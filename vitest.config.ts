@@ -26,6 +26,9 @@ export default defineConfig({
 				statements: 100,
 			},
 		},
+		env: {
+			GITHUB_ACTIONS: "",
+		},
 		exclude: [
 			"src/**/__fixtures__/**",
 			"test/fixtures/**",
