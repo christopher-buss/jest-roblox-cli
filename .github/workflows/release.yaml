@@ -29,10 +29,11 @@ jobs:
           mv "$src" "dist/sea/${{ matrix.binary }}"
 
         shell: bash
-      - name: Upload binary to release
-        env:
+      - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: Upload binary to release
         run: gh release upload "${{ github.ref_name }}" "dist/sea/${{ matrix.binary }}" --clobber
+
     strategy:
       matrix:
         include:
@@ -59,19 +60,19 @@ jobs:
       - name: Build
         run: nr build
 
-      - name: Publish to npm
-        env:
+      - env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
-
+        name: Publish to npm
         run: pnpm publish --access public --no-git-checks
-      - name: Generate changelog
-        continue-on-error: true
+
+      - continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+        name: Generate changelog
         run: pnpx changelogithub
-      - name: Upload plugin to release
-        env:
+
+      - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: Upload plugin to release
         run: gh release upload "${{ github.ref_name }}" plugin/JestRobloxRunner.rbxm --clobber
