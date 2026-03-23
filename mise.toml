@@ -1,0 +1,35 @@
+[env]
+_.file = { path = ".env" }
+_.path = [
+  '{{config_root}}/node_modules/.bin',
+  '{{cwd}}/node_modules/.bin',
+]
+
+[tools]
+"github:jacktabscode/drillbit" = "latest"
+"github:johnnymorganz/stylua" = "latest"
+"github:rojo-rbx/rojo" = "v7.7.0-rc.1"
+"github:seaofvoices/darklua" = "0.17.1"
+node = { version = "lts", postinstall = "corepack enable" }
+"npm:@antfu/ni" = "latest"
+"ubi:luau-lang/lute" = "latest"
+watchexec = "latest"
+
+[tasks.drillbit]
+run = "drillbit"
+sources = [
+  "plugin/*",
+  "drillbit.toml" 
+]
+
+[tasks.watch-drillbit]
+run = "mise watch drillbit"
+
+[tasks.dev]
+description = "Starts the Rojo server and compiler in watch mode"
+alias = "d"
+depends = [
+  "watch-drillbit",
+  "compile --watch",
+  "serve" 
+]

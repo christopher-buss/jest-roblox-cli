@@ -1,0 +1,14 @@
+{
+	"languageMode": "strict",
+	"lintErrors": false,
+	"lint": {
+		"*": true
+	},
+	"typeErrors": true,
+	"aliases": {		
+		"batteries": "~/.lute/typedefs/0.1.0/batteries",
+        "lint": "~/.lute/typedefs/0.1.0/lint",
+        "lute": "~/.lute/typedefs/0.1.0/lute", 
+        "std": "~/.lute/typedefs/0.1.0/std"
+	}
+}

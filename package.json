@@ -1,0 +1,103 @@
+{
+	"name": "@isentinel/jest-roblox",
+	"version": "0.0.8",
+	"description": "Jest-compatible CLI for running roblox-ts tests via Roblox Open Cloud",
+	"keywords": [
+		"jest",
+		"roblox",
+		"rbxts",
+		"testing",
+		"cli"
+	],
+	"homepage": "https://github.com/christopher-buss/jest-roblox-cli#readme",
+	"bugs": {
+		"email": "christopher.buss@pm.me"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/christopher-buss/jest-roblox-cli.git"
+	},
+	"license": "MIT",
+	"author": "Christopher Buss <christopher.buss@pm.me> (https://github.com/christopher-buss)",
+	"sideEffects": false,
+	"type": "module",
+	"exports": {
+		".": "./dist/index.mjs",
+		"./cli": "./dist/cli.mjs",
+		"./package.json": "./package.json"
+	},
+	"types": "./dist/index.d.mts",
+	"bin": {
+		"jest-roblox": "./bin/jest-roblox.js"
+	},
+	"files": [
+		"bin",
+		"dist",
+		"plugin",
+		"!dist/**/*.map",
+		"!dist/**/*.tsbuildinfo"
+	],
+	"scripts": {
+		"build": "pnpm build:bundle && tsdown && pnpm build:plugin",
+		"build:bundle": "darklua process -c .darklua-bundle.json luau/entry.luau src/test-runner.bundled.luau",
+		"build:plugin": "rm -rf plugin/out && darklua process -c .darklua-plugin.json luau/ plugin/out/shared/ && rojo build plugin/plugin.project.json -o plugin/JestRobloxRunner.rbxm",
+		"lint": "eslint --cache",
+		"lint:ci": "eslint --cache --cache-strategy content",
+		"prepack": "pnpm build",
+		"prepublishOnly": "pnpm build",
+		"release": "bumpp",
+		"test": "vitest --coverage",
+		"typecheck": "tsgo --build --emitDeclarationOnly",
+		"watch": "tsdown --watch"
+	},
+	"dependencies": {
+		"@jridgewell/trace-mapping": "0.3.31",
+		"@roblox-ts/rojo-resolver": "1.1.0",
+		"arktype": "2.1.29",
+		"c12": "4.0.0-beta.4",
+		"confbox": "0.2.2",
+		"defu": "6.1.4",
+		"get-tsconfig": "4.13.6",
+		"highlight.js": "11.11.1",
+		"istanbul-lib-coverage": "3.2.2",
+		"istanbul-lib-report": "3.0.1",
+		"istanbul-reports": "3.2.0",
+		"oxc-parser": "0.120.0",
+		"picomatch": "4.0.3",
+		"std-env": "4.0.0",
+		"tinyrainbow": "3.0.3",
+		"ws": "8.18.0"
+	},
+	"devDependencies": {
+		"@isentinel/eslint-config": "5.0.0-beta.9",
+		"@isentinel/tsconfig": "1.2.0",
+		"@oxc-project/types": "0.120.0",
+		"@rbxts/jest": "3.13.3-ts.1",
+		"@rbxts/types": "1.0.911",
+		"@total-typescript/shoehorn": "0.1.2",
+		"@types/istanbul-lib-coverage": "2.0.6",
+		"@types/istanbul-lib-report": "3.0.3",
+		"@types/istanbul-reports": "3.0.4",
+		"@types/node": "24.10.13",
+		"@types/picomatch": "4.0.2",
+		"@types/ws": "8.5.13",
+		"@typescript/native-preview": "7.0.0-dev.20260308.1",
+		"@vitest/coverage-v8": "4.1.0",
+		"@vitest/eslint-plugin": "1.6.12",
+		"better-typescript-lib": "2.12.0",
+		"bumpp": "10.4.1",
+		"eslint": "9.39.2",
+		"eslint-plugin-jest-extended": "3.0.1",
+		"eslint-plugin-n": "17.23.1",
+		"eslint-plugin-pnpm": "1.4.3",
+		"jest-extended": "7.0.0",
+		"memfs": "4.56.11",
+		"publint": "0.3.15",
+		"tsdown": "0.20.1",
+		"type-fest": "5.2.0",
+		"vitest": "4.1.0"
+	},
+	"engines": {
+		"node": ">=24.10.0"
+	}
+}

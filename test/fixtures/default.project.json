@@ -1,0 +1,7 @@
+{
+	"name": "demo-project",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": { "$path": "out/shared" }
+	}
+}

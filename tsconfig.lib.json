@@ -1,0 +1,17 @@
+{
+	"extends": "@isentinel/tsconfig/typescript",
+	"compilerOptions": {
+		"composite": true,
+		"tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
+		"lib": ["esnext"],
+		"libReplacement": true,
+		"allowImportingTsExtensions": true,
+		"allowJs": false,
+		"emitDeclarationOnly": true,
+		"noEmit": false,
+		"outDir": "out",
+		"isolatedDeclarations": true
+	},
+	"include": ["src/**/*.ts", "package.json"],
+	"exclude": ["vitest.config.ts", "src/**/*.spec.ts", "src/**/*.spec.tsx", "src/**/*.spec.jsx"]
+}

@@ -1,0 +1,8 @@
+{
+	"generator": "retain_lines",
+	"bundle": {
+		"require_mode": "path",
+		"modules_identifier": "__JEST_MODULES"
+	},
+	"rules": []
+}

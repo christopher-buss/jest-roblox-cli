@@ -1,0 +1,16 @@
+src/test-runner.bundled.luau
+plugin/out/
+!src/coverage
+!test/coverage
+.standalone/.preview
+dist/
+# Standalone extras
+node_modules/
+out-tsc/
+coverage/
+*.tsbuildinfo
+*.rbxl
+*.rbxl.lock
+*.tgz
+.DS_Store
+.env

@@ -1,0 +1,36 @@
+version: "0.2"
+language: en
+words:
+  - arktype
+  - begincolumn
+  - beginline
+  - compoundassign
+  - covmap
+  - defu
+  - doublestar
+  - elseblock
+  - elseexpr
+  - elseifs
+  - endcolumn
+  - highlightjs
+  - indexexpr
+  - instrumentable
+  - instrumenter
+  - interp
+  - interpolatedstring
+  - interpstring
+  - lhsoperand
+  - localfunction
+  - rbxl
+  - rhsoperand
+  - rojo
+  - statfunction
+  - statlocalfunction
+  - thenblock
+  - thenexpr
+  - typealias
+  - typeassertion
+  - typefunction
+  - unmappable
+  - vararg
+  - varargs

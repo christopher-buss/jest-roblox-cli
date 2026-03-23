@@ -1,0 +1,2 @@
+[plugins.jest_roblox_runner]
+local = "./plugin/JestRobloxRunner.rbxm"

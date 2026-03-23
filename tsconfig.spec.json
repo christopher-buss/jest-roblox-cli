@@ -1,0 +1,27 @@
+{
+	"extends": "@isentinel/tsconfig/typescript",
+	"compilerOptions": {
+		"composite": true,
+		"libReplacement": true,
+		"types": ["jest-extended"],
+		"allowImportingTsExtensions": true,
+		"outDir": "./out-tsc/vitest"
+	},
+	"references": [
+		{
+			"path": "./tsconfig.lib.json"
+		}
+	],
+	"include": [
+		"src/**/*.d.ts",
+		"src/**/*.spec.js",
+		"src/**/*.spec.jsx",
+		"src/**/*.spec.ts",
+		"src/**/*.spec.tsx",
+		"test/**/*.*",
+		"eslint.config.ts",
+		"tsdown.config.ts",
+		"vitest.config.ts"
+	],
+	"exclude": ["${configDir}/node_modules", "**/fixtures/"]
+}

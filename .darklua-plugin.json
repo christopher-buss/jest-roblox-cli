@@ -1,0 +1,10 @@
+{
+	"generator": "retain_lines",
+	"rules": [
+		{
+			"rule": "convert_require",
+			"current": "path",
+			"target": "roblox"
+		}
+	]
+}

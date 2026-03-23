@@ -1,0 +1,9 @@
+{
+	"name": "JestRobloxRunner",
+	"tree": {
+		"$path": "src",
+		"shared": {
+			"$path": "out/shared"
+		}
+	}
+}
