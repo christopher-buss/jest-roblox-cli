@@ -1,6 +1,6 @@
 node_modules/
 out-tsc/
-coverage/
+/coverage/
 *.tsbuildinfo
 *.rbxl
 *.rbxl.lock
