@@ -50,7 +50,4 @@ jobs:
         run: nr lint:ci
 
       - name: Test
-        run: vitest --coverage
-
-      - name: Typecheck
-        run: nr typecheck
+        run: nr test
