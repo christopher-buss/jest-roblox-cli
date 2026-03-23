@@ -1,0 +1,527 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`instrumentation pipeline (integration) > when instrumenting a simple file > should produce the expected instrumented source and cov-map > cov-map 1`] = `
+{
+  "branchMap": {},
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 12,
+        "line": 1,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 10,
+        "line": 2,
+      },
+      "start": {
+        "column": 1,
+        "line": 2,
+      },
+    },
+    "3": {
+      "end": {
+        "column": 9,
+        "line": 3,
+      },
+      "start": {
+        "column": 1,
+        "line": 3,
+      },
+    },
+  },
+}
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting a simple file > should produce the expected instrumented source and cov-map > instrumented source 1`] = `
+"if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end
+local __cov_file_key = "simple.luau"
+if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end
+if _G.__jest_roblox_cov[__cov_file_key].s == nil then _G.__jest_roblox_cov[__cov_file_key].s = {} end
+local __cov_s = _G.__jest_roblox_cov[__cov_file_key].s
+for __i = 1, 3 do if __cov_s[__i] == nil then __cov_s[__i] = 0 end end
+__cov_s[1] += 1; local x = 1
+__cov_s[2] += 1; x = x + 1
+__cov_s[3] += 1; print(x)"
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting an empty file > should produce the expected instrumented source and cov-map > cov-map 1`] = `
+{
+  "branchMap": {},
+  "functionMap": {},
+  "statementMap": {},
+}
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting an empty file > should produce the expected instrumented source and cov-map > instrumented source 1`] = `
+"if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end
+local __cov_file_key = "empty.luau"
+if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end
+if _G.__jest_roblox_cov[__cov_file_key].s == nil then _G.__jest_roblox_cov[__cov_file_key].s = {} end
+local __cov_s = _G.__jest_roblox_cov[__cov_file_key].s
+"
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting an if statement > should produce the expected instrumented source and cov-map > cov-map 1`] = `
+{
+  "branchMap": {
+    "1": {
+      "locations": [
+        {
+          "end": {
+            "column": 1,
+            "line": 3,
+          },
+          "start": {
+            "column": 13,
+            "line": 1,
+          },
+        },
+        {
+          "end": {
+            "column": 1,
+            "line": 1,
+          },
+          "start": {
+            "column": 1,
+            "line": 1,
+          },
+        },
+      ],
+      "type": "if",
+    },
+  },
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 4,
+        "line": 3,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 14,
+        "line": 2,
+      },
+      "start": {
+        "column": 3,
+        "line": 2,
+      },
+    },
+  },
+}
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting an if statement > should produce the expected instrumented source and cov-map > instrumented source 1`] = `
+"if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end
+local __cov_file_key = "if-only.luau"
+if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end
+if _G.__jest_roblox_cov[__cov_file_key].s == nil then _G.__jest_roblox_cov[__cov_file_key].s = {} end
+local __cov_s = _G.__jest_roblox_cov[__cov_file_key].s
+for __i = 1, 2 do if __cov_s[__i] == nil then __cov_s[__i] = 0 end end
+if _G.__jest_roblox_cov[__cov_file_key].b == nil then _G.__jest_roblox_cov[__cov_file_key].b = {} end
+local __cov_b = _G.__jest_roblox_cov[__cov_file_key].b
+if __cov_b[1] == nil then __cov_b[1] = {0, 0} end
+__cov_s[1] += 1; if true then
+  __cov_b[1][1] += 1; __cov_s[2] += 1; local y = 2
+else __cov_b[1][2] += 1 end"
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting expression-if branches > should produce the expected instrumented source and cov-map > cov-map 1`] = `
+{
+  "branchMap": {
+    "1": {
+      "locations": [
+        {
+          "end": {
+            "column": 25,
+            "line": 1,
+          },
+          "start": {
+            "column": 24,
+            "line": 1,
+          },
+        },
+        {
+          "end": {
+            "column": 32,
+            "line": 1,
+          },
+          "start": {
+            "column": 31,
+            "line": 1,
+          },
+        },
+      ],
+      "type": "expr-if",
+    },
+    "2": {
+      "locations": [
+        {
+          "end": {
+            "column": 28,
+            "line": 2,
+          },
+          "start": {
+            "column": 25,
+            "line": 2,
+          },
+        },
+        {
+          "end": {
+            "column": 49,
+            "line": 2,
+          },
+          "start": {
+            "column": 46,
+            "line": 2,
+          },
+        },
+        {
+          "end": {
+            "column": 58,
+            "line": 2,
+          },
+          "start": {
+            "column": 55,
+            "line": 2,
+          },
+        },
+      ],
+      "type": "expr-if",
+    },
+  },
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 32,
+        "line": 1,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 58,
+        "line": 2,
+      },
+      "start": {
+        "column": 1,
+        "line": 2,
+      },
+    },
+  },
+}
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting expression-if branches > should produce the expected instrumented source and cov-map > instrumented source 1`] = `
+"if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end
+local __cov_file_key = "expr-if.luau"
+if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end
+if _G.__jest_roblox_cov[__cov_file_key].s == nil then _G.__jest_roblox_cov[__cov_file_key].s = {} end
+local __cov_s = _G.__jest_roblox_cov[__cov_file_key].s
+for __i = 1, 2 do if __cov_s[__i] == nil then __cov_s[__i] = 0 end end
+if _G.__jest_roblox_cov[__cov_file_key].b == nil then _G.__jest_roblox_cov[__cov_file_key].b = {} end
+local __cov_b = _G.__jest_roblox_cov[__cov_file_key].b
+if __cov_b[1] == nil then __cov_b[1] = {0, 0} end
+if __cov_b[2] == nil then __cov_b[2] = {0, 0, 0} end
+local function __cov_br(__bi, __ai, ...) __cov_b[__bi][__ai] += 1; return ... end
+__cov_s[1] += 1; local x = if true then __cov_br(1, 1, 1) else __cov_br(1, 2, 2)
+__cov_s[2] += 1; local y = if false then __cov_br(2, 1, "a") elseif true then __cov_br(2, 2, "b") else __cov_br(2, 3, "c")"
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting functions > should produce the expected instrumented source and cov-map > cov-map 1`] = `
+{
+  "branchMap": {},
+  "functionMap": {
+    "1": {
+      "location": {
+        "end": {
+          "column": 4,
+          "line": 3,
+        },
+        "start": {
+          "column": 1,
+          "line": 1,
+        },
+      },
+      "name": "greet",
+    },
+    "2": {
+      "location": {
+        "end": {
+          "column": 4,
+          "line": 7,
+        },
+        "start": {
+          "column": 17,
+          "line": 5,
+        },
+      },
+      "name": "(anonymous)",
+    },
+    "3": {
+      "location": {
+        "end": {
+          "column": 4,
+          "line": 11,
+        },
+        "start": {
+          "column": 1,
+          "line": 9,
+        },
+      },
+      "name": "globalFunc",
+    },
+  },
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 4,
+        "line": 3,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 4,
+        "line": 7,
+      },
+      "start": {
+        "column": 1,
+        "line": 5,
+      },
+    },
+    "3": {
+      "end": {
+        "column": 4,
+        "line": 11,
+      },
+      "start": {
+        "column": 1,
+        "line": 9,
+      },
+    },
+    "4": {
+      "end": {
+        "column": 15,
+        "line": 13,
+      },
+      "start": {
+        "column": 1,
+        "line": 13,
+      },
+    },
+    "5": {
+      "end": {
+        "column": 11,
+        "line": 14,
+      },
+      "start": {
+        "column": 1,
+        "line": 14,
+      },
+    },
+    "6": {
+      "end": {
+        "column": 13,
+        "line": 15,
+      },
+      "start": {
+        "column": 1,
+        "line": 15,
+      },
+    },
+    "7": {
+      "end": {
+        "column": 29,
+        "line": 2,
+      },
+      "start": {
+        "column": 5,
+        "line": 2,
+      },
+    },
+    "8": {
+      "end": {
+        "column": 17,
+        "line": 6,
+      },
+      "start": {
+        "column": 5,
+        "line": 6,
+      },
+    },
+    "9": {
+      "end": {
+        "column": 20,
+        "line": 10,
+      },
+      "start": {
+        "column": 5,
+        "line": 10,
+      },
+    },
+  },
+}
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting functions > should produce the expected instrumented source and cov-map > instrumented source 1`] = `
+"if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end
+local __cov_file_key = "functions.luau"
+if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end
+if _G.__jest_roblox_cov[__cov_file_key].s == nil then _G.__jest_roblox_cov[__cov_file_key].s = {} end
+local __cov_s = _G.__jest_roblox_cov[__cov_file_key].s
+for __i = 1, 9 do if __cov_s[__i] == nil then __cov_s[__i] = 0 end end
+if _G.__jest_roblox_cov[__cov_file_key].f == nil then _G.__jest_roblox_cov[__cov_file_key].f = {} end
+local __cov_f = _G.__jest_roblox_cov[__cov_file_key].f
+for __i = 1, 3 do if __cov_f[__i] == nil then __cov_f[__i] = 0 end end
+__cov_s[1] += 1; local function greet(name)
+    __cov_f[1] += 1; __cov_s[7] += 1; return "Hello, " .. name
+end
+
+__cov_s[2] += 1; local handler = function(x)
+    __cov_f[2] += 1; __cov_s[8] += 1; return x * 2
+end
+
+__cov_s[3] += 1; function globalFunc()
+    __cov_f[3] += 1; __cov_s[9] += 1; print("global")
+end
+
+__cov_s[4] += 1; greet("world")
+__cov_s[5] += 1; handler(5)
+__cov_s[6] += 1; globalFunc()"
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting if/elseif/else branches > should produce the expected instrumented source and cov-map > cov-map 1`] = `
+{
+  "branchMap": {
+    "1": {
+      "locations": [
+        {
+          "end": {
+            "column": 1,
+            "line": 5,
+          },
+          "start": {
+            "column": 15,
+            "line": 3,
+          },
+        },
+        {
+          "end": {
+            "column": 1,
+            "line": 7,
+          },
+          "start": {
+            "column": 19,
+            "line": 5,
+          },
+        },
+        {
+          "end": {
+            "column": 1,
+            "line": 9,
+          },
+          "start": {
+            "column": 5,
+            "line": 7,
+          },
+        },
+      ],
+      "type": "if",
+    },
+  },
+  "functionMap": {},
+  "statementMap": {
+    "1": {
+      "end": {
+        "column": 12,
+        "line": 1,
+      },
+      "start": {
+        "column": 1,
+        "line": 1,
+      },
+    },
+    "2": {
+      "end": {
+        "column": 4,
+        "line": 9,
+      },
+      "start": {
+        "column": 1,
+        "line": 3,
+      },
+    },
+    "3": {
+      "end": {
+        "column": 17,
+        "line": 4,
+      },
+      "start": {
+        "column": 5,
+        "line": 4,
+      },
+    },
+    "4": {
+      "end": {
+        "column": 17,
+        "line": 6,
+      },
+      "start": {
+        "column": 5,
+        "line": 6,
+      },
+    },
+    "5": {
+      "end": {
+        "column": 17,
+        "line": 8,
+      },
+      "start": {
+        "column": 5,
+        "line": 8,
+      },
+    },
+  },
+}
+`;
+
+exports[`instrumentation pipeline (integration) > when instrumenting if/elseif/else branches > should produce the expected instrumented source and cov-map > instrumented source 1`] = `
+"if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end
+local __cov_file_key = "if-else.luau"
+if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end
+if _G.__jest_roblox_cov[__cov_file_key].s == nil then _G.__jest_roblox_cov[__cov_file_key].s = {} end
+local __cov_s = _G.__jest_roblox_cov[__cov_file_key].s
+for __i = 1, 5 do if __cov_s[__i] == nil then __cov_s[__i] = 0 end end
+if _G.__jest_roblox_cov[__cov_file_key].b == nil then _G.__jest_roblox_cov[__cov_file_key].b = {} end
+local __cov_b = _G.__jest_roblox_cov[__cov_file_key].b
+if __cov_b[1] == nil then __cov_b[1] = {0, 0, 0} end
+__cov_s[1] += 1; local x = 1
+
+__cov_s[2] += 1; if x == 1 then
+    __cov_b[1][1] += 1; __cov_s[3] += 1; local a = 10
+elseif x == 2 then
+    __cov_b[1][2] += 1; __cov_s[4] += 1; local b = 20
+else
+    __cov_b[1][3] += 1; __cov_s[5] += 1; local c = 30
+end"
+`;
