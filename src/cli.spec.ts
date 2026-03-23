@@ -609,6 +609,30 @@ describe("runInner via run", () => {
 		expect(code).toBe(0);
 	});
 
+	it("should reject --typecheck in SEA binary", async () => {
+		expect.assertions(2);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const code = await run(["--typecheck"]);
+
+		expect(code).toBe(2);
+		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("standalone binary"));
+	});
+
+	it("should reject --typecheckOnly in SEA binary", async () => {
+		expect.assertions(2);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const code = await run(["--typecheckOnly"]);
+
+		expect(code).toBe(2);
+		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("standalone binary"));
+	});
+
 	it("should run typecheck tests and return results", async () => {
 		expect.assertions(2);
 

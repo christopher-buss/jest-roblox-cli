@@ -983,6 +983,12 @@ async function runInner(args: Array<string>): Promise<number> {
 		return 0;
 	}
 
+	if (process.env["JEST_ROBLOX_SEA"] === "true" && cli.typecheck === true) {
+		throw new ConfigError(
+			"--typecheck is not available in the standalone binary. Install via npm instead.",
+		);
+	}
+
 	const loadedConfig = await loadConfig(cli.config);
 	const config = mergeCliWithConfig(cli, loadedConfig);
 

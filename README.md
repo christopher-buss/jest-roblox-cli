@@ -29,6 +29,24 @@ real Roblox session and piping results back to your terminal.
 npm install @isentinel/jest-roblox
 ```
 
+### Standalone binary (no Node.js required)
+
+Pre-built binaries are attached to each
+[GitHub release](https://github.com/christopher-buss/jest-roblox-cli/releases).
+Install with your preferred tool manager:
+
+```bash
+mise use github:christopher-buss/jest-roblox-cli
+rokit add christopher-buss/jest-roblox-cli
+
+```
+
+The standalone binary has a few limitations compared to the npm package:
+
+- `--typecheck` and `--typecheckOnly` are not available
+- `.ts` config files are not supported (use `.json`, `.js`, or `.mjs`)
+- External tools (rojo, lute for coverage) must still be on your `PATH`
+
 ## Quick start
 
 Add a `jest.config.ts` (or `.js`, `.json`, `.yaml`, `.toml`) to your project
