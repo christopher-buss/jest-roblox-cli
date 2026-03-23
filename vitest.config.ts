@@ -44,5 +44,6 @@ export default defineConfig({
 			include: ["src/**/*.spec-d.ts"],
 			tsconfig: "./tsconfig.spec.json",
 		},
+		unstubEnvs: true,
 	},
 });

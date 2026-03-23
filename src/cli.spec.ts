@@ -1418,15 +1418,9 @@ describe("resolveFormatters", () => {
 		});
 		mocks.execute.mockResolvedValue(makeExecuteResult({ result: failResult }));
 
-		const originalEnvironment = process.env["GITHUB_ACTIONS"];
-		process.env["GITHUB_ACTIONS"] = "true";
+		vi.stubEnv("GITHUB_ACTIONS", "true");
 
-		try {
-			const runCli = run;
-			await runCli([]);
-		} finally {
-			process.env["GITHUB_ACTIONS"] = originalEnvironment;
-		}
+		await run([]);
 
 		const stderrOutput = spies.stderr.mock.calls.map(([argument]) => String(argument)).join("");
 
@@ -1462,15 +1456,9 @@ describe("resolveFormatters", () => {
 		});
 		mocks.execute.mockResolvedValue(makeExecuteResult({ result: failResult }));
 
-		const originalEnvironment = process.env["GITHUB_ACTIONS"];
-		process.env["GITHUB_ACTIONS"] = "true";
+		vi.stubEnv("GITHUB_ACTIONS", "true");
 
-		try {
-			const runCli = run;
-			await runCli([]);
-		} finally {
-			process.env["GITHUB_ACTIONS"] = originalEnvironment;
-		}
+		await run([]);
 
 		const stderrOutput = spies.stderr.mock.calls.map(([argument]) => String(argument)).join("");
 
@@ -1550,6 +1538,8 @@ describe("github-actions formatter", () => {
 	it("should write annotations to stderr when github-actions formatter is active", async () => {
 		expect.assertions(1);
 
+		vi.stubEnv("GITHUB_STEP_SUMMARY", undefined);
+
 		const spies = setupOutputSpies();
 		setupDefaults({ formatters: ["default", "github-actions"] });
 		const failResult = makeJestResult({
@@ -1619,15 +1609,9 @@ describe("github-actions formatter", () => {
 		});
 		mocks.execute.mockResolvedValue(makeExecuteResult({ result: failResult }));
 
-		const originalEnvironment = process.env["GITHUB_STEP_SUMMARY"];
-		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
+		vi.stubEnv("GITHUB_STEP_SUMMARY", "/tmp/summary.md");
 
-		try {
-			const runCli = run;
-			await runCli([]);
-		} finally {
-			process.env["GITHUB_STEP_SUMMARY"] = originalEnvironment;
-		}
+		await run([]);
 
 		const content = vol.readFileSync("/tmp/summary.md", "utf-8") as string;
 
@@ -1703,15 +1687,9 @@ describe("github-actions formatter", () => {
 		});
 		mocks.execute.mockResolvedValue(makeExecuteResult());
 
-		const originalEnvironment = process.env["GITHUB_STEP_SUMMARY"];
-		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
+		vi.stubEnv("GITHUB_STEP_SUMMARY", "/tmp/summary.md");
 
-		try {
-			const runCli = run;
-			await runCli([]);
-		} finally {
-			process.env["GITHUB_STEP_SUMMARY"] = originalEnvironment;
-		}
+		await run([]);
 
 		const content = vol.readFileSync("/tmp/summary.md", "utf-8") as string;
 

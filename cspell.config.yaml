@@ -32,5 +32,6 @@ words:
   - typeassertion
   - typefunction
   - unmappable
+  - unstub
   - vararg
   - varargs
