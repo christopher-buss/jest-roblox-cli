@@ -1,27 +1,28 @@
-# jest-roblox-cli
+<h1 align="center">jest-roblox-cli</h1>
 
-[![npm version](https://img.shields.io/npm/v/@isentinel/jest-roblox)](https://www.npmx.dev/package/@isentinel/jest-roblox)
-[![CI](https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/christopher-buss/jest-roblox-cli/blob/main/LICENSE)
+<p align="center">
+  <a href="https://www.npmx.dev/package/@isentinel/jest-roblox"><img src="https://img.shields.io/npm/v/@isentinel/jest-roblox" alt="npm version"></a>
+  <a href="https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml"><img src="https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/christopher-buss/jest-roblox-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
 
-Run your TypeScript and Luau tests inside Roblox, then see the results in your
-terminal.
+Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 
-jest-roblox-cli builds a Roblox place from your test files, runs it in Roblox,
-and reports results in your terminal. It works with roblox-ts and pure Luau
-projects. For TypeScript, it maps Luau errors back to your `.ts` source.
-
-## Why?
-
-Roblox code can only run inside the Roblox engine. Standard test runners
-can't access the Roblox API. This tool bridges that gap by running tests in a
-real Roblox session and piping results back to your terminal.
+<p align="center">
+  <img src="assets/cli-example.png" alt="jest-roblox-cli output" width="700">
+</p>
 
 - roblox-ts and pure Luau
 - Source-mapped errors (Luau line numbers back to `.ts` files)
-- Code coverage
+- Code coverage (via [Lute](https://github.com/luau-lang/lute) instrumentation)
 - Two backends: Open Cloud (remote) and Studio (local)
+- Multiple output formatters (human, agent, JSON, GitHub Actions)
+
+> [!NOTE]
+> roblox-ts projects currently require
+> [@isentinel/roblox-ts](https://npmx.dev/package/@isentinel/roblox-ts) for
+> source maps and coverage support.
 
 ## Install
 
@@ -41,7 +42,7 @@ rokit add christopher-buss/jest-roblox-cli
 
 ```
 
-The standalone binary has a few limitations compared to the npm package:
+Limitations vs the npm package:
 
 - `--typecheck` and `--typecheckOnly` are not available
 - `.ts` config files are not supported (use `.json`, `.js`, or `.mjs`)
@@ -82,6 +83,7 @@ jest-roblox -t "should spawn"
 
 # Filter by file path
 jest-roblox --testPathPattern player
+jest-roblox --testPathPattern="modifiers|define\\.spec|triggers"
 
 # Use a specific backend
 jest-roblox --backend studio
@@ -89,12 +91,6 @@ jest-roblox --backend open-cloud
 
 # Collect coverage
 jest-roblox --coverage
-
-# Output JSON results
-jest-roblox --formatters json --outputFile results.json
-
-# Short output for AI tools
-jest-roblox --formatters agent
 
 # Save game output (print/warn/error) to file
 jest-roblox --gameOutput game-logs.txt
@@ -145,7 +141,7 @@ Precedence: CLI flags > config file > extended config > defaults.
 ### Coverage fields
 
 > [!IMPORTANT]
-> Coverage requires [Lute](https://github.com/4lve/lute) to be installed and
+> Coverage requires [Lute](https://github.com/luau-lang/lute) to be installed and
 > on your `PATH`. Lute parses Luau ASTs so the CLI can insert coverage probes.
 
 | Field | What it does | Default |
@@ -171,28 +167,22 @@ export default defineConfig({
 	projects: [
 		{
 			test: defineProject({
-				displayName: { name: "core", color: "magenta" },
-				include: ["src/**/*.spec.ts"],
+				displayName: { name: "client", color: "magenta" },
+				include: ["**/*.spec.ts"],
 				mockDataModel: true,
-				outDir: "out-test/src",
+				outDir: "out/src/client",
 			}),
 		},
 		{
 			test: defineProject({
-				displayName: { name: "core:integration", color: "white" },
-				include: ["test/**/*.spec.ts"],
-				mockDataModel: true,
-				outDir: "out-test/test",
+				displayName: { name: "server", color: "white" },
+				include: ["**/*.spec.ts"],
+				outDir: "out/src/server",
 			}),
 		},
 	],
 });
 ```
-
-Available per-project fields: `displayName`, `include`, `exclude`, `testMatch`,
-`testRegex`, `testPathIgnorePatterns`, `setupFiles`, `setupFilesAfterEnv`,
-`testTimeout`, `slowTestThreshold`, `testEnvironment`, `snapshotFormat`,
-`outDir`, `root`, and the Jest mock flags (`clearMocks`, `resetMocks`, etc.).
 
 ### Full example
 
@@ -233,7 +223,18 @@ You need these environment variables:
 ### Studio (local)
 
 Connects to Roblox Studio over WebSocket. Faster than Open Cloud (no upload
-step), but Studio must be open with the plugin running.
+step), but Studio must be open with the plugin running. Studio doesn't expose which place is open, so
+multiple concurrent projects aren't supported yet.
+
+Install the plugin with [Drillbit](https://github.com/jacktabscode/drillbit):
+
+```bash
+drillbit install christopher-buss/jest-roblox-cli
+```
+
+Or download `JestRobloxRunner.rbxm` from the
+[latest release](https://github.com/christopher-buss/jest-roblox-cli/releases)
+and drop it into your Studio plugins folder.
 
 ## CLI flags
 
@@ -290,54 +291,9 @@ Default `testMatch` patterns (configurable):
 - Luau: `*.spec.lua`, `*.test.lua`, `*.spec.luau`, `*.test.luau`
 - Type tests: `*.spec-d.ts`, `*.test-d.ts`
 
-## Project structure
-
-```text
-jest-roblox-cli/
-├── bin/              CLI entry point
-├── src/
-│   ├── backends/     Open Cloud and Studio backends
-│   ├── config/       Config loading and validation
-│   ├── coverage/     Coverage instrumentation pipeline
-│   ├── formatters/   Output formatters (default, agent, JSON, GitHub Actions)
-│   ├── highlighter/  Luau syntax highlighting
-│   ├── reporter/     Result parsing and validation
-│   ├── source-mapper/ Luau-to-TypeScript error mapping
-│   ├── snapshot/     Snapshot file handling
-│   ├── typecheck/    Type test runner
-│   ├── types/        Shared type definitions
-│   └── utils/        Helpers (glob, hash, cache, paths)
-├── luau/             Luau code that runs inside Roblox
-├── plugin/           Roblox Studio WebSocket plugin
-└── test/             Test fixtures and mocks
-```
-
 ## Contributing
 
-### Build
-
-```bash
-pnpm build         # Full build
-pnpm watch         # Watch mode
-pnpm typecheck     # Check types
-```
-
-### Test
-
-```bash
-vitest run                    # All tests
-vitest run src/formatters     # One folder
-vitest run src/cli.spec.ts    # One file
-```
-
-### Lint
-
-```bash
-eslint .
-```
-
-> [!IMPORTANT]
-> 100% test coverage is enforced. Write tests first. Every PR must maintain full coverage.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
