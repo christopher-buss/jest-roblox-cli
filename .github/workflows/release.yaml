@@ -6,6 +6,40 @@ on:
       - "v*"
 
 jobs:
+  build-sea:
+    needs: release
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+
+      - name: Install
+        run: nci
+
+      - name: Build
+        run: nr build
+
+      - name: Rename binary
+        run: |
+          src="dist/sea/jest-roblox"
+          if [[ "${{ matrix.binary }}" == *.exe ]]; then src="${src}.exe"; fi
+          mv "$src" "dist/sea/${{ matrix.binary }}"
+
+        shell: bash
+      - name: Upload binary to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "dist/sea/${{ matrix.binary }}" --clobber
+    strategy:
+      matrix:
+        include:
+          - { binary: jest-roblox-linux-x64, os: ubuntu-latest }
+          - { binary: jest-roblox-darwin-arm64, os: macos-latest }
+          - { binary: jest-roblox-windows-x64.exe, os: windows-latest }
+
   release:
     permissions:
       contents: write
@@ -41,39 +75,3 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" plugin/JestRobloxRunner.rbxm --clobber
-
-  build-sea:
-    needs: release
-    permissions:
-      contents: write
-
-    strategy:
-      matrix:
-        include:
-          - { os: ubuntu-latest, binary: jest-roblox-linux-x64 }
-          - { os: macos-latest, binary: jest-roblox-darwin-arm64 }
-          - { os: windows-latest, binary: jest-roblox-windows-x64.exe }
-
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-
-      - name: Install
-        run: nci
-
-      - name: Build
-        run: nr build
-
-      - name: Rename binary
-        shell: bash
-        run: |
-          src="dist/sea/jest-roblox"
-          if [[ "${{ matrix.binary }}" == *.exe ]]; then src="${src}.exe"; fi
-          mv "$src" "dist/sea/${{ matrix.binary }}"
-
-      - name: Upload binary to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.ref_name }}" "dist/sea/${{ matrix.binary }}" --clobber
