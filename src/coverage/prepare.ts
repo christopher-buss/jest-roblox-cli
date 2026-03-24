@@ -7,7 +7,7 @@ import picomatch from "picomatch";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashBuffer } from "../utils/hash.ts";
-import { collectPaths } from "../utils/rojo-tree.ts";
+import { collectPaths, resolveNestedProjects } from "../utils/rojo-tree.ts";
 import { INSTRUMENTER_VERSION, instrumentRoot } from "./instrumenter.ts";
 import { buildWithRojo } from "./rojo-builder.ts";
 import type { RojoProject, RootEntry } from "./rojo-rewriter.ts";
@@ -350,7 +350,11 @@ function buildRojoProject(
 		.relative(COVERAGE_DIR, path.dirname(rojoProjectPath))
 		.replaceAll("\\", "/");
 
-	const rewritten = rewriteRojoProject(rojoProjectRaw, { projectRelocation, roots });
+	const resolved = {
+		...rojoProjectRaw,
+		tree: resolveNestedProjects(rojoProjectRaw.tree, path.dirname(rojoProjectPath)),
+	};
+	const rewritten = rewriteRojoProject(resolved, { projectRelocation, roots });
 	const rewrittenProjectPath = path.join(COVERAGE_DIR, path.basename(rojoProjectPath));
 
 	fs.writeFileSync(rewrittenProjectPath, JSON.stringify(rewritten, undefined, "\t"));

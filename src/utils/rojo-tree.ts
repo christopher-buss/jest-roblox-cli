@@ -35,7 +35,13 @@ function resolveTree(
 			const chain = new Set(visited);
 			chain.add(projectPath);
 
-			const content = readFileSync(projectPath, "utf-8");
+			let content: string;
+			try {
+				content = readFileSync(projectPath, "utf-8");
+			} catch (err) {
+				throw new Error(`Could not read nested Rojo project: ${value}`, { cause: err });
+			}
+
 			const project = JSON.parse(content) as { tree: RojoTreeNode };
 			const innerTree = resolveTree(project.tree, rootDirectory, chain);
 

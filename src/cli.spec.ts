@@ -828,6 +828,46 @@ describe("runInner via run", () => {
 		);
 	});
 
+	it("should warn when coverage enabled but runtime returned no data", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults({ collectCoverage: true });
+
+		mocks.prepareCoverage.mockReturnValue({
+			manifest: {} as never,
+			placeFile: "/test/cov.rbxl",
+		});
+		mocks.execute.mockResolvedValue(makeExecuteResult({ coverageData: undefined }));
+
+		const code = await run(["--coverage"]);
+
+		expect(code).toBe(0);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("coverage data was empty"),
+		);
+	});
+
+	it("should suppress empty coverage data warning when silent", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults({ collectCoverage: true, silent: true });
+
+		mocks.prepareCoverage.mockReturnValue({
+			manifest: {} as never,
+			placeFile: "/test/cov.rbxl",
+		});
+		mocks.execute.mockResolvedValue(makeExecuteResult({ coverageData: undefined }));
+
+		const code = await run(["--silent", "--coverage"]);
+
+		expect(code).toBe(0);
+		expect(spies.stderr).not.toHaveBeenCalledWith(
+			expect.stringContaining("coverage data was empty"),
+		);
+	});
+
 	it("should print PASS badge when coverage enabled and passing", async () => {
 		expect.assertions(2);
 

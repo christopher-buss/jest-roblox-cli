@@ -275,6 +275,61 @@ describe(prepareCoverage, () => {
 		});
 	});
 
+	describe("when Rojo project has nested project references", () => {
+		it("should resolve nested .project.json refs before rewriting paths", async () => {
+			expect.assertions(1);
+
+			const developmentProject = {
+				name: "development",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						"uuid-generator": {
+							$path: "default.project.json",
+						},
+					},
+				},
+			};
+			const defaultProject = {
+				name: "uuid-generator",
+				tree: {
+					$className: "Folder",
+					$path: "src",
+				},
+			};
+
+			vol.mkdirSync("/project", { recursive: true });
+			vol.mkdirSync("src", { recursive: true });
+			vol.writeFileSync("src/init.luau", "local x = 1");
+			vol.writeFileSync(
+				"/project/development.project.json",
+				JSON.stringify(developmentProject),
+			);
+			vol.writeFileSync("/project/default.project.json", JSON.stringify(defaultProject));
+
+			await setupMocks();
+			const config = makeConfig({
+				luauRoots: ["src"],
+				rojoProject: "/project/development.project.json",
+			});
+
+			prepareCoverage(config);
+
+			const written: Record<string, unknown> = JSON.parse(
+				vol.readFileSync(
+					".jest-roblox-coverage/development.project.json",
+					"utf-8",
+				) as string,
+			) as Record<string, unknown>;
+			const tree = written["tree"] as Record<string, Record<string, Record<string, string>>>;
+
+			// The nested $path: "default.project.json" is resolved to $path:
+			// "src". "src" is already relative to the shadow directory, so no
+			// rewrite needed.
+			expect(tree["ReplicatedStorage"]!["uuid-generator"]!["$path"]).toBe("src");
+		});
+	});
+
 	describe("when returning results", () => {
 		it("should return the manifest and placeFile path", async () => {
 			expect.assertions(2);

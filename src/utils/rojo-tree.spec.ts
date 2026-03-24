@@ -192,8 +192,9 @@ describe(resolveNestedProjects, () => {
 		};
 
 		try {
-			expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
-				"nonexistent.project.json",
+			expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrowWithMessage(
+				Error,
+				"Could not read nested Rojo project: nonexistent.project.json",
 			);
 		} finally {
 			fs.rmSync(temporaryDirectory, { force: true, recursive: true });

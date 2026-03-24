@@ -391,7 +391,17 @@ function processCoverage(
 	config: ResolvedConfig,
 	coverageData: RawCoverageData | undefined,
 ): boolean {
-	if (!config.collectCoverage || coverageData === undefined) {
+	if (!config.collectCoverage) {
+		return true;
+	}
+
+	if (coverageData === undefined) {
+		if (!config.silent) {
+			process.stderr.write(
+				"Warning: coverage data was empty — the Rojo project may point at uninstrumented source\n",
+			);
+		}
+
 		return true;
 	}
 
