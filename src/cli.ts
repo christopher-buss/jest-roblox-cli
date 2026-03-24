@@ -61,6 +61,7 @@ import type { TimingResult } from "./types/timing.ts";
 import { formatBanner } from "./utils/banner.ts";
 import { formatGameOutputNotice, parseGameOutput, writeGameOutput } from "./utils/game-output.ts";
 import { globSync } from "./utils/glob.ts";
+import { resolveNestedProjects } from "./utils/rojo-tree.ts";
 
 const VERSION: string = packageJson.version;
 
@@ -682,7 +683,7 @@ function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 		throw new Error(`Invalid Rojo project: ${validated.summary}`);
 	}
 
-	return validated.tree;
+	return resolveNestedProjects(validated.tree, path.dirname(rojoPath));
 }
 
 // Keys excluded from Luau stubs — these are TS-side/structural config, not

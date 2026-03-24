@@ -71,8 +71,8 @@ describe(globSync, () => {
 
 		const result = globSync("**/*.ts", { cwd });
 
-		// **/*.ts requires a directory separator, so root.ts is NOT matched
-		expect(result).not.toContain("root.ts");
+		// **/ matches zero or more path segments (standard glob semantics)
+		expect(result).toContain("root.ts");
 		expect(result).toContain("src/index.ts");
 		expect(result).not.toContain("src/util.js");
 
@@ -135,6 +135,29 @@ describe(globSync, () => {
 		const result = globSync("**/*.ts", { cwd });
 
 		expect(result).toStrictEqual(["src/app.ts"]);
+
+		vi.restoreAllMocks();
+	});
+
+	it("should match files directly in a prefixed doublestar directory", () => {
+		expect.assertions(1);
+
+		const sourceDirectory = path.join(cwd, "src");
+		vi.mocked(fs.readdirSync).mockImplementation((directoryPath) => {
+			if (String(directoryPath) === cwd) {
+				return [directory("src")] as unknown as ReturnType<typeof fs.readdirSync>;
+			}
+
+			if (String(directoryPath) === sourceDirectory) {
+				return [file("init.spec.luau")] as unknown as ReturnType<typeof fs.readdirSync>;
+			}
+
+			return [] as unknown as ReturnType<typeof fs.readdirSync>;
+		});
+
+		const result = globSync("src/**/*.spec.luau", { cwd });
+
+		expect(result).toStrictEqual(["src/init.spec.luau"]);
 
 		vi.restoreAllMocks();
 	});

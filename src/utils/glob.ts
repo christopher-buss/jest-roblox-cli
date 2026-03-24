@@ -16,9 +16,10 @@ export function globSync(pattern: string, options: GlobOptions = {}): Array<stri
 function matchesGlobPattern(filePath: string, pattern: string): boolean {
 	const regexPattern = pattern
 		.replace(/\./g, "\\.")
-		.replace(/\*\*/g, "{{DOUBLESTAR}}")
+		.replace(/\*\*\//g, "{{DOUBLESTAR_SLASH}}")
+		.replace(/\*\*/g, ".*")
 		.replace(/\*/g, "[^/]*")
-		.replace(/\{\{DOUBLESTAR\}\}/g, ".*");
+		.replace(/\{\{DOUBLESTAR_SLASH\}\}/g, "(.+/)?");
 
 	return new RegExp(`^${regexPattern}$`).test(filePath);
 }

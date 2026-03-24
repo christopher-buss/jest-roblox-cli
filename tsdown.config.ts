@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { defineConfig } from "tsdown";
 
 function luauRawPlugin() {
@@ -11,6 +12,31 @@ function luauRawPlugin() {
 
 			const content = readFileSync(id, "utf-8");
 			return `export default ${JSON.stringify(content)};`;
+		},
+	};
+}
+
+function inlineRojoSchemaPlugin() {
+	const schemaPath = resolve("node_modules/@roblox-ts/rojo-resolver/rojo-schema.json");
+	const schemaContent = readFileSync(schemaPath, "utf-8");
+
+	return {
+		name: "inline-rojo-schema",
+		transform(code: string, id: string) {
+			if (!id.includes("rojo-resolver") || !id.includes("RojoResolver")) {
+				return;
+			}
+
+			const replaced = code.replace(
+				/fs_extra_1\.default\.readFileSync\(SCHEMA_PATH\)\.toString\(\)/,
+				JSON.stringify(schemaContent),
+			);
+
+			if (replaced === code) {
+				return;
+			}
+
+			return { code: replaced };
 		},
 	};
 }
@@ -77,7 +103,7 @@ export default defineConfig([
 			},
 		},
 		format: ["cjs"],
-		plugins: [seaStubPlugin(), luauRawPlugin()],
+		plugins: [seaStubPlugin(), inlineRojoSchemaPlugin(), luauRawPlugin()],
 		shims: true,
 		target: ["node25"],
 	},

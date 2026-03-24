@@ -1,5 +1,6 @@
 import { loadConfig as c12LoadConfig } from "c12";
 import { defuFn } from "defu";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 
 import type { Config, ResolvedConfig } from "./schema.ts";
@@ -58,6 +59,10 @@ export async function loadConfig(
 			cwd,
 			dotenv: false,
 			globalRc: false,
+			// In SEA mode, jiti's babel.cjs can't be resolved from the
+			// single-executable archive. Bypass jiti entirely by providing a
+			// custom import function.
+			import: isSea() ? seaImport : undefined,
 			merger,
 			omit$Keys: true,
 			packageJson: false,
@@ -85,6 +90,19 @@ export async function loadConfig(
 	config.rootDir ??= cwd;
 
 	return resolveConfig(config);
+}
+
+function isSea(): boolean {
+	return process.env["JEST_ROBLOX_SEA"] === "true";
+}
+
+async function seaImport(id: string): Promise<JSONValue> {
+	if (id.endsWith(".json")) {
+		const content = readFileSync(id, "utf-8");
+		return JSON.parse(content);
+	}
+
+	return import(id) as unknown as JSONValue;
 }
 
 // c12's merger signature and defuFn's generic signature are structurally

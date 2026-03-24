@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { applySnapshotFormatDefaults, loadConfig, resolveConfig } from "./loader.ts";
 import type { Config } from "./schema.ts";
@@ -429,6 +429,36 @@ describe(loadConfig, () => {
 		}
 
 		expect(warnings).toContain("some other warning");
+	});
+
+	it("should load JSON config in SEA mode", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "config-test-"));
+		const configPath = path.join(temporaryDirectory, "jest.config.json");
+		fs.writeFileSync(configPath, JSON.stringify({ verbose: true }));
+
+		const result = await loadConfig(configPath, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.verbose).toBe(true);
+	});
+
+	it("should load ESM config in SEA mode", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "config-test-"));
+		const configPath = path.join(temporaryDirectory, "jest.config.mjs");
+		fs.writeFileSync(configPath, "export default { verbose: true };");
+
+		const result = await loadConfig(configPath, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.verbose).toBe(true);
 	});
 
 	it("should throw when extends fails to resolve", async () => {
