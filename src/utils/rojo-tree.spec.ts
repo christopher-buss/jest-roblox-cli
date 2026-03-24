@@ -277,4 +277,34 @@ describe(resolveNestedProjects, () => {
 			},
 		});
 	});
+
+	it("should resolve nested project paths relative to the project file's directory", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const subDirectory = path.join(temporaryDirectory, "packages", "my-pkg");
+		fs.mkdirSync(subDirectory, { recursive: true });
+		fs.writeFileSync(
+			path.join(subDirectory, "default.project.json"),
+			JSON.stringify({ name: "my-pkg", tree: { $path: "src" } }),
+		);
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				"my-pkg": { $path: "packages/my-pkg/default.project.json" },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		// "src" is relative to packages/my-pkg/, not the root
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: {
+				"my-pkg": { $path: "src" },
+			},
+		});
+	});
 });

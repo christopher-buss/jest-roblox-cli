@@ -33,6 +33,7 @@ function inlineRojoSchemaPlugin() {
 			);
 
 			if (replaced === code) {
+				console.warn("[inline-rojo-schema] Pattern not found — schema will not be inlined");
 				return;
 			}
 

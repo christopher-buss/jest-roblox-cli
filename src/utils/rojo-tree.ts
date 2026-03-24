@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
 
@@ -43,7 +43,7 @@ function resolveTree(
 			}
 
 			const project = JSON.parse(content) as { tree: RojoTreeNode };
-			const innerTree = resolveTree(project.tree, rootDirectory, chain);
+			const innerTree = resolveTree(project.tree, dirname(projectPath), chain);
 
 			for (const [innerKey, innerValue] of Object.entries(innerTree)) {
 				resolved[innerKey] = innerValue;
