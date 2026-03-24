@@ -29,17 +29,29 @@ jobs:
           mv "$src" "dist/sea/${{ matrix.binary }}"
 
         shell: bash
+      - name: Archive binary
+        run: cd dist/sea && 7z a "${{ matrix.archive }}" "${{ matrix.binary }}"
+        shell: bash
+
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        name: Upload binary to release
-        run: gh release upload "${{ github.ref_name }}" "dist/sea/${{ matrix.binary }}" --clobber
+        name: Upload archive to release
+        run: gh release upload "${{ github.ref_name }}" "dist/sea/${{ matrix.archive }}" --clobber
 
     strategy:
       matrix:
         include:
-          - { binary: jest-roblox-linux-x64, os: ubuntu-latest }
-          - { binary: jest-roblox-darwin-arm64, os: macos-latest }
-          - { binary: jest-roblox-windows-x64.exe, os: windows-latest }
+          - archive: jest-roblox-linux-x64.zip
+            binary: jest-roblox-linux-x64
+            os: ubuntu-latest
+
+          - archive: jest-roblox-darwin-arm64.zip
+            binary: jest-roblox-darwin-arm64
+            os: macos-latest
+
+          - archive: jest-roblox-windows-x64.zip
+            binary: jest-roblox-windows-x64.exe
+            os: windows-latest
 
   release:
     permissions:
