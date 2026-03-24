@@ -40,6 +40,7 @@ export default defineConfig({
 		restoreMocks: true,
 		setupFiles: ["./test/setup/jest-extended.ts"],
 		typecheck: {
+			checker: "tsgo",
 			enabled: true,
 			include: ["src/**/*.spec-d.ts"],
 			tsconfig: "./tsconfig.spec.json",
