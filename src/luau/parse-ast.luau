@@ -16,13 +16,11 @@ for _, arg in rawArgs do
 end
 
 local luauRoot = userArgs[1]
-local outputDir = userArgs[2]
-if not luauRoot or not outputDir then
-	error("Usage: lute run parse-ast.luau -- <luau-root> <output-dir>")
+if not luauRoot then
+	error("Usage: lute run parse-ast.luau -- <file.luau | luau-root> [output-dir]")
 end
 
 luauRoot = string.gsub(luauRoot, "\\", "/")
-outputDir = string.gsub(outputDir, "\\", "/")
 
 -- Fields to keep per AST tag (beyond tag/kind/location which are always kept).
 -- Tags shared by stat/expr variants are merged — nil fields are harmless.
@@ -30,6 +28,7 @@ local KEEP: { [string]: { string } } = {
 	assign = { "values", "variables" },
 	binary = { "lhsoperand", "rhsoperand" },
 	block = { "statements" },
+	boolean = { "value" },
 	call = { "arguments", "func" },
 	cast = { "operand" },
 	compoundassign = { "value", "variable" },
@@ -47,8 +46,10 @@ local KEEP: { [string]: { string } } = {
 	interpolatedstring = { "expressions" },
 	["local"] = { "values", "variables" },
 	localfunction = { "name", "func" },
+	number = { "value" },
 	["repeat"] = { "body", "condition" },
 	["return"] = { "expressions" },
+	string = { "text" },
 	table = { "entries" },
 	unary = { "operand" },
 	["while"] = { "body", "condition" },
@@ -92,6 +93,21 @@ local function strip(value: any): any
 
 	return result
 end
+
+-- Single-file mode: parse one file, print stripped AST to stdout
+if string.sub(luauRoot, -5) == ".luau" or string.sub(luauRoot, -4) == ".lua" then
+	local source = fs.readfiletostring(luauRoot)
+	local parseResult = syntax.parse(source)
+	print(json.serialize(strip(parseResult.root)))
+	return
+end
+
+local outputDir = userArgs[2]
+if not outputDir then
+	error("Usage: lute run parse-ast.luau -- <luau-root> <output-dir>")
+end
+
+outputDir = string.gsub(outputDir, "\\", "/")
 
 -- Discover .luau files recursively, skipping node_modules, dot dirs, spec/test files
 local function discoverFiles(directory: string, relativeTo: string, results: { string })

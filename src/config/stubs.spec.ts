@@ -211,6 +211,26 @@ describe(generateProjectConfigs, () => {
 		expect(vol.existsSync("/deep/nested/dir/test.config.luau")).toBeTrue();
 	});
 
+	it("should skip writing when jest.config.luau already exists at output directory", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.mkdirSync("/out/client", { recursive: true });
+		vol.writeFileSync("/out/client/jest.config.luau", "return {}");
+
+		generateProjectConfigs([
+			{
+				config: minimalConfig({ displayName: "client" }),
+				outputPath: "/out/client/jest.config.lua",
+			},
+		]);
+
+		expect(vol.existsSync("/out/client/jest.config.lua")).toBeFalse();
+	});
+
 	it("should write config files for multiple roots", () => {
 		expect.assertions(2);
 

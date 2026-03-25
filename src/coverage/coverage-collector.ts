@@ -7,10 +7,27 @@ import type {
 	AstStatIf,
 	AstStatLocalFunction,
 	LuauSpan,
-} from "../types/luau-ast.ts";
-import { INSTRUMENTABLE_STATEMENT_TAGS } from "../types/luau-ast.ts";
-import type { LuauVisitor } from "./luau-visitor.ts";
-import { visitBlock } from "./luau-visitor.ts";
+} from "../luau/ast-types.ts";
+import type { LuauVisitor } from "../luau/visitor.ts";
+import { visitBlock } from "../luau/visitor.ts";
+
+const INSTRUMENTABLE_STATEMENT_TAGS: ReadonlySet<string> = new Set([
+	"assign",
+	"break",
+	"compoundassign",
+	"conditional",
+	"continue",
+	"do",
+	"expression",
+	"for",
+	"forin",
+	"function",
+	"local",
+	"localfunction",
+	"repeat",
+	"return",
+	"while",
+]);
 
 const END_KEYWORD_LENGTH = 3;
 

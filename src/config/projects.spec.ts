@@ -27,6 +27,18 @@ vi.mock<typeof import("c12")>(import("c12"), async (importOriginal) => {
 	};
 });
 
+vi.mock<typeof import("./luau-config-loader.ts")>(
+	import("./luau-config-loader.ts"),
+	async (importOriginal) => {
+		const actual = await importOriginal();
+		return {
+			...actual,
+			findLuauConfigFile: vi.fn<typeof actual.findLuauConfigFile>(),
+			loadLuauConfig: vi.fn<typeof actual.loadLuauConfig>(),
+		};
+	},
+);
+
 const simpleRojoTree: RojoTreeNode = {
 	$className: "DataModel",
 	ReplicatedStorage: {
@@ -724,6 +736,158 @@ describe(loadProjectConfigFile, () => {
 		await expect(loadProjectConfigFile("./no-name.config.ts", "/project")).rejects.toThrow(
 			'Project config file "./no-name.config.ts" must have a displayName',
 		);
+	});
+
+	it("should load Luau config when jest.config.luau exists", async () => {
+		expect.assertions(2);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce(
+			"/project/packages/shared/jest.config.luau",
+		);
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({
+			displayName: "shared-luau",
+			testMatch: ["**/*.spec"],
+		});
+
+		const result = await loadProjectConfigFile("packages/shared", "/project");
+
+		expect(result.displayName).toBe("shared-luau");
+		expect(result.include).toContain("packages/shared/**/*.spec.luau");
+	});
+
+	it("should throw when Luau config has empty displayName", async () => {
+		expect.assertions(1);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/lib/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({ displayName: "" });
+
+		await expect(loadProjectConfigFile("lib", "/project")).rejects.toThrowWithMessage(
+			Error,
+			/must have a displayName string/,
+		);
+	});
+
+	it("should throw when Luau config has no displayName", async () => {
+		expect.assertions(1);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/lib/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({});
+
+		await expect(loadProjectConfigFile("lib", "/project")).rejects.toThrowWithMessage(
+			Error,
+			/must have a displayName string/,
+		);
+	});
+
+	it("should derive default include pattern when Luau config has no testMatch", async () => {
+		expect.assertions(1);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({ displayName: "shared" });
+
+		const result = await loadProjectConfigFile("shared", "/project");
+
+		expect(result.include).toStrictEqual(["shared/**/*.spec.luau"]);
+	});
+
+	it("should set testMatch on config when Luau config provides testMatch", async () => {
+		expect.assertions(1);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({
+			displayName: "shared",
+			testMatch: ["**/*.spec", "**/*.test"],
+		});
+
+		const result = await loadProjectConfigFile("shared", "/project");
+
+		expect(result.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
+	});
+
+	it("should copy boolean optional fields from Luau config", async () => {
+		expect.assertions(2);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({
+			clearMocks: true,
+			displayName: "shared",
+			resetMocks: false,
+		});
+
+		const result = await loadProjectConfigFile("shared", "/project");
+
+		expect(result.clearMocks).toBeTrue();
+		expect(result.resetMocks).toBeFalse();
+	});
+
+	it("should copy number optional fields from Luau config", async () => {
+		expect.assertions(1);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({
+			displayName: "shared",
+			testTimeout: 5000,
+		});
+
+		const result = await loadProjectConfigFile("shared", "/project");
+
+		expect(result.testTimeout).toBe(5000);
+	});
+
+	it("should copy string optional fields from Luau config", async () => {
+		expect.assertions(1);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({
+			displayName: "shared",
+			testEnvironment: "jest-environment-jsdom",
+		});
+
+		const result = await loadProjectConfigFile("shared", "/project");
+
+		expect(result.testEnvironment).toBe("jest-environment-jsdom");
+	});
+
+	it("should copy string array optional fields from Luau config", async () => {
+		expect.assertions(1);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({
+			displayName: "shared",
+			setupFiles: ["setup.luau"],
+		});
+
+		const result = await loadProjectConfigFile("shared", "/project");
+
+		expect(result.setupFiles).toStrictEqual(["setup.luau"]);
+	});
+
+	it("should ignore fields with wrong types in Luau config", async () => {
+		expect.assertions(3);
+
+		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
+		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
+		vi.mocked(loadLuauConfig).mockReturnValueOnce({
+			clearMocks: "yes" as unknown,
+			displayName: "shared",
+			setupFiles: "not-an-array" as unknown,
+			testTimeout: "fast" as unknown,
+		} as Record<string, unknown>);
+
+		const result = await loadProjectConfigFile("shared", "/project");
+
+		expect(result.clearMocks).toBeUndefined();
+		expect(result.testTimeout).toBeUndefined();
+		expect(result.setupFiles).toBeUndefined();
 	});
 });
 

@@ -5,6 +5,7 @@ import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import { collectPaths } from "../utils/rojo-tree.ts";
 import { ConfigError } from "./errors.ts";
+import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 import type { ProjectEntry, ProjectTestConfig, ResolvedConfig } from "./schema.ts";
 
 export interface ResolvedProjectConfig {
@@ -186,6 +187,11 @@ export async function loadProjectConfigFile(
 	filePath: string,
 	cwd: string,
 ): Promise<ProjectTestConfig> {
+	const luauConfigPath = findLuauConfigFile(filePath, cwd);
+	if (luauConfigPath !== undefined) {
+		return buildProjectConfigFromLuau(luauConfigPath, filePath);
+	}
+
 	let result;
 	try {
 		result = await c12LoadConfig<ProjectTestConfig>({
@@ -269,6 +275,92 @@ function mergeProjectConfig(
 	}
 
 	return merged as unknown as ResolvedConfig;
+}
+
+const LUAU_BOOLEAN_KEYS: ReadonlyArray<keyof ProjectTestConfig> = [
+	"automock",
+	"clearMocks",
+	"injectGlobals",
+	"mockDataModel",
+	"resetMocks",
+	"resetModules",
+	"restoreMocks",
+];
+
+const LUAU_NUMBER_KEYS: ReadonlyArray<keyof ProjectTestConfig> = [
+	"slowTestThreshold",
+	"testTimeout",
+];
+
+const LUAU_STRING_KEYS: ReadonlyArray<keyof ProjectTestConfig> = ["testEnvironment"];
+
+const LUAU_STRING_ARRAY_KEYS: ReadonlyArray<keyof ProjectTestConfig> = [
+	"setupFiles",
+	"setupFilesAfterEnv",
+];
+
+function copyLuauOptionalFields(raw: Record<string, unknown>, config: ProjectTestConfig): void {
+	const record = config as unknown as Record<string, unknown>;
+
+	for (const key of LUAU_BOOLEAN_KEYS) {
+		if (typeof raw[key] === "boolean") {
+			record[key] = raw[key];
+		}
+	}
+
+	for (const key of LUAU_NUMBER_KEYS) {
+		if (typeof raw[key] === "number") {
+			record[key] = raw[key];
+		}
+	}
+
+	for (const key of LUAU_STRING_KEYS) {
+		if (typeof raw[key] === "string") {
+			record[key] = raw[key];
+		}
+	}
+
+	for (const key of LUAU_STRING_ARRAY_KEYS) {
+		if (Array.isArray(raw[key])) {
+			record[key] = raw[key];
+		}
+	}
+}
+
+function buildProjectConfigFromLuau(
+	luauConfigPath: string,
+	directoryPath: string,
+): ProjectTestConfig {
+	const raw = loadLuauConfig(luauConfigPath);
+
+	const { displayName } = raw;
+	if (typeof displayName !== "string" || displayName === "") {
+		throw new Error(`Luau config file "${luauConfigPath}" must have a displayName string`);
+	}
+
+	const testMatch = Array.isArray(raw["testMatch"])
+		? (raw["testMatch"] as Array<string>)
+		: undefined;
+
+	// Derive include from testMatch — append .luau extension and prefix with
+	// directory path
+	const include =
+		testMatch !== undefined
+			? testMatch.map((pattern) => path.posix.join(directoryPath, `${pattern}.luau`))
+			: [path.posix.join(directoryPath, "**/*.spec.luau")];
+
+	const config: ProjectTestConfig = {
+		displayName,
+		include,
+	};
+
+	if (testMatch !== undefined) {
+		config.testMatch = testMatch;
+	}
+
+	copyLuauOptionalFields(raw, config);
+
+	return config;
 }
 
 function matchNodePath(

@@ -41,6 +41,11 @@ export function generateProjectConfigs(
 	projects: Array<{ config: ProjectTestConfig; outputPath: string }>,
 ): void {
 	for (const project of projects) {
+		const luauConfigPath = project.outputPath.replace(/\.lua$/, ".luau");
+		if (fs.existsSync(luauConfigPath)) {
+			continue;
+		}
+
 		const content = serializeToLuau(project.config);
 		const directory = path.dirname(project.outputPath);
 		fs.mkdirSync(directory, { recursive: true });

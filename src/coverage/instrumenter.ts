@@ -3,11 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import type { AstStatBlock } from "../types/luau-ast.ts";
+import type { AstStatBlock } from "../luau/ast-types.ts";
+import parseAstLuauSource from "../luau/parse-ast.luau";
 import { hashBuffer } from "../utils/hash.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
-import parseAstLuauSource from "./parse-ast.luau";
 import { insertProbes } from "./probe-inserter.ts";
 import type { CoverageManifest, InstrumentedFileRecord } from "./types.ts";
 

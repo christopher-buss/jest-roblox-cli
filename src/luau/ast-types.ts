@@ -45,7 +45,7 @@ export interface AstExprConstantNumber extends AstExprBase {
 
 export interface AstExprConstantString extends AstExprBase {
 	tag: "string";
-	value: string;
+	text: string;
 }
 
 export interface AstExprLocal extends AstExprBase {
@@ -311,21 +311,3 @@ interface AstStatBase {
 	kind: "stat";
 	location: LuauSpan;
 }
-
-export const INSTRUMENTABLE_STATEMENT_TAGS: ReadonlySet<string> = new Set([
-	"assign",
-	"break",
-	"compoundassign",
-	"conditional",
-	"continue",
-	"do",
-	"expression",
-	"for",
-	"forin",
-	"function",
-	"local",
-	"localfunction",
-	"repeat",
-	"return",
-	"while",
-]);

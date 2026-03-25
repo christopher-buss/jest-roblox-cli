@@ -6,12 +6,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { AstStatBlock } from "../../src/types/luau-ast.ts";
+import type { AstStatBlock } from "../../src/luau/ast-types.ts";
 import { collectCoverage } from "../../src/coverage/coverage-collector.ts";
 import { buildCoverageMap } from "../../src/coverage/coverage-map-builder.ts";
 import { insertProbes } from "../../src/coverage/probe-inserter.ts";
 
-const PARSE_SCRIPT = path.resolve(import.meta.dirname, "../../src/coverage/parse-ast.luau");
+const PARSE_SCRIPT = path.resolve(import.meta.dirname, "../../src/luau/parse-ast.luau");
 const FIXTURES_DIR = path.resolve(import.meta.dirname, "../fixtures/coverage");
 
 // Cache the AST map from a single lute call for all fixtures

@@ -92,7 +92,8 @@ interface MappedPosition {
 
 interface FileResources {
 	coverageMap: typeof coverageMapSchema.infer;
-	traceMap: TraceMap;
+	sourceKey: string;
+	traceMap: TraceMap | undefined;
 }
 
 interface MappedArmLocations {
@@ -101,6 +102,11 @@ interface MappedArmLocations {
 		start: { column: number; line: number };
 	}>;
 	tsPath: string;
+}
+
+interface SourceMapped {
+	coverageMap: FileResources["coverageMap"];
+	traceMap: TraceMap;
 }
 
 export function mapCoverageToTypeScript(
@@ -122,21 +128,28 @@ export function mapCoverageToTypeScript(
 			continue;
 		}
 
-		const resolvedTsPaths = mapFileStatements(resources, fileCoverage, pendingStatements);
-		mapFileFunctions(resources, fileCoverage, pendingFunctions, resolvedTsPaths);
-		mapFileBranches(resources, fileCoverage, pendingBranches);
+		if (resources.traceMap === undefined) {
+			passthroughFileStatements(resources, fileCoverage, pendingStatements);
+			passthroughFileFunctions(resources, fileCoverage, pendingFunctions);
+			passthroughFileBranches(resources, fileCoverage, pendingBranches);
+		} else {
+			const mapped = { coverageMap: resources.coverageMap, traceMap: resources.traceMap };
+			const resolvedTsPaths = mapFileStatements(mapped, fileCoverage, pendingStatements);
+			mapFileFunctions(mapped, fileCoverage, pendingFunctions, resolvedTsPaths);
+			mapFileBranches(mapped, fileCoverage, pendingBranches);
+		}
 	}
 
 	return buildResult(pendingStatements, pendingFunctions, pendingBranches);
 }
 
+// --- Luau column → Istanbul column conversion ---
+// Luau columns are 1-based; Istanbul expects 0-based.
+
 function loadFileResources(record: CoverageManifest["files"][string]): FileResources | undefined {
 	let coverageMapRaw: string;
-	let sourceMapRaw: string;
-
 	try {
 		coverageMapRaw = fs.readFileSync(record.coverageMapPath, "utf-8");
-		sourceMapRaw = fs.readFileSync(record.sourceMapPath, "utf-8");
 	} catch {
 		return undefined;
 	}
@@ -146,7 +159,149 @@ function loadFileResources(record: CoverageManifest["files"][string]): FileResou
 		return undefined;
 	}
 
-	return { coverageMap: parsed, traceMap: new TraceMap(sourceMapRaw) };
+	let traceMap: TraceMap | undefined;
+	try {
+		const sourceMapRaw = fs.readFileSync(record.sourceMapPath, "utf-8");
+		traceMap = new TraceMap(sourceMapRaw);
+	} catch {
+		// No source map — native Luau file, passthrough mode
+	}
+
+	return { coverageMap: parsed, sourceKey: record.key, traceMap };
+}
+
+// --- Passthrough helpers for native Luau (no source map) ---
+
+function toIstanbulColumn(luauColumn: number): number {
+	return Math.max(0, luauColumn - 1);
+}
+
+function passthroughFileStatements(
+	resources: FileResources,
+	fileCoverage: RawCoverageData[string],
+	pending: Map<string, Map<string, PendingStatement>>,
+): void {
+	let fileStatements = pending.get(resources.sourceKey);
+	if (fileStatements === undefined) {
+		fileStatements = new Map();
+		pending.set(resources.sourceKey, fileStatements);
+	}
+
+	for (const [statementId, rawSpan] of Object.entries(resources.coverageMap.statementMap)) {
+		const span = spanSchema(rawSpan);
+		if (span instanceof type.errors) {
+			continue;
+		}
+
+		const hitCount = fileCoverage.s[statementId] ?? 0;
+		fileStatements.set(statementId, {
+			end: { column: toIstanbulColumn(span.end.column), line: span.end.line },
+			hitCount,
+			start: { column: toIstanbulColumn(span.start.column), line: span.start.line },
+		});
+	}
+}
+
+function passthroughFileFunctions(
+	resources: FileResources,
+	fileCoverage: RawCoverageData[string],
+	pendingFunctions: Map<string, Array<PendingFunction>>,
+): void {
+	if (resources.coverageMap.functionMap === undefined) {
+		return;
+	}
+
+	let fileFunctions = pendingFunctions.get(resources.sourceKey);
+	if (fileFunctions === undefined) {
+		fileFunctions = [];
+		pendingFunctions.set(resources.sourceKey, fileFunctions);
+	}
+
+	for (const [functionId, rawEntry] of Object.entries(resources.coverageMap.functionMap)) {
+		const entry = functionEntrySchema(rawEntry);
+		if (entry instanceof type.errors) {
+			continue;
+		}
+
+		fileFunctions.push({
+			name: entry.name,
+			hitCount: fileCoverage.f?.[functionId] ?? 0,
+			loc: {
+				end: {
+					column: toIstanbulColumn(entry.location.end.column),
+					line: entry.location.end.line,
+				},
+				start: {
+					column: toIstanbulColumn(entry.location.start.column),
+					line: entry.location.start.line,
+				},
+			},
+		});
+	}
+}
+
+// --- Source-mapped helpers (roblox-ts → TypeScript) ---
+
+function passthroughFileBranches(
+	resources: FileResources,
+	fileCoverage: RawCoverageData[string],
+	pendingBranches: Map<string, Array<PendingBranch>>,
+): void {
+	if (resources.coverageMap.branchMap === undefined) {
+		return;
+	}
+
+	let fileBranches = pendingBranches.get(resources.sourceKey);
+	if (fileBranches === undefined) {
+		fileBranches = [];
+		pendingBranches.set(resources.sourceKey, fileBranches);
+	}
+
+	for (const [branchId, rawEntry] of Object.entries(resources.coverageMap.branchMap)) {
+		const entry = branchEntrySchema(rawEntry);
+		if (entry instanceof type.errors) {
+			continue;
+		}
+
+		const armHitCounts = fileCoverage.b?.[branchId] ?? [];
+		const locations: PendingBranch["locations"] = [];
+
+		for (const rawLocation of entry.locations) {
+			const location = spanSchema(rawLocation);
+			if (location instanceof type.errors) {
+				continue;
+			}
+
+			locations.push({
+				end: { column: toIstanbulColumn(location.end.column), line: location.end.line },
+				start: {
+					column: toIstanbulColumn(location.start.column),
+					line: location.start.line,
+				},
+			});
+		}
+
+		if (locations.length === 0) {
+			continue;
+		}
+
+		const firstLocation = locations[0];
+		const lastLocation = locations[locations.length - 1];
+		assert(
+			firstLocation !== undefined && lastLocation !== undefined,
+			"Branch locations must not be empty after filtering",
+		);
+
+		fileBranches.push({
+			armHitCounts: entry.locations.map((_, index) => armHitCounts[index] ?? 0),
+			loc: {
+				end: lastLocation.end,
+				start: firstLocation.start,
+			},
+			locations,
+			type: entry.type,
+		});
+	}
 }
 
 function mapStatement(
@@ -235,7 +390,7 @@ function addOrCoalesce(
 }
 
 function mapFileStatements(
-	resources: FileResources,
+	resources: SourceMapped,
 	fileCoverage: RawCoverageData[string],
 	pending: Map<string, Map<string, PendingStatement>>,
 ): Set<string> {
@@ -262,7 +417,7 @@ function mapFileStatements(
 }
 
 function mapFileFunctions(
-	resources: FileResources,
+	resources: SourceMapped,
 	fileCoverage: RawCoverageData[string],
 	pendingFunctions: Map<string, Array<PendingFunction>>,
 	resolvedTsPaths: Set<string>,
@@ -367,7 +522,7 @@ function mapBranchArmLocations(
 }
 
 function mapFileBranches(
-	resources: FileResources,
+	resources: SourceMapped,
 	fileCoverage: RawCoverageData[string],
 	pendingBranches: Map<string, Array<PendingBranch>>,
 ): void {
@@ -412,6 +567,8 @@ function mapFileBranches(
 		});
 	}
 }
+
+// --- Result building ---
 
 function populateStatements(
 	file: MappedFileCoverage,

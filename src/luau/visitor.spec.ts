@@ -41,9 +41,9 @@ import type {
 	AstStatTypeFunction,
 	AstStatWhile,
 	LuauSpan,
-} from "../types/luau-ast.ts";
-import type { LuauVisitor } from "./luau-visitor.ts";
-import { visitBlock, visitExpression, visitStatement } from "./luau-visitor.ts";
+} from "./ast-types.ts";
+import type { LuauVisitor } from "./visitor.ts";
+import { visitBlock, visitExpression, visitStatement } from "./visitor.ts";
 
 const span: LuauSpan = { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 };
 
@@ -1035,7 +1035,7 @@ describe("luau-visitor", () => {
 				kind: "expr",
 				location: span,
 				tag: "string",
-				value: "hi",
+				text: "hi",
 			} satisfies AstExprConstantString;
 			const localNode = {
 				kind: "expr",

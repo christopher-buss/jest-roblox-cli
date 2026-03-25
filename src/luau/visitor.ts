@@ -49,7 +49,7 @@ import type {
 	AstStatWhile,
 	AstTableExprItem,
 	Punctuated,
-} from "../types/luau-ast.ts";
+} from "./ast-types.ts";
 
 export interface LuauVisitor {
 	visitExpr?(node: AstExpr): boolean;

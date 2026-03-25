@@ -447,6 +447,43 @@ describe("probe-inserter", () => {
 			expect(result).not.toContain("__cov_br");
 		});
 
+		it("should add space when branch probe follows non-whitespace", () => {
+			expect.assertions(1);
+
+			const source = "if x then\n    -- comment\nend";
+			const collector: CollectorResult = {
+				...emptyResult(),
+				branches: [
+					{
+						arms: [
+							{
+								bodyFirstColumn: 10,
+								bodyFirstLine: 1,
+								location: {
+									begincolumn: 10,
+									beginline: 1,
+									endcolumn: 1,
+									endline: 3,
+								},
+							},
+						],
+						branchType: "if",
+						index: 1,
+					},
+				],
+				statements: [
+					{
+						index: 1,
+						location: { begincolumn: 1, beginline: 1, endcolumn: 4, endline: 3 },
+					},
+				],
+			};
+
+			const result = insertProbes(source, collector, "test.luau");
+
+			expect(result).toContain("if x then __cov_b[1][1] += 1;");
+		});
+
 		it("should handle CRLF line endings", () => {
 			expect.assertions(2);
 

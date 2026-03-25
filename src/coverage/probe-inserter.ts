@@ -98,7 +98,8 @@ function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): voi
 		assert(line !== undefined, `Invalid probe line number: ${probeLine}`);
 		const before = line.slice(0, column - 1);
 		const after = line.slice(column - 1);
-		mutableLines[lineIndex] = before + text + after;
+		const needsSeparator = before.length > 0 && !/\s$/.test(before) && /^[a-zA-Z_]/.test(text);
+		mutableLines[lineIndex] = before + (needsSeparator ? " " : "") + text + after;
 	}
 }
 

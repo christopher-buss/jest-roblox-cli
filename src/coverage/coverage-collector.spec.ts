@@ -16,7 +16,7 @@ import type {
 	AstStatLocal,
 	AstStatLocalFunction,
 	LuauSpan,
-} from "../types/luau-ast.ts";
+} from "../luau/ast-types.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 
 function span(
@@ -607,7 +607,7 @@ describe("coverage-collector", () => {
 					kind: "expr",
 					location: span(1, 55, 1, 58),
 					tag: "string",
-					value: "c",
+					text: "c",
 				},
 				elseifs: [
 					{
@@ -621,7 +621,7 @@ describe("coverage-collector", () => {
 							kind: "expr",
 							location: span(1, 40, 1, 43),
 							tag: "string",
-							value: "b",
+							text: "b",
 						},
 					},
 				],
@@ -632,7 +632,7 @@ describe("coverage-collector", () => {
 					kind: "expr",
 					location: span(1, 24, 1, 27),
 					tag: "string",
-					value: "a",
+					text: "a",
 				},
 			} satisfies AstExprIfElse;
 			const statement = {
