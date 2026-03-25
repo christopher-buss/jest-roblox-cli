@@ -18,7 +18,7 @@ export default defineConfig({
 	test: {
 		clearMocks: true,
 		coverage: {
-			exclude: ["src/**/*.luau", "src/**/*.spec-d.ts", "test/mocks/**"],
+			exclude: ["src/**/*.luau", "src/**/*.spec-d.ts", "test/mocks/**", "package.json"],
 			thresholds: {
 				branches: 100,
 				functions: 100,

@@ -140,6 +140,42 @@ describe(loadLuauConfig, () => {
 		);
 	});
 
+	it("should throw when config returns a non-table value", () => {
+		expect.assertions(1);
+
+		const ast = JSON.stringify({
+			kind: "stat",
+			location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+			statements: [
+				{
+					expressions: [
+						{
+							node: {
+								kind: "expr",
+								location: {},
+								tag: "string",
+								text: "not a table",
+							},
+						},
+					],
+					kind: "stat",
+					location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+					tag: "return",
+				},
+			],
+			tag: "block",
+		});
+
+		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
+		vi.mocked(fs.existsSync).mockReturnValue(false);
+		vi.mocked(cp.execFileSync).mockReturnValue(ast as Buffer & string);
+
+		expect(() => loadLuauConfig("jest.config.luau")).toThrowWithMessage(
+			Error,
+			"Luau config jest.config.luau must return a table",
+		);
+	});
+
 	it("should reuse cached temp directory on subsequent calls", () => {
 		expect.assertions(1);
 

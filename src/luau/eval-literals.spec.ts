@@ -154,6 +154,92 @@ describe(evalLuauReturnLiterals, () => {
 		expect(evalLuauReturnLiterals(root)).toStrictEqual({ x: 1 });
 	});
 
+	it("should throw when root is not an object", () => {
+		expect.assertions(1);
+
+		expect(() => evalLuauReturnLiterals(null)).toThrowWithMessage(
+			Error,
+			"Config file has no return statement",
+		);
+	});
+
+	it("should return undefined when return expression node is not an object", () => {
+		expect.assertions(1);
+
+		const root = makeBlock({
+			expressions: [{ node: 42 }],
+			kind: "stat",
+			location: {},
+			tag: "return",
+		});
+
+		expect(evalLuauReturnLiterals(root)).toBeUndefined();
+	});
+
+	it("should return undefined for non-object entries in list table", () => {
+		expect.assertions(1);
+
+		const root = makeBlock(
+			makeReturn({
+				entries: [
+					{
+						kind: "list",
+						value: { kind: "expr", location: {}, tag: "string", text: "a" },
+					},
+					"not-an-object",
+				],
+				kind: "expr",
+				location: {},
+				tag: "table",
+			}),
+		);
+
+		expect(evalLuauReturnLiterals(root)).toStrictEqual(["a", undefined]);
+	});
+
+	it("should skip record entries with non-string key", () => {
+		expect.assertions(1);
+
+		const root = makeBlock(
+			makeReturn({
+				entries: [
+					{
+						key: 42,
+						kind: "record",
+						value: { kind: "expr", location: {}, tag: "number", value: 1 },
+					},
+				],
+				kind: "expr",
+				location: {},
+				tag: "table",
+			}),
+		);
+
+		expect(evalLuauReturnLiterals(root)).toStrictEqual({});
+	});
+
+	it("should skip non-record entries in record table", () => {
+		expect.assertions(1);
+
+		const root = makeBlock(
+			makeReturn({
+				entries: [
+					{
+						key: { text: "kept" },
+						kind: "record",
+						value: { kind: "expr", location: {}, tag: "number", value: 1 },
+					},
+					"not-an-object",
+				],
+				kind: "expr",
+				location: {},
+				tag: "table",
+			}),
+		);
+
+		expect(evalLuauReturnLiterals(root)).toStrictEqual({ kept: 1 });
+	});
+
 	it("should throw when no return statement exists", () => {
 		expect.assertions(1);
 
