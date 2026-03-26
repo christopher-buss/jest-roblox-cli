@@ -299,11 +299,11 @@ describe(resolveNestedProjects, () => {
 		const result = resolveNestedProjects(tree, temporaryDirectory);
 		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 
-		// "src" is relative to packages/my-pkg/, not the root
+		// $path is root-relative so resolvers can use it directly
 		expect(result).toStrictEqual({
 			$className: "DataModel",
 			ReplicatedStorage: {
-				"my-pkg": { $path: "src" },
+				"my-pkg": { $path: "packages/my-pkg/src" },
 			},
 		});
 	});

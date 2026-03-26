@@ -1,4 +1,4 @@
-import { fromPartial } from "@total-typescript/shoehorn";
+import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
 import * as cp from "node:child_process";
@@ -12,10 +12,9 @@ vi.mock<typeof import("node:os")>(import("node:os"), async (importOriginal) => {
 });
 vi.mock<typeof import("node:child_process")>(import("node:child_process"));
 
-// @ts-expect-error -- memfs factory doesn't match node:fs overload signatures
-vi.mock<typeof import("node:fs")>(import("node:fs"), async () => {
+vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return { ...memfs.fs, default: memfs.fs };
+	return fromAny({ ...memfs.fs, default: memfs.fs });
 });
 
 const EMPTY_AST = {

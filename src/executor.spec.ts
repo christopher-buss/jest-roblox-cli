@@ -1,5 +1,7 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
+import { vol } from "memfs";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
@@ -19,6 +21,37 @@ import {
 } from "./executor.ts";
 import { parseJestOutput } from "./reporter/parser.ts";
 import type { JestResult } from "./types/jest-result.ts";
+
+vi.mock(import("node:fs"), async () => {
+	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
+	return fromAny({ ...memfs.fs, default: memfs.fs });
+});
+// get-tsconfig uses its own node:fs binding that vitest can't intercept (ESM).
+// Re-implement getTsconfig to read from our mocked fs.
+vi.mock(import("get-tsconfig"), async (importOriginal) => {
+	const actual = await importOriginal();
+	const nodeFs = await import("node:fs");
+	const nodePath = await import("node:path");
+	return fromAny({
+		...actual,
+		getTsconfig: (searchPath: string, configName = "tsconfig.json") => {
+			const resolved = nodePath.resolve(searchPath);
+			const filePath = nodePath.join(resolved, configName);
+			try {
+				const content = nodeFs.readFileSync(filePath, "utf-8");
+				return { config: JSON.parse(content) as unknown, path: filePath };
+			} catch {
+				return null;
+			}
+		},
+	});
+});
+
+function seedCwd(): void {
+	vol.mkdirSync(process.cwd(), { recursive: true });
+}
+
+seedCwd();
 
 function createFailingResult(): JestResult {
 	return {
@@ -179,10 +212,15 @@ function createPassingResult(): JestResult {
 	};
 }
 
+let temporaryDirectoryCounter = 0;
+
 function createTemporaryDirectory(prefix: string): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+	const directory = path.resolve(`/tmp/${prefix}${temporaryDirectoryCounter}`);
+	temporaryDirectoryCounter += 1;
+	vol.mkdirSync(directory, { recursive: true });
 	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
+		vol.reset();
+		seedCwd();
 	});
 	return directory;
 }
@@ -603,7 +641,7 @@ describe(execute, () => {
 	it("should resolve DataModel testFilePaths to filesystem paths", async () => {
 		expect.assertions(2);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "executor-test-"));
+		const temporaryDirectory = createTemporaryDirectory("executor-test-");
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "default.project.json"),
 			JSON.stringify({
@@ -655,7 +693,6 @@ describe(execute, () => {
 		};
 
 		const executeResult = await execute(options);
-		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 
 		expect(executeResult.output).not.toContain(dataModelPath);
 		expect(executeResult.result.testResults[0]!.testFilePath).toContain(
@@ -1132,6 +1169,118 @@ describe(execute, () => {
 		// Source mapper was built (failure messages won't contain rojo paths
 		// though)
 		expect(result.exitCode).toBe(1);
+	});
+
+	it("should resolve test file paths through nested rojo projects", async () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-nested-rojo-");
+
+		// Root project references a nested package via default.project.json
+		const rootProject = {
+			name: "test",
+			tree: {
+				ReplicatedStorage: {
+					"uuid-generator": {
+						$path: "packages/uuid-generator/default.project.json",
+					},
+				},
+			},
+		};
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify(rootProject),
+		);
+
+		// Nested package project points to src/
+		const nestedProject = {
+			name: "uuid-generator",
+			tree: { $path: "src" },
+		};
+		const nestedDirectory = path.join(temporaryDirectory, "packages/uuid-generator");
+		fs.mkdirSync(nestedDirectory, { recursive: true });
+		fs.writeFileSync(
+			path.join(nestedDirectory, "default.project.json"),
+			JSON.stringify(nestedProject),
+		);
+
+		// Backend returns DataModel path as Jest would
+		const result = createPassingResult();
+		result.testResults[0]!.testFilePath = "/ReplicatedStorage/uuid-generator/init.spec";
+		const backend = createMockBackend(result);
+
+		const config: ResolvedConfig = {
+			...DEFAULT_CONFIG,
+			rootDir: temporaryDirectory,
+			sourceMap: true,
+		};
+		const options: ExecuteOptions = {
+			backend,
+			config,
+			testFiles: ["packages/uuid-generator/src/init.spec.luau"],
+			version: "0.0.0-test",
+		};
+
+		const executeResult = await execute(options);
+
+		expect(executeResult.result.testResults[0]!.testFilePath).toBe(
+			"packages/uuid-generator/src/init.spec.luau",
+		);
+	});
+
+	it("should write snapshots through nested rojo projects", async () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-nested-snap-");
+
+		const rootProject = {
+			name: "test",
+			tree: {
+				ReplicatedStorage: {
+					"uuid-generator": {
+						$path: "packages/uuid-generator/default.project.json",
+					},
+				},
+			},
+		};
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify(rootProject),
+		);
+
+		const nestedProject = {
+			name: "uuid-generator",
+			tree: { $path: "src" },
+		};
+		const nestedDirectory = path.join(temporaryDirectory, "packages/uuid-generator");
+		fs.mkdirSync(nestedDirectory, { recursive: true });
+		fs.writeFileSync(
+			path.join(nestedDirectory, "default.project.json"),
+			JSON.stringify(nestedProject),
+		);
+
+		const backend: Backend = {
+			runTests: async (): Promise<BackendResult> => {
+				return {
+					result: createPassingResult(),
+					snapshotWrites: {
+						"ReplicatedStorage/uuid-generator/__snapshots__/init.spec.snap.luau":
+							"-- snapshot",
+					},
+					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
+				};
+			},
+		};
+
+		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+		await execute({ backend, config, testFiles: [], version: "0.0.0-test" });
+
+		const snapshotPath = path.join(
+			temporaryDirectory,
+			"packages/uuid-generator/src/__snapshots__/init.spec.snap.luau",
+		);
+
+		expect(fs.existsSync(snapshotPath)).toBeTrue();
 	});
 
 	it("should return undefined source mapper when rojo project has invalid schema", async () => {

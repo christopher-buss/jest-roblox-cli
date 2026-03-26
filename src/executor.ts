@@ -25,6 +25,7 @@ import { rojoProjectSchema } from "./types/rojo.ts";
 import type { TimingResult } from "./types/timing.ts";
 import type { TsconfigMapping } from "./types/tsconfig.ts";
 import { formatBanner } from "./utils/banner.ts";
+import { resolveNestedProjects } from "./utils/rojo-tree.ts";
 
 export interface ExecuteOptions {
 	backend: Backend;
@@ -326,9 +327,11 @@ function buildSourceMapper(
 			return undefined;
 		}
 
+		const resolvedTree = resolveNestedProjects(rojoResult.tree, path.dirname(rojoProjectPath));
+
 		return createSourceMapper({
 			mappings: tsconfigMappings,
-			rojoProject: rojoResult,
+			rojoProject: { ...rojoResult, tree: resolvedTree },
 		});
 	} catch {
 		return undefined;
@@ -451,9 +454,11 @@ function writeSnapshots(
 			return;
 		}
 
+		const resolvedTree = resolveNestedProjects(rojoResult.tree, path.dirname(rojoProjectPath));
+
 		const resolver = createSnapshotPathResolver({
 			mappings: tsconfigMappings,
-			rojoProject: rojoResult,
+			rojoProject: { ...rojoResult, tree: resolvedTree },
 		});
 
 		let written = 0;
