@@ -81,6 +81,7 @@ Options:
   --gameOutput <path>               Write game output (print/warn/error) to file
   --sourceMap                       Map Luau stack traces to TypeScript source
   --rojoProject <path>              Path to rojo project file (auto-detected if not set)
+  --passWithNoTests                 Exit with 0 when no test files are found
   --verbose                         Show individual test results
   --silent                          Suppress output
   --no-color                        Disable colored output
@@ -156,6 +157,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 			"no-color": { type: "boolean" },
 			"no-show-luau": { type: "boolean" },
 			"outputFile": { type: "string" },
+			"passWithNoTests": { type: "boolean" },
 			"pollInterval": { type: "string" },
 			"port": { type: "string" },
 			"project": { multiple: true, type: "string" },
@@ -198,6 +200,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		gameOutput: values.gameOutput,
 		help: values.help,
 		outputFile: values.outputFile,
+		passWithNoTests: values.passWithNoTests,
 		pollInterval,
 		port,
 		project: values.project,
@@ -880,6 +883,10 @@ async function runMultiProject(
 			: undefined;
 
 	if (projectResults.length === 0 && typecheckResult === undefined) {
+		if (rootConfig.passWithNoTests) {
+			return 0;
+		}
+
 		console.error("No test files found in any project");
 		return 2;
 	}
@@ -938,6 +945,10 @@ async function runSingleProject(
 	const discovery = discoverTestFiles(config, cliFiles);
 
 	if (discovery.files.length === 0) {
+		if (config.passWithNoTests) {
+			return 0;
+		}
+
 		console.error("No test files found");
 		return 2;
 	}
@@ -950,6 +961,10 @@ async function runSingleProject(
 		: discovery.files.filter((file) => !TYPE_TEST_PATTERN.test(file));
 
 	if (typeTestFiles.length === 0 && runtimeTestFiles.length === 0) {
+		if (config.passWithNoTests) {
+			return 0;
+		}
+
 		console.error("No test files found for the selected mode");
 		return 2;
 	}
@@ -1135,6 +1150,7 @@ function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): ResolvedCo
 		formatters: resolveFormatters(cli, config),
 		gameOutput: cli.gameOutput ?? config.gameOutput,
 		outputFile: cli.outputFile ?? config.outputFile,
+		passWithNoTests: cli.passWithNoTests ?? config.passWithNoTests,
 		pollInterval: cli.pollInterval ?? config.pollInterval,
 		port: cli.port ?? config.port,
 		rojoProject: cli.rojoProject ?? config.rojoProject,

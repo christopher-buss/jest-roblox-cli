@@ -435,6 +435,14 @@ describe(parseArgs, () => {
 
 		expect(result.project).toStrictEqual(["client", "server"]);
 	});
+
+	it("should parse --passWithNoTests flag", () => {
+		expect.assertions(1);
+
+		const result = parseArgs(["--passWithNoTests"]);
+
+		expect(result.passWithNoTests).toBeTrue();
+	});
 });
 
 describe(run, () => {
@@ -583,6 +591,31 @@ describe("runInner via run", () => {
 		expect(spies.consoleError).toHaveBeenCalledWith("No test files found");
 	});
 
+	it("should return 0 when no test files found and passWithNoTests is set", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults({ passWithNoTests: true });
+		mocks.globSync.mockReturnValue([]);
+
+		const code = await run([]);
+
+		expect(code).toBe(0);
+		expect(spies.consoleError).not.toHaveBeenCalled();
+	});
+
+	it("should return 0 via --passWithNoTests CLI flag when no test files found", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults();
+		mocks.globSync.mockReturnValue([]);
+
+		const code = await run(["--passWithNoTests"]);
+
+		expect(code).toBe(0);
+	});
+
 	it("should return 2 when no files match selected mode", async () => {
 		expect.assertions(2);
 
@@ -596,6 +629,19 @@ describe("runInner via run", () => {
 		expect(spies.consoleError).toHaveBeenCalledWith(
 			"No test files found for the selected mode",
 		);
+	});
+
+	it("should return 0 when no files match selected mode and passWithNoTests is set", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults({ passWithNoTests: true, typecheck: true, typecheckOnly: true });
+		mocks.globSync.mockReturnValue(["/test/foo.spec.ts"]);
+
+		const code = await run(["--typecheckOnly"]);
+
+		expect(code).toBe(0);
+		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
 	it("should run runtime tests and return 0 on success", async () => {
@@ -1990,6 +2036,22 @@ describe("multi-project execution", () => {
 
 		expect(code).toBe(2);
 		expect(spies.consoleError).toHaveBeenCalledWith("No test files found in any project");
+	});
+
+	it("should return 0 when no test files found in any project and passWithNoTests is set", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupMultiProjectDefaults({ passWithNoTests: true });
+		onTestFinished(() => {
+			vol.reset();
+		});
+		mocks.globSync.mockReturnValue([]);
+
+		const code = await run([]);
+
+		expect(code).toBe(0);
+		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
 	it("should suppress project headers when silent", async () => {

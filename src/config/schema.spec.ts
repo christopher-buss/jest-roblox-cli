@@ -378,6 +378,14 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
+		it("should accept passWithNoTests", () => {
+			expect.assertions(1);
+
+			const result = configSchema({ passWithNoTests: true });
+
+			expect(result).not.toBeInstanceOf(type.errors);
+		});
+
 		it("should accept testEnvironmentOptions as object", () => {
 			expect.assertions(1);
 

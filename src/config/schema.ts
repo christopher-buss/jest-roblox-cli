@@ -109,6 +109,7 @@ export interface Config extends Except<
 	gameOutput?: string;
 	jestPath?: string;
 	luauRoots?: Array<string>;
+	passWithNoTests?: boolean;
 	placeFile?: string;
 	pollInterval?: number;
 	port?: number;
@@ -137,6 +138,7 @@ export interface ResolvedConfig extends Except<Config, "projects"> {
 	coverageDirectory: string;
 	coveragePathIgnorePatterns: Array<string>;
 	coverageReporters: Array<CoverageReporter>;
+	passWithNoTests: boolean;
 	placeFile: string;
 	pollInterval: number;
 	port: number;
@@ -183,6 +185,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 		"**/rbxts_include/**",
 	],
 	coverageReporters: ["text", "lcov"],
+	passWithNoTests: false,
 	placeFile: "./game.rbxl",
 	pollInterval: 500,
 	port: 3001,
@@ -223,6 +226,7 @@ export interface CliOptions {
 	gameOutput?: string;
 	help?: boolean;
 	outputFile?: string;
+	passWithNoTests?: boolean;
 	pollInterval?: number;
 	port?: number;
 	project?: Array<string>;
@@ -340,6 +344,7 @@ export const configSchema: Type<Config> = type({
 	"maxWorkers?": type("number").or(type("string")),
 	"noStackTrace?": "boolean",
 	"outputFile?": "string",
+	"passWithNoTests?": "boolean",
 	"placeFile?": "string",
 	"pollInterval?": "number",
 	"port?": "number",
