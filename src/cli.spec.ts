@@ -396,6 +396,27 @@ describe(parseArgs, () => {
 		expect(result.coverageReporters).toStrictEqual(["text", "lcov", "html"]);
 	});
 
+	it("should parse --collectCoverageFrom with multiple values", () => {
+		expect.assertions(1);
+
+		const result = parseArgs([
+			"--collectCoverageFrom",
+			"src/**/*.ts",
+			"--collectCoverageFrom",
+			"lib/**/*.ts",
+		]);
+
+		expect(result.collectCoverageFrom).toStrictEqual(["src/**/*.ts", "lib/**/*.ts"]);
+	});
+
+	it("should leave collectCoverageFrom undefined when not passed", () => {
+		expect.assertions(1);
+
+		const result = parseArgs([]);
+
+		expect(result.collectCoverageFrom).toBeUndefined();
+	});
+
 	it("should parse --pollInterval option", () => {
 		expect.assertions(1);
 
@@ -824,6 +845,78 @@ describe("runInner via run", () => {
 
 		expect(code).toBe(0);
 		expect(mocks.generateReports).toHaveBeenCalledWith(expect.objectContaining({ mapped }));
+	});
+
+	it("should pass collectCoverageFrom from CLI to generateReports", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults({ collectCoverage: true });
+		const coverageData = { "file.luau": { s: { "0": 1 } } } as never;
+		const manifest = { files: [] } as never;
+		const mapped = { files: {} };
+
+		mocks.prepareCoverage.mockReturnValue({ manifest, placeFile: "/test/cov.rbxl" });
+		mocks.execute.mockResolvedValue(makeExecuteResult({ coverageData }));
+		mocks.loadCoverageManifest.mockReturnValue(manifest);
+		mocks.mapCoverageToTypeScript.mockReturnValue(mapped);
+		mocks.checkThresholds.mockReturnValue({ failures: [], passed: true });
+
+		await run(["--coverage", "--collectCoverageFrom", "src/**/*.ts"]);
+
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({ collectCoverageFrom: ["src/**/*.ts"] }),
+		);
+	});
+
+	it("should pass collectCoverageFrom from config to generateReports", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults({
+			collectCoverage: true,
+			collectCoverageFrom: ["lib/**/*.ts"],
+		});
+		const coverageData = { "file.luau": { s: { "0": 1 } } } as never;
+		const manifest = { files: [] } as never;
+		const mapped = { files: {} };
+
+		mocks.prepareCoverage.mockReturnValue({ manifest, placeFile: "/test/cov.rbxl" });
+		mocks.execute.mockResolvedValue(makeExecuteResult({ coverageData }));
+		mocks.loadCoverageManifest.mockReturnValue(manifest);
+		mocks.mapCoverageToTypeScript.mockReturnValue(mapped);
+		mocks.checkThresholds.mockReturnValue({ failures: [], passed: true });
+
+		await run(["--coverage"]);
+
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({ collectCoverageFrom: ["lib/**/*.ts"] }),
+		);
+	});
+
+	it("should override config collectCoverageFrom with CLI value", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults({
+			collectCoverage: true,
+			collectCoverageFrom: ["lib/**/*.ts"],
+		});
+		const coverageData = { "file.luau": { s: { "0": 1 } } } as never;
+		const manifest = { files: [] } as never;
+		const mapped = { files: {} };
+
+		mocks.prepareCoverage.mockReturnValue({ manifest, placeFile: "/test/cov.rbxl" });
+		mocks.execute.mockResolvedValue(makeExecuteResult({ coverageData }));
+		mocks.loadCoverageManifest.mockReturnValue(manifest);
+		mocks.mapCoverageToTypeScript.mockReturnValue(mapped);
+		mocks.checkThresholds.mockReturnValue({ failures: [], passed: true });
+
+		await run(["--coverage", "--collectCoverageFrom", "src/**/*.ts"]);
+
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({ collectCoverageFrom: ["src/**/*.ts"] }),
+		);
 	});
 
 	it("should return 1 when coverage threshold not met", async () => {

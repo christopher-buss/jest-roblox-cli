@@ -5,6 +5,7 @@ import istanbulReports, { type ReportOptions } from "istanbul-reports";
 import assert from "node:assert";
 import * as path from "node:path";
 import process from "node:process";
+import picomatch from "picomatch";
 import color from "tinyrainbow";
 
 import type { CoverageReporter } from "../config/schema.ts";
@@ -27,6 +28,7 @@ const VALID_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>([
 ]);
 
 export interface CoverageReportOptions {
+	collectCoverageFrom?: Array<string>;
 	coverageDirectory: string;
 	mapped: MappedCoverageResult;
 	reporters: Array<CoverageReporter>;
@@ -45,7 +47,8 @@ export function printCoverageHeader(): void {
 }
 
 export function generateReports(options: CoverageReportOptions): void {
-	const coverageMap = buildCoverageMap(options.mapped);
+	const filtered = filterMappedFiles(options.mapped, options.collectCoverageFrom);
+	const coverageMap = buildCoverageMap(filtered);
 
 	const context = istanbulReport.createContext({
 		coverageMap,
@@ -65,8 +68,10 @@ export function generateReports(options: CoverageReportOptions): void {
 export function checkThresholds(
 	mapped: MappedCoverageResult,
 	thresholds: { branches?: number; functions?: number; lines?: number; statements?: number },
+	collectCoverageFrom?: Array<string>,
 ): ThresholdResult {
-	const coverageMap = buildCoverageMap(mapped);
+	const filtered = filterMappedFiles(mapped, collectCoverageFrom);
+	const coverageMap = buildCoverageMap(filtered);
 	const summary = coverageMap.getCoverageSummary();
 
 	const failures: ThresholdResult["failures"] = [];
@@ -149,6 +154,52 @@ function buildCoverageMap(
 	}
 
 	return coverageMap;
+}
+
+function createGlobMatcher(patterns: Array<string>): (filePath: string) => boolean {
+	const withPath = patterns.filter((pattern) => pattern.includes("/"));
+	const withoutPath = patterns.filter((pattern) => !pattern.includes("/"));
+
+	const matchers: Array<(filePath: string) => boolean> = [];
+	if (withPath.length > 0) {
+		matchers.push(picomatch(withPath));
+	}
+
+	if (withoutPath.length > 0) {
+		matchers.push(picomatch(withoutPath, { matchBase: true }));
+	}
+
+	return (filePath) => matchers.some((matcher) => matcher(filePath));
+}
+
+function filterMappedFiles(
+	mapped: MappedCoverageResult,
+	collectCoverageFrom: Array<string> | undefined,
+): MappedCoverageResult {
+	if (collectCoverageFrom === undefined || collectCoverageFrom.length === 0) {
+		return mapped;
+	}
+
+	const includePatterns = collectCoverageFrom.filter((pattern) => !pattern.startsWith("!"));
+	const excludePatterns = collectCoverageFrom
+		.filter((pattern) => pattern.startsWith("!"))
+		.map((pattern) => pattern.slice(1));
+
+	const isIncluded = includePatterns.length > 0 ? createGlobMatcher(includePatterns) : () => true;
+	const isExcluded =
+		excludePatterns.length > 0 ? createGlobMatcher(excludePatterns) : () => false;
+
+	const cwd = process.cwd();
+	const filtered = Object.fromEntries(
+		Object.entries(mapped.files).filter(([filePath]) => {
+			const relativePath = path.isAbsolute(filePath)
+				? path.relative(cwd, filePath).replaceAll("\\", "/")
+				: filePath;
+			return isIncluded(relativePath) && !isExcluded(relativePath);
+		}),
+	);
+
+	return { files: filtered };
 }
 
 function isValidReporter(name: string): name is keyof ReportOptions {

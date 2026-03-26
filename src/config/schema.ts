@@ -216,6 +216,7 @@ export interface CliOptions {
 	backend?: Backend;
 	cache?: boolean;
 	collectCoverage?: boolean;
+	collectCoverageFrom?: Array<string>;
 	color?: boolean;
 
 	config?: string;

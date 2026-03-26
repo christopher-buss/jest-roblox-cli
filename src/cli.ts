@@ -87,6 +87,7 @@ Options:
   --no-color                        Disable colored output
   -u, --updateSnapshot              Update snapshot files
   --coverage                        Enable coverage collection
+  --collectCoverageFrom <glob>      Globs for files to include in coverage (repeatable)
   --coverageDirectory <path>        Directory for coverage output (default: coverage)
   --coverageReporters <r...>        Coverage reporters (default: text, lcov)
   --formatters <name...>            Output formatters (default, agent, json, github-actions)
@@ -145,6 +146,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		options: {
 			"backend": { type: "string" },
 			"cache": { type: "boolean" },
+			"collectCoverageFrom": { multiple: true, type: "string" },
 			"color": { type: "boolean" },
 			"config": { type: "string" },
 			"coverage": { type: "boolean" },
@@ -191,6 +193,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		backend: validateBackend(values.backend),
 		cache: values["no-cache"] === true ? false : values.cache,
 		collectCoverage: values.coverage,
+		collectCoverageFrom: values.collectCoverageFrom,
 		color: values["no-color"] === true ? false : values.color,
 		config: values.config,
 		coverageDirectory: values.coverageDirectory,
@@ -427,13 +430,18 @@ function processCoverage(
 
 	// Always generate reports (even in silent mode) so CI can collect artifacts
 	generateReports({
+		collectCoverageFrom: config.collectCoverageFrom,
 		coverageDirectory,
 		mapped,
 		reporters: config.coverageReporters,
 	});
 
 	if (config.coverageThreshold !== undefined) {
-		const result = checkThresholds(mapped, config.coverageThreshold);
+		const result = checkThresholds(
+			mapped,
+			config.coverageThreshold,
+			config.collectCoverageFrom,
+		);
 		if (!result.passed) {
 			for (const failure of result.failures) {
 				process.stderr.write(
@@ -1144,6 +1152,7 @@ function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): ResolvedCo
 		backend: cli.backend ?? config.backend,
 		cache: cli.cache ?? config.cache,
 		collectCoverage: cli.collectCoverage ?? config.collectCoverage,
+		collectCoverageFrom: cli.collectCoverageFrom ?? config.collectCoverageFrom,
 		color: cli.color ?? config.color,
 		coverageDirectory: cli.coverageDirectory ?? config.coverageDirectory,
 		coverageReporters: cli.coverageReporters ?? config.coverageReporters,
