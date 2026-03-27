@@ -26,6 +26,7 @@ import { isValidBackend, ROOT_ONLY_KEYS, VALID_BACKENDS } from "./config/schema.
 import { createSetupResolver } from "./config/setup-resolver.ts";
 import { generateProjectConfigs, syncStubsToShadowDirectory } from "./config/stubs.ts";
 import { mapCoverageToTypeScript } from "./coverage/mapper.ts";
+import { mergeRawCoverage } from "./coverage/merge-raw-coverage.ts";
 import { prepareCoverage } from "./coverage/prepare.ts";
 import { checkThresholds, generateReports, printCoverageHeader } from "./coverage/reporter.ts";
 import { buildWithRojo } from "./coverage/rojo-builder.ts";
@@ -280,7 +281,7 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 		uploadMs += result.timing.uploadMs ?? 0;
 		coverageMs += result.timing.coverageMs ?? 0;
 		if (result.coverageData !== undefined) {
-			mergedCoverage = { ...mergedCoverage, ...result.coverageData };
+			mergedCoverage = mergeRawCoverage(mergedCoverage, result.coverageData);
 		}
 	}
 
@@ -891,7 +892,7 @@ async function runMultiProject(
 			: undefined;
 
 	if (projectResults.length === 0 && typecheckResult === undefined) {
-		if (rootConfig.passWithNoTests) {
+		if (rootConfig.passWithNoTests === true) {
 			return 0;
 		}
 
@@ -953,7 +954,7 @@ async function runSingleProject(
 	const discovery = discoverTestFiles(config, cliFiles);
 
 	if (discovery.files.length === 0) {
-		if (config.passWithNoTests) {
+		if (config.passWithNoTests === true) {
 			return 0;
 		}
 
@@ -969,7 +970,7 @@ async function runSingleProject(
 		: discovery.files.filter((file) => !TYPE_TEST_PATTERN.test(file));
 
 	if (typeTestFiles.length === 0 && runtimeTestFiles.length === 0) {
-		if (config.passWithNoTests) {
+		if (config.passWithNoTests === true) {
 			return 0;
 		}
 

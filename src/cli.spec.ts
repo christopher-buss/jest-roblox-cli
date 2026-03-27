@@ -2586,10 +2586,10 @@ describe(mergeProjectResults, () => {
 
 		const results: Array<ExecuteResult> = [
 			makeExecuteResult({
-				coverageData: { "file1.luau": { s: { "0": 1 } } } as never,
+				coverageData: { "file1.luau": { s: { "0": 1 } } },
 			}),
 			makeExecuteResult({
-				coverageData: { "file2.luau": { s: { "0": 2 } } } as never,
+				coverageData: { "file2.luau": { s: { "0": 2 } } },
 			}),
 		];
 		const merged = mergeProjectResults(results);
@@ -2597,6 +2597,28 @@ describe(mergeProjectResults, () => {
 		expect(merged.coverageData).toStrictEqual({
 			"file1.luau": { s: { "0": 1 } },
 			"file2.luau": { s: { "0": 2 } },
+		});
+	});
+
+	it("should sum coverage hit counts for overlapping files", () => {
+		expect.assertions(1);
+
+		const results: Array<ExecuteResult> = [
+			makeExecuteResult({
+				coverageData: {
+					"shared.luau": { f: { "0": 2 }, s: { "0": 1, "1": 3 } },
+				},
+			}),
+			makeExecuteResult({
+				coverageData: {
+					"shared.luau": { f: { "0": 1 }, s: { "0": 4, "1": 0 } },
+				},
+			}),
+		];
+		const merged = mergeProjectResults(results);
+
+		expect(merged.coverageData).toStrictEqual({
+			"shared.luau": { f: { "0": 3 }, s: { "0": 5, "1": 3 } },
 		});
 	});
 
