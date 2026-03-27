@@ -892,7 +892,7 @@ async function runMultiProject(
 			: undefined;
 
 	if (projectResults.length === 0 && typecheckResult === undefined) {
-		if (rootConfig.passWithNoTests === true) {
+		if (rootConfig.passWithNoTests) {
 			return 0;
 		}
 
@@ -954,7 +954,7 @@ async function runSingleProject(
 	const discovery = discoverTestFiles(config, cliFiles);
 
 	if (discovery.files.length === 0) {
-		if (config.passWithNoTests === true) {
+		if (config.passWithNoTests) {
 			return 0;
 		}
 
@@ -970,7 +970,7 @@ async function runSingleProject(
 		: discovery.files.filter((file) => !TYPE_TEST_PATTERN.test(file));
 
 	if (typeTestFiles.length === 0 && runtimeTestFiles.length === 0) {
-		if (config.passWithNoTests === true) {
+		if (config.passWithNoTests) {
 			return 0;
 		}
 
