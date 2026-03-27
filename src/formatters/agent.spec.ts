@@ -14,7 +14,7 @@ import {
 	SKIPPED_RESULT,
 	SNAPSHOT_FAILING_RESULT,
 } from "./__fixtures__/results.ts";
-import { type CompactOptions, formatCompact, formatCompactMultiProject } from "./compact.ts";
+import { type AgentOptions, formatAgent, formatAgentMultiProject } from "./agent.ts";
 
 vi.mock(
 	import("../source-mapper"),
@@ -63,12 +63,12 @@ function createResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
-describe("formatCompact summary", () => {
+describe("formatAgent summary", () => {
 	it("should show file and test counts when all tests pass", () => {
 		expect.assertions(1);
 
 		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
-		const output = formatCompact(result, { maxFailures: 10, rootDir: "/project" });
+		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
 		expect(output).toBe(" Test Files  1 passed (1)\n      Tests  3 passed (3)");
 	});
@@ -77,7 +77,7 @@ describe("formatCompact summary", () => {
 		expect.assertions(1);
 
 		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			typeErrorCount: 0,
@@ -90,7 +90,7 @@ describe("formatCompact summary", () => {
 		expect.assertions(1);
 
 		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			typeErrorCount: 1,
@@ -103,7 +103,7 @@ describe("formatCompact summary", () => {
 		expect.assertions(1);
 
 		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			typeErrorCount: 2,
@@ -116,7 +116,7 @@ describe("formatCompact summary", () => {
 		expect.assertions(1);
 
 		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
-		const output = formatCompact(result, { maxFailures: 10, rootDir: "/project" });
+		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
 		expect(output).not.toContain("Type Errors");
 	});
@@ -124,7 +124,7 @@ describe("formatCompact summary", () => {
 	it("should show failed and passed file counts", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -135,7 +135,7 @@ describe("formatCompact summary", () => {
 	it("should show failed, passed, and skipped test counts", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(MIXED_RESULT, {
+		const output = formatAgent(MIXED_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -167,7 +167,7 @@ describe("formatCompact summary", () => {
 			],
 		});
 
-		const output = formatCompact(result, { maxFailures: 10, rootDir: "/project" });
+		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
 		expect(output).toContain("      Tests  1 failed (1)");
 	});
@@ -175,7 +175,7 @@ describe("formatCompact summary", () => {
 	it("should include exec errors in failed file count", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(MIXED_WITH_EXEC_ERROR_RESULT, {
+		const output = formatAgent(MIXED_WITH_EXEC_ERROR_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -184,11 +184,11 @@ describe("formatCompact summary", () => {
 	});
 });
 
-describe("formatCompact file headers", () => {
+describe("formatAgent file headers", () => {
 	it("should show file header with test count and failure count", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -199,7 +199,7 @@ describe("formatCompact file headers", () => {
 	it("should list each failed test with x marker", () => {
 		expect.assertions(2);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -211,7 +211,7 @@ describe("formatCompact file headers", () => {
 	it("should include duration on failed test lines", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -244,7 +244,7 @@ describe("formatCompact file headers", () => {
 			],
 		});
 
-		const output = formatCompact(result, { maxFailures: 10, rootDir: "/project" });
+		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
 		expect(output).toContain("   × should work\n");
 	});
@@ -252,7 +252,7 @@ describe("formatCompact file headers", () => {
 	it("should show suite failed to run for exec errors", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(EXEC_ERROR_RESULT, {
+		const output = formatAgent(EXEC_ERROR_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -263,7 +263,7 @@ describe("formatCompact file headers", () => {
 	it("should only show files with failures", () => {
 		expect.assertions(2);
 
-		const output = formatCompact(MIXED_RESULT, {
+		const output = formatAgent(MIXED_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -273,11 +273,11 @@ describe("formatCompact file headers", () => {
 	});
 });
 
-describe("formatCompact separator", () => {
+describe("formatAgent separator", () => {
 	it("should show Failed Tests N separator before failure details", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -288,7 +288,7 @@ describe("formatCompact separator", () => {
 	it("should not show separator when all tests pass", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(PASSING_RESULT, {
+		const output = formatAgent(PASSING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -299,11 +299,11 @@ describe("formatCompact separator", () => {
 
 // --- Failure details ---
 
-describe("formatCompact failure details", () => {
+describe("formatAgent failure details", () => {
 	it("should show FAIL with ancestor chain using > separator", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -314,7 +314,7 @@ describe("formatCompact failure details", () => {
 	it("should show Expected/Received labels", () => {
 		expect.assertions(2);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -326,7 +326,7 @@ describe("formatCompact failure details", () => {
 	it("should render snapshot diff", () => {
 		expect.assertions(2);
 
-		const output = formatCompact(SNAPSHOT_FAILING_RESULT, {
+		const output = formatAgent(SNAPSHOT_FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -373,7 +373,7 @@ describe("formatCompact failure details", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -437,7 +437,7 @@ describe("formatCompact failure details", () => {
 			],
 		});
 
-		const output = formatCompact(result, { maxFailures: 2, rootDir: "/project" });
+		const output = formatAgent(result, { maxFailures: 2, rootDir: "/project" });
 
 		expect(output).toContain("... 3 more failures omitted");
 		expect(output.match(/ FAIL /g)?.length).toBe(2);
@@ -446,7 +446,7 @@ describe("formatCompact failure details", () => {
 	it("should show exec error message in failure details", () => {
 		expect.assertions(2);
 
-		const output = formatCompact(EXEC_ERROR_RESULT, {
+		const output = formatAgent(EXEC_ERROR_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -458,7 +458,7 @@ describe("formatCompact failure details", () => {
 	it("should show hint for exec errors", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(LOADSTRING_ERROR_RESULT, {
+		const output = formatAgent(LOADSTRING_ERROR_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -467,7 +467,7 @@ describe("formatCompact failure details", () => {
 	});
 });
 
-describe("formatCompact snippets", () => {
+describe("formatAgent snippets", () => {
 	it("should show TS and Luau snippets when 1-2 failures", () => {
 		expect.assertions(4);
 
@@ -518,7 +518,7 @@ describe("formatCompact snippets", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -595,7 +595,7 @@ describe("formatCompact snippets", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "D:\\project",
 			sourceMapper: fromPartial({
@@ -660,7 +660,7 @@ describe("formatCompact snippets", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -723,7 +723,7 @@ describe("formatCompact snippets", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -783,7 +783,7 @@ describe("formatCompact snippets", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -831,7 +831,7 @@ describe("formatCompact snippets", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -879,7 +879,7 @@ describe("formatCompact snippets", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -926,7 +926,7 @@ describe("formatCompact snippets", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -940,11 +940,11 @@ describe("formatCompact snippets", () => {
 	});
 });
 
-describe("formatCompact log hints", () => {
+describe("formatAgent log hints", () => {
 	it("should show output file hint with size on failure", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			outputFile: "/tmp/results.json",
 			outputFileSize: 7168,
@@ -957,7 +957,7 @@ describe("formatCompact log hints", () => {
 	it("should show game output hint with size on failure", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			gameOutput: "/tmp/game.json",
 			gameOutputSize: 12288,
 			maxFailures: 10,
@@ -970,7 +970,7 @@ describe("formatCompact log hints", () => {
 	it("should show both hints when both configured", () => {
 		expect.assertions(2);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			gameOutput: "/tmp/game.json",
 			gameOutputSize: 512,
 			maxFailures: 10,
@@ -986,7 +986,7 @@ describe("formatCompact log hints", () => {
 	it("should not show hints on passing results", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(PASSING_RESULT, {
+		const output = formatAgent(PASSING_RESULT, {
 			maxFailures: 10,
 			outputFile: "/tmp/results.json",
 			rootDir: "/project",
@@ -998,7 +998,7 @@ describe("formatCompact log hints", () => {
 	it("should not show hints when no paths configured", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -1009,7 +1009,7 @@ describe("formatCompact log hints", () => {
 	it("should show hints without size when size is undefined", () => {
 		expect.assertions(2);
 
-		const output = formatCompact(FAILING_RESULT, {
+		const output = formatAgent(FAILING_RESULT, {
 			gameOutput: "/tmp/game.json",
 			maxFailures: 10,
 			outputFile: "/tmp/results.json",
@@ -1021,7 +1021,7 @@ describe("formatCompact log hints", () => {
 	});
 });
 
-describe("formatCompact source mapping", () => {
+describe("formatAgent source mapping", () => {
 	it("should show Luau location for Luau-only mapped location", () => {
 		expect.assertions(1);
 
@@ -1046,7 +1046,7 @@ describe("formatCompact source mapping", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -1087,7 +1087,7 @@ describe("formatCompact source mapping", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -1101,7 +1101,7 @@ describe("formatCompact source mapping", () => {
 	});
 });
 
-describe("formatCompact edge cases", () => {
+describe("formatAgent edge cases", () => {
 	it("should show FAIL without ancestors when ancestorTitles is empty", () => {
 		expect.assertions(1);
 
@@ -1128,7 +1128,7 @@ describe("formatCompact edge cases", () => {
 			],
 		});
 
-		const output = formatCompact(result, { maxFailures: 10, rootDir: "/project" });
+		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
 		expect(output).toContain(" FAIL src/test.spec.ts > should work");
 	});
@@ -1158,7 +1158,7 @@ describe("formatCompact edge cases", () => {
 			],
 		});
 
-		const output = formatCompact(result, { maxFailures: 10, rootDir: "/project" });
+		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
 
 		expect(output).toContain("other/path/test.spec.ts");
 	});
@@ -1188,7 +1188,7 @@ describe("formatCompact edge cases", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "D:\\roblox\\project",
 			sourceMapper: fromPartial({
@@ -1226,7 +1226,7 @@ describe("formatCompact edge cases", () => {
 			],
 		});
 
-		const output = formatCompact(result, {
+		const output = formatAgent(result, {
 			maxFailures: 10,
 			rootDir: "D:/roblox/project",
 			sourceMapper: fromPartial({
@@ -1240,11 +1240,11 @@ describe("formatCompact edge cases", () => {
 	});
 });
 
-describe("formatCompact loadstring hint", () => {
+describe("formatAgent loadstring hint", () => {
 	it("should show hint when loadstring is not available", () => {
 		expect.assertions(2);
 
-		const output = formatCompact(LOADSTRING_ERROR_RESULT, {
+		const output = formatAgent(LOADSTRING_ERROR_RESULT, {
 			maxFailures: 10,
 			rootDir: "/project",
 		});
@@ -1254,8 +1254,8 @@ describe("formatCompact loadstring hint", () => {
 	});
 });
 
-describe("formatCompact snapshots", () => {
-	const baseOptions: CompactOptions = {
+describe("formatAgent snapshots", () => {
+	const baseOptions: AgentOptions = {
 		maxFailures: 10,
 		rootDir: "/project",
 	};
@@ -1263,7 +1263,7 @@ describe("formatCompact snapshots", () => {
 	it("should format passing results", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(PASSING_RESULT, baseOptions);
+		const output = formatAgent(PASSING_RESULT, baseOptions);
 
 		expect(output).toMatchInlineSnapshot(`
 			" Test Files  1 passed (1)
@@ -1274,7 +1274,7 @@ describe("formatCompact snapshots", () => {
 	it("should format failing results", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(FAILING_RESULT, baseOptions);
+		const output = formatAgent(FAILING_RESULT, baseOptions);
 
 		expect(output).toMatchInlineSnapshot(`
 			" ❯ src/player.spec.ts (3 tests | 2 failed)
@@ -1299,7 +1299,7 @@ describe("formatCompact snapshots", () => {
 	it("should format mixed results", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(MIXED_RESULT, baseOptions);
+		const output = formatAgent(MIXED_RESULT, baseOptions);
 
 		expect(output).toMatchInlineSnapshot(`
 			" ❯ src/game.spec.ts (4 tests | 1 failed)
@@ -1319,7 +1319,7 @@ describe("formatCompact snapshots", () => {
 	it("should format exec-error-only result", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(EXEC_ERROR_RESULT, baseOptions);
+		const output = formatAgent(EXEC_ERROR_RESULT, baseOptions);
 
 		expect(output).toMatchInlineSnapshot(`
 			" ❯ shared/react/features/windows/__tests__/unit-menu-app.test (suite failed to run)
@@ -1337,7 +1337,7 @@ describe("formatCompact snapshots", () => {
 	it("should format mixed passing + exec-error result", () => {
 		expect.assertions(1);
 
-		const output = formatCompact(MIXED_WITH_EXEC_ERROR_RESULT, baseOptions);
+		const output = formatAgent(MIXED_WITH_EXEC_ERROR_RESULT, baseOptions);
 
 		expect(output).toMatchInlineSnapshot(`
 			" ❯ src/broken.spec.ts (suite failed to run)
@@ -1353,13 +1353,13 @@ describe("formatCompact snapshots", () => {
 	});
 });
 
-describe(formatCompactMultiProject, () => {
-	const baseOptions: CompactOptions = { maxFailures: 10, rootDir: "/project" };
+describe(formatAgentMultiProject, () => {
+	const baseOptions: AgentOptions = { maxFailures: 10, rootDir: "/project" };
 
 	it("should group passing projects with headers and combined summary", () => {
 		expect.assertions(1);
 
-		const output = formatCompactMultiProject(
+		const output = formatAgentMultiProject(
 			[
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "utils", result: PASSING_RESULT },
@@ -1378,7 +1378,7 @@ describe(formatCompactMultiProject, () => {
 	it("should show failure details across projects", () => {
 		expect.assertions(4);
 
-		const output = formatCompactMultiProject(
+		const output = formatAgentMultiProject(
 			[
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "auth", result: FAILING_RESULT },
@@ -1395,7 +1395,7 @@ describe(formatCompactMultiProject, () => {
 	it("should show exec errors from multiple projects", () => {
 		expect.assertions(3);
 
-		const output = formatCompactMultiProject(
+		const output = formatAgentMultiProject(
 			[
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "broken", result: EXEC_ERROR_RESULT },
@@ -1411,7 +1411,7 @@ describe(formatCompactMultiProject, () => {
 	it("should show skipped files in project header and summary", () => {
 		expect.assertions(3);
 
-		const output = formatCompactMultiProject(
+		const output = formatAgentMultiProject(
 			[
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "utils", result: SKIPPED_RESULT },
@@ -1427,7 +1427,7 @@ describe(formatCompactMultiProject, () => {
 	it("should show hints in multi-project output", () => {
 		expect.assertions(2);
 
-		const output = formatCompactMultiProject(
+		const output = formatAgentMultiProject(
 			[
 				{ displayName: "core", result: PASSING_RESULT },
 				{ displayName: "auth", result: FAILING_RESULT },
@@ -1442,7 +1442,7 @@ describe(formatCompactMultiProject, () => {
 	it("should omit passed count when no tests pass", () => {
 		expect.assertions(2);
 
-		const output = formatCompactMultiProject(
+		const output = formatAgentMultiProject(
 			[
 				{ displayName: "a", result: EXEC_ERROR_RESULT },
 				{ displayName: "b", result: EXEC_ERROR_RESULT },

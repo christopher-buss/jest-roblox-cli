@@ -1722,19 +1722,6 @@ describe("resolveFormatters agent detection", () => {
 
 		expect(formatters).toContain("agent");
 	});
-
-	it("should normalize compact to agent in --formatters", async () => {
-		expect.assertions(1);
-
-		setupOutputSpies();
-		setupDefaults();
-
-		await run(["--formatters", "compact"]);
-
-		const formatters = mocks.formatExecuteOutput.mock.calls[0]?.[0].config.formatters;
-
-		expect(formatters).toContain("agent");
-	});
 });
 
 describe("github-actions formatter", () => {

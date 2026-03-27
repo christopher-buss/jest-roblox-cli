@@ -30,8 +30,8 @@ advice — jest-roblox is usable by both roblox-ts and Luau-only projects.
 | Filter by file path | `jest-roblox --testPathPattern player` |
 | Verbose output | `jest-roblox --verbose` |
 | Update snapshots | `jest-roblox -u` |
-| AI-friendly output | `jest-roblox --compact` |
-| Limit compact failures | `jest-roblox --compact --compactMaxFailures 5` |
+| AI-friendly output | `jest-roblox --formatters agent` |
+| Limit agent failures | `jest-roblox --formatters agent` (configure `maxFailures` in config) |
 | Type tests only | `jest-roblox --typecheckOnly` |
 | Enable type tests | `jest-roblox --typecheck` |
 | Custom tsconfig for types | `jest-roblox --typecheckTsconfig tsconfig.test.json` |

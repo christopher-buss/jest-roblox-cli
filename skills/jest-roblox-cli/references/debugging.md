@@ -31,7 +31,7 @@
 | `--gameOutput <path>` | Capture all Luau print/warn/error to a file |
 | `--no-cache` | Force re-upload place file (rule out stale cache) |
 | `--no-show-luau` | Hide Luau code snippets in failure output (useful for AI consumption) |
-| `--compact` | Token-efficient output format for AI agents |
+| `--formatters agent` | Token-efficient output format for AI agents |
 | `--no-color` | Disable colored output (useful for CI logs) |
 
 ## General Approach

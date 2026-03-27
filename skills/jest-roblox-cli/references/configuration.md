@@ -23,8 +23,7 @@ file values.
 | `showLuau` | Show Luau code snippets in failure output | `true` |
 | `snapshotFormat` | Snapshot serialization options | — |
 | `verbose` | Show individual test results | `false` |
-| `compact` | Token-efficient AI-friendly output | `false` |
-| `compactMaxFailures` | Max failures shown in compact mode | `10` |
+| `formatters` | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`) | `["default"]` |
 | `gameOutput` | Write game print/warn/error to file | — |
 | `cache` | Cache place files by SHA256 hash | `true` |
 | `updateSnapshot` | Update snapshot files | — |

@@ -587,7 +587,7 @@ describe(execute, () => {
 
 		const result = await execute(options);
 
-		// Compact format uses PASS/FAIL prefix per file, no verbose headers
+		// Agent format uses PASS/FAIL prefix per file, no verbose headers
 		expect(result.output).toContain("FAIL");
 		expect(result.output).not.toContain("RUN");
 	});

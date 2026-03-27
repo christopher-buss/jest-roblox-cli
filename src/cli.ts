@@ -36,7 +36,7 @@ import {
 	formatExecuteOutput,
 	loadCoverageManifest,
 } from "./executor.ts";
-import { formatCompactMultiProject } from "./formatters/compact.ts";
+import { formatAgentMultiProject } from "./formatters/agent.ts";
 import {
 	formatMultiProjectResult,
 	formatResult,
@@ -495,7 +495,7 @@ function hasFormatter(config: ResolvedConfig, name: string): boolean {
 	);
 }
 
-function getCompactMaxFailures(config: ResolvedConfig): number {
+function getAgentMaxFailures(config: ResolvedConfig): number {
 	assert(config.formatters !== undefined, "formatters is set by resolveFormatters");
 	const options = findFormatterOptions(config.formatters, "agent");
 	if (options !== undefined && typeof options["maxFailures"] === "number") {
@@ -630,9 +630,9 @@ function printMultiProjectOutput(options: MultiProjectOutputOptions): void {
 
 	if (usesAgentFormatter(config)) {
 		printOutput(
-			formatCompactMultiProject(toProjectEntries(projectResults), {
+			formatAgentMultiProject(toProjectEntries(projectResults), {
 				gameOutput: config.gameOutput,
-				maxFailures: getCompactMaxFailures(config),
+				maxFailures: getAgentMaxFailures(config),
 				outputFile: config.outputFile,
 				rootDir: config.rootDir,
 				sourceMapper: merged.sourceMapper,
@@ -1119,22 +1119,10 @@ function getLuauErrorHint(message: string): string | undefined {
 	return undefined;
 }
 
-function normalizeFormatterName(name: string): string {
-	return name === "compact" ? "agent" : name;
-}
-
-function normalizeFormatterEntry(entry: FormatterEntry): FormatterEntry {
-	if (Array.isArray(entry)) {
-		return [normalizeFormatterName(entry[0]), entry[1]];
-	}
-
-	return normalizeFormatterName(entry);
-}
-
 function resolveFormatters(cli: CliOptions, config: ResolvedConfig): Array<FormatterEntry> {
 	const explicit = cli.formatters ?? config.formatters;
 	if (explicit !== undefined) {
-		return explicit.map(normalizeFormatterEntry);
+		return explicit;
 	}
 
 	const defaults: Array<FormatterEntry> = isAgent ? ["agent"] : ["default"];

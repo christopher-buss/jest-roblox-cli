@@ -9,7 +9,7 @@ import type { Backend } from "./backends/interface.ts";
 import { applySnapshotFormatDefaults } from "./config/loader.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import type { CoverageManifest, RawCoverageData } from "./coverage/types.ts";
-import { formatCompact } from "./formatters/compact.ts";
+import { formatAgent } from "./formatters/agent.ts";
 import { formatResult } from "./formatters/formatter.ts";
 import { formatJson } from "./formatters/json.ts";
 import {
@@ -169,8 +169,6 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 	const resolvedGameOutput =
 		config.gameOutput !== undefined ? path.resolve(config.gameOutput) : undefined;
 
-	// Formatter names are normalized by resolveFormatters before reaching here,
-	// so the "compact" alias is already resolved to "agent".
 	const agentOptions = findFormatterOptions(config.formatters ?? [], "agent") as
 		| AgentFormatterOptions
 		| undefined;
@@ -178,7 +176,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 	if (agentOptions !== undefined && !config.verbose) {
 		const maxFailures = agentOptions.maxFailures ?? DEFAULT_MAX_FAILURES;
 
-		return formatCompact(result, {
+		return formatAgent(result, {
 			gameOutput: resolvedGameOutput,
 			maxFailures,
 			outputFile: resolvedOutputFile,

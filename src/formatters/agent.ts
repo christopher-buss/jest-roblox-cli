@@ -15,7 +15,7 @@ import {
 	resolveDisplayPath,
 } from "./formatter.ts";
 
-export interface CompactOptions {
+export interface AgentOptions {
 	gameOutput?: string;
 	gameOutputSize?: number;
 	maxFailures: number;
@@ -26,14 +26,14 @@ export interface CompactOptions {
 	typeErrorCount?: number;
 }
 
-export interface CompactProjectEntry {
+export interface AgentProjectEntry {
 	displayName: string;
 	result: JestResult;
 }
 
 type SnippetLevel = "both" | "none" | "ts-only";
 
-interface CompactProjectStats {
+interface AgentProjectStats {
 	allExecErrors: Array<JestResult["testResults"][number]>;
 	totalFailed: number;
 	totalFailedFiles: number;
@@ -44,7 +44,7 @@ interface CompactProjectStats {
 	totalTests: number;
 }
 
-export function formatCompact(result: JestResult, options: CompactOptions): string {
+export function formatAgent(result: JestResult, options: AgentOptions): string {
 	const lines: Array<string> = [];
 	const execErrors = result.testResults.filter(hasExecError);
 	const hasFailures = result.numFailedTests > 0 || execErrors.length > 0;
@@ -64,7 +64,7 @@ export function formatCompact(result: JestResult, options: CompactOptions): stri
 			lines.push(...formatExecError(file, options));
 		}
 
-		const hints = formatCompactLogHints(options);
+		const hints = formatAgentLogHints(options);
 		if (hints !== "") {
 			lines.push(hints);
 		}
@@ -75,14 +75,14 @@ export function formatCompact(result: JestResult, options: CompactOptions): stri
 	return lines.join("\n");
 }
 
-export function formatCompactMultiProject(
-	projects: Array<CompactProjectEntry>,
-	options: CompactOptions,
+export function formatAgentMultiProject(
+	projects: Array<AgentProjectEntry>,
+	options: AgentOptions,
 ): string {
 	const lines: Array<string> = [];
 
 	for (const { displayName, result } of projects) {
-		lines.push(...formatCompactProjectHeader(displayName, result, options));
+		lines.push(...formatAgentProjectHeader(displayName, result, options));
 	}
 
 	const stats = collectMultiProjectStats(projects);
@@ -105,7 +105,7 @@ function formatTypeErrorLabel(count: number): string {
 	return `${count} error${count === 1 ? "" : "s"}`;
 }
 
-function formatSummarySection(result: JestResult, options: CompactOptions): Array<string> {
+function formatSummarySection(result: JestResult, options: AgentOptions): Array<string> {
 	const lines: Array<string> = [];
 
 	const failedFiles = result.testResults.filter(
@@ -165,7 +165,7 @@ function makeRelative(filePath: string, rootDirectory: string): string {
 
 function formatFileHeaderExecError(
 	file: JestResult["testResults"][number],
-	options: CompactOptions,
+	options: AgentOptions,
 ): Array<string> {
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
 	const relativePath = makeRelative(displayPath, options.rootDir);
@@ -175,7 +175,7 @@ function formatFileHeaderExecError(
 
 function formatFileHeaderFailures(
 	file: JestResult["testResults"][number],
-	options: CompactOptions,
+	options: AgentOptions,
 ): Array<string> {
 	const lines: Array<string> = [];
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
@@ -195,7 +195,7 @@ function formatFileHeaderFailures(
 	return lines;
 }
 
-function formatFileHeaders(result: JestResult, options: CompactOptions): Array<string> {
+function formatFileHeaders(result: JestResult, options: AgentOptions): Array<string> {
 	const lines: Array<string> = [];
 
 	for (const file of result.testResults) {
@@ -216,7 +216,7 @@ function formatFileHeaders(result: JestResult, options: CompactOptions): Array<s
 
 function formatExecError(
 	file: JestResult["testResults"][number],
-	options: CompactOptions,
+	options: AgentOptions,
 ): Array<string> {
 	const lines: Array<string> = [];
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
@@ -245,7 +245,7 @@ function formatSize(bytes: number): string {
 	return `${kb}kb`;
 }
 
-function formatCompactLogHints(options: CompactOptions): string {
+function formatAgentLogHints(options: AgentOptions): string {
 	const lines: Array<string> = [];
 
 	if (options.outputFile !== undefined) {
@@ -417,10 +417,10 @@ function getFailureSnippets(
 	return [];
 }
 
-function formatCompactFailure(
+function formatAgentFailure(
 	test: TestCaseResult,
 	filePath: string,
-	options: CompactOptions,
+	options: AgentOptions,
 	snippetLevel: SnippetLevel,
 ): string {
 	const lines: Array<string> = [];
@@ -468,7 +468,7 @@ function formatCompactFailure(
 function formatFailures(
 	result: JestResult,
 	totalFailures: number,
-	options: CompactOptions,
+	options: AgentOptions,
 ): Array<string> {
 	const lines: Array<string> = [];
 	const failures = collectFailedTests(result, options.sourceMapper);
@@ -480,16 +480,16 @@ function formatFailures(
 			break;
 		}
 
-		lines.push(formatCompactFailure(test, filePath, options, snippetLevel));
+		lines.push(formatAgentFailure(test, filePath, options, snippetLevel));
 	}
 
 	return lines;
 }
 
-function formatCompactProjectHeader(
+function formatAgentProjectHeader(
 	displayName: string,
 	result: JestResult,
-	options: CompactOptions,
+	options: AgentOptions,
 ): Array<string> {
 	const execErrors = result.testResults.filter(hasExecError);
 	const hasFailures = result.numFailedTests > 0 || execErrors.length > 0;
@@ -524,8 +524,8 @@ function formatCompactProjectHeader(
 	return lines;
 }
 
-function collectMultiProjectStats(projects: Array<CompactProjectEntry>): CompactProjectStats {
-	const stats: CompactProjectStats = {
+function collectMultiProjectStats(projects: Array<AgentProjectEntry>): AgentProjectStats {
+	const stats: AgentProjectStats = {
 		allExecErrors: [],
 		totalFailed: 0,
 		totalFailedFiles: 0,
@@ -559,9 +559,9 @@ function collectMultiProjectStats(projects: Array<CompactProjectEntry>): Compact
 }
 
 function formatMultiProjectFailures(
-	projects: Array<CompactProjectEntry>,
-	stats: CompactProjectStats,
-	options: CompactOptions,
+	projects: Array<AgentProjectEntry>,
+	stats: AgentProjectStats,
+	options: AgentOptions,
 ): Array<string> {
 	const totalFailures = stats.totalFailed + stats.allExecErrors.length;
 	const lines: Array<string> = [
@@ -580,7 +580,7 @@ function formatMultiProjectFailures(
 		lines.push(...formatExecError(file, options));
 	}
 
-	const hints = formatCompactLogHints(options);
+	const hints = formatAgentLogHints(options);
 	if (hints !== "") {
 		lines.push(hints);
 	}
@@ -588,10 +588,7 @@ function formatMultiProjectFailures(
 	return lines;
 }
 
-function formatMultiProjectSummary(
-	stats: CompactProjectStats,
-	options: CompactOptions,
-): Array<string> {
+function formatMultiProjectSummary(stats: AgentProjectStats, options: AgentOptions): Array<string> {
 	const lines: Array<string> = [];
 
 	const fileParts: Array<string> = [];
