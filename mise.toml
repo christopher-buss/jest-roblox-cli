@@ -11,6 +11,7 @@ _.path = [
 "github:rojo-rbx/rojo" = "v7.7.0-rc.1"
 "github:seaofvoices/darklua" = "0.17.1"
 node = { version = "v25.8.2", postinstall = "corepack enable" }
+"npm:corepack" = "latest"
 "npm:@antfu/ni" = "latest"
 "ubi:luau-lang/lute" = "latest"
 watchexec = "latest"
