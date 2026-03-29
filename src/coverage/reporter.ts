@@ -28,6 +28,7 @@ const VALID_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>([
 ]);
 
 export interface CoverageReportOptions {
+	agentMode?: boolean;
 	collectCoverageFrom?: Array<string>;
 	coverageDirectory: string;
 	mapped: MappedCoverageResult;
@@ -46,21 +47,44 @@ export function printCoverageHeader(): void {
 	process.stdout.write(`\n${header}\n`);
 }
 
+const TEXT_REPORTERS: ReadonlySet<string> = new Set(["text", "text-summary"]);
+
 export function generateReports(options: CoverageReportOptions): void {
 	const filtered = filterMappedFiles(options.mapped, options.collectCoverageFrom);
 	const coverageMap = buildCoverageMap(filtered);
 
 	const context = istanbulReport.createContext({
 		coverageMap,
+		defaultSummarizer: options.agentMode === true ? "flat" : "pkg",
 		dir: options.coverageDirectory,
 	});
+
+	const terminalColumns = getTerminalColumns();
+	const allFilesFull = options.agentMode === true && isAllFilesFull(coverageMap);
 
 	for (const reporterName of options.reporters) {
 		if (!isValidReporter(reporterName)) {
 			throw new Error(`Unknown coverage reporter: ${reporterName}`);
 		}
 
-		const report = istanbulReports.create(reporterName);
+		if (allFilesFull && TEXT_REPORTERS.has(reporterName)) {
+			const fileCount = coverageMap.files().length;
+			const label = fileCount === 1 ? "file" : "files";
+			process.stdout.write(`Coverage: 100% (${fileCount} ${label})\n`);
+			continue;
+		}
+
+		let reporterOptions = {};
+		if (reporterName === "text") {
+			reporterOptions = {
+				maxCols: terminalColumns,
+				skipFull: options.agentMode === true,
+			};
+		} else if (TEXT_REPORTERS.has(reporterName)) {
+			reporterOptions = { skipFull: options.agentMode === true };
+		}
+
+		const report = istanbulReports.create(reporterName, reporterOptions);
 		report.execute(context);
 	}
 }
@@ -109,6 +133,40 @@ export function checkThresholds(
 		failures,
 		passed: failures.length === 0,
 	};
+}
+
+function getTerminalColumns(): number | undefined {
+	// eslint-disable-next-line ts/no-unnecessary-condition -- some environments might not have this property
+	if (process.stdout.columns !== undefined) {
+		return process.stdout.columns;
+	}
+
+	const columnsEnvironment = process.env["COLUMNS"];
+	if (columnsEnvironment === undefined) {
+		return undefined;
+	}
+
+	const parsed = Number(columnsEnvironment);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function isAllFilesFull(
+	coverageMap: ReturnType<typeof istanbulCoverage.createCoverageMap>,
+): boolean {
+	const files = coverageMap.files();
+	if (files.length === 0) {
+		return false;
+	}
+
+	return files.every((file) => {
+		const summary = coverageMap.fileCoverageFor(file).toSummary();
+		return (
+			summary.statements.pct === 100 &&
+			summary.branches.pct === 100 &&
+			summary.functions.pct === 100 &&
+			summary.lines.pct === 100
+		);
+	});
 }
 
 function buildCoverageMap(

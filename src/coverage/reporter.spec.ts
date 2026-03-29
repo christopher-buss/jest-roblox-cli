@@ -34,6 +34,43 @@ function createResult(files: Record<string, MappedFileCoverage> = {}): MappedCov
 	return { files };
 }
 
+function stdoutOutput(): string {
+	return stripVTControlCharacters(
+		vi
+			.mocked(process.stdout.write)
+			.mock.calls.map((call) => String(call[0]))
+			.join(""),
+	);
+}
+
+/** One file at 100%, one below — for testing skipFull behavior. */
+function createMixedCoverageResult(): MappedCoverageResult {
+	return createResult({
+		"src/shared/inventory.ts": createMappedFile({
+			f: { "0": 5, "1": 3 },
+			fnMap: {
+				"0": {
+					name: "addItem",
+					loc: { end: { column: 1, line: 5 }, start: { column: 0, line: 1 } },
+				},
+				"1": {
+					name: "removeItem",
+					loc: { end: { column: 1, line: 10 }, start: { column: 0, line: 6 } },
+				},
+			},
+			path: "src/shared/inventory.ts",
+			s: { "0": 5, "1": 3, "2": 2, "3": 2 },
+			statementMap: {
+				"0": { end: { column: 20, line: 1 }, start: { column: 0, line: 1 } },
+				"1": { end: { column: 15, line: 2 }, start: { column: 0, line: 2 } },
+				"2": { end: { column: 10, line: 3 }, start: { column: 0, line: 3 } },
+				"3": { end: { column: 12, line: 4 }, start: { column: 0, line: 4 } },
+			},
+		}),
+		"src/shared/player.ts": createMappedFile(),
+	});
+}
+
 describe(generateReports, () => {
 	describe("with text reporter", () => {
 		it("should write coverage summary to stdout", () => {
@@ -60,6 +97,31 @@ describe(generateReports, () => {
 				stdoutSpy.mockRestore();
 				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 			}
+		});
+	});
+
+	describe("with text-summary reporter", () => {
+		it("should write summary to stdout", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			const result = createResult({
+				"src/shared/player.ts": createMappedFile(),
+			});
+
+			generateReports({
+				coverageDirectory: "/tmp/unused",
+				mapped: result,
+				reporters: ["text-summary"],
+			});
+
+			const output = vi
+				.mocked(process.stdout.write)
+				.mock.calls.map((call) => String(call[0]))
+				.join("");
+
+			expect(output).toContain("Statements");
 		});
 	});
 
@@ -168,6 +230,219 @@ describe(generateReports, () => {
 				stdoutSpy.mockRestore();
 				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 			}
+		});
+
+		it("should disambiguate files with identical names via flat paths in agent mode", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			const result = createResult({
+				"src/client/ui/index.ts": createMappedFile({
+					path: "src/client/ui/index.ts",
+				}),
+				"src/server/services/index.ts": createMappedFile({
+					path: "src/server/services/index.ts",
+				}),
+			});
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: result,
+				reporters: ["text"],
+			});
+
+			const output = stdoutOutput();
+
+			// flat summarizer shows path suffixes that disambiguate
+			// same-named files (vs pkg summarizer which shows "index.ts" twice)
+			expect(output).toMatchInlineSnapshot(`
+				"-------------------|---------|----------|---------|---------|-------------------
+				File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+				-------------------|---------|----------|---------|---------|-------------------
+				All files          |   66.66 |      100 |     100 |   66.66 |                   
+				 ...nt/ui/index.ts |   66.66 |      100 |     100 |   66.66 | 3                 
+				 ...vices/index.ts |   66.66 |      100 |     100 |   66.66 | 3                 
+				-------------------|---------|----------|---------|---------|-------------------
+				"
+			`);
+		});
+
+		it("should omit fully-covered files from text output in agent mode", () => {
+			expect.assertions(2);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: createMixedCoverageResult(),
+				reporters: ["text"],
+			});
+
+			const output = stdoutOutput();
+
+			expect(output).not.toContain("inventory.ts");
+			expect(output).toContain("player.ts");
+		});
+
+		it("should print compact summary when all files have full coverage in agent mode", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			const result = createResult({
+				"src/shared/player.ts": createMappedFile({
+					s: { "0": 3, "1": 2, "2": 5 },
+				}),
+			});
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: result,
+				reporters: ["text"],
+			});
+
+			expect(stdoutOutput()).toBe("Coverage: 100% (1 file)\n");
+		});
+
+		it("should pluralize file count in compact summary", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			const result = createResult({
+				"src/shared/inventory.ts": createMappedFile({
+					path: "src/shared/inventory.ts",
+					s: { "0": 3, "1": 2, "2": 5 },
+				}),
+				"src/shared/player.ts": createMappedFile({
+					s: { "0": 3, "1": 2, "2": 5 },
+				}),
+			});
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: result,
+				reporters: ["text"],
+			});
+
+			expect(stdoutOutput()).toBe("Coverage: 100% (2 files)\n");
+		});
+
+		it("should show table when coverage map is empty in agent mode", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: createResult(),
+				reporters: ["text"],
+			});
+
+			expect(stdoutOutput()).toContain("------");
+		});
+
+		it("should show all files including fully-covered when not in agent mode", () => {
+			expect.assertions(2);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				coverageDirectory: "/tmp/unused",
+				mapped: createMixedCoverageResult(),
+				reporters: ["text"],
+			});
+
+			const output = stdoutOutput();
+
+			expect(output).toContain("inventory.ts");
+			expect(output).toContain("player.ts");
+		});
+	});
+
+	describe("terminal columns", () => {
+		it("should use stdout.columns when available", () => {
+			expect.assertions(1);
+
+			Object.defineProperty(process.stdout, "columns", { configurable: true, value: 200 });
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			const result = createResult({
+				"src/deeply/nested/path/to/module/index.ts": createMappedFile({
+					path: "src/deeply/nested/path/to/module/index.ts",
+				}),
+				"src/other/location/index.ts": createMappedFile({
+					path: "src/other/location/index.ts",
+				}),
+			});
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: result,
+				reporters: ["text"],
+			});
+
+			Object.defineProperty(process.stdout, "columns", {
+				configurable: true,
+				value: undefined,
+			});
+
+			expect(stdoutOutput()).toContain("deeply/nested/path/to/module/index.ts");
+		});
+
+		it("should use COLUMNS env var to prevent path truncation", () => {
+			expect.assertions(2);
+
+			vi.stubEnv("COLUMNS", "200");
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			const result = createResult({
+				"src/deeply/nested/path/to/module/index.ts": createMappedFile({
+					path: "src/deeply/nested/path/to/module/index.ts",
+				}),
+				"src/other/location/index.ts": createMappedFile({
+					path: "src/other/location/index.ts",
+				}),
+			});
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: result,
+				reporters: ["text"],
+			});
+
+			const output = stdoutOutput();
+
+			expect(output).toContain("deeply/nested/path/to/module/index.ts");
+			expect(output).toContain("other/location/index.ts");
+		});
+
+		it("should ignore invalid COLUMNS env var", () => {
+			expect.assertions(1);
+
+			vi.stubEnv("COLUMNS", "auto");
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			const result = createResult({
+				"src/shared/player.ts": createMappedFile(),
+			});
+
+			generateReports({
+				coverageDirectory: "/tmp/unused",
+				mapped: result,
+				reporters: ["text"],
+			});
+
+			// should not throw — falls back to Istanbul default (80)
+			expect(stdoutOutput()).toContain("player.ts");
 		});
 	});
 

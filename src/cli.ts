@@ -394,6 +394,18 @@ function printFinalStatus(passed: boolean): void {
 	process.stdout.write(`${badge}\n`);
 }
 
+function hasFormatter(config: ResolvedConfig, name: string): boolean {
+	return (
+		config.formatters?.some((entry) =>
+			Array.isArray(entry) ? entry[0] === name : entry === name,
+		) === true
+	);
+}
+
+function usesAgentFormatter(config: ResolvedConfig): boolean {
+	return hasFormatter(config, "agent") && !config.verbose;
+}
+
 function processCoverage(
 	config: ResolvedConfig,
 	coverageData: RawCoverageData | undefined,
@@ -431,6 +443,7 @@ function processCoverage(
 
 	// Always generate reports (even in silent mode) so CI can collect artifacts
 	generateReports({
+		agentMode: usesAgentFormatter(config),
 		collectCoverageFrom: config.collectCoverageFrom,
 		coverageDirectory,
 		mapped,
@@ -488,14 +501,6 @@ function runGitHubActionsFormatter(
 	}
 }
 
-function hasFormatter(config: ResolvedConfig, name: string): boolean {
-	return (
-		config.formatters?.some((entry) =>
-			Array.isArray(entry) ? entry[0] === name : entry === name,
-		) === true
-	);
-}
-
 function getAgentMaxFailures(config: ResolvedConfig): number {
 	assert(config.formatters !== undefined, "formatters is set by resolveFormatters");
 	const options = findFormatterOptions(config.formatters, "agent");
@@ -504,10 +509,6 @@ function getAgentMaxFailures(config: ResolvedConfig): number {
 	}
 
 	return DEFAULT_MAX_FAILURES;
-}
-
-function usesAgentFormatter(config: ResolvedConfig): boolean {
-	return hasFormatter(config, "agent") && !config.verbose;
 }
 
 function usesDefaultFormatter(config: ResolvedConfig): boolean {
