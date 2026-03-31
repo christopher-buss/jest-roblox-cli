@@ -1,6 +1,6 @@
 {
 	"name": "@isentinel/jest-roblox",
-	"version": "0.1.5",
+	"version": "0.2.0",
 	"description": "Jest-compatible CLI for running roblox-ts tests via Roblox Open Cloud",
 	"keywords": [
 		"jest",
