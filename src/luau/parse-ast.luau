@@ -60,8 +60,8 @@ local function strip(value: any): any
 		return value
 	end
 
-	-- LuauSpan — has beginline, no tag
-	if value.beginline ~= nil then
+	-- LuauSpan — has beginLine, no tag
+	if value.beginLine ~= nil then
 		return value
 	end
 

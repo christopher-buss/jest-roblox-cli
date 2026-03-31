@@ -5,10 +5,10 @@
  */
 
 export interface LuauSpan {
-	begincolumn: number;
-	beginline: number;
-	endcolumn: number;
-	endline: number;
+	beginColumn: number;
+	beginLine: number;
+	endColumn: number;
+	endLine: number;
 }
 
 export interface Pair<T> {

@@ -167,6 +167,7 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 		generatedAt: new Date().toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots: [posixLuauRoot],
+		nonInstrumentedFiles: {},
 		shadowDir: toPosix(shadowDir),
 		version: 1,
 	} satisfies CoverageManifest;

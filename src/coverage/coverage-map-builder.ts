@@ -5,8 +5,8 @@ export function buildCoverageMap(result: CollectorResult): CoverageMap {
 	const statementMap: Record<string, SourceLocation> = {};
 	for (const statement of result.statements) {
 		statementMap[String(statement.index)] = {
-			end: { column: statement.location.endcolumn, line: statement.location.endline },
-			start: { column: statement.location.begincolumn, line: statement.location.beginline },
+			end: { column: statement.location.endColumn, line: statement.location.endLine },
+			start: { column: statement.location.beginColumn, line: statement.location.beginLine },
 		};
 	}
 
@@ -15,8 +15,8 @@ export function buildCoverageMap(result: CollectorResult): CoverageMap {
 		functionMap[String(func.index)] = {
 			name: func.name,
 			location: {
-				end: { column: func.location.endcolumn, line: func.location.endline },
-				start: { column: func.location.begincolumn, line: func.location.beginline },
+				end: { column: func.location.endColumn, line: func.location.endLine },
+				start: { column: func.location.beginColumn, line: func.location.beginLine },
 			},
 		};
 	}
@@ -26,8 +26,8 @@ export function buildCoverageMap(result: CollectorResult): CoverageMap {
 		branchMap[String(branch.index)] = {
 			locations: branch.arms.map((arm) => {
 				return {
-					end: { column: arm.location.endcolumn, line: arm.location.endline },
-					start: { column: arm.location.begincolumn, line: arm.location.beginline },
+					end: { column: arm.location.endColumn, line: arm.location.endLine },
+					start: { column: arm.location.beginColumn, line: arm.location.beginLine },
 				};
 			}),
 			type: branch.branchType,

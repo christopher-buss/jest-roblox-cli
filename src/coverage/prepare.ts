@@ -325,6 +325,7 @@ function writeManifest(
 		generatedAt: new Date().toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots,
+		nonInstrumentedFiles: {},
 		placeFilePath: placeFile,
 		shadowDir: COVERAGE_DIR,
 		version: 1,

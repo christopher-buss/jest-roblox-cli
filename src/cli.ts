@@ -25,6 +25,7 @@ import type {
 import { isValidBackend, ROOT_ONLY_KEYS, VALID_BACKENDS } from "./config/schema.ts";
 import { createSetupResolver } from "./config/setup-resolver.ts";
 import { generateProjectConfigs, syncStubsToShadowDirectory } from "./config/stubs.ts";
+import { deriveCoverageFromIncludes } from "./coverage/derive-coverage-from.ts";
 import { mapCoverageToTypeScript } from "./coverage/mapper.ts";
 import { mergeRawCoverage } from "./coverage/merge-raw-coverage.ts";
 import { prepareCoverage } from "./coverage/prepare.ts";
@@ -906,7 +907,17 @@ async function runMultiProject(
 		return outputResults(rootConfig, typecheckResult, undefined, preCoverageMs);
 	}
 
-	return outputMultiProjectResults(rootConfig, projectResults, typecheckResult, preCoverageMs);
+	const configWithCoverage: ResolvedConfig = {
+		...rootConfig,
+		collectCoverageFrom: rootConfig.collectCoverageFrom ?? deriveCoverageFromIncludes(projects),
+	};
+
+	return outputMultiProjectResults(
+		configWithCoverage,
+		projectResults,
+		typecheckResult,
+		preCoverageMs,
+	);
 }
 
 async function executeRuntimeTests(

@@ -6,7 +6,7 @@ import { evalLuauReturnLiterals } from "./eval-literals.ts";
 function makeBlock(...statements: Array<unknown>): AstStatBlock {
 	return {
 		kind: "stat",
-		location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+		location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 		statements,
 		tag: "block",
 	} as AstStatBlock;
@@ -16,7 +16,7 @@ function makeReturn(...expressions: Array<unknown>) {
 	return {
 		expressions: expressions.map((node) => ({ node })),
 		kind: "stat",
-		location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+		location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 		tag: "return",
 	};
 }

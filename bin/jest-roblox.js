@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "../src/cli.ts");
 
+const { register } = await import("node:module");
+register("../loaders/luau-raw.mjs", import.meta.url);
+
 if (existsSync(sourceEntry)) {
-	const { register } = await import("node:module");
-	register("../loaders/luau-raw.mjs", import.meta.url);
 	const { main } = await import("../src/cli.ts");
 	main();
 } else {

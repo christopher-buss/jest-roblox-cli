@@ -240,18 +240,18 @@ export function collectCoverage(root: AstStatBlock): CollectorResult {
 					bodyFirstColumn: 0,
 					bodyFirstLine: 0,
 					location: {
-						begincolumn: node.location.begincolumn,
-						beginline: node.location.beginline,
-						endcolumn: node.location.begincolumn,
-						endline: node.location.beginline,
+						beginColumn: node.location.beginColumn,
+						beginLine: node.location.beginLine,
+						endColumn: node.location.beginColumn,
+						endLine: node.location.beginLine,
 					},
 				});
 
 				implicitElseProbes.push({
 					armIndex: branch.arms.length,
 					branchIndex,
-					endColumn: node.location.endcolumn - END_KEYWORD_LENGTH,
-					endLine: node.location.endline,
+					endColumn: node.location.endColumn - END_KEYWORD_LENGTH,
+					endLine: node.location.endLine,
 				});
 			}
 
@@ -286,12 +286,12 @@ export function collectCoverage(root: AstStatBlock): CollectorResult {
 function getBodyFirstStatement(block: AstStatBlock): { column: number; line: number } {
 	const first = block.statements[0];
 	if (first !== undefined) {
-		return { column: first.location.begincolumn, line: first.location.beginline };
+		return { column: first.location.beginColumn, line: first.location.beginLine };
 	}
 
 	// Empty body — use the block's own start position so the probe
 	// inserter can place __cov_f / __cov_b inside the empty body.
-	return { column: block.location.begincolumn, line: block.location.beginline };
+	return { column: block.location.beginColumn, line: block.location.beginLine };
 }
 
 function extractExprName(expr: AstExpr): string {

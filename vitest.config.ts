@@ -6,6 +6,10 @@ export default defineConfig({
 		{
 			name: "luau-raw",
 			load(id) {
+				if (id.endsWith(".lua")) {
+					return "export default {};";
+				}
+
 				if (!id.endsWith(".luau")) {
 					return;
 				}

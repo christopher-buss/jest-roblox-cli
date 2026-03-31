@@ -3,6 +3,7 @@ import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { type } from "arktype";
 import assert from "node:assert";
 import * as fs from "node:fs";
+import * as path from "node:path";
 
 import type { CoverageManifest, RawCoverageData } from "./types.ts";
 
@@ -93,6 +94,8 @@ interface MappedPosition {
 interface FileResources {
 	coverageMap: typeof coverageMapSchema.infer;
 	sourceKey: string;
+	/** Directory containing the source map, used to resolve relative source paths. */
+	sourceMapDirectory: string;
 	traceMap: TraceMap | undefined;
 }
 
@@ -106,6 +109,7 @@ interface MappedArmLocations {
 
 interface SourceMapped {
 	coverageMap: FileResources["coverageMap"];
+	sourceMapDirectory: string;
 	traceMap: TraceMap;
 }
 
@@ -133,7 +137,11 @@ export function mapCoverageToTypeScript(
 			passthroughFileFunctions(resources, fileCoverage, pendingFunctions);
 			passthroughFileBranches(resources, fileCoverage, pendingBranches);
 		} else {
-			const mapped = { coverageMap: resources.coverageMap, traceMap: resources.traceMap };
+			const mapped = {
+				coverageMap: resources.coverageMap,
+				sourceMapDirectory: resources.sourceMapDirectory,
+				traceMap: resources.traceMap,
+			};
 			const resolvedTsPaths = mapFileStatements(mapped, fileCoverage, pendingStatements);
 			mapFileFunctions(mapped, fileCoverage, pendingFunctions, resolvedTsPaths);
 			mapFileBranches(mapped, fileCoverage, pendingBranches);
@@ -167,7 +175,9 @@ function loadFileResources(record: CoverageManifest["files"][string]): FileResou
 		// No source map — native Luau file, passthrough mode
 	}
 
-	return { coverageMap: parsed, sourceKey: record.key, traceMap };
+	const sourceMapDirectory = path.posix.dirname(record.sourceMapPath);
+
+	return { coverageMap: parsed, sourceKey: record.key, sourceMapDirectory, traceMap };
 }
 
 // --- Passthrough helpers for native Luau (no source map) ---
@@ -304,9 +314,26 @@ function passthroughFileBranches(
 	}
 }
 
+/**
+ * Resolves a source path from a source map against the source map's directory.
+ * Source maps produce paths relative to the .map file (e.g.,
+ * `../../../packages/src/file.ts` from `out/packages/src/file.lua.map`).
+ * Joining with the map directory normalizes these to cwd-relative paths.
+ * Paths that are already cwd-relative (no `..` prefix) pass through unchanged.
+ */
+function resolveSourcePath(source: string, sourceMapDirectory: string): string {
+	const normalized = source.replaceAll("\\", "/");
+	if (!normalized.startsWith("..")) {
+		return normalized;
+	}
+
+	return path.posix.normalize(path.posix.join(sourceMapDirectory, normalized));
+}
+
 function mapStatement(
 	traceMap: TraceMap,
 	span: { end: { column: number; line: number }; start: { column: number; line: number } },
+	sourceMapDirectory: string,
 ): undefined | { end: MappedPosition; start: MappedPosition } {
 	// Luau columns are 1-based, source maps expect 0-based
 	const mappedStart = originalPositionFor(traceMap, {
@@ -329,16 +356,17 @@ function mapStatement(
 
 	// trace-mapping guarantees column/line are non-null
 	// when source is non-null
+	const resolvedSource = resolveSourcePath(mappedStart.source, sourceMapDirectory);
 	return {
 		end: {
 			column: mappedEnd.column,
 			line: mappedEnd.line,
-			source: mappedEnd.source,
+			source: resolvedSource,
 		},
 		start: {
 			column: mappedStart.column,
 			line: mappedStart.line,
-			source: mappedStart.source,
+			source: resolvedSource,
 		},
 	};
 }
@@ -404,7 +432,7 @@ function mapFileStatements(
 
 		const hitCount = fileCoverage.s[statementId] ?? 0;
 
-		const mapped = mapStatement(resources.traceMap, span);
+		const mapped = mapStatement(resources.traceMap, span, resources.sourceMapDirectory);
 		if (mapped === undefined) {
 			continue;
 		}
@@ -434,7 +462,11 @@ function mapFileFunctions(
 
 		const hitCount = fileCoverage.f?.[functionId] ?? 0;
 
-		const mapped = mapStatement(resources.traceMap, entry.location);
+		const mapped = mapStatement(
+			resources.traceMap,
+			entry.location,
+			resources.sourceMapDirectory,
+		);
 
 		if (mapped !== undefined) {
 			const tsPath = mapped.start.source;
@@ -487,6 +519,7 @@ function mapFileFunctions(
 function mapBranchArmLocations(
 	traceMap: TraceMap,
 	rawLocations: Array<Record<string, unknown>>,
+	sourceMapDirectory: string,
 ): MappedArmLocations | undefined {
 	const mappedLocations: MappedArmLocations["locations"] = [];
 	let tsPath: string | undefined;
@@ -497,7 +530,7 @@ function mapBranchArmLocations(
 			return undefined;
 		}
 
-		const mapped = mapStatement(traceMap, location);
+		const mapped = mapStatement(traceMap, location, sourceMapDirectory);
 		if (mapped === undefined) {
 			return undefined;
 		}
@@ -538,7 +571,11 @@ function mapFileBranches(
 
 		const armHitCounts = fileCoverage.b?.[branchId] ?? [];
 
-		const result = mapBranchArmLocations(resources.traceMap, entry.locations);
+		const result = mapBranchArmLocations(
+			resources.traceMap,
+			entry.locations,
+			resources.sourceMapDirectory,
+		);
 		if (result === undefined) {
 			continue;
 		}

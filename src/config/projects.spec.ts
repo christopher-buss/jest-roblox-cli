@@ -27,6 +27,16 @@ vi.mock<typeof import("c12")>(import("c12"), async (importOriginal) => {
 	};
 });
 
+vi.mock<typeof import("../executor.ts")>(import("../executor.ts"), async (importOriginal) => {
+	const actual = await importOriginal();
+	return {
+		...actual,
+		resolveTsconfigDirectories: vi
+			.fn<typeof actual.resolveTsconfigDirectories>()
+			.mockReturnValue({ outDir: "out", rootDir: "src" }),
+	};
+});
+
 vi.mock<typeof import("./luau-config-loader.ts")>(
 	import("./luau-config-loader.ts"),
 	async (importOriginal) => {
@@ -736,6 +746,159 @@ describe(loadProjectConfigFile, () => {
 		await expect(loadProjectConfigFile("./no-name.config.ts", "/project")).rejects.toThrow(
 			'Project config file "./no-name.config.ts" must have a displayName',
 		);
+	});
+
+	it("should derive include from testMatch when include is missing", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "shared",
+				testMatch: ["**/__tests__/**/*.test"],
+			} as unknown as ProjectTestConfig,
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("./shared/jest.config.ts", "/project");
+
+		expect(result.include).toStrictEqual([
+			"shared/**/__tests__/**/*.test.ts",
+			"shared/**/__tests__/**/*.test.tsx",
+		]);
+	});
+
+	it("should leave include undefined when neither include nor testMatch is set", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "minimal",
+			} as unknown as ProjectTestConfig,
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("./minimal.config.ts", "/project");
+
+		expect((result as unknown as Record<string, unknown>)["include"]).toBeUndefined();
+	});
+
+	it("should derive outDir from config path for roblox-ts projects", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "shared",
+				testMatch: ["**/__tests__/**/*.test"],
+			} as unknown as ProjectTestConfig,
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project");
+
+		expect(result.outDir).toBe("out/shared");
+	});
+
+	it("should not derive outDir when tsconfig has no rootDir/outDir", async () => {
+		expect.assertions(1);
+
+		const { resolveTsconfigDirectories } = await import("../executor.ts");
+		vi.mocked(resolveTsconfigDirectories).mockReturnValueOnce({
+			outDir: undefined,
+			rootDir: undefined,
+		});
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "luau-only",
+				testMatch: ["**/*.spec"],
+			} as unknown as ProjectTestConfig,
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project");
+
+		expect(result.outDir).toBeUndefined();
+	});
+
+	it("should not derive outDir when config path is not under src/", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "lib",
+				testMatch: ["**/*.spec"],
+			} as unknown as ProjectTestConfig,
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("packages/lib/jest.config.ts", "/project");
+
+		expect(result.outDir).toBeUndefined();
+	});
+
+	it("should keep testMatch patterns that already have source extensions", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "mixed",
+				testMatch: ["**/*.spec.ts", "**/*.test"],
+			} as unknown as ProjectTestConfig,
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("./shared/mixed.config.ts", "/project");
+
+		expect(result.include).toStrictEqual([
+			"shared/**/*.spec.ts",
+			"shared/**/*.test.ts",
+			"shared/**/*.test.tsx",
+		]);
+	});
+
+	it("should not override include when already provided", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "client",
+				include: ["src/client/**/*.spec.ts"],
+				testMatch: ["**/*.spec"],
+			} as ProjectTestConfig,
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("./client.config.ts", "/project");
+
+		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
 	});
 
 	it("should load Luau config when jest.config.luau exists", async () => {

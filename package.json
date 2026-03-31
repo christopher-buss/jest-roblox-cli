@@ -33,6 +33,7 @@
 	"files": [
 		"bin",
 		"dist",
+		"loaders",
 		"plugin",
 		"!dist/**/*.map",
 		"!dist/**/*.tsbuildinfo"
@@ -53,7 +54,7 @@
 	"dependencies": {
 		"@jridgewell/trace-mapping": "0.3.31",
 		"@roblox-ts/rojo-resolver": "1.1.0",
-		"arktype": "2.1.29",
+		"arktype": "2.2.0",
 		"c12": "4.0.0-beta.4",
 		"confbox": "0.2.4",
 		"defu": "6.1.4",
@@ -79,25 +80,25 @@
 		"@types/istanbul-lib-coverage": "2.0.6",
 		"@types/istanbul-lib-report": "3.0.3",
 		"@types/istanbul-reports": "3.0.4",
-		"@types/node": "24.10.13",
+		"@types/node": "24.12.0",
 		"@types/picomatch": "4.0.2",
 		"@types/ws": "8.5.13",
 		"@typescript/native-preview": "7.0.0-dev.20260325.1",
-		"@vitest/coverage-v8": "4.1.0",
+		"@vitest/coverage-v8": "4.1.2",
 		"@vitest/eslint-plugin": "1.6.13",
 		"better-typescript-lib": "2.12.0",
 		"bumpp": "10.4.1",
 		"eslint": "9.39.2",
 		"eslint-plugin-jest-extended": "3.0.1",
-		"eslint-plugin-n": "17.23.1",
-		"eslint-plugin-pnpm": "1.4.3",
+		"eslint-plugin-n": "17.24.0",
+		"eslint-plugin-pnpm": "1.6.0",
 		"jest-extended": "7.0.0",
 		"memfs": "4.56.11",
 		"publint": "0.3.18",
 		"tsdown": "0.21.5",
 		"type-fest": "5.2.0",
 		"typescript": "5.9.3",
-		"vitest": "4.1.0"
+		"vitest": "4.1.2"
 	},
 	"packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
 	"engines": {

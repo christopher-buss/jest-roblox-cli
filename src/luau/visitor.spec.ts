@@ -45,7 +45,7 @@ import type {
 import type { LuauVisitor } from "./visitor.ts";
 import { visitBlock, visitExpression, visitStatement } from "./visitor.ts";
 
-const span: LuauSpan = { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 };
+const span: LuauSpan = { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 };
 
 function emptyBlock(): AstStatBlock {
 	return { kind: "stat", location: span, statements: [], tag: "block" };

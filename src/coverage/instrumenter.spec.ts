@@ -19,7 +19,7 @@ vi.mock(import("node:fs"), async () => {
 
 const EMPTY_AST = {
 	kind: "stat",
-	location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+	location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 	statements: [],
 	tag: "block",
 };
@@ -255,11 +255,11 @@ describe(instrument, () => {
 
 			const astWithStatement = {
 				kind: "stat",
-				location: { begincolumn: 1, beginline: 1, endcolumn: 12, endline: 1 },
+				location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
 				statements: [
 					{
 						kind: "stat",
-						location: { begincolumn: 1, beginline: 1, endcolumn: 12, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
 						tag: "local",
 						values: [],
 						variables: [],

@@ -35,11 +35,11 @@ describe("covmap-builder", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 12, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
 					},
 					{
 						index: 2,
-						location: { begincolumn: 1, beginline: 2, endcolumn: 9, endline: 2 },
+						location: { beginColumn: 1, beginLine: 2, endColumn: 9, endLine: 2 },
 					},
 				],
 			} satisfies CollectorResult;
@@ -67,7 +67,7 @@ describe("covmap-builder", () => {
 						bodyFirstColumn: 5,
 						bodyFirstLine: 2,
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 4, endline: 3 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 3 },
 					},
 				],
 			} satisfies CollectorResult;
@@ -96,20 +96,20 @@ describe("covmap-builder", () => {
 								bodyFirstColumn: 5,
 								bodyFirstLine: 2,
 								location: {
-									begincolumn: 13,
-									beginline: 1,
-									endcolumn: 1,
-									endline: 3,
+									beginColumn: 13,
+									beginLine: 1,
+									endColumn: 1,
+									endLine: 3,
 								},
 							},
 							{
 								bodyFirstColumn: 5,
 								bodyFirstLine: 4,
 								location: {
-									begincolumn: 5,
-									beginline: 3,
-									endcolumn: 1,
-									endline: 5,
+									beginColumn: 5,
+									beginLine: 3,
+									endColumn: 1,
+									endLine: 5,
 								},
 							},
 						],

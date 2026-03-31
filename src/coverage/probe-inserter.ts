@@ -25,8 +25,8 @@ function collectProbes(result: CollectorResult): Array<ProbeInfo> {
 
 	for (const stmt of result.statements) {
 		probes.push({
-			column: stmt.location.begincolumn,
-			line: stmt.location.beginline,
+			column: stmt.location.beginColumn,
+			line: stmt.location.beginLine,
 			text: `__cov_s[${stmt.index}] += 1; `,
 		});
 	}
@@ -66,13 +66,13 @@ function collectProbes(result: CollectorResult): Array<ProbeInfo> {
 		// Prefix: wrap expression start with __cov_br(bi, ai,
 		probes.push(
 			{
-				column: probe.exprLocation.begincolumn,
-				line: probe.exprLocation.beginline,
+				column: probe.exprLocation.beginColumn,
+				line: probe.exprLocation.beginLine,
 				text: `__cov_br(${probe.branchIndex}, ${probe.armIndex}, `,
 			},
 			{
-				column: probe.exprLocation.endcolumn,
-				line: probe.exprLocation.endline,
+				column: probe.exprLocation.endColumn,
+				line: probe.exprLocation.endLine,
 				text: ")",
 			},
 		);

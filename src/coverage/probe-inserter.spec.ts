@@ -35,11 +35,11 @@ describe("probe-inserter", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 12, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
 					},
 					{
 						index: 2,
-						location: { begincolumn: 1, beginline: 2, endcolumn: 9, endline: 2 },
+						location: { beginColumn: 1, beginLine: 2, endColumn: 9, endLine: 2 },
 					},
 				],
 			};
@@ -63,17 +63,17 @@ describe("probe-inserter", () => {
 						bodyFirstColumn: 5,
 						bodyFirstLine: 2,
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 4, endline: 3 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 3 },
 					},
 				],
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 4, endline: 3 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 3 },
 					},
 					{
 						index: 2,
-						location: { begincolumn: 5, beginline: 2, endcolumn: 16, endline: 2 },
+						location: { beginColumn: 5, beginLine: 2, endColumn: 16, endLine: 2 },
 					},
 				],
 			};
@@ -97,20 +97,20 @@ describe("probe-inserter", () => {
 								bodyFirstColumn: 5,
 								bodyFirstLine: 2,
 								location: {
-									begincolumn: 13,
-									beginline: 1,
-									endcolumn: 1,
-									endline: 3,
+									beginColumn: 13,
+									beginLine: 1,
+									endColumn: 1,
+									endLine: 3,
 								},
 							},
 							{
 								bodyFirstColumn: 5,
 								bodyFirstLine: 4,
 								location: {
-									begincolumn: 5,
-									beginline: 3,
-									endcolumn: 1,
-									endline: 5,
+									beginColumn: 5,
+									beginLine: 3,
+									endColumn: 1,
+									endLine: 5,
 								},
 							},
 						],
@@ -121,15 +121,15 @@ describe("probe-inserter", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 4, endline: 5 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 5 },
 					},
 					{
 						index: 2,
-						location: { begincolumn: 5, beginline: 2, endcolumn: 16, endline: 2 },
+						location: { beginColumn: 5, beginLine: 2, endColumn: 16, endLine: 2 },
 					},
 					{
 						index: 3,
-						location: { begincolumn: 5, beginline: 4, endcolumn: 16, endline: 4 },
+						location: { beginColumn: 5, beginLine: 4, endColumn: 16, endLine: 4 },
 					},
 				],
 			};
@@ -154,20 +154,20 @@ describe("probe-inserter", () => {
 								bodyFirstColumn: 3,
 								bodyFirstLine: 2,
 								location: {
-									begincolumn: 13,
-									beginline: 1,
-									endcolumn: 1,
-									endline: 3,
+									beginColumn: 13,
+									beginLine: 1,
+									endColumn: 1,
+									endLine: 3,
 								},
 							},
 							{
 								bodyFirstColumn: 0,
 								bodyFirstLine: 0,
 								location: {
-									begincolumn: 1,
-									beginline: 1,
-									endcolumn: 1,
-									endline: 1,
+									beginColumn: 1,
+									beginLine: 1,
+									endColumn: 1,
+									endLine: 1,
 								},
 							},
 						],
@@ -179,11 +179,11 @@ describe("probe-inserter", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 4, endline: 3 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 3 },
 					},
 					{
 						index: 2,
-						location: { begincolumn: 3, beginline: 2, endcolumn: 14, endline: 2 },
+						location: { beginColumn: 3, beginLine: 2, endColumn: 14, endLine: 2 },
 					},
 				],
 			};
@@ -202,7 +202,7 @@ describe("probe-inserter", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 2, endcolumn: 12, endline: 2 },
+						location: { beginColumn: 1, beginLine: 2, endColumn: 12, endLine: 2 },
 					},
 				],
 			};
@@ -222,7 +222,7 @@ describe("probe-inserter", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 12, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
 					},
 				],
 			};
@@ -244,13 +244,13 @@ describe("probe-inserter", () => {
 						bodyFirstColumn: 23,
 						bodyFirstLine: 1,
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 26, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
 					},
 				],
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 26, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
 					},
 				],
 			};
@@ -272,13 +272,13 @@ describe("probe-inserter", () => {
 						bodyFirstColumn: 0,
 						bodyFirstLine: 0,
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 26, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
 					},
 				],
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 26, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 26, endLine: 1 },
 					},
 				],
 			};
@@ -303,20 +303,20 @@ describe("probe-inserter", () => {
 								bodyFirstColumn: 0,
 								bodyFirstLine: 0,
 								location: {
-									begincolumn: 24,
-									beginline: 1,
-									endcolumn: 25,
-									endline: 1,
+									beginColumn: 24,
+									beginLine: 1,
+									endColumn: 25,
+									endLine: 1,
 								},
 							},
 							{
 								bodyFirstColumn: 0,
 								bodyFirstLine: 0,
 								location: {
-									begincolumn: 31,
-									beginline: 1,
-									endcolumn: 32,
-									endline: 1,
+									beginColumn: 31,
+									beginLine: 1,
+									endColumn: 32,
+									endLine: 1,
 								},
 							},
 						],
@@ -328,18 +328,18 @@ describe("probe-inserter", () => {
 					{
 						armIndex: 1,
 						branchIndex: 1,
-						exprLocation: { begincolumn: 24, beginline: 1, endcolumn: 25, endline: 1 },
+						exprLocation: { beginColumn: 24, beginLine: 1, endColumn: 25, endLine: 1 },
 					},
 					{
 						armIndex: 2,
 						branchIndex: 1,
-						exprLocation: { begincolumn: 31, beginline: 1, endcolumn: 32, endline: 1 },
+						exprLocation: { beginColumn: 31, beginLine: 1, endColumn: 32, endLine: 1 },
 					},
 				],
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 32, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 32, endLine: 1 },
 					},
 				],
 			};
@@ -365,30 +365,30 @@ describe("probe-inserter", () => {
 								bodyFirstColumn: 0,
 								bodyFirstLine: 0,
 								location: {
-									begincolumn: 21,
-									beginline: 1,
-									endcolumn: 22,
-									endline: 1,
+									beginColumn: 21,
+									beginLine: 1,
+									endColumn: 22,
+									endLine: 1,
 								},
 							},
 							{
 								bodyFirstColumn: 0,
 								bodyFirstLine: 0,
 								location: {
-									begincolumn: 37,
-									beginline: 1,
-									endcolumn: 38,
-									endline: 1,
+									beginColumn: 37,
+									beginLine: 1,
+									endColumn: 38,
+									endLine: 1,
 								},
 							},
 							{
 								bodyFirstColumn: 0,
 								bodyFirstLine: 0,
 								location: {
-									begincolumn: 44,
-									beginline: 1,
-									endcolumn: 45,
-									endline: 1,
+									beginColumn: 44,
+									beginLine: 1,
+									endColumn: 45,
+									endLine: 1,
 								},
 							},
 						],
@@ -400,23 +400,23 @@ describe("probe-inserter", () => {
 					{
 						armIndex: 1,
 						branchIndex: 1,
-						exprLocation: { begincolumn: 21, beginline: 1, endcolumn: 22, endline: 1 },
+						exprLocation: { beginColumn: 21, beginLine: 1, endColumn: 22, endLine: 1 },
 					},
 					{
 						armIndex: 2,
 						branchIndex: 1,
-						exprLocation: { begincolumn: 37, beginline: 1, endcolumn: 38, endline: 1 },
+						exprLocation: { beginColumn: 37, beginLine: 1, endColumn: 38, endLine: 1 },
 					},
 					{
 						armIndex: 3,
 						branchIndex: 1,
-						exprLocation: { begincolumn: 44, beginline: 1, endcolumn: 45, endline: 1 },
+						exprLocation: { beginColumn: 44, beginLine: 1, endColumn: 45, endLine: 1 },
 					},
 				],
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 45, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 45, endLine: 1 },
 					},
 				],
 			};
@@ -437,7 +437,7 @@ describe("probe-inserter", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 12, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
 					},
 				],
 			};
@@ -460,10 +460,10 @@ describe("probe-inserter", () => {
 								bodyFirstColumn: 10,
 								bodyFirstLine: 1,
 								location: {
-									begincolumn: 10,
-									beginline: 1,
-									endcolumn: 1,
-									endline: 3,
+									beginColumn: 10,
+									beginLine: 1,
+									endColumn: 1,
+									endLine: 3,
 								},
 							},
 						],
@@ -474,7 +474,7 @@ describe("probe-inserter", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 4, endline: 3 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 3 },
 					},
 				],
 			};
@@ -493,11 +493,11 @@ describe("probe-inserter", () => {
 				statements: [
 					{
 						index: 1,
-						location: { begincolumn: 1, beginline: 1, endcolumn: 12, endline: 1 },
+						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
 					},
 					{
 						index: 2,
-						location: { begincolumn: 1, beginline: 2, endcolumn: 9, endline: 2 },
+						location: { beginColumn: 1, beginLine: 2, endColumn: 9, endLine: 2 },
 					},
 				],
 			};

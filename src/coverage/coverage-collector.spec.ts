@@ -20,12 +20,12 @@ import type {
 import { collectCoverage } from "./coverage-collector.ts";
 
 function span(
-	beginline: number,
-	begincolumn: number,
-	endline: number,
-	endcolumn: number,
+	beginLine: number,
+	beginColumn: number,
+	endLine: number,
+	endColumn: number,
 ): LuauSpan {
-	return { begincolumn, beginline, endcolumn, endline };
+	return { beginColumn, beginLine, endColumn, endLine };
 }
 
 function emptyBlock(location?: LuauSpan): AstStatBlock {
@@ -372,7 +372,7 @@ describe("coverage-collector", () => {
 			expect(result.branches[0]?.arms).toHaveLength(2);
 			expect(result.implicitElseProbes).toHaveLength(1);
 			expect(result.implicitElseProbes[0]?.endLine).toBe(3);
-			// endcolumn - 3 (length of "end")
+			// endColumn - 3 (length of "end")
 			expect(result.implicitElseProbes[0]?.endColumn).toBe(1);
 		});
 

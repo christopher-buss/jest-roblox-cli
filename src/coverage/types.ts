@@ -46,6 +46,15 @@ export interface InstrumentedFileRecord {
 }
 
 /**
+ * Metadata for a non-instrumented file (spec/test/snap) tracked by the cache.
+ */
+export interface NonInstrumentedFileRecord {
+	shadowPath: string;
+	sourceHash: string;
+	sourcePath: string;
+}
+
+/**
  * Manifest emitted by `jest-roblox instrument`.
  */
 export interface CoverageManifest {
@@ -53,6 +62,7 @@ export interface CoverageManifest {
 	generatedAt: string;
 	instrumenterVersion: number;
 	luauRoots: Array<string>;
+	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 	placeFilePath?: string;
 	shadowDir: string;
 	version: 1;

@@ -146,6 +146,101 @@ describe(mapCoverageToTypeScript, () => {
 		});
 	});
 
+	describe("with source-map-relative paths", () => {
+		it("should resolve ../  paths relative to source map location", () => {
+			expect.assertions(2);
+
+			// roblox-ts source maps produce paths relative to the .lua.map file,
+			// e.g., ../../../packages/src/player.ts from
+			// out/packages/src/player.lua.map. The mapper should resolve these to
+			// cwd-relative paths so that collectCoverageFrom glob patterns can
+			// match them.
+			const coverageMap = createCoverageMap({
+				"0": {
+					end: { column: 20, line: 5 },
+					start: { column: 1, line: 5 },
+				},
+			});
+
+			setupFs({
+				"out/packages/src/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/packages/src/player.luau.map": '{"version":3}',
+			});
+
+			setupSourceMapMappings({
+				"5:0": { column: 0, line: 3, source: "../../../packages/src/player.ts" },
+				"5:19": { column: 25, line: 3, source: "../../../packages/src/player.ts" },
+			});
+
+			const manifest = createManifest({
+				"out/packages/src/player.luau": {
+					key: "out/packages/src/player.luau",
+					coverageMapPath: "out/packages/src/player.luau.cov-map.json",
+					instrumentedLuauPath: ".jest-roblox-coverage/out/packages/src/player.luau",
+					originalLuauPath: "out/packages/src/player.luau",
+					sourceHash: "abc123",
+					sourceMapPath: "out/packages/src/player.luau.map",
+					statementCount: 1,
+				},
+			});
+
+			const coverageData: RawCoverageData = {
+				"out/packages/src/player.luau": { s: { "0": 3 } },
+			};
+
+			const result = mapCoverageToTypeScript(coverageData, manifest);
+
+			// Should resolve to cwd-relative path, not raw source map relative
+			// path
+			expect(result.files["packages/src/player.ts"]).toBeDefined();
+			expect(result.files["../../../packages/src/player.ts"]).toBeUndefined();
+		});
+
+		it("should normalize Windows backslash paths from source maps", () => {
+			expect.assertions(2);
+
+			// roblox-ts on Windows produces source maps with backslash paths
+			// like ..\\src\\player.ts instead of ../src/player.ts
+			const coverageMap = createCoverageMap({
+				"0": {
+					end: { column: 20, line: 5 },
+					start: { column: 1, line: 5 },
+				},
+			});
+
+			setupFs({
+				"out/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/player.luau.map": '{"version":3}',
+			});
+
+			setupSourceMapMappings({
+				"5:0": { column: 0, line: 3, source: "..\\src\\player.ts" },
+				"5:19": { column: 25, line: 3, source: "..\\src\\player.ts" },
+			});
+
+			const manifest = createManifest({
+				"out/player.luau": {
+					key: "out/player.luau",
+					coverageMapPath: "out/player.luau.cov-map.json",
+					instrumentedLuauPath: ".jest-roblox-coverage/out/player.luau",
+					originalLuauPath: "out/player.luau",
+					sourceHash: "abc123",
+					sourceMapPath: "out/player.luau.map",
+					statementCount: 1,
+				},
+			});
+
+			const coverageData: RawCoverageData = {
+				"out/player.luau": { s: { "0": 3 } },
+			};
+
+			const result = mapCoverageToTypeScript(coverageData, manifest);
+
+			expect(result.files["src/player.ts"]).toBeDefined();
+			expect(result.files["..\\src\\player.ts"]).toBeUndefined();
+		});
+	});
+
 	describe("with unmapped statements", () => {
 		it("should skip statements that have no source map mapping", () => {
 			expect.assertions(2);

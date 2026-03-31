@@ -9,7 +9,7 @@ vi.mock<typeof import("node:child_process")>(import("node:child_process"));
 vi.mock<typeof import("node:fs")>(import("node:fs"));
 
 function toLiteralNode(value: unknown): Record<string, unknown> {
-	const location = { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 };
+	const location = { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 };
 
 	if (typeof value === "string") {
 		return { kind: "expr", location, tag: "string", text: value };
@@ -42,7 +42,7 @@ function makeAstJson(config: Record<string, unknown>): string {
 
 	return JSON.stringify({
 		kind: "stat",
-		location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+		location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 		statements: [
 			{
 				expressions: [
@@ -50,13 +50,13 @@ function makeAstJson(config: Record<string, unknown>): string {
 						node: {
 							entries,
 							kind: "expr",
-							location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+							location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 							tag: "table",
 						},
 					},
 				],
 				kind: "stat",
-				location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+				location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 				tag: "return",
 			},
 		],
@@ -145,7 +145,7 @@ describe(loadLuauConfig, () => {
 
 		const ast = JSON.stringify({
 			kind: "stat",
-			location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+			location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 			statements: [
 				{
 					expressions: [
@@ -159,7 +159,7 @@ describe(loadLuauConfig, () => {
 						},
 					],
 					kind: "stat",
-					location: { begincolumn: 1, beginline: 1, endcolumn: 1, endline: 1 },
+					location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 					tag: "return",
 				},
 			],

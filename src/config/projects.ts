@@ -1,6 +1,8 @@
 import { loadConfig as c12LoadConfig } from "c12";
 import * as path from "node:path";
 
+import type { TsconfigDirectories } from "../executor.ts";
+import { resolveTsconfigDirectories } from "../executor.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import { collectPaths } from "../utils/rojo-tree.ts";
@@ -221,6 +223,10 @@ export async function loadProjectConfigFile(
 		throw new Error(`Project config file "${filePath}" must have a displayName`);
 	}
 
+	const configDirectory = path.posix.dirname(filePath);
+	const tsconfig = resolveTsconfigDirectories(cwd);
+	deriveIncludeFromTestMatch(config, configDirectory, tsconfig);
+
 	return config;
 }
 
@@ -275,6 +281,46 @@ function mergeProjectConfig(
 	}
 
 	return merged as unknown as ResolvedConfig;
+}
+
+/**
+ * When a project config provides `testMatch` but not `include`, derive
+ * `include` by appending `.ts` and `.tsx` extensions.  This lets users
+ * write project configs with the standard Jest `testMatch` field without
+ * needing the CLI-specific `include`.
+ */
+function deriveIncludeFromTestMatch(
+	config: ProjectTestConfig,
+	configDirectory: string,
+	tsconfig: TsconfigDirectories,
+): void {
+	const raw = config as unknown as Record<string, unknown>;
+
+	if (raw["include"] !== undefined) {
+		return;
+	}
+
+	if (!Array.isArray(raw["testMatch"])) {
+		return;
+	}
+
+	config.include = (raw["testMatch"] as Array<string>).flatMap((pattern) => {
+		const withExtensions = /\.(tsx?|luau?)$/.test(pattern)
+			? [pattern]
+			: [`${pattern}.ts`, `${pattern}.tsx`];
+
+		return withExtensions.map((extension) => path.posix.join(configDirectory, extension));
+	});
+
+	// Derive outDir from tsconfig rootDir/outDir mapping so the Rojo tree
+	// mapping resolves correctly (e.g. src/shared → out/shared).
+	const { outDir, rootDir } = tsconfig;
+	if (raw["outDir"] === undefined && rootDir !== undefined && outDir !== undefined) {
+		const rootPrefix = `${rootDir}/`;
+		if (configDirectory.startsWith(rootPrefix)) {
+			config.outDir = `${outDir}/${configDirectory.slice(rootPrefix.length)}`;
+		}
+	}
 }
 
 const LUAU_BOOLEAN_KEYS: ReadonlyArray<keyof ProjectTestConfig> = [
