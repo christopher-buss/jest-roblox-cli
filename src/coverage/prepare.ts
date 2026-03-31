@@ -12,18 +12,47 @@ import { INSTRUMENTER_VERSION, instrumentRoot } from "./instrumenter.ts";
 import { buildWithRojo } from "./rojo-builder.ts";
 import type { RojoProject, RootEntry } from "./rojo-rewriter.ts";
 import { rewriteRojoProject } from "./rojo-rewriter.ts";
-import type { CoverageManifest, InstrumentedFileRecord } from "./types.ts";
+import type {
+	CoverageManifest,
+	InstrumentedFileRecord,
+	NonInstrumentedFileRecord,
+} from "./types.ts";
 
 const COVERAGE_DIR = ".jest-roblox-coverage";
+
+/**
+ * Suffixes for files that are not instrumented for coverage but still need
+ * syncing to the shadow directory. Matches parse-ast.luau:131-139.
+ */
+export const NON_INSTRUMENTED_SUFFIXES = [
+	".spec.luau",
+	".test.luau",
+	".spec.lua",
+	".test.lua",
+	".snap.luau",
+	".snap.lua",
+] as const;
+
+/** Previous manifests may lack nonInstrumentedFiles (pre-fix). */
+type PreviousManifest = Omit<CoverageManifest, "nonInstrumentedFiles"> & {
+	nonInstrumentedFiles?: CoverageManifest["nonInstrumentedFiles"];
+};
+
+export function isNonInstrumentedFile(filename: string): boolean {
+	return NON_INSTRUMENTED_SUFFIXES.some((suffix) => filename.endsWith(suffix));
+}
 
 const previousManifestSchema = type({
 	"files": type({ "[string]": { sourceHash: "string" } }),
 	"instrumenterVersion": "number",
 	"luauRoots": "string[]",
+	"nonInstrumentedFiles?": type({
+		"[string]": { shadowPath: "string", sourceHash: "string", sourcePath: "string" },
+	}),
 	"placeFilePath?": "string",
 	"shadowDir": "string",
 	"version": "number",
-}).as<CoverageManifest>();
+}).as<PreviousManifest>();
 
 export interface PrepareCoverageResult {
 	manifest: CoverageManifest;
@@ -33,7 +62,21 @@ export interface PrepareCoverageResult {
 interface InstrumentRootResult {
 	changed: boolean;
 	files: Record<string, InstrumentedFileRecord>;
+	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 	rootEntry: RootEntry;
+}
+
+interface WriteManifestOptions {
+	allFiles: Record<string, InstrumentedFileRecord>;
+	luauRoots: Array<string>;
+	manifestPath: string;
+	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
+	placeFile: string;
+}
+
+interface SyncResult {
+	changed: boolean;
+	files: Record<string, NonInstrumentedFileRecord>;
 }
 
 export function collectLuauRootsFromRojo(
@@ -88,6 +131,7 @@ export function prepareCoverage(
 	}
 
 	const allFiles: Record<string, InstrumentedFileRecord> = {};
+	const allNonInstrumented: Record<string, NonInstrumentedFileRecord> = {};
 	const roots: Array<RootEntry> = [];
 	let hasChanges = !useIncremental;
 
@@ -99,6 +143,7 @@ export function prepareCoverage(
 		}
 
 		Object.assign(allFiles, rootResult.files);
+		Object.assign(allNonInstrumented, rootResult.nonInstrumentedFiles);
 		roots.push(rootResult.rootEntry);
 	}
 
@@ -119,7 +164,13 @@ export function prepareCoverage(
 	}
 
 	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
-	const manifest = writeManifest(manifestPath, allFiles, luauRoots, placeFile);
+	const manifest = writeManifest({
+		allFiles,
+		luauRoots,
+		manifestPath,
+		nonInstrumentedFiles: allNonInstrumented,
+		placeFile,
+	});
 
 	if (!hasChanges && previousManifest?.placeFilePath !== undefined) {
 		return { manifest, placeFile: previousManifest.placeFilePath };
@@ -212,7 +263,7 @@ function validateRelativeRoots(luauRoots: Array<string>): void {
 	}
 }
 
-function computeSkipFiles(luauRoot: string, previousManifest: CoverageManifest): Set<string> {
+function computeSkipFiles(luauRoot: string, previousManifest: PreviousManifest): Set<string> {
 	const skipFiles = new Set<string>();
 	const posixRoot = luauRoot.replaceAll("\\", "/");
 
@@ -237,7 +288,7 @@ function computeSkipFiles(luauRoot: string, previousManifest: CoverageManifest):
 	return skipFiles;
 }
 
-function countPreviousFilesForRoot(luauRoot: string, previousManifest: CoverageManifest): number {
+function countPreviousFilesForRoot(luauRoot: string, previousManifest: PreviousManifest): number {
 	const posixRoot = luauRoot.replaceAll("\\", "/");
 	let count = 0;
 	for (const fileKey of Object.keys(previousManifest.files)) {
@@ -251,7 +302,7 @@ function countPreviousFilesForRoot(luauRoot: string, previousManifest: CoverageM
 
 function carryForwardRecords(
 	luauRoot: string,
-	previousManifest: CoverageManifest,
+	previousManifest: PreviousManifest,
 	allFiles: Record<string, InstrumentedFileRecord>,
 	skipFiles: Set<string>,
 ): void {
@@ -263,10 +314,106 @@ function carryForwardRecords(
 	}
 }
 
+function discoverNonInstrumentedFiles(
+	directory: string,
+	relativeTo: string,
+	results: Array<string>,
+): void {
+	const entries = fs.readdirSync(directory, { withFileTypes: true });
+	for (const entry of entries) {
+		const fullPath = path.join(directory, entry.name).replaceAll("\\", "/");
+		if (entry.isDirectory()) {
+			if (entry.name === "node_modules" || entry.name === COVERAGE_DIR) {
+				continue;
+			}
+
+			if (entry.name.startsWith(".")) {
+				continue;
+			}
+
+			discoverNonInstrumentedFiles(fullPath, relativeTo, results);
+		} else if (isNonInstrumentedFile(entry.name)) {
+			const relative = fullPath.slice(relativeTo.length + 1);
+			results.push(relative);
+		}
+	}
+}
+
+function pruneStaleNonInstrumented(
+	posixRoot: string,
+	previousNonInstrumented: Record<string, NonInstrumentedFileRecord> | undefined,
+	currentFiles: Record<string, NonInstrumentedFileRecord>,
+): boolean {
+	if (previousNonInstrumented === undefined) {
+		return false;
+	}
+
+	let changed = false;
+	for (const [fileKey, record] of Object.entries(previousNonInstrumented)) {
+		if (!fileKey.startsWith(`${posixRoot}/`)) {
+			continue;
+		}
+
+		if (fileKey in currentFiles) {
+			continue;
+		}
+
+		try {
+			if (fs.existsSync(record.shadowPath)) {
+				fs.unlinkSync(record.shadowPath);
+			}
+		} catch {
+			// Best-effort cleanup
+		}
+
+		changed = true;
+	}
+
+	return changed;
+}
+
+function syncNonInstrumentedFiles(
+	luauRoot: string,
+	shadowDirectory: string,
+	previousNonInstrumented: Record<string, NonInstrumentedFileRecord> | undefined,
+): SyncResult {
+	const posixRoot = luauRoot.replaceAll("\\", "/");
+	const discovered: Array<string> = [];
+	discoverNonInstrumentedFiles(posixRoot, posixRoot, discovered);
+
+	const files: Record<string, NonInstrumentedFileRecord> = {};
+	let changed = false;
+
+	for (const relativePath of discovered) {
+		const sourcePath = `${posixRoot}/${relativePath}`;
+		const shadowPath = `${shadowDirectory}/${relativePath}`;
+
+		const sourceBuffer = fs.readFileSync(path.resolve(sourcePath));
+		const currentHash = hashBuffer(sourceBuffer);
+
+		const previousRecord = previousNonInstrumented?.[sourcePath];
+		if (previousRecord?.sourceHash === currentHash) {
+			files[sourcePath] = previousRecord;
+			continue;
+		}
+
+		const outputDirectory = path.dirname(shadowPath);
+		fs.mkdirSync(outputDirectory, { recursive: true });
+		fs.copyFileSync(path.resolve(sourcePath), shadowPath);
+
+		files[sourcePath] = { shadowPath, sourceHash: currentHash, sourcePath };
+		changed = true;
+	}
+
+	changed = pruneStaleNonInstrumented(posixRoot, previousNonInstrumented, files) || changed;
+
+	return { changed, files };
+}
+
 function instrumentRootWithCache(
 	luauRoot: string,
 	useIncremental: boolean,
-	previousManifest: CoverageManifest | undefined,
+	previousManifest: PreviousManifest | undefined,
 ): InstrumentRootResult {
 	const shadowDirectory = path.join(COVERAGE_DIR, luauRoot).replaceAll("\\", "/");
 	let changed = false;
@@ -303,6 +450,16 @@ function instrumentRootWithCache(
 		carryForwardRecords(luauRoot, previousManifest, allFiles, skipFiles);
 	}
 
+	const syncResult = syncNonInstrumentedFiles(
+		luauRoot,
+		shadowDirectory,
+		previousManifest?.nonInstrumentedFiles,
+	);
+
+	if (syncResult.changed) {
+		changed = true;
+	}
+
 	const relocatedShadowDirectory = path
 		.relative(COVERAGE_DIR, shadowDirectory)
 		.replaceAll("\\", "/");
@@ -310,22 +467,20 @@ function instrumentRootWithCache(
 	return {
 		changed,
 		files: allFiles,
+		nonInstrumentedFiles: syncResult.files,
 		rootEntry: { luauRoot, relocatedShadowDirectory, shadowDir: shadowDirectory },
 	};
 }
 
-function writeManifest(
-	manifestPath: string,
-	allFiles: Record<string, InstrumentedFileRecord>,
-	luauRoots: Array<string>,
-	placeFile: string,
-): CoverageManifest {
+function writeManifest(options: WriteManifestOptions): CoverageManifest {
+	const { allFiles, luauRoots, manifestPath, nonInstrumentedFiles, placeFile } = options;
+
 	const manifest = {
 		files: allFiles,
 		generatedAt: new Date().toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots,
-		nonInstrumentedFiles: {},
+		nonInstrumentedFiles,
 		placeFilePath: placeFile,
 		shadowDir: COVERAGE_DIR,
 		version: 1,
@@ -362,7 +517,7 @@ function buildRojoProject(
 	buildWithRojo(rewrittenProjectPath, placeFile);
 }
 
-function loadPreviousManifest(manifestPath: string): CoverageManifest | undefined {
+function loadPreviousManifest(manifestPath: string): PreviousManifest | undefined {
 	if (!fs.existsSync(manifestPath)) {
 		return undefined;
 	}
@@ -381,7 +536,7 @@ function loadPreviousManifest(manifestPath: string): CoverageManifest | undefine
 }
 
 function canUseIncremental(
-	previousManifest: CoverageManifest | undefined,
+	previousManifest: PreviousManifest | undefined,
 	config: ResolvedConfig,
 ): boolean {
 	if (!config.cache) {
@@ -396,11 +551,17 @@ function canUseIncremental(
 		return false;
 	}
 
+	// Force cold rebuild when upgrading from a manifest that lacks
+	// nonInstrumentedFiles tracking — prevents orphaned stale test files.
+	if (previousManifest.nonInstrumentedFiles === undefined) {
+		return false;
+	}
+
 	return true;
 }
 
 function detectDeletedFiles(
-	previousManifest: CoverageManifest,
+	previousManifest: PreviousManifest,
 	currentFiles: Record<string, InstrumentedFileRecord>,
 ): Array<InstrumentedFileRecord> {
 	const deleted: Array<InstrumentedFileRecord> = [];

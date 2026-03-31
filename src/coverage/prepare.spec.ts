@@ -9,7 +9,11 @@ import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import { collectLuauRootsFromRojo, prepareCoverage, resolveLuauRoots } from "./prepare.ts";
 import type { RojoProject } from "./rojo-rewriter.ts";
-import type { CoverageManifest, InstrumentedFileRecord } from "./types.ts";
+import type {
+	CoverageManifest,
+	InstrumentedFileRecord,
+	NonInstrumentedFileRecord,
+} from "./types.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -376,6 +380,7 @@ describe(prepareCoverage, () => {
 				fileContents?: Record<string, string>;
 				previousFiles?: Record<string, InstrumentedFileRecord>;
 				previousInstrumenterVersion?: number;
+				previousNonInstrumentedFiles?: Record<string, NonInstrumentedFileRecord>;
 				previousPlaceFilePath?: string;
 			} = {},
 		) {
@@ -387,6 +392,7 @@ describe(prepareCoverage, () => {
 					}),
 				},
 				previousInstrumenterVersion = INSTRUMENTER_VERSION,
+				previousNonInstrumentedFiles = {},
 				previousPlaceFilePath = ".jest-roblox-coverage/game.rbxl",
 			} = options;
 
@@ -409,6 +415,16 @@ describe(prepareCoverage, () => {
 				vol.writeFileSync(record.coverageMapPath, "{}");
 			}
 
+			// Seed shadow dir with non-instrumented files
+			for (const record of Object.values(previousNonInstrumentedFiles)) {
+				const directory = record.shadowPath.substring(
+					0,
+					record.shadowPath.lastIndexOf("/"),
+				);
+				vol.mkdirSync(directory, { recursive: true });
+				vol.writeFileSync(record.shadowPath, "-- old spec content");
+			}
+
 			// Seed previous place file
 			if (previousPlaceFilePath) {
 				vol.writeFileSync(previousPlaceFilePath, "RBXL");
@@ -419,6 +435,7 @@ describe(prepareCoverage, () => {
 				generatedAt: new Date().toISOString(),
 				instrumenterVersion: previousInstrumenterVersion,
 				luauRoots: ["out-tsc/test"],
+				nonInstrumentedFiles: previousNonInstrumentedFiles,
 				placeFilePath: previousPlaceFilePath,
 				shadowDir: ".jest-roblox-coverage",
 				version: 1,
@@ -823,6 +840,7 @@ describe(prepareCoverage, () => {
 				generatedAt: new Date().toISOString(),
 				instrumenterVersion: INSTRUMENTER_VERSION,
 				luauRoots: ["packages/core/out", "packages/utils/out"],
+				nonInstrumentedFiles: {},
 				placeFilePath: ".jest-roblox-coverage/game.rbxl",
 				shadowDir: ".jest-roblox-coverage",
 				version: 1,
@@ -881,6 +899,371 @@ describe(prepareCoverage, () => {
 			prepareCoverage(config, beforeBuild);
 
 			expect(buildWithRojo).not.toHaveBeenCalled();
+		});
+
+		describe("when syncing non-instrumented files", () => {
+			it("should copy spec files to shadow dir on first run", async () => {
+				expect.assertions(1);
+
+				seedFilesystem();
+				vol.writeFileSync("out-tsc/test/init.spec.luau", "-- test code");
+				await setupMocks();
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				prepareCoverage(config);
+
+				expect(
+					vol.readFileSync(".jest-roblox-coverage/out-tsc/test/init.spec.luau", "utf-8"),
+				).toBe("-- test code");
+			});
+
+			it("should update changed spec files during incremental run", async () => {
+				expect.assertions(1);
+
+				const specRecord: NonInstrumentedFileRecord = {
+					shadowPath: ".jest-roblox-coverage/out-tsc/test/init.spec.luau",
+					sourceHash: sha256("-- old test"),
+					sourcePath: "out-tsc/test/init.spec.luau",
+				};
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/init.luau": "local x = 1",
+						"out-tsc/test/init.spec.luau": "-- new test",
+					},
+					previousNonInstrumentedFiles: {
+						"out-tsc/test/init.spec.luau": specRecord,
+					},
+				});
+
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				prepareCoverage(config);
+
+				expect(
+					vol.readFileSync(".jest-roblox-coverage/out-tsc/test/init.spec.luau", "utf-8"),
+				).toBe("-- new test");
+			});
+
+			it("should skip unchanged spec files during incremental run", async () => {
+				expect.assertions(1);
+
+				const specContent = "-- unchanged test";
+				const specRecord: NonInstrumentedFileRecord = {
+					shadowPath: ".jest-roblox-coverage/out-tsc/test/init.spec.luau",
+					sourceHash: sha256(specContent),
+					sourcePath: "out-tsc/test/init.spec.luau",
+				};
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/init.luau": "local x = 1",
+						"out-tsc/test/init.spec.luau": specContent,
+					},
+					previousNonInstrumentedFiles: {
+						"out-tsc/test/init.spec.luau": specRecord,
+					},
+				});
+
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				const result = prepareCoverage(config);
+
+				expect(
+					result.manifest.nonInstrumentedFiles["out-tsc/test/init.spec.luau"]?.sourceHash,
+				).toBe(sha256(specContent));
+			});
+
+			it("should detect deleted spec files and clean up shadow copies", async () => {
+				expect.assertions(2);
+
+				const specRecord: NonInstrumentedFileRecord = {
+					shadowPath: ".jest-roblox-coverage/out-tsc/test/deleted.spec.luau",
+					sourceHash: sha256("-- deleted test"),
+					sourcePath: "out-tsc/test/deleted.spec.luau",
+				};
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					previousNonInstrumentedFiles: {
+						"out-tsc/test/deleted.spec.luau": specRecord,
+					},
+				});
+				// Source file doesn't exist (not in fileContents), but shadow was
+				// seeded
+
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				const result = prepareCoverage(config);
+
+				expect(
+					result.manifest.nonInstrumentedFiles["out-tsc/test/deleted.spec.luau"],
+				).toBeUndefined();
+				expect(
+					vol.existsSync(".jest-roblox-coverage/out-tsc/test/deleted.spec.luau"),
+				).toBeFalse();
+			});
+
+			it("should set changed=true when spec file changes (triggers rojo rebuild)", async () => {
+				expect.assertions(1);
+
+				const specRecord: NonInstrumentedFileRecord = {
+					shadowPath: ".jest-roblox-coverage/out-tsc/test/init.spec.luau",
+					sourceHash: sha256("-- old test"),
+					sourcePath: "out-tsc/test/init.spec.luau",
+				};
+
+				const { buildWithRojo, instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/init.luau": "local x = 1",
+						"out-tsc/test/init.spec.luau": "-- new test",
+					},
+					previousNonInstrumentedFiles: {
+						"out-tsc/test/init.spec.luau": specRecord,
+					},
+				});
+
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				prepareCoverage(config);
+
+				expect(buildWithRojo).toHaveBeenCalledWith(expect.any(String), expect.any(String));
+			});
+
+			it("should track non-instrumented files in manifest", async () => {
+				expect.assertions(2);
+
+				seedFilesystem();
+				vol.writeFileSync("out-tsc/test/init.spec.luau", "-- test code");
+				await setupMocks();
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				const result = prepareCoverage(config);
+
+				const record = result.manifest.nonInstrumentedFiles["out-tsc/test/init.spec.luau"];
+
+				expect(record).toBeDefined();
+				expect(record?.sourceHash).toBe(sha256("-- test code"));
+			});
+
+			it("should force cold rebuild when previous manifest lacks nonInstrumentedFiles", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocks();
+
+				seedFilesystem();
+				vol.mkdirSync("out-tsc/test", { recursive: true });
+				vol.writeFileSync("out-tsc/test/init.luau", "local x = 1");
+
+				// Seed a manifest WITHOUT nonInstrumentedFiles
+				vol.mkdirSync(".jest-roblox-coverage", { recursive: true });
+				vol.writeFileSync(
+					".jest-roblox-coverage/manifest.json",
+					JSON.stringify({
+						files: {
+							"out-tsc/test/init.luau": makeFileRecord({
+								key: "out-tsc/test/init.luau",
+							}),
+						},
+						generatedAt: new Date().toISOString(),
+						instrumenterVersion: INSTRUMENTER_VERSION,
+						luauRoots: ["out-tsc/test"],
+						shadowDir: ".jest-roblox-coverage",
+						version: 1,
+					}),
+				);
+
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				prepareCoverage(config);
+
+				// Should NOT use incremental (no skipFiles)
+				const callArgs = vi.mocked(instrumentRoot).mock.calls[0]![0];
+
+				expect(callArgs.skipFiles).toBeUndefined();
+			});
+
+			it("should handle cleanup when spec shadow files are already missing", async () => {
+				expect.assertions(1);
+
+				const specRecord: NonInstrumentedFileRecord = {
+					shadowPath: ".jest-roblox-coverage/out-tsc/test/gone.spec.luau",
+					sourceHash: sha256("-- gone"),
+					sourcePath: "out-tsc/test/gone.spec.luau",
+				};
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					previousNonInstrumentedFiles: {
+						"out-tsc/test/gone.spec.luau": specRecord,
+					},
+				});
+				// Remove shadow file (simulating prior partial cleanup)
+				vol.unlinkSync(".jest-roblox-coverage/out-tsc/test/gone.spec.luau");
+
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				const result = prepareCoverage(config);
+
+				expect(
+					result.manifest.nonInstrumentedFiles["out-tsc/test/gone.spec.luau"],
+				).toBeUndefined();
+			});
+
+			it("should discover spec files in subdirectories", async () => {
+				expect.assertions(1);
+
+				seedFilesystem();
+				vol.mkdirSync("out-tsc/test/sub", { recursive: true });
+				vol.writeFileSync("out-tsc/test/sub/deep.spec.luau", "-- deep test");
+				await setupMocks();
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				const result = prepareCoverage(config);
+
+				expect(
+					result.manifest.nonInstrumentedFiles["out-tsc/test/sub/deep.spec.luau"],
+				).toBeDefined();
+			});
+
+			it("should not prune non-instrumented files from other roots", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				// Multi-root: previous manifest has a spec in packages/core/out
+				vol.mkdirSync("/project", { recursive: true });
+				vol.mkdirSync("packages/core/out", { recursive: true });
+				vol.mkdirSync("packages/utils/out", { recursive: true });
+				vol.writeFileSync("packages/core/out/init.luau", "local a = 1");
+				vol.writeFileSync("packages/core/out/init.spec.luau", "-- core spec");
+				vol.writeFileSync("packages/utils/out/init.luau", "local b = 2");
+				vol.writeFileSync("/project/default.project.json", JSON.stringify(ROJO_PROJECT));
+
+				const coreRecord = makeFileRecord({
+					key: "packages/core/out/init.luau",
+					coverageMapPath: ".jest-roblox-coverage/packages/core/out/init.cov-map.json",
+					instrumentedLuauPath: ".jest-roblox-coverage/packages/core/out/init.luau",
+					sourceHash: sha256("local a = 1"),
+				});
+				const utilsRecord = makeFileRecord({
+					key: "packages/utils/out/init.luau",
+					coverageMapPath: ".jest-roblox-coverage/packages/utils/out/init.cov-map.json",
+					instrumentedLuauPath: ".jest-roblox-coverage/packages/utils/out/init.luau",
+					sourceHash: sha256("local b = 2"),
+				});
+
+				const coreSpecRecord: NonInstrumentedFileRecord = {
+					shadowPath: ".jest-roblox-coverage/packages/core/out/init.spec.luau",
+					sourceHash: sha256("-- core spec"),
+					sourcePath: "packages/core/out/init.spec.luau",
+				};
+
+				for (const record of [coreRecord, utilsRecord]) {
+					const directory = record.instrumentedLuauPath.substring(
+						0,
+						record.instrumentedLuauPath.lastIndexOf("/"),
+					);
+					vol.mkdirSync(directory, { recursive: true });
+					vol.writeFileSync(record.instrumentedLuauPath, "-- instrumented");
+					vol.writeFileSync(record.coverageMapPath, "{}");
+				}
+
+				vol.mkdirSync(".jest-roblox-coverage/packages/core/out", { recursive: true });
+				vol.writeFileSync(coreSpecRecord.shadowPath, "-- core spec");
+				vol.writeFileSync(".jest-roblox-coverage/game.rbxl", "RBXL");
+
+				seedPreviousManifest({
+					files: {
+						"packages/core/out/init.luau": coreRecord,
+						"packages/utils/out/init.luau": utilsRecord,
+					},
+					generatedAt: new Date().toISOString(),
+					instrumenterVersion: INSTRUMENTER_VERSION,
+					luauRoots: ["packages/core/out", "packages/utils/out"],
+					nonInstrumentedFiles: {
+						"packages/core/out/init.spec.luau": coreSpecRecord,
+					},
+					placeFilePath: ".jest-roblox-coverage/game.rbxl",
+					shadowDir: ".jest-roblox-coverage",
+					version: 1,
+				});
+
+				const config = makeConfig({
+					luauRoots: ["packages/core/out", "packages/utils/out"],
+				});
+
+				const result = prepareCoverage(config);
+
+				// Core spec should still be tracked (not pruned by utils root
+				// processing)
+				expect(
+					result.manifest.nonInstrumentedFiles["packages/core/out/init.spec.luau"],
+				).toBeDefined();
+			});
+
+			it("should skip node_modules and dot directories when discovering spec files", async () => {
+				expect.assertions(2);
+
+				seedFilesystem();
+				vol.mkdirSync("out-tsc/test/node_modules", { recursive: true });
+				vol.writeFileSync("out-tsc/test/node_modules/mod.spec.luau", "-- ignored");
+				vol.mkdirSync("out-tsc/test/.hidden", { recursive: true });
+				vol.writeFileSync("out-tsc/test/.hidden/secret.spec.luau", "-- ignored");
+				await setupMocks();
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				const result = prepareCoverage(config);
+
+				expect(
+					result.manifest.nonInstrumentedFiles["out-tsc/test/node_modules/mod.spec.luau"],
+				).toBeUndefined();
+				expect(
+					result.manifest.nonInstrumentedFiles["out-tsc/test/.hidden/secret.spec.luau"],
+				).toBeUndefined();
+			});
+
+			it("should handle file rename across categories (source to spec)", async () => {
+				expect.assertions(2);
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				// Previous manifest has init.luau as instrumented source
+				// Now the file has been renamed to init.spec.luau
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/helper.spec.luau": "-- was a source file",
+						"out-tsc/test/init.luau": "local x = 1",
+					},
+				});
+
+				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+				const result = prepareCoverage(config);
+
+				// New spec file should be tracked as non-instrumented
+				expect(
+					result.manifest.nonInstrumentedFiles["out-tsc/test/helper.spec.luau"],
+				).toBeDefined();
+				// Source file should still be in instrumented files (carried
+				// forward)
+				expect(result.manifest.files["out-tsc/test/init.luau"]).toBeDefined();
+			});
 		});
 	});
 

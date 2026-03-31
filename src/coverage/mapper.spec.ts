@@ -39,6 +39,7 @@ function createManifest(files: CoverageManifest["files"] = {}): CoverageManifest
 		generatedAt: "2026-01-01T00:00:00.000Z",
 		instrumenterVersion: 1,
 		luauRoots: ["out"],
+		nonInstrumentedFiles: {},
 		shadowDir: ".jest-roblox-coverage/out",
 		version: 1,
 	};
