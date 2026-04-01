@@ -164,10 +164,10 @@ describe("luau-visitor", () => {
 			expect(visitor.visitStatBreak).toHaveBeenCalledWith(breakNode);
 		});
 
-		it("should dispatch if statement with condition, thenblock, elseifs, and elseblock", () => {
+		it("should dispatch if statement with condition, thenBlock, elseifs, and elseBlock", () => {
 			expect.assertions(4);
 
-			const thenblock = {
+			const thenBlock = {
 				kind: "stat",
 				location: span,
 				statements: [breakNode],
@@ -179,7 +179,7 @@ describe("luau-visitor", () => {
 				statements: [],
 				tag: "block",
 			} satisfies AstStatBlock;
-			const elseblock = {
+			const elseBlock = {
 				kind: "stat",
 				location: span,
 				statements: [continueNode],
@@ -187,12 +187,12 @@ describe("luau-visitor", () => {
 			} satisfies AstStatBlock;
 			const node = {
 				condition: boolTrue,
-				elseblock,
-				elseifs: [{ condition: boolFalse, thenblock: elseifBlock }],
+				elseBlock,
+				elseifs: [{ condition: boolFalse, thenBlock: elseifBlock }],
 				kind: "stat",
 				location: span,
 				tag: "conditional",
-				thenblock,
+				thenBlock,
 			} satisfies AstStatIf;
 			const visitor = {
 				visitExprConstantBool: vi.fn<(node: AstExprConstantBool) => boolean>(() => true),
@@ -716,9 +716,9 @@ describe("luau-visitor", () => {
 			} satisfies AstExprConstantNumber;
 			const node = {
 				kind: "expr",
-				lhsoperand: numberOne,
+				lhsOperand: numberOne,
 				location: span,
-				rhsoperand: rhs,
+				rhsOperand: rhs,
 				tag: "binary",
 			} satisfies AstExprBinary;
 			const visitor = {
@@ -940,7 +940,7 @@ describe("luau-visitor", () => {
 				tag: "number",
 				value: 2,
 			} satisfies AstExprConstantNumber;
-			const elseexpr = {
+			const elseExpr = {
 				kind: "expr",
 				location: span,
 				tag: "number",
@@ -948,12 +948,12 @@ describe("luau-visitor", () => {
 			} satisfies AstExprConstantNumber;
 			const node = {
 				condition: boolTrue,
-				elseexpr,
-				elseifs: [{ condition: boolFalse, thenexpr: elseifThen }],
+				elseExpr,
+				elseifs: [{ condition: boolFalse, thenExpr: elseifThen }],
 				kind: "expr",
 				location: span,
 				tag: "conditional",
-				thenexpr: numberOne,
+				thenExpr: numberOne,
 			} satisfies AstExprIfElse;
 			const visitor = {
 				visitExprConstantBool: vi.fn<(node: AstExprConstantBool) => boolean>(() => true),
@@ -1115,9 +1115,9 @@ describe("luau-visitor", () => {
 			// binary: skip children
 			const binaryNode = {
 				kind: "expr",
-				lhsoperand: numberOne,
+				lhsOperand: numberOne,
 				location: span,
-				rhsoperand: numberOne,
+				rhsOperand: numberOne,
 				tag: "binary",
 			} satisfies AstExprBinary;
 
@@ -1145,12 +1145,12 @@ describe("luau-visitor", () => {
 			// ifelse: skip children
 			const ifelseNode = {
 				condition: numberOne,
-				elseexpr: numberOne,
+				elseExpr: numberOne,
 				elseifs: [],
 				kind: "expr",
 				location: span,
 				tag: "conditional",
-				thenexpr: numberOne,
+				thenExpr: numberOne,
 			} satisfies AstExprIfElse;
 			visitExpression(ifelseNode, {
 				visitExprConstantNumber: numberVisitor,
@@ -1196,7 +1196,7 @@ describe("luau-visitor", () => {
 				kind: "stat",
 				location: span,
 				tag: "conditional",
-				thenblock: body,
+				thenBlock: body,
 			} satisfies AstStatIf;
 			visitStatement(ifNode, { visitStatBreak: breakVisitor, visitStatIf: () => false });
 
@@ -1548,10 +1548,10 @@ describe("luau-visitor", () => {
 			expect(visitor.visitStatBreak).toHaveBeenCalledWith(breakNode);
 		});
 
-		it("should dispatch if statement without elseblock", () => {
+		it("should dispatch if statement without elseBlock", () => {
 			expect.assertions(2);
 
-			const thenblock = {
+			const thenBlock = {
 				kind: "stat",
 				location: span,
 				statements: [breakNode],
@@ -1563,7 +1563,7 @@ describe("luau-visitor", () => {
 				kind: "stat",
 				location: span,
 				tag: "conditional",
-				thenblock,
+				thenBlock,
 			} satisfies AstStatIf;
 			const visitor = {
 				visitStatBreak: vi.fn<(node: AstStatBreak) => boolean>(() => true),

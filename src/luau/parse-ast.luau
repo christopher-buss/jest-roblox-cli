@@ -26,13 +26,13 @@ luauRoot = string.gsub(luauRoot, "\\", "/")
 -- Tags shared by stat/expr variants are merged — nil fields are harmless.
 local KEEP: { [string]: { string } } = {
 	assign = { "values", "variables" },
-	binary = { "lhsoperand", "rhsoperand" },
+	binary = { "lhsOperand", "rhsOperand" },
 	block = { "statements" },
 	boolean = { "value" },
 	call = { "arguments", "func" },
 	cast = { "operand" },
 	compoundassign = { "value", "variable" },
-	conditional = { "condition", "thenblock", "elseifs", "elseblock", "thenexpr", "elseexpr" },
+	conditional = { "condition", "thenBlock", "elseifs", "elseBlock", "thenExpr", "elseExpr" },
 	["do"] = { "body" },
 	expression = { "expression" },
 	["for"] = { "body", "from", "to", "step" },

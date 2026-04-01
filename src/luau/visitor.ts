@@ -310,19 +310,19 @@ function visitStatIf(node: AstStatIf, visitor: LuauVisitor): void {
 	}
 
 	visitExpression(node.condition, visitor);
-	visitStatBlock(node.thenblock, visitor);
+	visitStatBlock(node.thenBlock, visitor);
 	for (const elseif of node.elseifs) {
 		visitElseIfStat(elseif, visitor);
 	}
 
-	if (node.elseblock) {
-		visitStatBlock(node.elseblock, visitor);
+	if (node.elseBlock) {
+		visitStatBlock(node.elseBlock, visitor);
 	}
 }
 
 function visitElseIfStat(node: AstElseIfStat, visitor: LuauVisitor): void {
 	visitExpression(node.condition, visitor);
-	visitStatBlock(node.thenblock, visitor);
+	visitStatBlock(node.thenBlock, visitor);
 }
 
 function visitStatWhile(node: AstStatWhile, visitor: LuauVisitor): void {
@@ -456,8 +456,8 @@ function visitExprBinary(node: AstExprBinary, visitor: LuauVisitor): void {
 		return;
 	}
 
-	visitExpression(node.lhsoperand, visitor);
-	visitExpression(node.rhsoperand, visitor);
+	visitExpression(node.lhsOperand, visitor);
+	visitExpression(node.rhsOperand, visitor);
 }
 
 function visitExprTable(node: AstExprTable, visitor: LuauVisitor): void {
@@ -530,17 +530,17 @@ function visitExprIfElse(node: AstExprIfElse, visitor: LuauVisitor): void {
 	}
 
 	visitExpression(node.condition, visitor);
-	visitExpression(node.thenexpr, visitor);
+	visitExpression(node.thenExpr, visitor);
 	for (const elseif of node.elseifs) {
 		visitElseIfExpr(elseif, visitor);
 	}
 
-	visitExpression(node.elseexpr, visitor);
+	visitExpression(node.elseExpr, visitor);
 }
 
 function visitElseIfExpr(node: AstElseIfExpr, visitor: LuauVisitor): void {
 	visitExpression(node.condition, visitor);
-	visitExpression(node.thenexpr, visitor);
+	visitExpression(node.thenExpr, visitor);
 }
 
 function visitExprInstantiate(node: AstExprInstantiate, visitor: LuauVisitor): void {

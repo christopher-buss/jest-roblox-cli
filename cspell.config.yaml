@@ -8,8 +8,8 @@ words:
   - covmap
   - defu
   - doublestar
-  - elseblock
-  - elseexpr
+  - elseBlock
+  - elseExpr
   - elseifs
   - endcolumn
   - highlightjs
@@ -19,15 +19,15 @@ words:
   - interp
   - interpolatedstring
   - interpstring
-  - lhsoperand
+  - lhsOperand
   - localfunction
   - rbxl
-  - rhsoperand
+  - rhsOperand
   - rojo
   - statfunction
   - statlocalfunction
-  - thenblock
-  - thenexpr
+  - thenBlock
+  - thenExpr
   - typealias
   - typeassertion
   - typefunction

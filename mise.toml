@@ -13,7 +13,7 @@ _.path = [
 node = { version = "v25.8.2", postinstall = "corepack enable" }
 "npm:corepack" = "latest"
 "npm:@antfu/ni" = "latest"
-"ubi:luau-lang/lute" = "latest"
+"ubi:luau-lang/lute" = "0.1.0-nightly.20260401"
 watchexec = "latest"
 
 [tasks.drillbit]

@@ -66,7 +66,7 @@
 		"oxc-parser": "0.120.0",
 		"picomatch": "4.0.4",
 		"std-env": "4.0.0",
-		"tinyrainbow": "3.0.3",
+		"tinyrainbow": "3.1.0",
 		"ws": "8.18.0"
 	},
 	"devDependencies": {

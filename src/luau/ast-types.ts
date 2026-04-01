@@ -97,8 +97,8 @@ export interface AstExprUnary extends AstExprBase {
 }
 
 export interface AstExprBinary extends AstExprBase {
-	lhsoperand: AstExpr;
-	rhsoperand: AstExpr;
+	lhsOperand: AstExpr;
+	rhsOperand: AstExpr;
 	tag: "binary";
 }
 
@@ -114,15 +114,15 @@ export interface AstExprTypeAssertion extends AstExprBase {
 
 export interface AstElseIfExpr {
 	condition: AstExpr;
-	thenexpr: AstExpr;
+	thenExpr: AstExpr;
 }
 
 export interface AstExprIfElse extends AstExprBase {
 	condition: AstExpr;
-	elseexpr: AstExpr;
+	elseExpr: AstExpr;
 	elseifs: Array<AstElseIfExpr>;
 	tag: "conditional";
-	thenexpr: AstExpr;
+	thenExpr: AstExpr;
 }
 
 export interface AstExprInstantiate extends AstExprBase {
@@ -185,15 +185,15 @@ export interface AstStatDo extends AstStatBase {
 
 export interface AstElseIfStat {
 	condition: AstExpr;
-	thenblock: AstStatBlock;
+	thenBlock: AstStatBlock;
 }
 
 export interface AstStatIf extends AstStatBase {
 	condition: AstExpr;
-	elseblock?: AstStatBlock;
+	elseBlock?: AstStatBlock;
 	elseifs: Array<AstElseIfStat>;
 	tag: "conditional";
-	thenblock: AstStatBlock;
+	thenBlock: AstStatBlock;
 }
 
 export interface AstStatWhile extends AstStatBase {

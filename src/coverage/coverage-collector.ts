@@ -121,12 +121,12 @@ export function collectCoverage(root: AstStatBlock): CollectorResult {
 			branch.arms.push({
 				bodyFirstColumn: 0,
 				bodyFirstLine: 0,
-				location: { ...node.thenexpr.location },
+				location: { ...node.thenExpr.location },
 			});
 			exprIfProbes.push({
 				armIndex,
 				branchIndex,
-				exprLocation: { ...node.thenexpr.location },
+				exprLocation: { ...node.thenExpr.location },
 			});
 			armIndex++;
 
@@ -135,12 +135,12 @@ export function collectCoverage(root: AstStatBlock): CollectorResult {
 				branch.arms.push({
 					bodyFirstColumn: 0,
 					bodyFirstLine: 0,
-					location: { ...elseif.thenexpr.location },
+					location: { ...elseif.thenExpr.location },
 				});
 				exprIfProbes.push({
 					armIndex,
 					branchIndex,
-					exprLocation: { ...elseif.thenexpr.location },
+					exprLocation: { ...elseif.thenExpr.location },
 				});
 				armIndex++;
 			}
@@ -149,12 +149,12 @@ export function collectCoverage(root: AstStatBlock): CollectorResult {
 			branch.arms.push({
 				bodyFirstColumn: 0,
 				bodyFirstLine: 0,
-				location: { ...node.elseexpr.location },
+				location: { ...node.elseExpr.location },
 			});
 			exprIfProbes.push({
 				armIndex,
 				branchIndex,
-				exprLocation: { ...node.elseexpr.location },
+				exprLocation: { ...node.elseExpr.location },
 			});
 
 			branches.push(branch);
@@ -201,27 +201,27 @@ export function collectCoverage(root: AstStatBlock): CollectorResult {
 			};
 
 			// then arm
-			const thenFirst = getBodyFirstStatement(node.thenblock);
+			const thenFirst = getBodyFirstStatement(node.thenBlock);
 			branch.arms.push({
 				bodyFirstColumn: thenFirst.column,
 				bodyFirstLine: thenFirst.line,
-				location: { ...node.thenblock.location },
+				location: { ...node.thenBlock.location },
 			});
 
 			// elseif arms
 			for (const elseif of node.elseifs) {
-				const elseifFirst = getBodyFirstStatement(elseif.thenblock);
+				const elseifFirst = getBodyFirstStatement(elseif.thenBlock);
 				branch.arms.push({
 					bodyFirstColumn: elseifFirst.column,
 					bodyFirstLine: elseifFirst.line,
-					location: { ...elseif.thenblock.location },
+					location: { ...elseif.thenBlock.location },
 				});
 			}
 
 			// else arm — treat empty `else end` as no else: roblox-ts never emits
 			// empty else blocks, and an empty else has no observable behavior to
 			// cover
-			const elseBlock = node.elseblock;
+			const { elseBlock } = node;
 			const hasExplicitElse = elseBlock !== undefined && elseBlock.statements.length > 0;
 
 			if (hasExplicitElse) {

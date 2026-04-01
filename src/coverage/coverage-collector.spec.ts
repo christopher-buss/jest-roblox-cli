@@ -268,7 +268,7 @@ describe("coverage-collector", () => {
 				location: span(4, 5, 4, 17),
 				tag: "break",
 			} satisfies AstStatBreak;
-			const thenblock = {
+			const thenBlock = {
 				kind: "stat",
 				location: span(3, 15, 5, 1),
 				statements: [thenStatement],
@@ -290,7 +290,7 @@ describe("coverage-collector", () => {
 				location: span(8, 5, 8, 17),
 				tag: "break",
 			} satisfies AstStatBreak;
-			const elseblock = {
+			const elseBlock = {
 				kind: "stat",
 				location: span(7, 5, 9, 1),
 				statements: [elseStatement],
@@ -298,7 +298,7 @@ describe("coverage-collector", () => {
 			} satisfies AstStatBlock;
 			const ifStatement = {
 				condition,
-				elseblock,
+				elseBlock,
 				elseifs: [
 					{
 						condition: {
@@ -307,13 +307,13 @@ describe("coverage-collector", () => {
 							tag: "boolean",
 							value: false,
 						} satisfies AstExprConstantBool,
-						thenblock: elseifBlock,
+						thenBlock: elseifBlock,
 					},
 				],
 				kind: "stat",
 				location: span(3, 1, 9, 4),
 				tag: "conditional",
-				thenblock,
+				thenBlock,
 			} satisfies AstStatIf;
 			const root = {
 				kind: "stat",
@@ -339,7 +339,7 @@ describe("coverage-collector", () => {
 				location: span(2, 3, 2, 14),
 				tag: "break",
 			} satisfies AstStatBreak;
-			const thenblock = {
+			const thenBlock = {
 				kind: "stat",
 				location: span(1, 13, 3, 1),
 				statements: [thenStatement],
@@ -356,7 +356,7 @@ describe("coverage-collector", () => {
 				kind: "stat",
 				location: span(1, 1, 3, 4),
 				tag: "conditional",
-				thenblock,
+				thenBlock,
 			} satisfies AstStatIf;
 			const root = {
 				kind: "stat",
@@ -386,7 +386,7 @@ describe("coverage-collector", () => {
 					tag: "boolean",
 					value: true,
 				},
-				elseexpr: {
+				elseExpr: {
 					kind: "expr",
 					location: span(1, 31, 1, 32),
 					tag: "number",
@@ -396,7 +396,7 @@ describe("coverage-collector", () => {
 				kind: "expr",
 				location: span(1, 9, 1, 32),
 				tag: "conditional",
-				thenexpr: {
+				thenExpr: {
 					kind: "expr",
 					location: span(1, 24, 1, 25),
 					tag: "number",
@@ -436,7 +436,7 @@ describe("coverage-collector", () => {
 					tag: "boolean",
 					value: true,
 				},
-				elseexpr: {
+				elseExpr: {
 					kind: "expr",
 					location: span(1, 31, 1, 32),
 					tag: "number",
@@ -446,7 +446,7 @@ describe("coverage-collector", () => {
 				kind: "expr",
 				location: span(1, 9, 1, 32),
 				tag: "conditional",
-				thenexpr: {
+				thenExpr: {
 					kind: "expr",
 					location: span(1, 24, 1, 25),
 					tag: "number",
@@ -603,7 +603,7 @@ describe("coverage-collector", () => {
 					tag: "boolean",
 					value: false,
 				},
-				elseexpr: {
+				elseExpr: {
 					kind: "expr",
 					location: span(1, 55, 1, 58),
 					tag: "string",
@@ -617,7 +617,7 @@ describe("coverage-collector", () => {
 							tag: "boolean",
 							value: true,
 						} satisfies AstExprConstantBool,
-						thenexpr: {
+						thenExpr: {
 							kind: "expr",
 							location: span(1, 40, 1, 43),
 							tag: "string",
@@ -628,7 +628,7 @@ describe("coverage-collector", () => {
 				kind: "expr",
 				location: span(1, 9, 1, 58),
 				tag: "conditional",
-				thenexpr: {
+				thenExpr: {
 					kind: "expr",
 					location: span(1, 24, 1, 27),
 					tag: "string",
