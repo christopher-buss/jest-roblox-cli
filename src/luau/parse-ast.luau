@@ -155,11 +155,27 @@ local function dirname(filepath: string): string
 	return ""
 end
 
+-- Optional 3rd arg: path to skip list JSON file.
+-- Skipped files are still included in the file list but not parsed.
+local skipListPath = userArgs[3]
+local skipSet: { [string]: boolean } = {}
+if skipListPath then
+	local skipJson = fs.readfiletostring(skipListPath)
+	local skipList = json.deserialize(skipJson) :: { string }
+	for _, entry in skipList do
+		skipSet[entry] = true
+	end
+end
+
 local files: { string } = {}
 discoverFiles(luauRoot, luauRoot, files)
 
 -- Parse, strip, and write per-file AST JSON
 for _, relativePath in files do
+	if skipSet[relativePath] then
+		continue
+	end
+
 	local fullPath = luauRoot .. "/" .. relativePath
 	local source = fs.readfiletostring(fullPath)
 	local parseResult = syntax.parse(source)

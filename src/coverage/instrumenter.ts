@@ -60,19 +60,23 @@ export function instrumentRoot(
 
 	fs.mkdirSync(astOutputDirectory, { recursive: true });
 
+	// Write skip list so lute can skip parsing unchanged files
+	const luteArgs = ["run", scriptPath, "--", path.resolve(luauRoot), astOutputDirectory];
+	if (skipFiles !== undefined && skipFiles.size > 0) {
+		const skipListPath = toPosix(path.join(astOutputDirectory, "skip-list.json"));
+		fs.writeFileSync(skipListPath, JSON.stringify([...skipFiles]));
+		luteArgs.push(skipListPath);
+	}
+
 	// Single lute call: discovers files, parses + strips ASTs, writes per-file
-	// JSON
+	// JSON. Skipped files are still included in the file list.
 	let fileListJson: string;
 	try {
-		fileListJson = cp.execFileSync(
-			"lute",
-			["run", scriptPath, "--", path.resolve(luauRoot), astOutputDirectory],
-			{
-				encoding: "utf-8",
-				// File list only (paths, not ASTs) — 1MB is plenty
-				maxBuffer: 1024 * 1024,
-			},
-		);
+		fileListJson = cp.execFileSync("lute", luteArgs, {
+			encoding: "utf-8",
+			// File list only (paths, not ASTs) — 1MB is plenty
+			maxBuffer: 1024 * 1024,
+		});
 	} catch (err) {
 		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
 			throw new Error("lute is required for instrumentation but was not found on PATH");

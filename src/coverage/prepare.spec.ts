@@ -7,7 +7,12 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
-import { collectLuauRootsFromRojo, prepareCoverage, resolveLuauRoots } from "./prepare.ts";
+import {
+	collectLuauRootsFromRojo,
+	discoverInstrumentableFiles,
+	prepareCoverage,
+	resolveLuauRoots,
+} from "./prepare.ts";
 import type { RojoProject } from "./rojo-rewriter.ts";
 import type {
 	CoverageManifest,
@@ -487,11 +492,10 @@ describe(prepareCoverage, () => {
 			expect(result.manifest.placeFilePath).toContain("game.rbxl");
 		});
 
-		it("should skip instrumentation for unchanged files", async () => {
+		it("should carry forward records for unchanged files without calling instrumentRoot", async () => {
 			expect.assertions(2);
 
 			const { instrumentRoot } = await setupMocks();
-			vi.mocked(instrumentRoot).mockReturnValue({});
 
 			seedIncrementalScenario();
 
@@ -499,11 +503,8 @@ describe(prepareCoverage, () => {
 
 			const result = prepareCoverage(config);
 
-			expect(instrumentRoot).toHaveBeenCalledWith(
-				expect.objectContaining({
-					skipFiles: new Set(["init.luau"]),
-				}),
-			);
+			// Full cache hit — instrumentRoot skipped entirely
+			expect(instrumentRoot).not.toHaveBeenCalled();
 			// Unchanged record carried forward
 			expect(result.manifest.files["out-tsc/test/init.luau"]).toBeDefined();
 		});
@@ -632,11 +633,10 @@ describe(prepareCoverage, () => {
 			expect(result.manifest.files["out-tsc/test/deleted.luau"]).toBeUndefined();
 		});
 
-		it("should skip rojo build when no files changed", async () => {
-			expect.assertions(2);
+		it("should skip rojo build and instrumentRoot when no files changed", async () => {
+			expect.assertions(3);
 
 			const { buildWithRojo, instrumentRoot } = await setupMocks();
-			vi.mocked(instrumentRoot).mockReturnValue({});
 
 			seedIncrementalScenario();
 
@@ -644,8 +644,84 @@ describe(prepareCoverage, () => {
 
 			const result = prepareCoverage(config);
 
+			expect(instrumentRoot).not.toHaveBeenCalled();
 			expect(buildWithRojo).not.toHaveBeenCalled();
 			expect(result.placeFile).toBe(".jest-roblox-coverage/game.rbxl");
+		});
+
+		it("should call instrumentRoot when a new file appears on disk", async () => {
+			expect.assertions(1);
+
+			const { instrumentRoot } = await setupMocks();
+
+			seedIncrementalScenario();
+
+			// Add a new file that wasn't in the previous manifest
+			vol.writeFileSync("out-tsc/test/new-module.luau", "local y = 2");
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			expect(instrumentRoot).toHaveBeenCalledOnce();
+		});
+
+		it("should call instrumentRoot when a file is deleted", async () => {
+			expect.assertions(1);
+
+			const { instrumentRoot } = await setupMocks();
+
+			seedIncrementalScenario({
+				fileContents: {
+					"out-tsc/test/a.luau": "local a = 1",
+					"out-tsc/test/b.luau": "local b = 1",
+				},
+				previousFiles: {
+					"out-tsc/test/a.luau": makeFileRecord({
+						key: "out-tsc/test/a.luau",
+						sourceHash: sha256("local a = 1"),
+					}),
+					"out-tsc/test/b.luau": makeFileRecord({
+						key: "out-tsc/test/b.luau",
+						sourceHash: sha256("local b = 1"),
+					}),
+				},
+			});
+
+			// Delete one source file
+			vol.unlinkSync("out-tsc/test/b.luau");
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			expect(instrumentRoot).toHaveBeenCalledOnce();
+		});
+
+		it("should still rebuild rojo when only non-instrumented file changed", async () => {
+			expect.assertions(2);
+
+			const { buildWithRojo, instrumentRoot } = await setupMocks();
+
+			const specRecord: NonInstrumentedFileRecord = {
+				shadowPath: ".jest-roblox-coverage/out-tsc/test/init.spec.luau",
+				sourceHash: sha256("-- old spec"),
+				sourcePath: "out-tsc/test/init.spec.luau",
+			};
+
+			seedIncrementalScenario({
+				previousNonInstrumentedFiles: { "out-tsc/test/init.spec.luau": specRecord },
+			});
+
+			// Write a changed spec file
+			vol.writeFileSync("out-tsc/test/init.spec.luau", "-- new spec");
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			expect(instrumentRoot).not.toHaveBeenCalled();
+			expect(buildWithRojo).toHaveBeenCalledOnce();
 		});
 
 		it("should wipe and re-instrument all when cache is disabled", async () => {
@@ -688,7 +764,7 @@ describe(prepareCoverage, () => {
 		});
 
 		it("should handle luauRoots change between runs", async () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const { instrumentRoot } = await setupMocks();
 			vi.mocked(instrumentRoot).mockReturnValue({});
@@ -707,15 +783,9 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			// Existing root: unchanged file should be skipped
-			expect(vi.mocked(instrumentRoot)).toHaveBeenCalledWith(
-				expect.objectContaining({
-					luauRoot: "out-tsc/test",
-					skipFiles: new Set(["init.luau"]),
-				}),
-			);
-			// New root: no previous records, so no skipFiles
-			expect(vi.mocked(instrumentRoot)).toHaveBeenCalledWith(
+			// Existing root: full cache hit — instrumentRoot not called for it
+			// New root: no previous records, so instrumentRoot called
+			expect(vi.mocked(instrumentRoot)).toHaveBeenCalledExactlyOnceWith(
 				expect.objectContaining({
 					luauRoot: "packages/core/out",
 					skipFiles: new Set(),
@@ -793,7 +863,7 @@ describe(prepareCoverage, () => {
 		});
 
 		it("should handle incremental mode across multiple luauRoots", async () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const { instrumentRoot } = await setupMocks();
 			vi.mocked(instrumentRoot).mockReturnValue({});
@@ -852,19 +922,8 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			// Both roots should have skipFiles
-			expect(instrumentRoot).toHaveBeenCalledWith(
-				expect.objectContaining({
-					luauRoot: "packages/core/out",
-					skipFiles: new Set(["init.luau"]),
-				}),
-			);
-			expect(instrumentRoot).toHaveBeenCalledWith(
-				expect.objectContaining({
-					luauRoot: "packages/utils/out",
-					skipFiles: new Set(["init.luau"]),
-				}),
-			);
+			// Both roots fully cached — instrumentRoot not called
+			expect(instrumentRoot).not.toHaveBeenCalled();
 		});
 
 		it("should force rebuild when beforeBuild returns true on incremental run", async () => {
@@ -1672,5 +1731,83 @@ describe(collectLuauRootsFromRojo, () => {
 
 			expect(collectLuauRootsFromRojo(project, config)).toStrictEqual(["packages/core/out"]);
 		});
+	});
+});
+
+describe(discoverInstrumentableFiles, () => {
+	function setup() {
+		onTestFinished(() => {
+			vol.reset();
+		});
+	}
+
+	it("should discover .luau files", () => {
+		expect.assertions(1);
+
+		setup();
+		vol.mkdirSync("out/shared", { recursive: true });
+		vol.writeFileSync("out/init.luau", "");
+		vol.writeFileSync("out/shared/player.luau", "");
+
+		const result = discoverInstrumentableFiles("out");
+
+		expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
+	});
+
+	it("should exclude spec, test, and snap files", () => {
+		expect.assertions(1);
+
+		setup();
+		vol.mkdirSync("out", { recursive: true });
+		vol.writeFileSync("out/init.luau", "");
+		vol.writeFileSync("out/init.spec.luau", "");
+		vol.writeFileSync("out/init.test.luau", "");
+		vol.writeFileSync("out/init.snap.luau", "");
+		vol.writeFileSync("out/init.spec.lua", "");
+		vol.writeFileSync("out/init.test.lua", "");
+		vol.writeFileSync("out/init.snap.lua", "");
+
+		const result = discoverInstrumentableFiles("out");
+
+		expect(result).toStrictEqual(new Set(["init.luau"]));
+	});
+
+	it("should skip node_modules and dot directories", () => {
+		expect.assertions(1);
+
+		setup();
+		vol.mkdirSync("out/node_modules", { recursive: true });
+		vol.mkdirSync("out/.hidden", { recursive: true });
+		vol.mkdirSync("out/.jest-roblox-coverage", { recursive: true });
+		vol.writeFileSync("out/node_modules/vendor.luau", "");
+		vol.writeFileSync("out/.hidden/secret.luau", "");
+		vol.writeFileSync("out/.jest-roblox-coverage/cached.luau", "");
+
+		const result = discoverInstrumentableFiles("out");
+
+		expect(result).toStrictEqual(new Set());
+	});
+
+	it("should include .lua files", () => {
+		expect.assertions(1);
+
+		setup();
+		vol.mkdirSync("out", { recursive: true });
+		vol.writeFileSync("out/init.lua", "");
+
+		const result = discoverInstrumentableFiles("out");
+
+		expect(result).toStrictEqual(new Set(["init.lua"]));
+	});
+
+	it("should return empty set for empty directory", () => {
+		expect.assertions(1);
+
+		setup();
+		vol.mkdirSync("out", { recursive: true });
+
+		const result = discoverInstrumentableFiles("out");
+
+		expect(result).toStrictEqual(new Set());
 	});
 });

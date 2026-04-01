@@ -79,6 +79,14 @@ interface SyncResult {
 	files: Record<string, NonInstrumentedFileRecord>;
 }
 
+interface FullCacheOptions {
+	luauRoot: string;
+	previousManifest: PreviousManifest;
+	rootEntry: RootEntry;
+	shadowDirectory: string;
+	skipFiles: Set<string>;
+}
+
 export function collectLuauRootsFromRojo(
 	project: RojoProject,
 	config: ResolvedConfig,
@@ -111,6 +119,17 @@ export function collectLuauRootsFromRojo(
 
 export function resolveLuauRoots(config: ResolvedConfig): Array<string> {
 	return resolveLuauRootsWithRojo(config);
+}
+
+/**
+ * Fast directory walk to discover instrumentable .luau/.lua files.
+ * Must match parse-ast.luau's discoverFiles logic (same skip rules).
+ */
+export function discoverInstrumentableFiles(luauRoot: string): Set<string> {
+	const posixRoot = luauRoot.replaceAll("\\", "/");
+	const results: Array<string> = [];
+	walkLuauDirectory(posixRoot, posixRoot, isInstrumentableFile, results);
+	return new Set(results);
 }
 
 export function prepareCoverage(
@@ -252,6 +271,41 @@ function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: stri
 	);
 }
 
+/**
+ * Shared directory walker. Skips node_modules, .jest-roblox-coverage, and
+ * dot-prefixed directories — matching parse-ast.luau:113-147.
+ * `predicate` receives the entry name and returns true to collect the file.
+ */
+function walkLuauDirectory(
+	directory: string,
+	relativeTo: string,
+	predicate: (name: string) => boolean,
+	results: Array<string>,
+): void {
+	const entries = fs.readdirSync(directory, { withFileTypes: true });
+	for (const entry of entries) {
+		const fullPath = path.join(directory, entry.name).replaceAll("\\", "/");
+		if (entry.isDirectory()) {
+			if (entry.name === "node_modules" || entry.name === COVERAGE_DIR) {
+				continue;
+			}
+
+			if (entry.name.startsWith(".")) {
+				continue;
+			}
+
+			walkLuauDirectory(fullPath, relativeTo, predicate, results);
+		} else if (predicate(entry.name)) {
+			const relative = fullPath.slice(relativeTo.length + 1);
+			results.push(relative);
+		}
+	}
+}
+
+function isInstrumentableFile(name: string): boolean {
+	return (name.endsWith(".luau") || name.endsWith(".lua")) && !isNonInstrumentedFile(name);
+}
+
 function validateRelativeRoots(luauRoots: Array<string>): void {
 	for (const root of luauRoots) {
 		if (path.isAbsolute(root)) {
@@ -261,43 +315,6 @@ function validateRelativeRoots(luauRoots: Array<string>): void {
 			);
 		}
 	}
-}
-
-function computeSkipFiles(luauRoot: string, previousManifest: PreviousManifest): Set<string> {
-	const skipFiles = new Set<string>();
-	const posixRoot = luauRoot.replaceAll("\\", "/");
-
-	for (const [fileKey, record] of Object.entries(previousManifest.files)) {
-		if (!fileKey.startsWith(`${posixRoot}/`)) {
-			continue;
-		}
-
-		const relativePath = fileKey.slice(posixRoot.length + 1);
-		const sourcePath = path.resolve(record.originalLuauPath);
-
-		if (!fs.existsSync(sourcePath)) {
-			continue;
-		}
-
-		const currentHash = hashBuffer(fs.readFileSync(sourcePath));
-		if (currentHash === record.sourceHash) {
-			skipFiles.add(relativePath);
-		}
-	}
-
-	return skipFiles;
-}
-
-function countPreviousFilesForRoot(luauRoot: string, previousManifest: PreviousManifest): number {
-	const posixRoot = luauRoot.replaceAll("\\", "/");
-	let count = 0;
-	for (const fileKey of Object.keys(previousManifest.files)) {
-		if (fileKey.startsWith(`${posixRoot}/`)) {
-			count++;
-		}
-	}
-
-	return count;
 }
 
 function carryForwardRecords(
@@ -319,24 +336,7 @@ function discoverNonInstrumentedFiles(
 	relativeTo: string,
 	results: Array<string>,
 ): void {
-	const entries = fs.readdirSync(directory, { withFileTypes: true });
-	for (const entry of entries) {
-		const fullPath = path.join(directory, entry.name).replaceAll("\\", "/");
-		if (entry.isDirectory()) {
-			if (entry.name === "node_modules" || entry.name === COVERAGE_DIR) {
-				continue;
-			}
-
-			if (entry.name.startsWith(".")) {
-				continue;
-			}
-
-			discoverNonInstrumentedFiles(fullPath, relativeTo, results);
-		} else if (isNonInstrumentedFile(entry.name)) {
-			const relative = fullPath.slice(relativeTo.length + 1);
-			results.push(relative);
-		}
-	}
+	walkLuauDirectory(directory, relativeTo, isNonInstrumentedFile, results);
 }
 
 function pruneStaleNonInstrumented(
@@ -410,6 +410,90 @@ function syncNonInstrumentedFiles(
 	return { changed, files };
 }
 
+function computeSkipFiles(luauRoot: string, previousManifest: PreviousManifest): Set<string> {
+	const skipFiles = new Set<string>();
+	const posixRoot = luauRoot.replaceAll("\\", "/");
+
+	for (const [fileKey, record] of Object.entries(previousManifest.files)) {
+		if (!fileKey.startsWith(`${posixRoot}/`)) {
+			continue;
+		}
+
+		const relativePath = fileKey.slice(posixRoot.length + 1);
+		const sourcePath = path.resolve(record.originalLuauPath);
+
+		if (!fs.existsSync(sourcePath)) {
+			continue;
+		}
+
+		const currentHash = hashBuffer(fs.readFileSync(sourcePath));
+		if (currentHash === record.sourceHash) {
+			skipFiles.add(relativePath);
+		}
+	}
+
+	return skipFiles;
+}
+
+function countPreviousFilesForRoot(luauRoot: string, previousManifest: PreviousManifest): number {
+	const posixRoot = luauRoot.replaceAll("\\", "/");
+	let count = 0;
+	for (const fileKey of Object.keys(previousManifest.files)) {
+		if (fileKey.startsWith(`${posixRoot}/`)) {
+			count++;
+		}
+	}
+
+	return count;
+}
+
+/**
+ * Check if all files in this root are unchanged (full cache hit).
+ *
+ * `changed` means previous files were deleted or modified — it does NOT cover
+ * new files appearing on disk. When `allCached` is false but `changed` is also
+ * false, new files exist and the caller detects them when `instrumentRoot`
+ * returns non-empty results.
+ */
+function computeIncrementalState(
+	luauRoot: string,
+	previousManifest: PreviousManifest,
+): { allCached: boolean; changed: boolean; skipFiles: Set<string> } {
+	const skipFiles = computeSkipFiles(luauRoot, previousManifest);
+	const previousCount = countPreviousFilesForRoot(luauRoot, previousManifest);
+	const changed = skipFiles.size !== previousCount;
+
+	if (changed) {
+		return { allCached: false, changed, skipFiles };
+	}
+
+	// All previous files match. Check if any new files appeared on disk.
+	const discovered = discoverInstrumentableFiles(luauRoot);
+	const allCached = discovered.size === previousCount;
+
+	return { allCached, changed, skipFiles };
+}
+
+function buildFullCacheResult(options: FullCacheOptions): InstrumentRootResult {
+	const { luauRoot, previousManifest, rootEntry, shadowDirectory, skipFiles } = options;
+
+	const allFiles: Record<string, InstrumentedFileRecord> = {};
+	carryForwardRecords(luauRoot, previousManifest, allFiles, skipFiles);
+
+	const syncResult = syncNonInstrumentedFiles(
+		luauRoot,
+		shadowDirectory,
+		previousManifest.nonInstrumentedFiles,
+	);
+
+	return {
+		changed: syncResult.changed,
+		files: allFiles,
+		nonInstrumentedFiles: syncResult.files,
+		rootEntry,
+	};
+}
+
 function instrumentRootWithCache(
 	luauRoot: string,
 	useIncremental: boolean,
@@ -423,14 +507,30 @@ function instrumentRootWithCache(
 		fs.cpSync(luauRoot, shadowDirectory, { recursive: true });
 	}
 
+	const relocatedShadowDirectory = path
+		.relative(COVERAGE_DIR, shadowDirectory)
+		.replaceAll("\\", "/");
+	const rootEntry: RootEntry = { luauRoot, relocatedShadowDirectory, shadowDir: shadowDirectory };
+
 	let skipFiles: Set<string> | undefined;
 
 	if (useIncremental && previousManifest !== undefined) {
-		skipFiles = computeSkipFiles(luauRoot, previousManifest);
-		const previousCount = countPreviousFilesForRoot(luauRoot, previousManifest);
-		// skipFiles.size < previousCount when files changed hash or were deleted
-		if (skipFiles.size !== previousCount) {
-			changed = true;
+		const {
+			allCached,
+			changed: hasChanges,
+			skipFiles: computed,
+		} = computeIncrementalState(luauRoot, previousManifest);
+		skipFiles = computed;
+		changed = hasChanges;
+
+		if (allCached) {
+			return buildFullCacheResult({
+				luauRoot,
+				previousManifest,
+				rootEntry,
+				shadowDirectory,
+				skipFiles,
+			});
 		}
 	}
 
@@ -460,15 +560,11 @@ function instrumentRootWithCache(
 		changed = true;
 	}
 
-	const relocatedShadowDirectory = path
-		.relative(COVERAGE_DIR, shadowDirectory)
-		.replaceAll("\\", "/");
-
 	return {
 		changed,
 		files: allFiles,
 		nonInstrumentedFiles: syncResult.files,
-		rootEntry: { luauRoot, relocatedShadowDirectory, shadowDir: shadowDirectory },
+		rootEntry,
 	};
 }
 

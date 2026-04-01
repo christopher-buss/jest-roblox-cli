@@ -105,6 +105,64 @@ describe(instrumentRoot, () => {
 			expect(keys).toContain("/luau-root/init.luau");
 			expect(keys).not.toContain("/luau-root/shared/player.luau");
 		});
+
+		it("should pass skip list file to lute when skipFiles is non-empty", () => {
+			expect.assertions(2);
+
+			setupFilesystem();
+
+			instrumentRoot({
+				astOutputDirectory: "/tmp/asts",
+				luauRoot: "/luau-root",
+				parseScript: "mock.luau",
+				shadowDir: "/shadow",
+				skipFiles: new Set(["shared/player.luau"]),
+			});
+
+			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]![1] as Array<string>;
+			const skipListPath = luteArgs[luteArgs.length - 1]!;
+
+			expect(skipListPath).toContain("skip-list.json");
+			expect(JSON.parse(vol.readFileSync(skipListPath, "utf-8") as string)).toStrictEqual([
+				"shared/player.luau",
+			]);
+		});
+
+		it("should not pass skip list to lute when skipFiles is empty", () => {
+			expect.assertions(1);
+
+			setupFilesystem();
+
+			instrumentRoot({
+				astOutputDirectory: "/tmp/asts",
+				luauRoot: "/luau-root",
+				parseScript: "mock.luau",
+				shadowDir: "/shadow",
+				skipFiles: new Set(),
+			});
+
+			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]?.[1] as Array<string>;
+
+			// 5 args: run, scriptPath, --, luauRoot, astOutputDir (no skip list)
+			expect(luteArgs).toHaveLength(5);
+		});
+
+		it("should not pass skip list to lute when skipFiles is undefined", () => {
+			expect.assertions(1);
+
+			setupFilesystem();
+
+			instrumentRoot({
+				astOutputDirectory: "/tmp/asts",
+				luauRoot: "/luau-root",
+				parseScript: "mock.luau",
+				shadowDir: "/shadow",
+			});
+
+			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]?.[1] as Array<string>;
+
+			expect(luteArgs).toHaveLength(5);
+		});
 	});
 
 	describe("when the file list includes snapshot files", () => {
