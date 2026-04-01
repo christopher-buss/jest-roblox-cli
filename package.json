@@ -96,7 +96,7 @@
 		"memfs": "4.56.11",
 		"publint": "0.3.18",
 		"tsdown": "0.21.5",
-		"type-fest": "5.2.0",
+		"type-fest": "5.5.0",
 		"typescript": "5.9.3",
 		"vitest": "4.1.2"
 	},
