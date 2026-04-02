@@ -42,7 +42,7 @@ export default defineConfig({
 		],
 		include: ["src/**/*.spec.ts", "test/**/*.spec.ts"],
 		restoreMocks: true,
-		setupFiles: ["./test/setup/jest-extended.ts"],
+		setupFiles: ["./test/setup/enable-colors.ts", "./test/setup/jest-extended.ts"],
 		typecheck: {
 			checker: "tsgo",
 			enabled: true,
