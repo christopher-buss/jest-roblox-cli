@@ -234,7 +234,7 @@ Create a file named drillbit.toml in your project's directory.
 
 ```toml
 [plugins.jest_roblox]
-github = "https://github.com/christopher-buss/jest-roblox-cli/releases/tag/v0.2.1/JestRobloxRunner.rbxm"
+github = "https://github.com/christopher-buss/jest-roblox-cli/releases/download/v0.2.1/JestRobloxRunner.rbxm"
 ```
 
 Then run `drillbit` and it will download the plugin and install it in Studio for you.
