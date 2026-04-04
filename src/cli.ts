@@ -265,6 +265,7 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 	let totalMs = 0;
 	let uploadMs = 0;
 	let coverageMs = 0;
+	let setupMs = 0;
 	let mergedCoverage: RawCoverageData | undefined;
 
 	for (const result of results) {
@@ -281,6 +282,7 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 		totalMs += result.timing.totalMs;
 		uploadMs += result.timing.uploadMs ?? 0;
 		coverageMs += result.timing.coverageMs ?? 0;
+		setupMs += result.timing.setupMs ?? 0;
 		if (result.coverageData !== undefined) {
 			mergedCoverage = mergeRawCoverage(mergedCoverage, result.coverageData);
 		}
@@ -303,6 +305,7 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 		timing: {
 			coverageMs: coverageMs > 0 ? coverageMs : undefined,
 			executionMs,
+			setupMs: setupMs > 0 ? setupMs : undefined,
 			startTime: Math.min(...results.map((result) => result.timing.startTime)),
 			testsMs,
 			totalMs,

@@ -19,6 +19,7 @@ export interface BackendResult {
 	gameOutput?: string;
 	luauTiming?: Record<string, number>;
 	result: JestResult;
+	setupMs?: number;
 	snapshotWrites?: SnapshotWrites;
 	timing: BackendTiming;
 }

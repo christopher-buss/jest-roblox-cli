@@ -176,6 +176,64 @@ describe(OpenCloudBackend, () => {
 		expect(result.gameOutput).toBe(gameOutputData);
 	});
 
+	it("should convert _setup seconds to setupMs", async () => {
+		expect.assertions(1);
+
+		const envelopeWithSetup = JSON.stringify({
+			_setup: 0.123,
+			success: true,
+			value: {
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				startTime: 0,
+				success: true,
+				testResults: [],
+			},
+		});
+
+		const mockHttp = createMockHttpClient(
+			new Map([
+				["/versions", UPLOAD_OK],
+				["task-id", completeResponse([envelopeWithSetup])],
+				[LUAU_EXEC_TASKS_PATH, TASK_CREATED_WITH_ID],
+			]),
+		);
+
+		const backend = new OpenCloudBackend(credentials, {
+			http: mockHttp,
+			readFile: () => buffer.Buffer.from("mock-rbxl"),
+			sleep: noSleep,
+		});
+
+		const result = await backend.runTests(options);
+
+		expect(result.setupMs).toBe(123);
+	});
+
+	it("should return undefined setupMs when _setup absent", async () => {
+		expect.assertions(1);
+
+		const mockHttp = createMockHttpClient(
+			new Map([
+				["/versions", UPLOAD_OK],
+				["task-id", completeResponse([successResult()])],
+				[LUAU_EXEC_TASKS_PATH, TASK_CREATED_WITH_ID],
+			]),
+		);
+
+		const backend = new OpenCloudBackend(credentials, {
+			http: mockHttp,
+			readFile: () => buffer.Buffer.from("mock-rbxl"),
+			sleep: noSleep,
+		});
+
+		const result = await backend.runTests(options);
+
+		expect(result.setupMs).toBeUndefined();
+	});
+
 	it("should poll until task is complete", async () => {
 		expect.assertions(1);
 

@@ -2672,4 +2672,39 @@ describe(mergeProjectResults, () => {
 
 		expect(result.result.startTime).toBe(1000);
 	});
+
+	it("should sum setupMs across projects", () => {
+		expect.assertions(1);
+
+		const result = mergeProjectResults([
+			makeExecuteResult({
+				timing: {
+					executionMs: 100,
+					setupMs: 50,
+					startTime: 1000,
+					testsMs: 30,
+					totalMs: 200,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 100,
+					setupMs: 75,
+					startTime: 1000,
+					testsMs: 30,
+					totalMs: 200,
+				},
+			}),
+		]);
+
+		expect(result.timing.setupMs).toBe(125);
+	});
+
+	it("should omit setupMs when no project has it", () => {
+		expect.assertions(1);
+
+		const result = mergeProjectResults([makeExecuteResult(), makeExecuteResult()]);
+
+		expect(result.timing.setupMs).toBeUndefined();
+	});
 });

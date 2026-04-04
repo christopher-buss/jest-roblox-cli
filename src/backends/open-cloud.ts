@@ -110,11 +110,15 @@ export class OpenCloudBackend implements Backend {
 			throw err;
 		}
 
+		const setupMs =
+			parsed.setupSeconds !== undefined ? Math.round(parsed.setupSeconds * 1000) : undefined;
+
 		return {
 			coverageData: parsed.coverageData,
 			gameOutput,
 			luauTiming: parsed.luauTiming,
 			result: parsed.result,
+			setupMs,
 			snapshotWrites: parsed.snapshotWrites,
 			timing: { executionMs, uploadCached, uploadMs },
 		};

@@ -584,6 +584,71 @@ End of output
 		expect(luauTiming).toBeUndefined();
 	});
 
+	it("should extract _setup seconds from envelope", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			_setup: 0.25,
+			success: true,
+			value: {
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				startTime: 1000,
+				success: true,
+				testResults: [],
+			},
+		});
+
+		const { setupSeconds } = parseJestOutput(output);
+
+		expect(setupSeconds).toBe(0.25);
+	});
+
+	it("should return undefined setupSeconds when _setup absent", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			success: true,
+			value: {
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				startTime: 1000,
+				success: true,
+				testResults: [],
+			},
+		});
+
+		const { setupSeconds } = parseJestOutput(output);
+
+		expect(setupSeconds).toBeUndefined();
+	});
+
+	it("should return undefined setupSeconds when _setup is not a number", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			_setup: "bad",
+			success: true,
+			value: {
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				startTime: 1000,
+				success: true,
+				testResults: [],
+			},
+		});
+
+		const { setupSeconds } = parseJestOutput(output);
+
+		expect(setupSeconds).toBeUndefined();
+	});
+
 	it("should filter non-string values from _snapshotWrites", () => {
 		expect.assertions(1);
 

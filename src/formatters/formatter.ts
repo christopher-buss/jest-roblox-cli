@@ -406,7 +406,8 @@ export function formatTestSummary(
 	lines.push(`${st.dim("   Start at")}  ${startAtStr}`);
 
 	// Duration line with breakdown
-	const environmentMs = timing.executionMs - timing.testsMs;
+	const setupMs = timing.setupMs ?? 0;
+	const environmentMs = Math.max(0, timing.executionMs - timing.testsMs - setupMs);
 	const uploadMs = timing.uploadMs ?? 0;
 	const coverageMs = timing.coverageMs ?? 0;
 	const cliMs = Math.max(0, timing.totalMs - uploadMs - timing.executionMs - coverageMs);
@@ -420,11 +421,13 @@ export function formatTestSummary(
 		);
 	}
 
-	breakdownParts.push(
-		`environment ${environmentMs}ms`,
-		`tests ${timing.testsMs}ms`,
-		`cli ${cliMs}ms`,
-	);
+	breakdownParts.push(`environment ${environmentMs}ms`);
+
+	if (setupMs > 0) {
+		breakdownParts.push(`setup ${setupMs}ms`);
+	}
+
+	breakdownParts.push(`tests ${timing.testsMs}ms`, `cli ${cliMs}ms`);
 
 	if (coverageMs > 0) {
 		breakdownParts.push(`coverage ${coverageMs}ms`);

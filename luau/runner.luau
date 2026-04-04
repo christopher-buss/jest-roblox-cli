@@ -3,6 +3,7 @@ local HttpService = game:GetService("HttpService")
 local LogService = game:GetService("LogService")
 
 local InstanceResolver = require("./instance-resolver")
+local SetupTiming = require("./setup-timing")
 local SnapshotPatch = require("./snapshot-patch")
 
 type Config = {
@@ -133,6 +134,12 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		end
 		local t_resolveSetupFiles = os.clock()
 
+		local setupTimingState = SetupTiming.patch(
+			findValue,
+			config.setupFiles :: any,
+			config.setupFilesAfterEnv :: any
+		)
+
 		-- Strip private keys before Jest.runCLI (safe: single-task execution per VM)
 		config._timing = nil :: any
 		config._coverage = nil :: any
@@ -142,13 +149,28 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		end
 
 		local t_jestRunCLI0 = os.clock()
-		local jestResult = Jest.runCLI(callingScript, config, projects):expect()
+		local runCLIOk, runCLIValue = pcall(function()
+			return Jest.runCLI(callingScript, config, projects):expect()
+		end)
 		local t_jestRunCLI = os.clock()
+
+		local setupSeconds = SetupTiming.getSeconds(setupTimingState)
+		SetupTiming.unpatch(setupTimingState)
+
+		if not runCLIOk then
+			error(runCLIValue, 0)
+		end
+
+		local jestResult = runCLIValue
 
 		local result: { [string]: any } = {
 			success = true,
 			value = jestResult,
 		}
+
+		if setupSeconds > 0 then
+			result._setup = setupSeconds
+		end
 
 		if timingEnabled then
 			result._timing = {

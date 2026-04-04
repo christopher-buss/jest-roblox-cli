@@ -215,6 +215,7 @@ export async function execute(options: ExecuteOptions): Promise<ExecuteResult> {
 		gameOutput,
 		luauTiming,
 		result,
+		setupMs,
 		snapshotWrites,
 		timing: backendTiming,
 	} = await options.backend.runTests({
@@ -235,6 +236,7 @@ export async function execute(options: ExecuteOptions): Promise<ExecuteResult> {
 
 	const timing = {
 		executionMs: backendTiming.executionMs,
+		setupMs,
 		startTime,
 		testsMs,
 		totalMs,

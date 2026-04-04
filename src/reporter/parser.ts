@@ -10,6 +10,7 @@ export interface ParseResult {
 	coverageData?: RawCoverageData;
 	luauTiming?: Record<string, number>;
 	result: JestResult;
+	setupSeconds?: number;
 	snapshotWrites?: SnapshotWrites;
 }
 
@@ -75,6 +76,7 @@ export function parseJestOutput(output: string): ParseResult {
 		const parsed = JSON.parse(trimmed) as Record<string, unknown>;
 		const coverageData = extractCoverageData(parsed);
 		const luauTiming = extractLuauTiming(parsed);
+		const setupSeconds = extractSetupSeconds(parsed);
 		const snapshotWrites = extractSnapshotWrites(parsed);
 		const unwrapped = unwrapResult(parsed);
 
@@ -90,6 +92,7 @@ export function parseJestOutput(output: string): ParseResult {
 				coverageData,
 				luauTiming,
 				result: validateJestResult(unwrapped["results"]),
+				setupSeconds,
 				snapshotWrites,
 			};
 		}
@@ -99,6 +102,7 @@ export function parseJestOutput(output: string): ParseResult {
 				coverageData,
 				luauTiming,
 				result: validateJestResult(unwrapped),
+				setupSeconds,
 				snapshotWrites,
 			};
 		} catch {
@@ -305,4 +309,13 @@ function validateJestResult(value: unknown): JestResult {
 	}
 
 	return result as JestResult;
+}
+
+function extractSetupSeconds(parsed: Record<string, unknown>): number | undefined {
+	const setup = parsed["_setup"];
+	if (typeof setup !== "number") {
+		return undefined;
+	}
+
+	return setup;
 }

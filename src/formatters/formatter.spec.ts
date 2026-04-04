@@ -1868,6 +1868,68 @@ describe("formatTestSummary coverage timing", () => {
 	});
 });
 
+describe("formatTestSummary setup timing", () => {
+	it("should show setup bucket when setupMs is provided", () => {
+		expect.assertions(1);
+
+		const summary = formatTestSummary(PASSING_RESULT, {
+			...TIMING,
+			executionMs: 500,
+			setupMs: 200,
+			totalMs: 600,
+		});
+		const plain = stripVTControlCharacters(summary);
+
+		expect(plain).toContain("setup 200ms");
+	});
+
+	it("should subtract setupMs from environment bucket", () => {
+		expect.assertions(1);
+
+		// executionMs=500, testsMs=100, setupMs=200 → environment=200
+		const summary = formatTestSummary(PASSING_RESULT, {
+			...TIMING,
+			executionMs: 500,
+			setupMs: 200,
+			totalMs: 600,
+		});
+		const plain = stripVTControlCharacters(summary);
+
+		expect(plain).toContain("environment 200ms");
+	});
+
+	it("should clamp environment to zero when setupMs exceeds available time", () => {
+		expect.assertions(1);
+
+		// executionMs=150, testsMs=100, setupMs=200 → would be -150, clamp to 0
+		const summary = formatTestSummary(PASSING_RESULT, {
+			...TIMING,
+			setupMs: 200,
+		});
+		const plain = stripVTControlCharacters(summary);
+
+		expect(plain).toContain("environment 0ms");
+	});
+
+	it("should omit setup bucket when setupMs is undefined", () => {
+		expect.assertions(1);
+
+		const summary = formatTestSummary(PASSING_RESULT, TIMING);
+		const plain = stripVTControlCharacters(summary);
+
+		expect(plain).not.toContain("setup");
+	});
+
+	it("should omit setup bucket when setupMs is zero", () => {
+		expect.assertions(1);
+
+		const summary = formatTestSummary(PASSING_RESULT, { ...TIMING, setupMs: 0 });
+		const plain = stripVTControlCharacters(summary);
+
+		expect(plain).not.toContain("setup");
+	});
+});
+
 describe("formatSnapshotCallSnippet via formatFailure", () => {
 	function writeTemporary(content: string): string {
 		const filePath = path.join(os.tmpdir(), `formatter-test-${Date.now()}.ts`);
