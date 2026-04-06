@@ -1,3 +1,6 @@
+packages:
+  - "packages/*"
+
 publicHoistPattern:
   - "*@rbxts*"
   - "@typescript/*"

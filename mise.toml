@@ -10,7 +10,7 @@ _.path = [
 "github:johnnymorganz/stylua" = "latest"
 "github:rojo-rbx/rojo" = "v7.7.0-rc.1"
 "github:seaofvoices/darklua" = "0.18.0"
-node = { version = "v25.8.2", postinstall = "corepack enable" }
+node = { version = "25.9.0", postinstall = "corepack enable" }
 "npm:corepack" = "latest"
 "npm:@antfu/ni" = "latest"
 "ubi:luau-lang/lute" = "0.1.0-nightly.20260401"

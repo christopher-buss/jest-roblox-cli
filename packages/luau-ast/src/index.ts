@@ -1,3 +1,4 @@
+// AST types
 export type {
 	AstElseIfExpr,
 	AstElseIfStat,
@@ -51,4 +52,12 @@ export type {
 	LuauSpan,
 	Pair,
 	Punctuated,
-} from "@isentinel/luau-ast";
+} from "./ast-types.ts";
+
+// Lute spawner
+export type { LuteSpawnOptions } from "./lute-spawner.ts";
+export { spawnLute, writeTemporaryLuauScript } from "./lute-spawner.ts";
+
+// Visitor
+export type { LuauVisitor } from "./visitor.ts";
+export { visitBlock, visitExpression, visitStatement } from "./visitor.ts";

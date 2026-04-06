@@ -1,0 +1,21 @@
+{
+	"extends": "@isentinel/tsconfig/typescript",
+	"compilerOptions": {
+		"composite": true,
+		"libReplacement": true,
+		"allowImportingTsExtensions": true,
+		"outDir": "./out-tsc/vitest"
+	},
+	"references": [
+		{
+			"path": "./tsconfig.lib.json"
+		}
+	],
+	"include": [
+		"src/**/*.spec.ts",
+		"eslint.config.ts",
+		"vitest.config.ts",
+		"tsdown.config.ts",
+		"package.json"
+	]
+}

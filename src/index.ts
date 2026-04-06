@@ -41,3 +41,16 @@ export type {
 	TestStatus,
 } from "./types/jest-result.ts";
 export { formatGameOutputNotice, parseGameOutput, writeGameOutput } from "./utils/game-output.ts";
+
+// Luau AST infrastructure
+export type {
+	AstExpr,
+	AstExprBinary,
+	AstExprCall,
+	AstExprFunction,
+	AstStat,
+	AstStatBlock,
+	LuauSpan,
+	LuauVisitor,
+} from "@isentinel/luau-ast";
+export { visitBlock, visitExpression, visitStatement } from "@isentinel/luau-ast";
