@@ -15,6 +15,12 @@
 	"references": [
 		{
 			"path": "packages/luau-ast/tsconfig.lib.json"
+		},
+		{
+			"path": "packages/rojo-utils/tsconfig.lib.json"
+		},
+		{
+			"path": "packages/roblox-runner/tsconfig.lib.json"
 		}
 	],
 	"include": ["src/**/*.ts", "package.json"],

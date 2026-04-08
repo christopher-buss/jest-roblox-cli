@@ -7,6 +7,9 @@ out-tsc/
 *.tgz
 .DS_Store
 .env
+.eslintcache
+dist/
+*.rbxm
 src/test-runner.bundled.luau
 plugin/out/
 !src/coverage

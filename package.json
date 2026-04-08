@@ -39,8 +39,9 @@
 		"!dist/**/*.tsbuildinfo"
 	],
 	"scripts": {
-		"build": "pnpm build:bundle && tsdown && pnpm build:plugin",
+		"build": "pnpm build:packages && pnpm build:bundle && tsdown && pnpm build:plugin",
 		"build:bundle": "darklua process -c .darklua-bundle.json luau/entry.luau src/test-runner.bundled.luau",
+		"build:packages": "pnpm -r --filter !@isentinel/jest-roblox run build",
 		"build:plugin": "rm -rf plugin/out && darklua process -c .darklua-plugin.json luau/ plugin/out/shared/ && rojo build plugin/plugin.project.json -o plugin/JestRobloxRunner.rbxm",
 		"lint": "eslint --cache",
 		"lint:ci": "eslint --cache --cache-strategy content",
@@ -53,6 +54,8 @@
 	},
 	"dependencies": {
 		"@isentinel/luau-ast": "workspace:*",
+		"@isentinel/roblox-runner": "workspace:*",
+		"@isentinel/rojo-utils": "workspace:*",
 		"@jridgewell/trace-mapping": "0.3.31",
 		"@roblox-ts/rojo-resolver": "1.1.0",
 		"arktype": "2.2.0",

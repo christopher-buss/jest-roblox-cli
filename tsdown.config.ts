@@ -68,6 +68,7 @@ export default defineConfig([
 	{
 		clean: true,
 		deps: {
+			alwaysBundle: ["@isentinel/luau-ast"],
 			neverBundle: [
 				"arktype",
 				"istanbul-lib-coverage",

@@ -1,24 +1,8 @@
+import type { RojoProject } from "@isentinel/rojo-utils";
+
 import { type, type Type } from "arktype";
 
-export interface RojoTreeNode {
-	$className?: string;
-	$ignoreUnknownInstances?: boolean;
-	$path?: string | { optional: string };
-	$properties?: Record<string, unknown>;
-	[key: string]:
-		| boolean
-		| Record<string, unknown>
-		| RojoTreeNode
-		| string
-		| undefined
-		| { optional: string };
-}
-
-export interface RojoProject {
-	name: string;
-	servePort?: number;
-	tree: RojoTreeNode;
-}
+export type { RojoProject, RojoTreeNode } from "@isentinel/rojo-utils";
 
 export const rojoProjectSchema: Type<RojoProject> = type({
 	"name": "string",

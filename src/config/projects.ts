@@ -1,11 +1,11 @@
+import { collectPaths, findInTree, type RojoTreeNode } from "@isentinel/rojo-utils";
+
 import { loadConfig as c12LoadConfig } from "c12";
 import * as path from "node:path";
 
 import type { TsconfigDirectories } from "../executor.ts";
 import { resolveTsconfigDirectories } from "../executor.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
-import { collectPaths } from "../utils/rojo-tree.ts";
 import { ConfigError } from "./errors.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 import type { ProjectEntry, ProjectTestConfig, ResolvedConfig } from "./schema.ts";
@@ -407,57 +407,4 @@ function buildProjectConfigFromLuau(
 	copyLuauOptionalFields(raw, config);
 
 	return config;
-}
-
-function matchNodePath(
-	childNode: RojoTreeNode,
-	targetPath: string,
-	childDataModelPath: string,
-): string | undefined {
-	const nodePath = childNode.$path;
-	if (typeof nodePath !== "string") {
-		return undefined;
-	}
-
-	const normalizedNodePath = nodePath.replace(/\/$/, "");
-	if (normalizedNodePath === targetPath) {
-		return childDataModelPath;
-	}
-
-	// Check if targetPath is nested under this $path
-	if (targetPath.startsWith(`${normalizedNodePath}/`)) {
-		const remainder = targetPath.slice(normalizedNodePath.length + 1);
-		return `${childDataModelPath}/${remainder}`;
-	}
-
-	return undefined;
-}
-
-function findInTree(
-	node: RojoTreeNode,
-	targetPath: string,
-	currentDataModelPath: string,
-): string | undefined {
-	for (const [key, value] of Object.entries(node)) {
-		if (key.startsWith("$") || typeof value !== "object") {
-			continue;
-		}
-
-		const childNode = value as RojoTreeNode;
-		const childDataModelPath =
-			currentDataModelPath === "" ? key : `${currentDataModelPath}/${key}`;
-
-		const pathMatch = matchNodePath(childNode, targetPath, childDataModelPath);
-		if (pathMatch !== undefined) {
-			return pathMatch;
-		}
-
-		// Recurse into child
-		const found = findInTree(childNode, targetPath, childDataModelPath);
-		if (found !== undefined) {
-			return found;
-		}
-	}
-
-	return undefined;
 }
