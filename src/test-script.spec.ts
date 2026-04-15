@@ -1,9 +1,8 @@
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import type { BackendOptions } from "./backends/interface.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
-import { buildJestArgv, generateTestScript } from "./test-script.ts";
+import { buildJestArgv, generateTestScript, type JestArgvInput } from "./test-script.ts";
 
 function createConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return { ...DEFAULT_CONFIG, ...overrides };
@@ -12,7 +11,7 @@ function createConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 function createOptions(overrides?: {
 	config?: Partial<ResolvedConfig>;
 	testFiles?: Array<string>;
-}): BackendOptions {
+}): JestArgvInput {
 	return {
 		config: createConfig(overrides?.config),
 		testFiles: overrides?.testFiles ?? ["src/test.spec.ts"],

@@ -26,5 +26,18 @@ const INIT_SUFFIX = /\/init$/;
 export function mapFsPathToDataModel(fsPath: string, rojoTree: RojoTreeNode): string | undefined {
 	const normalized = fsPath.replaceAll("\\", "/").replace(LUAU_EXTENSIONS, "");
 	const withoutInit = normalized.replace(INIT_SUFFIX, "");
+
+	const rootPath = rojoTree.$path;
+	if (typeof rootPath === "string") {
+		const normalizedRootPath = rootPath.replace(/\/$/, "");
+		if (withoutInit === normalizedRootPath) {
+			return "";
+		}
+
+		if (withoutInit.startsWith(`${normalizedRootPath}/`)) {
+			return withoutInit.slice(normalizedRootPath.length + 1);
+		}
+	}
+
 	return findInTree(rojoTree, withoutInit, "");
 }

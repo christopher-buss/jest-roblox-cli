@@ -5,7 +5,13 @@ import * as path from "node:path";
 import process from "node:process";
 import color from "tinyrainbow";
 
-import type { Backend } from "./backends/interface.ts";
+import type {
+	Backend,
+	BackendResult,
+	BackendTiming,
+	ProjectBackendResult,
+	ProjectJob,
+} from "./backends/interface.ts";
 import { applySnapshotFormatDefaults } from "./config/loader.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import type { CoverageManifest, RawCoverageData } from "./coverage/types.ts";
@@ -43,6 +49,14 @@ export interface ExecuteResult {
 	result: JestResult;
 	sourceMapper?: SourceMapper;
 	timing: TimingResult;
+}
+
+export interface ProcessProjectOptions {
+	backendTiming: BackendTiming;
+	config: ResolvedConfig;
+	deferFormatting?: boolean;
+	startTime: number;
+	version: string;
 }
 
 export interface FormatOutputOptions {
@@ -203,25 +217,53 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 	});
 }
 
-export async function execute(options: ExecuteOptions): Promise<ExecuteResult> {
-	const startTime = Date.now();
-
-	const tsconfigMappings = resolveAllTsconfigMappings(options.config.rootDir);
-	const luauProject = isLuauProject(options.testFiles, tsconfigMappings);
-	const config = applySnapshotFormatDefaults(options.config, luauProject);
-
-	const {
-		coverageData,
-		gameOutput,
-		luauTiming,
-		result,
-		setupMs,
-		snapshotWrites,
-		timing: backendTiming,
-	} = await options.backend.runTests({
+/**
+ * Build a `ProjectJob` with `snapshotFormat` resolved per-project. Each job
+ * carries its own config so the Luau runner never re-resolves or shares format
+ * state across projects (fixes the spike's snapshot-diff regression — C1).
+ */
+export function buildProjectJob(parameters: {
+	config: ResolvedConfig;
+	displayColor?: string;
+	displayName?: string;
+	testFiles: Array<string>;
+}): ProjectJob {
+	const tsconfigMappings = resolveAllTsconfigMappings(parameters.config.rootDir);
+	const luauProject = isLuauProject(parameters.testFiles, tsconfigMappings);
+	const config = applySnapshotFormatDefaults(parameters.config, luauProject);
+	return {
 		config,
-		testFiles: options.testFiles,
-	});
+		displayColor: parameters.displayColor,
+		displayName: parameters.displayName ?? "",
+		testFiles: parameters.testFiles,
+	};
+}
+
+/**
+ * Thin wrapper over `backend.runTests`. Fires exactly once per CLI invocation
+ * with a full `ProjectJob[]` envelope. Returns the raw `BackendResult`.
+ */
+export async function executeBackend(
+	backend: Backend,
+	jobs: Array<ProjectJob>,
+	parallel?: "auto" | number,
+): Promise<BackendResult> {
+	return backend.runTests({ jobs, parallel });
+}
+
+/**
+ * Process a single `ProjectBackendResult` into an `ExecuteResult`: writes
+ * snapshots, builds the source mapper, resolves test-file paths, and renders
+ * formatter output. Called once per job.
+ */
+export function processProjectResult(
+	entry: ProjectBackendResult,
+	options: ProcessProjectOptions,
+): ExecuteResult {
+	const { backendTiming, config, deferFormatting, startTime, version } = options;
+	const { coverageData, gameOutput, luauTiming, result, setupMs, snapshotWrites } = entry;
+
+	const tsconfigMappings = resolveAllTsconfigMappings(config.rootDir);
 
 	if (snapshotWrites !== undefined) {
 		writeSnapshots(snapshotWrites, config, tsconfigMappings);
@@ -245,14 +287,8 @@ export async function execute(options: ExecuteOptions): Promise<ExecuteResult> {
 	} satisfies TimingResult;
 
 	const output =
-		options.deferFormatting !== true
-			? formatExecuteOutput({
-					config,
-					result,
-					sourceMapper,
-					timing,
-					version: options.version,
-				})
+		deferFormatting !== true
+			? formatExecuteOutput({ config, result, sourceMapper, timing, version })
 			: "";
 
 	if (luauTiming !== undefined) {
@@ -262,6 +298,34 @@ export async function execute(options: ExecuteOptions): Promise<ExecuteResult> {
 	const exitCode = result.success ? 0 : 1;
 
 	return { coverageData, exitCode, gameOutput, output, result, sourceMapper, timing };
+}
+
+/**
+ * Single-project convenience wrapper: builds a length-1 jobs array, fires
+ * `executeBackend` once, and maps the single entry through
+ * `processProjectResult`. Multi-project callers drive `executeBackend` +
+ * `processProjectResult` directly from `cli.ts`.
+ */
+export async function execute(options: ExecuteOptions): Promise<ExecuteResult> {
+	const startTime = Date.now();
+
+	const job = buildProjectJob({
+		config: options.config,
+		testFiles: options.testFiles,
+	});
+
+	const { results, timing: backendTiming } = await executeBackend(options.backend, [job]);
+	// Length-1 envelope: single-project path always gets exactly one result.
+	// eslint-disable-next-line ts/no-non-null-assertion -- length-1 invariant
+	const first = results[0]!;
+
+	return processProjectResult(first, {
+		backendTiming,
+		config: job.config,
+		deferFormatting: options.deferFormatting,
+		startTime,
+		version: options.version,
+	});
 }
 
 function normalizeDirectoryPath(directory: string): string {

@@ -6,15 +6,23 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import type { Backend, BackendOptions, BackendResult } from "./backends/interface.ts";
+import type {
+	Backend,
+	BackendOptions,
+	BackendResult,
+	ProjectBackendResult,
+} from "./backends/interface.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import type { RawCoverageData } from "./coverage/types.ts";
 import {
+	buildProjectJob,
 	execute,
+	executeBackend,
 	type ExecuteOptions,
 	isLuauProject,
 	loadCoverageManifest,
+	processProjectResult,
 	readTsconfigMapping,
 	resolveAllTsconfigMappings,
 	resolveTsconfigDirectories,
@@ -90,27 +98,33 @@ function createFailingResult(): JestResult {
 	};
 }
 
+const DEFAULT_TIMING: BackendResult["timing"] = {
+	executionMs: 100,
+	uploadCached: false,
+	uploadMs: 50,
+};
+
+function singleEntryResult(
+	entry: Partial<ProjectBackendResult> & Pick<ProjectBackendResult, "result">,
+	timing: BackendResult["timing"] = DEFAULT_TIMING,
+): BackendResult {
+	return {
+		results: [{ displayName: "", elapsedMs: 0, ...entry }],
+		timing,
+	};
+}
+
 function createMockBackend(result: JestResult, gameOutput?: string): Backend {
 	return {
-		runTests: async (): Promise<BackendResult> => {
-			return {
-				gameOutput,
-				result,
-				timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-			};
-		},
+		kind: "studio",
+		runTests: async (): Promise<BackendResult> => singleEntryResult({ gameOutput, result }),
 	};
 }
 
 function createMockBackendWithCoverage(result: JestResult, coverageData: RawCoverageData): Backend {
 	return {
-		runTests: async (): Promise<BackendResult> => {
-			return {
-				coverageData,
-				result,
-				timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-			};
-		},
+		kind: "studio",
+		runTests: async (): Promise<BackendResult> => singleEntryResult({ coverageData, result }),
 	};
 }
 
@@ -307,12 +321,10 @@ describe(execute, () => {
 
 		let capturedOptions: BackendOptions | undefined;
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (options_): Promise<BackendResult> => {
 				capturedOptions = options_;
-				return {
-					result: createPassingResult(),
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+				return singleEntryResult({ result: createPassingResult() });
 			},
 		};
 
@@ -326,7 +338,7 @@ describe(execute, () => {
 
 		await execute(options);
 
-		expect(capturedOptions?.config.testNamePattern).toBe("should pass");
+		expect(capturedOptions?.jobs[0]?.config.testNamePattern).toBe("should pass");
 	});
 
 	it("should format output as human-readable by default", async () => {
@@ -616,12 +628,15 @@ describe(execute, () => {
 		expect.assertions(1);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					luauTiming: { requireJest: 1.5 },
-					result: createPassingResult(),
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+				return singleEntryResult(
+					{
+						luauTiming: { requireJest: 1.5 },
+						result: createPassingResult(),
+					},
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -704,14 +719,18 @@ describe(execute, () => {
 		expect.assertions(1);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/shared/__snapshots__/test.snap.luau": "snapshot content",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/shared/__snapshots__/test.snap.luau":
+								"snapshot content",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -743,15 +762,18 @@ describe(execute, () => {
 		);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
-						"ReplicatedStorage/__snapshots__/b.snap.luau": "snap b",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
+							"ReplicatedStorage/__snapshots__/b.snap.luau": "snap b",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -789,14 +811,17 @@ describe(execute, () => {
 		);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -830,14 +855,17 @@ describe(execute, () => {
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"UnknownService/__snapshots__/test.snap.luau": "snap content",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"UnknownService/__snapshots__/test.snap.luau": "snap content",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -871,14 +899,17 @@ describe(execute, () => {
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -911,14 +942,17 @@ describe(execute, () => {
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -964,14 +998,17 @@ describe(execute, () => {
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -1011,14 +1048,17 @@ describe(execute, () => {
 		);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -1058,14 +1098,17 @@ describe(execute, () => {
 		);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -1104,14 +1147,17 @@ describe(execute, () => {
 		);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.spec.snap.luau": "-- snapshot",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -1260,15 +1306,18 @@ describe(execute, () => {
 		);
 
 		const backend: Backend = {
+			kind: "studio",
 			runTests: async (): Promise<BackendResult> => {
-				return {
-					result: createPassingResult(),
-					snapshotWrites: {
-						"ReplicatedStorage/uuid-generator/__snapshots__/init.spec.snap.luau":
-							"-- snapshot",
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/uuid-generator/__snapshots__/init.spec.snap.luau":
+								"-- snapshot",
+						},
 					},
-					timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
-				};
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
 			},
 		};
 
@@ -1571,6 +1620,168 @@ describe(isLuauProject, () => {
 		expect.assertions(1);
 
 		expect(isLuauProject(["a.spec.luau", "b.spec.ts"], [])).toBeFalse();
+	});
+});
+
+describe(buildProjectJob, () => {
+	it("should resolve printBasicPrototype=true for Luau project", () => {
+		expect.assertions(2);
+
+		const job = buildProjectJob({
+			config: DEFAULT_CONFIG,
+			displayName: "luau-project",
+			testFiles: ["src/a.spec.luau"],
+		});
+
+		expect(job.displayName).toBe("luau-project");
+		expect(job.config.snapshotFormat?.printBasicPrototype).toBe(true);
+	});
+
+	it("should resolve printBasicPrototype=false for TS project", () => {
+		expect.assertions(1);
+
+		const job = buildProjectJob({
+			config: DEFAULT_CONFIG,
+			testFiles: ["src/a.spec.ts"],
+		});
+
+		expect(job.config.snapshotFormat?.printBasicPrototype).toBe(false);
+	});
+
+	it("should default displayName to empty string", () => {
+		expect.assertions(1);
+
+		const job = buildProjectJob({ config: DEFAULT_CONFIG, testFiles: [] });
+
+		expect(job.displayName).toBe("");
+	});
+
+	it("should preserve displayColor", () => {
+		expect.assertions(1);
+
+		const job = buildProjectJob({
+			config: DEFAULT_CONFIG,
+			displayColor: "green",
+			testFiles: [],
+		});
+
+		expect(job.displayColor).toBe("green");
+	});
+
+	it("should preserve existing snapshotFormat.printBasicPrototype when set", () => {
+		expect.assertions(1);
+
+		const config: ResolvedConfig = {
+			...DEFAULT_CONFIG,
+			snapshotFormat: { printBasicPrototype: false },
+		};
+		const job = buildProjectJob({ config, testFiles: ["src/a.spec.luau"] });
+
+		expect(job.config.snapshotFormat?.printBasicPrototype).toBe(false);
+	});
+});
+
+describe(executeBackend, () => {
+	it("should call backend.runTests with jobs array and return BackendResult", async () => {
+		expect.assertions(2);
+
+		let captured: BackendOptions | undefined;
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async (options_) => {
+				captured = options_;
+				return {
+					results: [{ displayName: "", elapsedMs: 42, result: createPassingResult() }],
+					timing: { executionMs: 100, uploadCached: false, uploadMs: 0 },
+				};
+			},
+		};
+
+		const job = buildProjectJob({ config: DEFAULT_CONFIG, testFiles: [] });
+		const result = await executeBackend(backend, [job]);
+
+		expect(captured?.jobs).toHaveLength(1);
+		expect(result.results[0]?.elapsedMs).toBe(42);
+	});
+
+	it("should forward parallel option to backend.runTests", async () => {
+		expect.assertions(1);
+
+		let captured: BackendOptions | undefined;
+		const backend: Backend = {
+			kind: "open-cloud",
+			runTests: async (options_) => {
+				captured = options_;
+				return {
+					results: [{ displayName: "", elapsedMs: 0, result: createPassingResult() }],
+					timing: { executionMs: 0, uploadCached: false, uploadMs: 0 },
+				};
+			},
+		};
+
+		const job = buildProjectJob({ config: DEFAULT_CONFIG, testFiles: [] });
+		await executeBackend(backend, [job], 3);
+
+		expect(captured?.parallel).toBe(3);
+	});
+
+	it("should forward auto parallel value", async () => {
+		expect.assertions(1);
+
+		let captured: BackendOptions | undefined;
+		const backend: Backend = {
+			kind: "open-cloud",
+			runTests: async (options_) => {
+				captured = options_;
+				return {
+					results: [{ displayName: "", elapsedMs: 0, result: createPassingResult() }],
+					timing: { executionMs: 0, uploadCached: false, uploadMs: 0 },
+				};
+			},
+		};
+
+		const job = buildProjectJob({ config: DEFAULT_CONFIG, testFiles: [] });
+		await executeBackend(backend, [job], "auto");
+
+		expect(captured?.parallel).toBe("auto");
+	});
+});
+
+describe(processProjectResult, () => {
+	it("should return ExecuteResult with backend timing and success exit code", () => {
+		expect.assertions(3);
+
+		const result = processProjectResult(
+			{ displayName: "", elapsedMs: 0, result: createPassingResult() },
+			{
+				backendTiming: { executionMs: 200, uploadCached: true, uploadMs: 50 },
+				config: DEFAULT_CONFIG,
+				deferFormatting: true,
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			},
+		);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.timing.executionMs).toBe(200);
+		expect(result.timing.uploadCached).toBeTrue();
+	});
+
+	it("should return exit code 1 when result fails", () => {
+		expect.assertions(1);
+
+		const result = processProjectResult(
+			{ displayName: "", elapsedMs: 0, result: createFailingResult() },
+			{
+				backendTiming: { executionMs: 0 },
+				config: DEFAULT_CONFIG,
+				deferFormatting: true,
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			},
+		);
+
+		expect(result.exitCode).toBe(1);
 	});
 });
 

@@ -155,4 +155,42 @@ describe(mapFsPathToDataModel, () => {
 			"ReplicatedStorage/client/components/ui/Button",
 		);
 	});
+
+	it("should map root init.luau when tree root has $path", () => {
+		expect.assertions(1);
+
+		const rootOnlyTree: RojoTreeNode = { $path: "out" };
+		expect(mapFsPathToDataModel("out/init.luau", rootOnlyTree)).toBe("");
+	});
+
+	it("should map nested file when tree root has $path", () => {
+		expect.assertions(1);
+
+		const rootOnlyTree: RojoTreeNode = { $path: "out" };
+		expect(mapFsPathToDataModel("out/core/module.luau", rootOnlyTree)).toBe("core/module");
+	});
+
+	it("should map nested init.luau when tree root has $path", () => {
+		expect.assertions(1);
+
+		const rootOnlyTree: RojoTreeNode = { $path: "out" };
+		expect(mapFsPathToDataModel("out/core/init.luau", rootOnlyTree)).toBe("core");
+	});
+
+	it("should return undefined when tree root $path does not match", () => {
+		expect.assertions(1);
+
+		const rootOnlyTree: RojoTreeNode = { $path: "out" };
+		expect(mapFsPathToDataModel("other/file.luau", rootOnlyTree)).toBeUndefined();
+	});
+
+	it("should fall through to findInTree when root $path is an optional object", () => {
+		expect.assertions(1);
+
+		const tree: RojoTreeNode = {
+			$path: { optional: "out" },
+			ReplicatedStorage: { lib: { $path: "lib" } },
+		};
+		expect(mapFsPathToDataModel("lib/foo.luau", tree)).toBe("ReplicatedStorage/lib/foo");
+	});
 });

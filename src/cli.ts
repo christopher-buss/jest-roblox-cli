@@ -33,10 +33,13 @@ import { checkThresholds, generateReports, printCoverageHeader } from "./coverag
 import { buildWithRojo } from "./coverage/rojo-builder.ts";
 import type { RawCoverageData } from "./coverage/types.ts";
 import {
+	buildProjectJob,
 	execute,
+	executeBackend,
 	type ExecuteResult,
 	formatExecuteOutput,
 	loadCoverageManifest,
+	processProjectResult,
 } from "./executor.ts";
 import { formatAgentMultiProject } from "./formatters/agent.ts";
 import {
@@ -54,7 +57,7 @@ import {
 import { writeJsonFile } from "./formatters/json.ts";
 import { DEFAULT_MAX_FAILURES, findFormatterOptions } from "./formatters/utils.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
-import type { SourceMapper } from "./source-mapper/index.ts";
+import { combineSourceMappers, type SourceMapper } from "./source-mapper/index.ts";
 import { runTypecheck } from "./typecheck/runner.ts";
 import type { JestResult } from "./types/jest-result.ts";
 import { rojoProjectSchema } from "./types/rojo.ts";
@@ -95,6 +98,8 @@ Options:
   --formatters <name...>            Output formatters (default, agent, json, github-actions)
   --no-cache                        Force re-upload place file (skip cache)
   --pollInterval <ms>               Open Cloud poll interval in ms (default: 500)
+  --parallel [n]                    Open-Cloud-only: number of concurrent sessions
+                                    (or "auto" = min(jobs, 3); default: 1 session)
   --project <name...>               Filter which named projects to run
   --setupFiles <path...>            Setup scripts (package specifiers or relative paths)
   --setupFilesAfterEnv <path...>    Post-env setup scripts (package specifiers or relative paths)
@@ -144,7 +149,7 @@ interface MultiProjectOutputOptions {
 export function parseArgs(args: Array<string>): CliOptions {
 	const { positionals, values } = nodeParseArgs({
 		allowPositionals: true,
-		args,
+		args: normalizeParallelFlag(args),
 		options: {
 			"backend": { type: "string" },
 			"cache": { type: "boolean" },
@@ -161,6 +166,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 			"no-color": { type: "boolean" },
 			"no-show-luau": { type: "boolean" },
 			"outputFile": { type: "string" },
+			"parallel": { type: "string" },
 			"passWithNoTests": { type: "boolean" },
 			"pollInterval": { type: "string" },
 			"port": { type: "string" },
@@ -205,6 +211,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		gameOutput: values.gameOutput,
 		help: values.help,
 		outputFile: values.outputFile,
+		parallel: parseParallelValue(values.parallel),
 		passWithNoTests: values.passWithNoTests,
 		pollInterval,
 		port,
@@ -260,11 +267,12 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 	let startTime = Number.POSITIVE_INFINITY;
 	let success = true;
 	const testResults: Array<JestResult["testResults"][number]> = [];
-	let executionMs = 0;
+	// testsMs and setupMs are per-project CPU time — summing is honest even
+	// when wall-clock overlaps (parallel run). executionMs/totalMs/uploadMs/
+	// uploadCached come from the backend's shared BackendTiming and are
+	// identical across entries; take them from the first entry rather than
+	// summing, so Duration reflects wall-clock and not N × wall-clock.
 	let testsMs = 0;
-	let totalMs = 0;
-	let uploadMs = 0;
-	let coverageMs = 0;
 	let setupMs = 0;
 	let mergedCoverage: RawCoverageData | undefined;
 
@@ -277,16 +285,27 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 		startTime = Math.min(startTime, result.result.startTime);
 		success &&= result.result.success;
 		testResults.push(...result.result.testResults);
-		executionMs += result.timing.executionMs;
 		testsMs += result.timing.testsMs;
-		totalMs += result.timing.totalMs;
-		uploadMs += result.timing.uploadMs ?? 0;
-		coverageMs += result.timing.coverageMs ?? 0;
 		setupMs += result.timing.setupMs ?? 0;
 		if (result.coverageData !== undefined) {
 			mergedCoverage = mergeRawCoverage(mergedCoverage, result.coverageData);
 		}
 	}
+
+	// Safe: length > 1 checked above, so index 0 is defined.
+	const [sharedTiming] = results as [ExecuteResult, ...Array<ExecuteResult>];
+	const mergedStartTime = Math.min(...results.map((result) => result.timing.startTime));
+	// totalMs is wall-clock (Date.now() - startTime at processProjectResult
+	// time). All entries share the same outer startTime, so their totalMs
+	// values are within a few ms of each other — take the max to report the
+	// latest observed wall-clock for the whole invocation.
+	const totalMs = Math.max(...results.map((result) => result.timing.totalMs));
+
+	const mergedSourceMapper = combineSourceMappers(
+		results.flatMap((result) =>
+			result.sourceMapper !== undefined ? [result.sourceMapper] : [],
+		),
+	);
 
 	return {
 		coverageData: mergedCoverage,
@@ -302,15 +321,16 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 			success,
 			testResults,
 		},
+		sourceMapper: mergedSourceMapper,
 		timing: {
-			coverageMs: coverageMs > 0 ? coverageMs : undefined,
-			executionMs,
+			coverageMs: sharedTiming.timing.coverageMs,
+			executionMs: sharedTiming.timing.executionMs,
 			setupMs: setupMs > 0 ? setupMs : undefined,
-			startTime: Math.min(...results.map((result) => result.timing.startTime)),
+			startTime: mergedStartTime,
 			testsMs,
 			totalMs,
-			uploadCached: results.every((result) => result.timing.uploadCached === true),
-			uploadMs,
+			uploadCached: sharedTiming.timing.uploadCached,
+			uploadMs: sharedTiming.timing.uploadMs,
 		},
 	};
 }
@@ -327,6 +347,57 @@ export async function run(args: Array<string>): Promise<number> {
 export async function main(): Promise<void> {
 	const exitCode = await run(process.argv.slice(2));
 	process.exit(exitCode);
+}
+
+/**
+ * `--parallel` with no value means `"auto"`. Node's `parseArgs` can't express
+ * optional values, so rewrite bare `--parallel` (at the end of argv, or
+ * followed by another `--flag`, or followed by a non-numeric, non-"auto" token)
+ * into `--parallel auto` before handing it off.
+ */
+const PARALLEL_FLAG = "--parallel";
+
+function normalizeParallelFlag(args: Array<string>): Array<string> {
+	const out: Array<string> = [];
+	for (let index = 0; index < args.length; index++) {
+		// eslint-disable-next-line ts/no-non-null-assertion -- index bounded by args.length
+		const current = args[index]!;
+		if (current !== PARALLEL_FLAG) {
+			out.push(current);
+			continue;
+		}
+
+		const next = args[index + 1];
+		const looksLikeValue =
+			next !== undefined &&
+			!next.startsWith("-") &&
+			(next === "auto" || /^-?\d+$/.test(next));
+		if (looksLikeValue) {
+			out.push(PARALLEL_FLAG, next);
+			index += 1;
+		} else {
+			out.push(PARALLEL_FLAG, "auto");
+		}
+	}
+
+	return out;
+}
+
+function parseParallelValue(raw: string | undefined): "auto" | number | undefined {
+	if (raw === undefined) {
+		return undefined;
+	}
+
+	if (raw === "auto") {
+		return "auto";
+	}
+
+	const parsed = Number.parseInt(raw, 10);
+	if (Number.isNaN(parsed) || parsed < 1) {
+		throw new Error(`Invalid --parallel value "${raw}". Must be a positive integer or "auto".`);
+	}
+
+	return parsed;
 }
 
 function formatGameOutputLines(raw: string | undefined): string | undefined {
@@ -381,6 +452,32 @@ function writeGameOutputIfConfigured(
 	}
 
 	const entries = parseGameOutput(gameOutput);
+	writeGameOutput(config.gameOutput, entries);
+
+	if (!config.silent && options.hintsShown !== true) {
+		const notice = formatGameOutputNotice(config.gameOutput, entries.length);
+		if (notice) {
+			console.error(notice);
+		}
+	}
+}
+
+/**
+ * Multi-project variant: `--gameOutput` used to silently drop when a config
+ * declared `projects`, because the output path here never called
+ * `writeGameOutputIfConfigured`. Aggregate every project's parsed entries into
+ * one file so the contract matches the single-project path.
+ */
+function writeAggregatedGameOutput(
+	config: ResolvedConfig,
+	projectResults: Array<ProjectResult>,
+	options: { hintsShown?: boolean },
+): void {
+	if (config.gameOutput === undefined) {
+		return;
+	}
+
+	const entries = projectResults.flatMap((project) => parseGameOutput(project.result.gameOutput));
 	writeGameOutput(config.gameOutput, entries);
 
 	if (!config.silent && options.hintsShown !== true) {
@@ -690,6 +787,10 @@ async function outputMultiProjectResults(
 		await writeJsonFile(mergedResult, config.outputFile);
 	}
 
+	writeAggregatedGameOutput(config, projectResults, {
+		hintsShown: !mergedResult.success,
+	});
+
 	runGitHubActionsFormatter(config, mergedResult, merged.sourceMapper);
 
 	const passed = mergedResult.success && coveragePassed;
@@ -797,6 +898,22 @@ function applySetupResolver(
 	}
 }
 
+function validateParallelOption(
+	parallel: "auto" | number | undefined,
+	backend: { kind: string },
+): void {
+	if (parallel === undefined) {
+		return;
+	}
+
+	if (backend.kind !== "open-cloud") {
+		throw new ConfigError(
+			"--parallel is only supported on the open-cloud backend.",
+			"Pass --backend open-cloud, or remove --parallel.",
+		);
+	}
+}
+
 async function runMultiProject(
 	cli: CliOptions,
 	rootConfig: ResolvedConfig,
@@ -842,8 +959,16 @@ async function runMultiProject(
 
 	const { effectiveConfig, preCoverageMs } = prepareMultiProjectCoverage(rootConfig, projects);
 	const backend = await resolveBackend(effectiveConfig);
+	validateParallelOption(cli.parallel, backend);
 
-	const projectResults: Array<ProjectResult> = [];
+	interface PendingJob {
+		config: ResolvedConfig;
+		displayColor?: string;
+		displayName: string;
+		runtimeFiles: Array<string>;
+	}
+
+	const pendingJobs: Array<PendingJob> = [];
 	const allTypeTestFiles: Array<string> = [];
 
 	for (const project of projects) {
@@ -866,22 +991,66 @@ async function runMultiProject(
 
 		allTypeTestFiles.push(...typeTestFiles);
 
-		if (runtimeFiles.length === 0 && typeTestFiles.length === 0) {
+		if (runtimeFiles.length === 0) {
 			continue;
 		}
 
-		if (runtimeFiles.length > 0) {
-			const result = await execute({
-				backend,
-				config: projConfig,
+		pendingJobs.push({
+			config: projConfig,
+			displayColor: project.displayColor,
+			displayName: project.displayName,
+			runtimeFiles,
+		});
+	}
+
+	// Build the ProjectJob[] envelope once. `buildProjectJob` resolves
+	// snapshotFormat per-project so each entry in `jobs` arrives at the
+	// runtime with its own correct format (C1 — fixes the spike's snapshot
+	// regression).
+	const jobs = pendingJobs.map((pending) => {
+		return buildProjectJob({
+			config: pending.config,
+			displayColor: pending.displayColor,
+			displayName: pending.displayName,
+			testFiles: pending.runtimeFiles,
+		});
+	});
+
+	const projectResults: Array<ProjectResult> = [];
+	if (jobs.length > 0) {
+		const startTime = Date.now();
+		let backendResult;
+		try {
+			backendResult = await executeBackend(backend, jobs, cli.parallel);
+		} finally {
+			await backend.close?.();
+		}
+
+		// Use overall backend wall-clock as the shared executionMs so the
+		// reported Duration reflects real time and not the sum of per-entry
+		// timings (which would double-count parallel work).
+		const sharedTiming = backendResult.timing;
+
+		for (const [index, entry] of backendResult.results.entries()) {
+			// Invariant: backends return results.length === jobs.length in
+			// request order, so pendingJobs[index] and jobs[index] are always
+			// defined.
+			// eslint-disable-next-line ts/no-non-null-assertion -- backend invariant
+			const pending = pendingJobs[index]!;
+			// eslint-disable-next-line ts/no-non-null-assertion -- backend invariant
+			const jobConfig = jobs[index]!.config;
+
+			const executeResult = processProjectResult(entry, {
+				backendTiming: sharedTiming,
+				config: jobConfig,
 				deferFormatting: true,
-				testFiles: runtimeFiles,
+				startTime,
 				version: VERSION,
 			});
 			projectResults.push({
-				displayColor: project.displayColor,
-				displayName: project.displayName,
-				result,
+				displayColor: pending.displayColor,
+				displayName: pending.displayName,
+				result: executeResult,
 			});
 		}
 	}
@@ -924,6 +1093,7 @@ async function runMultiProject(
 }
 
 async function executeRuntimeTests(
+	cli: CliOptions,
 	config: ResolvedConfig,
 	testFiles: Array<string>,
 	totalFiles: number,
@@ -937,14 +1107,19 @@ async function executeRuntimeTests(
 	}
 
 	const backend = await resolveBackend(config);
+	validateParallelOption(cli.parallel, backend);
 
-	return execute({
-		backend,
-		config,
-		deferFormatting: true,
-		testFiles,
-		version: VERSION,
-	});
+	try {
+		return await execute({
+			backend,
+			config,
+			deferFormatting: true,
+			testFiles,
+			version: VERSION,
+		});
+	} finally {
+		await backend.close?.();
+	}
 }
 
 function resolveSetupFilePaths(config: ResolvedConfig): void {
@@ -961,12 +1136,9 @@ function resolveSetupFilePaths(config: ResolvedConfig): void {
 	applySetupResolver(config, resolve);
 }
 
-async function runSingleProject(
-	config: ResolvedConfig,
-	cliFiles: Array<string> | undefined,
-): Promise<number> {
+async function runSingleProject(cli: CliOptions, config: ResolvedConfig): Promise<number> {
 	resolveSetupFilePaths(config);
-	const discovery = discoverTestFiles(config, cliFiles);
+	const discovery = discoverTestFiles(config, cli.files);
 
 	if (discovery.files.length === 0) {
 		if (config.passWithNoTests) {
@@ -1014,7 +1186,12 @@ async function runSingleProject(
 
 	const runtimeResult =
 		runtimeTestFiles.length > 0
-			? await executeRuntimeTests(effectiveConfig, runtimeTestFiles, discovery.totalFiles)
+			? await executeRuntimeTests(
+					cli,
+					effectiveConfig,
+					runtimeTestFiles,
+					discovery.totalFiles,
+				)
 			: undefined;
 
 	return outputResults(effectiveConfig, typecheckResult, runtimeResult, preCoverageMs);
@@ -1048,7 +1225,7 @@ async function runInner(args: Array<string>): Promise<number> {
 		return runMultiProject(cli, config, rawProjects);
 	}
 
-	return runSingleProject(config, cli.files);
+	return runSingleProject(cli, config);
 }
 
 const LUAU_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [

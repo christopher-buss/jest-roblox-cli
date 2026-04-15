@@ -182,6 +182,66 @@ export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
 	};
 }
 
+/**
+ * Compose multiple `SourceMapper`s into one that tries every child in order.
+ * Used by the multi-project CLI path so that failure messages and GitHub
+ * annotations can resolve frames from any project's TS/Luau mapping.
+ *
+ * Each child mapper only rewrites frames it can resolve, leaving the rest
+ * untouched. Chaining `mapFailureMessage` / `mapFailureWithLocations` calls
+ * through every child is therefore safe: later mappers see the partially
+ * rewritten string and still parse any remaining `[string "..."]` frames.
+ * Locations accumulate across mappers; `resolveTestFilePath` returns the
+ * first child's hit.
+ */
+export function combineSourceMappers(
+	mappers: ReadonlyArray<SourceMapper>,
+): SourceMapper | undefined {
+	if (mappers.length === 0) {
+		return undefined;
+	}
+
+	if (mappers.length === 1) {
+		// Safe: length checked above.
+		// eslint-disable-next-line ts/no-non-null-assertion -- length check
+		return mappers[0]!;
+	}
+
+	return {
+		mapFailureMessage(message: string): string {
+			let result = message;
+			for (const mapper of mappers) {
+				result = mapper.mapFailureMessage(result);
+			}
+
+			return result;
+		},
+
+		mapFailureWithLocations(message: string): MappedFailure {
+			let mappedMessage = message;
+			const locations: Array<MappedLocation> = [];
+			for (const mapper of mappers) {
+				const partial = mapper.mapFailureWithLocations(mappedMessage);
+				mappedMessage = partial.message;
+				locations.push(...partial.locations);
+			}
+
+			return { locations, message: mappedMessage };
+		},
+
+		resolveTestFilePath(testFilePath: string): string | undefined {
+			for (const mapper of mappers) {
+				const resolved = mapper.resolveTestFilePath(testFilePath);
+				if (resolved !== undefined) {
+					return resolved;
+				}
+			}
+
+			return undefined;
+		},
+	};
+}
+
 export function getSourceSnippet({
 	column,
 	context = 2,

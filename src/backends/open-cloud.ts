@@ -17,8 +17,16 @@ import * as path from "node:path";
 import process from "node:process";
 
 import { LuauScriptError, parseJestOutput } from "../reporter/parser.ts";
-import { generateTestScript } from "../test-script.ts";
-import type { Backend, BackendOptions, BackendResult } from "./interface.ts";
+import { generateTestScript, type JestArgvInput } from "../test-script.ts";
+import type {
+	Backend,
+	BackendOptions,
+	BackendResult,
+	ProjectBackendResult,
+	ProjectJob,
+} from "./interface.ts";
+
+const PARALLEL_AUTO_CAP = 3;
 
 const OPEN_CLOUD_BASE_URL = "https://apis.roblox.com";
 const RATE_LIMIT_DEFAULT_WAIT_MS = 5000;
@@ -46,11 +54,26 @@ const taskStatusResponse = type({
 	"state": "'CANCELLED' | 'COMPLETE' | 'FAILED' | 'PROCESSING'",
 });
 
+const entrySchema = type({
+	"elapsedMs?": "number",
+	"gameOutput?": "string",
+	"jestOutput": "string",
+});
+
+const envelopeSchema = type({ entries: entrySchema.array() });
+
+interface JobBucket {
+	indices: Array<number>;
+	jobs: Array<ProjectJob>;
+}
+
 export class OpenCloudBackend implements Backend {
 	private readonly credentials: OpenCloudCredentials;
 	private readonly http: HttpClient;
 	private readonly readFile: FileReader;
 	private readonly sleepFn: (ms: number) => Promise<void>;
+
+	public readonly kind = "open-cloud" as const;
 
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
 		this.credentials = credentials;
@@ -70,10 +93,23 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	public async runTests(options: BackendOptions): Promise<BackendResult> {
-		const placeFilePath = path.resolve(options.config.rootDir, options.config.placeFile);
+		const { jobs, parallel } = options;
+		if (jobs.length === 0) {
+			throw new Error("OpenCloudBackend requires at least one job");
+		}
+
+		// Cache/timeout/pollInterval are picked from the first job. All jobs in
+		// a single CLI invocation share the same place file, so these are
+		// per-run knobs rather than per-job.
+		// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
+		const primary = jobs[0]!;
+		const placeFilePath = path.resolve(primary.config.rootDir, primary.config.placeFile);
 		const cacheDirectory = getCacheDirectory();
 		const cacheFilePath = path.join(cacheDirectory, "upload-cache.json");
 
+		// Place upload happens once per runTests call regardless of how many
+		// sessions we fire. Hoisted above the bucket dispatch so --parallel does
+		// not upload N times.
 		const uploadStart = Date.now();
 		const placeData = this.readFile(placeFilePath);
 		const fileHash = hashBuffer(placeData);
@@ -82,7 +118,7 @@ export class OpenCloudBackend implements Backend {
 		const cache = readCache(cacheFilePath);
 		const uploadCached = await this.uploadOrReuseCached({
 			cache,
-			cacheEnabled: options.config.cache,
+			cacheEnabled: primary.config.cache,
 			cacheFilePath,
 			cacheKey,
 			fileHash,
@@ -91,49 +127,43 @@ export class OpenCloudBackend implements Backend {
 
 		const uploadMs = Date.now() - uploadStart;
 
+		const buckets = bucketJobs(jobs, parallel);
+
 		const executionStart = Date.now();
-		const taskPath = await this.createExecutionTask(options);
-		const { gameOutput, jestOutput } = await this.pollForCompletion(
-			taskPath,
-			options.config.timeout,
-			options.config.pollInterval,
+		const bucketResults = await Promise.all(
+			buckets.map(async (bucket) => this.runBucket(bucket)),
 		);
 		const executionMs = Date.now() - executionStart;
 
-		let parsed;
-		try {
-			parsed = parseJestOutput(jestOutput);
-		} catch (err) {
-			if (err instanceof LuauScriptError) {
-				err.gameOutput = gameOutput;
+		// Flatten bucket results in original job order via the indices recorded
+		// at bucketing time. indices and results always share the same length
+		// because runBucket asserts that invariant before returning.
+		const flattened: Array<ProjectBackendResult> = Array.from({ length: jobs.length });
+		for (const { indices, results } of bucketResults) {
+			for (const [positionInBucket, originalIndex] of indices.entries()) {
+				// eslint-disable-next-line ts/no-non-null-assertion -- length invariant
+				flattened[originalIndex] = results[positionInBucket]!;
 			}
-
-			throw err;
 		}
 
-		const setupMs =
-			parsed.setupSeconds !== undefined ? Math.round(parsed.setupSeconds * 1000) : undefined;
-
 		return {
-			coverageData: parsed.coverageData,
-			gameOutput,
-			luauTiming: parsed.luauTiming,
-			result: parsed.result,
-			setupMs,
-			snapshotWrites: parsed.snapshotWrites,
+			results: flattened,
 			timing: { executionMs, uploadCached, uploadMs },
 		};
 	}
 
-	private async createExecutionTask(options: BackendOptions): Promise<string> {
+	private async createExecutionTask(
+		inputs: Array<JestArgvInput>,
+		timeoutMs: number,
+	): Promise<string> {
 		const url = `${OPEN_CLOUD_BASE_URL}/cloud/v2/universes/${this.credentials.universeId}/places/${this.credentials.placeId}/luau-execution-session-tasks`;
 
-		const script = generateTestScript(options);
+		const script = generateTestScript(inputs);
 
 		const response = await this.http.request("POST", url, {
 			body: {
 				script,
-				timeout: `${Math.floor(options.config.timeout / 1000)}s`,
+				timeout: `${Math.floor(timeoutMs / 1000)}s`,
 			},
 		});
 
@@ -204,6 +234,41 @@ export class OpenCloudBackend implements Backend {
 		throw new Error("Execution timed out");
 	}
 
+	private async runBucket(
+		bucket: JobBucket,
+	): Promise<{ indices: Array<number>; results: Array<ProjectBackendResult> }> {
+		const { indices, jobs } = bucket;
+		// A bucket is only created for at least one job, so jobs[0] is defined.
+		// eslint-disable-next-line ts/no-non-null-assertion -- bucket non-empty
+		const primary = jobs[0]!;
+		const inputs: Array<JestArgvInput> = jobs.map((job) => {
+			return { config: job.config, testFiles: job.testFiles };
+		});
+
+		const taskPath = await this.createExecutionTask(inputs, primary.config.timeout);
+		const { gameOutput, jestOutput } = await this.pollForCompletion(
+			taskPath,
+			primary.config.timeout,
+			primary.config.pollInterval,
+		);
+
+		const entries = parseEnvelope(jestOutput);
+		if (entries.length !== jobs.length) {
+			throw new Error(
+				`Open Cloud backend returned ${entries.length.toString()} entries but bucket had ${jobs.length.toString()} jobs`,
+			);
+		}
+
+		const results = entries.map((entry, index) => {
+			// Length match has been asserted above, so the index is always in
+			// range.
+			// eslint-disable-next-line ts/no-non-null-assertion -- length asserted above
+			return buildProjectResult(entry, jobs[index]!, gameOutput);
+		});
+
+		return { indices, results };
+	}
+
 	private async uploadOrReuseCached({
 		cache,
 		cacheEnabled,
@@ -263,6 +328,91 @@ export function createOpenCloudBackend(): OpenCloudBackend {
 	}
 
 	return new OpenCloudBackend({ apiKey, placeId, universeId });
+}
+
+function resolveBucketCount(parallel: BackendOptions["parallel"], jobCount: number): number {
+	if (parallel === undefined) {
+		return 1;
+	}
+
+	if (parallel === "auto") {
+		return Math.min(jobCount, PARALLEL_AUTO_CAP);
+	}
+
+	if (parallel < 1) {
+		throw new Error(`--parallel must be >= 1, got ${parallel.toString()}`);
+	}
+
+	return Math.min(Math.floor(parallel), jobCount);
+}
+
+function bucketJobs(
+	jobs: Array<ProjectJob>,
+	parallel: BackendOptions["parallel"],
+): Array<JobBucket> {
+	const bucketCount = resolveBucketCount(parallel, jobs.length);
+	const buckets: Array<JobBucket> = [];
+	for (let index = 0; index < bucketCount; index++) {
+		buckets.push({ indices: [], jobs: [] });
+	}
+
+	// Round-robin assignment: job[i] goes to bucket i % bucketCount. Preserves
+	// input order within each bucket so per-bucket results flatten back in the
+	// original request order via the recorded indices. Smart LPT bucketing is
+	// future work (F1 in the plan).
+	for (const [originalIndex, job] of jobs.entries()) {
+		// eslint-disable-next-line ts/no-non-null-assertion -- index always valid
+		const bucket = buckets[originalIndex % bucketCount]!;
+		bucket.indices.push(originalIndex);
+		bucket.jobs.push(job);
+	}
+
+	return buckets;
+}
+
+function parseEnvelope(jestOutput: string): Array<typeof entrySchema.infer> {
+	// Legacy runtime error payloads (non-envelope-shaped) are re-wrapped as a
+	// length-1 entries array so parseJestOutput can surface the original
+	// LuauScriptError through buildProjectResult. Mirrors StudioBackend.
+	const raw: unknown = JSON.parse(jestOutput);
+	const envelope = envelopeSchema(raw);
+	if (envelope instanceof type.errors) {
+		return [{ elapsedMs: 0, jestOutput }];
+	}
+
+	return envelope.entries;
+}
+
+function buildProjectResult(
+	entry: typeof entrySchema.infer,
+	job: ProjectJob,
+	fallbackGameOutput: string | undefined,
+): ProjectBackendResult {
+	const gameOutput = entry.gameOutput ?? fallbackGameOutput;
+
+	let parsed;
+	try {
+		parsed = parseJestOutput(entry.jestOutput);
+	} catch (err) {
+		if (err instanceof LuauScriptError) {
+			err.gameOutput = gameOutput;
+		}
+
+		throw err;
+	}
+
+	return {
+		coverageData: parsed.coverageData,
+		displayColor: job.displayColor,
+		displayName: job.displayName,
+		elapsedMs: entry.elapsedMs ?? 0,
+		gameOutput,
+		luauTiming: parsed.luauTiming,
+		result: parsed.result,
+		setupMs:
+			parsed.setupSeconds !== undefined ? Math.round(parsed.setupSeconds * 1000) : undefined,
+		snapshotWrites: parsed.snapshotWrites,
+	};
 }
 
 function parseRetryAfter(headers?: Record<string, string | undefined>): number {

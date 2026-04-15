@@ -252,4 +252,50 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	return jestResult, if logSuccess then logHistory else "[]"
 end
 
+type ProjectEntry = {
+	jestOutput: string,
+	gameOutput: string,
+	elapsedMs: number,
+}
+
+local function encodeExecutionError(err: any): string
+	return HttpService:JSONEncode({
+		success = true,
+		value = {
+			kind = "ExecutionError",
+			error = tostring(err),
+		},
+	})
+end
+
+-- TODO(runner-tests): dogfood harness for Runner.runProjects
+function module.runProjects(
+	callingScript: LuaSourceContainer,
+	configs: { Config }
+): { ProjectEntry }
+	local entries: { ProjectEntry } = {}
+
+	for index, cfg in configs do
+		local start = os.clock()
+		local ok, jestOutput, gameOutput = pcall(module.run, callingScript, cfg)
+		local elapsedMs = math.floor((os.clock() - start) * 1000)
+
+		if ok then
+			entries[index] = {
+				jestOutput = jestOutput :: string,
+				gameOutput = gameOutput :: string,
+				elapsedMs = elapsedMs,
+			}
+		else
+			entries[index] = {
+				jestOutput = encodeExecutionError(jestOutput),
+				gameOutput = "[]",
+				elapsedMs = elapsedMs,
+			}
+		end
+	end
+
+	return entries
+end
+
 return module

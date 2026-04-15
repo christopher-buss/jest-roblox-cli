@@ -7,6 +7,7 @@ import type { MockInstance } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { resolveBackend } from "./backends/auto.ts";
+import type { Backend, BackendResult, ProjectJob } from "./backends/interface.ts";
 import { filterByName, main, mergeProjectResults, parseArgs, run } from "./cli.ts";
 import { ConfigError } from "./config/errors.ts";
 import { loadConfig } from "./config/loader.ts";
@@ -25,13 +26,17 @@ import { prepareCoverage } from "./coverage/prepare.ts";
 import { checkThresholds, generateReports } from "./coverage/reporter.ts";
 import { buildWithRojo } from "./coverage/rojo-builder.ts";
 import {
+	buildProjectJob,
 	execute,
+	executeBackend,
 	type ExecuteResult,
 	formatExecuteOutput,
 	loadCoverageManifest,
+	processProjectResult,
 } from "./executor.ts";
 import { writeJsonFile } from "./formatters/json.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
+import type { SourceMapper } from "./source-mapper/index.ts";
 import { runTypecheck } from "./typecheck/runner.ts";
 import type { JestResult } from "./types/jest-result.ts";
 import { formatGameOutputNotice, parseGameOutput, writeGameOutput } from "./utils/game-output.ts";
@@ -119,11 +124,35 @@ function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResul
 	};
 }
 
+function makeBackendResult(jobs: Array<ProjectJob>): BackendResult {
+	return {
+		results: jobs.map((job) => {
+			return {
+				displayColor: job.displayColor,
+				displayName: job.displayName,
+				elapsedMs: 50,
+				result: makeJestResult(),
+			};
+		}),
+		timing: { executionMs: 100, uploadCached: false, uploadMs: 50 },
+	};
+}
+
+function makeMockBackend(kind: "open-cloud" | "studio" = "studio"): Backend {
+	return {
+		close: vi.fn<NonNullable<Backend["close"]>>(),
+		kind,
+		runTests: vi.fn<Backend["runTests"]>(),
+	};
+}
+
 const mocks = {
+	buildProjectJob: vi.mocked(buildProjectJob),
 	buildWithRojo: vi.mocked(buildWithRojo),
 	checkThresholds: vi.mocked(checkThresholds),
 	createSetupResolver: vi.mocked(createSetupResolver),
 	execute: vi.mocked(execute),
+	executeBackend: vi.mocked(executeBackend),
 	formatExecuteOutput: vi.mocked(formatExecuteOutput),
 	formatGameOutputNotice: vi.mocked(formatGameOutputNotice),
 	generateProjectConfigs: vi.mocked(generateProjectConfigs),
@@ -134,6 +163,7 @@ const mocks = {
 	mapCoverageToTypeScript: vi.mocked(mapCoverageToTypeScript),
 	parseGameOutput: vi.mocked(parseGameOutput),
 	prepareCoverage: vi.mocked(prepareCoverage),
+	processProjectResult: vi.mocked(processProjectResult),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
 	resolveBackend: vi.mocked(resolveBackend),
 	runTypecheck: vi.mocked(runTypecheck),
@@ -463,6 +493,68 @@ describe(parseArgs, () => {
 		const result = parseArgs(["--passWithNoTests"]);
 
 		expect(result.passWithNoTests).toBeTrue();
+	});
+
+	it("should parse --parallel with integer value", () => {
+		expect.assertions(1);
+
+		const result = parseArgs(["--parallel", "3"]);
+
+		expect(result.parallel).toBe(3);
+	});
+
+	it('should parse --parallel with "auto"', () => {
+		expect.assertions(1);
+
+		const result = parseArgs(["--parallel", "auto"]);
+
+		expect(result.parallel).toBe("auto");
+	});
+
+	it('should treat bare --parallel (no value) as "auto"', () => {
+		expect.assertions(1);
+
+		const result = parseArgs(["--parallel"]);
+
+		expect(result.parallel).toBe("auto");
+	});
+
+	it("should treat --parallel followed by another flag as auto", () => {
+		expect.assertions(2);
+
+		const result = parseArgs(["--parallel", "--verbose"]);
+
+		expect(result.parallel).toBe("auto");
+		expect(result.verbose).toBeTrue();
+	});
+
+	it("should leave parallel undefined when flag not present", () => {
+		expect.assertions(1);
+
+		const result = parseArgs([]);
+
+		expect(result.parallel).toBeUndefined();
+	});
+
+	it("should throw on --parallel 0", () => {
+		expect.assertions(1);
+
+		expect(() => parseArgs(["--parallel", "0"])).toThrow("Invalid --parallel value");
+	});
+
+	it("should throw on --parallel -1", () => {
+		expect.assertions(1);
+
+		// Pre-normalized to "--parallel -1" still reads as a string value since
+		// "-1" starts with "-", so normalization rewrites it to "auto"; force
+		// the value form explicitly via "=" syntax.
+		expect(() => parseArgs(["--parallel=-1"])).toThrow("Invalid --parallel value");
+	});
+
+	it("should throw on --parallel non-numeric", () => {
+		expect.assertions(1);
+
+		expect(() => parseArgs(["--parallel=xyz"])).toThrow("Invalid --parallel value");
 	});
 });
 
@@ -1997,9 +2089,21 @@ function setupMultiProjectDefaults(
 		makeResolvedProject({ displayName: "server", outDir: "out/server" }),
 	]);
 	mocks.generateProjectConfigs.mockReturnValue(undefined);
-	mocks.resolveBackend.mockResolvedValue({} as never);
+	mocks.resolveBackend.mockResolvedValue(makeMockBackend("studio"));
 	mocks.globSync.mockReturnValue(["/test/foo.spec.ts"]);
 	mocks.execute.mockResolvedValue(makeExecuteResult());
+	mocks.buildProjectJob.mockImplementation((parameters) => {
+		return {
+			config: parameters.config,
+			displayColor: parameters.displayColor,
+			displayName: parameters.displayName ?? "",
+			testFiles: parameters.testFiles,
+		};
+	});
+	mocks.executeBackend.mockImplementation(async (_backend, jobs) => makeBackendResult(jobs));
+	mocks.processProjectResult.mockImplementation((entry, options) => {
+		return makeExecuteResult({ result: entry.result, timing: options.backendTiming as never });
+	});
 	mocks.formatExecuteOutput.mockReturnValue("");
 	mocks.parseGameOutput.mockReturnValue([]);
 	mocks.formatGameOutputNotice.mockReturnValue("");
@@ -2016,8 +2120,8 @@ function setupMultiProjectDefaults(
 }
 
 describe("multi-project execution", () => {
-	it("should execute each project separately", async () => {
-		expect.assertions(2);
+	it("should call backend exactly once with one job per project", async () => {
+		expect.assertions(3);
 
 		setupOutputSpies();
 		setupMultiProjectDefaults();
@@ -2028,11 +2132,15 @@ describe("multi-project execution", () => {
 		const code = await run([]);
 
 		expect(code).toBe(0);
-		expect(mocks.execute).toHaveBeenCalledTimes(2);
+		expect(mocks.executeBackend).toHaveBeenCalledOnce();
+
+		const jobs = mocks.executeBackend.mock.calls[0]![1];
+
+		expect(jobs).toHaveLength(2);
 	});
 
 	it("should filter by --project name", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		setupOutputSpies();
 		setupMultiProjectDefaults();
@@ -2043,7 +2151,11 @@ describe("multi-project execution", () => {
 		const code = await run(["--project", "client"]);
 
 		expect(code).toBe(0);
-		expect(mocks.execute).toHaveBeenCalledOnce();
+		expect(mocks.executeBackend).toHaveBeenCalledOnce();
+
+		const jobs = mocks.executeBackend.mock.calls[0]![1];
+
+		expect(jobs).toHaveLength(1);
 	});
 
 	it("should error on unknown --project displayName", async () => {
@@ -2088,7 +2200,7 @@ describe("multi-project execution", () => {
 		});
 
 		let callCount = 0;
-		mocks.execute.mockImplementation(async () => {
+		mocks.processProjectResult.mockImplementation(() => {
 			callCount++;
 			return callCount === 1
 				? makeExecuteResult({
@@ -2205,6 +2317,153 @@ describe("multi-project execution", () => {
 		await run(["--outputFile", "/test/results.json"]);
 
 		expect(mocks.writeJsonFile).toHaveBeenCalledOnce();
+	});
+
+	it("should print a notice when aggregated gameOutput is written", async () => {
+		expect.assertions(1);
+
+		const spies = setupOutputSpies();
+		setupMultiProjectDefaults({ gameOutput: "/test/game.json" });
+		mocks.processProjectResult.mockImplementation((entry, options) => {
+			return makeExecuteResult({
+				gameOutput: "raw",
+				result: entry.result,
+				timing: options.backendTiming as never,
+			});
+		});
+		mocks.parseGameOutput.mockReturnValue([{ message: "hi", type: "print" }] as never);
+		mocks.formatGameOutputNotice.mockReturnValue("game-output-written");
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run(["--gameOutput", "/test/game.json"]);
+
+		expect(spies.consoleError).toHaveBeenCalledWith("game-output-written");
+	});
+
+	it("should aggregate gameOutput across projects and write it", async () => {
+		// Regression: configs with projects + --gameOutput silently dropped the
+		// file in multi-project mode. Per-project gameOutput entries must be
+		// parsed, concatenated, and written exactly once.
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults({ gameOutput: "/test/game.json" });
+		let call = 0;
+		mocks.processProjectResult.mockImplementation((entry, options) => {
+			call += 1;
+			return makeExecuteResult({
+				gameOutput: call === 1 ? "clientRaw" : "serverRaw",
+				result: entry.result,
+				timing: options.backendTiming as never,
+			});
+		});
+		mocks.parseGameOutput.mockImplementation((raw) => {
+			if (raw === "clientRaw") {
+				return [{ message: "from-client", type: "print" }] as never;
+			}
+
+			if (raw === "serverRaw") {
+				return [{ message: "from-server", type: "print" }] as never;
+			}
+
+			return [];
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const code = await run(["--gameOutput", "/test/game.json"]);
+
+		expect(code).toBe(0);
+		expect(mocks.writeGameOutput).toHaveBeenCalledWith("/test/game.json", [
+			{ message: "from-client", type: "print" },
+			{ message: "from-server", type: "print" },
+		]);
+	});
+
+	it("should suppress gameOutput notice when a project failed", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupMultiProjectDefaults({ gameOutput: "/test/game.json" });
+		let call = 0;
+		mocks.processProjectResult.mockImplementation((_entry, options) => {
+			call += 1;
+			return makeExecuteResult({
+				gameOutput: "raw",
+				result: makeJestResult({
+					numFailedTests: call === 1 ? 1 : 0,
+					success: call !== 1,
+				}),
+				timing: options.backendTiming as never,
+			});
+		});
+		mocks.parseGameOutput.mockReturnValue([{ message: "hi", type: "print" }] as never);
+		mocks.formatGameOutputNotice.mockReturnValue("should-not-appear");
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run(["--gameOutput", "/test/game.json"]);
+
+		expect(mocks.writeGameOutput).toHaveBeenCalledOnce();
+		expect(spies.consoleError).not.toHaveBeenCalledWith("should-not-appear");
+	});
+
+	it("should not write gameOutput in multi-project mode when none is configured", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		expect(mocks.writeGameOutput).not.toHaveBeenCalled();
+	});
+
+	it("should propagate per-project sourceMappers through the merged result", async () => {
+		// Regression: mergeProjectResults previously dropped sourceMapper, so
+		// multi-project GitHub annotations and failure output lost TS stack
+		// mapping. processProjectResult must produce sourceMappers and the
+		// merged ExecuteResult must keep a usable composite.
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		let call = 0;
+		mocks.processProjectResult.mockImplementation((entry, options) => {
+			call += 1;
+			const tag = call === 1 ? "CLIENT" : "SERVER";
+			const mapper: SourceMapper = {
+				mapFailureMessage: (message) => message.replace(tag, `${tag}_TS`),
+				mapFailureWithLocations: (message) => ({ locations: [], message }),
+				resolveTestFilePath: () => {},
+			};
+			return makeExecuteResult({
+				result: entry.result,
+				sourceMapper: mapper,
+				timing: options.backendTiming as never,
+			});
+		});
+		// formatMultiProject calls formatExecuteOutput indirectly; capture its
+		// options to verify the merged sourceMapper survived.
+		let observed: SourceMapper | undefined;
+		mocks.formatExecuteOutput.mockImplementation((options) => {
+			observed ??= options.sourceMapper;
+			return "";
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run(["--formatters", "json"]);
+
+		expect(observed?.mapFailureMessage("CLIENT SERVER")).toBe("CLIENT_TS SERVER_TS");
 	});
 
 	it("should generate stubs with full project config fields", async () => {
@@ -2453,7 +2712,7 @@ describe("multi-project typecheck", () => {
 		const code = await run(["--typecheckOnly"]);
 
 		expect(code).toBe(0);
-		expect(mocks.execute).not.toHaveBeenCalled();
+		expect(mocks.executeBackend).not.toHaveBeenCalled();
 	});
 
 	it("should pass verbose options through default formatter in multi-project mode", async () => {
@@ -2489,6 +2748,379 @@ describe("multi-project typecheck", () => {
 	});
 });
 
+describe("multi-project Phase 4 behavior", () => {
+	it("should resolve snapshotFormat per job based on project language", async () => {
+		expect.assertions(3);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		// Stub buildProjectJob to resolve snapshotFormat by project language.
+		// This mirrors the real implementation (applySnapshotFormatDefaults +
+		// isLuauProject) — the point is to assert the CLI calls buildProjectJob
+		// per-project and uses its output as the job config.
+		mocks.buildProjectJob.mockImplementation((parameters) => {
+			const isLuau = parameters.testFiles.some((file) => file.endsWith(".luau"));
+			return {
+				config: {
+					...parameters.config,
+					snapshotFormat: {
+						...parameters.config.snapshotFormat,
+						printBasicPrototype: isLuau,
+					},
+				},
+				displayColor: parameters.displayColor,
+				displayName: parameters.displayName ?? "",
+				testFiles: parameters.testFiles,
+			};
+		});
+
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({ displayName: "ts-project", outDir: "out/ts" }),
+			makeResolvedProject({ displayName: "luau-project", outDir: undefined }),
+		]);
+		// First project gets a TS file, second gets Luau. The stub above
+		// resolves snapshotFormat from the testFiles extension.
+		mocks.globSync
+			.mockReturnValueOnce(["/test/a.spec.ts"])
+			.mockReturnValueOnce(["/test/b.spec.luau"]);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		const jobs = mocks.executeBackend.mock.calls[0]![1];
+
+		expect(jobs).toHaveLength(2);
+		// TS project → printBasicPrototype = false (non-Luau)
+		expect(jobs[0]?.config.snapshotFormat?.printBasicPrototype).toBe(false);
+		// Luau project → printBasicPrototype = true
+		expect(jobs[1]?.config.snapshotFormat?.printBasicPrototype).toBe(true);
+	});
+
+	it("should propagate displayName and displayColor on each job", async () => {
+		expect.assertions(3);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayColor: "red",
+				displayName: "client",
+				outDir: "out/client",
+			}),
+			makeResolvedProject({
+				displayColor: "blue",
+				displayName: "server",
+				outDir: "out/server",
+			}),
+		]);
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		const jobs = mocks.executeBackend.mock.calls[0]![1];
+
+		expect(jobs).toHaveLength(2);
+		expect(jobs[0]).toMatchObject({ displayColor: "red", displayName: "client" });
+		expect(jobs[1]).toMatchObject({ displayColor: "blue", displayName: "server" });
+	});
+
+	it("should preserve per-job setupFiles and setupFilesAfterEnv", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.createSetupResolver.mockReturnValue((input) => `resolved-${input}`);
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				config: makeConfig({
+					setupFiles: ["./client-setup.ts"],
+					setupFilesAfterEnv: ["./client-after.ts"],
+				}),
+				displayName: "client",
+				outDir: "out/client",
+			}),
+			makeResolvedProject({
+				config: makeConfig({
+					setupFiles: ["./server-setup.ts"],
+					setupFilesAfterEnv: ["./server-after.ts"],
+				}),
+				displayName: "server",
+				outDir: "out/server",
+			}),
+		]);
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		const jobs = mocks.executeBackend.mock.calls[0]![1];
+
+		expect(jobs[0]?.config).toMatchObject({
+			setupFiles: ["resolved-./client-setup.ts"],
+			setupFilesAfterEnv: ["resolved-./client-after.ts"],
+		});
+		expect(jobs[1]?.config).toMatchObject({
+			setupFiles: ["resolved-./server-setup.ts"],
+			setupFilesAfterEnv: ["resolved-./server-after.ts"],
+		});
+	});
+
+	it("should call backend.close in finally even when runTests throws", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		const closeMock = vi.fn<NonNullable<Backend["close"]>>();
+		const failingBackend: Backend = {
+			close: closeMock,
+			kind: "studio",
+			runTests: vi.fn<Backend["runTests"]>(),
+		};
+		mocks.resolveBackend.mockResolvedValue(failingBackend);
+		mocks.executeBackend.mockRejectedValue(new Error("backend blew up"));
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const code = await run([]);
+
+		expect(code).toBe(2);
+		expect(closeMock).toHaveBeenCalledOnce();
+	});
+
+	it("should call backend.close on successful multi-project run", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		const closeMock = vi.fn<NonNullable<Backend["close"]>>();
+		mocks.resolveBackend.mockResolvedValue({
+			close: closeMock,
+			kind: "studio",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		expect(closeMock).toHaveBeenCalledOnce();
+	});
+
+	it("should forward --parallel to executeBackend when backend is open-cloud", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.resolveBackend.mockResolvedValue({
+			close: vi.fn<NonNullable<Backend["close"]>>(),
+			kind: "open-cloud",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const code = await run(["--parallel", "3"]);
+
+		expect(code).toBe(0);
+		expect(mocks.executeBackend).toHaveBeenCalledWith(expect.anything(), expect.any(Array), 3);
+	});
+
+	it('should forward --parallel "auto" to executeBackend', async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.resolveBackend.mockResolvedValue({
+			close: vi.fn<NonNullable<Backend["close"]>>(),
+			kind: "open-cloud",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run(["--parallel"]);
+
+		expect(mocks.executeBackend).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.any(Array),
+			"auto",
+		);
+	});
+
+	it("should error when --parallel combined with studio backend", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.resolveBackend.mockResolvedValue(makeMockBackend("studio"));
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const code = await run(["--parallel", "3"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--parallel is only supported on the open-cloud backend"),
+		);
+	});
+
+	it("should not pass parallel when flag is absent", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.resolveBackend.mockResolvedValue({
+			close: vi.fn<NonNullable<Backend["close"]>>(),
+			kind: "open-cloud",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		expect(mocks.executeBackend).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.any(Array),
+			undefined,
+		);
+	});
+
+	it("should use backend wall-clock for reported Duration, not sum of entries", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.executeBackend.mockImplementation(async (_backend, jobs) => {
+			return {
+				results: jobs.map((job) => {
+					return {
+						displayName: job.displayName,
+						elapsedMs: 5000,
+						result: makeJestResult(),
+					};
+				}),
+				timing: { executionMs: 1234, uploadCached: false, uploadMs: 50 },
+			};
+		});
+		// Capture the backendTiming that gets passed to processProjectResult
+		mocks.processProjectResult.mockImplementation((entry, options) => {
+			return makeExecuteResult({
+				result: entry.result,
+				timing: {
+					executionMs: options.backendTiming.executionMs,
+					startTime: options.startTime,
+					testsMs: 0,
+					totalMs: 0,
+					uploadCached: options.backendTiming.uploadCached,
+					uploadMs: options.backendTiming.uploadMs,
+				},
+			});
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		const callArguments = mocks.processProjectResult.mock.calls;
+
+		expect(callArguments).toHaveLength(2);
+		// Both entries should receive the same backend wall-clock (1234ms),
+		// NOT the sum of per-entry elapsedMs (10000ms).
+		expect(
+			callArguments.every(([, options]) => options.backendTiming.executionMs === 1234),
+		).toBeTrue();
+	});
+
+	it("should preserve per-job order in processProjectResult calls", async () => {
+		expect.assertions(3);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({ displayName: "alpha", outDir: "out/a" }),
+			makeResolvedProject({ displayName: "beta", outDir: "out/b" }),
+		]);
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		const jobs = mocks.executeBackend.mock.calls[0]![1];
+
+		expect(jobs).toHaveLength(2);
+		expect(jobs[0]?.displayName).toBe("alpha");
+		expect(jobs[1]?.displayName).toBe("beta");
+	});
+});
+
+describe("single-project Phase 4 behavior", () => {
+	it("should call backend.close in finally on single-project run", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults();
+		const closeMock = vi.fn<NonNullable<Backend["close"]>>();
+		mocks.resolveBackend.mockResolvedValue({
+			close: closeMock,
+			kind: "studio",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+
+		await run([]);
+
+		expect(closeMock).toHaveBeenCalledOnce();
+	});
+
+	it("should call backend.close even when execute throws", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupDefaults();
+		const closeMock = vi.fn<NonNullable<Backend["close"]>>();
+		mocks.resolveBackend.mockResolvedValue({
+			close: closeMock,
+			kind: "studio",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+		mocks.execute.mockRejectedValue(new Error("boom"));
+
+		const code = await run([]);
+
+		expect(code).toBe(2);
+		expect(closeMock).toHaveBeenCalledOnce();
+	});
+
+	it("should error when --parallel combined with studio backend in single-project", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.resolveBackend.mockResolvedValue(makeMockBackend("studio"));
+
+		const code = await run(["--parallel", "3"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--parallel is only supported on the open-cloud backend"),
+		);
+	});
+});
+
 describe("multi-project file args", () => {
 	it("should filter by positional file args in multi-project mode", async () => {
 		expect.assertions(2);
@@ -2504,10 +3136,9 @@ describe("multi-project file args", () => {
 
 		expect(code).toBe(0);
 
-		// execute should receive only the specified file, not all discovered
-		// files
-		const { calls } = mocks.execute.mock;
-		const allTestFiles = calls.flatMap((call) => call[0].testFiles);
+		// Jobs should receive only the specified file, not all discovered files
+		const jobs = mocks.executeBackend.mock.calls[0]![1];
+		const allTestFiles = jobs.flatMap((job) => job.testFiles);
 
 		expect(allTestFiles).not.toContainEqual(expect.stringContaining("b.spec.ts"));
 	});
@@ -2626,15 +3257,143 @@ describe(mergeProjectResults, () => {
 		});
 	});
 
-	it("should handle undefined uploadMs and positive coverageMs", () => {
+	it("should take executionMs from shared backend timing, not sum", () => {
+		// Regression: a 3-project run where each entry carries the shared
+		// backend wall-clock of 14000ms must report executionMs=14000, not
+		// 42000. Summing would triple the reported Duration.
 		expect.assertions(2);
 
 		const result = mergeProjectResults([
 			makeExecuteResult({
 				timing: {
-					coverageMs: 100,
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 8000,
+					totalMs: 14500,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 11000,
+					totalMs: 14500,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 10000,
+					totalMs: 14500,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+		]);
+
+		expect(result.timing.executionMs).toBe(14000);
+		expect(result.timing.uploadMs).toBe(500);
+	});
+
+	it("should take totalMs as wall-clock max, not sum", () => {
+		// Regression: per-entry totalMs is CLI wall-clock (Date.now()-startTime)
+		// computed with a shared startTime. Summing 3×14000 gave 42000 which
+		// is the bug the user reported.
+		expect.assertions(1);
+
+		const result = mergeProjectResults([
+			makeExecuteResult({
+				timing: {
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 5000,
+					totalMs: 14000,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 5000,
+					totalMs: 14010,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 5000,
+					totalMs: 14005,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+		]);
+
+		expect(result.timing.totalMs).toBe(14010);
+	});
+
+	it("should take uploadMs from shared timing, not sum across entries", () => {
+		// Open-Cloud does one place upload per CLI invocation. Every entry
+		// sees the same uploadMs via the shared BackendTiming. Summing would
+		// over-report upload cost by the project count.
+		expect.assertions(2);
+
+		const result = mergeProjectResults([
+			makeExecuteResult({
+				timing: {
+					executionMs: 100,
+					startTime: 1000,
+					testsMs: 25,
+					totalMs: 200,
+					uploadCached: true,
+					uploadMs: 500,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 100,
+					startTime: 1000,
+					testsMs: 25,
+					totalMs: 200,
+					uploadCached: true,
+					uploadMs: 500,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 100,
+					startTime: 1000,
+					testsMs: 25,
+					totalMs: 200,
+					uploadCached: true,
+					uploadMs: 500,
+				},
+			}),
+		]);
+
+		expect(result.timing.uploadMs).toBe(500);
+		expect(result.timing.uploadCached).toBeTrue();
+	});
+
+	it("should pass through undefined uploadMs", () => {
+		// Studio backend never sets uploadMs — ensure undefined survives merge.
+		expect.assertions(1);
+
+		const result = mergeProjectResults([
+			makeExecuteResult({
+				timing: {
 					executionMs: 50,
-					startTime: Date.now(),
+					startTime: 1000,
 					testsMs: 25,
 					totalMs: 150,
 					uploadCached: false,
@@ -2643,9 +3402,8 @@ describe(mergeProjectResults, () => {
 			}),
 			makeExecuteResult({
 				timing: {
-					coverageMs: 50,
 					executionMs: 50,
-					startTime: Date.now(),
+					startTime: 1000,
 					testsMs: 25,
 					totalMs: 150,
 					uploadCached: false,
@@ -2654,8 +3412,83 @@ describe(mergeProjectResults, () => {
 			}),
 		]);
 
-		expect(result.timing.uploadMs).toBe(0);
-		expect(result.timing.coverageMs).toBe(150);
+		expect(result.timing.uploadMs).toBeUndefined();
+	});
+
+	it("should sum testsMs across projects (CPU time)", () => {
+		// testsMs is per-project in-Luau test CPU time — summing is honest
+		// even when wall-clock overlaps, because it reports "tests did N ms
+		// of work" across all projects.
+		expect.assertions(1);
+
+		const result = mergeProjectResults([
+			makeExecuteResult({
+				timing: {
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 8000,
+					totalMs: 14000,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 11000,
+					totalMs: 14000,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					executionMs: 14000,
+					startTime: 1000,
+					testsMs: 10000,
+					totalMs: 14000,
+					uploadCached: false,
+					uploadMs: 500,
+				},
+			}),
+		]);
+
+		expect(result.timing.testsMs).toBe(29000);
+	});
+
+	it("should pass through coverageMs from shared timing", () => {
+		// Per-entry coverageMs is currently always undefined (coverage cost
+		// is injected post-merge via addCoverageTiming). Defensive: if set,
+		// take it from the first entry, don't sum.
+		expect.assertions(1);
+
+		const result = mergeProjectResults([
+			makeExecuteResult({
+				timing: {
+					coverageMs: 100,
+					executionMs: 50,
+					startTime: 1000,
+					testsMs: 25,
+					totalMs: 150,
+					uploadCached: false,
+					uploadMs: undefined,
+				},
+			}),
+			makeExecuteResult({
+				timing: {
+					coverageMs: 100,
+					executionMs: 50,
+					startTime: 1000,
+					testsMs: 25,
+					totalMs: 150,
+					uploadCached: false,
+					uploadMs: undefined,
+				},
+			}),
+		]);
+
+		expect(result.timing.coverageMs).toBe(100);
 	});
 
 	it("should use earliest startTime", () => {
@@ -2706,5 +3539,70 @@ describe(mergeProjectResults, () => {
 		const result = mergeProjectResults([makeExecuteResult(), makeExecuteResult()]);
 
 		expect(result.timing.setupMs).toBeUndefined();
+	});
+
+	it("should combine per-project sourceMappers into a composite", () => {
+		// Multi-project runs must preserve source mapping — otherwise TS stack
+		// frames in failure output and GitHub annotations fall back to Luau
+		// paths. The merged sourceMapper should delegate to each child.
+		expect.assertions(3);
+
+		const mapperA: SourceMapper = {
+			mapFailureMessage: (message) => message.replace("A_LUAU", "A_TS"),
+			mapFailureWithLocations: (message) => {
+				return {
+					locations: [{ luauLine: 1, luauPath: "a.luau", tsPath: "a.ts" }],
+					message: message.replace("A_LUAU", "A_TS"),
+				};
+			},
+			resolveTestFilePath: (file) => (file === "a.spec" ? "a.spec.ts" : undefined),
+		};
+		const mapperB: SourceMapper = {
+			mapFailureMessage: (message) => message.replace("B_LUAU", "B_TS"),
+			mapFailureWithLocations: (message) => {
+				return {
+					locations: [{ luauLine: 2, luauPath: "b.luau", tsPath: "b.ts" }],
+					message: message.replace("B_LUAU", "B_TS"),
+				};
+			},
+			resolveTestFilePath: (file) => (file === "b.spec" ? "b.spec.ts" : undefined),
+		};
+
+		const result = mergeProjectResults([
+			makeExecuteResult({ sourceMapper: mapperA }),
+			makeExecuteResult({ sourceMapper: mapperB }),
+		]);
+
+		expect(result.sourceMapper?.mapFailureMessage("A_LUAU B_LUAU")).toBe("A_TS B_TS");
+		expect(result.sourceMapper?.resolveTestFilePath("b.spec")).toBe("b.spec.ts");
+
+		const withLocations = result.sourceMapper?.mapFailureWithLocations("A_LUAU B_LUAU");
+
+		expect(withLocations?.locations).toHaveLength(2);
+	});
+
+	it("should return the single sourceMapper unchanged when only one result has it", () => {
+		expect.assertions(1);
+
+		const mapper: SourceMapper = {
+			mapFailureMessage: (message) => `mapped:${message}`,
+			mapFailureWithLocations: (message) => ({ locations: [], message }),
+			resolveTestFilePath: () => {},
+		};
+
+		const result = mergeProjectResults([
+			makeExecuteResult({ sourceMapper: mapper }),
+			makeExecuteResult({ sourceMapper: undefined }),
+		]);
+
+		expect(result.sourceMapper?.mapFailureMessage("hi")).toBe("mapped:hi");
+	});
+
+	it("should leave sourceMapper undefined when no project provides one", () => {
+		expect.assertions(1);
+
+		const result = mergeProjectResults([makeExecuteResult(), makeExecuteResult()]);
+
+		expect(result.sourceMapper).toBeUndefined();
 	});
 });

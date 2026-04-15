@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { formatSourceSnippet } from "../formatters/formatter.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { createSourceMapper, getSourceSnippet } from "./index.ts";
+import type { SourceMapper } from "./index.ts";
+import { combineSourceMappers, createSourceMapper, getSourceSnippet } from "./index.ts";
 import { getSourceContent, mapFromSourceMap } from "./v3-mapper.ts";
 
 vi.mock(import("node:fs"));
@@ -422,6 +423,62 @@ Received: "world"
 		expect(result.locations).toHaveLength(1);
 		expect(result.locations[0]).toMatchObject({ luauLine: 5 });
 		expect(result.message).toContain("out/shared/test.luau:5");
+	});
+});
+
+describe(combineSourceMappers, () => {
+	function makeStub(tag: string): SourceMapper {
+		return {
+			mapFailureMessage: (message) => message.replace(tag, `${tag}_TS`),
+			mapFailureWithLocations: (message) => {
+				return {
+					locations: [{ luauLine: 1, luauPath: `${tag}.luau`, tsPath: `${tag}.ts` }],
+					message: message.replace(tag, `${tag}_TS`),
+				};
+			},
+			resolveTestFilePath: (file) => (file === `${tag}.spec` ? `${tag}.spec.ts` : undefined),
+		};
+	}
+
+	it("should return undefined when given no mappers", () => {
+		expect.assertions(1);
+
+		expect(combineSourceMappers([])).toBeUndefined();
+	});
+
+	it("should return the only mapper unchanged when given one", () => {
+		expect.assertions(1);
+
+		const mapper = makeStub("A");
+
+		expect(combineSourceMappers([mapper])).toBe(mapper);
+	});
+
+	it("should chain mapFailureMessage through every child", () => {
+		expect.assertions(1);
+
+		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
+
+		expect(composite?.mapFailureMessage("A B")).toBe("A_TS B_TS");
+	});
+
+	it("should accumulate locations from mapFailureWithLocations across children", () => {
+		expect.assertions(2);
+
+		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
+		const result = composite?.mapFailureWithLocations("A B");
+
+		expect(result?.locations).toHaveLength(2);
+		expect(result?.message).toBe("A_TS B_TS");
+	});
+
+	it("should return the first resolveTestFilePath hit", () => {
+		expect.assertions(2);
+
+		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
+
+		expect(composite?.resolveTestFilePath("B.spec")).toBe("B.spec.ts");
+		expect(composite?.resolveTestFilePath("missing")).toBeUndefined();
 	});
 });
 

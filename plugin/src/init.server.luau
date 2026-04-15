@@ -4,7 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StudioTestService = game:GetService("StudioTestService")
 
-if RunService:IsRunning() then
+if not RunService:IsEdit() then
 	return
 end
 

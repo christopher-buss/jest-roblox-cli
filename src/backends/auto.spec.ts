@@ -216,6 +216,7 @@ describe(StudioWithFallback, () => {
 		vi.stubEnv("ROBLOX_PLACE_ID", "456");
 
 		const studioBackend: Backend = {
+			kind: "studio",
 			runTests: vi
 				.fn<Backend["runTests"]>()
 				.mockRejectedValue(
@@ -229,18 +230,40 @@ describe(StudioWithFallback, () => {
 		// path runs
 		await expect(
 			fallback.runTests({
-				config: makeConfig({ backend: "auto" }),
-				testFiles: ["test.spec.ts"],
+				jobs: [
+					{
+						config: makeConfig({ backend: "auto" }),
+						displayName: "",
+						testFiles: ["test.spec.ts"],
+					},
+				],
 			}),
 		).rejects.toThrow(/game\.rbxl/);
 
 		vi.unstubAllEnvs();
 	});
 
+	it("should delegate close() to the wrapped studio backend", async () => {
+		expect.assertions(1);
+
+		const close = vi.fn<() => void>();
+		const studioBackend: Backend = {
+			close,
+			kind: "studio",
+			runTests: vi.fn<Backend["runTests"]>(),
+		};
+
+		const fallback = new StudioWithFallback(studioBackend);
+		await fallback.close();
+
+		expect(close).toHaveBeenCalledOnce();
+	});
+
 	it("should rethrow non-busy errors", async () => {
 		expect.assertions(1);
 
 		const studioBackend: Backend = {
+			kind: "studio",
 			runTests: vi.fn<Backend["runTests"]>().mockRejectedValue(new Error("some other error")),
 		};
 
@@ -248,8 +271,13 @@ describe(StudioWithFallback, () => {
 
 		await expect(
 			fallback.runTests({
-				config: makeConfig({ backend: "auto" }),
-				testFiles: ["test.spec.ts"],
+				jobs: [
+					{
+						config: makeConfig({ backend: "auto" }),
+						displayName: "",
+						testFiles: ["test.spec.ts"],
+					},
+				],
 			}),
 		).rejects.toThrowWithMessage(Error, "some other error");
 	});

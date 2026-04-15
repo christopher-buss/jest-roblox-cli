@@ -3,6 +3,7 @@ local HttpService = game:GetService("HttpService")
 
 local Runner = require("./runner")
 
-local config = HttpService:JSONDecode([=[__CONFIG_JSON__]=])
+local payload = HttpService:JSONDecode([=[__CONFIG_JSON__]=])
+local entries = Runner.runProjects(script, payload.configs)
 
-return Runner.run(script, config)
+return HttpService:JSONEncode({ entries = entries }), "[]"

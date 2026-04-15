@@ -8,7 +8,17 @@ if not RunService:IsRunning() then
 end
 
 local testArgs = StudioTestService:GetTestArgs()
-if not testArgs or not testArgs.test then
+if testArgs == nil then
+	for _ = 1, 50 do
+		task.wait(0.1)
+		testArgs = StudioTestService:GetTestArgs()
+		if testArgs ~= nil then
+			break
+		end
+	end
+end
+
+if testArgs == nil or testArgs.configs == nil then
 	return
 end
 
@@ -28,9 +38,9 @@ if not loadStringEnabled then
 end
 
 local Runner = require(script.Parent.shared.runner)
-local jestOutput, gameOutput = Runner.run(script, testArgs.config or {})
+local entries = Runner.runProjects(script, testArgs.configs)
 
 StudioTestService:EndTest({
-	jestOutput = jestOutput,
-	gameOutput = gameOutput,
+	jestOutput = HttpService:JSONEncode({ entries = entries }),
+	gameOutput = "[]",
 })

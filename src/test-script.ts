@@ -2,8 +2,11 @@ import type { Argv } from "@rbxts/jest/src/config";
 
 import process from "node:process";
 
-import type { BackendOptions } from "./backends/interface.ts";
-import { ROOT_ONLY_KEYS, type SnapshotFormatOptions } from "./config/schema.ts";
+import {
+	type ResolvedConfig,
+	ROOT_ONLY_KEYS,
+	type SnapshotFormatOptions,
+} from "./config/schema.ts";
 import template from "./test-runner.bundled.luau";
 
 export type JestArgv = Argv & {
@@ -11,7 +14,12 @@ export type JestArgv = Argv & {
 	testMatch: Array<string>;
 };
 
-export function buildJestArgv(options: BackendOptions): JestArgv {
+export interface JestArgvInput {
+	config: ResolvedConfig;
+	testFiles: Array<string>;
+}
+
+export function buildJestArgv(options: JestArgvInput): JestArgv {
 	const argv: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(options.config)) {
 		if (!ROOT_ONLY_KEYS.has(key) && value !== undefined) {
@@ -40,7 +48,8 @@ export function buildJestArgv(options: BackendOptions): JestArgv {
 	} as JestArgv;
 }
 
-export function generateTestScript(options: BackendOptions): string {
-	const config = buildJestArgv(options);
-	return template.replace("__CONFIG_JSON__", () => JSON.stringify(config));
+export function generateTestScript(options: Array<JestArgvInput> | JestArgvInput): string {
+	const inputs = Array.isArray(options) ? options : [options];
+	const configs = inputs.map((input) => buildJestArgv(input));
+	return template.replace("__CONFIG_JSON__", () => JSON.stringify({ configs }));
 }

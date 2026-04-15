@@ -227,6 +227,7 @@ export interface CliOptions {
 	gameOutput?: string;
 	help?: boolean;
 	outputFile?: string;
+	parallel?: "auto" | number;
 	passWithNoTests?: boolean;
 	pollInterval?: number;
 	port?: number;

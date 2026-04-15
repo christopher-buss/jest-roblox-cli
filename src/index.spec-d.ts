@@ -2,7 +2,6 @@ import { describe, expectTypeOf, it } from "vitest";
 
 import type {
 	Backend,
-	BackendOptions,
 	CliOptions,
 	Config,
 	ConfigInput,
@@ -156,8 +155,10 @@ describe("parsers", () => {
 });
 
 describe("test-script", () => {
-	it("should accept BackendOptions in buildJestArgv", () => {
-		expectTypeOf(buildJestArgv).parameter(0).toExtend<BackendOptions>();
+	it("should accept JestArgvInput in buildJestArgv", () => {
+		expectTypeOf(buildJestArgv)
+			.parameter(0)
+			.toExtend<{ config: unknown; testFiles: Array<string> }>();
 	});
 
 	it("should return JestArgv from buildJestArgv", () => {

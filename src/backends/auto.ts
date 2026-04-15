@@ -21,8 +21,14 @@ export interface ProbeDetected {
 export class StudioWithFallback implements Backend {
 	private readonly studio: Backend;
 
+	public readonly kind = "studio" as const;
+
 	constructor(studio: Backend) {
 		this.studio = studio;
+	}
+
+	public async close(): Promise<void> {
+		await this.studio.close?.();
 	}
 
 	public async runTests(options: BackendOptions): Promise<BackendResult> {
