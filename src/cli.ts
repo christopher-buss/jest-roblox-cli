@@ -357,6 +357,8 @@ export async function main(): Promise<void> {
  */
 const PARALLEL_FLAG = "--parallel";
 
+type ParallelOption = "auto" | number | undefined;
+
 function normalizeParallelFlag(args: Array<string>): Array<string> {
 	const out: Array<string> = [];
 	for (let index = 0; index < args.length; index++) {
@@ -383,7 +385,7 @@ function normalizeParallelFlag(args: Array<string>): Array<string> {
 	return out;
 }
 
-function parseParallelValue(raw: string | undefined): "auto" | number | undefined {
+function parseParallelValue(raw: string | undefined): ParallelOption {
 	if (raw === undefined) {
 		return undefined;
 	}
@@ -898,20 +900,17 @@ function applySetupResolver(
 	}
 }
 
-function validateParallelOption(
-	parallel: "auto" | number | undefined,
+/**
+ * Drop `parallel` on any non-open-cloud backend. Studio has no concept of
+ * multi-session, so passing `parallel` there is a silent noop — this lets
+ * users keep `parallel: 3` in `jest.config.ts` and still drop to
+ * `--backend studio` for debugging without editing config.
+ */
+function effectiveParallelForBackend(
+	parallel: ParallelOption,
 	backend: { kind: string },
-): void {
-	if (parallel === undefined) {
-		return;
-	}
-
-	if (backend.kind !== "open-cloud") {
-		throw new ConfigError(
-			"--parallel is only supported on the open-cloud backend.",
-			"Pass --backend open-cloud, or remove --parallel.",
-		);
-	}
+): ParallelOption {
+	return backend.kind === "open-cloud" ? parallel : undefined;
 }
 
 async function runMultiProject(
@@ -959,7 +958,7 @@ async function runMultiProject(
 
 	const { effectiveConfig, preCoverageMs } = prepareMultiProjectCoverage(rootConfig, projects);
 	const backend = await resolveBackend(effectiveConfig);
-	validateParallelOption(cli.parallel, backend);
+	const parallel = effectiveParallelForBackend(effectiveConfig.parallel, backend);
 
 	interface PendingJob {
 		config: ResolvedConfig;
@@ -1021,7 +1020,7 @@ async function runMultiProject(
 		const startTime = Date.now();
 		let backendResult;
 		try {
-			backendResult = await executeBackend(backend, jobs, cli.parallel);
+			backendResult = await executeBackend(backend, jobs, parallel);
 		} finally {
 			await backend.close?.();
 		}
@@ -1093,7 +1092,6 @@ async function runMultiProject(
 }
 
 async function executeRuntimeTests(
-	cli: CliOptions,
 	config: ResolvedConfig,
 	testFiles: Array<string>,
 	totalFiles: number,
@@ -1107,7 +1105,6 @@ async function executeRuntimeTests(
 	}
 
 	const backend = await resolveBackend(config);
-	validateParallelOption(cli.parallel, backend);
 
 	try {
 		return await execute({
@@ -1186,12 +1183,7 @@ async function runSingleProject(cli: CliOptions, config: ResolvedConfig): Promis
 
 	const runtimeResult =
 		runtimeTestFiles.length > 0
-			? await executeRuntimeTests(
-					cli,
-					effectiveConfig,
-					runtimeTestFiles,
-					discovery.totalFiles,
-				)
+			? await executeRuntimeTests(effectiveConfig, runtimeTestFiles, discovery.totalFiles)
 			: undefined;
 
 	return outputResults(effectiveConfig, typecheckResult, runtimeResult, preCoverageMs);
@@ -1340,6 +1332,7 @@ function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): ResolvedCo
 		formatters: resolveFormatters(cli, config),
 		gameOutput: cli.gameOutput ?? config.gameOutput,
 		outputFile: cli.outputFile ?? config.outputFile,
+		parallel: cli.parallel ?? config.parallel,
 		passWithNoTests: cli.passWithNoTests ?? config.passWithNoTests,
 		pollInterval: cli.pollInterval ?? config.pollInterval,
 		port: cli.port ?? config.port,

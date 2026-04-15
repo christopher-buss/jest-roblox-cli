@@ -137,6 +137,7 @@ Precedence: CLI flags > config file > extended config > defaults.
 | `showLuau` | Show Luau code snippets in failure output | `true` |
 | `cache` | Cache place file uploads by content hash | `true` |
 | `pollInterval` | How often to poll for results in ms (Open Cloud) | `500` |
+| `parallel` | Number of concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`) | — |
 
 ### Coverage fields
 
@@ -268,6 +269,7 @@ and drop it into your Studio plugins folder.
 | `--no-color` | Turn off colors |
 | `--no-cache` | Force a fresh place file upload |
 | `--pollInterval <ms>` | How often to check for results (Open Cloud) |
+| `--parallel [n]` | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`) |
 | `--project <name...>` | Filter which named projects to run |
 | `--projects <path...>` | DataModel paths that hold tests |
 | `--setupFiles <path...>` | Scripts to run before env |

@@ -54,7 +54,7 @@ describe("rOOT_ONLY_KEYS", () => {
 	});
 
 	it("should contain all root-only keys", () => {
-		expect.assertions(23);
+		expect.assertions(24);
 
 		const expected = [
 			"backend",
@@ -69,6 +69,7 @@ describe("rOOT_ONLY_KEYS", () => {
 			"gameOutput",
 			"jestPath",
 			"luauRoots",
+			"parallel",
 			"placeFile",
 			"pollInterval",
 			"port",
@@ -386,6 +387,29 @@ describe(configSchema, () => {
 			expect(result).not.toBeInstanceOf(type.errors);
 		});
 
+		it('should accept parallel as "auto"', () => {
+			expect.assertions(1);
+
+			const result = configSchema({ parallel: "auto" });
+
+			expect(result).not.toBeInstanceOf(type.errors);
+		});
+
+		it("should accept parallel as integer >= 1", () => {
+			expect.assertions(2);
+
+			expect(configSchema({ parallel: 1 })).not.toBeInstanceOf(type.errors);
+			expect(configSchema({ parallel: 3 })).not.toBeInstanceOf(type.errors);
+		});
+
+		it("should accept omitted parallel", () => {
+			expect.assertions(1);
+
+			const result = configSchema({});
+
+			expect(result).not.toBeInstanceOf(type.errors);
+		});
+
 		it("should accept testEnvironmentOptions as object", () => {
 			expect.assertions(1);
 
@@ -518,6 +542,55 @@ describe(configSchema, () => {
 			});
 
 			expect(result).toBeInstanceOf(type.errors);
+		});
+
+		it("should reject parallel inside an inline project (root-only key)", () => {
+			expect.assertions(2);
+
+			const result = configSchema({
+				projects: [
+					{
+						test: {
+							displayName: "core",
+							include: ["src/**/*.spec.ts"],
+							parallel: 3,
+						},
+					},
+				],
+			});
+
+			expect(result).toBeInstanceOf(type.errors);
+			expect(String(result)).toContain("parallel");
+		});
+
+		it("should reject parallel: 0", () => {
+			expect.assertions(1);
+
+			expect(configSchema({ parallel: 0 })).toBeInstanceOf(type.errors);
+		});
+
+		it("should reject parallel with negative value", () => {
+			expect.assertions(1);
+
+			expect(configSchema({ parallel: -1 })).toBeInstanceOf(type.errors);
+		});
+
+		it("should reject parallel with non-integer value", () => {
+			expect.assertions(1);
+
+			expect(configSchema({ parallel: 2.5 })).toBeInstanceOf(type.errors);
+		});
+
+		it("should reject parallel with arbitrary string", () => {
+			expect.assertions(1);
+
+			expect(configSchema({ parallel: "invalid" })).toBeInstanceOf(type.errors);
+		});
+
+		it("should reject parallel with boolean value", () => {
+			expect.assertions(1);
+
+			expect(configSchema({ parallel: true })).toBeInstanceOf(type.errors);
 		});
 
 		it("should reject formatters with wrong element type", () => {

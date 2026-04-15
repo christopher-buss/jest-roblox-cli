@@ -2957,10 +2957,10 @@ describe("multi-project Phase 4 behavior", () => {
 		);
 	});
 
-	it("should error when --parallel combined with studio backend", async () => {
+	it("should silently drop --parallel on studio backend (multi-project)", async () => {
 		expect.assertions(2);
 
-		const spies = setupOutputSpies();
+		setupOutputSpies();
 		setupMultiProjectDefaults();
 		mocks.resolveBackend.mockResolvedValue(makeMockBackend("studio"));
 		onTestFinished(() => {
@@ -2969,9 +2969,92 @@ describe("multi-project Phase 4 behavior", () => {
 
 		const code = await run(["--parallel", "3"]);
 
-		expect(code).toBe(2);
-		expect(spies.stderr).toHaveBeenCalledWith(
-			expect.stringContaining("--parallel is only supported on the open-cloud backend"),
+		expect(code).toBe(0);
+		expect(mocks.executeBackend).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.any(Array),
+			undefined,
+		);
+	});
+
+	it("should forward parallel from config file when flag absent", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults({ parallel: 2 });
+		mocks.resolveBackend.mockResolvedValue({
+			close: vi.fn<NonNullable<Backend["close"]>>(),
+			kind: "open-cloud",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		expect(mocks.executeBackend).toHaveBeenCalledWith(expect.anything(), expect.any(Array), 2);
+	});
+
+	it("should prefer CLI --parallel over config file value", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults({ parallel: 2 });
+		mocks.resolveBackend.mockResolvedValue({
+			close: vi.fn<NonNullable<Backend["close"]>>(),
+			kind: "open-cloud",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run(["--parallel", "5"]);
+
+		expect(mocks.executeBackend).toHaveBeenCalledWith(expect.anything(), expect.any(Array), 5);
+	});
+
+	it('should forward parallel "auto" from config file', async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults({ parallel: "auto" });
+		mocks.resolveBackend.mockResolvedValue({
+			close: vi.fn<NonNullable<Backend["close"]>>(),
+			kind: "open-cloud",
+			runTests: vi.fn<Backend["runTests"]>(),
+		});
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run([]);
+
+		expect(mocks.executeBackend).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.any(Array),
+			"auto",
+		);
+	});
+
+	it("should silently drop config parallel on studio backend (multi-project)", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults({ parallel: 3 });
+		mocks.resolveBackend.mockResolvedValue(makeMockBackend("studio"));
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const code = await run([]);
+
+		expect(code).toBe(0);
+		expect(mocks.executeBackend).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.any(Array),
+			undefined,
 		);
 	});
 
@@ -3105,7 +3188,7 @@ describe("single-project Phase 4 behavior", () => {
 		expect(closeMock).toHaveBeenCalledOnce();
 	});
 
-	it("should error when --parallel combined with studio backend in single-project", async () => {
+	it("should silently drop --parallel on studio backend (single-project)", async () => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -3114,9 +3197,24 @@ describe("single-project Phase 4 behavior", () => {
 
 		const code = await run(["--parallel", "3"]);
 
-		expect(code).toBe(2);
-		expect(spies.stderr).toHaveBeenCalledWith(
-			expect.stringContaining("--parallel is only supported on the open-cloud backend"),
+		expect(code).toBe(0);
+		expect(spies.stderr).not.toHaveBeenCalledWith(
+			expect.stringContaining("parallel is only supported"),
+		);
+	});
+
+	it("should silently drop config parallel on studio backend (single-project)", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults({ parallel: 3 });
+		mocks.resolveBackend.mockResolvedValue(makeMockBackend("studio"));
+
+		const code = await run([]);
+
+		expect(code).toBe(0);
+		expect(spies.stderr).not.toHaveBeenCalledWith(
+			expect.stringContaining("parallel is only supported"),
 		);
 	});
 });

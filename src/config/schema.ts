@@ -36,6 +36,7 @@ export const ROOT_ONLY_KEYS: ReadonlySet<string> = new Set([
 	"gameOutput",
 	"jestPath",
 	"luauRoots",
+	"parallel",
 	"placeFile",
 	"pollInterval",
 	"port",
@@ -109,6 +110,7 @@ export interface Config extends Except<
 	gameOutput?: string;
 	jestPath?: string;
 	luauRoots?: Array<string>;
+	parallel?: "auto" | number;
 	passWithNoTests?: boolean;
 	placeFile?: string;
 	pollInterval?: number;
@@ -346,6 +348,7 @@ export const configSchema: Type<Config> = type({
 	"maxWorkers?": type("number").or(type("string")),
 	"noStackTrace?": "boolean",
 	"outputFile?": "string",
+	"parallel?": type("'auto'").or("number.integer >= 1"),
 	"passWithNoTests?": "boolean",
 	"placeFile?": "string",
 	"pollInterval?": "number",
