@@ -160,6 +160,7 @@ describe(mapFsPathToDataModel, () => {
 		expect.assertions(1);
 
 		const rootOnlyTree: RojoTreeNode = { $path: "out" };
+
 		expect(mapFsPathToDataModel("out/init.luau", rootOnlyTree)).toBe("");
 	});
 
@@ -167,6 +168,7 @@ describe(mapFsPathToDataModel, () => {
 		expect.assertions(1);
 
 		const rootOnlyTree: RojoTreeNode = { $path: "out" };
+
 		expect(mapFsPathToDataModel("out/core/module.luau", rootOnlyTree)).toBe("core/module");
 	});
 
@@ -174,6 +176,7 @@ describe(mapFsPathToDataModel, () => {
 		expect.assertions(1);
 
 		const rootOnlyTree: RojoTreeNode = { $path: "out" };
+
 		expect(mapFsPathToDataModel("out/core/init.luau", rootOnlyTree)).toBe("core");
 	});
 
@@ -181,6 +184,7 @@ describe(mapFsPathToDataModel, () => {
 		expect.assertions(1);
 
 		const rootOnlyTree: RojoTreeNode = { $path: "out" };
+
 		expect(mapFsPathToDataModel("other/file.luau", rootOnlyTree)).toBeUndefined();
 	});
 
@@ -191,6 +195,7 @@ describe(mapFsPathToDataModel, () => {
 			$path: { optional: "out" },
 			ReplicatedStorage: { lib: { $path: "lib" } },
 		};
+
 		expect(mapFsPathToDataModel("lib/foo.luau", tree)).toBe("ReplicatedStorage/lib/foo");
 	});
 });
