@@ -53,9 +53,6 @@
 		"watch": "tsdown --watch"
 	},
 	"dependencies": {
-		"@isentinel/luau-ast": "workspace:*",
-		"@isentinel/roblox-runner": "workspace:*",
-		"@isentinel/rojo-utils": "workspace:*",
 		"@jridgewell/trace-mapping": "0.3.31",
 		"@roblox-ts/rojo-resolver": "1.1.0",
 		"arktype": "2.2.0",
@@ -75,6 +72,9 @@
 	},
 	"devDependencies": {
 		"@isentinel/eslint-config": "5.0.0-beta.9",
+		"@isentinel/luau-ast": "workspace:*",
+		"@isentinel/roblox-runner": "workspace:*",
+		"@isentinel/rojo-utils": "workspace:*",
 		"@isentinel/tsconfig": "1.2.0",
 		"@oxc-project/types": "0.120.0",
 		"@rbxts/jest": "3.13.3-ts.1",
