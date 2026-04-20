@@ -227,6 +227,11 @@ Connects to Roblox Studio over WebSocket. Faster than Open Cloud (no upload
 step), but Studio must be open with the plugin running. Studio doesn't expose which place is open, so
 multiple concurrent projects aren't supported yet.
 
+> [!NOTE]
+> For `--coverage`, prefer `--backend open-cloud` since the coverage output is
+> built to a separate output under `.jest-roblox-coverage/` that is likely not
+> the studio place being served.
+
 Install the plugin with [Drillbit](https://github.com/jacktabscode/drillbit):
 
 #### Configuration file

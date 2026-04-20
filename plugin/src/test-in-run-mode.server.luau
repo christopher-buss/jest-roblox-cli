@@ -7,6 +7,18 @@ if not RunService:IsRunning() then
 	return
 end
 
+local function endWithError(err: string): ()
+	local ok, endErr = pcall(function()
+		StudioTestService:EndTest({
+			jestOutput = HttpService:JSONEncode({ success = false, err = err }),
+			gameOutput = "[]",
+		})
+	end)
+	if not ok then
+		warn("[jest-roblox] EndTest failed: " .. tostring(endErr))
+	end
+end
+
 local testArgs = StudioTestService:GetTestArgs()
 if testArgs == nil then
 	for _ = 1, 50 do
@@ -18,29 +30,43 @@ if testArgs == nil then
 	end
 end
 
-if testArgs == nil or testArgs.configs == nil then
+if testArgs == nil then
+	endWithError("StudioTestService:GetTestArgs() returned nil after 50 polls (5s)")
 	return
 end
+
+if testArgs.config == nil or testArgs.config.configs == nil then
+	local keysOk, keys = pcall(HttpService.JSONEncode, HttpService, testArgs)
+	endWithError(
+		"testArgs.config.configs is nil. Keys: " .. (if keysOk then keys else "<unencodable>")
+	)
+	return
+end
+
+local configs = testArgs.config.configs
 
 local loadStringEnabled = pcall(function()
 	loadstring("return true")
 end)
 
 if not loadStringEnabled then
-	StudioTestService:EndTest({
-		jestOutput = HttpService:JSONEncode({
-			success = false,
-			err = "LoadString must be enabled in ServerScriptService to run tests",
-		}),
-		gameOutput = "[]",
-	})
+	endWithError("LoadString must be enabled in ServerScriptService to run tests")
 	return
 end
 
-local Runner = require(script.Parent.shared.runner)
-local entries = Runner.runProjects(script, testArgs.configs)
+local requireOk, Runner = pcall(require, script.Parent.shared.runner)
+if not requireOk then
+	endWithError("Failed to require shared.runner: " .. tostring(Runner))
+	return
+end
+
+local runOk, entriesOrErr = pcall(Runner.runProjects, script, configs)
+if not runOk then
+	endWithError("Runner.runProjects threw: " .. tostring(entriesOrErr))
+	return
+end
 
 StudioTestService:EndTest({
-	jestOutput = HttpService:JSONEncode({ entries = entries }),
+	jestOutput = HttpService:JSONEncode({ entries = entriesOrErr }),
 	gameOutput = "[]",
 })
