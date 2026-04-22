@@ -309,6 +309,40 @@ End of output
 		expect(result.success).toBeTrue();
 	});
 
+	it("should preserve _setup and _coverage when extracting mixed output", () => {
+		expect.assertions(3);
+
+		const payload = JSON.stringify({
+			_coverage: {
+				"shared/player.luau": { s: { 0: 1 } },
+			},
+			_setup: 0.25,
+			success: true,
+			value: {
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				startTime: 0,
+				success: true,
+				testResults: [],
+			},
+		});
+
+		const mixed = `
+Roblox output log...
+${payload}
+End of output
+`;
+		const { coverageData, setupSeconds } = parseJestOutput(mixed);
+
+		expect(setupSeconds).toBe(0.25);
+		expect(coverageData).toStrictEqual({
+			"shared/player.luau": { b: undefined, f: undefined, s: { 0: 1 } },
+		});
+		expect(coverageData?.["shared/player.luau"]?.s["0"]).toBe(1);
+	});
+
 	it("should extract _snapshotWrites from result", () => {
 		expect.assertions(2);
 

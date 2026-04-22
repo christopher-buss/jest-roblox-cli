@@ -350,7 +350,7 @@ export async function run(args: Array<string>): Promise<number> {
 
 export async function main(): Promise<void> {
 	const exitCode = await run(process.argv.slice(2));
-	process.exit(exitCode);
+	process.exitCode = exitCode;
 }
 
 /**

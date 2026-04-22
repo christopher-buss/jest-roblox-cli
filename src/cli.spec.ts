@@ -1649,27 +1649,29 @@ describe("runInner via run", () => {
 });
 
 describe(main, () => {
-	it("should call process.exit with the run result", async () => {
-		expect.assertions(1);
+	it("should set process.exitCode from the run result", async () => {
+		expect.assertions(2);
 
 		setupDefaults();
 		mocks.globSync.mockReturnValue(["/test/foo.spec.ts"]);
 		mocks.execute.mockResolvedValue(makeExecuteResult());
 
-		const exitSpy = vi.spyOn(process, "exit").mockReturnValue(undefined as never);
 		setupOutputSpies();
 
 		// Override process.argv so parseArgs gets known args
 		const originalArgv = process.argv;
+		const originalExitCode = process.exitCode;
 		process.argv = ["node", "jest-roblox"];
 
 		try {
 			await main();
+
+			expect(process.exitCode).toBe(0);
+			expect(mocks.execute).toHaveBeenCalledOnce();
 		} finally {
 			process.argv = originalArgv;
+			process.exitCode = originalExitCode;
 		}
-
-		expect(exitSpy).toHaveBeenCalledWith(0);
 	});
 });
 

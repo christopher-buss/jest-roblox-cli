@@ -28,7 +28,7 @@ import type {
 
 const PARALLEL_AUTO_CAP = 3;
 
-const OPEN_CLOUD_BASE_URL = "https://apis.roblox.com";
+const DEFAULT_OPEN_CLOUD_BASE_URL = "https://apis.roblox.com";
 const RATE_LIMIT_DEFAULT_WAIT_MS = 5000;
 const MAX_RATE_LIMIT_RETRIES = 5;
 
@@ -68,6 +68,7 @@ interface JobBucket {
 }
 
 export class OpenCloudBackend implements Backend {
+	private readonly baseUrl: string;
 	private readonly credentials: OpenCloudCredentials;
 	private readonly http: HttpClient;
 	private readonly readFile: FileReader;
@@ -76,6 +77,7 @@ export class OpenCloudBackend implements Backend {
 	public readonly kind = "open-cloud" as const;
 
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
+		this.baseUrl = resolveOpenCloudBaseUrl();
 		this.credentials = credentials;
 		this.http =
 			options?.http ??
@@ -156,7 +158,7 @@ export class OpenCloudBackend implements Backend {
 		inputs: Array<JestArgvInput>,
 		timeoutMs: number,
 	): Promise<string> {
-		const url = `${OPEN_CLOUD_BASE_URL}/cloud/v2/universes/${this.credentials.universeId}/places/${this.credentials.placeId}/luau-execution-session-tasks`;
+		const url = `${this.baseUrl}/cloud/v2/universes/${this.credentials.universeId}/places/${this.credentials.placeId}/luau-execution-session-tasks`;
 
 		const script = generateTestScript(inputs);
 
@@ -180,7 +182,7 @@ export class OpenCloudBackend implements Backend {
 		timeoutMs: number,
 		pollIntervalMs: number,
 	): Promise<{ gameOutput?: string; jestOutput: string }> {
-		const url = `${OPEN_CLOUD_BASE_URL}/cloud/v2/${taskPath}`;
+		const url = `${this.baseUrl}/cloud/v2/${taskPath}`;
 		const startTime = Date.now();
 		let rateLimitRetries = 0;
 
@@ -296,7 +298,7 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	private async uploadPlaceData(placeData: buffer.Buffer): Promise<void> {
-		const url = `${OPEN_CLOUD_BASE_URL}/universes/v1/${this.credentials.universeId}/places/${this.credentials.placeId}/versions?versionType=Saved`;
+		const url = `${this.baseUrl}/universes/v1/${this.credentials.universeId}/places/${this.credentials.placeId}/versions?versionType=Saved`;
 
 		const response = await this.http.request("POST", url, {
 			body: placeData,
@@ -328,6 +330,15 @@ export function createOpenCloudBackend(): OpenCloudBackend {
 	}
 
 	return new OpenCloudBackend({ apiKey, placeId, universeId });
+}
+
+function resolveOpenCloudBaseUrl(): string {
+	const override = process.env["JEST_ROBLOX_OPEN_CLOUD_BASE_URL"];
+	if (override === undefined || override.trim() === "") {
+		return DEFAULT_OPEN_CLOUD_BASE_URL;
+	}
+
+	return override.replace(/\/+$/, "");
 }
 
 function resolveBucketCount(parallel: BackendOptions["parallel"], jobCount: number): number {

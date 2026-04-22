@@ -1,6 +1,6 @@
 import buffer from "node:buffer";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
@@ -133,6 +133,40 @@ const credentials = {
 };
 
 describe(OpenCloudBackend, () => {
+	it("should honor JEST_ROBLOX_OPEN_CLOUD_BASE_URL for requests", async () => {
+		expect.assertions(2);
+
+		onTestFinished(
+			createTestEnvironment({
+				JEST_ROBLOX_OPEN_CLOUD_BASE_URL: "http://127.0.0.1:4010/custom/",
+			}),
+		);
+
+		const http = createDispatchMock({
+			onCreateTask: () => {
+				return {
+					complete: completeResponse(envelope([{ jestOutput: successJest() }])),
+					taskPath: "mock/tasks/1",
+				};
+			},
+		});
+
+		const backend = new OpenCloudBackend(credentials, {
+			http,
+			readFile: () => buffer.Buffer.from("mock-rbxl"),
+			sleep: noSleep,
+		});
+
+		await backend.runTests(jobsOptions([job("alpha")], 1));
+
+		expect(http.calls[0]?.url).toBe(
+			"http://127.0.0.1:4010/custom/universes/v1/123/places/456/versions?versionType=Saved",
+		);
+		expect(http.calls[1]?.url).toBe(
+			"http://127.0.0.1:4010/custom/cloud/v2/universes/123/places/456/luau-execution-session-tasks",
+		);
+	});
+
 	it("should throw when the jobs array is empty", async () => {
 		expect.assertions(1);
 
@@ -1098,8 +1132,8 @@ describe(OpenCloudBackend, () => {
 	it("should rethrow non-LuauScriptError exceptions from parseJestOutput", async () => {
 		expect.assertions(1);
 
-		// Envelope-shaped payload whose entry jestOutput is invalid JSON surfaces
-		// a SyntaxError through parseJestOutput unchanged.
+		// Envelope-shaped payload whose entry jestOutput is invalid JSON now
+		// falls through mixed-output extraction and surfaces the parser's error.
 		const http = createDispatchMock({
 			onCreateTask: () => {
 				return {
@@ -1115,7 +1149,9 @@ describe(OpenCloudBackend, () => {
 			sleep: noSleep,
 		});
 
-		await expect(backend.runTests(jobsOptions([job("alpha")]))).rejects.toThrow(SyntaxError);
+		await expect(backend.runTests(jobsOptions([job("alpha")]))).rejects.toThrow(
+			/No valid Jest result JSON found/,
+		);
 	});
 
 	it("should throw when the bucket envelope length does not match the job count", async () => {
@@ -1200,16 +1236,23 @@ describe(OpenCloudBackend, () => {
 	});
 });
 
-function withEnvironmentBackup(callback: () => void): void {
+function createTestEnvironment(values: Record<string, string | undefined>): () => void {
 	const backup: Record<string, string | undefined> = {
+		JEST_ROBLOX_OPEN_CLOUD_BASE_URL: process.env["JEST_ROBLOX_OPEN_CLOUD_BASE_URL"],
 		ROBLOX_OPEN_CLOUD_API_KEY: process.env["ROBLOX_OPEN_CLOUD_API_KEY"],
 		ROBLOX_PLACE_ID: process.env["ROBLOX_PLACE_ID"],
 		ROBLOX_UNIVERSE_ID: process.env["ROBLOX_UNIVERSE_ID"],
 	};
 
-	try {
-		callback();
-	} finally {
+	for (const [key, value] of Object.entries(values)) {
+		if (value === undefined) {
+			delete process.env[key];
+		} else {
+			process.env[key] = value;
+		}
+	}
+
+	return () => {
 		for (const [key, value] of Object.entries(backup)) {
 			if (value === undefined) {
 				delete process.env[key];
@@ -1217,63 +1260,71 @@ function withEnvironmentBackup(callback: () => void): void {
 				process.env[key] = value;
 			}
 		}
-	}
+	};
 }
 
 describe(createOpenCloudBackend, () => {
 	it("should throw when ROBLOX_OPEN_CLOUD_API_KEY is missing", () => {
 		expect.assertions(1);
 
-		withEnvironmentBackup(() => {
-			delete process.env["ROBLOX_OPEN_CLOUD_API_KEY"];
-			delete process.env["ROBLOX_UNIVERSE_ID"];
-			delete process.env["ROBLOX_PLACE_ID"];
+		onTestFinished(
+			createTestEnvironment({
+				ROBLOX_OPEN_CLOUD_API_KEY: undefined,
+				ROBLOX_PLACE_ID: undefined,
+				ROBLOX_UNIVERSE_ID: undefined,
+			}),
+		);
 
-			expect(() => createOpenCloudBackend()).toThrow(
-				"ROBLOX_OPEN_CLOUD_API_KEY environment variable is required",
-			);
-		});
+		expect(() => createOpenCloudBackend()).toThrow(
+			"ROBLOX_OPEN_CLOUD_API_KEY environment variable is required",
+		);
 	});
 
 	it("should throw when ROBLOX_UNIVERSE_ID is missing", () => {
 		expect.assertions(1);
 
-		withEnvironmentBackup(() => {
-			process.env["ROBLOX_OPEN_CLOUD_API_KEY"] = "key";
-			delete process.env["ROBLOX_UNIVERSE_ID"];
-			delete process.env["ROBLOX_PLACE_ID"];
+		onTestFinished(
+			createTestEnvironment({
+				ROBLOX_OPEN_CLOUD_API_KEY: "key",
+				ROBLOX_PLACE_ID: undefined,
+				ROBLOX_UNIVERSE_ID: undefined,
+			}),
+		);
 
-			expect(() => createOpenCloudBackend()).toThrow(
-				"ROBLOX_UNIVERSE_ID environment variable is required",
-			);
-		});
+		expect(() => createOpenCloudBackend()).toThrow(
+			"ROBLOX_UNIVERSE_ID environment variable is required",
+		);
 	});
 
 	it("should throw when ROBLOX_PLACE_ID is missing", () => {
 		expect.assertions(1);
 
-		withEnvironmentBackup(() => {
-			process.env["ROBLOX_OPEN_CLOUD_API_KEY"] = "key";
-			process.env["ROBLOX_UNIVERSE_ID"] = "123";
-			delete process.env["ROBLOX_PLACE_ID"];
+		onTestFinished(
+			createTestEnvironment({
+				ROBLOX_OPEN_CLOUD_API_KEY: "key",
+				ROBLOX_PLACE_ID: undefined,
+				ROBLOX_UNIVERSE_ID: "123",
+			}),
+		);
 
-			expect(() => createOpenCloudBackend()).toThrow(
-				"ROBLOX_PLACE_ID environment variable is required",
-			);
-		});
+		expect(() => createOpenCloudBackend()).toThrow(
+			"ROBLOX_PLACE_ID environment variable is required",
+		);
 	});
 
 	it("should create backend when all env vars are set", () => {
 		expect.assertions(1);
 
-		withEnvironmentBackup(() => {
-			process.env["ROBLOX_OPEN_CLOUD_API_KEY"] = "key";
-			process.env["ROBLOX_UNIVERSE_ID"] = "123";
-			process.env["ROBLOX_PLACE_ID"] = "456";
+		onTestFinished(
+			createTestEnvironment({
+				ROBLOX_OPEN_CLOUD_API_KEY: "key",
+				ROBLOX_PLACE_ID: "456",
+				ROBLOX_UNIVERSE_ID: "123",
+			}),
+		);
 
-			const backend = createOpenCloudBackend();
+		const backend = createOpenCloudBackend();
 
-			expect(backend).toBeInstanceOf(OpenCloudBackend);
-		});
+		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
 });

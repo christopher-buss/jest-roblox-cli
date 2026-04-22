@@ -73,38 +73,8 @@ export function parseJestOutput(output: string): ParseResult {
 	const trimmed = output.trim();
 
 	if (trimmed.startsWith("{")) {
-		const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-		const coverageData = extractCoverageData(parsed);
-		const luauTiming = extractLuauTiming(parsed);
-		const setupSeconds = extractSetupSeconds(parsed);
-		const snapshotWrites = extractSnapshotWrites(parsed);
-		const unwrapped = unwrapResult(parsed);
-
-		// Check for Jest execution error (Promise rejection)
-		if (unwrapped["kind"] === "ExecutionError") {
-			const errorMessage = extractExecutionError(unwrapped);
-			throw new Error(`Jest execution failed: ${errorMessage}`);
-		}
-
-		// Jest returns { globalConfig, results } - extract results
-		if (unwrapped["results"] !== undefined && typeof unwrapped["results"] === "object") {
-			return {
-				coverageData,
-				luauTiming,
-				result: validateJestResult(unwrapped["results"]),
-				setupSeconds,
-				snapshotWrites,
-			};
-		}
-
 		try {
-			return {
-				coverageData,
-				luauTiming,
-				result: validateJestResult(unwrapped),
-				setupSeconds,
-				snapshotWrites,
-			};
+			return parseParsedOutput(JSON.parse(trimmed) as Record<string, unknown>);
 		} catch {
 			// Fall through to extract
 		}
@@ -115,9 +85,7 @@ export function parseJestOutput(output: string): ParseResult {
 		throw new Error(`No valid Jest result JSON found in output, output was:\n${output}`);
 	}
 
-	// _coverage lives in the top-level envelope (startsWith("{") branch).
-	// This fallback extracts embedded JSON from mixed stdout — no coverage.
-	return { result: validateJestResult(JSON.parse(jsonString)) };
+	return parseParsedOutput(JSON.parse(jsonString) as Record<string, unknown>);
 }
 
 function countBraces(line: string): number {
@@ -318,4 +286,35 @@ function extractSetupSeconds(parsed: Record<string, unknown>): number | undefine
 	}
 
 	return setup;
+}
+
+function parseParsedOutput(parsed: Record<string, unknown>): ParseResult {
+	const coverageData = extractCoverageData(parsed);
+	const luauTiming = extractLuauTiming(parsed);
+	const setupSeconds = extractSetupSeconds(parsed);
+	const snapshotWrites = extractSnapshotWrites(parsed);
+	const unwrapped = unwrapResult(parsed);
+
+	if (unwrapped["kind"] === "ExecutionError") {
+		const errorMessage = extractExecutionError(unwrapped);
+		throw new Error(`Jest execution failed: ${errorMessage}`);
+	}
+
+	if (unwrapped["results"] !== undefined && typeof unwrapped["results"] === "object") {
+		return {
+			coverageData,
+			luauTiming,
+			result: validateJestResult(unwrapped["results"]),
+			setupSeconds,
+			snapshotWrites,
+		};
+	}
+
+	return {
+		coverageData,
+		luauTiming,
+		result: validateJestResult(unwrapped),
+		setupSeconds,
+		snapshotWrites,
+	};
 }

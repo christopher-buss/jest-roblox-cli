@@ -1,0 +1,14 @@
+{
+	"name": "multi-root-e2e",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"PkgShared": { "$path": "pkg/src/Shared" }
+		},
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+			"PkgServer": { "$path": "pkg/src/Server" }
+		}
+	}
+}

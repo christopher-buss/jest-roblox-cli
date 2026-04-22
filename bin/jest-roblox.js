@@ -10,8 +10,8 @@ register("../loaders/luau-raw.mjs", import.meta.url);
 
 if (existsSync(sourceEntry)) {
 	const { main } = await import("../src/cli.ts");
-	main();
+	await main();
 } else {
 	const { main } = await import("../dist/cli.mjs");
-	main();
+	await main();
 }
