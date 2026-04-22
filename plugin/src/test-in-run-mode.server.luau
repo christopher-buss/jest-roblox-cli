@@ -31,7 +31,6 @@ if testArgs == nil then
 end
 
 if testArgs == nil then
-	endWithError("StudioTestService:GetTestArgs() returned nil after 50 polls (5s)")
 	return
 end
 
