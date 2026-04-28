@@ -13,7 +13,7 @@ describe(applySnapshotFormatDefaults, () => {
 
 		const result = applySnapshotFormatDefaults(DEFAULT_CONFIG, true);
 
-		expect(result.snapshotFormat?.printBasicPrototype).toBe(true);
+		expect(result.snapshotFormat?.printBasicPrototype).toBeTrue();
 	});
 
 	it("should default printBasicPrototype to false for typescript project", () => {
@@ -30,7 +30,7 @@ describe(applySnapshotFormatDefaults, () => {
 		const config = { ...DEFAULT_CONFIG, snapshotFormat: { printBasicPrototype: true } };
 		const result = applySnapshotFormatDefaults(config, false);
 
-		expect(result.snapshotFormat?.printBasicPrototype).toBe(true);
+		expect(result.snapshotFormat?.printBasicPrototype).toBeTrue();
 	});
 
 	it("should preserve explicit printBasicPrototype=false even for luau project", () => {
@@ -73,7 +73,7 @@ describe(resolveConfig, () => {
 		const result = resolveConfig(config);
 
 		expect(result.testMatch).toStrictEqual(["**/*.test.ts"]);
-		expect(result.verbose).toBe(true);
+		expect(result.verbose).toBeTrue();
 	});
 
 	it("should preserve rootDir from config", () => {
@@ -189,7 +189,7 @@ describe(loadConfig, () => {
 		const result = await loadConfig(configPath, temporaryDirectory);
 		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 
-		expect(result.verbose).toBe(true);
+		expect(result.verbose).toBeTrue();
 	});
 
 	it("should default rootDir to cwd", async () => {
@@ -360,7 +360,7 @@ describe(loadConfig, () => {
 			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 
 			expect(result.timeout).toBe(10000);
-			expect(result.verbose).toBe(true);
+			expect(result.verbose).toBeTrue();
 		});
 
 		it("should deep-merge nested objects like snapshotFormat", async () => {
@@ -443,7 +443,7 @@ describe(loadConfig, () => {
 		const result = await loadConfig(configPath, temporaryDirectory);
 		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 
-		expect(result.verbose).toBe(true);
+		expect(result.verbose).toBeTrue();
 	});
 
 	it("should load ESM config in SEA mode", async () => {
@@ -458,7 +458,7 @@ describe(loadConfig, () => {
 		const result = await loadConfig(configPath, temporaryDirectory);
 		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 
-		expect(result.verbose).toBe(true);
+		expect(result.verbose).toBeTrue();
 	});
 
 	it("should throw when extends fails to resolve", async () => {

@@ -10,7 +10,7 @@ export default isentinel({
 	},
 	test: {
 		vitest: {
-			extended: false,
+			extended: true,
 			typecheck: true,
 		},
 	},

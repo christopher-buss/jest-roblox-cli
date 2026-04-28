@@ -75,7 +75,7 @@ describe(OcaleRunner, () => {
 
 			const result = await runner.uploadPlace({ placeFilePath: "./test.rbxl" });
 
-			expect(result.cached).toBe(false);
+			expect(result.cached).toBeFalse();
 			expect(result.versionNumber).toBe(1);
 			expect(mockHttp.calls[0]!.url).toContain("/versions");
 		});
@@ -94,11 +94,11 @@ describe(OcaleRunner, () => {
 
 			const result1 = await runner.uploadPlace({ cache: true, placeFilePath: "./test.rbxl" });
 
-			expect(result1.cached).toBe(false);
+			expect(result1.cached).toBeFalse();
 
 			const result2 = await runner.uploadPlace({ cache: true, placeFilePath: "./test.rbxl" });
 
-			expect(result2.cached).toBe(true);
+			expect(result2.cached).toBeTrue();
 			expect(mockHttp.calls.filter((call) => call.url.includes("/versions"))).toHaveLength(1);
 		});
 
@@ -115,7 +115,7 @@ describe(OcaleRunner, () => {
 
 			const result = await runner.uploadPlace({ cache: false, placeFilePath: "./test.rbxl" });
 
-			expect(result.cached).toBe(false);
+			expect(result.cached).toBeFalse();
 			expect(mockHttp.calls.filter((call) => call.url.includes("/versions"))).toHaveLength(1);
 		});
 

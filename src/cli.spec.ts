@@ -2841,9 +2841,9 @@ describe("multi-project Phase 4 behavior", () => {
 
 		expect(jobs).toHaveLength(2);
 		// TS project → printBasicPrototype = false (non-Luau)
-		expect(jobs[0]?.config.snapshotFormat?.printBasicPrototype).toBe(false);
+		expect(jobs[0]?.config.snapshotFormat?.printBasicPrototype).toBeFalse();
 		// Luau project → printBasicPrototype = true
-		expect(jobs[1]?.config.snapshotFormat?.printBasicPrototype).toBe(true);
+		expect(jobs[1]?.config.snapshotFormat?.printBasicPrototype).toBeTrue();
 	});
 
 	it("should propagate displayName and displayColor on each job", async () => {

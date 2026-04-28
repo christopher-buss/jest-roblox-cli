@@ -1634,7 +1634,7 @@ describe(buildProjectJob, () => {
 		});
 
 		expect(job.displayName).toBe("luau-project");
-		expect(job.config.snapshotFormat?.printBasicPrototype).toBe(true);
+		expect(job.config.snapshotFormat?.printBasicPrototype).toBeTrue();
 	});
 
 	it("should resolve printBasicPrototype=false for TS project", () => {
@@ -1645,7 +1645,7 @@ describe(buildProjectJob, () => {
 			testFiles: ["src/a.spec.ts"],
 		});
 
-		expect(job.config.snapshotFormat?.printBasicPrototype).toBe(false);
+		expect(job.config.snapshotFormat?.printBasicPrototype).toBeFalse();
 	});
 
 	it("should default displayName to empty string", () => {
@@ -1677,7 +1677,7 @@ describe(buildProjectJob, () => {
 		};
 		const job = buildProjectJob({ config, testFiles: ["src/a.spec.luau"] });
 
-		expect(job.config.snapshotFormat?.printBasicPrototype).toBe(false);
+		expect(job.config.snapshotFormat?.printBasicPrototype).toBeFalse();
 	});
 });
 

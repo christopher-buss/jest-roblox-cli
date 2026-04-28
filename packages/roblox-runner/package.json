@@ -34,8 +34,10 @@
 		"@vitest/coverage-v8": "4.1.2",
 		"@vitest/eslint-plugin": "1.6.14",
 		"eslint": "9.39.4",
+		"eslint-plugin-jest-extended": "3.0.1",
 		"eslint-plugin-n": "17.24.0",
 		"eslint-plugin-pnpm": "1.6.0",
+		"jest-extended": "7.0.0",
 		"tsdown": "0.21.7",
 		"typescript": "6.0.3",
 		"vitest": "4.1.2"

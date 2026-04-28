@@ -14,6 +14,7 @@ export default defineConfig({
 		},
 		include: ["src/**/*.spec.ts"],
 		restoreMocks: true,
+		setupFiles: ["./test/setup/jest-extended.ts"],
 		unstubEnvs: true,
 	},
 });

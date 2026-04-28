@@ -235,7 +235,7 @@ describe(StudioRunner, () => {
 		const runner = new StudioRunner({ port: 0 });
 		const result = await runner.uploadPlace({ placeFilePath: "./test.rbxl" });
 
-		expect(result.cached).toBe(false);
+		expect(result.cached).toBeFalse();
 		expect(result.uploadMs).toBe(0);
 		expect(result.versionNumber).toBe(0);
 	});

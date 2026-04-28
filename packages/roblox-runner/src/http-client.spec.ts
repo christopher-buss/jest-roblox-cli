@@ -55,7 +55,7 @@ describe(createFetchClient, () => {
 			method: "GET",
 		});
 		expect(result.body).toStrictEqual({ ok: true });
-		expect(result.ok).toBe(true);
+		expect(result.ok).toBeTrue();
 		expect(result.status).toBe(200);
 	});
 
@@ -192,7 +192,7 @@ describe(createFetchClient, () => {
 		const client = createFetchClient();
 		const result = await client.request("GET", "https://example.com");
 
-		expect(result.ok).toBe(false);
+		expect(result.ok).toBeFalse();
 		expect(result.status).toBe(404);
 	});
 });

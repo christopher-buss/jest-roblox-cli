@@ -3,6 +3,7 @@ import { getTsconfig } from "get-tsconfig";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import picomatch from "picomatch";
+import type { Except } from "type-fest";
 
 import type { ResolvedConfig } from "../config/schema.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
@@ -34,7 +35,7 @@ export const NON_INSTRUMENTED_SUFFIXES = [
 ] as const;
 
 /** Previous manifests may lack nonInstrumentedFiles (pre-fix). */
-type PreviousManifest = Omit<CoverageManifest, "nonInstrumentedFiles"> & {
+type PreviousManifest = Except<CoverageManifest, "nonInstrumentedFiles"> & {
 	nonInstrumentedFiles?: CoverageManifest["nonInstrumentedFiles"];
 };
 

@@ -151,7 +151,7 @@ describe("cache utilities", () => {
 			const exists = fs.existsSync(nestedFile);
 			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 
-			expect(exists).toBe(true);
+			expect(exists).toBeTrue();
 		});
 	});
 
@@ -161,7 +161,7 @@ describe("cache utilities", () => {
 
 			const cache: Record<string, { fileHash: string; uploadedAt: number }> = {};
 
-			expect(isUploaded(cache, "missing", "hash")).toBe(false);
+			expect(isUploaded(cache, "missing", "hash")).toBeFalse();
 		});
 
 		it("should return true after marking uploaded with same hash", () => {
@@ -170,7 +170,7 @@ describe("cache utilities", () => {
 			const cache: Record<string, { fileHash: string; uploadedAt: number }> = {};
 			markUploaded(cache, "key", "hash_a");
 
-			expect(isUploaded(cache, "key", "hash_a")).toBe(true);
+			expect(isUploaded(cache, "key", "hash_a")).toBeTrue();
 		});
 
 		it("should return false when hash differs from uploaded hash", () => {
@@ -179,7 +179,7 @@ describe("cache utilities", () => {
 			const cache: Record<string, { fileHash: string; uploadedAt: number }> = {};
 			markUploaded(cache, "key", "hash_a");
 
-			expect(isUploaded(cache, "key", "hash_b")).toBe(false);
+			expect(isUploaded(cache, "key", "hash_b")).toBeFalse();
 		});
 
 		it("should set uploadedAt timestamp", () => {

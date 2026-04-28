@@ -7,7 +7,6 @@ import { mapCoverageToTypeScript } from "./mapper.ts";
 import type { CoverageManifest, CoverageMap, RawCoverageData } from "./types.ts";
 
 const { mockOriginalPositionFor, mockReadFileSync, MockTraceMap } = vi.hoisted(() => {
-	// eslint-disable-next-line ts/no-extraneous-class -- mock constructor for TraceMap
 	class MockTraceMapClass {}
 
 	return {
