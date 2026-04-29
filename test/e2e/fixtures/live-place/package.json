@@ -1,0 +1,56 @@
+{
+	"name": "@isentinel/jest-roblox-fixture-live-place",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Fixture place file for live OCALE e2e tests in jest-roblox-cli. Pre-built; rebuilds are manual (see README).",
+	"type": "module",
+	"devDependencies": {
+		"@isentinel/jest-roblox": "workspace:*",
+		"@isentinel/roblox-ts": "workspace:*",
+		"@isentinel/tsconfig": "catalog:tsc",
+		"@rbxts/compiler-types": "catalog:types",
+		"@rbxts/jest": "catalog:test",
+		"@rbxts/jest-globals": "catalog:test",
+		"@rbxts/types": "catalog:types"
+	},
+	"nx": {
+		"name": "jest-roblox-cli-fixture-live-place",
+		"tags": [
+			"scope:tooling",
+			"type:fixture"
+		],
+		"includedScripts": [],
+		"targets": {
+			"build": {
+				"executor": "nx:noop",
+				"cache": true,
+				"dependsOn": [],
+				"inputs": []
+			},
+			"build-test": {
+				"executor": "nx:noop",
+				"cache": true,
+				"dependsOn": [],
+				"inputs": []
+			},
+			"test": {
+				"executor": "nx:noop",
+				"cache": true,
+				"dependsOn": [],
+				"inputs": []
+			},
+			"typecheck": {
+				"executor": "nx:noop",
+				"cache": true,
+				"dependsOn": [],
+				"inputs": []
+			},
+			"lint": {
+				"executor": "nx:noop",
+				"cache": true,
+				"dependsOn": [],
+				"inputs": []
+			}
+		}
+	}
+}

@@ -8,9 +8,20 @@ const JSON_CONTENT_TYPE = "application/json";
 
 export interface FakeOpenCloudTask {
 	elapsedMs?: number;
+	/**
+	 * Error message returned when `state === "FAILED"`. Mirrors the live
+	 * `error.message` shape the backend reads in `pollForCompletion`.
+	 */
+	errorMessage?: string;
 	gameOutput?: string;
 	jestOutput: string;
 	pollsBeforeComplete?: number;
+	/**
+	 * Terminal state to return after `pollsBeforeComplete` is exhausted.
+	 * Defaults to `"COMPLETE"`. Set to `"FAILED"` to drive the failure
+	 * branch — the contract suite needs both to prove fake/live parity.
+	 */
+	state?: "COMPLETE" | "FAILED";
 }
 
 export interface FakeOpenCloudCall {
@@ -108,6 +119,62 @@ async function readBody(request: IncomingMessage): Promise<string> {
 	return Buffer.concat(chunks).toString("utf-8");
 }
 
+function handlePoll(options: {
+	pollCounts: Map<string, number>;
+	response: ServerResponse;
+	taskResults: Map<string, FakeOpenCloudTask>;
+	url: URL;
+}): void {
+	const { pollCounts, response, taskResults, url } = options;
+	const taskPath = url.pathname.replace("/cloud/v2/", "");
+	const remainingPolls = pollCounts.get(taskPath);
+	const queuedTask = taskResults.get(taskPath);
+
+	if (queuedTask === undefined || remainingPolls === undefined) {
+		response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
+		response.end(JSON.stringify({ error: { message: "Unknown fake task" } }));
+		return;
+	}
+
+	if (remainingPolls > 0) {
+		pollCounts.set(taskPath, remainingPolls - 1);
+		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+		response.end(JSON.stringify({ state: "PROCESSING" }));
+		return;
+	}
+
+	if (queuedTask.state === "FAILED") {
+		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+		response.end(
+			JSON.stringify({
+				error: { message: queuedTask.errorMessage ?? "Execution failed" },
+				state: "FAILED",
+			}),
+		);
+		return;
+	}
+
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(
+		JSON.stringify({
+			output: {
+				results: [
+					JSON.stringify({
+						entries: [
+							{
+								elapsedMs: queuedTask.elapsedMs ?? 25,
+								gameOutput: queuedTask.gameOutput,
+								jestOutput: queuedTask.jestOutput,
+							},
+						],
+					}),
+				],
+			},
+			state: "COMPLETE",
+		}),
+	);
+}
+
 async function handleRequest(options: {
 	pollCounts: Map<string, number>;
 	request: IncomingMessage;
@@ -156,42 +223,7 @@ async function handleRequest(options: {
 	}
 
 	if (request.method === "GET" && url.pathname.startsWith("/cloud/v2/mock/tasks/")) {
-		const taskPath = url.pathname.replace("/cloud/v2/", "");
-		const remainingPolls = pollCounts.get(taskPath);
-		const queuedTask = taskResults.get(taskPath);
-
-		if (queuedTask === undefined || remainingPolls === undefined) {
-			response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
-			response.end(JSON.stringify({ error: { message: "Unknown fake task" } }));
-			return;
-		}
-
-		if (remainingPolls > 0) {
-			pollCounts.set(taskPath, remainingPolls - 1);
-			response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-			response.end(JSON.stringify({ state: "PROCESSING" }));
-			return;
-		}
-
-		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-		response.end(
-			JSON.stringify({
-				output: {
-					results: [
-						JSON.stringify({
-							entries: [
-								{
-									elapsedMs: queuedTask.elapsedMs ?? 25,
-									gameOutput: queuedTask.gameOutput,
-									jestOutput: queuedTask.jestOutput,
-								},
-							],
-						}),
-					],
-				},
-				state: "COMPLETE",
-			}),
-		);
+		handlePoll({ pollCounts, response, taskResults, url });
 		return;
 	}
 

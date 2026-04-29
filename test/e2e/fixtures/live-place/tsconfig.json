@@ -1,0 +1,19 @@
+{
+	"extends": "@isentinel/tsconfig/roblox",
+	"nx": {
+		"addTypecheckTarget": false
+	},
+	"compilerOptions": {
+		"declaration": true,
+		"downlevelIteration": null,
+		"isolatedDeclarations": false,
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"outDir": "out",
+		"rootDir": "src",
+		"sourceMap": true,
+		"typeRoots": ["node_modules/@rbxts"],
+		"types": ["compiler-types"]
+	},
+	"include": ["src"]
+}

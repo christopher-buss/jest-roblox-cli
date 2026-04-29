@@ -1,14 +1,14 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createSourceMapper, type RojoProject } from "../../src/source-mapper/index.ts";
-import type { TsconfigMapping } from "../../src/types/tsconfig.ts";
-import { normalizeWindowsPath } from "../../src/utils/normalize-windows-path.ts";
-import { createRbxtsFixtureSandbox } from "./helpers.ts";
+import { createSourceMapper, type RojoProject } from "../../../src/source-mapper/index.ts";
+import type { TsconfigMapping } from "../../../src/types/tsconfig.ts";
+import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.ts";
+import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
 const normalize = normalizeWindowsPath;
-const RBXTS_FIXTURE = path.resolve(__dirname, "fixtures/rbxts-project");
-const LUAU_FIXTURE = path.resolve(__dirname, "fixtures/luau-project");
+const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
+const LUAU_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/luau-project");
 
 function createRbxtsFixtureMapper(rootDirectory: string) {
 	const outDirectory = normalize(path.join(rootDirectory, "out"));

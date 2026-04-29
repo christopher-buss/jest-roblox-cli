@@ -1,6 +1,14 @@
 import { Buffer } from "node:buffer";
 import { execFile, execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import nodeProcess from "node:process";
 import { onTestFinished } from "vitest";
@@ -17,7 +25,7 @@ export interface RunCliOptions {
 	timeoutMs?: number;
 }
 
-const BIN = path.resolve(__dirname, "../../bin/jest-roblox.js");
+const BIN = path.resolve(__dirname, "../../../bin/jest-roblox.js");
 
 // cspell:ignore LOCALAPPDATA MSYSTEM PATHEXT PROGRAMDATA WINDIR
 const ALLOWED_ENV_VARS = [
@@ -79,6 +87,7 @@ export async function runCliAsync(
 				cwd: options.cwd,
 				encoding: "utf-8",
 				env: buildCliEnvironment(options.env),
+				maxBuffer: 16 * 1024 * 1024,
 				timeout: options.timeoutMs ?? 30_000,
 			},
 			(error, stdout, stderr) => {
@@ -113,6 +122,7 @@ export function createFixtureSandbox(sourcePath: string): string {
 	const directory = mkdtempSync(path.join(sandboxRoot, "jest-roblox-cli-e2e-"));
 	const sandboxPath = path.join(directory, path.basename(sourcePath));
 	cpSync(sourcePath, sandboxPath, { recursive: true });
+	absolutizeEscapingProjectPaths(sourcePath, sandboxPath);
 	onTestFinished(() => {
 		rmSync(directory, { force: true, recursive: true });
 	});
@@ -137,6 +147,53 @@ export function createRbxtsFixtureSandbox(sourcePath: string): string {
 	writeFileSync(path.join(outDirectory, "jest.config.lua"), RBXTS_JEST_CONFIG_LUA);
 
 	return sandboxPath;
+}
+
+function rewriteEscapingPaths(
+	node: unknown,
+	sourceResolved: string,
+	sandboxResolved: string,
+): void {
+	if (node === null || typeof node !== "object") {
+		return;
+	}
+
+	const record = node as Record<string, unknown>;
+	const value = record["$path"];
+	if (typeof value === "string" && !path.isAbsolute(value)) {
+		const absolute = path.resolve(sourceResolved, value);
+		const relativeFromSource = path.relative(sourceResolved, absolute);
+		if (relativeFromSource.startsWith("..") || path.isAbsolute(relativeFromSource)) {
+			const fromSandbox = path.relative(sandboxResolved, absolute).replaceAll("\\", "/");
+			record["$path"] = fromSandbox;
+		}
+	}
+
+	for (const child of Object.values(record)) {
+		rewriteEscapingPaths(child, sourceResolved, sandboxResolved);
+	}
+}
+
+// Rojo project files use `$path` values relative to the project file. When a
+// fixture references siblings outside its own directory (e.g. `rojo-sync/`),
+// the relative path is calibrated to the fixture's location in the repo —
+// copying the fixture to a temp sandbox at a different depth breaks those
+// references. For each `$path` that escapes the source fixture, rewrite it
+// to a sandbox-relative path that points back at the original target.
+// Sandbox-relative (rather than absolute) lets downstream consumers like the
+// coverage rewriter still relocate the project tree without mangling the path.
+function absolutizeEscapingProjectPaths(sourceDirectory: string, sandboxDirectory: string): void {
+	const projectFile = path.join(sandboxDirectory, "default.project.json");
+	if (!existsSync(projectFile)) {
+		return;
+	}
+
+	const sourceResolved = path.resolve(sourceDirectory);
+	const sandboxResolved = path.resolve(sandboxDirectory);
+	const raw: unknown = JSON.parse(readFileSync(projectFile, "utf-8"));
+
+	rewriteEscapingPaths(raw, sourceResolved, sandboxResolved);
+	writeFileSync(projectFile, `${JSON.stringify(raw, null, "\t")}\n`);
 }
 
 const RBXTS_EXAMPLE_LUAU = `-- Compiled with @isentinel/roblox-ts v3.1.5

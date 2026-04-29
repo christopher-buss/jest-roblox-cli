@@ -1,12 +1,12 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { formatFailure } from "../src/formatters/formatter.ts";
-import { createSourceMapper, type SourceMapper } from "../src/source-mapper/index.ts";
-import { normalizeWindowsPath } from "../src/utils/normalize-windows-path.ts";
+import { formatFailure } from "../../../src/formatters/formatter.ts";
+import { createSourceMapper, type SourceMapper } from "../../../src/source-mapper/index.ts";
+import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.ts";
 
 const normalize = normalizeWindowsPath;
-const FIXTURE_DIR = normalize(path.resolve(__dirname, "fixtures"));
+const FIXTURE_DIR = normalize(path.resolve(__dirname, "../../fixtures"));
 const rootDirectory = normalize(path.join(FIXTURE_DIR, "src"));
 const outDirectory = normalize(path.join(FIXTURE_DIR, "out"));
 

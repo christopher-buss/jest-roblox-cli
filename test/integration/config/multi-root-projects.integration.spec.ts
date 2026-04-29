@@ -1,12 +1,12 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { loadConfig } from "../../src/config/loader.ts";
-import { resolveAllProjects } from "../../src/config/projects.ts";
-import { rojoProjectSchema } from "../../src/types/rojo.ts";
-import { readJsonSync } from "./helpers.ts";
+import { loadConfig } from "../../../src/config/loader.ts";
+import { resolveAllProjects } from "../../../src/config/projects.ts";
+import { rojoProjectSchema } from "../../../src/types/rojo.ts";
+import { readJsonSync } from "../../e2e/cli/helpers.ts";
 
-const MULTI_ROOT_FIXTURE = path.resolve(__dirname, "fixtures/multi-root-project");
+const MULTI_ROOT_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/multi-root-project");
 
 async function resolveFixtureProjects() {
 	const config = await loadConfig(undefined, MULTI_ROOT_FIXTURE);

@@ -1,15 +1,15 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { loadConfig } from "../../src/config/loader.ts";
-import { resolveAllProjects } from "../../src/config/projects.ts";
-import { isLuauProject, resolveAllTsconfigMappings } from "../../src/executor.ts";
-import { rojoProjectSchema } from "../../src/types/rojo.ts";
-import { readJsonSync } from "./helpers.ts";
+import { loadConfig } from "../../../src/config/loader.ts";
+import { resolveAllProjects } from "../../../src/config/projects.ts";
+import { isLuauProject, resolveAllTsconfigMappings } from "../../../src/executor.ts";
+import { rojoProjectSchema } from "../../../src/types/rojo.ts";
+import { readJsonSync } from "../../e2e/cli/helpers.ts";
 
-const LUAU_FIXTURE = path.resolve(__dirname, "fixtures/luau-project");
-const RBXTS_FIXTURE = path.resolve(__dirname, "fixtures/rbxts-project");
-const PARALLEL_FIXTURE = path.resolve(__dirname, "fixtures/parallel-config-project");
+const LUAU_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/luau-project");
+const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
+const PARALLEL_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/parallel-config-project");
 
 describe("config resolution", () => {
 	describe("luau project", () => {

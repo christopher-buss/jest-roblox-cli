@@ -1,9 +1,9 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { runTypecheck } from "../src/typecheck/runner.ts";
+import { runTypecheck } from "../../src/typecheck/runner.ts";
 
-const FIXTURE_DIR = path.resolve(__dirname, "fixtures", "typecheck");
+const FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck");
 
 describe("typecheck integration", () => {
 	it("should pass all tests when file has no type errors", () => {

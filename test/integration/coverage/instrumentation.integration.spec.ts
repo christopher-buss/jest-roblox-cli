@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { instrumentRoot } from "../../src/coverage/instrumenter.ts";
-import { createRbxtsFixtureSandbox } from "./helpers.ts";
+import { instrumentRoot } from "../../../src/coverage/instrumenter.ts";
+import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
-const LUAU_FIXTURE_SRC = path.resolve(__dirname, "fixtures/luau-project/src");
-const RBXTS_FIXTURE = path.resolve(__dirname, "fixtures/rbxts-project");
+const LUAU_FIXTURE_SRC = path.resolve(__dirname, "../../e2e/fixtures/luau-project/src");
+const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
 
 function createTemporaryDirectory(): string {
 	const directory = mkdtempSync(path.join(tmpdir(), "jest-roblox-e2e-"));

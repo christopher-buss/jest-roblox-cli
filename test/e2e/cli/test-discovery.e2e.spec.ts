@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { runCli } from "./helpers.ts";
 
-const LUAU_FIXTURE = path.resolve(__dirname, "fixtures/luau-project");
-const RBXTS_FIXTURE = path.resolve(__dirname, "fixtures/rbxts-project");
+const LUAU_FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
+const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 
 describe("test discovery", () => {
 	describe("luau project", () => {

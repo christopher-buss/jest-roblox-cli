@@ -2,9 +2,9 @@ import type { PathKind, RojoTreeNode } from "@isentinel/rojo-utils";
 
 import { describe, expect, it } from "vitest";
 
-import { createFsClassifier, resolveProjectConfig } from "../src/config/projects.ts";
-import type { ResolvedConfig } from "../src/config/schema.ts";
-import { DEFAULT_CONFIG, defineProject } from "../src/config/schema.ts";
+import { createFsClassifier, resolveProjectConfig } from "../../../src/config/projects.ts";
+import type { ResolvedConfig } from "../../../src/config/schema.ts";
+import { DEFAULT_CONFIG, defineProject } from "../../../src/config/schema.ts";
 
 // Mirrors the real friends-package layout: one logical package that a rojo
 // project splits across ReplicatedStorage (client + shared) and

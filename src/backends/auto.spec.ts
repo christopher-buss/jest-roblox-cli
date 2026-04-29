@@ -194,7 +194,7 @@ describe(resolveBackend, () => {
 	});
 
 	it("should throw precise resolver error when user supplies partial CLI overrides", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", undefined);
 		vi.stubEnv("ROBLOX_UNIVERSE_ID", undefined);
@@ -210,6 +210,12 @@ describe(resolveBackend, () => {
 		await expect(
 			resolveBackend(makeCli({ apiKey: "key" }), makeConfig({ backend: "auto" }), probe),
 		).rejects.toThrowWithMessage(Error, /Missing: universeId, placeId/);
+		await expect(
+			resolveBackend(makeCli({ apiKey: "key" }), makeConfig({ backend: "auto" }), probe),
+		).rejects.toThrowWithMessage(
+			Error,
+			/Set ROBLOX_UNIVERSE_ID \(or JEST_ROBLOX_UNIVERSE_ID\), ROBLOX_PLACE_ID \(or JEST_ROBLOX_PLACE_ID\)/,
+		);
 	});
 
 	it("should wrap studio with fallback when OC credentials available", async () => {

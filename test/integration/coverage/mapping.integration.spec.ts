@@ -3,18 +3,18 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { INSTRUMENTER_VERSION, instrumentRoot } from "../../src/coverage/instrumenter.ts";
-import { mapCoverageToTypeScript } from "../../src/coverage/mapper.ts";
+import { INSTRUMENTER_VERSION, instrumentRoot } from "../../../src/coverage/instrumenter.ts";
+import { mapCoverageToTypeScript } from "../../../src/coverage/mapper.ts";
 import type {
 	CoverageManifest,
 	InstrumentedFileRecord,
 	RawCoverageData,
-} from "../../src/coverage/types.ts";
-import { normalizeWindowsPath } from "../../src/utils/normalize-windows-path.ts";
-import { createRbxtsFixtureSandbox } from "./helpers.ts";
+} from "../../../src/coverage/types.ts";
+import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.ts";
+import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
 const normalize = normalizeWindowsPath;
-const RBXTS_FIXTURE = path.resolve(__dirname, "fixtures/rbxts-project");
+const RBXTS_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/rbxts-project");
 
 function createTemporaryDirectory(): string {
 	const directory = mkdtempSync(path.join(tmpdir(), "jest-roblox-e2e-cov-"));
