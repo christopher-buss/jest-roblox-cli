@@ -8,7 +8,7 @@ export function buildWithRojo(projectPath: string, outputPath: string): void {
 		});
 	} catch (err) {
 		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
-			throw new Error("rojo is required for --coverage but was not found on PATH");
+			throw new Error("rojo was not found on PATH");
 		}
 
 		const stderr =

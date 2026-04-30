@@ -8,9 +8,9 @@ import type { Except } from "type-fest";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashBuffer } from "../utils/hash.ts";
+import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { collectPaths, resolveNestedProjects } from "../utils/rojo-tree.ts";
 import { INSTRUMENTER_VERSION, instrumentRoot } from "./instrumenter.ts";
-import { buildWithRojo } from "./rojo-builder.ts";
 import type { RojoProject, RootEntry } from "./rojo-rewriter.ts";
 import { rewriteRojoProject } from "./rojo-rewriter.ts";
 import type {
@@ -19,7 +19,7 @@ import type {
 	NonInstrumentedFileRecord,
 } from "./types.ts";
 
-const COVERAGE_DIR = ".jest-roblox-coverage";
+const COVERAGE_DIR = ".jest-roblox/coverage";
 
 /**
  * Suffixes for files that are not instrumented for coverage but still need
@@ -273,7 +273,7 @@ function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: stri
 }
 
 /**
- * Shared directory walker. Skips node_modules, .jest-roblox-coverage, and
+ * Shared directory walker. Skips node_modules, .jest-roblox, and
  * dot-prefixed directories — matching parse-ast.luau:113-147.
  * `predicate` receives the entry name and returns true to collect the file.
  */

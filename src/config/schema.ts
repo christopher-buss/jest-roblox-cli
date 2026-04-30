@@ -241,6 +241,7 @@ export interface CliOptions {
 	gameOutput?: string;
 	help?: boolean;
 	outputFile?: string;
+	packages?: string;
 	parallel?: "auto" | number;
 	passWithNoTests?: boolean;
 	placeId?: string;
@@ -264,6 +265,7 @@ export interface CliOptions {
 	updateSnapshot?: boolean;
 	verbose?: boolean;
 	version?: boolean;
+	workspace?: boolean;
 }
 
 const snapshotFormatSchema = type({

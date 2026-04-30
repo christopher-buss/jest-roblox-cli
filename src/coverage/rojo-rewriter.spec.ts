@@ -20,12 +20,12 @@ describe(rewriteRojoProject, () => {
 
 			const result = rewriteRojoProject(project, {
 				luauRoot: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			const node = result.tree["ReplicatedStorage"] as RojoTreeNode;
 
-			expect(node.$path).toBe(".jest-roblox-coverage/out-tsc/test/client");
+			expect(node.$path).toBe(".jest-roblox/coverage/out-tsc/test/client");
 		});
 
 		it("should leave a $path that does not start with luauRoot unchanged", () => {
@@ -46,7 +46,7 @@ describe(rewriteRojoProject, () => {
 
 			const result = rewriteRojoProject(project, {
 				luauRoot: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			expect((result.tree["ReplicatedStorage"] as RojoTreeNode).$path).toBe("include");
@@ -75,16 +75,16 @@ describe(rewriteRojoProject, () => {
 
 			const result = rewriteRojoProject(project, {
 				luauRoot: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			const replicated = result.tree["ReplicatedStorage"] as RojoTreeNode;
 
 			expect((replicated["client"] as RojoTreeNode).$path).toBe(
-				".jest-roblox-coverage/out-tsc/test/client",
+				".jest-roblox/coverage/out-tsc/test/client",
 			);
 			expect((replicated["shared"] as RojoTreeNode).$path).toBe(
-				".jest-roblox-coverage/out-tsc/test/shared",
+				".jest-roblox/coverage/out-tsc/test/shared",
 			);
 		});
 
@@ -103,11 +103,11 @@ describe(rewriteRojoProject, () => {
 
 			const result = rewriteRojoProject(project, {
 				luauRoot: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			expect((result.tree["ReplicatedStorage"] as RojoTreeNode).$path).toBe(
-				".jest-roblox-coverage/out-tsc/test",
+				".jest-roblox/coverage/out-tsc/test",
 			);
 		});
 	});
@@ -129,7 +129,7 @@ describe(rewriteRojoProject, () => {
 
 			const result = rewriteRojoProject(project, {
 				luauRoot: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			expect(result.name).toBe("game");
@@ -158,11 +158,11 @@ describe(rewriteRojoProject, () => {
 				luauRoot: "out-tsc/test",
 				projectRelocation: "..",
 				relocatedShadowDirectory: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
-			// Project is inside .jest-roblox-coverage/, shadow dir is also inside
-			// .jest-roblox-coverage/, so the path from relocated project to
+			// Project is inside .jest-roblox/coverage/, shadow dir is also inside
+			// .jest-roblox/coverage/, so the path from relocated project to
 			// shadow content is just "out-tsc/test/client" (strip the shared
 			// prefix)
 			expect((result.tree["ReplicatedStorage"] as RojoTreeNode).$path).toBe(
@@ -190,7 +190,7 @@ describe(rewriteRojoProject, () => {
 				luauRoot: "out-tsc/test",
 				projectRelocation: "..",
 				relocatedShadowDirectory: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			expect((result.tree["ReplicatedStorage"] as RojoTreeNode).$path).toBe("../include");
@@ -219,7 +219,7 @@ describe(rewriteRojoProject, () => {
 				luauRoot: "out-tsc/test",
 				projectRelocation: "..",
 				relocatedShadowDirectory: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			expect((result.tree["ServerScriptService"] as RojoTreeNode).$path).toBe(
@@ -247,7 +247,7 @@ describe(rewriteRojoProject, () => {
 				luauRoot: "out-tsc/test",
 				projectRelocation: "..",
 				relocatedShadowDirectory: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			expect((result.tree["ReplicatedStorage"] as RojoTreeNode).$path).toBe("out-tsc/test");
@@ -275,7 +275,7 @@ describe(rewriteRojoProject, () => {
 				luauRoot: "out-tsc/test",
 				projectRelocation: "..",
 				relocatedShadowDirectory: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			const replicated = result.tree["ReplicatedStorage"] as RojoTreeNode;
@@ -301,11 +301,11 @@ describe(rewriteRojoProject, () => {
 
 			const result = rewriteRojoProject(project, {
 				luauRoot: "out-tsc/test/",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			expect((result.tree["ReplicatedStorage"] as RojoTreeNode).$path).toBe(
-				".jest-roblox-coverage/out-tsc/test/client",
+				".jest-roblox/coverage/out-tsc/test/client",
 			);
 		});
 
@@ -324,7 +324,7 @@ describe(rewriteRojoProject, () => {
 
 			const result = rewriteRojoProject(project, {
 				luauRoot: "out-tsc/test",
-				shadowDir: ".jest-roblox-coverage/out-tsc/test",
+				shadowDir: ".jest-roblox/coverage/out-tsc/test",
 			});
 
 			expect((result.tree["ReplicatedStorage"] as RojoTreeNode).$path).toBe(
@@ -356,12 +356,12 @@ describe(rewriteRojoProject, () => {
 					{
 						luauRoot: "packages/core/out",
 						relocatedShadowDirectory: "packages/core/out",
-						shadowDir: ".jest-roblox-coverage/packages/core/out",
+						shadowDir: ".jest-roblox/coverage/packages/core/out",
 					},
 					{
 						luauRoot: "packages/test-utils/out",
 						relocatedShadowDirectory: "packages/test-utils/out",
-						shadowDir: ".jest-roblox-coverage/packages/test-utils/out",
+						shadowDir: ".jest-roblox/coverage/packages/test-utils/out",
 					},
 				],
 			});
@@ -393,7 +393,7 @@ describe(rewriteRojoProject, () => {
 					{
 						luauRoot: "packages/core/out",
 						relocatedShadowDirectory: "packages/core/out",
-						shadowDir: ".jest-roblox-coverage/packages/core/out",
+						shadowDir: ".jest-roblox/coverage/packages/core/out",
 					},
 				],
 			});
@@ -420,12 +420,12 @@ describe(rewriteRojoProject, () => {
 					{
 						luauRoot: "packages/core/out",
 						relocatedShadowDirectory: "packages/core/out",
-						shadowDir: ".jest-roblox-coverage/packages/core/out",
+						shadowDir: ".jest-roblox/coverage/packages/core/out",
 					},
 					{
 						luauRoot: "packages/core/out/client",
 						relocatedShadowDirectory: "packages/core/out/client",
-						shadowDir: ".jest-roblox-coverage/packages/core/out/client",
+						shadowDir: ".jest-roblox/coverage/packages/core/out/client",
 					},
 				],
 			});

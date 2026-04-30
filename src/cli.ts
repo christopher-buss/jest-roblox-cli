@@ -1,3 +1,5 @@
+import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-runner";
+
 import { type } from "arktype";
 import assert from "node:assert";
 import * as fs from "node:fs";
@@ -9,6 +11,8 @@ import color from "tinyrainbow";
 
 import packageJson from "../package.json" with { type: "json" };
 import { resolveBackend } from "./backends/auto.ts";
+import type { Backend as BackendInstance } from "./backends/interface.ts";
+import { createOpenCloudBackend } from "./backends/open-cloud.ts";
 import { ConfigError } from "./config/errors.ts";
 import { loadConfig } from "./config/loader.ts";
 import type { ResolvedProjectConfig } from "./config/projects.ts";
@@ -34,7 +38,6 @@ import { mapCoverageToTypeScript } from "./coverage/mapper.ts";
 import { mergeRawCoverage } from "./coverage/merge-raw-coverage.ts";
 import { prepareCoverage } from "./coverage/prepare.ts";
 import { checkThresholds, generateReports, printCoverageHeader } from "./coverage/reporter.ts";
-import { buildWithRojo } from "./coverage/rojo-builder.ts";
 import type { RawCoverageData } from "./coverage/types.ts";
 import {
 	buildProjectJob,
@@ -70,7 +73,11 @@ import type { TimingResult } from "./types/timing.ts";
 import { formatBanner } from "./utils/banner.ts";
 import { formatGameOutputNotice, parseGameOutput, writeGameOutput } from "./utils/game-output.ts";
 import { globSync } from "./utils/glob.ts";
+import { buildWithRojo } from "./utils/rojo-builder.ts";
 import { resolveNestedProjects } from "./utils/rojo-tree.ts";
+import { runWorkspace } from "./workspace-runner.ts";
+import { discoverWorkspaceRoot } from "./workspace/discovery.ts";
+import { resolvePackage } from "./workspace/package-resolver.ts";
 
 const VERSION: string = packageJson.version;
 
@@ -180,6 +187,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 			"no-color": { type: "boolean" },
 			"no-show-luau": { type: "boolean" },
 			"outputFile": { type: "string" },
+			"packages": { type: "string" },
 			"parallel": { type: "string" },
 			"passWithNoTests": { type: "boolean" },
 			"placeId": { type: "string" },
@@ -202,6 +210,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 			"updateSnapshot": { short: "u", type: "boolean" },
 			"verbose": { type: "boolean" },
 			"version": { default: false, type: "boolean" },
+			"workspace": { type: "boolean" },
 		},
 		strict: true,
 	});
@@ -228,6 +237,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		gameOutput: values.gameOutput,
 		help: values.help,
 		outputFile: values.outputFile,
+		packages: values.packages,
 		parallel: parseParallelValue(values.parallel),
 		passWithNoTests: values.passWithNoTests,
 		placeId: values.placeId,
@@ -250,6 +260,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		updateSnapshot: values.updateSnapshot,
 		verbose: values.verbose,
 		version: values.version,
+		workspace: values.workspace,
 	};
 }
 
@@ -1215,6 +1226,104 @@ async function runSingleProject(cli: CliOptions, config: ResolvedConfig): Promis
 	return outputResults(effectiveConfig, typecheckResult, runtimeResult, preCoverageMs);
 }
 
+function buildWorkspaceCredentials(cli: CliOptions, config: ResolvedConfig): RunnerCredentials {
+	return resolveCredentials({
+		defaults: { placeId: config.placeId, universeId: config.universeId },
+		envPrefix: "JEST_",
+		overrides: { apiKey: cli.apiKey, placeId: cli.placeId, universeId: cli.universeId },
+	});
+}
+
+async function runWorkspaceMode(
+	cli: CliOptions,
+	config: ResolvedConfig,
+	rawProjects: Array<ProjectEntry> | undefined,
+): Promise<number> {
+	if (cli.workspace !== true) {
+		process.stderr.write("Error: --packages requires --workspace.\n");
+		return 2;
+	}
+
+	if (cli.packages === undefined || cli.packages.trim() === "") {
+		process.stderr.write("Error: --workspace requires --packages.\n");
+		return 2;
+	}
+
+	if (cli.packages.includes(",")) {
+		process.stderr.write(
+			"Error: multiple packages not yet supported. Use a single package name per invocation.\n",
+		);
+		return 2;
+	}
+
+	if (rawProjects !== undefined && rawProjects.length > 0) {
+		process.stderr.write("Error: projects config not supported with --workspace.\n");
+		return 2;
+	}
+
+	if (cli.collectCoverage === true) {
+		process.stderr.write("Error: coverage not supported with --workspace yet.\n");
+		return 2;
+	}
+
+	if (cli.parallel !== undefined) {
+		process.stderr.write("Error: --parallel not yet supported with --workspace.\n");
+		return 2;
+	}
+
+	if (cli.gameOutput !== undefined) {
+		process.stderr.write("Error: --gameOutput not yet supported with --workspace.\n");
+		return 2;
+	}
+
+	if (config.backend === "studio") {
+		process.stderr.write(
+			"Error: --workspace requires --backend open-cloud (Studio not supported).\n",
+		);
+		return 2;
+	}
+
+	let workspaceRoot: string;
+	let packageInfo;
+	try {
+		workspaceRoot = discoverWorkspaceRoot(process.cwd());
+		packageInfo = resolvePackage(workspaceRoot, cli.packages);
+	} catch (err) {
+		process.stderr.write(`Error: ${String(err)}\n`);
+		return 2;
+	}
+
+	const packageLoaded = await loadConfig(undefined, packageInfo.packageDirectory);
+	const packageConfig = mergeCliWithConfig(cli, packageLoaded);
+
+	let backend: BackendInstance;
+	try {
+		backend = createOpenCloudBackend(buildWorkspaceCredentials(cli, packageConfig));
+	} catch (err) {
+		process.stderr.write(`Error: ${String(err)}\n`);
+		return 2;
+	}
+
+	let runtimeResult;
+	try {
+		runtimeResult = await runWorkspace({
+			backend,
+			config: packageConfig,
+			packageInfo,
+			version: VERSION,
+			workspaceRoot,
+		});
+	} finally {
+		await backend.close?.();
+	}
+
+	if (runtimeResult === undefined) {
+		return 2;
+	}
+
+	return outputResults(packageConfig, undefined, runtimeResult, 0);
+}
+
 async function runInner(args: Array<string>): Promise<number> {
 	const cli = parseArgs(args);
 
@@ -1239,6 +1348,11 @@ async function runInner(args: Array<string>): Promise<number> {
 
 	// Check for project entries (Array<ProjectEntry>) on the resolved config
 	const rawProjects = (config as unknown as { projects?: Array<ProjectEntry> }).projects;
+
+	if (cli.workspace === true || cli.packages !== undefined) {
+		return runWorkspaceMode(cli, config, rawProjects);
+	}
+
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		return runMultiProject(cli, config, rawProjects);
 	}

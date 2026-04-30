@@ -33,7 +33,7 @@ describe(buildWithRojo, () => {
 
 		expect(() => {
 			buildWithRojo("my.project.json", "output/game.rbxl");
-		}).toThrowWithMessage(Error, "rojo is required for --coverage but was not found on PATH");
+		}).toThrowWithMessage(Error, "rojo was not found on PATH");
 	});
 
 	it("should include stderr content in error message when rojo build fails", () => {

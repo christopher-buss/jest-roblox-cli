@@ -40,7 +40,7 @@
 	],
 	"scripts": {
 		"build": "pnpm build:packages && pnpm build:bundle && tsdown && pnpm build:plugin",
-		"build:bundle": "darklua process -c .darklua-bundle.json luau/entry.luau src/test-runner.bundled.luau",
+		"build:bundle": "darklua process -c .darklua-bundle.json luau/entry.luau src/test-runner.bundled.luau && darklua process -c .darklua-bundle.json luau/staging/entry.luau src/materializer.bundled.luau",
 		"build:packages": "pnpm -r --filter !@isentinel/jest-roblox run build",
 		"build:plugin": "rm -rf plugin/out && darklua process -c .darklua-plugin.json luau/ plugin/out/shared/ && rojo build plugin/plugin.project.json -o plugin/JestRobloxRunner.rbxm",
 		"lint": "eslint --cache",

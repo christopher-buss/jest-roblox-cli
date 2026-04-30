@@ -2,6 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
 import * as crypto from "node:crypto";
+import * as path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { ResolvedConfig } from "../config/schema.ts";
@@ -25,7 +26,7 @@ vi.mock(import("node:fs"), async () => {
 	return fromAny({ ...memfs.fs, cpSync: memfs.vol.cpSync.bind(memfs.vol), default: memfs.fs });
 });
 vi.mock(import("./instrumenter"));
-vi.mock(import("./rojo-builder"));
+vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("get-tsconfig"));
 
 const ROJO_PROJECT = {
@@ -66,7 +67,7 @@ async function setupMocks(options: { outDir?: string } = {}) {
 	const { instrumentRoot } = await import("./instrumenter");
 	vi.mocked(instrumentRoot).mockReturnValue({});
 
-	const { buildWithRojo } = await import("./rojo-builder");
+	const { buildWithRojo } = await import("../utils/rojo-builder");
 	vi.mocked(buildWithRojo).mockReturnValue(undefined);
 
 	return { buildWithRojo, instrumentRoot };
@@ -136,16 +137,16 @@ describe(prepareCoverage, () => {
 			expect.assertions(2);
 
 			seedFilesystem();
-			vol.mkdirSync(".jest-roblox-coverage/stale", { recursive: true });
-			vol.writeFileSync(".jest-roblox-coverage/stale/old.txt", "stale");
+			vol.mkdirSync(".jest-roblox/coverage/stale", { recursive: true });
+			vol.writeFileSync(".jest-roblox/coverage/stale/old.txt", "stale");
 
 			await setupMocks();
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
 			prepareCoverage(config);
 
-			expect(vol.existsSync(".jest-roblox-coverage/stale/old.txt")).toBeFalse();
-			expect(vol.existsSync(".jest-roblox-coverage")).toBeTrue();
+			expect(vol.existsSync(".jest-roblox/coverage/stale/old.txt")).toBeFalse();
+			expect(vol.existsSync(".jest-roblox/coverage")).toBeTrue();
 		});
 
 		it("should copy each root tree to the shadow directory", async () => {
@@ -157,7 +158,7 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			expect(vol.readFileSync(".jest-roblox-coverage/out-tsc/test/init.luau", "utf-8")).toBe(
+			expect(vol.readFileSync(".jest-roblox/coverage/out-tsc/test/init.luau", "utf-8")).toBe(
 				"local x = 1",
 			);
 		});
@@ -173,9 +174,9 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			expect(vol.existsSync(".jest-roblox-coverage/default.project.json")).toBeTrue();
+			expect(vol.existsSync(".jest-roblox/coverage/default.project.json")).toBeTrue();
 			expect(buildWithRojo).toHaveBeenCalledWith(
-				expect.stringContaining(".jest-roblox-coverage"),
+				expect.stringContaining(path.join(".jest-roblox", "coverage")),
 				expect.stringContaining("game.rbxl"),
 			);
 		});
@@ -192,7 +193,7 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			expect(vol.existsSync(".jest-roblox-coverage/custom.project.json")).toBeTrue();
+			expect(vol.existsSync(".jest-roblox/coverage/custom.project.json")).toBeTrue();
 		});
 
 		it("should auto-detect the Rojo project when not configured", async () => {
@@ -204,7 +205,7 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			expect(vol.existsSync(".jest-roblox-coverage/default.project.json")).toBeTrue();
+			expect(vol.existsSync(".jest-roblox/coverage/default.project.json")).toBeTrue();
 		});
 
 		it("should find a non-default .project.json via directory listing", async () => {
@@ -216,7 +217,7 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			expect(vol.existsSync(".jest-roblox-coverage/game.project.json")).toBeTrue();
+			expect(vol.existsSync(".jest-roblox/coverage/game.project.json")).toBeTrue();
 		});
 
 		it("should throw when Rojo project has valid JSON but invalid schema", async () => {
@@ -260,7 +261,7 @@ describe(prepareCoverage, () => {
 			};
 
 			// Use rootDir "." so rojo project is at ./default.project.json
-			// and coverage dir is .jest-roblox-coverage/ — both relative
+			// and coverage dir is .jest-roblox/coverage/ — both relative
 			vol.mkdirSync(".", { recursive: true });
 			vol.mkdirSync("out-tsc/test", { recursive: true });
 			vol.writeFileSync("out-tsc/test/init.luau", "local x = 1");
@@ -272,15 +273,16 @@ describe(prepareCoverage, () => {
 			prepareCoverage(config);
 
 			const written: Record<string, unknown> = JSON.parse(
-				vol.readFileSync(".jest-roblox-coverage/default.project.json", "utf-8") as string,
+				vol.readFileSync(".jest-roblox/coverage/default.project.json", "utf-8") as string,
 			) as Record<string, unknown>;
 			const tree = written["tree"] as Record<string, Record<string, string>>;
 
 			// Matching path: stripped shadow prefix (relative to relocated
 			// project)
 			expect(tree["ReplicatedStorage"]!["$path"]).toBe("out-tsc/test/client");
-			// Non-matching path: rebased with ".." to reach original project dir
-			expect(tree["ServerScriptService"]!["$path"]).toBe("../include");
+			// Non-matching path: rebased with "../.." to reach original project
+			// dir (cache lives at .jest-roblox/coverage/, two segments deep).
+			expect(tree["ServerScriptService"]!["$path"]).toBe("../../include");
 		});
 	});
 
@@ -326,7 +328,7 @@ describe(prepareCoverage, () => {
 
 			const written: Record<string, unknown> = JSON.parse(
 				vol.readFileSync(
-					".jest-roblox-coverage/development.project.json",
+					".jest-roblox/coverage/development.project.json",
 					"utf-8",
 				) as string,
 			) as Record<string, unknown>;
@@ -366,7 +368,7 @@ describe(prepareCoverage, () => {
 				branchCount: 0,
 				coverageMapPath: overrides.key.replace(/\.luau$/, ".cov-map.json"),
 				functionCount: 0,
-				instrumentedLuauPath: `.jest-roblox-coverage/${overrides.key}`,
+				instrumentedLuauPath: `.jest-roblox/coverage/${overrides.key}`,
 				originalLuauPath: overrides.key,
 				sourceHash: sha256("local x = 1"),
 				sourceMapPath: `${overrides.key}.map`,
@@ -376,8 +378,8 @@ describe(prepareCoverage, () => {
 		}
 
 		function seedPreviousManifest(manifest: CoverageManifest) {
-			vol.mkdirSync(".jest-roblox-coverage", { recursive: true });
-			vol.writeFileSync(".jest-roblox-coverage/manifest.json", JSON.stringify(manifest));
+			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
+			vol.writeFileSync(".jest-roblox/coverage/manifest.json", JSON.stringify(manifest));
 		}
 
 		function seedIncrementalScenario(
@@ -398,7 +400,7 @@ describe(prepareCoverage, () => {
 				},
 				previousInstrumenterVersion = INSTRUMENTER_VERSION,
 				previousNonInstrumentedFiles = {},
-				previousPlaceFilePath = ".jest-roblox-coverage/game.rbxl",
+				previousPlaceFilePath = ".jest-roblox/coverage/game.rbxl",
 			} = options;
 
 			seedFilesystem();
@@ -442,7 +444,7 @@ describe(prepareCoverage, () => {
 				luauRoots: ["out-tsc/test"],
 				nonInstrumentedFiles: previousNonInstrumentedFiles,
 				placeFilePath: previousPlaceFilePath,
-				shadowDir: ".jest-roblox-coverage",
+				shadowDir: ".jest-roblox/coverage",
 				version: 1,
 			});
 		}
@@ -567,8 +569,8 @@ describe(prepareCoverage, () => {
 
 			const deletedRecord = makeFileRecord({
 				key: "out-tsc/test/deleted.luau",
-				coverageMapPath: ".jest-roblox-coverage/out-tsc/test/deleted.cov-map.json",
-				instrumentedLuauPath: ".jest-roblox-coverage/out-tsc/test/deleted.luau",
+				coverageMapPath: ".jest-roblox/coverage/out-tsc/test/deleted.cov-map.json",
+				instrumentedLuauPath: ".jest-roblox/coverage/out-tsc/test/deleted.luau",
 			});
 
 			const { instrumentRoot } = await setupMocks();
@@ -594,7 +596,7 @@ describe(prepareCoverage, () => {
 			const result = prepareCoverage(config);
 
 			expect(result.manifest.files["out-tsc/test/deleted.luau"]).toBeUndefined();
-			expect(vol.existsSync(".jest-roblox-coverage/out-tsc/test/deleted.luau")).toBeFalse();
+			expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/deleted.luau")).toBeFalse();
 		});
 
 		it("should handle cleanup when shadow files are already missing", async () => {
@@ -602,8 +604,8 @@ describe(prepareCoverage, () => {
 
 			const deletedRecord = makeFileRecord({
 				key: "out-tsc/test/deleted.luau",
-				coverageMapPath: ".jest-roblox-coverage/out-tsc/test/deleted.cov-map.json",
-				instrumentedLuauPath: ".jest-roblox-coverage/out-tsc/test/deleted.luau",
+				coverageMapPath: ".jest-roblox/coverage/out-tsc/test/deleted.cov-map.json",
+				instrumentedLuauPath: ".jest-roblox/coverage/out-tsc/test/deleted.luau",
 			});
 
 			const { instrumentRoot } = await setupMocks();
@@ -623,8 +625,8 @@ describe(prepareCoverage, () => {
 			});
 			// Remove source AND shadow files (simulating prior partial cleanup)
 			vol.unlinkSync("out-tsc/test/deleted.luau");
-			vol.unlinkSync(".jest-roblox-coverage/out-tsc/test/deleted.luau");
-			vol.unlinkSync(".jest-roblox-coverage/out-tsc/test/deleted.cov-map.json");
+			vol.unlinkSync(".jest-roblox/coverage/out-tsc/test/deleted.luau");
+			vol.unlinkSync(".jest-roblox/coverage/out-tsc/test/deleted.cov-map.json");
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
@@ -646,7 +648,7 @@ describe(prepareCoverage, () => {
 
 			expect(instrumentRoot).not.toHaveBeenCalled();
 			expect(buildWithRojo).not.toHaveBeenCalled();
-			expect(result.placeFile).toBe(".jest-roblox-coverage/game.rbxl");
+			expect(result.placeFile).toBe(".jest-roblox/coverage/game.rbxl");
 		});
 
 		it("should call instrumentRoot when a new file appears on disk", async () => {
@@ -704,7 +706,7 @@ describe(prepareCoverage, () => {
 			const { buildWithRojo, instrumentRoot } = await setupMocks();
 
 			const specRecord: NonInstrumentedFileRecord = {
-				shadowPath: ".jest-roblox-coverage/out-tsc/test/init.spec.luau",
+				shadowPath: ".jest-roblox/coverage/out-tsc/test/init.spec.luau",
 				sourceHash: sha256("-- old spec"),
 				sourcePath: "out-tsc/test/init.spec.luau",
 			};
@@ -750,7 +752,7 @@ describe(prepareCoverage, () => {
 			vi.mocked(instrumentRoot).mockReturnValue({});
 
 			seedIncrementalScenario();
-			vol.writeFileSync(".jest-roblox-coverage/stale.txt", "stale");
+			vol.writeFileSync(".jest-roblox/coverage/stale.txt", "stale");
 
 			const config = makeConfig({
 				cache: false,
@@ -759,8 +761,8 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			expect(vol.existsSync(".jest-roblox-coverage/stale.txt")).toBeFalse();
-			expect(vol.existsSync(".jest-roblox-coverage")).toBeTrue();
+			expect(vol.existsSync(".jest-roblox/coverage/stale.txt")).toBeFalse();
+			expect(vol.existsSync(".jest-roblox/coverage")).toBeTrue();
 		});
 
 		it("should handle luauRoots change between runs", async () => {
@@ -799,8 +801,8 @@ describe(prepareCoverage, () => {
 			const { instrumentRoot } = await setupMocks();
 
 			seedFilesystem();
-			vol.mkdirSync(".jest-roblox-coverage", { recursive: true });
-			vol.writeFileSync(".jest-roblox-coverage/manifest.json", "not valid json{{{");
+			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
+			vol.writeFileSync(".jest-roblox/coverage/manifest.json", "not valid json{{{");
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
@@ -838,9 +840,9 @@ describe(prepareCoverage, () => {
 			vol.mkdirSync("out-tsc/test", { recursive: true });
 			vol.writeFileSync("out-tsc/test/init.luau", "local x = 1");
 
-			vol.mkdirSync(".jest-roblox-coverage", { recursive: true });
+			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
 			vol.writeFileSync(
-				".jest-roblox-coverage/manifest.json",
+				".jest-roblox/coverage/manifest.json",
 				JSON.stringify({
 					files: {
 						"out-tsc/test/init.luau": { key: "out-tsc/test/init.luau" },
@@ -848,7 +850,7 @@ describe(prepareCoverage, () => {
 					generatedAt: new Date().toISOString(),
 					instrumenterVersion: INSTRUMENTER_VERSION,
 					luauRoots: ["out-tsc/test"],
-					shadowDir: ".jest-roblox-coverage",
+					shadowDir: ".jest-roblox/coverage",
 					version: 1,
 				}),
 			);
@@ -878,14 +880,14 @@ describe(prepareCoverage, () => {
 
 			const coreRecord = makeFileRecord({
 				key: "packages/core/out/init.luau",
-				coverageMapPath: ".jest-roblox-coverage/packages/core/out/init.cov-map.json",
-				instrumentedLuauPath: ".jest-roblox-coverage/packages/core/out/init.luau",
+				coverageMapPath: ".jest-roblox/coverage/packages/core/out/init.cov-map.json",
+				instrumentedLuauPath: ".jest-roblox/coverage/packages/core/out/init.luau",
 				sourceHash: sha256("local a = 1"),
 			});
 			const utilsRecord = makeFileRecord({
 				key: "packages/utils/out/init.luau",
-				coverageMapPath: ".jest-roblox-coverage/packages/utils/out/init.cov-map.json",
-				instrumentedLuauPath: ".jest-roblox-coverage/packages/utils/out/init.luau",
+				coverageMapPath: ".jest-roblox/coverage/packages/utils/out/init.cov-map.json",
+				instrumentedLuauPath: ".jest-roblox/coverage/packages/utils/out/init.luau",
 				sourceHash: sha256("local b = 2"),
 			});
 
@@ -900,7 +902,7 @@ describe(prepareCoverage, () => {
 				vol.writeFileSync(record.coverageMapPath, "{}");
 			}
 
-			vol.writeFileSync(".jest-roblox-coverage/game.rbxl", "RBXL");
+			vol.writeFileSync(".jest-roblox/coverage/game.rbxl", "RBXL");
 
 			seedPreviousManifest({
 				files: {
@@ -911,8 +913,8 @@ describe(prepareCoverage, () => {
 				instrumenterVersion: INSTRUMENTER_VERSION,
 				luauRoots: ["packages/core/out", "packages/utils/out"],
 				nonInstrumentedFiles: {},
-				placeFilePath: ".jest-roblox-coverage/game.rbxl",
-				shadowDir: ".jest-roblox-coverage",
+				placeFilePath: ".jest-roblox/coverage/game.rbxl",
+				shadowDir: ".jest-roblox/coverage",
 				version: 1,
 			});
 
@@ -972,7 +974,7 @@ describe(prepareCoverage, () => {
 				prepareCoverage(config);
 
 				expect(
-					vol.readFileSync(".jest-roblox-coverage/out-tsc/test/init.spec.luau", "utf-8"),
+					vol.readFileSync(".jest-roblox/coverage/out-tsc/test/init.spec.luau", "utf-8"),
 				).toBe("-- test code");
 			});
 
@@ -980,7 +982,7 @@ describe(prepareCoverage, () => {
 				expect.assertions(1);
 
 				const specRecord: NonInstrumentedFileRecord = {
-					shadowPath: ".jest-roblox-coverage/out-tsc/test/init.spec.luau",
+					shadowPath: ".jest-roblox/coverage/out-tsc/test/init.spec.luau",
 					sourceHash: sha256("-- old test"),
 					sourcePath: "out-tsc/test/init.spec.luau",
 				};
@@ -1003,7 +1005,7 @@ describe(prepareCoverage, () => {
 				prepareCoverage(config);
 
 				expect(
-					vol.readFileSync(".jest-roblox-coverage/out-tsc/test/init.spec.luau", "utf-8"),
+					vol.readFileSync(".jest-roblox/coverage/out-tsc/test/init.spec.luau", "utf-8"),
 				).toBe("-- new test");
 			});
 
@@ -1012,7 +1014,7 @@ describe(prepareCoverage, () => {
 
 				const specContent = "-- unchanged test";
 				const specRecord: NonInstrumentedFileRecord = {
-					shadowPath: ".jest-roblox-coverage/out-tsc/test/init.spec.luau",
+					shadowPath: ".jest-roblox/coverage/out-tsc/test/init.spec.luau",
 					sourceHash: sha256(specContent),
 					sourcePath: "out-tsc/test/init.spec.luau",
 				};
@@ -1043,7 +1045,7 @@ describe(prepareCoverage, () => {
 				expect.assertions(2);
 
 				const specRecord: NonInstrumentedFileRecord = {
-					shadowPath: ".jest-roblox-coverage/out-tsc/test/deleted.spec.luau",
+					shadowPath: ".jest-roblox/coverage/out-tsc/test/deleted.spec.luau",
 					sourceHash: sha256("-- deleted test"),
 					sourcePath: "out-tsc/test/deleted.spec.luau",
 				};
@@ -1067,7 +1069,7 @@ describe(prepareCoverage, () => {
 					result.manifest.nonInstrumentedFiles["out-tsc/test/deleted.spec.luau"],
 				).toBeUndefined();
 				expect(
-					vol.existsSync(".jest-roblox-coverage/out-tsc/test/deleted.spec.luau"),
+					vol.existsSync(".jest-roblox/coverage/out-tsc/test/deleted.spec.luau"),
 				).toBeFalse();
 			});
 
@@ -1075,7 +1077,7 @@ describe(prepareCoverage, () => {
 				expect.assertions(1);
 
 				const specRecord: NonInstrumentedFileRecord = {
-					shadowPath: ".jest-roblox-coverage/out-tsc/test/init.spec.luau",
+					shadowPath: ".jest-roblox/coverage/out-tsc/test/init.spec.luau",
 					sourceHash: sha256("-- old test"),
 					sourcePath: "out-tsc/test/init.spec.luau",
 				};
@@ -1126,9 +1128,9 @@ describe(prepareCoverage, () => {
 				vol.writeFileSync("out-tsc/test/init.luau", "local x = 1");
 
 				// Seed a manifest WITHOUT nonInstrumentedFiles
-				vol.mkdirSync(".jest-roblox-coverage", { recursive: true });
+				vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
 				vol.writeFileSync(
-					".jest-roblox-coverage/manifest.json",
+					".jest-roblox/coverage/manifest.json",
 					JSON.stringify({
 						files: {
 							"out-tsc/test/init.luau": makeFileRecord({
@@ -1138,7 +1140,7 @@ describe(prepareCoverage, () => {
 						generatedAt: new Date().toISOString(),
 						instrumenterVersion: INSTRUMENTER_VERSION,
 						luauRoots: ["out-tsc/test"],
-						shadowDir: ".jest-roblox-coverage",
+						shadowDir: ".jest-roblox/coverage",
 						version: 1,
 					}),
 				);
@@ -1157,7 +1159,7 @@ describe(prepareCoverage, () => {
 				expect.assertions(1);
 
 				const specRecord: NonInstrumentedFileRecord = {
-					shadowPath: ".jest-roblox-coverage/out-tsc/test/gone.spec.luau",
+					shadowPath: ".jest-roblox/coverage/out-tsc/test/gone.spec.luau",
 					sourceHash: sha256("-- gone"),
 					sourcePath: "out-tsc/test/gone.spec.luau",
 				};
@@ -1171,7 +1173,7 @@ describe(prepareCoverage, () => {
 					},
 				});
 				// Remove shadow file (simulating prior partial cleanup)
-				vol.unlinkSync(".jest-roblox-coverage/out-tsc/test/gone.spec.luau");
+				vol.unlinkSync(".jest-roblox/coverage/out-tsc/test/gone.spec.luau");
 
 				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
@@ -1215,19 +1217,19 @@ describe(prepareCoverage, () => {
 
 				const coreRecord = makeFileRecord({
 					key: "packages/core/out/init.luau",
-					coverageMapPath: ".jest-roblox-coverage/packages/core/out/init.cov-map.json",
-					instrumentedLuauPath: ".jest-roblox-coverage/packages/core/out/init.luau",
+					coverageMapPath: ".jest-roblox/coverage/packages/core/out/init.cov-map.json",
+					instrumentedLuauPath: ".jest-roblox/coverage/packages/core/out/init.luau",
 					sourceHash: sha256("local a = 1"),
 				});
 				const utilsRecord = makeFileRecord({
 					key: "packages/utils/out/init.luau",
-					coverageMapPath: ".jest-roblox-coverage/packages/utils/out/init.cov-map.json",
-					instrumentedLuauPath: ".jest-roblox-coverage/packages/utils/out/init.luau",
+					coverageMapPath: ".jest-roblox/coverage/packages/utils/out/init.cov-map.json",
+					instrumentedLuauPath: ".jest-roblox/coverage/packages/utils/out/init.luau",
 					sourceHash: sha256("local b = 2"),
 				});
 
 				const coreSpecRecord: NonInstrumentedFileRecord = {
-					shadowPath: ".jest-roblox-coverage/packages/core/out/init.spec.luau",
+					shadowPath: ".jest-roblox/coverage/packages/core/out/init.spec.luau",
 					sourceHash: sha256("-- core spec"),
 					sourcePath: "packages/core/out/init.spec.luau",
 				};
@@ -1242,9 +1244,9 @@ describe(prepareCoverage, () => {
 					vol.writeFileSync(record.coverageMapPath, "{}");
 				}
 
-				vol.mkdirSync(".jest-roblox-coverage/packages/core/out", { recursive: true });
+				vol.mkdirSync(".jest-roblox/coverage/packages/core/out", { recursive: true });
 				vol.writeFileSync(coreSpecRecord.shadowPath, "-- core spec");
-				vol.writeFileSync(".jest-roblox-coverage/game.rbxl", "RBXL");
+				vol.writeFileSync(".jest-roblox/coverage/game.rbxl", "RBXL");
 
 				seedPreviousManifest({
 					files: {
@@ -1257,8 +1259,8 @@ describe(prepareCoverage, () => {
 					nonInstrumentedFiles: {
 						"packages/core/out/init.spec.luau": coreSpecRecord,
 					},
-					placeFilePath: ".jest-roblox-coverage/game.rbxl",
-					shadowDir: ".jest-roblox-coverage",
+					placeFilePath: ".jest-roblox/coverage/game.rbxl",
+					shadowDir: ".jest-roblox/coverage",
 					version: 1,
 				});
 
@@ -1339,7 +1341,7 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config, beforeBuild);
 
-			expect(beforeBuild).toHaveBeenCalledWith(".jest-roblox-coverage");
+			expect(beforeBuild).toHaveBeenCalledWith(".jest-roblox/coverage");
 			expect(buildWithRojo).toHaveBeenCalledWith(expect.any(String), expect.any(String));
 		});
 
@@ -1400,11 +1402,11 @@ describe(prepareCoverage, () => {
 			prepareCoverage(config);
 
 			expect(
-				vol.readFileSync(".jest-roblox-coverage/packages/core/out/init.luau", "utf-8"),
+				vol.readFileSync(".jest-roblox/coverage/packages/core/out/init.luau", "utf-8"),
 			).toBe("local a = 1");
 			expect(
 				vol.readFileSync(
-					".jest-roblox-coverage/packages/test-utils/out/init.luau",
+					".jest-roblox/coverage/packages/test-utils/out/init.luau",
 					"utf-8",
 				),
 			).toBe("local b = 2");
@@ -1778,10 +1780,10 @@ describe(discoverInstrumentableFiles, () => {
 		setup();
 		vol.mkdirSync("out/node_modules", { recursive: true });
 		vol.mkdirSync("out/.hidden", { recursive: true });
-		vol.mkdirSync("out/.jest-roblox-coverage", { recursive: true });
+		vol.mkdirSync("out/.jest-roblox/coverage", { recursive: true });
 		vol.writeFileSync("out/node_modules/vendor.luau", "");
 		vol.writeFileSync("out/.hidden/secret.luau", "");
-		vol.writeFileSync("out/.jest-roblox-coverage/cached.luau", "");
+		vol.writeFileSync("out/.jest-roblox/coverage/cached.luau", "");
 
 		const result = discoverInstrumentableFiles("out");
 

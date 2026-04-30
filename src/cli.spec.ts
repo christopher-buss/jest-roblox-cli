@@ -8,6 +8,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { resolveBackend } from "./backends/auto.ts";
 import type { Backend, BackendResult, ProjectJob } from "./backends/interface.ts";
+import { createOpenCloudBackend } from "./backends/open-cloud.ts";
 import { filterByName, main, mergeProjectResults, parseArgs, run } from "./cli.ts";
 import { ConfigError } from "./config/errors.ts";
 import { loadConfig } from "./config/loader.ts";
@@ -24,7 +25,6 @@ import { generateProjectConfigs, syncStubsToShadowDirectory } from "./config/stu
 import { mapCoverageToTypeScript } from "./coverage/mapper.ts";
 import { prepareCoverage } from "./coverage/prepare.ts";
 import { checkThresholds, generateReports } from "./coverage/reporter.ts";
-import { buildWithRojo } from "./coverage/rojo-builder.ts";
 import {
 	buildProjectJob,
 	execute,
@@ -41,6 +41,10 @@ import { runTypecheck } from "./typecheck/runner.ts";
 import type { JestResult } from "./types/jest-result.ts";
 import { formatGameOutputNotice, parseGameOutput, writeGameOutput } from "./utils/game-output.ts";
 import { globSync } from "./utils/glob.ts";
+import { buildWithRojo } from "./utils/rojo-builder.ts";
+import { runWorkspace } from "./workspace-runner.ts";
+import { discoverWorkspaceRoot } from "./workspace/discovery.ts";
+import { resolvePackage } from "./workspace/package-resolver.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -52,7 +56,7 @@ vi.mock(import("./config/loader"));
 vi.mock(import("./config/projects"));
 vi.mock(import("./config/setup-resolver"));
 vi.mock(import("./config/stubs"));
-vi.mock(import("./coverage/rojo-builder"));
+vi.mock(import("./utils/rojo-builder"));
 vi.mock(import("./executor"));
 vi.mock(import("./coverage/prepare"));
 vi.mock(import("./coverage/mapper"));
@@ -61,6 +65,21 @@ vi.mock(import("./typecheck/runner"));
 vi.mock(import("./utils/glob"));
 vi.mock(import("./utils/game-output"));
 vi.mock(import("./formatters/json"));
+vi.mock(import("./workspace-runner"));
+vi.mock(import("./workspace/discovery"));
+vi.mock(import("./workspace/package-resolver"));
+vi.mock(import("./backends/open-cloud"));
+vi.mock(import("@isentinel/roblox-runner"), async (importOriginal) => {
+	const actual = await importOriginal();
+	return {
+		...actual,
+		resolveCredentials: vi.fn<() => { apiKey: string; placeId: string; universeId: string }>(
+			() => {
+				return { apiKey: "test-key", placeId: "test-place", universeId: "test-universe" };
+			},
+		),
+	};
+});
 
 const stdEnvironmentMock = vi.hoisted(() => ({ isAgent: false }));
 vi.mock(import("std-env"), async (importOriginal) => {
@@ -150,7 +169,9 @@ const mocks = {
 	buildProjectJob: vi.mocked(buildProjectJob),
 	buildWithRojo: vi.mocked(buildWithRojo),
 	checkThresholds: vi.mocked(checkThresholds),
+	createOpenCloudBackend: vi.mocked(createOpenCloudBackend),
 	createSetupResolver: vi.mocked(createSetupResolver),
+	discoverWorkspaceRoot: vi.mocked(discoverWorkspaceRoot),
 	execute: vi.mocked(execute),
 	executeBackend: vi.mocked(executeBackend),
 	formatExecuteOutput: vi.mocked(formatExecuteOutput),
@@ -166,7 +187,9 @@ const mocks = {
 	processProjectResult: vi.mocked(processProjectResult),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
 	resolveBackend: vi.mocked(resolveBackend),
+	resolvePackage: vi.mocked(resolvePackage),
 	runTypecheck: vi.mocked(runTypecheck),
+	runWorkspace: vi.mocked(runWorkspace),
 	syncStubsToShadowDirectory: vi.mocked(syncStubsToShadowDirectory),
 	writeGameOutput: vi.mocked(writeGameOutput),
 	writeJsonFile: vi.mocked(writeJsonFile),
@@ -186,6 +209,12 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	mocks.loadConfig.mockResolvedValue(config);
 	mocks.globSync.mockReturnValue(["/test/foo.spec.ts"]);
 	mocks.resolveBackend.mockResolvedValue({} as never);
+	mocks.createOpenCloudBackend.mockReturnValue(fromAny(makeMockBackend("open-cloud")));
+	mocks.discoverWorkspaceRoot.mockReturnValue("/repo");
+	mocks.resolvePackage.mockReturnValue({
+		name: "@halcyon/foo",
+		packageDirectory: "/repo/packages/foo",
+	});
 	mocks.execute.mockResolvedValue(makeExecuteResult());
 	mocks.formatExecuteOutput.mockReturnValue("");
 	mocks.parseGameOutput.mockReturnValue([]);
@@ -708,6 +737,267 @@ describe(run, () => {
 
 		expect(code).toBe(2);
 		expect(spies.consoleError).toHaveBeenCalledWith("An unknown error occurred");
+	});
+});
+
+describe("--workspace mode", () => {
+	it("should error and exit 2 when --workspace is passed without --packages", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run(["--workspace"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--workspace requires --packages"),
+		);
+	});
+
+	it("should error and exit 2 when --packages is passed without --workspace", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run(["--packages=foo"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--packages requires --workspace"),
+		);
+	});
+
+	it("should error and exit 2 when --packages contains a comma", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run(["--workspace", "--packages=foo,bar"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("multiple packages not yet supported"),
+		);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Use a single package name per invocation"),
+		);
+	});
+
+	it("should error and exit 2 when projects config is set", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults({ projects: ["ReplicatedStorage/client"] });
+
+		const code = await run(["--workspace", "--packages=foo"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("projects config not supported with --workspace"),
+		);
+	});
+
+	it("should error and exit 2 when --coverage is passed", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run(["--workspace", "--packages=foo", "--coverage"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("coverage not supported with --workspace"),
+		);
+	});
+
+	it("should error and exit 2 when --packages is empty", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run(["--workspace", "--packages= "]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--workspace requires --packages"),
+		);
+	});
+
+	it("should call runWorkspace and propagate exit code on success", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupDefaults();
+		mocks.runWorkspace.mockResolvedValue(makeExecuteResult());
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(0);
+
+		const call = mocks.runWorkspace.mock.calls[0]?.[0];
+
+		expect(call?.packageInfo.name).toBe("@halcyon/foo");
+	});
+
+	it("should propagate non-zero exit code from runWorkspace", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults();
+		mocks.runWorkspace.mockResolvedValue(
+			makeExecuteResult({
+				exitCode: 1,
+				result: makeJestResult({ numFailedTests: 1, success: false }),
+			}),
+		);
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(1);
+	});
+
+	it("should return exit code 2 when runWorkspace returns undefined (preflight)", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults();
+		mocks.runWorkspace.mockResolvedValue(undefined);
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(2);
+	});
+
+	it("should error and exit 2 when --parallel is set", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo", "--parallel=2"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--parallel not yet supported with --workspace"),
+		);
+	});
+
+	it("should error and exit 2 when workspace discovery throws", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.discoverWorkspaceRoot.mockImplementation(() => {
+			throw new Error("no workspace root found");
+		});
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("no workspace root found"),
+		);
+	});
+
+	it("should error and exit 2 when credential resolution throws", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const { createOpenCloudBackend: mockedCreate } = await import("./backends/open-cloud.ts");
+		vi.mocked(mockedCreate).mockImplementation(() => {
+			throw new Error("missing OCALE credentials");
+		});
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("missing OCALE credentials"),
+		);
+	});
+
+	it("should error and exit 2 when backend is studio", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults({ backend: "studio" });
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--workspace requires --backend open-cloud"),
+		);
+	});
+
+	it("should error and exit 2 when --gameOutput is passed", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run([
+			"--workspace",
+			"--packages=@halcyon/foo",
+			"--gameOutput",
+			"/tmp/out.json",
+		]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--gameOutput not yet supported with --workspace"),
+		);
+	});
+
+	it("should close backend after successful runWorkspace", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupDefaults();
+		const backend = makeMockBackend("open-cloud");
+		mocks.createOpenCloudBackend.mockReturnValue(fromAny(backend));
+		mocks.runWorkspace.mockResolvedValue(makeExecuteResult());
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(0);
+		expect(backend.close).toHaveBeenCalledOnce();
+	});
+
+	it("should close backend even when runWorkspace throws", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupDefaults();
+		const backend = makeMockBackend("open-cloud");
+		mocks.createOpenCloudBackend.mockReturnValue(fromAny(backend));
+		mocks.runWorkspace.mockRejectedValue(new Error("boom"));
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(2);
+		expect(backend.close).toHaveBeenCalledOnce();
+	});
+
+	it("should close backend when runWorkspace returns undefined (preflight)", async () => {
+		expect.assertions(2);
+
+		setupOutputSpies();
+		setupDefaults();
+		const backend = makeMockBackend("open-cloud");
+		mocks.createOpenCloudBackend.mockReturnValue(fromAny(backend));
+		mocks.runWorkspace.mockResolvedValue(undefined);
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(2);
+		expect(backend.close).toHaveBeenCalledOnce();
 	});
 });
 
@@ -2600,7 +2890,7 @@ describe("multi-project execution", () => {
 				luauRoots: [],
 				nonInstrumentedFiles: {},
 				placeFilePath: "/coverage/game.rbxl",
-				shadowDir: ".jest-roblox-coverage",
+				shadowDir: ".jest-roblox/coverage",
 				version: 1,
 			},
 			placeFile: "/coverage/game.rbxl",
@@ -2628,7 +2918,7 @@ describe("multi-project execution", () => {
 				luauRoots: [],
 				nonInstrumentedFiles: {},
 				placeFilePath: "/coverage/game.rbxl",
-				shadowDir: ".jest-roblox-coverage",
+				shadowDir: ".jest-roblox/coverage",
 				version: 1,
 			},
 			placeFile: "/coverage/game.rbxl",
@@ -2658,7 +2948,7 @@ describe("multi-project execution", () => {
 				luauRoots: [],
 				nonInstrumentedFiles: {},
 				placeFilePath: "/coverage/game.rbxl",
-				shadowDir: ".jest-roblox-coverage",
+				shadowDir: ".jest-roblox/coverage",
 				version: 1,
 			},
 			placeFile: "/coverage/game.rbxl",
@@ -2694,7 +2984,7 @@ describe("multi-project execution", () => {
 		mocks.syncStubsToShadowDirectory.mockReturnValue(false);
 		mocks.prepareCoverage.mockImplementation((_config, beforeBuild) => {
 			if (beforeBuild !== undefined) {
-				beforeBuild(".jest-roblox-coverage");
+				beforeBuild(".jest-roblox/coverage");
 			}
 
 			return {
@@ -2705,7 +2995,7 @@ describe("multi-project execution", () => {
 					luauRoots: [],
 					nonInstrumentedFiles: {},
 					placeFilePath: "/coverage/game.rbxl",
-					shadowDir: ".jest-roblox-coverage",
+					shadowDir: ".jest-roblox/coverage",
 					version: 1,
 				},
 				placeFile: "/coverage/game.rbxl",
@@ -2720,7 +3010,7 @@ describe("multi-project execution", () => {
 		expect(mocks.syncStubsToShadowDirectory).toHaveBeenCalledWith(
 			expect.any(Array),
 			"/test",
-			".jest-roblox-coverage",
+			".jest-roblox/coverage",
 		);
 	});
 });

@@ -11,6 +11,7 @@ out-tsc/
 dist/
 *.rbxm
 src/test-runner.bundled.luau
+src/materializer.bundled.luau
 plugin/out/
 !src/coverage
 !test/coverage

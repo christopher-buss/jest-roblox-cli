@@ -91,7 +91,7 @@ function successJest(overrides: Record<string, unknown> = {}): string {
 }
 
 function envelope(
-	entries: Array<{ elapsedMs?: number; gameOutput?: string; jestOutput: string }>,
+	entries: Array<{ elapsedMs?: number; gameOutput?: string; jestOutput: string; pkg?: string }>,
 ): string {
 	return JSON.stringify({ entries });
 }
@@ -1228,6 +1228,66 @@ describe(OpenCloudBackend, () => {
 		const { timing } = await backend.runTests(jobsOptions([job("alpha")]));
 
 		expect(timing.uploadCached).toBeFalse();
+	});
+
+	it("should send scriptOverride when set instead of generating from inputs", async () => {
+		expect.assertions(2);
+
+		const customScript = "-- custom materializer script\nreturn nil";
+		const http = createDispatchMock({
+			onCreateTask: () => {
+				return {
+					complete: completeResponse(
+						envelope([{ jestOutput: successJest(), pkg: "@halcyon/foo" }]),
+					),
+					taskPath: "task-override",
+				};
+			},
+		});
+
+		const backend = new OpenCloudBackend(credentials, {
+			http,
+			readFile: () => buffer.Buffer.from("mock"),
+			sleep: noSleep,
+		});
+
+		await backend.runTests({
+			jobs: [job("alpha")],
+			scriptOverride: customScript,
+		});
+
+		const taskCall = http.calls.find(
+			(call) => call.url.includes(LUAU_EXEC_TASKS_PATH) && call.method === "POST",
+		);
+		const requestBody = taskCall?.body as undefined | { script: string };
+
+		expect(requestBody?.script).toBe(customScript);
+		expect(requestBody?.script).not.toContain("Jest.runCLI");
+	});
+
+	it("should accept envelope entries with pkg field", async () => {
+		expect.assertions(1);
+
+		const http = createDispatchMock({
+			onCreateTask: () => {
+				return {
+					complete: completeResponse(
+						envelope([{ jestOutput: successJest(), pkg: "@halcyon/foo" }]),
+					),
+					taskPath: "task-pkg",
+				};
+			},
+		});
+
+		const backend = new OpenCloudBackend(credentials, {
+			http,
+			readFile: () => buffer.Buffer.from("mock"),
+			sleep: noSleep,
+		});
+
+		const { results } = await backend.runTests(jobsOptions([job("alpha")]));
+
+		expect(results[0]?.result.success).toBeTrue();
 	});
 });
 

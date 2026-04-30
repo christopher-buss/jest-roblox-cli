@@ -115,7 +115,7 @@ local function discoverFiles(directory: string, relativeTo: string, results: { s
 	for _, entry in entries do
 		local fullPath = directory .. "/" .. entry.name
 		if entry.type == "dir" then
-			if entry.name == "node_modules" or entry.name == ".jest-roblox-coverage" then
+			if entry.name == "node_modules" or entry.name == ".jest-roblox" then
 				continue
 			end
 

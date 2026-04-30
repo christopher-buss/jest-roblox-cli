@@ -1798,7 +1798,7 @@ describe(loadCoverageManifest, () => {
 		expect.assertions(2);
 
 		const temporaryDirectory = createTemporaryDirectory("cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox-coverage");
+		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
 		fs.writeFileSync(path.join(coverageDirectory, "manifest.json"), "not json");
 		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -1813,7 +1813,7 @@ describe(loadCoverageManifest, () => {
 		expect.assertions(2);
 
 		const temporaryDirectory = createTemporaryDirectory("cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox-coverage");
+		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
 		fs.writeFileSync(
 			path.join(coverageDirectory, "manifest.json"),
@@ -1831,7 +1831,7 @@ describe(loadCoverageManifest, () => {
 		expect.assertions(2);
 
 		const temporaryDirectory = createTemporaryDirectory("cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox-coverage");
+		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
 		const manifest = {
 			files: {
@@ -1846,7 +1846,7 @@ describe(loadCoverageManifest, () => {
 			},
 			generatedAt: "2026-01-01T00:00:00Z",
 			luauRoots: ["out"],
-			shadowDir: ".jest-roblox-coverage/out",
+			shadowDir: ".jest-roblox/coverage/out",
 			version: 1,
 		};
 		fs.writeFileSync(path.join(coverageDirectory, "manifest.json"), JSON.stringify(manifest));
@@ -1860,7 +1860,7 @@ describe(loadCoverageManifest, () => {
 		expect.assertions(3);
 
 		const temporaryDirectory = createTemporaryDirectory("cov-test-");
-		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox-coverage");
+		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
 		const manifest = {
 			files: {
@@ -1876,7 +1876,7 @@ describe(loadCoverageManifest, () => {
 			},
 			generatedAt: "2026-01-01T00:00:00Z",
 			luauRoots: ["out"],
-			shadowDir: ".jest-roblox-coverage/out",
+			shadowDir: ".jest-roblox/coverage/out",
 			version: 1,
 		};
 		fs.writeFileSync(path.join(coverageDirectory, "manifest.json"), JSON.stringify(manifest));

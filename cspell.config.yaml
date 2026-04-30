@@ -21,6 +21,8 @@ words:
   - interpstring
   - lhsOperand
   - localfunction
+  - materializer
+  - OCALE
   - rbxl
   - rhsOperand
   - rojo

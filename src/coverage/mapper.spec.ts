@@ -39,7 +39,7 @@ function createManifest(files: CoverageManifest["files"] = {}): CoverageManifest
 		instrumenterVersion: 1,
 		luauRoots: ["out"],
 		nonInstrumentedFiles: {},
-		shadowDir: ".jest-roblox-coverage/out",
+		shadowDir: ".jest-roblox/coverage/out",
 		version: 1,
 	};
 }
@@ -93,7 +93,7 @@ function createManifestFiles() {
 		"shared/player.luau": {
 			key: "shared/player.luau",
 			coverageMapPath: "out/shared/player.luau.cov-map.json",
-			instrumentedLuauPath: ".jest-roblox-coverage/out/shared/player.luau",
+			instrumentedLuauPath: ".jest-roblox/coverage/out/shared/player.luau",
 			originalLuauPath: "out/shared/player.luau",
 			sourceHash: "abc123",
 			sourceMapPath: "out/shared/player.luau.map",
@@ -176,7 +176,7 @@ describe(mapCoverageToTypeScript, () => {
 				"out/packages/src/player.luau": {
 					key: "out/packages/src/player.luau",
 					coverageMapPath: "out/packages/src/player.luau.cov-map.json",
-					instrumentedLuauPath: ".jest-roblox-coverage/out/packages/src/player.luau",
+					instrumentedLuauPath: ".jest-roblox/coverage/out/packages/src/player.luau",
 					originalLuauPath: "out/packages/src/player.luau",
 					sourceHash: "abc123",
 					sourceMapPath: "out/packages/src/player.luau.map",
@@ -222,7 +222,7 @@ describe(mapCoverageToTypeScript, () => {
 				"out/player.luau": {
 					key: "out/player.luau",
 					coverageMapPath: "out/player.luau.cov-map.json",
-					instrumentedLuauPath: ".jest-roblox-coverage/out/player.luau",
+					instrumentedLuauPath: ".jest-roblox/coverage/out/player.luau",
 					originalLuauPath: "out/player.luau",
 					sourceHash: "abc123",
 					sourceMapPath: "out/player.luau.map",

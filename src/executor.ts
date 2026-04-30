@@ -247,8 +247,9 @@ export async function executeBackend(
 	backend: Backend,
 	jobs: Array<ProjectJob>,
 	parallel?: "auto" | number,
+	scriptOverride?: string,
 ): Promise<BackendResult> {
-	return backend.runTests({ jobs, parallel });
+	return backend.runTests({ jobs, parallel, scriptOverride });
 }
 
 /**
@@ -476,7 +477,7 @@ const coverageManifestSchema = type({
 });
 
 export function loadCoverageManifest(rootDirectory: string): CoverageManifest | undefined {
-	const manifestPath = path.join(rootDirectory, ".jest-roblox-coverage", "manifest.json");
+	const manifestPath = path.join(rootDirectory, ".jest-roblox", "coverage", "manifest.json");
 	try {
 		const raw = fs.readFileSync(manifestPath, "utf-8");
 		const parsed = coverageManifestSchema(JSON.parse(raw));

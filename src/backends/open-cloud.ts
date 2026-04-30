@@ -58,6 +58,7 @@ const entrySchema = type({
 	"elapsedMs?": "number",
 	"gameOutput?": "string",
 	"jestOutput": "string",
+	"pkg?": "string",
 });
 
 const envelopeSchema = type({ entries: entrySchema.array() });
@@ -95,7 +96,7 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	public async runTests(options: BackendOptions): Promise<BackendResult> {
-		const { jobs, parallel } = options;
+		const { jobs, parallel, scriptOverride } = options;
 		if (jobs.length === 0) {
 			throw new Error("OpenCloudBackend requires at least one job");
 		}
@@ -133,7 +134,7 @@ export class OpenCloudBackend implements Backend {
 
 		const executionStart = Date.now();
 		const bucketResults = await Promise.all(
-			buckets.map(async (bucket) => this.runBucket(bucket)),
+			buckets.map(async (bucket) => this.runBucket(bucket, scriptOverride)),
 		);
 		const executionMs = Date.now() - executionStart;
 
@@ -157,10 +158,11 @@ export class OpenCloudBackend implements Backend {
 	private async createExecutionTask(
 		inputs: Array<JestArgvInput>,
 		timeoutMs: number,
+		scriptOverride?: string,
 	): Promise<string> {
 		const url = `${this.baseUrl}/cloud/v2/universes/${this.credentials.universeId}/places/${this.credentials.placeId}/luau-execution-session-tasks`;
 
-		const script = generateTestScript(inputs);
+		const script = scriptOverride ?? generateTestScript(inputs);
 
 		const response = await this.http.request("POST", url, {
 			body: {
@@ -238,6 +240,7 @@ export class OpenCloudBackend implements Backend {
 
 	private async runBucket(
 		bucket: JobBucket,
+		scriptOverride?: string,
 	): Promise<{ indices: Array<number>; results: Array<ProjectBackendResult> }> {
 		const { indices, jobs } = bucket;
 		// A bucket is only created for at least one job, so jobs[0] is defined.
@@ -247,7 +250,11 @@ export class OpenCloudBackend implements Backend {
 			return { config: job.config, testFiles: job.testFiles };
 		});
 
-		const taskPath = await this.createExecutionTask(inputs, primary.config.timeout);
+		const taskPath = await this.createExecutionTask(
+			inputs,
+			primary.config.timeout,
+			scriptOverride,
+		);
 		const { gameOutput, jestOutput } = await this.pollForCompletion(
 			taskPath,
 			primary.config.timeout,

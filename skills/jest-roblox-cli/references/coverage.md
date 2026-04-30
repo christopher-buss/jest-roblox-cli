@@ -56,18 +56,17 @@ Put these under `test: { ... }`. Keep `luauRoots` at config root.
 
 ## Generated Files
 
-The `.jest-roblox-coverage/` directory holds instrumented Luau files and
-manifests. Add it to `.gitignore`:
+The `.jest-roblox/coverage/` directory holds instrumented Luau files and
+manifests. Add the umbrella to `.gitignore`:
 
 ```gitignore
-.jest-roblox-coverage/
-coverage/
+.jest-roblox/
 ```
 
 ## How It Works
 
 1. Resolves `luauRoots` from tsconfig `outDir` (or explicit config)
-2. Copies compiled Luau to shadow directory (`.jest-roblox-coverage/`)
+2. Copies compiled Luau to shadow directory (`.jest-roblox/coverage/`)
 3. Instruments Luau files with coverage probes (`__cov_s`, `__cov_f`, `__cov_b`)
 4. Rewrites Rojo project to point at instrumented files
 5. Builds coverage place file via `rojo build`

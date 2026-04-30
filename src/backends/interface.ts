@@ -19,6 +19,13 @@ export interface BackendOptions {
 	 * anything other than undefined/1 (Phase 4 enforces at the CLI layer).
 	 */
 	parallel?: "auto" | number;
+	/**
+	 * Workspace mode: pre-built Luau script that the backend should send
+	 * verbatim instead of generating one from `jobs`. Used by the staged
+	 * materializer pipeline so the CLI layer chooses the script and the
+	 * backend stays unaware of the difference.
+	 */
+	scriptOverride?: string;
 }
 
 export interface BackendTiming {
