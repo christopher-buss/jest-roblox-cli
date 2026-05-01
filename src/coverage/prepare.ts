@@ -249,7 +249,11 @@ function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: stri
 			fs.readFileSync(resolvedPath, "utf-8"),
 		) as unknown as RojoProject;
 
-		const roots = collectLuauRootsFromRojo(rojoProject, config);
+		const resolved = {
+			...rojoProject,
+			tree: resolveNestedProjects(rojoProject.tree, path.dirname(resolvedPath)),
+		};
+		const roots = collectLuauRootsFromRojo(resolved, config);
 		if (roots.length > 0) {
 			return roots;
 		}

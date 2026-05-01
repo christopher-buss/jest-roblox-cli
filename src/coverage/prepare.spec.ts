@@ -1542,6 +1542,38 @@ describe(resolveLuauRoots, () => {
 			expect(resolveLuauRoots(config)).toStrictEqual(["packages/core/out"]);
 		});
 
+		it("should resolve nested .project.json refs before collecting roots", async () => {
+			expect.assertions(1);
+
+			const parentProject = {
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Client: { $path: "client.project.json" },
+					},
+				},
+			};
+			const clientProject = {
+				name: "client",
+				tree: {
+					$className: "Folder",
+					Systems: { $path: "src/Client/Systems" },
+				},
+			};
+
+			vol.mkdirSync("/project", { recursive: true });
+			vol.mkdirSync("src/Client/Systems", { recursive: true });
+			vol.writeFileSync("src/Client/Systems/FriendsController.luau", "");
+			vol.writeFileSync("/project/default.project.json", JSON.stringify(parentProject));
+			vol.writeFileSync("/project/client.project.json", JSON.stringify(clientProject));
+
+			await setupMocks();
+			const config = makeConfig();
+
+			expect(resolveLuauRoots(config)).toStrictEqual(["src/Client/Systems"]);
+		});
+
 		it("should apply coveragePathIgnorePatterns to filter roots", async () => {
 			expect.assertions(1);
 
