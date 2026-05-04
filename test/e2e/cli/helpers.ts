@@ -13,13 +13,13 @@ import path from "node:path";
 import nodeProcess from "node:process";
 import { onTestFinished } from "vitest";
 
-export interface ExecResult {
+interface ExecResult {
 	exitCode: number;
 	stderr: string;
 	stdout: string;
 }
 
-export interface RunCliOptions {
+interface RunCliOptions {
 	cwd?: string;
 	env?: Record<string, string | undefined>;
 	timeoutMs?: number;
@@ -110,10 +110,6 @@ export async function runCliAsync(
 
 export function readJsonSync(filePath: string): unknown {
 	return JSON.parse(readFileSync(filePath, "utf-8"));
-}
-
-export function readJsonFile<T>(filePath: string, schema: { assert(input: unknown): T }): T {
-	return schema.assert(readJsonSync(filePath));
 }
 
 export function createFixtureSandbox(sourcePath: string): string {

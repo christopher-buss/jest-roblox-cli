@@ -6,7 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { AstStatBlock } from "../../src/luau/ast-types.ts";
+import type { AstStatBlock } from "@isentinel/luau-ast";
 import { collectCoverage } from "../../src/coverage/coverage-collector.ts";
 import { buildCoverageMap } from "../../src/coverage/coverage-map-builder.ts";
 import { insertProbes } from "../../src/coverage/probe-inserter.ts";

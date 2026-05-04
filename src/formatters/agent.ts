@@ -26,7 +26,7 @@ export interface AgentOptions {
 	typeErrorCount?: number;
 }
 
-export interface AgentProjectEntry {
+interface AgentProjectEntry {
 	displayName: string;
 	result: JestResult;
 }

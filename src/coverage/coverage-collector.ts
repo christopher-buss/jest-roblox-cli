@@ -7,7 +7,8 @@ import type {
 	AstStatIf,
 	AstStatLocalFunction,
 	LuauSpan,
-} from "../luau/ast-types.ts";
+} from "@isentinel/luau-ast";
+
 import type { LuauVisitor } from "../luau/visitor.ts";
 import { visitBlock } from "../luau/visitor.ts";
 

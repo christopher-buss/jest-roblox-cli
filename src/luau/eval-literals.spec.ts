@@ -1,6 +1,7 @@
+import type { AstStatBlock } from "@isentinel/luau-ast";
+
 import { describe, expect, it } from "vitest";
 
-import type { AstStatBlock } from "./ast-types.ts";
 import { evalLuauReturnLiterals } from "./eval-literals.ts";
 
 function makeBlock(...statements: Array<unknown>): AstStatBlock {

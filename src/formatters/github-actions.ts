@@ -6,22 +6,6 @@ import { hasExecError } from "../types/jest-result.ts";
 
 const SEPARATOR = " · ";
 
-export interface GitHubAnnotation {
-	col?: number;
-	file: string;
-	line?: number;
-	message: string;
-	title?: string;
-}
-
-export interface GitHubActionsOptions {
-	repository?: string;
-	serverUrl?: string;
-	sha?: string;
-	sourceMapper?: SourceMapper;
-	workspace?: string;
-}
-
 export interface GitHubActionsFormatterOptions {
 	/**
 	 * Whether to emit `::error` workflow commands for test failures.
@@ -81,6 +65,22 @@ interface JobSummaryOptions {
 	 * @default process.env.GITHUB_STEP_SUMMARY
 	 */
 	outputPath: string | undefined;
+}
+
+interface GitHubAnnotation {
+	col?: number;
+	file: string;
+	line?: number;
+	message: string;
+	title?: string;
+}
+
+interface GitHubActionsOptions {
+	repository?: string;
+	serverUrl?: string;
+	sha?: string;
+	sourceMapper?: SourceMapper;
+	workspace?: string;
 }
 
 export function escapeData(value: string): string {

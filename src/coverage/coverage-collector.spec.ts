@@ -1,5 +1,3 @@
-import { describe, expect, it } from "vitest";
-
 import type {
 	AstExprConstantBool,
 	AstExprConstantNumber,
@@ -16,7 +14,10 @@ import type {
 	AstStatLocal,
 	AstStatLocalFunction,
 	LuauSpan,
-} from "../luau/ast-types.ts";
+} from "@isentinel/luau-ast";
+
+import { describe, expect, it } from "vitest";
+
 import { collectCoverage } from "./coverage-collector.ts";
 
 function span(

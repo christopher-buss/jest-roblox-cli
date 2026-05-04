@@ -42,32 +42,23 @@ export interface FormatOptions {
 	version: string;
 }
 
-export interface ParsedError {
-	expected?: string;
-	message: string;
-	received?: string;
-	snapshotDiff?: string;
-}
-
-export interface SourceLocation {
-	column?: number;
-	line: number;
-	path: string;
-}
-
 export interface FormatterProjectEntry {
 	displayColor?: string;
 	displayName: string;
 	result: JestResult;
 }
 
-export interface ProjectSectionOptions {
-	displayColor?: string;
-	displayName: string;
-	failureCtx: FailureContext;
-	options: FormatOptions;
-	result: JestResult;
-	styles?: Styles;
+interface ParsedError {
+	expected?: string;
+	message: string;
+	received?: string;
+	snapshotDiff?: string;
+}
+
+interface SourceLocation {
+	column?: number;
+	line: number;
+	path: string;
 }
 
 interface FailureContext {
@@ -101,6 +92,15 @@ interface Styles {
 		passed: ColorFunc;
 		pending: ColorFunc;
 	};
+}
+
+interface ProjectSectionOptions {
+	displayColor?: string;
+	displayName: string;
+	failureCtx: FailureContext;
+	options: FormatOptions;
+	result: JestResult;
+	styles?: Styles;
 }
 
 export function getExecErrorHint(message: string): string | undefined {
@@ -495,27 +495,6 @@ export function formatResult(
 	return lines.join("\n");
 }
 
-export function formatTypecheckFailures(result: JestResult, useColor = true): string {
-	const styles = createStyles(useColor);
-	const lines: Array<string> = [];
-
-	for (const file of result.testResults) {
-		for (const test of file.testResults) {
-			if (test.status !== "failed") {
-				continue;
-			}
-
-			const badge = styles.failBadge(" FAIL ");
-			lines.push(`  ${badge} ${styles.status.fail(test.fullName)}`);
-			for (const message of test.failureMessages) {
-				lines.push(`    ${styles.dim(message)}`);
-			}
-		}
-	}
-
-	return lines.join("\n");
-}
-
 export function formatTypecheckSummary(result: JestResult, useColor = true): string {
 	const styles = createStyles(useColor);
 	const passed = result.numPassedTests;
@@ -537,6 +516,27 @@ export function formatTypecheckSummary(result: JestResult, useColor = true): str
 	return parts.join("\n");
 }
 
+function formatTypecheckFailures(result: JestResult, useColor = true): string {
+	const styles = createStyles(useColor);
+	const lines: Array<string> = [];
+
+	for (const file of result.testResults) {
+		for (const test of file.testResults) {
+			if (test.status !== "failed") {
+				continue;
+			}
+
+			const badge = styles.failBadge(" FAIL ");
+			lines.push(`  ${badge} ${styles.status.fail(test.fullName)}`);
+			for (const message of test.failureMessages) {
+				lines.push(`    ${styles.dim(message)}`);
+			}
+		}
+	}
+
+	return lines.join("\n");
+}
+
 const PROJECT_BADGE_COLORS: Array<ColorFunc> = [
 	(text: string) => color.bgYellow(color.black(text)),
 	(text: string) => color.bgCyan(color.black(text)),
@@ -554,7 +554,7 @@ const NAMED_BADGE_COLORS: Record<string, ColorFunc> = {
 	yellow: (text: string) => color.bgYellow(color.black(text)),
 };
 
-export interface ProjectHeaderOptions {
+interface ProjectHeaderOptions {
 	displayColor?: string;
 	displayName: string;
 	result: JestResult;

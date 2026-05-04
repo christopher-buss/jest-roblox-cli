@@ -6,7 +6,7 @@ import type { JestResult } from "../types/jest-result.ts";
 
 export type SnapshotWrites = Record<string, string>;
 
-export interface ParseResult {
+interface ParseResult {
 	coverageData?: RawCoverageData;
 	luauTiming?: Record<string, number>;
 	result: JestResult;

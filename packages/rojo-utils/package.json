@@ -26,14 +26,14 @@
 		"@isentinel/tsconfig": "1.2.0",
 		"@types/node": "24.12.2",
 		"@typescript/native-preview": "7.0.0-dev.20260325.1",
-		"@vitest/coverage-v8": "4.1.2",
+		"@vitest/coverage-v8": "4.1.5",
 		"@vitest/eslint-plugin": "1.6.16",
 		"eslint": "9.39.4",
 		"eslint-plugin-n": "17.24.0",
 		"eslint-plugin-pnpm": "1.6.0",
-		"tsdown": "0.21.7",
+		"tsdown": "0.21.10",
 		"typescript": "6.0.3",
-		"vitest": "4.1.2"
+		"vitest": "4.1.5"
 	},
 	"packageManager": "pnpm@10.33.2+sha512.a90faf6feeab71ad6c6e57f94e0fe1a12f5dcc22cd754db40ae9593eb6a3e0b6b12e3540218bb37ae083404b1f2ce6db2a4121e979829b4aff94b99f49da1cf8",
 	"engines": {

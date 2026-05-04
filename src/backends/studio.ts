@@ -16,12 +16,12 @@ import type {
 
 const DEFAULT_STUDIO_TIMEOUT = 300_000;
 
-export interface PreConnected {
+interface PreConnected {
 	server: WebSocketServer;
 	socket: WebSocket;
 }
 
-export interface StudioOptions {
+interface StudioOptions {
 	createServer?: (port: number) => WebSocketServer;
 	port: number;
 	preConnected?: PreConnected;

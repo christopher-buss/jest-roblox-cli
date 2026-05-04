@@ -4,7 +4,7 @@ import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
-export interface ResolvedPath {
+interface ResolvedPath {
 	filePath: string;
 	mapping?: TsconfigMapping;
 }

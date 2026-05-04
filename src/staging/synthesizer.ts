@@ -10,7 +10,7 @@ export interface PackageDescriptor {
 	rojoProjectPath: string;
 }
 
-export interface SynthesizeInput {
+interface SynthesizeInput {
 	packages: Array<PackageDescriptor>;
 }
 

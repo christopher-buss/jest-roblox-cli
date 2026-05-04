@@ -24,13 +24,13 @@ export interface FakeOpenCloudTask {
 	state?: "COMPLETE" | "FAILED";
 }
 
-export interface FakeOpenCloudCall {
+interface FakeOpenCloudCall {
 	apiKey: string | undefined;
 	method: string;
 	url: string;
 }
 
-export interface FakeOpenCloudServer {
+interface FakeOpenCloudServer {
 	baseUrl: string;
 	calls: Array<FakeOpenCloudCall>;
 	requests: Array<typeof createTaskRequestSchema.infer>;

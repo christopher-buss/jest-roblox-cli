@@ -5,15 +5,15 @@ import * as path from "node:path";
 
 import { collectPaths } from "../utils/rojo-tree.ts";
 
+export interface PreflightError {
+	package: string;
+	reason: string;
+}
+
 export interface PackageDescriptor {
 	name: string;
 	packageDirectory: string;
 	rojoProjectPath: string;
-}
-
-export interface PreflightError {
-	package: string;
-	reason: string;
 }
 
 export function validatePackages(descriptors: Array<PackageDescriptor>): Array<PreflightError> {

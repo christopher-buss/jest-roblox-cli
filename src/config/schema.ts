@@ -419,8 +419,6 @@ export interface ConfigInput extends Except<Config, "formatters" | "luauRoots" |
 	test?: GlobalTestConfigInput;
 }
 
-export type RootCliKey = Exclude<keyof Config, "test">;
-
 type MergeableTestKey =
 	| "collectCoverageFrom"
 	| "coveragePathIgnorePatterns"
@@ -435,6 +433,8 @@ type MergeableTestKey =
 	| "snapshotSerializers"
 	| "testMatch"
 	| "testPathIgnorePatterns";
+
+type RootCliKey = Exclude<keyof Config, "test">;
 
 type GlobalOnlyKey = Exclude<keyof GlobalTestConfig, keyof SharedTestConfig>;
 
@@ -552,7 +552,7 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
  * `validateConfig` to emit a migration error when jest options appear at
  * config root.
  */
-export const KEY_LOCATIONS: Readonly<Record<string, "root" | "test">> = (() => {
+const KEY_LOCATIONS: Readonly<Record<string, "root" | "test">> = (() => {
 	const result: Record<string, "root" | "test"> = {};
 	for (const key of ROOT_CLI_KEYS_LIST) {
 		result[key] = "root";

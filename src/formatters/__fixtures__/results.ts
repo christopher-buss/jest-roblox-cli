@@ -143,15 +143,6 @@ export const TIMING: TimingResult = {
 	uploadMs: 50,
 };
 
-export const TIMING_CACHED: TimingResult = {
-	executionMs: 150,
-	startTime: 1700000000000,
-	testsMs: 100,
-	totalMs: 250,
-	uploadCached: true,
-	uploadMs: 50,
-};
-
 export const TIMING_NO_UPLOAD: TimingResult = {
 	executionMs: 150,
 	startTime: 1700000000000,

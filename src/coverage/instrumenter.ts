@@ -1,9 +1,10 @@
+import type { AstStatBlock } from "@isentinel/luau-ast";
+
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import type { AstStatBlock } from "../luau/ast-types.ts";
 import parseAstLuauSource from "../luau/parse-ast.luau";
 import { hashBuffer } from "../utils/hash.ts";
 import { collectCoverage } from "./coverage-collector.ts";

@@ -1,5 +1,3 @@
-import { describe, expect, it, vi } from "vitest";
-
 import type {
 	AstExpr,
 	AstExprBinary,
@@ -41,7 +39,10 @@ import type {
 	AstStatTypeFunction,
 	AstStatWhile,
 	LuauSpan,
-} from "./ast-types.ts";
+} from "@isentinel/luau-ast";
+
+import { describe, expect, it, vi } from "vitest";
+
 import type { LuauVisitor } from "./visitor.ts";
 import { visitBlock, visitExpression, visitStatement } from "./visitor.ts";
 
