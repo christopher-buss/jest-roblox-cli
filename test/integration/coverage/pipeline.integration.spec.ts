@@ -126,7 +126,7 @@ describe("coverage pipeline (mapper -> istanbul json reporter)", () => {
 		expect(exampleEntry).toBeDefined();
 		expect(
 			Object.keys(report).every(
-				(key) => key.endsWith(".ts") || key.endsWith("jest.config.lua"),
+				(key) => key.endsWith(".ts") || key.endsWith("jest.config.luau"),
 			),
 		).toBeTrue();
 		expect(

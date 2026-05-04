@@ -241,11 +241,11 @@ describe(generateProjectConfigs, () => {
 		generateProjectConfigs([
 			{
 				config: minimalConfig({ displayName: "client" }),
-				outputPath: "/out/client/jest.config.lua",
+				outputPath: "/out/client/jest.config.luau",
 			},
 		]);
 
-		expect(vol.existsSync("/out/client/jest.config.lua")).toBeFalse();
+		expect(vol.readFileSync("/out/client/jest.config.luau", "utf8")).toBe("return {}");
 	});
 
 	it("should write config files for multiple roots", () => {
@@ -258,16 +258,16 @@ describe(generateProjectConfigs, () => {
 		generateProjectConfigs([
 			{
 				config: { displayName: "client", include: [], testMatch: ["**/*.spec"] },
-				outputPath: "/out/client/jest.config.lua",
+				outputPath: "/out/client/jest.config.luau",
 			},
 			{
 				config: { displayName: "server", include: [], testMatch: ["**/*.spec"] },
-				outputPath: "/out/server/jest.config.lua",
+				outputPath: "/out/server/jest.config.luau",
 			},
 		]);
 
-		expect(vol.existsSync("/out/client/jest.config.lua")).toBeTrue();
-		expect(vol.existsSync("/out/server/jest.config.lua")).toBeTrue();
+		expect(vol.existsSync("/out/client/jest.config.luau")).toBeTrue();
+		expect(vol.existsSync("/out/server/jest.config.luau")).toBeTrue();
 	});
 
 	it("should write multiple project configs", () => {
@@ -305,13 +305,13 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		vol.mkdirSync("/root/out/client", { recursive: true });
-		vol.writeFileSync("/root/out/client/jest.config.lua", "-- stub");
+		vol.writeFileSync("/root/out/client/jest.config.luau", "-- stub");
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
 		syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(vol.readFileSync("/shadow/out/client/jest.config.lua", "utf8")).toBe("-- stub");
+		expect(vol.readFileSync("/shadow/out/client/jest.config.luau", "utf8")).toBe("-- stub");
 	});
 
 	it("should return true when stub is new", () => {
@@ -322,7 +322,7 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		vol.mkdirSync("/root/out/client", { recursive: true });
-		vol.writeFileSync("/root/out/client/jest.config.lua", "-- stub");
+		vol.writeFileSync("/root/out/client/jest.config.luau", "-- stub");
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
@@ -339,9 +339,9 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		vol.mkdirSync("/root/out/client", { recursive: true });
-		vol.writeFileSync("/root/out/client/jest.config.lua", "-- updated");
+		vol.writeFileSync("/root/out/client/jest.config.luau", "-- updated");
 		vol.mkdirSync("/shadow/out/client", { recursive: true });
-		vol.writeFileSync("/shadow/out/client/jest.config.lua", "-- old");
+		vol.writeFileSync("/shadow/out/client/jest.config.luau", "-- old");
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
@@ -358,9 +358,9 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		vol.mkdirSync("/root/out/client", { recursive: true });
-		vol.writeFileSync("/root/out/client/jest.config.lua", "-- same");
+		vol.writeFileSync("/root/out/client/jest.config.luau", "-- same");
 		vol.mkdirSync("/shadow/out/client", { recursive: true });
-		vol.writeFileSync("/shadow/out/client/jest.config.lua", "-- same");
+		vol.writeFileSync("/shadow/out/client/jest.config.luau", "-- same");
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
@@ -391,7 +391,7 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		vol.mkdirSync("/root/out/deep/nested", { recursive: true });
-		vol.writeFileSync("/root/out/deep/nested/jest.config.lua", "-- stub");
+		vol.writeFileSync("/root/out/deep/nested/jest.config.luau", "-- stub");
 
 		const projects = [
 			makeResolvedProject({
@@ -404,7 +404,7 @@ describe(syncStubsToShadowDirectory, () => {
 
 		syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(vol.existsSync("/shadow/out/deep/nested/jest.config.lua")).toBeTrue();
+		expect(vol.existsSync("/shadow/out/deep/nested/jest.config.luau")).toBeTrue();
 	});
 
 	it("should delete orphaned shadow stubs not in current projects and return true", () => {
@@ -416,14 +416,14 @@ describe(syncStubsToShadowDirectory, () => {
 
 		// Orphaned stub in shadow dir (no matching project)
 		vol.mkdirSync("/shadow/out/removed", { recursive: true });
-		vol.writeFileSync("/shadow/out/removed/jest.config.lua", "-- orphan");
+		vol.writeFileSync("/shadow/out/removed/jest.config.luau", "-- orphan");
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
 		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
 		expect(result).toBeTrue();
-		expect(vol.existsSync("/shadow/out/removed/jest.config.lua")).toBeFalse();
+		expect(vol.existsSync("/shadow/out/removed/jest.config.luau")).toBeFalse();
 	});
 
 	it("should throw when mount fsPath is an absolute path", () => {
@@ -462,7 +462,7 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		vol.mkdirSync("/shadow/out/removed/deep", { recursive: true });
-		vol.writeFileSync("/shadow/out/removed/deep/jest.config.lua", "-- orphan");
+		vol.writeFileSync("/shadow/out/removed/deep/jest.config.luau", "-- orphan");
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
@@ -495,14 +495,14 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		vol.mkdirSync("/shadow/out/mixed", { recursive: true });
-		vol.writeFileSync("/shadow/out/mixed/jest.config.lua", "-- orphan");
+		vol.writeFileSync("/shadow/out/mixed/jest.config.luau", "-- orphan");
 		vol.writeFileSync("/shadow/out/mixed/other-file.txt", "keep me");
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
 		syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(vol.existsSync("/shadow/out/mixed/jest.config.lua")).toBeFalse();
+		expect(vol.existsSync("/shadow/out/mixed/jest.config.luau")).toBeFalse();
 		expect(vol.existsSync("/shadow/out/mixed/other-file.txt")).toBeTrue();
 	});
 
@@ -530,7 +530,7 @@ describe(syncStubsToShadowDirectory, () => {
 			vol.reset();
 		});
 
-		// outDir exists but jest.config.lua does not
+		// outDir exists but jest.config.luau does not
 		vol.mkdirSync("/root/out/client", { recursive: true });
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
@@ -550,9 +550,9 @@ describe(syncStubsToShadowDirectory, () => {
 		vol.mkdirSync("/root/src/Client", { recursive: true });
 		vol.mkdirSync("/root/src/Server", { recursive: true });
 		vol.mkdirSync("/root/src/Shared", { recursive: true });
-		vol.writeFileSync("/root/src/Client/jest.config.lua", "-- stub");
-		vol.writeFileSync("/root/src/Server/jest.config.lua", "-- stub");
-		vol.writeFileSync("/root/src/Shared/jest.config.lua", "-- stub");
+		vol.writeFileSync("/root/src/Client/jest.config.luau", "-- stub");
+		vol.writeFileSync("/root/src/Server/jest.config.luau", "-- stub");
+		vol.writeFileSync("/root/src/Shared/jest.config.luau", "-- stub");
 
 		const projects = [
 			makeResolvedProject({
@@ -567,9 +567,9 @@ describe(syncStubsToShadowDirectory, () => {
 
 		syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(vol.existsSync("/shadow/src/Client/jest.config.lua")).toBeTrue();
-		expect(vol.existsSync("/shadow/src/Server/jest.config.lua")).toBeTrue();
-		expect(vol.existsSync("/shadow/src/Shared/jest.config.lua")).toBeTrue();
+		expect(vol.existsSync("/shadow/src/Client/jest.config.luau")).toBeTrue();
+		expect(vol.existsSync("/shadow/src/Server/jest.config.luau")).toBeTrue();
+		expect(vol.existsSync("/shadow/src/Shared/jest.config.luau")).toBeTrue();
 	});
 
 	it("should remove shadow stub when its mount is dropped between runs", () => {
@@ -580,12 +580,12 @@ describe(syncStubsToShadowDirectory, () => {
 		});
 
 		vol.mkdirSync("/root/src/Client", { recursive: true });
-		vol.writeFileSync("/root/src/Client/jest.config.lua", "-- stub");
+		vol.writeFileSync("/root/src/Client/jest.config.luau", "-- stub");
 		vol.mkdirSync("/shadow/src/Client", { recursive: true });
-		vol.writeFileSync("/shadow/src/Client/jest.config.lua", "-- stub");
+		vol.writeFileSync("/shadow/src/Client/jest.config.luau", "-- stub");
 		// Stale shadow stub for a mount that no longer exists.
 		vol.mkdirSync("/shadow/src/Removed", { recursive: true });
-		vol.writeFileSync("/shadow/src/Removed/jest.config.lua", "-- stale");
+		vol.writeFileSync("/shadow/src/Removed/jest.config.luau", "-- stale");
 
 		const projects = [
 			makeResolvedProject({
@@ -596,8 +596,8 @@ describe(syncStubsToShadowDirectory, () => {
 
 		syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(vol.existsSync("/shadow/src/Client/jest.config.lua")).toBeTrue();
-		expect(vol.existsSync("/shadow/src/Removed/jest.config.lua")).toBeFalse();
+		expect(vol.existsSync("/shadow/src/Client/jest.config.luau")).toBeTrue();
+		expect(vol.existsSync("/shadow/src/Removed/jest.config.luau")).toBeFalse();
 	});
 });
 
@@ -777,14 +777,14 @@ describe("generateProjectConfigs with multi-mount projects", () => {
 		};
 
 		generateProjectConfigs([
-			{ config: stubConfig, outputPath: "/root/src/Client/jest.config.lua" },
-			{ config: stubConfig, outputPath: "/root/src/Server/jest.config.lua" },
-			{ config: stubConfig, outputPath: "/root/src/Shared/jest.config.lua" },
+			{ config: stubConfig, outputPath: "/root/src/Client/jest.config.luau" },
+			{ config: stubConfig, outputPath: "/root/src/Server/jest.config.luau" },
+			{ config: stubConfig, outputPath: "/root/src/Shared/jest.config.luau" },
 		]);
 
-		const clientContent = vol.readFileSync("/root/src/Client/jest.config.lua", "utf8");
-		const serverContent = vol.readFileSync("/root/src/Server/jest.config.lua", "utf8");
-		const sharedContent = vol.readFileSync("/root/src/Shared/jest.config.lua", "utf8");
+		const clientContent = vol.readFileSync("/root/src/Client/jest.config.luau", "utf8");
+		const serverContent = vol.readFileSync("/root/src/Server/jest.config.luau", "utf8");
+		const sharedContent = vol.readFileSync("/root/src/Shared/jest.config.luau", "utf8");
 
 		expect(clientContent).toBe(serverContent);
 		expect(serverContent).toBe(sharedContent);
@@ -823,19 +823,100 @@ describe("generateProjectConfigs with multi-mount projects", () => {
 
 		vol.mkdirSync("/root/src/Client", { recursive: true });
 		vol.writeFileSync(
-			"/root/src/Client/jest.config.lua",
+			"/root/src/Client/jest.config.luau",
 			"-- Auto-generated by jest-roblox (do not edit)\n-- old content\n",
 		);
 
 		generateProjectConfigs([
 			{
 				config: { displayName: "updated", include: [], testMatch: ["**/*.spec"] },
-				outputPath: "/root/src/Client/jest.config.lua",
+				outputPath: "/root/src/Client/jest.config.luau",
 			},
 		]);
 
-		expect(vol.readFileSync("/root/src/Client/jest.config.lua", "utf8")).toContain(
+		expect(vol.readFileSync("/root/src/Client/jest.config.luau", "utf8")).toContain(
 			'\tdisplayName = "updated",',
 		);
+	});
+
+	it("should delete a HEADER-prefixed legacy jest.config.lua sibling when writing the .luau stub", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.mkdirSync("/root/src/Client", { recursive: true });
+		// Simulate an upgrade: the old run wrote a `.lua` stub; the new run
+		// must delete it so Rojo doesn't see two ModuleScripts named
+		// `jest.config` in the same folder.
+		vol.writeFileSync(
+			"/root/src/Client/jest.config.lua",
+			"-- Auto-generated by jest-roblox (do not edit)\nreturn {}\n",
+		);
+
+		generateProjectConfigs([
+			{
+				config: { displayName: "client", include: [], testMatch: ["**/*.spec"] },
+				outputPath: "/root/src/Client/jest.config.luau",
+			},
+		]);
+
+		expect(vol.existsSync("/root/src/Client/jest.config.luau")).toBeTrue();
+		expect(vol.existsSync("/root/src/Client/jest.config.lua")).toBeFalse();
+	});
+
+	it("should preserve a user-authored jest.config.lua when no .luau stub is written", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.mkdirSync("/root/src/Client", { recursive: true });
+		// User-authored .lua (no HEADER) — must NOT be deleted by the
+		// upgrade-cleanup path. `hasUserAuthoredConfig` returns true so the
+		// stub is skipped entirely.
+		vol.writeFileSync("/root/src/Client/jest.config.lua", "-- user wrote this\nreturn {}");
+
+		generateProjectConfigs([
+			{
+				config: { displayName: "client", include: [], testMatch: ["**/*.spec"] },
+				outputPath: "/root/src/Client/jest.config.luau",
+			},
+		]);
+
+		expect(vol.existsSync("/root/src/Client/jest.config.luau")).toBeFalse();
+		expect(vol.readFileSync("/root/src/Client/jest.config.lua", "utf8")).toBe(
+			"-- user wrote this\nreturn {}",
+		);
+	});
+
+	it("should not touch a sibling jest.config.lua when writing a non-stub config", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.mkdirSync("/root/src/Client", { recursive: true });
+		// HEADER-prefixed legacy stub. The upgrade-cleanup path is allowed
+		// to delete this when writing the new `jest.config.luau` stub, but
+		// MUST NOT trigger when the caller is writing some other config
+		// file in the same directory.
+		vol.writeFileSync(
+			"/root/src/Client/jest.config.lua",
+			"-- Auto-generated by jest-roblox (do not edit)\nreturn {}\n",
+		);
+
+		generateProjectConfigs([
+			{
+				config: { displayName: "client", include: [], testMatch: ["**/*.spec"] },
+				outputPath: "/root/src/Client/other.config.luau",
+			},
+		]);
+
+		expect(vol.existsSync("/root/src/Client/other.config.luau")).toBeTrue();
+		expect(vol.existsSync("/root/src/Client/jest.config.lua")).toBeTrue();
 	});
 });

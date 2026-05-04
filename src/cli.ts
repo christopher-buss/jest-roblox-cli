@@ -31,6 +31,7 @@ import { createSetupResolver } from "./config/setup-resolver.ts";
 import {
 	assertStubCollisionRule,
 	generateProjectConfigs,
+	STUB_FILENAME,
 	syncStubsToShadowDirectory,
 } from "./config/stubs.ts";
 import { deriveCoverageFromIncludes } from "./coverage/derive-coverage-from.ts";
@@ -847,7 +848,7 @@ function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 }
 
 // Keys excluded from Luau stubs — these are TS-side/structural config, not
-// meaningful in the generated jest.config.lua (separate from SKIP_FIELDS in
+// meaningful in the generated jest.config.luau (separate from SKIP_FIELDS in
 // serializeToLuau which handles include/exclude).
 const STUB_SKIP_KEYS = new Set(["outDir", "projects", "root"]);
 
@@ -876,7 +877,7 @@ function generateProjectStubs(projects: Array<ResolvedProjectConfig>, rootDirect
 		};
 
 		for (const mount of project.rojoMounts) {
-			const outputPath = path.resolve(rootDirectory, mount.fsPath, "jest.config.lua");
+			const outputPath = path.resolve(rootDirectory, mount.fsPath, STUB_FILENAME);
 			entries.push({ config: stubConfig, outputPath });
 		}
 	}

@@ -89,11 +89,16 @@ describe("coverage mapping pipeline (roblox-ts)", () => {
 		expect(resultPaths.length).toBeGreaterThan(0);
 
 		const nonTsPaths = resultPaths.filter((filePath) => {
-			return !filePath.endsWith(".ts") && !filePath.endsWith("jest.config.lua");
+			return !filePath.endsWith(".ts") && !filePath.endsWith("jest.config.luau");
 		});
 
 		expect(nonTsPaths).toStrictEqual([]);
-		expect(resultPaths.some((filePath) => filePath.endsWith(".luau"))).toBeFalse();
+		expect(
+			resultPaths.some(
+				(filePath) =>
+					filePath.endsWith(".luau") && !filePath.endsWith("jest.config.luau"),
+			),
+		).toBeFalse();
 	});
 
 	it("should produce statement mappings pointing at typescript source lines", () => {
