@@ -77,6 +77,7 @@ import { globSync } from "./utils/glob.ts";
 import { buildWithRojo } from "./utils/rojo-builder.ts";
 import { resolveNestedProjects } from "./utils/rojo-tree.ts";
 import { runWorkspace } from "./workspace-runner.ts";
+import { getAffectedPackages } from "./workspace/affected.ts";
 import { discoverWorkspaceRoot } from "./workspace/discovery.ts";
 import { resolvePackage } from "./workspace/package-resolver.ts";
 
@@ -108,6 +109,9 @@ Options:
   --coverageDirectory <path>        Directory for coverage output (default: coverage)
   --coverageReporters <r...>        Coverage reporters (default: text, lcov)
   --formatters <name...>            Output formatters (default, agent, json, github-actions)
+  --workspace                       Run tests across all workspace packages
+  --packages <names>                Comma-separated package names (workspace mode)
+  --affected-since <ref>            Run only packages affected since git ref via turbo/nx
   --no-cache                        Force re-upload place file (skip cache)
   --pollInterval <ms>               Open Cloud poll interval in ms (default: 500)
   --parallel [n]                    Open-Cloud-only: number of concurrent sessions
@@ -172,6 +176,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		allowPositionals: true,
 		args: normalizeParallelFlag(args),
 		options: {
+			"affected-since": { type: "string" },
 			"apiKey": { type: "string" },
 			"backend": { type: "string" },
 			"cache": { type: "boolean" },
@@ -224,6 +229,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 	const timeout = values.timeout !== undefined ? Number.parseInt(values.timeout, 10) : undefined;
 
 	return {
+		affectedSince: values["affected-since"],
 		apiKey: values.apiKey,
 		backend: validateBackend(values.backend),
 		cache: values["no-cache"] === true ? false : values.cache,
@@ -1260,14 +1266,23 @@ function buildWorkspaceCredentials(cli: CliOptions, config: ResolvedConfig): Run
 	});
 }
 
-async function runWorkspaceMode(cli: CliOptions, config: ResolvedConfig): Promise<number> {
-	if (cli.workspace !== true) {
-		process.stderr.write("Error: --packages requires --workspace.\n");
+function validateWorkspaceFlags(cli: CliOptions, config: ResolvedConfig): number | undefined {
+	if (cli.packages !== undefined && cli.affectedSince !== undefined) {
+		process.stderr.write("Error: --packages and --affected-since are mutually exclusive.\n");
 		return 2;
 	}
 
-	if (cli.packages === undefined || cli.packages.trim() === "") {
-		process.stderr.write("Error: --workspace requires --packages.\n");
+	if (cli.workspace !== true) {
+		const flag = cli.affectedSince !== undefined ? "--affected-since" : "--packages";
+		process.stderr.write(`Error: ${flag} requires --workspace.\n`);
+		return 2;
+	}
+
+	if (
+		cli.affectedSince === undefined &&
+		(cli.packages === undefined || cli.packages.trim() === "")
+	) {
+		process.stderr.write("Error: --workspace requires --packages or --affected-since.\n");
 		return 2;
 	}
 
@@ -1293,20 +1308,46 @@ async function runWorkspaceMode(cli: CliOptions, config: ResolvedConfig): Promis
 		return 2;
 	}
 
-	const packageNames = cli.packages
-		.split(",")
+	return undefined;
+}
+
+function resolveWorkspacePackageNames(cli: CliOptions, workspaceRoot: string): Array<string> {
+	if (cli.affectedSince !== undefined) {
+		return getAffectedPackages(workspaceRoot, cli.affectedSince);
+	}
+
+	// validateWorkspaceFlags guarantees cli.packages is defined when
+	// affectedSince is undefined.
+	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed by validation
+	return cli
+		.packages!.split(",")
 		.map((name) => name.trim())
 		.filter((name) => name.length > 0);
+}
 
-	if (packageNames.length === 0) {
-		process.stderr.write("Error: --workspace requires --packages.\n");
-		return 2;
+async function runWorkspaceMode(cli: CliOptions, config: ResolvedConfig): Promise<number> {
+	const validationCode = validateWorkspaceFlags(cli, config);
+	if (validationCode !== undefined) {
+		return validationCode;
 	}
 
 	let workspaceRoot: string;
+	let packageNames: Array<string>;
 	let packageInfos;
 	try {
 		workspaceRoot = discoverWorkspaceRoot(process.cwd());
+		packageNames = resolveWorkspacePackageNames(cli, workspaceRoot);
+
+		if (packageNames.length === 0 && cli.affectedSince !== undefined) {
+			process.stdout.write("No affected packages — nothing to test.\n");
+			return 0;
+		}
+
+		if (packageNames.length === 0) {
+			process.stderr.write("Error: --workspace requires --packages or --affected-since.\n");
+			return 2;
+		}
+
 		packageInfos = packageNames.map((name) => resolvePackage(workspaceRoot, name));
 	} catch (err) {
 		process.stderr.write(`Error: ${String(err)}\n`);
@@ -1385,7 +1426,7 @@ async function runInner(args: Array<string>): Promise<number> {
 	// Check for project entries (Array<ProjectEntry>) on the resolved config
 	const rawProjects = (config as unknown as { projects?: Array<ProjectEntry> }).projects;
 
-	if (cli.workspace === true || cli.packages !== undefined) {
+	if (cli.workspace === true || cli.packages !== undefined || cli.affectedSince !== undefined) {
 		return runWorkspaceMode(cli, config);
 	}
 

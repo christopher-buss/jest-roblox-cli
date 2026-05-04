@@ -230,6 +230,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 };
 
 export interface CliOptions {
+	affectedSince?: string;
 	apiKey?: string;
 	backend?: Backend;
 	cache?: boolean;

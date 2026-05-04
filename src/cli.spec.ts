@@ -43,6 +43,7 @@ import { formatGameOutputNotice, parseGameOutput, writeGameOutput } from "./util
 import { globSync } from "./utils/glob.ts";
 import { buildWithRojo } from "./utils/rojo-builder.ts";
 import { runWorkspace } from "./workspace-runner.ts";
+import { getAffectedPackages } from "./workspace/affected.ts";
 import { discoverWorkspaceRoot } from "./workspace/discovery.ts";
 import { resolvePackage } from "./workspace/package-resolver.ts";
 
@@ -66,6 +67,7 @@ vi.mock(import("./utils/glob"));
 vi.mock(import("./utils/game-output"));
 vi.mock(import("./formatters/json"));
 vi.mock(import("./workspace-runner"));
+vi.mock(import("./workspace/affected"));
 vi.mock(import("./workspace/discovery"));
 vi.mock(import("./workspace/package-resolver"));
 vi.mock(import("./backends/open-cloud"));
@@ -185,6 +187,7 @@ const mocks = {
 	formatGameOutputNotice: vi.mocked(formatGameOutputNotice),
 	generateProjectConfigs: vi.mocked(generateProjectConfigs),
 	generateReports: vi.mocked(generateReports),
+	getAffectedPackages: vi.mocked(getAffectedPackages),
 	globSync: vi.mocked(globSync),
 	loadConfig: vi.mocked(loadConfig),
 	loadCoverageManifest: vi.mocked(loadCoverageManifest),
@@ -636,6 +639,14 @@ describe(parseArgs, () => {
 		expect(result.universeId).toBeUndefined();
 		expect(result.placeId).toBeUndefined();
 	});
+
+	it("should parse --affected-since option", () => {
+		expect.assertions(1);
+
+		const result = parseArgs(["--affected-since", "main"]);
+
+		expect(result.affectedSince).toBe("main");
+	});
 });
 
 describe(run, () => {
@@ -773,6 +784,93 @@ describe("--workspace mode", () => {
 		expect(code).toBe(2);
 		expect(spies.stderr).toHaveBeenCalledWith(
 			expect.stringContaining("--packages requires --workspace"),
+		);
+	});
+
+	it("should call getAffectedPackages and run affected packages via runWorkspace", async () => {
+		expect.assertions(3);
+
+		setupOutputSpies();
+		setupDefaults();
+		mocks.getAffectedPackages.mockReturnValue(["@halcyon/foo", "@halcyon/bar"]);
+		mocks.resolvePackage.mockImplementation((_, name) => {
+			return { name, packageDirectory: `/repo/packages/${name.replace("@halcyon/", "")}` };
+		});
+		mocks.runWorkspace.mockResolvedValue([
+			{ displayName: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "@halcyon/bar", result: makeExecuteResult() },
+		]);
+
+		const code = await run(["--workspace", "--affected-since", "main"]);
+
+		expect(code).toBe(0);
+		expect(mocks.getAffectedPackages).toHaveBeenCalledWith("/repo", "main");
+		expect(
+			mocks.runWorkspace.mock.calls[0]?.[0].packageInfos.map((info) => info.name),
+		).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
+	});
+
+	it("should exit 0 with a 'nothing to test' message when affected list is empty", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.getAffectedPackages.mockReturnValue([]);
+
+		const code = await run(["--workspace", "--affected-since", "main"]);
+
+		expect(code).toBe(0);
+		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("nothing to test"));
+		expect(mocks.runWorkspace).not.toHaveBeenCalled();
+	});
+
+	it("should error and exit 2 when getAffectedPackages throws", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.getAffectedPackages.mockImplementation(() => {
+			throw new Error("--affected-since requires turbo or nx");
+		});
+
+		const code = await run(["--workspace", "--affected-since", "main"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--affected-since requires turbo or nx"),
+		);
+	});
+
+	it("should error and exit 2 when --affected-since is passed without --workspace", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run(["--affected-since", "main"]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--affected-since requires --workspace"),
+		);
+	});
+
+	it("should error and exit 2 when --packages and --affected-since are both passed", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const code = await run([
+			"--workspace",
+			"--packages=@halcyon/foo",
+			"--affected-since",
+			"main",
+		]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("--packages and --affected-since are mutually exclusive"),
 		);
 	});
 

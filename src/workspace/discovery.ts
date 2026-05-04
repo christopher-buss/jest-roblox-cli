@@ -1,7 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const MARKERS = ["pnpm-workspace.yaml", "turbo.json", "nx.json"] as const;
+export const TURBO_MARKER = "turbo.json";
+export const NX_MARKER = "nx.json";
+
+const MARKERS = ["pnpm-workspace.yaml", TURBO_MARKER, NX_MARKER] as const;
 
 export function discoverWorkspaceRoot(cwd: string): string {
 	let current = path.resolve(cwd);
