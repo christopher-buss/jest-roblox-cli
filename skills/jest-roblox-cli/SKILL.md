@@ -1,13 +1,12 @@
 ---
 name: jest-roblox-cli
-description:
-    Use when running Roblox tests via jest-roblox CLI, configuring jest.config.ts,
-    debugging test execution failures, choosing between Open Cloud and Studio
-    backends, enabling coverage collection, or filtering which tests to run. Use
-    this skill whenever you need to execute tests, diagnose "no backend available"
-    or "failed to find Jest instance" errors, set up coverage thresholds, or
-    understand how jest-roblox discovers and runs test files. NOT for writing test
-    code (describe/it/expect API, matchers, mocking).
+description: |
+    Run Jest tests inside Roblox, configure test execution, collect code
+    coverage, and debug test runner failures for Roblox and roblox-ts
+    projects. Use when setting up or running tests for a Roblox project,
+    executing the jest-roblox command, editing jest.config.ts, adding test
+    coverage, or debugging errors like "no backend available" or "failed to
+    find Jest instance".
 ---
 
 # jest-roblox CLI
