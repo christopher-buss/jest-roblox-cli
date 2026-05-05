@@ -70,24 +70,4 @@ function module.materialize(pkgName: string)
 	end
 end
 
-function module.collectJestConfigs(): { Instance }
-	local configs: { Instance } = {}
-	local seen: { [Instance]: boolean } = {}
-
-	local function visit(root: Instance)
-		for _, desc in root:GetDescendants() do
-			if desc:IsA("ModuleScript") and desc.Name == "jest.config" and not seen[desc] then
-				seen[desc] = true
-				table.insert(configs, desc)
-			end
-		end
-	end
-
-	visit(ReplicatedStorage)
-	visit(game:GetService("ServerScriptService"))
-	visit(game:GetService("ServerStorage"))
-
-	return configs
-end
-
 return module

@@ -1,19 +1,30 @@
 import { loadRojoProject } from "@isentinel/rojo-utils";
 
+import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+
+export interface StubMount {
+	absStubPath: string;
+	dataModelPath: string;
+}
 
 export interface PackageDescriptor {
 	name: string;
 	packageDirectory: string;
 	rojoProjectPath: string;
+	stubMounts?: Array<StubMount>;
 }
 
 interface SynthesizeInput {
 	packages: Array<PackageDescriptor>;
 }
+
+const STUB_INJECTION_KEY = "jest.config";
+const COLLIDING_SOURCE_FILES = ["jest.config.lua", "jest.config.luau"];
 
 const SERVICE_CLASSES = new Set([
 	"Chat",
@@ -49,7 +60,9 @@ export function synthesize(input: SynthesizeInput): string {
 	for (const descriptor of input.packages) {
 		const project = loadRojoProject(descriptor.rojoProjectPath);
 		const folder = transformToFolder(project.tree);
-		stage[descriptor.name] = absolutizePaths(folder, path.dirname(descriptor.rojoProjectPath));
+		const root = absolutizePaths(folder, path.dirname(descriptor.rojoProjectPath));
+		injectStubMounts(root, descriptor.stubMounts);
+		stage[descriptor.name] = root;
 	}
 
 	const tree: RojoTreeNode = {
@@ -119,6 +132,54 @@ function sortKeys(value: unknown): unknown {
 
 function stableStringify(value: unknown): string {
 	return String(JSON.stringify(sortKeys(value), undefined, 2));
+}
+
+function walkToLeaf(root: RojoTreeNode, dataModelPath: string): RojoTreeNode {
+	let cursor: RojoTreeNode = root;
+	for (const segment of dataModelPath.split("/")) {
+		const next = cursor[segment];
+		if (!isTreeNode(next)) {
+			throw new ConfigError(
+				`stubMount dataModelPath "${dataModelPath}" does not resolve in synthesized tree (missing segment "${segment}")`,
+			);
+		}
+
+		cursor = next;
+	}
+
+	return cursor;
+}
+
+function assertNoSourceCollision(leaf: RojoTreeNode, dataModelPath: string): void {
+	const leafPath = leaf.$path;
+	if (typeof leafPath !== "string") {
+		return;
+	}
+
+	for (const candidate of COLLIDING_SOURCE_FILES) {
+		// `fs.existsSync` needs the OS-native path; only the rojo $path
+		// injection further down needs POSIX normalization.
+		const sourceFile = path.join(leafPath, candidate);
+		if (fs.existsSync(sourceFile)) {
+			throw new ConfigError(
+				`stubMount at "${dataModelPath}" would collide with existing source file "${normalizeWindowsPath(sourceFile)}" (rojo silently duplicates jest.config children)`,
+			);
+		}
+	}
+}
+
+function injectStubMounts(root: RojoTreeNode, stubMounts: Array<StubMount> | undefined): void {
+	if (!stubMounts) {
+		return;
+	}
+
+	for (const mount of stubMounts) {
+		const leaf = walkToLeaf(root, mount.dataModelPath);
+		assertNoSourceCollision(leaf, mount.dataModelPath);
+		leaf[STUB_INJECTION_KEY] = {
+			$path: normalizeWindowsPath(mount.absStubPath),
+		};
+	}
 }
 
 function transformChild(node: RojoTreeNode): RojoTreeNode {

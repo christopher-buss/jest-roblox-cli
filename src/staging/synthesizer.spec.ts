@@ -4,6 +4,7 @@ import { vol } from "memfs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { ConfigError } from "../config/errors.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { synthesize } from "./synthesizer.ts";
 
@@ -304,6 +305,409 @@ describe(synthesize, () => {
 		expect(parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.$path).toBe(
 			normalizeWindowsPath(path.join(FOO_DIR, "src")),
 		);
+	});
+
+	it("should inject jest.config child at dataModelPath leaf for stubMounts", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$className: "ReplicatedStorage",
+						Common: { $path: "src" },
+					},
+				},
+			}),
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+			[stubPath]: "return {}",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+					stubMounts: [
+						{ absStubPath: stubPath, dataModelPath: "ReplicatedStorage/Common" },
+					],
+				},
+			],
+		});
+
+		const parsed = JSON.parse(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<
+						string,
+						{
+							ReplicatedStorage: {
+								Common: { "$path": string; "jest.config": { $path: string } };
+							};
+						}
+					>;
+				};
+			};
+		};
+
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Common[
+				"jest.config"
+			].$path,
+		).toBe(stubPath.replaceAll("\\", "/"));
+	});
+
+	it("should inject multiple stubMounts on a single package", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		const stubA = path.join(ROOT, ".cache/foo/a/jest.config.luau");
+		const stubB = path.join(ROOT, ".cache/foo/b/jest.config.luau");
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$className: "ReplicatedStorage",
+						A: { $path: "src/a" },
+						B: { $path: "src/b" },
+					},
+				},
+			}),
+			[path.join(FOO_DIR, "src/a/init.luau")]: "",
+			[path.join(FOO_DIR, "src/b/init.luau")]: "",
+			[stubA]: "return {}",
+			[stubB]: "return {}",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+					stubMounts: [
+						{ absStubPath: stubA, dataModelPath: "ReplicatedStorage/A" },
+						{ absStubPath: stubB, dataModelPath: "ReplicatedStorage/B" },
+					],
+				},
+			],
+		});
+
+		const parsed = JSON.parse(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<
+						string,
+						{
+							ReplicatedStorage: {
+								A: { "jest.config": { $path: string } };
+								B: { "jest.config": { $path: string } };
+							};
+						}
+					>;
+				};
+			};
+		};
+
+		const package_ = parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"];
+
+		expect(package_?.ReplicatedStorage.A["jest.config"].$path).toBe(
+			stubA.replaceAll("\\", "/"),
+		);
+		expect(package_?.ReplicatedStorage.B["jest.config"].$path).toBe(
+			stubB.replaceAll("\\", "/"),
+		);
+	});
+
+	it("should keep stubMounts isolated per package", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+		const barDirectory = path.join(ROOT, "packages/bar");
+		const stubFoo = path.join(ROOT, ".cache/foo/jest.config.luau");
+		const stubBar = path.join(ROOT, ".cache/bar/jest.config.luau");
+		vol.fromJSON({
+			[barProject]: projectJson({
+				name: "bar-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$className: "ReplicatedStorage",
+						BarMount: { $path: "src" },
+					},
+				},
+			}),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$className: "ReplicatedStorage",
+						FooMount: { $path: "src" },
+					},
+				},
+			}),
+			[path.join(barDirectory, "src/init.luau")]: "",
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+			[stubBar]: "return {}",
+			[stubFoo]: "return {}",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/bar",
+					packageDirectory: barDirectory,
+					rojoProjectPath: barProject,
+					stubMounts: [
+						{ absStubPath: stubBar, dataModelPath: "ReplicatedStorage/BarMount" },
+					],
+				},
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+					stubMounts: [
+						{ absStubPath: stubFoo, dataModelPath: "ReplicatedStorage/FooMount" },
+					],
+				},
+			],
+		});
+
+		const parsed = JSON.parse(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<
+						string,
+						{
+							ReplicatedStorage: Record<
+								string,
+								{ "jest.config"?: { $path: string } }
+							>;
+						}
+					>;
+				};
+			};
+		};
+
+		const stage = parsed.tree.ServerStorage.__pkg_stage;
+
+		expect(stage["@halcyon/bar"]?.ReplicatedStorage["BarMount"]?.["jest.config"]?.$path).toBe(
+			stubBar.replaceAll("\\", "/"),
+		);
+		expect(stage["@halcyon/foo"]?.ReplicatedStorage["FooMount"]?.["jest.config"]?.$path).toBe(
+			stubFoo.replaceAll("\\", "/"),
+		);
+	});
+
+	it.for(["jest.config.lua", "jest.config.luau"])(
+		"should throw ConfigError when stubMount leaf source dir contains %s",
+		(collidingFile) => {
+			expect.assertions(2);
+
+			vol.reset();
+
+			const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
+			const sourceDirectory = path.join(FOO_DIR, "src");
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							$className: "ReplicatedStorage",
+							Common: { $path: "src" },
+						},
+					},
+				}),
+				[path.join(sourceDirectory, "init.luau")]: "",
+				[path.join(sourceDirectory, collidingFile)]: "return {}",
+				[stubPath]: "return {}",
+			});
+
+			function callSynthesize(): string {
+				return synthesize({
+					packages: [
+						{
+							name: "@halcyon/foo",
+							packageDirectory: FOO_DIR,
+							rojoProjectPath: FOO_PROJECT,
+							stubMounts: [
+								{
+									absStubPath: stubPath,
+									dataModelPath: "ReplicatedStorage/Common",
+								},
+							],
+						},
+					],
+				});
+			}
+
+			expect(callSynthesize).toThrow(ConfigError);
+			expect(callSynthesize).toThrow(
+				path.join(sourceDirectory, collidingFile).replaceAll("\\", "/"),
+			);
+		},
+	);
+
+	it("should not throw when leaf source dir contains unrelated files", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
+		const sourceDirectory = path.join(FOO_DIR, "src");
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$className: "ReplicatedStorage",
+						Common: { $path: "src" },
+					},
+				},
+			}),
+			[path.join(sourceDirectory, "config.lua")]: "",
+			[path.join(sourceDirectory, "init.luau")]: "",
+			[stubPath]: "return {}",
+		});
+
+		expect(() => {
+			return synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+						stubMounts: [
+							{ absStubPath: stubPath, dataModelPath: "ReplicatedStorage/Common" },
+						],
+					},
+				],
+			});
+		}).not.toThrow();
+	});
+
+	it("should throw ConfigError when stubMount dataModelPath does not resolve in the tree", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+				},
+			}),
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+		});
+
+		expect(() => {
+			synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+						stubMounts: [
+							{
+								absStubPath: "/cache/stub.lua",
+								dataModelPath: "ReplicatedStorage/Missing",
+							},
+						],
+					},
+				],
+			});
+		}).toThrow(ConfigError);
+	});
+
+	it("should skip collision check when stubMount leaf has no $path", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Branch: { $className: "Folder", Leaf: { $path: "src" } },
+					},
+				},
+			}),
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+					stubMounts: [
+						{
+							absStubPath: "/cache/stub.lua",
+							dataModelPath: "ReplicatedStorage/Branch",
+						},
+					],
+				},
+			],
+		});
+
+		expect(result).toContain('"jest.config"');
+	});
+
+	it("should produce identical output to a stubMounts-less descriptor when stubMounts is omitted", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+				},
+			}),
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+		});
+
+		const baseline = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+		const withEmpty = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(withEmpty).toBe(baseline);
 	});
 
 	it("should be byte-stable regardless of input package ordering", () => {

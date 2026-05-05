@@ -1,3 +1,5 @@
+import { collectPaths, resolveNestedProjects } from "@isentinel/rojo-utils";
+
 import { type } from "arktype";
 import { getTsconfig } from "get-tsconfig";
 import * as fs from "node:fs";
@@ -10,7 +12,6 @@ import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
-import { collectPaths, resolveNestedProjects } from "../utils/rojo-tree.ts";
 import { INSTRUMENTER_VERSION, instrumentRoot } from "./instrumenter.ts";
 import type { RojoProject, RootEntry } from "./rojo-rewriter.ts";
 import { rewriteRojoProject } from "./rojo-rewriter.ts";

@@ -12,6 +12,7 @@ export default isentinel(
 			".standalone/**/*",
 			"plans/**/*",
 			"reference/**/*",
+			"spike/**/*",
 		],
 		jsdoc: false,
 		namedConfigs: true,

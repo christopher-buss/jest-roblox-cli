@@ -1,4 +1,5 @@
 import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-runner";
+import { resolveNestedProjects } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
 import assert from "node:assert";
@@ -6,7 +7,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import { parseArgs as nodeParseArgs } from "node:util";
-import { isAgent } from "std-env";
 import color from "tinyrainbow";
 
 import packageJson from "../package.json" with { type: "json" };
@@ -15,25 +15,19 @@ import type { Backend as BackendInstance } from "./backends/interface.ts";
 import { createOpenCloudBackend } from "./backends/open-cloud.ts";
 import { ConfigError } from "./config/errors.ts";
 import { loadConfig } from "./config/loader.ts";
+import { mergeCliWithConfig } from "./config/merge.ts";
 import type { ResolvedProjectConfig } from "./config/projects.ts";
 import { resolveAllProjects } from "./config/projects.ts";
 import type {
 	Backend,
 	CliOptions,
 	CoverageReporter,
-	FormatterEntry,
 	ProjectEntry,
-	ProjectTestConfig,
 	ResolvedConfig,
 } from "./config/schema.ts";
-import { isValidBackend, JEST_ARGV_EXCLUDED_KEYS, VALID_BACKENDS } from "./config/schema.ts";
+import { isValidBackend, VALID_BACKENDS } from "./config/schema.ts";
 import { createSetupResolver } from "./config/setup-resolver.ts";
-import {
-	assertStubCollisionRule,
-	generateProjectConfigs,
-	STUB_FILENAME,
-	syncStubsToShadowDirectory,
-} from "./config/stubs.ts";
+import { generateProjectStubs, syncStubsToShadowDirectory } from "./config/stubs.ts";
 import { deriveCoverageFromIncludes } from "./coverage/derive-coverage-from.ts";
 import { mapCoverageToTypeScript } from "./coverage/mapper.ts";
 import { mergeRawCoverage } from "./coverage/merge-raw-coverage.ts";
@@ -75,7 +69,6 @@ import { formatBanner } from "./utils/banner.ts";
 import { formatGameOutputNotice, parseGameOutput, writeGameOutput } from "./utils/game-output.ts";
 import { globSync } from "./utils/glob.ts";
 import { buildWithRojo } from "./utils/rojo-builder.ts";
-import { resolveNestedProjects } from "./utils/rojo-tree.ts";
 import { runWorkspace } from "./workspace-runner.ts";
 import { getAffectedPackages } from "./workspace/affected.ts";
 import { discoverWorkspaceRoot } from "./workspace/discovery.ts";
@@ -853,44 +846,6 @@ function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 	return resolveNestedProjects(validated.tree, path.dirname(rojoPath));
 }
 
-// Keys excluded from Luau stubs — these are TS-side/structural config, not
-// meaningful in the generated jest.config.luau (separate from SKIP_FIELDS in
-// serializeToLuau which handles include/exclude).
-const STUB_SKIP_KEYS = new Set(["outDir", "projects", "root"]);
-
-function buildStubConfig(config: ResolvedConfig): Partial<ProjectTestConfig> {
-	const result: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(config)) {
-		if (!JEST_ARGV_EXCLUDED_KEYS.has(key) && !STUB_SKIP_KEYS.has(key) && value !== undefined) {
-			result[key] = value;
-		}
-	}
-
-	return result as Partial<ProjectTestConfig>;
-}
-
-function generateProjectStubs(projects: Array<ResolvedProjectConfig>, rootDirectory: string): void {
-	const entries: Array<{ config: ProjectTestConfig; outputPath: string }> = [];
-
-	for (const project of projects) {
-		assertStubCollisionRule(project, rootDirectory);
-
-		const stubConfig: ProjectTestConfig = {
-			...buildStubConfig(project.config),
-			displayName: project.displayName,
-			include: [],
-			testMatch: project.testMatch,
-		};
-
-		for (const mount of project.rojoMounts) {
-			const outputPath = path.resolve(rootDirectory, mount.fsPath, STUB_FILENAME);
-			entries.push({ config: stubConfig, outputPath });
-		}
-	}
-
-	generateProjectConfigs(entries);
-}
-
 function prepareMultiProjectCoverage(
 	rootConfig: ResolvedConfig,
 	projects: Array<ResolvedProjectConfig>,
@@ -1233,29 +1188,8 @@ async function runSingleProject(cli: CliOptions, config: ResolvedConfig): Promis
 	return outputResults(effectiveConfig, typecheckResult, runtimeResult, preCoverageMs);
 }
 
-/**
- * Workspace mode does not yet fan out per-project × per-package the way
- * `runMultiProject` does (no stub generation, no per-project result attribution).
- * If a package config declares `projects:`, keep only the first entry as a
- * single-element `projects` array so Luau-side Jest still scopes test discovery
- * to that DataModel subtree. Inline `{ test: {...} }` entries are flattened
- * earlier during config resolution, so `ResolvedConfig.projects` is always
- * `Array<string>`.
- */
-function applyFirstProjectInWorkspace(packageConfig: ResolvedConfig): void {
-	const { projects } = packageConfig;
-	if (projects === undefined || projects.length === 0) {
-		return;
-	}
-
-	const ignored = projects.length - 1;
-	const suffix = ignored > 0 ? ` (ignoring ${String(ignored)} other)` : "";
-	process.stderr.write(
-		`Warning: multi-project not yet supported with --workspace; picking first project in the project list${suffix}.\n`,
-	);
-
-	// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
-	packageConfig.projects = [projects[0]!];
+function composeWorkspaceDisplayName(package_: string, project: string): string {
+	return package_ === project ? package_ : `${package_} › ${project}`;
 }
 
 function buildWorkspaceCredentials(cli: CliOptions, config: ResolvedConfig): RunnerCredentials {
@@ -1354,19 +1288,9 @@ async function runWorkspaceMode(cli: CliOptions, config: ResolvedConfig): Promis
 		return 2;
 	}
 
-	// All packages share the same root config; per-package config layering
-	// (each package's own jest.config.ts) is a follow-up. Use the first
-	// package's directory as the c12 search root for now.
-	// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
-	const primary = packageInfos[0]!;
-	const packageLoaded = await loadConfig(undefined, primary.packageDirectory);
-	const packageConfig = mergeCliWithConfig(cli, packageLoaded);
-
-	applyFirstProjectInWorkspace(packageConfig);
-
 	let backend: BackendInstance;
 	try {
-		backend = createOpenCloudBackend(buildWorkspaceCredentials(cli, packageConfig));
+		backend = createOpenCloudBackend(buildWorkspaceCredentials(cli, config));
 	} catch (err) {
 		process.stderr.write(`Error: ${String(err)}\n`);
 		return 2;
@@ -1376,7 +1300,8 @@ async function runWorkspaceMode(cli: CliOptions, config: ResolvedConfig): Promis
 	try {
 		runtimeResults = await runWorkspace({
 			backend,
-			config: packageConfig,
+			cli,
+			config,
 			packageInfos,
 			version: VERSION,
 			workspaceRoot,
@@ -1389,16 +1314,18 @@ async function runWorkspaceMode(cli: CliOptions, config: ResolvedConfig): Promis
 		return 2;
 	}
 
-	if (runtimeResults.length === 1) {
-		// eslint-disable-next-line ts/no-non-null-assertion -- length checked
-		return outputResults(packageConfig, undefined, runtimeResults[0]!.result, 0);
+	if (runtimeResults.length === 0) {
+		return 0;
 	}
 
 	const projectResults: Array<ProjectResult> = runtimeResults.map((entry) => {
-		return { displayName: entry.displayName, result: entry.result };
+		return {
+			displayName: composeWorkspaceDisplayName(entry.pkg, entry.displayName),
+			result: entry.result,
+		};
 	});
 
-	return outputMultiProjectResults(packageConfig, projectResults, undefined, 0);
+	return outputMultiProjectResults(config, projectResults, undefined, 0);
 }
 
 async function runInner(args: Array<string>): Promise<number> {
@@ -1519,55 +1446,6 @@ function getLuauErrorHint(message: string): string | undefined {
 	}
 
 	return undefined;
-}
-
-function resolveFormatters(cli: CliOptions, config: ResolvedConfig): Array<FormatterEntry> {
-	const explicit = cli.formatters ?? config.formatters;
-	if (explicit !== undefined) {
-		return explicit;
-	}
-
-	const defaults: Array<FormatterEntry> = isAgent ? ["agent"] : ["default"];
-
-	if (process.env["GITHUB_ACTIONS"] === "true") {
-		defaults.push("github-actions");
-	}
-
-	return defaults;
-}
-
-function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): ResolvedConfig {
-	return {
-		...config,
-		backend: cli.backend ?? config.backend,
-		cache: cli.cache ?? config.cache,
-		collectCoverage: cli.collectCoverage ?? config.collectCoverage,
-		collectCoverageFrom: cli.collectCoverageFrom ?? config.collectCoverageFrom,
-		color: cli.color ?? config.color,
-		coverageDirectory: cli.coverageDirectory ?? config.coverageDirectory,
-		coverageReporters: cli.coverageReporters ?? config.coverageReporters,
-		formatters: resolveFormatters(cli, config),
-		gameOutput: cli.gameOutput ?? config.gameOutput,
-		outputFile: cli.outputFile ?? config.outputFile,
-		parallel: cli.parallel ?? config.parallel,
-		passWithNoTests: cli.passWithNoTests ?? config.passWithNoTests,
-		pollInterval: cli.pollInterval ?? config.pollInterval,
-		port: cli.port ?? config.port,
-		rojoProject: cli.rojoProject ?? config.rojoProject,
-		setupFiles: cli.setupFiles ?? config.setupFiles,
-		setupFilesAfterEnv: cli.setupFilesAfterEnv ?? config.setupFilesAfterEnv,
-		showLuau: cli.showLuau ?? config.showLuau,
-		silent: cli.silent ?? config.silent,
-		sourceMap: cli.sourceMap ?? config.sourceMap,
-		testNamePattern: cli.testNamePattern ?? config.testNamePattern,
-		testPathPattern: cli.testPathPattern ?? config.testPathPattern,
-		timeout: cli.timeout ?? config.timeout,
-		typecheck: cli.typecheck ?? config.typecheck,
-		typecheckOnly: cli.typecheckOnly ?? config.typecheckOnly,
-		typecheckTsconfig: cli.typecheckTsconfig ?? config.typecheckTsconfig,
-		updateSnapshot: cli.updateSnapshot ?? config.updateSnapshot,
-		verbose: cli.verbose ?? config.verbose,
-	};
 }
 
 function mergeResults(

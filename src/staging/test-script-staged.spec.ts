@@ -4,28 +4,81 @@ import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { generateMaterializerScript } from "./test-script-staged.ts";
 
 describe(generateMaterializerScript, () => {
-	it("should embed package list as JSON in the substituted template", () => {
-		expect.assertions(2);
+	it("should embed entry pkg and project in the substituted template", () => {
+		expect.assertions(3);
 
 		const script = generateMaterializerScript([
 			{
-				name: "@halcyon/foo",
 				config: DEFAULT_CONFIG,
+				pkg: "@halcyon/foo",
+				project: "core",
 				testFiles: ["src/foo.spec.ts"],
 			},
 		]);
 
 		expect(script).toContain('"pkg":"@halcyon/foo"');
+		expect(script).toContain('"project":"core"');
 		expect(script).toContain("Jest.runCLI");
 	});
 
-	it("should include the package's testMatch in the substituted Jest argv", () => {
+	it("should preserve order across same-pkg multi-project entries", () => {
+		expect.assertions(2);
+
+		const script = generateMaterializerScript([
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+			{
+				config: DEFAULT_CONFIG,
+				pkg: "@halcyon/foo",
+				project: "integration",
+				testFiles: [],
+			},
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "e2e", testFiles: [] },
+		]);
+
+		const corePosition = script.indexOf('"project":"core"');
+		const integrationPosition = script.indexOf('"project":"integration"');
+		const e2ePosition = script.indexOf('"project":"e2e"');
+
+		expect(corePosition).toBeLessThan(integrationPosition);
+		expect(integrationPosition).toBeLessThan(e2ePosition);
+	});
+
+	it("should preserve order across multi-pkg multi-project entries", () => {
+		expect.assertions(3);
+
+		const script = generateMaterializerScript([
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "alpha", testFiles: [] },
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/bar", project: "beta", testFiles: [] },
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/bar", project: "gamma", testFiles: [] },
+		]);
+
+		const fooPosition = script.indexOf('"pkg":"@halcyon/foo"');
+		const firstBarPosition = script.indexOf('"pkg":"@halcyon/bar"');
+		const lastBarPosition = script.lastIndexOf('"pkg":"@halcyon/bar"');
+
+		expect(fooPosition).toBeGreaterThanOrEqual(0);
+		expect(fooPosition).toBeLessThan(firstBarPosition);
+		expect(lastBarPosition).toBeGreaterThan(firstBarPosition);
+	});
+
+	it("should wrap entries in an entries envelope", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript([
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+		]);
+
+		expect(script).toContain('"entries":[');
+	});
+
+	it("should include the entry's testMatch in the substituted Jest argv", () => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
 			{
-				name: "@halcyon/foo",
 				config: { ...DEFAULT_CONFIG, testMatch: ["**/*.spec.ts"] },
+				pkg: "@halcyon/foo",
+				project: "core",
 				testFiles: ["src/foo.spec.ts"],
 			},
 		]);
@@ -38,11 +91,12 @@ describe(generateMaterializerScript, () => {
 
 		const script = generateMaterializerScript([
 			{
-				name: "@halcyon/foo",
 				config: {
 					...DEFAULT_CONFIG,
 					jestPath: "ReplicatedStorage/Packages/_Index/Jest",
 				},
+				pkg: "@halcyon/foo",
+				project: "core",
 				testFiles: [],
 			},
 		]);
@@ -54,21 +108,34 @@ describe(generateMaterializerScript, () => {
 		expect.assertions(1);
 
 		const script = generateMaterializerScript([
-			{ name: "@halcyon/foo", config: DEFAULT_CONFIG, testFiles: [] },
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
 		]);
 
 		expect(script).toContain("[==[");
 	});
 
-	it("should call materializer reset between packages", () => {
-		expect.assertions(1);
+	it("should bundle the setup-paths resolver so Luau converts strings to Instances", () => {
+		expect.assertions(2);
 
 		const script = generateMaterializerScript([
-			{ name: "@halcyon/foo", config: DEFAULT_CONFIG, testFiles: [] },
-			{ name: "@halcyon/bar", config: DEFAULT_CONFIG, testFiles: [] },
+			{
+				config: {
+					...DEFAULT_CONFIG,
+					setupFilesAfterEnv: ["ReplicatedStorage/Pkg/Shared/setup"],
+				},
+				pkg: "@halcyon/foo",
+				project: "core",
+				testFiles: [],
+			},
 		]);
 
-		expect(script).toMatch(/Materializer\.reset\(/);
+		// The generated Luau must invoke InstanceResolver on the setupFiles
+		// arrays. Without this the materializer payload's DataModel-path
+		// strings reach Jest unresolved and runCLI fails.
+		expect(script).toContain("setupFilesAfterEnv");
+		expect(script).toMatch(
+			/InstanceResolver\.findInstance.*setup|resolveSetupPaths|entry\.config\.setupFiles/,
+		);
 	});
 
 	it("should throw when serialized payload contains the long-string terminator", () => {
@@ -77,8 +144,9 @@ describe(generateMaterializerScript, () => {
 		expect(() => {
 			return generateMaterializerScript([
 				{
-					name: "@halcyon/foo",
 					config: { ...DEFAULT_CONFIG, jestPath: "boom]==]bad" },
+					pkg: "@halcyon/foo",
+					project: "core",
 					testFiles: [],
 				},
 			]);

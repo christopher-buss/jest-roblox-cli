@@ -1,3 +1,5 @@
+import { resolveNestedProjects } from "@isentinel/rojo-utils";
+
 import { type } from "arktype";
 import { getTsconfig } from "get-tsconfig";
 import * as fs from "node:fs";
@@ -32,7 +34,6 @@ import type { TimingResult } from "./types/timing.ts";
 import type { TsconfigMapping } from "./types/tsconfig.ts";
 import { formatBanner } from "./utils/banner.ts";
 import { normalizeWindowsPath } from "./utils/normalize-windows-path.ts";
-import { resolveNestedProjects } from "./utils/rojo-tree.ts";
 
 export interface ExecuteOptions {
 	backend: Backend;

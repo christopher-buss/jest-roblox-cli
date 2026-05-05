@@ -1,0 +1,13 @@
+{
+	"name": "merge-collision",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Common": {
+				"$path": "target",
+				"injected": { "$path": "injected-stub.luau" }
+			}
+		}
+	}
+}

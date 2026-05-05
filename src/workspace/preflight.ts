@@ -1,9 +1,7 @@
-import { loadRojoProject } from "@isentinel/rojo-utils";
+import { collectPaths, loadRojoProject } from "@isentinel/rojo-utils";
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-
-import { collectPaths } from "../utils/rojo-tree.ts";
 
 export interface PreflightError {
 	package: string;

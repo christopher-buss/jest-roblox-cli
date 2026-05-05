@@ -21,7 +21,7 @@ import {
 	type ResolvedConfig,
 } from "./config/schema.ts";
 import { createSetupResolver } from "./config/setup-resolver.ts";
-import { generateProjectConfigs, syncStubsToShadowDirectory } from "./config/stubs.ts";
+import { generateProjectStubs, syncStubsToShadowDirectory } from "./config/stubs.ts";
 import { mapCoverageToTypeScript } from "./coverage/mapper.ts";
 import { prepareCoverage } from "./coverage/prepare.ts";
 import { checkThresholds, generateReports } from "./coverage/reporter.ts";
@@ -148,8 +148,8 @@ function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResul
 function makeWorkspaceResult(
 	overrides: Partial<ExecuteResult> = {},
 	displayName = "@halcyon/foo",
-): Array<{ displayName: string; result: ExecuteResult }> {
-	return [{ displayName, result: makeExecuteResult(overrides) }];
+): Array<{ displayName: string; pkg: string; result: ExecuteResult }> {
+	return [{ displayName, pkg: displayName, result: makeExecuteResult(overrides) }];
 }
 
 function makeBackendResult(jobs: Array<ProjectJob>): BackendResult {
@@ -185,7 +185,7 @@ const mocks = {
 	executeBackend: vi.mocked(executeBackend),
 	formatExecuteOutput: vi.mocked(formatExecuteOutput),
 	formatGameOutputNotice: vi.mocked(formatGameOutputNotice),
-	generateProjectConfigs: vi.mocked(generateProjectConfigs),
+	generateProjectStubs: vi.mocked(generateProjectStubs),
 	generateReports: vi.mocked(generateReports),
 	getAffectedPackages: vi.mocked(getAffectedPackages),
 	globSync: vi.mocked(globSync),
@@ -797,8 +797,8 @@ describe("--workspace mode", () => {
 			return { name, packageDirectory: `/repo/packages/${name.replace("@halcyon/", "")}` };
 		});
 		mocks.runWorkspace.mockResolvedValue([
-			{ displayName: "@halcyon/foo", result: makeExecuteResult() },
-			{ displayName: "@halcyon/bar", result: makeExecuteResult() },
+			{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
 		]);
 
 		const code = await run(["--workspace", "--affected-since", "main"]);
@@ -883,9 +883,9 @@ describe("--workspace mode", () => {
 			return { name, packageDirectory: `/repo/packages/${name.replace("@halcyon/", "")}` };
 		});
 		mocks.runWorkspace.mockResolvedValue([
-			{ displayName: "@halcyon/foo", result: makeExecuteResult() },
-			{ displayName: "@halcyon/bar", result: makeExecuteResult() },
-			{ displayName: "@halcyon/baz", result: makeExecuteResult() },
+			{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
+			{ displayName: "@halcyon/baz", pkg: "@halcyon/baz", result: makeExecuteResult() },
 		]);
 
 		const code = await run([
@@ -899,6 +899,18 @@ describe("--workspace mode", () => {
 		).toStrictEqual(["@halcyon/foo", "@halcyon/bar", "@halcyon/baz"]);
 	});
 
+	it("should exit 0 when runWorkspace returns no results (passWithNoTests success)", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults();
+		mocks.runWorkspace.mockResolvedValue([]);
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(0);
+	});
+
 	it("should exit 1 when any package in the multi-package list fails", async () => {
 		expect.assertions(1);
 
@@ -908,9 +920,10 @@ describe("--workspace mode", () => {
 			return { name, packageDirectory: `/repo/packages/${name.replace("@halcyon/", "")}` };
 		});
 		mocks.runWorkspace.mockResolvedValue([
-			{ displayName: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 			{
 				displayName: "@halcyon/bar",
+				pkg: "@halcyon/bar",
 				result: makeExecuteResult({
 					exitCode: 1,
 					result: makeJestResult({ numFailedTests: 1, success: false }),
@@ -923,57 +936,111 @@ describe("--workspace mode", () => {
 		expect(code).toBe(1);
 	});
 
-	it("should warn and continue when projects config is set", async () => {
+	it("should render displayName as just pkg when project name matches pkg (single-project collapse)", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.runWorkspace.mockResolvedValue([
+			{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
+		]);
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(0);
+		expect(spies.consoleLog).toHaveBeenCalledWith(expect.stringContaining("@halcyon/foo"));
+		expect(spies.consoleLog).not.toHaveBeenCalledWith(expect.stringContaining("›"));
+	});
+
+	it("should render composite 'pkg › project' for multi-project package", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.runWorkspace.mockResolvedValue([
+			{ displayName: "client", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "server", pkg: "@halcyon/foo", result: makeExecuteResult() },
+		]);
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo"]);
+
+		expect(code).toBe(0);
+		expect(spies.consoleLog).toHaveBeenCalledWith(
+			expect.stringContaining("@halcyon/foo › client"),
+		);
+		expect(spies.consoleLog).toHaveBeenCalledWith(
+			expect.stringContaining("@halcyon/foo › server"),
+		);
+	});
+
+	it("should render composite displayName for multi-package single-project workspace", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.resolvePackage.mockImplementation((_, name) => {
+			return { name, packageDirectory: `/repo/packages/${name.replace("@halcyon/", "")}` };
+		});
+		mocks.runWorkspace.mockResolvedValue([
+			{ displayName: "client", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "client", pkg: "@halcyon/bar", result: makeExecuteResult() },
+		]);
+
+		const code = await run(["--workspace", "--packages=@halcyon/foo,@halcyon/bar"]);
+
+		expect(code).toBe(0);
+		expect(spies.consoleLog).toHaveBeenCalledWith(
+			expect.stringContaining("@halcyon/foo › client"),
+		);
+		expect(spies.consoleLog).toHaveBeenCalledWith(
+			expect.stringContaining("@halcyon/bar › client"),
+		);
+	});
+
+	it("should collapse displayName for every virtual-wrap package across multi-package workspace", async () => {
 		expect.assertions(4);
 
 		const spies = setupOutputSpies();
-		setupDefaults({ projects: ["ReplicatedStorage/client", "ReplicatedStorage/server"] });
+		setupDefaults();
+		mocks.resolvePackage.mockImplementation((_, name) => {
+			return { name, packageDirectory: `/repo/packages/${name.replace("@halcyon/", "")}` };
+		});
 		mocks.runWorkspace.mockResolvedValue([
-			{ displayName: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
 		]);
 
-		const code = await run(["--workspace", "--packages=foo"]);
+		const code = await run(["--workspace", "--packages=@halcyon/foo,@halcyon/bar"]);
 
 		expect(code).toBe(0);
-		expect(spies.stderr).toHaveBeenCalledWith(
-			expect.stringContaining("picking first project in the project list"),
-		);
-		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("ignoring 1 other"));
-		expect(mocks.runWorkspace).toHaveBeenCalledOnce();
+		expect(spies.consoleLog).toHaveBeenCalledWith(expect.stringContaining("@halcyon/foo"));
+		expect(spies.consoleLog).toHaveBeenCalledWith(expect.stringContaining("@halcyon/bar"));
+		expect(spies.consoleLog).not.toHaveBeenCalledWith(expect.stringContaining("›"));
 	});
 
-	it("should warn without ignored-other suffix when projects has a single entry", async () => {
-		expect.assertions(2);
+	it("should mix collapsed virtual-wrap and composite explicit displayName", async () => {
+		expect.assertions(4);
 
 		const spies = setupOutputSpies();
-		setupDefaults({ projects: ["ReplicatedStorage/only"] });
+		setupDefaults();
+		mocks.resolvePackage.mockImplementation((_, name) => {
+			return { name, packageDirectory: `/repo/packages/${name.replace("@halcyon/", "")}` };
+		});
 		mocks.runWorkspace.mockResolvedValue([
-			{ displayName: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			{ displayName: "client", pkg: "@halcyon/bar", result: makeExecuteResult() },
 		]);
 
-		const code = await run(["--workspace", "--packages=foo"]);
+		const code = await run(["--workspace", "--packages=@halcyon/foo,@halcyon/bar"]);
 
 		expect(code).toBe(0);
-		expect(spies.stderr).toHaveBeenCalledWith(
-			expect.stringMatching(/picking first project in the project list\.\n$/),
+		expect(spies.consoleLog).toHaveBeenCalledWith(
+			expect.stringContaining("@halcyon/bar › client"),
 		);
-	});
-
-	it("should pass first projects entry through to runWorkspace", async () => {
-		expect.assertions(2);
-
-		setupOutputSpies();
-		setupDefaults({ projects: ["ReplicatedStorage/client", "ReplicatedStorage/server"] });
-		mocks.runWorkspace.mockResolvedValue([
-			{ displayName: "@halcyon/foo", result: makeExecuteResult() },
-		]);
-
-		const code = await run(["--workspace", "--packages=foo"]);
-
-		expect(code).toBe(0);
-		expect(mocks.runWorkspace.mock.calls[0]?.[0].config.projects).toStrictEqual([
-			"ReplicatedStorage/client",
-		]);
+		expect(spies.consoleLog).toHaveBeenCalledWith(expect.stringContaining("@halcyon/foo"));
+		expect(spies.consoleLog).not.toHaveBeenCalledWith(
+			expect.stringContaining("@halcyon/foo › @halcyon/foo"),
+		);
 	});
 
 	it("should error and exit 2 when --coverage is passed", async () => {
@@ -2615,7 +2682,7 @@ function setupMultiProjectDefaults(
 		makeResolvedProject({ displayName: "client", outDir: "out/client" }),
 		makeResolvedProject({ displayName: "server", outDir: "out/server" }),
 	]);
-	mocks.generateProjectConfigs.mockReturnValue(undefined);
+	mocks.generateProjectStubs.mockReturnValue(undefined);
 	mocks.resolveBackend.mockResolvedValue(makeMockBackend("studio"));
 	mocks.globSync.mockReturnValue(["/test/foo.spec.ts"]);
 	mocks.execute.mockResolvedValue(makeExecuteResult());
@@ -3010,12 +3077,13 @@ describe("multi-project execution", () => {
 
 		await run([]);
 
-		expect(mocks.generateProjectConfigs).toHaveBeenCalledWith(
+		expect(mocks.generateProjectStubs).toHaveBeenCalledWith(
 			expect.arrayContaining([
 				expect.objectContaining({
 					config: expect.objectContaining({ clearMocks: true }) as unknown,
 				}),
 			]),
+			expect.any(String),
 		);
 	});
 

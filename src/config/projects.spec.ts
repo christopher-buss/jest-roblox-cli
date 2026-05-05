@@ -1482,6 +1482,31 @@ describe(resolveAllProjects, () => {
 		expect(result[1]!.displayName).toBe("server");
 	});
 
+	it("should dedupe testMatch when multiple include roots strip to identical patterns", async () => {
+		expect.assertions(1);
+
+		const tree = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				src: { $path: "src" },
+				test: { $path: "test" },
+			},
+		} satisfies RojoTreeNode;
+
+		const entries = [
+			{
+				test: makeProject({
+					displayName: "shared",
+					include: ["src/**/*.spec.luau", "test/**/*.spec.luau"],
+				}),
+			},
+		];
+
+		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, tree, "/project");
+
+		expect(result[0]!.testMatch).toStrictEqual(["**/*.spec"]);
+	});
+
 	it("should throw when projects have duplicate names", async () => {
 		expect.assertions(1);
 

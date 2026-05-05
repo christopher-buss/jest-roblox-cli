@@ -177,7 +177,7 @@ export function resolveProjectConfig(
 ): ResolvedProjectConfig {
 	const rootPrefixedInclude = applyProjectRoot(project.include, project.root);
 	const roots = extractProjectRoots(rootPrefixedInclude);
-	const testMatch = roots.flatMap((entry) => entry.testMatch);
+	const testMatch = [...new Set(roots.flatMap((entry) => entry.testMatch))];
 
 	const rojoMounts = resolveMounts(project, roots, rojoTree, classify);
 

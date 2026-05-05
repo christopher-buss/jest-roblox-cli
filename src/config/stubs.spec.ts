@@ -10,6 +10,7 @@ import { DEFAULT_CONFIG } from "./schema.ts";
 import {
 	assertStubCollisionRule,
 	generateProjectConfigs,
+	generateProjectStubs,
 	serializeToLuau,
 	syncStubsToShadowDirectory,
 } from "./stubs.ts";
@@ -759,6 +760,89 @@ describe(assertStubCollisionRule, () => {
 		expect(() => {
 			assertStubCollisionRule(project, "/root");
 		}).not.toThrow();
+	});
+});
+
+describe(generateProjectStubs, () => {
+	it("should write stubs to source-tree paths when no outputRoot is given", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const project = makeResolvedProject({
+			displayName: "client",
+			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
+		});
+
+		generateProjectStubs([project], "/root");
+
+		expect(vol.existsSync("/root/out/Client/jest.config.luau")).toBeTrue();
+	});
+
+	it("should route stubs to outputRoot when provided", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const project = makeResolvedProject({
+			displayName: "client",
+			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
+		});
+
+		generateProjectStubs([project], "/root", "/cache/.jest-roblox/workspace/pkg");
+
+		expect(
+			vol.existsSync("/cache/.jest-roblox/workspace/pkg/out/Client/jest.config.luau"),
+		).toBeTrue();
+		// Source tree untouched.
+		expect(vol.existsSync("/root/out/Client/jest.config.luau")).toBeFalse();
+	});
+
+	it("should reject absolute mount fsPath when outputRoot is provided", () => {
+		expect.assertions(1);
+
+		const project = makeResolvedProject({
+			displayName: "evil",
+			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Evil", fsPath: "/abs/path" }],
+		});
+
+		expect(() => {
+			generateProjectStubs([project], "/root", "/cache/.jest-roblox/workspace/pkg");
+		}).toThrow("mount fsPath must be relative");
+	});
+
+	it("should still detect partial user-authored configs in source tree when writing to outputRoot", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		// User config in source tree at one mount but not the other → partial
+		// coverage.
+		vol.mkdirSync("/root/out/Client", { recursive: true });
+		vol.writeFileSync("/root/out/Client/jest.config.luau", "return {}");
+		vol.mkdirSync("/root/out/Server", { recursive: true });
+
+		const project = makeResolvedProject({
+			displayName: "partial",
+			rojoMounts: [
+				{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" },
+				{ dataModelPath: "ServerScriptService/Server", fsPath: "out/Server" },
+			],
+		});
+
+		expect(() => {
+			generateProjectStubs([project], "/root", "/cache/.jest-roblox/workspace/pkg");
+		}).toThrow(ConfigError);
+		// No stub written to cache because the guard fires before any write.
+		expect(
+			vol.existsSync("/cache/.jest-roblox/workspace/pkg/out/Server/jest.config.luau"),
+		).toBeFalse();
 	});
 });
 

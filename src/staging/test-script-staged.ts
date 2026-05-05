@@ -3,24 +3,27 @@ import template from "../materializer.bundled.luau";
 import { buildJestArgv, type JestArgv } from "../test-script.ts";
 
 export interface MaterializerInput {
-	name: string;
 	config: ResolvedConfig;
+	pkg: string;
+	project: string;
 	testFiles: Array<string>;
 }
 
-interface PackagePayload {
+interface EntryPayload {
 	config: JestArgv;
 	pkg: string;
+	project: string;
 }
 
 export function generateMaterializerScript(inputs: Array<MaterializerInput>): string {
-	const packages: Array<PackagePayload> = inputs.map((input) => {
+	const entries: Array<EntryPayload> = inputs.map((input) => {
 		return {
 			config: buildJestArgv({ config: input.config, testFiles: input.testFiles }),
-			pkg: input.name,
+			pkg: input.pkg,
+			project: input.project,
 		};
 	});
-	const payload = JSON.stringify({ packages });
+	const payload = JSON.stringify({ entries });
 	if (payload.includes("]==]")) {
 		throw new Error("workspace materializer payload contains forbidden sequence ']==]'");
 	}
