@@ -7,6 +7,7 @@ import * as path from "node:path";
 
 import parseAstLuauSource from "../luau/parse-ast.luau";
 import { hashBuffer } from "../utils/hash.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
 import { insertProbes } from "./probe-inserter.ts";
@@ -64,7 +65,7 @@ export function instrumentRoot(
 	// Write skip list so lute can skip parsing unchanged files
 	const luteArgs = ["run", scriptPath, "--", path.resolve(luauRoot), astOutputDirectory];
 	if (skipFiles !== undefined && skipFiles.size > 0) {
-		const skipListPath = toPosix(path.join(astOutputDirectory, "skip-list.json"));
+		const skipListPath = normalizeWindowsPath(path.join(astOutputDirectory, "skip-list.json"));
 		fs.writeFileSync(skipListPath, JSON.stringify([...skipFiles]));
 		luteArgs.push(skipListPath);
 	}
@@ -98,7 +99,7 @@ export function instrumentRoot(
 	}
 
 	const files: Record<string, InstrumentedFileRecord> = {};
-	const posixLuauRoot = toPosix(luauRoot);
+	const posixLuauRoot = normalizeWindowsPath(luauRoot);
 
 	for (const relativePath of fileList) {
 		if (shouldSkipFile(relativePath, skipFiles)) {
@@ -120,9 +121,9 @@ export function instrumentRoot(
 		// avoid that overhead in the instrumentation process.
 		const ast = JSON.parse(astJson) as unknown as AstStatBlock;
 
-		const fileKey = toPosix(path.join(posixLuauRoot, relativePath));
+		const fileKey = normalizeWindowsPath(path.join(posixLuauRoot, relativePath));
 		const originalLuauPath = fileKey;
-		const instrumentedLuauPath = toPosix(path.join(shadowDir, relativePath));
+		const instrumentedLuauPath = normalizeWindowsPath(path.join(shadowDir, relativePath));
 		const coverageMapOutputPath = path.join(
 			shadowDir,
 			relativePath.replace(/\.luau$/, ".cov-map.json"),
@@ -144,7 +145,7 @@ export function instrumentRoot(
 		files[fileKey] = {
 			key: fileKey,
 			branchCount: collectorResult.branches.length,
-			coverageMapPath: toPosix(coverageMapOutputPath),
+			coverageMapPath: normalizeWindowsPath(coverageMapOutputPath),
 			functionCount: collectorResult.functions.length,
 			instrumentedLuauPath,
 			originalLuauPath,
@@ -165,7 +166,7 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 	const { luauRoot, manifestPath, shadowDir } = options;
 
 	const files = instrumentRoot(options);
-	const posixLuauRoot = toPosix(luauRoot);
+	const posixLuauRoot = normalizeWindowsPath(luauRoot);
 
 	const manifest = {
 		files,
@@ -173,7 +174,7 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots: [posixLuauRoot],
 		nonInstrumentedFiles: {},
-		shadowDir: toPosix(shadowDir),
+		shadowDir: normalizeWindowsPath(shadowDir),
 		version: 1,
 	} satisfies CoverageManifest;
 
@@ -198,8 +199,4 @@ function getTemporaryDirectory(): string {
 
 	cachedTemporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-instrument-"));
 	return cachedTemporaryDirectory;
-}
-
-function toPosix(value: string): string {
-	return value.replaceAll("\\", "/");
 }

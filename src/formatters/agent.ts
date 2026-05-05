@@ -7,6 +7,7 @@ import {
 	type SourceMapper,
 } from "../source-mapper/index.ts";
 import { hasExecError, type JestResult, type TestCaseResult } from "../types/jest-result.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import {
 	cleanExecErrorMessage,
 	getExecErrorHint,
@@ -153,11 +154,11 @@ function formatSummarySection(result: JestResult, options: AgentOptions): Array<
 }
 
 function makeRelative(filePath: string, rootDirectory: string): string {
-	const normalizedPath = filePath.replaceAll("\\", "/");
-	const normalizedRoot = rootDirectory.replaceAll("\\", "/");
+	const normalizedPath = normalizeWindowsPath(filePath);
+	const normalizedRoot = normalizeWindowsPath(rootDirectory);
 
 	if (normalizedPath.startsWith(normalizedRoot)) {
-		return path.relative(normalizedRoot, normalizedPath).replaceAll("\\", "/");
+		return normalizeWindowsPath(path.relative(normalizedRoot, normalizedPath));
 	}
 
 	return filePath;

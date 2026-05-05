@@ -9,6 +9,7 @@ import picomatch from "picomatch";
 import color from "tinyrainbow";
 
 import type { CoverageReporter } from "../config/schema.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { MappedCoverageResult } from "./mapper.ts";
 
 const VALID_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>([
@@ -251,7 +252,7 @@ function filterMappedFiles(
 	const filtered = Object.fromEntries(
 		Object.entries(mapped.files).filter(([filePath]) => {
 			const relativePath = path.isAbsolute(filePath)
-				? path.relative(cwd, filePath).replaceAll("\\", "/")
+				? normalizeWindowsPath(path.relative(cwd, filePath))
 				: filePath;
 			return isIncluded(relativePath) && !isExcluded(relativePath);
 		}),

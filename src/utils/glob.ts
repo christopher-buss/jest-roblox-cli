@@ -2,6 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
+import { normalizeWindowsPath } from "./normalize-windows-path.ts";
+
 interface GlobOptions {
 	cwd?: string;
 }
@@ -32,7 +34,7 @@ function walkDirectory(directoryPath: string, baseDirectory: string): Array<stri
 
 		for (const entry of entries) {
 			const fullPath = path.join(directoryPath, entry.name);
-			const relativePath = path.relative(baseDirectory, fullPath).replace(/\\/g, "/");
+			const relativePath = normalizeWindowsPath(path.relative(baseDirectory, fullPath));
 
 			if (entry.isDirectory()) {
 				if (!entry.name.startsWith(".") && entry.name !== "node_modules") {

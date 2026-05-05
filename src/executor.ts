@@ -31,6 +31,7 @@ import { rojoProjectSchema } from "./types/rojo.ts";
 import type { TimingResult } from "./types/timing.ts";
 import type { TsconfigMapping } from "./types/tsconfig.ts";
 import { formatBanner } from "./utils/banner.ts";
+import { normalizeWindowsPath } from "./utils/normalize-windows-path.ts";
 import { resolveNestedProjects } from "./utils/rojo-tree.ts";
 
 export interface ExecuteOptions {
@@ -330,7 +331,7 @@ export async function execute(options: ExecuteOptions): Promise<ExecuteResult> {
 }
 
 function normalizeDirectoryPath(directory: string): string {
-	return path.normalize(directory).replaceAll("\\", "/");
+	return normalizeWindowsPath(path.normalize(directory));
 }
 
 function parseTsconfigMappings(options: TsconfigCompilerOptions): Array<TsconfigMapping> {

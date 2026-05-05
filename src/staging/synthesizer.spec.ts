@@ -4,6 +4,7 @@ import { vol } from "memfs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { synthesize } from "./synthesizer.ts";
 
 vi.mock(import("node:fs"), async () => {
@@ -298,10 +299,10 @@ describe(synthesize, () => {
 		};
 
 		expect(parsed.tree.ServerStorage.__pkg_stage["@halcyon/bar"]?.ReplicatedStorage.$path).toBe(
-			path.join(ROOT, "packages/bar/src").replaceAll("\\", "/"),
+			normalizeWindowsPath(path.join(ROOT, "packages/bar/src")),
 		);
 		expect(parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.$path).toBe(
-			path.join(FOO_DIR, "src").replaceAll("\\", "/"),
+			normalizeWindowsPath(path.join(FOO_DIR, "src")),
 		);
 	});
 

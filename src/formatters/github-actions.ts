@@ -3,6 +3,7 @@ import process from "node:process";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { hasExecError } from "../types/jest-result.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 const SEPARATOR = " · ";
 
@@ -209,8 +210,8 @@ function makeRelative(filePath: string, workspace: string | undefined): string {
 		return filePath;
 	}
 
-	const normalized = filePath.replace(/\\/g, "/");
-	const normalizedWorkspace = workspace.replace(/\\/g, "/").replace(/\/$/, "");
+	const normalized = normalizeWindowsPath(filePath);
+	const normalizedWorkspace = normalizeWindowsPath(workspace).replace(/\/$/, "");
 
 	if (normalized.startsWith(`${normalizedWorkspace}/`)) {
 		return normalized.slice(normalizedWorkspace.length + 1);

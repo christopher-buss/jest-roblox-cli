@@ -1,5 +1,6 @@
 import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
 interface ResolvedSnapshotPath {
@@ -26,7 +27,7 @@ export function createSnapshotPathResolver(
 		resolve(virtualPath: string): ResolvedSnapshotPath | undefined {
 			// Normalize separators — getParent in RobloxShared uses \ for
 			// non-unix paths
-			const normalized = virtualPath.replaceAll("\\", "/");
+			const normalized = normalizeWindowsPath(virtualPath);
 
 			for (const [prefix, basePath] of rojoMappings) {
 				if (!normalized.startsWith(`${prefix}/`) && normalized !== prefix) {

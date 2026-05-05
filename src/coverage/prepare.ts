@@ -8,6 +8,7 @@ import type { Except } from "type-fest";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashBuffer } from "../utils/hash.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { collectPaths, resolveNestedProjects } from "../utils/rojo-tree.ts";
 import { INSTRUMENTER_VERSION, instrumentRoot } from "./instrumenter.ts";
@@ -127,7 +128,7 @@ export function resolveLuauRoots(config: ResolvedConfig): Array<string> {
  * Must match parse-ast.luau's discoverFiles logic (same skip rules).
  */
 export function discoverInstrumentableFiles(luauRoot: string): Set<string> {
-	const posixRoot = luauRoot.replaceAll("\\", "/");
+	const posixRoot = normalizeWindowsPath(luauRoot);
 	const results: Array<string> = [];
 	walkLuauDirectory(posixRoot, posixRoot, isInstrumentableFile, results);
 	return new Set(results);
@@ -289,7 +290,7 @@ function walkLuauDirectory(
 ): void {
 	const entries = fs.readdirSync(directory, { withFileTypes: true });
 	for (const entry of entries) {
-		const fullPath = path.join(directory, entry.name).replaceAll("\\", "/");
+		const fullPath = normalizeWindowsPath(path.join(directory, entry.name));
 		if (entry.isDirectory()) {
 			if (entry.name === "node_modules" || entry.name === COVERAGE_DIR) {
 				continue;
@@ -328,7 +329,7 @@ function carryForwardRecords(
 	allFiles: Record<string, InstrumentedFileRecord>,
 	skipFiles: Set<string>,
 ): void {
-	const posixRoot = luauRoot.replaceAll("\\", "/");
+	const posixRoot = normalizeWindowsPath(luauRoot);
 
 	for (const relativePath of skipFiles) {
 		const fileKey = `${posixRoot}/${relativePath}`;
@@ -382,7 +383,7 @@ function syncNonInstrumentedFiles(
 	shadowDirectory: string,
 	previousNonInstrumented: Record<string, NonInstrumentedFileRecord> | undefined,
 ): SyncResult {
-	const posixRoot = luauRoot.replaceAll("\\", "/");
+	const posixRoot = normalizeWindowsPath(luauRoot);
 	const discovered: Array<string> = [];
 	discoverNonInstrumentedFiles(posixRoot, posixRoot, discovered);
 
@@ -417,7 +418,7 @@ function syncNonInstrumentedFiles(
 
 function computeSkipFiles(luauRoot: string, previousManifest: PreviousManifest): Set<string> {
 	const skipFiles = new Set<string>();
-	const posixRoot = luauRoot.replaceAll("\\", "/");
+	const posixRoot = normalizeWindowsPath(luauRoot);
 
 	for (const [fileKey, record] of Object.entries(previousManifest.files)) {
 		if (!fileKey.startsWith(`${posixRoot}/`)) {
@@ -441,7 +442,7 @@ function computeSkipFiles(luauRoot: string, previousManifest: PreviousManifest):
 }
 
 function countPreviousFilesForRoot(luauRoot: string, previousManifest: PreviousManifest): number {
-	const posixRoot = luauRoot.replaceAll("\\", "/");
+	const posixRoot = normalizeWindowsPath(luauRoot);
 	let count = 0;
 	for (const fileKey of Object.keys(previousManifest.files)) {
 		if (fileKey.startsWith(`${posixRoot}/`)) {
@@ -504,7 +505,7 @@ function instrumentRootWithCache(
 	useIncremental: boolean,
 	previousManifest: PreviousManifest | undefined,
 ): InstrumentRootResult {
-	const shadowDirectory = path.join(COVERAGE_DIR, luauRoot).replaceAll("\\", "/");
+	const shadowDirectory = normalizeWindowsPath(path.join(COVERAGE_DIR, luauRoot));
 	let changed = false;
 
 	if (!useIncremental) {
@@ -512,9 +513,9 @@ function instrumentRootWithCache(
 		fs.cpSync(luauRoot, shadowDirectory, { recursive: true });
 	}
 
-	const relocatedShadowDirectory = path
-		.relative(COVERAGE_DIR, shadowDirectory)
-		.replaceAll("\\", "/");
+	const relocatedShadowDirectory = normalizeWindowsPath(
+		path.relative(COVERAGE_DIR, shadowDirectory),
+	);
 	const rootEntry: RootEntry = { luauRoot, relocatedShadowDirectory, shadowDir: shadowDirectory };
 
 	let skipFiles: Set<string> | undefined;
@@ -603,9 +604,9 @@ function buildRojoProject(
 		throw new Error(`Malformed Rojo project JSON: ${rojoProjectRaw.toString()}`);
 	}
 
-	const projectRelocation = path
-		.relative(COVERAGE_DIR, path.dirname(rojoProjectPath))
-		.replaceAll("\\", "/");
+	const projectRelocation = normalizeWindowsPath(
+		path.relative(COVERAGE_DIR, path.dirname(rojoProjectPath)),
+	);
 
 	const resolved = {
 		...rojoProjectRaw,

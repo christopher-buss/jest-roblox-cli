@@ -3,6 +3,7 @@ import { loadRojoProject } from "@isentinel/rojo-utils";
 import * as path from "node:path";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 export interface PackageDescriptor {
 	name: string;
@@ -74,7 +75,7 @@ function absolutizePaths(node: RojoTreeNode, base: string): RojoTreeNode {
 	const result: RojoTreeNode = {};
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
-			result[key] = path.resolve(base, value).replaceAll("\\", "/");
+			result[key] = normalizeWindowsPath(path.resolve(base, value));
 			continue;
 		}
 

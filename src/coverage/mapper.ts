@@ -5,6 +5,7 @@ import assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { CoverageManifest, RawCoverageData } from "./types.ts";
 
 const positionSchema = type({ column: "number", line: "number" });
@@ -322,7 +323,7 @@ function passthroughFileBranches(
  * Paths that are already cwd-relative (no `..` prefix) pass through unchanged.
  */
 function resolveSourcePath(source: string, sourceMapDirectory: string): string {
-	const normalized = source.replaceAll("\\", "/");
+	const normalized = normalizeWindowsPath(source);
 	if (!normalized.startsWith("..")) {
 		return normalized;
 	}

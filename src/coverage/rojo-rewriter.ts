@@ -1,4 +1,5 @@
 import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 export type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 
@@ -40,7 +41,10 @@ export function rewriteRojoProject(project: RojoProject, options: RewriteOptions
 		: [buildRootContext(options)];
 
 	const context: RewriteContext = {
-		relocation: options.projectRelocation?.replaceAll("\\", "/"),
+		relocation:
+			options.projectRelocation !== undefined
+				? normalizeWindowsPath(options.projectRelocation)
+				: undefined,
 		roots,
 	};
 
@@ -56,14 +60,17 @@ function isMultiRoot(options: RewriteOptions): options is MultiRootRewriteOption
 
 function buildRootContext(entry: RootEntry): RootContext {
 	return {
-		luauRoot: entry.luauRoot.replaceAll("\\", "/").replace(/\/$/, ""),
-		relocatedShadowDirectory: entry.relocatedShadowDirectory?.replaceAll("\\", "/"),
+		luauRoot: normalizeWindowsPath(entry.luauRoot).replace(/\/$/, ""),
+		relocatedShadowDirectory:
+			entry.relocatedShadowDirectory !== undefined
+				? normalizeWindowsPath(entry.relocatedShadowDirectory)
+				: undefined,
 		shadowDirectory: entry.shadowDir,
 	};
 }
 
 function rewritePath(value: string, context: RewriteContext): string {
-	const normalized = value.replaceAll("\\", "/");
+	const normalized = normalizeWindowsPath(value);
 
 	for (const root of context.roots) {
 		if (normalized === root.luauRoot || normalized.startsWith(`${root.luauRoot}/`)) {
