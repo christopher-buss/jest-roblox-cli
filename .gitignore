@@ -12,7 +12,9 @@ out-tsc/
 dist/
 *.rbxm
 src/test-runner.bundled.luau
+src/test-runner.bundled.luau.map
 src/materializer.bundled.luau
+src/materializer.bundled.luau.map
 plugin/out/
 !src/coverage
 !test/coverage
