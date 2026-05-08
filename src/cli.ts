@@ -16,6 +16,7 @@ import { createOpenCloudBackend } from "./backends/open-cloud.ts";
 import { ConfigError } from "./config/errors.ts";
 import { loadConfig } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
+import { narrowConfigByFiles } from "./config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "./config/projects.ts";
 import { resolveAllProjects } from "./config/projects.ts";
 import type {
@@ -976,11 +977,15 @@ async function runMultiProject(
 		const discovery = discoverTestFiles(discoveryConfig, cli.files);
 		const { runtimeFiles, typeTestFiles } = classifyTestFiles(discovery.files, rootConfig);
 
-		// Use stripped testMatch (no extensions) for Luau-side Jest execution
-		const projConfig: ResolvedConfig = {
-			...discoveryConfig,
-			testMatch: project.testMatch,
-		};
+		// Use stripped testMatch (no extensions) for Luau-side Jest execution.
+		// `narrowConfigByFiles` adds a `testPathPattern` derived from the
+		// positional CLI files so the Luau-side Jest runner only executes the
+		// requested files (otherwise it would run every file matched by
+		// testMatch on the place).
+		const projConfig: ResolvedConfig = narrowConfigByFiles(
+			{ ...discoveryConfig, testMatch: project.testMatch },
+			cli.files ?? [],
+		);
 
 		allTypeTestFiles.push(...typeTestFiles);
 
@@ -1128,7 +1133,8 @@ function resolveSetupFilePaths(config: ResolvedConfig): void {
 	applySetupResolver(config, resolve);
 }
 
-async function runSingleProject(cli: CliOptions, config: ResolvedConfig): Promise<number> {
+async function runSingleProject(cli: CliOptions, rawConfig: ResolvedConfig): Promise<number> {
+	const config = narrowConfigByFiles(rawConfig, cli.files ?? []);
 	resolveSetupFilePaths(config);
 	const discovery = discoverTestFiles(config, cli.files);
 

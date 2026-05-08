@@ -66,7 +66,7 @@ describe(globSync, () => {
 				>;
 			}
 
-			return [] as unknown as ReturnType<typeof fs.readdirSync>;
+			return [];
 		});
 
 		const result = globSync("**/*.ts", { cwd });
@@ -99,7 +99,7 @@ describe(globSync, () => {
 				throw new Error("Should not read node_modules");
 			}
 
-			return [] as unknown as ReturnType<typeof fs.readdirSync>;
+			return [];
 		});
 
 		const result = globSync("**/*.ts", { cwd });
@@ -129,7 +129,7 @@ describe(globSync, () => {
 				throw new Error("Should not read .git");
 			}
 
-			return [] as unknown as ReturnType<typeof fs.readdirSync>;
+			return [];
 		});
 
 		const result = globSync("**/*.ts", { cwd });
@@ -152,7 +152,7 @@ describe(globSync, () => {
 				return [file("init.spec.luau")] as unknown as ReturnType<typeof fs.readdirSync>;
 			}
 
-			return [] as unknown as ReturnType<typeof fs.readdirSync>;
+			return [];
 		});
 
 		const result = globSync("src/**/*.spec.luau", { cwd });

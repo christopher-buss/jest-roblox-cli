@@ -17,7 +17,7 @@ import {
 	validateProjects,
 } from "./projects.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
-import type { InlineProjectConfig, ProjectTestConfig, ResolvedConfig } from "./schema.ts";
+import type { ProjectTestConfig, ResolvedConfig } from "./schema.ts";
 
 function allDirectories(): PathKind {
 	return "directory";
@@ -972,7 +972,7 @@ describe(loadProjectConfigFile, () => {
 			config: {
 				displayName: "client",
 				include: ["src/client/**/*.spec.ts"],
-			} as ProjectTestConfig,
+			},
 			configFile: "jest-project.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -995,7 +995,7 @@ describe(loadProjectConfigFile, () => {
 					displayName: "client",
 					include: ["src/client/**/*.spec.ts"],
 				},
-			} as InlineProjectConfig,
+			},
 			configFile: "jest-project.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1052,7 +1052,7 @@ describe(loadProjectConfigFile, () => {
 			config: {
 				displayName: { name: "client", color: "cyan" },
 				include: ["src/client/**/*.spec.ts"],
-			} as ProjectTestConfig,
+			},
 			configFile: "jest-project.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1072,7 +1072,7 @@ describe(loadProjectConfigFile, () => {
 			config: {
 				displayName: "",
 				include: ["src/**/*.spec.ts"],
-			} as ProjectTestConfig,
+			},
 			configFile: "jest-project.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1092,7 +1092,7 @@ describe(loadProjectConfigFile, () => {
 			config: {
 				displayName: "shared",
 				testMatch: ["**/__tests__/**/*.test"],
-			} as unknown as ProjectTestConfig,
+			},
 			configFile: "jest.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1114,7 +1114,7 @@ describe(loadProjectConfigFile, () => {
 		mockLoadConfig.mockResolvedValueOnce({
 			config: {
 				displayName: "minimal",
-			} as unknown as ProjectTestConfig,
+			},
 			configFile: "jest.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1134,7 +1134,7 @@ describe(loadProjectConfigFile, () => {
 			config: {
 				displayName: "shared",
 				testMatch: ["**/__tests__/**/*.test"],
-			} as unknown as ProjectTestConfig,
+			},
 			configFile: "jest.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1160,7 +1160,7 @@ describe(loadProjectConfigFile, () => {
 			config: {
 				displayName: "luau-only",
 				testMatch: ["**/*.spec"],
-			} as unknown as ProjectTestConfig,
+			},
 			configFile: "jest.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1180,7 +1180,7 @@ describe(loadProjectConfigFile, () => {
 			config: {
 				displayName: "lib",
 				testMatch: ["**/*.spec"],
-			} as unknown as ProjectTestConfig,
+			},
 			configFile: "jest.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1200,7 +1200,7 @@ describe(loadProjectConfigFile, () => {
 			config: {
 				displayName: "mixed",
 				testMatch: ["**/*.spec.ts", "**/*.test"],
-			} as unknown as ProjectTestConfig,
+			},
 			configFile: "jest.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1225,7 +1225,7 @@ describe(loadProjectConfigFile, () => {
 				displayName: "client",
 				include: ["src/client/**/*.spec.ts"],
 				testMatch: ["**/*.spec"],
-			} as ProjectTestConfig,
+			},
 			configFile: "jest.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1375,11 +1375,11 @@ describe(loadProjectConfigFile, () => {
 		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
 		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
 		vi.mocked(loadLuauConfig).mockReturnValueOnce({
-			clearMocks: "yes" as unknown,
+			clearMocks: "yes",
 			displayName: "shared",
-			setupFiles: "not-an-array" as unknown,
-			testTimeout: "fast" as unknown,
-		} as Record<string, unknown>);
+			setupFiles: "not-an-array",
+			testTimeout: "fast",
+		});
 
 		const result = await loadProjectConfigFile("shared", "/project");
 
@@ -1424,7 +1424,7 @@ describe(resolveAllProjects, () => {
 				displayName: "server",
 				include: ["src/server/**/*.spec.ts"],
 				outDir: "out/server",
-			} as ProjectTestConfig,
+			},
 			configFile: "jest-project.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1453,7 +1453,7 @@ describe(resolveAllProjects, () => {
 				displayName: "server",
 				include: ["src/server/**/*.spec.ts"],
 				outDir: "out/server",
-			} as ProjectTestConfig,
+			},
 			configFile: "jest-project.config.ts",
 			cwd: "/project",
 			layers: [],
@@ -1564,9 +1564,7 @@ describe(createFsClassifier, () => {
 		expect.assertions(1);
 
 		const fs = await import("node:fs");
-		vi.spyOn(fs.default, "statSync").mockReturnValueOnce(
-			undefined as unknown as ReturnType<typeof fs.statSync>,
-		);
+		vi.spyOn(fs.default, "statSync").mockReturnValueOnce(undefined);
 
 		const classify = createFsClassifier("/root");
 

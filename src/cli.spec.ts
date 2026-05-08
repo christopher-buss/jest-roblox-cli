@@ -3834,6 +3834,38 @@ describe("multi-project file args", () => {
 
 		expect(allTestFiles).not.toContainEqual(expect.stringContaining("b.spec.ts"));
 	});
+
+	it("should derive testPathPattern from positional file args so Luau-side Jest filters", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupMultiProjectDefaults();
+		mocks.globSync.mockReturnValue(["/test/a.spec.ts", "/test/b.spec.ts"]);
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		await run(["a.spec.ts"]);
+
+		const jobs = mocks.executeBackend.mock.calls[0]![1];
+
+		expect(jobs[0]!.config.testPathPattern).toBe("(a\\.spec)");
+	});
+});
+
+describe("single-project file args", () => {
+	it("should derive testPathPattern from positional file args in single-project mode", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults();
+
+		await run(["src/foo.spec.ts"]);
+
+		const jobConfig = mocks.execute.mock.calls[0]![0].config;
+
+		expect(jobConfig.testPathPattern).toBe("(foo\\.spec)");
+	});
 });
 
 describe(filterByName, () => {

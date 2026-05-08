@@ -57,10 +57,10 @@ async function setupMocks(options: { outDir?: string } = {}) {
 	const { getTsconfig } = await import("get-tsconfig");
 	vi.mocked(getTsconfig).mockReturnValue(
 		outDir !== undefined
-			? ({
+			? {
 					config: { compilerOptions: { outDir } },
 					path: "/project/tsconfig.json",
-				} as NonNullable<ReturnType<typeof getTsconfig>>)
+				}
 			: null,
 	);
 

@@ -250,7 +250,7 @@ function stringifyError(err: unknown): string {
 		"kind" in err &&
 		(err as Record<string, unknown>)["kind"] === "ExecutionError"
 	) {
-		return extractExecutionError(err as Record<string, unknown>);
+		return extractExecutionError(err);
 	}
 
 	const serialized = JSON.stringify(err);

@@ -189,10 +189,7 @@ export function formatJobSummary(result: JestResult, options: GitHubActionsOptio
 export function resolveGitHubActionsOptions(
 	userOptions: GitHubActionsFormatterOptions,
 	sourceMapper: SourceMapper | undefined,
-	environment: Record<string, string | undefined> = process.env as Record<
-		string,
-		string | undefined
-	>,
+	environment: Record<string, string | undefined> = process.env,
 ): GitHubActionsOptions {
 	return {
 		repository:

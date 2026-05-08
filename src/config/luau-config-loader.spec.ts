@@ -1,4 +1,3 @@
-import type { Buffer } from "node:buffer";
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import { describe, expect, it, vi } from "vitest";
@@ -70,9 +69,7 @@ describe(loadLuauConfig, () => {
 
 		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
 		vi.mocked(fs.existsSync).mockReturnValue(false);
-		vi.mocked(cp.execFileSync).mockReturnValue(
-			makeAstJson({ displayName: "test" }) as Buffer & string,
-		);
+		vi.mocked(cp.execFileSync).mockReturnValue(makeAstJson({ displayName: "test" }));
 
 		const result = loadLuauConfig("project/jest.config.luau");
 
@@ -132,7 +129,7 @@ describe(loadLuauConfig, () => {
 
 		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
 		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(cp.execFileSync).mockReturnValue("not json" as Buffer & string);
+		vi.mocked(cp.execFileSync).mockReturnValue("not json");
 
 		expect(() => loadLuauConfig("jest.config.luau")).toThrowWithMessage(
 			Error,
@@ -168,7 +165,7 @@ describe(loadLuauConfig, () => {
 
 		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
 		vi.mocked(fs.existsSync).mockReturnValue(false);
-		vi.mocked(cp.execFileSync).mockReturnValue(ast as Buffer & string);
+		vi.mocked(cp.execFileSync).mockReturnValue(ast);
 
 		expect(() => loadLuauConfig("jest.config.luau")).toThrowWithMessage(
 			Error,
@@ -181,7 +178,7 @@ describe(loadLuauConfig, () => {
 
 		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
 		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(cp.execFileSync).mockReturnValue(makeAstJson({ a: 1 }) as Buffer & string);
+		vi.mocked(cp.execFileSync).mockReturnValue(makeAstJson({ a: 1 }));
 
 		loadLuauConfig("a.luau");
 		const callsAfterFirst = vi.mocked(fs.mkdtempSync).mock.calls.length;
@@ -196,7 +193,7 @@ describe(loadLuauConfig, () => {
 
 		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-new");
 		vi.mocked(fs.existsSync).mockReturnValue(false);
-		vi.mocked(cp.execFileSync).mockReturnValue(makeAstJson({}) as Buffer & string);
+		vi.mocked(cp.execFileSync).mockReturnValue(makeAstJson({}));
 
 		const callsBefore = vi.mocked(fs.mkdtempSync).mock.calls.length;
 		loadLuauConfig("a.luau");

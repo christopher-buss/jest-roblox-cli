@@ -110,6 +110,7 @@ async function seaImport(id: string): Promise<JSONValue> {
 		return JSON.parse(content);
 	}
 
+	// eslint-disable-next-line ts/no-unnecessary-type-assertion -- import(id) returns any
 	return import(id) as unknown as JSONValue;
 }
 
@@ -177,7 +178,7 @@ function resolveFunctionValues(config: Config): Config {
 	}
 
 	if (test === undefined) {
-		return resolvedRest as Config;
+		return resolvedRest;
 	}
 
 	const resolvedTest: Record<string, unknown> = {};
@@ -187,5 +188,5 @@ function resolveFunctionValues(config: Config): Config {
 			: innerValue;
 	}
 
-	return { ...resolvedRest, test: resolvedTest } as Config;
+	return { ...resolvedRest, test: resolvedTest };
 }

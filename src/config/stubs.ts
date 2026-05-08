@@ -223,7 +223,7 @@ function buildStubConfig(config: ResolvedConfig): Partial<ProjectTestConfig> {
 		}
 	}
 
-	return result as Partial<ProjectTestConfig>;
+	return result;
 }
 
 function syncMountStub(
