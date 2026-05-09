@@ -1453,4 +1453,15 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toContain("Tests   (0)");
 		expect(output).not.toMatch(/\d+ passed/);
 	});
+
+	it("should append Type Errors line when typeErrorCount is provided", () => {
+		expect.assertions(1);
+
+		const output = formatAgentMultiProject([{ displayName: "core", result: PASSING_RESULT }], {
+			...baseOptions,
+			typeErrorCount: 3,
+		});
+
+		expect(output).toContain("Type Errors");
+	});
 });

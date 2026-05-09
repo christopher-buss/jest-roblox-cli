@@ -32,10 +32,22 @@ export type { ExecuteOptions, ExecuteResult, FormatOutputOptions } from "./execu
 
 export { formatResult, formatTestSummary, formatFailure } from "./formatters/formatter.ts";
 export { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
-export type { GitHubActionsFormatterOptions } from "./formatters/github-actions.ts";
 
+export type { GitHubActionsFormatterOptions } from "./formatters/github-actions.ts";
 export { formatJson, writeJsonFile } from "./formatters/json.ts";
 export { parseJestOutput, extractJsonFromOutput } from "./reporter/parser.ts";
+
+export { runJestRoblox } from "./run.ts";
+export type {
+	MultiProjectMerged,
+	MultiRunResult,
+	ProjectResult,
+	RunMode,
+	RunOptions,
+	RunResult,
+	SingleRunResult,
+	WorkspaceRunResult,
+} from "./run/types.ts";
 
 export { buildJestArgv, generateTestScript } from "./test-script.ts";
 

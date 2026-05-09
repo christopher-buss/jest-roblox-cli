@@ -1,4 +1,4 @@
-import type { FormatterEntry } from "../config/schema.ts";
+import type { FormatterEntry, ResolvedConfig } from "../config/schema.ts";
 
 export interface AgentFormatterOptions {
 	maxFailures?: number;
@@ -25,4 +25,16 @@ export function findFormatterOptions(
 	}
 
 	return undefined;
+}
+
+export function hasFormatter(config: ResolvedConfig, name: string): boolean {
+	return (
+		config.formatters?.some((entry) =>
+			Array.isArray(entry) ? entry[0] === name : entry === name,
+		) === true
+	);
+}
+
+export function usesAgentFormatter(config: ResolvedConfig): boolean {
+	return hasFormatter(config, "agent") && !config.verbose;
 }
