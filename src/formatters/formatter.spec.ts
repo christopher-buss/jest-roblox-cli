@@ -1423,7 +1423,7 @@ describe("formatResult with typecheck data", () => {
 			 RUN  v1.0.0 /project
 
 			 ❯ src/types.test-d.ts (2 tests | 1 failed)
-			   ❯ type checks (2 tests | 1 failed) 0ms
+			   ❯ type checks (2 tests | 1 failed)
 			     × should reject string as number
 			     ✓ should accept number
 
@@ -1452,7 +1452,7 @@ describe("formatResult with typecheck data", () => {
 
 			 ✓ src/passing.test-d.ts (2 tests)
 			 ❯ src/failing.test-d.ts (2 tests | 1 failed)
-			   ❯ failing types (2 tests | 1 failed) 0ms
+			   ❯ failing types (2 tests | 1 failed)
 			     × should reject string as number
 			     ✓ should pass this one
 
@@ -3024,5 +3024,220 @@ describe("multi-project log hints", () => {
 
 		expect(output).toContain("View results.json");
 		expect(output).toContain("View game.log");
+	});
+});
+
+describe("test duration coloring", () => {
+	function passingFile(duration: number): JestResult {
+		return {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "src/dur.spec.ts",
+					testResults: [
+						{
+							ancestorTitles: ["Suite"],
+							duration,
+							failureMessages: [],
+							fullName: "Suite is timed",
+							status: "passed",
+							title: "is timed",
+						},
+					],
+				},
+			],
+		};
+	}
+
+	it("should color slow passing test duration yellow when over 300ms threshold", () => {
+		expect.assertions(2);
+
+		const formatted = formatResult(passingFile(450), createTiming(500), {
+			...defaultOptions,
+			color: true,
+			verbose: true,
+		});
+
+		expect(formatted).toContain("[33m 450[2mms[22m[39m");
+		expect(formatted).not.toContain("[32m 450");
+	});
+
+	it("should still color exactly 300ms green (strict > comparison)", () => {
+		expect.assertions(2);
+
+		const formatted = formatResult(passingFile(300), createTiming(500), {
+			...defaultOptions,
+			color: true,
+			verbose: true,
+		});
+
+		expect(formatted).toContain("[32m 300[2mms[22m[39m");
+		expect(formatted).not.toContain("[33m 300");
+	});
+
+	it("should omit the group duration when all tests have undefined duration", () => {
+		expect.assertions(1);
+
+		const fileResult: TestFileResult = {
+			numFailingTests: 1,
+			numPassingTests: 0,
+			numPendingTests: 0,
+			testFilePath: "src/no-dur.spec.ts",
+			testResults: [
+				{
+					ancestorTitles: ["Suite"],
+					duration: undefined,
+					failureMessages: ["Expected: 1\nReceived: 2"],
+					fullName: "Suite fails",
+					status: "failed",
+					title: "fails",
+				},
+			],
+		};
+
+		const result: JestResult = {
+			numFailedTests: 1,
+			numPassedTests: 0,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 0,
+			success: false,
+			testResults: [fileResult],
+		};
+
+		const formatted = formatResult(result, createTiming(500), {
+			...defaultOptions,
+			color: true,
+		});
+
+		const plain = stripVTControlCharacters(formatted);
+
+		expect(plain).not.toMatch(/❯ Suite \(.*?\) 0ms/);
+	});
+
+	it("should color the passed-file summary total ms", () => {
+		expect.assertions(1);
+
+		const fileResult: TestFileResult = {
+			numFailingTests: 0,
+			numPassingTests: 2,
+			numPendingTests: 0,
+			testFilePath: "src/file.spec.ts",
+			testResults: [
+				{
+					ancestorTitles: ["Suite"],
+					duration: 200,
+					failureMessages: [],
+					fullName: "Suite a",
+					status: "passed",
+					title: "a",
+				},
+				{
+					ancestorTitles: ["Suite"],
+					duration: 200,
+					failureMessages: [],
+					fullName: "Suite b",
+					status: "passed",
+					title: "b",
+				},
+			],
+		};
+
+		const result: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 2,
+			numPendingTests: 0,
+			numTotalTests: 2,
+			startTime: 0,
+			success: true,
+			testResults: [fileResult],
+		};
+
+		const formatted = formatResult(result, createTiming(500), {
+			...defaultOptions,
+			color: true,
+		});
+
+		expect(formatted).toContain("[33m 400[2mms[22m[39m");
+	});
+
+	it("should render duration without ANSI coloring when color is disabled", () => {
+		expect.assertions(2);
+
+		const formatted = formatResult(passingFile(42), createTiming(500), {
+			...defaultOptions,
+			color: false,
+			verbose: true,
+		});
+
+		expect(formatted).not.toContain("[");
+		expect(formatted).toContain(" 42ms");
+	});
+
+	it("should color durations in failed-suite group lines and the group total", () => {
+		expect.assertions(2);
+
+		const fileResult: TestFileResult = {
+			numFailingTests: 1,
+			numPassingTests: 1,
+			numPendingTests: 0,
+			testFilePath: "src/grp.spec.ts",
+			testResults: [
+				{
+					ancestorTitles: ["Suite"],
+					duration: 50,
+					failureMessages: [],
+					fullName: "Suite fast pass",
+					status: "passed",
+					title: "fast pass",
+				},
+				{
+					ancestorTitles: ["Suite"],
+					duration: 500,
+					failureMessages: ["Expected: 1\nReceived: 2"],
+					fullName: "Suite slow fail",
+					status: "failed",
+					title: "slow fail",
+				},
+			],
+		};
+
+		const result: JestResult = {
+			numFailedTests: 1,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 2,
+			startTime: 0,
+			success: false,
+			testResults: [fileResult],
+		};
+
+		const formatted = formatResult(result, createTiming(1000), {
+			...defaultOptions,
+			color: true,
+		});
+
+		expect(formatted).toContain("[32m 50[2mms[22m[39m");
+		expect(formatted).toContain("[33m 550[2mms[22m[39m");
+	});
+
+	it("should color fast passing test duration green with dim ms suffix", () => {
+		expect.assertions(1);
+
+		const formatted = formatResult(passingFile(42), createTiming(500), {
+			...defaultOptions,
+			color: true,
+			verbose: true,
+		});
+
+		expect(formatted).toContain("[32m 42[2mms[22m[39m");
 	});
 });

@@ -21,6 +21,8 @@ import type { TimingResult } from "../types/timing.ts";
 import { formatBannerBar } from "../utils/banner.ts";
 import { highlightCode } from "../utils/colors.ts";
 
+const SLOW_TEST_THRESHOLD_MS = 300;
+
 const EXEC_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [
 	[
 		/loadstring\(\) is not available/,
@@ -74,6 +76,10 @@ interface Styles {
 		received: ColorFunc;
 	};
 	dim: ColorFunc;
+	duration: {
+		fast: ColorFunc;
+		slow: ColorFunc;
+	};
 	failBadge: ColorFunc;
 	lineNumber: ColorFunc;
 	location: ColorFunc;
@@ -730,6 +736,7 @@ function createStyles(useColor: boolean): Styles {
 		return {
 			diff: { expected: identity, received: identity },
 			dim: identity,
+			duration: { fast: identity, slow: identity },
 			failBadge: identity,
 			lineNumber: identity,
 			location: identity,
@@ -746,6 +753,10 @@ function createStyles(useColor: boolean): Styles {
 			received: color.red,
 		},
 		dim: color.dim,
+		duration: {
+			fast: color.green,
+			slow: color.yellow,
+		},
 		failBadge: (text: string) => color.bgRed(color.white(color.bold(text))),
 		lineNumber: color.gray,
 		location: color.cyan,
@@ -884,9 +895,14 @@ function formatExecErrorDetail(
 	return lines.join("\n");
 }
 
+function formatDuration(ms: number, styles: Styles): string {
+	const colorFunc = ms > SLOW_TEST_THRESHOLD_MS ? styles.duration.slow : styles.duration.fast;
+	return colorFunc(` ${ms}${styles.dim("ms")}`);
+}
+
 function formatTestInGroup(testCase: TestCaseResult, styles: Styles): string {
 	const duration =
-		testCase.duration !== undefined ? styles.lineNumber(` ${testCase.duration}ms`) : "";
+		testCase.duration !== undefined ? formatDuration(testCase.duration, styles) : "";
 	if (testCase.status === "passed") {
 		const marker = styles.status.pass("     ✓");
 		// Red title is intentional: this function only runs inside failed suites.
@@ -909,8 +925,9 @@ function formatDescribeGroup(
 	const lines: Array<string> = [];
 	const groupHasFailure = tests.some((testCase) => testCase.status === "failed");
 	const groupTestCount = tests.length;
+	const groupHasTimedTest = tests.some((testCase) => testCase.duration !== undefined);
 	const groupDuration = tests.reduce((sum, testCase) => sum + (testCase.duration ?? 0), 0);
-	const groupDurationStr = styles.lineNumber(` ${groupDuration}ms`);
+	const groupDurationStr = groupHasTimedTest ? formatDuration(groupDuration, styles) : "";
 
 	if (groupHasFailure) {
 		const failedCount = tests.filter((testCase) => testCase.status === "failed").length;
@@ -993,7 +1010,7 @@ function formatExecErrorFileSummary(
 }
 
 function formatPass(test: TestCaseResult, styles: Styles): string {
-	const duration = test.duration !== undefined ? styles.dim(` ${test.duration}ms`) : "";
+	const duration = test.duration !== undefined ? formatDuration(test.duration, styles) : "";
 	return styles.status.pass(`  ✓ ${test.fullName}`) + duration;
 }
 
@@ -1004,9 +1021,11 @@ function formatPassedFileSummary(
 	const lines: Array<string> = [];
 	const fileMs = sumFileDuration(file);
 	const symbol = ctx.styles.status.pass("✓");
-	const duration = fileMs > 0 ? ` - ${fileMs}ms` : "";
-	const meta = ctx.styles.dim(`(${ctx.testCount} tests${duration})`);
-	lines.push(` ${symbol} ${ctx.formattedPath} ${meta}`);
+	const testsLabel = ctx.styles.dim(`(${ctx.testCount} tests`);
+	const closeParen = ctx.styles.dim(")");
+	const duration =
+		fileMs > 0 ? `${ctx.styles.dim(" -")}${formatDuration(fileMs, ctx.styles)}` : "";
+	lines.push(` ${symbol} ${ctx.formattedPath} ${testsLabel}${duration}${closeParen}`);
 
 	if (ctx.verbose) {
 		for (const testCase of file.testResults) {
