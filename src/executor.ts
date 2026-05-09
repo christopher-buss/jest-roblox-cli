@@ -213,6 +213,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 		outputFile: resolvedOutputFile,
 		rootDir: config.rootDir,
 		showLuau: config.showLuau,
+		slowTestThreshold: config.slowTestThreshold,
 		sourceMapper,
 		verbose: config.verbose,
 		version,

@@ -796,4 +796,34 @@ describe(validateConfig, () => {
 			"jest options must be wrapped in a `test:` block. Move these keys under `test:`: coverageThreshold, setupFiles, testMatch",
 		);
 	});
+
+	it("should reject test.slowTestThreshold of 0", () => {
+		expect.assertions(1);
+
+		expect(() => validateConfig({ test: { slowTestThreshold: 0 } })).toThrow(
+			/slowTestThreshold/,
+		);
+	});
+
+	it("should reject negative test.slowTestThreshold", () => {
+		expect.assertions(1);
+
+		expect(() => validateConfig({ test: { slowTestThreshold: -100 } })).toThrow(
+			/slowTestThreshold/,
+		);
+	});
+
+	it("should reject NaN test.slowTestThreshold", () => {
+		expect.assertions(1);
+
+		expect(() => validateConfig({ test: { slowTestThreshold: Number.NaN } })).toThrow(
+			/slowTestThreshold/,
+		);
+	});
+
+	it("should accept positive test.slowTestThreshold", () => {
+		expect.assertions(1);
+
+		expect(() => validateConfig({ test: { slowTestThreshold: 500 } })).not.toThrow();
+	});
 });

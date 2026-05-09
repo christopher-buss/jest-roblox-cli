@@ -309,7 +309,7 @@ const sharedTestSchemaShape = {
 	"restoreMocks?": "boolean",
 	"setupFiles?": "string[]",
 	"setupFilesAfterEnv?": "string[]",
-	"slowTestThreshold?": "number",
+	"slowTestThreshold?": "number > 0",
 	"snapshotFormat?": snapshotFormatSchema,
 	"snapshotSerializers?": "string[]",
 	"testEnvironment?": "string",

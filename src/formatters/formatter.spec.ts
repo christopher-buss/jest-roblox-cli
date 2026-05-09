@@ -2625,6 +2625,45 @@ describe(formatProjectSection, () => {
 		expect(output).toContain("▶ broken");
 		expect(output).toContain("unit-menu-app");
 	});
+
+	it("should honor caller-supplied slowTestThreshold for duration coloring", () => {
+		expect.assertions(1);
+
+		const result = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "src/d.spec.ts",
+					testResults: [
+						{
+							ancestorTitles: ["S"],
+							duration: 100,
+							failureMessages: [],
+							fullName: "S t",
+							status: "passed" as const,
+							title: "t",
+						},
+					],
+				},
+			],
+		};
+		const output = formatProjectSection({
+			displayName: "core",
+			failureCtx,
+			options: { ...defaultOptions, color: true, slowTestThreshold: 50 },
+			result,
+		});
+
+		expect(output).toContain("[33m 100[2mms[22m[39m");
+	});
 });
 
 describe(formatMultiProjectResult, () => {
@@ -2973,6 +3012,44 @@ describe(formatProjectBadge, () => {
 			expect(output).not.toBe(`▶ ${name}`);
 		}
 	});
+
+	it("should honor caller-supplied slowTestThreshold for duration coloring", () => {
+		expect.assertions(1);
+
+		const result = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "src/d.spec.ts",
+					testResults: [
+						{
+							ancestorTitles: ["S"],
+							duration: 100,
+							failureMessages: [],
+							fullName: "S t",
+							status: "passed" as const,
+							title: "t",
+						},
+					],
+				},
+			],
+		};
+		const output = formatMultiProjectResult([{ displayName: "core", result }], TIMING, {
+			...defaultOptions,
+			color: true,
+			slowTestThreshold: 50,
+		});
+
+		expect(output).toContain("[33m 100[2mms[22m[39m");
+	});
 });
 
 describe("formatProjectSection failuresOnly", () => {
@@ -3239,5 +3316,31 @@ describe("test duration coloring", () => {
 		});
 
 		expect(formatted).toContain("[32m 42[2mms[22m[39m");
+	});
+
+	it("should treat duration above caller-supplied slowTestThreshold as slow", () => {
+		expect.assertions(1);
+
+		const formatted = formatResult(passingFile(100), createTiming(500), {
+			...defaultOptions,
+			color: true,
+			slowTestThreshold: 50,
+			verbose: true,
+		});
+
+		expect(formatted).toContain("[33m 100[2mms[22m[39m");
+	});
+
+	it("should treat duration below caller-supplied slowTestThreshold as fast", () => {
+		expect.assertions(1);
+
+		const formatted = formatResult(passingFile(400), createTiming(500), {
+			...defaultOptions,
+			color: true,
+			slowTestThreshold: 500,
+			verbose: true,
+		});
+
+		expect(formatted).toContain("[32m 400[2mms[22m[39m");
 	});
 });

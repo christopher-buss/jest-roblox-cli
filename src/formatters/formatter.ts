@@ -21,7 +21,7 @@ import type { TimingResult } from "../types/timing.ts";
 import { formatBannerBar } from "../utils/banner.ts";
 import { highlightCode } from "../utils/colors.ts";
 
-const SLOW_TEST_THRESHOLD_MS = 300;
+const DEFAULT_SLOW_TEST_THRESHOLD_MS = 300;
 
 const EXEC_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [
 	[
@@ -38,6 +38,7 @@ export interface FormatOptions {
 	outputFile?: string;
 	rootDir: string;
 	showLuau?: boolean;
+	slowTestThreshold?: number;
 	sourceMapper?: SourceMapper;
 	typeErrors?: number;
 	verbose: boolean;
@@ -88,6 +89,7 @@ interface Styles {
 		file: ColorFunc;
 	};
 	runBadge: ColorFunc;
+	slowTestThreshold: number;
 	status: {
 		fail: ColorFunc;
 		pass: ColorFunc;
@@ -450,7 +452,7 @@ export function formatResult(
 	timing: TimingResult,
 	options: FormatOptions,
 ): string {
-	const styles = createStyles(options.color);
+	const styles = createStyles(options.color, options.slowTestThreshold);
 	const lines: Array<string> = [
 		// Run header
 		formatRunHeader(options, styles),
@@ -616,7 +618,7 @@ export function formatProjectSection(section: ProjectSectionOptions): string {
 		result,
 		styles: sectionStyles,
 	} = section;
-	const resolved = sectionStyles ?? createStyles(options.color);
+	const resolved = sectionStyles ?? createStyles(options.color, options.slowTestThreshold);
 	const lines: Array<string> = [
 		formatProjectHeader({
 			displayColor,
@@ -659,7 +661,7 @@ export function formatMultiProjectResult(
 	timing: TimingResult,
 	options: FormatOptions,
 ): string {
-	const styles = createStyles(options.color);
+	const styles = createStyles(options.color, options.slowTestThreshold);
 
 	let totalFailures = 0;
 	for (const { result } of projects) {
@@ -731,7 +733,10 @@ function identity(text: string): string {
 	return text;
 }
 
-function createStyles(useColor: boolean): Styles {
+function createStyles(
+	useColor: boolean,
+	slowTestThreshold: number = DEFAULT_SLOW_TEST_THRESHOLD_MS,
+): Styles {
 	if (!useColor) {
 		return {
 			diff: { expected: identity, received: identity },
@@ -742,6 +747,7 @@ function createStyles(useColor: boolean): Styles {
 			location: identity,
 			path: { dir: identity, file: identity },
 			runBadge: identity,
+			slowTestThreshold,
 			status: { fail: identity, pass: identity, pending: identity },
 			summary: { failed: identity, passed: identity, pending: identity },
 		};
@@ -765,6 +771,7 @@ function createStyles(useColor: boolean): Styles {
 			file: color.bold,
 		},
 		runBadge: (text: string) => color.bgCyan(color.black(color.bold(text))),
+		slowTestThreshold,
 		status: {
 			fail: color.red,
 			pass: color.green,
@@ -896,7 +903,7 @@ function formatExecErrorDetail(
 }
 
 function formatDuration(ms: number, styles: Styles): string {
-	const colorFunc = ms > SLOW_TEST_THRESHOLD_MS ? styles.duration.slow : styles.duration.fast;
+	const colorFunc = ms > styles.slowTestThreshold ? styles.duration.slow : styles.duration.fast;
 	return colorFunc(` ${ms}${styles.dim("ms")}`);
 }
 
