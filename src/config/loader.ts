@@ -1,6 +1,7 @@
 import { loadConfig as c12LoadConfig } from "c12";
 import { defuFn } from "defu";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import * as path from "node:path";
 import process from "node:process";
 
 import type { Config, ResolvedConfig } from "./schema.ts";
@@ -46,58 +47,28 @@ export async function loadConfig(
 	cwd: string = process.cwd(),
 ): Promise<ResolvedConfig> {
 	let result;
-	const extendWarnings: Array<string> = [];
-	const originalWarn = console.warn;
-
 	try {
-		console.warn = (...args: Array<unknown>) => {
-			const message = args.join(" ");
-			if (typeof message === "string" && message.includes("Cannot extend config")) {
-				extendWarnings.push(message);
-				return;
-			}
-
-			originalWarn.apply(console, args);
-		};
-
-		result = await c12LoadConfig<Config>({
-			name: "jest",
-			configFile: configPath,
-			configFileRequired: configPath !== undefined,
-			cwd,
-			dotenv: false,
-			globalRc: false,
-			// In SEA mode, jiti's babel.cjs can't be resolved from the
-			// single-executable archive. Bypass jiti entirely by providing a
-			// custom import function.
-			import: isSea() ? seaImport : undefined,
-			merger,
-			omit$Keys: true,
-			packageJson: false,
-			rcFile: false,
-		});
+		result = await invokeC12(configPath, cwd);
 	} catch (err) {
-		if (configPath !== undefined) {
+		if (configPath !== undefined && isC12NotFoundError(err)) {
 			throw new Error(`Config file not found: ${configPath}`, { cause: err });
 		}
 
 		throw err;
-	} finally {
-		console.warn = originalWarn;
 	}
 
-	if (extendWarnings.length > 0) {
-		const extendsPath = extendWarnings[0]?.match(/`([^`]+)`/)?.[1];
-		throw new Error(
-			`Failed to resolve extends: "${extendsPath}". If the file exists, try adding the file extension (e.g. ".ts").`,
-		);
-	}
+	const mergedConfig = await processExtends(result, new Set());
 
-	const config = resolveFunctionValues(result.config);
-
+	const config = resolveFunctionValues(mergedConfig);
 	config.rootDir ??= cwd;
 
 	return resolveConfig(config);
+}
+
+// c12 signals an unresolvable required config file with this message shape.
+// Other failures (parse errors, import-time exceptions) surface unchanged.
+function isC12NotFoundError(err: unknown): boolean {
+	return err instanceof Error && err.message.includes("cannot be resolved");
 }
 
 function isSea(): boolean {
@@ -118,6 +89,89 @@ async function seaImport(id: string): Promise<JSONValue> {
 // incompatible. This wrapper bridges the two with a single boundary cast.
 function merger(...sources: Array<Config | null | undefined>): Config {
 	return defuFn(...(sources.filter(Boolean) as [Config, ...Array<Config>]));
+}
+
+async function invokeC12(configFile: string | undefined, cwd: string) {
+	return c12LoadConfig<Config>({
+		name: "jest",
+		configFile,
+		configFileRequired: configFile !== undefined,
+		cwd,
+		dotenv: false,
+		extend: false,
+		globalRc: false,
+		// In SEA mode, jiti's babel.cjs can't be resolved from the
+		// single-executable archive. Bypass jiti entirely by providing a
+		// custom import function.
+		import: isSea() ? seaImport : undefined,
+		merger,
+		omit$Keys: true,
+		packageJson: false,
+		rcFile: false,
+	});
+}
+
+// c12 mis-resolves relative `extends` paths whose `dirname()` is non-empty
+// (e.g. "../../jest.shared.ts"): it adds dirname(source) to its internal cwd
+// but leaves source unchanged, then re-applies dirname when resolving the file
+// — duplicating the path component. See c12 issue #57. We disable c12's extend
+// handling and resolve the chain ourselves against the loaded config file's
+// actual directory.
+//
+// `visited` is stack-local — popped on unwind via `finally` — so a diamond
+// graph (child → [a, b], both → base) loads `base` twice rather than failing
+// as a false cycle. Config load is one-time at startup; the re-parse cost is
+// negligible.
+async function processExtends(
+	result: Awaited<ReturnType<typeof invokeC12>>,
+	visited: Set<string>,
+): Promise<Config> {
+	const loadedConfig: Config = result.config;
+	const loadedFile = result.configFile;
+
+	if (loadedFile === undefined || !existsSync(loadedFile)) {
+		return loadedConfig;
+	}
+
+	const canonicalFile = path.resolve(loadedFile);
+	if (visited.has(canonicalFile)) {
+		const cycle = [...visited, canonicalFile].join(" -> ");
+		throw new Error(`Circular extends detected: ${cycle}.`);
+	}
+
+	const { extends: extendsValue, ...configWithoutExtends } = loadedConfig;
+	if (extendsValue === undefined) {
+		return loadedConfig;
+	}
+
+	visited.add(canonicalFile);
+	try {
+		const extendList = Array.isArray(extendsValue) ? extendsValue : [extendsValue];
+		const configFileDirectory = path.dirname(canonicalFile);
+		const layers: Array<Config> = [];
+
+		for (const entry of extendList) {
+			const target = path.isAbsolute(entry)
+				? entry
+				: path.resolve(configFileDirectory, entry);
+
+			let extendedResult;
+			try {
+				extendedResult = await invokeC12(target, path.dirname(target));
+			} catch (err) {
+				throw new Error(`Failed to resolve extends "${entry}" from "${canonicalFile}".`, {
+					cause: err,
+				});
+			}
+
+			const extendedConfig = await processExtends(extendedResult, visited);
+			layers.push(extendedConfig);
+		}
+
+		return merger(configWithoutExtends, ...layers);
+	} finally {
+		visited.delete(canonicalFile);
+	}
 }
 
 const EMPTY_ARRAY_DEFAULT_KEYS = new Set([

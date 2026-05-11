@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import process from "node:process";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { applySnapshotFormatDefaults, loadConfig, resolveConfig } from "./loader.ts";
 import type { Config } from "./schema.ts";
@@ -494,6 +495,218 @@ describe(loadConfig, () => {
 		});
 	});
 
+	describe("extends across directories", () => {
+		function setupTemporaryDirectory() {
+			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "config-test-"));
+			onTestFinished(() => {
+				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+			});
+			return temporaryDirectory;
+		}
+
+		it("should resolve parent in workspace root from child in nested subdirectory", async () => {
+			expect.assertions(2);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "jest.shared.mjs"),
+				"export default { timeout: 12345, test: { verbose: true } };",
+			);
+
+			const childDirectory = path.join(temporaryDirectory, "packages", "test-utils");
+			fs.mkdirSync(childDirectory, { recursive: true });
+			fs.writeFileSync(
+				path.join(childDirectory, "jest.config.mjs"),
+				'export default { extends: "../../jest.shared.mjs", test: { passWithNoTests: true } };',
+			);
+
+			const result = await loadConfig(undefined, childDirectory);
+
+			expect(result.timeout).toBe(12345);
+			expect(result.verbose).toBeTrue();
+		});
+
+		it("should resolve extends against config file dir, not process.cwd()", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "jest.shared.mjs"),
+				"export default { timeout: 54321 };",
+			);
+
+			const childDirectory = path.join(temporaryDirectory, "sub", "pkg");
+			fs.mkdirSync(childDirectory, { recursive: true });
+			fs.writeFileSync(
+				path.join(childDirectory, "jest.config.mjs"),
+				'export default { extends: "../../jest.shared.mjs" };',
+			);
+
+			const originalCwd = process.cwd();
+			onTestFinished(() => {
+				process.chdir(originalCwd);
+			});
+			process.chdir(os.tmpdir());
+
+			const result = await loadConfig(undefined, childDirectory);
+
+			expect(result.timeout).toBe(54321);
+		});
+
+		it("should resolve nested extends chain across directories", async () => {
+			expect.assertions(3);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "jest.base.mjs"),
+				'export default { backend: "open-cloud" };',
+			);
+
+			const middleDirectory = path.join(temporaryDirectory, "shared");
+			fs.mkdirSync(middleDirectory, { recursive: true });
+			fs.writeFileSync(
+				path.join(middleDirectory, "jest.shared.mjs"),
+				'export default { extends: "../jest.base.mjs", timeout: 9999 };',
+			);
+
+			const childDirectory = path.join(temporaryDirectory, "packages", "core");
+			fs.mkdirSync(childDirectory, { recursive: true });
+			fs.writeFileSync(
+				path.join(childDirectory, "jest.config.mjs"),
+				'export default { extends: "../../shared/jest.shared.mjs", test: { verbose: true } };',
+			);
+
+			const result = await loadConfig(undefined, childDirectory);
+
+			expect(result.backend).toBe("open-cloud");
+			expect(result.timeout).toBe(9999);
+			expect(result.verbose).toBeTrue();
+		});
+
+		it("should load diamond extends with shared base ancestor", async () => {
+			expect.assertions(3);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "base.mjs"),
+				'export default { backend: "open-cloud" };',
+			);
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "left.mjs"),
+				'export default { extends: "./base.mjs", timeout: 1111 };',
+			);
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "right.mjs"),
+				'export default { extends: "./base.mjs", test: { verbose: true } };',
+			);
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "jest.config.mjs"),
+				'export default { extends: ["./left.mjs", "./right.mjs"] };',
+			);
+
+			const result = await loadConfig(undefined, temporaryDirectory);
+
+			expect(result.backend).toBe("open-cloud");
+			expect(result.timeout).toBe(1111);
+			expect(result.verbose).toBeTrue();
+		});
+
+		it("should resolve absolute extends path verbatim", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			const parentPath = path.join(temporaryDirectory, "jest.shared.mjs");
+			fs.writeFileSync(parentPath, "export default { timeout: 2222 };");
+
+			const childDirectory = path.join(temporaryDirectory, "deep", "nested");
+			fs.mkdirSync(childDirectory, { recursive: true });
+			fs.writeFileSync(
+				path.join(childDirectory, "jest.config.mjs"),
+				`export default { extends: ${JSON.stringify(parentPath)} };`,
+			);
+
+			const result = await loadConfig(undefined, childDirectory);
+
+			expect(result.timeout).toBe(2222);
+		});
+
+		it("should detect true cycle in extends chain", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "a.mjs"),
+				'export default { extends: "./b.mjs" };',
+			);
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "b.mjs"),
+				'export default { extends: "./a.mjs" };',
+			);
+
+			await expect(
+				loadConfig(path.join(temporaryDirectory, "a.mjs"), temporaryDirectory),
+			).rejects.toThrowWithMessage(Error, /Circular extends detected/);
+		});
+
+		// cspell:disable-next-line
+		it("should resolve extensionless extends via c12 extension search", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "jest.shared.mjs"),
+				"export default { timeout: 7777 };",
+			);
+
+			const childPath = path.join(temporaryDirectory, "jest.config.mjs");
+			fs.writeFileSync(childPath, 'export default { extends: "./jest.shared" };');
+
+			const result = await loadConfig(childPath, temporaryDirectory);
+
+			expect(result.timeout).toBe(7777);
+		});
+
+		it("should surface parent parse errors with extends context, not as 'not found'", async () => {
+			expect.assertions(4);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			fs.writeFileSync(
+				path.join(temporaryDirectory, "jest.shared.mjs"),
+				"export default {{{",
+			);
+
+			const childPath = path.join(temporaryDirectory, "jest.config.mjs");
+			fs.writeFileSync(childPath, 'export default { extends: "./jest.shared.mjs" };');
+
+			const error = await loadConfig(childPath, temporaryDirectory).catch(
+				(err: unknown) => err,
+			);
+
+			expect(error).toBeInstanceOf(Error);
+
+			const { message } = error as Error;
+
+			expect(message).toContain("Failed to resolve extends");
+			expect(message).not.toContain("Config file not found");
+			expect(message).toMatch(/jest\.shared\.mjs/);
+		});
+
+		it("should surface explicit-path parse errors without wrapping as 'not found'", async () => {
+			expect.assertions(2);
+
+			const temporaryDirectory = setupTemporaryDirectory();
+			const configPath = path.join(temporaryDirectory, "jest.config.mjs");
+			fs.writeFileSync(configPath, "export default {{{");
+
+			const error = await loadConfig(configPath, temporaryDirectory).catch(
+				(err: unknown) => err,
+			);
+
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).message).not.toContain("Config file not found");
+		});
+	});
+
 	it("should forward non-extend warnings to console.warn", async () => {
 		expect.assertions(1);
 
@@ -553,19 +766,19 @@ describe(loadConfig, () => {
 		expect(result.verbose).toBeTrue();
 	});
 
-	it("should throw when extends fails to resolve", async () => {
+	it("should throw with clear message when extends target is missing", async () => {
 		expect.assertions(1);
 
 		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "config-test-"));
 		const configPath = path.join(temporaryDirectory, "jest.config.mjs");
 		fs.writeFileSync(
 			configPath,
-			'export default { extends: "../../jest.shared", test: { verbose: true } };',
+			'export default { extends: "./does-not-exist.mjs", test: { verbose: true } };',
 		);
 
 		await expect(loadConfig(configPath, temporaryDirectory)).rejects.toThrowWithMessage(
 			Error,
-			/Failed to resolve extends.*jest\.shared.*file extension/,
+			/Failed to resolve extends.*does-not-exist\.mjs/,
 		);
 
 		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
