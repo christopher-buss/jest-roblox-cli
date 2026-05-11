@@ -117,6 +117,53 @@ describe("workspace --parallel work-stealing", () => {
 	);
 });
 
+// Regression: a package whose rojo declares a `$path`-mounted parent (e.g.
+// `Tests: { $path: "out-test" }`) with no explicit child for the sub-directory
+// targeted by `outDir: "out-test/src"`. Before the synthesizer learned to
+// virtualize the missing `Tests/src` child from the on-disk directory, the
+// workspace runner crashed with `stubMount dataModelPath ... does not resolve
+// in synthesized tree (missing segment "src")` before reaching the backend.
+describe("workspace synthesizer $path-mounted parent virtualization", () => {
+	it.skipIf(!rojoOnPath())(
+		"should reach backend dispatch when stubMount targets a sub-directory of a $path-mounted parent",
+		async () => {
+			expect.assertions(4);
+
+			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
+
+			const server = await startFakeOpenCloudServer([
+				{
+					jestOutput: passingJestOutput(),
+					pkg: "@e2e/nested",
+					project: "@e2e/nested",
+				},
+			]);
+
+			const result = await runCliAsync(
+				["--workspace", "--packages=@e2e/nested", "--backend", "open-cloud", "--no-cache"],
+				{
+					cwd: sandbox,
+					env: {
+						JEST_ROBLOX_OPEN_CLOUD_BASE_URL: server.baseUrl,
+						ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
+						ROBLOX_PLACE_ID: "456",
+						ROBLOX_UNIVERSE_ID: "123",
+					},
+					timeoutMs: 60_000,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(result.stderr).not.toContain("does not resolve in synthesized tree");
+			// Guard against silent short-circuits (e.g. zero-discovery passes
+			// without ever reaching backend dispatch).
+			expect(server.requests).toHaveLength(1);
+			expect(server.uploadCount).toBe(1);
+		},
+		60_000,
+	);
+});
+
 function liveEnvironment(): Record<string, string | undefined> {
 	return {
 		JEST_ROBLOX_LIVE: process.env["JEST_ROBLOX_LIVE"],

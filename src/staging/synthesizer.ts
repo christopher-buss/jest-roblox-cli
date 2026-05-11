@@ -189,10 +189,33 @@ function stableStringify(value: unknown): string {
 	return String(JSON.stringify(sortKeys(value), undefined, 2));
 }
 
+function virtualizePathChild(parent: RojoTreeNode, segment: string): RojoTreeNode | undefined {
+	const parentPath = parent.$path;
+	if (typeof parentPath !== "string") {
+		return undefined;
+	}
+
+	const childPath = path.posix.join(parentPath, segment);
+	const stat = fs.statSync(childPath, { throwIfNoEntry: false });
+	if (stat?.isDirectory() !== true) {
+		return undefined;
+	}
+
+	return { $path: normalizeWindowsPath(childPath) };
+}
+
 function walkToLeaf(root: RojoTreeNode, dataModelPath: string): RojoTreeNode {
 	let cursor: RojoTreeNode = root;
 	for (const segment of dataModelPath.split("/")) {
-		const next = cursor[segment];
+		let next = cursor[segment];
+		if (!isTreeNode(next)) {
+			const virtualized = virtualizePathChild(cursor, segment);
+			if (virtualized !== undefined) {
+				cursor[segment] = virtualized;
+				next = virtualized;
+			}
+		}
+
 		if (!isTreeNode(next)) {
 			throw new ConfigError(
 				`stubMount dataModelPath "${dataModelPath}" does not resolve in synthesized tree (missing segment "${segment}")`,

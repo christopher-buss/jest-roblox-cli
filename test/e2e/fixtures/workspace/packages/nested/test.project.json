@@ -1,0 +1,10 @@
+{
+	"name": "nested-test",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Tests": { "$path": "out-test" }
+		}
+	}
+}
