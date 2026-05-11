@@ -44,14 +44,6 @@ export function validateWorkspaceFlags(
 		};
 	}
 
-	if (config.collectCoverage) {
-		return {
-			exitCode: 2,
-			message: "Error: coverage not supported with --workspace yet.\n",
-			ok: false,
-		};
-	}
-
 	if (config.gameOutput !== undefined) {
 		return {
 			exitCode: 2,

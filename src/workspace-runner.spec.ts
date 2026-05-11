@@ -27,6 +27,8 @@ vi.mock(import("./config/loader.ts"), async (importOriginal) => {
 
 vi.mock(import("@roblox-ts/rojo-resolver"));
 
+vi.mock(import("./coverage/workspace-prepare.ts"));
+
 const ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(ROOT, "packages/foo");
 const BAR_DIR = path.join(ROOT, "packages/bar");
@@ -868,6 +870,241 @@ describe(runWorkspace, () => {
 
 		expect(results).toBeUndefined();
 		expect(stderr).toHaveBeenCalledWith(expect.stringMatching(/failed to parse rojoProject/));
+	});
+
+	describe("coverage", () => {
+		it("should call prepareWorkspaceCoverage with the workspace packages when collectCoverage is set", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+				{
+					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					manifest: {
+						files: {},
+						generatedAt: "x",
+						instrumenterVersion: 2,
+						luauRoots: [],
+						nonInstrumentedFiles: {},
+						shadowDir: "/shadow",
+						version: 1,
+					},
+					manifestPath: "/shadow/manifest.json",
+					pkg: "@halcyon/foo",
+				},
+			]);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ collectCoverage: true }),
+				config: makeConfig({ collectCoverage: true }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			expect(prepareWorkspaceCoverage).toHaveBeenCalledOnce();
+
+			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+
+			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
+		});
+
+		it("should embed _coverage in the materializer config when collectCoverage is set", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+				{
+					coverageRoots: [],
+					manifest: {
+						files: {},
+						generatedAt: "x",
+						instrumenterVersion: 2,
+						luauRoots: [],
+						nonInstrumentedFiles: {},
+						shadowDir: "/shadow",
+						version: 1,
+					},
+					manifestPath: "/shadow/manifest.json",
+					pkg: "@halcyon/foo",
+				},
+			]);
+
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ collectCoverage: true }),
+				config: makeConfig({ collectCoverage: true }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			expect(captured.options?.scriptOverride).toContain('"_coverage":true');
+		});
+
+		it("should expose per-package coverage descriptors on the workspace result", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const manifest = {
+				files: {},
+				generatedAt: "x",
+				instrumenterVersion: 2,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				shadowDir: "/shadow",
+				version: 1 as const,
+			};
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+				{
+					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					manifest,
+					manifestPath: "/shadow/manifest.json",
+					pkg: "@halcyon/foo",
+				},
+			]);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			const results = await runWorkspace({
+				backend,
+				cli: makeCli({ collectCoverage: true }),
+				config: makeConfig({ collectCoverage: true }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			expect(results?.[0]?.coverageManifest).toBe(manifest);
+			expect(results?.[0]?.pkg).toBe("@halcyon/foo");
+		});
+
+		it("should restrict prepareWorkspaceCoverage to packages with pending test files", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				// foo has a spec file
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				// bar has NO spec files — should be excluded from instrumentation
+				...seedPackage(BAR_DIR, {
+					name: "@halcyon/bar",
+					specFiles: {},
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[BAR_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: BAR_DIR },
+				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ collectCoverage: true }),
+				config: makeConfig({ collectCoverage: true }),
+				packageInfos: [FOO_INFO, BAR_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+
+			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
+		});
+
+		it("should not call prepareWorkspaceCoverage when collectCoverage is false", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig(),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			expect(prepareWorkspaceCoverage).not.toHaveBeenCalled();
+		});
 	});
 
 	describe("work-stealing", () => {

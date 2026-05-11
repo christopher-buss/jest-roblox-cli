@@ -17,6 +17,11 @@ import type {
 } from "./config/schema.ts";
 import { createSetupResolver } from "./config/setup-resolver.ts";
 import { generateProjectStubs, STUB_FILENAME } from "./config/stubs.ts";
+import type { CoverageManifest } from "./coverage/types.ts";
+import {
+	prepareWorkspaceCoverage,
+	type WorkspacePackageCoverage,
+} from "./coverage/workspace-prepare.ts";
 import {
 	buildProjectJob,
 	executeBackend,
@@ -62,6 +67,13 @@ export interface RunWorkspaceOptions {
 }
 
 export interface WorkspaceProjectResult {
+	/**
+	 * When coverage is enabled in workspace mode, the per-package manifest
+	 * captured during `prepareWorkspaceCoverage`. Downstream aggregation maps
+	 * the result's `coverageData` (raw hit counts captured by the materializer)
+	 * back through this manifest to produce TS-coord Istanbul records.
+	 */
+	coverageManifest?: CoverageManifest;
 	displayName: string;
 	pkg: string;
 	result: ExecuteResult;
@@ -90,6 +102,7 @@ interface PendingEntry {
 
 interface MapResultsOptions {
 	backendTiming: BackendTiming;
+	coverageByPackage: Map<string, WorkspacePackageCoverage>;
 	startTime: number;
 	version: string;
 }
@@ -139,7 +152,31 @@ export async function runWorkspace(
 		return undefined;
 	}
 
-	const descriptorsWithStubs = writeStubsAndBuildDescriptors(filteredContexts);
+	// Limit instrumentation to packages that actually have pending tests.
+	// `--project` and zero-discovery filters narrow the set of pending
+	// entries; instrumenting packages that won't run wastes time on every
+	// run (instrumentation is the dominant pre-OCALE cost).
+	const pendingPackageNames = new Set(pending.map((entry) => entry.pkg));
+	const coverageByPackage = config.collectCoverage
+		? buildCoverageMap(
+				prepareWorkspaceCoverage({
+					config,
+					packages: loaded
+						.map((entry) => entry.descriptor)
+						.filter((descriptor) => pendingPackageNames.has(descriptor.name)),
+					workspaceRoot,
+				}),
+			)
+		: new Map<string, WorkspacePackageCoverage>();
+
+	const descriptorsWithStubs = writeStubsAndBuildDescriptors(filteredContexts).map(
+		(descriptor) => {
+			const coverage = coverageByPackage.get(descriptor.name);
+			return coverage !== undefined
+				? { ...descriptor, coverageRoots: coverage.coverageRoots }
+				: descriptor;
+		},
+	);
 
 	const synthProjectPath = path.join(cacheDirectory, SYNTHESIZED_PROJECT_FILE);
 	const synthRbxlPath = path.join(cacheDirectory, SYNTHESIZED_PLACE_FILE);
@@ -178,9 +215,21 @@ export async function runWorkspace(
 
 	return mapBackendResults(results, pending, {
 		backendTiming,
+		coverageByPackage,
 		startTime,
 		version,
 	});
+}
+
+function buildCoverageMap(
+	entries: Array<WorkspacePackageCoverage>,
+): Map<string, WorkspacePackageCoverage> {
+	const map = new Map<string, WorkspacePackageCoverage>();
+	for (const entry of entries) {
+		map.set(entry.pkg, entry);
+	}
+
+	return map;
 }
 
 const PER_PACKAGE_TIMEOUT_SECONDS = 60;
@@ -201,10 +250,9 @@ async function dispatchWorkspace(input: {
 	const useWorkStealing = queueClient !== undefined && parallel !== undefined && parallel > 1;
 
 	if (useWorkStealing) {
-		const perPackageTimeoutSeconds = PER_PACKAGE_TIMEOUT_SECONDS;
 		const prepared = await prepareWorkStealingQueue({
 			packages: inputs.map((entry) => ({ pkg: entry.pkg, project: entry.project })),
-			perPackageTimeoutSeconds,
+			perPackageTimeoutSeconds: PER_PACKAGE_TIMEOUT_SECONDS,
 			queueClient,
 		});
 		const script = generateWorkStealingScript(
@@ -463,7 +511,9 @@ function mapBackendResults(
 	return results.map((entry, index) => {
 		// eslint-disable-next-line ts/no-non-null-assertion -- length matches pending
 		const pendingEntry = pending[index]!;
+		const coverage = options.coverageByPackage.get(pendingEntry.pkg);
 		return {
+			coverageManifest: coverage?.manifest,
 			displayName: pendingEntry.project.displayName,
 			pkg: pendingEntry.pkg,
 			result: processProjectResult(entry, {

@@ -6,7 +6,7 @@ import color from "tinyrainbow";
 
 import packageJson from "../package.json" with { type: "json" };
 import type { ResolvedConfig } from "./config/schema.ts";
-import { mapCoverageToTypeScript } from "./coverage/mapper.ts";
+import { mapCoverageToTypeScript, type MappedCoverageResult } from "./coverage/mapper.ts";
 import { mergeRawCoverage } from "./coverage/merge-raw-coverage.ts";
 import { checkThresholds, generateReports, printCoverageHeader } from "./coverage/reporter.ts";
 import type { RawCoverageData } from "./coverage/types.ts";
@@ -204,7 +204,11 @@ export async function outputMultiResult(
 		}
 	}
 
-	const coveragePassed = processCoverage(config, merged.coverageData);
+	const coveragePassed = processCoverage(
+		config,
+		merged.coverageData,
+		extractWorkspaceCoverageMapped(result),
+	);
 
 	if (config.outputFile !== undefined) {
 		await writeJsonFile(mergedResult, config.outputFile);
@@ -310,12 +314,16 @@ function printFormattedOutput(options: FormattedOutputOptions): void {
 	printOutput(formatRuntimeOutput(config, runtimeResult, timing));
 }
 
-function processCoverage(
+function resolveMappedCoverage(
 	config: ResolvedConfig,
 	coverageData: RawCoverageData | undefined,
-): boolean {
-	if (!config.collectCoverage) {
-		return true;
+	preMapped: MappedCoverageResult | undefined,
+): MappedCoverageResult | undefined {
+	if (preMapped !== undefined) {
+		// Workspace mode pre-aggregates per-package coverage using each
+		// package's own manifest before reaching the formatter; skip the
+		// single-package manifest lookup entirely.
+		return preMapped;
 	}
 
 	if (coverageData === undefined) {
@@ -325,7 +333,7 @@ function processCoverage(
 			);
 		}
 
-		return true;
+		return undefined;
 	}
 
 	const manifest = loadCoverageManifest(config.rootDir);
@@ -334,11 +342,44 @@ function processCoverage(
 			process.stderr.write("Warning: Coverage manifest not found, skipping TS mapping\n");
 		}
 
+		return undefined;
+	}
+
+	return mapCoverageToTypeScript(coverageData, manifest);
+}
+
+function enforceThresholds(config: ResolvedConfig, mapped: MappedCoverageResult): boolean {
+	if (config.coverageThreshold === undefined) {
 		return true;
 	}
 
-	const mapped = mapCoverageToTypeScript(coverageData, manifest);
-	const coverageDirectory = path.resolve(config.rootDir, config.coverageDirectory);
+	const result = checkThresholds(mapped, config.coverageThreshold, config.collectCoverageFrom);
+	if (result.passed) {
+		return true;
+	}
+
+	for (const failure of result.failures) {
+		process.stderr.write(
+			`Coverage threshold not met for ${failure.metric}: ${String(failure.actual.toFixed(2))}% < ${String(failure.threshold)}%\n`,
+		);
+	}
+
+	return false;
+}
+
+function processCoverage(
+	config: ResolvedConfig,
+	coverageData: RawCoverageData | undefined,
+	preMapped?: MappedCoverageResult,
+): boolean {
+	if (!config.collectCoverage) {
+		return true;
+	}
+
+	const mapped = resolveMappedCoverage(config, coverageData, preMapped);
+	if (mapped === undefined) {
+		return true;
+	}
 
 	if (!config.silent) {
 		printCoverageHeader();
@@ -347,29 +388,12 @@ function processCoverage(
 	generateReports({
 		agentMode: usesAgentFormatter(config),
 		collectCoverageFrom: config.collectCoverageFrom,
-		coverageDirectory,
+		coverageDirectory: path.resolve(config.rootDir, config.coverageDirectory),
 		mapped,
 		reporters: config.coverageReporters,
 	});
 
-	if (config.coverageThreshold !== undefined) {
-		const result = checkThresholds(
-			mapped,
-			config.coverageThreshold,
-			config.collectCoverageFrom,
-		);
-		if (!result.passed) {
-			for (const failure of result.failures) {
-				process.stderr.write(
-					`Coverage threshold not met for ${failure.metric}: ${String(failure.actual.toFixed(2))}% < ${String(failure.threshold)}%\n`,
-				);
-			}
-
-			return false;
-		}
-	}
-
-	return true;
+	return enforceThresholds(config, mapped);
 }
 
 function runGitHubActionsFormatter(
@@ -428,6 +452,12 @@ function printFinalStatus(passed: boolean): void {
 		? color.bgGreen(color.black(color.bold(" PASS ")))
 		: color.bgRed(color.white(color.bold(" FAIL ")));
 	process.stdout.write(`${badge}\n`);
+}
+
+function extractWorkspaceCoverageMapped(
+	result: MultiRunResult | WorkspaceRunResult,
+): MappedCoverageResult | undefined {
+	return "coverageMapped" in result ? result.coverageMapped : undefined;
 }
 
 function getAgentMaxFailures(config: ResolvedConfig): number {

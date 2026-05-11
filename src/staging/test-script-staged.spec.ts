@@ -138,6 +138,21 @@ describe(generateMaterializerScript, () => {
 		);
 	});
 
+	it("should bundle the per-package coverage reset/capture logic into the materializer template", () => {
+		expect.assertions(2);
+
+		const script = generateMaterializerScript([
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+		]);
+
+		// The bundled materializer must reset _G.__jest_roblox_cov between
+		// packages and embed the captured map into the result envelope. The
+		// rest of the runtime workflow lives in luau/staging/entry.luau but
+		// must survive bundling; assert both halves are present.
+		expect(script).toContain("__jest_roblox_cov");
+		expect(script).toMatch(/_coverage/);
+	});
+
 	it("should throw when serialized payload contains the long-string terminator", () => {
 		expect.assertions(1);
 

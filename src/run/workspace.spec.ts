@@ -21,6 +21,7 @@ vi.mock(import("../workspace/discovery.ts"));
 vi.mock(import("../workspace/package-resolver.ts"));
 vi.mock(import("../workspace/affected.ts"));
 vi.mock(import("../backends/open-cloud.ts"));
+vi.mock(import("../coverage/workspace-aggregate.ts"));
 vi.mock(import("../memory-store/queue-client.ts"), () => {
 	return fromAny({ MemoryStoreQueueClient: vi.fn<() => unknown>() });
 });
@@ -125,19 +126,6 @@ describe(runWorkspaceMode, () => {
 			expect(result.validationMessage).toContain(
 				"--workspace requires --packages or --affected-since",
 			);
-		});
-
-		it("should surface coverage-with-workspace failure", async () => {
-			expect.assertions(2);
-
-			setupHappyPath();
-			const result = await runWorkspaceMode({
-				cli: makeCli({ collectCoverage: true, packages: "a", workspace: true }),
-				config: makeConfig({ collectCoverage: true }),
-			});
-
-			expect(result.validationExitCode).toBe(2);
-			expect(result.validationMessage).toContain("coverage not supported with --workspace");
 		});
 
 		it("should surface gameOutput-with-workspace failure", async () => {
@@ -365,6 +353,188 @@ describe(runWorkspaceMode, () => {
 			).rejects.toThrow("boom");
 
 			expect(backend.close).toHaveBeenCalledWith();
+		});
+	});
+
+	describe("coverage aggregation", () => {
+		it("should aggregate per-package coverage into a single MappedCoverageResult on the result", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			const manifest = {
+				files: {},
+				generatedAt: "x",
+				instrumenterVersion: 2,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				shadowDir: "/shadow",
+				version: 1 as const,
+			};
+			vi.mocked(runWorkspace).mockResolvedValue([
+				{
+					coverageManifest: manifest,
+					displayName: "@halcyon/foo",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult({
+						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+					}),
+				},
+			]);
+
+			const { aggregateWorkspaceCoverage } =
+				await import("../coverage/workspace-aggregate.ts");
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
+				files: {
+					"foo.ts": {
+						b: {},
+						branchMap: {},
+						f: {},
+						fnMap: {},
+						path: "foo.ts",
+						s: { "0": 3 },
+						statementMap: {
+							"0": {
+								end: { column: 1, line: 1 },
+								start: { column: 0, line: 1 },
+							},
+						},
+					},
+				},
+			});
+
+			const result = await runWorkspaceMode({
+				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig({ collectCoverage: true }),
+			});
+
+			expect(aggregateWorkspaceCoverage).toHaveBeenCalledWith([
+				expect.objectContaining({
+					coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+					manifest,
+					pkg: "@halcyon/foo",
+				}),
+			]);
+			expect(result.coverageMapped?.files["foo.ts"]).toBeDefined();
+		});
+
+		it("should merge raw coverageData across same-pkg multi-project entries and skip pkgs without a manifest", async () => {
+			expect.assertions(3);
+
+			setupHappyPath();
+			const manifest = {
+				files: {},
+				generatedAt: "x",
+				instrumenterVersion: 2,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				shadowDir: "/shadow",
+				version: 1 as const,
+			};
+			vi.mocked(runWorkspace).mockResolvedValue([
+				// Two projects under the same pkg — coverageData must MERGE
+				// (each project runs Jest with its own _G.__jest_roblox_cov
+				// reset, so the maps are disjoint).
+				{
+					coverageManifest: manifest,
+					displayName: "client",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult({
+						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+					}),
+				},
+				{
+					coverageManifest: manifest,
+					displayName: "server",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult({
+						coverageData: { "out/foo.luau": { s: { "1": 4 } } },
+					}),
+				},
+				// Different pkg, no manifest — must be skipped.
+				{
+					displayName: "@halcyon/bar",
+					pkg: "@halcyon/bar",
+					result: makeExecuteResult(),
+				},
+			]);
+
+			const { aggregateWorkspaceCoverage } =
+				await import("../coverage/workspace-aggregate.ts");
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({ files: {} });
+
+			await runWorkspaceMode({
+				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig({ collectCoverage: true }),
+			});
+
+			const aggregateCall = vi.mocked(aggregateWorkspaceCoverage).mock.calls[0]?.[0];
+
+			expect(aggregateCall).toHaveLength(1);
+			expect(aggregateCall?.[0]?.pkg).toBe("@halcyon/foo");
+			// 3 + 4 = 7 — both project hits summed.
+			expect(aggregateCall?.[0]?.coverageData?.["out/foo.luau"]?.s["1"]).toBe(7);
+		});
+
+		it("should leave coverageMapped undefined when the aggregator returns an empty files map", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			const manifest = {
+				files: {},
+				generatedAt: "x",
+				instrumenterVersion: 2,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				shadowDir: "/shadow",
+				version: 1 as const,
+			};
+			vi.mocked(runWorkspace).mockResolvedValue([
+				{
+					coverageManifest: manifest,
+					displayName: "@halcyon/foo",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult(),
+				},
+			]);
+
+			// Empty mapper output means there's nothing to report — the
+			// run result should expose `undefined` rather than `{files: {}}`
+			// so the formatter's "coverage was empty" warning stays
+			// reachable.
+			const { aggregateWorkspaceCoverage } =
+				await import("../coverage/workspace-aggregate.ts");
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({ files: {} });
+
+			const result = await runWorkspaceMode({
+				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig({ collectCoverage: true }),
+			});
+
+			expect(result.coverageMapped).toBeUndefined();
+		});
+
+		it("should not aggregate when collectCoverage is false", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			vi.mocked(runWorkspace).mockResolvedValue([
+				{
+					displayName: "@halcyon/foo",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult(),
+				},
+			]);
+
+			const { aggregateWorkspaceCoverage } =
+				await import("../coverage/workspace-aggregate.ts");
+
+			const result = await runWorkspaceMode({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig(),
+			});
+
+			expect(aggregateWorkspaceCoverage).not.toHaveBeenCalled();
+			expect(result.coverageMapped).toBeUndefined();
 		});
 	});
 

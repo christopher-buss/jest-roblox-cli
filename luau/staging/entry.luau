@@ -13,6 +13,7 @@ type EntryPayload = {
 		projects: { string }?,
 		setupFiles: { string }?,
 		setupFilesAfterEnv: { string }?,
+		_coverage: boolean?,
 		[string]: any,
 	},
 }
@@ -33,6 +34,13 @@ type ResultEntry = {
 	project: string,
 	elapsedMs: number,
 	jestOutput: string,
+}
+
+type JestResultPayload = {
+	success: boolean,
+	value: any?,
+	err: any?,
+	_coverage: { [string]: any }?,
 }
 
 local function resolveSetupPaths(paths: { string }?): { Instance }?
@@ -66,8 +74,26 @@ local function runEntry(entry: EntryPayload): string
 	entry.config.setupFiles = resolveSetupPaths(entry.config.setupFiles) :: any
 	entry.config.setupFilesAfterEnv = resolveSetupPaths(entry.config.setupFilesAfterEnv) :: any
 
+	local coverageEnabled = entry.config._coverage == true
+	if coverageEnabled then
+		-- Per-package isolation: reset the global probe sink immediately
+		-- before Jest.runCLI so the captured map only contains hits from
+		-- this package's instrumented sources.
+		_G.__jest_roblox_cov = {}
+		entry.config._coverage = nil :: any
+	end
+
 	local result = Jest.runCLI(script, entry.config, projectInstances):expect()
-	return HttpService:JSONEncode(result.results or result)
+
+	local payload: JestResultPayload = {
+		success = true,
+		value = result.results or result,
+	}
+	if coverageEnabled then
+		payload._coverage = _G.__jest_roblox_cov
+	end
+
+	return HttpService:JSONEncode(payload)
 end
 
 local function executeEntry(

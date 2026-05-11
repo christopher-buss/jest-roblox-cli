@@ -645,6 +645,54 @@ describe("processCoverage via outputSingleResult", () => {
 	});
 });
 
+describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
+	it("should use coverageMapped directly without consulting the single-pkg manifest", async () => {
+		expect.assertions(3);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
+			files: { "foo.ts": {} },
+		});
+		await outputMultiResult(
+			makeConfig({ collectCoverage: true }),
+			makeWorkspaceResult({
+				coverageMapped: preMapped,
+			}),
+		);
+
+		expect(mocks.loadCoverageManifest).not.toHaveBeenCalled();
+		expect(mocks.mapCoverageToTypeScript).not.toHaveBeenCalled();
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({ mapped: preMapped }),
+		);
+	});
+
+	it("should still fall back to single-pkg path when coverageMapped is undefined", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
+		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		setupOutputSpies();
+
+		await outputMultiResult(
+			makeConfig({ collectCoverage: true }),
+			makeWorkspaceResult({
+				projectResults: [
+					{
+						displayName: "@halcyon/foo",
+						result: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
+					},
+				],
+			}),
+		);
+
+		expect(mocks.mapCoverageToTypeScript).toHaveBeenCalledOnce();
+	});
+});
+
 describe("runGitHubActionsFormatter via outputSingleResult", () => {
 	it("should be a no-op when formatter not configured", async () => {
 		expect.assertions(2);

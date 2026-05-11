@@ -710,6 +710,245 @@ describe(synthesize, () => {
 		expect(withEmpty).toBe(baseline);
 	});
 
+	it("should swap $path to the per-package coverage shadow dir when coverageRoots is set", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const shadowOut = normalizeWindowsPath(
+			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
+		);
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					coverageRoots: [{ luauRoot: "out", shadowDir: shadowOut }],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = JSON.parse(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
+				};
+			};
+		};
+
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Pkg.$path,
+		).toBe(shadowOut);
+	});
+
+	it("should leave $path untouched for packages that opt out of coverageRoots", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+		const fooShadow = normalizeWindowsPath(
+			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
+		);
+		vol.fromJSON({
+			[barProject]: projectJson({
+				name: "bar-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out" } },
+				},
+			}),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/init.luau")]: "",
+			[path.join(ROOT, "packages/bar/out/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/bar",
+					packageDirectory: path.join(ROOT, "packages/bar"),
+					rojoProjectPath: barProject,
+				},
+				{
+					name: "@halcyon/foo",
+					coverageRoots: [{ luauRoot: "out", shadowDir: fooShadow }],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = JSON.parse(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
+				};
+			};
+		};
+
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/bar"]?.ReplicatedStorage.Pkg.$path,
+		).toBe(normalizeWindowsPath(path.join(ROOT, "packages/bar/out")));
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Pkg.$path,
+		).toBe(fooShadow);
+	});
+
+	it("should pass nested $path entries through the coverage shadow dir prefix", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const shadowOut = normalizeWindowsPath(
+			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
+		);
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Client: { $path: "out/client" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/client/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					coverageRoots: [{ luauRoot: "out", shadowDir: shadowOut }],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = JSON.parse(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<
+						string,
+						{ ReplicatedStorage: { Client: { $path: string } } }
+					>;
+				};
+			};
+		};
+
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Client.$path,
+		).toBe(`${shadowOut}/client`);
+	});
+
+	it("should normalize trailing slashes on $path before matching coverageRoots", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const shadowOut = normalizeWindowsPath(
+			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
+		);
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out/" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					coverageRoots: [{ luauRoot: "out", shadowDir: shadowOut }],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = JSON.parse(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
+				};
+			};
+		};
+
+		// Must NOT have a trailing slash → not "<shadowOut>/".
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Pkg.$path,
+		).toBe(shadowOut);
+	});
+
+	it("should leave $path entries that don't match any coverageRoot using package-relative resolution", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const shadowOut = normalizeWindowsPath(
+			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
+		);
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Other: { $path: "vendor" } },
+				},
+			}),
+			[path.join(FOO_DIR, "vendor/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					coverageRoots: [{ luauRoot: "out", shadowDir: shadowOut }],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = JSON.parse(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<
+						string,
+						{ ReplicatedStorage: { Other: { $path: string } } }
+					>;
+				};
+			};
+		};
+
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Other.$path,
+		).toBe(normalizeWindowsPath(path.join(FOO_DIR, "vendor")));
+	});
+
 	it("should be byte-stable regardless of input package ordering", () => {
 		expect.assertions(1);
 

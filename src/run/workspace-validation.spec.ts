@@ -115,7 +115,7 @@ describe(validateWorkspaceFlags, () => {
 		);
 	});
 
-	it("should reject coverage with --workspace", () => {
+	it("should accept coverage with --workspace", () => {
 		expect.assertions(1);
 
 		const result = validateWorkspaceFlags(
@@ -123,14 +123,10 @@ describe(validateWorkspaceFlags, () => {
 			makeConfig({ backend: "open-cloud", collectCoverage: true }),
 		);
 
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message: "Error: coverage not supported with --workspace yet.\n",
-			ok: false,
-		});
+		expect(result).toStrictEqual({ ok: true });
 	});
 
-	it("should reject coverage when only enabled via config", () => {
+	it("should accept coverage when only enabled via config", () => {
 		expect.assertions(1);
 
 		const result = validateWorkspaceFlags(
@@ -138,11 +134,7 @@ describe(validateWorkspaceFlags, () => {
 			makeConfig({ backend: "open-cloud", collectCoverage: true }),
 		);
 
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message: "Error: coverage not supported with --workspace yet.\n",
-			ok: false,
-		});
+		expect(result).toStrictEqual({ ok: true });
 	});
 
 	it("should reject --gameOutput with --workspace", () => {

@@ -12,8 +12,22 @@ export interface StubMount {
 	dataModelPath: string;
 }
 
+export interface CoverageRoot {
+	/** Path relative to `packageDirectory` that points at the original luau root. */
+	luauRoot: string;
+	/** Absolute path to the instrumented shadow directory for the same root. */
+	shadowDir: string;
+}
+
 export interface PackageDescriptor {
 	name: string;
+	/**
+	 * When set, $path entries that fall inside any listed `luauRoot` are
+	 * redirected to the corresponding `shadowDir` so the synthesized place
+	 * picks up instrumented sources for this package only. Packages without
+	 * `coverageRoots` use their original $path entries unchanged.
+	 */
+	coverageRoots?: Array<CoverageRoot>;
 	packageDirectory: string;
 	rojoProjectPath: string;
 	stubMounts?: Array<StubMount>;
@@ -54,13 +68,19 @@ const SERVICE_CLASSES = new Set([
 
 const SERVICE_PROPERTIES = new Set(["LoadStringEnabled"]);
 
+interface AbsolutizeOptions {
+	coverageRoots: Array<CoverageRoot> | undefined;
+}
+
 export function synthesize(input: SynthesizeInput): string {
 	const stage: RojoTreeNode = { $className: "Folder" };
 
 	for (const descriptor of input.packages) {
 		const project = loadRojoProject(descriptor.rojoProjectPath);
 		const folder = transformToFolder(project.tree);
-		const root = absolutizePaths(folder, path.dirname(descriptor.rojoProjectPath));
+		const root = absolutizePaths(folder, path.dirname(descriptor.rojoProjectPath), {
+			coverageRoots: descriptor.coverageRoots,
+		});
 		injectStubMounts(root, descriptor.stubMounts);
 		stage[descriptor.name] = root;
 	}
@@ -84,16 +104,51 @@ function isTreeNode(value: RojoTreeNode[string]): value is RojoTreeNode {
 	return typeof value === "object" && !("optional" in value);
 }
 
-function absolutizePaths(node: RojoTreeNode, base: string): RojoTreeNode {
+function resolveDollarPath(
+	value: string,
+	base: string,
+	coverageRoots: Array<CoverageRoot> | undefined,
+): string {
+	const absoluteTarget = normalizeWindowsPath(path.resolve(base, value));
+
+	if (coverageRoots !== undefined) {
+		for (const root of coverageRoots) {
+			// luauRoot is package-relative; resolve against the same base
+			// (which is the rojo project dir, == package dir in the common
+			// case) and strip any trailing slash before comparison so a
+			// rojo `$path: "out/"` matches a `luauRoot: "out"` exactly.
+			const absoluteRoot = normalizeWindowsPath(path.resolve(base, root.luauRoot)).replace(
+				/\/$/,
+				"",
+			);
+			if (absoluteTarget === absoluteRoot) {
+				return normalizeWindowsPath(root.shadowDir);
+			}
+
+			if (absoluteTarget.startsWith(`${absoluteRoot}/`)) {
+				const suffix = absoluteTarget.slice(absoluteRoot.length);
+				return normalizeWindowsPath(root.shadowDir) + suffix;
+			}
+		}
+	}
+
+	return absoluteTarget;
+}
+
+function absolutizePaths(
+	node: RojoTreeNode,
+	base: string,
+	options: AbsolutizeOptions,
+): RojoTreeNode {
 	const result: RojoTreeNode = {};
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
-			result[key] = normalizeWindowsPath(path.resolve(base, value));
+			result[key] = resolveDollarPath(value, base, options.coverageRoots);
 			continue;
 		}
 
 		if (!key.startsWith("$") && isTreeNode(value)) {
-			result[key] = absolutizePaths(value, base);
+			result[key] = absolutizePaths(value, base, options);
 			continue;
 		}
 

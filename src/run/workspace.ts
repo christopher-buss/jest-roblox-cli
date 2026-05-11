@@ -3,8 +3,12 @@ import process from "node:process";
 import packageJson from "../../package.json" with { type: "json" };
 import type { Backend } from "../backends/interface.ts";
 import { createOpenCloudBackend } from "../backends/open-cloud.ts";
+import type { MappedCoverageResult } from "../coverage/mapper.ts";
+import { mergeRawCoverage } from "../coverage/merge-raw-coverage.ts";
+import type { RawCoverageData } from "../coverage/types.ts";
+import { aggregateWorkspaceCoverage } from "../coverage/workspace-aggregate.ts";
 import { MemoryStoreQueueClient } from "../memory-store/queue-client.ts";
-import { runWorkspace } from "../workspace-runner.ts";
+import { runWorkspace, type WorkspaceProjectResult } from "../workspace-runner.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
 import { resolvePackage } from "../workspace/package-resolver.ts";
@@ -106,12 +110,59 @@ export async function runWorkspaceMode(options: RunOptions): Promise<WorkspaceRu
 		};
 	});
 
+	const coverageMapped = config.collectCoverage
+		? normalizeEmptyCoverage(aggregatePerPackageCoverage(runtimeResults))
+		: undefined;
+
 	return {
+		coverageMapped,
 		merged: {},
 		mode: "workspace",
 		preCoverageMs: 0,
 		projectResults,
 	};
+}
+
+function normalizeEmptyCoverage(mapped: MappedCoverageResult): MappedCoverageResult | undefined {
+	return Object.keys(mapped.files).length === 0 ? undefined : mapped;
+}
+
+function aggregatePerPackageCoverage(
+	runtimeResults: Array<WorkspaceProjectResult>,
+): MappedCoverageResult {
+	// A package with multiple projects emits one entry per project. Each
+	// project runs Jest with its own `_G.__jest_roblox_cov` reset, so the
+	// per-entry `coverageData` captures DIFFERENT hits across projects. We
+	// must additively merge those maps per pkg (not drop them) before passing
+	// one entry per pkg into the mapper — otherwise multi-project packages
+	// silently lose coverage from all but the first project.
+	interface PackageEntry {
+		coverageData: RawCoverageData | undefined;
+		manifest: NonNullable<WorkspaceProjectResult["coverageManifest"]>;
+		pkg: string;
+	}
+
+	const byPackage = new Map<string, PackageEntry>();
+
+	for (const entry of runtimeResults) {
+		if (entry.coverageManifest === undefined) {
+			continue;
+		}
+
+		const existing = byPackage.get(entry.pkg);
+		if (existing === undefined) {
+			byPackage.set(entry.pkg, {
+				coverageData: entry.result.coverageData,
+				manifest: entry.coverageManifest,
+				pkg: entry.pkg,
+			});
+			continue;
+		}
+
+		existing.coverageData = mergeRawCoverage(existing.coverageData, entry.result.coverageData);
+	}
+
+	return aggregateWorkspaceCoverage([...byPackage.values()]);
 }
 
 function resolvePackages(options: RunOptions): ResolvedPackages {
