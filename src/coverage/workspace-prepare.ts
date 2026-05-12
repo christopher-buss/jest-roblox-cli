@@ -55,10 +55,30 @@ export function prepareWorkspaceCoverage(
 	});
 }
 
+function isInstrumentableLuauFile(filename: string): boolean {
+	if (!filename.endsWith(".luau") && !filename.endsWith(".lua")) {
+		return false;
+	}
+
+	// Mirror `parse-ast.luau`'s discovery filter: instrumentation skips spec,
+	// test, and snapshot files. A directory containing only those would feed
+	// `instrumentRoot` zero files and produce an empty shadow dir, which the
+	// synthesizer would then swap a parent `$path` into and the demote pass
+	// inside `walkToLeaf` would fail to walk.
+	return (
+		!filename.endsWith(".spec.luau") &&
+		!filename.endsWith(".spec.lua") &&
+		!filename.endsWith(".test.luau") &&
+		!filename.endsWith(".test.lua") &&
+		!filename.endsWith(".snap.luau") &&
+		!filename.endsWith(".snap.lua")
+	);
+}
+
 function containsLuauFiles(directoryPath: string): boolean {
 	const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
 	return entries.some((entry) => {
-		if (entry.isFile() && entry.name.endsWith(".luau")) {
+		if (entry.isFile() && isInstrumentableLuauFile(entry.name)) {
 			return true;
 		}
 

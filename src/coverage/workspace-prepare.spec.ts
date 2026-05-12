@@ -396,6 +396,44 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(mocked).not.toHaveBeenCalled();
 	});
 
+	it("should skip directories that only contain spec / test / snap luau files", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Tests: { $path: "out-test" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out-test/__snapshots__/foo.spec.snap.luau")]: "",
+			[path.join(FOO_DIR, "out-test/src/bar.test.luau")]: "",
+			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "",
+		});
+		const mocked = await mockInstrumentRoot();
+
+		const result = prepareWorkspaceCoverage({
+			config: makeConfig(),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		// `out-test/` only contains files the instrumenter would skip
+		// (`.spec.luau`, `.test.luau`, `.snap.luau` — see `parse-ast.luau`).
+		// Without filtering them at discovery time, the synthesizer would swap
+		// the parent's `$path` to an empty shadow dir and the demote pass
+		// inside `walkToLeaf` would fail to find any siblings on disk.
+		expect(mocked).not.toHaveBeenCalled();
+		expect(result[0]?.coverageRoots).toStrictEqual([]);
+	});
+
 	it("should dedupe duplicate $path entries within a single package", async () => {
 		expect.assertions(1);
 
