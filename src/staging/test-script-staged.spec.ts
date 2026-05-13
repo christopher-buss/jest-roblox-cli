@@ -219,4 +219,46 @@ describe(generateWorkStealingScript, () => {
 			);
 		}).toThrow(/]==]/);
 	});
+
+	it("should embed sortedMapId and streamingTtlSeconds when streaming is configured", () => {
+		expect.assertions(2);
+
+		const script = generateWorkStealingScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			"queue-uuid-1",
+			90,
+			{ streaming: { sortedMapId: "stream-uuid", ttlSeconds: 300 } },
+		);
+
+		expect(script).toContain('"sortedMapId":"stream-uuid"');
+		expect(script).toContain('"streamingTtlSeconds":300');
+	});
+
+	it("should omit streaming payload fields when streaming is not configured", () => {
+		expect.assertions(2);
+
+		const script = generateWorkStealingScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			"queue-uuid-1",
+			90,
+		);
+
+		// The Luau template always references `sortedMapId` in its type
+		// declaration; assert the JSON payload does not embed a value for it.
+		expect(script).not.toContain('"sortedMapId":');
+		expect(script).not.toContain('"streamingTtlSeconds":');
+	});
+});
+
+describe("generateMaterializerScript with streaming", () => {
+	it("should embed sortedMapId when streaming is configured", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			{ streaming: { sortedMapId: "stream-uuid" } },
+		);
+
+		expect(script).toContain('"sortedMapId":"stream-uuid"');
+	});
 });

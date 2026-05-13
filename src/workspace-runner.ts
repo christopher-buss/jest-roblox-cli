@@ -1,10 +1,16 @@
 import { collectPaths, loadRojoProject, resolveNestedProjects } from "@isentinel/rojo-utils";
 
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
-import type { Backend, BackendTiming, ProjectBackendResult } from "./backends/interface.ts";
+import type {
+	Backend,
+	BackendTiming,
+	ProjectBackendResult,
+	StreamingHooks,
+} from "./backends/interface.ts";
 import { loadConfig } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
 import type { ResolvedProjectConfig } from "./config/projects.ts";
@@ -28,7 +34,12 @@ import {
 	type ExecuteResult,
 	processProjectResult,
 } from "./executor.ts";
+import { StreamingResultClient } from "./memory-store/sorted-map-client.ts";
 import { prepareWorkStealingQueue } from "./memory-store/work-stealing.ts";
+import {
+	StreamingAggregator,
+	type StreamingAggregatorOnEntry,
+} from "./reporter/streaming-aggregator.ts";
 import { type PackageDescriptor, type StubMount, synthesize } from "./staging/synthesizer.ts";
 import {
 	generateMaterializerScript,
@@ -51,6 +62,14 @@ export interface RunWorkspaceOptions {
 	backend: Backend;
 	cli: CliOptions;
 	config: ResolvedConfig;
+	/**
+	 * When provided, called once per newly-observed streaming result as
+	 * packages complete (work-stealing mode only). The intended consumer is
+	 * the human formatter, which uses this hook to flush per-package output
+	 * to stdout as it lands. Omit for buffering formatters (JSON) so the
+	 * final envelope is built once at task end.
+	 */
+	onStreamingResult?: StreamingAggregatorOnEntry;
 	packageInfos: Array<PackageInfo>;
 	version: string;
 	workspaceRoot: string;
@@ -203,14 +222,17 @@ export async function runWorkspace(
 		};
 	});
 
-	const { workStealingCredentials } = options;
+	const { onStreamingResult, workStealingCredentials } = options;
 	const { results, timing: backendTiming } = await dispatchWorkspace({
 		backend,
 		cli,
 		inputs,
 		jobs,
+		...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
 		workStealingCredentials,
 	});
+
+	writePerPackageOutputFiles(workspaceRoot, pending, results);
 
 	return mapBackendResults(results, pending, {
 		backendTiming,
@@ -233,17 +255,52 @@ function buildCoverageMap(
 
 const PER_PACKAGE_TIMEOUT_SECONDS = 60;
 
+function buildStreaming(input: {
+	credentials: { apiKey: string; baseUrl?: string; universeId: string };
+	generateUuid: () => string;
+	onStreamingResult: StreamingAggregatorOnEntry;
+}): { hooks: StreamingHooks; sortedMapId: string } {
+	const sortedMapId = input.generateUuid();
+	// drain() is intentionally untouched in the current production path —
+	// it's an in-memory buffer kept for future formatter integrations that
+	// need to emit a final summary across all streamed entries (e.g. JSON
+	// envelope with per-pkg summaries). Today the aggregator's sole job is
+	// per-arrival dedupe + forwarding to onStreamingResult.
+	const aggregator = new StreamingAggregator({ onEntry: input.onStreamingResult });
+	const reader = new StreamingResultClient({
+		...(input.credentials.baseUrl !== undefined ? { baseUrl: input.credentials.baseUrl } : {}),
+		credentials: {
+			apiKey: input.credentials.apiKey,
+			universeId: input.credentials.universeId,
+		},
+		mapId: sortedMapId,
+	});
+
+	return {
+		hooks: {
+			onPackageResult: (entry) => {
+				aggregator.accept(entry);
+			},
+			reader,
+		},
+		sortedMapId,
+	};
+}
+
 async function dispatchWorkspace(input: {
 	backend: Backend;
 	cli: CliOptions;
+	generateUuid?: () => string;
 	inputs: Array<MaterializerInput>;
 	jobs: Array<ReturnType<typeof buildProjectJob>>;
+	onStreamingResult?: StreamingAggregatorOnEntry;
 	workStealingCredentials: undefined | { apiKey: string; baseUrl?: string; universeId: string };
 }): Promise<{
 	results: Array<ProjectBackendResult>;
 	timing: BackendTiming;
 }> {
-	const { backend, cli, inputs, jobs, workStealingCredentials } = input;
+	const { backend, cli, generateUuid, inputs, jobs, onStreamingResult, workStealingCredentials } =
+		input;
 
 	const parallel = typeof cli.parallel === "number" ? cli.parallel : undefined;
 	const useWorkStealing =
@@ -261,16 +318,33 @@ async function dispatchWorkspace(input: {
 			packages: inputs.map((entry) => ({ pkg: entry.pkg, project: entry.project })),
 			perPackageTimeoutSeconds: PER_PACKAGE_TIMEOUT_SECONDS,
 		});
+
+		// Gate streaming setup on an actual consumer. Without `onStreamingResult`
+		// (JSON/agent/silent runs) the SortedMap polling has no sink — running
+		// it anyway burns HTTP quota and risks the one-shot stderr warning
+		// leaking into structured output. Skip the SortedMap path entirely;
+		// the final batched envelope still drives per-package output files.
+		const streaming =
+			onStreamingResult !== undefined
+				? buildStreaming({
+						credentials: workStealingCredentials,
+						generateUuid: generateUuid ?? randomUUID,
+						onStreamingResult,
+					})
+				: undefined;
+
 		const script = generateWorkStealingScript(
 			inputs,
 			prepared.queueId,
 			prepared.invisibilityWindowSeconds,
+			streaming !== undefined ? { streaming: { sortedMapId: streaming.sortedMapId } } : {},
 		);
 
 		return backend.runTests({
 			jobs,
 			parallel,
 			scriptOverride: script,
+			...(streaming !== undefined ? { streaming: streaming.hooks } : {}),
 			workStealing: true,
 		});
 	}
@@ -531,6 +605,35 @@ function mapBackendResults(
 			}),
 		};
 	});
+}
+
+const PER_PACKAGE_OUTPUT_DIRECTORY = path.join(".jest-roblox", "output");
+const FILESYSTEM_UNSAFE = /[^\w@.-]+/g;
+
+function sanitizePathSegment(segment: string): string {
+	return segment.replace(FILESYSTEM_UNSAFE, "-");
+}
+
+function writePerPackageOutputFiles(
+	workspaceRoot: string,
+	pending: Array<PendingEntry>,
+	results: Array<ProjectBackendResult>,
+): void {
+	const directory = path.join(workspaceRoot, PER_PACKAGE_OUTPUT_DIRECTORY);
+	fs.mkdirSync(directory, { recursive: true });
+
+	for (const [index, result] of results.entries()) {
+		// eslint-disable-next-line ts/no-non-null-assertion -- backend keeps results aligned to pending.
+		const entry = pending[index]!;
+		const filename = `${sanitizePathSegment(entry.pkg)}--${sanitizePathSegment(
+			entry.project.displayName,
+		)}.json`;
+		fs.writeFileSync(
+			path.join(directory, filename),
+			JSON.stringify(result.result, null, 2),
+			"utf8",
+		);
+	}
 }
 
 function writePreflightErrors(errors: Array<PreflightError>): void {

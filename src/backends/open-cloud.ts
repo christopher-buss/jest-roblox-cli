@@ -1,3 +1,4 @@
+import { PermissionError } from "@bedrock-rbx/ocale";
 import { OcaleRunner } from "@isentinel/roblox-runner";
 import type { RemoteRunner, RunnerCredentials } from "@isentinel/roblox-runner";
 
@@ -14,10 +15,12 @@ import type {
 	BackendResult,
 	ProjectBackendResult,
 	ProjectJob,
+	StreamingHooks,
 } from "./interface.ts";
 
 const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
+const DEFAULT_STREAM_POLL_MS = 250;
 
 export type OpenCloudCredentials = RunnerCredentials;
 
@@ -46,6 +49,10 @@ interface JobBucket {
 	jobs: Array<ProjectJob>;
 }
 
+interface PollState {
+	warned: boolean;
+}
+
 export class OpenCloudBackend implements Backend {
 	private readonly runner: RemoteRunner;
 
@@ -56,7 +63,7 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	public async runTests(options: BackendOptions): Promise<BackendResult> {
-		const { jobs, parallel, scriptOverride, workStealing } = options;
+		const { jobs, parallel, scriptOverride, streaming, workStealing } = options;
 		if (jobs.length === 0) {
 			throw new Error("OpenCloudBackend requires at least one job");
 		}
@@ -80,8 +87,14 @@ export class OpenCloudBackend implements Backend {
 		const executionStart = Date.now();
 		const flattened =
 			workStealing === true
-				? // eslint-disable-next-line ts/no-non-null-assertion -- length checked above
-					await this.runWorkStealing(jobs, parallel, scriptOverride!, primary.config)
+				? await this.runWorkStealing({
+						jobs,
+						parallel,
+						primaryConfig: primary.config,
+						// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
+						scriptOverride: scriptOverride!,
+						streaming,
+					})
 				: await this.runStaticBuckets(jobs, parallel, scriptOverride);
 		const executionMs = Date.now() - executionStart;
 
@@ -177,18 +190,41 @@ export class OpenCloudBackend implements Backend {
 		return { entries: parseEnvelope(jestOutput), gameOutput: result.outputs[1] };
 	}
 
-	private async runWorkStealing(
-		jobs: Array<ProjectJob>,
-		parallel: BackendOptions["parallel"],
-		scriptOverride: string,
-		primaryConfig: ResolvedConfig,
-	): Promise<Array<ProjectBackendResult>> {
+	private async runWorkStealing(args: {
+		jobs: Array<ProjectJob>;
+		parallel: BackendOptions["parallel"];
+		primaryConfig: ResolvedConfig;
+		scriptOverride: string;
+		streaming: StreamingHooks | undefined;
+	}): Promise<Array<ProjectBackendResult>> {
+		const { jobs, parallel, primaryConfig, scriptOverride, streaming } = args;
 		const taskCount = resolveBucketCount(parallel, jobs.length);
-		const taskEnvelopes = await Promise.all(
+		const tasksDone = { value: false };
+		const taskEnvelopesPromise = Promise.all(
 			Array.from({ length: taskCount }, async () =>
 				this.runStealingTask(scriptOverride, primaryConfig),
 			),
-		);
+		).finally(() => {
+			tasksDone.value = true;
+		});
+
+		const pollPromise =
+			streaming !== undefined
+				? pollStreamingResults(streaming, () => tasksDone.value)
+				: Promise.resolve();
+
+		// Settle both promises before letting any task failure escape: tasksDone
+		// is set by taskEnvelopesPromise.finally regardless of success/failure,
+		// so pollPromise terminates within ~pollMs of the task settling. If we
+		// went through `await Promise.all([...])` and the task rejected,
+		// pollPromise would be orphaned — its setTimeout chain could keep timers
+		// alive and write to stderr after the function has already returned.
+		const [taskSettlement] = await Promise.allSettled([taskEnvelopesPromise, pollPromise]);
+		if (taskSettlement.status === "rejected") {
+			throw taskSettlement.reason;
+		}
+
+		const taskEnvelopes = taskSettlement.value;
 
 		// Aggregate entries from all task envelopes. Map by pkg::project so
 		// multi-project packages don't collide on a shared `pkg`. The first
@@ -233,6 +269,30 @@ export class OpenCloudBackend implements Backend {
 	}
 }
 
+/**
+ * Poll the streaming SortedMap until `isDone()` returns true, then perform
+ * one final drain. Each newly-observed entry is forwarded to
+ * `onPackageResult` and deleted from the map. Errors are swallowed so a
+ * transient HTTP failure doesn't take down the test run — the final task
+ * envelope still carries authoritative results.
+ */
+export async function pollStreamingResults(
+	hooks: StreamingHooks,
+	isDone: () => boolean,
+): Promise<void> {
+	const pollMs = hooks.pollMs ?? DEFAULT_STREAM_POLL_MS;
+	const state: PollState = { warned: false };
+
+	while (!isDone()) {
+		await drainOnce(hooks, state);
+		await sleep(pollMs);
+	}
+
+	// Final pass to catch any entries written between the last drain and
+	// tasksDone.
+	await drainOnce(hooks, state);
+}
+
 export function resolveOpenCloudBaseUrl(): string | undefined {
 	const override = process.env[BASE_URL_ENV]?.trim();
 	if (override === undefined || override === "") {
@@ -244,6 +304,64 @@ export function resolveOpenCloudBaseUrl(): string | undefined {
 
 export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenCloudBackend {
 	return new OpenCloudBackend(credentials);
+}
+
+function describeError(err: unknown): string {
+	const cause = err instanceof Error ? err.cause : undefined;
+	if (cause instanceof PermissionError) {
+		const scopes = cause.requiredScopes.join(", ");
+		return `API key missing scope${cause.requiredScopes.length === 1 ? "" : "s"} ${scopes}. Add via Creator Dashboard.`;
+	}
+
+	return err instanceof Error ? err.message : String(err);
+}
+
+function warnStreamingDisabled(err: unknown, state: PollState): void {
+	if (state.warned) {
+		return;
+	}
+
+	state.warned = true;
+	process.stderr.write(`Warning: live per-package streaming disabled — ${describeError(err)}\n`);
+	process.stderr.write("  Tests still run; results print as usual once each task finishes.\n");
+}
+
+async function drainOnce(hooks: StreamingHooks, state: PollState): Promise<void> {
+	let records;
+	try {
+		records = await hooks.reader.readAll();
+	} catch (err) {
+		warnStreamingDisabled(err, state);
+		return;
+	}
+
+	// Forward in arrival order so the streaming-progress lines stay
+	// deterministic, then fire deletes in parallel — when several packages
+	// land between two poll ticks, serial deletes can stack up to a full
+	// poll interval of latency before the next read sees fresh entries.
+	for (const record of records) {
+		hooks.onPackageResult(record.value);
+	}
+
+	await Promise.all(
+		records.map(async (record) => {
+			try {
+				await hooks.reader.delete(record.id);
+			} catch (err) {
+				// Best-effort; if delete fails the entry will reappear on the
+				// next poll and onPackageResult dedupes downstream. Still surface
+				// the first failure so users know their key can read but not
+				// write.
+				warnStreamingDisabled(err, state);
+			}
+		}),
+	);
+}
+
+async function sleep(ms: number): Promise<void> {
+	await new Promise((resolve) => {
+		setTimeout(resolve, ms);
+	});
 }
 
 function resolveRunnerOptions(): { baseUrl?: string } {

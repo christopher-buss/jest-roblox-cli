@@ -1,5 +1,9 @@
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { RawCoverageData } from "../coverage/types.ts";
+import type {
+	StreamingResultEntry,
+	StreamingResultReader,
+} from "../memory-store/sorted-map-client.ts";
 import type { SnapshotWrites } from "../reporter/parser.ts";
 import type { JestResult } from "../types/jest-result.ts";
 
@@ -18,6 +22,22 @@ export interface ProjectJob {
 	testFiles: Array<string>;
 }
 
+export interface StreamingHooks {
+	/**
+	 * Called once per newly-observed SortedMap entry, in the order the
+	 * backend's poll loop drains them. Duplicates from work-stealing
+	 * fault-recovery are NOT filtered here — consumers handle that
+	 * (the StreamingAggregator drops repeat pkg/project keys).
+	 */
+	onPackageResult: (entry: StreamingResultEntry) => void;
+	/**
+	 * Optional poll cadence in milliseconds. Defaults to 250ms — fast
+	 * enough to feel live without saturating the Open Cloud rate limit.
+	 */
+	pollMs?: number;
+	reader: StreamingResultReader;
+}
+
 export interface BackendOptions {
 	jobs: Array<ProjectJob>;
 	/**
@@ -34,6 +54,15 @@ export interface BackendOptions {
 	 * backend stays unaware of the difference.
 	 */
 	scriptOverride?: string;
+	/**
+	 * Open-Cloud-only, work-stealing only: when provided, the backend polls
+	 * the SortedMap concurrently with executeScript and invokes
+	 * `onPackageResult` per newly-observed entry. Consumed entries are
+	 * deleted to avoid re-emission. Streaming is best-effort: failure to
+	 * poll/delete does not affect the final results returned in the task
+	 * envelope.
+	 */
+	streaming?: StreamingHooks;
 	/**
 	 * Open-Cloud-only: when true, fire `parallel` tasks all running the SAME
 	 * `scriptOverride` (no static job-bucket split). Each task pulls work from

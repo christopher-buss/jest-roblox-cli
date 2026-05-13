@@ -1293,6 +1293,12 @@ describe(runWorkspace, () => {
 				backend,
 				cli: makeCli({ parallel: 2 }),
 				config: makeConfig(),
+				// Exercise the streaming-side baseUrl plumbing on the same call;
+				// keeps the SortedMap client constructor seeing the override
+				// when work-stealing fires.
+				onStreamingResult: () => {
+					/* intentionally inert */
+				},
 				packageInfos: [FOO_INFO],
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
@@ -1302,6 +1308,239 @@ describe(runWorkspace, () => {
 			expect(vi.mocked(prepareWorkStealingQueue).mock.calls[0]?.[0]?.baseUrl).toBe(
 				"http://127.0.0.1:4010",
 			);
+		});
+
+		it("should provide a streaming reader and onPackageResult to the backend when onStreamingResult is set", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			mockPreparedQueue("queue-stream");
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ parallel: 2 }),
+				config: makeConfig(),
+				onStreamingResult: () => {
+					/* intentionally inert */
+				},
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(captured.options?.streaming?.reader).toBeDefined();
+			expect(captured.options?.streaming?.onPackageResult).toBeFunction();
+		});
+
+		it("should embed a sortedMapId in the work-stealing script when onStreamingResult is set", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			mockPreparedQueue("queue-stream");
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ parallel: 2 }),
+				config: makeConfig(),
+				onStreamingResult: () => {
+					/* intentionally inert */
+				},
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(captured.options?.scriptOverride).toContain('"sortedMapId":');
+		});
+
+		it("should skip streaming setup when onStreamingResult is omitted (no SortedMap polling overhead)", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			mockPreparedQueue("queue-stream");
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ parallel: 2 }),
+				config: makeConfig(),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(captured.options?.streaming).toBeUndefined();
+			expect(captured.options?.scriptOverride).not.toContain('"sortedMapId":');
+		});
+
+		it("should route streaming entries through the supplied onStreamingResult", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			mockPreparedQueue("queue-stream");
+			const seen: Array<string> = [];
+			const streamedEntry = {
+				elapsedMs: 5,
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				pkg: "@halcyon/foo",
+				project: "@halcyon/foo",
+				success: true,
+			};
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+			// Wrap the stub so it invokes the streaming hook before returning,
+			// simulating an entry observed mid-task.
+			const wrappedBackend: Backend = {
+				kind: "open-cloud",
+				runTests: async (options) => {
+					options.streaming?.onPackageResult(streamedEntry);
+					return backend.runTests(options);
+				},
+			};
+
+			await runWorkspace({
+				backend: wrappedBackend,
+				cli: makeCli({ parallel: 2 }),
+				config: makeConfig(),
+				onStreamingResult: (entry) => {
+					seen.push(entry.pkg);
+				},
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(seen).toStrictEqual(["@halcyon/foo"]);
+		});
+	});
+
+	describe("per-package output files", () => {
+		it("should write .jest-roblox/output/<pkg>--<project>.json under the workspace root from final results", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig(),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const file = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--@halcyon-foo.json",
+			);
+
+			expect(vol.existsSync(file)).toBeTrue();
+			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toMatchObject({
+				numFailedTests: 0,
+				numPassedTests: 1,
+				success: true,
+			});
+		});
+
+		it("should sanitize filesystem-unsafe characters in pkg/project segments", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig(),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			// `@halcyon/foo` → `@halcyon-foo`; slashes and other unsafe chars
+			// become hyphens so the path component stays a single segment.
+			expect(
+				vol.existsSync(
+					path.join(ROOT, ".jest-roblox", "output", "@halcyon-foo--@halcyon-foo.json"),
+				),
+			).toBeTrue();
 		});
 	});
 });

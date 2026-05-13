@@ -6,13 +6,23 @@ import type {
 	UploadPlaceResult,
 } from "@isentinel/roblox-runner";
 
+import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
+import type {
+	StreamingResultReader,
+	StreamingResultRecord,
+} from "../memory-store/sorted-map-client.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import { createOpenCloudBackend, OpenCloudBackend } from "./open-cloud.ts";
+
+interface StubStreamReader extends StreamingResultReader {
+	deleted: Array<string>;
+	readCalls: number;
+}
 
 interface RunnerStubOptions {
 	uploadError?: Error;
@@ -26,6 +36,22 @@ interface RunnerStub {
 	runner: RemoteRunner;
 	setExecute: (handler: ExecuteHandler) => void;
 	uploadCalls: Array<UploadPlaceOptions>;
+}
+
+function createStreamReader(pages: Array<Array<StreamingResultRecord>>): StubStreamReader {
+	const reader: StubStreamReader = {
+		delete: async (itemId: string): Promise<void> => {
+			reader.deleted.push(itemId);
+		},
+		deleted: [],
+		readAll: async (): Promise<Array<StreamingResultRecord>> => {
+			const index = Math.min(reader.readCalls, pages.length - 1);
+			reader.readCalls += 1;
+			return pages[index] ?? [];
+		},
+		readCalls: 0,
+	};
+	return reader;
 }
 
 const DEFAULT_UPLOAD: UploadPlaceResult = { cached: false, uploadMs: 12, versionNumber: 1 };
@@ -909,6 +935,392 @@ describe(OpenCloudBackend, () => {
 			expect(results.map((entry) => entry.displayName)).toStrictEqual(["client", "server"]);
 			expect(results[0]?.result.numPassedTests).toBe(5);
 			expect(results[1]?.result.numPassedTests).toBe(9);
+		});
+
+		it("should deliver streaming entries to onPackageResult and delete each one", async () => {
+			expect.assertions(3);
+
+			const reader = createStreamReader([
+				[
+					{
+						id: "alpha::client",
+						value: {
+							elapsedMs: 50,
+							numFailedTests: 0,
+							numPassedTests: 1,
+							numPendingTests: 0,
+							pkg: "alpha",
+							project: "client",
+							success: true,
+						},
+					},
+				],
+				[],
+			]);
+			const seen: Array<string> = [];
+
+			const stub = createRunnerStub();
+			stub.setExecute(async () => {
+				// Let the polling loop tick once before the task finishes so
+				// the entry is consumed mid-flight rather than only on the
+				// final drain.
+				await new Promise<void>((resolve) => {
+					setTimeout(resolve, 10);
+				});
+				return scriptResult(
+					envelope([{ jestOutput: successJest(), pkg: "alpha", project: "client" }]),
+				);
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("client", {}, "alpha")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				streaming: {
+					onPackageResult: (entry) => {
+						seen.push(entry.pkg);
+					},
+					pollMs: 1,
+					reader,
+				},
+				workStealing: true,
+			});
+
+			expect(seen).toContain("alpha");
+			expect(reader.deleted).toContain("alpha::client");
+			expect(reader.readCalls).toBeGreaterThanOrEqual(1);
+		});
+
+		it("should default pollMs when streaming hooks omit it", async () => {
+			expect.assertions(2);
+
+			const reader = createStreamReader([
+				[
+					{
+						id: "alpha::alpha",
+						value: {
+							elapsedMs: 1,
+							numFailedTests: 0,
+							numPassedTests: 1,
+							numPendingTests: 0,
+							pkg: "alpha",
+							project: "alpha",
+							success: true,
+						},
+					},
+				],
+				[],
+			]);
+			const seen: Array<string> = [];
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				streaming: {
+					onPackageResult: (entry) => {
+						seen.push(entry.pkg);
+					},
+					reader,
+				},
+				workStealing: true,
+			});
+
+			expect(seen).toContain("alpha");
+			expect(reader.deleted).toContain("alpha::alpha");
+		});
+
+		it("should emit a one-shot stderr warning when the streaming reader returns a PermissionError", async () => {
+			expect.assertions(2);
+
+			const { PermissionError } = await import("@bedrock-rbx/ocale");
+			const writes: Array<string> = [];
+			const stderrSpy = vi
+				.spyOn(process.stderr, "write")
+				.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
+					writes.push(typeof chunk === "string" ? chunk : String(chunk));
+					return true;
+				});
+
+			const reader = {
+				delete: async (): Promise<void> => {
+					/* unused */
+				},
+				deleted: [] as Array<string>,
+				readAll: async (): Promise<never> => {
+					reader.readCalls += 1;
+					throw new Error("Failed to read streaming results: forbidden", {
+						cause: new PermissionError("forbidden", {
+							operationKey: "memory-store-sorted-maps.list",
+							requiredScopes: ["memory-store.sorted-map:read"],
+							statusCode: 403,
+						}),
+					});
+				},
+				readCalls: 0,
+			};
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				streaming: {
+					onPackageResult: () => {
+						/* unused */
+					},
+					pollMs: 1,
+					reader,
+				},
+				workStealing: true,
+			});
+			stderrSpy.mockRestore();
+
+			const joined = writes.join("");
+
+			expect(joined).toContain("memory-store.sorted-map:read");
+			// Only one warning even though the failing read happens twice (poll
+			// + final drain).
+			expect(writes.filter((line) => line.includes("streaming disabled"))).toHaveLength(1);
+		});
+
+		it("should pluralize the scope hint when the PermissionError carries multiple scopes", async () => {
+			expect.assertions(1);
+
+			const { PermissionError } = await import("@bedrock-rbx/ocale");
+			const writes: Array<string> = [];
+			const stderrSpy = vi
+				.spyOn(process.stderr, "write")
+				.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
+					writes.push(typeof chunk === "string" ? chunk : String(chunk));
+					return true;
+				});
+
+			const reader = {
+				delete: async (): Promise<void> => {
+					/* unused */
+				},
+				deleted: [] as Array<string>,
+				readAll: async (): Promise<never> => {
+					reader.readCalls += 1;
+					throw new Error("forbidden", {
+						cause: new PermissionError("forbidden", {
+							operationKey: "memory-store-sorted-maps.list",
+							requiredScopes: ["scope-a", "scope-b"],
+							statusCode: 403,
+						}),
+					});
+				},
+				readCalls: 0,
+			};
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				streaming: {
+					onPackageResult: () => {
+						/* unused */
+					},
+					pollMs: 1,
+					reader,
+				},
+				workStealing: true,
+			});
+			stderrSpy.mockRestore();
+
+			expect(writes.join("")).toContain("missing scopes scope-a, scope-b");
+		});
+
+		it("should stringify a non-Error thrown by the streaming reader", async () => {
+			expect.assertions(1);
+
+			const writes: Array<string> = [];
+			const stderrSpy = vi
+				.spyOn(process.stderr, "write")
+				.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
+					writes.push(typeof chunk === "string" ? chunk : String(chunk));
+					return true;
+				});
+
+			const reader = {
+				delete: async (): Promise<void> => {
+					/* unused */
+				},
+				deleted: [] as Array<string>,
+				readAll: async (): Promise<never> => {
+					reader.readCalls += 1;
+
+					// eslint-disable-next-line ts/only-throw-error -- exercising the non-Error branch in drainOnce's catch.
+					throw "string-error";
+				},
+				readCalls: 0,
+			};
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				streaming: {
+					onPackageResult: () => {
+						/* unused */
+					},
+					pollMs: 1,
+					reader,
+				},
+				workStealing: true,
+			});
+			stderrSpy.mockRestore();
+
+			expect(writes.join("")).toContain("string-error");
+		});
+
+		it("should emit a one-shot stderr warning for non-permission streaming reader errors", async () => {
+			expect.assertions(1);
+
+			const writes: Array<string> = [];
+			const stderrSpy = vi
+				.spyOn(process.stderr, "write")
+				.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
+					writes.push(typeof chunk === "string" ? chunk : String(chunk));
+					return true;
+				});
+
+			const reader = {
+				delete: async (): Promise<void> => {
+					/* unused */
+				},
+				deleted: [] as Array<string>,
+				readAll: async (): Promise<never> => {
+					reader.readCalls += 1;
+					throw new Error("network broke");
+				},
+				readCalls: 0,
+			};
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				streaming: {
+					onPackageResult: () => {
+						/* unused */
+					},
+					pollMs: 1,
+					reader,
+				},
+				workStealing: true,
+			});
+			stderrSpy.mockRestore();
+
+			expect(writes.filter((line) => line.includes("streaming disabled"))).toHaveLength(1);
+		});
+
+		it("should swallow streaming reader errors so they don't fail the run", async () => {
+			expect.assertions(1);
+
+			const reader = {
+				delete: async () => {
+					/* unused */
+				},
+				deleted: [] as Array<string>,
+				readAll: async () => {
+					reader.readCalls += 1;
+					throw new Error("read failed");
+				},
+				readCalls: 0,
+			};
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const { results } = await backend.runTests({
+				jobs: [job("alpha")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				streaming: {
+					onPackageResult: () => {
+						/* unused */
+					},
+					pollMs: 1,
+					reader,
+				},
+				workStealing: true,
+			});
+
+			expect(results).toHaveLength(1);
+		});
+
+		it("should swallow streaming delete errors after forwarding the entry", async () => {
+			expect.assertions(2);
+
+			const seen: Array<string> = [];
+			const reader = {
+				delete: async () => {
+					throw new Error("delete failed");
+				},
+				deleted: [] as Array<string>,
+				readAll: async () => {
+					reader.readCalls += 1;
+					return [
+						{
+							id: "alpha::default",
+							value: {
+								elapsedMs: 0,
+								numFailedTests: 0,
+								numPassedTests: 1,
+								numPendingTests: 0,
+								pkg: "alpha",
+								project: "default",
+								success: true,
+							},
+						},
+					];
+				},
+				readCalls: 0,
+			};
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const { results } = await backend.runTests({
+				jobs: [job("alpha")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				streaming: {
+					onPackageResult: (entry) => {
+						seen.push(entry.pkg);
+					},
+					pollMs: 1,
+					reader,
+				},
+				workStealing: true,
+			});
+
+			expect(seen).toContain("alpha");
+			expect(results).toHaveLength(1);
 		});
 
 		it("should throw when work-stealing executeScript returns no outputs", async () => {

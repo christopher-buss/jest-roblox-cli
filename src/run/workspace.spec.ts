@@ -209,6 +209,96 @@ describe(runWorkspaceMode, () => {
 			expect(result.projectResults[0]?.displayName).toBe("@halcyon/foo");
 		});
 
+		it("should pass an onStreamingResult hook when the default human formatter is active", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(runWorkspace).mockResolvedValue([]);
+
+			await runWorkspaceMode({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig(),
+			});
+
+			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeFunction();
+		});
+
+		it("should omit onStreamingResult when the JSON formatter is active", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(runWorkspace).mockResolvedValue([]);
+
+			await runWorkspaceMode({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig({ formatters: ["json"] }),
+			});
+
+			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
+		});
+
+		it("should omit onStreamingResult when silent is true", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(runWorkspace).mockResolvedValue([]);
+
+			await runWorkspaceMode({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig({ silent: true }),
+			});
+
+			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
+		});
+
+		it("should omit onStreamingResult when the non-verbose agent formatter is active", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(runWorkspace).mockResolvedValue([]);
+
+			await runWorkspaceMode({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig({ formatters: ["agent"], verbose: false }),
+			});
+
+			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
+		});
+
+		it("should write a progress line to stdout when the human-formatter sink is called", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(runWorkspace).mockResolvedValue([]);
+
+			const writes: Array<string> = [];
+			const writeSpy = vi
+				.spyOn(process.stdout, "write")
+				.mockImplementation((chunk: Parameters<typeof process.stdout.write>[0]) => {
+					writes.push(typeof chunk === "string" ? chunk : String(chunk));
+					return true;
+				});
+
+			await runWorkspaceMode({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig({ color: false }),
+			});
+
+			const onStreamingResult = vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult;
+			onStreamingResult?.({
+				elapsedMs: 42,
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				pkg: "@halcyon/foo",
+				project: "@halcyon/foo",
+				success: true,
+			});
+			writeSpy.mockRestore();
+
+			expect(writes.join("")).toContain("@halcyon/foo  1 passed (42ms)");
+		});
+
 		it("should compose 'pkg › project' when names differ", async () => {
 			expect.assertions(2);
 

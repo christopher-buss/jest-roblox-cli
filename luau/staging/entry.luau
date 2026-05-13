@@ -22,6 +22,8 @@ type Payload = {
 	entries: { EntryPayload },
 	queueId: string?,
 	invisibilityWindowSeconds: number?,
+	sortedMapId: string?,
+	streamingTtlSeconds: number?,
 }
 
 type QueueItem = {
@@ -34,6 +36,16 @@ type ResultEntry = {
 	project: string,
 	elapsedMs: number,
 	jestOutput: string,
+}
+
+type StreamingSummary = {
+	pkg: string,
+	project: string,
+	elapsedMs: number,
+	numFailedTests: number,
+	numPassedTests: number,
+	numPendingTests: number,
+	success: boolean,
 }
 
 type JestResultPayload = {
@@ -96,9 +108,67 @@ local function runEntry(entry: EntryPayload): string
 	return HttpService:JSONEncode(payload)
 end
 
+local function buildSummary(result: ResultEntry): StreamingSummary
+	-- Default to a "failed to run" shape; if jestOutput parses as the
+	-- materializer's envelope we'll fill in the real counts.
+	--
+	-- Edge case: a JSONDecode failure or unexpected inner shape leaves the
+	-- defaults intact, which streams as "▶ <pkg>  0 tests" — visually
+	-- indistinguishable from a package that legitimately ran zero tests.
+	-- runEntry wraps Jest.runCLI in pcall and encodes ALL Jest-level
+	-- failures as { success = false, err = ... }, so this branch is only
+	-- reached when the captured jestOutput itself is malformed JSON.
+	local summary: StreamingSummary = {
+		pkg = result.pkg,
+		project = result.project,
+		elapsedMs = result.elapsedMs,
+		numFailedTests = 0,
+		numPassedTests = 0,
+		numPendingTests = 0,
+		success = false,
+	}
+
+	local parseOk, parsed = pcall(function()
+		return HttpService:JSONDecode(result.jestOutput)
+	end)
+	if not parseOk or type(parsed) ~= "table" or parsed.success ~= true then
+		return summary
+	end
+
+	local inner = parsed.value
+	if type(inner) ~= "table" then
+		return summary
+	end
+
+	summary.numFailedTests = tonumber(inner.numFailedTests) or 0
+	summary.numPassedTests = tonumber(inner.numPassedTests) or 0
+	summary.numPendingTests = tonumber(inner.numPendingTests) or 0
+	summary.success = inner.success == true
+	return summary
+end
+
+local function streamResult(result: ResultEntry, sortedMapId: string?, ttlSeconds: number?)
+	if sortedMapId == nil or sortedMapId == "" then
+		return
+	end
+
+	-- Slim payload: SortedMap items cap at 32 KB and a single package's
+	-- jestOutput JSON already pushes that limit. Streaming only needs the
+	-- summary fields to render a one-line progress message; the CLI keeps
+	-- the full Jest result via the task envelope returned at task end.
+	local summary = buildSummary(result)
+	pcall(function()
+		local map = MemoryStoreService:GetSortedMap(sortedMapId)
+		local ttl = ttlSeconds or 600
+		map:SetAsync(result.pkg .. "::" .. result.project, summary, ttl)
+	end)
+end
+
 local function executeEntry(
 	entry: EntryPayload,
-	prevPkg: string?
+	prevPkg: string?,
+	sortedMapId: string?,
+	streamingTtlSeconds: number?
 ): (ResultEntry, string)
 	if entry.pkg ~= prevPkg then
 		if prevPkg ~= nil then
@@ -131,6 +201,13 @@ local function executeEntry(
 		}
 	end
 
+	-- Publish the entry immediately so the CLI can stream this package's
+	-- output without waiting for the whole task to finish. Best-effort
+	-- (pcall): if the SortedMap write fails the entry still lands in the
+	-- envelope returned at task end, so streaming failure degrades to the
+	-- existing batched behavior rather than losing the result.
+	streamResult(result, sortedMapId, streamingTtlSeconds)
+
 	return result, entry.pkg
 end
 
@@ -139,7 +216,7 @@ local function runEmbedded(payload: Payload): { ResultEntry }
 	local prevPkg: string? = nil
 
 	for _, entry in payload.entries do
-		local result, pkg = executeEntry(entry, prevPkg)
+		local result, pkg = executeEntry(entry, prevPkg, payload.sortedMapId, payload.streamingTtlSeconds)
 		table.insert(results, result)
 		prevPkg = pkg
 	end
@@ -196,7 +273,7 @@ local function runWorkStealing(payload: Payload): { ResultEntry }
 			continue
 		end
 
-		local result, pkg = executeEntry(entry, prevPkg)
+		local result, pkg = executeEntry(entry, prevPkg, payload.sortedMapId, payload.streamingTtlSeconds)
 		table.insert(results, result)
 		prevPkg = pkg
 

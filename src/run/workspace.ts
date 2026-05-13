@@ -3,10 +3,14 @@ import process from "node:process";
 import packageJson from "../../package.json" with { type: "json" };
 import type { Backend } from "../backends/interface.ts";
 import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/open-cloud.ts";
+import type { ResolvedConfig } from "../config/schema.ts";
 import type { MappedCoverageResult } from "../coverage/mapper.ts";
 import { mergeRawCoverage } from "../coverage/merge-raw-coverage.ts";
 import type { RawCoverageData } from "../coverage/types.ts";
 import { aggregateWorkspaceCoverage } from "../coverage/workspace-aggregate.ts";
+import { hasFormatter, usesAgentFormatter } from "../formatters/utils.ts";
+import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
+import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
 import { runWorkspace, type WorkspaceProjectResult } from "../workspace-runner.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
@@ -81,10 +85,12 @@ export async function runWorkspaceMode(options: RunOptions): Promise<WorkspaceRu
 
 	let runtimeResults;
 	try {
+		const onStreamingResult = resolveStreamingProgressSink(config);
 		runtimeResults = await runWorkspace({
 			backend,
 			cli,
 			config,
+			...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
 			// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
 			packageInfos: resolved.packageInfos!,
 			version: VERSION,
@@ -187,4 +193,27 @@ function resolvePackages(options: RunOptions): ResolvedPackages {
 
 function composeWorkspaceDisplayName(package_: string, project: string): string {
 	return package_ === project ? package_ : `${package_} › ${project}`;
+}
+
+/**
+ * Build a streaming progress sink when the human formatter is active. Returns
+ * undefined for JSON/agent/silent runs — those formatters buffer a single
+ * final envelope (per HAL-160 AC#5) so live per-package stdout writes would
+ * either break the structured output or be silenced anyway.
+ */
+function resolveStreamingProgressSink(
+	config: ResolvedConfig,
+): StreamingAggregatorOnEntry | undefined {
+	if (config.silent) {
+		return undefined;
+	}
+
+	if (hasFormatter(config, "json") || usesAgentFormatter(config)) {
+		return undefined;
+	}
+
+	return (entry) => {
+		const line = formatStreamingProgressLine(entry, { color: config.color });
+		process.stdout.write(`${line}\n`);
+	};
 }

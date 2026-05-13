@@ -54,7 +54,7 @@
 		"watch": "tsdown --watch"
 	},
 	"dependencies": {
-		"@bedrock-rbx/ocale": "0.1.0-beta.7",
+		"@bedrock-rbx/ocale": "0.1.0-beta.11",
 		"@jridgewell/trace-mapping": "0.3.31",
 		"@roblox-ts/rojo-resolver": "1.1.0",
 		"arktype": "2.2.0",
