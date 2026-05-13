@@ -3,9 +3,18 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { vol } from "memfs";
 import * as cp from "node:child_process";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import process from "node:process";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { getAffectedPackages } from "./affected.ts";
+
+function stubPlatform(platform: NodeJS.Platform): void {
+	const original = process.platform;
+	Object.defineProperty(process, "platform", { value: platform });
+	onTestFinished(() => {
+		Object.defineProperty(process, "platform", { value: original });
+	});
+}
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -81,19 +90,19 @@ describe(getAffectedPackages, () => {
 		expect(() => getAffectedPackages(ROOT, "main")).toThrow(/nx returned non-JSON output/);
 	});
 
-	it("should reject extra keys in the turbo schema", () => {
+	it("should tolerate unknown top-level fields in turbo output (e.g. packageManager)", () => {
 		expect.assertions(1);
 
 		vol.reset();
 		vol.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
 		vi.mocked(cp.execFileSync).mockReturnValue(
 			JSON.stringify({
-				extraKey: "future-field",
+				packageManager: "pnpm@10.0.0",
 				packages: { items: [{ name: "@org/foo" }] },
 			}),
 		);
 
-		expect(() => getAffectedPackages(ROOT, "main")).toThrow(/Unexpected turbo ls output/);
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
 	});
 
 	it("should throw a friendly error when turbo is not on PATH", () => {
@@ -123,6 +132,24 @@ describe(getAffectedPackages, () => {
 
 		expect(() => getAffectedPackages(ROOT, "main")).toThrow(
 			/turbo failed: invalid filter syntax/,
+		);
+	});
+
+	it("should fall back to stdout content when nx writes its diagnostic to stdout", () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
+		const stdoutError = Object.assign(new Error("nx exited with code 1"), {
+			stderr: "",
+			stdout: 'NX  Command failed: git diff --name-only "main" "HEAD"\nfatal: ambiguous argument \'main\': unknown revision',
+		});
+		vi.mocked(cp.execFileSync).mockImplementation(() => {
+			throw stdoutError;
+		});
+
+		expect(() => getAffectedPackages(ROOT, "main")).toThrow(
+			/nx failed: NX {2}Command failed.*ambiguous argument 'main'/s,
 		);
 	});
 
@@ -159,6 +186,38 @@ describe(getAffectedPackages, () => {
 		expect(act).toThrow(expect.objectContaining({ cause: bareError }) as Error);
 	});
 
+	it.for<[string, string]>([
+		["main; calc.exe", "command separator"],
+		["main & echo pwned", "ampersand"],
+		["main | wget evil", "pipe"],
+		["main > /etc/passwd", "redirect"],
+		["main\nrm -rf /", "newline"],
+		["main`whoami`", "backtick"],
+		["$(whoami)", "command substitution"],
+		["--help", "leading dash"],
+	])("should reject ref %j (%s) before invoking the shell", ([ref]) => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
+
+		expect(() => getAffectedPackages(ROOT, ref)).toThrow(/Invalid --affected-since ref/);
+		expect(vi.mocked(cp.execFileSync)).not.toHaveBeenCalled();
+	});
+
+	it.for(["main", "HEAD", "HEAD~1", "HEAD^", "v1.2.3", "release/2026-05", "abc123def"])(
+		"should accept valid git ref %j",
+		(ref) => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
+			vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify({ packages: { items: [] } }));
+
+			expect(() => getAffectedPackages(ROOT, ref)).not.toThrow();
+		},
+	);
+
 	it("should throw a clear error directing users to --packages when neither tool is detected", () => {
 		expect.assertions(1);
 
@@ -167,6 +226,65 @@ describe(getAffectedPackages, () => {
 
 		expect(() => getAffectedPackages(ROOT, "main")).toThrow(
 			/--affected-since requires turbo or nx.*--packages/s,
+		);
+	});
+
+	it("should run via cmd.exe with node_modules/.bin prepended to PATH on Windows", () => {
+		expect.assertions(4);
+
+		stubPlatform("win32");
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
+		vi.mocked(cp.execFileSync).mockReturnValue(
+			JSON.stringify({ packages: { items: [{ name: "@org/foo" }] } }),
+		);
+
+		getAffectedPackages(ROOT, "main");
+
+		const binDirectory = path.join(ROOT, "node_modules", ".bin");
+		const [file, , options] = vi.mocked(cp.execFileSync).mock.calls[0]!;
+
+		expect(file).toBe("turbo");
+		expect(options?.shell).toBeTrue();
+		expect(options?.cwd).toBe(ROOT);
+		expect(options?.env?.["PATH"]?.startsWith(`${binDirectory}${path.delimiter}`)).toBeTrue();
+	});
+
+	it("should resolve nx from node_modules/.bin without a shell on POSIX", () => {
+		expect.assertions(1);
+
+		stubPlatform("linux");
+		vol.reset();
+		const shimPath = path.join(ROOT, "node_modules", ".bin", "nx");
+		vol.fromJSON({
+			[path.join(ROOT, "nx.json")]: "{}",
+			[shimPath]: "#!/usr/bin/env node\n",
+		});
+		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify(["proj-a"]));
+
+		getAffectedPackages(ROOT, "develop");
+
+		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
+			shimPath,
+			["show", "projects", "--affected", "--base=develop", "--json"],
+			expect.objectContaining({ cwd: ROOT, shell: false }),
+		);
+	});
+
+	it("should fall back to the bare command on POSIX when no local shim is present", () => {
+		expect.assertions(1);
+
+		stubPlatform("linux");
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
+		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify(["proj-a"]));
+
+		getAffectedPackages(ROOT, "develop");
+
+		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
+			"nx",
+			expect.any(Array),
+			expect.objectContaining({ cwd: ROOT, shell: false }),
 		);
 	});
 
