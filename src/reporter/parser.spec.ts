@@ -343,6 +343,133 @@ End of output
 		expect(coverageData?.["shared/player.luau"]?.s["0"]).toBe(1);
 	});
 
+	it("should extract snapshot summary from wrapped results", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			success: true,
+			value: {
+				globalConfig: {},
+				results: {
+					numFailedTests: 1,
+					numPassedTests: 2,
+					numPendingTests: 0,
+					numTotalTests: 3,
+					snapshot: {
+						added: 1,
+						didUpdate: false,
+						filesRemoved: 2,
+						matched: 3,
+						total: 7,
+						unchecked: 0,
+						unmatched: 1,
+						updated: 2,
+					},
+					startTime: 1000,
+					success: false,
+					testResults: [],
+				},
+			},
+		});
+
+		const { result } = parseJestOutput(output);
+
+		expect(result.snapshot).toStrictEqual({
+			added: 1,
+			didUpdate: false,
+			filesRemoved: 2,
+			matched: 3,
+			total: 7,
+			unchecked: 0,
+			unmatched: 1,
+			updated: 2,
+		});
+	});
+
+	it("should extract snapshot summary from unwrapped results", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: {
+				added: 0,
+				matched: 1,
+				total: 1,
+				unmatched: 0,
+				updated: 0,
+			},
+			startTime: 0,
+			success: true,
+			testResults: [],
+		});
+
+		const { result } = parseJestOutput(output);
+
+		expect(result.snapshot).toStrictEqual({
+			added: 0,
+			matched: 1,
+			total: 1,
+			unmatched: 0,
+			updated: 0,
+		});
+	});
+
+	it("should coerce missing snapshot numeric fields to 0", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			success: true,
+			value: {
+				results: {
+					numFailedTests: 0,
+					numPassedTests: 1,
+					numPendingTests: 0,
+					numTotalTests: 1,
+					snapshot: { unmatched: 1 },
+					startTime: 0,
+					success: false,
+					testResults: [],
+				},
+			},
+		});
+
+		const { result } = parseJestOutput(output);
+
+		expect(result.snapshot).toStrictEqual({
+			added: 0,
+			matched: 0,
+			total: 0,
+			unmatched: 1,
+			updated: 0,
+		});
+	});
+
+	it("should return undefined snapshot when summary absent", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			success: true,
+			value: {
+				results: {
+					numFailedTests: 0,
+					numPassedTests: 1,
+					numPendingTests: 0,
+					numTotalTests: 1,
+					startTime: 0,
+					success: true,
+					testResults: [],
+				},
+			},
+		});
+
+		const { result } = parseJestOutput(output);
+
+		expect(result.snapshot).toBeUndefined();
+	});
+
 	it("should extract _snapshotWrites from result", () => {
 		expect.assertions(2);
 

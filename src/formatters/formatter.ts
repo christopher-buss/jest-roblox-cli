@@ -39,6 +39,7 @@ export interface FormatOptions {
 	rootDir: string;
 	showLuau?: boolean;
 	slowTestThreshold?: number;
+	snapshotWriteFailures?: number;
 	sourceMapper?: SourceMapper;
 	typeErrors?: number;
 	verbose: boolean;
@@ -344,7 +345,7 @@ export function formatTestSummary(
 	result: JestResult,
 	timing: TimingResult,
 	styles?: Styles,
-	options?: { typeErrors?: number },
+	options?: { snapshotWriteFailures?: number; typeErrors?: number },
 ): string {
 	const st = styles ?? createStyles(true);
 	const lines: Array<string> = [];
@@ -359,20 +360,17 @@ export function formatTestSummary(
 	).length;
 	const passedFiles = totalFiles - failedFiles - skippedFiles;
 
-	const fileParts: Array<string> = [];
-	if (passedFiles > 0) {
-		fileParts.push(st.summary.passed(`${passedFiles} passed`));
+	const fileParts = formatSummaryParts(
+		{ failed: failedFiles, passed: passedFiles, skipped: skippedFiles },
+		st,
+	);
+
+	const snapshotWriteFailures = options?.snapshotWriteFailures ?? 0;
+	const writeFailureLine = formatSnapshotWriteFailureLine(snapshotWriteFailures, st);
+	if (writeFailureLine !== undefined) {
+		lines.push(writeFailureLine);
 	}
 
-	if (failedFiles > 0) {
-		fileParts.push(st.summary.failed(`${failedFiles} failed`));
-	}
-
-	if (skippedFiles > 0) {
-		fileParts.push(st.summary.pending(`${skippedFiles} skipped`));
-	}
-
-	// Snapshots line (only shown when there are failures)
 	const snapshotLine = formatSnapshotLine(result.snapshot, st);
 	if (snapshotLine !== undefined) {
 		lines.push(snapshotLine);
@@ -381,20 +379,14 @@ export function formatTestSummary(
 	const fileTotalLabel = st.dim(`(${totalFiles})`);
 	lines.push(`${st.dim(" Test Files")}  ${fileParts.join(" | ")} ${fileTotalLabel}`);
 
-	// Tests line
-	const testParts: Array<string> = [];
-	if (result.numPassedTests > 0) {
-		testParts.push(st.summary.passed(`${result.numPassedTests} passed`));
-	}
-
-	if (result.numFailedTests > 0) {
-		testParts.push(st.summary.failed(`${result.numFailedTests} failed`));
-	}
-
-	if (result.numPendingTests > 0) {
-		testParts.push(st.summary.pending(`${result.numPendingTests} skipped`));
-	}
-
+	const testParts = formatSummaryParts(
+		{
+			failed: result.numFailedTests,
+			passed: result.numPassedTests,
+			skipped: result.numPendingTests,
+		},
+		st,
+	);
 	const testTotalLabel = st.dim(`(${result.numTotalTests})`);
 	lines.push(`${st.dim("      Tests")}  ${testParts.join(" | ")} ${testTotalLabel}`);
 
@@ -491,10 +483,16 @@ export function formatResult(
 		}
 	}
 
-	lines.push("", formatTestSummary(result, timing, styles, { typeErrors: options.typeErrors }));
+	lines.push(
+		"",
+		formatTestSummary(result, timing, styles, {
+			snapshotWriteFailures: options.snapshotWriteFailures,
+			typeErrors: options.typeErrors,
+		}),
+	);
 
 	if (!result.success) {
-		const hints = formatLogHints(options, styles);
+		const hints = formatLogHints(options, styles, result.snapshot);
 		if (hints !== "") {
 			lines.push("", hints);
 		}
@@ -656,6 +654,64 @@ export function formatProjectSection(section: ProjectSectionOptions): string {
 	return lines.join("\n");
 }
 
+export function mergeSnapshotSummaries(
+	snapshots: Array<SnapshotSummary>,
+): SnapshotSummary | undefined {
+	if (snapshots.length === 0) {
+		return undefined;
+	}
+
+	let added = 0;
+	let matched = 0;
+	let total = 0;
+	let unmatched = 0;
+	let updated = 0;
+	let filesRemoved = 0;
+	let unchecked = 0;
+	let didUpdate = false;
+	let hasFilesRemoved = false;
+	let hasUnchecked = false;
+	let hasDidUpdate = false;
+
+	for (const snapshot of snapshots) {
+		added += snapshot.added;
+		matched += snapshot.matched;
+		total += snapshot.total;
+		unmatched += snapshot.unmatched;
+		updated += snapshot.updated;
+
+		if (snapshot.filesRemoved !== undefined) {
+			hasFilesRemoved = true;
+			filesRemoved += snapshot.filesRemoved;
+		}
+
+		if (snapshot.unchecked !== undefined) {
+			hasUnchecked = true;
+			unchecked += snapshot.unchecked;
+		}
+
+		if (snapshot.didUpdate !== undefined) {
+			hasDidUpdate = true;
+			didUpdate ||= snapshot.didUpdate;
+		}
+	}
+
+	const merged: SnapshotSummary = { added, matched, total, unmatched, updated };
+	if (hasFilesRemoved) {
+		merged.filesRemoved = filesRemoved;
+	}
+
+	if (hasUnchecked) {
+		merged.unchecked = unchecked;
+	}
+
+	if (hasDidUpdate) {
+		merged.didUpdate = didUpdate;
+	}
+
+	return merged;
+}
+
 export function formatMultiProjectResult(
 	projects: Array<FormatterProjectEntry>,
 	timing: TimingResult,
@@ -694,11 +750,14 @@ export function formatMultiProjectResult(
 
 	lines.push(
 		"",
-		formatTestSummary(mergedResult, timing, styles, { typeErrors: options.typeErrors }),
+		formatTestSummary(mergedResult, timing, styles, {
+			snapshotWriteFailures: options.snapshotWriteFailures,
+			typeErrors: options.typeErrors,
+		}),
 	);
 
 	if (!mergedResult.success) {
-		const hints = formatLogHints(options, styles);
+		const hints = formatLogHints(options, styles, mergedResult.snapshot);
 		if (hints !== "") {
 			lines.push("", hints);
 		}
@@ -1072,8 +1131,18 @@ function formatFileSummary(file: TestFileResult, options: FormatOptions, styles:
 	}).join("\n");
 }
 
-function formatLogHints(options: FormatOptions, styles: Styles): string {
+function formatLogHints(
+	options: FormatOptions,
+	styles: Styles,
+	snapshot?: SnapshotSummary,
+): string {
 	const lines: Array<string> = [];
+
+	if (snapshot !== undefined && snapshot.unmatched > 0) {
+		lines.push(
+			styles.dim("  Inspect your code changes or rerun with `-u` to update snapshots."),
+		);
+	}
 
 	if (options.outputFile !== undefined) {
 		lines.push(styles.dim(`  View ${options.outputFile} for full Jest output`));
@@ -1094,13 +1163,8 @@ function mergeJestResults(results: Array<JestResult>): JestResult {
 	let numberTotalTests = 0;
 	let startTime = Number.POSITIVE_INFINITY;
 	let success = true;
-	let snapshotAdded = 0;
-	let snapshotMatched = 0;
-	let snapshotTotal = 0;
-	let snapshotUnmatched = 0;
-	let snapshotUpdated = 0;
-	let hasSnapshot = false;
 	const testResults: JestResult["testResults"] = [];
+	const snapshots: Array<SnapshotSummary> = [];
 
 	for (const result of results) {
 		numberFailedTests += result.numFailedTests;
@@ -1113,12 +1177,7 @@ function mergeJestResults(results: Array<JestResult>): JestResult {
 		testResults.push(...result.testResults);
 
 		if (result.snapshot !== undefined) {
-			hasSnapshot = true;
-			snapshotAdded += result.snapshot.added;
-			snapshotMatched += result.snapshot.matched;
-			snapshotTotal += result.snapshot.total;
-			snapshotUnmatched += result.snapshot.unmatched;
-			snapshotUpdated += result.snapshot.updated;
+			snapshots.push(result.snapshot);
 		}
 	}
 
@@ -1128,15 +1187,7 @@ function mergeJestResults(results: Array<JestResult>): JestResult {
 		numPendingTests: numberPendingTests,
 		numTodoTests: numberTodoTests > 0 ? numberTodoTests : undefined,
 		numTotalTests: numberTotalTests,
-		snapshot: hasSnapshot
-			? {
-					added: snapshotAdded,
-					matched: snapshotMatched,
-					total: snapshotTotal,
-					unmatched: snapshotUnmatched,
-					updated: snapshotUpdated,
-				}
-			: undefined,
+		snapshot: mergeSnapshotSummaries(snapshots),
 		startTime,
 		success,
 		testResults,
@@ -1393,16 +1444,82 @@ function formatFailureMessage(
 	];
 }
 
+function formatSummaryParts(
+	counts: { failed: number; passed: number; skipped: number },
+	styles: Styles,
+): Array<string> {
+	const parts: Array<string> = [];
+	if (counts.passed > 0) {
+		parts.push(styles.summary.passed(`${counts.passed} passed`));
+	}
+
+	if (counts.failed > 0) {
+		parts.push(styles.summary.failed(`${counts.failed} failed`));
+	}
+
+	if (counts.skipped > 0) {
+		parts.push(styles.summary.pending(`${counts.skipped} skipped`));
+	}
+
+	return parts;
+}
+
+function formatSnapshotWriteFailureLine(failures: number, styles: Styles): string | undefined {
+	if (failures <= 0) {
+		return undefined;
+	}
+
+	const label = styles.dim("  Snapshot Write");
+	const failed = styles.summary.failed(`${failures} failed`);
+	return `${label}  ${failed}`;
+}
+
 function formatSnapshotLine(
 	snapshot: SnapshotSummary | undefined,
 	styles: Styles,
 ): string | undefined {
-	if (snapshot === undefined || snapshot.unmatched === 0) {
+	if (snapshot === undefined) {
 		return undefined;
 	}
 
-	const label = styles.dim("  Snapshots");
-	const failed = styles.summary.failed(`${snapshot.unmatched} failed`);
+	// `unchecked` is Jest's "obsolete" count — orphaned snapshot keys inside
+	// still-present `.snap.luau` files. `filesRemoved` is a separate count
+	// (whole files removed); mixing the two units would over-report.
+	const obsolete = snapshot.unchecked ?? 0;
+	const hasActivity =
+		snapshot.unmatched > 0 ||
+		obsolete > 0 ||
+		snapshot.updated > 0 ||
+		snapshot.added > 0 ||
+		snapshot.matched > 0;
 
-	return `${label}  ${failed}`;
+	if (!hasActivity) {
+		return undefined;
+	}
+
+	const parts: Array<string> = [];
+	if (snapshot.unmatched > 0) {
+		parts.push(styles.summary.failed(`${snapshot.unmatched} failed`));
+	}
+
+	if (obsolete > 0) {
+		parts.push(styles.summary.pending(`${obsolete} obsolete`));
+	}
+
+	if (snapshot.updated > 0) {
+		parts.push(styles.summary.passed(`${snapshot.updated} updated`));
+	}
+
+	if (snapshot.added > 0) {
+		parts.push(styles.summary.passed(`${snapshot.added} written`));
+	}
+
+	if (snapshot.matched > 0) {
+		parts.push(styles.summary.passed(`${snapshot.matched} passed`));
+	}
+
+	const label = styles.dim("  Snapshots");
+	const totalLabel = styles.dim(`(${snapshot.total})`);
+
+	return `${label}  ${parts.join(" | ")} ${totalLabel}`;
 }

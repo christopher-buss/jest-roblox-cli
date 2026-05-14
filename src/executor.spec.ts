@@ -4,6 +4,7 @@ import { vol } from "memfs";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
+import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type {
@@ -715,8 +716,8 @@ describe(execute, () => {
 		);
 	});
 
-	it("should handle backend providing snapshot writes", async () => {
-		expect.assertions(1);
+	it("should exit non-zero when rojo project missing causes snapshot writes to fail", async () => {
+		expect.assertions(2);
 
 		const backend: Backend = {
 			kind: "studio",
@@ -741,10 +742,10 @@ describe(execute, () => {
 			version: "0.0.0-test",
 		};
 
-		// Should not throw even when rojo project isn't found
 		const result = await execute(options);
 
-		expect(result.exitCode).toBe(0);
+		expect(result.exitCode).toBe(1);
+		expect(result.snapshotWriteFailures).toBe(1);
 	});
 
 	it("should write multiple snapshots and use plural message", async () => {
@@ -794,6 +795,99 @@ describe(execute, () => {
 
 		expect(fs.existsSync(snapshotA)).toBeTrue();
 		expect(fs.existsSync(snapshotB)).toBeTrue();
+	});
+
+	it("should report partial success in stderr when some writes fail", async () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-snap-partial-");
+
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify({
+				name: "test",
+				tree: { ReplicatedStorage: { $path: "src/shared" } },
+			}),
+		);
+
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async (): Promise<BackendResult> => {
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
+							"UnknownService/__snapshots__/b.snap.luau": "snap b",
+						},
+					},
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
+			},
+		};
+
+		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+		await execute({
+			backend,
+			config,
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		stderrSpy.mockRestore();
+
+		expect(output).toMatch(/Wrote 1 of 2 snapshot files/);
+	});
+
+	it("should suppress success message when config.silent is true", async () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-snap-silent-");
+
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify({
+				name: "test",
+				tree: { ReplicatedStorage: { $path: "src/shared" } },
+			}),
+		);
+
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async (): Promise<BackendResult> => {
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/a.snap.luau": "snap a",
+						},
+					},
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
+			},
+		};
+
+		const config: ResolvedConfig = {
+			...DEFAULT_CONFIG,
+			rootDir: temporaryDirectory,
+			silent: true,
+		};
+		await execute({
+			backend,
+			config,
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		stderrSpy.mockRestore();
+
+		expect(output).not.toMatch(/Wrote \d+ snapshot/);
 	});
 
 	it("should find non-default rojo project file", async () => {
@@ -928,6 +1022,97 @@ describe(execute, () => {
 		stderrSpy.mockRestore();
 	});
 
+	it("should warn distinctly when rojo project cannot be read", async () => {
+		expect.assertions(3);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-snap-read-");
+
+		// Create a directory where the rojo project file is expected;
+		// fs.existsSync returns true, but fs.readFileSync throws EISDIR. The read
+		// path should produce a "Cannot read" message, not "Failed to parse".
+		fs.mkdirSync(path.join(temporaryDirectory, "default.project.json"));
+
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async (): Promise<BackendResult> => {
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+						},
+					},
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
+			},
+		};
+
+		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+		await execute({
+			backend,
+			config,
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		stderrSpy.mockRestore();
+
+		expect(output).toContain("Cannot read rojo project");
+		expect(output).toContain("default.project.json");
+		expect(output).not.toContain("Failed to parse rojo project");
+	});
+
+	it("should warn when resolveNestedProjects throws on a missing nested project", async () => {
+		expect.assertions(2);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-snap-nested-");
+
+		// A nested $path pointing at a non-existent file makes
+		// resolveNestedProjects throw. This must surface as a write failure, not
+		// abort the run.
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify({
+				name: "test",
+				tree: { $path: "nested.project.json" },
+			}),
+		);
+
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async (): Promise<BackendResult> => {
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap",
+						},
+					},
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
+			},
+		};
+
+		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+		const result = await execute({
+			backend,
+			config,
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		stderrSpy.mockRestore();
+
+		expect(output).toContain("Cannot resolve rojo project tree");
+		expect(result.snapshotWriteFailures).toBe(1);
+	});
+
 	it("should warn with banner when rojo project JSON is invalid", async () => {
 		expect.assertions(3);
 
@@ -1025,7 +1210,45 @@ describe(execute, () => {
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
 		stderrSpy.mockRestore();
 
-		expect(output).toContain("Failed to write snapshot files");
+		expect(output).toMatch(
+			/Failed to write snapshot ReplicatedStorage\/__snapshots__\/test\.snap\.luau/,
+		);
+	});
+
+	it("should expose snapshot write failures in Snapshot Write line", async () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-snap-write-fail-");
+
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify({ name: "test", tree: { ReplicatedStorage: { $path: "src/shared" } } }),
+		);
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async (): Promise<BackendResult> => {
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"UnknownService/__snapshots__/a.snap.luau": "snap a",
+						},
+					},
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
+			},
+		};
+
+		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+		const result = await execute({
+			backend,
+			config,
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		expect(stripVTControlCharacters(result.output)).toMatch(/Snapshot Write\s+1 failed/);
 	});
 
 	it("should resolve tsconfig outDir for snapshot source rewriting", async () => {

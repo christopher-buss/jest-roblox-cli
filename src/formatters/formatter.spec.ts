@@ -42,6 +42,7 @@ import {
 	formatTestSummary,
 	formatTypecheckSummary,
 	getExecErrorHint,
+	mergeSnapshotSummaries,
 	parseErrorMessage,
 	parseSourceLocation,
 } from "./formatter.ts";
@@ -157,7 +158,7 @@ describe(formatTestSummary, () => {
 		expect(summary).not.toContain("Snapshots");
 	});
 
-	it("should hide snapshots line when all snapshots pass", () => {
+	it("should hide snapshots line when no snapshot activity (all zeros)", () => {
 		expect.assertions(1);
 
 		const result: JestResult = {
@@ -165,7 +166,7 @@ describe(formatTestSummary, () => {
 			numPassedTests: 1,
 			numPendingTests: 0,
 			numTotalTests: 1,
-			snapshot: { added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 },
+			snapshot: { added: 0, matched: 0, total: 0, unmatched: 0, updated: 0 },
 			startTime: 0,
 			success: true,
 			testResults: [
@@ -184,8 +185,37 @@ describe(formatTestSummary, () => {
 		expect(summary).not.toContain("Snapshots");
 	});
 
-	it("should show snapshots line above test files when snapshots fail", () => {
+	it("should show snapshots line when all snapshots pass", () => {
 		expect.assertions(3);
+
+		const result: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: { added: 0, matched: 3, total: 3, unmatched: 0, updated: 0 },
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const summary = formatTestSummary(result, createTiming(1000));
+
+		expect(summary).toContain("Snapshots");
+		expect(summary).toContain("3 passed");
+		expect(summary).toContain("(3)");
+	});
+
+	it("should show snapshots line above test files when snapshots fail", () => {
+		expect.assertions(4);
 
 		const result: JestResult = {
 			numFailedTests: 1,
@@ -208,9 +238,238 @@ describe(formatTestSummary, () => {
 
 		const summary = formatTestSummary(result, createTiming(1000));
 
-		expect(summary).toContain("1 failed");
 		expect(summary).toContain("Snapshots");
+		expect(summary).toMatch(/Snapshots.*1 failed/);
+		expect(summary).toMatch(/Snapshots.*1 passed/);
 		expect(summary.indexOf("Snapshots")).toBeLessThan(summary.indexOf("Test Files"));
+	});
+
+	it("should show written count when snapshots are added", () => {
+		expect.assertions(2);
+
+		const result: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: { added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 },
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const summary = formatTestSummary(result, createTiming(1000));
+
+		expect(summary).toMatch(/Snapshots.*1 written/);
+		expect(summary).toMatch(/Snapshots.*2 passed/);
+	});
+
+	it("should show updated count when snapshots are updated", () => {
+		expect.assertions(2);
+
+		const result: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: { added: 0, matched: 1, total: 3, unmatched: 0, updated: 2 },
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const summary = formatTestSummary(result, createTiming(1000));
+
+		expect(summary).toMatch(/Snapshots.*2 updated/);
+		expect(summary).toMatch(/Snapshots.*1 passed/);
+	});
+
+	it("should report unchecked snapshot keys as the obsolete count", () => {
+		expect.assertions(1);
+
+		const result: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: {
+				added: 0,
+				matched: 1,
+				total: 1,
+				unchecked: 2,
+				unmatched: 0,
+				updated: 0,
+			},
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const summary = formatTestSummary(result, createTiming(1000));
+
+		expect(summary).toMatch(/Snapshots.*2 obsolete/);
+	});
+
+	it("should not treat filesRemoved as obsolete (different unit)", () => {
+		expect.assertions(2);
+
+		const result: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: {
+				added: 0,
+				filesRemoved: 2,
+				matched: 0,
+				total: 0,
+				unchecked: 0,
+				unmatched: 0,
+				updated: 0,
+			},
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const summary = formatTestSummary(result, createTiming(1000));
+
+		expect(summary).not.toMatch(/Snapshots.*obsolete/);
+		expect(summary).not.toContain("  Snapshots");
+	});
+
+	it("should show obsolete count even when total is zero", () => {
+		expect.assertions(3);
+
+		const result: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: {
+				added: 0,
+				matched: 0,
+				total: 0,
+				unchecked: 2,
+				unmatched: 0,
+				updated: 0,
+			},
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const summary = formatTestSummary(result, createTiming(1000));
+
+		expect(summary).toContain("Snapshots");
+		expect(summary).toMatch(/Snapshots.*2 obsolete/);
+		expect(summary).not.toMatch(/Snapshots.*passed/);
+	});
+
+	it("should render Snapshot Write line when persistence failures occur", () => {
+		expect.assertions(2);
+
+		const result: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: { added: 2, matched: 1, total: 3, unmatched: 0, updated: 0 },
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const summary = formatTestSummary(result, createTiming(1000), undefined, {
+			snapshotWriteFailures: 1,
+		});
+		const writeLine = summary.split("\n").find((line) => line.includes("Snapshot Write"));
+
+		expect(writeLine).toMatch(/1 failed/);
+		expect(summary.indexOf("Snapshot Write")).toBeLessThan(summary.lastIndexOf("Snapshots"));
+	});
+
+	it("should order snapshot parts as failed, obsolete, updated, written, passed", () => {
+		expect.assertions(1);
+
+		const result: JestResult = {
+			numFailedTests: 1,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 2,
+			snapshot: {
+				added: 1,
+				matched: 2,
+				total: 6,
+				unchecked: 1,
+				unmatched: 1,
+				updated: 2,
+			},
+			startTime: 0,
+			success: false,
+			testResults: [
+				{
+					numFailingTests: 1,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const summary = formatTestSummary(result, createTiming(1000));
+		const snapshotLine = summary.split("\n").find((line) => line.includes("Snapshots"));
+
+		expect(snapshotLine).toMatch(/1 failed.*1 obsolete.*2 updated.*1 written.*2 passed.*\(6\)/);
 	});
 
 	it("should format test files count with pipe separator", () => {
@@ -994,6 +1253,44 @@ describe("formatResult log hints", () => {
 
 		expect(output).not.toContain("View");
 		expect(output).not.toContain("for full Jest output");
+	});
+
+	it("should suggest -u when snapshot assertions failed", () => {
+		expect.assertions(1);
+
+		const result: JestResult = {
+			numFailedTests: 1,
+			numPassedTests: 0,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: { added: 0, matched: 0, total: 1, unmatched: 1, updated: 0 },
+			startTime: 0,
+			success: false,
+			testResults: [
+				{
+					numFailingTests: 1,
+					numPassingTests: 0,
+					numPendingTests: 0,
+					testFilePath: "test.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const output = formatResult(result, TIMING, { ...defaultOptions, color: false });
+
+		expect(output).toMatch(/Inspect your code changes or rerun with `-u` to update snapshots/);
+	});
+
+	it("should not suggest -u when no snapshot mismatches", () => {
+		expect.assertions(1);
+
+		const output = formatResult(FAILING_RESULT, TIMING, {
+			...defaultOptions,
+			color: false,
+		});
+
+		expect(output).not.toContain("rerun with `-u`");
 	});
 });
 
@@ -2721,6 +3018,200 @@ describe(formatMultiProjectResult, () => {
 		expect(output).toContain("▶ a");
 		expect(output).toContain("▶ b");
 		expect(output).toContain("Tests");
+	});
+
+	it("should aggregate unchecked across projects into a single obsolete count", () => {
+		expect.assertions(2);
+
+		const projectA: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: {
+				added: 0,
+				didUpdate: true,
+				matched: 1,
+				total: 1,
+				unchecked: 2,
+				unmatched: 0,
+				updated: 0,
+			},
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "a.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const projectB: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: {
+				added: 0,
+				didUpdate: false,
+				matched: 1,
+				total: 1,
+				unchecked: 3,
+				unmatched: 0,
+				updated: 0,
+			},
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "b.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const output = formatMultiProjectResult(
+			[
+				{ displayName: "a", result: projectA },
+				{ displayName: "b", result: projectB },
+			],
+			TIMING,
+			noColorOptions,
+		);
+		const snapshotLine = output.split("\n").find((line) => line.includes("Snapshots"));
+
+		expect(snapshotLine).toMatch(/5 obsolete/);
+		expect(snapshotLine).toMatch(/2 passed.*\(2\)/);
+	});
+
+	it("should aggregate snapshot counts across projects including obsolete", () => {
+		expect.assertions(3);
+
+		const projectA: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: {
+				added: 0,
+				matched: 1,
+				total: 1,
+				unchecked: 1,
+				unmatched: 0,
+				updated: 0,
+			},
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "a.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const projectB: JestResult = {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			snapshot: {
+				added: 1,
+				matched: 2,
+				total: 3,
+				unchecked: 1,
+				unmatched: 0,
+				updated: 0,
+			},
+			startTime: 0,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "b.spec.ts",
+					testResults: [],
+				},
+			],
+		};
+
+		const output = formatMultiProjectResult(
+			[
+				{ displayName: "a", result: projectA },
+				{ displayName: "b", result: projectB },
+			],
+			TIMING,
+			noColorOptions,
+		);
+		const snapshotLine = output.split("\n").find((line) => line.includes("Snapshots"));
+
+		expect(snapshotLine).toMatch(/2 obsolete/);
+		expect(snapshotLine).toMatch(/1 written/);
+		expect(snapshotLine).toMatch(/3 passed.*\(4\)/);
+	});
+});
+
+describe(mergeSnapshotSummaries, () => {
+	it("should aggregate didUpdate as true if any project ran in update mode", () => {
+		expect.assertions(1);
+
+		const merged = mergeSnapshotSummaries([
+			{ added: 0, didUpdate: true, matched: 1, total: 1, unmatched: 0, updated: 0 },
+			{ added: 0, didUpdate: false, matched: 1, total: 1, unmatched: 0, updated: 0 },
+		]);
+
+		expect(merged).toMatchObject({ didUpdate: true });
+	});
+
+	it("should aggregate didUpdate as false when no project ran in update mode", () => {
+		expect.assertions(1);
+
+		const merged = mergeSnapshotSummaries([
+			{ added: 0, didUpdate: false, matched: 1, total: 1, unmatched: 0, updated: 0 },
+			{ added: 0, didUpdate: false, matched: 1, total: 1, unmatched: 0, updated: 0 },
+		]);
+
+		expect(merged).toMatchObject({ didUpdate: false });
+	});
+
+	it("should sum unchecked across all projects", () => {
+		expect.assertions(1);
+
+		const merged = mergeSnapshotSummaries([
+			{ added: 0, matched: 0, total: 0, unchecked: 2, unmatched: 0, updated: 0 },
+			{ added: 0, matched: 0, total: 0, unchecked: 3, unmatched: 0, updated: 0 },
+			{ added: 0, matched: 0, total: 0, unmatched: 0, updated: 0 },
+		]);
+
+		expect(merged).toMatchObject({ unchecked: 5 });
+	});
+
+	it("should sum filesRemoved across projects so JSON consumers see it", () => {
+		expect.assertions(1);
+
+		const merged = mergeSnapshotSummaries([
+			{ added: 0, filesRemoved: 1, matched: 0, total: 0, unmatched: 0, updated: 0 },
+			{ added: 0, filesRemoved: 2, matched: 0, total: 0, unmatched: 0, updated: 0 },
+		]);
+
+		expect(merged).toMatchObject({ filesRemoved: 3 });
+	});
+
+	it("should return undefined when no snapshots provided", () => {
+		expect.assertions(1);
+
+		expect(mergeSnapshotSummaries([])).toBeUndefined();
 	});
 });
 

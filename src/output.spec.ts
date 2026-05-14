@@ -14,6 +14,7 @@ import {
 	formatMultiProjectResult,
 	formatResult,
 	formatTypecheckSummary,
+	mergeSnapshotSummaries,
 } from "./formatters/formatter.ts";
 import { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
 import { writeJsonFile } from "./formatters/json.ts";
@@ -64,6 +65,7 @@ const mocks = {
 	generateReports: vi.mocked(generateReports),
 	loadCoverageManifest: vi.mocked(loadCoverageManifest),
 	mapCoverageToTypeScript: vi.mocked(mapCoverageToTypeScript),
+	mergeSnapshotSummaries: vi.mocked(mergeSnapshotSummaries),
 	parseGameOutput: vi.mocked(parseGameOutput),
 	printCoverageHeader: vi.mocked(printCoverageHeader),
 	writeGameOutput: vi.mocked(writeGameOutput),
@@ -208,6 +210,40 @@ describe(outputSingleResult, () => {
 		);
 
 		expect(code).toBe(1);
+	});
+
+	it("should return 1 when snapshot writes failed even if tests passed", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const code = await outputSingleResult(
+			makeConfig(),
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 2 }),
+			}),
+		);
+
+		expect(code).toBe(1);
+	});
+
+	it("should propagate snapshotWriteFailures into deferred runtime output", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputSingleResult(
+			makeConfig(),
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 3 }),
+			}),
+		);
+
+		expect(mocks.formatExecuteOutput).toHaveBeenCalledWith(
+			expect.objectContaining({ snapshotWriteFailures: 3 }),
+		);
 	});
 
 	it("should suppress output when config.silent is true", async () => {
@@ -360,6 +396,60 @@ describe(outputMultiResult, () => {
 		);
 
 		expect(code).toBe(1);
+	});
+
+	it("should return 1 when any project had snapshot write failures", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const code = await outputMultiResult(
+			makeConfig(),
+			makeMultiResult({
+				projectResults: [
+					{
+						displayName: "client",
+						result: makeExecuteResult({ snapshotWriteFailures: 1 }),
+					},
+					{
+						displayName: "server",
+						result: makeExecuteResult(),
+					},
+				],
+			}),
+		);
+
+		expect(code).toBe(1);
+	});
+
+	it("should propagate aggregated snapshotWriteFailures to multi formatter", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResult(
+			makeConfig(),
+			makeMultiResult({
+				projectResults: [
+					{
+						displayName: "client",
+						result: makeExecuteResult({ snapshotWriteFailures: 2 }),
+					},
+					{
+						displayName: "server",
+						result: makeExecuteResult({ snapshotWriteFailures: 3 }),
+					},
+				],
+			}),
+		);
+
+		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ snapshotWriteFailures: 5 }),
+		);
 	});
 
 	it("should suppress output when config.silent is true", async () => {
@@ -1090,6 +1180,30 @@ describe(mergeProjectResults, () => {
 		});
 
 		expect(mergeProjectResults([a, b]).result.numTodoTests).toBe(0);
+	});
+
+	it("should pass each project's snapshot summary to mergeSnapshotSummaries", () => {
+		expect.assertions(1);
+
+		const a = makeExecuteResult({
+			result: {
+				...makeJestResult(),
+				snapshot: { added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 },
+			},
+		});
+		const b = makeExecuteResult({
+			result: {
+				...makeJestResult(),
+				snapshot: { added: 0, matched: 4, total: 5, unmatched: 1, updated: 0 },
+			},
+		});
+
+		mergeProjectResults([a, b]);
+
+		expect(mocks.mergeSnapshotSummaries).toHaveBeenCalledWith([
+			{ added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 },
+			{ added: 0, matched: 4, total: 5, unmatched: 1, updated: 0 },
+		]);
 	});
 });
 

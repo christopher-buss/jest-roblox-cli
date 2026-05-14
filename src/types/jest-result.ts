@@ -23,8 +23,11 @@ export interface TestFileResult {
 
 export interface SnapshotSummary {
 	added: number;
+	didUpdate?: boolean;
+	filesRemoved?: number;
 	matched: number;
 	total: number;
+	unchecked?: number;
 	unmatched: number;
 	updated: number;
 }

@@ -2,7 +2,7 @@ import { type } from "arktype";
 import assert from "node:assert";
 
 import type { RawCoverageData } from "../coverage/types.ts";
-import type { JestResult } from "../types/jest-result.ts";
+import type { JestResult, SnapshotSummary } from "../types/jest-result.ts";
 
 export type SnapshotWrites = Record<string, string>;
 
@@ -288,6 +288,43 @@ function extractSetupSeconds(parsed: Record<string, unknown>): number | undefine
 	return setup;
 }
 
+function numericField(source: Record<string, unknown>, key: string): number {
+	const value = source[key];
+	return typeof value === "number" ? value : 0;
+}
+
+function extractSnapshotSummary(
+	resultsObject: Record<string, unknown>,
+): SnapshotSummary | undefined {
+	const { snapshot } = resultsObject;
+	if (snapshot === undefined || snapshot === null || typeof snapshot !== "object") {
+		return undefined;
+	}
+
+	const source = snapshot as Record<string, unknown>;
+	const summary: SnapshotSummary = {
+		added: numericField(source, "added"),
+		matched: numericField(source, "matched"),
+		total: numericField(source, "total"),
+		unmatched: numericField(source, "unmatched"),
+		updated: numericField(source, "updated"),
+	};
+
+	if (typeof source["filesRemoved"] === "number") {
+		summary.filesRemoved = source["filesRemoved"];
+	}
+
+	if (typeof source["unchecked"] === "number") {
+		summary.unchecked = source["unchecked"];
+	}
+
+	if (typeof source["didUpdate"] === "boolean") {
+		summary.didUpdate = source["didUpdate"];
+	}
+
+	return summary;
+}
+
 function parseParsedOutput(parsed: Record<string, unknown>): ParseResult {
 	const coverageData = extractCoverageData(parsed);
 	const luauTiming = extractLuauTiming(parsed);
@@ -301,19 +338,24 @@ function parseParsedOutput(parsed: Record<string, unknown>): ParseResult {
 	}
 
 	if (unwrapped["results"] !== undefined && typeof unwrapped["results"] === "object") {
+		const resultsObject = unwrapped["results"] as Record<string, unknown>;
+		const validated = validateJestResult(resultsObject);
+		const snapshot = extractSnapshotSummary(resultsObject);
 		return {
 			coverageData,
 			luauTiming,
-			result: validateJestResult(unwrapped["results"]),
+			result: snapshot !== undefined ? { ...validated, snapshot } : validated,
 			setupSeconds,
 			snapshotWrites,
 		};
 	}
 
+	const validated = validateJestResult(unwrapped);
+	const snapshot = extractSnapshotSummary(unwrapped);
 	return {
 		coverageData,
 		luauTiming,
-		result: validateJestResult(unwrapped),
+		result: snapshot !== undefined ? { ...validated, snapshot } : validated,
 		setupSeconds,
 		snapshotWrites,
 	};

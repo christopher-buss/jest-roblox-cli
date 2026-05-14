@@ -17,6 +17,7 @@ import {
 	formatResult,
 	type FormatterProjectEntry,
 	formatTypecheckSummary,
+	mergeSnapshotSummaries,
 } from "./formatters/formatter.ts";
 import {
 	formatAnnotations,
@@ -38,7 +39,7 @@ import type {
 	WorkspaceRunResult,
 } from "./run/types.ts";
 import { combineSourceMappers, type SourceMapper } from "./source-mapper/index.ts";
-import type { JestResult } from "./types/jest-result.ts";
+import type { JestResult, SnapshotSummary } from "./types/jest-result.ts";
 import type { TimingResult } from "./types/timing.ts";
 import { formatGameOutputNotice, parseGameOutput, writeGameOutput } from "./utils/game-output.ts";
 
@@ -89,7 +90,8 @@ export async function outputSingleResult(
 
 	runGitHubActionsFormatter(config, mergedResult, runtimeResult?.sourceMapper);
 
-	const passed = mergedResult.success && coveragePassed;
+	const snapshotsPersisted = (runtimeResult?.snapshotWriteFailures ?? 0) === 0;
+	const passed = mergedResult.success && coveragePassed && snapshotsPersisted;
 	if (!config.silent && config.collectCoverage) {
 		printFinalStatus(passed);
 	}
@@ -116,6 +118,8 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 	let testsMs = 0;
 	let setupMs = 0;
 	let mergedCoverage: RawCoverageData | undefined;
+	let snapshotWriteFailures = 0;
+	const snapshots: Array<SnapshotSummary> = [];
 
 	for (const result of results) {
 		numberFailedTests += result.result.numFailedTests;
@@ -128,6 +132,11 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 		testResults.push(...result.result.testResults);
 		testsMs += result.timing.testsMs;
 		setupMs += result.timing.setupMs ?? 0;
+		snapshotWriteFailures += result.snapshotWriteFailures ?? 0;
+		if (result.result.snapshot !== undefined) {
+			snapshots.push(result.result.snapshot);
+		}
+
 		if (result.coverageData !== undefined) {
 			mergedCoverage = mergeRawCoverage(mergedCoverage, result.coverageData);
 		}
@@ -143,7 +152,7 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 
 	return {
 		coverageData: mergedCoverage,
-		exitCode: success ? 0 : 1,
+		exitCode: success && snapshotWriteFailures === 0 ? 0 : 1,
 		output: "",
 		result: {
 			numFailedTests: numberFailedTests,
@@ -151,10 +160,12 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 			numPendingTests: numberPendingTests,
 			numTodoTests: numberTodoTests,
 			numTotalTests: numberTotalTests,
+			snapshot: mergeSnapshotSummaries(snapshots),
 			startTime,
 			success,
 			testResults,
 		},
+		snapshotWriteFailures: snapshotWriteFailures > 0 ? snapshotWriteFailures : undefined,
 		sourceMapper: mergedSourceMapper,
 		timing: {
 			coverageMs: sharedTiming.timing.coverageMs,
@@ -220,7 +231,8 @@ export async function outputMultiResult(
 
 	runGitHubActionsFormatter(config, mergedResult, merged.sourceMapper);
 
-	const passed = mergedResult.success && coveragePassed;
+	const snapshotsPersisted = (merged.snapshotWriteFailures ?? 0) === 0;
+	const passed = mergedResult.success && coveragePassed && snapshotsPersisted;
 	if (!config.silent && config.collectCoverage) {
 		printFinalStatus(passed);
 	}
@@ -239,6 +251,7 @@ function mergeResults(
 			numPendingTests: typecheck.numPendingTests + runtime.numPendingTests,
 			numTodoTests: (typecheck.numTodoTests ?? 0) + (runtime.numTodoTests ?? 0),
 			numTotalTests: typecheck.numTotalTests + runtime.numTotalTests,
+			snapshot: runtime.snapshot,
 			startTime: Math.min(typecheck.startTime, runtime.startTime),
 			success: typecheck.success && runtime.success,
 			testResults: [...typecheck.testResults, ...runtime.testResults],
@@ -273,6 +286,7 @@ function formatRuntimeOutput(
 	return formatExecuteOutput({
 		config,
 		result: runtimeResult.result,
+		snapshotWriteFailures: runtimeResult.snapshotWriteFailures,
 		sourceMapper: runtimeResult.sourceMapper,
 		timing,
 		version: VERSION,
@@ -291,6 +305,7 @@ function printFormattedOutput(options: FormattedOutputOptions): void {
 					rootDir: config.rootDir,
 					showLuau: config.showLuau,
 					slowTestThreshold: config.slowTestThreshold,
+					snapshotWriteFailures: runtimeResult.snapshotWriteFailures,
 					sourceMapper: runtimeResult.sourceMapper,
 					typeErrors: typecheckResult.numFailedTests,
 					verbose: config.verbose,
@@ -510,6 +525,7 @@ function printMultiProjectOutput(options: MultiOutputContext): void {
 			rootDir: config.rootDir,
 			showLuau: config.showLuau,
 			slowTestThreshold: config.slowTestThreshold,
+			snapshotWriteFailures: merged.snapshotWriteFailures,
 			sourceMapper: merged.sourceMapper,
 			typeErrors: typecheckResult?.numFailedTests,
 			verbose: config.verbose,

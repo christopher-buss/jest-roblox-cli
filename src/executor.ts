@@ -49,6 +49,7 @@ export interface ExecuteResult {
 	gameOutput?: string;
 	output: string;
 	result: JestResult;
+	snapshotWriteFailures?: number;
 	sourceMapper?: SourceMapper;
 	timing: TimingResult;
 }
@@ -64,9 +65,16 @@ export interface ProcessProjectOptions {
 export interface FormatOutputOptions {
 	config: ResolvedConfig;
 	result: JestResult;
+	snapshotWriteFailures?: number;
 	sourceMapper?: SourceMapper;
 	timing: TimingResult;
 	version: string;
+}
+
+export interface SnapshotWriteCounts {
+	attempted: number;
+	failed: number;
+	written: number;
 }
 
 export interface TsconfigDirectories {
@@ -174,7 +182,7 @@ export function resolveTsconfigDirectories(projectRoot: string): TsconfigDirecto
 }
 
 export function formatExecuteOutput(options: FormatOutputOptions): string {
-	const { config, result, sourceMapper, timing, version } = options;
+	const { config, result, snapshotWriteFailures, sourceMapper, timing, version } = options;
 
 	if (config.silent) {
 		return "";
@@ -214,6 +222,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 		rootDir: config.rootDir,
 		showLuau: config.showLuau,
 		slowTestThreshold: config.slowTestThreshold,
+		snapshotWriteFailures,
 		sourceMapper,
 		verbose: config.verbose,
 		version,
@@ -271,9 +280,10 @@ export function processProjectResult(
 
 	const tsconfigMappings = resolveAllTsconfigMappings(config.rootDir);
 
-	if (snapshotWrites !== undefined) {
-		writeSnapshots(snapshotWrites, config, tsconfigMappings);
-	}
+	const writeCounts: SnapshotWriteCounts =
+		snapshotWrites !== undefined
+			? writeSnapshots(snapshotWrites, config, tsconfigMappings)
+			: { attempted: 0, failed: 0, written: 0 };
 
 	const testsMs = calculateTestsMs(result.testResults);
 	const sourceMapper = config.sourceMap ? buildSourceMapper(config, tsconfigMappings) : undefined;
@@ -294,16 +304,32 @@ export function processProjectResult(
 
 	const output =
 		deferFormatting !== true
-			? formatExecuteOutput({ config, result, sourceMapper, timing, version })
+			? formatExecuteOutput({
+					config,
+					result,
+					snapshotWriteFailures: writeCounts.failed,
+					sourceMapper,
+					timing,
+					version,
+				})
 			: "";
 
 	if (luauTiming !== undefined) {
 		printLuauTiming(luauTiming);
 	}
 
-	const exitCode = result.success ? 0 : 1;
+	const exitCode = result.success && writeCounts.failed === 0 ? 0 : 1;
 
-	return { coverageData, exitCode, gameOutput, output, result, sourceMapper, timing };
+	return {
+		coverageData,
+		exitCode,
+		gameOutput,
+		output,
+		result,
+		snapshotWriteFailures: writeCounts.failed > 0 ? writeCounts.failed : undefined,
+		sourceMapper,
+		timing,
+	};
 }
 
 /**
@@ -505,40 +531,97 @@ export function loadCoverageManifest(rootDirectory: string): CoverageManifest | 
 	}
 }
 
+function logSnapshotWriteSummary(options: {
+	attempted: number;
+	failed: number;
+	silent?: boolean;
+	written: number;
+}): void {
+	const { attempted, failed, silent, written } = options;
+	if (written === 0 || silent === true) {
+		return;
+	}
+
+	const plural = written === 1 ? "" : "s";
+	const message =
+		failed > 0
+			? `Wrote ${String(written)} of ${String(attempted)} snapshot files\n`
+			: `Wrote ${String(written)} snapshot file${plural}\n`;
+	process.stderr.write(message);
+}
+
 function writeSnapshots(
 	snapshotWrites: SnapshotWrites,
 	config: ResolvedConfig,
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
-): void {
+): SnapshotWriteCounts {
+	const attempted = Object.keys(snapshotWrites).length;
+
 	const rojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir);
 	if (rojoProjectPath === undefined || !fs.existsSync(rojoProjectPath)) {
 		process.stderr.write("Warning: Cannot write snapshots - no rojo project found\n");
-		return;
+		return { attempted, failed: attempted, written: 0 };
 	}
 
+	let rojoProjectSource: string;
 	try {
-		const rojoProjectRaw = JSON.parse(fs.readFileSync(rojoProjectPath, "utf-8"));
-		const rojoResult = rojoProjectSchema(rojoProjectRaw);
-		if (rojoResult instanceof type.errors) {
-			process.stderr.write("Warning: Cannot write snapshots - invalid rojo project\n");
-			return;
-		}
+		rojoProjectSource = fs.readFileSync(rojoProjectPath, "utf-8");
+	} catch (err) {
+		process.stderr.write(
+			`Warning: Cannot read rojo project ${rojoProjectPath}: ${(err as Error).message}\n`,
+		);
+		return { attempted, failed: attempted, written: 0 };
+	}
 
+	let rojoProjectRaw: unknown;
+	try {
+		rojoProjectRaw = JSON.parse(rojoProjectSource);
+	} catch (err) {
+		process.stderr.write(
+			formatBanner({
+				body: [
+					color.red(`Failed to parse rojo project: ${(err as Error).message}`),
+					`  ${color.dim("File:")} ${rojoProjectPath}`,
+				],
+				level: "warn",
+				title: "Snapshot Warning",
+			}),
+		);
+		return { attempted, failed: attempted, written: 0 };
+	}
+
+	const rojoResult = rojoProjectSchema(rojoProjectRaw);
+	if (rojoResult instanceof type.errors) {
+		process.stderr.write("Warning: Cannot write snapshots - invalid rojo project\n");
+		return { attempted, failed: attempted, written: 0 };
+	}
+
+	let resolver: ReturnType<typeof createSnapshotPathResolver>;
+	try {
 		const resolvedTree = resolveNestedProjects(rojoResult.tree, path.dirname(rojoProjectPath));
-
-		const resolver = createSnapshotPathResolver({
+		resolver = createSnapshotPathResolver({
 			mappings: tsconfigMappings,
 			rojoProject: { ...rojoResult, tree: resolvedTree },
 		});
+	} catch (err) {
+		process.stderr.write(
+			`Warning: Cannot resolve rojo project tree: ${(err as Error).message}\n`,
+		);
+		return { attempted, failed: attempted, written: 0 };
+	}
 
-		let written = 0;
-		for (const [virtualPath, content] of Object.entries(snapshotWrites)) {
-			const resolved = resolver.resolve(virtualPath);
-			if (resolved === undefined) {
-				process.stderr.write(`Warning: Cannot resolve snapshot path: ${virtualPath}\n`);
-				continue;
-			}
+	let written = 0;
+	let failed = 0;
 
+	for (const [virtualPath, content] of Object.entries(snapshotWrites)) {
+		const resolved = resolver.resolve(virtualPath);
+		if (resolved === undefined) {
+			process.stderr.write(`Warning: Cannot resolve snapshot path: ${virtualPath}\n`);
+			failed++;
+			continue;
+		}
+
+		try {
 			const absolutePath = path.resolve(config.rootDir, resolved.filePath);
 			fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
 			fs.writeFileSync(absolutePath, content);
@@ -553,27 +636,15 @@ function writeSnapshots(
 			}
 
 			written++;
-		}
-
-		if (written > 0) {
+		} catch (err) {
 			process.stderr.write(
-				`Wrote ${String(written)} snapshot file${written === 1 ? "" : "s"}\n`,
+				`Warning: Failed to write snapshot ${virtualPath}: ${String(err)}\n`,
 			);
-		}
-	} catch (err) {
-		if (err instanceof SyntaxError) {
-			process.stderr.write(
-				formatBanner({
-					body: [
-						color.red(`Failed to parse rojo project: ${err.message}`),
-						`  ${color.dim("File:")} ${rojoProjectPath}`,
-					],
-					level: "warn",
-					title: "Snapshot Warning",
-				}),
-			);
-		} else {
-			process.stderr.write(`Warning: Failed to write snapshot files: ${String(err)}\n`);
+			failed++;
 		}
 	}
+
+	logSnapshotWriteSummary({ attempted, failed, silent: config.silent, written });
+
+	return { attempted, failed, written };
 }
