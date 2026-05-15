@@ -15,7 +15,6 @@ import type {
 	StreamingResultReader,
 	StreamingResultRecord,
 } from "../memory-store/sorted-map-client.ts";
-import { LuauScriptError } from "../reporter/parser.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import { createOpenCloudBackend, OpenCloudBackend } from "./open-cloud.ts";
 
@@ -208,7 +207,7 @@ describe(OpenCloudBackend, () => {
 			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(
+			const { rawResults } = await backend.runTests(
 				jobsOptions([
 					job("alpha", { testNamePattern: "alpha-pattern" }),
 					job("beta", { testNamePattern: "beta-pattern" }),
@@ -224,12 +223,8 @@ describe(OpenCloudBackend, () => {
 			);
 
 			expect(patterns).toStrictEqual(["alpha-pattern", "beta-pattern", "gamma-pattern"]);
-			expect(results.map((entry) => entry.displayName)).toStrictEqual([
-				"alpha",
-				"beta",
-				"gamma",
-			]);
-			expect(results.map((entry) => entry.elapsedMs)).toStrictEqual([111, 222, 333]);
+			expect(rawResults).toHaveLength(3);
+			expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([111, 222, 333]);
 		});
 
 		it("should preserve snapshotFormat per job inside the bundled configs array", async () => {
@@ -275,12 +270,12 @@ describe(OpenCloudBackend, () => {
 			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(
+			const { rawResults } = await backend.runTests(
 				jobsOptions([job("alpha"), job("beta"), job("gamma")], 1),
 			);
 
 			expect(stub.executeCalls).toHaveLength(1);
-			expect(results).toHaveLength(3);
+			expect(rawResults).toHaveLength(3);
 		});
 
 		it("should populate timing.executionMs on the BackendResult", async () => {
@@ -314,17 +309,15 @@ describe(OpenCloudBackend, () => {
 			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(
+			const { rawResults } = await backend.runTests(
 				jobsOptions([job("alpha"), job("beta"), job("gamma")], 3),
 			);
 
 			expect(stub.executeCalls).toHaveLength(3);
-			expect(results).toHaveLength(3);
-			expect(results.map((entry) => entry.displayName)).toStrictEqual([
-				"alpha",
-				"beta",
-				"gamma",
-			]);
+			expect(rawResults).toHaveLength(3);
+			// Round-robin places job[i] in bucket[i]; bucket index N returns
+			// elapsedMs:N*10. Flattened order must match input order.
+			expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([0, 10, 20]);
 		});
 
 		it("should round-robin 10 jobs into buckets of 4/3/3 and flatten in input order", async () => {
@@ -337,12 +330,13 @@ describe(OpenCloudBackend, () => {
 					(match) => match[1]!,
 				);
 				bucketPatterns.push(patterns);
-				const index = bucketPatterns.length - 1;
+				const bucketIndex = bucketPatterns.length - 1;
 				return scriptResult(
 					envelope(
 						patterns.map((_, position) => {
 							return {
-								jestOutput: successJest({ numPassedTests: index * 10 + position }),
+								elapsedMs: bucketIndex * 100 + position,
+								jestOutput: successJest(),
 							};
 						}),
 					),
@@ -356,7 +350,7 @@ describe(OpenCloudBackend, () => {
 				});
 			});
 
-			const { results } = await backend.runTests(jobsOptions(jobs, 3));
+			const { rawResults } = await backend.runTests(jobsOptions(jobs, 3));
 
 			expect(stub.executeCalls).toHaveLength(3);
 			expect(bucketPatterns[0]).toStrictEqual([
@@ -367,17 +361,10 @@ describe(OpenCloudBackend, () => {
 			]);
 			expect(bucketPatterns[1]).toStrictEqual(["pattern-1", "pattern-4", "pattern-7"]);
 			expect(bucketPatterns[2]).toStrictEqual(["pattern-2", "pattern-5", "pattern-8"]);
-			expect(results.map((entry) => entry.displayName)).toStrictEqual([
-				"p0",
-				"p1",
-				"p2",
-				"p3",
-				"p4",
-				"p5",
-				"p6",
-				"p7",
-				"p8",
-				"p9",
+			// Round-robin: job[i] → bucket[i%3], position floor(i/3); bucket N
+			// emits elapsedMs N*100+position. Flatten back to job order.
+			expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([
+				0, 100, 200, 1, 101, 201, 2, 102, 202, 3,
 			]);
 		});
 
@@ -483,26 +470,7 @@ describe(OpenCloudBackend, () => {
 	});
 
 	describe("envelope parsing", () => {
-		it("should pass through per-entry gameOutput from the envelope", async () => {
-			expect.assertions(1);
-
-			const entryGameOutput = JSON.stringify([
-				{ message: "alpha log", messageType: 0, timestamp: 1 },
-			]);
-			const stub = createRunnerStub();
-			stub.setExecute(() => {
-				return scriptResult(
-					envelope([{ gameOutput: entryGameOutput, jestOutput: successJest() }]),
-				);
-			});
-
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(jobsOptions([job("alpha")]));
-
-			expect(results[0]!.gameOutput).toBe(entryGameOutput);
-		});
-
-		it("should fall back to the outer results[1] gameOutput when the entry omits one", async () => {
+		it("should expose outputs[1] as the fallback gameOutput on each rawResult", async () => {
 			expect.assertions(1);
 
 			const fallback = JSON.stringify([
@@ -514,46 +482,9 @@ describe(OpenCloudBackend, () => {
 			);
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(jobsOptions([job("alpha")]));
+			const { rawResults } = await backend.runTests(jobsOptions([job("alpha")]));
 
-			expect(results[0]!.gameOutput).toBe(fallback);
-		});
-
-		it("should convert _setup seconds into setupMs on the parsed result", async () => {
-			expect.assertions(1);
-
-			const jestOutput = JSON.stringify({
-				_setup: 0.321,
-				success: true,
-				value: {
-					numFailedTests: 0,
-					numPassedTests: 1,
-					numPendingTests: 0,
-					numTotalTests: 1,
-					startTime: 0,
-					success: true,
-					testResults: [],
-				},
-			});
-			const stub = createRunnerStub();
-			stub.setExecute(() => scriptResult(envelope([{ jestOutput }])));
-
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(jobsOptions([job("alpha")]));
-
-			expect(results[0]!.setupMs).toBe(321);
-		});
-
-		it("should return undefined setupMs when _setup is absent", async () => {
-			expect.assertions(1);
-
-			const stub = createRunnerStub();
-			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(jobsOptions([job("alpha")]));
-
-			expect(results[0]!.setupMs).toBeUndefined();
+			expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
 		});
 
 		it("should throw when executeScript returns no outputs", async () => {
@@ -569,111 +500,27 @@ describe(OpenCloudBackend, () => {
 			);
 		});
 
-		it("should attach fallback gameOutput to LuauScriptError from parseJestOutput", async () => {
+		it("should expose multi-entry rawResults in input order", async () => {
 			expect.assertions(2);
-
-			const luauError = JSON.stringify({ err: "Luau script error", success: false });
-			const gameOutputData = JSON.stringify([
-				{ message: "error context", messageType: 0, timestamp: 1 },
-			]);
-			const stub = createRunnerStub();
-			stub.setExecute(() => scriptResult(luauError, gameOutputData));
-
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const error = await backend
-				.runTests(jobsOptions([job("alpha")]))
-				.catch((err: unknown) => err);
-
-			expect(error).toBeInstanceOf(Error);
-			expect((error as Error & { gameOutput?: string }).gameOutput).toBe(gameOutputData);
-		});
-
-		it("should attach entry gameOutput to LuauScriptError for ExecutionError payloads", async () => {
-			expect.assertions(3);
-
-			const executionErrorPayload = JSON.stringify({
-				success: true,
-				value: {
-					error: "Requested module experienced an error while loading",
-					kind: "ExecutionError",
-					parent: { error: "DataController failed loading", kind: "ExecutionError" },
-				},
-			});
-			const entryGameOutput = "[ERROR] DataController failed loading";
-			const stub = createRunnerStub();
-			stub.setExecute(() => {
-				return scriptResult(
-					envelope([{ gameOutput: entryGameOutput, jestOutput: executionErrorPayload }]),
-				);
-			});
-
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const error = await backend
-				.runTests(jobsOptions([job("alpha")]))
-				.catch((err: unknown) => err);
-
-			expect(error).toBeInstanceOf(LuauScriptError);
-			expect((error as LuauScriptError).message).toContain("Jest execution failed:");
-			expect((error as LuauScriptError).gameOutput).toBe(entryGameOutput);
-		});
-
-		it("should rethrow non-LuauScriptError exceptions from parseJestOutput", async () => {
-			expect.assertions(1);
-
-			const stub = createRunnerStub();
-			stub.setExecute(() => scriptResult(envelope([{ jestOutput: "{bad json" }])));
-
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-
-			await expect(backend.runTests(jobsOptions([job("alpha")]))).rejects.toThrow(
-				/No valid Jest result JSON found/,
-			);
-		});
-
-		it("should accept envelope entries with pkg field", async () => {
-			expect.assertions(1);
-
-			const stub = createRunnerStub();
-			stub.setExecute(() => {
-				return scriptResult(envelope([{ jestOutput: successJest(), pkg: "@halcyon/foo" }]));
-			});
-
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(jobsOptions([job("alpha")]));
-
-			expect(results[0]?.result.success).toBeTrue();
-		});
-
-		it("should map a multi-package envelope to per-package results in input order", async () => {
-			expect.assertions(4);
 
 			const stub = createRunnerStub();
 			stub.setExecute(() => {
 				return scriptResult(
 					envelope([
-						{ jestOutput: successJest(), pkg: "@halcyon/foo" },
-						{
-							jestOutput: successJest({ numFailedTests: 1, success: false }),
-							pkg: "@halcyon/bar",
-						},
-						{ jestOutput: successJest(), pkg: "@halcyon/baz" },
+						{ elapsedMs: 11, jestOutput: successJest(), pkg: "@halcyon/foo" },
+						{ elapsedMs: 22, jestOutput: successJest(), pkg: "@halcyon/bar" },
+						{ elapsedMs: 33, jestOutput: successJest(), pkg: "@halcyon/baz" },
 					]),
 				);
 			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests(
+			const { rawResults } = await backend.runTests(
 				jobsOptions([job("@halcyon/foo"), job("@halcyon/bar"), job("@halcyon/baz")]),
 			);
 
-			expect(results.map((entry) => entry.displayName)).toStrictEqual([
-				"@halcyon/foo",
-				"@halcyon/bar",
-				"@halcyon/baz",
-			]);
-			expect(results[0]?.result.success).toBeTrue();
-			expect(results[1]?.result.success).toBeFalse();
-			expect(results[2]?.result.success).toBeTrue();
+			expect(rawResults).toHaveLength(3);
+			expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([11, 22, 33]);
 		});
 	});
 
@@ -787,7 +634,7 @@ describe(OpenCloudBackend, () => {
 		});
 
 		it("should drop duplicate-pkg entries from fault-recovery and keep the first occurrence", async () => {
-			expect.assertions(3);
+			expect.assertions(2);
 
 			let taskIndex = 0;
 			const stub = createRunnerStub();
@@ -797,33 +644,25 @@ describe(OpenCloudBackend, () => {
 				const entries =
 					index === 0
 						? [
-								{ jestOutput: successJest({ numPassedTests: 7 }), pkg: "alpha" },
-								{ jestOutput: successJest({ numPassedTests: 3 }), pkg: "beta" },
+								{ elapsedMs: 1, jestOutput: successJest(), pkg: "alpha" },
+								{ elapsedMs: 2, jestOutput: successJest(), pkg: "beta" },
 							]
-						: [
-								{
-									jestOutput: successJest({
-										numFailedTests: 1,
-										numPassedTests: 0,
-										success: false,
-									}),
-									pkg: "alpha",
-								},
-							];
+						: [{ elapsedMs: 99, jestOutput: successJest(), pkg: "alpha" }];
 				return scriptResult(envelope(entries));
 			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests({
+			const { rawResults } = await backend.runTests({
 				jobs: [job("alpha"), job("beta")],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
 			});
 
-			expect(results.map((entry) => entry.displayName)).toStrictEqual(["alpha", "beta"]);
-			expect(results[0]?.result.success).toBeTrue();
-			expect(results[0]?.result.numPassedTests).toBe(7);
+			expect(rawResults).toHaveLength(2);
+			// First-occurrence wins: alpha must come from task 0 (elapsedMs 1),
+			// not the duplicate from task 1 (elapsedMs 99).
+			expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([1, 2]);
 		});
 
 		it("should error when a job has no matching entry in any envelope", async () => {
@@ -862,20 +701,20 @@ describe(OpenCloudBackend, () => {
 			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests({
+			const { rawResults } = await backend.runTests({
 				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
 			});
 
-			expect(results.map((entry) => entry.displayName)).toStrictEqual([
+			expect(rawResults).toHaveLength(4);
+			expect(rawResults.map((raw) => raw.entry.pkg)).toStrictEqual([
 				"alpha",
 				"beta",
 				"gamma",
 				"delta",
 			]);
-			expect(results.every((entry) => entry.result.success)).toBeTrue();
 		});
 
 		it("should silently skip envelope entries with no pkg field", async () => {
@@ -886,37 +725,39 @@ describe(OpenCloudBackend, () => {
 				return scriptResult(
 					envelope([
 						{ jestOutput: successJest() },
-						{ jestOutput: successJest({ numPassedTests: 4 }), pkg: "alpha" },
+						{ elapsedMs: 42, jestOutput: successJest(), pkg: "alpha" },
 					]),
 				);
 			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests({
+			const { rawResults } = await backend.runTests({
 				jobs: [job("alpha")],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				workStealing: true,
 			});
 
-			expect(results).toHaveLength(1);
-			expect(results[0]?.result.numPassedTests).toBe(4);
+			expect(rawResults).toHaveLength(1);
+			expect(rawResults[0]!.entry.elapsedMs).toBe(42);
 		});
 
 		it("should match entries to jobs by pkg::project so multi-project packages don't collide", async () => {
-			expect.assertions(3);
+			expect.assertions(2);
 
 			const stub = createRunnerStub();
 			stub.setExecute(() => {
 				return scriptResult(
 					envelope([
 						{
-							jestOutput: successJest({ numPassedTests: 5 }),
+							elapsedMs: 5,
+							jestOutput: successJest(),
 							pkg: "@halcyon/foo",
 							project: "client",
 						},
 						{
-							jestOutput: successJest({ numPassedTests: 9 }),
+							elapsedMs: 9,
+							jestOutput: successJest(),
 							pkg: "@halcyon/foo",
 							project: "server",
 						},
@@ -925,16 +766,15 @@ describe(OpenCloudBackend, () => {
 			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests({
+			const { rawResults } = await backend.runTests({
 				jobs: [job("client", {}, "@halcyon/foo"), job("server", {}, "@halcyon/foo")],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
 			});
 
-			expect(results.map((entry) => entry.displayName)).toStrictEqual(["client", "server"]);
-			expect(results[0]?.result.numPassedTests).toBe(5);
-			expect(results[1]?.result.numPassedTests).toBe(9);
+			expect(rawResults).toHaveLength(2);
+			expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([5, 9]);
 		});
 
 		it("should deliver streaming entries to onPackageResult and delete each one", async () => {
@@ -1255,7 +1095,7 @@ describe(OpenCloudBackend, () => {
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests({
+			const { rawResults } = await backend.runTests({
 				jobs: [job("alpha")],
 				parallel: 1,
 				scriptOverride: "stealing-script",
@@ -1269,7 +1109,7 @@ describe(OpenCloudBackend, () => {
 				workStealing: true,
 			});
 
-			expect(results).toHaveLength(1);
+			expect(rawResults).toHaveLength(1);
 		});
 
 		it("should swallow streaming delete errors after forwarding the entry", async () => {
@@ -1305,7 +1145,7 @@ describe(OpenCloudBackend, () => {
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			const { results } = await backend.runTests({
+			const { rawResults } = await backend.runTests({
 				jobs: [job("alpha")],
 				parallel: 1,
 				scriptOverride: "stealing-script",
@@ -1320,7 +1160,7 @@ describe(OpenCloudBackend, () => {
 			});
 
 			expect(seen).toContain("alpha");
-			expect(results).toHaveLength(1);
+			expect(rawResults).toHaveLength(1);
 		});
 
 		it("should throw when work-stealing executeScript returns no outputs", async () => {

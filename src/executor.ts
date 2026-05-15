@@ -7,6 +7,7 @@ import * as path from "node:path";
 import process from "node:process";
 import color from "tinyrainbow";
 
+import { buildProjectResult } from "./backends/envelope.ts";
 import type {
 	Backend,
 	BackendTiming,
@@ -248,21 +249,23 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 
 /**
  * Unified orchestration entry point: builds jobs for every input project,
- * dispatches them through the backend in one call, then maps each backend
- * result through per-project post-processing. Single-, multi-, and workspace-
- * run callers all funnel through here so the build→execute→process sequence
- * lives in exactly one place.
+ * dispatches them through the backend in one call, shapes each raw envelope
+ * entry into a `ProjectBackendResult`, then maps each through per-project
+ * post-processing. Single-, multi-, and workspace-run callers all funnel
+ * through here so the build→execute→shape→process sequence lives in
+ * exactly one place.
  *
  * Ordering contract: the returned `results` array is in the same order as
- * `options.projects`. Backends MUST return `ProjectBackendResult[]` in the
- * same order as the submitted `jobs` envelope — `runProjects` indexes into
- * `jobs[i]` to recover each project's resolved config, so out-of-order
- * results would post-process with the wrong config.
+ * `options.projects`. Backends MUST return `rawResults` in the same order
+ * as the submitted `jobs` envelope — `runProjects` indexes into `jobs[i]`
+ * to recover each project's resolved config and pair it with the matching
+ * raw entry, so out-of-order results would post-process with the wrong
+ * config.
  */
 export async function runProjects(options: RunProjectsOptions): Promise<RunProjectsResult> {
 	const jobs = options.projects.map((project) => buildProjectJob(project));
 
-	const { results: backendResults, timing: backendTiming } = await options.backend.runTests({
+	const { rawResults, timing: backendTiming } = await options.backend.runTests({
 		jobs,
 		parallel: options.parallel,
 		scriptOverride: options.scriptOverride,
@@ -270,11 +273,19 @@ export async function runProjects(options: RunProjectsOptions): Promise<RunProje
 		workStealing: options.workStealing,
 	});
 
-	const results = backendResults.map((entry, index) => {
-		return processProjectResult(entry, {
+	if (rawResults.length !== jobs.length) {
+		throw new Error(
+			`Backend returned ${rawResults.length.toString()} results for ${jobs.length.toString()} jobs — rawResults must be parallel to jobs`,
+		);
+	}
+
+	const results = rawResults.map((raw, index) => {
+		// eslint-disable-next-line ts/no-non-null-assertion -- length equality asserted above
+		const job = jobs[index]!;
+		const projectResult = buildProjectResult(raw.entry, job, raw.fallbackGameOutput);
+		return processProjectResult(projectResult, {
 			backendTiming,
-			// eslint-disable-next-line ts/no-non-null-assertion -- backend invariant: results are parallel to jobs (same length, same order)
-			config: jobs[index]!.config,
+			config: job.config,
 			deferFormatting: options.deferFormatting,
 			startTime: options.startTime,
 			version: options.version,

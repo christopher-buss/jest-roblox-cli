@@ -4,14 +4,14 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 
-import { LuauScriptError, parseJestOutput } from "../reporter/parser.ts";
 import { buildJestArgv, type JestArgv } from "../test-script.ts";
+import { parseEnvelope } from "./envelope.ts";
 import type {
 	Backend,
 	BackendOptions,
 	BackendResult,
-	ProjectBackendResult,
 	ProjectJob,
+	RawBackendEntry,
 } from "./interface.ts";
 
 const DEFAULT_STUDIO_TIMEOUT = 300_000;
@@ -27,14 +27,6 @@ interface StudioOptions {
 	preConnected?: PreConnected;
 	timeout?: number;
 }
-
-const entrySchema = type({
-	"elapsedMs?": "number",
-	"gameOutput?": "string",
-	"jestOutput": "string",
-});
-
-const envelopeSchema = type({ entries: entrySchema.array() });
 
 const pluginMessageSchema = type({
 	"gameOutput?": "string",
@@ -84,40 +76,6 @@ export class StudioBackend implements Backend {
 		return this.executeViaPlugin(this.wss, options.jobs, pre?.socket);
 	}
 
-	private buildProjectResult(
-		entry: typeof entrySchema.infer,
-		job: ProjectJob,
-		fallbackGameOutput: string | undefined,
-	): ProjectBackendResult {
-		const gameOutput = entry.gameOutput ?? fallbackGameOutput;
-
-		let parsed;
-		try {
-			parsed = parseJestOutput(entry.jestOutput);
-		} catch (err) {
-			if (err instanceof LuauScriptError) {
-				err.gameOutput = gameOutput;
-			}
-
-			throw err;
-		}
-
-		return {
-			coverageData: parsed.coverageData,
-			displayColor: job.displayColor,
-			displayName: job.displayName,
-			elapsedMs: entry.elapsedMs ?? 0,
-			gameOutput,
-			luauTiming: parsed.luauTiming,
-			result: parsed.result,
-			setupMs:
-				parsed.setupSeconds !== undefined
-					? Math.round(parsed.setupSeconds * 1000)
-					: undefined,
-			snapshotWrites: parsed.snapshotWrites,
-		};
-	}
-
 	private async executeViaPlugin(
 		wss: WebSocketServer,
 		jobs: Array<ProjectJob>,
@@ -130,34 +88,18 @@ export class StudioBackend implements Backend {
 		const message = await this.waitForResult(wss, requestId, configs, existingSocket);
 		const executionMs = Date.now() - executionStart;
 
-		const entries = this.parseEnvelope(message.jestOutput);
+		const entries = parseEnvelope(message.jestOutput);
 		if (entries.length !== jobs.length) {
 			throw new Error(
 				`Studio backend returned ${entries.length.toString()} entries but request had ${jobs.length.toString()} jobs`,
 			);
 		}
 
-		const results = entries.map((entry, index) => {
-			// Safe: length equality asserted above.
-			// eslint-disable-next-line ts/no-non-null-assertion -- length check
-			const matched = jobs[index]!;
-			return this.buildProjectResult(entry, matched, message.gameOutput);
+		const rawResults: Array<RawBackendEntry> = entries.map((entry) => {
+			return { entry, fallbackGameOutput: message.gameOutput };
 		});
 
-		return { results, timing: { executionMs } };
-	}
-
-	private parseEnvelope(jestOutput: string): Array<typeof entrySchema.infer> {
-		// Legacy single-result payloads (error envelopes from the plugin before
-		// run-mode returns entries) are re-wrapped as a length-1 entries array so
-		// downstream parsing stays uniform.
-		const raw: unknown = JSON.parse(jestOutput);
-		const envelope = envelopeSchema(raw);
-		if (envelope instanceof type.errors) {
-			return [{ elapsedMs: 0, jestOutput }];
-		}
-
-		return envelope.entries;
+		return { rawResults, timing: { executionMs } };
 	}
 
 	private async waitForResult(

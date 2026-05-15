@@ -7,6 +7,14 @@ import type {
 import type { SnapshotWrites } from "../reporter/parser.ts";
 import type { JestResult } from "../types/jest-result.ts";
 
+export interface EnvelopeEntry {
+	elapsedMs?: number;
+	gameOutput?: string;
+	jestOutput: string;
+	pkg?: string;
+	project?: string;
+}
+
 export interface ProjectJob {
 	config: ResolvedConfig;
 	displayColor?: string;
@@ -92,8 +100,13 @@ export interface ProjectBackendResult {
 	snapshotWrites?: SnapshotWrites;
 }
 
+export interface RawBackendEntry {
+	entry: EnvelopeEntry;
+	fallbackGameOutput?: string;
+}
+
 export interface BackendResult {
-	results: Array<ProjectBackendResult>;
+	rawResults: Array<RawBackendEntry>;
 	timing: BackendTiming;
 }
 

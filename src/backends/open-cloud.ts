@@ -2,19 +2,19 @@ import { PermissionError } from "@bedrock-rbx/ocale";
 import { OcaleRunner } from "@isentinel/roblox-runner";
 import type { RemoteRunner, RunnerCredentials } from "@isentinel/roblox-runner";
 
-import { type } from "arktype";
 import * as path from "node:path";
 import process from "node:process";
 
 import type { ResolvedConfig } from "../config/schema.ts";
-import { LuauScriptError, parseJestOutput } from "../reporter/parser.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
+import { parseEnvelope } from "./envelope.ts";
 import type {
 	Backend,
 	BackendOptions,
 	BackendResult,
-	ProjectBackendResult,
+	EnvelopeEntry,
 	ProjectJob,
+	RawBackendEntry,
 	StreamingHooks,
 } from "./interface.ts";
 
@@ -33,16 +33,6 @@ export interface OpenCloudOptions {
 	 */
 	runner?: RemoteRunner;
 }
-
-const entrySchema = type({
-	"elapsedMs?": "number",
-	"gameOutput?": "string",
-	"jestOutput": "string",
-	"pkg?": "string",
-	"project?": "string",
-});
-
-const envelopeSchema = type({ entries: entrySchema.array() });
 
 interface JobBucket {
 	indices: Array<number>;
@@ -99,7 +89,7 @@ export class OpenCloudBackend implements Backend {
 		const executionMs = Date.now() - executionStart;
 
 		return {
-			results: flattened,
+			rawResults: flattened,
 			timing: { executionMs, uploadCached: upload.cached, uploadMs: upload.uploadMs },
 		};
 	}
@@ -107,7 +97,7 @@ export class OpenCloudBackend implements Backend {
 	private async runBucket(
 		bucket: JobBucket,
 		scriptOverride?: string,
-	): Promise<{ indices: Array<number>; results: Array<ProjectBackendResult> }> {
+	): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
 		const { indices, jobs } = bucket;
 		// A bucket is only created for at least one job, so jobs[0] is defined.
 		// eslint-disable-next-line ts/no-non-null-assertion -- bucket non-empty
@@ -138,34 +128,31 @@ export class OpenCloudBackend implements Backend {
 			);
 		}
 
-		const results = entries.map((entry, index) => {
-			// Length match has been asserted above, so the index is always in
-			// range.
-			// eslint-disable-next-line ts/no-non-null-assertion -- length asserted above
-			return buildProjectResult(entry, jobs[index]!, fallbackGameOutput);
+		const rawResults: Array<RawBackendEntry> = entries.map((entry) => {
+			return { entry, fallbackGameOutput };
 		});
 
-		return { indices, results };
+		return { indices, rawResults };
 	}
 
 	private async runStaticBuckets(
 		jobs: Array<ProjectJob>,
 		parallel: BackendOptions["parallel"],
 		scriptOverride?: string,
-	): Promise<Array<ProjectBackendResult>> {
+	): Promise<Array<RawBackendEntry>> {
 		const buckets = bucketJobs(jobs, parallel);
 		const bucketResults = await Promise.all(
 			buckets.map(async (bucket) => this.runBucket(bucket, scriptOverride)),
 		);
 
 		// Flatten bucket results in original job order via the indices recorded
-		// at bucketing time. indices and results always share the same length
+		// at bucketing time. indices and rawResults always share the same length
 		// because runBucket asserts that invariant before returning.
-		const flattened: Array<ProjectBackendResult> = Array.from({ length: jobs.length });
-		for (const { indices, results } of bucketResults) {
+		const flattened: Array<RawBackendEntry> = Array.from({ length: jobs.length });
+		for (const { indices, rawResults } of bucketResults) {
 			for (const [positionInBucket, originalIndex] of indices.entries()) {
 				// eslint-disable-next-line ts/no-non-null-assertion -- length invariant
-				flattened[originalIndex] = results[positionInBucket]!;
+				flattened[originalIndex] = rawResults[positionInBucket]!;
 			}
 		}
 
@@ -175,7 +162,7 @@ export class OpenCloudBackend implements Backend {
 	private async runStealingTask(
 		script: string,
 		primaryConfig: ResolvedConfig,
-	): Promise<{ entries: Array<typeof entrySchema.infer>; gameOutput: string | undefined }> {
+	): Promise<{ entries: Array<EnvelopeEntry>; gameOutput: string | undefined }> {
 		const result = await this.runner.executeScript({
 			pollInterval: primaryConfig.pollInterval,
 			script,
@@ -196,7 +183,7 @@ export class OpenCloudBackend implements Backend {
 		primaryConfig: ResolvedConfig;
 		scriptOverride: string;
 		streaming: StreamingHooks | undefined;
-	}): Promise<Array<ProjectBackendResult>> {
+	}): Promise<Array<RawBackendEntry>> {
 		const { jobs, parallel, primaryConfig, scriptOverride, streaming } = args;
 		const taskCount = resolveBucketCount(parallel, jobs.length);
 		const tasksDone = { value: false };
@@ -225,39 +212,21 @@ export class OpenCloudBackend implements Backend {
 		}
 
 		const taskEnvelopes = taskSettlement.value;
-
-		// Aggregate entries from all task envelopes. Map by pkg::project so
-		// multi-project packages don't collide on a shared `pkg`. The first
-		// observed entry per key wins; subsequent duplicates (from fault-
-		// recovery re-runs after invisibility timeout) are dropped.
-		const entryByKey = new Map<
-			string,
-			{ entry: typeof entrySchema.infer; gameOutput: string | undefined }
-		>();
-		for (const { entries, gameOutput } of taskEnvelopes) {
-			for (const entry of entries) {
-				if (entry.pkg !== undefined) {
-					const key = entryLookupKey(entry.pkg, entry.project);
-					if (!entryByKey.has(key)) {
-						entryByKey.set(key, { entry, gameOutput });
-					}
-				}
-			}
-		}
+		const entryByKey = aggregateEntriesByKey(taskEnvelopes);
 
 		const missing: Array<string> = [];
-		const results: Array<ProjectBackendResult> = jobs.map((job) => {
+		const rawResults: Array<RawBackendEntry> = [];
+		for (const job of jobs) {
 			const found = entryByKey.get(
 				entryLookupKey(job.pkg ?? job.displayName, job.displayName),
 			);
 			if (found === undefined) {
 				missing.push(job.displayName);
-				// Placeholder; runTests throws below before this is observed.
-				return undefined as unknown as ProjectBackendResult;
+				continue;
 			}
 
-			return buildProjectResult(found.entry, job, found.gameOutput);
-		});
+			rawResults.push({ entry: found.entry, fallbackGameOutput: found.gameOutput });
+		}
 
 		if (missing.length > 0) {
 			throw new Error(
@@ -265,7 +234,7 @@ export class OpenCloudBackend implements Backend {
 			);
 		}
 
-		return results;
+		return rawResults;
 	}
 }
 
@@ -413,47 +382,24 @@ function entryLookupKey(package_: string, project: string | undefined): string {
 	return project === undefined || project === package_ ? package_ : `${package_}::${project}`;
 }
 
-function parseEnvelope(jestOutput: string): Array<typeof entrySchema.infer> {
-	// Legacy runtime error payloads (non-envelope-shaped) are re-wrapped as a
-	// length-1 entries array so parseJestOutput can surface the original
-	// LuauScriptError through buildProjectResult. Mirrors StudioBackend.
-	const raw: unknown = JSON.parse(jestOutput);
-	const envelope = envelopeSchema(raw);
-	if (envelope instanceof type.errors) {
-		return [{ elapsedMs: 0, jestOutput }];
-	}
-
-	return envelope.entries;
-}
-
-function buildProjectResult(
-	entry: typeof entrySchema.infer,
-	job: ProjectJob,
-	fallbackGameOutput: string | undefined,
-): ProjectBackendResult {
-	const gameOutput = entry.gameOutput ?? fallbackGameOutput;
-
-	let parsed;
-	try {
-		parsed = parseJestOutput(entry.jestOutput);
-	} catch (err) {
-		if (err instanceof LuauScriptError) {
-			err.gameOutput = gameOutput;
+// Aggregate entries from all task envelopes. Map by pkg::project so
+// multi-project packages don't collide on a shared `pkg`. The first
+// observed entry per key wins; subsequent duplicates (from fault-
+// recovery re-runs after invisibility timeout) are dropped.
+function aggregateEntriesByKey(
+	taskEnvelopes: ReadonlyArray<{ entries: Array<EnvelopeEntry>; gameOutput: string | undefined }>,
+): Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }> {
+	const entryByKey = new Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }>();
+	for (const { entries, gameOutput } of taskEnvelopes) {
+		for (const entry of entries) {
+			if (entry.pkg !== undefined) {
+				const key = entryLookupKey(entry.pkg, entry.project);
+				if (!entryByKey.has(key)) {
+					entryByKey.set(key, { entry, gameOutput });
+				}
+			}
 		}
-
-		throw err;
 	}
 
-	return {
-		coverageData: parsed.coverageData,
-		displayColor: job.displayColor,
-		displayName: job.displayName,
-		elapsedMs: entry.elapsedMs ?? 0,
-		gameOutput,
-		luauTiming: parsed.luauTiming,
-		result: parsed.result,
-		setupMs:
-			parsed.setupSeconds !== undefined ? Math.round(parsed.setupSeconds * 1000) : undefined,
-		snapshotWrites: parsed.snapshotWrites,
-	};
+	return entryByKey;
 }

@@ -7,12 +7,7 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import type {
-	Backend,
-	BackendOptions,
-	BackendResult,
-	ProjectBackendResult,
-} from "./backends/interface.ts";
+import type { Backend, BackendOptions, BackendResult } from "./backends/interface.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import type { RawCoverageData } from "./coverage/types.ts";
@@ -25,6 +20,7 @@ import {
 	resolveTsconfigDirectories,
 	runProjects,
 } from "./executor.ts";
+import type { SnapshotWrites } from "./reporter/parser.ts";
 import { parseJestOutput } from "./reporter/parser.ts";
 import type { JestResult } from "./types/jest-result.ts";
 
@@ -122,12 +118,63 @@ const DEFAULT_TIMING: BackendResult["timing"] = {
 	uploadMs: 50,
 };
 
+interface EntryInput {
+	coverageData?: RawCoverageData;
+	elapsedMs?: number;
+	gameOutput?: string;
+	luauTiming?: Record<string, number>;
+	result: JestResult;
+	setupSeconds?: number;
+	snapshotWrites?: SnapshotWrites;
+}
+
+function buildJestOutputPayload(entry: EntryInput): string {
+	const payload: Record<string, unknown> = { ...entry.result };
+	if (entry.coverageData !== undefined) {
+		payload["_coverage"] = entry.coverageData;
+	}
+
+	if (entry.luauTiming !== undefined) {
+		payload["_timing"] = entry.luauTiming;
+	}
+
+	if (entry.setupSeconds !== undefined) {
+		payload["_setup"] = entry.setupSeconds;
+	}
+
+	if (entry.snapshotWrites !== undefined) {
+		payload["_snapshotWrites"] = entry.snapshotWrites;
+	}
+
+	return JSON.stringify(payload);
+}
+
 function singleEntryResult(
-	entry: Partial<ProjectBackendResult> & Pick<ProjectBackendResult, "result">,
+	entry: EntryInput,
 	timing: BackendResult["timing"] = DEFAULT_TIMING,
 ): BackendResult {
 	return {
-		results: [{ displayName: "", elapsedMs: 0, ...entry }],
+		rawResults: [
+			{
+				entry: { elapsedMs: entry.elapsedMs, jestOutput: buildJestOutputPayload(entry) },
+				fallbackGameOutput: entry.gameOutput,
+			},
+		],
+		timing,
+	};
+}
+
+function multiEntryResult(
+	entries: Array<EntryInput>,
+	timing: BackendResult["timing"] = DEFAULT_TIMING,
+): BackendResult {
+	return {
+		rawResults: entries.map((entry) => {
+			return {
+				entry: { elapsedMs: entry.elapsedMs, jestOutput: buildJestOutputPayload(entry) },
+				fallbackGameOutput: entry.gameOutput,
+			};
+		}),
 		timing,
 	};
 }
@@ -534,7 +581,9 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingle(options);
 
-		expect(result.coverageData).toBe(coverageData);
+		expect(result.coverageData).toStrictEqual({
+			"shared/player.luau": { b: undefined, f: undefined, s: { "0": 3, "1": 0, "2": 1 } },
+		});
 	});
 
 	it("should pass through coverageData regardless of collectCoverage", async () => {
@@ -557,7 +606,9 @@ describe("execute single-project helper", () => {
 
 		// coverageData is still returned (backend always provides it), but
 		// coverage processing is now handled by cli.ts
-		expect(result.coverageData).toBe(coverageData);
+		expect(result.coverageData).toStrictEqual({
+			"shared/player.luau": { b: undefined, f: undefined, s: { "0": 3, "1": 0, "2": 1 } },
+		});
 	});
 
 	it("should not factor coverage into exit code", async () => {
@@ -1994,13 +2045,10 @@ describe(runProjects, () => {
 		const backend: Backend = {
 			kind: "studio",
 			runTests: async () => {
-				return {
-					results: [
-						{ displayName: "first", elapsedMs: 0, result: createPassingResult() },
-						{ displayName: "second", elapsedMs: 0, result: createFailingResult() },
-					],
-					timing: DEFAULT_TIMING,
-				};
+				return multiEntryResult([
+					{ result: createPassingResult() },
+					{ result: createFailingResult() },
+				]);
 			},
 		};
 
@@ -2088,13 +2136,10 @@ describe(runProjects, () => {
 		const backend: Backend = {
 			kind: "studio",
 			runTests: async () => {
-				return {
-					results: [
-						{ displayName: "silent", elapsedMs: 0, result: createPassingResult() },
-						{ displayName: "loud", elapsedMs: 0, result: createPassingResult() },
-					],
-					timing: DEFAULT_TIMING,
-				};
+				return multiEntryResult([
+					{ result: createPassingResult() },
+					{ result: createPassingResult() },
+				]);
 			},
 		};
 
@@ -2126,13 +2171,10 @@ describe(runProjects, () => {
 		const backend: Backend = {
 			kind: "open-cloud",
 			runTests: async () => {
-				return {
-					results: [
-						{ displayName: "first", elapsedMs: 0, result: createPassingResult() },
-						{ displayName: "second", elapsedMs: 0, result: createPassingResult() },
-					],
-					timing: { executionMs: 250, uploadCached: false, uploadMs: 75 },
-				};
+				return multiEntryResult(
+					[{ result: createPassingResult() }, { result: createPassingResult() }],
+					{ executionMs: 250, uploadCached: false, uploadMs: 75 },
+				);
 			},
 		};
 
@@ -2149,6 +2191,28 @@ describe(runProjects, () => {
 		expect(backendTiming.executionMs).toBe(250);
 		expect(results[0]?.timing.executionMs).toBe(250);
 		expect(results[1]?.timing.executionMs).toBe(250);
+	});
+
+	it("should throw when backend rawResults length does not match jobs length", async () => {
+		expect.assertions(1);
+
+		const emptyResult: BackendResult = { rawResults: [], timing: DEFAULT_TIMING };
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async () => emptyResult,
+		};
+
+		const promise = runProjects({
+			backend,
+			projects: [
+				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
+				{ config: DEFAULT_CONFIG, testFiles: ["src/b.spec.ts"] },
+			],
+			startTime: Date.now(),
+			version: "0.0.0-test",
+		});
+
+		await expect(promise).rejects.toThrow(/rawResults must be parallel to jobs/);
 	});
 
 	it("should surface backend errors", async () => {
@@ -2211,13 +2275,10 @@ describe(runProjects, () => {
 			kind: "studio",
 			runTests: async (options_) => {
 				captured = options_;
-				return {
-					results: [
-						{ displayName: "luau", elapsedMs: 0, result: createPassingResult() },
-						{ displayName: "ts", elapsedMs: 0, result: createPassingResult() },
-					],
-					timing: DEFAULT_TIMING,
-				};
+				return multiEntryResult([
+					{ result: createPassingResult() },
+					{ result: createPassingResult() },
+				]);
 			},
 		};
 

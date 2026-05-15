@@ -164,6 +164,57 @@ describe("workspace synthesizer $path-mounted parent virtualization", () => {
 	);
 });
 
+// Regression: a workspace package with `jest.config` + `outDir` pointing at a
+// sub-directory that doesn't exist on disk (the package has no specs, so the
+// compiler produces no output there). Before stubMount emission learned to
+// skip zero-test projects, the synthesizer crashed walking the missing
+// segment — but only when at least one OTHER package had pending tests, so
+// the workspace runner reached `writeStubsAndBuildDescriptors` instead of
+// short-circuiting on `pending.length === 0`. The mixed `@e2e/foo` +
+// `@e2e/empty-tests` invocation is what surfaces the bug.
+describe("workspace synthesizer zero-test project tolerance", () => {
+	it.skipIf(!rojoOnPath())(
+		"should not emit stubMounts for projects with no discovered tests",
+		async () => {
+			expect.assertions(4);
+
+			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
+
+			const server = await startFakeOpenCloudServer([
+				{ jestOutput: passingJestOutput(), pkg: "@e2e/foo", project: "@e2e/foo" },
+			]);
+
+			const result = await runCliAsync(
+				[
+					"--workspace",
+					"--packages=@e2e/foo,@e2e/empty-tests",
+					"--backend",
+					"open-cloud",
+					"--no-cache",
+				],
+				{
+					cwd: sandbox,
+					env: {
+						JEST_ROBLOX_OPEN_CLOUD_BASE_URL: server.baseUrl,
+						ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
+						ROBLOX_PLACE_ID: "456",
+						ROBLOX_UNIVERSE_ID: "123",
+					},
+					timeoutMs: 60_000,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(result.stderr).not.toContain("does not resolve in synthesized tree");
+			// Populated package still dispatches; empty-tests contributes
+			// nothing to the backend queue.
+			expect(server.requests).toHaveLength(1);
+			expect(server.uploadCount).toBe(1);
+		},
+		60_000,
+	);
+});
+
 function liveEnvironment(): Record<string, string | undefined> {
 	return {
 		JEST_ROBLOX_LIVE: process.env["JEST_ROBLOX_LIVE"],

@@ -77,7 +77,7 @@ function makeFakeBackend(): Backend {
 		close: vi.fn<() => void>(),
 		kind: "open-cloud",
 		runTests: vi.fn<(options: BackendOptions) => Promise<BackendResult>>(async () => {
-			return { results: [], timing: { executionMs: 0 } };
+			return { rawResults: [], timing: { executionMs: 0 } };
 		}),
 	};
 }

@@ -137,8 +137,8 @@ describe(StudioBackend, () => {
 		expect(capturedConfig?.configs[1]?.testNamePattern).toBe("beta-pattern");
 	});
 
-	it("should preserve job order, displayName, and displayColor in the results array", async () => {
-		expect.assertions(5);
+	it("should return rawResults in the same order as the submitted jobs", async () => {
+		expect.assertions(2);
 
 		const backend = new StudioBackend({ port: 0 });
 		const promise = backend.runTests({ jobs: [job("alpha"), job("beta"), job("gamma")] });
@@ -146,32 +146,16 @@ describe(StudioBackend, () => {
 		const wss = getLastCreatedServer()!;
 		connectAndReply(wss, {
 			entries: [
-				{
-					elapsedMs: 11,
-					jestOutput: successResult({ numPassedTests: 1, numTotalTests: 1 }),
-				},
-				{
-					elapsedMs: 22,
-					jestOutput: successResult({ numPassedTests: 2, numTotalTests: 2 }),
-				},
-				{
-					elapsedMs: 33,
-					jestOutput: successResult({ numPassedTests: 3, numTotalTests: 3 }),
-				},
+				{ elapsedMs: 11, jestOutput: successResult() },
+				{ elapsedMs: 22, jestOutput: successResult() },
+				{ elapsedMs: 33, jestOutput: successResult() },
 			],
 		});
 
-		const { results } = await promise;
+		const { rawResults } = await promise;
 
-		expect(results).toHaveLength(3);
-		expect(results.map((entry) => entry.displayName)).toStrictEqual(["alpha", "beta", "gamma"]);
-		expect(results.map((entry) => entry.displayColor)).toStrictEqual([
-			"alpha-color",
-			"beta-color",
-			"gamma-color",
-		]);
-		expect(results.map((entry) => entry.elapsedMs)).toStrictEqual([11, 22, 33]);
-		expect(results.map((entry) => entry.result.numPassedTests)).toStrictEqual([1, 2, 3]);
+		expect(rawResults).toHaveLength(3);
+		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([11, 22, 33]);
 	});
 
 	it("should populate timing.executionMs on the BackendResult", async () => {
@@ -188,27 +172,7 @@ describe(StudioBackend, () => {
 		expect(result.timing.executionMs).toBeGreaterThanOrEqual(0);
 	});
 
-	it("should pass through per-entry game output from the envelope", async () => {
-		expect.assertions(1);
-
-		const entryGameOutput = JSON.stringify([
-			{ message: "alpha log", messageType: 0, timestamp: 1 },
-		]);
-
-		const backend = new StudioBackend({ port: 0 });
-		const promise = backend.runTests(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, {
-			entries: [{ gameOutput: entryGameOutput, jestOutput: successResult() }],
-		});
-
-		const { results } = await promise;
-
-		expect(results[0]!.gameOutput).toBe(entryGameOutput);
-	});
-
-	it("should fall back to the outer gameOutput when the entry does not supply one", async () => {
+	it("should surface the fallback gameOutput on each rawResult", async () => {
 		expect.assertions(1);
 
 		const fallback = JSON.stringify([{ message: "fallback", messageType: 0, timestamp: 0 }]);
@@ -219,127 +183,29 @@ describe(StudioBackend, () => {
 		const wss = getLastCreatedServer()!;
 		connectAndReply(wss, { gameOutput: fallback });
 
-		const { results } = await promise;
+		const { rawResults } = await promise;
 
-		expect(results[0]!.gameOutput).toBe(fallback);
+		expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
 	});
 
-	it("should convert _setup seconds on the parsed result into setupMs", async () => {
-		expect.assertions(1);
-
-		const jestOutput = JSON.stringify({
-			_setup: 0.321,
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 0,
-				success: true,
-				testResults: [],
-			},
-		});
-
-		const backend = new StudioBackend({ port: 0 });
-		const promise = backend.runTests(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, { entries: [{ jestOutput }] });
-
-		const { results } = await promise;
-
-		expect(results[0]!.setupMs).toBe(321);
-	});
-
-	it("should propagate coverage data through the first result", async () => {
-		expect.assertions(1);
-
-		const coverageData = {
-			"shared/player.luau": { b: undefined, f: undefined, s: { "1": 3, "2": 0 } },
-		};
-
-		const jestOutput = JSON.stringify({
-			_coverage: coverageData,
-			success: true,
-			value: {
-				numFailedTests: 0,
-				numPassedTests: 1,
-				numPendingTests: 0,
-				numTotalTests: 1,
-				startTime: 0,
-				success: true,
-				testResults: [],
-			},
-		});
-
-		const backend = new StudioBackend({ port: 0 });
-		const promise = backend.runTests(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, { entries: [{ jestOutput }] });
-
-		const { results } = await promise;
-
-		expect(results[0]!.coverageData).toStrictEqual(coverageData);
-	});
-
-	it("should rewrap legacy plugin error payloads as a single-entry envelope and throws", async () => {
+	it("should rewrap legacy plugin error payloads as a single rawResult carrying the raw payload", async () => {
 		expect.assertions(2);
 
-		const gameOutput = JSON.stringify([{ message: "boom", messageType: 1, timestamp: 1 }]);
+		const rawJestOutput = JSON.stringify({
+			err: "Failed to find Jest instance",
+			success: false,
+		});
 
 		const backend = new StudioBackend({ port: 0 });
 		const promise = backend.runTests(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, {
-			gameOutput,
-			rawJestOutput: JSON.stringify({ err: "Failed to find Jest instance", success: false }),
-		});
+		connectAndReply(wss, { rawJestOutput });
 
-		const error = await promise.catch((err: unknown) => err);
+		const { rawResults } = await promise;
 
-		expect(error).toBeInstanceOf(Error);
-		expect((error as Error & { gameOutput?: string }).gameOutput).toBe(gameOutput);
-	});
-
-	it("should attach entry gameOutput to LuauScriptError thrown for ExecutionError payloads", async () => {
-		expect.assertions(2);
-
-		const executionError = JSON.stringify({
-			success: true,
-			value: { error: "runtime blew up", kind: "ExecutionError" },
-		});
-		const entryGameOutput = JSON.stringify([{ message: "boom", messageType: 1, timestamp: 1 }]);
-
-		const backend = new StudioBackend({ port: 0 });
-		const promise = backend.runTests(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, {
-			entries: [{ gameOutput: entryGameOutput, jestOutput: executionError }],
-		});
-
-		const error = await promise.catch((err: unknown) => err);
-
-		expect(error).toBeInstanceOf(Error);
-		expect((error as Error & { gameOutput?: string }).gameOutput).toBe(entryGameOutput);
-	});
-
-	it("should rethrow non-LuauScriptError exceptions from parseJestOutput unchanged", async () => {
-		expect.assertions(2);
-
-		const backend = new StudioBackend({ port: 0 });
-		const promise = backend.runTests(singleJobOptions);
-
-		const wss = getLastCreatedServer()!;
-		connectAndReply(wss, { entries: [{ jestOutput: "no json here" }] });
-
-		const error = await promise.catch((err: unknown) => err);
-
-		expect(error).toBeInstanceOf(Error);
-		expect((error as Error & { gameOutput?: string }).gameOutput).toBeUndefined();
+		expect(rawResults).toHaveLength(1);
+		expect(rawResults[0]!.entry.jestOutput).toBe(rawJestOutput);
 	});
 
 	it("should rethrow syntax errors when jestOutput is not valid JSON", async () => {
@@ -419,10 +285,10 @@ describe(StudioBackend, () => {
 			preConnected: fromPartial({ server: wss, socket }),
 		});
 
-		const { results } = await backend.runTests(singleJobOptions);
+		const { rawResults } = await backend.runTests(singleJobOptions);
 
-		expect(results[0]!.result.success).toBeTrue();
-		expect(results[0]!.result.numPassedTests).toBe(3);
+		expect(rawResults).toHaveLength(1);
+		expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":3');
 	});
 
 	it("should reject when the plugin sends a malformed message", async () => {
@@ -514,9 +380,9 @@ describe(StudioBackend, () => {
 
 		wss.emit("connection", socket);
 
-		const { results } = await promise;
+		const { rawResults } = await promise;
 
-		expect(results[0]!.result.success).toBeTrue();
+		expect(rawResults).toHaveLength(1);
 	});
 
 	it("should reuse the same WebSocketServer across successive runTests calls", async () => {

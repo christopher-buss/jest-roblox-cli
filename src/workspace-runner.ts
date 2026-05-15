@@ -175,7 +175,8 @@ export async function runWorkspace(
 			)
 		: new Map<string, WorkspacePackageCoverage>();
 
-	const descriptorsWithStubs = writeStubsAndBuildDescriptors(filteredContexts).map(
+	const liveProjects = liveProjectsByPackage(pending);
+	const descriptorsWithStubs = writeStubsAndBuildDescriptors(filteredContexts, liveProjects).map(
 		(descriptor) => {
 			const coverage = coverageByPackage.get(descriptor.name);
 			return coverage !== undefined
@@ -617,12 +618,41 @@ function writePreflightErrors(errors: Array<PreflightError>): void {
 	}
 }
 
-function writeStubsAndBuildDescriptors(contexts: Array<PackageContext>): Array<PackageDescriptor> {
+function liveProjectsByPackage(pending: Array<PendingEntry>): Map<string, Set<string>> {
+	const live = new Map<string, Set<string>>();
+	for (const entry of pending) {
+		let names = live.get(entry.pkg);
+		if (names === undefined) {
+			names = new Set();
+			live.set(entry.pkg, names);
+		}
+
+		names.add(entry.project.displayName);
+	}
+
+	return live;
+}
+
+// stubMounts inject `jest.config` at each rojoMount leaf. Projects whose
+// runtime discovery returned zero files are already dropped from `pending`
+// (workspace-runner.ts ~L162), so their stubs would never run. Emitting them
+// anyway is worse than wasteful: a project's `outDir` may legitimately not
+// exist on disk when the compiler had nothing to produce, and the synthesizer
+// would fail walking that missing path (e.g. `out-test/src` when no specs
+// exist). Skip stub emission for non-live projects; the package's own rojo
+// tree still mounts so cross-package consumers resolve normally.
+function writeStubsAndBuildDescriptors(
+	contexts: Array<PackageContext>,
+	liveProjects: Map<string, Set<string>>,
+): Array<PackageDescriptor> {
 	return contexts.map((ctx) => {
-		generateProjectStubs(ctx.projects, ctx.info.packageDirectory, ctx.cacheRoot);
+		const live = liveProjects.get(ctx.info.name) ?? new Set<string>();
+		const projectsForStubs = ctx.projects.filter((project) => live.has(project.displayName));
+
+		generateProjectStubs(projectsForStubs, ctx.info.packageDirectory, ctx.cacheRoot);
 
 		const stubMounts: Array<StubMount> = [];
-		for (const project of ctx.projects) {
+		for (const project of projectsForStubs) {
 			for (const mount of project.rojoMounts) {
 				stubMounts.push({
 					absStubPath: path.resolve(ctx.cacheRoot, mount.fsPath, STUB_FILENAME),

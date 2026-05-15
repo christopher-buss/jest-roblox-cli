@@ -87,13 +87,7 @@ function createStubBackend(entries: Array<BackendStubEntry>): {
 		runTests: async (options: BackendOptions): Promise<BackendResult> => {
 			captured.options = options;
 			return {
-				results: entries.map((entry) => {
-					return {
-						displayName: entry.project ?? entry.pkg ?? "",
-						elapsedMs: 0,
-						result: JSON.parse(entry.jestOutput) as never,
-					};
-				}),
+				rawResults: entries.map((entry) => ({ entry: { jestOutput: entry.jestOutput } })),
 				timing: { executionMs: 0, uploadMs: 0 },
 			};
 		},

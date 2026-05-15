@@ -1,0 +1,10 @@
+{
+	"name": "empty-tests",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"EmptyTests:tests": { "$path": "out-test" }
+		}
+	}
+}

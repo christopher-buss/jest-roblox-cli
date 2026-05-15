@@ -1,12 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type {
-	Backend,
-	BackendOptions,
-	BackendResult,
-	ProjectBackendResult,
-} from "../../../src/backends/interface.ts";
+import type { Backend, BackendOptions, BackendResult } from "../../../src/backends/interface.ts";
 import { loadConfig } from "../../../src/config/loader.ts";
 import { resolveAllProjects } from "../../../src/config/projects.ts";
 import { runProjects } from "../../../src/executor.ts";
@@ -104,15 +99,12 @@ describe("executor multi-root pipeline", () => {
 			kind: "open-cloud",
 			runTests: async (options): Promise<BackendResult> => {
 				captured = options;
-				const entry: ProjectBackendResult = {
-					displayColor: project.displayColor,
-					displayName: project.displayName,
-					elapsedMs: 50,
-					result: buildMergedJestResult(),
-					setupMs: 50,
-				};
+				const jestOutput = JSON.stringify({
+					_setup: 0.05,
+					...buildMergedJestResult(),
+				});
 				return {
-					results: [entry],
+					rawResults: [{ entry: { elapsedMs: 50, jestOutput } }],
 					timing: { executionMs: 100, uploadCached: false, uploadMs: 25 },
 				};
 			},
