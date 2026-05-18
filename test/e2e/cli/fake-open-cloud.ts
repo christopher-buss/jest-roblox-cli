@@ -35,6 +35,13 @@ export interface FakeOpenCloudTask {
 	 */
 	project?: string;
 	/**
+	 * Per-package snapshot writes returned on the auto-wrapped entry.
+	 * Mirrors the HAL-165 envelope field captured by the staged materializer:
+	 * each key is a DataModel-style virtual path resolved by the CLI's
+	 * `writeSnapshots` against the per-package rojo project + rootDir.
+	 */
+	snapshotWrites?: Record<string, string>;
+	/**
 	 * Terminal state to return after `pollsBeforeComplete` is exhausted.
 	 * Defaults to `"COMPLETE"`. Set to `"FAILED"` to drive the failure
 	 * branch — the contract suite needs both to prove fake/live parity.
@@ -214,6 +221,7 @@ function handlePoll(options: {
 									jestOutput: queuedTask.jestOutput,
 									pkg: queuedTask.pkg,
 									project: queuedTask.project,
+									snapshotWrites: queuedTask.snapshotWrites,
 								},
 							],
 						}),

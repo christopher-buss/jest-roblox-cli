@@ -1002,10 +1002,17 @@ describe("execute single-project helper", () => {
 	it("should resolve relative config.rojoProject against rootDir, not CWD", async () => {
 		// Regression: in workspace mode CWD is the workspace root and a
 		// relative `rojoProject` like "test.project.json" must resolve under
-		// each package's `rootDir`, not where the CLI was invoked.
-		expect.assertions(2);
+		// each package's `rootDir`, not where the CLI was invoked. Stub
+		// process.cwd() to a sentinel that is NOT a parent of rootDir so the
+		// resolution is unambiguous — without the rootDir-relative resolve
+		// fs.existsSync would interpret the relative path against this CWD
+		// sentinel and miss every package.
+		expect.assertions(3);
 
 		const temporaryDirectory = createTemporaryDirectory("exec-snap-root-dir-");
+		const workspaceRoot = "/fake-workspace-root";
+		vol.mkdirSync(workspaceRoot, { recursive: true });
+		const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(workspaceRoot);
 
 		const rojoProject = {
 			name: "test",
@@ -1047,7 +1054,10 @@ describe("execute single-project helper", () => {
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
 		stderrSpy.mockRestore();
+		cwdSpy.mockRestore();
 
+		// CWD-relative misresolution would land here and falsely "exist".
+		expect(fs.existsSync(path.join(workspaceRoot, "test.project.json"))).toBeFalse();
 		expect(output).not.toMatch(/Cannot write snapshots - no rojo project found/);
 
 		const snapshotPath = path.join(

@@ -1,4 +1,5 @@
 import * as cp from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
@@ -203,6 +204,100 @@ describe("workspace synthesizer zero-test project tolerance", () => {
 			// nothing to the backend queue.
 			expect(server.requests).toHaveLength(1);
 			expect(server.uploadCount).toBe(1);
+		},
+		60_000,
+	);
+});
+
+// Regression: HAL-165 per-package snapshot writeback only landed on disk in
+// single-package mode because `writeSnapshots` interpreted relative
+// `config.rojoProject` against process.cwd(). Single-pkg happens to launch
+// with CWD == rootDir so the lookup coincidentally worked; workspace mode
+// runs from the workspace root and every per-package lookup missed,
+// silently dropping every captured snapshot.
+//
+// The original HAL-165 tests asserted on the in-memory envelope (envelope
+// parsing, per-package routing dispatch) but stopped before writeSnapshots,
+// so the disk-write regression slipped through. This e2e drives the full
+// pipeline through the fake OCALE backend with `snapshotWrites` populated
+// on the envelope and asserts each package's snapshot file lands at its own
+// rootDir-relative `__snapshots__/` location — the disk shape the fix
+// (`path.resolve(config.rootDir, ...)`) guarantees.
+describe("workspace snapshot writeback lands per-package on disk", () => {
+	it.skipIf(!rojoOnPath())(
+		"should write each package's snapshotWrites to its own rootDir/__snapshots__",
+		async () => {
+			expect.assertions(8);
+
+			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
+			const fooSnapshot = "-- @e2e/foo snapshot body\nreturn { pkg = 'foo' }\n";
+			const barSnapshot = "-- @e2e/bar snapshot body\nreturn { pkg = 'bar' }\n";
+
+			const server = await startFakeOpenCloudServer([
+				{
+					jestOutput: passingJestOutput(),
+					pkg: "@e2e/foo",
+					project: "@e2e/foo",
+					snapshotWrites: {
+						"ReplicatedStorage/Foo/__snapshots__/hal-165.spec.snap.luau": fooSnapshot,
+					},
+				},
+				{
+					jestOutput: passingJestOutput(),
+					pkg: "@e2e/bar",
+					project: "@e2e/bar",
+					snapshotWrites: {
+						"ReplicatedStorage/Bar/__snapshots__/hal-165.spec.snap.luau": barSnapshot,
+					},
+				},
+			]);
+
+			const result = await runCliAsync(
+				[
+					"--workspace",
+					"--packages=@e2e/foo,@e2e/bar",
+					"--parallel=2",
+					"--updateSnapshot",
+					"--backend",
+					"open-cloud",
+				],
+				{
+					cwd: sandbox,
+					env: {
+						JEST_ROBLOX_OPEN_CLOUD_BASE_URL: server.baseUrl,
+						ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
+						ROBLOX_PLACE_ID: "456",
+						ROBLOX_UNIVERSE_ID: "123",
+					},
+					timeoutMs: 60_000,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(result.stderr).not.toContain("Cannot write snapshots - no rojo project found");
+			// Server-side invariants: confirm the fake OCALE backend was actually
+			// exercised — without these, a CLI short-circuit (zero discovery,
+			// early validation failure) could let the file-existence assertions
+			// pass on stale disk state from a prior run. One upload regardless
+			// of --parallel (single synthesized place); one task per parallel
+			// worker (2).
+			expect(server.uploadCount).toBe(1);
+			expect(server.requests).toHaveLength(2);
+
+			const fooSnapPath = path.join(
+				sandbox,
+				"packages/foo/src/__snapshots__/hal-165.spec.snap.luau",
+			);
+			const barSnapPath = path.join(
+				sandbox,
+				"packages/bar/src/__snapshots__/hal-165.spec.snap.luau",
+			);
+			expect(fs.existsSync(fooSnapPath)).toBeTrue();
+			expect(fs.existsSync(barSnapPath)).toBeTrue();
+			// Cross-contamination guard: each package's body lives only under
+			// its own __snapshots__ tree.
+			expect(fs.readFileSync(fooSnapPath, "utf-8")).toBe(fooSnapshot);
+			expect(fs.readFileSync(barSnapPath, "utf-8")).toBe(barSnapshot);
 		},
 		60_000,
 	);
