@@ -362,6 +362,30 @@ describe(instrument, () => {
 			expect(vol.existsSync("/shadow/init.cov-map.json")).toBeTrue();
 			expect(vol.existsSync("/shadow/shared/player.cov-map.json")).toBeTrue();
 		});
+
+		// Regression: roblox-ts emits `.lua` (not `.luau`) for its vendor
+		// runtime (`include/RuntimeLib.lua`). A regex that only stripped
+		// `.luau$` left the cov-map path identical to the instrumented source
+		// path, so the JSON write clobbered the Lua text — every `require`
+		// through RuntimeLib then failed at load.
+		it("should write covmap sidecar without clobbering .lua source", () => {
+			expect.assertions(2);
+
+			setupFilesystem({
+				files: { "RuntimeLib.lua": EMPTY_AST },
+			});
+
+			instrument({
+				astOutputDirectory: "/tmp/asts",
+				luauRoot: "/luau-root",
+				manifestPath: "/manifest.json",
+				parseScript: "mock.luau",
+				shadowDir: "/shadow",
+			});
+
+			expect(vol.existsSync("/shadow/RuntimeLib.cov-map.json")).toBeTrue();
+			expect(vol.readFileSync("/shadow/RuntimeLib.lua", "utf-8")).not.toStartWith("{");
+		});
 	});
 
 	describe("when normalizing paths", () => {

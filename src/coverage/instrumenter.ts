@@ -129,7 +129,7 @@ export function instrumentRoot(
 		const instrumentedLuauPath = normalizeWindowsPath(path.join(shadowDir, relativePath));
 		const coverageMapOutputPath = path.join(
 			shadowDir,
-			relativePath.replace(/\.luau$/, ".cov-map.json"),
+			relativePath.replace(/\.luau?$/, ".cov-map.json"),
 		);
 		const sourceMapPath = `${originalLuauPath}.map`;
 

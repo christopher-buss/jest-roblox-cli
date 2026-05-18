@@ -434,6 +434,55 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(result[0]?.coverageRoots).toStrictEqual([]);
 	});
 
+	// Regression: roblox-ts ships its vendor runtime (`RuntimeLib.lua`,
+	// `Promise.lua`) into the project's rbxts `include/` dir. Instrumenting
+	// those files isn't useful (they're vendor code, not project source) and
+	// the synthesizer would then redirect `rbxts_include.$path` to the shadow,
+	// adding probe overhead to every `require` through `TS.import`. Skip any
+	// `$path` whose root contains a `RuntimeLib` file — the canonical marker.
+	it("should skip directories containing RuntimeLib (rbxts include)", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Pkg: { $path: "out" },
+						rbxts_include: { $path: "include" },
+					},
+				},
+			}),
+			[path.join(FOO_DIR, "include/Promise.lua")]: "local x = 1",
+			[path.join(FOO_DIR, "include/RuntimeLib.lua")]: "local x = 1",
+			[path.join(FOO_DIR, "out/init.luau")]: "local x = 1",
+		});
+		const mocked = await mockInstrumentRoot();
+
+		const result = prepareWorkspaceCoverage({
+			config: makeConfig(),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).toHaveBeenCalledOnce();
+		expect(result[0]?.coverageRoots).toStrictEqual([
+			{
+				luauRoot: "out",
+				shadowDir: path
+					.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out")
+					.replaceAll("\\", "/"),
+			},
+		]);
+	});
+
 	it("should dedupe duplicate $path entries within a single package", async () => {
 		expect.assertions(1);
 

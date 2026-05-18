@@ -90,6 +90,16 @@ function containsLuauFiles(directoryPath: string): boolean {
 	});
 }
 
+// Mirrors the roblox-ts compiler: it emits `RuntimeLib.lua` (and `Promise.lua`)
+// into the project's rbxts include dir. Instrumenting vendor code wastes work
+// and forces every `TS.import` through cov probes.
+function isRbxtsIncludeRoot(directoryPath: string): boolean {
+	return (
+		fs.existsSync(path.join(directoryPath, "RuntimeLib.lua")) ||
+		fs.existsSync(path.join(directoryPath, "RuntimeLib.luau"))
+	);
+}
+
 function discoverPackageLuauRoots(
 	descriptor: WorkspacePackageDescriptor,
 	matchesIgnored: (filePath: string) => boolean,
@@ -116,23 +126,17 @@ function discoverPackageLuauRoots(
 			continue;
 		}
 
-		if (matchesIgnored(relative)) {
-			continue;
-		}
-
-		if (!fs.existsSync(absolute)) {
-			continue;
-		}
-
-		if (!fs.statSync(absolute).isDirectory()) {
-			continue;
-		}
-
-		if (!containsLuauFiles(absolute)) {
-			continue;
-		}
-
-		if (seen.has(relative)) {
+		// `isRbxtsIncludeRoot` (two `existsSync`s) precedes the recursive
+		// `containsLuauFiles` scan so include dirs short-circuit out before
+		// the deep walk.
+		if (
+			matchesIgnored(relative) ||
+			!fs.existsSync(absolute) ||
+			!fs.statSync(absolute).isDirectory() ||
+			isRbxtsIncludeRoot(absolute) ||
+			!containsLuauFiles(absolute) ||
+			seen.has(relative)
+		) {
 			continue;
 		}
 
