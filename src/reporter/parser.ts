@@ -273,9 +273,35 @@ function extractSnapshotWrites(parsed: Record<string, unknown>): SnapshotWrites 
 	return Object.keys(record).length > 0 ? record : undefined;
 }
 
+// Single-line Luau `<path>:<line>:` prefix (e.g.
+// "Module.Path:25: Exited with code: 1"). Mirrors the Luau-side strip in
+// promise-error.luau so the CLI banner's exit-code branch can match a bare
+// message regardless of which producer encoded the envelope.
+const PATH_LINE_PREFIX = /^[\w.@/-]+:\d+:\s*/;
+
+function stripPathLinePrefix(message: string): string {
+	if (message.includes("\n")) {
+		return message;
+	}
+
+	return message.replace(PATH_LINE_PREFIX, "");
+}
+
 function stringifyError(err: unknown): string {
 	if (typeof err === "string") {
-		return err;
+		// Defense in depth: when the Luau side encodes a Promise.Error via
+		// tostring() (e.g. luau/staging/entry.luau's per-pkg failure path) the
+		// raw multi-frame __tostring blob lands here as a top-level err. Walk
+		// to the trailing cause line so the banner shows a clean leaf, not
+		// the frame dump.
+		if (looksLikePromiseTrace(err)) {
+			const cause = extractCauseFromPromiseTrace(err);
+			if (cause !== undefined) {
+				return stripPathLinePrefix(cause);
+			}
+		}
+
+		return stripPathLinePrefix(err);
 	}
 
 	if (

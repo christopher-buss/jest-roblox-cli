@@ -3,8 +3,12 @@ local HttpService = game:GetService("HttpService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
 
 local InstanceResolver = require("../instance-resolver")
+local InterceptWriteable = require("../intercept-writeable")
+local PromiseError = require("../promise-error")
 local SnapshotPatch = require("../snapshot-patch")
 local Materializer = require("./materializer")
+
+type CapturedMessage = InterceptWriteable.CapturedMessage
 
 type SnapshotWrites = { [string]: string }
 
@@ -40,6 +44,7 @@ type ResultEntry = {
 	elapsedMs: number,
 	jestOutput: string,
 	snapshotWrites: SnapshotWrites?,
+	gameOutput: string?,
 }
 
 type StreamingSummary = {
@@ -72,7 +77,13 @@ local function resolveSetupPaths(paths: { string }?): { Instance }?
 	return resolved
 end
 
-local function runEntry(entry: EntryPayload): (string, SnapshotWrites?)
+-- Returns: (jestSuccess, jestOutputOrErrorMessage, snapshotWrites, gameOutput).
+-- `jestSuccess=false` means Jest itself rejected; `jestOutputOrErrorMessage`
+-- carries the normalized cause string in that case, otherwise the encoded
+-- success envelope. `gameOutput` is the JSON-encoded captured stdout/stderr
+-- whether Jest succeeded or failed — the CLI banner uses it on the failure
+-- path to surface messages like "No tests found, exiting with code 1".
+local function runEntry(entry: EntryPayload): (boolean, string, SnapshotWrites?, string?)
 	local JestModule = InstanceResolver.getJest(entry.config)
 
 	-- Patch BEFORE require(Jest) so the snapshot mock is in place when
@@ -82,6 +93,21 @@ local function runEntry(entry: EntryPayload): (string, SnapshotWrites?)
 	-- unpatch would freeze the previous mock as the restoration target.
 	local snapshotWrites: SnapshotWrites = {}
 	local patchState = SnapshotPatch.patch(JestModule, snapshotWrites)
+
+	-- Intercept Jest's stdout/stderr around runCLI so per-pkg failure messages
+	-- (e.g. "No tests found, exiting with code 1") are captured and surfaced
+	-- in the CLI banner. Single-package mode (runner.luau) does the same.
+	local capturedMessages: { CapturedMessage } = {}
+	local restoreStdout: (() -> ())?
+	local restoreStderr: (() -> ())?
+	pcall(function()
+		local nodeModules = JestModule.Parent.Parent.Parent :: any
+		local RobloxShared = (require :: any)(nodeModules["@rbxts-js"].RobloxShared)
+		local process = RobloxShared.nodeUtils.process
+
+		restoreStdout = InterceptWriteable.intercept(process.stdout, capturedMessages, 0)
+		restoreStderr = InterceptWriteable.intercept(process.stderr, capturedMessages, 1)
+	end)
 
 	-- ALL post-patch work (require, project/setup resolution, runCLI) must
 	-- be inside this pcall so SnapshotPatch.unpatch always runs. If require
@@ -129,15 +155,32 @@ local function runEntry(entry: EntryPayload): (string, SnapshotWrites?)
 		return HttpService:JSONEncode(payload)
 	end)
 
+	if restoreStdout then
+		restoreStdout()
+	end
+	if restoreStderr then
+		restoreStderr()
+	end
+
 	SnapshotPatch.unpatch(patchState)
 
-	if not ok then
-		error(jestResultOrError, 0)
+	local gameOutput: string?
+	if #capturedMessages > 0 then
+		local encodeOk, encoded = pcall(function()
+			return HttpService:JSONEncode(capturedMessages)
+		end)
+		if encodeOk then
+			gameOutput = encoded :: string
+		end
 	end
 
 	local capturedWrites: SnapshotWrites? = if next(snapshotWrites) then snapshotWrites else nil
 
-	return jestResultOrError, capturedWrites
+	if not ok then
+		return false, PromiseError.normalize(jestResultOrError), nil, gameOutput
+	end
+
+	return true, jestResultOrError, capturedWrites, gameOutput
 end
 
 local function buildSummary(result: ResultEntry): StreamingSummary
@@ -202,25 +245,63 @@ local function executeEntry(
 	sortedMapId: string?,
 	streamingTtlSeconds: number?
 ): (ResultEntry, string)
-	if entry.pkg ~= prevPkg then
-		if prevPkg ~= nil then
-			Materializer.reset()
+	local t0 = os.clock()
+
+	-- Wrap the staging hand-off so a missing/torn-down `__pkg_stage` (or any
+	-- materialize-side assertion) surfaces as a per-pkg envelope failure
+	-- instead of escaping as `TaskScript:NNN: ...` and aborting the whole
+	-- task script.
+	local stageOk, stageErr = pcall(function()
+		if entry.pkg ~= prevPkg then
+			if prevPkg ~= nil then
+				Materializer.reset()
+			end
+			Materializer.materialize(entry.pkg)
 		end
-		Materializer.materialize(entry.pkg)
+	end)
+
+	if not stageOk then
+		local elapsedMs = math.floor((os.clock() - t0) * 1000)
+		local result: ResultEntry = {
+			pkg = entry.pkg,
+			project = entry.project,
+			elapsedMs = elapsedMs,
+			jestOutput = HttpService:JSONEncode({
+				success = false,
+				err = PromiseError.normalize(stageErr),
+			}),
+		}
+		streamResult(result, sortedMapId, streamingTtlSeconds)
+		return result, entry.pkg
 	end
 
-	local t0 = os.clock()
-	local ok, jestOrError, snapshotWrites = pcall(runEntry, entry)
+	local pcallOk, jestSuccess, primary, snapshotWrites, gameOutput =
+		pcall(runEntry, entry)
 	local elapsedMs = math.floor((os.clock() - t0) * 1000)
 
 	local result: ResultEntry
-	if ok then
+	if not pcallOk then
+		-- runEntry itself errored (e.g. InstanceResolver/getJest failure
+		-- before interception was installed). `jestSuccess` here holds the
+		-- raw error value pcall returned in slot 2 — normalize it the same
+		-- way the Jest-rejection path does.
 		result = {
 			pkg = entry.pkg,
 			project = entry.project,
 			elapsedMs = elapsedMs,
-			jestOutput = jestOrError,
+			jestOutput = HttpService:JSONEncode({
+				success = false,
+				err = PromiseError.normalize(jestSuccess),
+			}),
+		}
+	elseif jestSuccess then
+		result = {
+			pkg = entry.pkg,
+			project = entry.project,
+			elapsedMs = elapsedMs,
+			jestOutput = primary,
 			snapshotWrites = snapshotWrites,
+			gameOutput = gameOutput,
 		}
 	else
 		result = {
@@ -229,8 +310,9 @@ local function executeEntry(
 			elapsedMs = elapsedMs,
 			jestOutput = HttpService:JSONEncode({
 				success = false,
-				err = tostring(jestOrError),
+				err = primary,
 			}),
+			gameOutput = gameOutput,
 		}
 	end
 

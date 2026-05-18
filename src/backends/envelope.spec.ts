@@ -294,6 +294,62 @@ describe(buildProjectResult, () => {
 		expect((thrown as LuauScriptError).gameOutput).toBe("fallback-output");
 	});
 
+	it("should prefer per-entry gameOutput over the backend fallback on the failure path", () => {
+		// Regression: luau/staging/entry.luau now installs an interceptWriteable
+		// around runEntry so per-pkg failures carry captured stdout
+		// (e.g. "No tests found, exiting with code 1") in `entry.gameOutput`.
+		// buildProjectResult must hand that to LuauScriptError.gameOutput so
+		// the CLI banner's "Test Run Failed" branch can render it as the body.
+		expect.assertions(2);
+
+		const capturedStdout = JSON.stringify([
+			{
+				message: "No tests found, exiting with code 1",
+				messageType: 0,
+				timestamp: 0.001,
+			},
+		]);
+		const errorPayload = JSON.stringify({ err: "Exited with code: 1", success: false });
+
+		const thrown = captureThrown(() => {
+			buildProjectResult(
+				entry({ gameOutput: capturedStdout, jestOutput: errorPayload }),
+				job("alpha"),
+				"fallback-not-used",
+			);
+		});
+
+		expect(thrown).toBeInstanceOf(LuauScriptError);
+		expect((thrown as LuauScriptError).gameOutput).toBe(capturedStdout);
+	});
+
+	it("should extract trailing cause when entry encodes err as a Promise-trace string", () => {
+		// Regression: workspace materializer (luau/staging/entry.luau) encodes
+		// per-package failures as { success: false, err: tostring(promiseError)
+		// }. buildProjectResult must surface the leaf cause and attach gameOutput
+		// so the CLI banner renders "Test Run Failed" + captured stdout instead
+		// of the multi-frame Promise.Error blob.
+		expect.assertions(3);
+
+		const promiseTrace = [
+			"-- Promise.Error(ExecutionError) --",
+			"",
+			"...Rejected because it was chained to the following Promise, which encountered an error:",
+			"",
+			"ReplicatedStorage.rbxts_include.node_modules.@rbxts-js.RobloxShared.nodeUtils:25: Exited with code: 1",
+		].join("\n");
+
+		const errorPayload = JSON.stringify({ err: promiseTrace, success: false });
+
+		const thrown = captureThrown(() => {
+			buildProjectResult(entry({ jestOutput: errorPayload }), job("alpha"), "No tests found");
+		});
+
+		expect(thrown).toBeInstanceOf(LuauScriptError);
+		expect((thrown as Error).message).toBe("Exited with code: 1");
+		expect((thrown as LuauScriptError).gameOutput).toBe("No tests found");
+	});
+
 	it("should propagate non-LuauScriptError errors from parseJestOutput unchanged", () => {
 		expect.assertions(2);
 

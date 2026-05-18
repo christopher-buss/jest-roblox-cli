@@ -332,6 +332,39 @@ describe(parseJestOutput, () => {
 		);
 	});
 
+	it("should extract trailing message when err is a top-level Promise-trace string", () => {
+		// Regression: workspace materializer (luau/staging/entry.luau) encodes
+		// Jest-side failures as { success: false, err: tostring(promiseError) }
+		// — a *string* err, not the { kind: "ExecutionError" } object shape
+		// produced by runner.luau's runProjects. stringifyError must also
+		// detect Promise traces in that top-level string form, otherwise the
+		// multi-frame __tostring blob leaks into the banner.
+		expect.assertions(1);
+
+		const promiseTrace = [
+			"-- Promise.Error(ExecutionError) --",
+			"",
+			"The Promise at:",
+			"",
+			"ReplicatedStorage.rbxts_include.node_modules.@rbxts-js.JestCore.cli:305 function runWithoutWatch",
+			"",
+			"...Rejected because it was chained to the following Promise, which encountered an error:",
+			"",
+			"ReplicatedStorage.rbxts_include.node_modules.@rbxts-js.RobloxShared.nodeUtils:25: Exited with code: 1",
+			"ReplicatedStorage.rbxts_include.node_modules.@rbxts-js.JestCore.runJest:345",
+		].join("\n");
+
+		const output = JSON.stringify({
+			err: promiseTrace,
+			success: false,
+		});
+
+		expect(() => parseJestOutput(output)).toThrowWithMessage(
+			LuauScriptError,
+			"Exited with code: 1",
+		);
+	});
+
 	it("should extract a no-space cause line from a Promise trace", () => {
 		// Luau `error(msg, 0)` emits `path:N:msg` with no space after the
 		// second colon — the cause regex must accept that shape.
@@ -388,6 +421,71 @@ describe(parseJestOutput, () => {
 		expect(() => parseJestOutput(output)).toThrowWithMessage(
 			LuauScriptError,
 			"Failed to find Jest instance in ReplicatedStorage",
+		);
+	});
+
+	it("should strip a path:line prefix from a single-line top-level err string", () => {
+		// Regression: promise-error.luau walks the parent chain to a leaf whose
+		// .error field is `<path>:<line>: <msg>` (e.g.
+		// "...nodeUtils:25: Exited with code: 1"). The CLI banner's exit-code
+		// branch (`^Exited with code: \d+$`) only fires on the bare cause —
+		// stringifyError must surface the trailing message so the captured
+		// stdout body replaces the transport line.
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			err: "ReplicatedStorage.rbxts_include.node_modules.@rbxts-js.RobloxShared.nodeUtils:25: Exited with code: 1",
+			success: false,
+		});
+
+		expect(() => parseJestOutput(output)).toThrowWithMessage(
+			LuauScriptError,
+			"Exited with code: 1",
+		);
+	});
+
+	it("should leave a multi-line top-level err untouched by the path:line strip", () => {
+		// Multi-line errors carry context worth preserving (e.g. a stack frame
+		// list); the strip only fires for the single-line `<path>:<line>: <msg>`
+		// shape that promise-error.luau emits as a normalized leaf.
+		expect.assertions(1);
+
+		const multiLine = "ReplicatedStorage.Foo:10: outer\n  at frame:1\n  at frame:2";
+		const output = JSON.stringify({ err: multiLine, success: false });
+
+		expect(() => parseJestOutput(output)).toThrowWithMessage(LuauScriptError, multiLine);
+	});
+
+	it("should fall through unchanged when a top-level err looks like a Promise trace but has no cause line", () => {
+		// Defensive branch: a string that matches the `-- Promise.Error(` header
+		// but carries no `:N:` cause line (e.g. a malformed/partial trace from
+		// an unexpected encoder) must return as-is rather than collapse to an
+		// empty string — preserving whatever context the producer did emit.
+		expect.assertions(1);
+
+		const headerOnly = "-- Promise.Error(ExecutionError) --";
+		const output = JSON.stringify({ err: headerOnly, success: false });
+
+		expect(() => parseJestOutput(output)).toThrowWithMessage(LuauScriptError, headerOnly);
+	});
+
+	it("should surface a clean materializer assertion as the LuauScriptError message", () => {
+		// Regression: when `luau/staging/entry.luau` pcall-wraps the
+		// `Materializer.materialize` hand-off and the staged pkg ServerStorage
+		// folder is missing, the envelope shape is
+		// `{success:false, err:"TaskScript:N: ServerStorage.__pkg_stage
+		// missing"}`. The parser must strip the TaskScript prefix so the user
+		// sees the bare assertion message, not the escaped TaskScript:NNN frame.
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			err: "TaskScript:43: ServerStorage.__pkg_stage missing",
+			success: false,
+		});
+
+		expect(() => parseJestOutput(output)).toThrowWithMessage(
+			LuauScriptError,
+			"ServerStorage.__pkg_stage missing",
 		);
 	});
 
