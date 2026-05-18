@@ -117,7 +117,12 @@ export async function runWorkspaceMode(options: RunOptions): Promise<WorkspaceRu
 		};
 	});
 
-	const coverageMapped = config.collectCoverage
+	// Drive coverage off per-package manifests, not the workspace-level
+	// `collectCoverage`. A package that opted into coverage via its own
+	// jest.config will carry a `coverageManifest` here; aggregating
+	// regardless of workspace config keeps that report from being dropped.
+	const hasCoverage = runtimeResults.some((entry) => entry.coverageManifest !== undefined);
+	const coverageMapped = hasCoverage
 		? normalizeEmptyCoverage(aggregatePerPackageCoverage(runtimeResults))
 		: undefined;
 

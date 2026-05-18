@@ -142,38 +142,49 @@ export async function runWorkspace(
 
 	const allEntries = collectPendingEntries(filteredContexts);
 
-	// D8: passWithNoTests is workspace-global. Drop projects whose runtime
-	// discovery returned zero files BEFORE building jobs so empty projects
-	// inside an otherwise non-empty workspace do not fail with "no tests
-	// found". The workspace-global zero-check still fires when nothing is
-	// left.
-	const pending = allEntries.filter((entry) => entry.testFiles.length > 0);
-
-	if (pending.length === 0) {
-		if (config.passWithNoTests) {
-			return [];
+	// Each package decides independently. A package with zero discovered
+	// tests passes only when its OWN `passWithNoTests` is true; the
+	// workspace root's value is not aggregated over packages. Projects with
+	// zero tests inside a populated package are silently dropped.
+	const { emptyPackageErrors, pending } = applyEmptyPackagePolicy(allEntries, filteredContexts);
+	if (emptyPackageErrors.length > 0) {
+		for (const error of emptyPackageErrors) {
+			process.stderr.write(`${error}\n`);
 		}
 
-		process.stderr.write("No test files found in any package\n");
 		return undefined;
 	}
 
-	// Limit instrumentation to packages that actually have pending tests.
-	// `--project` and zero-discovery filters narrow the set of pending
-	// entries; instrumenting packages that won't run wastes time on every
-	// run (instrumentation is the dominant pre-OCALE cost).
+	if (pending.length === 0) {
+		return [];
+	}
+
+	// Limit instrumentation to packages that actually have pending tests
+	// AND opted into coverage via their own config. Per-package opt-in
+	// matches passWithNoTests: the workspace root's value is not
+	// aggregated over packages. Instrumenting packages that won't run
+	// (or didn't ask for coverage) wastes time on every run
+	// (instrumentation is the dominant pre-OCALE cost).
 	const pendingPackageNames = new Set(pending.map((entry) => entry.pkg));
-	const coverageByPackage = config.collectCoverage
-		? buildCoverageMap(
-				prepareWorkspaceCoverage({
-					config,
-					packages: loaded
-						.map((entry) => entry.descriptor)
-						.filter((descriptor) => pendingPackageNames.has(descriptor.name)),
-					workspaceRoot,
-				}),
-			)
-		: new Map<string, WorkspacePackageCoverage>();
+	const coverageOptIn = new Set(
+		filteredContexts.filter((ctx) => ctx.pkgConfig.collectCoverage).map((ctx) => ctx.info.name),
+	);
+	const coveragePackages = loaded
+		.map((entry) => entry.descriptor)
+		.filter(
+			(descriptor) =>
+				pendingPackageNames.has(descriptor.name) && coverageOptIn.has(descriptor.name),
+		);
+	const coverageByPackage =
+		coveragePackages.length > 0
+			? buildCoverageMap(
+					prepareWorkspaceCoverage({
+						config,
+						packages: coveragePackages,
+						workspaceRoot,
+					}),
+				)
+			: new Map<string, WorkspacePackageCoverage>();
 
 	const liveProjects = liveProjectsByPackage(pending);
 	const descriptorsWithStubs = writeStubsAndBuildDescriptors(filteredContexts, liveProjects).map(
@@ -543,6 +554,45 @@ function discoverProjectTestFiles(
 	}
 
 	return [...new Set(found)];
+}
+
+function applyEmptyPackagePolicy(
+	allEntries: Array<PendingEntry>,
+	contexts: Array<PackageContext>,
+): { emptyPackageErrors: Array<string>; pending: Array<PendingEntry> } {
+	const passByPackage = new Map<string, boolean>();
+	for (const ctx of contexts) {
+		passByPackage.set(ctx.info.name, ctx.pkgConfig.passWithNoTests);
+	}
+
+	const entriesByPackage = new Map<string, Array<PendingEntry>>();
+	for (const entry of allEntries) {
+		let group = entriesByPackage.get(entry.pkg);
+		if (group === undefined) {
+			group = [];
+			entriesByPackage.set(entry.pkg, group);
+		}
+
+		group.push(entry);
+	}
+
+	const emptyPackageErrors: Array<string> = [];
+	const pending: Array<PendingEntry> = [];
+	for (const [package_, entries] of entriesByPackage) {
+		const populated = entries.filter((entry) => entry.testFiles.length > 0);
+		if (populated.length > 0) {
+			pending.push(...populated);
+			continue;
+		}
+
+		if (passByPackage.get(package_) === true) {
+			continue;
+		}
+
+		emptyPackageErrors.push(`No test files found in package ${package_}`);
+	}
+
+	return { emptyPackageErrors, pending };
 }
 
 function collectPendingEntries(contexts: Array<PackageContext>): Array<PendingEntry> {

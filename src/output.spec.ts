@@ -780,6 +780,51 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 
 		expect(mocks.mapCoverageToTypeScript).toHaveBeenCalledOnce();
 	});
+
+	it("should generate reports for per-pkg opt-in even when workspace collectCoverage is false", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
+			files: { "foo.ts": {} },
+		});
+		await outputMultiResult(
+			makeConfig(),
+			makeWorkspaceResult({
+				coverageMapped: preMapped,
+			}),
+		);
+
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({ mapped: preMapped }),
+		);
+	});
+
+	it("should enforce coverage thresholds for per-pkg opt-in when workspace collectCoverage is false", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.checkThresholds.mockReturnValue({
+			failures: [{ actual: 50, metric: "lines", threshold: 100 }],
+			passed: false,
+		});
+		const spies = setupOutputSpies();
+
+		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
+			files: { "foo.ts": {} },
+		});
+		const code = await outputMultiResult(
+			makeConfig({ coverageThreshold: { lines: 100 } }),
+			makeWorkspaceResult({ coverageMapped: preMapped }),
+		);
+
+		expect(code).toBe(1);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Coverage threshold not met"),
+		);
+	});
 });
 
 describe("runGitHubActionsFormatter via outputSingleResult", () => {

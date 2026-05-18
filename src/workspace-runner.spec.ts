@@ -604,7 +604,7 @@ describe(runWorkspace, () => {
 		});
 
 		setLoadedConfigPerPackage({
-			[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR },
+			[BAR_DIR]: { ...DEFAULT_CONFIG, passWithNoTests: true, rootDir: BAR_DIR },
 			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 		});
 
@@ -637,7 +637,7 @@ describe(runWorkspace, () => {
 		});
 
 		setLoadedConfigPerPackage({
-			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+			[FOO_DIR]: { ...DEFAULT_CONFIG, passWithNoTests: true, rootDir: FOO_DIR },
 		});
 
 		const { backend } = createStubBackend([]);
@@ -645,13 +645,77 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig({ passWithNoTests: true }),
+			config: makeConfig(),
 			packageInfos: [FOO_INFO],
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
 
 		expect(results).toStrictEqual([]);
+	});
+
+	it("should honor per-package passWithNoTests when the workspace config does not set it", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, { name: "@halcyon/foo" }),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		// Package opts in to passWithNoTests via its OWN jest.config; the
+		// workspace-level config has no real global. Workspace mode must
+		// consult the per-package value, not aggregate over the workspace
+		// root.
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, passWithNoTests: true, rootDir: FOO_DIR },
+		});
+
+		const { backend } = createStubBackend([]);
+
+		const results = await runWorkspace({
+			backend,
+			cli: makeCli(),
+			config: makeConfig(),
+			packageInfos: [FOO_INFO],
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(results).toStrictEqual([]);
+	});
+
+	it("should error when one package has zero tests and its own passWithNoTests is false even if another package opts in", async () => {
+		expect.assertions(3);
+
+		vol.reset();
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, { name: "@halcyon/foo" }),
+			...seedPackage(BAR_DIR, { name: "@halcyon/bar" }),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR },
+			[FOO_DIR]: { ...DEFAULT_CONFIG, passWithNoTests: true, rootDir: FOO_DIR },
+		});
+
+		const { backend } = createStubBackend([]);
+
+		const results = await runWorkspace({
+			backend,
+			cli: makeCli(),
+			config: makeConfig(),
+			packageInfos: [FOO_INFO, BAR_INFO],
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(results).toBeUndefined();
+		expect(stderr).toHaveBeenCalledWith(expect.stringMatching(/@halcyon\/bar/));
+		expect(stderr).not.toHaveBeenCalledWith(expect.stringMatching(/@halcyon\/foo/));
 	});
 
 	it("should error 2 with no tests when passWithNoTests is false", async () => {
@@ -682,7 +746,7 @@ describe(runWorkspace, () => {
 
 		expect(results).toBeUndefined();
 		expect(stderr).toHaveBeenCalledWith(
-			expect.stringMatching(/No test files found in any package/),
+			expect.stringMatching(/No test files found in package @halcyon\/foo/),
 		);
 	});
 
@@ -1060,7 +1124,12 @@ describe(runWorkspace, () => {
 			});
 
 			setLoadedConfigPerPackage({
-				[BAR_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: BAR_DIR },
+				[BAR_DIR]: {
+					...DEFAULT_CONFIG,
+					collectCoverage: true,
+					passWithNoTests: true,
+					rootDir: BAR_DIR,
+				},
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
@@ -1116,6 +1185,89 @@ describe(runWorkspace, () => {
 			});
 
 			expect(prepareWorkspaceCoverage).not.toHaveBeenCalled();
+		});
+
+		it("should honor per-package collectCoverage when the workspace config does not set it", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			// Per-package opts in; workspace does not. The workspace runner
+			// must still instrument so the materializer's runtime coverage
+			// collection has a shadow dir to read from.
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig(),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]?.[0];
+
+			expect(callArgs?.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
+		});
+
+		it("should restrict prepareWorkspaceCoverage to packages that opted in via per-package collectCoverage", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				...seedPackage(BAR_DIR, {
+					name: "@halcyon/bar",
+					specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR },
+				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig(),
+				packageInfos: [FOO_INFO, BAR_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]?.[0];
+
+			expect(callArgs?.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
 		});
 	});
 

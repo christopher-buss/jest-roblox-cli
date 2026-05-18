@@ -616,7 +616,7 @@ describe(runWorkspaceMode, () => {
 			expect(result.coverageMapped).toBeUndefined();
 		});
 
-		it("should not aggregate when collectCoverage is false", async () => {
+		it("should not aggregate when no runtime results carry a coverage manifest", async () => {
 			expect.assertions(2);
 
 			setupHappyPath();
@@ -638,6 +638,63 @@ describe(runWorkspaceMode, () => {
 
 			expect(aggregateWorkspaceCoverage).not.toHaveBeenCalled();
 			expect(result.coverageMapped).toBeUndefined();
+		});
+
+		it("should aggregate when a runtime result has a coverage manifest even if workspace collectCoverage is false", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			const manifest = {
+				files: {},
+				generatedAt: "x",
+				instrumenterVersion: 2,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				shadowDir: "/shadow",
+				version: 1 as const,
+			};
+			// Per-package opt-in: the workspace runner instrumented foo and
+			// attached a manifest. The outer `runWorkspaceMode` must still
+			// produce a coverage report instead of gating on the workspace
+			// root's `collectCoverage` flag.
+			vi.mocked(runWorkspace).mockResolvedValue([
+				{
+					coverageManifest: manifest,
+					displayName: "@halcyon/foo",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult({
+						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+					}),
+				},
+			]);
+
+			const { aggregateWorkspaceCoverage } =
+				await import("../coverage/workspace-aggregate.ts");
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
+				files: {
+					"foo.ts": {
+						b: {},
+						branchMap: {},
+						f: {},
+						fnMap: {},
+						path: "foo.ts",
+						s: { "0": 3 },
+						statementMap: {
+							"0": {
+								end: { column: 1, line: 1 },
+								start: { column: 0, line: 1 },
+							},
+						},
+					},
+				},
+			});
+
+			const result = await runWorkspaceMode({
+				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
+				config: makeConfig(),
+			});
+
+			expect(result.coverageMapped?.files["foo.ts"]).toBeDefined();
 		});
 	});
 

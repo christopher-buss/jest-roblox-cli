@@ -386,7 +386,9 @@ function processCoverage(
 	coverageData: RawCoverageData | undefined,
 	preMapped?: MappedCoverageResult,
 ): boolean {
-	if (!config.collectCoverage) {
+	// preMapped is workspace pre-aggregated coverage from per-package opt-ins.
+	// When present, generate reports regardless of workspace `collectCoverage`.
+	if (!config.collectCoverage && preMapped === undefined) {
 		return true;
 	}
 
