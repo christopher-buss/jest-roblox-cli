@@ -1000,6 +1000,63 @@ describe("execute single-project helper", () => {
 		expect(result.exitCode).toBe(0);
 	});
 
+	it("should resolve relative config.rojoProject against rootDir, not CWD", async () => {
+		// Regression: in workspace mode CWD is the workspace root and a
+		// relative `rojoProject` like "test.project.json" must resolve under
+		// each package's `rootDir`, not where the CLI was invoked.
+		expect.assertions(2);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-snap-rootdir-");
+
+		const rojoProject = {
+			name: "test",
+			tree: { ReplicatedStorage: { $path: "src/shared" } },
+		};
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "test.project.json"),
+			JSON.stringify(rojoProject),
+		);
+
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async (): Promise<BackendResult> => {
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/__snapshots__/test.snap.luau": "snap content",
+						},
+					},
+					{ executionMs: 100, uploadCached: false, uploadMs: 50 },
+				);
+			},
+		};
+
+		const config: ResolvedConfig = {
+			...DEFAULT_CONFIG,
+			rojoProject: "test.project.json",
+			rootDir: temporaryDirectory,
+		};
+		await executeSingle({
+			backend,
+			config,
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
+		stderrSpy.mockRestore();
+
+		expect(output).not.toMatch(/Cannot write snapshots - no rojo project found/);
+		const snapshotPath = path.join(
+			temporaryDirectory,
+			"src/shared/__snapshots__/test.snap.luau",
+		);
+		expect(fs.existsSync(snapshotPath)).toBeTrue();
+	});
+
 	it("should warn when snapshot path cannot be resolved", async () => {
 		expect.assertions(1);
 

@@ -3,7 +3,10 @@ local HttpService = game:GetService("HttpService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
 
 local InstanceResolver = require("../instance-resolver")
+local SnapshotPatch = require("../snapshot-patch")
 local Materializer = require("./materializer")
+
+type SnapshotWrites = { [string]: string }
 
 type EntryPayload = {
 	pkg: string,
@@ -36,6 +39,7 @@ type ResultEntry = {
 	project: string,
 	elapsedMs: number,
 	jestOutput: string,
+	snapshotWrites: SnapshotWrites?,
 }
 
 type StreamingSummary = {
@@ -68,44 +72,72 @@ local function resolveSetupPaths(paths: { string }?): { Instance }?
 	return resolved
 end
 
-local function runEntry(entry: EntryPayload): string
+local function runEntry(entry: EntryPayload): (string, SnapshotWrites?)
 	local JestModule = InstanceResolver.getJest(entry.config)
-	local Jest = (require :: any)(JestModule)
 
-	local projectInstances = {}
-	if entry.config.projects then
-		for _, projectPath in entry.config.projects do
-			table.insert(projectInstances, InstanceResolver.findInstance(projectPath))
+	-- Patch BEFORE require(Jest) so the snapshot mock is in place when
+	-- Jest's internal modules capture their FileSystemService reference.
+	-- Patch/unpatch per-entry isolates state across packages: SnapshotPatch
+	-- saves the live getDataModelService each call, so re-patching without
+	-- unpatch would freeze the previous mock as the restoration target.
+	local snapshotWrites: SnapshotWrites = {}
+	local patchState = SnapshotPatch.patch(JestModule, snapshotWrites)
+
+	-- ALL post-patch work (require, project/setup resolution, runCLI) must
+	-- be inside this pcall so SnapshotPatch.unpatch always runs. If require
+	-- or instance resolution threw outside the pcall, the patched mock
+	-- would persist on shared RobloxShared/JestRuntime modules and the
+	-- next package's patch would save the stale mock as "original",
+	-- causing cross-package contamination.
+	local ok, jestResultOrError = pcall(function()
+		local Jest = (require :: any)(JestModule)
+
+		local projectInstances = {}
+		if entry.config.projects then
+			for _, projectPath in entry.config.projects do
+				table.insert(projectInstances, InstanceResolver.findInstance(projectPath))
+			end
 		end
+		entry.config.projects = {}
+
+		-- Resolve setupFiles / setupFilesAfterEnv from DataModel-path
+		-- strings to ModuleScript Instances. Jest expects Instances;
+		-- without this the run crashes when setup files are configured
+		-- at the package level.
+		entry.config.setupFiles = resolveSetupPaths(entry.config.setupFiles) :: any
+		entry.config.setupFilesAfterEnv = resolveSetupPaths(entry.config.setupFilesAfterEnv) :: any
+
+		local coverageEnabled = entry.config._coverage == true
+		if coverageEnabled then
+			-- Per-package isolation: reset the global probe sink
+			-- immediately before Jest.runCLI so the captured map only
+			-- contains hits from this package's instrumented sources.
+			_G.__jest_roblox_cov = {}
+			entry.config._coverage = nil :: any
+		end
+
+		local result = Jest.runCLI(script, entry.config, projectInstances):expect()
+
+		local payload: JestResultPayload = {
+			success = true,
+			value = result.results or result,
+		}
+		if coverageEnabled then
+			payload._coverage = _G.__jest_roblox_cov
+		end
+
+		return HttpService:JSONEncode(payload)
+	end)
+
+	SnapshotPatch.unpatch(patchState)
+
+	if not ok then
+		error(jestResultOrError, 0)
 	end
-	entry.config.projects = {}
 
-	-- Resolve setupFiles / setupFilesAfterEnv from DataModel-path strings to
-	-- ModuleScript Instances. Jest expects Instances; without this the run
-	-- crashes when setup files are configured at the package level.
-	entry.config.setupFiles = resolveSetupPaths(entry.config.setupFiles) :: any
-	entry.config.setupFilesAfterEnv = resolveSetupPaths(entry.config.setupFilesAfterEnv) :: any
+	local capturedWrites: SnapshotWrites? = if next(snapshotWrites) then snapshotWrites else nil
 
-	local coverageEnabled = entry.config._coverage == true
-	if coverageEnabled then
-		-- Per-package isolation: reset the global probe sink immediately
-		-- before Jest.runCLI so the captured map only contains hits from
-		-- this package's instrumented sources.
-		_G.__jest_roblox_cov = {}
-		entry.config._coverage = nil :: any
-	end
-
-	local result = Jest.runCLI(script, entry.config, projectInstances):expect()
-
-	local payload: JestResultPayload = {
-		success = true,
-		value = result.results or result,
-	}
-	if coverageEnabled then
-		payload._coverage = _G.__jest_roblox_cov
-	end
-
-	return HttpService:JSONEncode(payload)
+	return jestResultOrError, capturedWrites
 end
 
 local function buildSummary(result: ResultEntry): StreamingSummary
@@ -178,7 +210,7 @@ local function executeEntry(
 	end
 
 	local t0 = os.clock()
-	local ok, jestOrError = pcall(runEntry, entry)
+	local ok, jestOrError, snapshotWrites = pcall(runEntry, entry)
 	local elapsedMs = math.floor((os.clock() - t0) * 1000)
 
 	local result: ResultEntry
@@ -188,6 +220,7 @@ local function executeEntry(
 			project = entry.project,
 			elapsedMs = elapsedMs,
 			jestOutput = jestOrError,
+			snapshotWrites = snapshotWrites,
 		}
 	else
 		result = {

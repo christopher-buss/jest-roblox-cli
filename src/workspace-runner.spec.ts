@@ -47,6 +47,7 @@ interface BackendStubEntry {
 	jestOutput: string;
 	pkg?: string;
 	project?: string;
+	snapshotWrites?: Record<string, string>;
 }
 
 function packageJson(json: object): string {
@@ -87,7 +88,18 @@ function createStubBackend(entries: Array<BackendStubEntry>): {
 		runTests: async (options: BackendOptions): Promise<BackendResult> => {
 			captured.options = options;
 			return {
-				rawResults: entries.map((entry) => ({ entry: { jestOutput: entry.jestOutput } })),
+				rawResults: entries.map((entry) => {
+					return {
+						entry: {
+							jestOutput: entry.jestOutput,
+							...(entry.pkg !== undefined ? { pkg: entry.pkg } : {}),
+							...(entry.project !== undefined ? { project: entry.project } : {}),
+							...(entry.snapshotWrites !== undefined
+								? { snapshotWrites: entry.snapshotWrites }
+								: {}),
+						},
+					};
+				}),
 				timing: { executionMs: 0, uploadMs: 0 },
 			};
 		},
@@ -1535,6 +1547,73 @@ describe(runWorkspace, () => {
 					path.join(ROOT, ".jest-roblox", "output", "@halcyon-foo--@halcyon-foo.json"),
 				),
 			).toBeTrue();
+		});
+	});
+
+	describe("snapshot writeback", () => {
+		it("should route each package's envelope snapshotWrites to its own package directory without cross-package leak", async () => {
+			expect.assertions(4);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				...seedPackage(BAR_DIR, {
+					name: "@halcyon/bar",
+					specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR, silent: true },
+				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, silent: true },
+			});
+
+			const { backend } = createStubBackend([
+				{
+					jestOutput: passingResult(),
+					pkg: "@halcyon/foo",
+					snapshotWrites: {
+						"ReplicatedStorage/Pkg/__snapshots__/foo.spec.snap.luau":
+							"foo-snap-content",
+					},
+				},
+				{
+					jestOutput: passingResult(),
+					pkg: "@halcyon/bar",
+					snapshotWrites: {
+						"ReplicatedStorage/Pkg/__snapshots__/bar.spec.snap.luau":
+							"bar-snap-content",
+					},
+				},
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig({ silent: true }),
+				packageInfos: [FOO_INFO, BAR_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const fooSnap = path.join(FOO_DIR, "src/__snapshots__/foo.spec.snap.luau");
+			const barSnap = path.join(BAR_DIR, "src/__snapshots__/bar.spec.snap.luau");
+
+			expect(vol.readFileSync(fooSnap, "utf8")).toBe("foo-snap-content");
+			expect(vol.readFileSync(barSnap, "utf8")).toBe("bar-snap-content");
+
+			// No cross-package leak: foo's snapshot path does not appear under
+			// bar's tree, and vice versa.
+			expect(
+				vol.existsSync(path.join(BAR_DIR, "src/__snapshots__/foo.spec.snap.luau")),
+			).toBeFalse();
+			expect(
+				vol.existsSync(path.join(FOO_DIR, "src/__snapshots__/bar.spec.snap.luau")),
+			).toBeFalse();
 		});
 	});
 });

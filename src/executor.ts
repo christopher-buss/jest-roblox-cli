@@ -576,7 +576,17 @@ function writeSnapshots(
 ): SnapshotWriteCounts {
 	const attempted = Object.keys(snapshotWrites).length;
 
-	const rojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir);
+	// Resolve against `config.rootDir`, not CWD. In single-package mode CWD
+	// happens to equal rootDir so the distinction is invisible; in workspace
+	// mode CWD is the workspace root and a relative `config.rojoProject`
+	// (e.g. "test.project.json") would miss every package. `findRojoProject`
+	// already returns an absolute path so the resolve is a no-op for that
+	// branch — needed only for the user-supplied raw string.
+	const rawRojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir);
+	const rojoProjectPath =
+		rawRojoProjectPath !== undefined
+			? path.resolve(config.rootDir, rawRojoProjectPath)
+			: undefined;
 	if (rojoProjectPath === undefined || !fs.existsSync(rojoProjectPath)) {
 		process.stderr.write("Warning: Cannot write snapshots - no rojo project found\n");
 		return { attempted, failed: attempted, written: 0 };

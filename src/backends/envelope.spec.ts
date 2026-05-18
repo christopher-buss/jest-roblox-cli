@@ -89,6 +89,34 @@ describe(parseEnvelope, () => {
 		]);
 	});
 
+	it("should preserve the optional snapshotWrites field on entries", () => {
+		expect.assertions(1);
+
+		const envelope = JSON.stringify({
+			entries: [
+				{
+					jestOutput: '{"a":1}',
+					pkg: "@halcyon/foo",
+					snapshotWrites: {
+						"ReplicatedStorage/Pkg/__snapshots__/foo.spec.snap": "foo content",
+					},
+				},
+			],
+		});
+
+		const result = parseEnvelope(envelope);
+
+		expect(result).toStrictEqual([
+			{
+				jestOutput: '{"a":1}',
+				pkg: "@halcyon/foo",
+				snapshotWrites: {
+					"ReplicatedStorage/Pkg/__snapshots__/foo.spec.snap": "foo content",
+				},
+			},
+		]);
+	});
+
 	it("should rewrap a non-envelope-shaped payload as a length-1 entries array containing the raw jestOutput", () => {
 		expect.assertions(1);
 
@@ -212,6 +240,40 @@ describe(buildProjectResult, () => {
 		expect(result.snapshotWrites).toStrictEqual({
 			"snapshots/foo.snap": "snapshot-content",
 		});
+	});
+
+	it("should prefer entry-level snapshotWrites over the parsed-from-jestOutput value", () => {
+		expect.assertions(1);
+
+		const result = buildProjectResult(
+			entry({
+				jestOutput: successJest({
+					_snapshotWrites: { "stale/inner.snap": "ignored" },
+				}),
+				snapshotWrites: { "fresh/outer.snap": "wins" },
+			}),
+			job("alpha"),
+			undefined,
+		);
+
+		expect(result.snapshotWrites).toStrictEqual({ "fresh/outer.snap": "wins" });
+	});
+
+	it("should fall back to parsed snapshotWrites when entry-level is an empty object", () => {
+		expect.assertions(1);
+
+		const result = buildProjectResult(
+			entry({
+				jestOutput: successJest({
+					_snapshotWrites: { "legacy.snap": "kept" },
+				}),
+				snapshotWrites: {},
+			}),
+			job("alpha"),
+			undefined,
+		);
+
+		expect(result.snapshotWrites).toStrictEqual({ "legacy.snap": "kept" });
 	});
 
 	it("should attach the resolved gameOutput to LuauScriptError when parseJestOutput throws it", () => {

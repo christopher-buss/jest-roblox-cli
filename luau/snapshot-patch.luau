@@ -44,37 +44,49 @@ function module.patch(jestModule: ModuleScript, snapshotWrites: { [string]: stri
 	local originalGetDataModelService = robloxSharedExports.getDataModelService
 	robloxSharedExports.getDataModelService = mockGetDataModelService
 
-	local getDataModelServiceChild = robloxSharedInstance:FindFirstChild("getDataModelService")
-
-	local jestRuntimeModule = InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
-	if not jestRuntimeModule then
-		warn("Could not find JestRuntime; snapshot interception unavailable")
-		return {
-			robloxSharedExports = robloxSharedExports,
-			originalGetDataModelService = originalGetDataModelService,
-			Runtime = nil,
-			originalRequireInternalModule = nil,
-		}
-	end
-
-	local Runtime = (require :: any)(jestRuntimeModule)
-	local originalRequireInternalModule = Runtime.requireInternalModule
-
-	Runtime.requireInternalModule = function(self: any, from: any, to: any, ...): any
-		local target = if to ~= nil then to else from
-		if getDataModelServiceChild and typeof(target) == "Instance" and target == getDataModelServiceChild then
-			return mockGetDataModelService
-		end
-
-		return originalRequireInternalModule(self, from, to, ...)
-	end
-
-	return {
+	-- Snapshot the partial state immediately so any subsequent throw can
+	-- be rolled back. Without this, workspace mode (where multiple patch
+	-- cycles share the same RobloxShared module) would leak the mock if
+	-- the JestRuntime acquisition below threw — the next package's patch
+	-- would then save the leaked mock as "original".
+	local partialState: PatchState = {
 		robloxSharedExports = robloxSharedExports,
 		originalGetDataModelService = originalGetDataModelService,
-		Runtime = Runtime,
-		originalRequireInternalModule = originalRequireInternalModule,
+		Runtime = nil,
+		originalRequireInternalModule = nil,
 	}
+
+	local ok, err = pcall(function()
+		local getDataModelServiceChild = robloxSharedInstance:FindFirstChild("getDataModelService")
+
+		local jestRuntimeModule = InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
+		if not jestRuntimeModule then
+			warn("Could not find JestRuntime; snapshot interception unavailable")
+			return
+		end
+
+		local Runtime = (require :: any)(jestRuntimeModule)
+		local originalRequireInternalModule = Runtime.requireInternalModule
+
+		Runtime.requireInternalModule = function(self: any, from: any, to: any, ...): any
+			local target = if to ~= nil then to else from
+			if getDataModelServiceChild and typeof(target) == "Instance" and target == getDataModelServiceChild then
+				return mockGetDataModelService
+			end
+
+			return originalRequireInternalModule(self, from, to, ...)
+		end
+
+		partialState.Runtime = Runtime
+		partialState.originalRequireInternalModule = originalRequireInternalModule
+	end)
+
+	if not ok then
+		module.unpatch(partialState)
+		error(err, 0)
+	end
+
+	return partialState
 end
 
 function module.unpatch(state: PatchState?)

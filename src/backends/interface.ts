@@ -13,6 +13,7 @@ export interface EnvelopeEntry {
 	jestOutput: string;
 	pkg?: string;
 	project?: string;
+	snapshotWrites?: SnapshotWrites;
 }
 
 export interface ProjectJob {

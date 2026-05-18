@@ -10,6 +10,7 @@ const envelopeSchema = type({
 		"jestOutput": "string",
 		"pkg?": "string",
 		"project?": "string",
+		"snapshotWrites?": { "[string]": "string" },
 	}).array(),
 });
 
@@ -41,6 +42,12 @@ export function buildProjectResult(
 		throw err;
 	}
 
+	// Length check, not `??`: an empty {} from a future malformed
+	// producer must not mask a populated parsed._snapshotWrites
+	// scraped from jestOutput (single-package runner.luau path).
+	const entryWrites = entry.snapshotWrites;
+	const hasEntryWrites = entryWrites !== undefined && Object.keys(entryWrites).length > 0;
+
 	return {
 		coverageData: parsed.coverageData,
 		displayColor: job.displayColor,
@@ -51,6 +58,6 @@ export function buildProjectResult(
 		result: parsed.result,
 		setupMs:
 			parsed.setupSeconds !== undefined ? Math.round(parsed.setupSeconds * 1000) : undefined,
-		snapshotWrites: parsed.snapshotWrites,
+		snapshotWrites: hasEntryWrites ? entryWrites : parsed.snapshotWrites,
 	};
 }
