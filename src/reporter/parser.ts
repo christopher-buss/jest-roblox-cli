@@ -142,7 +142,7 @@ function extractExecutionError(object: Record<string, unknown>): string {
 	// in JS, so an explicit null guard is required to stop at the leaf.
 	let current = object;
 	while (true) {
-		const parent = current["parent"];
+		const { parent } = current;
 		if (parent === null || typeof parent !== "object") {
 			break;
 		}
