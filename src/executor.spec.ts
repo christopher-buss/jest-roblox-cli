@@ -2392,4 +2392,273 @@ describe(runProjects, () => {
 		expect(captured?.jobs[0]?.config.snapshotFormat?.printBasicPrototype).toBeTrue();
 		expect(captured?.jobs[1]?.config.snapshotFormat?.printBasicPrototype).toBeFalse();
 	});
+
+	// HAL-209: parse failures on one entry must not halt sibling processing.
+	// The Luau-side runEntry's per-entry pcall encodes deferred Promise
+	// rejections (Jest's exit(1)) as `{success:false, err:...}` envelopes;
+	// the CLI must convert that into a synthetic failed ExecuteResult so
+	// the surrounding workspace pipeline (snapshot writes, per-package
+	// output files) still runs for sibling entries.
+	describe("per-entry parse failure recovery (HAL-209)", () => {
+		const failureEnvelope = JSON.stringify({
+			err: "Exited with code: 1",
+			success: false,
+		});
+
+		function backendReturning(result: BackendResult): Backend {
+			return {
+				kind: "open-cloud",
+				runTests: async () => result,
+			};
+		}
+
+		it("should keep processing siblings and emit a failed ExecuteResult for the bad entry", async () => {
+			expect.assertions(3);
+
+			const passingPayload = buildJestOutputPayload({ result: createPassingResult() });
+			const backendResult: BackendResult = {
+				rawResults: [
+					{ entry: { jestOutput: passingPayload } },
+					{ entry: { jestOutput: failureEnvelope } },
+				],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjects({
+				backend: backendReturning(backendResult),
+				deferFormatting: true,
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "ok", testFiles: ["src/a.spec.ts"] },
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			expect(results).toHaveLength(2);
+			expect(results[0]?.exitCode).toBe(0);
+			expect(results[1]?.exitCode).toBe(1);
+		});
+
+		it("should use the exec-error file shape on the synthetic failure (failureMessage + empty testResults, counts stay 0)", async () => {
+			expect.assertions(4);
+
+			const backendResult: BackendResult = {
+				rawResults: [{ entry: { jestOutput: failureEnvelope } }],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjects({
+				backend: backendReturning(backendResult),
+				deferFormatting: true,
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			// `hasExecError` is true when failureMessage is set AND testResults
+			// is empty. Aggregate `numFailedTests` is 0 because no tests ran.
+			expect(results[0]?.result.success).toBeFalse();
+			expect(results[0]?.result.numFailedTests).toBe(0);
+			expect(results[0]?.result.testResults[0]?.failureMessage).toContain(
+				"Exited with code: 1",
+			);
+			expect(results[0]?.result.testResults[0]?.testResults).toHaveLength(0);
+		});
+
+		it("should format the failure's human output when deferFormatting is not set", async () => {
+			expect.assertions(2);
+
+			const backendResult: BackendResult = {
+				rawResults: [{ entry: { jestOutput: failureEnvelope } }],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjects({
+				backend: backendReturning(backendResult),
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			// Without deferFormatting, the recovered failure still emits
+			// formatted output so single-mode callers see the human banner.
+			expect(results[0]?.output.length).toBeGreaterThan(0);
+			expect(results[0]?.output).toContain("Exited with code: 1");
+		});
+
+		it("should keep the raw error message when it is not an exit-code transport error", async () => {
+			expect.assertions(1);
+
+			// `{success:false, err:"..."}` envelopes whose message does NOT
+			// match `^Exited with code: \d+$` should pass through unchanged —
+			// gameOutput compose only applies to the exit-code-only case
+			// because that's where the real cause is hidden.
+			const customFailure = JSON.stringify({
+				err: "Resolver crashed: invalid jest path",
+				success: false,
+			});
+			const backendResult: BackendResult = {
+				rawResults: [
+					{
+						entry: {
+							gameOutput: JSON.stringify([
+								{ message: "noise", messageType: 0, timestamp: 0 },
+							]),
+							jestOutput: customFailure,
+						},
+					},
+				],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjects({
+				backend: backendReturning(backendResult),
+				deferFormatting: true,
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			expect(results[0]?.result.testResults[0]?.failureMessage).toBe(
+				"Resolver crashed: invalid jest path",
+			);
+		});
+
+		it("should fall back to the raw error message when gameOutput entries are all blank", async () => {
+			expect.assertions(1);
+
+			// Edge case: gameOutput parses to entries but every message is
+			// whitespace/empty. Don't compose a "(blank)\n\nExited with..."
+			// monstrosity — just use the exit-code message.
+			const backendResult: BackendResult = {
+				rawResults: [
+					{
+						entry: {
+							gameOutput: JSON.stringify([
+								{ message: "  ", messageType: 0, timestamp: 0 },
+							]),
+							jestOutput: failureEnvelope,
+						},
+					},
+				],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjects({
+				backend: backendReturning(backendResult),
+				deferFormatting: true,
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			expect(results[0]?.result.testResults[0]?.failureMessage).toBe("Exited with code: 1");
+		});
+
+		// When Jest's exit(1) fires for "no tests found", the underlying
+		// rejection message is just "Exited with code: 1" — the real cause
+		// (`No tests found in <pkg>`, passWithNoTests guidance, etc.) lives
+		// in the captured game output. The synthetic exec-error must surface
+		// that cause; otherwise users see only the opaque transport error.
+		it("should compose failureMessage from gameOutput when error is exit-code-only", async () => {
+			expect.assertions(3);
+
+			const gameOutput = JSON.stringify([
+				{
+					message: "No tests found in /repo/packages/foo",
+					messageType: 0,
+					timestamp: 0,
+				},
+			]);
+			const backendResult: BackendResult = {
+				rawResults: [
+					{
+						entry: { gameOutput, jestOutput: failureEnvelope },
+					},
+				],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjects({
+				backend: backendReturning(backendResult),
+				deferFormatting: true,
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			const failureMessage = results[0]?.result.testResults[0]?.failureMessage ?? "";
+
+			// Meaningful cause leads so `cleanExecErrorMessage` picks it.
+			expect(failureMessage).toContain("No tests found in /repo/packages/foo");
+			// Exit code still present as a footer for diagnostic completeness.
+			expect(failureMessage).toContain("Exited with code: 1");
+			expect(failureMessage.indexOf("No tests found")).toBeLessThan(
+				failureMessage.indexOf("Exited with code: 1"),
+			);
+		});
+
+		it("should attach the rawResult's fallbackGameOutput to the synthetic failure", async () => {
+			expect.assertions(1);
+
+			const backendResult: BackendResult = {
+				rawResults: [
+					{
+						entry: { jestOutput: failureEnvelope },
+						fallbackGameOutput: "captured-game-output",
+					},
+				],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjects({
+				backend: backendReturning(backendResult),
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			expect(results[0]?.gameOutput).toBe("captured-game-output");
+		});
+
+		it("should rethrow non-LuauScriptError failures so unexpected internal errors still surface", async () => {
+			expect.assertions(1);
+
+			// `{}` parses as JSON but fails validateJestResult (no
+			// testResults etc.), which throws a plain Error (not
+			// LuauScriptError). That path should not be silently swallowed.
+			const backendResult: BackendResult = {
+				rawResults: [{ entry: { jestOutput: "{}" } }],
+				timing: DEFAULT_TIMING,
+			};
+
+			await expect(
+				runProjects({
+					backend: backendReturning(backendResult),
+					projects: [
+						{
+							config: DEFAULT_CONFIG,
+							displayName: "boom",
+							testFiles: ["src/b.spec.ts"],
+						},
+					],
+					startTime: Date.now(),
+					version: "0.0.0-test",
+				}),
+			).rejects.toThrow(/Invalid Jest result/);
+		});
+	});
 });

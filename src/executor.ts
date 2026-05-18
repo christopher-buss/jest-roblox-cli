@@ -28,7 +28,7 @@ import {
 	DEFAULT_MAX_FAILURES,
 	findFormatterOptions,
 } from "./formatters/utils.ts";
-import type { SnapshotWrites } from "./reporter/parser.ts";
+import { LuauScriptError, type SnapshotWrites } from "./reporter/parser.ts";
 import { createSnapshotPathResolver } from "./snapshot/path-resolver.ts";
 import { createSourceMapper, type SourceMapper } from "./source-mapper/index.ts";
 import type { JestResult, TestFileResult } from "./types/jest-result.ts";
@@ -36,6 +36,7 @@ import { rojoProjectSchema } from "./types/rojo.ts";
 import type { TimingResult } from "./types/timing.ts";
 import type { TsconfigMapping } from "./types/tsconfig.ts";
 import { formatBanner } from "./utils/banner.ts";
+import { parseGameOutput } from "./utils/game-output.ts";
 import { normalizeWindowsPath } from "./utils/normalize-windows-path.ts";
 
 export interface ExecuteResult {
@@ -284,14 +285,39 @@ export async function runProjects(options: RunProjectsOptions): Promise<RunProje
 	const results = rawResults.map((raw, index) => {
 		// eslint-disable-next-line ts/no-non-null-assertion -- length equality asserted above
 		const job = jobs[index]!;
-		const projectResult = buildProjectResult(raw.entry, job, raw.fallbackGameOutput);
-		return processProjectResult(projectResult, {
-			backendTiming,
-			config: job.config,
-			deferFormatting: options.deferFormatting,
-			startTime: options.startTime,
-			version: options.version,
-		});
+		// HAL-209: when one entry's envelope decodes to `{success:false,
+		// err:...}` (Jest's per-entry pcall in `runEntry` encodes deferred
+		// Promise rejections this way — e.g. when jest-core's runJest:345 calls
+		// exit(1) because a project's --testPathPattern matched zero files),
+		// parseJestOutput throws LuauScriptError. Without per-entry recovery the
+		// throw escapes runProjects entirely and the workspace-runner never
+		// reaches writePerPackageOutputFiles or writes snapshots from sibling
+		// entries. Convert the parse failure into a synthetic failed
+		// ExecuteResult so the other entries' snapshot writes and per-package
+		// output files still land.
+		try {
+			const projectResult = buildProjectResult(raw.entry, job, raw.fallbackGameOutput);
+			return processProjectResult(projectResult, {
+				backendTiming,
+				config: job.config,
+				deferFormatting: options.deferFormatting,
+				startTime: options.startTime,
+				version: options.version,
+			});
+		} catch (err) {
+			if (!(err instanceof LuauScriptError)) {
+				throw err;
+			}
+
+			return buildExecutionErrorResult({
+				backendTiming,
+				config: job.config,
+				deferFormatting: options.deferFormatting,
+				error: err,
+				startTime: options.startTime,
+				version: options.version,
+			});
+		}
 	});
 
 	return { backendTiming, results };
@@ -362,6 +388,107 @@ function parseTsconfigMappings(options: TsconfigCompilerOptions): Array<Tsconfig
 	}
 
 	return [{ outDir: outDirectory, rootDir: normalizeDirectoryPath(options.rootDir ?? "src") }];
+}
+
+const EXIT_CODE_MESSAGE = /^Exited with code: \d+$/;
+
+/**
+ * Compose the human-readable failure message for an exec-error file
+ * synthesized from a Luau script failure.
+ *
+ * When the wire-level error is just `Exited with code: N`, the actual
+ * Jest cause (`No tests found`, `passWithNoTests` guidance, etc.) lives
+ * in the captured game output, not the rejection message itself. The
+ * existing single-mode CLI banner (`cli.ts#formatLuauErrorBanner`)
+ * surfaces that game output as the primary content for exit-code-only
+ * errors; mirror the same semantics here so workspace-mode and
+ * multi-project recovery don't drop the user-actionable cause.
+ *
+ * Format: meaningful game-output lines first, then a blank line, then
+ * the raw exit-code message as a footer. `cleanExecErrorMessage`
+ * (formatter.ts/agent.ts) takes the first non-empty content line so the
+ * meaningful cause surfaces in human/agent formatters; JSON formatter
+ * preserves the full multi-line text for structured consumers.
+ */
+function composeExecErrorMessage(error: LuauScriptError): string {
+	if (!EXIT_CODE_MESSAGE.test(error.message)) {
+		return error.message;
+	}
+
+	const entries = parseGameOutput(error.gameOutput);
+	if (entries.length === 0) {
+		return error.message;
+	}
+
+	const gameLines = entries
+		.map((entry) => entry.message)
+		.join("\n")
+		.trim();
+	if (gameLines === "") {
+		return error.message;
+	}
+
+	return `${gameLines}\n\n${error.message}`;
+}
+
+/**
+ * Build an `ExecuteResult` representing an entry whose envelope decoded to a
+ * Luau-level script failure. Synthesizes a JestResult with a single
+ * "exec-error" file so the failure shows up in formatted output and
+ * per-package output files, without halting sibling processing.
+ */
+function buildExecutionErrorResult(options: {
+	backendTiming: BackendTiming;
+	config: ResolvedConfig;
+	deferFormatting: boolean | undefined;
+	error: LuauScriptError;
+	startTime: number;
+	version: string;
+}): ExecuteResult {
+	const { backendTiming, config, deferFormatting, error, startTime, version } = options;
+
+	// Exec-error file shape (see `hasExecError`): `failureMessage` set with
+	// empty `testResults` — the file errored before any tests ran, so
+	// `numFailingTests`/`numFailedTests`/`numTotalTests` all stay 0.
+	// Formatters key off `hasExecError` to count this as a failed FILE
+	// (not a failed test).
+	const result: JestResult = {
+		numFailedTests: 0,
+		numPassedTests: 0,
+		numPendingTests: 0,
+		numTotalTests: 0,
+		startTime,
+		success: false,
+		testResults: [
+			{
+				failureMessage: composeExecErrorMessage(error),
+				numFailingTests: 0,
+				numPassingTests: 0,
+				numPendingTests: 0,
+				testFilePath: "<exec-error>",
+				testResults: [],
+			},
+		],
+	};
+
+	const timing = {
+		executionMs: backendTiming.executionMs,
+		startTime,
+		testsMs: 0,
+		totalMs: Date.now() - startTime,
+		uploadMs: backendTiming.uploadMs,
+	} satisfies TimingResult;
+
+	const output =
+		deferFormatting !== true ? formatExecuteOutput({ config, result, timing, version }) : "";
+
+	return {
+		exitCode: 1,
+		gameOutput: error.gameOutput,
+		output,
+		result,
+		timing,
+	};
 }
 
 function findRojoProject(rootDirectory: string): string | undefined {

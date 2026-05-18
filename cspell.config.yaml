@@ -22,6 +22,7 @@ words:
   - lhsOperand
   - localfunction
   - materializer
+  - misresolution
   - ocale
   - rbxl
   - rbxlx

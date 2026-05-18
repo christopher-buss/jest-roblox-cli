@@ -1767,5 +1767,97 @@ describe(runWorkspace, () => {
 				vol.existsSync(path.join(FOO_DIR, "src/__snapshots__/bar.spec.snap.luau")),
 			).toBeFalse();
 		});
+
+		// HAL-209: when one entry's jestOutput is a failure envelope
+		// (`{success:false, err:...}`) — the shape `runEntry`'s per-entry
+		// pcall emits when Jest's `exit(1)` fires from the no-tests-found path
+		// — the other entries' snapshots and per-package output files must
+		// still be written. Previously runProjects's `Array.map` threw on the
+		// first failure envelope (parser.ts:304 throws LuauScriptError) and
+		// halted before reaching workspace-runner.ts:229
+		// `writePerPackageOutputFiles`, dropping every captured snapshot.
+		it("should still write sibling snapshots and per-package outputs when one entry's envelope is a failure", async () => {
+			expect.assertions(5);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				...seedPackage(BAR_DIR, {
+					name: "@halcyon/bar",
+					specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR, silent: true },
+				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, silent: true },
+			});
+
+			const failureEnvelope = JSON.stringify({
+				err: "Exited with code: 1",
+				success: false,
+			});
+
+			const { backend } = createStubBackend([
+				{
+					jestOutput: failureEnvelope,
+					pkg: "@halcyon/foo",
+				},
+				{
+					jestOutput: passingResult(),
+					pkg: "@halcyon/bar",
+					snapshotWrites: {
+						"ReplicatedStorage/Pkg/__snapshots__/bar.spec.snap.luau":
+							"bar-snap-content",
+					},
+				},
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig({ silent: true }),
+				packageInfos: [FOO_INFO, BAR_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			// bar's snapshot lands even though foo's envelope failed.
+			expect(
+				vol.readFileSync(
+					path.join(BAR_DIR, "src/__snapshots__/bar.spec.snap.luau"),
+					"utf8",
+				),
+			).toBe("bar-snap-content");
+
+			// Per-package output files for BOTH packages get written. foo's
+			// file documents the failure; bar's documents the pass.
+			const fooOutput = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--@halcyon-foo.json",
+			);
+			const barOutput = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-bar--@halcyon-bar.json",
+			);
+
+			expect(vol.existsSync(fooOutput)).toBeTrue();
+			expect(vol.existsSync(barOutput)).toBeTrue();
+			expect(JSON.parse(vol.readFileSync(fooOutput, "utf8") as string)).toMatchObject({
+				success: false,
+			});
+			expect(JSON.parse(vol.readFileSync(barOutput, "utf8") as string)).toMatchObject({
+				numPassedTests: 1,
+				success: true,
+			});
+		});
 	});
 });
