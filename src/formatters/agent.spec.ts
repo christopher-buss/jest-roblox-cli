@@ -412,6 +412,41 @@ describe("formatAgent failure details", () => {
 		expect(output.match(/src\/traits\.spec\.ts:29/g)?.length).toBe(1);
 	});
 
+	it("should surface timeout error message", () => {
+		expect.assertions(1);
+
+		const timeoutMessage = [
+			'thrown: "Exceeded timeout of 5000 ms for a test.',
+			'Use jest.setTimeout(newTimeout) to increase the timeout value, if this is a long-running test."',
+		].join("\n");
+
+		const failedTest = createTestCase({
+			failureMessages: [timeoutMessage],
+			status: "failed",
+			title: "should respond within 5s",
+		});
+
+		const result = createResult({
+			numFailedTests: 1,
+			numPassedTests: 0,
+			numTotalTests: 1,
+			success: false,
+			testResults: [
+				{
+					numFailingTests: 1,
+					numPassingTests: 0,
+					numPendingTests: 0,
+					testFilePath: "/project/src/api.spec.ts",
+					testResults: [failedTest],
+				},
+			],
+		});
+
+		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
+
+		expect(output).toContain('thrown: "Exceeded timeout of 5000 ms for a test.');
+	});
+
 	it("should respect maxFailures limit", () => {
 		expect.assertions(2);
 

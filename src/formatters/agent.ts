@@ -448,6 +448,8 @@ function formatAgentFailure(
 			lines.push(parsed.snapshotDiff);
 		} else if (parsed.expected !== undefined && parsed.received !== undefined) {
 			lines.push(`Expected: ${parsed.expected}`, `Received: ${parsed.received}`);
+		} else {
+			lines.push(parsed.message);
 		}
 
 		const snippets = getFailureSnippets(
