@@ -25,17 +25,31 @@ vi.mock(import("node:child_process"));
 
 const ROOT = path.resolve("/repo");
 
+function packagePathFor(name: string): string {
+	return `packages/${name.replace(/^@[^/]+\//, "")}`;
+}
+
 function seedRobloxWorkspace(names: Array<string>): Record<string, string> {
 	const entries: Record<string, string> = {
 		[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 	};
 	for (const name of names) {
-		const directory = `packages/${name.replace(/^@[^/]+\//, "")}`;
+		const directory = packagePathFor(name);
 		entries[path.join(ROOT, directory, "package.json")] = `{"name":${JSON.stringify(name)}}`;
 		entries[path.join(ROOT, directory, "jest.config.ts")] = "export default {};";
 	}
 
 	return entries;
+}
+
+function turboItem(
+	name: string,
+	relativePath: string = packagePathFor(name),
+): {
+	name: string;
+	path: string;
+} {
+	return { name, path: relativePath };
 }
 
 describe(getAffectedPackages, () => {
@@ -52,7 +66,7 @@ describe(getAffectedPackages, () => {
 		vi.mocked(cp.execFileSync).mockReturnValue(
 			JSON.stringify({
 				packages: {
-					items: [{ name: "@org/foo" }, { name: "@org/bar" }],
+					items: [turboItem("@org/foo"), turboItem("@org/bar")],
 				},
 			}),
 		);
@@ -60,7 +74,7 @@ describe(getAffectedPackages, () => {
 		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo", "@org/bar"]);
 		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
 			"turbo",
-			["ls", "--affected", "--filter=...[main]", "--output=json"],
+			["ls", "--filter=...[main]", "--output=json"],
 			expect.objectContaining({ cwd: ROOT }),
 		);
 	});
@@ -118,7 +132,7 @@ describe(getAffectedPackages, () => {
 		vi.mocked(cp.execFileSync).mockReturnValue(
 			JSON.stringify({
 				packageManager: "pnpm@10.0.0",
-				packages: { items: [{ name: "@org/foo" }] },
+				packages: { items: [turboItem("@org/foo")] },
 			}),
 		);
 
@@ -259,7 +273,7 @@ describe(getAffectedPackages, () => {
 			...seedRobloxWorkspace(["@org/foo"]),
 		});
 		vi.mocked(cp.execFileSync).mockReturnValue(
-			JSON.stringify({ packages: { items: [{ name: "@org/foo" }] } }),
+			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
 		);
 
 		getAffectedPackages(ROOT, "main");
@@ -272,7 +286,7 @@ describe(getAffectedPackages, () => {
 			"/d",
 			"/s",
 			"/c",
-			'""turbo" "ls" "--affected" "--filter=...[main]" "--output=json""',
+			'"turbo "ls" "--filter=...[main]" "--output=json""',
 		]);
 		expect(options).toMatchObject({
 			cwd: ROOT,
@@ -281,6 +295,27 @@ describe(getAffectedPackages, () => {
 			windowsVerbatimArguments: true,
 		});
 		expect(options?.env?.["PATH"]).toStartWith(`${binDirectory}${path.delimiter}`);
+	});
+
+	// cspell:words PATHEXT
+	it("should leave the command unquoted on Windows so npm-cli shim %~dp0 resolves correctly", () => {
+		// Regression: quoting the command (`"turbo"`) makes cmd.exe set %0 to
+		// the bare name when it resolves via PATHEXT, so the shim's %~dp0
+		// falls back to cwd and `node "%~dp0\..\turbo\bin\turbo"` loads a
+		// path one directory above the workspace, failing with
+		// MODULE_NOT_FOUND. Command must stay unquoted; args stay quoted.
+		expect.assertions(1);
+
+		stubPlatform("win32");
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
+		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify({ packages: { items: [] } }));
+
+		getAffectedPackages(ROOT, "main");
+
+		const [, args] = vi.mocked(cp.execFileSync).mock.calls[0]!;
+
+		expect(args?.[3]).toStartWith('"turbo "');
 	});
 
 	it("should preserve cmd metacharacters like ^ inside double-quoted args on Windows", () => {
@@ -372,14 +407,57 @@ describe(getAffectedPackages, () => {
 		});
 		vi.mocked(cp.execFileSync).mockReturnValue(
 			JSON.stringify({
-				packages: { items: [{ name: "@org/foo" }, { name: "@org/bar" }] },
+				packages: { items: [turboItem("@org/foo"), turboItem("@org/bar")] },
 			}),
 		);
 
 		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([]);
 	});
 
-	it("should throw loudly when an affected name is not present in the pnpm workspace", () => {
+	it("should silently drop turbo entries that live outside our known workspace globs", () => {
+		// Real-world workspaces have packages turbo's discovery surfaces that
+		// pnpm-workspace.yaml globs don't match — e.g. nested workspaces,
+		// packages in directories not covered by the top-level patterns. Those
+		// aren't a config error and they aren't Roblox packages: drop them
+		// quietly instead of failing the run.
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			[path.join(ROOT, "apps/plain-node-lib/package.json")]: '{"name":"orphan-pkg"}',
+			[path.join(ROOT, "turbo.json")]: "{}",
+			...seedRobloxWorkspace(["@org/foo"]),
+		});
+		vi.mocked(cp.execFileSync).mockReturnValue(
+			JSON.stringify({
+				packages: {
+					items: [turboItem("@org/foo"), turboItem("orphan-pkg", "apps/plain-node-lib")],
+				},
+			}),
+		);
+
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
+	});
+
+	it("should silently drop nx project names that don't map to a workspace package", () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			[path.join(ROOT, "nx.json")]: "{}",
+			...seedRobloxWorkspace(["@org/foo"]),
+		});
+		vi.mocked(cp.execFileSync).mockReturnValue(
+			JSON.stringify(["@org/foo", "stale-nx-project"]),
+		);
+
+		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual(["@org/foo"]);
+	});
+
+	it("should silently drop turbo items whose path no longer exists on disk", () => {
+		// Stale turbo cache or a package deleted between turbo's view and ours
+		// would otherwise throw ENOENT from fs.readdirSync, breaking the
+		// silent-drop guarantee.
 		expect.assertions(1);
 
 		vol.reset();
@@ -389,13 +467,25 @@ describe(getAffectedPackages, () => {
 		});
 		vi.mocked(cp.execFileSync).mockReturnValue(
 			JSON.stringify({
-				packages: { items: [{ name: "@org/foo" }, { name: "@org/orphan" }] },
+				packages: {
+					items: [turboItem("@org/foo"), turboItem("ghost", "packages/ghost")],
+				},
 			}),
 		);
 
-		expect(() => getAffectedPackages(ROOT, "main")).toThrow(
-			/Affected package "@org\/orphan" not found in workspace.*@org\/foo/s,
-		);
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
+	});
+
+	it("should return an empty list for empty nx output without reading pnpm-workspace.yaml", () => {
+		// No pnpm-workspace.yaml is staged — listPackages would throw if
+		// called. An empty affected set must short-circuit before that.
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
+		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify([]));
+
+		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual([]);
 	});
 
 	it("should accept any jest.config.<ext> as the marker", () => {
@@ -409,7 +499,7 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "turbo.json")]: "{}",
 		});
 		vi.mocked(cp.execFileSync).mockReturnValue(
-			JSON.stringify({ packages: { items: [{ name: "@org/foo" }] } }),
+			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
 		);
 
 		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
@@ -428,7 +518,7 @@ describe(getAffectedPackages, () => {
 		});
 		vi.mocked(cp.execFileSync).mockReturnValue(
 			JSON.stringify({
-				packages: { items: [{ name: "@org/foo" }, { name: "@org/bar" }] },
+				packages: { items: [turboItem("@org/foo"), turboItem("@org/bar")] },
 			}),
 		);
 

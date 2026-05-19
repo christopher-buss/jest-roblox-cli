@@ -14,21 +14,34 @@ function resolvePosixShim(binDirectory: string, command: string): string {
 	return fs.existsSync(candidate) ? candidate : command;
 }
 
-// Build cmd.exe args for `cmd.exe /d /s /c "<command>"`. Each token is wrapped
-// in double quotes — cmd metacharacters (^, &, |, <, >) are literal inside
-// quotes, and `ref` is already restricted by validRefPattern so no `"` can
-// appear. The outer pair of quotes around the whole command is stripped by
-// /s, leaving cmd.exe to parse the inner `"tok" "tok" ...` normally.
+// Build cmd.exe args for `cmd.exe /d /s /c "<command> <args>"`. Each argument
+// is wrapped in double quotes — cmd metacharacters (^, &, |, <, >) are literal
+// inside quotes, and `ref` is already restricted by validRefPattern so no `"`
+// can appear. The outer pair of quotes around the whole command is stripped
+// by /s, leaving cmd.exe to parse the inner `cmd "tok" "tok" ...` normally.
+//
+// The command itself MUST stay unquoted: npm-cli batch shims (turbo.cmd,
+// nx.cmd) compute `%~dp0` from %0, and when cmd.exe runs a *quoted* command
+// resolved via PATHEXT it sets %0 to the bare name — so `%~dp0` falls back
+// to the cwd. The shim then does `node "%~dp0\..\turbo\bin\turbo"`, which
+// resolves to `<cwd>\..\turbo\bin\turbo` (one directory above the workspace),
+// and node errors with MODULE_NOT_FOUND. Leaving the command unquoted lets
+// cmd resolve it through PATH normally and %~dp0 points at the shim's own
+// directory. `command` here is a hard-coded "turbo" or "nx", so no quoting
+// is required for safety.
 function buildCmdExeArgs(command: string, args: Array<string>): Array<string> {
-	const quoted = [command, ...args].map((argument) => `"${argument}"`).join(" ");
-	return ["/d", "/s", "/c", `"${quoted}"`];
+	const quotedArgs = args.map((argument) => `"${argument}"`).join(" ");
+	return ["/d", "/s", "/c", `"${command} ${quotedArgs}"`];
 }
 
 // Validate only the fields we read — turbo adds top-level fields between
-// versions (e.g. `packageManager`), so we tolerate unknown keys here.
+// versions (e.g. `packageManager`), so we tolerate unknown keys here. `path`
+// is relative to the workspace root (forward or back slashes depending on
+// platform) and lets us locate each package without re-walking
+// pnpm-workspace.yaml ourselves.
 const turboLsOutputSchema = type({
 	packages: {
-		items: type({ name: "string" }).array(),
+		items: type({ name: "string", path: "string" }).array(),
 	},
 });
 
@@ -43,6 +56,11 @@ const nxShowProjectsOutputSchema = type("string[]");
 // can't be confused with a CLI flag.
 const validRefPattern = /^[\w./~^-]+$/;
 
+interface TurboPackage {
+	name: string;
+	relativePath: string;
+}
+
 // turbo.json takes precedence when both markers are present (hybrid monorepo).
 export function getAffectedPackages(workspaceRoot: string, ref: string): Array<string> {
 	if (!validRefPattern.test(ref) || ref.startsWith("-")) {
@@ -53,12 +71,24 @@ export function getAffectedPackages(workspaceRoot: string, ref: string): Array<s
 	}
 
 	if (fs.existsSync(path.join(workspaceRoot, TURBO_MARKER))) {
+		// `--filter=...[<ref>]` = packages changed since <ref> plus their
+		// dependents. That's exactly the set the user asked for.
+		//
+		// Don't pass `--affected` alongside it. `--affected` doesn't take a
+		// ref — it auto-detects a base (GITHUB_BASE_REF, then merge-base with
+		// main) and intersects with the filter. If the auto-detected base
+		// differs from <ref> (common on CI where GITHUB_BASE_REF is set), the
+		// intersection silently narrows the result. Some turbo versions
+		// (e.g. 2.8.x) also reject the combination outright. The filter alone
+		// is the precise expression of intent and works on every 2.x.
 		const stdout = runTool(
 			"turbo",
-			["ls", "--affected", `--filter=...[${ref}]`, "--output=json"],
+			["ls", `--filter=...[${ref}]`, "--output=json"],
 			workspaceRoot,
 		);
-		return filterJestRobloxPackages(workspaceRoot, parseTurboOutput(stdout));
+		return parseTurboOutput(stdout)
+			.filter((item) => hasJestConfig(path.join(workspaceRoot, item.relativePath)))
+			.map((item) => item.name);
 	}
 
 	if (fs.existsSync(path.join(workspaceRoot, NX_MARKER))) {
@@ -67,7 +97,7 @@ export function getAffectedPackages(workspaceRoot: string, ref: string): Array<s
 			["show", "projects", "--affected", `--base=${ref}`, "--json"],
 			workspaceRoot,
 		);
-		return filterJestRobloxPackages(workspaceRoot, parseNxOutput(stdout));
+		return filterJestRobloxByName(workspaceRoot, parseNxOutput(stdout));
 	}
 
 	throw new Error(
@@ -77,39 +107,15 @@ export function getAffectedPackages(workspaceRoot: string, ref: string): Array<s
 }
 
 function hasJestConfig(packageDirectory: string): boolean {
-	return fs.readdirSync(packageDirectory).some((entry) => JEST_CONFIG_MARKER.test(entry));
-}
-
-// turbo/nx return every affected package in the workspace, including ones
-// with no jest-roblox config (e.g. plain Node libs, scripts). Preflight would
-// reject those for missing `rojoProject`, so we drop them up front. Explicit
-// `--packages` skips this filter — a named package missing config is a user
-// error and should still surface.
-//
-// Unknown affected names (turbo/nx → name that pnpm-workspace.yaml does not
-// know about) are NOT silently dropped: that masks resolver drift, like an
-// nx project name not matching `package.json.name` — the run would report
-// success while skipping real affected work. Throw loudly instead so the
-// mismatch is visible.
-function filterJestRobloxPackages(workspaceRoot: string, names: Array<string>): Array<string> {
-	if (names.length === 0) {
-		return names;
+	// Guard against a missing directory: turbo's package list can lag the
+	// filesystem (stale cache, package deleted between turbo's read and ours),
+	// and readdirSync would otherwise throw ENOENT and break the silent-drop
+	// guarantee.
+	if (!fs.existsSync(packageDirectory)) {
+		return false;
 	}
 
-	const packages = listPackages(workspaceRoot);
-	const directoryByName = new Map(packages.map((info) => [info.name, info.packageDirectory]));
-
-	return names.filter((name) => {
-		const directory = directoryByName.get(name);
-		if (directory === undefined) {
-			const available = packages.map((info) => info.name).join(", ");
-			throw new Error(
-				`Affected package ${JSON.stringify(name)} not found in workspace. Available: ${available}`,
-			);
-		}
-
-		return hasJestConfig(directory);
-	});
+	return fs.readdirSync(packageDirectory).some((entry) => JEST_CONFIG_MARKER.test(entry));
 }
 
 function hasStringField<K extends string>(value: unknown, key: K): value is Record<K, string> {
@@ -189,13 +195,13 @@ function parseJson(stdout: string, command: string): unknown {
 	}
 }
 
-function parseTurboOutput(stdout: string): Array<string> {
+function parseTurboOutput(stdout: string): Array<TurboPackage> {
 	const validated = turboLsOutputSchema(parseJson(stdout, "turbo"));
 	if (validated instanceof type.errors) {
 		throw new Error(`Unexpected turbo ls output: ${validated.summary}`);
 	}
 
-	return validated.packages.items.map((item) => item.name);
+	return validated.packages.items.map((item) => ({ name: item.name, relativePath: item.path }));
 }
 
 function parseNxOutput(stdout: string): Array<string> {
@@ -205,4 +211,30 @@ function parseNxOutput(stdout: string): Array<string> {
 	}
 
 	return validated;
+}
+
+// nx's `show projects --affected` returns project names only — no path, so
+// we map each name to its directory via pnpm-workspace.yaml and keep only
+// those with a jest.config.*. The turbo path above doesn't go through here
+// because turbo's JSON already includes each package's `path`, letting us
+// skip the workspace round-trip entirely.
+//
+// Anything else (non-Roblox packages, nx project names that don't match a
+// package.json name, etc.) is dropped silently — workspaces commonly contain
+// non-jest tooling/libs we don't run.
+function filterJestRobloxByName(workspaceRoot: string, names: Array<string>): Array<string> {
+	if (names.length === 0) {
+		// Avoid the pnpm-workspace.yaml read + glob walk when there's nothing
+		// to filter. Common in CI where most pushes touch zero packages.
+		return names;
+	}
+
+	const directoryByName = new Map(
+		listPackages(workspaceRoot).map((info) => [info.name, info.packageDirectory]),
+	);
+
+	return names.filter((name) => {
+		const directory = directoryByName.get(name);
+		return directory !== undefined && hasJestConfig(directory);
+	});
 }
