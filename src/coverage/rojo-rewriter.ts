@@ -1,5 +1,6 @@
 import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { redirectPathToShadow } from "./redirect-path.ts";
 
 export type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 
@@ -72,15 +73,24 @@ function buildRootContext(entry: RootEntry): RootContext {
 function rewritePath(value: string, context: RewriteContext): string {
 	const normalized = normalizeWindowsPath(value);
 
-	for (const root of context.roots) {
-		if (normalized === root.luauRoot || normalized.startsWith(`${root.luauRoot}/`)) {
-			const suffix = normalized.slice(root.luauRoot.length);
-			if (context.relocation === undefined || root.relocatedShadowDirectory === undefined) {
-				return root.shadowDirectory + suffix;
-			}
+	// Each rojo root carries both an absolute `shadowDirectory` and an
+	// optional `relocatedShadowDirectory` (relative to the relocated project
+	// file). Pick whichever matches the current rewrite context before
+	// asking `redirectPathToShadow` to resolve the suffix — the helper itself
+	// is agnostic to which variant it's given.
+	const coverageRoots = context.roots.map((root) => {
+		return {
+			luauRoot: root.luauRoot,
+			shadowDir:
+				context.relocation !== undefined && root.relocatedShadowDirectory !== undefined
+					? root.relocatedShadowDirectory
+					: root.shadowDirectory,
+		};
+	});
 
-			return root.relocatedShadowDirectory + suffix;
-		}
+	const redirected = redirectPathToShadow(normalized, coverageRoots);
+	if (redirected !== undefined) {
+		return redirected;
 	}
 
 	if (context.relocation !== undefined) {

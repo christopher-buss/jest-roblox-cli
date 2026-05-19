@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { ConfigError } from "../config/errors.ts";
+import { redirectPathToShadow } from "../coverage/redirect-path.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
@@ -112,28 +113,22 @@ function resolveDollarPath(
 ): string {
 	const absoluteTarget = normalizeWindowsPath(path.resolve(base, value));
 
-	if (coverageRoots !== undefined) {
-		for (const root of coverageRoots) {
-			// luauRoot is package-relative; resolve against the same base
-			// (which is the rojo project dir, == package dir in the common
-			// case) and strip any trailing slash before comparison so a
-			// rojo `$path: "out/"` matches a `luauRoot: "out"` exactly.
-			const absoluteRoot = normalizeWindowsPath(path.resolve(base, root.luauRoot)).replace(
-				/\/$/,
-				"",
-			);
-			if (absoluteTarget === absoluteRoot) {
-				return normalizeWindowsPath(root.shadowDir);
-			}
-
-			if (absoluteTarget.startsWith(`${absoluteRoot}/`)) {
-				const suffix = absoluteTarget.slice(absoluteRoot.length);
-				return normalizeWindowsPath(root.shadowDir) + suffix;
-			}
-		}
+	if (coverageRoots === undefined) {
+		return absoluteTarget;
 	}
 
-	return absoluteTarget;
+	// CoverageRoot.luauRoot is package-relative; resolve against the same base
+	// (which is the rojo project dir, == package dir in the common case) and
+	// strip any trailing slash so a rojo `$path: "out/"` matches a
+	// `luauRoot: "out"` exactly.
+	const resolvedRoots = coverageRoots.map((root) => {
+		return {
+			luauRoot: normalizeWindowsPath(path.resolve(base, root.luauRoot)).replace(/\/$/, ""),
+			shadowDir: normalizeWindowsPath(root.shadowDir),
+		};
+	});
+
+	return redirectPathToShadow(absoluteTarget, resolvedRoots) ?? absoluteTarget;
 }
 
 function absolutizePaths(

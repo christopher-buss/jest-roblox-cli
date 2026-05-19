@@ -2,12 +2,24 @@ import { collectPaths, loadRojoProject, resolveNestedProjects } from "@isentinel
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import process from "node:process";
 import picomatch from "picomatch";
 
 import type { ResolvedConfig } from "../config/schema.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { INSTRUMENTER_VERSION, instrumentRoot } from "./instrumenter.ts";
-import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
+import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
+import type {
+	CoverageManifest,
+	InstrumentedFileRecord,
+	NonInstrumentedFileRecord,
+} from "./manifest.ts";
+import { MANIFEST_VERSION, readManifest } from "./manifest.ts";
+import {
+	cleanupDeletedFiles,
+	detectDeletedFiles,
+	isNonInstrumentedFile,
+	prepareShadowRoot,
+} from "./shadow-root.ts";
 
 const WORKSPACE_COVERAGE_DIR = ".jest-roblox/workspace";
 
@@ -51,7 +63,7 @@ export function prepareWorkspaceCoverage(
 	const matchesIgnored = createIgnoreMatcher(config.coveragePathIgnorePatterns);
 
 	return packages.map((descriptor) => {
-		return prepareForPackage(descriptor, workspaceRoot, matchesIgnored);
+		return prepareForPackage(descriptor, workspaceRoot, matchesIgnored, config);
 	});
 }
 
@@ -64,15 +76,10 @@ function isInstrumentableLuauFile(filename: string): boolean {
 	// test, and snapshot files. A directory containing only those would feed
 	// `instrumentRoot` zero files and produce an empty shadow dir, which the
 	// synthesizer would then swap a parent `$path` into and the demote pass
-	// inside `walkToLeaf` would fail to walk.
-	return (
-		!filename.endsWith(".spec.luau") &&
-		!filename.endsWith(".spec.lua") &&
-		!filename.endsWith(".test.luau") &&
-		!filename.endsWith(".test.lua") &&
-		!filename.endsWith(".snap.luau") &&
-		!filename.endsWith(".snap.lua")
-	);
+	// inside `walkToLeaf` would fail to walk. Defer the suffix set to
+	// `shadow-root.ts`'s `NON_INSTRUMENTED_SUFFIXES` so this filter cannot
+	// drift from the instrumenter's view.
+	return !isNonInstrumentedFile(filename);
 }
 
 function containsLuauFiles(directoryPath: string): boolean {
@@ -155,10 +162,55 @@ function safePackageName(name: string): string {
 	return name.replaceAll("/", "-");
 }
 
+function loadPackageManifest(manifestPath: string): CoverageManifest | undefined {
+	const result = readManifest(manifestPath);
+	switch (result.kind) {
+		case "invalid": {
+			process.stderr.write(
+				`Warning: Workspace coverage manifest is invalid (cache discarded): ${result.summary}\n`,
+			);
+			return undefined;
+		}
+		case "malformed-json": {
+			process.stderr.write(
+				"Warning: Workspace coverage manifest is malformed JSON (cache discarded)\n",
+			);
+			return undefined;
+		}
+		case "missing":
+		case "version-mismatch": {
+			return undefined;
+		}
+		case "ok": {
+			return result.manifest;
+		}
+	}
+}
+
+function canUseIncremental(
+	previousManifest: CoverageManifest | undefined,
+	config: ResolvedConfig,
+): boolean {
+	if (!config.coverageCache) {
+		return false;
+	}
+
+	if (previousManifest === undefined) {
+		return false;
+	}
+
+	if (previousManifest.instrumenterVersion !== INSTRUMENTER_VERSION) {
+		return false;
+	}
+
+	return true;
+}
+
 function prepareForPackage(
 	descriptor: WorkspacePackageDescriptor,
 	workspaceRoot: string,
 	matchesIgnored: (filePath: string) => boolean,
+	config: ResolvedConfig,
 ): WorkspacePackageCoverage {
 	const safeName = safePackageName(descriptor.name);
 	const packageShadowRoot = path.join(
@@ -169,10 +221,22 @@ function prepareForPackage(
 	);
 	const manifestPath = normalizeWindowsPath(path.join(packageShadowRoot, "manifest.json"));
 
+	const previousManifest = loadPackageManifest(manifestPath);
+	const useIncremental = canUseIncremental(previousManifest, config);
+
+	// Mirror prepareCoverage's cold-path nuke (prepare.ts) so files deleted
+	// from source between runs don't survive into the redirected `$path`
+	// mount. `prepareShadowRoot`'s cpSync merges; without an explicit rmSync
+	// here a stale `*.spec.luau` could still be discovered at runtime.
+	if (!useIncremental && fs.existsSync(packageShadowRoot)) {
+		fs.rmSync(packageShadowRoot, { recursive: true });
+	}
+
 	const luauRoots = discoverPackageLuauRoots(descriptor, matchesIgnored);
 
 	const coverageRoots: Array<WorkspaceCoverageRoot> = [];
 	const allFiles: Record<string, InstrumentedFileRecord> = {};
+	const allNonInstrumented: Record<string, NonInstrumentedFileRecord> = {};
 
 	for (const relativeLuauRoot of luauRoots) {
 		const absoluteSourceRoot = normalizeWindowsPath(
@@ -182,14 +246,21 @@ function prepareForPackage(
 			path.join(packageShadowRoot, relativeLuauRoot),
 		);
 
-		fs.mkdirSync(shadowDirectory, { recursive: true });
-
-		const files = instrumentRoot({
+		const result = prepareShadowRoot({
 			luauRoot: absoluteSourceRoot,
+			previousManifest,
 			shadowDir: shadowDirectory,
+			useIncremental,
 		});
-		Object.assign(allFiles, files);
+
+		Object.assign(allFiles, result.files);
+		Object.assign(allNonInstrumented, result.nonInstrumentedFiles);
 		coverageRoots.push({ luauRoot: relativeLuauRoot, shadowDir: shadowDirectory });
+	}
+
+	if (useIncremental && previousManifest !== undefined) {
+		const deleted = detectDeletedFiles(previousManifest, allFiles);
+		cleanupDeletedFiles(deleted);
 	}
 
 	const manifest: CoverageManifest = {
@@ -197,9 +268,9 @@ function prepareForPackage(
 		generatedAt: new Date().toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots: coverageRoots.map((entry) => entry.shadowDir),
-		nonInstrumentedFiles: {},
+		nonInstrumentedFiles: allNonInstrumented,
 		shadowDir: normalizeWindowsPath(packageShadowRoot),
-		version: 1,
+		version: MANIFEST_VERSION,
 	};
 
 	// Ensure the manifest's parent directory exists even when the loop above

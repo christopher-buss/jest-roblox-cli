@@ -1,17 +1,24 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
+import * as crypto from "node:crypto";
 import * as path from "node:path";
+import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
 import { prepareWorkspaceCoverage } from "./workspace-prepare.ts";
 
+function sha256(content: string): string {
+	return crypto.createHash("sha256").update(content).digest("hex");
+}
+
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
+	return fromAny({ ...memfs.fs, cpSync: memfs.vol.cpSync.bind(memfs.vol), default: memfs.fs });
 });
 vi.mock(import("./instrumenter"));
 
@@ -248,6 +255,472 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(Object.keys(manifest.files)).toContain(expectedKey);
 	});
 
+	// Codex review (HAL-211 follow-up): on a cold run, prepareShadowRoot only
+	// does mkdirSync + cpSync (both merge). If a prior run wrote files into
+	// the package shadow that have since been deleted from source — or the
+	// cache is invalid / version-stale and we fall back to a cold run — those
+	// stale files survive into the redirected $path mount. Single-package
+	// prepares avoid this by rmSync-ing COVERAGE_DIR before instrumenting;
+	// workspace must nuke its own per-package shadow root for symmetry.
+	it("should remove stale shadow files when running cold (no cache)", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const packageShadow = path
+			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
+			.replaceAll("\\", "/");
+		const staleSpecPath = path.join(packageShadow, "out/stale.spec.luau");
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/init.luau")]: "local x = 1",
+			// Stale spec from a prior run — source has no matching file.
+			[staleSpecPath]: "return {}",
+		});
+		await mockInstrumentRoot();
+
+		prepareWorkspaceCoverage({
+			config: makeConfig({ coverageCache: false }),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		// Stale shadow file gone — rmSync of package shadow before cpSync.
+		expect(vol.existsSync(staleSpecPath)).toBeFalse();
+		// Current source still landed via cpSync.
+		expect(vol.existsSync(path.join(packageShadow, "out/init.luau"))).toBeTrue();
+	});
+
+	it("should bypass the cache when coverageCache is disabled", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const sourceContent = "local x = 1";
+		const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
+		// A valid manifest exists on disk, but coverageCache=false discards it.
+		const previousManifest: CoverageManifest = {
+			files: {
+				[fileKey]: {
+					key: fileKey,
+					coverageMapPath: "x",
+					instrumentedLuauPath: "x",
+					originalLuauPath: fileKey,
+					sourceHash: sha256(sourceContent),
+					sourceMapPath: "x",
+					statementCount: 1,
+				},
+			},
+			generatedAt: "2025-01-01T00:00:00.000Z",
+			instrumenterVersion: INSTRUMENTER_VERSION,
+			luauRoots: [],
+			nonInstrumentedFiles: {},
+			shadowDir: "x",
+			version: 1,
+		};
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
+			[path.join(
+				WORKSPACE_ROOT,
+				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+			)]: JSON.stringify(previousManifest),
+		});
+		const mocked = await mockInstrumentRoot();
+
+		prepareWorkspaceCoverage({
+			config: makeConfig({ coverageCache: false }),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		// Cache disabled → cold path: instrumenter runs even though the manifest
+		// matched.
+		expect(mocked).toHaveBeenCalledOnce();
+	});
+
+	it("should discard a manifest with a stale instrumenter version", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const sourceContent = "local x = 1";
+		const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
+		const previousManifest: CoverageManifest = {
+			files: {
+				[fileKey]: {
+					key: fileKey,
+					coverageMapPath: "x",
+					instrumentedLuauPath: "x",
+					originalLuauPath: fileKey,
+					sourceHash: sha256(sourceContent),
+					sourceMapPath: "x",
+					statementCount: 1,
+				},
+			},
+			generatedAt: "2025-01-01T00:00:00.000Z",
+			instrumenterVersion: INSTRUMENTER_VERSION - 1,
+			luauRoots: [],
+			nonInstrumentedFiles: {},
+			shadowDir: "x",
+			version: 1,
+		};
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
+			[path.join(
+				WORKSPACE_ROOT,
+				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+			)]: JSON.stringify(previousManifest),
+		});
+		const mocked = await mockInstrumentRoot();
+
+		prepareWorkspaceCoverage({
+			config: makeConfig({ coverageCache: true }),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).toHaveBeenCalledOnce();
+	});
+
+	it.for([
+		{
+			name: "malformed JSON manifest",
+			body: "{",
+			expectedWarning: "malformed JSON",
+		},
+		{
+			name: "schema-invalid manifest",
+			body: JSON.stringify({ files: "not-an-object", version: 1 }),
+			expectedWarning: "is invalid",
+		},
+	])("should warn and discard the cache for $name", async ({ body, expectedWarning }) => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		seedPackage(FOO_DIR);
+		const manifestDirectory = path.join(
+			WORKSPACE_ROOT,
+			".jest-roblox/workspace/@halcyon-foo/coverage",
+		);
+		vol.mkdirSync(manifestDirectory, { recursive: true });
+		vol.writeFileSync(path.join(manifestDirectory, "manifest.json"), body);
+		const mocked = await mockInstrumentRoot();
+
+		prepareWorkspaceCoverage({
+			config: makeConfig({ coverageCache: true }),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).toHaveBeenCalledOnce();
+		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining(expectedWarning));
+	});
+
+	// Codex review (HAL-211 follow-up): computeSkipFiles validates the
+	// source hash but does NOT verify the manifest's referenced shadow
+	// files still exist. If a partial cleanup or interrupted run leaves
+	// the manifest pointing at missing files, the warm path would skip
+	// re-instrumentation and the synthesized place would mount paths to
+	// absent files. The cache record must be self-validating: source AND
+	// outputs both have to be on disk for the skip to apply.
+	it("should re-instrument when the cached shadow file is missing", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const sourceContent = "local x = 1";
+		const absoluteSourceRoot = path.join(FOO_DIR, "out").replaceAll("\\", "/");
+		const fileKey = `${absoluteSourceRoot}/init.luau`;
+		const packageShadow = path
+			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
+			.replaceAll("\\", "/");
+		const previousManifest: CoverageManifest = {
+			files: {
+				[fileKey]: {
+					key: fileKey,
+					coverageMapPath: `${packageShadow}/out/init.cov-map.json`,
+					instrumentedLuauPath: `${packageShadow}/out/init.luau`,
+					originalLuauPath: fileKey,
+					sourceHash: sha256(sourceContent),
+					sourceMapPath: `${packageShadow}/out/init.luau.map`,
+					statementCount: 1,
+				},
+			},
+			generatedAt: "2025-01-01T00:00:00.000Z",
+			instrumenterVersion: INSTRUMENTER_VERSION,
+			luauRoots: [`${packageShadow}/out`],
+			nonInstrumentedFiles: {},
+			shadowDir: packageShadow,
+			version: 1,
+		};
+
+		// Manifest claims init.luau is fully cached, but the shadow files
+		// the record points at don't exist on disk.
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
+			[path.join(
+				WORKSPACE_ROOT,
+				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+			)]: JSON.stringify(previousManifest),
+		});
+		const mocked = await mockInstrumentRoot();
+
+		prepareWorkspaceCoverage({
+			config: makeConfig({ coverageCache: true }),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		// Cache record points at a missing file → drop it from skipFiles
+		// and call the instrumenter for a fresh run.
+		expect(mocked).toHaveBeenCalledOnce();
+	});
+
+	// Workspace incremental cache: when the per-package manifest already
+	// records the current source hash and coverageCache is on,
+	// prepareShadowRoot should hit the full-cache path and not call the
+	// instrumenter at all. Symmetric with single-package behavior in
+	// prepare.spec.ts.
+	it("should skip instrumentRoot on a full cache hit", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const sourceContent = "local x = 1";
+		const absoluteSourceRoot = path.join(FOO_DIR, "out").replaceAll("\\", "/");
+		const fileKey = `${absoluteSourceRoot}/init.luau`;
+		const packageShadow = path
+			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
+			.replaceAll("\\", "/");
+		const previousManifest: CoverageManifest = {
+			files: {
+				[fileKey]: {
+					key: fileKey,
+					coverageMapPath: `${packageShadow}/out/init.cov-map.json`,
+					instrumentedLuauPath: `${packageShadow}/out/init.luau`,
+					originalLuauPath: fileKey,
+					sourceHash: sha256(sourceContent),
+					sourceMapPath: `${packageShadow}/out/init.luau.map`,
+					statementCount: 1,
+				},
+			},
+			generatedAt: "2025-01-01T00:00:00.000Z",
+			instrumenterVersion: INSTRUMENTER_VERSION,
+			luauRoots: [`${packageShadow}/out`],
+			nonInstrumentedFiles: {},
+			shadowDir: packageShadow,
+			version: 1,
+		};
+
+		vol.fromJSON({
+			[`${packageShadow}/out/init.cov-map.json`]: "{}",
+			// Cache hit requires the shadow outputs the manifest points at
+			// to still exist on disk (otherwise computeSkipFiles drops the
+			// record and forces re-instrumentation).
+			[`${packageShadow}/out/init.luau`]: "instrumented",
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Pkg: { $path: "out" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
+			[path.join(
+				WORKSPACE_ROOT,
+				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+			)]: JSON.stringify(previousManifest),
+		});
+		const mocked = await mockInstrumentRoot();
+
+		prepareWorkspaceCoverage({
+			config: makeConfig({ coverageCache: true }),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).not.toHaveBeenCalled();
+	});
+
+	// Codex review (HAL-211 follow-up): syncNonInstrumentedFiles reused a
+	// previousRecord whenever the source hash matched, without verifying
+	// that `record.shadowPath` still existed. A partial cleanup would let
+	// the manifest claim a spec was cached while the shadow file was gone.
+	// Validate by re-copying when the shadow file is missing.
+	it("should re-copy non-instrumented file when its shadow is missing", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const helperContent = "local x = 1";
+		const specContent = "return {}";
+		const absoluteSourceRoot = path.join(FOO_DIR, "out-test").replaceAll("\\", "/");
+		const helperKey = `${absoluteSourceRoot}/test/fixtures.luau`;
+		const specKey = `${absoluteSourceRoot}/src/foo.spec.luau`;
+		const packageShadow = path
+			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
+			.replaceAll("\\", "/");
+		const shadowSpecPath = `${packageShadow}/out-test/src/foo.spec.luau`;
+		const previousManifest: CoverageManifest = {
+			files: {
+				[helperKey]: {
+					key: helperKey,
+					coverageMapPath: `${packageShadow}/out-test/test/fixtures.cov-map.json`,
+					instrumentedLuauPath: `${packageShadow}/out-test/test/fixtures.luau`,
+					originalLuauPath: helperKey,
+					sourceHash: sha256(helperContent),
+					sourceMapPath: `${packageShadow}/out-test/test/fixtures.luau.map`,
+					statementCount: 1,
+				},
+			},
+			generatedAt: "2025-01-01T00:00:00.000Z",
+			instrumenterVersion: INSTRUMENTER_VERSION,
+			luauRoots: [`${packageShadow}/out-test`],
+			nonInstrumentedFiles: {
+				[specKey]: {
+					shadowPath: shadowSpecPath,
+					sourceHash: sha256(specContent),
+					sourcePath: specKey,
+				},
+			},
+			shadowDir: packageShadow,
+			version: 1,
+		};
+
+		vol.fromJSON({
+			[`${packageShadow}/out-test/test/fixtures.cov-map.json`]: "{}",
+			// Cached helper shadow files exist (so instrumentation is skipped
+			// for the helper) — but the spec's shadow file does NOT exist.
+			[`${packageShadow}/out-test/test/fixtures.luau`]: "instrumented",
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Tests: { $path: "out-test" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: specContent,
+			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: helperContent,
+			[path.join(
+				WORKSPACE_ROOT,
+				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+			)]: JSON.stringify(previousManifest),
+		});
+		await mockInstrumentRoot();
+
+		prepareWorkspaceCoverage({
+			config: makeConfig({ coverageCache: true }),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		// previousRecord matched the source hash but pointed at a missing
+		// shadow file — re-copy via copyFileSync so the shadow stays
+		// consistent with the manifest.
+		expect(vol.existsSync(shadowSpecPath)).toBeTrue();
+	});
+
+	// Symmetry with prepareCoverage: each non-instrumented file the
+	// shadow inherits via cpSync (spec/test/snap luau) needs a record in
+	// the manifest so a future incremental run can detect stale shadow
+	// entries and prune them.
+	it("should track non-instrumented files (spec/test/snap) in the per-package manifest", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Tests: { $path: "out-test" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "return {}",
+			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: "local x = 1",
+		});
+		await mockInstrumentRoot();
+
+		const [result] = prepareWorkspaceCoverage({
+			config: makeConfig(),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		const manifest = JSON.parse(
+			vol.readFileSync(result!.manifestPath, "utf-8") as string,
+		) as unknown as CoverageManifest;
+		const specKey = `${path.join(FOO_DIR, "out-test").replaceAll("\\", "/")}/src/foo.spec.luau`;
+
+		expect(Object.keys(manifest.nonInstrumentedFiles)).toContain(specKey);
+	});
+
 	it("should skip $path entries that escape the package directory", async () => {
 		expect.assertions(1);
 
@@ -432,6 +905,50 @@ describe(prepareWorkspaceCoverage, () => {
 		// inside `walkToLeaf` would fail to find any siblings on disk.
 		expect(mocked).not.toHaveBeenCalled();
 		expect(result[0]?.coverageRoots).toStrictEqual([]);
+	});
+
+	// HAL-211: when a $path tree mixes spec files with non-spec helpers
+	// (e.g. flux-react's `out-test/` holds `test/fixtures.luau` next to
+	// `src/foo.spec.luau`), `containsLuauFiles` makes the dir a coverage
+	// root because the helper passes `isInstrumentableLuauFile`. The
+	// synthesizer then redirects `$path` to the shadow, which only holds
+	// the instrumented helper — the spec disappears. The fix: bulk-copy
+	// the source tree into the shadow (matching prepareCoverage's
+	// behavior) so spec files survive the redirect.
+	it("should preserve spec files in the shadow when $path mixes specs with non-spec helpers", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Tests: { $path: "out-test" } },
+				},
+			}),
+			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "return {}",
+			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: "local x = 1",
+		});
+		await mockInstrumentRoot();
+
+		const result = prepareWorkspaceCoverage({
+			config: makeConfig(),
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(result[0]?.coverageRoots).toHaveLength(1);
+
+		const { shadowDir } = result[0]!.coverageRoots[0]!;
+		const specInShadow = path.join(shadowDir, "src/foo.spec.luau").replaceAll("\\", "/");
+
+		expect(vol.existsSync(specInShadow)).toBeTrue();
 	});
 
 	// Regression: roblox-ts ships its vendor runtime (`RuntimeLib.lua`,

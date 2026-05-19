@@ -13,13 +13,9 @@ import type {
 	InstrumentedFileRecord,
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
-import {
-	collectLuauRootsFromRojo,
-	discoverInstrumentableFiles,
-	prepareCoverage,
-	resolveLuauRoots,
-} from "./prepare.ts";
+import { collectLuauRootsFromRojo, prepareCoverage, resolveLuauRoots } from "./prepare.ts";
 import type { RojoProject } from "./rojo-rewriter.ts";
+import { discoverInstrumentableFiles } from "./shadow-root.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
