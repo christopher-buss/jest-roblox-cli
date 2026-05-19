@@ -7,6 +7,7 @@ import * as path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
+import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import { narrowConfigByFiles } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
@@ -44,8 +45,20 @@ interface PendingJob {
 interface CollectPendingJobsArguments {
 	cliFiles: Array<string> | undefined;
 	effectivePlaceFile: string;
+	/**
+	 * Per-project subset of `cliFiles` when auto-pick filtered cli files to
+	 * specific projects. When absent or missing for a given project, the full
+	 * `cliFiles` array is used (back-compat for `--project` and no-positional
+	 * flows).
+	 */
+	filesByProject?: ReadonlyMap<string, Array<string>>;
 	projects: Array<ResolvedProjectConfig>;
 	rootConfig: ResolvedConfig;
+}
+
+interface SelectedProjects {
+	filesByProject?: ReadonlyMap<string, Array<string>>;
+	projects: Array<ResolvedProjectConfig>;
 }
 
 export async function runMultiProject(options: MultiRunOptions): Promise<MultiRunResult> {
@@ -64,8 +77,12 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 		resolveSetupFilePaths(project.config);
 	}
 
-	const projects =
-		cli.project !== undefined ? filterProjectsByName(allProjects, cli.project) : allProjects;
+	const { filesByProject, projects } = selectProjects(
+		allProjects,
+		cli.project,
+		cli.files,
+		rootConfig.rootDir,
+	);
 
 	generateProjectStubs(projects, rootConfig.rootDir);
 
@@ -85,6 +102,7 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	const { allTypeTestFiles, pendingJobs } = collectPendingJobs({
 		cliFiles: cli.files,
 		effectivePlaceFile: effectiveConfig.placeFile,
+		filesByProject,
 		projects,
 		rootConfig,
 	});
@@ -139,11 +157,17 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 	allTypeTestFiles: Array<string>;
 	pendingJobs: Array<PendingJob>;
 } {
-	const { cliFiles, effectivePlaceFile, projects, rootConfig } = arguments_;
+	const { cliFiles, effectivePlaceFile, filesByProject, projects, rootConfig } = arguments_;
 	const pendingJobs: Array<PendingJob> = [];
 	const allTypeTestFiles: Array<string> = [];
 
 	for (const project of projects) {
+		// When auto-pick produced a per-project file subset, only feed those
+		// files into discovery / narrowing for this project. Otherwise (no
+		// positional files, or explicit `--project`), fall back to the full
+		// cli.files list.
+		const projectCliFiles = filesByProject?.get(project.displayName) ?? cliFiles;
+
 		const discoveryConfig: ResolvedConfig = {
 			...project.config,
 			placeFile: effectivePlaceFile,
@@ -151,12 +175,12 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 			testMatch: project.include,
 		};
 
-		const discovery = discoverTestFiles(discoveryConfig, cliFiles);
+		const discovery = discoverTestFiles(discoveryConfig, projectCliFiles);
 		const { runtimeFiles, typeTestFiles } = classifyTestFiles(discovery.files, rootConfig);
 
 		const projConfig: ResolvedConfig = narrowConfigByFiles(
 			{ ...discoveryConfig, testMatch: project.testMatch },
-			cliFiles ?? [],
+			projectCliFiles ?? [],
 		);
 
 		allTypeTestFiles.push(...typeTestFiles);
@@ -255,22 +279,6 @@ function effectiveParallelForBackend(
 	return backend.kind === "open-cloud" ? parallel : undefined;
 }
 
-function filterProjectsByName(
-	projects: Array<ResolvedProjectConfig>,
-	names: Array<string>,
-): Array<ResolvedProjectConfig> {
-	const available = new Set(projects.map((project) => project.displayName));
-	const unknown = names.filter((name) => !available.has(name));
-	if (unknown.length > 0) {
-		throw new Error(
-			`Unknown project name(s): ${unknown.join(", ")}. Available: ${[...available].join(", ")}`,
-		);
-	}
-
-	const nameSet = new Set(names);
-	return projects.filter((project) => nameSet.has(project.displayName));
-}
-
 function mergeForMultiResult(projectResults: Array<ProjectResult>): MultiProjectMerged {
 	if (projectResults.length === 0) {
 		return {};
@@ -299,4 +307,43 @@ function mergeForMultiResult(projectResults: Array<ProjectResult>): MultiProject
 	}
 
 	return merged;
+}
+
+function filterProjectsByName(
+	projects: Array<ResolvedProjectConfig>,
+	names: Array<string>,
+): Array<ResolvedProjectConfig> {
+	const available = new Set(projects.map((project) => project.displayName));
+	const unknown = names.filter((name) => !available.has(name));
+	if (unknown.length > 0) {
+		throw new Error(
+			`Unknown project name(s): ${unknown.join(", ")}. Available: ${[...available].join(", ")}`,
+		);
+	}
+
+	const nameSet = new Set(names);
+	return projects.filter((project) => nameSet.has(project.displayName));
+}
+
+function selectProjects(
+	allProjects: Array<ResolvedProjectConfig>,
+	projectNames: Array<string> | undefined,
+	cliFiles: Array<string> | undefined,
+	rootDirectory: string,
+): SelectedProjects {
+	if (projectNames !== undefined) {
+		return { projects: filterProjectsByName(allProjects, projectNames) };
+	}
+
+	if (cliFiles !== undefined && cliFiles.length > 0) {
+		const matches = filterProjectsByFiles(allProjects, cliFiles, rootDirectory);
+		return {
+			filesByProject: new Map(
+				matches.map((match) => [match.project.displayName, match.matchingFiles]),
+			),
+			projects: matches.map((match) => match.project),
+		};
+	}
+
+	return { projects: allProjects };
 }

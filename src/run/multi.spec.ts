@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { resolveBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
+import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import { narrowConfigByFiles } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
@@ -33,6 +34,7 @@ vi.mock(import("../config/projects"));
 vi.mock(import("../config/setup-resolver"));
 vi.mock(import("../config/stubs"));
 vi.mock(import("../config/narrow-by-files"));
+vi.mock(import("../config/filter-projects-by-files"));
 vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("../executor"));
 vi.mock(import("../coverage/prepare"));
@@ -41,6 +43,7 @@ vi.mock(import("../typecheck/runner"));
 const mocks = {
 	buildWithRojo: vi.mocked(buildWithRojo),
 	createSetupResolver: vi.mocked(createSetupResolver),
+	filterProjectsByFiles: vi.mocked(filterProjectsByFiles),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
 	narrowConfigByFiles: vi.mocked(narrowConfigByFiles),
 	prepareCoverage: vi.mocked(prepareCoverage),
@@ -156,6 +159,9 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 		};
 	});
 	mocks.narrowConfigByFiles.mockImplementation((cfg) => cfg);
+	mocks.filterProjectsByFiles.mockImplementation((projectList, files) => {
+		return projectList.map((project) => ({ matchingFiles: [...files], project }));
+	});
 	writeRojoProject();
 	onTestFinished(() => {
 		vol.reset();
@@ -539,6 +545,122 @@ describe(runMultiProject, () => {
 		expect(mocks.narrowConfigByFiles).toHaveBeenCalledWith(expect.any(Object), [
 			"src/client/a.spec.ts",
 		]);
+	});
+
+	it("should call filterProjectsByFiles with cli files when --project is absent", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+		mocks.filterProjectsByFiles.mockImplementation((projectList, files) => {
+			return projectList
+				.filter((project) => project.displayName === "server")
+				.map((project) => ({ matchingFiles: [...files], project }));
+		});
+
+		const result = await runMultiProject({
+			cli: makeCli({ files: ["src/server/b.spec.ts"] }),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
+
+		expect(result.projectResults.map((entry) => entry.displayName)).toStrictEqual(["server"]);
+	});
+
+	it("should feed each project only the cli files filterProjectsByFiles paired with it", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+		mocks.filterProjectsByFiles.mockImplementation((projectList) => {
+			return projectList.map((project) => {
+				return {
+					matchingFiles: project.displayName === "client" ? ["src/client/a.spec.ts"] : [],
+					project,
+				};
+			});
+		});
+
+		await runMultiProject({
+			cli: makeCli({ files: ["src/client/a.spec.ts", "src/server/b.spec.ts"] }),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
+
+		// narrowConfigByFiles is called once per selected project with the
+		// per-project file subset, not the full cli.files list.
+		expect(mocks.narrowConfigByFiles).toHaveBeenNthCalledWith(1, expect.any(Object), [
+			"src/client/a.spec.ts",
+		]);
+		expect(mocks.narrowConfigByFiles).toHaveBeenNthCalledWith(2, expect.any(Object), []);
+	});
+
+	it("should pass cli files and rootDir through to filterProjectsByFiles", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+
+		await runMultiProject({
+			cli: makeCli({ files: ["src/server/b.spec.ts"] }),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
+
+		expect(mocks.filterProjectsByFiles).toHaveBeenCalledWith(
+			expect.any(Array),
+			["src/server/b.spec.ts"],
+			"/test",
+		);
+	});
+
+	it("should propagate filterProjectsByFiles errors when no project owns the file", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+		mocks.filterProjectsByFiles.mockImplementation(() => {
+			throw new Error("No project contains the requested file(s)");
+		});
+
+		await expect(
+			runMultiProject({
+				cli: makeCli({ files: ["src/shared/x.spec.ts"] }),
+				config,
+				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+			}),
+		).rejects.toThrow(/No project contains the requested file/);
+	});
+
+	it("should skip filterProjectsByFiles when --project is set even if files are passed", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+
+		const result = await runMultiProject({
+			cli: makeCli({ files: ["src/server/b.spec.ts"], project: ["client"] }),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
+
+		expect(mocks.filterProjectsByFiles).not.toHaveBeenCalled();
+		expect(result.projectResults.map((entry) => entry.displayName)).toStrictEqual(["client"]);
+	});
+
+	it("should skip filterProjectsByFiles when no cli files are passed", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
+
+		expect(mocks.filterProjectsByFiles).not.toHaveBeenCalled();
 	});
 
 	it("should resolve setupFiles per-project via discovery helper", async () => {
