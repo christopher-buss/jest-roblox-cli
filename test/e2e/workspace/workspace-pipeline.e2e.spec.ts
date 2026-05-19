@@ -227,7 +227,7 @@ describe("workspace snapshot writeback lands per-package on disk", () => {
 	it.skipIf(!rojoOnPath())(
 		"should write each package's snapshotWrites to its own rootDir/__snapshots__",
 		async () => {
-			expect.assertions(8);
+			expect.assertions(5);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
 			const fooSnapshot = "-- @e2e/foo snapshot body\nreturn { pkg = 'foo' }\n";
@@ -292,12 +292,14 @@ describe("workspace snapshot writeback lands per-package on disk", () => {
 				sandbox,
 				"packages/bar/src/__snapshots__/hal-165.spec.snap.luau",
 			);
-			expect(fs.existsSync(fooSnapPath)).toBeTrue();
-			expect(fs.existsSync(barSnapPath)).toBeTrue();
+
 			// Cross-contamination guard: each package's body lives only under
-			// its own __snapshots__ tree.
-			expect(fs.readFileSync(fooSnapPath, "utf-8")).toBe(fooSnapshot);
-			expect(fs.readFileSync(barSnapPath, "utf-8")).toBe(barSnapshot);
+			// its own __snapshots__ tree. readFileSync throws ENOENT if a
+			// snapshot is missing entirely.
+			expect({
+				bar: fs.readFileSync(barSnapPath, "utf-8"),
+				foo: fs.readFileSync(fooSnapPath, "utf-8"),
+			}).toStrictEqual({ bar: barSnapshot, foo: fooSnapshot });
 		},
 		60_000,
 	);
