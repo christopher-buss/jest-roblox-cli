@@ -89,7 +89,7 @@ describe("live project pipeline", () => {
 
 			expect(fs.existsSync(reportPath)).toBeTrue();
 
-			const raw: unknown = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+			const raw = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
 			const report = coverageReportSchema.assert(raw);
 			const keys = Object.keys(report);
 

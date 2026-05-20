@@ -34,6 +34,8 @@ const jestResultSchema = type({
 	testResults: "object[]",
 });
 
+const jestEnvelopeSchema = type("Record<string, unknown>");
+
 export function extractJsonFromOutput(output: string): string | undefined {
 	const lines = output.split("\n");
 	let braceCount = 0;
@@ -70,22 +72,12 @@ export function extractJsonFromOutput(output: string): string | undefined {
 }
 
 export function parseJestOutput(output: string): ParseResult {
-	const trimmed = output.trim();
-
-	if (trimmed.startsWith("{")) {
-		try {
-			return parseParsedOutput(JSON.parse(trimmed) as Record<string, unknown>);
-		} catch {
-			// Fall through to extract
-		}
-	}
-
-	const jsonString = extractJsonFromOutput(output);
-	if (jsonString === undefined) {
+	const candidate = findJestJsonCandidate(output);
+	if (candidate === undefined) {
 		throw new Error(`No valid Jest result JSON found in output, output was:\n${output}`);
 	}
 
-	return parseParsedOutput(JSON.parse(jsonString) as Record<string, unknown>);
+	return parseParsedOutput(jestEnvelopeSchema.assert(JSON.parse(candidate)));
 }
 
 function countBraces(line: string): number {
@@ -110,6 +102,15 @@ function isValidJson(text: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+function findJestJsonCandidate(output: string): string | undefined {
+	const trimmed = output.trim();
+	if (trimmed.startsWith("{") && isValidJson(trimmed)) {
+		return trimmed;
+	}
+
+	return extractJsonFromOutput(output);
 }
 
 const PROMISE_TRACE_HEADER = /^-- Promise\.Error\(/;

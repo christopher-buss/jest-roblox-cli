@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { evalLuauReturnLiterals } from "../luau/eval-literals.ts";
+import { evalLuauReturnLiterals, isAstStatBlock } from "../luau/eval-literals.ts";
 import parseAstLuauSource from "../luau/parse-ast.luau";
 
 let cachedTemporaryDirectory: string | undefined;
@@ -41,12 +41,16 @@ export function loadLuauConfig(filePath: string): Record<string, unknown> {
 		throw new Error(`Failed to parse AST JSON from Luau config ${filePath}`, { cause: err });
 	}
 
+	if (!isAstStatBlock(ast)) {
+		throw new Error(`Expected AST root with tag "block" from Luau config ${filePath}`);
+	}
+
 	const result = evalLuauReturnLiterals(ast);
-	if (typeof result !== "object" || result === null) {
+	if (!isPlainObject(result)) {
 		throw new Error(`Luau config ${filePath} must return a table`);
 	}
 
-	return result as Record<string, unknown>;
+	return result;
 }
 
 /**
@@ -60,6 +64,10 @@ export function findLuauConfigFile(directoryOrFile: string, cwd: string): string
 	}
 
 	return undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function getTemporaryDirectory(): string {

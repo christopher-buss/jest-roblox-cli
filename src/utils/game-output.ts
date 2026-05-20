@@ -1,7 +1,14 @@
+import { type } from "arktype";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { GameOutputEntry } from "../types/game-output.ts";
+
+const gameOutputEntriesSchema = type({
+	message: "string",
+	messageType: "number",
+	timestamp: "number",
+}).array();
 
 export function formatGameOutputNotice(filePath: string, entryCount: number): string {
 	if (entryCount === 0) {
@@ -17,12 +24,12 @@ export function parseGameOutput(raw: string | undefined): Array<GameOutputEntry>
 	}
 
 	try {
-		const parsed: unknown = JSON.parse(raw);
-		if (!Array.isArray(parsed) || parsed.length === 0) {
+		const parsed = gameOutputEntriesSchema(JSON.parse(raw));
+		if (parsed instanceof type.errors) {
 			return [];
 		}
 
-		return parsed as Array<GameOutputEntry>;
+		return parsed;
 	} catch {
 		return [];
 	}

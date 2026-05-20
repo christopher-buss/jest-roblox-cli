@@ -2,7 +2,7 @@ import type { AstStatBlock } from "@isentinel/luau-ast";
 
 import { describe, expect, it } from "vitest";
 
-import { evalLuauReturnLiterals } from "./eval-literals.ts";
+import { evalLuauReturnLiterals, isAstStatBlock } from "./eval-literals.ts";
 
 function makeBlock(...statements: Array<unknown>): AstStatBlock {
 	return {
@@ -155,13 +155,34 @@ describe(evalLuauReturnLiterals, () => {
 		expect(evalLuauReturnLiterals(root)).toStrictEqual({ x: 1 });
 	});
 
-	it("should throw when root is not an object", () => {
+	it("should throw when root has no statements array", () => {
 		expect.assertions(1);
 
-		expect(() => evalLuauReturnLiterals(null)).toThrowWithMessage(
-			Error,
-			"Config file has no return statement",
-		);
+		expect(() =>
+			evalLuauReturnLiterals({ tag: "block" } as unknown as AstStatBlock),
+		).toThrowWithMessage(Error, "Config file has no return statement");
+	});
+
+	describe(isAstStatBlock, () => {
+		it("should reject null", () => {
+			expect.assertions(1);
+			expect(isAstStatBlock(null)).toBeFalse();
+		});
+
+		it("should reject arrays", () => {
+			expect.assertions(1);
+			expect(isAstStatBlock([])).toBeFalse();
+		});
+
+		it("should reject non-block tag", () => {
+			expect.assertions(1);
+			expect(isAstStatBlock({ tag: "expr" })).toBeFalse();
+		});
+
+		it("should accept block-tagged objects", () => {
+			expect.assertions(1);
+			expect(isAstStatBlock({ tag: "block" })).toBeTrue();
+		});
 	});
 
 	it("should return undefined when return expression node is not an object", () => {

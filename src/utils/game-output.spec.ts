@@ -43,6 +43,14 @@ describe(parseGameOutput, () => {
 
 		expect(result).toBeEmpty();
 	});
+
+	it("should return empty array when JSON is parseable but does not match schema", () => {
+		expect.assertions(1);
+
+		const result = parseGameOutput(JSON.stringify([{ wrong: "shape" }]));
+
+		expect(result).toBeEmpty();
+	});
 });
 
 describe(writeGameOutput, () => {

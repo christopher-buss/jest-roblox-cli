@@ -1,5 +1,6 @@
 import { collectPaths, resolveNestedProjects } from "@isentinel/rojo-utils";
 
+import { type } from "arktype";
 import { getTsconfig } from "get-tsconfig";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -10,6 +11,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import type { CoverageRoot } from "../staging/synthesizer.ts";
 import { synthesize } from "../staging/synthesizer.ts";
 import type { RojoProject } from "../types/rojo.ts";
+import { rojoProjectSchema } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
@@ -191,10 +193,12 @@ function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: stri
 	// Auto-detect from Rojo project
 	try {
 		const resolvedPath = rojoProjectPath ?? findRojoProject(config);
-		const rojoProject = JSON.parse(
-			fs.readFileSync(resolvedPath, "utf-8"),
-		) as unknown as RojoProject;
+		const validated = rojoProjectSchema(JSON.parse(fs.readFileSync(resolvedPath, "utf-8")));
+		if (validated instanceof type.errors) {
+			throw new Error(validated.summary);
+		}
 
+		const rojoProject = validated;
 		const resolved = {
 			...rojoProject,
 			tree: resolveNestedProjects(rojoProject.tree, path.dirname(resolvedPath)),

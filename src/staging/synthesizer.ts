@@ -1,4 +1,4 @@
-import { loadRojoProject, resolveNestedProjects } from "@isentinel/rojo-utils";
+import { loadRojoProject } from "@isentinel/rojo-utils";
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -218,23 +218,16 @@ function synthesizeNoWrap(packages: Array<PackageDescriptor>): string {
 
 	// eslint-disable-next-line ts/no-non-null-assertion -- length-1 invariant
 	const descriptor = packages[0]!;
-
-	// loadRojoProject validates name/tree shape; raw JSON preserves top-level
-	// fields (gameId, placeId, globIgnorePaths, etc.) that the loader narrows
-	// away.
-	loadRojoProject(descriptor.rojoProjectPath);
-
-	const raw = JSON.parse(fs.readFileSync(descriptor.rojoProjectPath, "utf-8")) as Record<
-		string,
-		unknown
-	>;
-	const rawTree = raw["tree"] as RojoTreeNode;
-	const resolvedTree = resolveNestedProjects(rawTree, path.dirname(descriptor.rojoProjectPath));
-	const tree = absolutizePaths(resolvedTree, path.dirname(descriptor.rojoProjectPath), {
+	const project = loadRojoProject(descriptor.rojoProjectPath);
+	const tree = absolutizePaths(project.tree, path.dirname(descriptor.rojoProjectPath), {
 		coverageBase: descriptor.packageDirectory,
 		coverageRoots: descriptor.coverageRoots,
 	});
-	return stableStringify({ ...raw, tree });
+
+	// `raw` carries top-level fields (gameId, placeId, globIgnorePaths, etc.)
+	// that the narrow `RojoProject` shape strips; `tree` then overrides the
+	// raw unresolved tree with the loader's resolved version.
+	return stableStringify({ ...project.raw, tree });
 }
 
 function transformToFolder(node: RojoTreeNode): RojoTreeNode {

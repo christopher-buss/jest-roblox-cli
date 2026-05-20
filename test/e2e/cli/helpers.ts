@@ -148,26 +148,25 @@ export function createRbxtsFixtureSandbox(sourcePath: string): string {
 }
 
 function rewriteEscapingPaths(
-	node: unknown,
+	node: JSONValue,
 	sourceResolved: string,
 	sandboxResolved: string,
 ): void {
-	if (node === null || typeof node !== "object") {
+	if (node === null || typeof node !== "object" || Array.isArray(node)) {
 		return;
 	}
 
-	const record = node as Record<string, unknown>;
-	const value = record["$path"];
+	const value = node["$path"];
 	if (typeof value === "string" && !path.isAbsolute(value)) {
 		const absolute = path.resolve(sourceResolved, value);
 		const relativeFromSource = path.relative(sourceResolved, absolute);
 		if (relativeFromSource.startsWith("..") || path.isAbsolute(relativeFromSource)) {
 			const fromSandbox = path.relative(sandboxResolved, absolute).replaceAll("\\", "/");
-			record["$path"] = fromSandbox;
+			node["$path"] = fromSandbox;
 		}
 	}
 
-	for (const child of Object.values(record)) {
+	for (const child of Object.values(node)) {
 		rewriteEscapingPaths(child, sourceResolved, sandboxResolved);
 	}
 }
@@ -188,7 +187,7 @@ function absolutizeEscapingProjectPaths(sourceDirectory: string, sandboxDirector
 
 	const sourceResolved = path.resolve(sourceDirectory);
 	const sandboxResolved = path.resolve(sandboxDirectory);
-	const raw: unknown = JSON.parse(readFileSync(projectFile, "utf-8"));
+	const raw = JSON.parse(readFileSync(projectFile, "utf-8"));
 
 	rewriteEscapingPaths(raw, sourceResolved, sandboxResolved);
 	writeFileSync(projectFile, `${JSON.stringify(raw, null, "\t")}\n`);

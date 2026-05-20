@@ -10,7 +10,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
-import { MANIFEST_VERSION } from "./manifest.ts";
+import { MANIFEST_VERSION, manifestSchema } from "./manifest.ts";
 import { prepareWorkspaceCoverage } from "./workspace-prepare.ts";
 
 function sha256(content: string): string {
@@ -248,9 +248,9 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		const manifest = JSON.parse(
-			vol.readFileSync(result!.manifestPath, "utf-8") as string,
-		) as unknown as CoverageManifest;
+		const manifest = manifestSchema.assert(
+			JSON.parse(vol.readFileSync(result!.manifestPath, "utf-8") as string),
+		);
 		const expectedKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 
 		expect(Object.keys(manifest.files)).toContain(expectedKey);
@@ -714,9 +714,9 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		const manifest = JSON.parse(
-			vol.readFileSync(result!.manifestPath, "utf-8") as string,
-		) as unknown as CoverageManifest;
+		const manifest = manifestSchema.assert(
+			JSON.parse(vol.readFileSync(result!.manifestPath, "utf-8") as string),
+		);
 		const specKey = `${path.join(FOO_DIR, "out-test").replaceAll("\\", "/")}/src/foo.spec.luau`;
 
 		expect(Object.keys(manifest.nonInstrumentedFiles)).toContain(specKey);

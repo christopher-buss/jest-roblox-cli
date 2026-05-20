@@ -326,7 +326,7 @@ async function handleQueueRequest(options: {
 }): Promise<void> {
 	const { body, queueAdds, queueDiscards, queuePath, queues, response, updateItemSeq } = options;
 	const { queue, suffix } = queuePath;
-	const parsed: unknown = body === "" ? {} : JSON.parse(body);
+	const parsed = body === "" ? {} : JSON.parse(body);
 
 	switch (suffix) {
 		case "/items": {

@@ -15,7 +15,7 @@ const envelopeSchema = type({
 });
 
 export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
-	const raw: unknown = JSON.parse(jestOutput);
+	const raw = JSON.parse(jestOutput);
 	const envelope = envelopeSchema(raw);
 	if (envelope instanceof type.errors) {
 		return [{ jestOutput }];

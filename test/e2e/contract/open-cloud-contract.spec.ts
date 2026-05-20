@@ -197,7 +197,7 @@ function createHttpClient(apiKey: string): HttpClient {
 
 			const response = await fetch(url, fetchOptions);
 			const contentType = response.headers.get("content-type") ?? "";
-			const body: unknown = contentType.includes("application/json")
+			const body = contentType.includes("application/json")
 				? await response.json()
 				: await response.text();
 
@@ -297,7 +297,7 @@ function parseEnvelope(raw: string | undefined): typeof envelopeSchema.infer | u
 		return undefined;
 	}
 
-	const decoded: unknown = JSON.parse(raw);
+	const decoded = JSON.parse(raw);
 	const result = envelopeSchema(decoded);
 	if (result instanceof type.errors) {
 		return undefined;

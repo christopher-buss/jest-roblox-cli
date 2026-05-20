@@ -21,6 +21,7 @@ vi.mock(import("get-tsconfig"), async (importOriginal) => {
 	const actual = await importOriginal();
 	const nodeFs = await import("node:fs");
 	const nodePath = await import("node:path");
+	const { tsconfigShapeSchema } = await import("../config/tsconfig-schema.ts");
 	return fromAny({
 		...actual,
 		getTsconfig: (searchPath: string, configName = "tsconfig.json") => {
@@ -28,7 +29,7 @@ vi.mock(import("get-tsconfig"), async (importOriginal) => {
 			const filePath = nodePath.join(resolved, configName);
 			try {
 				const content = nodeFs.readFileSync(filePath, "utf-8");
-				return { config: JSON.parse(content) as unknown, path: filePath };
+				return { config: tsconfigShapeSchema.assert(JSON.parse(content)), path: filePath };
 			} catch {
 				return null;
 			}

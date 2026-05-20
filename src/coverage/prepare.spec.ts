@@ -37,6 +37,19 @@ const ROJO_PROJECT = {
 	},
 };
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readRojoProjectJson(text: string): Record<string, unknown> {
+	const parsed = JSON.parse(text);
+	if (!isPlainObject(parsed)) {
+		throw new Error("Expected rojo project to be a JSON object");
+	}
+
+	return parsed;
+}
+
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
 		...DEFAULT_CONFIG,
@@ -127,6 +140,20 @@ describe(prepareCoverage, () => {
 			const config = makeConfig();
 
 			expect(() => prepareCoverage(config)).toThrow(/Could not determine luauRoots/);
+		});
+
+		it("should fall back to tsconfig outDir when Rojo project has invalid schema", async () => {
+			expect.assertions(1);
+
+			seedFilesystem();
+			// Valid JSON, schema-violating shape — rojoProjectSchema rejects it,
+			// resolveLuauRootsWithRojo silently falls through to the tsconfig
+			// outDir path.
+			vol.writeFileSync("/project/default.project.json", JSON.stringify({ invalid: true }));
+			await setupMocks({ outDir: "out" });
+			const config = makeConfig();
+
+			expect(resolveLuauRoots(config)).toStrictEqual(["out"]);
 		});
 	});
 
@@ -268,9 +295,9 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			const written: Record<string, unknown> = JSON.parse(
+			const written = readRojoProjectJson(
 				vol.readFileSync(".jest-roblox/coverage/default.project.json", "utf-8") as string,
-			) as Record<string, unknown>;
+			);
 			const tree = written["tree"] as Record<string, Record<string, string>>;
 
 			// Matching path: absolute path inside the shadow dir.
@@ -313,10 +340,10 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			const written: Record<string, unknown> = JSON.parse(
+			const parsed = readRojoProjectJson(
 				vol.readFileSync(".jest-roblox/coverage/dev.project.json", "utf-8") as string,
-			) as Record<string, unknown>;
-			const tree = written["tree"] as Record<string, Record<string, string>>;
+			);
+			const tree = parsed["tree"] as Record<string, Record<string, string>>;
 
 			// $path "../out" resolves against "config" → absolute "out";
 			// luauRoot "out" resolves against rootDir "." → absolute "out";
@@ -367,12 +394,12 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			const written: Record<string, unknown> = JSON.parse(
+			const written = readRojoProjectJson(
 				vol.readFileSync(
 					".jest-roblox/coverage/development.project.json",
 					"utf-8",
 				) as string,
-			) as Record<string, unknown>;
+			);
 			const tree = written["tree"] as Record<string, Record<string, Record<string, string>>>;
 
 			// The nested $path: "default.project.json" is resolved to $path:

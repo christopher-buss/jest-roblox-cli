@@ -32,14 +32,14 @@ export function listPackages(workspaceRoot: string): Array<PackageInfo> {
 		for (const match of matches) {
 			const packageJsonPath = path.join(workspaceRoot, match);
 			const packageDirectory = path.dirname(packageJsonPath);
-			const raw: unknown = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+			const raw = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
 			if (
 				typeof raw === "object" &&
 				raw !== null &&
-				"name" in raw &&
-				typeof raw.name === "string"
+				!Array.isArray(raw) &&
+				typeof raw["name"] === "string"
 			) {
-				packages.push({ name: raw.name, packageDirectory });
+				packages.push({ name: raw["name"], packageDirectory });
 			}
 		}
 	}

@@ -90,16 +90,18 @@ export function instrumentRoot(
 		throw new Error("Failed to parse Luau files", { cause: err });
 	}
 
-	let fileList: Array<string>;
+	let parsed: JSONValue;
 	try {
-		fileList = JSON.parse(fileListJson) as Array<string>;
+		parsed = JSON.parse(fileListJson);
 	} catch (err) {
 		throw new Error("Failed to parse file list from lute", { cause: err });
 	}
 
-	if (!Array.isArray(fileList)) {
+	if (!Array.isArray(parsed) || !parsed.every((entry) => typeof entry === "string")) {
 		throw new Error("Expected file list array from lute");
 	}
+
+	const fileList: Array<string> = parsed;
 
 	const files: Record<string, InstrumentedFileRecord> = {};
 	const posixLuauRoot = normalizeWindowsPath(luauRoot);
@@ -117,11 +119,6 @@ export function instrumentRoot(
 			throw new Error(`Failed to read AST for ${relativePath}`, { cause: err });
 		}
 
-		// AST is already validated and stripped by parse-ast.luau, so we can
-		// assert its shape with a simple type assertion rather than a full
-		// schema validation. Additionally, to validate every field with a
-		// schema would be expensive given the size of the ASTs, and we want to
-		// avoid that overhead in the instrumentation process.
 		const ast = JSON.parse(astJson) as unknown as AstStatBlock;
 
 		const fileKey = normalizeWindowsPath(path.join(posixLuauRoot, relativePath));

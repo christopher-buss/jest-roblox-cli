@@ -245,7 +245,7 @@ async function runJobs(
 function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 	const rojoPath = path.resolve(config.rootDir, config.rojoProject ?? DEFAULT_ROJO_PROJECT);
 	const content = fs.readFileSync(rojoPath, "utf8");
-	const parsed: unknown = JSON.parse(content);
+	const parsed = JSON.parse(content);
 	const validated = rojoProjectSchema(parsed);
 	if (validated instanceof type.errors) {
 		throw new Error(`Invalid Rojo project: ${validated.summary}`);

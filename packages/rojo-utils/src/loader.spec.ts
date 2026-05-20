@@ -131,6 +131,22 @@ describe(loadRojoProject, () => {
 		}
 	});
 
+	it("should throw when project JSON is not an object", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-loader-test-"));
+		const projectPath = path.join(temporaryDirectory, "array.project.json");
+		fs.writeFileSync(projectPath, JSON.stringify([1, 2, 3]));
+
+		try {
+			expect(() => loadRojoProject(projectPath)).toThrow(
+				"Rojo project must be a JSON object",
+			);
+		} finally {
+			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		}
+	});
+
 	it("should throw when file does not exist", () => {
 		expect.assertions(1);
 

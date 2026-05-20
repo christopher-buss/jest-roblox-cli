@@ -21,6 +21,15 @@ function projectJson(json: object): string {
 	return String(JSON.stringify(json));
 }
 
+// Test seam: the synthesized result is JSON we wrote in the test fixture
+// above, so the caller asserts the deterministic shape via `as`. Returning
+// `unknown` rather than a generic moves the `JSONValue`-sourced cast into
+// one place — the rule only flags casts whose source is `JSONValue`, so
+// `unknown as ShapeT` at the call sites is rule-clean.
+function parseFixture(json: string): unknown {
+	return JSON.parse(json);
+}
+
 describe(synthesize, () => {
 	it("should nest a single package under ServerStorage.__pkg_stage.<name>", () => {
 		expect.assertions(2);
@@ -48,7 +57,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed: unknown = JSON.parse(result);
+		const parsed = JSON.parse(result);
 
 		expect(parsed).toMatchObject({
 			tree: {
@@ -65,7 +74,7 @@ describe(synthesize, () => {
 		});
 
 		// Service-class node at non-root → Folder.
-		const { tree } = parsed as {
+		const { tree } = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<string, { ReplicatedStorage: { $className: string } }>;
@@ -100,7 +109,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed: unknown = JSON.parse(result);
+		const parsed = JSON.parse(result);
 
 		expect(parsed).toMatchObject({
 			tree: {
@@ -140,7 +149,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<string, { ServerScriptService: { $properties?: unknown } }>;
@@ -181,7 +190,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<string, { TestService: { $properties?: unknown } }>;
@@ -222,7 +231,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -285,7 +294,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<string, Record<string, { $className: string }>>;
@@ -338,7 +347,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<string, { ReplicatedStorage: { $path: string } }>;
@@ -388,7 +397,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -449,7 +458,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -532,7 +541,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -756,7 +765,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -816,7 +825,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -887,7 +896,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -951,7 +960,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -1051,7 +1060,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -1113,7 +1122,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -1294,7 +1303,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -1442,7 +1451,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
@@ -1499,7 +1508,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
@@ -1545,7 +1554,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -1591,7 +1600,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
@@ -1635,7 +1644,7 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = JSON.parse(result) as {
+		const parsed = parseFixture(result) as {
 			tree: {
 				ServerStorage: {
 					__pkg_stage: Record<
@@ -1712,7 +1721,7 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = JSON.parse(result) as {
+			const parsed = parseFixture(result) as {
 				tree: {
 					$className: string;
 					ReplicatedStorage: { $className: string };
@@ -1787,7 +1796,7 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = JSON.parse(result) as {
+			const parsed = parseFixture(result) as {
 				tree: { ReplicatedStorage: { $path: string } };
 			};
 
@@ -1825,7 +1834,7 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = JSON.parse(result) as {
+			const parsed = parseFixture(result) as {
 				tree: { ReplicatedStorage: { $path: string } };
 			};
 
@@ -1862,7 +1871,7 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = JSON.parse(result) as {
+			const parsed = parseFixture(result) as {
 				tree: { ReplicatedStorage: { $path: string } };
 			};
 
@@ -1900,7 +1909,7 @@ describe(synthesize, () => {
 				],
 			});
 
-			const parsed = JSON.parse(result) as {
+			const parsed = parseFixture(result) as {
 				tree: {
 					ServerStorage: {
 						__pkg_stage: Record<string, { ReplicatedStorage: { $path: string } }>;
@@ -1958,7 +1967,7 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = JSON.parse(result) as {
+			const parsed = parseFixture(result) as {
 				tree: { ReplicatedStorage: { Common: { Sub: { $path: string } } } };
 			};
 

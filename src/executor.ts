@@ -17,6 +17,7 @@ import type {
 } from "./backends/interface.ts";
 import { applySnapshotFormatDefaults } from "./config/loader.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
+import { type TsconfigCompilerOptions, tsconfigShapeSchema } from "./config/tsconfig-schema.ts";
 import type { CoverageManifest } from "./coverage/manifest.ts";
 import { readManifest } from "./coverage/manifest.ts";
 import type { RawCoverageData } from "./coverage/types.ts";
@@ -103,12 +104,6 @@ interface ProcessProjectOptions {
 	version: string;
 }
 
-interface TsconfigCompilerOptions {
-	outDir?: string;
-	rootDir?: null | string;
-	rootDirs?: Array<string>;
-}
-
 export function isLuauProject(
 	testFiles: ReadonlyArray<string>,
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
@@ -126,10 +121,8 @@ export function isLuauProject(
 
 export function readTsconfigMapping(tsconfigPath: string): TsconfigDirectories | undefined {
 	try {
-		const raw = JSON.parse(fs.readFileSync(tsconfigPath, "utf-8")) as {
-			compilerOptions?: TsconfigCompilerOptions;
-		};
-		if (raw.compilerOptions === undefined) {
+		const raw = tsconfigShapeSchema(JSON.parse(fs.readFileSync(tsconfigPath, "utf-8")));
+		if (raw instanceof type.errors || raw.compilerOptions === undefined) {
 			return undefined;
 		}
 

@@ -17,3 +17,13 @@ export interface RojoProject {
 	servePort?: number;
 	tree: RojoTreeNode;
 }
+
+/**
+ * Result of `loadRojoProject` — the validated narrow shape plus the original
+ * parsed JSON. Callers that need top-level fields beyond name/servePort/tree
+ * (gameId, placeId, globIgnorePaths, etc.) read them from `raw` rather than
+ * re-parsing the project file.
+ */
+export interface LoadedRojoProject extends RojoProject {
+	raw: Record<string, unknown>;
+}

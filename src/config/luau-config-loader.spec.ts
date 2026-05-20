@@ -173,6 +173,19 @@ describe(loadLuauConfig, () => {
 		);
 	});
 
+	it("should throw when Lute returns an AST without the block tag", () => {
+		expect.assertions(1);
+
+		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
+		vi.mocked(fs.existsSync).mockReturnValue(false);
+		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify({ tag: "expr" }));
+
+		expect(() => loadLuauConfig("jest.config.luau")).toThrowWithMessage(
+			Error,
+			'Expected AST root with tag "block" from Luau config jest.config.luau',
+		);
+	});
+
 	it("should reuse cached temp directory on subsequent calls", () => {
 		expect.assertions(1);
 

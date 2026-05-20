@@ -68,7 +68,7 @@ const nonInstrumentedRecordSchema = type({
 	sourcePath: "string",
 }).as<NonInstrumentedFileRecord>();
 
-const manifestSchema = type({
+export const manifestSchema: type<CoverageManifest> = type({
 	"files": type({ "[string]": instrumentedFileRecordSchema }),
 	"generatedAt": "string",
 	"instrumenterVersion": "number",
