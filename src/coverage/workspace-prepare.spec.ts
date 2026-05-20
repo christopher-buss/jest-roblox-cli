@@ -1079,4 +1079,594 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(mocked).not.toHaveBeenCalled();
 		expect(result[0]?.coverageRoots).toStrictEqual([]);
 	});
+
+	// HAL-215: workspace coverage walked every rojo `$path` mount and
+	// instrumented every directory containing luau files — ignoring per-pkg
+	// `luauRoots` and `coveragePathIgnorePatterns` that single mode honors. The
+	// fix threads both knobs through `WorkspacePackageDescriptor`. These cases
+	// seed a multi-mount rojo tree (the user-owned `src/` + a vendored
+	// `vendored-packages/`) and pin the new descriptor fields' semantics.
+	describe("multi-$path rojo tree with per-pkg descriptor fields", () => {
+		const multiMountTree = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Packages: { $path: "vendored-packages" },
+				Src: { $path: "src" },
+			},
+		};
+
+		function seedMultiMount(): void {
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: multiMountTree,
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
+				[path.join(FOO_DIR, "vendored-packages/dep/init.luau")]: "local y = 2",
+			});
+		}
+
+		it("should short-circuit to descriptor.luauRoots when set, ignoring other rojo $path mounts", async () => {
+			expect.assertions(3);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			seedMultiMount();
+			const mocked = await mockInstrumentRoot();
+
+			const [result] = prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result?.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+
+			const manifest = JSON.parse(
+				vol.readFileSync(result!.manifestPath, "utf-8") as string,
+			) as unknown as CoverageManifest;
+
+			expect(manifest.luauRoots).toHaveLength(1);
+		});
+
+		it("should preserve existing behavior (walk every $path) when descriptor.luauRoots is undefined", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			seedMultiMount();
+			const mocked = await mockInstrumentRoot();
+
+			const [result] = prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledTimes(2);
+			expect(result?.coverageRoots.map((entry) => entry.luauRoot).sort()).toStrictEqual([
+				"src",
+				"vendored-packages",
+			]);
+		});
+
+		it("should drop off-tree luauRoot entries with a stderr warning", async () => {
+			expect.assertions(3);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			seedMultiMount();
+			const mocked = await mockInstrumentRoot();
+			const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+			const [result] = prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["build/out"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).not.toHaveBeenCalled();
+			expect(result?.coverageRoots).toStrictEqual([]);
+
+			const warnings = writeSpy.mock.calls.map(([chunk]) => String(chunk));
+
+			expect(
+				warnings.some(
+					(line) =>
+						line.includes('luauRoot "build/out"') && line.includes("@halcyon/foo"),
+				),
+			).toBeTrue();
+		});
+
+		it("should fall through to the rojo walk when descriptor.luauRoots is an empty array", async () => {
+			expect.assertions(1);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			seedMultiMount();
+			const mocked = await mockInstrumentRoot();
+
+			prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: [],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			// `[]` means auto-detect (matches single mode's `> 0` gate at
+			// prepare.ts:187). Both mounts get instrumented.
+			expect(mocked).toHaveBeenCalledTimes(2);
+		});
+
+		it("should fall back to workspace-root coveragePathIgnorePatterns when the descriptor field is undefined", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			seedMultiMount();
+			const mocked = await mockInstrumentRoot();
+
+			const [result] = prepareWorkspaceCoverage({
+				// Workspace-root config opts into a custom pattern; the
+				// descriptor below has no per-pkg override, so the matcher
+				// must fall back to this root value.
+				config: makeConfig({
+					coveragePathIgnorePatterns: ["**/vendored-packages/**"],
+				}),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result?.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+		});
+
+		it("should honor per-pkg coveragePathIgnorePatterns over workspace defaults", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			seedMultiMount();
+			const mocked = await mockInstrumentRoot();
+
+			const [result] = prepareWorkspaceCoverage({
+				// Workspace-root config has empty patterns — only the
+				// per-pkg override filters the vendored mount.
+				config: makeConfig({ coveragePathIgnorePatterns: [] }),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coveragePathIgnorePatterns: ["**/vendored-packages/**"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result?.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+		});
+
+		it("should accept luauRoots nested inside a $path mount", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// rojo mounts `src` at the parent level; the package opts into a
+			// narrower `luauRoot` underneath it. Exercises the
+			// `candidate.startsWith(mount/)` branch of `isOnRojoTree`.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { Src: { $path: "src" } },
+					},
+				}),
+				[path.join(FOO_DIR, "src/client/init.luau")]: "local x = 1",
+			});
+			const mocked = await mockInstrumentRoot();
+
+			const [result] = prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src/client"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result?.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual([
+				"src/client",
+			]);
+		});
+
+		it("should accept a luauRoot that contains a finer-grained $path mount", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// rojo mounts `src/client` only; the package opts into the
+			// broader `src` as its luauRoot. Exercises the
+			// `mount.startsWith(candidate/)` branch of `isOnRojoTree`.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { Client: { $path: "src/client" } },
+					},
+				}),
+				[path.join(FOO_DIR, "src/client/init.luau")]: "local y = 2",
+				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
+			});
+			const mocked = await mockInstrumentRoot();
+
+			const [result] = prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result?.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+		});
+
+		it("should deduplicate repeated luauRoots entries", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			seedMultiMount();
+			const mocked = await mockInstrumentRoot();
+
+			const [result] = prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src", "src"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result?.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+		});
+
+		it("should skip a luauRoot that is on the rojo tree but has no instrumentable files", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// rojo mounts `src` (with content) and `empty` (no luau files).
+			// `empty` is on-tree per `isOnRojoTree` but `containsLuauFiles`
+			// returns false; `isInstrumentableRoot` drops it.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							Empty: { $path: "empty" },
+							Src: { $path: "src" },
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "empty/README.md")]: "not a luau file",
+				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
+			});
+			const mocked = await mockInstrumentRoot();
+
+			const [result] = prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["empty", "src"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result?.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+		});
+
+		it("should cold-rebuild the shadow when luauRoots shrinks between runs", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			const packageShadow = path
+				.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
+				.replaceAll("\\", "/");
+			const staleVendoredShadow = path.join(packageShadow, "vendored-packages/dep/init.luau");
+			const sourceFileKey = `${path.join(FOO_DIR, "src").replaceAll("\\", "/")}/init.luau`;
+			const vendoredShadowDirectory = path.join(packageShadow, "vendored-packages");
+			const previousManifest: CoverageManifest = {
+				files: {
+					[sourceFileKey]: {
+						key: sourceFileKey,
+						coverageMapPath: `${sourceFileKey}.cov-map.json`,
+						instrumentedLuauPath: sourceFileKey,
+						originalLuauPath: sourceFileKey,
+						sourceHash: sha256("local x = 1"),
+						sourceMapPath: `${sourceFileKey}.map`,
+						statementCount: 1,
+					},
+				},
+				generatedAt: new Date().toISOString(),
+				instrumenterVersion: INSTRUMENTER_VERSION,
+				// Prior run instrumented BOTH mounts; the new run only lists
+				// `src`.
+				luauRoots: [
+					path.join(packageShadow, "src").replaceAll("\\", "/"),
+					path.join(packageShadow, "vendored-packages").replaceAll("\\", "/"),
+				],
+				nonInstrumentedFiles: {},
+				shadowDir: packageShadow,
+				version: MANIFEST_VERSION,
+			};
+
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({ name: "foo-test", tree: multiMountTree }),
+				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
+				[path.join(FOO_DIR, "vendored-packages/dep/init.luau")]: "local y = 2",
+				[path.join(packageShadow, "manifest.json")]: JSON.stringify(previousManifest),
+				// Stale shadow file from the prior mount that the new run drops.
+				[staleVendoredShadow]: "return {}",
+			});
+			await mockInstrumentRoot();
+
+			prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(vol.existsSync(staleVendoredShadow)).toBeFalse();
+			expect(vol.existsSync(vendoredShadowDirectory)).toBeFalse();
+		});
+
+		it("should cold-rebuild when luauRoots size matches but membership changes", async () => {
+			expect.assertions(1);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// Same cardinality, different members: prior manifest tracked
+			// `vendored-packages` but the new luauRoot is `src`. Exercises the
+			// `setsEqual` value-mismatch branch (size equal, content differs).
+			const packageShadow = path
+				.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
+				.replaceAll("\\", "/");
+			const staleVendoredShadow = path.join(packageShadow, "vendored-packages/dep/init.luau");
+			const previousFileKey = `${path.join(FOO_DIR, "vendored-packages").replaceAll("\\", "/")}/dep/init.luau`;
+			const previousManifest: CoverageManifest = {
+				files: {
+					[previousFileKey]: {
+						key: previousFileKey,
+						coverageMapPath: `${previousFileKey}.cov-map.json`,
+						instrumentedLuauPath: previousFileKey,
+						originalLuauPath: previousFileKey,
+						sourceHash: sha256("local y = 2"),
+						sourceMapPath: `${previousFileKey}.map`,
+						statementCount: 1,
+					},
+				},
+				generatedAt: new Date().toISOString(),
+				instrumenterVersion: INSTRUMENTER_VERSION,
+				luauRoots: [path.join(packageShadow, "vendored-packages").replaceAll("\\", "/")],
+				nonInstrumentedFiles: {},
+				shadowDir: packageShadow,
+				version: MANIFEST_VERSION,
+			};
+
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({ name: "foo-test", tree: multiMountTree }),
+				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
+				[path.join(FOO_DIR, "vendored-packages/dep/init.luau")]: "local y = 2",
+				[path.join(packageShadow, "manifest.json")]: JSON.stringify(previousManifest),
+				[staleVendoredShadow]: "return {}",
+			});
+			await mockInstrumentRoot();
+
+			prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(vol.existsSync(staleVendoredShadow)).toBeFalse();
+		});
+
+		it("should preserve the cache when luauRoots is unchanged between runs", async () => {
+			expect.assertions(1);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// Cache hit with matching luauRoots set: prior shadow survives and
+			// `useIncremental` stays `true`. Exercises the
+			// `setsEqual === true` branch.
+			const packageShadow = path
+				.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
+				.replaceAll("\\", "/");
+			const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
+			const previousManifest: CoverageManifest = {
+				files: {
+					[fileKey]: {
+						key: fileKey,
+						coverageMapPath: `${fileKey}.cov-map.json`,
+						instrumentedLuauPath: fileKey,
+						originalLuauPath: fileKey,
+						sourceHash: sha256("local x = 1"),
+						sourceMapPath: `${fileKey}.map`,
+						statementCount: 1,
+					},
+				},
+				generatedAt: new Date().toISOString(),
+				instrumenterVersion: INSTRUMENTER_VERSION,
+				luauRoots: [path.join(packageShadow, "out").replaceAll("\\", "/")],
+				nonInstrumentedFiles: {},
+				shadowDir: packageShadow,
+				version: MANIFEST_VERSION,
+			};
+
+			seedPackage(FOO_DIR);
+			vol.fromJSON({
+				[path.join(packageShadow, "manifest.json")]: JSON.stringify(previousManifest),
+				[path.join(packageShadow, "out/preserved.txt")]: "cache-survives",
+			});
+			await mockInstrumentRoot();
+
+			prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			// Cache preserved → rmSync did not fire, the marker is still there.
+			expect(vol.existsSync(path.join(packageShadow, "out/preserved.txt"))).toBeTrue();
+		});
+
+		it("should skip rojo $path entries that escape the package directory", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// `..` path escapes the package — the relative path starts with
+			// "..", which `buildRojoMountSet` drops. Combined with a per-pkg
+			// `luauRoots` that lists the absolute-equivalent root, this
+			// confirms the off-tree filter and the warning fire.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { External: { $path: "../sibling" } },
+					},
+				}),
+				[path.join(WORKSPACE_ROOT, "sibling/init.luau")]: "local x = 1",
+			});
+			await mockInstrumentRoot();
+			const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+			const [result] = prepareWorkspaceCoverage({
+				config: makeConfig(),
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["sibling"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(result?.coverageRoots).toStrictEqual([]);
+			expect(writeSpy).toHaveBeenCalledWith(
+				expect.stringContaining('luauRoot "sibling" in @halcyon/foo'),
+			);
+		});
+	});
 });

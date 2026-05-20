@@ -16,6 +16,7 @@ import type {
 	ProjectEntry,
 	ResolvedConfig,
 } from "./config/schema.ts";
+import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { createSetupResolver } from "./config/setup-resolver.ts";
 import { generateProjectStubs, STUB_FILENAME } from "./config/stubs.ts";
 import type { CoverageManifest } from "./coverage/manifest.ts";
@@ -363,8 +364,32 @@ async function loadPackages(input: {
 		// (then the package-default) when the package doesn't set it.
 		const rojoProject = packageConfig.rojoProject ?? config.rojoProject ?? ROJO_PROJECT_DEFAULT;
 
+		// Propagate per-pkg coverage knobs to the descriptor so
+		// `prepareWorkspaceCoverage` sees the merged values, not just the
+		// workspace-root config. Per-pkg overrides workspace-root: per HAL-215
+		// the workspace-prepare matcher was reading from the root config and
+		// silently dropping per-pkg patterns set via `jest.shared.ts` extends.
+		//
+		// `coveragePathIgnorePatterns` always resolves post-merge — both pkg
+		// and root carry the `DEFAULT_CONFIG` 6-pattern array when nothing
+		// explicit is set. Passing it unconditionally would make every
+		// descriptor "override" the root, dropping a workspace-root custom
+		// value for packages that wanted to inherit it. `resolveConfig`
+		// (loader.ts:42) builds via `Object.assign({}, DEFAULT_CONFIG, ...)`
+		// — when the package's `test` block omits the key, the field keeps
+		// the `DEFAULT_CONFIG` reference verbatim. Reference identity is the
+		// "user explicitly set this" signal; treat ref-equal as "inherit
+		// root" by leaving the descriptor field undefined.
+		const hasExplicitIgnore =
+			packageConfig.coveragePathIgnorePatterns !== DEFAULT_CONFIG.coveragePathIgnorePatterns;
 		loaded.push({
 			descriptor: {
+				...(hasExplicitIgnore
+					? { coveragePathIgnorePatterns: packageConfig.coveragePathIgnorePatterns }
+					: {}),
+				...(packageConfig.luauRoots !== undefined
+					? { luauRoots: packageConfig.luauRoots }
+					: {}),
 				name: info.name,
 				packageDirectory: info.packageDirectory,
 				rojoProjectPath: path.resolve(info.packageDirectory, rojoProject),

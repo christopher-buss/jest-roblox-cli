@@ -1,0 +1,11 @@
+{
+	"name": "vendored-mount-test",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Src": { "$path": "src" },
+			"Packages": { "$path": "vendored-packages" }
+		}
+	}
+}

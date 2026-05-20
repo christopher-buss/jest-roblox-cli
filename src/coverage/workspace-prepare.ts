@@ -25,6 +25,20 @@ const WORKSPACE_COVERAGE_DIR = ".jest-roblox/workspace";
 
 export interface WorkspacePackageDescriptor {
 	name: string;
+	/**
+	 * Per-package override for `coveragePathIgnorePatterns`. When undefined, the
+	 * workspace-root config's value is used. An empty array means "no ignore
+	 * patterns" (user opted out of every pattern, including workspace defaults).
+	 */
+	coveragePathIgnorePatterns?: Array<string>;
+	/**
+	 * Per-package override for `luauRoots`. When set to a non-empty array,
+	 * `discoverPackageLuauRoots` skips the rojo-tree walk and uses these roots
+	 * directly (after validating each entry against the rojo `$path` mounts).
+	 * An empty array or undefined falls back to the rojo walk — matches single
+	 * mode's `> 0` gate at `prepare.ts:resolveLuauRootsWithRojo`.
+	 */
+	luauRoots?: Array<string>;
 	packageDirectory: string;
 	rojoProjectPath: string;
 }
@@ -60,9 +74,16 @@ export function prepareWorkspaceCoverage(
 	options: PrepareWorkspaceCoverageOptions,
 ): Array<WorkspacePackageCoverage> {
 	const { config, packages, workspaceRoot } = options;
-	const matchesIgnored = createIgnoreMatcher(config.coveragePathIgnorePatterns);
+	// Hoist the workspace-default matcher so packages that don't override
+	// `coveragePathIgnorePatterns` reuse a single picomatch compile. The
+	// per-pkg branch builds its own matcher inside `prepareForPackage`.
+	const workspaceDefaultMatcher = createIgnoreMatcher(config.coveragePathIgnorePatterns);
 
 	return packages.map((descriptor) => {
+		const matchesIgnored =
+			descriptor.coveragePathIgnorePatterns !== undefined
+				? createIgnoreMatcher(descriptor.coveragePathIgnorePatterns)
+				: workspaceDefaultMatcher;
 		return prepareForPackage(descriptor, workspaceRoot, matchesIgnored, config);
 	});
 }
@@ -107,10 +128,40 @@ function isRbxtsIncludeRoot(directoryPath: string): boolean {
 	);
 }
 
-function discoverPackageLuauRoots(
-	descriptor: WorkspacePackageDescriptor,
+/**
+ * Common filter applied to every candidate coverage root regardless of how it
+ * was discovered (rojo walk or per-pkg `luauRoots`). Returns `true` when the
+ * directory should be instrumented.
+ *
+ * `isRbxtsIncludeRoot` (two `existsSync`s) precedes the recursive
+ * `containsLuauFiles` scan so include dirs short-circuit out before the deep
+ * walk.
+ */
+function isInstrumentableRoot(
+	absolutePath: string,
+	relativePath: string,
 	matchesIgnored: (filePath: string) => boolean,
-): Array<string> {
+): boolean {
+	if (matchesIgnored(relativePath)) {
+		return false;
+	}
+
+	if (!fs.existsSync(absolutePath)) {
+		return false;
+	}
+
+	if (!fs.statSync(absolutePath).isDirectory()) {
+		return false;
+	}
+
+	if (isRbxtsIncludeRoot(absolutePath)) {
+		return false;
+	}
+
+	return containsLuauFiles(absolutePath);
+}
+
+function collectRojoMountedPaths(descriptor: WorkspacePackageDescriptor): Array<string> {
 	const project = loadRojoProject(descriptor.rojoProjectPath);
 	const resolvedTree = resolveNestedProjects(
 		project.tree,
@@ -119,7 +170,96 @@ function discoverPackageLuauRoots(
 
 	const collected: Array<string> = [];
 	collectPaths(resolvedTree, collected);
+	return collected;
+}
 
+/**
+ * Returns the set of package-relative directory paths the rojo tree mounts.
+ * Used by the per-pkg `luauRoots` short-circuit to validate that each user-
+ * provided root corresponds to an actual `$path` mount — off-tree entries
+ * become orphan instrumented code (shadow built, never loaded at runtime).
+ */
+function buildRojoMountSet(
+	descriptor: WorkspacePackageDescriptor,
+	collected: Array<string>,
+): Set<string> {
+	const rojoDirectory = path.dirname(descriptor.rojoProjectPath);
+	const mounts = new Set<string>();
+	for (const rawPath of collected) {
+		const absolute = path.resolve(rojoDirectory, rawPath);
+		const relative = normalizeWindowsPath(path.relative(descriptor.packageDirectory, absolute));
+		if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+			continue;
+		}
+
+		mounts.add(relative);
+	}
+
+	return mounts;
+}
+
+/**
+ * True when `candidate` is a rojo `$path` mount or is nested under one. A
+ * `luauRoot: "src/Client"` is valid when rojo mounts either `src` or
+ * `src/Client` (the synthesized rojo project still resolves the shadow at
+ * runtime in either case).
+ */
+function isOnRojoTree(candidate: string, mounts: Set<string>): boolean {
+	for (const mount of mounts) {
+		if (candidate === mount) {
+			return true;
+		}
+
+		if (candidate.startsWith(`${mount}/`)) {
+			return true;
+		}
+
+		if (mount.startsWith(`${candidate}/`)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function discoverFromLuauRoots(
+	descriptor: WorkspacePackageDescriptor,
+	luauRoots: Array<string>,
+	matchesIgnored: (filePath: string) => boolean,
+): Array<string> {
+	const mounts = buildRojoMountSet(descriptor, collectRojoMountedPaths(descriptor));
+	const seen = new Set<string>();
+	const result: Array<string> = [];
+	for (const rawRoot of luauRoots) {
+		const relative = normalizeWindowsPath(rawRoot);
+		if (seen.has(relative)) {
+			continue;
+		}
+
+		if (!isOnRojoTree(relative, mounts)) {
+			process.stderr.write(
+				`Warning: luauRoot "${rawRoot}" in ${descriptor.name} does not correspond to any rojo $path mount; coverage will be skipped for this root.\n`,
+			);
+			continue;
+		}
+
+		const absolute = path.resolve(descriptor.packageDirectory, relative);
+		if (!isInstrumentableRoot(absolute, relative, matchesIgnored)) {
+			continue;
+		}
+
+		seen.add(relative);
+		result.push(relative);
+	}
+
+	return result;
+}
+
+function discoverFromRojoWalk(
+	descriptor: WorkspacePackageDescriptor,
+	matchesIgnored: (filePath: string) => boolean,
+): Array<string> {
+	const collected = collectRojoMountedPaths(descriptor);
 	const rojoDirectory = path.dirname(descriptor.rojoProjectPath);
 	const seen = new Set<string>();
 	const result: Array<string> = [];
@@ -133,17 +273,7 @@ function discoverPackageLuauRoots(
 			continue;
 		}
 
-		// `isRbxtsIncludeRoot` (two `existsSync`s) precedes the recursive
-		// `containsLuauFiles` scan so include dirs short-circuit out before
-		// the deep walk.
-		if (
-			matchesIgnored(relative) ||
-			!fs.existsSync(absolute) ||
-			!fs.statSync(absolute).isDirectory() ||
-			isRbxtsIncludeRoot(absolute) ||
-			!containsLuauFiles(absolute) ||
-			seen.has(relative)
-		) {
+		if (seen.has(relative) || !isInstrumentableRoot(absolute, relative, matchesIgnored)) {
 			continue;
 		}
 
@@ -152,6 +282,20 @@ function discoverPackageLuauRoots(
 	}
 
 	return result;
+}
+
+function discoverPackageLuauRoots(
+	descriptor: WorkspacePackageDescriptor,
+	matchesIgnored: (filePath: string) => boolean,
+): Array<string> {
+	// Short-circuit when the package opts into explicit luauRoots — mirrors
+	// single mode's `> 0` gate at `prepare.ts:resolveLuauRootsWithRojo:187`.
+	// Empty array falls through to the rojo walk (auto-detect).
+	if (descriptor.luauRoots !== undefined && descriptor.luauRoots.length > 0) {
+		return discoverFromLuauRoots(descriptor, descriptor.luauRoots, matchesIgnored);
+	}
+
+	return discoverFromRojoWalk(descriptor, matchesIgnored);
 }
 
 /**
@@ -206,6 +350,20 @@ function canUseIncremental(
 	return true;
 }
 
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+	if (a.size !== b.size) {
+		return false;
+	}
+
+	for (const value of a) {
+		if (!b.has(value)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 function prepareForPackage(
 	descriptor: WorkspacePackageDescriptor,
 	workspaceRoot: string,
@@ -222,7 +380,27 @@ function prepareForPackage(
 	const manifestPath = normalizeWindowsPath(path.join(packageShadowRoot, "manifest.json"));
 
 	const previousManifest = loadPackageManifest(manifestPath);
-	const useIncremental = canUseIncremental(previousManifest, config);
+	let useIncremental = canUseIncremental(previousManifest, config);
+
+	const luauRoots = discoverPackageLuauRoots(descriptor, matchesIgnored);
+
+	// HAL-215: when the user shrinks `luauRoots` (or adds new ignore patterns)
+	// between runs, previously-instrumented mounts disappear from the new set
+	// but their shadow files remain on disk. `prepareShadowRoot` only merges
+	// (cpSync), so a stale `vendored-packages/dep/init.luau` would survive
+	// into the redirected `$path` mount and the runtime would load it. Force
+	// a cold rebuild for that package so the rmSync below nukes the shadow.
+	if (useIncremental && previousManifest !== undefined) {
+		const computedShadowDirectories = new Set(
+			luauRoots.map((relative) =>
+				normalizeWindowsPath(path.join(packageShadowRoot, relative)),
+			),
+		);
+		const previousShadowDirectories = new Set(previousManifest.luauRoots);
+		if (!setsEqual(computedShadowDirectories, previousShadowDirectories)) {
+			useIncremental = false;
+		}
+	}
 
 	// Mirror prepareCoverage's cold-path nuke (prepare.ts) so files deleted
 	// from source between runs don't survive into the redirected `$path`
@@ -231,8 +409,6 @@ function prepareForPackage(
 	if (!useIncremental && fs.existsSync(packageShadowRoot)) {
 		fs.rmSync(packageShadowRoot, { recursive: true });
 	}
-
-	const luauRoots = discoverPackageLuauRoots(descriptor, matchesIgnored);
 
 	const coverageRoots: Array<WorkspaceCoverageRoot> = [];
 	const allFiles: Record<string, InstrumentedFileRecord> = {};

@@ -23,12 +23,24 @@ export interface CoverageRoot {
 export interface PackageDescriptor {
 	name: string;
 	/**
+	 * Per-package coverage ignore patterns, forwarded to
+	 * `prepareWorkspaceCoverage` so the matcher reflects the merged pkgConfig
+	 * instead of the workspace-root default. Not read by synthesis itself.
+	 */
+	coveragePathIgnorePatterns?: Array<string>;
+	/**
 	 * When set, $path entries that fall inside any listed `luauRoot` are
 	 * redirected to the corresponding `shadowDir` so the synthesized place
 	 * picks up instrumented sources for this package only. Packages without
 	 * `coverageRoots` use their original $path entries unchanged.
 	 */
 	coverageRoots?: Array<CoverageRoot>;
+	/**
+	 * Per-package `luauRoots`, forwarded to `prepareWorkspaceCoverage` so the
+	 * short-circuit honors the user-listed source dirs. Not read by synthesis
+	 * itself.
+	 */
+	luauRoots?: Array<string>;
 	packageDirectory: string;
 	rojoProjectPath: string;
 	stubMounts?: Array<StubMount>;

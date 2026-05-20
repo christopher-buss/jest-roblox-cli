@@ -1004,6 +1004,136 @@ describe(runWorkspace, () => {
 			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
 		});
 
+		// HAL-215: the per-package coverage knobs must reach the descriptor so
+		// `prepareWorkspaceCoverage`'s discovery and ignore-matcher both see the
+		// merged pkgConfig values. Pre-fix `loadPackages` only populated
+		// `name`/`packageDirectory`/`rojoProjectPath` and silently dropped
+		// `luauRoots` + `coveragePathIgnorePatterns`.
+		it("should propagate pkgConfig luauRoots and coveragePathIgnorePatterns onto the descriptor", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: {
+					...DEFAULT_CONFIG,
+					collectCoverage: true,
+					coveragePathIgnorePatterns: ["**/vendored-packages/**"],
+					luauRoots: ["src"],
+					rootDir: FOO_DIR,
+				},
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+				{
+					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					manifest: {
+						files: {},
+						generatedAt: "x",
+						instrumenterVersion: 2,
+						luauRoots: [],
+						nonInstrumentedFiles: {},
+						shadowDir: "/shadow",
+						version: MANIFEST_VERSION,
+					},
+					manifestPath: "/shadow/manifest.json",
+					pkg: "@halcyon/foo",
+				},
+			]);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ collectCoverage: true }),
+				config: makeConfig({ collectCoverage: true }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const descriptor = callArgs.packages[0]!;
+
+			expect(descriptor.luauRoots).toStrictEqual(["src"]);
+			expect(descriptor.coveragePathIgnorePatterns).toStrictEqual([
+				"**/vendored-packages/**",
+			]);
+		});
+
+		// HAL-215 follow-up: the descriptor must distinguish "user set
+		// coveragePathIgnorePatterns" from "default value present after merge"
+		// — otherwise every package looks like an override and the workspace
+		// root's custom patterns silently never apply. `resolveConfig`
+		// (loader.ts:42) preserves the `DEFAULT_CONFIG` array reference when
+		// the package config omits the key, so reference identity gates the
+		// descriptor field.
+		it("should leave descriptor.coveragePathIgnorePatterns undefined when the package config defaults", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			// Spread DEFAULT_CONFIG without overriding coveragePathIgnorePatterns
+			// — the field keeps the DEFAULT_CONFIG reference verbatim, which
+			// the loadPackages gate treats as "inherit root".
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
+			});
+
+			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+				{
+					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					manifest: {
+						files: {},
+						generatedAt: "x",
+						instrumenterVersion: 2,
+						luauRoots: [],
+						nonInstrumentedFiles: {},
+						shadowDir: "/shadow",
+						version: MANIFEST_VERSION,
+					},
+					manifestPath: "/shadow/manifest.json",
+					pkg: "@halcyon/foo",
+				},
+			]);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ collectCoverage: true }),
+				config: makeConfig({ collectCoverage: true }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const descriptor = callArgs.packages[0]!;
+
+			expect(descriptor.coveragePathIgnorePatterns).toBeUndefined();
+		});
+
 		it("should embed _coverage in the materializer config when collectCoverage is set", async () => {
 			expect.assertions(1);
 
