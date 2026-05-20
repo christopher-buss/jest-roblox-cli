@@ -25,6 +25,8 @@ vi.mock(import("node:child_process"));
 
 const ROOT = path.resolve("/repo");
 
+type NxResolveResult = "not-found" | "schema-violation" | { root: string };
+
 function packagePathFor(name: string): string {
 	return `packages/${name.replace(/^@[^/]+\//, "")}`;
 }
@@ -50,6 +52,42 @@ function turboItem(
 	path: string;
 } {
 	return { name, path: relativePath };
+}
+
+// Route execFileSync mock calls between `nx show projects` and per-project
+// `nx show project <name>`. Linux platforms only — on Windows the args are
+// wrapped in `cmd /c "<command> <quoted args>"`, so `args[0]` is `/d`, not
+// `show`, and this helper's routing falls through. Any Windows nx test must
+// set up `execFileSync` manually and inspect the inner `/c` string.
+function mockNxResponses(
+	affected: Array<string>,
+	responsesByName: Record<string, NxResolveResult>,
+): void {
+	vi.mocked(cp.execFileSync).mockImplementation((...callArgs) => {
+		const args = callArgs[1] ?? [];
+		if (args[0] === "show" && args[1] === "projects") {
+			return JSON.stringify(affected);
+		}
+
+		if (args[0] === "show" && args[1] === "project" && args[2] !== undefined) {
+			const name = args[2];
+			const entry = responsesByName[name];
+			if (entry === undefined || entry === "not-found") {
+				throw Object.assign(new Error("nx exit 1"), {
+					stderr: `Cannot find project '${name}'`,
+					stdout: "",
+				});
+			}
+
+			if (entry === "schema-violation") {
+				return JSON.stringify({ name, type: "library" });
+			}
+
+			return JSON.stringify({ name, root: entry.root, type: "library" });
+		}
+
+		throw new Error(`unexpected nx args: ${args.join(" ")}`);
+	});
 }
 
 describe(getAffectedPackages, () => {
@@ -344,7 +382,7 @@ describe(getAffectedPackages, () => {
 			[shimPath]: "#!/usr/bin/env node\n",
 			...seedRobloxWorkspace(["proj-a"]),
 		});
-		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify(["proj-a"]));
+		mockNxResponses(["proj-a"], { "proj-a": { root: packagePathFor("proj-a") } });
 
 		getAffectedPackages(ROOT, "develop");
 
@@ -364,7 +402,7 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "nx.json")]: "{}",
 			...seedRobloxWorkspace(["proj-a"]),
 		});
-		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify(["proj-a"]));
+		mockNxResponses(["proj-a"], { "proj-a": { root: packagePathFor("proj-a") } });
 
 		getAffectedPackages(ROOT, "develop");
 
@@ -376,7 +414,7 @@ describe(getAffectedPackages, () => {
 	});
 
 	it("should shell out to nx when nx.json is present and parse the project list", () => {
-		expect.assertions(2);
+		expect.assertions(4);
 
 		stubPlatform("linux");
 		vol.reset();
@@ -384,13 +422,28 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "nx.json")]: "{}",
 			...seedRobloxWorkspace(["proj-a", "proj-b"]),
 		});
-
-		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify(["proj-a", "proj-b"]));
+		mockNxResponses(["proj-a", "proj-b"], {
+			"proj-a": { root: packagePathFor("proj-a") },
+			"proj-b": { root: packagePathFor("proj-b") },
+		});
 
 		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual(["proj-a", "proj-b"]);
 		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
 			"nx",
 			["show", "projects", "--affected", "--base=develop", "--json"],
+			expect.objectContaining({ cwd: ROOT }),
+		);
+		// Per-project calls: pin the exact arg shape so a refactor that
+		// shuffles the args (e.g. `["show", "project", "--json", name]`) gets
+		// caught here instead of failing only against the real nx CLI.
+		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
+			"nx",
+			["show", "project", "proj-a", "--json"],
+			expect.objectContaining({ cwd: ROOT }),
+		);
+		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
+			"nx",
+			["show", "project", "proj-b", "--json"],
 			expect.objectContaining({ cwd: ROOT }),
 		);
 	});
@@ -439,19 +492,131 @@ describe(getAffectedPackages, () => {
 		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
 	});
 
-	it("should silently drop nx project names that don't map to a workspace package", () => {
+	it("should keep nx projects whose nx name differs from package.json name", () => {
+		// Regression: nx project names live in a separate namespace from
+		// `package.json.name`. Resolving via pnpm-workspace.yaml would silently
+		// drop affected projects whose two names diverge, causing a false-green
+		// CI run. Use `nx show project <name>` to ask nx itself for the root,
+		// then check jest.config.* there.
 		expect.assertions(1);
 
+		stubPlatform("linux");
 		vol.reset();
 		vol.fromJSON({
+			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
+			[path.join(ROOT, "apps/foo/package.json")]: '{"name":"@org/foo"}',
 			[path.join(ROOT, "nx.json")]: "{}",
-			...seedRobloxWorkspace(["@org/foo"]),
 		});
-		vi.mocked(cp.execFileSync).mockReturnValue(
-			JSON.stringify(["@org/foo", "stale-nx-project"]),
-		);
+		mockNxResponses(["foo"], { foo: { root: "apps/foo" } });
 
-		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual(["@org/foo"]);
+		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual(["foo"]);
+	});
+
+	it("should drop nx projects whose root has no jest.config.*", () => {
+		expect.assertions(1);
+
+		stubPlatform("linux");
+		vol.reset();
+		vol.fromJSON({
+			[path.join(ROOT, "apps/plain/package.json")]: '{"name":"plain"}',
+			[path.join(ROOT, "nx.json")]: "{}",
+		});
+		mockNxResponses(["plain"], { plain: { root: "apps/plain" } });
+
+		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual([]);
+	});
+
+	it("should throw when 'nx show project' output is missing root, mentioning the project name", () => {
+		expect.assertions(2);
+
+		stubPlatform("linux");
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
+		mockNxResponses(["foo"], { foo: "schema-violation" });
+
+		function act(): unknown {
+			return getAffectedPackages(ROOT, "develop");
+		}
+
+		expect(act).toThrow(/nx show project "foo"/);
+		expect(act).toThrow(/root/);
+	});
+
+	it("should surface the project name when 'nx show project' fails", () => {
+		// Loud failure on resolver drift — no silent under-coverage. nx
+		// reporting an affected project it can't subsequently locate is a
+		// real inconsistency the user needs to see.
+		expect.assertions(1);
+
+		stubPlatform("linux");
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
+		mockNxResponses(["ghost"], { ghost: "not-found" });
+
+		expect(() => getAffectedPackages(ROOT, "develop")).toThrow(/nx show project "ghost"/);
+	});
+
+	it("should surface the project name when 'nx show project' returns non-JSON", () => {
+		// nx's own stderr already mentions the name on failure, but
+		// parseJson's error doesn't know about names — wrap so the name is
+		// in the message regardless of failure mode.
+		expect.assertions(1);
+
+		stubPlatform("linux");
+		vol.reset();
+		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
+		vi.mocked(cp.execFileSync).mockImplementation((...callArgs) => {
+			const args = callArgs[1] ?? [];
+			if (args[0] === "show" && args[1] === "projects") {
+				return JSON.stringify(["weird"]);
+			}
+
+			if (args[0] === "show" && args[1] === "project") {
+				return "Welcome to nx!\nnot-json-at-all";
+			}
+
+			throw new Error(`unexpected args: ${args.join(" ")}`);
+		});
+
+		expect(() => getAffectedPackages(ROOT, "develop")).toThrow(/nx show project "weird"/);
+	});
+
+	it("should route per-project 'nx show project' calls through cmd.exe on Windows", () => {
+		expect.assertions(3);
+
+		stubPlatform("win32");
+		vol.reset();
+		vol.fromJSON({
+			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
+			[path.join(ROOT, "nx.json")]: "{}",
+		});
+		// mockNxResponses can't be used here — Windows wraps the args in
+		// `cmd /c "..."` so its arg-routing falls through. Hand-mock by
+		// inspecting the inner /c string.
+		vi.mocked(cp.execFileSync).mockImplementation((...callArgs) => {
+			const args = callArgs[1] ?? [];
+			const inner = typeof args[3] === "string" ? args[3] : "";
+			if (inner.includes('"projects"')) {
+				return JSON.stringify(["foo"]);
+			}
+
+			if (inner.includes('"project"')) {
+				return JSON.stringify({ name: "foo", root: "apps/foo", type: "library" });
+			}
+
+			throw new Error(`unexpected inner: ${inner}`);
+		});
+
+		getAffectedPackages(ROOT, "develop");
+
+		const { calls } = vi.mocked(cp.execFileSync).mock;
+
+		expect(calls).toHaveLength(2);
+
+		const [perProjectFile, perProjectArgs] = calls[1]!;
+
+		expect(perProjectFile).toBe("cmd.exe");
+		expect(perProjectArgs?.[3]).toBe('"nx "show" "project" "foo" "--json""');
 	});
 
 	it("should silently drop turbo items whose path no longer exists on disk", () => {
@@ -476,16 +641,17 @@ describe(getAffectedPackages, () => {
 		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
 	});
 
-	it("should return an empty list for empty nx output without reading pnpm-workspace.yaml", () => {
-		// No pnpm-workspace.yaml is staged — listPackages would throw if
-		// called. An empty affected set must short-circuit before that.
-		expect.assertions(1);
+	it("should short-circuit empty nx output without firing any 'nx show project' calls", () => {
+		// Common CI case: nothing affected. Per-project resolution is wasted
+		// work when there's nothing to resolve.
+		expect.assertions(2);
 
 		vol.reset();
 		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
 		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify([]));
 
 		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual([]);
+		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledOnce();
 	});
 
 	it("should accept any jest.config.<ext> as the marker", () => {

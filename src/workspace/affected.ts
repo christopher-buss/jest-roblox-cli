@@ -1,11 +1,11 @@
 import { type } from "arktype";
+import assert from "node:assert";
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
 import { NX_MARKER, TURBO_MARKER } from "./discovery.ts";
-import { listPackages } from "./package-resolver.ts";
 
 const JEST_CONFIG_MARKER = /^jest\.config\.[^.]+$/;
 
@@ -46,6 +46,11 @@ const turboLsOutputSchema = type({
 });
 
 const nxShowProjectsOutputSchema = type("string[]");
+
+// `nx show project <name> --json` returns the full project config — name,
+// root, source-root, targets, tags, etc. We only need `root`; tolerate the
+// rest so nx version drift doesn't break us.
+const nxShowProjectOutputSchema = type({ root: "string" });
 
 // cspell:words metacharacter
 // On Windows we invoke cmd.exe explicitly (see runTool), so any shell
@@ -92,12 +97,22 @@ export function getAffectedPackages(workspaceRoot: string, ref: string): Array<s
 	}
 
 	if (fs.existsSync(path.join(workspaceRoot, NX_MARKER))) {
-		const stdout = runTool(
-			"nx",
-			["show", "projects", "--affected", `--base=${ref}`, "--json"],
-			workspaceRoot,
+		// nx project names live in a separate namespace from
+		// `package.json.name`, so we can't map them via pnpm-workspace.yaml
+		// without false-green-ing affected projects whose two names diverge.
+		// Ask nx itself for each project's root via `nx show project --json`
+		// and check for jest.config.* there. Mirrors the turbo path, which
+		// gets `path` for free from `turbo ls`.
+		const affected = parseNxOutput(
+			runTool(
+				"nx",
+				["show", "projects", "--affected", `--base=${ref}`, "--json"],
+				workspaceRoot,
+			),
 		);
-		return filterJestRobloxByName(workspaceRoot, parseNxOutput(stdout));
+		return affected.filter((name) => {
+			return hasJestConfig(path.join(workspaceRoot, nxProjectRoot(workspaceRoot, name)));
+		});
 	}
 
 	throw new Error(
@@ -213,28 +228,27 @@ function parseNxOutput(stdout: string): Array<string> {
 	return validated;
 }
 
-// nx's `show projects --affected` returns project names only — no path, so
-// we map each name to its directory via pnpm-workspace.yaml and keep only
-// those with a jest.config.*. The turbo path above doesn't go through here
-// because turbo's JSON already includes each package's `path`, letting us
-// skip the workspace round-trip entirely.
-//
-// Anything else (non-Roblox packages, nx project names that don't match a
-// package.json name, etc.) is dropped silently — workspaces commonly contain
-// non-jest tooling/libs we don't run.
-function filterJestRobloxByName(workspaceRoot: string, names: Array<string>): Array<string> {
-	if (names.length === 0) {
-		// Avoid the pnpm-workspace.yaml read + glob walk when there's nothing
-		// to filter. Common in CI where most pushes touch zero packages.
-		return names;
+// Ask nx itself where a project lives. Errors surface with the project name
+// in the message regardless of failure mode (exec failure, non-JSON output,
+// schema mismatch) — nx reporting an affected project it can't subsequently
+// locate is a real inconsistency the user needs to see, not silently drop.
+function nxProjectRoot(workspaceRoot: string, name: string): string {
+	const errorContext = `nx show project ${JSON.stringify(name)}`;
+	let parsed: unknown;
+	try {
+		const stdout = runTool("nx", ["show", "project", name, "--json"], workspaceRoot);
+		parsed = parseJson(stdout, "nx");
+	} catch (err) {
+		// Both runTool and parseJson surface failures as Error instances —
+		// no need to defend against non-Error throws.
+		assert(err instanceof Error);
+		throw new Error(`${errorContext}: ${err.message}`, { cause: err });
 	}
 
-	const directoryByName = new Map(
-		listPackages(workspaceRoot).map((info) => [info.name, info.packageDirectory]),
-	);
+	const validated = nxShowProjectOutputSchema(parsed);
+	if (validated instanceof type.errors) {
+		throw new Error(`${errorContext}: missing root in output (${validated.summary})`);
+	}
 
-	return names.filter((name) => {
-		const directory = directoryByName.get(name);
-		return directory !== undefined && hasJestConfig(directory);
-	});
+	return validated.root;
 }
