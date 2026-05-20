@@ -77,6 +77,7 @@ function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): Moc
 						JSON.stringify({
 							gameOutput: reply.gameOutput ?? JSON.stringify([]),
 							jestOutput,
+							protocolVersion: 2,
 							request_id: message.request_id,
 							type: "results",
 						}),
@@ -89,6 +90,112 @@ function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): Moc
 	wss.emit("connection", socket);
 	return socket;
 }
+
+describe("protocol version handshake", () => {
+	it("should include protocolVersion in the run_tests payload", async () => {
+		expect.assertions(1);
+
+		const backend = new StudioBackend({ port: 0 });
+		const promise = backend.runTests(singleJobOptions);
+
+		const wss = getLastCreatedServer()!;
+		const socket = new MockWebSocket();
+		let captured: undefined | { protocolVersion?: number };
+
+		socket.send.mockImplementation((data) => {
+			captured = JSON.parse(data) as { protocolVersion?: number };
+			queueMicrotask(() => {
+				socket.emit(
+					"message",
+					Buffer.from(
+						JSON.stringify({
+							gameOutput: "[]",
+							jestOutput: envelope([
+								{ elapsedMs: 1, jestOutput: successResult() },
+							]),
+							protocolVersion: 2,
+							request_id: (JSON.parse(data) as { request_id: string }).request_id,
+							type: "results",
+						}),
+					),
+				);
+			});
+		});
+
+		wss.emit("connection", socket);
+		await promise;
+
+		expect(captured?.protocolVersion).toBeTypeOf("number");
+	});
+
+	it("should reject a stale v1 plugin response that omits protocolVersion echo", async () => {
+		expect.assertions(1);
+
+		// A pre-v2 plugin would ignore the request-side `protocolVersion`
+		// and return a valid-looking results envelope without echoing it.
+		// Schema rejection on the response surfaces this as the standard
+		// "Invalid plugin message" error rather than running with no
+		// runtime injection.
+		const backend = new StudioBackend({ port: 0 });
+		const promise = backend.runTests(singleJobOptions);
+
+		const wss = getLastCreatedServer()!;
+		const socket = new MockWebSocket();
+
+		socket.send.mockImplementation((data) => {
+			const { request_id } = JSON.parse(data) as { request_id: string };
+			queueMicrotask(() => {
+				socket.emit(
+					"message",
+					Buffer.from(
+						JSON.stringify({
+							gameOutput: "[]",
+							jestOutput: envelope([{ jestOutput: successResult() }]),
+							request_id,
+							type: "results",
+							// no protocolVersion — simulating stale plugin
+						}),
+					),
+				);
+			});
+		});
+
+		wss.emit("connection", socket);
+
+		await expect(promise).rejects.toThrow(/invalid plugin message/i);
+	});
+
+	it("should throw a clear upgrade error on version_mismatch response", async () => {
+		expect.assertions(1);
+
+		const backend = new StudioBackend({ port: 0 });
+		const promise = backend.runTests(singleJobOptions);
+
+		const wss = getLastCreatedServer()!;
+		const socket = new MockWebSocket();
+
+		socket.send.mockImplementation((data) => {
+			const { request_id } = JSON.parse(data) as { request_id: string };
+			queueMicrotask(() => {
+				socket.emit(
+					"message",
+					Buffer.from(
+						JSON.stringify({
+							actualVersion: 1,
+							expectedVersion: 2,
+							request_id,
+							type: "version_mismatch",
+						}),
+					),
+				);
+			});
+		});
+
+		wss.emit("connection", socket);
+
+		await expect(promise).rejects.toThrow(/protocol version mismatch/i);
+	});
+});
 
 describe(StudioBackend, () => {
 	it("should send one envelope carrying a configs array with one entry per job", async () => {
@@ -119,6 +226,7 @@ describe(StudioBackend, () => {
 								{ elapsedMs: 10, jestOutput: successResult() },
 								{ elapsedMs: 20, jestOutput: successResult() },
 							]),
+							protocolVersion: 2,
 							request_id: message.request_id,
 							type: "results",
 						}),
@@ -272,6 +380,7 @@ describe(StudioBackend, () => {
 									}),
 								},
 							]),
+							protocolVersion: 2,
 							request_id: message.request_id,
 							type: "results",
 						}),
@@ -360,6 +469,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: "wrong",
+							protocolVersion: 2,
 							request_id: "wrong-id",
 							type: "results",
 						}),
@@ -370,6 +480,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: envelope([{ jestOutput: successResult() }]),
+							protocolVersion: 2,
 							request_id: message.request_id,
 							type: "results",
 						}),

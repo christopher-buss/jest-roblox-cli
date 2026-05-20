@@ -28,12 +28,33 @@ interface StudioOptions {
 	timeout?: number;
 }
 
-const pluginMessageSchema = type({
+/**
+ * Plugin/CLI protocol version. Must match `PROTOCOL_VERSION` in
+ * `plugin/src/init.server.luau`. Increment when the runtime contract
+ * changes (e.g. runtime-injection payload shape). Stale plugins return
+ * `version_mismatch` explicitly OR (legacy plugins predating v2) return a
+ * `results` envelope that fails schema validation because the
+ * `protocolVersion` echo is missing — either way the CLI surfaces a clean
+ * upgrade error instead of running with stale semantics.
+ */
+const STUDIO_PROTOCOL_VERSION = 2;
+
+const pluginResultSchema = type({
 	"gameOutput?": "string",
 	"jestOutput": "string",
+	"protocolVersion": "number == 2",
 	"request_id": "string",
 	"type": "'results'",
 });
+
+const pluginVersionMismatchSchema = type({
+	"actualVersion": "number",
+	"expectedVersion": "number",
+	"request_id": "string",
+	"type": "'version_mismatch'",
+});
+
+const pluginMessageSchema = pluginResultSchema.or(pluginVersionMismatchSchema);
 
 type PluginMessage = typeof pluginMessageSchema.infer;
 
@@ -83,10 +104,27 @@ export class StudioBackend implements Backend {
 	): Promise<BackendResult> {
 		const requestId = randomUUID();
 		const configs = jobs.map((job) => buildJestArgv(job));
+		// Filtered injection targets per job. The plugin's Run Mode runner
+		// uses this list (NOT `cfg.projects`) so mounts where Rojo already
+		// syncs a user-authored `jest.config.luau` are not injected over.
+		const runtimeStubMounts = jobs.map((job) => job.runtimeInjectionPaths ?? []);
 
 		const executionStart = Date.now();
-		const message = await this.waitForResult(wss, requestId, configs, existingSocket);
+		const message = await this.waitForResult(
+			wss,
+			requestId,
+			configs,
+			runtimeStubMounts,
+			existingSocket,
+		);
 		const executionMs = Date.now() - executionStart;
+
+		if (message.type === "version_mismatch") {
+			throw new Error(
+				`Studio plugin protocol version mismatch: plugin reported v${message.actualVersion.toString()}, CLI expected v${message.expectedVersion.toString()}. ` +
+					"Update the jest-roblox Studio plugin to match this CLI version.",
+			);
+		}
 
 		const entries = parseEnvelope(message.jestOutput);
 		if (entries.length !== jobs.length) {
@@ -106,6 +144,7 @@ export class StudioBackend implements Backend {
 		wss: WebSocketServer,
 		requestId: string,
 		configs: Array<JestArgv>,
+		runtimeStubMounts: Array<Array<string>>,
 		existingSocket?: WebSocket,
 	): Promise<PluginMessage> {
 		return new Promise((resolve, reject) => {
@@ -118,7 +157,9 @@ export class StudioBackend implements Backend {
 					JSON.stringify({
 						action: "run_tests",
 						config: { configs },
+						protocolVersion: STUDIO_PROTOCOL_VERSION,
 						request_id: requestId,
+						runtimeStubMounts,
 					}),
 				);
 

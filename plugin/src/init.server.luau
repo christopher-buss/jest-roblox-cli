@@ -11,6 +11,13 @@ end
 local WEBSOCKET_URL = "ws://localhost:3001"
 local RECONNECT_DELAY = 0.1
 
+-- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
+-- `src/backends/studio.ts`. Bumped when the runtime contract changes (e.g.
+-- runtime-injection payload shape). The plugin rejects mismatched CLI
+-- versions with a `version_mismatch` response so users see a clear upgrade
+-- message rather than running with stale behaviour or an opaque timeout.
+local PROTOCOL_VERSION = 2
+
 local IsDebug = ReplicatedStorage:GetAttribute("JEST_ROBLOX_DEBUG") == true
 ReplicatedStorage:GetAttributeChangedSignal("JEST_ROBLOX_DEBUG"):Connect(function(): ()
 	IsDebug = ReplicatedStorage:GetAttribute("JEST_ROBLOX_DEBUG") == true
@@ -96,12 +103,38 @@ local function connect(): ()
 			end
 
 			if message.action == "run_tests" then
+				-- Version handshake: reject a missing or mismatched
+				-- `protocolVersion` synchronously so the user sees an
+				-- upgrade message rather than stale-semantics behaviour.
+				local clientVersion = if typeof(message.protocolVersion) == "number"
+					then message.protocolVersion
+					else nil
+				if clientVersion ~= PROTOCOL_VERSION then
+					warn(
+						"[jest-roblox] Protocol version mismatch — CLI v"
+							.. tostring(clientVersion)
+							.. ", plugin v"
+							.. tostring(PROTOCOL_VERSION)
+					)
+					ws:Send(HttpService:JSONEncode({
+						type = "version_mismatch",
+						actualVersion = PROTOCOL_VERSION,
+						expectedVersion = clientVersion or 0,
+						request_id = message.request_id,
+					}))
+					return
+				end
+
 				print("[jest-roblox] Running tests via StudioTestService...")
 
 				local runOk, result = pcall(function(): any
 					return StudioTestService:ExecuteRunModeAsync({
 						test = true,
 						config = message.config,
+						-- Filtered injection targets (parallel to configs)
+						-- so the Run Mode runner skips mounts that already
+						-- have a user-authored jest.config on disk.
+						runtimeStubMounts = message.runtimeStubMounts,
 					})
 				end)
 
@@ -109,6 +142,7 @@ local function connect(): ()
 					warn("[jest-roblox] ExecuteRunModeAsync failed: " .. tostring(result))
 					ws:Send(HttpService:JSONEncode({
 						type = "results",
+						protocolVersion = PROTOCOL_VERSION,
 						request_id = message.request_id,
 						jestOutput = HttpService:JSONEncode({
 							success = false,
@@ -121,6 +155,11 @@ local function connect(): ()
 
 				ws:Send(HttpService:JSONEncode({
 					type = "results",
+					-- Echo the protocol version. A stale plugin that ignored
+					-- the request-side version would also omit the echo, so
+					-- the CLI's schema validation rejects it as malformed
+					-- rather than treating it as a valid v1 success.
+					protocolVersion = PROTOCOL_VERSION,
 					request_id = message.request_id,
 					jestOutput = result.jestOutput or HttpService:JSONEncode({
 						success = false,

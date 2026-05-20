@@ -18,7 +18,12 @@ import type {
 } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { createSetupResolver } from "./config/setup-resolver.ts";
-import { generateProjectStubs, STUB_FILENAME } from "./config/stubs.ts";
+import {
+	cleanLeftoverStubs,
+	generateProjectStubs,
+	hasUserAuthoredConfig,
+	STUB_FILENAME,
+} from "./config/stubs.ts";
 import type { CoverageManifest } from "./coverage/manifest.ts";
 import {
 	prepareWorkspaceCoverage,
@@ -188,6 +193,26 @@ export async function runWorkspace(
 			: new Map<string, WorkspacePackageCoverage>();
 
 	const liveProjects = liveProjectsByPackage(pending);
+
+	// Pre-flight cleanup: walks live projects' known mount paths in each
+	// package source tree and removes marker-bearing leftover stubs from
+	// pre-refactor multi-project runs. Without this, the synthesizer's
+	// `assertNoSourceCollision` would reject them and re-trigger the
+	// original cross-mode bug this refactor exists to fix.
+	for (const ctx of filteredContexts) {
+		const live = liveProjects.get(ctx.info.name) ?? new Set<string>();
+		const liveProjectsForPkg = ctx.projects.filter((project) =>
+			live.has(project.displayName),
+		);
+		const cleaned = cleanLeftoverStubs(liveProjectsForPkg, ctx.info.packageDirectory);
+		if (cleaned.length > 0) {
+			process.stderr.write(
+				`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s) from ${ctx.info.name}:\n` +
+					cleaned.map((p) => `  ${p}\n`).join(""),
+			);
+		}
+	}
+
 	const descriptorsWithStubs = writeStubsAndBuildDescriptors(filteredContexts, liveProjects).map(
 		(descriptor) => {
 			const coverage = coverageByPackage.get(descriptor.name);
@@ -722,13 +747,25 @@ function writeStubsAndBuildDescriptors(
 ): Array<PackageDescriptor> {
 	return contexts.map((ctx) => {
 		const live = liveProjects.get(ctx.info.name) ?? new Set<string>();
-		const projectsForStubs = ctx.projects.filter((project) => live.has(project.displayName));
+		const liveProjectsForPkg = ctx.projects.filter((project) =>
+			live.has(project.displayName),
+		);
 
-		generateProjectStubs(projectsForStubs, ctx.info.packageDirectory, ctx.cacheRoot);
+		// `generateProjectStubs` skips per-mount when the user already has
+		// a `jest.config.luau` on disk at that mount, so pass the full
+		// live list. The `stubMounts` loop below applies the same filter
+		// so we only emit `$path` references for mounts that actually got
+		// a cache stub written.
+		generateProjectStubs(liveProjectsForPkg, ctx.info.packageDirectory, ctx.cacheRoot);
 
 		const stubMounts: Array<StubMount> = [];
-		for (const project of projectsForStubs) {
+		for (const project of liveProjectsForPkg) {
 			for (const mount of project.rojoMounts) {
+				const sourceMount = path.resolve(ctx.info.packageDirectory, mount.fsPath);
+				if (hasUserAuthoredConfig(sourceMount)) {
+					continue;
+				}
+
 				stubMounts.push({
 					absStubPath: path.resolve(ctx.cacheRoot, mount.fsPath, STUB_FILENAME),
 					dataModelPath: mount.dataModelPath,

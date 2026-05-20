@@ -16,12 +16,18 @@ import {
 	type ResolvedConfig,
 } from "../config/schema.ts";
 import { createSetupResolver } from "../config/setup-resolver.ts";
-import { generateProjectStubs, syncStubsToShadowDirectory } from "../config/stubs.ts";
+import {
+	cleanLeftoverStubs,
+	generateProjectStubs,
+	hasUserAuthoredConfig,
+	syncStubsToShadowDirectory,
+} from "../config/stubs.ts";
 import { MANIFEST_VERSION } from "../coverage/manifest.ts";
 import { prepareCoverage } from "../coverage/prepare.ts";
 import { type ExecuteResult, runProjects } from "../executor.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import { synthesize } from "../staging/synthesizer.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { runMultiProject } from "./multi.ts";
 
@@ -40,12 +46,15 @@ vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("../executor"));
 vi.mock(import("../coverage/prepare"));
 vi.mock(import("../typecheck/runner"));
+vi.mock(import("../staging/synthesizer"));
 
 const mocks = {
 	buildWithRojo: vi.mocked(buildWithRojo),
+	cleanLeftoverStubs: vi.mocked(cleanLeftoverStubs),
 	createSetupResolver: vi.mocked(createSetupResolver),
 	filterProjectsByFiles: vi.mocked(filterProjectsByFiles),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
+	hasUserAuthoredConfig: vi.mocked(hasUserAuthoredConfig),
 	narrowConfigByFiles: vi.mocked(narrowConfigByFiles),
 	prepareCoverage: vi.mocked(prepareCoverage),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
@@ -53,6 +62,7 @@ const mocks = {
 	runProjects: vi.mocked(runProjects),
 	runTypecheck: vi.mocked(runTypecheck),
 	syncStubsToShadowDirectory: vi.mocked(syncStubsToShadowDirectory),
+	synthesize: vi.mocked(synthesize),
 };
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -152,6 +162,15 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	]);
 	mocks.createSetupResolver.mockReturnValue((input) => input);
 	mocks.generateProjectStubs.mockReturnValue(undefined);
+	// `cleanLeftoverStubs` returns the list of paths it cleaned. Mock to
+	// empty for tests that don't seed leftover stubs.
+	mocks.cleanLeftoverStubs.mockReturnValue([]);
+	// Default: no user-authored configs exist on disk. Tests that want to
+	// exercise the user-authored skip branches override per-call.
+	mocks.hasUserAuthoredConfig.mockReturnValue(false);
+	mocks.synthesize.mockReturnValue(
+		JSON.stringify({ name: "synth", tree: { $className: "DataModel" } }),
+	);
 	mocks.resolveBackend.mockResolvedValue(makeBackend("studio"));
 	mocks.runProjects.mockImplementation(async (input) => {
 		return {
@@ -257,10 +276,33 @@ describe(runMultiProject, () => {
 		expect(result.mode).toBe("multi");
 	});
 
-	it("should call buildWithRojo when coverage is disabled", async () => {
+	it("should default rojoProject for the open-cloud synthesizer build when unset", async () => {
 		expect.assertions(1);
 
+		const { config } = setupDefaults({ rojoProject: undefined });
+		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
+		seedProjectFiles();
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		// The synthesizer is called with the user's rojoProjectPath; when
+		// the config's `rojoProject` is undefined the path should resolve
+		// to `<rootDir>/default.project.json`.
+		const synthArgs = mocks.synthesize.mock.calls[0]![0];
+		expect(synthArgs.packages[0]!.rojoProjectPath).toContain("default.project.json");
+	});
+
+	it("should call buildWithRojo when coverage is disabled and backend is open-cloud", async () => {
+		expect.assertions(2);
+
 		const { config } = setupDefaults();
+		// Studio skips the place build (it uses the runtime injector).
+		// Place build only runs for open-cloud + no-coverage.
+		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		seedProjectFiles();
 
 		await runMultiProject({
@@ -270,6 +312,25 @@ describe(runMultiProject, () => {
 		});
 
 		expect(mocks.buildWithRojo).toHaveBeenCalledOnce();
+		expect(mocks.synthesize).toHaveBeenCalledOnce();
+	});
+
+	it("should skip buildWithRojo entirely when backend is studio", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults();
+		// Default backend in setupDefaults is studio; reaffirm explicitly.
+		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("studio"));
+		seedProjectFiles();
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(mocks.buildWithRojo).not.toHaveBeenCalled();
+		expect(mocks.synthesize).not.toHaveBeenCalled();
 	});
 
 	it("should skip buildWithRojo and prepare coverage when collectCoverage is true", async () => {
@@ -331,9 +392,11 @@ describe(runMultiProject, () => {
 			rawProjects: [makeProjectEntry("client")],
 		});
 
+		// Coverage sync source is the cacheRoot, not rootDir. Stubs live
+		// in `.jest-roblox/cache`; the coverage shadow mirrors from there.
 		expect(mocks.syncStubsToShadowDirectory).toHaveBeenCalledWith(
 			expect.any(Array),
-			"/test",
+			expect.stringMatching(/[\\/]\.jest-roblox[\\/]cache$/),
 			".jest-roblox/coverage",
 		);
 	});
@@ -707,5 +770,55 @@ describe(runMultiProject, () => {
 			}),
 		).rejects.toBe(error);
 		expect(backend.close).toHaveBeenCalledOnce();
+	});
+
+	it("should emit a stderr notice listing the leftover stubs cleaned", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults();
+		mocks.cleanLeftoverStubs.mockReturnValueOnce([
+			"/test/src/client/jest.config.luau",
+			"/test/src/server/jest.config.luau",
+		]);
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		seedProjectFiles();
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(stderr).toHaveBeenCalledOnce();
+		const written = stderr.mock.calls[0]![0] as string;
+		expect(written).toContain("cleaned 2 leftover stub(s)");
+
+		stderr.mockRestore();
+	});
+
+	it("should skip stubMounts and runtimeInjectionPaths for mounts with user-authored configs", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults();
+		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
+		// Pretend the user authored a config at every mount on disk.
+		mocks.hasUserAuthoredConfig.mockReturnValue(true);
+		seedProjectFiles();
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		// Synthesizer still runs (it's open-cloud + no-coverage) but with
+		// zero stubMounts because hasUserAuthoredConfig was true at every
+		// mount. The synth.project.json would contain no `$path` injections.
+		const synthArgs = mocks.synthesize.mock.calls[0]![0];
+		expect(synthArgs.packages[0]!.stubMounts).toStrictEqual([]);
+
+		// `runtimeInjectionPaths` on the job is also empty for the same reason.
+		const jobs = mocks.runProjects.mock.calls[0]![0].projects;
+		expect(jobs[0]!.runtimeInjectionPaths).toStrictEqual([]);
 	});
 });

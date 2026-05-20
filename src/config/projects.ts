@@ -257,8 +257,7 @@ export async function resolveAllProjects(
 
 	for (const entry of entries) {
 		if (typeof entry === "string") {
-			const loaded = await loadProjectConfigFile(entry, cwd);
-			projects.push(loaded);
+			projects.push(await loadProjectConfigFile(entry, cwd));
 		} else {
 			projects.push(entry.test);
 		}

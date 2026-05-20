@@ -250,17 +250,56 @@ local function encodeExecutionError(err: any): string
 	})
 end
 
+-- Per-config hooks. Studio passes `beforeConfig` to inject the current
+-- config's `jest.config` ModuleScripts and `afterConfig` to destroy them
+-- before the next config runs. Per-config (not upfront-all) avoids
+-- nested-project DataModel contamination where configs at e.g.
+-- `ReplicatedStorage` and `ReplicatedStorage/Foo` would both have stubs
+-- present simultaneously and Jest's parent-traversal config lookup could
+-- resolve the wrong one. Open-cloud passes no hooks — its stubs are baked
+-- into the place file by the synthesizer.
+type RunHooks = {
+	beforeConfig: ((cfg: Config, index: number) -> ())?,
+	afterConfig: ((cfg: Config, index: number) -> ())?,
+}
+
 -- TODO(runner-tests): dogfood harness for Runner.runProjects
 function module.runProjects(
 	callingScript: LuaSourceContainer,
-	configs: { Config }
+	configs: { Config },
+	hooks: RunHooks?
 ): { ProjectEntry }
 	local entries: { ProjectEntry } = {}
 
 	for index, cfg in configs do
 		local start = os.clock()
-		local ok, jestOutput, gameOutput = pcall(module.run, callingScript, cfg)
+		local beforeOk: boolean, beforeErr: any = true, nil
+		if hooks and hooks.beforeConfig then
+			-- beforeConfig runs inside pcall too: a failed injection
+			-- mid-mount must still trigger afterConfig so partially-
+			-- parented stubs get destroyed. Without pcall, a throw would
+			-- propagate out and afterConfig would never fire.
+			beforeOk, beforeErr = pcall(hooks.beforeConfig, cfg, index)
+		end
+
+		local ok: boolean, jestOutput: any, gameOutput: any = false, nil, nil
+		if beforeOk then
+			ok, jestOutput, gameOutput = pcall(module.run, callingScript, cfg)
+		else
+			jestOutput = beforeErr
+		end
 		local elapsedMs = math.floor((os.clock() - start) * 1000)
+
+		-- Always run afterConfig, even on failure — cleanup must be
+		-- unconditional so injected ModuleScripts don't leak into the next
+		-- iteration when Jest (or the beforeConfig itself) throws partway
+		-- through.
+		if hooks and hooks.afterConfig then
+			local cleanupOk, cleanupErr = pcall(hooks.afterConfig, cfg, index)
+			if not cleanupOk then
+				warn("Runner afterConfig hook threw: " .. tostring(cleanupErr))
+			end
+		end
 
 		if ok then
 			entries[index] = {

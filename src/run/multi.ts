@@ -3,6 +3,7 @@ import { resolveNestedProjects } from "@isentinel/rojo-utils";
 import { type } from "arktype";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackend } from "../backends/auto.ts";
@@ -12,12 +13,19 @@ import { narrowConfigByFiles } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
-import { generateProjectStubs, syncStubsToShadowDirectory } from "../config/stubs.ts";
+import {
+	cleanLeftoverStubs,
+	generateProjectStubs,
+	hasUserAuthoredConfig,
+	STUB_FILENAME,
+	syncStubsToShadowDirectory,
+} from "../config/stubs.ts";
 import { deriveCoverageFromIncludes } from "../coverage/derive-coverage-from.ts";
 import { mergeRawCoverage } from "../coverage/merge-raw-coverage.ts";
 import { prepareCoverage } from "../coverage/prepare.ts";
 import type { RawCoverageData } from "../coverage/types.ts";
 import { runProjects } from "../executor.ts";
+import { synthesize, type StubMount } from "../staging/synthesizer.ts";
 import { combineSourceMappers, type SourceMapper } from "../source-mapper/index.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
@@ -39,6 +47,9 @@ interface PendingJob {
 	config: ResolvedConfig;
 	displayColor?: string;
 	displayName: string;
+	/** Mount paths the Studio runner should inject `jest.config` into; empty
+	 * when every mount already has a user-authored config on disk. */
+	runtimeInjectionPaths: Array<string>;
 	runtimeFiles: Array<string>;
 }
 
@@ -84,20 +95,80 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 		rootConfig.rootDir,
 	);
 
-	generateProjectStubs(projects, rootConfig.rootDir);
+	// Stubs land in `.jest-roblox/cache/` instead of the user's source
+	// tree. Open-cloud builds the place from a synthesizer-produced
+	// project that mounts those cache stubs via `$path` named-children;
+	// studio skips the place build entirely and the plugin's Run Mode
+	// runner materializes `jest.config` ModuleScripts in DataModel from
+	// the JSON configs.
+	const cacheRoot = path.resolve(rootConfig.rootDir, ".jest-roblox", "cache");
 
-	if (!rootConfig.collectCoverage) {
-		const rojoProjectPath = path.resolve(
+	// Pre-flight cleanup mirrors workspace behaviour: upgraders coming
+	// from a pre-refactor version may have marker-bearing leftover stubs
+	// in their source tree. The synthesizer's `assertNoSourceCollision`
+	// and the plugin's runtime `FindFirstChild` check would both block
+	// the run otherwise.
+	const cleaned = cleanLeftoverStubs(projects, rootConfig.rootDir);
+	if (cleaned.length > 0) {
+		process.stderr.write(
+			`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s):\n` +
+				cleaned.map((p) => `  ${p}\n`).join(""),
+		);
+	}
+
+	generateProjectStubs(projects, rootConfig.rootDir, cacheRoot);
+
+	const { effectiveConfig, preCoverageMs } = prepareMultiProjectCoverage(
+		rootConfig,
+		projects,
+		cacheRoot,
+	);
+	const backend = await resolveBackend(cli, effectiveConfig);
+	const parallel = effectiveParallelForBackend(effectiveConfig.parallel, backend);
+
+	if (!rootConfig.collectCoverage && backend.kind === "open-cloud") {
+		const userRojoProjectPath = path.resolve(
 			rootConfig.rootDir,
 			rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
 		);
 		const placeFilePath = path.resolve(rootConfig.rootDir, rootConfig.placeFile);
-		buildWithRojo(rojoProjectPath, placeFilePath);
-	}
+		// Per-mount FS check decides whether to inject. A TS string-entry
+		// may or may not have a compiled `.luau` at the mount yet —
+		// trust the filesystem rather than the entry shape.
+		const stubMounts: Array<StubMount> = [];
+		for (const project of projects) {
+			for (const mount of project.rojoMounts) {
+				const sourceMount = path.resolve(rootConfig.rootDir, mount.fsPath);
+				if (hasUserAuthoredConfig(sourceMount)) {
+					continue;
+				}
 
-	const { effectiveConfig, preCoverageMs } = prepareMultiProjectCoverage(rootConfig, projects);
-	const backend = await resolveBackend(cli, effectiveConfig);
-	const parallel = effectiveParallelForBackend(effectiveConfig.parallel, backend);
+				stubMounts.push({
+					absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
+					dataModelPath: mount.dataModelPath,
+				});
+			}
+		}
+
+		const synthProjectPath = path.resolve(cacheRoot, "synth.project.json");
+		fs.mkdirSync(path.dirname(synthProjectPath), { recursive: true });
+		fs.writeFileSync(
+			synthProjectPath,
+			synthesize({
+				packages: [
+					{
+						name: "multi-project",
+						packageDirectory: rootConfig.rootDir,
+						rojoProjectPath: userRojoProjectPath,
+						stubMounts,
+					},
+				],
+				wrap: false,
+			}),
+			"utf8",
+		);
+		buildWithRojo(synthProjectPath, placeFilePath);
+	}
 
 	const { allTypeTestFiles, pendingJobs } = collectPendingJobs({
 		cliFiles: cli.files,
@@ -189,11 +260,26 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 			continue;
 		}
 
+		// Same per-mount FS filter as the synthesizer's stubMounts loop:
+		// drop mounts where a user-authored `jest.config.luau` already
+		// exists. The runtime injector mustn't parent a duplicate
+		// `jest.config` over a Rojo-synced user file.
+		const runtimeInjectionPaths: Array<string> = [];
+		for (const mount of project.rojoMounts) {
+			const sourceMount = path.resolve(rootConfig.rootDir, mount.fsPath);
+			if (hasUserAuthoredConfig(sourceMount)) {
+				continue;
+			}
+
+			runtimeInjectionPaths.push(mount.dataModelPath);
+		}
+
 		pendingJobs.push({
 			config: projConfig,
 			displayColor: project.displayColor,
 			displayName: project.displayName,
 			runtimeFiles,
+			runtimeInjectionPaths,
 		});
 	}
 
@@ -221,6 +307,7 @@ async function runJobs(
 					config: pending.config,
 					displayColor: pending.displayColor,
 					displayName: pending.displayName,
+					runtimeInjectionPaths: pending.runtimeInjectionPaths,
 					testFiles: pending.runtimeFiles,
 				};
 			}),
@@ -257,6 +344,7 @@ function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 function prepareMultiProjectCoverage(
 	rootConfig: ResolvedConfig,
 	projects: Array<ResolvedProjectConfig>,
+	cacheRoot: string,
 ): { effectiveConfig: ResolvedConfig; preCoverageMs: number } {
 	if (!rootConfig.collectCoverage) {
 		return { effectiveConfig: rootConfig, preCoverageMs: 0 };
@@ -264,7 +352,11 @@ function prepareMultiProjectCoverage(
 
 	const start = Date.now();
 	const { placeFile } = prepareCoverage(rootConfig, (shadowDirectory) => {
-		return syncStubsToShadowDirectory(projects, rootConfig.rootDir, shadowDirectory);
+		// Mirror cache stubs into the shadow tree. The source tree is
+		// clean post-refactor (stubs land in `cacheRoot`, not `rootDir`),
+		// so without this the coverage place would build without any
+		// `jest.config` ModuleScripts.
+		return syncStubsToShadowDirectory(projects, cacheRoot, shadowDirectory);
 	});
 	return {
 		effectiveConfig: { ...rootConfig, placeFile },

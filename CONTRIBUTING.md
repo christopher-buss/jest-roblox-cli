@@ -16,11 +16,24 @@ pnpm typecheck     # Check types
 
 ## Test
 
+A few specs (anything that transitively imports `src/test-script.ts`) need
+the bundled Luau test runner present on disk. Build it once before running
+those specs:
+
+```bash
+pnpm build:bundle             # Produces src/test-runner.bundled.luau
+```
+
+Then:
+
 ```bash
 vitest run                    # All tests
 vitest run src/formatters     # One folder
 vitest run src/cli.spec.ts    # One file
 ```
+
+Specs that don't touch `test-script.ts` (e.g. `src/config/`, `src/staging/`)
+run without the bundle.
 
 ## Lint
 

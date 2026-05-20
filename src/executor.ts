@@ -76,6 +76,8 @@ export interface ProjectInput {
 	displayColor?: string;
 	displayName?: string;
 	pkg?: string;
+	/** Studio-only: forwarded to `ProjectJob.runtimeInjectionPaths`. */
+	runtimeInjectionPaths?: Array<string>;
 	testFiles: Array<string>;
 }
 
@@ -764,6 +766,7 @@ function buildProjectJob(parameters: ProjectInput): ProjectJob {
 		displayColor: parameters.displayColor,
 		displayName: parameters.displayName ?? "",
 		pkg: parameters.pkg,
+		runtimeInjectionPaths: parameters.runtimeInjectionPaths,
 		testFiles: parameters.testFiles,
 	};
 }

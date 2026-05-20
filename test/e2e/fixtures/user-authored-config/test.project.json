@@ -1,0 +1,11 @@
+{
+	"name": "user-authored-config-e2e",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"A": { "$path": "src/a" },
+			"B": { "$path": "src/b" }
+		}
+	}
+}

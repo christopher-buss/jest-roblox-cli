@@ -224,6 +224,10 @@ function synthesizeNoWrap(packages: Array<PackageDescriptor>): string {
 		coverageRoots: descriptor.coverageRoots,
 	});
 
+	// Inject in no-wrap mode too so single-package callers (multi-project +
+	// open-cloud) share the same `$path` named-child mounting workspace uses.
+	injectStubMounts(tree, descriptor.stubMounts);
+
 	// `raw` carries top-level fields (gameId, placeId, globIgnorePaths, etc.)
 	// that the narrow `RojoProject` shape strips; `tree` then overrides the
 	// raw unresolved tree with the loader's resolved version.
@@ -348,6 +352,17 @@ function injectStubMounts(root: RojoTreeNode, stubMounts: Array<StubMount> | und
 	for (const mount of stubMounts) {
 		const leaf = walkToLeaf(root, mount.dataModelPath);
 		assertNoSourceCollision(leaf, mount.dataModelPath);
+		// Structural collision: the user's project tree already declares a
+		// `jest.config` named-child at this leaf (e.g. they mounted a
+		// config explicitly via `$path`). Refusing to overwrite catches
+		// non-filesystem conflicts the source-collision check can't see.
+		if (leaf[STUB_INJECTION_KEY] !== undefined) {
+			throw new ConfigError(
+				`stubMount at "${mount.dataModelPath}" would overwrite an existing "${STUB_INJECTION_KEY}" child already declared in the project tree. ` +
+					"Either remove the explicit declaration from your .project.json, or declare the project via a string entry in `projects: [...]` so jest-roblox treats your config as canonical.",
+			);
+		}
+
 		leaf[STUB_INJECTION_KEY] = {
 			$path: normalizeWindowsPath(mount.absStubPath),
 		};

@@ -28,6 +28,20 @@ export interface ProjectJob {
 	 * `displayName` alone.
 	 */
 	pkg?: string;
+	/**
+	 * Studio-only: filtered list of DataModel paths that should receive
+	 * runtime `jest.config` ModuleScript injection. The CLI excludes mount
+	 * paths where a user-authored `jest.config.luau` already exists on
+	 * disk (synced by Rojo); injecting over those would either overwrite
+	 * the canonical config or trigger the plugin's structural collision
+	 * check. The Studio backend forwards this array (parallel to
+	 * `configs`) as `runtimeStubMounts[i]` in the WebSocket payload; the
+	 * plugin's Run Mode runner iterates only this list, never the
+	 * unfiltered `cfg.projects`. Empty is meaningful — the project has no
+	 * mounts needing runtime injection. Open-cloud backend ignores this
+	 * field; it bakes stubs into the place file via the synthesizer.
+	 */
+	runtimeInjectionPaths?: Array<string>;
 	testFiles: Array<string>;
 }
 
