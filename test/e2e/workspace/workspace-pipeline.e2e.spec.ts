@@ -57,13 +57,11 @@ describe("live workspace pipeline", () => {
 			// Refactor invariant: auto-stubs never land in source mount paths.
 			// The cache stub at `.jest-roblox/cache/<mount>/jest.config.luau`
 			// is canonical; the source-tree mount must stay clean.
-			expect(fs.existsSync(path.join(sandbox, "out/shared/jest.config.luau"))).toBe(false);
-			expect(fs.existsSync(path.join(sandbox, "out/server/jest.config.luau"))).toBe(false);
+			expect(fs.existsSync(path.join(sandbox, "out/shared/jest.config.luau"))).toBeFalse();
+			expect(fs.existsSync(path.join(sandbox, "out/server/jest.config.luau"))).toBeFalse();
 			expect(
-				fs.existsSync(
-					path.join(sandbox, ".jest-roblox/cache/out/shared/jest.config.luau"),
-				),
-			).toBe(true);
+				fs.existsSync(path.join(sandbox, ".jest-roblox/cache/out/shared/jest.config.luau")),
+			).toBeTrue();
 		},
 		RUN_TIMEOUT_MS + 5000,
 	);
@@ -268,7 +266,7 @@ describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
 			// Pre-flight cleanup removed the marker-bearing file before the
 			// synthesizer's `assertNoSourceCollision` got to look at it.
-			expect(fs.existsSync(leftoverPath)).toBe(false);
+			expect(fs.existsSync(leftoverPath)).toBeFalse();
 			// Notice format is fixed by `workspace-runner.ts:209-212`.
 			expect(result.stderr).toContain("cleaned 1 leftover stub(s) from @e2e/foo");
 			// Server-side: the run actually reached backend dispatch (guards

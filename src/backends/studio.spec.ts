@@ -18,9 +18,13 @@ const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.ho
 
 vi.mock(import("ws"), async () => fromPartial({ WebSocketServer: MockWebSocketServer }));
 
+// Mirrors the wire format StudioBackend emits in `attachSocket` — used by the
+// send-mock to assert the backend keeps sending the v2 handshake fields.
+// Drift here means the protocol-version handshake regressed.
 const pluginRequest = type({
 	action: "string",
 	config: { configs: "unknown[]" },
+	protocolVersion: "number",
 	request_id: "string",
 });
 
@@ -100,21 +104,19 @@ describe("protocol version handshake", () => {
 
 		const wss = getLastCreatedServer()!;
 		const socket = new MockWebSocket();
-		let captured: undefined | { protocolVersion?: number };
+		let captured: typeof pluginRequest.infer | undefined;
 
 		socket.send.mockImplementation((data) => {
-			captured = JSON.parse(data) as { protocolVersion?: number };
+			captured = pluginRequest.assert(JSON.parse(data));
 			queueMicrotask(() => {
 				socket.emit(
 					"message",
 					Buffer.from(
 						JSON.stringify({
 							gameOutput: "[]",
-							jestOutput: envelope([
-								{ elapsedMs: 1, jestOutput: successResult() },
-							]),
+							jestOutput: envelope([{ elapsedMs: 1, jestOutput: successResult() }]),
 							protocolVersion: 2,
-							request_id: (JSON.parse(data) as { request_id: string }).request_id,
+							request_id: captured!.request_id,
 							type: "results",
 						}),
 					),
@@ -143,7 +145,7 @@ describe("protocol version handshake", () => {
 		const socket = new MockWebSocket();
 
 		socket.send.mockImplementation((data) => {
-			const { request_id } = JSON.parse(data) as { request_id: string };
+			const { request_id } = pluginRequest.assert(JSON.parse(data));
 			queueMicrotask(() => {
 				socket.emit(
 					"message",
@@ -175,7 +177,7 @@ describe("protocol version handshake", () => {
 		const socket = new MockWebSocket();
 
 		socket.send.mockImplementation((data) => {
-			const { request_id } = JSON.parse(data) as { request_id: string };
+			const { request_id } = pluginRequest.assert(JSON.parse(data));
 			queueMicrotask(() => {
 				socket.emit(
 					"message",

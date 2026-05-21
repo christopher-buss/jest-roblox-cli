@@ -307,7 +307,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 		]);
 
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		await runWorkspace({
 			backend,
@@ -319,9 +319,13 @@ describe(runWorkspace, () => {
 		});
 
 		expect(vol.existsSync(leftoverStub)).toBeFalse();
-		expect(stderr).toHaveBeenCalled();
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("cleaned 1 leftover stub(s) from @halcyon/foo"),
+		);
+
 		const writes = stderr.mock.calls.map((call) => call[0] as string).join("");
-		expect(writes).toContain("cleaned 1 leftover stub(s) from @halcyon/foo");
+
+		expect(writes).toContain(leftoverStub);
 
 		stderr.mockRestore();
 	});
@@ -340,10 +344,11 @@ describe(runWorkspace, () => {
 					ReplicatedStorage: { Client: { $path: "out/Client" } },
 				},
 			}),
-			// User-authored config (no marker) at the mount — `hasUserAuthoredConfig`
-			// should return true and the stubMount construction must skip it.
-			[userConfigPath]: "return { displayName = 'user-shared' }\n",
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			// User-authored config (no marker) at the mount —
+			// `hasUserAuthoredConfig` should return true and the stubMount
+			// construction must skip it.
+			[userConfigPath]: "return { displayName = 'user-shared' }\n",
 		});
 
 		const projects = fromAny([
@@ -368,12 +373,14 @@ describe(runWorkspace, () => {
 
 		// User file survives the run (cleanLeftoverStubs only touches markers).
 		expect(vol.existsSync(userConfigPath)).toBeTrue();
+
 		// And the cache stub was NOT written for that mount because
 		// hasUserAuthoredConfig short-circuited generateProjectStubs.
 		const cacheStub = path.join(
 			ROOT,
 			".jest-roblox/workspace/@halcyon/foo/out/Client/jest.config.luau",
 		);
+
 		expect(vol.existsSync(cacheStub)).toBeFalse();
 	});
 

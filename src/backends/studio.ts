@@ -48,10 +48,10 @@ const pluginResultSchema = type({
 });
 
 const pluginVersionMismatchSchema = type({
-	"actualVersion": "number",
-	"expectedVersion": "number",
-	"request_id": "string",
-	"type": "'version_mismatch'",
+	actualVersion: "number",
+	expectedVersion: "number",
+	request_id: "string",
+	type: "'version_mismatch'",
 });
 
 const pluginMessageSchema = pluginResultSchema.or(pluginVersionMismatchSchema);
@@ -112,9 +112,7 @@ export class StudioBackend implements Backend {
 		const executionStart = Date.now();
 		const message = await this.waitForResult(
 			wss,
-			requestId,
-			configs,
-			runtimeStubMounts,
+			{ configs, requestId, runtimeStubMounts },
 			existingSocket,
 		);
 		const executionMs = Date.now() - executionStart;
@@ -142,11 +140,14 @@ export class StudioBackend implements Backend {
 
 	private async waitForResult(
 		wss: WebSocketServer,
-		requestId: string,
-		configs: Array<JestArgv>,
-		runtimeStubMounts: Array<Array<string>>,
+		request: {
+			configs: Array<JestArgv>;
+			requestId: string;
+			runtimeStubMounts: Array<Array<string>>;
+		},
 		existingSocket?: WebSocket,
 	): Promise<PluginMessage> {
+		const { configs, requestId, runtimeStubMounts } = request;
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				reject(new Error("Timed out waiting for Studio plugin connection"));

@@ -201,14 +201,15 @@ export async function runWorkspace(
 	// original cross-mode bug this refactor exists to fix.
 	for (const ctx of filteredContexts) {
 		const live = liveProjects.get(ctx.info.name) ?? new Set<string>();
-		const liveProjectsForPkg = ctx.projects.filter((project) =>
+		const liveProjectsForPackage = ctx.projects.filter((project) =>
 			live.has(project.displayName),
 		);
-		const cleaned = cleanLeftoverStubs(liveProjectsForPkg, ctx.info.packageDirectory);
+		const cleaned = cleanLeftoverStubs(liveProjectsForPackage, ctx.info.packageDirectory);
 		if (cleaned.length > 0) {
 			process.stderr.write(
-				`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s) from ${ctx.info.name}:\n` +
-					cleaned.map((p) => `  ${p}\n`).join(""),
+				`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s) from ${ctx.info.name}:\n${cleaned
+					.map((stubPath) => `  ${stubPath}\n`)
+					.join("")}`,
 			);
 		}
 	}
@@ -747,7 +748,7 @@ function writeStubsAndBuildDescriptors(
 ): Array<PackageDescriptor> {
 	return contexts.map((ctx) => {
 		const live = liveProjects.get(ctx.info.name) ?? new Set<string>();
-		const liveProjectsForPkg = ctx.projects.filter((project) =>
+		const liveProjectsForPackage = ctx.projects.filter((project) =>
 			live.has(project.displayName),
 		);
 
@@ -756,10 +757,10 @@ function writeStubsAndBuildDescriptors(
 		// live list. The `stubMounts` loop below applies the same filter
 		// so we only emit `$path` references for mounts that actually got
 		// a cache stub written.
-		generateProjectStubs(liveProjectsForPkg, ctx.info.packageDirectory, ctx.cacheRoot);
+		generateProjectStubs(liveProjectsForPackage, ctx.info.packageDirectory, ctx.cacheRoot);
 
 		const stubMounts: Array<StubMount> = [];
-		for (const project of liveProjectsForPkg) {
+		for (const project of liveProjectsForPackage) {
 			for (const mount of project.rojoMounts) {
 				const sourceMount = path.resolve(ctx.info.packageDirectory, mount.fsPath);
 				if (hasUserAuthoredConfig(sourceMount)) {

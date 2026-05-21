@@ -1,6 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
+import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { resolveBackend } from "../backends/auto.ts";
@@ -25,9 +26,9 @@ import {
 import { MANIFEST_VERSION } from "../coverage/manifest.ts";
 import { prepareCoverage } from "../coverage/prepare.ts";
 import { type ExecuteResult, runProjects } from "../executor.ts";
+import { synthesize } from "../staging/synthesizer.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
-import { synthesize } from "../staging/synthesizer.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { runMultiProject } from "./multi.ts";
 
@@ -293,6 +294,7 @@ describe(runMultiProject, () => {
 		// the config's `rojoProject` is undefined the path should resolve
 		// to `<rootDir>/default.project.json`.
 		const synthArgs = mocks.synthesize.mock.calls[0]![0];
+
 		expect(synthArgs.packages[0]!.rojoProjectPath).toContain("default.project.json");
 	});
 
@@ -780,7 +782,7 @@ describe(runMultiProject, () => {
 			"/test/src/client/jest.config.luau",
 			"/test/src/server/jest.config.luau",
 		]);
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		seedProjectFiles();
 
 		await runMultiProject({
@@ -790,7 +792,9 @@ describe(runMultiProject, () => {
 		});
 
 		expect(stderr).toHaveBeenCalledOnce();
+
 		const written = stderr.mock.calls[0]![0] as string;
+
 		expect(written).toContain("cleaned 2 leftover stub(s)");
 
 		stderr.mockRestore();
@@ -815,10 +819,12 @@ describe(runMultiProject, () => {
 		// zero stubMounts because hasUserAuthoredConfig was true at every
 		// mount. The synth.project.json would contain no `$path` injections.
 		const synthArgs = mocks.synthesize.mock.calls[0]![0];
+
 		expect(synthArgs.packages[0]!.stubMounts).toStrictEqual([]);
 
 		// `runtimeInjectionPaths` on the job is also empty for the same reason.
 		const jobs = mocks.runProjects.mock.calls[0]![0].projects;
+
 		expect(jobs[0]!.runtimeInjectionPaths).toStrictEqual([]);
 	});
 });

@@ -38,8 +38,10 @@ words:
   - typealias
   - typeassertion
   - typefunction
+  - uncompiled
   - unmappable
   - unstub
+  - upgraders
   - vararg
   - varargs
   - writeback

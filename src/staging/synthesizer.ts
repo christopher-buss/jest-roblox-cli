@@ -209,44 +209,6 @@ function absolutizePaths(
 	return result;
 }
 
-function synthesizeNoWrap(packages: Array<PackageDescriptor>): string {
-	if (packages.length !== 1) {
-		throw new ConfigError(
-			`synthesize wrap:false requires exactly one package, got ${String(packages.length)}`,
-		);
-	}
-
-	// eslint-disable-next-line ts/no-non-null-assertion -- length-1 invariant
-	const descriptor = packages[0]!;
-	const project = loadRojoProject(descriptor.rojoProjectPath);
-	const tree = absolutizePaths(project.tree, path.dirname(descriptor.rojoProjectPath), {
-		coverageBase: descriptor.packageDirectory,
-		coverageRoots: descriptor.coverageRoots,
-	});
-
-	// Inject in no-wrap mode too so single-package callers (multi-project +
-	// open-cloud) share the same `$path` named-child mounting workspace uses.
-	injectStubMounts(tree, descriptor.stubMounts);
-
-	// `raw` carries top-level fields (gameId, placeId, globIgnorePaths, etc.)
-	// that the narrow `RojoProject` shape strips; `tree` then overrides the
-	// raw unresolved tree with the loader's resolved version.
-	return stableStringify({ ...project.raw, tree });
-}
-
-function transformToFolder(node: RojoTreeNode): RojoTreeNode {
-	const folder: RojoTreeNode = { $className: "Folder" };
-	for (const [key, value] of Object.entries(node)) {
-		if (key === "$className" || key === "$properties") {
-			continue;
-		}
-
-		folder[key] = transformValue(key, value);
-	}
-
-	return folder;
-}
-
 function demoteAutoMountToExplicit(parent: RojoTreeNode, parentPath: string): void {
 	const entries = fs.readdirSync(parentPath, { withFileTypes: true });
 	for (const entry of entries) {
@@ -367,6 +329,44 @@ function injectStubMounts(root: RojoTreeNode, stubMounts: Array<StubMount> | und
 			$path: normalizeWindowsPath(mount.absStubPath),
 		};
 	}
+}
+
+function synthesizeNoWrap(packages: Array<PackageDescriptor>): string {
+	if (packages.length !== 1) {
+		throw new ConfigError(
+			`synthesize wrap:false requires exactly one package, got ${String(packages.length)}`,
+		);
+	}
+
+	// eslint-disable-next-line ts/no-non-null-assertion -- length-1 invariant
+	const descriptor = packages[0]!;
+	const project = loadRojoProject(descriptor.rojoProjectPath);
+	const tree = absolutizePaths(project.tree, path.dirname(descriptor.rojoProjectPath), {
+		coverageBase: descriptor.packageDirectory,
+		coverageRoots: descriptor.coverageRoots,
+	});
+
+	// Inject in no-wrap mode too so single-package callers (multi-project +
+	// open-cloud) share the same `$path` named-child mounting workspace uses.
+	injectStubMounts(tree, descriptor.stubMounts);
+
+	// `raw` carries top-level fields (gameId, placeId, globIgnorePaths, etc.)
+	// that the narrow `RojoProject` shape strips; `tree` then overrides the
+	// raw unresolved tree with the loader's resolved version.
+	return stableStringify({ ...project.raw, tree });
+}
+
+function transformToFolder(node: RojoTreeNode): RojoTreeNode {
+	const folder: RojoTreeNode = { $className: "Folder" };
+	for (const [key, value] of Object.entries(node)) {
+		if (key === "$className" || key === "$properties") {
+			continue;
+		}
+
+		folder[key] = transformValue(key, value);
+	}
+
+	return folder;
 }
 
 function transformChild(node: RojoTreeNode): RojoTreeNode {

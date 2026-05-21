@@ -1132,9 +1132,9 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(mocked).toHaveBeenCalledOnce();
 			expect(result?.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
 
-			const manifest = JSON.parse(
-				vol.readFileSync(result!.manifestPath, "utf-8") as string,
-			) as unknown as CoverageManifest;
+			const manifest = manifestSchema.assert(
+				JSON.parse(vol.readFileSync(result!.manifestPath, "utf-8") as string),
+			);
 
 			expect(manifest.luauRoots).toHaveLength(1);
 		});

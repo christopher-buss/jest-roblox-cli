@@ -25,8 +25,8 @@ import { mergeRawCoverage } from "../coverage/merge-raw-coverage.ts";
 import { prepareCoverage } from "../coverage/prepare.ts";
 import type { RawCoverageData } from "../coverage/types.ts";
 import { runProjects } from "../executor.ts";
-import { synthesize, type StubMount } from "../staging/synthesizer.ts";
 import { combineSourceMappers, type SourceMapper } from "../source-mapper/index.ts";
+import { type StubMount, synthesize } from "../staging/synthesizer.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
@@ -47,10 +47,10 @@ interface PendingJob {
 	config: ResolvedConfig;
 	displayColor?: string;
 	displayName: string;
-	/** Mount paths the Studio runner should inject `jest.config` into; empty
-	 * when every mount already has a user-authored config on disk. */
-	runtimeInjectionPaths: Array<string>;
 	runtimeFiles: Array<string>;
+	// Mount paths the Studio runner should inject `jest.config` into; empty
+	// when every mount already has a user-authored config on disk.
+	runtimeInjectionPaths: Array<string>;
 }
 
 interface CollectPendingJobsArguments {
@@ -111,8 +111,9 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	const cleaned = cleanLeftoverStubs(projects, rootConfig.rootDir);
 	if (cleaned.length > 0) {
 		process.stderr.write(
-			`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s):\n` +
-				cleaned.map((p) => `  ${p}\n`).join(""),
+			`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s):\n${cleaned
+				.map((stubPath) => `  ${stubPath}\n`)
+				.join("")}`,
 		);
 	}
 
@@ -127,47 +128,7 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	const parallel = effectiveParallelForBackend(effectiveConfig.parallel, backend);
 
 	if (!rootConfig.collectCoverage && backend.kind === "open-cloud") {
-		const userRojoProjectPath = path.resolve(
-			rootConfig.rootDir,
-			rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
-		);
-		const placeFilePath = path.resolve(rootConfig.rootDir, rootConfig.placeFile);
-		// Per-mount FS check decides whether to inject. A TS string-entry
-		// may or may not have a compiled `.luau` at the mount yet —
-		// trust the filesystem rather than the entry shape.
-		const stubMounts: Array<StubMount> = [];
-		for (const project of projects) {
-			for (const mount of project.rojoMounts) {
-				const sourceMount = path.resolve(rootConfig.rootDir, mount.fsPath);
-				if (hasUserAuthoredConfig(sourceMount)) {
-					continue;
-				}
-
-				stubMounts.push({
-					absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
-					dataModelPath: mount.dataModelPath,
-				});
-			}
-		}
-
-		const synthProjectPath = path.resolve(cacheRoot, "synth.project.json");
-		fs.mkdirSync(path.dirname(synthProjectPath), { recursive: true });
-		fs.writeFileSync(
-			synthProjectPath,
-			synthesize({
-				packages: [
-					{
-						name: "multi-project",
-						packageDirectory: rootConfig.rootDir,
-						rojoProjectPath: userRojoProjectPath,
-						stubMounts,
-					},
-				],
-				wrap: false,
-			}),
-			"utf8",
-		);
-		buildWithRojo(synthProjectPath, placeFilePath);
+		buildOpenCloudPlace(rootConfig, projects, cacheRoot);
 	}
 
 	const { allTypeTestFiles, pendingJobs } = collectPendingJobs({
@@ -222,6 +183,54 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 		projectResults,
 		typecheckResult,
 	};
+}
+
+function buildOpenCloudPlace(
+	rootConfig: ResolvedConfig,
+	projects: Array<ResolvedProjectConfig>,
+	cacheRoot: string,
+): void {
+	const userRojoProjectPath = path.resolve(
+		rootConfig.rootDir,
+		rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
+	);
+	const placeFilePath = path.resolve(rootConfig.rootDir, rootConfig.placeFile);
+	// Per-mount FS check decides whether to inject. A TS string-entry
+	// may or may not have a compiled `.luau` at the mount yet —
+	// trust the filesystem rather than the entry shape.
+	const stubMounts: Array<StubMount> = [];
+	for (const project of projects) {
+		for (const mount of project.rojoMounts) {
+			const sourceMount = path.resolve(rootConfig.rootDir, mount.fsPath);
+			if (hasUserAuthoredConfig(sourceMount)) {
+				continue;
+			}
+
+			stubMounts.push({
+				absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
+				dataModelPath: mount.dataModelPath,
+			});
+		}
+	}
+
+	const synthProjectPath = path.resolve(cacheRoot, "synth.project.json");
+	fs.mkdirSync(path.dirname(synthProjectPath), { recursive: true });
+	fs.writeFileSync(
+		synthProjectPath,
+		synthesize({
+			packages: [
+				{
+					name: "multi-project",
+					packageDirectory: rootConfig.rootDir,
+					rojoProjectPath: userRojoProjectPath,
+					stubMounts,
+				},
+			],
+			wrap: false,
+		}),
+		"utf8",
+	);
+	buildWithRojo(synthProjectPath, placeFilePath);
 }
 
 function collectPendingJobs(arguments_: CollectPendingJobsArguments): {

@@ -131,6 +131,29 @@ export function assertMountContained(
 }
 
 /**
+ * True when the mount directory contains a non-marker `jest.config.luau` —
+ * i.e. a user-authored config Rojo will sync. Source of truth for whether
+ * to skip generating a stub at that mount. Used by `generateProjectStubs`,
+ * `cleanLeftoverStubs`'s callers, and the multi-project + workspace runners
+ * when deciding stub-write and runtime-injection eligibility.
+ */
+export function hasUserAuthoredConfig(directoryPath: string): boolean {
+	// A `.luau` or legacy `.lua` may be either our generated stub or a
+	// user-authored config; only the HEADER prefix distinguishes them.
+	// Reuse `isGeneratedStub`'s bounded header-read so this detection
+	// check stays cheap (a few bytes) and resilient — unusual FS errors
+	// downgrade to "not user-authored" rather than throwing out of a
+	// detection helper called from multiple cleanup/build paths.
+	const luauPath = path.join(directoryPath, STUB_FILENAME);
+	if (fs.existsSync(luauPath) && !isGeneratedStub(luauPath)) {
+		return true;
+	}
+
+	const luaPath = path.join(directoryPath, LEGACY_LUA_FILENAME);
+	return fs.existsSync(luaPath) && !isGeneratedStub(luaPath);
+}
+
+/**
  * For a multi-mount project, the stubs-per-mount rule requires that a
  * user-authored config at any tracked FS path must appear at every tracked
  * FS path (or none). Throws `ConfigError` when the project has partial
@@ -189,10 +212,7 @@ export function cleanLeftoverStubs(
 	const cleaned: Array<string> = [];
 	let realRoot: string | undefined;
 	function realRootResolved(): string {
-		if (realRoot === undefined) {
-			realRoot = fs.realpathSync(path.resolve(rootDirectory));
-		}
-
+		realRoot ??= fs.realpathSync(path.resolve(rootDirectory));
 		return realRoot;
 	}
 
@@ -206,8 +226,10 @@ export function cleanLeftoverStubs(
 
 			const realStubPath = fs.realpathSync(stubPath);
 			const root = realRootResolved();
-			const rel = path.relative(root, realStubPath);
-			const inRoot = rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+			const relativePath = path.relative(root, realStubPath);
+			const inRoot =
+				relativePath === "" ||
+				(!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 			if (!inRoot) {
 				throw new Error(
 					`Project "${project.displayName}" mount fsPath resolves outside root via symlink: ${mount.fsPath} → ${realStubPath}`,
@@ -300,29 +322,6 @@ export function syncStubsToShadowDirectory(
 	}
 
 	return changed;
-}
-
-/**
- * True when the mount directory contains a non-marker `jest.config.luau` —
- * i.e. a user-authored config Rojo will sync. Source of truth for whether
- * to skip generating a stub at that mount. Used by `generateProjectStubs`,
- * `cleanLeftoverStubs`'s callers, and the multi-project + workspace runners
- * when deciding stub-write and runtime-injection eligibility.
- */
-export function hasUserAuthoredConfig(directoryPath: string): boolean {
-	// A `.luau` or legacy `.lua` may be either our generated stub or a
-	// user-authored config; only the HEADER prefix distinguishes them.
-	// Reuse `isGeneratedStub`'s bounded header-read so this detection
-	// check stays cheap (a few bytes) and resilient — unusual FS errors
-	// downgrade to "not user-authored" rather than throwing out of a
-	// detection helper called from multiple cleanup/build paths.
-	const luauPath = path.join(directoryPath, STUB_FILENAME);
-	if (fs.existsSync(luauPath) && !isGeneratedStub(luauPath)) {
-		return true;
-	}
-
-	const luaPath = path.join(directoryPath, LEGACY_LUA_FILENAME);
-	return fs.existsSync(luaPath) && !isGeneratedStub(luaPath);
 }
 
 function buildStubConfig(config: ResolvedConfig): Partial<ProjectTestConfig> {

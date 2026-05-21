@@ -50,4 +50,11 @@ export default isentinel(
 			"antfu/no-top-level-await": "off",
 		},
 	},
+	{
+		name: "project/e2e",
+		files: ["test/e2e/**/*"],
+		rules: {
+			"vitest/max-expects": "off",
+		},
+	},
 );
