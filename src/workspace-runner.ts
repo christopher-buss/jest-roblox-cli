@@ -15,6 +15,7 @@ import type {
 	InlineProjectConfig,
 	ProjectEntry,
 	ResolvedConfig,
+	WorkspaceRunOptions,
 } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { createSetupResolver } from "./config/setup-resolver.ts";
@@ -58,7 +59,6 @@ const ROJO_PROJECT_DEFAULT = "test.project.json";
 export interface RunWorkspaceOptions {
 	backend: Backend;
 	cli: CliOptions;
-	config: ResolvedConfig;
 	/**
 	 * When provided, called once per newly-observed streaming result as
 	 * packages complete (work-stealing mode only). The intended consumer is
@@ -68,6 +68,13 @@ export interface RunWorkspaceOptions {
 	 */
 	onStreamingResult?: StreamingAggregatorOnEntry;
 	packageInfos: Array<PackageInfo>;
+	/**
+	 * Per-invocation knobs resolved by `buildWorkspaceRunOptions` —
+	 * CLI > per-package consensus > defaults. The workspace runner does
+	 * NOT read jest-shaped fields here; per-package config (loaded inside
+	 * `loadPackages`) is the source of truth for those.
+	 */
+	runOptions: WorkspaceRunOptions;
 	version: string;
 	workspaceRoot: string;
 	/**
@@ -239,11 +246,11 @@ export async function runWorkspace(
 		};
 	});
 
-	const { onStreamingResult, workStealingCredentials } = options;
+	const { onStreamingResult, runOptions, workStealingCredentials } = options;
 	const dispatchSpec = await prepareWorkspaceDispatch({
-		cli,
 		inputs,
 		...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
+		parallel: runOptions.parallel,
 		workStealingCredentials,
 	});
 
@@ -266,13 +273,18 @@ export async function runWorkspace(
 
 	writePerPackageOutputFiles(workspaceRoot, pending, results);
 
-	// HAL-231: the gate scans per-package configs, not the workspace-root
-	// `config`. A user declaring `gameOutput` in jest.shared.ts (extended by
-	// every package) — but not at the workspace root — would otherwise see
-	// no per-package files: c12's workspace-root lookup never sees
+	// The gate scans per-package configs, not the workspace-root config. A
+	// user declaring `gameOutput` in jest.shared.ts (extended by every
+	// package) — but not at the workspace root — would otherwise see no
+	// per-package files: c12's workspace-root lookup never sees
 	// jest.shared.ts. `mergeCliWithConfig` already layers `--gameOutput`
 	// onto every loaded `pkgConfig` in `loadPackages`, so the CLI-flag path
 	// flows through this same check.
+	//
+	// All-or-none: when the gate opens, every selected package gets a
+	// `.gameOutput.json` companion file (empty array for packages that
+	// don't declare gameOutput themselves). This is correct for the common
+	// `jest.shared.ts` extends case and surprising in mixed setups.
 	if (loaded.some((entry) => entry.pkgConfig.gameOutput !== undefined)) {
 		writePerPackageGameOutputFiles(workspaceRoot, pending, results);
 	}
@@ -326,15 +338,18 @@ function buildStreaming(input: {
 }
 
 async function prepareWorkspaceDispatch(input: {
-	cli: CliOptions;
 	generateUuid?: () => string;
 	inputs: Array<MaterializerInput>;
 	onStreamingResult?: StreamingAggregatorOnEntry;
+	parallel?: "auto" | number;
 	workStealingCredentials: undefined | { apiKey: string; baseUrl?: string; universeId: string };
 }): Promise<WorkspaceDispatchSpec> {
-	const { cli, generateUuid, inputs, onStreamingResult, workStealingCredentials } = input;
+	const { generateUuid, inputs, onStreamingResult, workStealingCredentials } = input;
 
-	const parallel = typeof cli.parallel === "number" ? cli.parallel : undefined;
+	// `runOptions.parallel` already reflects CLI > per-package consensus >
+	// default; `"auto"` does not enable work-stealing (parity with the
+	// pre-existing CLI behavior — only an explicit count > 1 fans out).
+	const parallel = typeof input.parallel === "number" ? input.parallel : undefined;
 	const useWorkStealing =
 		workStealingCredentials !== undefined && parallel !== undefined && parallel > 1;
 
@@ -394,12 +409,10 @@ async function loadPackages(input: {
 		const fileConfig = await loadConfig(undefined, info.packageDirectory);
 		const packageConfig = mergeCliWithConfig(cli, fileConfig);
 
-		// HAL-231: `rojoProject` is resolved per-package only — the
-		// workspace-root config is intentionally not consulted. Pre-fix
-		// `pkg ?? config ?? DEFAULT` let a workspace-root value silently
-		// override `ROJO_PROJECT_DEFAULT` for packages that didn't declare
-		// the field, the same workspace-root vs per-pkg leak as the other
-		// A2 sites.
+		// `rojoProject` is resolved per-package only — the workspace-root
+		// config is intentionally not consulted. A `pkg ?? config ?? DEFAULT`
+		// chain would let a workspace-root value silently override the
+		// per-package default for packages that omitted the field.
 		const rojoProject = packageConfig.rojoProject ?? ROJO_PROJECT_DEFAULT;
 
 		// Propagate per-pkg coverage knobs to the descriptor so
@@ -420,9 +433,9 @@ async function loadPackages(input: {
 		// root" by leaving the descriptor field undefined.
 		const hasExplicitIgnore =
 			packageConfig.coveragePathIgnorePatterns !== DEFAULT_CONFIG.coveragePathIgnorePatterns;
-		// HAL-231: per-pkg `coverageCache` opt-out drives the workspace
-		// cache gate. Pass it through only when the pkg's value diverges
-		// from the default; an undefined descriptor field means "inherit
+		// Per-pkg `coverageCache` opt-out drives the workspace cache gate.
+		// Pass it through only when the pkg's value diverges from the
+		// default; an undefined descriptor field means "inherit
 		// DEFAULT_CONFIG" inside `prepareWorkspaceCoverage`.
 		const hasExplicitCoverageCache =
 			packageConfig.coverageCache !== DEFAULT_CONFIG.coverageCache;
@@ -731,12 +744,11 @@ function writePerPackageOutputFiles(
 	}
 }
 
-// Sibling of writePerPackageOutputFiles; emits the game-output slice per
-// (pkg, project) so a workspace run gives each package its own captured
-// log file in addition to the aggregated file at config.gameOutput. The
-// path is built absolute against workspaceRoot before calling
-// writeGameOutput — that helper calls path.resolve which would otherwise
-// fall back to process.cwd() and silently mis-route files.
+// Sibling of writePerPackageOutputFiles; emits a `.gameOutput.json`
+// companion alongside each (pkg, project) result file under
+// `.jest-roblox/output/`. The path is built absolute against workspaceRoot
+// before calling writeGameOutput — that helper calls path.resolve which
+// would otherwise fall back to process.cwd() and silently mis-route files.
 function writePerPackageGameOutputFiles(
 	workspaceRoot: string,
 	pending: Array<PendingEntry>,

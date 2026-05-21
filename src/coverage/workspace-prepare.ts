@@ -28,15 +28,15 @@ export interface WorkspacePackageDescriptor {
 	/**
 	 * Per-package `coverageCache` opt-out. When undefined, defaults to
 	 * `DEFAULT_CONFIG.coverageCache` (true). Workspace mode reads this knob
-	 * per-package only (HAL-231); the workspace-root `config.coverageCache`
-	 * is intentionally not consulted.
+	 * per-package only; the workspace-root `config.coverageCache` is
+	 * intentionally not consulted.
 	 */
 	coverageCache?: boolean;
 	/**
 	 * Per-package `coveragePathIgnorePatterns`. When undefined, the matcher
 	 * falls back to `DEFAULT_CONFIG.coveragePathIgnorePatterns` — workspace
-	 * mode reads this knob per-package only (see HAL-231). An empty array
-	 * means "no ignore patterns" (user opted out of every default pattern).
+	 * mode reads this knob per-package only. An empty array means "no
+	 * ignore patterns" (user opted out of every default pattern).
 	 */
 	coveragePathIgnorePatterns?: Array<string>;
 	/**
@@ -81,9 +81,9 @@ export function prepareWorkspaceCoverage(
 	options: PrepareWorkspaceCoverageOptions,
 ): Array<WorkspacePackageCoverage> {
 	const { packages, workspaceRoot } = options;
-	// HAL-231: workspace mode reads `coveragePathIgnorePatterns` per-package
-	// only. Hoist the DEFAULT_CONFIG matcher so packages that don't override
-	// the field share one picomatch compile; the workspace-root config is
+	// Workspace mode reads `coveragePathIgnorePatterns` per-package only.
+	// Hoist the DEFAULT_CONFIG matcher so packages that don't override the
+	// field share one picomatch compile; the workspace-root config is
 	// intentionally not threaded through here.
 	const defaultMatcher = createIgnoreMatcher(DEFAULT_CONFIG.coveragePathIgnorePatterns);
 

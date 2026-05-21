@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
+import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import {
+	assertWorkspaceRunOptions,
 	buildWorkspaceCredentials,
 	resolveWorkspacePackageNames,
-	validateWorkspaceFlags,
+	validateBasicWorkspaceFlags,
 } from "./workspace-validation.ts";
 
 vi.mock(import("../workspace/affected"));
@@ -25,17 +26,24 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return { ...overrides };
 }
 
-function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-	return { ...DEFAULT_CONFIG, ...overrides };
+function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): WorkspaceRunOptions {
+	return {
+		backend: DEFAULT_CONFIG.backend,
+		color: DEFAULT_CONFIG.color,
+		formatters: [],
+		pollInterval: DEFAULT_CONFIG.pollInterval,
+		port: DEFAULT_CONFIG.port,
+		silent: DEFAULT_CONFIG.silent,
+		...overrides,
+	};
 }
 
-describe(validateWorkspaceFlags, () => {
+describe(validateBasicWorkspaceFlags, () => {
 	it("should reject when --packages and --affected-since are both set", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
+		const result = validateBasicWorkspaceFlags(
 			makeCli({ affectedSince: "main", packages: "a", workspace: true }),
-			makeConfig({ backend: "open-cloud" }),
 		);
 
 		expect(result).toStrictEqual({
@@ -48,10 +56,7 @@ describe(validateWorkspaceFlags, () => {
 	it("should reject --packages without --workspace", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ packages: "a" }),
-			makeConfig({ backend: "open-cloud" }),
-		);
+		const result = validateBasicWorkspaceFlags(makeCli({ packages: "a" }));
 
 		expect(result).toStrictEqual({
 			exitCode: 2,
@@ -63,10 +68,7 @@ describe(validateWorkspaceFlags, () => {
 	it("should reject --affected-since without --workspace", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ affectedSince: "main" }),
-			makeConfig({ backend: "open-cloud" }),
-		);
+		const result = validateBasicWorkspaceFlags(makeCli({ affectedSince: "main" }));
 
 		expect(result).toStrictEqual({
 			exitCode: 2,
@@ -78,10 +80,7 @@ describe(validateWorkspaceFlags, () => {
 	it("should reject --workspace without --packages or --affected-since", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ workspace: true }),
-			makeConfig({ backend: "open-cloud" }),
-		);
+		const result = validateBasicWorkspaceFlags(makeCli({ workspace: true }));
 
 		expect(result).toStrictEqual({
 			exitCode: 2,
@@ -93,10 +92,7 @@ describe(validateWorkspaceFlags, () => {
 	it("should reject --workspace with empty --packages string", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ packages: "   ", workspace: true }),
-			makeConfig({ backend: "open-cloud" }),
-		);
+		const result = validateBasicWorkspaceFlags(makeCli({ packages: "   ", workspace: true }));
 
 		expect(result.ok).toBeFalse();
 	});
@@ -104,10 +100,7 @@ describe(validateWorkspaceFlags, () => {
 	it("should reject --packages that splits to zero entries", () => {
 		expect.assertions(2);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ packages: "  ,  ", workspace: true }),
-			makeConfig({ backend: "open-cloud" }),
-		);
+		const result = validateBasicWorkspaceFlags(makeCli({ packages: "  ,  ", workspace: true }));
 
 		expect(result.ok).toBeFalse();
 		expect((result as { message: string }).message).toBe(
@@ -115,57 +108,30 @@ describe(validateWorkspaceFlags, () => {
 		);
 	});
 
-	it("should accept coverage with --workspace", () => {
+	it("should accept --workspace with --packages", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ collectCoverage: true, packages: "a", workspace: true }),
-			makeConfig({ backend: "open-cloud", collectCoverage: true }),
-		);
+		const result = validateBasicWorkspaceFlags(makeCli({ packages: "a,b", workspace: true }));
 
 		expect(result).toStrictEqual({ ok: true });
 	});
 
-	it("should accept coverage when only enabled via config", () => {
+	it("should accept --workspace with --affected-since", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ packages: "a", workspace: true }),
-			makeConfig({ backend: "open-cloud", collectCoverage: true }),
+		const result = validateBasicWorkspaceFlags(
+			makeCli({ affectedSince: "HEAD~1", workspace: true }),
 		);
 
 		expect(result).toStrictEqual({ ok: true });
 	});
+});
 
-	it("should accept --gameOutput with --workspace", () => {
+describe(assertWorkspaceRunOptions, () => {
+	it("should reject studio backend", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ gameOutput: "/tmp/out.txt", packages: "a", workspace: true }),
-			makeConfig({ backend: "open-cloud", gameOutput: "/tmp/out.txt" }),
-		);
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should accept gameOutput when only set via config", () => {
-		expect.assertions(1);
-
-		const result = validateWorkspaceFlags(
-			makeCli({ packages: "a", workspace: true }),
-			makeConfig({ backend: "open-cloud", gameOutput: "/tmp/out.txt" }),
-		);
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should reject studio backend with --workspace", () => {
-		expect.assertions(1);
-
-		const result = validateWorkspaceFlags(
-			makeCli({ packages: "a", workspace: true }),
-			makeConfig({ backend: "studio" }),
-		);
+		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio" }));
 
 		expect(result).toStrictEqual({
 			exitCode: 2,
@@ -174,24 +140,18 @@ describe(validateWorkspaceFlags, () => {
 		});
 	});
 
-	it("should accept --workspace with --packages and open-cloud backend", () => {
+	it("should accept open-cloud backend", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ packages: "a,b", workspace: true }),
-			makeConfig({ backend: "open-cloud" }),
-		);
+		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "open-cloud" }));
 
 		expect(result).toStrictEqual({ ok: true });
 	});
 
-	it("should accept --workspace with --affected-since", () => {
+	it("should accept auto backend", () => {
 		expect.assertions(1);
 
-		const result = validateWorkspaceFlags(
-			makeCli({ affectedSince: "HEAD~1", workspace: true }),
-			makeConfig({ backend: "open-cloud" }),
-		);
+		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "auto" }));
 
 		expect(result).toStrictEqual({ ok: true });
 	});
@@ -233,13 +193,13 @@ describe(resolveWorkspacePackageNames, () => {
 });
 
 describe(buildWorkspaceCredentials, () => {
-	it("should forward CLI overrides and config defaults to resolveCredentials", async () => {
+	it("should forward CLI overrides and run-option defaults to resolveCredentials", async () => {
 		expect.assertions(2);
 
 		const { resolveCredentials } = await import("@isentinel/roblox-runner");
 		const cli = makeCli({ apiKey: "k", placeId: "pp", universeId: "uu" });
-		const config = makeConfig({ placeId: "configP", universeId: "configU" });
-		const result = buildWorkspaceCredentials(cli, config);
+		const runOptions = makeRunOptions({ placeId: "configP", universeId: "configU" });
+		const result = buildWorkspaceCredentials(cli, runOptions);
 
 		expect(result).toStrictEqual({ apiKey: "test-key", placeId: "p", universeId: "u" });
 		expect(resolveCredentials).toHaveBeenCalledWith({

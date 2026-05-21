@@ -42,10 +42,20 @@ export function resolveConfig(config: Config): ResolvedConfig {
 	return Object.assign({}, DEFAULT_CONFIG, definedTest, definedRest);
 }
 
-export async function loadConfig(
+/**
+ * Load the user-declared config without merging `DEFAULT_CONFIG`. Returned
+ * fields are exactly what the user wrote — omitted fields stay `undefined`.
+ * Use this when downstream code must distinguish "user declared X=false" from
+ * "X defaulted to false" (e.g. workspace consensus checks).
+ *
+ * The config is validated (same schema check as `loadConfig`) so workspace
+ * mode rejects malformed per-package configs with the same error messaging,
+ * rather than comparing unchecked shapes and failing later.
+ */
+export async function loadRawConfig(
 	configPath?: string,
 	cwd: string = process.cwd(),
-): Promise<ResolvedConfig> {
+): Promise<Config> {
 	let result;
 	try {
 		result = await invokeC12(configPath, cwd);
@@ -59,7 +69,14 @@ export async function loadConfig(
 
 	const mergedConfig = await processExtends(result, new Set());
 
-	const config = resolveFunctionValues(mergedConfig);
+	return validateConfig(resolveFunctionValues(mergedConfig));
+}
+
+export async function loadConfig(
+	configPath?: string,
+	cwd: string = process.cwd(),
+): Promise<ResolvedConfig> {
+	const config = await loadRawConfig(configPath, cwd);
 	config.rootDir ??= cwd;
 
 	return resolveConfig(config);

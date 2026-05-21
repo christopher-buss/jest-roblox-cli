@@ -77,7 +77,9 @@ async function executeRuntimeTests(
 	totalFiles: number,
 ): Promise<ExecuteResult> {
 	const useDefaultFormatter =
-		!config.silent && !usesAgentFormatter(config) && !hasFormatter(config, "json");
+		!config.silent &&
+		!usesAgentFormatter(config.formatters, config.verbose) &&
+		!hasFormatter(config.formatters, "json");
 	if (useDefaultFormatter && testFiles.length !== totalFiles) {
 		process.stderr.write(
 			`Running ${String(testFiles.length)} of ${String(totalFiles)} test files\n`,

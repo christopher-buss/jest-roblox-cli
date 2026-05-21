@@ -173,6 +173,23 @@ export interface ResolvedConfig
 	verbose: boolean;
 }
 
+/**
+ * Settings atomic to one workspace invocation. The entire run uses one
+ * value for each of these — there is no per-package variation. CLI flags
+ * override per-package config; otherwise every selected package must agree.
+ */
+export interface WorkspaceRunOptions {
+	backend: Backend;
+	color: boolean;
+	formatters: Array<FormatterEntry>;
+	parallel?: "auto" | number;
+	placeId?: string;
+	pollInterval: number;
+	port: number;
+	silent: boolean;
+	universeId?: string;
+}
+
 type MergerFunction<T> = (defaults: T) => T;
 
 type Mergeable<T> = MergerFunction<T> | T;

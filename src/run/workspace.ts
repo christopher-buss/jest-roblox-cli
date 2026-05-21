@@ -3,7 +3,9 @@ import process from "node:process";
 import packageJson from "../../package.json" with { type: "json" };
 import type { Backend } from "../backends/interface.ts";
 import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/open-cloud.ts";
-import type { ResolvedConfig } from "../config/schema.ts";
+import { loadRawConfig } from "../config/loader.ts";
+import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
+import { buildWorkspaceRunOptions } from "../config/workspace-run-options.ts";
 import type { MappedCoverageResult } from "../coverage/mapper.ts";
 import { mergeRawCoverage } from "../coverage/merge-raw-coverage.ts";
 import type { RawCoverageData } from "../coverage/types.ts";
@@ -15,11 +17,12 @@ import { runWorkspace, type WorkspaceProjectResult } from "../workspace-runner.t
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
 import { resolvePackage } from "../workspace/package-resolver.ts";
-import type { ProjectResult, RunOptions, WorkspaceRunResult } from "./types.ts";
+import type { ProjectResult, WorkspaceRunResult } from "./types.ts";
 import {
+	assertWorkspaceRunOptions,
 	buildWorkspaceCredentials,
 	resolveWorkspacePackageNames,
-	validateWorkspaceFlags,
+	validateBasicWorkspaceFlags,
 } from "./workspace-validation.ts";
 
 const VERSION: string = packageJson.version;
@@ -38,19 +41,17 @@ interface ResolvedPackages {
 	workspaceRoot?: string;
 }
 
-export async function runWorkspaceMode(options: RunOptions): Promise<WorkspaceRunResult> {
-	const { cli, config } = options;
-
-	const validation = validateWorkspaceFlags(cli, config);
-	if (!validation.ok) {
+export async function runWorkspaceMode(cli: CliOptions): Promise<WorkspaceRunResult> {
+	const basicValidation = validateBasicWorkspaceFlags(cli);
+	if (!basicValidation.ok) {
 		return {
 			...EMPTY_RESULT,
-			validationExitCode: validation.exitCode,
-			validationMessage: validation.message,
+			validationExitCode: basicValidation.exitCode,
+			validationMessage: basicValidation.message,
 		};
 	}
 
-	const resolved = resolvePackages(options);
+	const resolved = resolvePackages(cli);
 	if (resolved.error !== undefined) {
 		return {
 			...EMPTY_RESULT,
@@ -64,10 +65,43 @@ export async function runWorkspaceMode(options: RunOptions): Promise<WorkspaceRu
 		return EMPTY_RESULT;
 	}
 
+	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
+	const packageInfos = resolved.packageInfos!;
+	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
+	const workspaceRoot = resolved.workspaceRoot!;
+
+	let runOptions: WorkspaceRunOptions;
+	try {
+		const perPackageConfigs = await Promise.all(
+			packageInfos.map(async (info) => {
+				return {
+					name: info.name,
+					config: await loadRawConfig(undefined, info.packageDirectory),
+				};
+			}),
+		);
+		runOptions = buildWorkspaceRunOptions({ cli, perPackageConfigs });
+		const assertion = assertWorkspaceRunOptions(runOptions);
+		if (!assertion.ok) {
+			return {
+				...EMPTY_RESULT,
+				validationExitCode: assertion.exitCode,
+				validationMessage: assertion.message,
+			};
+		}
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return {
+			...EMPTY_RESULT,
+			validationExitCode: 2,
+			validationMessage: `Error: ${message}\n`,
+		};
+	}
+
 	let backend: Backend;
 	let workStealingCredentials: { apiKey: string; baseUrl?: string; universeId: string };
 	try {
-		const credentials = buildWorkspaceCredentials(cli, config);
+		const credentials = buildWorkspaceCredentials(cli, runOptions);
 		backend = createOpenCloudBackend(credentials);
 		const baseUrl = resolveOpenCloudBaseUrl();
 		workStealingCredentials = {
@@ -76,26 +110,25 @@ export async function runWorkspaceMode(options: RunOptions): Promise<WorkspaceRu
 			universeId: credentials.universeId,
 		};
 	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
 		return {
 			...EMPTY_RESULT,
 			validationExitCode: 2,
-			validationMessage: `Error: ${String(err)}\n`,
+			validationMessage: `Error: ${message}\n`,
 		};
 	}
 
 	let runtimeResults;
 	try {
-		const onStreamingResult = resolveStreamingProgressSink(config);
+		const onStreamingResult = resolveStreamingProgressSink(runOptions, cli);
 		runtimeResults = await runWorkspace({
 			backend,
 			cli,
-			config,
 			...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
-			// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
-			packageInfos: resolved.packageInfos!,
+			packageInfos,
+			runOptions,
 			version: VERSION,
-			// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
-			workspaceRoot: resolved.workspaceRoot!,
+			workspaceRoot,
 			workStealingCredentials,
 		});
 	} finally {
@@ -177,8 +210,7 @@ function aggregatePerPackageCoverage(
 	return aggregateWorkspaceCoverage([...byPackage.values()]);
 }
 
-function resolvePackages(options: RunOptions): ResolvedPackages {
-	const { cli } = options;
+function resolvePackages(cli: CliOptions): ResolvedPackages {
 	try {
 		const workspaceRoot = discoverWorkspaceRoot(process.cwd());
 		const packageNames = resolveWorkspacePackageNames(cli, workspaceRoot);
@@ -207,18 +239,22 @@ function composeWorkspaceDisplayName(package_: string, project: string): string 
  * either break the structured output or be silenced anyway.
  */
 function resolveStreamingProgressSink(
-	config: ResolvedConfig,
+	runOptions: WorkspaceRunOptions,
+	cli: CliOptions,
 ): StreamingAggregatorOnEntry | undefined {
-	if (config.silent) {
+	if (runOptions.silent) {
 		return undefined;
 	}
 
-	if (hasFormatter(config, "json") || usesAgentFormatter(config)) {
+	if (
+		hasFormatter(runOptions.formatters, "json") ||
+		usesAgentFormatter(runOptions.formatters, cli.verbose)
+	) {
 		return undefined;
 	}
 
 	return (entry) => {
-		const line = formatStreamingProgressLine(entry, { color: config.color });
+		const line = formatStreamingProgressLine(entry, { color: runOptions.color });
 		process.stdout.write(`${line}\n`);
 	};
 }

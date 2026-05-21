@@ -1,6 +1,6 @@
 import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-runner";
 
-import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
+import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
 
 interface WorkspaceValidationOk {
@@ -15,10 +15,11 @@ interface WorkspaceValidationError {
 
 type WorkspaceValidationResult = WorkspaceValidationError | WorkspaceValidationOk;
 
-export function validateWorkspaceFlags(
-	cli: CliOptions,
-	config: ResolvedConfig,
-): WorkspaceValidationResult {
+/**
+ * Pure CLI-shape checks — runs before package resolution or config loading.
+ * Catches mutually-exclusive flag combos and the missing --workspace.
+ */
+export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidationResult {
 	if (cli.packages !== undefined && cli.affectedSince !== undefined) {
 		return {
 			exitCode: 2,
@@ -44,7 +45,17 @@ export function validateWorkspaceFlags(
 		};
 	}
 
-	if (config.backend === "studio") {
+	return { ok: true };
+}
+
+/**
+ * Checks the resolved WorkspaceRunOptions for invariants that depend on the
+ * fully resolved values (CLI > per-package consensus > defaults).
+ */
+export function assertWorkspaceRunOptions(
+	runOptions: WorkspaceRunOptions,
+): WorkspaceValidationResult {
+	if (runOptions.backend === "studio") {
 		return {
 			exitCode: 2,
 			message: "Error: --workspace requires --backend open-cloud (Studio not supported).\n",
@@ -63,7 +74,7 @@ export function resolveWorkspacePackageNames(
 		return getAffectedPackages(workspaceRoot, cli.affectedSince);
 	}
 
-	// validateWorkspaceFlags guarantees cli.packages is defined when
+	// validateBasicWorkspaceFlags guarantees cli.packages is defined when
 	// affectedSince is undefined.
 	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed by validation
 	return cli
@@ -74,10 +85,10 @@ export function resolveWorkspacePackageNames(
 
 export function buildWorkspaceCredentials(
 	cli: CliOptions,
-	config: ResolvedConfig,
+	runOptions: WorkspaceRunOptions,
 ): RunnerCredentials {
 	return resolveCredentials({
-		defaults: { placeId: config.placeId, universeId: config.universeId },
+		defaults: { placeId: runOptions.placeId, universeId: runOptions.universeId },
 		envPrefix: "JEST_",
 		overrides: { apiKey: cli.apiKey, placeId: cli.placeId, universeId: cli.universeId },
 	});

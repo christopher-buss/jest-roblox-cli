@@ -4,7 +4,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { applySnapshotFormatDefaults, loadConfig, resolveConfig } from "./loader.ts";
+import { applySnapshotFormatDefaults, loadConfig, loadRawConfig, resolveConfig } from "./loader.ts";
 import type { Config } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
 
@@ -782,5 +782,86 @@ describe(loadConfig, () => {
 		);
 
 		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+	});
+});
+
+describe(loadRawConfig, () => {
+	it("should leave user-omitted fields undefined (no DEFAULT_CONFIG merge)", async () => {
+		expect.assertions(4);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "raw-config-test-"));
+		const configPath = path.join(temporaryDirectory, "jest.config.mjs");
+		fs.writeFileSync(configPath, "export default { test: { verbose: true } };");
+
+		const result = await loadRawConfig(configPath, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.test?.verbose).toBeTrue();
+		expect(result.backend).toBeUndefined();
+		expect(result.color).toBeUndefined();
+		expect(result.rootDir).toBeUndefined();
+	});
+
+	it("should return empty object when no config file found", async () => {
+		expect.assertions(2);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "raw-config-test-"));
+		const result = await loadRawConfig(undefined, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.backend).toBeUndefined();
+		expect(result.test).toBeUndefined();
+	});
+
+	it("should throw when explicit config path not found", async () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "raw-config-test-"));
+		const missingPath = path.join(temporaryDirectory, "nonexistent.config.ts");
+
+		await expect(loadRawConfig(missingPath, temporaryDirectory)).rejects.toThrow(
+			"Config file not found",
+		);
+
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+	});
+
+	it("should resolve extends chains the same as loadConfig", async () => {
+		expect.assertions(2);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "raw-config-test-"));
+		const parentPath = path.join(temporaryDirectory, "parent.config.mjs");
+		fs.writeFileSync(
+			parentPath,
+			'export default { test: { setupFiles: ["parent-setup.luau"] } };',
+		);
+
+		const childPath = path.join(temporaryDirectory, "jest.config.mjs");
+		fs.writeFileSync(
+			childPath,
+			'export default { extends: "./parent.config.mjs", test: { verbose: true } };',
+		);
+
+		const result = await loadRawConfig(childPath, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.test?.setupFiles).toStrictEqual(["parent-setup.luau"]);
+		expect(result.test?.verbose).toBeTrue();
+	});
+
+	it("should resolve function-valued merger fields against empty defaults", async () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "raw-config-test-"));
+		const configPath = path.join(temporaryDirectory, "jest.config.mjs");
+		fs.writeFileSync(
+			configPath,
+			'export default { test: { setupFiles: () => ["child-setup.luau"] } };',
+		);
+
+		const result = await loadRawConfig(configPath, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.test?.setupFiles).toStrictEqual(["child-setup.luau"]);
 	});
 });

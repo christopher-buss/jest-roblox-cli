@@ -25,7 +25,7 @@ export interface PackageDescriptor {
 	/**
 	 * Per-package `coverageCache` opt-out, forwarded to
 	 * `prepareWorkspaceCoverage` so the cache gate honors each package's own
-	 * declaration (HAL-231). Not read by synthesis itself.
+	 * declaration. Not read by synthesis itself.
 	 */
 	coverageCache?: boolean;
 	/**

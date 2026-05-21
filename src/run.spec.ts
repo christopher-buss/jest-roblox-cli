@@ -115,18 +115,16 @@ describe(runJestRoblox, () => {
 		expect(mocks.runSingleProject).toHaveBeenCalledOnce();
 	});
 
-	it("should fold CLI flags into config before dispatching to workspace mode", async () => {
+	it("should pass cli through to workspace mode without merging workspace-root config", async () => {
 		expect.assertions(1);
 
 		mocks.runWorkspaceMode.mockResolvedValue(WORKSPACE);
 
-		await runJestRoblox(
-			makeCli({ collectCoverage: true, packages: "a", workspace: true }),
-			makeConfig({ collectCoverage: false }),
-		);
+		const cli = makeCli({ collectCoverage: true, packages: "a", workspace: true });
+		await runJestRoblox(cli, makeConfig({ collectCoverage: false }));
 
-		const [options] = mocks.runWorkspaceMode.mock.calls[0] ?? [];
+		const [forwardedCli] = mocks.runWorkspaceMode.mock.calls[0] ?? [];
 
-		expect(options?.config.collectCoverage).toBeTrue();
+		expect(forwardedCli).toBe(cli);
 	});
 });

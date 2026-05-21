@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Backend, BackendOptions, BackendResult } from "./backends/interface.ts";
 import { loadConfig } from "./config/loader.ts";
-import type { CliOptions, ResolvedConfig } from "./config/schema.ts";
+import type { CliOptions, WorkspaceRunOptions } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { MANIFEST_VERSION } from "./coverage/manifest.ts";
 import { prepareWorkStealingQueue } from "./memory-store/work-stealing.ts";
@@ -112,8 +112,16 @@ function createStubBackend(entries: Array<BackendStubEntry>): {
 	return { backend, captured };
 }
 
-function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-	return { ...DEFAULT_CONFIG, rootDir: FOO_DIR, ...overrides };
+function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): WorkspaceRunOptions {
+	return {
+		backend: DEFAULT_CONFIG.backend,
+		color: DEFAULT_CONFIG.color,
+		formatters: [],
+		pollInterval: DEFAULT_CONFIG.pollInterval,
+		port: DEFAULT_CONFIG.port,
+		silent: DEFAULT_CONFIG.silent,
+		...overrides,
+	};
 }
 
 function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
@@ -192,8 +200,8 @@ describe(runWorkspace, () => {
 		await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -225,8 +233,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -271,8 +279,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -316,8 +324,8 @@ describe(runWorkspace, () => {
 		await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -369,8 +377,8 @@ describe(runWorkspace, () => {
 		await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -418,8 +426,8 @@ describe(runWorkspace, () => {
 		await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -485,8 +493,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -530,8 +538,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli({ project: ["client"] }),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -562,8 +570,8 @@ describe(runWorkspace, () => {
 			runWorkspace({
 				backend,
 				cli: makeCli({ project: ["nonexistent"] }),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			}),
@@ -617,8 +625,8 @@ describe(runWorkspace, () => {
 		await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -685,8 +693,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -738,8 +746,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig({ rojoProject: "custom.project.json" }),
 			packageInfos: [BAR_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -777,8 +785,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -807,8 +815,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -838,8 +846,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -869,8 +877,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -900,8 +908,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -947,8 +955,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO, BAR_INFO, BAZ_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -984,8 +992,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -1031,8 +1039,8 @@ describe(runWorkspace, () => {
 		await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig({ passWithNoTests: true }),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -1071,8 +1079,8 @@ describe(runWorkspace, () => {
 		await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -1100,8 +1108,8 @@ describe(runWorkspace, () => {
 		const results = await runWorkspace({
 			backend,
 			cli: makeCli(),
-			config: makeConfig(),
 			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -1152,8 +1160,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
-				config: makeConfig({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1217,8 +1225,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
-				config: makeConfig({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1290,8 +1298,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
-				config: makeConfig({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1346,8 +1354,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
-				config: makeConfig({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1399,8 +1407,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
-				config: makeConfig({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1450,8 +1458,8 @@ describe(runWorkspace, () => {
 			const results = await runWorkspace({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
-				config: makeConfig({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1498,8 +1506,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
-				config: makeConfig({ collectCoverage: true }),
 				packageInfos: [FOO_INFO, BAR_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1533,8 +1541,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1571,8 +1579,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1614,8 +1622,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO, BAR_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1665,9 +1673,9 @@ describe(runWorkspace, () => {
 
 			await runWorkspace({
 				backend,
-				cli: makeCli({ parallel: 2 }),
-				config: makeConfig(),
+				cli: makeCli(),
 				packageInfos: [FOO_INFO, BAR_INFO],
+				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 				workStealingCredentials: testCredentials,
@@ -1706,9 +1714,9 @@ describe(runWorkspace, () => {
 
 			await runWorkspace({
 				backend,
-				cli: makeCli({ parallel: 2 }),
-				config: makeConfig(),
+				cli: makeCli(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 				workStealingCredentials: testCredentials,
@@ -1739,8 +1747,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 				workStealingCredentials: testCredentials,
@@ -1771,9 +1779,9 @@ describe(runWorkspace, () => {
 
 			await runWorkspace({
 				backend,
-				cli: makeCli({ parallel: 4 }),
-				config: makeConfig(),
+				cli: makeCli(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 4 }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -1804,8 +1812,7 @@ describe(runWorkspace, () => {
 
 			await runWorkspace({
 				backend,
-				cli: makeCli({ parallel: 2 }),
-				config: makeConfig(),
+				cli: makeCli(),
 				// Exercise the streaming-side baseUrl plumbing on the same call;
 				// keeps the SortedMap client constructor seeing the override
 				// when work-stealing fires.
@@ -1813,6 +1820,7 @@ describe(runWorkspace, () => {
 					/* intentionally inert */
 				},
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 				workStealingCredentials: { ...testCredentials, baseUrl: "http://127.0.0.1:4010" },
@@ -1843,12 +1851,12 @@ describe(runWorkspace, () => {
 
 			await runWorkspace({
 				backend,
-				cli: makeCli({ parallel: 2 }),
-				config: makeConfig(),
+				cli: makeCli(),
 				onStreamingResult: () => {
 					/* intentionally inert */
 				},
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 				workStealingCredentials: testCredentials,
@@ -1878,12 +1886,12 @@ describe(runWorkspace, () => {
 
 			await runWorkspace({
 				backend,
-				cli: makeCli({ parallel: 2 }),
-				config: makeConfig(),
+				cli: makeCli(),
 				onStreamingResult: () => {
 					/* intentionally inert */
 				},
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 				workStealingCredentials: testCredentials,
@@ -1912,9 +1920,9 @@ describe(runWorkspace, () => {
 
 			await runWorkspace({
 				backend,
-				cli: makeCli({ parallel: 2 }),
-				config: makeConfig(),
+				cli: makeCli(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 				workStealingCredentials: testCredentials,
@@ -1964,12 +1972,12 @@ describe(runWorkspace, () => {
 
 			await runWorkspace({
 				backend: wrappedBackend,
-				cli: makeCli({ parallel: 2 }),
-				config: makeConfig(),
+				cli: makeCli(),
 				onStreamingResult: (entry) => {
 					seen.push(entry.pkg);
 				},
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 				workStealingCredentials: testCredentials,
@@ -2000,8 +2008,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2041,8 +2049,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2084,8 +2092,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ gameOutput: path.join(ROOT, "out.json") }),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2139,8 +2147,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2181,8 +2189,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2226,8 +2234,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ gameOutput: path.join(ROOT, "out.json") }),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2262,8 +2270,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ gameOutput: path.join(ROOT, "out.json") }),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2318,8 +2326,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ gameOutput: path.join(ROOT, "out.json") }),
-				config: makeConfig({ silent: true }),
 				packageInfos: [FOO_INFO, BAR_INFO],
+				runOptions: makeRunOptions({ silent: true }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2395,8 +2403,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli({ gameOutput: path.join(ROOT, "out.json") }),
-				config: makeConfig(),
 				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2469,8 +2477,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig({ silent: true }),
 				packageInfos: [FOO_INFO, BAR_INFO],
+				runOptions: makeRunOptions({ silent: true }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
@@ -2543,8 +2551,8 @@ describe(runWorkspace, () => {
 			await runWorkspace({
 				backend,
 				cli: makeCli(),
-				config: makeConfig({ silent: true }),
 				packageInfos: [FOO_INFO, BAR_INFO],
+				runOptions: makeRunOptions({ silent: true }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});

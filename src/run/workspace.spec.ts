@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Backend, BackendOptions, BackendResult } from "../backends/interface.ts";
 import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/open-cloud.ts";
-import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
-import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { loadRawConfig } from "../config/loader.ts";
+import type { CliOptions } from "../config/schema.ts";
 import { MANIFEST_VERSION } from "../coverage/manifest.ts";
 import type { ExecuteResult } from "../executor.ts";
 import type { JestResult } from "../types/jest-result.ts";
@@ -17,11 +17,15 @@ import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import { resolvePackage } from "../workspace/package-resolver.ts";
 import { runWorkspaceMode } from "./workspace.ts";
 
+const stdEnvironmentMock = vi.hoisted(() => ({ isAgent: false }));
+
+vi.mock(import("std-env"), () => stdEnvironmentMock);
 vi.mock(import("../workspace-runner.ts"));
 vi.mock(import("../workspace/discovery.ts"));
 vi.mock(import("../workspace/package-resolver.ts"));
 vi.mock(import("../workspace/affected.ts"));
 vi.mock(import("../backends/open-cloud.ts"));
+vi.mock(import("../config/loader.ts"));
 vi.mock(import("../coverage/workspace-aggregate.ts"));
 vi.mock(import("@isentinel/roblox-runner"), async (importOriginal) => {
 	const actual = await importOriginal();
@@ -36,11 +40,7 @@ vi.mock(import("@isentinel/roblox-runner"), async (importOriginal) => {
 });
 
 function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
-	return { ...overrides };
-}
-
-function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-	return { ...DEFAULT_CONFIG, backend: "open-cloud", ...overrides };
+	return { backend: "open-cloud", ...overrides };
 }
 
 function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
@@ -90,6 +90,7 @@ function setupHappyPath(): { backend: Backend } {
 	});
 	vi.mocked(createOpenCloudBackend).mockReturnValue(fromAny(backend));
 	vi.mocked(runWorkspace).mockResolvedValue([]);
+	vi.mocked(loadRawConfig).mockResolvedValue({});
 	return { backend };
 }
 
@@ -99,10 +100,9 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(2);
 
 			setupHappyPath();
-			const result = await runWorkspaceMode({
-				cli: makeCli({ affectedSince: "main", packages: "a", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ affectedSince: "main", packages: "a", workspace: true }),
+			);
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain(
@@ -114,10 +114,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(2);
 
 			setupHappyPath();
-			const result = await runWorkspaceMode({
-				cli: makeCli({ workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(makeCli({ workspace: true }));
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain(
@@ -129,10 +126,9 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(2);
 
 			setupHappyPath();
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "a", workspace: true }),
-				config: makeConfig({ backend: "studio" }),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ backend: "studio", packages: "a", workspace: true }),
+			);
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("--workspace requires --backend open-cloud");
@@ -149,10 +145,9 @@ describe(runWorkspaceMode, () => {
 				{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
 			]);
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo,@halcyon/bar", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo,@halcyon/bar", workspace: true }),
+			);
 
 			expect(result.validationExitCode).toBeUndefined();
 			expect(result.projectResults).toHaveLength(2);
@@ -168,10 +163,7 @@ describe(runWorkspaceMode, () => {
 			vi.mocked(resolveOpenCloudBaseUrl).mockReturnValue("http://127.0.0.1:4010");
 			vi.mocked(runWorkspace).mockResolvedValue([]);
 
-			await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			await runWorkspaceMode(makeCli({ packages: "@halcyon/foo", workspace: true }));
 
 			expect(
 				vi.mocked(runWorkspace).mock.calls[0]?.[0].workStealingCredentials?.baseUrl,
@@ -186,10 +178,9 @@ describe(runWorkspaceMode, () => {
 				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 			]);
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.projectResults[0]?.displayName).toBe("@halcyon/foo");
 		});
@@ -200,10 +191,7 @@ describe(runWorkspaceMode, () => {
 			setupHappyPath();
 			vi.mocked(runWorkspace).mockResolvedValue([]);
 
-			await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			await runWorkspaceMode(makeCli({ packages: "@halcyon/foo", workspace: true }));
 
 			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeFunction();
 		});
@@ -214,10 +202,9 @@ describe(runWorkspaceMode, () => {
 			setupHappyPath();
 			vi.mocked(runWorkspace).mockResolvedValue([]);
 
-			await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig({ formatters: ["json"] }),
-			});
+			await runWorkspaceMode(
+				makeCli({ formatters: ["json"], packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
 		});
@@ -228,10 +215,9 @@ describe(runWorkspaceMode, () => {
 			setupHappyPath();
 			vi.mocked(runWorkspace).mockResolvedValue([]);
 
-			await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig({ silent: true }),
-			});
+			await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", silent: true, workspace: true }),
+			);
 
 			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
 		});
@@ -242,10 +228,9 @@ describe(runWorkspaceMode, () => {
 			setupHappyPath();
 			vi.mocked(runWorkspace).mockResolvedValue([]);
 
-			await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig({ formatters: ["agent"], verbose: false }),
-			});
+			await runWorkspaceMode(
+				makeCli({ formatters: ["agent"], packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
 		});
@@ -264,10 +249,9 @@ describe(runWorkspaceMode, () => {
 					return true;
 				});
 
-			await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig({ color: false }),
-			});
+			await runWorkspaceMode(
+				makeCli({ color: false, packages: "@halcyon/foo", workspace: true }),
+			);
 
 			const onStreamingResult = vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult;
 			onStreamingResult?.({
@@ -293,10 +277,9 @@ describe(runWorkspaceMode, () => {
 				{ displayName: "server", pkg: "@halcyon/foo", result: makeExecuteResult() },
 			]);
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.projectResults[0]?.displayName).toBe("@halcyon/foo › client");
 			expect(result.projectResults[1]?.displayName).toBe("@halcyon/foo › server");
@@ -314,10 +297,9 @@ describe(runWorkspaceMode, () => {
 				{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
 			]);
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ affectedSince: "main", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ affectedSince: "main", workspace: true }),
+			);
 
 			expect(result.projectResults).toHaveLength(2);
 			expect(getAffectedPackages).toHaveBeenCalledWith("/repo", "main");
@@ -333,10 +315,9 @@ describe(runWorkspaceMode, () => {
 			vi.mocked(getAffectedPackages).mockReturnValue([]);
 			const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ affectedSince: "main", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ affectedSince: "main", workspace: true }),
+			);
 
 			expect(result.projectResults).toStrictEqual([]);
 			expect(result.validationExitCode).toBeUndefined();
@@ -353,10 +334,9 @@ describe(runWorkspaceMode, () => {
 				throw new Error("No workspace root");
 			});
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("No workspace root");
@@ -370,10 +350,9 @@ describe(runWorkspaceMode, () => {
 				throw new Error("Package missing");
 			});
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("Package missing");
@@ -387,10 +366,9 @@ describe(runWorkspaceMode, () => {
 				throw new Error("missing apiKey");
 			});
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("missing apiKey");
@@ -401,10 +379,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: " , , ", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(makeCli({ packages: " , , ", workspace: true }));
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain(
@@ -418,10 +393,9 @@ describe(runWorkspaceMode, () => {
 			setupHappyPath();
 			vi.mocked(runWorkspace).mockResolvedValue(undefined);
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toBeUndefined();
@@ -435,13 +409,71 @@ describe(runWorkspaceMode, () => {
 			vi.mocked(runWorkspace).mockRejectedValue(new Error("boom"));
 
 			await expect(
-				runWorkspaceMode({
-					cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-					config: makeConfig(),
-				}),
+				runWorkspaceMode(makeCli({ packages: "@halcyon/foo", workspace: true })),
 			).rejects.toThrow("boom");
 
 			expect(backend.close).toHaveBeenCalledWith();
+		});
+
+		it("should surface workspace consensus conflicts as validation message", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			vi.mocked(loadRawConfig).mockImplementation(async (_configPath, cwd) => {
+				return cwd?.endsWith("foo") === true ? { color: true } : { color: false };
+			});
+
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo,@halcyon/bar", workspace: true }),
+			);
+
+			expect(result.validationExitCode).toBe(2);
+			expect(result.validationMessage).toContain("workspace packages disagree on `color`");
+		});
+
+		it("should surface loadRawConfig errors without double-prefixing Error:", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			vi.mocked(loadRawConfig).mockRejectedValueOnce(new Error("Bad config file"));
+
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
+
+			expect(result.validationExitCode).toBe(2);
+			expect(result.validationMessage).toBe("Error: Bad config file\n");
+		});
+
+		it("should stringify non-Error throws from config loading", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			vi.mocked(loadRawConfig).mockRejectedValueOnce("raw string failure");
+
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
+
+			expect(result.validationExitCode).toBe(2);
+			expect(result.validationMessage).toBe("Error: raw string failure\n");
+		});
+
+		it("should stringify non-Error throws from credential building", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			vi.mocked(createOpenCloudBackend).mockImplementation(() => {
+				// eslint-disable-next-line ts/only-throw-error -- exercising the non-Error branch
+				throw "raw credential failure";
+			});
+
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
+
+			expect(result.validationExitCode).toBe(2);
+			expect(result.validationMessage).toBe("Error: raw credential failure\n");
 		});
 	});
 
@@ -491,10 +523,9 @@ describe(runWorkspaceMode, () => {
 				},
 			});
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig({ collectCoverage: true }),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(aggregateWorkspaceCoverage).toHaveBeenCalledWith([
 				expect.objectContaining({
@@ -551,10 +582,9 @@ describe(runWorkspaceMode, () => {
 				await import("../coverage/workspace-aggregate.ts");
 			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({ files: {} });
 
-			await runWorkspaceMode({
-				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig({ collectCoverage: true }),
-			});
+			await runWorkspaceMode(
+				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+			);
 
 			const aggregateCall = vi.mocked(aggregateWorkspaceCoverage).mock.calls[0]?.[0];
 
@@ -594,10 +624,9 @@ describe(runWorkspaceMode, () => {
 				await import("../coverage/workspace-aggregate.ts");
 			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({ files: {} });
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig({ collectCoverage: true }),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.coverageMapped).toBeUndefined();
 		});
@@ -617,10 +646,9 @@ describe(runWorkspaceMode, () => {
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage/workspace-aggregate.ts");
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(aggregateWorkspaceCoverage).not.toHaveBeenCalled();
 			expect(result.coverageMapped).toBeUndefined();
@@ -675,10 +703,9 @@ describe(runWorkspaceMode, () => {
 				},
 			});
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.coverageMapped?.files["foo.ts"]).toBeDefined();
 		});
@@ -691,10 +718,9 @@ describe(runWorkspaceMode, () => {
 			setupHappyPath();
 			vi.mocked(runWorkspace).mockResolvedValue([]);
 
-			const result = await runWorkspaceMode({
-				cli: makeCli({ packages: "@halcyon/foo", workspace: true }),
-				config: makeConfig(),
-			});
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
 
 			expect(result.validationExitCode).toBeUndefined();
 			expect(result.projectResults).toStrictEqual([]);

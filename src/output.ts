@@ -269,7 +269,10 @@ function addCoverageTiming(timing: TimingResult, coverageMs: number): TimingResu
 }
 
 function usesDefaultFormatter(config: ResolvedConfig): boolean {
-	return !hasFormatter(config, "json") && !usesAgentFormatter(config);
+	return (
+		!hasFormatter(config.formatters, "json") &&
+		!usesAgentFormatter(config.formatters, config.verbose)
+	);
 }
 
 function printOutput(out: string): void {
@@ -404,7 +407,7 @@ function processCoverage(
 	}
 
 	generateReports({
-		agentMode: usesAgentFormatter(config),
+		agentMode: usesAgentFormatter(config.formatters, config.verbose),
 		collectCoverageFrom: config.collectCoverageFrom,
 		coverageDirectory: path.resolve(config.rootDir, config.coverageDirectory),
 		mapped,
@@ -502,7 +505,7 @@ function printMultiProjectOutput(options: MultiOutputContext): void {
 	const { config, merged, preCoverageMs, projectResults, typecheckResult } = options;
 	const timing = addCoverageTiming(merged.timing, preCoverageMs);
 
-	if (usesAgentFormatter(config)) {
+	if (usesAgentFormatter(config.formatters, config.verbose)) {
 		printOutput(
 			formatAgentMultiProject(toProjectEntries(projectResults), {
 				gameOutput: config.gameOutput,
@@ -516,7 +519,7 @@ function printMultiProjectOutput(options: MultiOutputContext): void {
 		return;
 	}
 
-	if (hasFormatter(config, "json")) {
+	if (hasFormatter(config.formatters, "json")) {
 		printOutput(formatRuntimeOutput(config, merged, timing));
 		return;
 	}

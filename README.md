@@ -136,13 +136,14 @@ default. Mixed per-package declarations error loudly.
 | Field | What it does | Default |
 |---|---|---|
 | `backend` | `"auto"`, `"open-cloud"`, or `"studio"` | `"auto"` |
-| `placeId` | Open Cloud place ID | — |
-| `universeId` | Open Cloud universe ID | — |
-| `port` | WebSocket port for Studio backend | `3001` |
+| `color` | Use ANSI colors in console output | `true` |
 | `formatters` | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`) | `["default"]` |
-| `silent` | Suppress console output | `false` |
 | `parallel` | Number of concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`) | — |
+| `placeId` | Open Cloud place ID | — |
 | `pollInterval` | How often to poll for results in ms (Open Cloud) | `500` |
+| `port` | WebSocket port for Studio backend | `3001` |
+| `silent` | Suppress console output | `false` |
+| `universeId` | Open Cloud universe ID | — |
 
 #### Per-package fields
 
