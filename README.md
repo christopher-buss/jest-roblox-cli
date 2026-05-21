@@ -87,7 +87,8 @@ jest-roblox -t "should spawn"
 jest-roblox --testPathPattern player
 jest-roblox --testPathPattern="modifiers|define\\.spec|triggers"
 
-# Use a specific backend
+# Use a specific backend (default "auto" picks Studio if the plugin is
+# connected, else Open Cloud if credentials are set — see Backends below)
 jest-roblox --backend studio
 jest-roblox --backend open-cloud
 
@@ -126,7 +127,7 @@ Root fields control the CLI/runner. Jest passthrough fields live under `test:`.
 
 | Field | What it does | Default |
 |---|---|---|
-| `backend` | `"open-cloud"` or `"studio"` | — |
+| `backend` | `"auto"`, `"open-cloud"`, or `"studio"` | `"auto"` |
 | `placeFile` | Path to your `.rbxl` file | `"./game.rbxl"` |
 | `timeout` | Max time for tests to run (ms) | `300000` (5 min) |
 | `sourceMap` | Map Luau errors back to TypeScript (roblox-ts only) | `true` |
@@ -228,7 +229,14 @@ export default defineConfig({
 
 ## Backends
 
-Two ways to run tests:
+Two ways to run tests, plus an auto-pick:
+
+### Auto (default)
+
+`--backend auto` (the default) probes for a connected Studio plugin first.
+If detected, runs via Studio; otherwise falls back to Open Cloud — but only
+if credentials are available (see Open Cloud below). With no plugin and no
+credentials, the run errors instead of silently falling back.
 
 ### Open Cloud (remote)
 
@@ -243,6 +251,37 @@ You need these environment variables:
 | `ROBLOX_PLACE_ID` | The place to run tests in |
 
 > Prefix any of the above with `JEST_` (e.g. `JEST_ROBLOX_PLACE_ID`) to override the unprefixed value. Use the `JEST_`-prefixed form when the generic names collide with other tooling.
+
+#### Required scopes
+
+Create the API key in the Creator Dashboard against the target universe, then
+grant it the scopes below. A `403` at runtime surfaces as a `PermissionError`
+with the missing scope name.
+
+Always required:
+
+| Scope | What it's for |
+|---|---|
+| `universe-places:write` | Publish the built `.rbxl` as a new place version |
+| `universe.place.luau-execution-session:write` | Start the Luau session that runs the tests |
+
+`--workspace --parallel >1` additionally requires the queue scopes for
+work-stealing across concurrent sessions:
+
+| Scope | What it's for |
+|---|---|
+| `memory-store.queue:add` / `:dequeue` / `:discard` | Work-stealing queue across concurrent sessions |
+
+`--workspace --parallel >1` with a streaming formatter additionally requires:
+
+| Scope | What it's for |
+|---|---|
+| `memory-store.sorted-map:read` / `:write` | Stream live per-package results back as packages finish |
+
+Streaming is enabled by default and disabled only for `--silent`,
+`--formatters json`, and `--formatters agent` (without `--verbose`).
+`--formatters agent --verbose` re-enables streaming and therefore still
+needs the sorted-map scopes; `--formatters github-actions` also streams.
 
 ### Studio (local)
 
@@ -272,11 +311,44 @@ Or download `JestRobloxRunner.rbxm` from the
 [latest release](https://github.com/christopher-buss/jest-roblox-cli/releases)
 and drop it into your Studio plugins folder.
 
+## Workspace mode
+
+Run tests across multiple packages in a pnpm workspace in a single
+invocation. Open Cloud only — Studio backend is not supported.
+
+> [!NOTE]
+> Package discovery reads `pnpm-workspace.yaml` at the workspace root;
+> npm/yarn workspaces and turbo/nx-only roots are not yet supported.
+> `--affected-since` delegates change detection to `turbo` or `nx` if their
+> config is present, but `pnpm-workspace.yaml` is still required for the
+> package list. When using Nx, each project's Nx name must match the
+> `package.json` `name` field — `--affected-since` returns Nx project names
+> and looks them up against the pnpm package list, so a mismatch surfaces
+> as `Package "<name>" not found in workspace`.
+
+Pick packages explicitly or by what changed:
+
+```bash
+# Specific packages
+jest-roblox --workspace --packages @scope/pkg-a,@scope/pkg-b
+
+# Everything changed since a git ref (via turbo/nx affected)
+jest-roblox --workspace --affected-since main
+```
+
+`--workspace` must be combined with `--packages` or `--affected-since` —
+the two are mutually exclusive, and either flag requires `--workspace`.
+
+Per-package coverage is aggregated into a single report under
+`<rootDir>/<coverageDirectory>`. `rootDir` defaults to the current working
+directory, so run from the workspace root (or set `rootDir`) if you want
+the report to land there.
+
 ## CLI flags
 
 | Flag | What it does |
 |---|---|
-| `--backend <type>` | Choose `open-cloud` or `studio` |
+| `--backend <type>` | Choose `auto`, `open-cloud`, or `studio` |
 | `--port <n>` | WebSocket port for Studio |
 | `--config <path>` | Path to config file |
 | `--testPathPattern <regex>` | Filter test files by path |
@@ -287,11 +359,13 @@ and drop it into your Studio plugins folder.
 | `--coverage` | Collect coverage |
 | `--coverageDirectory <path>` | Where to put coverage reports |
 | `--coverageReporters <r...>` | Which report formats to use |
-| `--luauRoots <path...>` | Where compiled Luau files live |
+| `--collectCoverageFrom <glob>` | Globs for files to include in coverage (repeatable) |
 | `--no-show-luau` | Hide Luau code in failure output |
 | `-u, --updateSnapshot` | Update snapshot files |
 | `--sourceMap` | Map Luau errors to TypeScript (roblox-ts only) |
 | `--rojoProject <path>` | Path to Rojo project file |
+| `--timeout <ms>` | Max time for tests to run |
+| `--passWithNoTests` | Exit `0` when no test files are found |
 | `--verbose` | Show each test result |
 | `--silent` | Hide all output |
 | `--no-color` | Turn off colors |
@@ -299,12 +373,17 @@ and drop it into your Studio plugins folder.
 | `--pollInterval <ms>` | How often to check for results (Open Cloud) |
 | `--parallel [n]` | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`) |
 | `--project <name...>` | Filter which named projects to run |
-| `--projects <path...>` | DataModel paths that hold tests |
 | `--setupFiles <path...>` | Scripts to run before env |
 | `--setupFilesAfterEnv <path...>` | Scripts to run after env |
 | `--typecheck` | Run type tests too |
 | `--typecheckOnly` | Run only type tests |
 | `--typecheckTsconfig <path>` | tsconfig for type tests |
+| `--workspace` | Enable workspace mode (pair with `--packages` or `--affected-since`; see [Workspace mode](#workspace-mode)) |
+| `--packages <names>` | Comma-separated package names (workspace mode) |
+| `--affected-since <ref>` | Run only packages affected since a git ref (workspace mode) |
+| `--apiKey <key>` | Open Cloud API key (prefer env vars in CI — visible in process listings) |
+| `--universeId <id>` | Target universe ID (Open Cloud) |
+| `--placeId <id>` | Target place ID (Open Cloud) |
 
 ## How it works
 
