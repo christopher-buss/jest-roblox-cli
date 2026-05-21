@@ -49,7 +49,9 @@ local KEEP: { [string]: { string } } = {
 	number = { "value" },
 	["repeat"] = { "body", "condition" },
 	["return"] = { "expressions" },
-	string = { "text" },
+	-- `string` is intentionally absent: the literal value lives at
+	-- `value.token.text` and is flattened by the special-case branch in
+	-- `strip` below. A flat `{ "text" }` entry here can't reach it.
 	table = { "entries" },
 	unary = { "operand" },
 	["while"] = { "body", "condition" },
@@ -73,6 +75,14 @@ local function strip(value: any): any
 	-- AST node — has tag, keep only allowlisted fields
 	if value.tag ~= nil then
 		local result = { tag = value.tag, kind = value.kind, location = value.location }
+
+		-- Lute nests the string literal inside `.token.text`, so the KEEP
+		-- entry can't reach it via flat field lookup. Flatten it here so
+		-- downstream consumers read `node.text` like every other literal.
+		if value.tag == "string" and type(value.token) == "table" then
+			result.text = value.token.text
+		end
+
 		local fields = KEEP[value.tag :: string]
 		if fields then
 			for _, field in fields do

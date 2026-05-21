@@ -35,4 +35,28 @@ describe("parse-ast.luau lute integration", () => {
 
 		expect(keys).toStrictEqual([...EXPECTED_SPAN_KEYS].sort());
 	});
+
+	it("should preserve string literal values on string AST nodes", () => {
+		expect.assertions(1);
+
+		const temporaryFile = createTemporaryLuauFile('return "hello"\n');
+		onTestFinished(() => {
+			rmSync(path.dirname(temporaryFile), { recursive: true });
+		});
+
+		const json = execFileSync("lute", ["run", PARSE_AST_SCRIPT, "--", temporaryFile], {
+			encoding: "utf-8",
+			windowsHide: true,
+		});
+
+		const ast = JSON.parse(json) as {
+			statements: Array<{
+				expressions: Array<{ node: { tag: string; text?: string } }>;
+				tag: string;
+			}>;
+		};
+		const stringNode = ast.statements[0]!.expressions[0]!.node;
+
+		expect(stringNode).toMatchObject({ tag: "string", text: "hello" });
+	});
 });
