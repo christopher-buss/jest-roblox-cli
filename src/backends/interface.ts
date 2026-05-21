@@ -8,6 +8,7 @@ import type { SnapshotWrites } from "../reporter/parser.ts";
 import type { JestResult } from "../types/jest-result.ts";
 
 export interface EnvelopeEntry {
+	bannerOutput?: string;
 	elapsedMs?: number;
 	gameOutput?: string;
 	jestOutput: string;
@@ -103,6 +104,7 @@ export interface BackendTiming {
 }
 
 export interface ProjectBackendResult {
+	bannerOutput?: string;
 	coverageData?: RawCoverageData;
 	displayColor?: string;
 	displayName: string;

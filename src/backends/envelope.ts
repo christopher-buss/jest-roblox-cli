@@ -5,6 +5,7 @@ import type { EnvelopeEntry, ProjectBackendResult, ProjectJob } from "./interfac
 
 const envelopeSchema = type({
 	entries: type({
+		"bannerOutput?": "string",
 		"elapsedMs?": "number",
 		"gameOutput?": "string",
 		"jestOutput": "string",
@@ -29,13 +30,25 @@ export function buildProjectResult(
 	job: ProjectJob,
 	fallbackGameOutput: string | undefined,
 ): ProjectBackendResult {
-	const gameOutput = entry.gameOutput ?? fallbackGameOutput;
+	const {
+		bannerOutput,
+		elapsedMs,
+		gameOutput: entryGameOutput,
+		jestOutput,
+		snapshotWrites,
+	} = entry;
+	const gameOutput = entryGameOutput ?? fallbackGameOutput;
 
 	let parsed;
 	try {
-		parsed = parseJestOutput(entry.jestOutput);
+		parsed = parseJestOutput(jestOutput);
 	} catch (err) {
 		if (err instanceof LuauScriptError) {
+			// Both captures travel on the error so the exec-error path can
+			// surface the banner cause (bannerOutput) AND still write the
+			// full Game Output dump (gameOutput) to --gameOutput. See
+			// CONTEXT.md for the Game Output / Banner Output split.
+			err.bannerOutput = bannerOutput;
 			err.gameOutput = gameOutput;
 		}
 
@@ -45,19 +58,19 @@ export function buildProjectResult(
 	// Length check, not `??`: an empty {} from a future malformed
 	// producer must not mask a populated parsed._snapshotWrites
 	// scraped from jestOutput (single-package runner.luau path).
-	const entryWrites = entry.snapshotWrites;
-	const hasEntryWrites = entryWrites !== undefined && Object.keys(entryWrites).length > 0;
+	const hasEntryWrites = snapshotWrites !== undefined && Object.keys(snapshotWrites).length > 0;
 
 	return {
+		bannerOutput,
 		coverageData: parsed.coverageData,
 		displayColor: job.displayColor,
 		displayName: job.displayName,
-		elapsedMs: entry.elapsedMs ?? 0,
+		elapsedMs: elapsedMs ?? 0,
 		gameOutput,
 		luauTiming: parsed.luauTiming,
 		result: parsed.result,
 		setupMs:
 			parsed.setupSeconds !== undefined ? Math.round(parsed.setupSeconds * 1000) : undefined,
-		snapshotWrites: hasEntryWrites ? entryWrites : parsed.snapshotWrites,
+		snapshotWrites: hasEntryWrites ? snapshotWrites : parsed.snapshotWrites,
 	};
 }

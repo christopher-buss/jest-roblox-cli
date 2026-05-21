@@ -44,14 +44,6 @@ export function validateWorkspaceFlags(
 		};
 	}
 
-	if (config.gameOutput !== undefined) {
-		return {
-			exitCode: 2,
-			message: "Error: --gameOutput not yet supported with --workspace.\n",
-			ok: false,
-		};
-	}
-
 	if (config.backend === "studio") {
 		return {
 			exitCode: 2,

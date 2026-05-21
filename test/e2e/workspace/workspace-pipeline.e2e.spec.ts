@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -6,6 +7,13 @@ import { describe, expect, it } from "vitest";
 
 import { startFakeOpenCloudServer } from "../cli/fake-open-cloud.ts";
 import { createFixtureSandbox, runCliAsync } from "../cli/helpers.ts";
+
+const gameOutputEntrySchema = type({
+	message: "string",
+	messageType: "number",
+	timestamp: "number",
+});
+const gameOutputSchema = gameOutputEntrySchema.array();
 
 // Live multi-root workspace pipeline test. Gated on JEST_ROBLOX_LIVE=1 plus
 // the three Open Cloud env vars (`ROBLOX_OPEN_CLOUD_API_KEY`,
@@ -61,6 +69,57 @@ describe("live workspace pipeline", () => {
 			expect(fs.existsSync(path.join(sandbox, "out/server/jest.config.luau"))).toBeFalse();
 			expect(
 				fs.existsSync(path.join(sandbox, ".jest-roblox/cache/out/shared/jest.config.luau")),
+			).toBeTrue();
+		},
+		RUN_TIMEOUT_MS + 5000,
+	);
+
+	// HAL-225 regression: the multi-project path through runner.luau must
+	// aggregate per-project gameOutput contributions into the file at
+	// config.gameOutput. The shared spec carries a marker warn — it must
+	// reach the aggregated dump.
+	//
+	// Coverage gap acknowledged: this exercises runner.luau's MessageOut
+	// capture (multi-project = sequential module.run calls), NOT
+	// staging/entry.luau (workspace mode's parallel per-entry capture). A
+	// true `--workspace` + live OCALE test needs a workspace-shaped fixture
+	// that doesn't exist yet; tracked separately.
+	//
+	// Note: after editing fixture sources, run `rm -rf
+	// tools/jest-roblox-cli/test/e2e/fixtures/live-place/out` once so
+	// global-setup's sentinel cache re-compiles the spec with the marker.
+	it.runIf(isLive)(
+		"should aggregate native warn() from a spec into --gameOutput across both mounts",
+		async () => {
+			expect.assertions(4);
+
+			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
+			const gameOutputPath = path.join(sandbox, "game-output.json");
+			const result = await runCliAsync(
+				[
+					"--backend",
+					"open-cloud",
+					"--config",
+					"jest.config.ts",
+					"--gameOutput",
+					gameOutputPath,
+				],
+				{
+					cwd: sandbox,
+					env: liveEnvironment(),
+					timeoutMs: RUN_TIMEOUT_MS,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(fs.existsSync(gameOutputPath)).toBeTrue();
+
+			const raw = JSON.parse(fs.readFileSync(gameOutputPath, "utf-8"));
+			const entries = gameOutputSchema.assert(raw);
+
+			expect(entries.length).toBeGreaterThan(0);
+			expect(
+				entries.some((entry) => entry.message.includes("HAL-225 game-output marker")),
 			).toBeTrue();
 		},
 		RUN_TIMEOUT_MS + 5000,

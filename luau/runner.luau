@@ -28,24 +28,43 @@ end
 
 local module = {}
 
-function module.run(callingScript: LuaSourceContainer, config: Config): (string, string)
+function module.run(callingScript: LuaSourceContainer, config: Config): (string, string, string)
 	local t0 = os.clock()
 	local timingEnabled = config._timing
 	local coverageEnabled = config._coverage
+
+	-- Game Output capture: subscribe to LogService.MessageOut at the top of
+	-- the run so engine warnings during findJest/require(Jest) (broken
+	-- jestPath, missing dep) also land in the user-facing `--gameOutput`
+	-- dump. Disconnected last during teardown so late warns that fire after
+	-- Promise:expect resumes the coroutine still reach us — GetLogHistory
+	-- has a known gap here (plans/SNAPSHOT-SUPPORT.md).
+	local logMessages: { CapturedMessage } = {}
+	local logConnection = LogService.MessageOut:Connect(
+		function(message: string, messageType: Enum.MessageType)
+			table.insert(logMessages, {
+				message = message,
+				messageType = messageType.Value,
+				timestamp = os.clock(),
+			})
+		end
+	)
+
+	local function encodeGameOutput(): string
+		local ok, encoded = pcall(function()
+			return HttpService:JSONEncode(logMessages)
+		end)
+		return if ok then encoded else "[]"
+	end
 
 	local t_findJest0 = os.clock()
 	local findSuccess, findValue = pcall(InstanceResolver.getJest, config)
 	local t_findJest = os.clock()
 
 	if not findSuccess then
-		local logSuccess, logHistory = pcall(function()
-			return HttpService:JSONEncode(LogService:GetLogHistory())
-		end)
-
-		return HttpService:JSONEncode(fail(findValue :: any)), if logSuccess then logHistory else "[]"
+		logConnection:Disconnect()
+		return HttpService:JSONEncode(fail(findValue :: any)), encodeGameOutput(), "[]"
 	end
-
-	LogService:ClearOutput()
 
 	local snapshotWrites: { [string]: string } = {}
 
@@ -57,10 +76,13 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	local Jest = (require :: any)(findValue)
 	local t_requireJest = os.clock()
 
-	-- Intercept Jest's stdout/stderr to capture output synchronously.
-	-- Jest writes via process.stdout/stderr (Writeable objects whose _writeFn
-	-- defaults to print). Wrapping _writeFn captures messages like
-	-- "No tests found" that are printed just before exit(1) throws.
+	-- Intercept Jest's stdout/stderr to capture output synchronously into
+	-- the BANNER OUTPUT buffer. Jest writes via process.stdout/stderr
+	-- (Writeable objects whose _writeFn defaults to print); wrapping
+	-- _writeFn captures messages like "No tests found" that are printed
+	-- just before exit(1) throws. Distinct from the LogService-sourced
+	-- Game Output above: this narrower buffer is what the CLI's error
+	-- banner reads on Luau errors (see cli.ts:formatLuauErrorBanner).
 	local capturedMessages: { CapturedMessage } = {}
 	local restoreStdout: (() -> ())?
 	local restoreStderr: (() -> ())?
@@ -220,6 +242,11 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 
 	SnapshotPatch.unpatch(patchState)
 
+	-- MessageOut listener stays connected through SnapshotPatch.unpatch and
+	-- the encode below, so any disconnect-time warns still land in
+	-- gameOutput.
+	logConnection:Disconnect()
+
 	local jestResult
 	if not runSuccess then
 		jestResult = HttpService:JSONEncode(fail(runValue :: any))
@@ -227,16 +254,17 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		jestResult = HttpService:JSONEncode(runValue)
 	end
 
-	local logSuccess, logHistory = pcall(function()
+	local bannerEncodeOk, bannerEncoded = pcall(function()
 		return HttpService:JSONEncode(capturedMessages)
 	end)
 
-	return jestResult, if logSuccess then logHistory else "[]"
+	return jestResult, encodeGameOutput(), if bannerEncodeOk then bannerEncoded else "[]"
 end
 
 type ProjectEntry = {
 	jestOutput: string,
 	gameOutput: string,
+	bannerOutput: string,
 	elapsedMs: number,
 }
 
@@ -282,9 +310,10 @@ function module.runProjects(
 			beforeOk, beforeErr = pcall(hooks.beforeConfig, cfg, index)
 		end
 
-		local ok: boolean, jestOutput: any, gameOutput: any = false, nil, nil
+		local ok: boolean, jestOutput: any, gameOutput: any, bannerOutput: any =
+			false, nil, nil, nil
 		if beforeOk then
-			ok, jestOutput, gameOutput = pcall(module.run, callingScript, cfg)
+			ok, jestOutput, gameOutput, bannerOutput = pcall(module.run, callingScript, cfg)
 		else
 			jestOutput = beforeErr
 		end
@@ -305,12 +334,14 @@ function module.runProjects(
 			entries[index] = {
 				jestOutput = jestOutput :: string,
 				gameOutput = gameOutput :: string,
+				bannerOutput = bannerOutput :: string,
 				elapsedMs = elapsedMs,
 			}
 		else
 			entries[index] = {
 				jestOutput = encodeExecutionError(jestOutput),
 				gameOutput = "[]",
+				bannerOutput = "[]",
 				elapsedMs = elapsedMs,
 			}
 		end

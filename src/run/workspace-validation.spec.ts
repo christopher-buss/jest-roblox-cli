@@ -137,7 +137,7 @@ describe(validateWorkspaceFlags, () => {
 		expect(result).toStrictEqual({ ok: true });
 	});
 
-	it("should reject --gameOutput with --workspace", () => {
+	it("should accept --gameOutput with --workspace", () => {
 		expect.assertions(1);
 
 		const result = validateWorkspaceFlags(
@@ -145,14 +145,10 @@ describe(validateWorkspaceFlags, () => {
 			makeConfig({ backend: "open-cloud", gameOutput: "/tmp/out.txt" }),
 		);
 
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message: "Error: --gameOutput not yet supported with --workspace.\n",
-			ok: false,
-		});
+		expect(result).toStrictEqual({ ok: true });
 	});
 
-	it("should reject gameOutput when only set via config", () => {
+	it("should accept gameOutput when only set via config", () => {
 		expect.assertions(1);
 
 		const result = validateWorkspaceFlags(
@@ -160,11 +156,7 @@ describe(validateWorkspaceFlags, () => {
 			makeConfig({ backend: "open-cloud", gameOutput: "/tmp/out.txt" }),
 		);
 
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message: "Error: --gameOutput not yet supported with --workspace.\n",
-			ok: false,
-		});
+		expect(result).toStrictEqual({ ok: true });
 	});
 
 	it("should reject studio backend with --workspace", () => {

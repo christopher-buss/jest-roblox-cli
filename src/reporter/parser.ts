@@ -17,6 +17,18 @@ interface ParseResult {
 const TASK_SCRIPT_PREFIX = /^TaskScript:\d+:\s*/;
 
 export class LuauScriptError extends Error {
+	/**
+	 * Jest's own process.stdout/stderr writes captured via InterceptWriteable.
+	 * Used by the CLI error banner to surface synchronous exit messages
+	 * (e.g. "No tests found, exiting with code 1"). Narrower than
+	 * {@link gameOutput}; see CONTEXT.md for the split.
+	 */
+	public bannerOutput?: string;
+	/**
+	 * The LogService.MessageOut dump for the failed run. Propagated through
+	 * the exec-error path so `--gameOutput <path>` still receives the full
+	 * log when an entry's envelope decodes to a Luau-level script failure.
+	 */
 	public gameOutput?: string;
 
 	constructor(rawMessage: string) {

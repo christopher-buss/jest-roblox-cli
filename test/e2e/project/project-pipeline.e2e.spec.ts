@@ -54,6 +54,13 @@ const coverageReportSchema = type({
 	"[string]": coverageEntrySchema,
 });
 
+const gameOutputEntrySchema = type({
+	message: "string",
+	messageType: "number",
+	timestamp: "number",
+});
+const gameOutputSchema = gameOutputEntrySchema.array();
+
 describe("live project pipeline", () => {
 	it.runIf(isLive)(
 		"should pass end-to-end against live Open Cloud",
@@ -87,6 +94,57 @@ describe("live project pipeline", () => {
 			expect(fs.existsSync(path.join(sandbox, "out/server/jest.config.luau"))).toBeFalse();
 			expect(
 				fs.existsSync(path.join(sandbox, ".jest-roblox/cache/out/shared/jest.config.luau")),
+			).toBeTrue();
+		},
+		RUN_TIMEOUT_MS + 5000,
+	);
+
+	// HAL-225 regression: native Roblox `warn(...)` emitted from a spec must
+	// be captured into the `--gameOutput` JSON dump. Pre-#150 used
+	// LogService:GetLogHistory which captured all output; #150 swapped to
+	// InterceptWriteable on Jest's process.stdout/stderr, which only sees
+	// Jest's reporter writes — native warn/print never flows through it,
+	// so the dump file became `[]` for any real game output. Live fixture
+	// drops a marker warn inside the passing spec; assertion confirms the
+	// marker reaches the JSON file.
+	//
+	// Note: after editing fixture sources, run `rm -rf
+	// tools/jest-roblox-cli/test/e2e/fixtures/live-place/out` once so
+	// global-setup's sentinel cache re-compiles the spec with the marker.
+	it.runIf(isLive)(
+		"should capture native warn() from a spec into the --gameOutput dump",
+		async () => {
+			expect.assertions(4);
+
+			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
+			const gameOutputPath = path.join(sandbox, "game-output.json");
+			const result = await runCliAsync(
+				[
+					"--backend",
+					"open-cloud",
+					"--config",
+					"jest.config.ts",
+					"--project",
+					"live-place-shared",
+					"--gameOutput",
+					gameOutputPath,
+				],
+				{
+					cwd: sandbox,
+					env: liveEnvironment(),
+					timeoutMs: RUN_TIMEOUT_MS,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(fs.existsSync(gameOutputPath)).toBeTrue();
+
+			const raw = JSON.parse(fs.readFileSync(gameOutputPath, "utf-8"));
+			const entries = gameOutputSchema.assert(raw);
+
+			expect(entries.length).toBeGreaterThan(0);
+			expect(
+				entries.some((entry) => entry.message.includes("HAL-225 game-output marker")),
 			).toBeTrue();
 		},
 		RUN_TIMEOUT_MS + 5000,

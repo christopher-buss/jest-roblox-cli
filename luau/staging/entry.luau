@@ -1,5 +1,6 @@
 --!strict
 local HttpService = game:GetService("HttpService")
+local LogService = game:GetService("LogService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
 
 local InstanceResolver = require("../instance-resolver")
@@ -45,6 +46,7 @@ type ResultEntry = {
 	jestOutput: string,
 	snapshotWrites: SnapshotWrites?,
 	gameOutput: string?,
+	bannerOutput: string?,
 }
 
 type StreamingSummary = {
@@ -77,14 +79,38 @@ local function resolveSetupPaths(paths: { string }?): { Instance }?
 	return resolved
 end
 
--- Returns: (jestSuccess, jestOutputOrErrorMessage, snapshotWrites, gameOutput).
+-- Returns: (jestSuccess, jestOutputOrErrorMessage, snapshotWrites, gameOutput, bannerOutput).
 -- `jestSuccess=false` means Jest itself rejected; `jestOutputOrErrorMessage`
 -- carries the normalized cause string in that case, otherwise the encoded
--- success envelope. `gameOutput` is the JSON-encoded captured stdout/stderr
--- whether Jest succeeded or failed — the CLI banner uses it on the failure
--- path to surface messages like "No tests found, exiting with code 1".
-local function runEntry(entry: EntryPayload): (boolean, string, SnapshotWrites?, string?)
+-- success envelope.
+--
+-- `gameOutput` is the JSON-encoded LogService.MessageOut dump for the entry
+-- (everything Studio's Output would show — native print/warn, engine
+-- warnings, Jest stdout). Surfaced to users via `--gameOutput <path>`.
+--
+-- `bannerOutput` is the narrower InterceptWriteable capture of Jest's
+-- own process.stdout/stderr writes, used by the CLI error banner to
+-- surface exit-time messages like "No tests found, exiting with code 1".
+local function runEntry(
+	entry: EntryPayload
+): (boolean, string, SnapshotWrites?, string?, string?)
 	local JestModule = InstanceResolver.getJest(entry.config)
+
+	-- Per-entry Game Output capture. Connected before SnapshotPatch.patch
+	-- so any patch-time warning (e.g. RobloxShared shape changes) lands in
+	-- the dump. Disconnected last during teardown, after restoreStdout/
+	-- restoreStderr and SnapshotPatch.unpatch, to catch late warns that
+	-- fire as Promise:expect resumes the coroutine.
+	local logMessages: { CapturedMessage } = {}
+	local logConnection = LogService.MessageOut:Connect(
+		function(message: string, messageType: Enum.MessageType)
+			table.insert(logMessages, {
+				message = message,
+				messageType = messageType.Value,
+				timestamp = os.clock(),
+			})
+		end
+	)
 
 	-- Patch BEFORE require(Jest) so the snapshot mock is in place when
 	-- Jest's internal modules capture their FileSystemService reference.
@@ -95,8 +121,8 @@ local function runEntry(entry: EntryPayload): (boolean, string, SnapshotWrites?,
 	local patchState = SnapshotPatch.patch(JestModule, snapshotWrites)
 
 	-- Intercept Jest's stdout/stderr around runCLI so per-pkg failure messages
-	-- (e.g. "No tests found, exiting with code 1") are captured and surfaced
-	-- in the CLI banner. Single-package mode (runner.luau) does the same.
+	-- (e.g. "No tests found, exiting with code 1") are captured into the
+	-- BANNER OUTPUT buffer. Single-package mode (runner.luau) does the same.
 	local capturedMessages: { CapturedMessage } = {}
 	local restoreStdout: (() -> ())?
 	local restoreStderr: (() -> ())?
@@ -164,23 +190,37 @@ local function runEntry(entry: EntryPayload): (boolean, string, SnapshotWrites?,
 
 	SnapshotPatch.unpatch(patchState)
 
+	-- Disconnect MessageOut last so any teardown-time warns still land in
+	-- gameOutput.
+	logConnection:Disconnect()
+
 	local gameOutput: string?
-	if #capturedMessages > 0 then
+	if #logMessages > 0 then
 		local encodeOk, encoded = pcall(function()
-			return HttpService:JSONEncode(capturedMessages)
+			return HttpService:JSONEncode(logMessages)
 		end)
 		if encodeOk then
 			gameOutput = encoded :: string
 		end
 	end
 
+	local bannerOutput: string?
+	if #capturedMessages > 0 then
+		local encodeOk, encoded = pcall(function()
+			return HttpService:JSONEncode(capturedMessages)
+		end)
+		if encodeOk then
+			bannerOutput = encoded :: string
+		end
+	end
+
 	local capturedWrites: SnapshotWrites? = if next(snapshotWrites) then snapshotWrites else nil
 
 	if not ok then
-		return false, PromiseError.normalize(jestResultOrError), nil, gameOutput
+		return false, PromiseError.normalize(jestResultOrError), nil, gameOutput, bannerOutput
 	end
 
-	return true, jestResultOrError, capturedWrites, gameOutput
+	return true, jestResultOrError, capturedWrites, gameOutput, bannerOutput
 end
 
 local function buildSummary(result: ResultEntry): StreamingSummary
@@ -275,7 +315,7 @@ local function executeEntry(
 		return result, entry.pkg
 	end
 
-	local pcallOk, jestSuccess, primary, snapshotWrites, gameOutput =
+	local pcallOk, jestSuccess, primary, snapshotWrites, gameOutput, bannerOutput =
 		pcall(runEntry, entry)
 	local elapsedMs = math.floor((os.clock() - t0) * 1000)
 
@@ -302,6 +342,7 @@ local function executeEntry(
 			jestOutput = primary,
 			snapshotWrites = snapshotWrites,
 			gameOutput = gameOutput,
+			bannerOutput = bannerOutput,
 		}
 	else
 		result = {
@@ -313,6 +354,7 @@ local function executeEntry(
 				err = primary,
 			}),
 			gameOutput = gameOutput,
+			bannerOutput = bannerOutput,
 		}
 	end
 

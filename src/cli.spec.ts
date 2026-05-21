@@ -562,17 +562,19 @@ describe(run, () => {
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Hint:"));
 	});
 
-	it("should lead the banner with captured game output when the message is just an exit code", async () => {
+	it("should lead the banner with captured banner output when the message is just an exit code", async () => {
 		// HAL-84: when Jest exits via process.exit(N), the message "Exited
 		// with code: N" is only a transport — the real error message Jest
-		// printed to stdout lives in gameOutput. Lead the banner with that.
+		// printed to stdout lives in `bannerOutput` (the InterceptWriteable
+		// capture, distinct from the LogService-sourced `gameOutput` dump).
+		// Lead the banner with that.
 		expect.assertions(5);
 
 		const spies = setupOutputSpies();
 		setupDefaults();
 
 		const error = new LuauScriptError("Exited with code: 1");
-		error.gameOutput = JSON.stringify([
+		error.bannerOutput = JSON.stringify([
 			{ message: "No tests found, exiting with code 1", messageType: 0, timestamp: 0 },
 			{
 				message: "Run with `--passWithNoTests` to exit with code 0",
@@ -593,16 +595,16 @@ describe(run, () => {
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Luau Error"));
 	});
 
-	it("should print game output context for LuauScriptError with parseable gameOutput", async () => {
+	it("should print banner output context for LuauScriptError with parseable bannerOutput", async () => {
 		// Non-exit-code LuauScriptError (e.g. config / Jest-resolution failure)
-		// keeps the original layout: message as primary, gameOutput as hint.
+		// keeps the original layout: message as primary, bannerOutput as hint.
 		expect.assertions(3);
 
 		const spies = setupOutputSpies();
 		setupDefaults();
 
 		const error = new LuauScriptError("Failed to find Jest instance in ReplicatedStorage");
-		error.gameOutput = JSON.stringify([
+		error.bannerOutput = JSON.stringify([
 			{ message: "diagnostic output", messageType: 0, timestamp: 0 },
 		]);
 		mocks.loadConfig.mockRejectedValue(error);
@@ -614,14 +616,14 @@ describe(run, () => {
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Game output:"));
 	});
 
-	it("should omit Game output section when gameOutput parses to empty array", async () => {
+	it("should omit Game output section when bannerOutput parses to empty array", async () => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
 		setupDefaults();
 
 		const error = new LuauScriptError("Exited with code: 1");
-		error.gameOutput = "[]";
+		error.bannerOutput = "[]";
 		mocks.loadConfig.mockRejectedValue(error);
 
 		const code = await run([]);

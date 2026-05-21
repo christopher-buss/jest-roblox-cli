@@ -556,6 +556,21 @@ describe(outputMultiResult, () => {
 		expect(mocks.writeGameOutput).toHaveBeenCalledOnce();
 	});
 
+	it("should write aggregated game output for workspace results when config.gameOutput is set", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		mocks.parseGameOutput.mockReturnValue([{ message: "ws", messageType: 0, timestamp: 0 }]);
+		setupOutputSpies();
+
+		await outputMultiResult(
+			makeConfig({ gameOutput: "/tmp/game.json" }),
+			makeWorkspaceResult(),
+		);
+
+		expect(mocks.writeGameOutput).toHaveBeenCalledOnce();
+	});
+
 	it("should fall back to outputSingleResult when no project results but typecheck present", async () => {
 		expect.assertions(1);
 

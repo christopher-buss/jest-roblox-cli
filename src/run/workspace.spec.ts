@@ -125,21 +125,6 @@ describe(runWorkspaceMode, () => {
 			);
 		});
 
-		it("should surface gameOutput-with-workspace failure", async () => {
-			expect.assertions(2);
-
-			setupHappyPath();
-			const result = await runWorkspaceMode({
-				cli: makeCli({ gameOutput: "/tmp/x", packages: "a", workspace: true }),
-				config: makeConfig({ gameOutput: "/tmp/x" }),
-			});
-
-			expect(result.validationExitCode).toBe(2);
-			expect(result.validationMessage).toContain(
-				"--gameOutput not yet supported with --workspace",
-			);
-		});
-
 		it("should surface studio-backend-with-workspace failure", async () => {
 			expect.assertions(2);
 

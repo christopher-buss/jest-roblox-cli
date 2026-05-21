@@ -257,13 +257,13 @@ function formatGameOutputLines(raw: string | undefined): string | undefined {
 const EXIT_CODE_MESSAGE = /^Exited with code: \d+$/;
 
 function formatLuauErrorBanner(err: LuauScriptError): string {
-	const gameLines = formatGameOutputLines(err.gameOutput);
+	const bannerLines = formatGameOutputLines(err.bannerOutput);
 
 	// When the message is just "Exited with code: N", Jest's real error is in
 	// the captured stdout, not in the message itself — surface stdout as the
 	// primary content and demote the exit-code transport to a dim footer.
-	if (EXIT_CODE_MESSAGE.test(err.message) && gameLines !== undefined) {
-		const body = [gameLines, `\n  ${color.dim(err.message)}`];
+	if (EXIT_CODE_MESSAGE.test(err.message) && bannerLines !== undefined) {
+		const body = [bannerLines, `\n  ${color.dim(err.message)}`];
 		return formatBanner({ body, level: "error", title: "Test Run Failed" });
 	}
 
@@ -274,8 +274,8 @@ function formatLuauErrorBanner(err: LuauScriptError): string {
 		body.push(`\n  ${color.dim("Hint:")} ${hint}`);
 	}
 
-	if (gameLines !== undefined) {
-		body.push(`\n  ${color.dim("Game output:")}\n${gameLines}`);
+	if (bannerLines !== undefined) {
+		body.push(`\n  ${color.dim("Game output:")}\n${bannerLines}`);
 	}
 
 	return formatBanner({ body, level: "error", title: "Luau Error" });

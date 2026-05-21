@@ -410,7 +410,10 @@ function composeExecErrorMessage(error: LuauScriptError): string {
 		return error.message;
 	}
 
-	const entries = parseGameOutput(error.gameOutput);
+	// Banner Output (Jest's process.stdout) is where the exit cause lives —
+	// "No tests found, exiting with code 1" is written via Jest's reporter,
+	// not via native print/warn that LogService would capture.
+	const entries = parseGameOutput(error.bannerOutput);
 	if (entries.length === 0) {
 		return error.message;
 	}

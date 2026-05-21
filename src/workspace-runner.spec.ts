@@ -45,6 +45,7 @@ const BAR_INFO = { name: "@halcyon/bar", packageDirectory: BAR_DIR };
 const BAZ_INFO = { name: "@halcyon/baz", packageDirectory: BAZ_DIR };
 
 interface BackendStubEntry {
+	gameOutput?: string;
 	jestOutput: string;
 	pkg?: string;
 	project?: string;
@@ -93,6 +94,9 @@ function createStubBackend(entries: Array<BackendStubEntry>): {
 					return {
 						entry: {
 							jestOutput: entry.jestOutput,
+							...(entry.gameOutput !== undefined
+								? { gameOutput: entry.gameOutput }
+								: {}),
 							...(entry.pkg !== undefined ? { pkg: entry.pkg } : {}),
 							...(entry.project !== undefined ? { project: entry.project } : {}),
 							...(entry.snapshotWrites !== undefined
@@ -1936,6 +1940,316 @@ describe(runWorkspace, () => {
 					path.join(ROOT, ".jest-roblox", "output", "@halcyon-foo--@halcyon-foo.json"),
 				),
 			).toBeTrue();
+		});
+	});
+
+	describe("per-package gameOutput files", () => {
+		it("should write parsed entries to .jest-roblox/output/<pkg>--<project>.gameOutput.json when config.gameOutput is set", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			const gameOutputRaw = JSON.stringify([
+				{ message: "hello", messageType: 0, timestamp: 1000 },
+			]);
+			const { backend } = createStubBackend([
+				{ gameOutput: gameOutputRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig({ gameOutput: path.join(ROOT, "out.json") }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const file = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--@halcyon-foo.gameOutput.json",
+			);
+
+			expect(vol.existsSync(file)).toBeTrue();
+			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toStrictEqual([
+				{ message: "hello", messageType: 0, timestamp: 1000 },
+			]);
+		});
+
+		it("should NOT write per-package gameOutput files when config.gameOutput is undefined", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			const gameOutputRaw = JSON.stringify([
+				{ message: "hello", messageType: 0, timestamp: 1000 },
+			]);
+			const { backend } = createStubBackend([
+				{ gameOutput: gameOutputRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig(),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			// Result JSON sibling is still emitted; only the .gameOutput.json
+			// companion is skipped when no --gameOutput path is requested.
+			expect(
+				vol.existsSync(
+					path.join(ROOT, ".jest-roblox", "output", "@halcyon-foo--@halcyon-foo.json"),
+				),
+			).toBeTrue();
+			expect(
+				vol.existsSync(
+					path.join(
+						ROOT,
+						".jest-roblox",
+						"output",
+						"@halcyon-foo--@halcyon-foo.gameOutput.json",
+					),
+				),
+			).toBeFalse();
+		});
+
+		it("should write an empty array when the package's gameOutput is missing", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig({ gameOutput: path.join(ROOT, "out.json") }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const file = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--@halcyon-foo.gameOutput.json",
+			);
+
+			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toStrictEqual([]);
+		});
+
+		it("should write an empty array when the package's gameOutput is invalid JSON", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			const { backend } = createStubBackend([
+				{ gameOutput: "not-json", jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig({ gameOutput: path.join(ROOT, "out.json") }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const file = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--@halcyon-foo.gameOutput.json",
+			);
+
+			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toStrictEqual([]);
+		});
+
+		// Mirrors HAL-209 — a failure envelope synthesizes an ExecuteResult
+		// via executor.ts:482 carrying the per-entry gameOutput, so the
+		// failed package's captured logs are NOT lost.
+		it("should still write per-package gameOutput files when one entry's envelope is a failure", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				...seedPackage(BAR_DIR, {
+					name: "@halcyon/bar",
+					specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR, silent: true },
+				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, silent: true },
+			});
+
+			const failureEnvelope = JSON.stringify({
+				err: "Exited with code: 1",
+				success: false,
+			});
+			const fooGameOutput = JSON.stringify([
+				{ message: "captured before crash", messageType: 2, timestamp: 5 },
+			]);
+
+			const { backend } = createStubBackend([
+				{ gameOutput: fooGameOutput, jestOutput: failureEnvelope, pkg: "@halcyon/foo" },
+				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig({ gameOutput: path.join(ROOT, "out.json"), silent: true }),
+				packageInfos: [FOO_INFO, BAR_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const fooFile = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--@halcyon-foo.gameOutput.json",
+			);
+			const barFile = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-bar--@halcyon-bar.gameOutput.json",
+			);
+
+			expect(JSON.parse(vol.readFileSync(fooFile, "utf8") as string)).toStrictEqual([
+				{ message: "captured before crash", messageType: 2, timestamp: 5 },
+			]);
+			expect(JSON.parse(vol.readFileSync(barFile, "utf8") as string)).toStrictEqual([]);
+		});
+
+		it("should emit a separate gameOutput file per project for multi-project packages", async () => {
+			expect.assertions(4);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: {
+						[path.join(FOO_DIR, "out/Client/foo.spec.luau")]: "",
+						[path.join(FOO_DIR, "out/Server/bar.spec.luau")]: "",
+					},
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { Client: { $path: "out/Client" } },
+						ServerScriptService: { Server: { $path: "out/Server" } },
+					},
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			const projects = fromAny([
+				{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
+				{ test: { displayName: "server", include: ["out/Server/**/*.spec.luau"] } },
+			]);
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, projects, rootDir: FOO_DIR },
+			});
+
+			const clientOutput = JSON.stringify([
+				{ message: "client", messageType: 0, timestamp: 1 },
+			]);
+			const serverOutput = JSON.stringify([
+				{ message: "server", messageType: 1, timestamp: 2 },
+			]);
+			const { backend } = createStubBackend([
+				{
+					gameOutput: clientOutput,
+					jestOutput: passingResult(),
+					pkg: "@halcyon/foo",
+					project: "client",
+				},
+				{
+					gameOutput: serverOutput,
+					jestOutput: passingResult(),
+					pkg: "@halcyon/foo",
+					project: "server",
+				},
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				config: makeConfig({ gameOutput: path.join(ROOT, "out.json") }),
+				packageInfos: [FOO_INFO],
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const clientFile = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--client.gameOutput.json",
+			);
+			const serverFile = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--server.gameOutput.json",
+			);
+
+			expect(vol.existsSync(clientFile)).toBeTrue();
+			expect(vol.existsSync(serverFile)).toBeTrue();
+			expect(JSON.parse(vol.readFileSync(clientFile, "utf8") as string)).toStrictEqual([
+				{ message: "client", messageType: 0, timestamp: 1 },
+			]);
+			expect(JSON.parse(vol.readFileSync(serverFile, "utf8") as string)).toStrictEqual([
+				{ message: "server", messageType: 1, timestamp: 2 },
+			]);
 		});
 	});
 

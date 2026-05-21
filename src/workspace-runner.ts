@@ -43,6 +43,7 @@ import {
 	type MaterializerInput,
 } from "./staging/test-script-staged.ts";
 import type { RojoTreeNode } from "./types/rojo.ts";
+import { parseGameOutput, writeGameOutput } from "./utils/game-output.ts";
 import { globSync } from "./utils/glob.ts";
 import { buildWithRojo } from "./utils/rojo-builder.ts";
 import { ensurePackageDirectories } from "./workspace/ensure-paths.ts";
@@ -265,6 +266,10 @@ export async function runWorkspace(
 	});
 
 	writePerPackageOutputFiles(workspaceRoot, pending, results);
+
+	if (config.gameOutput !== undefined) {
+		writePerPackageGameOutputFiles(workspaceRoot, pending, results);
+	}
 
 	return attachCoverageManifests(results, pending, coverageByPackage);
 }
@@ -709,6 +714,29 @@ function writePerPackageOutputFiles(
 			JSON.stringify(result.result, null, 2),
 			"utf8",
 		);
+	}
+}
+
+// Sibling of writePerPackageOutputFiles; emits the game-output slice per
+// (pkg, project) so a workspace run gives each package its own captured
+// log file in addition to the aggregated file at config.gameOutput. The
+// path is built absolute against workspaceRoot before calling
+// writeGameOutput — that helper calls path.resolve which would otherwise
+// fall back to process.cwd() and silently mis-route files.
+function writePerPackageGameOutputFiles(
+	workspaceRoot: string,
+	pending: Array<PendingEntry>,
+	results: Array<ExecuteResult>,
+): void {
+	const directory = path.join(workspaceRoot, PER_PACKAGE_OUTPUT_DIRECTORY);
+
+	for (const [index, result] of results.entries()) {
+		// eslint-disable-next-line ts/no-non-null-assertion -- runProjects preserves order
+		const entry = pending[index]!;
+		const filename = `${sanitizePathSegment(entry.pkg)}--${sanitizePathSegment(
+			entry.project.displayName,
+		)}.gameOutput.json`;
+		writeGameOutput(path.join(directory, filename), parseGameOutput(result.gameOutput));
 	}
 }
 

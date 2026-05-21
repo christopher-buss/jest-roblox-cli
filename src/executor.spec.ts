@@ -2498,7 +2498,7 @@ describe(runProjects, () => {
 
 			// `{success:false, err:"..."}` envelopes whose message does NOT
 			// match `^Exited with code: \d+$` should pass through unchanged —
-			// gameOutput compose only applies to the exit-code-only case
+			// bannerOutput compose only applies to the exit-code-only case
 			// because that's where the real cause is hidden.
 			const customFailure = JSON.stringify({
 				err: "Resolver crashed: invalid jest path",
@@ -2508,7 +2508,7 @@ describe(runProjects, () => {
 				rawResults: [
 					{
 						entry: {
-							gameOutput: JSON.stringify([
+							bannerOutput: JSON.stringify([
 								{ message: "noise", messageType: 0, timestamp: 0 },
 							]),
 							jestOutput: customFailure,
@@ -2533,17 +2533,17 @@ describe(runProjects, () => {
 			);
 		});
 
-		it("should fall back to the raw error message when gameOutput entries are all blank", async () => {
+		it("should fall back to the raw error message when bannerOutput entries are all blank", async () => {
 			expect.assertions(1);
 
-			// Edge case: gameOutput parses to entries but every message is
+			// Edge case: bannerOutput parses to entries but every message is
 			// whitespace/empty. Don't compose a "(blank)\n\nExited with..."
 			// monstrosity — just use the exit-code message.
 			const backendResult: BackendResult = {
 				rawResults: [
 					{
 						entry: {
-							gameOutput: JSON.stringify([
+							bannerOutput: JSON.stringify([
 								{ message: "  ", messageType: 0, timestamp: 0 },
 							]),
 							jestOutput: failureEnvelope,
@@ -2569,12 +2569,13 @@ describe(runProjects, () => {
 		// When Jest's exit(1) fires for "no tests found", the underlying
 		// rejection message is just "Exited with code: 1" — the real cause
 		// (`No tests found in <pkg>`, passWithNoTests guidance, etc.) lives
-		// in the captured game output. The synthetic exec-error must surface
-		// that cause; otherwise users see only the opaque transport error.
-		it("should compose failureMessage from gameOutput when error is exit-code-only", async () => {
+		// in the captured banner output (Jest's process.stdout). The
+		// synthetic exec-error must surface that cause; otherwise users see
+		// only the opaque transport error.
+		it("should compose failureMessage from bannerOutput when error is exit-code-only", async () => {
 			expect.assertions(3);
 
-			const gameOutput = JSON.stringify([
+			const bannerOutput = JSON.stringify([
 				{
 					message: "No tests found in /repo/packages/foo",
 					messageType: 0,
@@ -2584,7 +2585,7 @@ describe(runProjects, () => {
 			const backendResult: BackendResult = {
 				rawResults: [
 					{
-						entry: { gameOutput, jestOutput: failureEnvelope },
+						entry: { bannerOutput, jestOutput: failureEnvelope },
 					},
 				],
 				timing: DEFAULT_TIMING,
