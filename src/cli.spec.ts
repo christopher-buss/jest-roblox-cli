@@ -690,6 +690,20 @@ describe("lUAU_ERROR_HINTS", () => {
 		expect(code).toBe(2);
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(fragment));
 	});
+
+	it("should not reference removed --projects flag in projects hint", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.loadConfig.mockRejectedValue(new LuauScriptError("No projects configured"));
+
+		const code = await run([]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("projects"));
+		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("--projects"));
+	});
 });
 
 describe(main, () => {

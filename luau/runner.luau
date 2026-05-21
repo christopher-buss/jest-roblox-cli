@@ -85,7 +85,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 
 		assert(
 			config.projects and #config.projects > 0,
-			"No projects configured. Set 'projects' in jest.config.ts or pass --projects."
+			"No projects configured. Set 'projects' in jest.config.ts."
 		)
 
 		for _, projectPath in config.projects do

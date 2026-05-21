@@ -363,7 +363,7 @@ const LUAU_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [
 	],
 	[
 		/No projects configured/,
-		'Set "projects" in jest.config.ts (e.g. ["ReplicatedStorage/client", "ServerScriptService/server"]) or pass --projects.',
+		'Set "projects" in jest.config.ts (e.g. ["ReplicatedStorage/client", "ServerScriptService/server"]).',
 	],
 	[
 		/Infinite yield detected/,
