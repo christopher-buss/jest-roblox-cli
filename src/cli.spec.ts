@@ -1,3 +1,5 @@
+import { NetworkError } from "@bedrock-rbx/ocale";
+
 import process from "node:process";
 import type { MockInstance } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
@@ -669,6 +671,67 @@ describe(run, () => {
 
 		expect(code).toBe(2);
 		expect(spies.consoleError).toHaveBeenCalledWith("An unknown error occurred");
+	});
+
+	it("should return 2 and render a Backend Error banner when error.cause is an OpenCloudError", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const wrapped = new Error("Failed to upload place: Network request failed", {
+			cause: new NetworkError("Network request failed"),
+		});
+		mocks.loadConfig.mockRejectedValue(wrapped);
+
+		const code = await run([]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Backend Error"));
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Failed to upload place: Network request failed"),
+		);
+	});
+
+	it("should include the cause chain entries inside the Backend Error banner", async () => {
+		expect.assertions(4);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const innerWithCode = Object.assign(new TypeError("fetch failed"), {
+			code: "ECONNRESET",
+			errno: -54,
+			syscall: "connect",
+		});
+		const wrapped = new Error("Failed to upload place: Network request failed", {
+			cause: new NetworkError("Network request failed", { cause: innerWithCode }),
+		});
+		mocks.loadConfig.mockRejectedValue(wrapped);
+
+		const code = await run([]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Caused by:"));
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining("NetworkError: Network request failed"),
+		);
+		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("ECONNRESET"));
+	});
+
+	it("should fall through to plain console.error when error.cause is not an OpenCloudError", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const wrapped = new Error("wrapped non-ocale", {
+			cause: new Error("inner non-ocale"),
+		});
+		mocks.loadConfig.mockRejectedValue(wrapped);
+
+		const code = await run([]);
+
+		expect(code).toBe(2);
+		expect(spies.consoleError).toHaveBeenCalledWith("Error: wrapped non-ocale");
+		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Backend Error"));
 	});
 });
 

@@ -1,3 +1,4 @@
+import { OpenCloudError, PollTimeoutError } from "@bedrock-rbx/ocale";
 import {
 	createFakeHttpClient,
 	createFakeSleep,
@@ -5,7 +6,7 @@ import {
 } from "@bedrock-rbx/ocale/testing";
 
 import buffer from "node:buffer";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import { OcaleRunner } from "./ocale-runner.ts";
 
@@ -107,6 +108,23 @@ describe(OcaleRunner, () => {
 				/Unauthorized/,
 			);
 		});
+
+		it("should preserve the underlying OpenCloudError as cause on the thrown Error from uploadPlace", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockApiError({ message: "Unauthorized", statusCode: 401 });
+
+			const runner = makeRunner(http);
+
+			const caught: unknown = await runner
+				.uploadPlace({ placeFilePath: "/work/p.rbxl" })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.cause).toBeInstanceOf(OpenCloudError);
+		});
 	});
 
 	describe("executeScript", () => {
@@ -198,8 +216,8 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow("Script blew up");
 		});
 
-		it("should throw 'Execution timed out' when pollUntilDone exhausts budget", async () => {
-			expect.assertions(1);
+		it("should throw 'Execution timed out' with PollTimeoutError as cause when polling exhausts budget", async () => {
+			expect.assertions(2);
 
 			let clock = 1_000_000;
 			vi.spyOn(Date, "now").mockImplementation(() => clock);
@@ -216,9 +234,14 @@ describe(OcaleRunner, () => {
 				{ httpClient: http, readFile: () => rbxlBuffer(), sleep: advancingSleep },
 			);
 
-			await expect(
-				runner.executeScript({ script: "return 1", timeout: 100 }),
-			).rejects.toThrow("Execution timed out");
+			const caught: unknown = await runner
+				.executeScript({ script: "return 1", timeout: 100 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toBe("Execution timed out");
+			expect(caught.cause).toBeInstanceOf(PollTimeoutError);
 		});
 
 		it("should throw when task is CANCELLED", async () => {
@@ -246,6 +269,23 @@ describe(OcaleRunner, () => {
 			await expect(
 				runner.executeScript({ script: "return 1", timeout: 30_000 }),
 			).rejects.toThrow(/Bad request/);
+		});
+
+		it("should preserve the underlying OpenCloudError as cause on the thrown Error from executeScript", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockApiError({ message: "Bad request", statusCode: 400 });
+
+			const runner = makeRunner(http);
+
+			const caught: unknown = await runner
+				.executeScript({ script: "return 1", timeout: 30_000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.cause).toBeInstanceOf(OpenCloudError);
 		});
 
 		it("should coerce non-string output values via JSON serialization", async () => {

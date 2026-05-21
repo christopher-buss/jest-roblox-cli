@@ -1,3 +1,5 @@
+import { OpenCloudError } from "@bedrock-rbx/ocale";
+
 import process from "node:process";
 import { parseArgs as nodeParseArgs } from "node:util";
 import color from "tinyrainbow";
@@ -13,6 +15,7 @@ import { LuauScriptError } from "./reporter/parser.ts";
 import { runJestRoblox } from "./run.ts";
 import type { RunResult } from "./run/types.ts";
 import { formatBanner } from "./utils/banner.ts";
+import { type ChainEntry, walkErrorChain } from "./utils/error-chain.ts";
 import { parseGameOutput } from "./utils/game-output.ts";
 
 const VERSION: string = packageJson.version;
@@ -281,6 +284,36 @@ function formatLuauErrorBanner(err: LuauScriptError): string {
 	return formatBanner({ body, level: "error", title: "Luau Error" });
 }
 
+function formatChainExtras(entry: ChainEntry): string {
+	const pieces: Array<string> = [];
+	if (entry.code !== undefined) {
+		pieces.push(`code=${entry.code}`);
+	}
+
+	if (entry.errno !== undefined) {
+		pieces.push(`errno=${entry.errno}`);
+	}
+
+	if (entry.syscall !== undefined) {
+		pieces.push(`syscall=${entry.syscall}`);
+	}
+
+	return pieces.length > 0 ? color.dim(` (${pieces.join(" ")})`) : "";
+}
+
+function formatBackendErrorBanner(err: Error): string {
+	const body: Array<string> = [color.red(err.message)];
+	const chain = walkErrorChain(err.cause);
+	body.push(`\n  ${color.dim("Caused by:")}`);
+	for (const [index, entry] of chain.entries()) {
+		const extras = formatChainExtras(entry);
+		const label = color.dim(`[${index.toString()}]`);
+		body.push(`    ${label} ${entry.name}: ${entry.message}${extras}`);
+	}
+
+	return formatBanner({ body, level: "error", title: "Backend Error" });
+}
+
 function printError(err: unknown): void {
 	if (err instanceof ConfigError) {
 		const body = [color.red(err.message)];
@@ -291,6 +324,8 @@ function printError(err: unknown): void {
 		process.stderr.write(formatBanner({ body, level: "error", title: "Config Error" }));
 	} else if (err instanceof LuauScriptError) {
 		process.stderr.write(formatLuauErrorBanner(err));
+	} else if (err instanceof Error && err.cause instanceof OpenCloudError) {
+		process.stderr.write(formatBackendErrorBanner(err));
 	} else if (err instanceof Error) {
 		console.error(`Error: ${err.message}`);
 	} else {

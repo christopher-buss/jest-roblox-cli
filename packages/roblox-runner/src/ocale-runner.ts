@@ -69,10 +69,10 @@ export class OcaleRunner implements RemoteRunner {
 
 		if (!result.success) {
 			if (result.err instanceof PollTimeoutError) {
-				throw new Error("Execution timed out");
+				throw new Error("Execution timed out", { cause: result.err });
 			}
 
-			throw new Error(result.err.message);
+			throw new Error(result.err.message, { cause: result.err });
 		}
 
 		const task = result.data;
@@ -103,7 +103,9 @@ export class OcaleRunner implements RemoteRunner {
 		};
 		const result = await this.places.save(parameters);
 		if (!result.success) {
-			throw new Error(`Failed to upload place: ${result.err.message}`);
+			throw new Error(`Failed to upload place: ${result.err.message}`, {
+				cause: result.err,
+			});
 		}
 
 		return {
