@@ -423,5 +423,15 @@ function transformValue(key: string, value: RojoTreeNode[string]): RojoTreeNode[
 		return value;
 	}
 
-	return transformChild(value);
+	const child = transformChild(value);
+
+	// A node named after a service relies on Rojo's implicit service inference
+	// at the DataModel root (e.g. a bare `ServerScriptService` with no
+	// `$className`). Once relocated under `__pkg_stage` it is a plain folder, so
+	// it needs an explicit `$className` or Rojo rejects it as missing info.
+	if (SERVICE_CLASSES.has(key) && child.$className === undefined && child.$path === undefined) {
+		child.$className = "Folder";
+	}
+
+	return child;
 }

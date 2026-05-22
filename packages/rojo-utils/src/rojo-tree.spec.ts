@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { collectPaths, resolveNestedProjects } from "./rojo-tree.ts";
+import { collectPaths, rebaseTreePaths, resolveNestedProjects } from "./rojo-tree.ts";
 import type { RojoTreeNode } from "./types.ts";
 
 describe(collectPaths, () => {
@@ -324,5 +324,172 @@ describe(resolveNestedProjects, () => {
 				"my-pkg": { $path: "packages/my-pkg/src" },
 			},
 		});
+	});
+
+	it("should inline a $path directory that contains a default.project.json", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const packageDirectory = path.join(temporaryDirectory, "pkg");
+		fs.mkdirSync(packageDirectory, { recursive: true });
+		fs.writeFileSync(
+			path.join(packageDirectory, "default.project.json"),
+			JSON.stringify({ name: "pkg", tree: { $path: "src" } }),
+		);
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ServerScriptService: {
+				pkg: { $path: "pkg" },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ServerScriptService: {
+				pkg: { $path: "pkg/src" },
+			},
+		});
+	});
+
+	it("should follow $path '..' into a parent directory's default.project.json", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify({ name: "rx", tree: { $path: "src" } }),
+		);
+		const testDirectory = path.join(temporaryDirectory, "test");
+		fs.mkdirSync(testDirectory, { recursive: true });
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ServerScriptService: {
+				rx: { $path: ".." },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, testDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ServerScriptService: {
+				rx: { $path: "../src" },
+			},
+		});
+	});
+
+	it("should leave a $path directory without default.project.json unchanged", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		fs.mkdirSync(path.join(temporaryDirectory, "src"), { recursive: true });
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Src: { $path: "src" },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Src: { $path: "src" },
+			},
+		});
+	});
+});
+
+describe(rebaseTreePaths, () => {
+	it("should re-express $path strings from one base directory to another", () => {
+		expect.assertions(1);
+
+		const packageDirectory = path.resolve("repo", "pkg");
+		const testDirectory = path.join(packageDirectory, "test");
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ServerScriptService: {
+				rx: { $path: "../src" },
+			},
+		};
+
+		const result = rebaseTreePaths(tree, testDirectory, packageDirectory);
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ServerScriptService: {
+				rx: { $path: "src" },
+			},
+		});
+	});
+
+	it("should return $path unchanged when both bases are equal", () => {
+		expect.assertions(1);
+
+		const base = path.resolve("repo", "pkg");
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Src: { $path: "src" },
+			},
+		};
+
+		const result = rebaseTreePaths(tree, base, base);
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Src: { $path: "src" },
+			},
+		});
+	});
+
+	it("should rebase every $path in a nested tree", () => {
+		expect.assertions(1);
+
+		const packageDirectory = path.resolve("repo", "pkg");
+		const testDirectory = path.join(packageDirectory, "test");
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Packages: { $path: "../node_modules" },
+				Src: { $path: "../src" },
+			},
+		};
+
+		const result = rebaseTreePaths(tree, testDirectory, packageDirectory);
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Packages: { $path: "node_modules" },
+				Src: { $path: "src" },
+			},
+		});
+	});
+
+	it("should leave non-string $path values unchanged", () => {
+		expect.assertions(1);
+
+		const base = path.resolve("repo", "pkg");
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			Workspace: { $path: { optional: "maybe" } },
+		};
+
+		const result = rebaseTreePaths(tree, path.join(base, "test"), base);
+
+		expect(result).toStrictEqual(tree);
 	});
 });

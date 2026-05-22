@@ -307,6 +307,93 @@ describe(synthesize, () => {
 		).toBe("Folder");
 	});
 
+	it("should add $className Folder to an implicit service node (no $className) when nested", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			// Rojo infers a service from the node name at the DataModel root, so
+			// ServerScriptService carries no $className here (Nevermore layout).
+			// Once relocated under __pkg_stage it needs an explicit one.
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ServerScriptService: {
+						Pkg: { $path: "src" },
+					},
+				},
+			}),
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<string, Record<string, { $className: string }>>;
+				};
+			};
+		};
+
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.["ServerScriptService"]
+				?.$className,
+		).toBe("Folder");
+	});
+
+	it("should not add $className to an implicit service node that already carries a $path", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			// A bare service node with $path and no $className: Rojo mounts the
+			// path, so the synthesizer must not override it with a Folder class.
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ServerScriptService: { $path: "src" },
+				},
+			}),
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result) as {
+			tree: {
+				ServerStorage: {
+					__pkg_stage: Record<string, Record<string, { $className?: string }>>;
+				};
+			};
+		};
+
+		expect(
+			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.["ServerScriptService"]
+				?.$className,
+		).toBeUndefined();
+	});
+
 	it("should isolate per-package service roots even when packages claim the same service", () => {
 		expect.assertions(2);
 

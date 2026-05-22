@@ -708,6 +708,65 @@ describe(runWorkspace, () => {
 		expect(results?.map((entry) => entry.pkg)).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
 	});
 
+	it("should resolve a Nevermore-style subdir rojoProject that mounts the package via '..'", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			// Package manifest maps src to the tree root (standard Wally layout).
+			[path.join(FOO_DIR, "default.project.json")]: packageJson({
+				name: "foo",
+				tree: { $path: "src" },
+			}),
+			[path.join(FOO_DIR, "jest.config.ts")]: "export default {}",
+			[path.join(FOO_DIR, "package.json")]: packageJson({ name: "@halcyon/foo" }),
+			[path.join(FOO_DIR, "src/foo.spec.lua")]: "",
+			// Test harness lives in a subdirectory and mounts the package via
+			// "..", which Rojo resolves through the package default.project.json.
+			[path.join(FOO_DIR, "test/default.project.json")]: packageJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ServerScriptService: { Pkg: { $path: ".." } },
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		const projects = fromAny([
+			{ test: { displayName: "@halcyon/foo", include: ["src/**/*.spec.lua"] } },
+		]);
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				projects,
+				rojoProject: "test/default.project.json",
+				rootDir: FOO_DIR,
+			},
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		const results = await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		// The "src" include root (package-relative) resolves through the
+		// package's default.project.json into the ServerScriptService/Pkg mount
+		// declared by the subdirectory test project.
+		expect(captured.options?.scriptOverride).toContain(
+			'"projects":["ServerScriptService/Pkg"]',
+		);
+		expect(results?.[0]?.displayName).toBe("@halcyon/foo");
+	});
+
 	// Workspace-root `config.rojoProject` no longer falls back into
 	// per-package descriptor resolution. Each package must declare its own
 	// rojoProject (directly or via extends); the workspace-root config

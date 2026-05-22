@@ -1,4 +1,4 @@
-import { collectPaths, loadRojoProject, resolveNestedProjects } from "@isentinel/rojo-utils";
+import { collectPaths, loadRojoProject, rebaseTreePaths } from "@isentinel/rojo-utils";
 
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
@@ -524,9 +524,16 @@ function resolveProjectEntries(
 	return [synthesizeVirtualProjectEntry(packageName, packageConfig, rojoTree, packageDirectory)];
 }
 
-function loadPackageRojoTree(rojoProjectPath: string): RojoTreeNode {
+function loadPackageRojoTree(rojoProjectPath: string, packageDirectory: string): RojoTreeNode {
+	// `loadRojoProject` resolves nested projects and expresses every `$path`
+	// relative to the project file's directory. Include roots, however, resolve
+	// relative to the package directory. When the project file lives in a
+	// subdirectory (e.g. `test/default.project.json`) the two bases diverge, so
+	// rebase the tree to package-relative paths so mount resolution
+	// (findInTree / collectMounts) compares like-for-like.
+	const rojoDirectory = path.dirname(rojoProjectPath);
 	const project = loadRojoProject(rojoProjectPath);
-	return resolveNestedProjects(project.tree, path.dirname(rojoProjectPath));
+	return rebaseTreePaths(project.tree, rojoDirectory, packageDirectory);
 }
 
 function applySetupResolver(
@@ -551,7 +558,10 @@ async function resolvePackageContexts(input: {
 
 	for (const entry of loaded) {
 		const { descriptor, info, pkgConfig } = entry;
-		const rojoTree = loadPackageRojoTree(descriptor.rojoProjectPath);
+		const rojoTree = loadPackageRojoTree(
+			descriptor.rojoProjectPath,
+			descriptor.packageDirectory,
+		);
 		const projectEntries = resolveProjectEntries(
 			info.name,
 			pkgConfig,

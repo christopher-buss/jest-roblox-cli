@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 
 import type { RojoTreeNode } from "./types.ts";
 
@@ -15,6 +15,45 @@ export function collectPaths(node: RojoTreeNode, result: Array<string>): void {
 			collectPaths(value as RojoTreeNode, result);
 		}
 	}
+}
+
+export function rebaseTreePaths(
+	node: RojoTreeNode,
+	fromDirectory: string,
+	toDirectory: string,
+): RojoTreeNode {
+	const result: RojoTreeNode = {};
+
+	for (const [key, value] of Object.entries(node)) {
+		if (key === "$path" && typeof value === "string") {
+			const absolutePath = resolve(fromDirectory, value);
+			result[key] = relative(toDirectory, absolutePath).replaceAll("\\", "/");
+			continue;
+		}
+
+		if (key.startsWith("$") || typeof value !== "object" || Array.isArray(value)) {
+			result[key] = value;
+			continue;
+		}
+
+		result[key] = rebaseTreePaths(value as RojoTreeNode, fromDirectory, toDirectory);
+	}
+
+	return result;
+}
+
+function nestedProjectPath(currentDirectory: string, value: string): string | undefined {
+	// Resolve a `$path` string to the nested project file it should inline, or
+	// undefined when the path is a plain source mount. Rojo treats a `$path`
+	// pointing at a directory containing `default.project.json` as a nested
+	// project (e.g. `$path: ".."` into a package root), so honor that alongside
+	// explicit `*.project.json` references.
+	if (value.endsWith(".project.json")) {
+		return join(currentDirectory, value);
+	}
+
+	const directoryDefault = join(currentDirectory, value, "default.project.json");
+	return existsSync(directoryDefault) ? directoryDefault : undefined;
 }
 
 function inlineNestedProject(
@@ -63,27 +102,21 @@ function resolveTree(
 	const resolved: RojoTreeNode = {};
 
 	for (const [key, value] of Object.entries(node)) {
-		if (key === "$path" && typeof value === "string" && value.endsWith(".project.json")) {
-			const projectPath = join(currentDirectory, value);
+		if (key === "$path" && typeof value === "string") {
+			const projectPath = nestedProjectPath(currentDirectory, value);
+			if (projectPath === undefined) {
+				resolved[key] = resolveRootRelativePath(currentDirectory, value, originalRoot);
+				continue;
+			}
+
 			if (visited.has(projectPath)) {
 				throw new Error(`Circular project reference: ${value}`);
 			}
 
-			const innerTree = inlineNestedProject(
-				projectPath,
-				currentDirectory,
-				originalRoot,
-				visited,
+			Object.assign(
+				resolved,
+				inlineNestedProject(projectPath, currentDirectory, originalRoot, visited),
 			);
-			for (const [innerKey, innerValue] of Object.entries(innerTree)) {
-				resolved[innerKey] = innerValue;
-			}
-
-			continue;
-		}
-
-		if (key === "$path" && typeof value === "string") {
-			resolved[key] = resolveRootRelativePath(currentDirectory, value, originalRoot);
 			continue;
 		}
 
