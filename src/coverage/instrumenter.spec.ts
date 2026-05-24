@@ -4,6 +4,7 @@ import { vol } from "memfs";
 import * as cp from "node:child_process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { createTimingCollector } from "../timing/orchestration-collector.ts";
 import { instrument, instrumentRoot } from "./instrumenter.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";
 
@@ -206,6 +207,39 @@ describe(instrumentRoot, () => {
 
 			expect(Object.keys(files)).toStrictEqual(["/luau-root/init.luau"]);
 			expect(vol.existsSync("/shadow/manifest.json")).toBeFalse();
+		});
+	});
+
+	describe("when a timing profiler is supplied", () => {
+		it("should record the parse-ast, probe-insert, and map-build sub-phases", () => {
+			expect.assertions(1);
+
+			setupFilesystem();
+
+			const lines: Array<string> = [];
+			const timing = createTimingCollector({
+				clock: { now: () => 0 },
+				enabled: true,
+				sink: (line) => {
+					lines.push(line);
+				},
+			});
+
+			instrumentRoot({
+				astOutputDirectory: "/tmp/asts",
+				luauRoot: "/luau-root",
+				parseScript: "mock.luau",
+				shadowDir: "/shadow",
+				timing,
+			});
+			timing.flushTimingReport();
+
+			expect(lines).toStrictEqual([
+				"[TIMING] parse-ast: 0ms",
+				"[TIMING] probe-insert: 0ms",
+				"[TIMING] map-build: 0ms",
+				"[TIMING] TOTAL (host): 0ms",
+			]);
 		});
 	});
 });

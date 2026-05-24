@@ -12,6 +12,7 @@ import type { CliOptions, WorkspaceRunOptions } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { MANIFEST_VERSION } from "./coverage/manifest.ts";
 import { prepareWorkStealingQueue } from "./memory-store/work-stealing.ts";
+import { buildWithRojo } from "./utils/rojo-builder.ts";
 import { runWorkspace } from "./workspace-runner.ts";
 
 vi.mock(import("./memory-store/work-stealing.ts"), () => {
@@ -243,6 +244,111 @@ describe(runWorkspace, () => {
 
 		expect(captured.options?.scriptOverride).toContain('"project":"@halcyon/foo"');
 		expect(results?.[0]?.displayName).toBe("@halcyon/foo");
+	});
+
+	it("should print a nested host [TIMING] report when TIMING is set", async () => {
+		expect.assertions(4);
+
+		vi.stubEnv("TIMING", "1");
+		const writes: Array<string> = [];
+		vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+			writes.push(String(chunk));
+			return true;
+		});
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+		});
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		const timingLines = writes
+			.join("")
+			.split("\n")
+			.filter((line) => line.startsWith("[TIMING]"));
+
+		expect(timingLines).toContainEqual(
+			expect.stringMatching(/^\[TIMING] loadPackages: \d+ms$/),
+		);
+		expect(timingLines).toContainEqual(
+			expect.stringMatching(/^\[TIMING] {3}load-config:@halcyon\/foo: \d+ms$/),
+		);
+		expect(timingLines).toContainEqual(expect.stringMatching(/^\[TIMING] runProjects: \d+ms$/));
+		expect(timingLines).toContainEqual(
+			expect.stringMatching(/^\[TIMING] TOTAL \(host\): \d+ms$/),
+		);
+	});
+
+	it("should still flush the [TIMING] report when a phase throws", async () => {
+		expect.assertions(2);
+
+		vi.stubEnv("TIMING", "1");
+		const writes: Array<string> = [];
+		vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+			writes.push(String(chunk));
+			return true;
+		});
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+		});
+
+		vi.mocked(buildWithRojo).mockImplementationOnce(() => {
+			throw new Error("rojo boom");
+		});
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await expect(
+			runWorkspace({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			}),
+		).rejects.toThrow("rojo boom");
+
+		const timingLines = writes
+			.join("")
+			.split("\n")
+			.filter((line) => line.startsWith("[TIMING]"));
+
+		expect(timingLines).toContainEqual(
+			expect.stringMatching(/^\[TIMING] TOTAL \(host\): \d+ms$/),
+		);
 	});
 
 	it("should pass through explicit projects when present, not virtual-wrap", async () => {

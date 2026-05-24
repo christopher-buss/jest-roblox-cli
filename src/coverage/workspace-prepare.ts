@@ -6,6 +6,7 @@ import process from "node:process";
 import picomatch from "picomatch";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
@@ -67,6 +68,8 @@ export interface WorkspacePackageCoverage {
 
 export interface PrepareWorkspaceCoverageOptions {
 	packages: Array<WorkspacePackageDescriptor>;
+	/** Orchestration profiler; records the coverage sub-phases per instrumented root. */
+	timing?: TimingCollector;
 	workspaceRoot: string;
 }
 
@@ -81,6 +84,7 @@ export function prepareWorkspaceCoverage(
 	options: PrepareWorkspaceCoverageOptions,
 ): Array<WorkspacePackageCoverage> {
 	const { packages, workspaceRoot } = options;
+	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 	// Workspace mode reads `coveragePathIgnorePatterns` per-package only.
 	// Hoist the DEFAULT_CONFIG matcher so packages that don't override the
 	// field share one picomatch compile; the workspace-root config is
@@ -92,7 +96,7 @@ export function prepareWorkspaceCoverage(
 			descriptor.coveragePathIgnorePatterns !== undefined
 				? createIgnoreMatcher(descriptor.coveragePathIgnorePatterns)
 				: defaultMatcher;
-		return prepareForPackage(descriptor, workspaceRoot, matchesIgnored);
+		return prepareForPackage(descriptor, workspaceRoot, matchesIgnored, timing);
 	});
 }
 
@@ -376,6 +380,7 @@ function prepareForPackage(
 	descriptor: WorkspacePackageDescriptor,
 	workspaceRoot: string,
 	matchesIgnored: (filePath: string) => boolean,
+	timing: TimingCollector,
 ): WorkspacePackageCoverage {
 	const safeName = safePackageName(descriptor.name);
 	const packageShadowRoot = path.join(
@@ -434,6 +439,7 @@ function prepareForPackage(
 			luauRoot: absoluteSourceRoot,
 			previousManifest,
 			shadowDir: shadowDirectory,
+			timing,
 			useIncremental,
 		});
 

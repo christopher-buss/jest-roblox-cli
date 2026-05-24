@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import parseAstLuauSource from "../luau/parse-ast.luau";
+import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { collectCoverage } from "./coverage-collector.ts";
@@ -30,6 +31,8 @@ export interface InstrumentRootOptions {
 	shadowDir: string;
 	/** Relative paths to skip (already instrumented / unchanged). */
 	skipFiles?: Set<string>;
+	/** Orchestration profiler; records `parse-ast` / `probe-insert` / `map-build`. */
+	timing?: TimingCollector;
 }
 
 export interface InstrumentOptions extends InstrumentRootOptions {
@@ -50,6 +53,7 @@ export function instrumentRoot(
 		shadowDir,
 		skipFiles,
 	} = options;
+	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 
 	const needsTemporaryDirectory =
 		parseScript === undefined || astOutputDirectoryOption === undefined;
@@ -76,11 +80,13 @@ export function instrumentRoot(
 	// JSON. Skipped files are still included in the file list.
 	let fileListJson: string;
 	try {
-		fileListJson = cp.execFileSync("lute", luteArgs, {
-			encoding: "utf-8",
-			// File list only (paths, not ASTs) — 1MB is plenty
-			maxBuffer: 1024 * 1024,
-			windowsHide: true,
+		fileListJson = timing.profile("parse-ast", () => {
+			return cp.execFileSync("lute", luteArgs, {
+				encoding: "utf-8",
+				// File list only (paths, not ASTs) — 1MB is plenty
+				maxBuffer: 1024 * 1024,
+				windowsHide: true,
+			});
 		});
 	} catch (err) {
 		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
@@ -136,8 +142,10 @@ export function instrumentRoot(
 		const sourceBuffer = fs.readFileSync(path.resolve(originalLuauPath));
 		const source = sourceBuffer.toString("utf-8");
 		const collectorResult = collectCoverage(ast);
-		const instrumentedSource = insertProbes(source, collectorResult, fileKey);
-		const coverageMap = buildCoverageMap(collectorResult);
+		const instrumentedSource = timing.profile("probe-insert", () => {
+			return insertProbes(source, collectorResult, fileKey);
+		});
+		const coverageMap = timing.profile("map-build", () => buildCoverageMap(collectorResult));
 
 		fs.writeFileSync(path.join(shadowDir, relativePath), instrumentedSource);
 		writeCoverageMap(coverageMapOutputPath, coverageMap);

@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { instrumentRoot } from "./instrumenter.ts";
@@ -27,6 +28,8 @@ export interface PrepareShadowRootOptions {
 	luauRoot: string;
 	previousManifest?: CoverageManifest;
 	shadowDir: string;
+	/** Orchestration profiler forwarded to `instrumentRoot`. */
+	timing?: TimingCollector;
 	useIncremental: boolean;
 }
 
@@ -76,6 +79,7 @@ export function discoverInstrumentableFiles(luauRoot: string): Set<string> {
  */
 export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRootResult {
 	const { luauRoot, previousManifest, shadowDir, useIncremental } = options;
+	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 	let changed = false;
 
 	if (!useIncremental) {
@@ -108,6 +112,7 @@ export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRoot
 		luauRoot,
 		shadowDir,
 		skipFiles,
+		timing,
 	});
 
 	if (Object.keys(files).length > 0) {

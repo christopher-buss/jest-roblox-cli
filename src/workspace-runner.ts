@@ -46,6 +46,7 @@ import {
 	generateWorkStealingScript,
 	type MaterializerInput,
 } from "./staging/test-script-staged.ts";
+import { createTimingCollector, type TimingCollector } from "./timing/orchestration-collector.ts";
 import type { RojoTreeNode } from "./types/rojo.ts";
 import {
 	buildGroupedGameOutput,
@@ -140,6 +141,33 @@ type WorkspaceDispatchSpec = Pick<
 export async function runWorkspace(
 	options: RunWorkspaceOptions,
 ): Promise<Array<WorkspaceProjectResult> | undefined> {
+	// Flush from `finally` so a TIMING run still emits the host waterfall when a
+	// profiled phase throws (missing lute, rojo build failure, dispatch timeout)
+	// — exactly the slow or broken runs the profiler exists to diagnose. Disabled
+	// (TIMING unset) it is a no-op, so behavior stays byte-identical.
+	const timing = createTimingCollector();
+	try {
+		return await runWorkspaceProfiled(options, timing);
+	} finally {
+		timing.flushTimingReport();
+	}
+}
+
+function buildCoverageMap(
+	entries: Array<WorkspacePackageCoverage>,
+): Map<string, WorkspacePackageCoverage> {
+	const map = new Map<string, WorkspacePackageCoverage>();
+	for (const entry of entries) {
+		map.set(entry.pkg, entry);
+	}
+
+	return map;
+}
+
+async function runWorkspaceProfiled(
+	options: RunWorkspaceOptions,
+	timing: TimingCollector,
+): Promise<Array<WorkspaceProjectResult> | undefined> {
 	const { backend, cli, packageInfos, version, workspaceRoot } = options;
 	const startTime = Date.now();
 
@@ -147,7 +175,9 @@ export async function runWorkspace(
 	// declarations override the workspace default. Building the descriptor
 	// (and the path preflight uses) before loadConfig pinned every package
 	// to the parent's rojo file.
-	const loaded = await loadPackages({ cli, packageInfos });
+	const loaded = await timing.profileAsync("loadPackages", async () => {
+		return loadPackages({ cli, packageInfos, timing });
+	});
 
 	ensurePackageDirectories(loaded.map((entry) => entry.descriptor));
 
@@ -160,17 +190,27 @@ export async function runWorkspace(
 	const cacheDirectory = path.join(workspaceRoot, WORKSPACE_CACHE_DIRECTORY);
 	fs.mkdirSync(cacheDirectory, { recursive: true });
 
-	const contexts = await resolvePackageContexts({ cacheDirectory, loaded });
-
-	const filteredContexts = applyProjectFilter(contexts, cli.project);
-
-	const allEntries = collectPendingEntries(filteredContexts);
+	const contexts = await timing.profileAsync("resolveContexts", async () => {
+		return resolvePackageContexts({ cacheDirectory, loaded });
+	});
 
 	// Each package decides independently. A package with zero discovered
 	// tests passes only when its OWN `passWithNoTests` is true; the
 	// workspace root's value is not aggregated over packages. Projects with
 	// zero tests inside a populated package are silently dropped.
-	const { emptyPackageErrors, pending } = applyEmptyPackagePolicy(allEntries, filteredContexts);
+	const { emptyPackageErrors, filteredContexts, pending } = timing.profile(
+		"discoverTests",
+		() => {
+			const discoveredContexts = applyProjectFilter(contexts, cli.project);
+			const allEntries = collectPendingEntries(discoveredContexts);
+			const policy = applyEmptyPackagePolicy(allEntries, discoveredContexts);
+			return {
+				emptyPackageErrors: policy.emptyPackageErrors,
+				filteredContexts: discoveredContexts,
+				pending: policy.pending,
+			};
+		},
+	);
 	if (emptyPackageErrors.length > 0) {
 		for (const error of emptyPackageErrors) {
 			process.stderr.write(`${error}\n`);
@@ -201,12 +241,15 @@ export async function runWorkspace(
 		);
 	const coverageByPackage =
 		coveragePackages.length > 0
-			? buildCoverageMap(
-					prepareWorkspaceCoverage({
-						packages: coveragePackages,
-						workspaceRoot,
-					}),
-				)
+			? timing.profile("prepareCoverage", () => {
+					return buildCoverageMap(
+						prepareWorkspaceCoverage({
+							packages: coveragePackages,
+							timing,
+							workspaceRoot,
+						}),
+					);
+				})
 			: new Map<string, WorkspacePackageCoverage>();
 
 	const liveProjects = liveProjectsByPackage(pending);
@@ -231,21 +274,25 @@ export async function runWorkspace(
 		}
 	}
 
-	const descriptorsWithStubs = writeStubsAndBuildDescriptors(filteredContexts, liveProjects).map(
-		(descriptor) => {
+	const descriptorsWithStubs = timing
+		.profile("buildStubs", () => writeStubsAndBuildDescriptors(filteredContexts, liveProjects))
+		.map((descriptor) => {
 			const coverage = coverageByPackage.get(descriptor.name);
 			return coverage !== undefined
 				? { ...descriptor, coverageRoots: coverage.coverageRoots }
 				: descriptor;
-		},
-	);
+		});
 
 	const synthProjectPath = path.join(cacheDirectory, SYNTHESIZED_PROJECT_FILE);
 	const synthRbxlPath = path.join(cacheDirectory, SYNTHESIZED_PLACE_FILE);
 
-	const projectJson = synthesize({ packages: descriptorsWithStubs });
-	fs.writeFileSync(synthProjectPath, projectJson);
-	buildWithRojo(synthProjectPath, synthRbxlPath);
+	timing.profile("synthesize", () => {
+		const projectJson = synthesize({ packages: descriptorsWithStubs });
+		fs.writeFileSync(synthProjectPath, projectJson);
+	});
+	timing.profile("rojoBuild", () => {
+		buildWithRojo(synthProjectPath, synthRbxlPath);
+	});
 
 	const inputs: Array<MaterializerInput> = pending.map((entry) => {
 		return {
@@ -257,28 +304,32 @@ export async function runWorkspace(
 	});
 
 	const { onStreamingResult, runOptions, workStealingCredentials } = options;
-	const dispatchSpec = await prepareWorkspaceDispatch({
-		inputs,
-		...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
-		parallel: runOptions.parallel,
-		workStealingCredentials,
+	const dispatchSpec = await timing.profileAsync("prepareDispatch", async () => {
+		return prepareWorkspaceDispatch({
+			inputs,
+			...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
+			parallel: runOptions.parallel,
+			workStealingCredentials,
+		});
 	});
 
-	const { results } = await runProjects({
-		backend,
-		deferFormatting: true,
-		projects: pending.map((entry) => {
-			return {
-				config: { ...entry.projectConfig, placeFile: synthRbxlPath },
-				displayColor: entry.project.displayColor,
-				displayName: entry.project.displayName,
-				pkg: entry.pkg,
-				testFiles: entry.testFiles,
-			};
-		}),
-		startTime,
-		version,
-		...dispatchSpec,
+	const { results } = await timing.profileAsync("runProjects", async () => {
+		return runProjects({
+			backend,
+			deferFormatting: true,
+			projects: pending.map((entry) => {
+				return {
+					config: { ...entry.projectConfig, placeFile: synthRbxlPath },
+					displayColor: entry.project.displayColor,
+					displayName: entry.project.displayName,
+					pkg: entry.pkg,
+					testFiles: entry.testFiles,
+				};
+			}),
+			startTime,
+			version,
+			...dispatchSpec,
+		});
 	});
 
 	if (runOptions.workspaceOutputFile) {
@@ -298,17 +349,6 @@ export async function runWorkspace(
 	});
 
 	return attachCoverageManifests(results, pending, coverageByPackage);
-}
-
-function buildCoverageMap(
-	entries: Array<WorkspacePackageCoverage>,
-): Map<string, WorkspacePackageCoverage> {
-	const map = new Map<string, WorkspacePackageCoverage>();
-	for (const entry of entries) {
-		map.set(entry.pkg, entry);
-	}
-
-	return map;
 }
 
 const PER_PACKAGE_TIMEOUT_SECONDS = 60;
@@ -409,12 +449,15 @@ async function prepareWorkspaceDispatch(input: {
 async function loadPackages(input: {
 	cli: CliOptions;
 	packageInfos: Array<PackageInfo>;
+	timing: TimingCollector;
 }): Promise<Array<LoadedPackage>> {
-	const { cli, packageInfos } = input;
+	const { cli, packageInfos, timing } = input;
 	const loaded: Array<LoadedPackage> = [];
 
 	for (const info of packageInfos) {
-		const fileConfig = await loadConfig(undefined, info.packageDirectory);
+		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
+			return loadConfig(undefined, info.packageDirectory);
+		});
 		const packageConfig = mergeCliWithConfig(cli, fileConfig);
 
 		// `rojoProject` is resolved per-package only — the workspace-root
