@@ -31,7 +31,6 @@ function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): Workspace
 		backend: DEFAULT_CONFIG.backend,
 		color: DEFAULT_CONFIG.color,
 		formatters: [],
-		pollInterval: DEFAULT_CONFIG.pollInterval,
 		port: DEFAULT_CONFIG.port,
 		silent: DEFAULT_CONFIG.silent,
 		workspaceGameOutput: false,

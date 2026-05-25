@@ -18,7 +18,6 @@ export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): Res
 		outputFile: cli.outputFile ?? config.outputFile,
 		parallel: cli.parallel ?? config.parallel,
 		passWithNoTests: cli.passWithNoTests ?? config.passWithNoTests,
-		pollInterval: cli.pollInterval ?? config.pollInterval,
 		port: cli.port ?? config.port,
 		rojoProject: cli.rojoProject ?? config.rojoProject,
 		setupFiles: cli.setupFiles ?? config.setupFiles,

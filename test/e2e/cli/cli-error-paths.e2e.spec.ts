@@ -64,13 +64,13 @@ describe("cli error paths", () => {
 				{
 					jestOutput: buildMixedOutput(buildPassingPayload()),
 					// Stall on PROCESSING longer than the configured CLI
-					// timeout. The backend will exhaust its poll budget and
-					// throw "Execution timed out" before this counter drains.
+					// timeout. The backend exhausts its timeout budget and
+					// throws "Execution timed out" before this counter drains.
 					pollsBeforeComplete: 999,
 				},
 			]);
 
-			const result = await runCliAsync(["--timeout", "2000", "--pollInterval", "100"], {
+			const result = await runCliAsync(["--timeout", "2000"], {
 				cwd: sandbox,
 				env: createOpenCloudEnvironment(server.baseUrl),
 				timeoutMs: 30_000,

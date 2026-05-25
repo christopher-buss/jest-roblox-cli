@@ -14,7 +14,6 @@ export interface UploadPlaceResult {
 }
 
 export interface ExecuteScriptOptions {
-	pollInterval?: number;
 	script: string;
 	timeout: number;
 }

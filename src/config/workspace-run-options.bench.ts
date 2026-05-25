@@ -18,7 +18,6 @@ function agreeingConfigs(count: number): Array<{ config: Config; name: string }>
 				color: true,
 				formatters: ["json"],
 				parallel: 4,
-				pollInterval: 500,
 				port: 3001,
 			},
 		});

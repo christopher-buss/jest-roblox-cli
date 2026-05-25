@@ -55,7 +55,7 @@
 		"watch": "tsdown --watch"
 	},
 	"dependencies": {
-		"@bedrock-rbx/ocale": "0.1.0-beta.11",
+		"@bedrock-rbx/ocale": "0.1.0-beta.15",
 		"@jridgewell/trace-mapping": "0.3.31",
 		"arktype": "2.2.0",
 		"c12": "4.0.0-beta.5",

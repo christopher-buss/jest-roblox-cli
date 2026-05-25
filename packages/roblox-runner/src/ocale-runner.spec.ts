@@ -307,36 +307,6 @@ describe(OcaleRunner, () => {
 			expect(result.outputs).toStrictEqual(["42", '{"nested":true}', "raw"]);
 		});
 
-		it("should pass pollInterval through to bedrock as pollDelay", async () => {
-			expect.assertions(1);
-
-			const waits: Array<number> = [];
-			async function recordingSleep(ms: number): Promise<void> {
-				waits.push(ms);
-			}
-
-			const http = createFakeHttpClient();
-			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({ body: taskBody({ state: "PROCESSING" }), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: [] }, state: "COMPLETE" }),
-				status: 200,
-			});
-
-			const runner = new OcaleRunner(
-				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http, readFile: () => rbxlBuffer(), sleep: recordingSleep },
-			);
-
-			await runner.executeScript({
-				pollInterval: 1337,
-				script: "return 1",
-				timeout: 30_000,
-			});
-
-			expect(waits).toContain(1337);
-		});
-
 		it("should clamp task timeout to 300 seconds when caller asks for more", async () => {
 			expect.assertions(1);
 

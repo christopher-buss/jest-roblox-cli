@@ -49,7 +49,6 @@ Options:
                                     (use when running outside any package)
   --affected-since <ref>            Run only packages affected since git ref via turbo/nx
   --no-coverage-cache               Force a clean coverage re-instrumentation (skip incremental cache)
-  --pollInterval <ms>               Open Cloud poll interval in ms (default: 500)
   --parallel [n]                    Open-Cloud-only: number of concurrent sessions
                                     (or "auto" = min(jobs, 3); default: 1 session)
   --project <name...>               Filter which named projects to run
@@ -111,7 +110,6 @@ export function parseArgs(args: Array<string>): CliOptions {
 			"parallel": { type: "string" },
 			"passWithNoTests": { type: "boolean" },
 			"placeId": { type: "string" },
-			"pollInterval": { type: "string" },
 			"port": { type: "string" },
 			"project": { multiple: true, type: "string" },
 			"rojoProject": { type: "string" },
@@ -135,9 +133,6 @@ export function parseArgs(args: Array<string>): CliOptions {
 		},
 		strict: true,
 	});
-
-	const pollInterval =
-		values.pollInterval !== undefined ? Number.parseInt(values.pollInterval, 10) : undefined;
 
 	const port = values.port !== undefined ? Number.parseInt(values.port, 10) : undefined;
 
@@ -163,7 +158,6 @@ export function parseArgs(args: Array<string>): CliOptions {
 		parallel: parseParallelValue(values.parallel),
 		passWithNoTests: values.passWithNoTests,
 		placeId: values.placeId,
-		pollInterval,
 		port,
 		project: values.project,
 		rojoProject: values.rojoProject,

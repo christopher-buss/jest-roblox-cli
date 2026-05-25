@@ -166,7 +166,6 @@ export interface Config {
 	parallel?: "auto" | number;
 	placeFile?: string;
 	placeId?: string;
-	pollInterval?: number;
 	port?: number;
 	rojoProject?: string;
 	rootDir?: string;
@@ -202,7 +201,6 @@ export interface ResolvedConfig
 	outputFile?: string;
 	passWithNoTests: boolean;
 	placeFile: string;
-	pollInterval: number;
 	port: number;
 	projects?: Array<string>;
 	rootDir: string;
@@ -233,7 +231,6 @@ export interface WorkspaceRunOptions {
 	outputFile?: string;
 	parallel?: "auto" | number;
 	placeId?: string;
-	pollInterval: number;
 	port: number;
 	silent: boolean;
 	universeId?: string;
@@ -274,7 +271,6 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 	coverageReporters: ["text", "lcov"],
 	passWithNoTests: false,
 	placeFile: "./game.rbxl",
-	pollInterval: 500,
 	port: 3001,
 	rootDir: process.cwd(),
 	showLuau: true,
@@ -320,7 +316,6 @@ export interface CliOptions {
 	parallel?: "auto" | number;
 	passWithNoTests?: boolean;
 	placeId?: string;
-	pollInterval?: number;
 	port?: number;
 	project?: Array<string>;
 	reporters?: Array<string>;
@@ -476,7 +471,6 @@ export const configSchema: Type<Config> = type({
 	"parallel?": type("'auto'").or("number.integer >= 1"),
 	"placeFile?": "string",
 	"placeId?": "string",
-	"pollInterval?": "number",
 	"port?": "number",
 	"rojoProject?": "string",
 	"rootDir?": "string",
@@ -535,7 +529,6 @@ export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"parallel",
 	"placeFile",
 	"placeId",
-	"pollInterval",
 	"port",
 	"rojoProject",
 	"rootDir",

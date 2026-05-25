@@ -62,8 +62,7 @@ export class OpenCloudBackend implements Backend {
 			throw new Error("OpenCloudBackend work-stealing mode requires scriptOverride");
 		}
 
-		// timeout/pollInterval are picked from the first job — they're per-run
-		// knobs.
+		// timeout is picked from the first job — it's a per-run knob.
 		// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
 		const primary = jobs[0]!;
 		const placeFilePath = path.resolve(primary.config.rootDir, primary.config.placeFile);
@@ -104,7 +103,6 @@ export class OpenCloudBackend implements Backend {
 
 		const script = scriptOverride ?? generateTestScript(inputs);
 		const scriptResult = await this.runner.executeScript({
-			pollInterval: primary.config.pollInterval,
 			script,
 			timeout: primary.config.timeout,
 		});
@@ -160,7 +158,6 @@ export class OpenCloudBackend implements Backend {
 		primaryConfig: ResolvedConfig,
 	): Promise<{ entries: Array<EnvelopeEntry>; gameOutput: string | undefined }> {
 		const result = await this.runner.executeScript({
-			pollInterval: primaryConfig.pollInterval,
 			script,
 			timeout: primaryConfig.timeout,
 		});

@@ -46,7 +46,7 @@ export class OcaleRunner implements RemoteRunner {
 	}
 
 	public async executeScript(options: ExecuteScriptOptions): Promise<ScriptResult> {
-		const { pollInterval, script, timeout } = options;
+		const { script, timeout } = options;
 		if (timeout <= 0) {
 			throw new Error("Timeout must be a positive number");
 		}
@@ -63,7 +63,6 @@ export class OcaleRunner implements RemoteRunner {
 			},
 			{
 				timeoutMs: timeout,
-				...(pollInterval !== undefined ? { pollDelay: () => pollInterval } : {}),
 			},
 		);
 

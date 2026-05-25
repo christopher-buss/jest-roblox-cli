@@ -347,12 +347,6 @@ describe(parseArgs, () => {
 		expect(parseArgs([]).collectCoverageFrom).toBeUndefined();
 	});
 
-	it("should parse --pollInterval option", () => {
-		expect.assertions(2);
-		expect(parseArgs(["--pollInterval", "1000"]).pollInterval).toBe(1000);
-		expect(parseArgs([]).pollInterval).toBeUndefined();
-	});
-
 	it("should parse --port option", () => {
 		expect.assertions(2);
 		expect(parseArgs(["--port", "4000"]).port).toBe(4000);

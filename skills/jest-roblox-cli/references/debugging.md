@@ -17,7 +17,7 @@
 | "loadstring() is not available" | LoadStringEnabled not set | Add `"LoadStringEnabled": true` to ServerScriptService.$properties in project.json |
 | "lute is required for instrumentation but was not found on PATH" | Lute not installed | Install lute via mise or rokit |
 | "rojo is required for --coverage but was not found on PATH" | Rojo not installed | Install rojo via mise, rokit, or aftman |
-| "Rate limited by Open Cloud API after multiple retries" | API rate limit | Wait and retry, or reduce poll frequency via `--pollInterval` |
+| "Rate limited by Open Cloud API after multiple retries" | API rate limit | Wait and retry; the Open Cloud client backs off automatically |
 | "Execution timed out" | Test exceeded timeout | Increase `--timeout` value |
 | "Execution was cancelled" | Task cancelled externally | Check Roblox Open Cloud dashboard |
 | "Studio plugin disconnected before sending results" | Studio closed mid-run | Keep Studio open during test execution |

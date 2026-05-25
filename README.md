@@ -144,7 +144,6 @@ default. Mixed per-package declarations error loudly.
 | `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only) | — |
 | `parallel` | Number of concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`) | — |
 | `placeId` | Open Cloud place ID | — |
-| `pollInterval` | How often to poll for results in ms (Open Cloud) | `500` |
 | `port` | WebSocket port for Studio backend | `3001` |
 | `silent` | Suppress console output | `false` |
 | `universeId` | Open Cloud universe ID | — |
@@ -458,7 +457,6 @@ root, and `workspace.outputFile: true` writes a per-package result file per
 | `--silent` | Hide all output |
 | `--no-color` | Turn off colors |
 | `--no-coverage-cache` | Force a clean coverage re-instrumentation |
-| `--pollInterval <ms>` | How often to check for results (Open Cloud) |
 | `--parallel [n]` | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`) |
 | `--project <name...>` | Filter which named projects to run |
 | `--setupFiles <path...>` | Scripts to run before env |

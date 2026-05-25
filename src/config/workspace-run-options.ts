@@ -74,13 +74,6 @@ export function buildWorkspaceRunOptions(
 		readConfig: (entry) => entry.color,
 	});
 
-	const pollInterval = resolveField(cli, perPackageConfigs, {
-		name: "pollInterval",
-		default: DEFAULT_CONFIG.pollInterval,
-		readCli: (entry) => entry.pollInterval,
-		readConfig: (entry) => entry.pollInterval,
-	});
-
 	const port = resolveField(cli, perPackageConfigs, {
 		name: "port",
 		default: DEFAULT_CONFIG.port,
@@ -158,7 +151,6 @@ export function buildWorkspaceRunOptions(
 		backend,
 		color,
 		formatters,
-		pollInterval,
 		port,
 		silent,
 		workspaceGameOutput,
