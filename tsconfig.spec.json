@@ -5,6 +5,7 @@
 		"libReplacement": true,
 		"types": ["jest-extended"],
 		"allowImportingTsExtensions": true,
+		"emitDeclarationOnly": true,
 		"outDir": "./out-tsc/vitest"
 	},
 	"references": [

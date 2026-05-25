@@ -15,7 +15,8 @@ function luauRawPlugin() {
 	};
 }
 
-const SEA_STUB_MODULES = new Set(["@typescript/native-preview", "oxc-parser"]);
+// cspell:ignore giget
+const SEA_STUB_MODULES = new Set(["@typescript/native-preview", "giget", "oxc-parser"]);
 
 function seaStubPlugin() {
 	return {
