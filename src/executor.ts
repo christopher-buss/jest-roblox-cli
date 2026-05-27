@@ -40,6 +40,7 @@ import type { TsconfigMapping } from "./types/tsconfig.ts";
 import { formatBanner } from "./utils/banner.ts";
 import { parseGameOutput } from "./utils/game-output.ts";
 import { normalizeWindowsPath } from "./utils/normalize-windows-path.ts";
+import { replacePrefix } from "./utils/tsconfig-mapping.ts";
 
 export interface ExecuteResult {
 	coverageData?: RawCoverageData;
@@ -712,7 +713,7 @@ function writeSnapshots(
 			// Also write to out dir so rojo picks it up without recompile
 			const { filePath, mapping } = resolved;
 			if (mapping !== undefined) {
-				const outPath = mapping.outDir + filePath.slice(mapping.rootDir.length);
+				const outPath = replacePrefix(filePath, mapping.rootDir, mapping.outDir);
 				const absoluteOutPath = path.resolve(config.rootDir, outPath);
 				fs.mkdirSync(path.dirname(absoluteOutPath), { recursive: true });
 				fs.writeFileSync(absoluteOutPath, content);

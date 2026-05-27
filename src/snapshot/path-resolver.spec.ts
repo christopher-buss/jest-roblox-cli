@@ -154,6 +154,32 @@ describe(createSnapshotPathResolver, () => {
 		).toStrictEqual(mapping);
 	});
 
+	it("should preserve rootDir prefix when rootDir is '.'", () => {
+		expect.assertions(1);
+
+		// tsconfig `rootDirs: ["src", "test"]` collapses to rootDir "." in
+		// parseTsconfigMappings. The resolved filePath must keep that prefix
+		// verbatim so the dual-write step can invert the mapping symmetrically.
+		const resolver = createSnapshotPathResolver({
+			mappings: [{ outDir: "out-test", rootDir: "." }],
+			rojoProject: {
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						"shared-tests": {
+							$path: "out-test/src/shared",
+						},
+					},
+				},
+			},
+		});
+
+		expect(
+			resolver.resolve("ReplicatedStorage/shared-tests/foo/__snapshots__/Bar.spec.snap.luau")
+				?.filePath,
+		).toBe("./src/shared/foo/__snapshots__/Bar.spec.snap.luau");
+	});
+
 	it("should return no mapping when basePath matches no outDir", () => {
 		expect.assertions(1);
 

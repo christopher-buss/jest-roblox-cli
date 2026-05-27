@@ -39,8 +39,10 @@ export function createSnapshotPathResolver(
 
 				const mapping = findMapping(result, tsconfigMappings);
 				if (mapping !== undefined) {
-					const replaced = replacePrefix(result, mapping.outDir, mapping.rootDir);
-					return { filePath: replaced.replace(/^\.\//, ""), mapping };
+					return {
+						filePath: replacePrefix(result, mapping.outDir, mapping.rootDir),
+						mapping,
+					};
 				}
 
 				return { filePath: result };

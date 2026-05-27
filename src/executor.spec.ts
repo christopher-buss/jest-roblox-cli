@@ -1555,6 +1555,74 @@ describe("execute single-project helper", () => {
 		expect(fs.existsSync(outSnapshot)).toBeTrue();
 	});
 
+	// cspell:ignore rootdirs testrc
+	it("should dual-write snapshots correctly when tsconfig uses rootDirs (rootDir collapses to '.')", async () => {
+		expect.assertions(3);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-snap-rootdirs-");
+
+		// Mirrors tsconfig.spec.json with `rootDirs: ["src", "test"]`, which
+		// collapses to rootDir "." in parseTsconfigMappings. Without the fix,
+		// the dual-write computes "out-test" + "src/...".slice(1) =
+		// "out-testrc/..." instead of "out-test/src/...".
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "tsconfig.spec.json"),
+			JSON.stringify({
+				compilerOptions: { outDir: "out-test", rootDirs: ["src", "test"] },
+			}),
+		);
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify({
+				name: "test",
+				tree: {
+					ReplicatedStorage: { "shared-tests": { $path: "out-test/src/shared" } },
+				},
+			}),
+		);
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async (): Promise<BackendResult> => {
+				return singleEntryResult(
+					{
+						result: createPassingResult(),
+						snapshotWrites: {
+							"ReplicatedStorage/shared-tests/foo/__snapshots__/Bar.spec.snap.luau":
+								"-- snapshot",
+						},
+					},
+					{ executionMs: 100, uploadMs: 50 },
+				);
+			},
+		};
+
+		const config: ResolvedConfig = {
+			...DEFAULT_CONFIG,
+			rootDir: temporaryDirectory,
+			silent: true,
+		};
+
+		await executeSingle({ backend, config, testFiles: [], version: "0.0.0-test" });
+
+		const sourceSnapshot = path.join(
+			temporaryDirectory,
+			"src/shared/foo/__snapshots__/Bar.spec.snap.luau",
+		);
+		const outSnapshot = path.join(
+			temporaryDirectory,
+			"out-test/src/shared/foo/__snapshots__/Bar.spec.snap.luau",
+		);
+		const corruptedSnapshot = path.join(
+			temporaryDirectory,
+			"out-testrc/shared/foo/__snapshots__/Bar.spec.snap.luau",
+		);
+
+		expect(fs.existsSync(sourceSnapshot)).toBeTrue();
+		expect(fs.existsSync(outSnapshot)).toBeTrue();
+		expect(fs.existsSync(corruptedSnapshot)).toBeFalse();
+	});
+
 	it("should fall back to rojo-resolved path when no tsconfig exists", async () => {
 		expect.assertions(2);
 

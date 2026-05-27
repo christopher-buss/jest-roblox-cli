@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { platform } from "node:process";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -712,6 +713,165 @@ describe("walker syscall behavior", () => {
 				expect(
 					resolver.getWarnings().some((warning) => warning.includes("broken")),
 				).toBeTrue();
+			},
+		);
+	});
+
+	it.skipIf(platform !== "win32")(
+		"should follow an NTFS junction via the realpath+stat fallback",
+		() => {
+			// Junctions classify as isSymbolicLink=true, isDirectory=false from a
+			// Dirent on current Node, so they route through the same fallback
+			// path as cross-volume symlinks. Pinning this guards against a Node
+			// version where junctions are reported as directories (which would
+			// skip the fallback) or as unknown entries that fail stat.
+			expect.assertions(1);
+
+			withProject(
+				{
+					"default.project.json": project({
+						$className: "DataModel",
+						ReplicatedStorage: { $path: "src/shared" },
+					}),
+					"real/leaf.luau": "return {}",
+				},
+				(directory) => {
+					mkdirSync(path.join(directory, "src/shared"), { recursive: true });
+					symlinkSync(
+						path.join(directory, "real"),
+						path.join(directory, "src/shared/linked"),
+						"junction",
+					);
+
+					const resolver = fromProject(directory);
+
+					expect(
+						resolver.getRbxPathFromFilePath(
+							path.join(directory, "src/shared/linked/leaf.luau"),
+						),
+					).toStrictEqual(["ReplicatedStorage", "linked", "leaf"]);
+				},
+			);
+		},
+	);
+});
+
+describe("walker parity snapshot", () => {
+	function snapshot(
+		state: ReturnType<RojoResolver["getState"]>,
+		root: string,
+	): {
+		filePathToRbxPathMap: Array<[string, ReadonlyArray<string>]>;
+		isGame: boolean;
+		partitions: Array<{ fsPath: string; rbxPath: ReadonlyArray<string> }>;
+		walkedConfigFiles: Array<string>;
+		walkedDirs: Array<string>;
+		warnings: Array<string>;
+	} {
+		function strip(full: string): string {
+			return full.replaceAll(root, "<root>").replaceAll("\\", "/");
+		}
+
+		return {
+			// Partitions order matters: parseConfig/parsePath unshift, and
+			// getRbxPathFromFilePath returns the first descendant match. Don't
+			// sort.
+			filePathToRbxPathMap: state.filePathToRbxPathMap.map(([file, rbxPath]) => [
+				strip(file),
+				rbxPath,
+			]),
+			isGame: state.isGame,
+			partitions: state.partitions.map((partition) => {
+				return { fsPath: strip(partition.fsPath), rbxPath: partition.rbxPath };
+			}),
+			// walkedConfigFiles / walkedDirs come from Sets used only for cache
+			// invalidation; sort for stability across traversal-order changes.
+			walkedConfigFiles: state.walkedConfigFiles.map(strip).toSorted(),
+			walkedDirs: state.walkedDirs.map(strip).toSorted(),
+			warnings: state.warnings,
+		};
+	}
+
+	it("should capture combined partition / nested / overlap / init shapes", () => {
+		// One synth tree exercising the interactions the isolated tests miss:
+		// a sibling *.project.json next to a sibling directory both contributing
+		// partitions, a nested default.project.json reached via $path, init
+		// stripping, and a direct module-file mapping. The snapshot pins the
+		// resolver-state shape; the trailing expectations back the comment's
+		// claim by asserting init/module resolve via the partition fallback.
+		expect.assertions(3);
+
+		withProject(
+			{
+				"config.luau": "return {}",
+				"default.project.json": project({
+					$className: "DataModel",
+					Direct: { $path: "config.luau" },
+					Nested: { $path: "nested" },
+					ReplicatedStorage: { $path: "src/shared" },
+				}),
+				"nested/default.project.json": project({ $path: "src" }, "Nested"),
+				"nested/src/inside.luau": "return {}",
+				"src/shared/child.project.json": project({ $path: "child" }, "ChildViaProject"),
+				"src/shared/child/leaf.luau": "return {}",
+				"src/shared/init.luau": "return {}",
+				"src/shared/module.luau": "return {}",
+			},
+			(directory) => {
+				const resolver = fromProject(directory);
+
+				expect(
+					resolver.getRbxPathFromFilePath(path.join(directory, "src/shared/init.luau")),
+				).toStrictEqual(["ReplicatedStorage"]);
+				expect(
+					resolver.getRbxPathFromFilePath(path.join(directory, "src/shared/module.luau")),
+				).toStrictEqual(["ReplicatedStorage", "module"]);
+				expect(snapshot(resolver.getState(), directory)).toMatchInlineSnapshot(`
+					{
+					  "filePathToRbxPathMap": [
+					    [
+					      "<root>/config.luau",
+					      [
+					        "Direct",
+					      ],
+					    ],
+					  ],
+					  "isGame": true,
+					  "partitions": [
+					    {
+					      "fsPath": "<root>/src/shared/child",
+					      "rbxPath": [
+					        "ReplicatedStorage",
+					        "ChildViaProject",
+					      ],
+					    },
+					    {
+					      "fsPath": "<root>/src/shared",
+					      "rbxPath": [
+					        "ReplicatedStorage",
+					      ],
+					    },
+					    {
+					      "fsPath": "<root>/nested/src",
+					      "rbxPath": [
+					        "Nested",
+					      ],
+					    },
+					  ],
+					  "walkedConfigFiles": [
+					    "<root>/default.project.json",
+					    "<root>/nested/default.project.json",
+					    "<root>/src/shared/child.project.json",
+					  ],
+					  "walkedDirs": [
+					    "<root>/nested",
+					    "<root>/nested/src",
+					    "<root>/src/shared",
+					    "<root>/src/shared/child",
+					  ],
+					  "warnings": [],
+					}
+				`);
 			},
 		);
 	});

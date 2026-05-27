@@ -67,8 +67,8 @@ importers:
         specifier: workspace:*
         version: link:packages/roblox-runner
       '@isentinel/roblox-ts':
-        specifier: 4.0.3
-        version: 4.0.3
+        specifier: 4.0.5
+        version: 4.0.5
       '@isentinel/rojo-utils':
         specifier: workspace:*
         version: link:packages/rojo-utils
@@ -877,8 +877,8 @@ packages:
     peerDependencies:
       eslint: '>=8.0.0'
 
-  '@isentinel/roblox-ts@4.0.3':
-    resolution: {integrity: sha512-PMTYc9DPC+Wcu7RyWstVceywpTpIvT6lRc123YDqy30uBkZjwgU83J7nEmSBwzHZ/Bb3YwWK3Jnp6f/ewzVsXQ==}
+  '@isentinel/roblox-ts@4.0.5':
+    resolution: {integrity: sha512-Z4+r1TXo+NE9OXAd9bqq+mCFa1+s106RHzAJrIZgbNX9Ulxp34q+tcQjqTlCWLczZ0W52y8UFkpFMD7ZY6AGKQ==}
     hasBin: true
 
   '@isentinel/stylua@2.1.0-esm.3':
@@ -2503,8 +2503,8 @@ packages:
   birpc@4.0.0:
     resolution: {integrity: sha512-LShSxJP0KTmd101b6DRyGBj57LZxSDYWKitQNW/mi8GRMvZb078Uf9+pveax1DrVL89vm7mWe+TovdI/UDOuPw==}
 
-  brace-expansion@1.1.14:
-    resolution: {integrity: sha512-MWPGfDxnyzKU7rNOW9SP/c50vi3xrmrua/+6hfPbCS2ABNWfx24vPidzvC7krjU/RTo235sV776ymlsMtGKj8g==}
+  brace-expansion@1.1.15:
+    resolution: {integrity: sha512-EwOCDEex4quD37XhqM3omwtMoJjr//isUZz1JopUNWms+4Z2ViyM/k1YIRePpoVNnQhENnxtFjLaxNHrT7xIUg==}
 
   brace-expansion@2.1.1:
     resolution: {integrity: sha512-WR1cURNjuvBLMZBMbqM0UoE+WAfdUcEV1ccD8PVBVOI+Z3ND4+SZbN8RsfT2bMuG1qwz5RFvPukSZm5fF2D5eA==}
@@ -5000,7 +5000,7 @@ snapshots:
       - supports-color
       - typescript
 
-  '@isentinel/roblox-ts@4.0.3':
+  '@isentinel/roblox-ts@4.0.5':
     dependencies:
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31
@@ -6616,7 +6616,7 @@ snapshots:
 
   birpc@4.0.0: {}
 
-  brace-expansion@1.1.14:
+  brace-expansion@1.1.15:
     dependencies:
       balanced-match: 1.0.2
       concat-map: 0.0.1
@@ -7983,7 +7983,7 @@ snapshots:
 
   minimatch@3.1.5:
     dependencies:
-      brace-expansion: 1.1.14
+      brace-expansion: 1.1.15
 
   minimatch@9.0.9:
     dependencies:
