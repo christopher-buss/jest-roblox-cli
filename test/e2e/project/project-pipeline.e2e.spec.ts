@@ -71,7 +71,7 @@ describe("live project pipeline", () => {
 	it.runIf(isLive)(
 		"should pass end-to-end against live Open Cloud",
 		async () => {
-			expect.assertions(5);
+			expect.assertions(7);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
 			const result = await runCliAsync(
@@ -101,6 +101,37 @@ describe("live project pipeline", () => {
 			expect(
 				fs.existsSync(path.join(sandbox, ".jest-roblox/cache/out/shared/jest.config.luau")),
 			).toBeTrue();
+
+			// Regression (HAL --testPathPattern): a filesystem-namespace
+			// `--testPathPattern` (with the `src/` prefix Jest-on-Roblox never
+			// sees) must be normalized to an Instance-namespace basename before
+			// forwarding, otherwise it matches zero files on the Luau side and
+			// the run dies with `<exec-error>` "Test suite failed to run". This
+			// is the only check that exercises the FS→Instance namespace fix
+			// against the real Roblox-side Jest.
+			const patternResult = await runCliAsync(
+				[
+					"--backend",
+					"open-cloud",
+					"--config",
+					"jest.config.ts",
+					"--project",
+					"live-place-shared",
+					"--testPathPattern",
+					"src/shared/example.spec",
+				],
+				{
+					cwd: sandbox,
+					env: liveEnvironment(),
+					timeoutMs: RUN_TIMEOUT_MS,
+				},
+			);
+
+			expect(
+				patternResult.exitCode,
+				`stderr: ${patternResult.stderr}\nstdout: ${patternResult.stdout}`,
+			).toBe(0);
+			expect(patternResult.stdout).toContain("1 passed");
 		},
 		RUN_TIMEOUT_MS + 5000,
 	);

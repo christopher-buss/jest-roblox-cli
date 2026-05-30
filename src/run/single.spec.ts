@@ -488,7 +488,7 @@ describe(runSingleProject, () => {
 	});
 
 	describe("when CLI files are supplied", () => {
-		it("should narrow testPathPattern via narrowConfigByFiles", async () => {
+		it("should narrow testPathPattern to a basename pattern via narrowForLuauRun", async () => {
 			expect.assertions(1);
 
 			resetVol();
@@ -499,6 +499,38 @@ describe(runSingleProject, () => {
 			await runSingleProject(makeOptions({}, { files: ["src/a.spec.ts"] }));
 
 			expect(capture.runOptions?.jobs[0]?.config.testPathPattern).toBe("(a\\.spec)");
+		});
+	});
+
+	describe("when --testPathPattern is a filesystem path", () => {
+		it("should forward a basename pattern so Roblox-side Jest matches the Instance path", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			seedFile("src/server/modules/ecs/context.spec.ts");
+			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
+			await setupBackend(createFakeBackend(makeJestResult(), capture));
+
+			await runSingleProject(
+				makeOptions({ testPathPattern: "src/server/modules/ecs/context.spec" }),
+			);
+
+			expect(capture.runOptions!.jobs[0]!.config.testPathPattern).toBe("(context\\.spec)");
+		});
+	});
+
+	describe("when no filter is active", () => {
+		it("should leave testPathPattern undefined so Luau runs all testMatch files", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
+			await setupBackend(createFakeBackend(makeJestResult(), capture));
+
+			await runSingleProject(makeOptions());
+
+			expect(capture.runOptions!.jobs[0]!.config.testPathPattern).toBeUndefined();
 		});
 	});
 

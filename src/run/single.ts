@@ -2,7 +2,7 @@ import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackend } from "../backends/auto.ts";
-import { narrowConfigByFiles } from "../config/narrow-by-files.ts";
+import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { prepareCoverage } from "../coverage/prepare.ts";
 import { type ExecuteResult, runProjects } from "../executor.ts";
@@ -25,18 +25,21 @@ interface ExecuteRuntimeTestsOptions {
 export async function runSingleProject(options: RunOptions): Promise<SingleRunResult> {
 	const { cli } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
-	const config = timing.profile("narrowConfigByFiles", () => {
-		return narrowConfigByFiles(options.config, cli.files ?? []);
-	});
+	// Discover against the raw config: `discoverTestFiles` filters globbed FS
+	// paths by the raw `testPathPattern` regex (FS namespace). Narrowing for the
+	// Luau runner happens after discovery, driven by the resolved file set.
+	// Shallow-clone so `resolveSetupFilePaths` doesn't mutate the caller's
+	// config.
+	const baseConfig = { ...options.config };
 	timing.profile("resolveSetupFilePaths", () => {
-		resolveSetupFilePaths(config);
+		resolveSetupFilePaths(baseConfig);
 	});
-	const discovery = timing.profile("discoverTestFiles", () =>
-		discoverTestFiles(config, cli.files),
-	);
+	const discovery = timing.profile("discoverTestFiles", () => {
+		return discoverTestFiles(baseConfig, cli.files);
+	});
 
 	if (discovery.files.length === 0) {
-		if (config.passWithNoTests) {
+		if (baseConfig.passWithNoTests) {
 			return { mode: "single", preCoverageMs: 0 };
 		}
 
@@ -45,7 +48,12 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 	}
 
 	const { runtimeFiles, typeTestFiles } = timing.profile("classifyTestFiles", () => {
-		return classifyTestFiles(discovery.files, config);
+		return classifyTestFiles(discovery.files, baseConfig);
+	});
+
+	const filterActive = (cli.files?.length ?? 0) > 0 || baseConfig.testPathPattern !== undefined;
+	const config = timing.profile("narrowForLuauRun", () => {
+		return narrowForLuauRun(baseConfig, runtimeFiles, filterActive);
 	});
 
 	if (typeTestFiles.length === 0 && runtimeFiles.length === 0) {

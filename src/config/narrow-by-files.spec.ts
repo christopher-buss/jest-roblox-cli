@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { narrowConfigByFiles } from "./narrow-by-files.ts";
+import { narrowConfigByFiles, narrowForLuauRun } from "./narrow-by-files.ts";
 import type { ResolvedConfig } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
 
@@ -110,5 +110,36 @@ describe(narrowConfigByFiles, () => {
 
 		expect(result).not.toBe(config);
 		expect(config.testPathPattern).toBe("existing");
+	});
+});
+
+describe(narrowForLuauRun, () => {
+	it("should return the config untouched when no filter is active", () => {
+		expect.assertions(1);
+
+		const config = make({ testPathPattern: "src/foo/bar.spec" });
+
+		expect(narrowForLuauRun(config, ["src/foo/bar.spec.ts"], false)).toBe(config);
+	});
+
+	it("should drop the FS pattern and forward a basename pattern when filter is active", () => {
+		expect.assertions(1);
+
+		const config = make({ testPathPattern: "src/foo/bar.spec" });
+		const result = narrowForLuauRun(config, ["src/foo/bar.spec.ts"], true);
+
+		expect(result.testPathPattern).toBe("(bar\\.spec)");
+	});
+
+	it("should clear the FS pattern when filter is active but no files match", () => {
+		expect.assertions(1);
+
+		// The raw FS pattern is dropped before the empty-files no-op, so callers
+		// that must run zero tests (workspace mode) handle the empty case
+		// separately rather than relying on this passthrough.
+		const config = make({ testPathPattern: "src/foo/bar.spec" });
+		const result = narrowForLuauRun(config, [], true);
+
+		expect(result.testPathPattern).toBeUndefined();
 	});
 });

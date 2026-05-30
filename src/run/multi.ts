@@ -9,7 +9,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
-import { narrowConfigByFiles } from "../config/narrow-by-files.ts";
+import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
@@ -264,9 +264,16 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 		const discovery = discoverTestFiles(discoveryConfig, projectCliFiles);
 		const { runtimeFiles, typeTestFiles } = classifyTestFiles(discovery.files, rootConfig);
 
-		const projConfig: ResolvedConfig = narrowConfigByFiles(
+		// Narrow by the per-project discovered files (not the raw positional/flag
+		// input) so the Luau runner receives an Instance-namespace basename
+		// pattern. A bare project run (no positionals, no `--testPathPattern`)
+		// keeps `testPathPattern` undefined so Jest-on-Roblox runs all testMatch.
+		const filterActive =
+			(projectCliFiles?.length ?? 0) > 0 || discoveryConfig.testPathPattern !== undefined;
+		const projConfig: ResolvedConfig = narrowForLuauRun(
 			{ ...discoveryConfig, testMatch: project.testMatch },
-			projectCliFiles ?? [],
+			runtimeFiles,
+			filterActive,
 		);
 
 		allTypeTestFiles.push(...typeTestFiles);

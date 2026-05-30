@@ -7,7 +7,6 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { resolveBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
-import { narrowConfigByFiles } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
 import {
@@ -41,7 +40,6 @@ vi.mock(import("../backends/auto"));
 vi.mock(import("../config/projects"));
 vi.mock(import("../config/setup-resolver"));
 vi.mock(import("../config/stubs"));
-vi.mock(import("../config/narrow-by-files"));
 vi.mock(import("../config/filter-projects-by-files"));
 vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("../executor"));
@@ -56,7 +54,6 @@ const mocks = {
 	filterProjectsByFiles: vi.mocked(filterProjectsByFiles),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
 	hasUserAuthoredConfig: vi.mocked(hasUserAuthoredConfig),
-	narrowConfigByFiles: vi.mocked(narrowConfigByFiles),
 	prepareCoverage: vi.mocked(prepareCoverage),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
 	resolveBackend: vi.mocked(resolveBackend),
@@ -179,7 +176,6 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 			results: input.projects.map(() => makeExecuteResult()),
 		};
 	});
-	mocks.narrowConfigByFiles.mockImplementation((cfg) => cfg);
 	mocks.filterProjectsByFiles.mockImplementation((projectList, files) => {
 		return projectList.map((project) => ({ matchingFiles: [...files], project }));
 	});
@@ -608,9 +604,33 @@ describe(runMultiProject, () => {
 			rawProjects: [makeProjectEntry("client")],
 		});
 
-		expect(mocks.narrowConfigByFiles).toHaveBeenCalledWith(expect.any(Object), [
-			"src/client/a.spec.ts",
+		const { projects } = mocks.runProjects.mock.calls[0]![0];
+
+		expect(projects[0]!.config.testPathPattern).toBe("(a\\.spec)");
+	});
+
+	it("should forward a basename pattern when --testPathPattern is a filesystem path", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				config: makeConfig({ testPathPattern: "src/client/a.spec" }),
+				displayName: "client",
+				outDir: "out/client",
+			}),
 		]);
+		seedProjectFiles();
+
+		await runMultiProject({
+			cli: makeCli({ testPathPattern: "src/client/a.spec" }),
+			config: { ...config, testPathPattern: "src/client/a.spec" },
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		const { projects } = mocks.runProjects.mock.calls[0]![0];
+
+		expect(projects[0]!.config.testPathPattern).toBe("(a\\.spec)");
 	});
 
 	it("should call filterProjectsByFiles with cli files when --project is absent", async () => {
@@ -653,12 +673,13 @@ describe(runMultiProject, () => {
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
-		// narrowConfigByFiles is called once per selected project with the
-		// per-project file subset, not the full cli.files list.
-		expect(mocks.narrowConfigByFiles).toHaveBeenNthCalledWith(1, expect.any(Object), [
-			"src/client/a.spec.ts",
-		]);
-		expect(mocks.narrowConfigByFiles).toHaveBeenNthCalledWith(2, expect.any(Object), []);
+		// Each selected project narrows by its own file subset: client matched
+		// a.spec, so its Luau pattern is `(a\.spec)`; server matched nothing, so
+		// it is not narrowed (runs all its testMatch files).
+		const { projects } = mocks.runProjects.mock.calls[0]![0];
+
+		expect(projects[0]!.config.testPathPattern).toBe("(a\\.spec)");
+		expect(projects[1]!.config.testPathPattern).toBeUndefined();
 	});
 
 	it("should pass cli files and rootDir through to filterProjectsByFiles", async () => {

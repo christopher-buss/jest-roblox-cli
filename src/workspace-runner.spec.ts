@@ -216,6 +216,76 @@ describe(runWorkspace, () => {
 		expect(captured.options?.scriptOverride).toContain('"testTimeout":5678');
 	});
 
+	it("should forward a basename testPathPattern when --testPathPattern is a filesystem path", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.luau"] },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli({ testPathPattern: "src/foo.spec" }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.scriptOverride).toContain('"testPathPattern":"(foo\\\\.spec)"');
+		expect(captured.options!.scriptOverride).not.toContain('"testPathPattern":"src/foo.spec"');
+	});
+
+	it("should pass with no tests in a package the testPathPattern does not match", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.luau"] },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli({ testPathPattern: "src/other-package.spec" }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.scriptOverride).toContain('"passWithNoTests":true');
+		// The zero-matching pattern is intentionally retained (not cleared) so
+		// the Luau side runs nothing instead of falling back to testMatch.
+		expect(captured.options!.scriptOverride).toContain(
+			'"testPathPattern":"src/other-package.spec"',
+		);
+	});
+
 	it("should synthesize one virtual project named after the package when projects: is absent", async () => {
 		expect.assertions(2);
 

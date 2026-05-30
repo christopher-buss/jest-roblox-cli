@@ -8,6 +8,7 @@ import process from "node:process";
 import type { Backend, StreamingHooks } from "./backends/interface.ts";
 import { loadConfig } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
+import { narrowForLuauRun } from "./config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "./config/projects.ts";
 import { createFsClassifier, resolveAllProjects } from "./config/projects.ts";
 import type {
@@ -40,6 +41,7 @@ import {
 	StreamingAggregator,
 	type StreamingAggregatorOnEntry,
 } from "./reporter/streaming-aggregator.ts";
+import { classifyTestFiles, discoverTestFiles } from "./run/discovery.ts";
 import { type PackageDescriptor, type StubMount, synthesize } from "./staging/synthesizer.ts";
 import {
 	generateMaterializerScript,
@@ -446,6 +448,30 @@ async function prepareWorkspaceDispatch(input: {
 	return { scriptOverride: generateMaterializerScript(inputs) };
 }
 
+/**
+ * Resolve a `--testPathPattern` against this package's files Node-side, then
+ * forward an Instance-namespace basename pattern (see {@link narrowForLuauRun}).
+ *
+ * A pattern that matches no file in this package simply targets a different
+ * package: keep the (zero-matching) raw pattern so Jest-on-Roblox runs nothing,
+ * and set `passWithNoTests` so it doesn't `exit(1)`. The raw pattern is
+ * load-bearing here — clearing it would drop the filter entirely and make the
+ * Luau side fall back to `testMatch`, running the whole package.
+ */
+function narrowPackageTestPathPattern(packageConfig: ResolvedConfig): ResolvedConfig {
+	if (packageConfig.testPathPattern === undefined) {
+		return packageConfig;
+	}
+
+	const { files } = discoverTestFiles(packageConfig);
+	const { runtimeFiles } = classifyTestFiles(files, packageConfig);
+	if (runtimeFiles.length === 0) {
+		return { ...packageConfig, passWithNoTests: true };
+	}
+
+	return narrowForLuauRun(packageConfig, runtimeFiles, true);
+}
+
 async function loadPackages(input: {
 	cli: CliOptions;
 	packageInfos: Array<PackageInfo>;
@@ -458,7 +484,7 @@ async function loadPackages(input: {
 		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
 			return loadConfig(undefined, info.packageDirectory);
 		});
-		const packageConfig = mergeCliWithConfig(cli, fileConfig);
+		const packageConfig = narrowPackageTestPathPattern(mergeCliWithConfig(cli, fileConfig));
 
 		// `rojoProject` is resolved per-package only — the workspace-root
 		// config is intentionally not consulted. A `pkg ?? config ?? DEFAULT`

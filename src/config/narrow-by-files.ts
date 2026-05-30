@@ -38,6 +38,32 @@ export function narrowConfigByFiles(
 	return { ...config, testPathPattern: `(${branches.join("|")})` };
 }
 
+/**
+ * Forward an Instance-namespace `testPathPattern` to the Luau runner.
+ *
+ * Node-side discovery is the source of truth: the FS-namespace filter
+ * (positional args or `--testPathPattern`) has already resolved to a concrete
+ * file set against real paths. Drop the raw FS-shaped pattern and re-narrow by
+ * the discovered files so Jest-on-Roblox matches the same files — its paths are
+ * Roblox Instance names (e.g. `ServerScriptService/...`) with no `src/` prefix,
+ * so a raw FS pattern like `src/server/foo.spec` matches zero files there.
+ *
+ * `filterActive` gates the rewrite: a bare run (no positionals, no
+ * `testPathPattern`) leaves the config untouched so the Luau side runs every
+ * `testMatch` file rather than a giant basename alternation.
+ */
+export function narrowForLuauRun(
+	config: ResolvedConfig,
+	runtimeFiles: ReadonlyArray<string>,
+	filterActive: boolean,
+): ResolvedConfig {
+	if (!filterActive) {
+		return config;
+	}
+
+	return narrowConfigByFiles({ ...config, testPathPattern: undefined }, runtimeFiles);
+}
+
 function toBasenamePattern(file: string): string {
 	const posix = file.replaceAll("\\", "/");
 	const lastSlash = posix.lastIndexOf("/");
