@@ -444,6 +444,7 @@ root, and `workspace.outputFile: true` writes a per-package result file per
 | `--outputFile <path>` | Write results to a file |
 | `--gameOutput <path>` | Write game print/warn/error to a file |
 | `--coverage` | Collect coverage |
+| `--no-coverage` | Disable coverage for this run, even when enabled in config |
 | `--coverageDirectory <path>` | Where to put coverage reports |
 | `--coverageReporters <r...>` | Which report formats to use |
 | `--collectCoverageFrom <glob>` | Globs for files to include in coverage (repeatable) |

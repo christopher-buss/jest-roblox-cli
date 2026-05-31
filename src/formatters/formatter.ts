@@ -441,10 +441,9 @@ export function formatResult(
 	options: FormatOptions,
 ): string {
 	const styles = createStyles(options.color, options.slowTestThreshold);
-	const lines: Array<string> = [
-		// Run header
-		formatRunHeader(options, styles),
-	];
+	// The run header is emitted at the start of the run (see run/run-header.ts);
+	// keep a leading blank line here so results stay visually separated.
+	const lines: Array<string> = [""];
 
 	// Phase 1: File summaries with test markers
 	for (const file of result.testResults) {
@@ -740,7 +739,9 @@ export function formatMultiProjectResult(
 		);
 	}
 
-	const lines: Array<string> = [formatRunHeader(options, styles), sections.join("\n\n")];
+	// The run header is emitted at the start of the run (see run/run-header.ts);
+	// keep a leading blank line so results stay visually separated.
+	const lines: Array<string> = ["", sections.join("\n\n")];
 
 	const mergedResult = mergeJestResults(projects.map((project) => project.result));
 

@@ -6,10 +6,11 @@ import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { prepareCoverage } from "../coverage/prepare.ts";
 import { type ExecuteResult, runProjects } from "../executor.ts";
-import { hasFormatter, usesAgentFormatter } from "../formatters/utils.ts";
+import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import { classifyTestFiles, discoverTestFiles, resolveSetupFilePaths } from "./discovery.ts";
+import { emitRunHeader } from "./run-header.ts";
 import type { RunOptions, SingleRunResult } from "./types.ts";
 
 const VERSION: string = packageJson.version;
@@ -101,10 +102,16 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 
 async function executeRuntimeTests(options: ExecuteRuntimeTestsOptions): Promise<ExecuteResult> {
 	const { cli, config, testFiles, timing, totalFiles } = options;
-	const useDefaultFormatter =
-		!config.silent &&
-		!usesAgentFormatter(config.formatters, config.verbose) &&
-		!hasFormatter(config.formatters, "json");
+	const useDefaultFormatter = isDefaultHumanFormatter(config);
+	emitRunHeader({
+		collectCoverage: config.collectCoverage,
+		color: config.color,
+		formatters: config.formatters,
+		rootDir: config.rootDir,
+		silent: config.silent,
+		verbose: config.verbose,
+		version: VERSION,
+	});
 	if (useDefaultFormatter && testFiles.length !== totalFiles) {
 		process.stderr.write(
 			`Running ${String(testFiles.length)} of ${String(totalFiles)} test files\n`,

@@ -33,6 +33,7 @@ import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { classifyTestFiles, discoverTestFiles, resolveAllSetupFilePaths } from "./discovery.ts";
+import { emitRunHeader } from "./run-header.ts";
 import type { MultiProjectMerged, MultiRunResult, ProjectResult, RunOptions } from "./types.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
@@ -142,6 +143,18 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 			rootConfig,
 		});
 	});
+
+	if (pendingJobs.length > 0) {
+		emitRunHeader({
+			collectCoverage: rootConfig.collectCoverage,
+			color: rootConfig.color,
+			formatters: rootConfig.formatters,
+			rootDir: rootConfig.rootDir,
+			silent: rootConfig.silent,
+			verbose: rootConfig.verbose,
+			version: VERSION,
+		});
+	}
 
 	const projectResults = await runJobs(backend, pendingJobs, parallel, timing);
 

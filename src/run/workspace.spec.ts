@@ -156,6 +156,36 @@ describe(runWorkspaceMode, () => {
 			).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
 		});
 
+		it("should emit the run header to stdout before running the workspace", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(runWorkspace).mockResolvedValue([
+				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			]);
+			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			await runWorkspaceMode(makeCli({ packages: "@halcyon/foo", workspace: true }));
+
+			expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN "));
+		});
+
+		it("should not emit the run header when silent", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(runWorkspace).mockResolvedValue([
+				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			]);
+			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", silent: true, workspace: true }),
+			);
+
+			expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining(" RUN "));
+		});
+
 		it("should surface consensus-resolved sink paths on the result", async () => {
 			expect.assertions(2);
 

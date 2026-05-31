@@ -16,6 +16,7 @@ verify lute is available.
 | Flag | Purpose | Default |
 |------|---------|---------|
 | `--coverage` | Enable coverage collection | `false` |
+| `--no-coverage` | Disable coverage for this run, overriding `collectCoverage` in config (skips instrumentation, so it runs at plain-run speed) | — |
 | `--coverageDirectory` | Output directory | `"coverage"` |
 | `--coverageReporters` | Reporter list | `text`, `lcov` |
 Supported reporters: `clover`, `cobertura`, `html`, `html-spa`, `json`,

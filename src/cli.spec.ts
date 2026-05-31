@@ -307,6 +307,16 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--coverage"]).collectCoverage).toBeTrue();
 	});
 
+	it("should parse --no-coverage flag", () => {
+		expect.assertions(1);
+		expect(parseArgs(["--no-coverage"]).collectCoverage).toBeFalse();
+	});
+
+	it("should let --no-coverage take precedence over --coverage when both are passed", () => {
+		expect.assertions(1);
+		expect(parseArgs(["--coverage", "--no-coverage"]).collectCoverage).toBeFalse();
+	});
+
 	it("should parse --coverageDirectory option", () => {
 		expect.assertions(1);
 		expect(parseArgs(["--coverageDirectory", "my-coverage"]).coverageDirectory).toBe(
@@ -1074,6 +1084,19 @@ describe("runInner orchestration", () => {
 
 		expect(code).toBe(0);
 		expect(mocks.outputMultiResult).toHaveBeenCalledOnce();
+	});
+
+	it("should let --no-coverage override config that enables coverage", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults({ collectCoverage: true });
+
+		await run(["--no-coverage"]);
+
+		const [, config] = mocks.runJestRoblox.mock.calls[0]!;
+
+		expect(config.collectCoverage).toBeFalse();
 	});
 
 	it("should pass explicit --formatters through merge into config", async () => {

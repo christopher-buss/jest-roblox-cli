@@ -211,6 +211,38 @@ describe(runMultiProject, () => {
 		expect(result.projectResults).toHaveLength(2);
 	});
 
+	it("should emit the run header to stdout before running jobs", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN "));
+	});
+
+	it("should not emit the run header when there are no runtime jobs", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		// Don't seed any test files — no runtime jobs are produced.
+		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining(" RUN "));
+	});
+
 	it("should filter projects by --project name", async () => {
 		expect.assertions(2);
 

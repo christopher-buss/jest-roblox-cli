@@ -480,9 +480,10 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingle(options);
 
-		// verbose cancels agent — uses default formatter which includes RUN
-		// header
-		expect(result.output).toContain("RUN");
+		// verbose cancels agent — uses the default formatter (Test Files
+		// summary). The RUN header is emitted at the start of the run, not by
+		// the formatter.
+		expect(result.output).not.toContain("RUN");
 		expect(result.output).toContain("Test Files");
 	});
 

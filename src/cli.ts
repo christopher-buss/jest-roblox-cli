@@ -39,6 +39,7 @@ Options:
   --no-color                        Disable colored output
   -u, --updateSnapshot              Update snapshot files
   --coverage                        Enable coverage collection
+  --no-coverage                     Disable coverage for this run (overrides config)
   --collectCoverageFrom <glob>      Globs for files to include in coverage (repeatable)
   --coverageDirectory <path>        Directory for coverage output (default: coverage)
   --coverageReporters <r...>        Coverage reporters (default: text, lcov)
@@ -82,6 +83,7 @@ Examples:
   jest-roblox -t "should spawn"       Run tests matching pattern
   jest-roblox --formatters json       Output JSON to file
   jest-roblox --coverage              Run tests with coverage instrumentation
+  jest-roblox --no-coverage           Skip coverage instrumentation for this run
 `;
 
 export function parseArgs(args: Array<string>): CliOptions {
@@ -103,6 +105,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 			"gameOutput": { type: "string" },
 			"help": { default: false, type: "boolean" },
 			"no-color": { type: "boolean" },
+			"no-coverage": { type: "boolean" },
 			"no-coverage-cache": { type: "boolean" },
 			"no-show-luau": { type: "boolean" },
 			"outputFile": { type: "string" },
@@ -142,7 +145,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		affectedSince: values["affected-since"],
 		apiKey: values.apiKey,
 		backend: validateBackend(values.backend),
-		collectCoverage: values.coverage,
+		collectCoverage: values["no-coverage"] === true ? false : values.coverage,
 		collectCoverageFrom: values.collectCoverageFrom,
 		color: values["no-color"] === true ? false : values.color,
 		config: values.config,

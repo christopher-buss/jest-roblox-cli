@@ -11,7 +11,7 @@ import type { MappedCoverageResult } from "../coverage/mapper.ts";
 import { mergeRawCoverage } from "../coverage/merge-raw-coverage.ts";
 import type { RawCoverageData } from "../coverage/types.ts";
 import { aggregateWorkspaceCoverage } from "../coverage/workspace-aggregate.ts";
-import { hasFormatter, usesAgentFormatter } from "../formatters/utils.ts";
+import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -19,6 +19,7 @@ import { runWorkspace, type WorkspaceProjectResult } from "../workspace-runner.t
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
 import { resolvePackage } from "../workspace/package-resolver.ts";
+import { emitRunHeader } from "./run-header.ts";
 import type { ProjectResult, WorkspaceRunResult } from "./types.ts";
 import {
 	assertWorkspaceRunOptions,
@@ -126,6 +127,17 @@ export async function runWorkspaceMode(
 
 	let runtimeResults;
 	try {
+		// `collectCoverage` is intentionally omitted: workspace coverage is
+		// per-package (driven by each package's manifest), so there is no
+		// workspace-level flag to surface the "Coverage enabled" subtitle.
+		emitRunHeader({
+			color: runOptions.color,
+			formatters: runOptions.formatters,
+			rootDir: workspaceRoot,
+			silent: runOptions.silent,
+			verbose: cli.verbose,
+			version: VERSION,
+		});
 		const onStreamingResult = resolveStreamingProgressSink(runOptions, cli);
 		runtimeResults = await runWorkspace({
 			backend,
@@ -281,13 +293,12 @@ function resolveStreamingProgressSink(
 	runOptions: WorkspaceRunOptions,
 	cli: CliOptions,
 ): StreamingAggregatorOnEntry | undefined {
-	if (runOptions.silent) {
-		return undefined;
-	}
-
 	if (
-		hasFormatter(runOptions.formatters, "json") ||
-		usesAgentFormatter(runOptions.formatters, cli.verbose)
+		!isDefaultHumanFormatter({
+			formatters: runOptions.formatters,
+			silent: runOptions.silent,
+			verbose: cli.verbose,
+		})
 	) {
 		return undefined;
 	}

@@ -1308,8 +1308,6 @@ describe("formatResult snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 
 			 Test Files  1 passed (1)
@@ -1326,8 +1324,6 @@ describe("formatResult snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ❯ src/player.spec.ts (3 tests | 2 failed)
 			   ❯ Player (3 tests | 2 failed) 18ms
 			     ✓ should spawn 10ms
@@ -1372,8 +1368,6 @@ describe("formatResult snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✓ src/utils.spec.ts (2 tests - 20ms)
 			 ❯ src/game.spec.ts (4 tests | 1 failed)
 			   ❯ Game (4 tests | 1 failed) 28ms
@@ -1409,8 +1403,6 @@ describe("formatResult snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✓ src/codes.spec.ts (5 tests - 50ms)
 			 ↓ src/utils.spec.ts (4 tests)
 			 ↓ src/player.spec.ts (3 tests)
@@ -1440,8 +1432,6 @@ describe("formatResult snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 
 			 Test Files  1 passed (1)
@@ -1458,8 +1448,6 @@ describe("formatResult snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 			  ✓ Utils add works 10ms
 			  ✓ Utils sub works 10ms
@@ -1482,9 +1470,6 @@ describe("formatResult snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-			      Coverage enabled with istanbul
-
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 
 			 Test Files  1 passed (1)
@@ -1505,9 +1490,6 @@ describe("formatResult snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-			      Coverage enabled with istanbul
-
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 			  ✓ Utils add works 10ms
 			  ✓ Utils sub works 10ms
@@ -1649,8 +1631,6 @@ describe("formatResult exec error snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✗ shared/react/features/windows/__tests__/unit-menu-app.test
 
 			[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 1 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
@@ -1675,8 +1655,6 @@ describe("formatResult exec error snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 			 ✗ src/broken.spec.ts
 
@@ -1711,8 +1689,6 @@ describe("formatResult with typecheck data", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✓ src/types.test-d.ts (2 tests)
 
 			 Test Files  1 passed (1)
@@ -1729,8 +1705,6 @@ describe("formatResult with typecheck data", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ❯ src/types.test-d.ts (2 tests | 1 failed)
 			   ❯ type checks (2 tests | 1 failed)
 			     × should reject string as number
@@ -1757,8 +1731,6 @@ describe("formatResult with typecheck data", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			 ✓ src/passing.test-d.ts (2 tests)
 			 ❯ src/failing.test-d.ts (2 tests | 1 failed)
 			   ❯ failing types (2 tests | 1 failed)
@@ -3143,7 +3115,9 @@ describe(formatMultiProjectResult, () => {
 		expect(output).toContain("▶ integration");
 		expect(output).toContain("Test Files");
 		expect(output).toContain("6 passed");
-		expect(output).toContain("RUN");
+		// The run header is emitted at the start of the run, not by the
+		// end-of-run formatter.
+		expect(output).not.toContain("RUN");
 	});
 
 	it("should show failure details within project sections", () => {
@@ -3485,8 +3459,6 @@ describe("multi-project output snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			▶ core  1 passed (3 tests - 30ms)
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 
@@ -3514,8 +3486,6 @@ describe("multi-project output snapshots", () => {
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			 RUN  v1.0.0 /project
-
 			▶ core  1 passed (3 tests - 30ms)
 			 ✓ src/utils.spec.ts (3 tests - 30ms)
 

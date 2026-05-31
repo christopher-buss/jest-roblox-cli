@@ -239,6 +239,32 @@ describe(runSingleProject, () => {
 			expect(capture.closeCalls).toBe(1);
 		});
 
+		it("should emit the run header to stdout before running", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+			await setupBackend();
+
+			await runSingleProject(makeOptions());
+
+			expect(stdout).toHaveBeenCalledWith(expect.stringContaining(" RUN "));
+		});
+
+		it("should not emit the run header when silent", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+			await setupBackend();
+
+			await runSingleProject(makeOptions({ silent: true }));
+
+			expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining(" RUN "));
+		});
+
 		it("should still close the backend when execute throws", async () => {
 			expect.assertions(2);
 

@@ -41,3 +41,21 @@ export function usesAgentFormatter(
 ): boolean {
 	return hasFormatter(formatters, "agent") && !verbose;
 }
+
+/**
+ * Whether human-facing progress output (the run header, the "Running X of Y"
+ * notice, the workspace streaming lines) should be written: not silent and not
+ * a machine-readable formatter (json, or non-verbose agent). The single source
+ * of truth so these sinks can't drift apart.
+ */
+export function isDefaultHumanFormatter(options: {
+	formatters?: Array<FormatterEntry>;
+	silent?: boolean;
+	verbose?: boolean;
+}): boolean {
+	return (
+		options.silent !== true &&
+		!usesAgentFormatter(options.formatters, options.verbose) &&
+		!hasFormatter(options.formatters, "json")
+	);
+}
