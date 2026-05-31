@@ -525,6 +525,37 @@ function mapBranchArmLocations(
 	return { locations: mappedLocations, tsPath };
 }
 
+/**
+ * Detects a phantom branch arm produced by a source-less synthetic statement
+ * `if` (e.g. a roblox-ts Array polyfill like `.filter`/`.includes`). The
+ * synthetic `if` has no source map entry, so trace-mapping's greatest-lower-
+ * bound bias snaps both arms onto the nearest preceding segment — the then-
+ * arm's own start — yielding a zero-width arm that coincides with another
+ * arm's start and can never be covered.
+ *
+ * A genuine statement `if` is safe: roblox-ts always renders it multi-line, so
+ * the then-body (generated line `if+1`) and the implicit-else arm (generated
+ * line `if`) carry distinct source-map segments and never collapse. This is
+ * gated to `type === "if"` by the caller: a single-line `expr-if` (ternary)
+ * legitimately collapses to one column-0 segment and must NOT be dropped.
+ */
+function hasCollapsedPhantomArm(locations: MappedArmLocations["locations"]): boolean {
+	return locations.some((arm, index) => {
+		const zeroWidth = arm.start.line === arm.end.line && arm.start.column === arm.end.column;
+		if (!zeroWidth) {
+			return false;
+		}
+
+		return locations.some((other, otherIndex) => {
+			return (
+				otherIndex !== index &&
+				other.start.line === arm.start.line &&
+				other.start.column === arm.start.column
+			);
+		});
+	});
+}
+
 function mapFileBranches(
 	resources: SourceMapped,
 	fileCoverage: RawCoverageData[string],
@@ -543,6 +574,13 @@ function mapFileBranches(
 			resources.sourceMapDirectory,
 		);
 		if (result === undefined) {
+			continue;
+		}
+
+		// Drop source-less synthetic polyfill `if`s whose arms collapsed onto a
+		// single point. Scoped to statement `if`s — a real `expr-if` (ternary)
+		// legitimately collapses to one column-0 segment and must be kept.
+		if (entry.type === "if" && hasCollapsedPhantomArm(result.locations)) {
 			continue;
 		}
 

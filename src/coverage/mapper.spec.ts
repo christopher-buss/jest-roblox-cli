@@ -1480,6 +1480,148 @@ describe(mapCoverageToTypeScript, () => {
 			expect(file.b["0"]).toStrictEqual([3, 0]);
 			expect(file.branchMap["0"]!.locations).toHaveLength(2);
 		});
+
+		it("should drop phantom branch whose arm collapses onto another arm's start", () => {
+			expect.assertions(1);
+
+			// A roblox-ts Array polyfill (.filter/.includes/.some) emits a
+			// synthetic dispatch conditional with no source map entry. With
+			// trace-mapping's greatest-lower-bound bias, the source-less
+			// implicit-else position snaps to the nearest preceding segment —
+			// the then-arm's own start — producing a zero-width phantom else
+			// arm that can never be covered (counts [N, 0]).
+			const coverageMap = createCoverageMap({}, undefined, {
+				"1": {
+					locations: [
+						{ end: { column: 10, line: 3 }, start: { column: 1, line: 3 } },
+						{ end: { column: 1, line: 5 }, start: { column: 1, line: 5 } },
+					],
+					type: "if",
+				},
+			});
+
+			setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+
+			// Else-arm (Luau line 5) snaps to the then-arm's start (TS L2c0).
+			setupSourceMapMappings({
+				"3:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"3:9": { column: 15, line: 2, source: "src/shared/player.ts" },
+				"5:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+			});
+
+			const coverageData: RawCoverageData = {
+				"shared/player.luau": { b: { "1": [10, 0] }, s: {} },
+			};
+
+			const result = mapCoverageToTypeScript(
+				coverageData,
+				createManifest(createManifestFiles()),
+			);
+
+			expect(result.files).toBeEmptyObject();
+		});
+
+		it("should retain statement coverage when a phantom branch is dropped", () => {
+			expect.assertions(3);
+
+			// Dropping the phantom must filter only the branch entry, not silence
+			// other coverage for the same file.
+			const coverageMap = createCoverageMap(
+				{
+					"0": { end: { column: 10, line: 7 }, start: { column: 1, line: 7 } },
+				},
+				undefined,
+				{
+					"1": {
+						locations: [
+							{ end: { column: 10, line: 3 }, start: { column: 1, line: 3 } },
+							{ end: { column: 1, line: 5 }, start: { column: 1, line: 5 } },
+						],
+						type: "if",
+					},
+				},
+			);
+
+			setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+
+			setupSourceMapMappings({
+				"3:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"3:9": { column: 15, line: 2, source: "src/shared/player.ts" },
+				"5:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"7:0": { column: 0, line: 3, source: "src/shared/player.ts" },
+				"7:9": { column: 25, line: 3, source: "src/shared/player.ts" },
+			});
+
+			const coverageData: RawCoverageData = {
+				"shared/player.luau": { b: { "1": [10, 0] }, s: { "0": 5 } },
+			};
+
+			const result = mapCoverageToTypeScript(
+				coverageData,
+				createManifest(createManifestFiles()),
+			);
+
+			const file = result.files["src/shared/player.ts"];
+
+			expect(file).toBeDefined();
+			expect(file?.s["0"]).toBe(5);
+			expect(file?.branchMap).toStrictEqual({});
+		});
+
+		it("should keep a collapsing expr-if branch (a real ternary is not a phantom)", () => {
+			expect.assertions(2);
+
+			// A single-line ternary compiles to a one-line Luau if-expression.
+			// roblox-ts emits one column-0 source-map segment for that line, so
+			// every arm's start/end greatest-lower-bound-snaps to the same TS
+			// position — looking exactly like a collapsed phantom. But an
+			// expr-if IS a real branch that tests can cover and must never be
+			// dropped; the
+			// phantom signature only applies to compiler-synthesized statement
+			// `if`s (type "if").
+			const coverageMap = createCoverageMap({}, undefined, {
+				"1": {
+					locations: [
+						{ end: { column: 5, line: 3 }, start: { column: 1, line: 3 } },
+						{ end: { column: 13, line: 3 }, start: { column: 9, line: 3 } },
+					],
+					type: "expr-if",
+				},
+			});
+
+			setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+
+			// One segment on line 3 → every column snaps to the same TS position.
+			setupSourceMapMappings({
+				"3:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"3:4": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"3:8": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"3:12": { column: 0, line: 2, source: "src/shared/player.ts" },
+			});
+
+			const coverageData: RawCoverageData = {
+				"shared/player.luau": { b: { "1": [4, 6] }, s: {} },
+			};
+
+			const result = mapCoverageToTypeScript(
+				coverageData,
+				createManifest(createManifestFiles()),
+			);
+
+			const file = result.files["src/shared/player.ts"];
+
+			expect(file).toBeDefined();
+			expect(file?.b["0"]).toStrictEqual([4, 6]);
+		});
 	});
 
 	describe("with native Luau files (no source map)", () => {
