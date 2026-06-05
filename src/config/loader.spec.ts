@@ -756,7 +756,11 @@ describe(loadConfig, () => {
 
 			const result = await loadConfig(undefined, childDirectory);
 
-			expect(result.workspace?.root).toBe(path.resolve(temporaryDirectory));
+			// c12 canonicalizes the discovered config path (realpath), so on
+			// macOS the anchored root resolves under /private/tmp; realpath the
+			// expected dir to match on symlinked-tmp hosts (a no-op where tmp is
+			// not a link).
+			expect(result.workspace?.root).toBe(fs.realpathSync(temporaryDirectory));
 		});
 
 		it("should anchor a relative workspace.root declared without extends", async () => {
@@ -770,7 +774,9 @@ describe(loadConfig, () => {
 
 			const result = await loadConfig(undefined, temporaryDirectory);
 
-			expect(result.workspace?.root).toBe(path.resolve(temporaryDirectory));
+			// realpath the expected dir so the assertion holds on symlinked-tmp
+			// hosts (macOS resolves the loaded config path under /private/tmp).
+			expect(result.workspace?.root).toBe(fs.realpathSync(temporaryDirectory));
 		});
 
 		it("should leave an absolute workspace.root untouched", async () => {
