@@ -352,7 +352,12 @@ export async function runProjects(options: RunProjectsOptions): Promise<RunProje
 }
 
 export function loadCoverageManifest(rootDirectory: string): CoverageManifest | undefined {
-	const manifestPath = path.join(rootDirectory, ".jest-roblox", "coverage", "manifest.json");
+	const manifestPath = path.join(
+		rootDirectory,
+		".jest-roblox",
+		"coverage",
+		"coverage-manifest.json",
+	);
 	const result = readManifest(manifestPath);
 	switch (result.kind) {
 		case "invalid": {

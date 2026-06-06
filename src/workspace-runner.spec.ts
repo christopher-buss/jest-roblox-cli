@@ -1541,6 +1541,7 @@ describe(runWorkspace, () => {
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
 					manifest: {
+						buildId: "test-build-id",
 						files: {},
 						generatedAt: "x",
 						instrumenterVersion: 2,
@@ -1549,7 +1550,7 @@ describe(runWorkspace, () => {
 						shadowDir: "/shadow",
 						version: MANIFEST_VERSION,
 					},
-					manifestPath: "/shadow/manifest.json",
+					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
 				},
 			]);
@@ -1606,6 +1607,7 @@ describe(runWorkspace, () => {
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
 					manifest: {
+						buildId: "test-build-id",
 						files: {},
 						generatedAt: "x",
 						instrumenterVersion: 2,
@@ -1614,7 +1616,7 @@ describe(runWorkspace, () => {
 						shadowDir: "/shadow",
 						version: MANIFEST_VERSION,
 					},
-					manifestPath: "/shadow/manifest.json",
+					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
 				},
 			]);
@@ -1679,6 +1681,7 @@ describe(runWorkspace, () => {
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
 					manifest: {
+						buildId: "test-build-id",
 						files: {},
 						generatedAt: "x",
 						instrumenterVersion: 2,
@@ -1687,7 +1690,7 @@ describe(runWorkspace, () => {
 						shadowDir: "/shadow",
 						version: MANIFEST_VERSION,
 					},
-					manifestPath: "/shadow/manifest.json",
+					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
 				},
 			]);
@@ -1735,6 +1738,7 @@ describe(runWorkspace, () => {
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
 					manifest: {
+						buildId: "test-build-id",
 						files: {},
 						generatedAt: "x",
 						instrumenterVersion: 2,
@@ -1743,7 +1747,7 @@ describe(runWorkspace, () => {
 						shadowDir: "/shadow",
 						version: MANIFEST_VERSION,
 					},
-					manifestPath: "/shadow/manifest.json",
+					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
 				},
 			]);
@@ -1788,6 +1792,7 @@ describe(runWorkspace, () => {
 				{
 					coverageRoots: [],
 					manifest: {
+						buildId: "test-build-id",
 						files: {},
 						generatedAt: "x",
 						instrumenterVersion: 2,
@@ -1796,7 +1801,7 @@ describe(runWorkspace, () => {
 						shadowDir: "/shadow",
 						version: MANIFEST_VERSION,
 					},
-					manifestPath: "/shadow/manifest.json",
+					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
 				},
 			]);
@@ -1835,6 +1840,7 @@ describe(runWorkspace, () => {
 
 			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
 			const manifest = {
+				buildId: "test-build-id",
 				files: {},
 				generatedAt: "x",
 				instrumenterVersion: 2,
@@ -1847,7 +1853,7 @@ describe(runWorkspace, () => {
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
 					manifest,
-					manifestPath: "/shadow/manifest.json",
+					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
 				},
 			]);

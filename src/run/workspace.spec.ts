@@ -567,6 +567,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			const manifest = {
+				buildId: "test-build-id",
 				files: {},
 				generatedAt: "x",
 				instrumenterVersion: 2,
@@ -626,6 +627,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			const manifest = {
+				buildId: "test-build-id",
 				files: {},
 				generatedAt: "x",
 				instrumenterVersion: 2,
@@ -683,6 +685,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			const manifest = {
+				buildId: "test-build-id",
 				files: {},
 				generatedAt: "x",
 				instrumenterVersion: 2,
@@ -743,6 +746,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			const manifest = {
+				buildId: "test-build-id",
 				files: {},
 				generatedAt: "x",
 				instrumenterVersion: 2,

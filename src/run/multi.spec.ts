@@ -369,6 +369,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults({ collectCoverage: true });
 		mocks.prepareCoverage.mockReturnValue({
 			manifest: {
+				buildId: "test-build-id",
 				files: {},
 				generatedAt: new Date().toISOString(),
 				instrumenterVersion: 1,
@@ -402,6 +403,7 @@ describe(runMultiProject, () => {
 			beforeBuild?.(".jest-roblox/coverage");
 			return {
 				manifest: {
+					buildId: "test-build-id",
 					files: {},
 					generatedAt: new Date().toISOString(),
 					instrumenterVersion: 1,

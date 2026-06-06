@@ -2129,7 +2129,7 @@ describe(loadCoverageManifest, () => {
 		const temporaryDirectory = createTemporaryDirectory("cov-test-");
 		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
-		fs.writeFileSync(path.join(coverageDirectory, "manifest.json"), "not json");
+		fs.writeFileSync(path.join(coverageDirectory, "coverage-manifest.json"), "not json");
 		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		expect(loadCoverageManifest(temporaryDirectory)).toBeUndefined();
@@ -2145,7 +2145,7 @@ describe(loadCoverageManifest, () => {
 		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
 		fs.writeFileSync(
-			path.join(coverageDirectory, "manifest.json"),
+			path.join(coverageDirectory, "coverage-manifest.json"),
 			JSON.stringify({ version: MANIFEST_VERSION, wrong: "schema" }),
 		);
 		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -2163,7 +2163,7 @@ describe(loadCoverageManifest, () => {
 		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
 		fs.writeFileSync(
-			path.join(coverageDirectory, "manifest.json"),
+			path.join(coverageDirectory, "coverage-manifest.json"),
 			JSON.stringify({ version: 99 }),
 		);
 		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -2181,6 +2181,7 @@ describe(loadCoverageManifest, () => {
 		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
 		const manifest = {
+			buildId: "test-build-id",
 			files: {
 				"shared/player.luau": {
 					key: "shared/player.luau",
@@ -2199,7 +2200,10 @@ describe(loadCoverageManifest, () => {
 			shadowDir: ".jest-roblox/coverage/out",
 			version: MANIFEST_VERSION,
 		};
-		fs.writeFileSync(path.join(coverageDirectory, "manifest.json"), JSON.stringify(manifest));
+		fs.writeFileSync(
+			path.join(coverageDirectory, "coverage-manifest.json"),
+			JSON.stringify(manifest),
+		);
 		const result = loadCoverageManifest(temporaryDirectory);
 
 		expect(result).toBeDefined();
@@ -2213,6 +2217,7 @@ describe(loadCoverageManifest, () => {
 		const coverageDirectory = path.join(temporaryDirectory, ".jest-roblox/coverage");
 		fs.mkdirSync(coverageDirectory, { recursive: true });
 		const manifest = {
+			buildId: "test-build-id",
 			files: {
 				"shared/invalid.luau": { bad: "record" },
 				"shared/valid.luau": {
@@ -2232,7 +2237,10 @@ describe(loadCoverageManifest, () => {
 			shadowDir: ".jest-roblox/coverage/out",
 			version: MANIFEST_VERSION,
 		};
-		fs.writeFileSync(path.join(coverageDirectory, "manifest.json"), JSON.stringify(manifest));
+		fs.writeFileSync(
+			path.join(coverageDirectory, "coverage-manifest.json"),
+			JSON.stringify(manifest),
+		);
 		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		expect(loadCoverageManifest(temporaryDirectory)).toBeUndefined();

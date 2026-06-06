@@ -28,6 +28,10 @@ export {
 	ROOT_CLI_KEYS,
 	SHARED_TEST_KEYS,
 } from "./config/schema.ts";
+// Artifact contract (BuildManifest + CoverageManifest schemas, validating
+// readers, file-hash helper). Re-exported from a clean barrel shared with the
+// `source`-condition entry.
+export * from "./coverage/artifacts.ts";
 export { formatExecuteOutput, runProjects } from "./executor.ts";
 export type {
 	ExecuteResult,
@@ -36,15 +40,15 @@ export type {
 	RunProjectsOptions,
 	RunProjectsResult,
 } from "./executor.ts";
-
 export { formatResult, formatTestSummary, formatFailure } from "./formatters/formatter.ts";
-export { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
 
+export { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
 export type { GitHubActionsFormatterOptions } from "./formatters/github-actions.ts";
+
 export { formatJson, writeJsonFile } from "./formatters/json.ts";
 export { parseJestOutput, extractJsonFromOutput } from "./reporter/parser.ts";
-
 export { runJestRoblox } from "./run.ts";
+
 export type {
 	MultiProjectMerged,
 	MultiRunResult,
@@ -55,10 +59,10 @@ export type {
 	SingleRunResult,
 	WorkspaceRunResult,
 } from "./run/types.ts";
-
 export { buildJestArgv, generateTestScript } from "./test-script.ts";
 
 export type { JestArgv } from "./test-script.ts";
+
 export { runTypecheck } from "./typecheck/runner.ts";
 export type { TypecheckOptions } from "./typecheck/runner.ts";
 export type { TestDefinition, TscErrorInfo } from "./typecheck/types.ts";

@@ -37,6 +37,7 @@ vi.mock(import("@jridgewell/trace-mapping"), async (importOriginal) => {
 
 function createManifest(files: CoverageManifest["files"] = {}): CoverageManifest {
 	return {
+		buildId: "test-build-id",
 		files,
 		generatedAt: "2026-01-01T00:00:00.000Z",
 		instrumenterVersion: 1,

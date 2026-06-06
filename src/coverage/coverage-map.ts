@@ -3,6 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
+import { isErrnoException } from "../utils/errno.ts";
+
 export interface SourceLocation {
 	end: { column: number; line: number };
 	start: { column: number; line: number };
@@ -72,10 +74,4 @@ export function readCoverageMap(filePath: string): ReadCoverageMapResult {
 	}
 
 	return { kind: "ok", map: validated };
-}
-
-function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
-	return (
-		err instanceof Error && "code" in err && typeof (err as { code: unknown }).code === "string"
-	);
 }

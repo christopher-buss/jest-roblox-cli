@@ -457,7 +457,10 @@ describe(runSingleProject, () => {
 			const { instrumentRoot } = await import("../coverage/instrumenter");
 			vi.mocked(instrumentRoot).mockReturnValue({});
 			const { buildWithRojo } = await import("../utils/rojo-builder");
-			vi.mocked(buildWithRojo).mockReturnValue(undefined);
+			vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
+				vol.mkdirSync(path.dirname(outputPath), { recursive: true });
+				vol.writeFileSync(outputPath, "RBXL");
+			});
 
 			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
 			await setupBackend(createFakeBackend(makeJestResult(), capture));

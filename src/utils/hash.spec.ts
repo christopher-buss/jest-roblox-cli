@@ -1,7 +1,15 @@
-import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import { fromAny } from "@total-typescript/shoehorn";
 
-import { hashBuffer } from "./hash.ts";
+import { vol } from "memfs";
+import { Buffer } from "node:buffer";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+
+import { hashBuffer, hashFile } from "./hash.ts";
+
+vi.mock(import("node:fs"), async () => {
+	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
+	return fromAny({ ...memfs.fs, default: memfs.fs });
+});
 
 describe(hashBuffer, () => {
 	it("should return consistent SHA256 hash for same input", () => {
@@ -30,5 +38,20 @@ describe(hashBuffer, () => {
 		const hash = hashBuffer(Buffer.from("test"));
 
 		expect(hash).toMatch(/^[0-9a-f]{64}$/);
+	});
+});
+
+describe(hashFile, () => {
+	it("should hash the file's bytes identically to hashBuffer", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.mkdirSync("/dir", { recursive: true });
+		vol.writeFileSync("/dir/file.luau", "local x = 1");
+
+		expect(hashFile("/dir/file.luau")).toBe(hashBuffer(Buffer.from("local x = 1")));
 	});
 });

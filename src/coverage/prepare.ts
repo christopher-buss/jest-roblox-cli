@@ -2,6 +2,7 @@ import { collectPaths, resolveNestedProjects } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
 import { getTsconfig } from "get-tsconfig";
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
@@ -12,8 +13,10 @@ import type { CoverageRoot } from "../staging/synthesizer.ts";
 import { synthesize } from "../staging/synthesizer.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
+import { hashFile } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
+import { BUILD_MANIFEST_VERSION, readBuildManifest, writeBuildManifest } from "./build-manifest.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
@@ -24,6 +27,8 @@ import { MANIFEST_VERSION, readManifest, writeManifest } from "./manifest.ts";
 import { cleanupDeletedFiles, detectDeletedFiles, prepareShadowRoot } from "./shadow-root.ts";
 
 const COVERAGE_DIR = ".jest-roblox/coverage";
+const COVERAGE_MANIFEST = "coverage-manifest.json";
+const BUILD_MANIFEST = "build-manifest.json";
 
 export interface PrepareCoverageResult {
 	manifest: CoverageManifest;
@@ -32,6 +37,7 @@ export interface PrepareCoverageResult {
 
 interface WriteManifestOptions {
 	allFiles: Record<string, InstrumentedFileRecord>;
+	buildId: string;
 	luauRoots: Array<string>;
 	manifestPath: string;
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
@@ -81,7 +87,8 @@ export function prepareCoverage(
 
 	validateRelativeRoots(luauRoots);
 
-	const manifestPath = path.join(COVERAGE_DIR, "manifest.json");
+	const manifestPath = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
+	const buildManifestPath = path.join(COVERAGE_DIR, BUILD_MANIFEST);
 	const previousManifest = loadCoverageManifest(manifestPath);
 	const useIncremental = canUseIncremental(previousManifest, config);
 
@@ -132,19 +139,43 @@ export function prepareCoverage(
 	}
 
 	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
+
+	// Incremental no-change short-circuit: reuse the prior place only if it is
+	// still on disk and its bytes match the prior build manifest's record. A
+	// missing or drifted artifact (e.g. an interrupted prior build) falls
+	// through to a full rebuild rather than publishing a manifest that points
+	// at a stale or absent `.rbxl`.
+	if (
+		!hasChanges &&
+		previousManifest?.placeFilePath !== undefined &&
+		priorPlaceIsReusable(previousManifest.placeFilePath, buildManifestPath)
+	) {
+		return { manifest: previousManifest, placeFile: previousManifest.placeFilePath };
+	}
+
+	// Build the `.rbxl` first, then hash it, then publish both manifests. The
+	// order matters: a failed `buildRojoProject` throws before any manifest is
+	// written, so an interrupted run never leaves a manifest claiming an
+	// artifact that isn't on disk.
+	buildRojoProject(rojoProjectPath, config.rootDir, coverageRoots, placeFile);
+
+	const buildId = crypto.randomUUID();
 	const manifest = buildAndWriteManifest({
 		allFiles,
+		buildId,
 		luauRoots,
 		manifestPath,
 		nonInstrumentedFiles: allNonInstrumented,
 		placeFile,
 	});
-
-	if (!hasChanges && previousManifest?.placeFilePath !== undefined) {
-		return { manifest, placeFile: previousManifest.placeFilePath };
-	}
-
-	buildRojoProject(rojoProjectPath, config.rootDir, coverageRoots, placeFile);
+	writeBuildManifest(buildManifestPath, {
+		buildId,
+		cleanPlace: { hash: hashFile(placeFile), path: placeFile },
+		files: toBuildManifestFiles(allFiles),
+		generatedAt: manifest.generatedAt,
+		projects: [],
+		version: BUILD_MANIFEST_VERSION,
+	});
 
 	return { manifest, placeFile };
 }
@@ -223,6 +254,39 @@ function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: stri
 
 	throw new Error(
 		"Could not determine luauRoots. Set luauRoots in config or ensure tsconfig has outDir.",
+	);
+}
+
+function priorPlaceIsReusable(placeFilePath: string, buildManifestPath: string): boolean {
+	if (!fs.existsSync(placeFilePath)) {
+		return false;
+	}
+
+	// A prior build manifest validates the cached artifacts: `readBuildManifest`
+	// re-hashes the clean place (and sources), so any drift or corruption yields
+	// a non-ok result and forces a rebuild. Pre-BuildManifest caches (coverage
+	// manifest only) have no build manifest yet, so the existence check above is
+	// the only gate — keeping the no-change path working across the v3 upgrade.
+	const previous = readBuildManifest(buildManifestPath);
+	if (previous.kind === "missing") {
+		return true;
+	}
+
+	if (previous.kind !== "ok") {
+		process.stderr.write(
+			`Warning: Previous build manifest is unusable (${previous.kind}); rebuilding place.\n`,
+		);
+		return false;
+	}
+
+	return true;
+}
+
+function toBuildManifestFiles(
+	allFiles: Record<string, InstrumentedFileRecord>,
+): Record<string, { sourceHash: string }> {
+	return Object.fromEntries(
+		Object.entries(allFiles).map(([key, record]) => [key, { sourceHash: record.sourceHash }]),
 	);
 }
 
@@ -305,9 +369,10 @@ function canUseIncremental(
 }
 
 function buildAndWriteManifest(options: WriteManifestOptions): CoverageManifest {
-	const { allFiles, luauRoots, manifestPath, nonInstrumentedFiles, placeFile } = options;
+	const { allFiles, buildId, luauRoots, manifestPath, nonInstrumentedFiles, placeFile } = options;
 
 	const manifest: CoverageManifest = {
+		buildId,
 		files: allFiles,
 		generatedAt: new Date().toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,

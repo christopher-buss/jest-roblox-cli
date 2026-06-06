@@ -2,15 +2,20 @@ import { describe, expectTypeOf, it } from "vitest";
 
 import type {
 	Backend,
+	BuildManifest,
 	CliOptions,
 	Config,
 	ConfigInput,
+	CoverageManifest,
 	ExecuteResult,
 	GameOutputEntry,
+	InstrumentedFileRecord,
 	JestArgv,
 	JestResult,
 	OpenCloudBackend,
 	ProjectInput,
+	ReadBuildManifestResult,
+	ReadCoverageManifestResult,
 	ResolvedConfig,
 	RunProjectsOptions,
 	RunProjectsResult,
@@ -24,6 +29,8 @@ import type {
 } from "./index.ts";
 import {
 	buildJestArgv,
+	buildManifestSchema,
+	coverageManifestSchema,
 	createOpenCloudBackend,
 	createStudioBackend,
 	DEFAULT_CONFIG,
@@ -34,9 +41,12 @@ import {
 	formatResult,
 	formatTestSummary,
 	generateTestScript,
+	hashFile,
 	loadConfig,
 	parseGameOutput,
 	parseJestOutput,
+	readBuildManifest,
+	readCoverageManifest,
 	resolveConfig,
 	runProjects,
 	runTypecheck,
@@ -257,5 +267,41 @@ describe("type exports", () => {
 
 	it("should export CliOptions with optional fields", () => {
 		expectTypeOf<CliOptions>().toBeObject();
+	});
+});
+
+describe("artifact contract", () => {
+	it("should return a hex string from hashFile", () => {
+		expectTypeOf(hashFile).parameter(0).toBeString();
+		expectTypeOf(hashFile).returns.toBeString();
+	});
+
+	it("should return ReadBuildManifestResult from readBuildManifest", () => {
+		expectTypeOf(readBuildManifest).returns.toEqualTypeOf<ReadBuildManifestResult>();
+	});
+
+	it("should return ReadCoverageManifestResult from readCoverageManifest", () => {
+		expectTypeOf(readCoverageManifest).returns.toEqualTypeOf<ReadCoverageManifestResult>();
+	});
+
+	it("should expose the arktype schemas as callable validators", () => {
+		expectTypeOf(buildManifestSchema).toBeCallableWith({});
+		expectTypeOf(coverageManifestSchema).toBeCallableWith({});
+	});
+
+	it("should export BuildManifest with the cross-link and artifact fields", () => {
+		expectTypeOf<BuildManifest>().toHaveProperty("buildId");
+		expectTypeOf<BuildManifest>().toHaveProperty("cleanPlace");
+		expectTypeOf<BuildManifest>().toHaveProperty("files");
+		expectTypeOf<BuildManifest>().toHaveProperty("projects");
+	});
+
+	it("should export CoverageManifest carrying the shared buildId", () => {
+		expectTypeOf<CoverageManifest>().toHaveProperty("buildId");
+		expectTypeOf<CoverageManifest["buildId"]>().toBeString();
+	});
+
+	it("should export InstrumentedFileRecord", () => {
+		expectTypeOf<InstrumentedFileRecord>().toHaveProperty("sourceHash");
 	});
 });

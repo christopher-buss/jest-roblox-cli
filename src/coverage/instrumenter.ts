@@ -1,6 +1,7 @@
 import type { AstStatBlock } from "@isentinel/luau-ast";
 
 import * as cp from "node:child_process";
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -177,6 +178,7 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 	const posixLuauRoot = normalizeWindowsPath(luauRoot);
 
 	const manifest: CoverageManifest = {
+		buildId: crypto.randomUUID(),
 		files,
 		generatedAt: new Date().toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,

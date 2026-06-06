@@ -28,6 +28,7 @@ function buildManifest(
 	shadowDirectory: string,
 ): CoverageManifest {
 	return {
+		buildId: "test-build-id",
 		files,
 		generatedAt: new Date().toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,

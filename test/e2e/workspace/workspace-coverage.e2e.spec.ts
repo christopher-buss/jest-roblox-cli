@@ -163,7 +163,7 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 			expect(fs.existsSync(path.join(shadowRoot, "src/init.luau"))).toBeTrue();
 			expect(fs.existsSync(path.join(shadowRoot, "vendored-packages"))).toBeFalse();
 
-			const manifest = readJsonSync(path.join(shadowRoot, "manifest.json")) as {
+			const manifest = readJsonSync(path.join(shadowRoot, "coverage-manifest.json")) as {
 				files: Record<string, unknown>;
 			};
 
@@ -249,7 +249,7 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 			expect(fs.existsSync(path.join(shadowRoot, "src/init.luau"))).toBeTrue();
 			expect(fs.existsSync(path.join(shadowRoot, "vendored-packages"))).toBeFalse();
 
-			const manifest = readJsonSync(path.join(shadowRoot, "manifest.json")) as {
+			const manifest = readJsonSync(path.join(shadowRoot, "coverage-manifest.json")) as {
 				files: Record<string, unknown>;
 			};
 

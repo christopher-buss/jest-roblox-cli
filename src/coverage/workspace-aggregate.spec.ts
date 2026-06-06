@@ -16,6 +16,7 @@ vi.mock(import("./mapper.ts"));
 
 function manifestStub(): CoverageManifest {
 	return {
+		buildId: "test-build-id",
 		files: {},
 		generatedAt: "2026-05-10T00:00:00.000Z",
 		instrumenterVersion: 2,

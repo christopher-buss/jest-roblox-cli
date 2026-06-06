@@ -137,7 +137,7 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const expectedPath = path.join(
 			WORKSPACE_ROOT,
-			".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+			".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 		);
 
 		expect(result[0]?.manifestPath).toBe(expectedPath.replaceAll("\\", "/"));
@@ -203,11 +203,11 @@ describe(prepareWorkspaceCoverage, () => {
 
 		const fooManifest = path.join(
 			WORKSPACE_ROOT,
-			".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+			".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 		);
 		const barManifest = path.join(
 			WORKSPACE_ROOT,
-			".jest-roblox/workspace/@halcyon-bar/coverage/manifest.json",
+			".jest-roblox/workspace/@halcyon-bar/coverage/coverage-manifest.json",
 		);
 
 		expect(result.find((entry) => entry.pkg === "@halcyon/foo")?.manifestPath).toBe(
@@ -311,6 +311,7 @@ describe(prepareWorkspaceCoverage, () => {
 			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
 			.replaceAll("\\", "/");
 		const previousManifest: CoverageManifest = {
+			buildId: "prev-build-id",
 			files: {
 				[fileKey]: {
 					key: fileKey,
@@ -343,7 +344,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
 			[path.join(
 				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
 		const mocked = await mockInstrumentRoot();
@@ -375,6 +376,7 @@ describe(prepareWorkspaceCoverage, () => {
 		const sourceContent = "local x = 1";
 		const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 		const previousManifest: CoverageManifest = {
+			buildId: "prev-build-id",
 			files: {
 				[fileKey]: {
 					key: fileKey,
@@ -405,7 +407,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
 			[path.join(
 				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
 		const mocked = await mockInstrumentRoot();
@@ -446,7 +448,7 @@ describe(prepareWorkspaceCoverage, () => {
 			".jest-roblox/workspace/@halcyon-foo/coverage",
 		);
 		vol.mkdirSync(manifestDirectory, { recursive: true });
-		vol.writeFileSync(path.join(manifestDirectory, "manifest.json"), body);
+		vol.writeFileSync(path.join(manifestDirectory, "coverage-manifest.json"), body);
 		const mocked = await mockInstrumentRoot();
 
 		prepareWorkspaceCoverage({
@@ -481,6 +483,7 @@ describe(prepareWorkspaceCoverage, () => {
 			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
 			.replaceAll("\\", "/");
 		const previousManifest: CoverageManifest = {
+			buildId: "prev-build-id",
 			files: {
 				[fileKey]: {
 					key: fileKey,
@@ -513,7 +516,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
 			[path.join(
 				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
 		const mocked = await mockInstrumentRoot();
@@ -549,6 +552,7 @@ describe(prepareWorkspaceCoverage, () => {
 			.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
 			.replaceAll("\\", "/");
 		const previousManifest: CoverageManifest = {
+			buildId: "prev-build-id",
 			files: {
 				[fileKey]: {
 					key: fileKey,
@@ -584,7 +588,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "out/init.luau")]: sourceContent,
 			[path.join(
 				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
 		const mocked = await mockInstrumentRoot();
@@ -621,6 +625,7 @@ describe(prepareWorkspaceCoverage, () => {
 			.replaceAll("\\", "/");
 		const shadowSpecPath = `${packageShadow}/out-test/src/foo.spec.luau`;
 		const previousManifest: CoverageManifest = {
+			buildId: "prev-build-id",
 			files: {
 				[helperKey]: {
 					key: helperKey,
@@ -662,7 +667,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: helperContent,
 			[path.join(
 				WORKSPACE_ROOT,
-				".jest-roblox/workspace/@halcyon-foo/coverage/manifest.json",
+				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
 		await mockInstrumentRoot();
@@ -1469,6 +1474,7 @@ describe(prepareWorkspaceCoverage, () => {
 			const sourceFileKey = `${path.join(FOO_DIR, "src").replaceAll("\\", "/")}/init.luau`;
 			const vendoredShadowDirectory = path.join(packageShadow, "vendored-packages");
 			const previousManifest: CoverageManifest = {
+				buildId: "prev-build-id",
 				files: {
 					[sourceFileKey]: {
 						key: sourceFileKey,
@@ -1497,7 +1503,8 @@ describe(prepareWorkspaceCoverage, () => {
 				[FOO_PROJECT]: JSON.stringify({ name: "foo-test", tree: multiMountTree }),
 				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 				[path.join(FOO_DIR, "vendored-packages/dep/init.luau")]: "local y = 2",
-				[path.join(packageShadow, "manifest.json")]: JSON.stringify(previousManifest),
+				[path.join(packageShadow, "coverage-manifest.json")]:
+					JSON.stringify(previousManifest),
 				// Stale shadow file from the prior mount that the new run drops.
 				[staleVendoredShadow]: "return {}",
 			});
@@ -1535,6 +1542,7 @@ describe(prepareWorkspaceCoverage, () => {
 			const staleVendoredShadow = path.join(packageShadow, "vendored-packages/dep/init.luau");
 			const previousFileKey = `${path.join(FOO_DIR, "vendored-packages").replaceAll("\\", "/")}/dep/init.luau`;
 			const previousManifest: CoverageManifest = {
+				buildId: "prev-build-id",
 				files: {
 					[previousFileKey]: {
 						key: previousFileKey,
@@ -1558,7 +1566,8 @@ describe(prepareWorkspaceCoverage, () => {
 				[FOO_PROJECT]: JSON.stringify({ name: "foo-test", tree: multiMountTree }),
 				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 				[path.join(FOO_DIR, "vendored-packages/dep/init.luau")]: "local y = 2",
-				[path.join(packageShadow, "manifest.json")]: JSON.stringify(previousManifest),
+				[path.join(packageShadow, "coverage-manifest.json")]:
+					JSON.stringify(previousManifest),
 				[staleVendoredShadow]: "return {}",
 			});
 			await mockInstrumentRoot();
@@ -1593,6 +1602,7 @@ describe(prepareWorkspaceCoverage, () => {
 				.replaceAll("\\", "/");
 			const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 			const previousManifest: CoverageManifest = {
+				buildId: "prev-build-id",
 				files: {
 					[fileKey]: {
 						key: fileKey,
@@ -1614,7 +1624,8 @@ describe(prepareWorkspaceCoverage, () => {
 
 			seedPackage(FOO_DIR);
 			vol.fromJSON({
-				[path.join(packageShadow, "manifest.json")]: JSON.stringify(previousManifest),
+				[path.join(packageShadow, "coverage-manifest.json")]:
+					JSON.stringify(previousManifest),
 				[path.join(packageShadow, "out/preserved.txt")]: "cache-survives",
 			});
 			await mockInstrumentRoot();

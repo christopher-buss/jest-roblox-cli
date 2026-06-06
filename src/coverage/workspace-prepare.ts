@@ -1,5 +1,6 @@
 import { collectPaths, loadRojoProject, resolveNestedProjects } from "@isentinel/rojo-utils";
 
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
@@ -390,7 +391,9 @@ function prepareForPackage(
 		safeName,
 		"coverage",
 	);
-	const manifestPath = normalizeWindowsPath(path.join(packageShadowRoot, "manifest.json"));
+	const manifestPath = normalizeWindowsPath(
+		path.join(packageShadowRoot, "coverage-manifest.json"),
+	);
 
 	const previousManifest = loadPackageManifest(manifestPath);
 	const coverageCache = descriptor.coverageCache ?? DEFAULT_CONFIG.coverageCache;
@@ -455,6 +458,7 @@ function prepareForPackage(
 	}
 
 	const manifest: CoverageManifest = {
+		buildId: crypto.randomUUID(),
 		files: allFiles,
 		generatedAt: new Date().toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,

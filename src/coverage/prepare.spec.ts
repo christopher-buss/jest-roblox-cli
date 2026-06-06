@@ -1,21 +1,25 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import { type } from "arktype";
 import { vol } from "memfs";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
+import type { Except } from "type-fest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { BuildManifest } from "./build-manifest.ts";
+import { buildManifestSchema } from "./build-manifest.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
 	InstrumentedFileRecord,
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
-import { MANIFEST_VERSION } from "./manifest.ts";
+import { MANIFEST_VERSION, manifestSchema } from "./manifest.ts";
 import { collectLuauRootsFromRojo, prepareCoverage, resolveLuauRoots } from "./prepare.ts";
 import { discoverInstrumentableFiles } from "./shadow-root.ts";
 
@@ -79,7 +83,11 @@ async function setupMocks(options: { outDir?: string } = {}) {
 	vi.mocked(instrumentRoot).mockReturnValue({});
 
 	const { buildWithRojo } = await import("../utils/rojo-builder");
-	vi.mocked(buildWithRojo).mockReturnValue(undefined);
+	// Simulate rojo producing the `.rbxl` so the post-build hashing in
+	// prepareCoverage finds an artifact to read.
+	vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
+		vol.writeFileSync(outputPath, "RBXL");
+	});
 
 	return { buildWithRojo, instrumentRoot };
 }
@@ -90,6 +98,24 @@ function seedFilesystem(options: { luauRoot?: string; rojoProject?: string } = {
 	vol.mkdirSync(luauRoot, { recursive: true });
 	vol.writeFileSync(`${luauRoot}/init.luau`, "local x = 1");
 	vol.writeFileSync(rojoProject, JSON.stringify(ROJO_PROJECT));
+}
+
+function readCoverageManifestFile(filePath: string): CoverageManifest {
+	const parsed = manifestSchema(JSON.parse(vol.readFileSync(filePath, "utf-8") as string));
+	if (parsed instanceof type.errors) {
+		throw new Error(parsed.summary);
+	}
+
+	return parsed;
+}
+
+function readBuildManifestFile(filePath: string): BuildManifest {
+	const parsed = buildManifestSchema(JSON.parse(vol.readFileSync(filePath, "utf-8") as string));
+	if (parsed instanceof type.errors) {
+		throw new Error(parsed.summary);
+	}
+
+	return parsed;
 }
 
 describe(prepareCoverage, () => {
@@ -426,6 +452,83 @@ describe(prepareCoverage, () => {
 		});
 	});
 
+	describe("when publishing the build manifest", () => {
+		it("should emit build-manifest.json next to coverage-manifest.json", async () => {
+			expect.assertions(2);
+
+			seedFilesystem();
+			await setupMocks();
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			expect(vol.existsSync(".jest-roblox/coverage/coverage-manifest.json")).toBeTrue();
+			expect(vol.existsSync(".jest-roblox/coverage/build-manifest.json")).toBeTrue();
+		});
+
+		it("should share a single buildId across both sibling manifests", async () => {
+			expect.assertions(1);
+
+			seedFilesystem();
+			await setupMocks();
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			const coverage = readCoverageManifestFile(
+				".jest-roblox/coverage/coverage-manifest.json",
+			);
+			const build = readBuildManifestFile(".jest-roblox/coverage/build-manifest.json");
+
+			expect(build.buildId).toBe(coverage.buildId);
+		});
+
+		it("should record the clean place hash and source hashes in the build manifest", async () => {
+			expect.assertions(2);
+
+			seedFilesystem();
+			const { instrumentRoot } = await setupMocks();
+			vi.mocked(instrumentRoot).mockImplementation((options) => {
+				return {
+					[`${options.luauRoot}/init.luau`]: {
+						key: `${options.luauRoot}/init.luau`,
+						branchCount: 0,
+						coverageMapPath: `${options.luauRoot}/init.cov-map.json`,
+						functionCount: 0,
+						instrumentedLuauPath: `.jest-roblox/coverage/${options.luauRoot}/init.luau`,
+						originalLuauPath: `${options.luauRoot}/init.luau`,
+						sourceHash: "deadbeef",
+						sourceMapPath: `${options.luauRoot}/init.luau.map`,
+						statementCount: 0,
+					},
+				};
+			});
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			const build = readBuildManifestFile(".jest-roblox/coverage/build-manifest.json");
+
+			expect(build.cleanPlace.hash).toMatch(/^[a-f0-9]{64}$/);
+			expect(build.files["out-tsc/test/init.luau"]?.sourceHash).toBe("deadbeef");
+		});
+
+		it("should leave no manifest at the final path when rojo build fails", async () => {
+			expect.assertions(3);
+
+			seedFilesystem();
+			const { buildWithRojo } = await setupMocks();
+			vi.mocked(buildWithRojo).mockImplementation(() => {
+				throw new Error("rojo build failed");
+			});
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			expect(() => prepareCoverage(config)).toThrow(/rojo build failed/);
+			expect(vol.existsSync(".jest-roblox/coverage/coverage-manifest.json")).toBeFalse();
+			expect(vol.existsSync(".jest-roblox/coverage/build-manifest.json")).toBeFalse();
+		});
+	});
+
 	describe("when running in incremental mode", () => {
 		function sha256(content: string): string {
 			return crypto.createHash("sha256").update(content).digest("hex");
@@ -447,9 +550,14 @@ describe(prepareCoverage, () => {
 			};
 		}
 
-		function seedPreviousManifest(manifest: CoverageManifest) {
+		function seedPreviousManifest(
+			manifest: Except<CoverageManifest, "buildId"> & { buildId?: string },
+		) {
 			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
-			vol.writeFileSync(".jest-roblox/coverage/manifest.json", JSON.stringify(manifest));
+			vol.writeFileSync(
+				".jest-roblox/coverage/coverage-manifest.json",
+				JSON.stringify({ buildId: "prev-build-id", ...manifest }),
+			);
 		}
 
 		function seedIncrementalScenario(
@@ -721,6 +829,77 @@ describe(prepareCoverage, () => {
 			expect(result.placeFile).toBe(".jest-roblox/coverage/game.rbxl");
 		});
 
+		it("should rebuild when no files changed but the prior place is missing on disk", async () => {
+			expect.assertions(1);
+
+			const { buildWithRojo } = await setupMocks();
+
+			seedIncrementalScenario();
+			// Simulate an interrupted prior build: the manifest still points at a
+			// place file that is no longer on disk.
+			vol.unlinkSync(".jest-roblox/coverage/game.rbxl");
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			expect(buildWithRojo).toHaveBeenCalledOnce();
+		});
+
+		it("should rebuild when no files changed but the prior place hash drifted", async () => {
+			expect.assertions(1);
+
+			const { buildWithRojo } = await setupMocks();
+
+			seedIncrementalScenario();
+			// A prior build manifest records a clean-place hash that no longer
+			// matches the bytes on disk (corruption / partial write).
+			vol.writeFileSync(
+				".jest-roblox/coverage/build-manifest.json",
+				JSON.stringify({
+					buildId: "prev-build-id",
+					cleanPlace: { hash: "0".repeat(64), path: ".jest-roblox/coverage/game.rbxl" },
+					files: {},
+					generatedAt: new Date().toISOString(),
+					projects: [],
+					version: 1,
+				}),
+			);
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			expect(buildWithRojo).toHaveBeenCalledOnce();
+		});
+
+		it("should reuse the prior place when the build manifest validates", async () => {
+			expect.assertions(1);
+
+			const { buildWithRojo } = await setupMocks();
+
+			seedIncrementalScenario();
+			// A valid prior build manifest: the recorded clean-place hash matches
+			// the bytes still on disk, so the place is reused without a rebuild.
+			vol.writeFileSync(
+				".jest-roblox/coverage/build-manifest.json",
+				JSON.stringify({
+					buildId: "prev-build-id",
+					cleanPlace: { hash: sha256("RBXL"), path: ".jest-roblox/coverage/game.rbxl" },
+					files: {},
+					generatedAt: new Date().toISOString(),
+					projects: [],
+					version: 1,
+				}),
+			);
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			expect(buildWithRojo).not.toHaveBeenCalled();
+		});
+
 		it("should call instrumentRoot when a new file appears on disk", async () => {
 			expect.assertions(1);
 
@@ -872,7 +1051,7 @@ describe(prepareCoverage, () => {
 
 			seedFilesystem();
 			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
-			vol.writeFileSync(".jest-roblox/coverage/manifest.json", "not valid json{{{");
+			vol.writeFileSync(".jest-roblox/coverage/coverage-manifest.json", "not valid json{{{");
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
@@ -912,8 +1091,9 @@ describe(prepareCoverage, () => {
 
 			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
 			vol.writeFileSync(
-				".jest-roblox/coverage/manifest.json",
+				".jest-roblox/coverage/coverage-manifest.json",
 				JSON.stringify({
+					buildId: "prev-build-id",
 					files: {
 						"out-tsc/test/init.luau": { key: "out-tsc/test/init.luau" },
 					},
@@ -1200,8 +1380,9 @@ describe(prepareCoverage, () => {
 				// Seed a manifest WITHOUT nonInstrumentedFiles
 				vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
 				vol.writeFileSync(
-					".jest-roblox/coverage/manifest.json",
+					".jest-roblox/coverage/coverage-manifest.json",
 					JSON.stringify({
+						buildId: "prev-build-id",
 						files: {
 							"out-tsc/test/init.luau": makeFileRecord({
 								key: "out-tsc/test/init.luau",

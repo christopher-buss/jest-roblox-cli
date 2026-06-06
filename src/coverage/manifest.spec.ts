@@ -13,6 +13,7 @@ vi.mock(import("node:fs"), async () => {
 
 function exampleManifest(overrides: Partial<CoverageManifest> = {}): CoverageManifest {
 	return {
+		buildId: "11111111-1111-1111-1111-111111111111",
 		files: {
 			"out/init.luau": {
 				key: "out/init.luau",
@@ -170,6 +171,34 @@ describe(readManifest, () => {
 		vol.writeFileSync("/coverage/manifest.json", JSON.stringify(manifest));
 
 		expect(readManifest("/coverage/manifest.json").kind).toBe("version-mismatch");
+	});
+
+	it("should reject v2 caches (pre-buildId) as version-mismatch", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const manifest = { ...exampleManifest(), version: 2 };
+		vol.mkdirSync("/coverage", { recursive: true });
+		vol.writeFileSync("/coverage/manifest.json", JSON.stringify(manifest));
+
+		expect(readManifest("/coverage/manifest.json").kind).toBe("version-mismatch");
+	});
+
+	it("should return invalid when buildId is absent", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const { buildId, ...withoutBuildId } = exampleManifest();
+		vol.mkdirSync("/coverage", { recursive: true });
+		vol.writeFileSync("/coverage/manifest.json", JSON.stringify(withoutBuildId));
+
+		expect(readManifest("/coverage/manifest.json").kind).toBe("invalid");
 	});
 
 	it("should return invalid (not version-mismatch) when version field is absent", () => {
