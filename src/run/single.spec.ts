@@ -196,7 +196,7 @@ describe(runSingleProject, () => {
 			await setupBackend();
 
 			const result = await runSingleProject(
-				makeOptions({ passWithNoTests: false, typecheck: true, typecheckOnly: true }),
+				makeOptions({ passWithNoTests: false, typecheck: { enabled: true, only: true } }),
 			);
 
 			expect(result).toStrictEqual({
@@ -215,7 +215,7 @@ describe(runSingleProject, () => {
 			await setupBackend();
 
 			const result = await runSingleProject(
-				makeOptions({ passWithNoTests: true, typecheck: true, typecheckOnly: true }),
+				makeOptions({ passWithNoTests: true, typecheck: { enabled: true, only: true } }),
 			);
 
 			expect(result).toStrictEqual({ mode: "single", preCoverageMs: 0 });
@@ -404,8 +404,7 @@ describe(runSingleProject, () => {
 			const result = await runSingleProject(
 				makeOptions({
 					testMatch: ["**/*.spec-d.ts"],
-					typecheck: true,
-					typecheckOnly: true,
+					typecheck: { enabled: true, only: true },
 				}),
 			);
 
@@ -425,12 +424,54 @@ describe(runSingleProject, () => {
 			await setupBackend(createFakeBackend(makeJestResult(), capture));
 
 			const result = await runSingleProject(
-				makeOptions({ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"], typecheck: true }),
+				makeOptions({
+					testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"],
+					typecheck: { enabled: true },
+				}),
 			);
 
 			expect(result.runtimeResult?.exitCode).toBe(0);
 			expect(result.typecheckResult).toBeDefined();
 			expect(capture.runCalls).toBe(1);
+		});
+	});
+
+	describe("when typecheck is driven by CLI flags", () => {
+		it("should run type and runtime tests when --typecheck is passed", async () => {
+			expect.assertions(2);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			seedFile("src/b.spec-d.ts", "test('typed', () => {});");
+			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
+			await setupBackend(createFakeBackend(makeJestResult(), capture));
+
+			const result = await runSingleProject(
+				makeOptions({ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"] }, { typecheck: true }),
+			);
+
+			expect(result.typecheckResult).toBeDefined();
+			expect(result.runtimeResult).toBeDefined();
+		});
+
+		it("should suppress runtime tests when --typecheckOnly is passed", async () => {
+			expect.assertions(2);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			seedFile("src/b.spec-d.ts", "test('typed', () => {});");
+			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
+			await setupBackend(createFakeBackend(makeJestResult(), capture));
+
+			const result = await runSingleProject(
+				makeOptions(
+					{ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"] },
+					{ typecheckOnly: true },
+				),
+			);
+
+			expect(result.runtimeResult).toBeUndefined();
+			expect(capture.runCalls).toBe(0);
 		});
 	});
 
@@ -485,8 +526,7 @@ describe(runSingleProject, () => {
 				makeOptions({
 					collectCoverage: true,
 					testMatch: ["**/*.spec-d.ts"],
-					typecheck: true,
-					typecheckOnly: true,
+					typecheck: { enabled: true, only: true },
 				}),
 			);
 
@@ -508,7 +548,7 @@ describe(runSingleProject, () => {
 				makeOptions({
 					collectCoverage: true,
 					testMatch: ["**/*.spec-d.ts"],
-					typecheck: true,
+					typecheck: { enabled: true },
 				}),
 			);
 

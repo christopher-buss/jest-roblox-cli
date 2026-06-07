@@ -484,7 +484,7 @@ describe(runMultiProject, () => {
 	it("should run typecheck across all projects with deduplicated files", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ typecheck: true });
+		const { config } = setupDefaults({ typecheck: { enabled: true } });
 		mocks.runTypecheck.mockReturnValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec.ts", "");
@@ -518,10 +518,38 @@ describe(runMultiProject, () => {
 		expect(result.typecheckResult).toBeDefined();
 	});
 
+	it("should derive spec-d type tests from a runtime-only include", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults({ typecheck: { enabled: true } });
+		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec.ts", "");
+		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				include: ["src/client/**/*.spec.ts"],
+			}),
+		]);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(mocks.runTypecheck).toHaveBeenCalledWith(
+			expect.objectContaining({
+				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]) as unknown,
+			}),
+		);
+	});
+
 	it("should run typecheck-only without runtime jobs", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ typecheck: true, typecheckOnly: true });
+		const { config } = setupDefaults({ typecheck: { enabled: true, only: true } });
 		mocks.runTypecheck.mockReturnValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
@@ -539,6 +567,156 @@ describe(runMultiProject, () => {
 		});
 
 		expect(mocks.runProjects).not.toHaveBeenCalled();
+		expect(result.typecheckResult).toBeDefined();
+	});
+
+	it("should not discover type tests when include is set but typecheck is disabled", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults({
+			typecheck: { include: ["src/client/**/*.spec-d.ts"] },
+		});
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec.ts", "");
+		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
+		]);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(mocks.runTypecheck).not.toHaveBeenCalled();
+	});
+
+	it("should use an explicit typecheck include instead of deriving", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults({
+			typecheck: { enabled: true, include: ["src/shared/**/*.spec-d.ts"] },
+		});
+		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec.ts", "");
+		vol.mkdirSync("/test/src/shared", { recursive: true });
+		vol.writeFileSync("/test/src/shared/x.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
+		]);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(mocks.runTypecheck).toHaveBeenCalledWith(
+			expect.objectContaining({
+				files: expect.arrayContaining([expect.stringMatching(/x\.spec-d\.ts$/)]) as unknown,
+			}),
+		);
+	});
+
+	it("should drop type test files matching a typecheck exclude glob", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults({
+			typecheck: { enabled: true, exclude: ["src/client/**/*.gen.spec-d.ts"] },
+		});
+		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec.ts", "");
+		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		vol.writeFileSync("/test/src/client/a.gen.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
+		]);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		const { files } = mocks.runTypecheck.mock.calls[0]![0];
+
+		expect(files).toContain("src/client/a.spec-d.ts");
+		expect(files).not.toContain("src/client/a.gen.spec-d.ts");
+	});
+
+	it("should not apply typecheck exclude to explicitly named positional files", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults({
+			typecheck: { enabled: true, exclude: ["src/client/**/*.spec-d.ts"] },
+		});
+		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
+		]);
+
+		await runMultiProject({
+			cli: makeCli({ files: ["src/client/a.spec-d.ts"] }),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(mocks.runTypecheck).toHaveBeenCalledWith(
+			expect.objectContaining({
+				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]) as unknown,
+			}),
+		);
+	});
+
+	// AC #2: with coverage on, derivation must keep `-d` globs out of
+	// `project.include`. `deriveCoverageFromIncludes` runs `inferSourceExtension`
+	// over `project.include` — a leaked `*.spec-d.ts` would throw "Cannot infer
+	// source extension", so completing the run proves the invariant holds.
+	it("should run coverage with typecheck enabled without inferring a -d source extension", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults({
+			collectCoverage: true,
+			typecheck: { enabled: true },
+		});
+		mocks.prepareCoverage.mockReturnValue({
+			buildId: "test-build-id",
+			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
+			files: {},
+			manifest: {
+				buildId: "test-build-id",
+				files: {},
+				generatedAt: new Date().toISOString(),
+				instrumenterVersion: 1,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				placeFilePath: "/coverage/game.rbxl",
+				shadowDir: ".jest-roblox/coverage",
+				version: MANIFEST_VERSION,
+			},
+			placeFile: "/coverage/game.rbxl",
+			rebuilt: true,
+		});
+		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec.ts", "");
+		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
+		]);
+
+		const result = await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(result.mode).toBe("multi");
 		expect(result.typecheckResult).toBeDefined();
 	});
 

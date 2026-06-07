@@ -10,6 +10,7 @@ import { resolveTsconfigDirectories } from "../executor.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import { ConfigError } from "./errors.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
+import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
 import type {
 	InlineProjectConfig,
 	ProjectEntry,
@@ -36,6 +37,8 @@ export interface ResolvedProjectConfig {
 	rojoMounts: Array<Mount>;
 	/** Luau-side testMatch patterns (extensions stripped). */
 	testMatch: Array<string>;
+	/** Raw per-project `test.typecheck`, merged via `resolveTypecheckConfig`. */
+	typecheck?: TypecheckConfig;
 }
 
 export function extractStaticRoot(pattern: string): { glob: string; root: string } {
@@ -199,6 +202,7 @@ export function resolveProjectConfig(
 		projects,
 		rojoMounts,
 		testMatch,
+		typecheck: project.typecheck,
 	};
 }
 
@@ -278,11 +282,13 @@ function mergeProjectConfig(
 	project: ProjectTestConfig,
 ): ResolvedConfig {
 	// Start with all root config values, then override with project-level
-	// values (excluding structural keys like include/displayName/root/outDir)
+	// values (excluding structural keys like include/displayName/root/outDir).
+	// `typecheck` is resolved separately via `resolveTypecheckConfig` (a layered
+	// merge), so it must not be wholesale-replaced here.
 	const merged: Record<string, unknown> = { ...rootConfig };
 
 	for (const [key, value] of Object.entries(project)) {
-		if (!PROJECT_ONLY_KEYS.has(key) && value !== undefined) {
+		if (!PROJECT_ONLY_KEYS.has(key) && key !== "typecheck" && value !== undefined) {
 			merged[key] = value;
 		}
 	}

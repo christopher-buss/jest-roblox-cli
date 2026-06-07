@@ -844,6 +844,46 @@ describe(validateConfig, () => {
 		);
 	});
 
+	it("should reject a flat root typecheck key with a migration directive", () => {
+		expect.assertions(1);
+
+		expect(() => validateConfig({ typecheck: true })).toThrow(
+			"`typecheck` options have moved under `test.typecheck`. Replace these keys: typecheck → test.typecheck.enabled",
+		);
+	});
+
+	it("should list all migrated typecheck keys with their targets", () => {
+		expect.assertions(1);
+
+		expect(() => {
+			return validateConfig({
+				typecheck: true,
+				typecheckOnly: true,
+				typecheckTsconfig: "tsconfig.test.json",
+			});
+		}).toThrow(
+			"`typecheck` options have moved under `test.typecheck`. Replace these keys: typecheck → test.typecheck.enabled, typecheckOnly → test.typecheck.only, typecheckTsconfig → test.typecheck.tsconfig",
+		);
+	});
+
+	it("should accept a typecheck object under test:", () => {
+		expect.assertions(1);
+
+		expect(() => {
+			return validateConfig({
+				test: { typecheck: { enabled: true, include: ["**/*.spec-d.ts"], only: false } },
+			});
+		}).not.toThrow();
+	});
+
+	it("should reject unknown keys inside the typecheck object", () => {
+		expect.assertions(1);
+
+		expect(() => validateConfig({ test: { typecheck: { bogus: true } } })).toThrow(
+			/Invalid config/,
+		);
+	});
+
 	it("should accept gameOutput as a string", () => {
 		expect.assertions(1);
 

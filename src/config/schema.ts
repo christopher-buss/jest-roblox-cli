@@ -4,6 +4,8 @@ import type { ReportOptions } from "istanbul-reports";
 import process from "node:process";
 import type { Except } from "type-fest";
 
+import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
+
 export type Backend = "auto" | "open-cloud" | "studio";
 
 export type CoverageReporter = keyof ReportOptions;
@@ -46,6 +48,11 @@ export interface SharedTestConfig {
 	testPathIgnorePatterns?: Array<string>;
 	testRegex?: Array<string> | string;
 	testTimeout?: number;
+	/**
+	 * Host-only Type Test config. Never forwarded to the Roblox runtime.
+	 * Resolved per-project via `resolveTypecheckConfig`.
+	 */
+	typecheck?: TypecheckConfig;
 }
 
 /** Jest-passthrough keys valid only per-project (under `projects[N].test`). */
@@ -173,9 +180,6 @@ export interface Config {
 	sourceMap?: boolean;
 	test?: GlobalTestConfig;
 	timeout?: number;
-	typecheck?: boolean;
-	typecheckOnly?: boolean;
-	typecheckTsconfig?: string;
 	universeId?: string;
 	workspace?: WorkspaceConfig;
 }
@@ -210,9 +214,6 @@ export interface ResolvedConfig
 	testMatch: Array<string>;
 	testPathIgnorePatterns: Array<string>;
 	timeout: number;
-	typecheck: boolean;
-	typecheckOnly: boolean;
-	typecheckTsconfig?: string;
 	verbose: boolean;
 }
 
@@ -290,8 +291,6 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 	],
 	testPathIgnorePatterns: ["/node_modules/", "/dist/", "/out/"],
 	timeout: 300_000,
-	typecheck: false,
-	typecheckOnly: false,
 	verbose: false,
 };
 
@@ -366,6 +365,15 @@ const displayNameSchema = type({
 	"color": "string",
 });
 
+const typecheckConfigSchema = type({
+	"+": "reject",
+	"enabled?": "boolean",
+	"exclude?": "string[]",
+	"include?": "string[]",
+	"only?": "boolean",
+	"tsconfig?": "string",
+});
+
 const sharedTestSchemaShape = {
 	"automock?": "boolean",
 	"clearMocks?": "boolean",
@@ -385,6 +393,7 @@ const sharedTestSchemaShape = {
 	"testPathIgnorePatterns?": "string[]",
 	"testRegex?": type("string").or(type("string[]")),
 	"testTimeout?": "number",
+	"typecheck?": typecheckConfigSchema,
 } as const;
 
 const projectTestConfigSchema = type({
@@ -478,9 +487,6 @@ export const configSchema: Type<Config> = type({
 	"sourceMap?": "boolean",
 	"test?": globalTestConfigSchema,
 	"timeout?": "number",
-	"typecheck?": "boolean",
-	"typecheckOnly?": "boolean",
-	"typecheckTsconfig?": "string",
 	"universeId?": "string",
 	"workspace?": workspaceConfigSchema,
 }).as<Config>();
@@ -535,9 +541,6 @@ export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"showLuau",
 	"sourceMap",
 	"timeout",
-	"typecheck",
-	"typecheckOnly",
-	"typecheckTsconfig",
 	"universeId",
 	"workspace",
 ];
@@ -561,6 +564,7 @@ const SHARED_TEST_KEYS_LIST = [
 	"testPathIgnorePatterns",
 	"testRegex",
 	"testTimeout",
+	"typecheck",
 ] as const satisfies ReadonlyArray<SharedKey>;
 
 const GLOBAL_ONLY_KEYS_LIST = [
@@ -638,7 +642,19 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
 	"coveragePathIgnorePatterns",
 	"coverageReporters",
 	"coverageThreshold",
+	"typecheck",
 ]);
+
+/**
+ * Removed flat root keys mapped to their `test.typecheck.*` replacements.
+ * `validateConfig` emits a migration error naming these so upgraders see the
+ * targets, mirroring the "wrap jest options in a `test:` block" directive.
+ */
+const MIGRATED_TYPECHECK_KEYS: Readonly<Record<string, string>> = {
+	typecheck: "test.typecheck.enabled",
+	typecheckOnly: "test.typecheck.only",
+	typecheckTsconfig: "test.typecheck.tsconfig",
+};
 
 /**
  * Source of truth for jest-passthrough vs CLI key partitioning.  Used by
@@ -664,6 +680,18 @@ const KEY_LOCATIONS: Readonly<Record<string, "root" | "test">> = (() => {
 
 export function validateConfig(raw: unknown): Config {
 	if (typeof raw === "object" && raw !== null) {
+		const migrated = Object.keys(raw)
+			.filter((key) => key in MIGRATED_TYPECHECK_KEYS)
+			.sort();
+		if (migrated.length > 0) {
+			const targets = migrated
+				.map((key) => `${key} → ${MIGRATED_TYPECHECK_KEYS[key]}`)
+				.join(", ");
+			throw new Error(
+				`\`typecheck\` options have moved under \`test.typecheck\`. Replace these keys: ${targets}`,
+			);
+		}
+
 		const misplaced = Object.keys(raw)
 			.filter((key) => KEY_LOCATIONS[key] === "test")
 			.sort();

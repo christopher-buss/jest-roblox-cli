@@ -139,9 +139,7 @@ describe(classifyTestFiles, () => {
 	it("should exclude type test files from runtime even when typecheck is off", () => {
 		expect.assertions(1);
 
-		const config = makeConfig({ typecheck: false, typecheckOnly: false });
-
-		expect(classifyTestFiles(files, config)).toStrictEqual({
+		expect(classifyTestFiles(files, { enabled: false, only: false })).toStrictEqual({
 			runtimeFiles: ["a.spec.ts", "d.test.ts"],
 			typeTestFiles: [],
 		});
@@ -150,9 +148,7 @@ describe(classifyTestFiles, () => {
 	it("should split runtime and type test files when typecheck is on", () => {
 		expect.assertions(1);
 
-		const config = makeConfig({ typecheck: true });
-
-		expect(classifyTestFiles(files, config)).toStrictEqual({
+		expect(classifyTestFiles(files, { enabled: true, only: false })).toStrictEqual({
 			runtimeFiles: ["a.spec.ts", "d.test.ts"],
 			typeTestFiles: ["b.spec-d.ts", "c.test-d.ts"],
 		});
@@ -161,9 +157,7 @@ describe(classifyTestFiles, () => {
 	it("should return no runtime files when typecheckOnly is set", () => {
 		expect.assertions(1);
 
-		const config = makeConfig({ typecheck: true, typecheckOnly: true });
-
-		expect(classifyTestFiles(files, config)).toStrictEqual({
+		expect(classifyTestFiles(files, { enabled: true, only: true })).toStrictEqual({
 			runtimeFiles: [],
 			typeTestFiles: ["b.spec-d.ts", "c.test-d.ts"],
 		});

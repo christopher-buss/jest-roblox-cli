@@ -101,6 +101,8 @@ const STUB_SKIP_KEYS: ReadonlySet<string> = new Set([
 	"include",
 	"outDir",
 	"root",
+	// Host-only: Type Tests run on the host, never inside the Roblox runtime.
+	"typecheck",
 ]);
 
 /**

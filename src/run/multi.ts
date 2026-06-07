@@ -8,10 +8,13 @@ import process from "node:process";
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
+import { deriveTypecheckInclude } from "../config/derive-typecheck-include.ts";
 import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
+import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
+import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
 import {
 	cleanLeftoverStubs,
@@ -33,6 +36,7 @@ import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestra
 import { runTypecheck } from "../typecheck/runner.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import { globSync } from "../utils/glob.ts";
 import { classifyTestFiles, discoverTestFiles, resolveAllSetupFilePaths } from "./discovery.ts";
 import { emitRunHeader } from "./run-header.ts";
 import type { MultiProjectMerged, MultiRunResult, ProjectResult, RunOptions } from "./types.ts";
@@ -58,6 +62,7 @@ interface PendingJob {
 
 interface CollectPendingJobsArguments {
 	cliFiles: Array<string> | undefined;
+	cliTypecheck: TypecheckCliOptions;
 	effectivePlaceFile: string;
 	/**
 	 * Per-project subset of `cliFiles` when auto-pick filtered cli files to
@@ -121,6 +126,11 @@ export function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 export async function runMultiProject(options: MultiRunOptions): Promise<MultiRunResult> {
 	const { cli, config: rootConfig, rawProjects } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
+	const cliTypecheck: TypecheckCliOptions = {
+		enabled: cli.typecheck,
+		only: cli.typecheckOnly,
+		tsconfig: cli.typecheckTsconfig,
+	};
 
 	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(rootConfig));
 
@@ -182,6 +192,7 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	const { allTypeTestFiles, pendingJobs } = timing.profile("collectPendingJobs", () => {
 		return collectPendingJobs({
 			cliFiles: cli.files,
+			cliTypecheck,
 			effectivePlaceFile: effectiveConfig.placeFile,
 			filesByProject,
 			projects,
@@ -204,13 +215,16 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	const projectResults = await runJobs(backend, pendingJobs, parallel, timing);
 
 	const uniqueTypeTestFiles = [...new Set(allTypeTestFiles)];
+	// Single tsgo pass: per-project `tsconfig` is not honored here (one pass over
+	// all type-test files), so resolve from root `test.typecheck` + CLI only.
+	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
 	const typecheckResult =
 		uniqueTypeTestFiles.length > 0
 			? timing.profile("runTypecheck", () => {
 					return runTypecheck({
 						files: uniqueTypeTestFiles,
 						rootDir: rootConfig.rootDir,
-						tsconfig: rootConfig.typecheckTsconfig,
+						tsconfig: rootTypecheck.tsconfig,
 					});
 				})
 			: undefined;
@@ -278,11 +292,29 @@ function buildOpenCloudPlace(
 	});
 }
 
+// Subtract files matching any `test.typecheck.exclude` glob (resolved against
+// `rootDir`, matching the relative paths `discoverTestFiles` returns).
+function excludeTypeTestFiles(
+	typeTestFiles: Array<string>,
+	exclude: Array<string> | undefined,
+	rootDirectory: string,
+): Array<string> {
+	if (exclude === undefined) {
+		return typeTestFiles;
+	}
+
+	const excluded = new Set(
+		exclude.flatMap((pattern) => globSync(pattern, { cwd: rootDirectory })),
+	);
+	return typeTestFiles.filter((file) => !excluded.has(file));
+}
+
 function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 	allTypeTestFiles: Array<string>;
 	pendingJobs: Array<PendingJob>;
 } {
-	const { cliFiles, effectivePlaceFile, filesByProject, projects, rootConfig } = arguments_;
+	const { cliFiles, cliTypecheck, effectivePlaceFile, filesByProject, projects, rootConfig } =
+		arguments_;
 	const pendingJobs: Array<PendingJob> = [];
 	const allTypeTestFiles: Array<string> = [];
 
@@ -293,15 +325,42 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 		// cli.files list.
 		const projectCliFiles = filesByProject?.get(project.displayName) ?? cliFiles;
 
+		const typecheck = resolveTypecheckConfig({
+			cli: cliTypecheck,
+			project: project.typecheck,
+			root: rootConfig.typecheck,
+		});
+
+		// Type Tests are discovered by `-d` globs derived from the Runtime
+		// `include` (or an explicit `test.typecheck.include`). These stay in the
+		// local discovery `testMatch` only — never folded into `project.include`
+		// — so coverage-source derivation (which reads `project.include`) never
+		// sees a `-d` glob.
+		const typecheckInclude = typecheck.enabled
+			? (typecheck.include ?? deriveTypecheckInclude(project.include))
+			: [];
 		const discoveryConfig: ResolvedConfig = {
 			...project.config,
 			placeFile: effectivePlaceFile,
 			projects: project.projects,
-			testMatch: project.include,
+			testMatch: [...project.include, ...typecheckInclude],
 		};
 
 		const discovery = discoverTestFiles(discoveryConfig, projectCliFiles);
-		const { runtimeFiles, typeTestFiles } = classifyTestFiles(discovery.files, rootConfig);
+		const classified = classifyTestFiles(discovery.files, typecheck);
+		const { runtimeFiles } = classified;
+		// `exclude` globs only match the relative paths glob-discovery returns;
+		// explicit positional files come back absolute and are user-chosen, so
+		// they bypass `exclude` — mirroring how `testPathIgnorePatterns` is
+		// already skipped for positionals in `discoverTestFiles`.
+		const typeTestFiles =
+			(projectCliFiles?.length ?? 0) > 0
+				? classified.typeTestFiles
+				: excludeTypeTestFiles(
+						classified.typeTestFiles,
+						typecheck.exclude,
+						rootConfig.rootDir,
+					);
 
 		// Narrow by the per-project discovered files (not the raw positional/flag
 		// input) so the Luau runner receives an Instance-namespace basename

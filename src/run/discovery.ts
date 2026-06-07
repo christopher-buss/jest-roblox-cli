@@ -1,5 +1,6 @@
 import * as path from "node:path";
 
+import type { ResolvedTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { createSetupResolver } from "../config/setup-resolver.ts";
 import { globSync } from "../utils/glob.ts";
@@ -53,12 +54,12 @@ export function discoverTestFiles(
 
 export function classifyTestFiles(
 	files: Array<string>,
-	config: ResolvedConfig,
+	typecheck: ResolvedTypecheckConfig,
 ): ClassifiedTestFiles {
-	const typeTestFiles = config.typecheck
+	const typeTestFiles = typecheck.enabled
 		? files.filter((file) => TYPE_TEST_PATTERN.test(file))
 		: [];
-	const runtimeFiles = config.typecheckOnly
+	const runtimeFiles = typecheck.only
 		? []
 		: files.filter((file) => !TYPE_TEST_PATTERN.test(file));
 	return { runtimeFiles, typeTestFiles };

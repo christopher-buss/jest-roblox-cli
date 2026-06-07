@@ -11,6 +11,7 @@ import { mergeCliWithConfig } from "./config/merge.ts";
 import { narrowForLuauRun } from "./config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "./config/projects.ts";
 import { createFsClassifier, resolveAllProjects } from "./config/projects.ts";
+import { resolveTypecheckConfig } from "./config/resolve-typecheck-config.ts";
 import type {
 	CliOptions,
 	InlineProjectConfig,
@@ -458,13 +459,23 @@ async function prepareWorkspaceDispatch(input: {
  * load-bearing here — clearing it would drop the filter entirely and make the
  * Luau side fall back to `testMatch`, running the whole package.
  */
-function narrowPackageTestPathPattern(packageConfig: ResolvedConfig): ResolvedConfig {
+function narrowPackageTestPathPattern(
+	packageConfig: ResolvedConfig,
+	cli: CliOptions,
+): ResolvedConfig {
 	if (packageConfig.testPathPattern === undefined) {
 		return packageConfig;
 	}
 
 	const { files } = discoverTestFiles(packageConfig);
-	const { runtimeFiles } = classifyTestFiles(files, packageConfig);
+	// `mergeCliWithConfig` no longer folds the typecheck flags into the resolved
+	// config, so resolve the CLI layer here to keep `--typecheckOnly` honored
+	// when classifying runtime files for the narrow.
+	const typecheck = resolveTypecheckConfig({
+		cli: { enabled: cli.typecheck, only: cli.typecheckOnly, tsconfig: cli.typecheckTsconfig },
+		root: packageConfig.typecheck,
+	});
+	const { runtimeFiles } = classifyTestFiles(files, typecheck);
 	if (runtimeFiles.length === 0) {
 		return { ...packageConfig, passWithNoTests: true };
 	}
@@ -484,7 +495,10 @@ async function loadPackages(input: {
 		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
 			return loadConfig(undefined, info.packageDirectory);
 		});
-		const packageConfig = narrowPackageTestPathPattern(mergeCliWithConfig(cli, fileConfig));
+		const packageConfig = narrowPackageTestPathPattern(
+			mergeCliWithConfig(cli, fileConfig),
+			cli,
+		);
 
 		// `rojoProject` is resolved per-package only — the workspace-root
 		// config is intentionally not consulted. A `pkg ?? config ?? DEFAULT`

@@ -55,11 +55,20 @@ Put these under `test: { ... }`.
 
 ## Type-Check Fields
 
+Type Tests (`*.spec-d.ts`, `*.test-d.ts`) are configured under
+`test: { typecheck: { ... } }`, valid at the root `test:` block and per-project.
+Host-only — never forwarded to the Roblox runtime.
+
 | Field | Purpose | Default |
 |-------|---------|---------|
-| `typecheck` | Enable type testing (*.test-d.ts, *.spec-d.ts) | `false` |
-| `typecheckOnly` | Run only type tests, skip runtime | `false` |
-| `typecheckTsconfig` | Custom tsconfig for type testing | — |
+| `enabled` | Enable Type Tests (the only gate; setting other fields does not auto-enable) | `false` |
+| `only` | Run only Type Tests, skip Runtime Tests | `false` |
+| `include` | Globs for Type Test files; when unset, derived from the project's runtime `include` (`.spec.`→`.spec-d.`, `.test.`→`.test-d.`) | derived |
+| `exclude` | Globs to exclude from Type Test discovery | — |
+| `tsconfig` | Custom tsconfig for type testing (root-only in projects mode) | — |
+
+The `--typecheck`, `--typecheckOnly`, and `--typecheckTsconfig` CLI flags map onto
+`enabled`, `only`, and `tsconfig`.
 
 ## Example
 

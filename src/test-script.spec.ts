@@ -200,30 +200,16 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("collectCoverageFrom");
 	});
 
-	it("should not pass typecheck to Jest argv", () => {
-		expect.assertions(1);
-
-		const argv = buildJestArgv(createOptions({ config: { typecheck: true } }));
-
-		expect(argv).not.toHaveProperty("typecheck");
-	});
-
-	it("should not pass typecheckOnly to Jest argv", () => {
-		expect.assertions(1);
-
-		const argv = buildJestArgv(createOptions({ config: { typecheckOnly: true } }));
-
-		expect(argv).not.toHaveProperty("typecheckOnly");
-	});
-
-	it("should not pass typecheckTsconfig to Jest argv", () => {
+	it("should not pass the typecheck object to Jest argv", () => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(
-			createOptions({ config: { typecheckTsconfig: "tsconfig.test.json" } }),
+			createOptions({
+				config: { typecheck: { enabled: true, tsconfig: "tsconfig.test.json" } },
+			}),
 		);
 
-		expect(argv).not.toHaveProperty("typecheckTsconfig");
+		expect(argv).not.toHaveProperty("typecheck");
 	});
 
 	it("should not pass formatters to Jest argv", () => {

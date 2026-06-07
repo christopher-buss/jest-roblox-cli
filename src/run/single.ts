@@ -3,6 +3,7 @@ import process from "node:process";
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackend } from "../backends/auto.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
+import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { CoverageArtifacts } from "../coverage/build-manifest.ts";
 import { prepareCoverage, toCoverageArtifacts } from "../coverage/prepare.ts";
@@ -33,6 +34,10 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 	// Shallow-clone so `resolveSetupFilePaths` doesn't mutate the caller's
 	// config.
 	const baseConfig = { ...options.config };
+	const typecheck = resolveTypecheckConfig({
+		cli: { enabled: cli.typecheck, only: cli.typecheckOnly, tsconfig: cli.typecheckTsconfig },
+		root: baseConfig.typecheck,
+	});
 	timing.profile("resolveSetupFilePaths", () => {
 		resolveSetupFilePaths(baseConfig);
 	});
@@ -50,7 +55,7 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 	}
 
 	const { runtimeFiles, typeTestFiles } = timing.profile("classifyTestFiles", () => {
-		return classifyTestFiles(discovery.files, baseConfig);
+		return classifyTestFiles(discovery.files, typecheck);
 	});
 
 	const filterActive = (cli.files?.length ?? 0) > 0 || baseConfig.testPathPattern !== undefined;
@@ -70,7 +75,7 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 	let preCoverageMs = 0;
 	let effectiveConfig = config;
 	let coverageArtifacts: CoverageArtifacts | undefined;
-	if (config.collectCoverage && !config.typecheckOnly && runtimeFiles.length > 0) {
+	if (config.collectCoverage && !typecheck.only && runtimeFiles.length > 0) {
 		const preCoverageStart = Date.now();
 		const coverage = timing.profile("prepareCoverage", () => prepareCoverage(config));
 		preCoverageMs = Date.now() - preCoverageStart;
@@ -84,7 +89,7 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 					return runTypecheck({
 						files: typeTestFiles,
 						rootDir: effectiveConfig.rootDir,
-						tsconfig: effectiveConfig.typecheckTsconfig,
+						tsconfig: typecheck.tsconfig,
 					});
 				})
 			: undefined;

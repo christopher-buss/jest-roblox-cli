@@ -28,9 +28,6 @@ export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): Res
 		testNamePattern: cli.testNamePattern ?? config.testNamePattern,
 		testPathPattern: cli.testPathPattern ?? config.testPathPattern,
 		timeout: cli.timeout ?? config.timeout,
-		typecheck: cli.typecheck ?? config.typecheck,
-		typecheckOnly: cli.typecheckOnly ?? config.typecheckOnly,
-		typecheckTsconfig: cli.typecheckTsconfig ?? config.typecheckTsconfig,
 		updateSnapshot: cli.updateSnapshot ?? config.updateSnapshot,
 		verbose: cli.verbose ?? config.verbose,
 	};
