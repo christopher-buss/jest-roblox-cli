@@ -4253,8 +4253,8 @@ packages:
     resolution: {integrity: sha512-PlBfpQwiUvGViBNX84Yxwjsdhd1TUlXr6zjX7eoirtCPIr08NAmxwa+fcYBTeRQxHo9YC9wwF3m9i700sHma8g==}
     engines: {node: '>=20'}
 
-  typebox@1.2.1:
-    resolution: {integrity: sha512-0upGv6+mxJR7/Wc7yoxjc/U6SjOk2aNDNzbihYacSHh+JfOsf28IJ8ggW4/3tRlDKfbInvEDPVneEywjOWYCzw==}
+  typebox@1.2.2:
+    resolution: {integrity: sha512-0nqIJFL+baWoAEtwa0l/vfbfXg0+3gEhiWGnHuoIiivXjlk/TpxDddG0WER34CojKNpHi4ZXku8XGEz9H55b5Q==}
 
   typescript@6.0.3:
     resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
@@ -5564,7 +5564,7 @@ snapshots:
       fast-diff: 1.3.0
       oxc-parser: 0.112.0(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
       oxc-resolver: 11.20.0
-      typebox: 1.2.1
+      typebox: 1.2.2
     optionalDependencies:
       oxfmt: 0.35.0
     transitivePeerDependencies:
@@ -8694,7 +8694,7 @@ snapshots:
     dependencies:
       tagged-tag: 1.0.0
 
-  typebox@1.2.1: {}
+  typebox@1.2.2: {}
 
   typescript@6.0.3: {}
 
