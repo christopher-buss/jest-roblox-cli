@@ -23,6 +23,22 @@ Supported reporters: `clover`, `cobertura`, `html`, `html-spa`, `json`,
 `json-summary`, `lcov`, `lcovonly`, `none`, `teamcity`, `text`, `text-lcov`,
 `text-summary`.
 
+## Agent mode
+
+When run inside an AI coding agent (auto-detected via `std-env` — Claude Code,
+Cursor, Codex, …) the default formatter becomes `agent` and the terminal text
+reporters trim to minimize tokens:
+
+- `skipFull` hides fully-covered files, so the table lists only what still needs
+  tests, with their uncovered line numbers.
+- The `flat` summarizer disambiguates same-named files by path suffix
+  (`...nt/ui/index.ts`) instead of repeating `index.ts`.
+- Fully covered → one line: `Coverage: 100% (N files)`.
+- Partially covered → the trimmed table plus a totals line with raw counts:
+  `Coverage: 84% stmts (16/19) | 100% branch (4/4) | …`.
+
+File reporters (`lcov`, `json`, …) are unaffected. `--verbose` opts out.
+
 ## Thresholds
 
 Configure in `jest.config.ts` — the run exits non-zero if any metric falls below

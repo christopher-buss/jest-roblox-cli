@@ -42,6 +42,7 @@ export interface ThresholdResult {
 }
 
 type FileCoverageData = istanbulCoverage.FileCoverageData;
+type CoverageMap = ReturnType<typeof istanbulCoverage.createCoverageMap>;
 
 export function printCoverageHeader(): void {
 	const header = ` ${color.blue("%")} ${color.dim("Coverage report from")} ${color.yellow("istanbul")}`;
@@ -54,14 +55,23 @@ export function generateReports(options: CoverageReportOptions): void {
 	const filtered = filterMappedFiles(options.mapped, options.collectCoverageFrom);
 	const coverageMap = buildCoverageMap(filtered);
 
+	const agentMode = options.agentMode === true;
 	const context = istanbulReport.createContext({
 		coverageMap,
-		defaultSummarizer: options.agentMode === true ? "flat" : "pkg",
+		defaultSummarizer: agentMode ? "flat" : "pkg",
 		dir: options.coverageDirectory,
 	});
 
 	const terminalColumns = getTerminalColumns();
-	const allFilesFull = options.agentMode === true && isAllFilesFull(coverageMap);
+	const hasTextReporter = options.reporters.some((name) => TEXT_REPORTERS.has(name));
+	const allFilesFull = agentMode && isAllFilesFull(coverageMap);
+
+	// Fully-covered runs collapse the text table to a single line; print it once
+	// rather than per text reporter so configuring both text reporters can't
+	// duplicate it.
+	if (allFilesFull && hasTextReporter) {
+		printCompactFullSummary(coverageMap);
+	}
 
 	for (const reporterName of options.reporters) {
 		if (!isValidReporter(reporterName)) {
@@ -69,24 +79,26 @@ export function generateReports(options: CoverageReportOptions): void {
 		}
 
 		if (allFilesFull && TEXT_REPORTERS.has(reporterName)) {
-			const fileCount = coverageMap.files().length;
-			const label = fileCount === 1 ? "file" : "files";
-			process.stdout.write(`Coverage: 100% (${fileCount} ${label})\n`);
 			continue;
 		}
 
 		let reporterOptions = {};
 		if (reporterName === "text") {
-			reporterOptions = {
-				maxCols: terminalColumns,
-				skipFull: options.agentMode === true,
-			};
+			reporterOptions = { maxCols: terminalColumns, skipFull: agentMode };
 		} else if (TEXT_REPORTERS.has(reporterName)) {
-			reporterOptions = { skipFull: options.agentMode === true };
+			reporterOptions = { skipFull: agentMode };
 		}
 
 		const report = istanbulReports.create(reporterName, reporterOptions);
 		report.execute(context);
+	}
+
+	// skipFull leaves the table showing only sub-100% files; give the agent the
+	// overall totals with raw counts so it knows exactly how much remains. An
+	// empty map has nothing to total (Istanbul reports its pct as "Unknown"), so
+	// skip it.
+	if (agentMode && !allFilesFull && hasTextReporter && coverageMap.files().length > 0) {
+		process.stdout.write(formatAgentTotals(coverageMap));
 	}
 }
 
@@ -136,6 +148,32 @@ export function checkThresholds(
 	};
 }
 
+function printCompactFullSummary(coverageMap: CoverageMap): void {
+	const fileCount = coverageMap.files().length;
+	const label = fileCount === 1 ? "file" : "files";
+	process.stdout.write(`Coverage: 100% (${fileCount} ${label})\n`);
+}
+
+function formatTotalsPart(label: string, totals: istanbulCoverage.Totals): string {
+	// Istanbul's blank summary (empty map) sets pct to the string "Unknown"
+	// despite the numeric type. Callers guard against the empty map, so fail
+	// loudly if a non-numeric pct ever slips through instead of printing garbage.
+	assert(typeof totals.pct === "number", "coverage summary pct must be numeric");
+	return `${totals.pct}% ${label} (${totals.covered}/${totals.total})`;
+}
+
+function formatAgentTotals(coverageMap: CoverageMap): string {
+	const summary = coverageMap.getCoverageSummary();
+	const parts = [
+		formatTotalsPart("stmts", summary.statements),
+		formatTotalsPart("branch", summary.branches),
+		formatTotalsPart("funcs", summary.functions),
+		formatTotalsPart("lines", summary.lines),
+	];
+
+	return `Coverage: ${parts.join(" | ")}\n`;
+}
+
 function getTerminalColumns(): number | undefined {
 	// eslint-disable-next-line ts/no-unnecessary-condition -- some environments might not have this property
 	if (process.stdout.columns !== undefined) {
@@ -151,9 +189,7 @@ function getTerminalColumns(): number | undefined {
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function isAllFilesFull(
-	coverageMap: ReturnType<typeof istanbulCoverage.createCoverageMap>,
-): boolean {
+function isAllFilesFull(coverageMap: CoverageMap): boolean {
 	const files = coverageMap.files();
 	if (files.length === 0) {
 		return false;
@@ -170,9 +206,7 @@ function isAllFilesFull(
 	});
 }
 
-function buildCoverageMap(
-	mapped: MappedCoverageResult,
-): ReturnType<typeof istanbulCoverage.createCoverageMap> {
+function buildCoverageMap(mapped: MappedCoverageResult): CoverageMap {
 	const coverageMap = istanbulCoverage.createCoverageMap({});
 
 	for (const [filePath, fileCoverage] of Object.entries(mapped.files)) {

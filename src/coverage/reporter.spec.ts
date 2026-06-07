@@ -265,6 +265,7 @@ describe(generateReports, () => {
 				 ...nt/ui/index.ts |   66.66 |      100 |     100 |   66.66 | 3                 
 				 ...vices/index.ts |   66.66 |      100 |     100 |   66.66 | 3                 
 				-------------------|---------|----------|---------|---------|-------------------
+				Coverage: 66.66% stmts (4/6) | 100% branch (0/0) | 100% funcs (2/2) | 66.66% lines (4/6)
 				"
 			`);
 		});
@@ -334,7 +335,7 @@ describe(generateReports, () => {
 		});
 
 		it("should show table when coverage map is empty in agent mode", () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
@@ -345,7 +346,12 @@ describe(generateReports, () => {
 				reporters: ["text"],
 			});
 
-			expect(stdoutOutput()).toContain("------");
+			const output = stdoutOutput();
+
+			expect(output).toContain("------");
+			// No files means no totals to report — Istanbul's blank summary has
+			// pct "Unknown", which must never reach the totals line.
+			expect(output).not.toContain("Coverage:");
 		});
 
 		it("should show all files including fully-covered when not in agent mode", () => {
@@ -363,6 +369,76 @@ describe(generateReports, () => {
 
 			expect(output).toContain("inventory.ts");
 			expect(output).toContain("player.ts");
+		});
+	});
+
+	describe("agent mode summary", () => {
+		it("should print totals with raw counts when files are partially covered", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: createResult({ "src/shared/player.ts": createMappedFile() }),
+				reporters: ["text"],
+			});
+
+			expect(stdoutOutput()).toContain(
+				"Coverage: 66.66% stmts (2/3) | 100% branch (0/0) | 100% funcs (1/1) | 66.66% lines (2/3)",
+			);
+		});
+
+		it("should not print totals when not in agent mode", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				coverageDirectory: "/tmp/unused",
+				mapped: createResult({ "src/shared/player.ts": createMappedFile() }),
+				reporters: ["text"],
+			});
+
+			expect(stdoutOutput()).not.toContain("stmts (");
+		});
+
+		it("should not print totals when no text reporter is present", () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
+			try {
+				vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+				generateReports({
+					agentMode: true,
+					coverageDirectory: temporaryDirectory,
+					mapped: createResult({ "src/shared/player.ts": createMappedFile() }),
+					reporters: ["lcov"],
+				});
+
+				expect(stdoutOutput()).not.toContain("Coverage:");
+			} finally {
+				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+			}
+		});
+
+		it("should print the compact full-coverage summary once for multiple text reporters", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: createResult({
+					"src/shared/player.ts": createMappedFile({ s: { "0": 3, "1": 2, "2": 5 } }),
+				}),
+				reporters: ["text", "text-summary"],
+			});
+
+			expect(stdoutOutput()).toBe("Coverage: 100% (1 file)\n");
 		});
 	});
 
