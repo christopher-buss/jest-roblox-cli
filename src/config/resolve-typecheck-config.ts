@@ -10,6 +10,8 @@ export interface TypecheckConfig {
 	ignoreSourceErrors?: boolean;
 	include?: Array<string>;
 	only?: boolean;
+	/** Milliseconds the tsgo spawn may run before it is killed and the pass throws. */
+	spawnTimeout?: number;
 	tsconfig?: string;
 }
 
@@ -32,6 +34,7 @@ export interface ResolvedTypecheckConfig {
 	ignoreSourceErrors?: boolean;
 	include?: Array<string>;
 	only: boolean;
+	spawnTimeout?: number;
 	tsconfig?: string;
 }
 
@@ -63,6 +66,11 @@ export function resolveTypecheckConfig(layers: TypecheckLayers): ResolvedTypeche
 	const ignoreSourceErrors = project.ignoreSourceErrors ?? root.ignoreSourceErrors;
 	if (ignoreSourceErrors !== undefined) {
 		resolved.ignoreSourceErrors = ignoreSourceErrors;
+	}
+
+	const spawnTimeout = project.spawnTimeout ?? root.spawnTimeout;
+	if (spawnTimeout !== undefined) {
+		resolved.spawnTimeout = spawnTimeout;
 	}
 
 	const tsconfig = cli.tsconfig ?? project.tsconfig ?? root.tsconfig;

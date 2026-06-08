@@ -68,6 +68,11 @@ Host-only — never forwarded to the Roblox runtime.
 | `exclude` | Globs to exclude from Type Test discovery | — |
 | `tsconfig` | Custom tsconfig for type testing (root-only in projects mode) | — |
 | `ignoreSourceErrors` | When `false`, type errors in non-test source files surface as source-level failures (vitest parity); `true` reports only errors inside the Type Test files | `false` |
+| `spawnTimeout` | Milliseconds a tsgo spawn may run before it is killed and the run throws (per `(tsconfig, cwd)` group) | `10000` |
+
+The type pass runs concurrently with the Roblox runtime run, so the local
+CPU-bound tsgo work overlaps the network-bound Open Cloud upload/poll. Multiple
+tsconfig groups also run concurrently.
 
 tsgo type-checks the whole tsconfig program; the Type Test globs only select which
 files are collected as Type Tests and how diagnostics are attributed.

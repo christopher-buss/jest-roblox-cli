@@ -10,7 +10,7 @@ export interface TypecheckGroupEntry {
 	tsconfig?: string;
 }
 
-export type RunTypecheckGroup = (group: TypecheckGroupEntry) => JestResult;
+export type RunTypecheckGroup = (group: TypecheckGroupEntry) => Promise<JestResult>;
 
 interface GroupAccumulator {
 	cwd: string;
@@ -22,14 +22,14 @@ interface GroupAccumulator {
  * Groups Type Test entries by their effective `(tsconfig, cwd)` and runs one
  * tsgo pass per distinct group via `run`, then merges the per-group results into
  * one. Projects sharing a `(tsconfig, cwd)` collapse to a single pass; projects
- * with distinct tsconfigs are each checked against their own. Returns undefined
- * when no entry carries any files.
+ * with distinct tsconfigs are each checked against their own. Groups run
+ * concurrently. Returns undefined when no entry carries any files.
  */
-export function groupTypecheckByTsconfig(
+export async function groupTypecheckByTsconfig(
 	entries: ReadonlyArray<TypecheckGroupEntry>,
 	run: RunTypecheckGroup,
-): JestResult | undefined {
-	function toResult(group: GroupAccumulator): JestResult {
+): Promise<JestResult | undefined> {
+	async function toResult(group: GroupAccumulator): Promise<JestResult> {
 		return run({
 			cwd: group.cwd,
 			files: [...group.files],
@@ -67,7 +67,8 @@ export function groupTypecheckByTsconfig(
 		return undefined;
 	}
 
-	return mergeResults([toResult(firstGroup), ...otherGroups.map(toResult)]);
+	const results = await Promise.all([toResult(firstGroup), ...otherGroups.map(toResult)]);
+	return mergeResults(results);
 }
 
 function mergeResults(results: [JestResult, ...Array<JestResult>]): JestResult {

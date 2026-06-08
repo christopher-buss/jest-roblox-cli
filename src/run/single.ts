@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -12,6 +13,7 @@ import { type ExecuteResult, runProjects } from "../executor.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
+import type { JestResult } from "../types/jest-result.ts";
 import { classifyTestFiles, discoverTestFiles, resolveSetupFilePaths } from "./discovery.ts";
 import { toSingleProjectManifest } from "./manifest-projects.ts";
 import { loadRojoTree } from "./multi.ts";
@@ -102,28 +104,47 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 		);
 	}
 
-	const typecheckResult =
+	// Run the typecheck pass concurrently with the runtime so the local
+	// CPU-bound tsgo work overlaps the network-bound Open Cloud upload/poll.
+	// `rootDir` is invariant under coverage (only `placeFile` changes), so the
+	// pass can run alongside a coverage-built runtime. The pass times itself
+	// with a plain clock rather than `timing.profile` — the collector's LIFO
+	// stack would corrupt if both branches profiled concurrently — and the
+	// span is recorded at root after the barrier.
+	let typecheckMs = 0;
+	const typecheckPass =
 		typeTestFiles.length > 0
-			? timing.profile("runTypecheck", () => {
-					return runTypecheck({
-						files: typeTestFiles,
-						ignoreSourceErrors: typecheck.ignoreSourceErrors,
-						rootDir: effectiveConfig.rootDir,
-						tsconfig: typecheck.tsconfig,
-					});
-				})
-			: undefined;
+			? (async (): Promise<JestResult> => {
+					const start = performance.now();
+					try {
+						return await runTypecheck({
+							files: typeTestFiles,
+							ignoreSourceErrors: typecheck.ignoreSourceErrors,
+							rootDir: effectiveConfig.rootDir,
+							spawnTimeout: typecheck.spawnTimeout,
+							tsconfig: typecheck.tsconfig,
+						});
+					} finally {
+						typecheckMs = performance.now() - start;
+					}
+				})()
+			: Promise.resolve(undefined);
 
-	const runtimeResult =
+	const runtimePass =
 		runtimeFiles.length > 0
-			? await executeRuntimeTests({
+			? executeRuntimeTests({
 					cli,
 					config: effectiveConfig,
 					testFiles: runtimeFiles,
 					timing,
 					totalFiles: discovery.totalFiles,
 				})
-			: undefined;
+			: Promise.resolve(undefined);
+
+	const [typecheckResult, runtimeResult] = await Promise.all([typecheckPass, runtimePass]);
+	if (typeTestFiles.length > 0) {
+		timing.record("runTypecheck", typecheckMs);
+	}
 
 	return { coverageArtifacts, mode: "single", preCoverageMs, runtimeResult, typecheckResult };
 }

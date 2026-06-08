@@ -886,6 +886,24 @@ describe(validateConfig, () => {
 		}).not.toThrow();
 	});
 
+	it("should accept spawnTimeout in the typecheck object", () => {
+		expect.assertions(1);
+
+		expect(() => {
+			return validateConfig({
+				test: { typecheck: { enabled: true, spawnTimeout: 5000 } },
+			});
+		}).not.toThrow();
+	});
+
+	it("should reject a non-positive spawnTimeout", () => {
+		expect.assertions(1);
+
+		expect(() => validateConfig({ test: { typecheck: { spawnTimeout: 0 } } })).toThrow(
+			/Invalid config/,
+		);
+	});
+
 	it("should reject unknown keys inside the typecheck object", () => {
 		expect.assertions(1);
 

@@ -3,6 +3,7 @@ import { resolveNestedProjects } from "@isentinel/rojo-utils";
 import { type } from "arktype";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { performance } from "node:perf_hooks";
 import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -14,7 +15,10 @@ import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
-import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
+import type {
+	ResolvedTypecheckConfig,
+	TypecheckCliOptions,
+} from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
 import {
@@ -37,6 +41,7 @@ import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestra
 import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
 import { groupTypecheckByTsconfig } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
+import type { JestResult } from "../types/jest-result.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { classifyTestFiles, discoverTestFiles, resolveAllSetupFilePaths } from "./discovery.ts";
@@ -81,6 +86,11 @@ interface CollectPendingJobsArguments {
 interface SelectedProjects {
 	filesByProject?: ReadonlyMap<string, Array<string>>;
 	projects: Array<ResolvedProjectConfig>;
+}
+
+interface TypecheckPassOutcome {
+	elapsedMs: number;
+	result?: JestResult;
 }
 
 /**
@@ -215,8 +225,6 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 		});
 	}
 
-	const projectResults = await runJobs(backend, pendingJobs, parallel, timing);
-
 	// One tsgo pass per distinct `(tsconfig, cwd)` group: projects sharing a
 	// tsconfig collapse to a single compilation, projects with distinct
 	// tsconfigs are each checked against their own, and diagnostics are
@@ -224,20 +232,24 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	// `ignoreSourceErrors` is a run-wide reporting policy, resolved from root
 	// `test.typecheck` + CLI (the per-project tsconfig drives grouping, not the
 	// source-error decision), then applied to every group's tsgo pass.
+	//
+	// The pass runs concurrently with `runJobs` so the local CPU-bound tsgo
+	// work overlaps the network-bound Open Cloud upload/poll.
 	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
-	const typecheckResult =
-		typeTestEntries.length > 0
-			? timing.profile("runTypecheck", () => {
-					return groupTypecheckByTsconfig(typeTestEntries, (group) => {
-						return runTypecheck({
-							files: group.files,
-							ignoreSourceErrors: rootTypecheck.ignoreSourceErrors,
-							rootDir: group.cwd,
-							tsconfig: group.tsconfig,
-						});
-					});
-				})
-			: undefined;
+	const [projectResults, typecheckPass] = await Promise.all([
+		runJobs(backend, pendingJobs, parallel, timing),
+		runTypecheckPass(typeTestEntries, rootTypecheck),
+	]);
+	// Record the tsgo span at root once both branches settle — the collector's
+	// LIFO stack is not concurrency-safe, so the pass must not `profile` while
+	// `runJobs` is open. `elapsedMs` is 0 (and skipped) when there are no Type
+	// Tests; otherwise the sibling span makes the overlap visible (host TOTAL
+	// sums the two while wall-clock is the longer of them).
+	if (typecheckPass.elapsedMs > 0) {
+		timing.record("runTypecheck", typecheckPass.elapsedMs);
+	}
+
+	const { result: typecheckResult } = typecheckPass;
 
 	if (projectResults.length === 0 && typecheckResult === undefined) {
 		if (rootConfig.passWithNoTests) {
@@ -458,6 +470,32 @@ async function runJobs(
 			result: executeResult,
 		};
 	});
+}
+
+// One concurrent tsgo pass per `(tsconfig, cwd)` group, awaited alongside
+// `runJobs`. Times itself with a plain clock rather than `timing.profile` — the
+// collector's LIFO stack would corrupt if two branches profiled concurrently —
+// and returns `elapsedMs` so the caller records the span after the barrier.
+// `elapsedMs` is 0 when there are no Type Test files.
+async function runTypecheckPass(
+	entries: Array<TypecheckGroupEntry>,
+	typecheck: ResolvedTypecheckConfig,
+): Promise<TypecheckPassOutcome> {
+	if (entries.length === 0) {
+		return { elapsedMs: 0 };
+	}
+
+	const start = performance.now();
+	const result = await groupTypecheckByTsconfig(entries, async (group) => {
+		return runTypecheck({
+			files: group.files,
+			ignoreSourceErrors: typecheck.ignoreSourceErrors,
+			rootDir: group.cwd,
+			spawnTimeout: typecheck.spawnTimeout,
+			tsconfig: group.tsconfig,
+		});
+	});
+	return { elapsedMs: performance.now() - start, result };
 }
 
 function prepareMultiProjectCoverage(

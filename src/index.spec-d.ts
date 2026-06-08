@@ -214,9 +214,9 @@ describe("backends", () => {
 });
 
 describe("runTypecheck", () => {
-	it("should accept TypecheckOptions and return JestResult", () => {
+	it("should accept TypecheckOptions and return a Promise of JestResult", () => {
 		expectTypeOf(runTypecheck).parameter(0).toExtend<TypecheckOptions>();
-		expectTypeOf(runTypecheck).returns.toEqualTypeOf<JestResult>();
+		expectTypeOf(runTypecheck).returns.toEqualTypeOf<Promise<JestResult>>();
 	});
 });
 

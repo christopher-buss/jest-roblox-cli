@@ -528,7 +528,7 @@ describe(runMultiProject, () => {
 		expect.assertions(2);
 
 		const { config } = setupDefaults({ typecheck: { enabled: true } });
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec.ts", "");
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
@@ -561,11 +561,60 @@ describe(runMultiProject, () => {
 		expect(result.typecheckResult).toBeDefined();
 	});
 
+	it("should run the typecheck pass concurrently with the runtime run", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults({ typecheck: { enabled: true } });
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec.ts", "");
+		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				include: ["src/client/**/*.spec.ts", "src/client/**/*.spec-d.ts"],
+			}),
+		]);
+
+		// A rendezvous: each side proceeds only once the other has started, so
+		// the run completes solely when the two overlap. A strictly-after pass
+		// would leave one side awaiting a signal that never fires (it hangs).
+		let signalRuntimeStarted!: () => void;
+		let signalTypecheckStarted!: () => void;
+		const runtimeStarted = new Promise<void>((resolve) => {
+			signalRuntimeStarted = resolve;
+		});
+		const typecheckStarted = new Promise<void>((resolve) => {
+			signalTypecheckStarted = resolve;
+		});
+		mocks.runProjects.mockImplementation(async (input) => {
+			signalRuntimeStarted();
+			await typecheckStarted;
+			return {
+				backendTiming: { executionMs: 100, uploadMs: 50 },
+				results: input.projects.map(() => makeExecuteResult()),
+			};
+		});
+		mocks.runTypecheck.mockImplementation(async () => {
+			signalTypecheckStarted();
+			await runtimeStarted;
+			return makeJestResult();
+		});
+
+		const result = await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(result.typecheckResult).toBeDefined();
+		expect(result.projectResults).toHaveLength(1);
+	});
+
 	it("should check projects with distinct typecheck tsconfigs against their own", async () => {
 		expect.assertions(3);
 
 		const { config } = setupDefaults({ typecheck: { enabled: true } });
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		vol.mkdirSync("/test/src/server", { recursive: true });
@@ -610,7 +659,7 @@ describe(runMultiProject, () => {
 		expect.assertions(1);
 
 		const { config } = setupDefaults({ typecheck: { enabled: true } });
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec.ts", "");
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
@@ -638,7 +687,7 @@ describe(runMultiProject, () => {
 		expect.assertions(2);
 
 		const { config } = setupDefaults({ typecheck: { enabled: true, only: true } });
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
@@ -664,7 +713,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults({
 			typecheck: { enabled: true, ignoreSourceErrors: true, only: true },
 		});
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
@@ -713,7 +762,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults({
 			typecheck: { enabled: true, include: ["src/shared/**/*.spec-d.ts"] },
 		});
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec.ts", "");
 		vol.mkdirSync("/test/src/shared", { recursive: true });
@@ -741,7 +790,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults({
 			typecheck: { enabled: true, exclude: ["src/client/**/*.gen.spec-d.ts"] },
 		});
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec.ts", "");
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
@@ -768,7 +817,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults({
 			typecheck: { enabled: true, exclude: ["src/client/**/*.spec-d.ts"] },
 		});
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
@@ -843,7 +892,7 @@ describe(runMultiProject, () => {
 			placeFile: "/coverage/game.rbxl",
 			rebuilt: true,
 		});
-		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec.ts", "");
 		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");

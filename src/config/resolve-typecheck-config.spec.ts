@@ -42,6 +42,11 @@ const cases: Array<[TypecheckLayers, ResolvedTypecheckConfig]> = [
 		{ root: { ignoreSourceErrors: true } },
 		{ enabled: false, ignoreSourceErrors: true, only: false },
 	],
+	[
+		{ project: { spawnTimeout: 5000 }, root: { spawnTimeout: 3000 } },
+		{ enabled: false, only: false, spawnTimeout: 5000 },
+	],
+	[{ root: { spawnTimeout: 3000 } }, { enabled: false, only: false, spawnTimeout: 3000 }],
 ];
 
 describe(resolveTypecheckConfig, () => {

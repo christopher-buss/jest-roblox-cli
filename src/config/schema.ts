@@ -372,6 +372,7 @@ const typecheckConfigSchema = type({
 	"ignoreSourceErrors?": "boolean",
 	"include?": "string[]",
 	"only?": "boolean",
+	"spawnTimeout?": "number > 0",
 	"tsconfig?": "string",
 });
 

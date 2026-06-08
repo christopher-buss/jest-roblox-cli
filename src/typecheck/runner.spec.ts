@@ -472,6 +472,32 @@ describe(isCompositeProject, () => {
 });
 
 describe(runTypecheck, () => {
+	interface TsgoSpawnError extends Error {
+		code?: number | string;
+		killed?: boolean;
+		signal?: string;
+	}
+
+	type TsgoCallback = (error: null | TsgoSpawnError, stdout: string, stderr: string) => void;
+
+	// `spawnTsgo` drives `execFile` in callback form. `stubTsgo` lets a test
+	// simulate tsgo finishing (exit 0), exiting non-zero with diagnostics,
+	// failing to spawn, or being killed by the `spawnTimeout`.
+	function stubTsgo(respond: (callback: TsgoCallback) => void): void {
+		vi.mocked(childProcess.execFile).mockImplementation(((
+			_file: string,
+			_arguments: ReadonlyArray<string>,
+			_options: object,
+			callback: TsgoCallback,
+		) => {
+			respond(callback);
+		}) as unknown as typeof childProcess.execFile);
+	}
+
+	function exitWith(code: number): TsgoSpawnError {
+		return Object.assign(new Error(`tsgo exit ${String(code)}`), { code });
+	}
+
 	function mockReadFileSync(tsconfigContent: string, testFileContent: string): void {
 		vi.mocked(fs.readFileSync).mockImplementation((filePath, _encoding) => {
 			const fileString = String(filePath);
@@ -483,13 +509,15 @@ describe(runTypecheck, () => {
 		});
 	}
 
-	it("should pass tsconfig option to tsgo for non-composite project", () => {
+	it("should pass tsconfig option to tsgo for non-composite project", async () => {
 		expect.assertions(4);
 
-		vi.mocked(childProcess.execFileSync).mockReturnValue("");
+		stubTsgo((callback) => {
+			callback(null, "", "");
+		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = runTypecheck({
+		const result = await runTypecheck({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 			tsconfig: "tsconfig.test.json",
@@ -497,10 +525,11 @@ describe(runTypecheck, () => {
 
 		expect(result.success).toBeTrue();
 
-		const callArgs = vi.mocked(childProcess.execFileSync).mock.calls[0]![1] as Array<string>;
+		const callArgs = vi.mocked(childProcess.execFile).mock.calls[0]![1] as Array<string>;
 
-		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledWith(
+		expect(vi.mocked(childProcess.execFile)).toHaveBeenCalledWith(
 			process.execPath,
+			expect.anything(),
 			expect.anything(),
 			expect.anything(),
 		);
@@ -508,71 +537,79 @@ describe(runTypecheck, () => {
 		expect(callArgs).toContain(path.resolve("/project", "tsconfig.test.json"));
 	});
 
-	it("should use --noEmit for non-composite projects", () => {
+	it("should use --noEmit for non-composite projects", async () => {
 		expect.assertions(2);
 
-		vi.mocked(childProcess.execFileSync).mockReturnValue("");
+		stubTsgo((callback) => {
+			callback(null, "", "");
+		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = runTypecheck({
+		const result = await runTypecheck({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
 
-		const callArgs = vi.mocked(childProcess.execFileSync).mock.calls[0]![1] as Array<string>;
+		const callArgs = vi.mocked(childProcess.execFile).mock.calls[0]![1] as Array<string>;
 
 		expect(result.success).toBeTrue();
 		expect(callArgs).toContain("--noEmit");
 	});
 
-	it("should use --build --emitDeclarationOnly for composite projects", () => {
+	it("should use --build --emitDeclarationOnly for composite projects", async () => {
 		expect.assertions(3);
 
-		vi.mocked(childProcess.execFileSync).mockReturnValue("");
+		stubTsgo((callback) => {
+			callback(null, "", "");
+		});
 		mockReadFileSync(
 			JSON.stringify({ compilerOptions: { composite: true } }),
 			'it("should pass", () => {});',
 		);
 
-		const result = runTypecheck({
+		const result = await runTypecheck({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
 
-		const callArgs = vi.mocked(childProcess.execFileSync).mock.calls[0]![1] as Array<string>;
+		const callArgs = vi.mocked(childProcess.execFile).mock.calls[0]![1] as Array<string>;
 
 		expect(result.success).toBeTrue();
 		expect(callArgs).toContain("--build");
 		expect(callArgs).toContain("--emitDeclarationOnly");
 	});
 
-	it("should pass tsconfig as positional arg for composite --build", () => {
+	it("should pass tsconfig as positional arg for composite --build", async () => {
 		expect.assertions(1);
 
-		vi.mocked(childProcess.execFileSync).mockReturnValue("");
+		stubTsgo((callback) => {
+			callback(null, "", "");
+		});
 		mockReadFileSync(
 			JSON.stringify({ compilerOptions: { composite: true } }),
 			'it("should pass", () => {});',
 		);
 
-		runTypecheck({
+		await runTypecheck({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 			tsconfig: "tsconfig.test.json",
 		});
 
-		const callArgs = vi.mocked(childProcess.execFileSync).mock.calls[0]![1] as Array<string>;
+		const callArgs = vi.mocked(childProcess.execFile).mock.calls[0]![1] as Array<string>;
 
 		expect(callArgs.at(-1)).toBe(path.resolve("/project", "tsconfig.test.json"));
 	});
 
-	it("should store testFilePath as relative to rootDir", () => {
+	it("should store testFilePath as relative to rootDir", async () => {
 		expect.assertions(1);
 
-		vi.mocked(childProcess.execFileSync).mockReturnValue("");
+		stubTsgo((callback) => {
+			callback(null, "", "");
+		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = runTypecheck({
+		const result = await runTypecheck({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
@@ -582,87 +619,145 @@ describe(runTypecheck, () => {
 		);
 	});
 
-	it("should rethrow when spawn fails without stdout or stderr", () => {
+	it("should bound the tsgo spawn with the default spawnTimeout", async () => {
 		expect.assertions(1);
 
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw new Error("spawn failed");
+		stubTsgo((callback) => {
+			callback(null, "", "");
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		expect(() => {
-			return runTypecheck({
+		await runTypecheck({
+			files: ["src/test.spec.ts"],
+			rootDir: "/project",
+		});
+
+		const options = vi.mocked(childProcess.execFile).mock.calls[0]![2] as { timeout?: number };
+
+		expect(options.timeout).toBe(10_000);
+	});
+
+	it("should bound the tsgo spawn with a custom spawnTimeout", async () => {
+		expect.assertions(1);
+
+		stubTsgo((callback) => {
+			callback(null, "", "");
+		});
+		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+
+		await runTypecheck({
+			files: ["src/test.spec.ts"],
+			rootDir: "/project",
+			spawnTimeout: 250,
+		});
+
+		const options = vi.mocked(childProcess.execFile).mock.calls[0]![2] as { timeout?: number };
+
+		expect(options.timeout).toBe(250);
+	});
+
+	it("should throw when the tsgo spawn exceeds spawnTimeout", async () => {
+		expect.assertions(1);
+
+		stubTsgo((callback) => {
+			callback(
+				Object.assign(new Error("killed"), { killed: true, signal: "SIGTERM" }),
+				"",
+				"",
+			);
+		});
+		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+
+		await expect(
+			runTypecheck({
 				files: ["src/test.spec.ts"],
 				rootDir: "/project",
-			});
-		}).toThrowWithMessage(Error, "spawn failed");
+				spawnTimeout: 250,
+			}),
+		).rejects.toThrow(/timed out after 250ms/);
 	});
 
-	it("should handle tsgo failure by parsing stderr/stdout", () => {
+	it("should rethrow when the tsgo spawn fails to start", async () => {
 		expect.assertions(1);
 
-		const filePath = "src/test.spec.ts";
-		const resolvedFile = path.resolve(filePath);
-		const rootDirectory = path.dirname(resolvedFile);
-		const relativePath = path.relative(rootDirectory, resolvedFile);
-
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw Object.assign(new Error("exit code 2"), {
-				stdout: `${relativePath}(1,7): error TS2322: Type 'string' is not assignable to type 'number'.`,
-			});
-		});
-		mockReadFileSync(
-			JSON.stringify({ compilerOptions: {} }),
-			'const x: number = "bad";\nit("should fail", () => {});',
-		);
-
-		const result = runTypecheck({
-			files: [filePath],
-			rootDir: rootDirectory,
-		});
-
-		expect(result.numFailedTests).toBePositive();
-	});
-
-	it("should fall back to stderr when stdout is undefined", () => {
-		expect.assertions(1);
-
-		const filePath = "src/test.spec.ts";
-		const resolvedFile = path.resolve(filePath);
-		const rootDirectory = path.dirname(resolvedFile);
-		const relativePath = path.relative(rootDirectory, resolvedFile);
-
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw Object.assign(new Error("exit code 2"), {
-				stderr: `${relativePath}(1,7): error TS2322: Type 'string' is not assignable to type 'number'.`,
-				stdout: undefined,
-			});
-		});
-		mockReadFileSync(
-			JSON.stringify({ compilerOptions: {} }),
-			'const x: number = "bad";\nit("should fail", () => {});',
-		);
-
-		const result = runTypecheck({
-			files: [filePath],
-			rootDir: rootDirectory,
-		});
-
-		expect(result.numFailedTests).toBePositive();
-	});
-
-	it("should return empty string when both stdout and stderr are undefined", () => {
-		expect.assertions(1);
-
-		vi.mocked(childProcess.execFileSync).mockImplementation(() => {
-			throw Object.assign(new Error("exit code 2"), {
-				stderr: undefined,
-				stdout: undefined,
-			});
+		stubTsgo((callback) => {
+			callback(Object.assign(new Error("spawn failed"), { code: "ENOENT" }), "", "");
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = runTypecheck({
+		await expect(
+			runTypecheck({
+				files: ["src/test.spec.ts"],
+				rootDir: "/project",
+			}),
+		).rejects.toThrow("spawn failed");
+	});
+
+	it("should parse tsgo diagnostics from stdout on a non-zero exit", async () => {
+		expect.assertions(1);
+
+		const filePath = "src/test.spec.ts";
+		const resolvedFile = path.resolve(filePath);
+		const rootDirectory = path.dirname(resolvedFile);
+		const relativePath = path.relative(rootDirectory, resolvedFile);
+
+		stubTsgo((callback) => {
+			callback(
+				exitWith(2),
+				`${relativePath}(1,7): error TS2322: Type 'string' is not assignable to type 'number'.`,
+				"",
+			);
+		});
+		mockReadFileSync(
+			JSON.stringify({ compilerOptions: {} }),
+			'const x: number = "bad";\nit("should fail", () => {});',
+		);
+
+		const result = await runTypecheck({
+			files: [filePath],
+			rootDir: rootDirectory,
+		});
+
+		expect(result.numFailedTests).toBePositive();
+	});
+
+	it("should fall back to stderr diagnostics when stdout is empty", async () => {
+		expect.assertions(1);
+
+		const filePath = "src/test.spec.ts";
+		const resolvedFile = path.resolve(filePath);
+		const rootDirectory = path.dirname(resolvedFile);
+		const relativePath = path.relative(rootDirectory, resolvedFile);
+
+		stubTsgo((callback) => {
+			callback(
+				exitWith(2),
+				"",
+				`${relativePath}(1,7): error TS2322: Type 'string' is not assignable to type 'number'.`,
+			);
+		});
+		mockReadFileSync(
+			JSON.stringify({ compilerOptions: {} }),
+			'const x: number = "bad";\nit("should fail", () => {});',
+		);
+
+		const result = await runTypecheck({
+			files: [filePath],
+			rootDir: rootDirectory,
+		});
+
+		expect(result.numFailedTests).toBePositive();
+	});
+
+	it("should treat a non-zero exit with empty output as success", async () => {
+		expect.assertions(1);
+
+		stubTsgo((callback) => {
+			callback(exitWith(2), "", "");
+		});
+		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+
+		const result = await runTypecheck({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
@@ -670,19 +765,23 @@ describe(runTypecheck, () => {
 		expect(result.success).toBeTrue();
 	});
 
-	it("should surface tsgo errors in non-test source files by default", () => {
+	it("should surface tsgo errors in non-test source files by default", async () => {
 		expect.assertions(2);
 
 		const filePath = "src/test.spec.ts";
 		const resolvedFile = path.resolve(filePath);
 		const rootDirectory = path.dirname(resolvedFile);
 
-		vi.mocked(childProcess.execFileSync).mockReturnValue(
-			"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
-		);
+		stubTsgo((callback) => {
+			callback(
+				exitWith(2),
+				"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+				"",
+			);
+		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = runTypecheck({ files: [filePath], rootDir: rootDirectory });
+		const result = await runTypecheck({ files: [filePath], rootDir: rootDirectory });
 
 		const sourceResult = result.testResults.find((file) => file.testFilePath === "other.ts");
 
@@ -690,19 +789,23 @@ describe(runTypecheck, () => {
 		expect(sourceResult).toBeDefined();
 	});
 
-	it("should suppress non-test source file errors when ignoreSourceErrors is true", () => {
+	it("should suppress non-test source file errors when ignoreSourceErrors is true", async () => {
 		expect.assertions(1);
 
 		const filePath = "src/test.spec.ts";
 		const resolvedFile = path.resolve(filePath);
 		const rootDirectory = path.dirname(resolvedFile);
 
-		vi.mocked(childProcess.execFileSync).mockReturnValue(
-			"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
-		);
+		stubTsgo((callback) => {
+			callback(
+				exitWith(2),
+				"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+				"",
+			);
+		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = runTypecheck({
+		const result = await runTypecheck({
 			files: [filePath],
 			ignoreSourceErrors: true,
 			rootDir: rootDirectory,

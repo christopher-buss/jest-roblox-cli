@@ -422,7 +422,7 @@ describe(runSingleProject, () => {
 			resetVol();
 			seedFile("src/a.spec-d.ts", "test('passes', () => {});");
 			await setupBackend();
-			vi.mocked(runTypecheck).mockReturnValue(makeJestResult());
+			vi.mocked(runTypecheck).mockResolvedValue(makeJestResult());
 
 			await runSingleProject(
 				makeOptions({
@@ -446,7 +446,7 @@ describe(runSingleProject, () => {
 			seedFile("src/b.spec-d.ts", "test('typed', () => {});");
 			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
 			await setupBackend(createFakeBackend(makeJestResult(), capture));
-			vi.mocked(runTypecheck).mockReturnValue(makeJestResult());
+			vi.mocked(runTypecheck).mockResolvedValue(makeJestResult());
 
 			const result = await runSingleProject(
 				makeOptions({
@@ -459,6 +459,59 @@ describe(runSingleProject, () => {
 			expect(result.typecheckResult).toBeDefined();
 			expect(capture.runCalls).toBe(1);
 		});
+
+		it("should run the typecheck pass concurrently with the runtime run", async () => {
+			expect.assertions(2);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			seedFile("src/b.spec-d.ts", "test('typed', () => {});");
+
+			let signalRuntimeStarted!: () => void;
+			let signalTypecheckStarted!: () => void;
+			const runtimeStarted = new Promise<void>((resolve) => {
+				signalRuntimeStarted = resolve;
+			});
+			const typecheckStarted = new Promise<void>((resolve) => {
+				signalTypecheckStarted = resolve;
+			});
+
+			const typecheckOutcome = makeJestResult({ numPassedTests: 7 });
+			vi.mocked(runTypecheck).mockImplementation(async () => {
+				signalTypecheckStarted();
+				await runtimeStarted;
+				return typecheckOutcome;
+			});
+
+			// The fake backend stands in for the network-bound runtime run; it
+			// proceeds only once the typecheck has also started, so the run
+			// completes solely when the two overlap (a strictly-after pass
+			// would deadlock here).
+			const backend: Backend = {
+				close: () => {
+					// no teardown needed
+				},
+				kind: "studio",
+				runTests: async (): Promise<BackendResult> => {
+					signalRuntimeStarted();
+					await typecheckStarted;
+					return {
+						rawResults: [{ entry: { jestOutput: JSON.stringify(makeJestResult()) } }],
+						timing: { executionMs: 1, uploadMs: 0 },
+					};
+				},
+			};
+			await setupBackend(backend);
+
+			const result = await runSingleProject(
+				makeOptions({ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"] }, { typecheck: true }),
+			);
+
+			// A resolved JestResult (not an un-awaited Promise) proves the pass
+			// is awaited; completing at all proves it overlapped the runtime.
+			expect(result.typecheckResult).toStrictEqual(typecheckOutcome);
+			expect(result.runtimeResult).toBeDefined();
+		});
 	});
 
 	describe("when typecheck is driven by CLI flags", () => {
@@ -470,7 +523,7 @@ describe(runSingleProject, () => {
 			seedFile("src/b.spec-d.ts", "test('typed', () => {});");
 			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
 			await setupBackend(createFakeBackend(makeJestResult(), capture));
-			vi.mocked(runTypecheck).mockReturnValue(makeJestResult());
+			vi.mocked(runTypecheck).mockResolvedValue(makeJestResult());
 
 			const result = await runSingleProject(
 				makeOptions({ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"] }, { typecheck: true }),
@@ -624,7 +677,7 @@ describe(runSingleProject, () => {
 			seedFile("src/a.spec-d.ts");
 			seedFile("src/a.gen.spec-d.ts");
 			await setupBackend();
-			vi.mocked(runTypecheck).mockReturnValue(makeJestResult());
+			vi.mocked(runTypecheck).mockResolvedValue(makeJestResult());
 
 			await runSingleProject(
 				makeOptions({

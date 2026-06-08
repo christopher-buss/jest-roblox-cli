@@ -1,5 +1,5 @@
 import { parseJSONC } from "confbox";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
@@ -11,6 +11,9 @@ import { collectTestDefinitions } from "./collect.ts";
 import { parseTscOutput } from "./parse.ts";
 import type { RawErrorsMap, TestDefinition, TscErrorInfo } from "./types.ts";
 
+/** Milliseconds the tsgo spawn may run before it is killed and the pass fails. */
+const DEFAULT_SPAWN_TIMEOUT = 10_000;
+
 export interface TypecheckOptions {
 	files: Array<string>;
 	/**
@@ -20,17 +23,17 @@ export interface TypecheckOptions {
 	 */
 	ignoreSourceErrors?: boolean;
 	rootDir: string;
+	/**
+	 * Milliseconds the tsgo spawn may run before it is killed and the pass
+	 * throws. Defaults to {@link DEFAULT_SPAWN_TIMEOUT}.
+	 */
+	spawnTimeout?: number;
 	tsconfig?: string;
 }
 
 interface FileInfo {
 	definitions: Array<TestDefinition>;
 	source: string;
-}
-
-interface ExecSyncError {
-	stderr?: string;
-	stdout?: string;
 }
 
 export function createLocationsIndexMap(source: string): Map<string, number> {
@@ -118,9 +121,9 @@ export function isCompositeProject(rootDirectory: string, tsconfig?: string): bo
 }
 
 // cspell:ignore tsgo
-export function runTypecheck(options: TypecheckOptions): JestResult {
+export async function runTypecheck(options: TypecheckOptions): Promise<JestResult> {
 	const startTime = Date.now();
-	const tsgoOutput = spawnTsgo(options);
+	const tsgoOutput = await spawnTsgo(options);
 	const errors = parseTscOutput(tsgoOutput);
 
 	const files = new Map<string, FileInfo>();
@@ -226,17 +229,17 @@ function buildSourceResult(filePath: string, errors: Array<TscErrorInfo>): TestF
 	};
 }
 
-function isExecSyncError(err: unknown): err is ExecSyncError {
-	return typeof err === "object" && err !== null && ("stdout" in err || "stderr" in err);
-}
-
 function resolveTsgoScript(): string {
 	const require = createRequire(import.meta.url);
 	const packageJsonPath = require.resolve("@typescript/native-preview/package.json");
 	return path.join(path.dirname(packageJsonPath), "bin", "tsgo.js");
 }
 
-function spawnTsgo(options: TypecheckOptions): string {
+// Async so the CPU-bound tsgo subprocess overlaps the network-bound Roblox run
+// (the host event loop stays free to drive the Open Cloud upload/poll while
+// tsgo compiles). `spawnTimeout` kills a wedged tsgo so the awaited pass can't
+// hang the run.
+async function spawnTsgo(options: TypecheckOptions): Promise<string> {
 	const composite = isCompositeProject(options.rootDir, options.tsconfig);
 	const args: Array<string> = [];
 
@@ -258,19 +261,45 @@ function spawnTsgo(options: TypecheckOptions): string {
 	}
 
 	const tsgoScript = resolveTsgoScript();
+	const spawnTimeout = options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT;
 
-	try {
-		return execFileSync(process.execPath, [tsgoScript, ...args], {
-			cwd: options.rootDir,
-			encoding: "utf-8",
-			stdio: ["ignore", "pipe", "pipe"],
-			windowsHide: true,
-		});
-	} catch (err: unknown) {
-		if (!isExecSyncError(err)) {
-			throw err;
-		}
+	return new Promise<string>((resolve, reject) => {
+		execFile(
+			process.execPath,
+			[tsgoScript, ...args],
+			{ cwd: options.rootDir, encoding: "utf-8", timeout: spawnTimeout, windowsHide: true },
+			(error, stdout, stderr) => {
+				if (error === null) {
+					resolve(stdout);
+					return;
+				}
 
-		return err.stdout ?? err.stderr ?? "";
-	}
+				// The `spawnTimeout` expiry is the only kill we cause, so
+				// `killed` is timeout-specific here: maxBuffer overflow surfaces
+				// as a distinct `code` (ERR_CHILD_PROCESS_STDIO_MAXBUFFER) with
+				// `killed` unset, and we never call `.kill()` ourselves. Fail
+				// loud rather than let truncated/empty output read as zero type
+				// errors.
+				if (error.killed === true) {
+					reject(
+						new Error(
+							`tsgo typecheck timed out after ${String(spawnTimeout)}ms (spawnTimeout)`,
+						),
+					);
+					return;
+				}
+
+				// tsgo exits non-zero (numeric `code`) when diagnostics exist;
+				// the captured output carries them. A non-numeric code means the
+				// process never ran (e.g. ENOENT) — rethrow so a real spawn
+				// failure isn't masked as a clean pass.
+				if (typeof error.code === "number") {
+					resolve(stdout !== "" ? stdout : stderr);
+					return;
+				}
+
+				reject(new Error(error.message, { cause: error }));
+			},
+		);
+	});
 }
