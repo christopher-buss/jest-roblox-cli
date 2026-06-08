@@ -122,6 +122,7 @@ function makeResolvedProject(
 	return {
 		config: makeConfig(),
 		displayName: "client",
+		exclude: [],
 		include: ["src/client/**/*.spec.ts"],
 		outDir: "out/client",
 		projects: ["ReplicatedStorage/client"],
@@ -671,6 +672,32 @@ describe(runMultiProject, () => {
 				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]) as unknown,
 			}),
 		);
+	});
+
+	it("should drop runtime test files matching a per-project exclude glob", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec.ts", "");
+		vol.writeFileSync("/test/src/client/a.gen.spec.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				exclude: ["**/*.gen.spec.ts"],
+				include: ["src/client/**/*.spec.ts"],
+			}),
+		]);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		const { projects } = mocks.runProjects.mock.calls[0]![0];
+
+		expect(projects[0]!.testFiles).toStrictEqual(["src/client/a.spec.ts"]);
 	});
 
 	// AC #2: with coverage on, derivation must keep `-d` globs out of

@@ -2,6 +2,7 @@ import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackend } from "../backends/auto.ts";
+import { applyExcludes } from "../config/apply-excludes.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
@@ -54,11 +55,24 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 		return { mode: "single", preCoverageMs: 0, validationExitCode: 2 };
 	}
 
-	const { runtimeFiles, typeTestFiles } = timing.profile("classifyTestFiles", () => {
-		return classifyTestFiles(discovery.files, typecheck);
-	});
+	const { runtimeFiles: classifiedRuntime, typeTestFiles: classifiedTypeTests } = timing.profile(
+		"classifyTestFiles",
+		() => classifyTestFiles(discovery.files, typecheck),
+	);
 
-	const filterActive = (cli.files?.length ?? 0) > 0 || baseConfig.testPathPattern !== undefined;
+	// `test.exclude` subtracts from Runtime Test discovery;
+	// `test.typecheck.exclude` from the Type Test set. Both skip explicit
+	// positionals (user-chosen absolute paths), mirroring the per-project
+	// excludes in multi mode.
+	const isPositional = (cli.files?.length ?? 0) > 0;
+	const runtimeFiles = isPositional
+		? classifiedRuntime
+		: applyExcludes(classifiedRuntime, baseConfig.exclude);
+	const typeTestFiles = isPositional
+		? classifiedTypeTests
+		: applyExcludes(classifiedTypeTests, typecheck.exclude);
+
+	const filterActive = isPositional || baseConfig.testPathPattern !== undefined;
 	const config = timing.profile("narrowForLuauRun", () => {
 		return narrowForLuauRun(baseConfig, runtimeFiles, filterActive);
 	});

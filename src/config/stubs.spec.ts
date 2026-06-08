@@ -27,6 +27,7 @@ function makeResolvedProject(
 	return {
 		config,
 		displayName: "client",
+		exclude: [],
 		include: ["src/client/**/*.spec.ts"],
 		outDir: "out/client",
 		projects: ["ReplicatedStorage/client"],

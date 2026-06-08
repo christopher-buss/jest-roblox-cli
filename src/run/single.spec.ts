@@ -8,6 +8,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { Backend, BackendOptions, BackendResult } from "../backends/interface.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { runTypecheck } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { runSingleProject } from "./single.ts";
 import type { RunOptions } from "./types.ts";
@@ -46,6 +47,7 @@ vi.mock(import("../coverage/instrumenter"));
 vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("../backends/auto"));
 vi.mock(import("../config/setup-resolver"));
+vi.mock(import("../typecheck/runner"));
 
 interface BackendCapture {
 	closeCalls: number;
@@ -422,6 +424,7 @@ describe(runSingleProject, () => {
 			seedFile("src/b.spec-d.ts", "test('typed', () => {});");
 			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
 			await setupBackend(createFakeBackend(makeJestResult(), capture));
+			vi.mocked(runTypecheck).mockReturnValue(makeJestResult());
 
 			const result = await runSingleProject(
 				makeOptions({
@@ -445,6 +448,7 @@ describe(runSingleProject, () => {
 			seedFile("src/b.spec-d.ts", "test('typed', () => {});");
 			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
 			await setupBackend(createFakeBackend(makeJestResult(), capture));
+			vi.mocked(runTypecheck).mockReturnValue(makeJestResult());
 
 			const result = await runSingleProject(
 				makeOptions({ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"] }, { typecheck: true }),
@@ -568,6 +572,46 @@ describe(runSingleProject, () => {
 			await runSingleProject(makeOptions({}, { files: ["src/a.spec.ts"] }));
 
 			expect(capture.runOptions?.jobs[0]?.config.testPathPattern).toBe("(a\\.spec)");
+		});
+	});
+
+	describe("when test.exclude is configured", () => {
+		it("should drop runtime test files matching a global exclude glob", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			seedFile("src/a.gen.spec.ts");
+			const capture: BackendCapture = { closeCalls: 0, runCalls: 0 };
+			await setupBackend(createFakeBackend(makeJestResult(), capture));
+
+			await runSingleProject(makeOptions({ exclude: ["**/*.gen.spec.ts"] }));
+
+			expect(capture.runOptions?.jobs[0]?.testFiles).toStrictEqual(["src/a.spec.ts"]);
+		});
+	});
+
+	describe("when test.typecheck.exclude is configured", () => {
+		it("should drop type test files matching a typecheck exclude glob", async () => {
+			expect.assertions(2);
+
+			resetVol();
+			seedFile("src/a.spec-d.ts");
+			seedFile("src/a.gen.spec-d.ts");
+			await setupBackend();
+			vi.mocked(runTypecheck).mockReturnValue(makeJestResult());
+
+			await runSingleProject(
+				makeOptions({
+					testMatch: ["**/*.spec-d.ts"],
+					typecheck: { enabled: true, exclude: ["**/*.gen.spec-d.ts"] },
+				}),
+			);
+
+			const { files } = vi.mocked(runTypecheck).mock.calls[0]![0];
+
+			expect(files).toContain("src/a.spec-d.ts");
+			expect(files).not.toContain("src/a.gen.spec-d.ts");
 		});
 	});
 

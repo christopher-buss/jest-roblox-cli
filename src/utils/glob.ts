@@ -8,22 +8,24 @@ interface GlobOptions {
 	cwd?: string;
 }
 
-export function globSync(pattern: string, options: GlobOptions = {}): Array<string> {
-	const cwd = options.cwd ?? process.cwd();
-	const allFiles = walkDirectory(cwd, cwd);
-
-	return allFiles.filter((file) => matchesGlobPattern(file, pattern));
-}
-
-function matchesGlobPattern(filePath: string, pattern: string): boolean {
+export function matchesGlobPattern(filePath: string, pattern: string): boolean {
 	const regexPattern = pattern
-		.replace(/\./g, "\\.")
+		// Escape regex metacharacters (incl. `.`) so they match literally; the
+		// glob wildcards `*`/`**` are translated below and are left untouched.
+		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
 		.replace(/\*\*\//g, "{{DOUBLESTAR_SLASH}}")
 		.replace(/\*\*/g, ".*")
 		.replace(/\*/g, "[^/]*")
 		.replace(/\{\{DOUBLESTAR_SLASH\}\}/g, "(.+/)?");
 
 	return new RegExp(`^${regexPattern}$`).test(filePath);
+}
+
+export function globSync(pattern: string, options: GlobOptions = {}): Array<string> {
+	const cwd = options.cwd ?? process.cwd();
+	const allFiles = walkDirectory(cwd, cwd);
+
+	return allFiles.filter((file) => matchesGlobPattern(file, pattern));
 }
 
 function walkDirectory(directoryPath: string, baseDirectory: string): Array<string> {

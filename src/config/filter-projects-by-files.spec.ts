@@ -7,6 +7,7 @@ function makeProject(overrides: Partial<ResolvedProjectConfig> = {}): ResolvedPr
 	return {
 		config: {} as unknown as ResolvedProjectConfig["config"],
 		displayName: "client",
+		exclude: [],
 		include: ["src/client/**/*.spec.ts"],
 		projects: [],
 		rojoMounts: [],

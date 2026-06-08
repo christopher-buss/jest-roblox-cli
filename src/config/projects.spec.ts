@@ -610,6 +610,29 @@ describe(resolveProjectConfig, () => {
 		expect(result.include).toStrictEqual(["packages/core/src/client/**/*.spec.ts"]);
 	});
 
+	it("should prepend root to resolved exclude patterns for filesystem discovery", () => {
+		expect.assertions(1);
+
+		const rojoTree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				client: { $path: "packages/core/out/client" },
+			},
+		};
+
+		const project = makeProject({
+			displayName: "client",
+			exclude: ["src/client/**/*.gen.spec.ts"],
+			include: ["src/client/**/*.spec.ts"],
+			outDir: "out/client",
+			root: "packages/core",
+		});
+
+		const result = resolveProjectConfig(project, rootConfig, rojoTree, allDirectories);
+
+		expect(result.exclude).toStrictEqual(["packages/core/src/client/**/*.gen.spec.ts"]);
+	});
+
 	it("should return empty projects when no outDir and no include roots", () => {
 		expect.assertions(1);
 

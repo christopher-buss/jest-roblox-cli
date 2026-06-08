@@ -22,6 +22,12 @@ export interface ResolvedProjectConfig {
 	config: ResolvedConfig;
 	displayColor?: string;
 	displayName: string;
+	/**
+	 * Root-prefixed `exclude` globs subtracted from Runtime Test discovery.
+	 * Optional on the public type (back-compat for external constructors);
+	 * `resolveProjectConfig` always populates it (defaulting to `[]`).
+	 */
+	exclude?: Array<string>;
 	/** Original include patterns (with TS extensions) for filesystem discovery. */
 	include: Array<string>;
 	/**
@@ -179,6 +185,7 @@ export function resolveProjectConfig(
 	classify: PathClassifier,
 ): ResolvedProjectConfig {
 	const rootPrefixedInclude = applyProjectRoot(project.include, project.root);
+	const rootPrefixedExclude = applyProjectRoot(project.exclude ?? [], project.root);
 	const roots = extractProjectRoots(rootPrefixedInclude);
 	const testMatch = [...new Set(roots.flatMap((entry) => entry.testMatch))];
 
@@ -197,6 +204,7 @@ export function resolveProjectConfig(
 		config,
 		displayColor,
 		displayName,
+		exclude: rootPrefixedExclude,
 		include: rootPrefixedInclude,
 		outDir: singleMount?.fsPath,
 		projects,

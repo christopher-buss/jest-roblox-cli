@@ -8,6 +8,7 @@ import process from "node:process";
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
+import { applyExcludes } from "../config/apply-excludes.ts";
 import { deriveTypecheckInclude } from "../config/derive-typecheck-include.ts";
 import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
@@ -36,7 +37,6 @@ import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestra
 import { runTypecheck } from "../typecheck/runner.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
-import { globSync } from "../utils/glob.ts";
 import { classifyTestFiles, discoverTestFiles, resolveAllSetupFilePaths } from "./discovery.ts";
 import { emitRunHeader } from "./run-header.ts";
 import type { MultiProjectMerged, MultiRunResult, ProjectResult, RunOptions } from "./types.ts";
@@ -292,23 +292,6 @@ function buildOpenCloudPlace(
 	});
 }
 
-// Subtract files matching any `test.typecheck.exclude` glob (resolved against
-// `rootDir`, matching the relative paths `discoverTestFiles` returns).
-function excludeTypeTestFiles(
-	typeTestFiles: Array<string>,
-	exclude: Array<string> | undefined,
-	rootDirectory: string,
-): Array<string> {
-	if (exclude === undefined) {
-		return typeTestFiles;
-	}
-
-	const excluded = new Set(
-		exclude.flatMap((pattern) => globSync(pattern, { cwd: rootDirectory })),
-	);
-	return typeTestFiles.filter((file) => !excluded.has(file));
-}
-
 function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 	allTypeTestFiles: Array<string>;
 	pendingJobs: Array<PendingJob>;
@@ -348,26 +331,24 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 
 		const discovery = discoverTestFiles(discoveryConfig, projectCliFiles);
 		const classified = classifyTestFiles(discovery.files, typecheck);
-		const { runtimeFiles } = classified;
 		// `exclude` globs only match the relative paths glob-discovery returns;
 		// explicit positional files come back absolute and are user-chosen, so
 		// they bypass `exclude` — mirroring how `testPathIgnorePatterns` is
-		// already skipped for positionals in `discoverTestFiles`.
-		const typeTestFiles =
-			(projectCliFiles?.length ?? 0) > 0
-				? classified.typeTestFiles
-				: excludeTypeTestFiles(
-						classified.typeTestFiles,
-						typecheck.exclude,
-						rootConfig.rootDir,
-					);
+		// already skipped for positionals in `discoverTestFiles`. Runtime files
+		// use the project's `exclude`; type tests use `test.typecheck.exclude`.
+		const isPositional = (projectCliFiles?.length ?? 0) > 0;
+		const runtimeFiles = isPositional
+			? classified.runtimeFiles
+			: applyExcludes(classified.runtimeFiles, project.exclude);
+		const typeTestFiles = isPositional
+			? classified.typeTestFiles
+			: applyExcludes(classified.typeTestFiles, typecheck.exclude);
 
 		// Narrow by the per-project discovered files (not the raw positional/flag
 		// input) so the Luau runner receives an Instance-namespace basename
 		// pattern. A bare project run (no positionals, no `--testPathPattern`)
 		// keeps `testPathPattern` undefined so Jest-on-Roblox runs all testMatch.
-		const filterActive =
-			(projectCliFiles?.length ?? 0) > 0 || discoveryConfig.testPathPattern !== undefined;
+		const filterActive = isPositional || discoveryConfig.testPathPattern !== undefined;
 		const projConfig: ResolvedConfig = narrowForLuauRun(
 			{ ...discoveryConfig, testMatch: project.testMatch },
 			runtimeFiles,

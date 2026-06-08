@@ -34,6 +34,7 @@ Put these under `test: { ... }`.
 | `testMatch` | Glob patterns for test files | `**/*.spec.ts`, `**/*.test.ts`, etc. |
 | `testPathPattern` | Regex to filter test files by path | — |
 | `testPathIgnorePatterns` | Regex patterns to exclude from discovery | `/node_modules/`, `/dist/` |
+| `exclude` | Globs subtracted from Runtime Test discovery in single- and multi-project (`projects`) runs (valid at root `test:` and per-project; skipped for explicit positional file args; not applied in `--workspace` mode). Type Tests use `typecheck.exclude` | — |
 | `setupFiles` | DataModel paths to setup scripts (run before env) | — |
 | `setupFilesAfterEnv` | DataModel paths to post-env setup scripts | — |
 | `snapshotFormat` | Snapshot serialization options | — |
