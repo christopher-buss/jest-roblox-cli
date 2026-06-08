@@ -489,6 +489,87 @@ describe(runWorkspace, () => {
 		expect(results?.map((entry) => entry.displayName)).toStrictEqual(["client", "server"]);
 	});
 
+	it("should drop runtime test files matching a per-project exclude glob", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/a.gen.spec.luau")]: "",
+					[path.join(FOO_DIR, "src/a.spec.luau")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		const projects = fromAny([
+			{
+				test: {
+					displayName: "main",
+					exclude: ["**/*.gen.spec.luau"],
+					include: ["src/**/*.spec.luau"],
+				},
+			},
+		]);
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, projects, rootDir: FOO_DIR },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "main" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options?.jobs[0]?.testFiles).toStrictEqual(["src/a.spec.luau"]);
+	});
+
+	it("should drop runtime test files matching a package-level test.exclude glob", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/a.gen.spec.luau")]: "",
+					[path.join(FOO_DIR, "src/a.spec.luau")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		// No `projects:` — the package's global `test.exclude` must flow into the
+		// synthesized virtual project, mirroring single-mode `test.exclude`.
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, exclude: ["**/*.gen.spec.luau"], rootDir: FOO_DIR },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options?.jobs[0]?.testFiles).toStrictEqual(["src/a.spec.luau"]);
+	});
+
 	it("should pre-flight clean marker-bearing leftover stubs from package source and emit a stderr notice", async () => {
 		expect.assertions(3);
 

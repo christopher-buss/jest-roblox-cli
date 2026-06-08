@@ -6,6 +6,7 @@ import * as path from "node:path";
 import process from "node:process";
 
 import type { Backend, StreamingHooks } from "./backends/interface.ts";
+import { applyExcludes } from "./config/apply-excludes.ts";
 import { loadConfig } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
 import { narrowForLuauRun } from "./config/narrow-by-files.ts";
@@ -570,9 +571,14 @@ function synthesizeVirtualProjectEntry(
 		return packageConfig.testMatch.map((pattern) => path.posix.join(root, pattern));
 	});
 
+	// Carry the package's global `test.exclude` onto the virtual project so
+	// `discoverProjectTestFiles` subtracts it — the workspace analogue of
+	// single-mode `test.exclude`. Explicit `projects:` carry their own
+	// per-project `exclude` instead and never reach this synthesis.
 	return {
 		test: {
 			displayName: packageName,
+			...(packageConfig.exclude !== undefined ? { exclude: packageConfig.exclude } : {}),
 			include,
 		},
 	};
@@ -751,7 +757,11 @@ function discoverProjectTestFiles(
 		found.push(...globSync(pattern, { cwd: packageDirectory }));
 	}
 
-	return [...new Set(found)];
+	// Workspace mode never consumes positional file args (no auto-pick path), so
+	// the exclude gate is unconditional — there is no user-chosen file set to
+	// bypass. Type Tests are not run in workspace mode, so only the Runtime
+	// `exclude` applies here; there is no `typecheck.exclude` set to split off.
+	return applyExcludes([...new Set(found)], project.exclude);
 }
 
 function applyEmptyPackagePolicy(
