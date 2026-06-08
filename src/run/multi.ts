@@ -34,6 +34,8 @@ import { combineSourceMappers, type SourceMapper } from "../source-mapper/index.
 import { buildPlace } from "../staging/place-builder.ts";
 import type { StubMount } from "../staging/synthesizer.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
+import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
+import { groupTypecheckByTsconfig } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
@@ -189,7 +191,7 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 		});
 	}
 
-	const { allTypeTestFiles, pendingJobs } = timing.profile("collectPendingJobs", () => {
+	const { pendingJobs, typeTestEntries } = timing.profile("collectPendingJobs", () => {
 		return collectPendingJobs({
 			cliFiles: cli.files,
 			cliTypecheck,
@@ -214,17 +216,19 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 
 	const projectResults = await runJobs(backend, pendingJobs, parallel, timing);
 
-	const uniqueTypeTestFiles = [...new Set(allTypeTestFiles)];
-	// Single tsgo pass: per-project `tsconfig` is not honored here (one pass over
-	// all type-test files), so resolve from root `test.typecheck` + CLI only.
-	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
+	// One tsgo pass per distinct `(tsconfig, cwd)` group: projects sharing a
+	// tsconfig collapse to a single compilation, projects with distinct
+	// tsconfigs are each checked against their own, and diagnostics are
+	// attributed back to each project's tests via the merged result.
 	const typecheckResult =
-		uniqueTypeTestFiles.length > 0
+		typeTestEntries.length > 0
 			? timing.profile("runTypecheck", () => {
-					return runTypecheck({
-						files: uniqueTypeTestFiles,
-						rootDir: rootConfig.rootDir,
-						tsconfig: rootTypecheck.tsconfig,
+					return groupTypecheckByTsconfig(typeTestEntries, (group) => {
+						return runTypecheck({
+							files: group.files,
+							rootDir: group.cwd,
+							tsconfig: group.tsconfig,
+						});
 					});
 				})
 			: undefined;
@@ -292,14 +296,34 @@ function buildOpenCloudPlace(
 	});
 }
 
+// Same per-mount FS filter as the synthesizer's stubMounts loop: drop mounts
+// where a user-authored `jest.config.luau` already exists. The runtime injector
+// mustn't parent a duplicate `jest.config` over a Rojo-synced user file.
+function collectRuntimeInjectionPaths(
+	project: ResolvedProjectConfig,
+	rootDirectory: string,
+): Array<string> {
+	const runtimeInjectionPaths: Array<string> = [];
+	for (const mount of project.rojoMounts) {
+		const sourceMount = path.resolve(rootDirectory, mount.fsPath);
+		if (hasUserAuthoredConfig(sourceMount)) {
+			continue;
+		}
+
+		runtimeInjectionPaths.push(mount.dataModelPath);
+	}
+
+	return runtimeInjectionPaths;
+}
+
 function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
-	allTypeTestFiles: Array<string>;
 	pendingJobs: Array<PendingJob>;
+	typeTestEntries: Array<TypecheckGroupEntry>;
 } {
 	const { cliFiles, cliTypecheck, effectivePlaceFile, filesByProject, projects, rootConfig } =
 		arguments_;
 	const pendingJobs: Array<PendingJob> = [];
-	const allTypeTestFiles: Array<string> = [];
+	const typeTestEntries: Array<TypecheckGroupEntry> = [];
 
 	for (const project of projects) {
 		// When auto-pick produced a per-project file subset, only feed those
@@ -355,24 +379,20 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 			filterActive,
 		);
 
-		allTypeTestFiles.push(...typeTestFiles);
+		// Each project carries its own effective `(tsconfig, cwd)` into the type
+		// pass; `groupTypecheckByTsconfig` collapses projects sharing one and
+		// checks distinct tsconfigs separately. cwd is always the workspace root
+		// in projects mode (all projects build from one tree).
+		if (typeTestFiles.length > 0) {
+			typeTestEntries.push({
+				cwd: rootConfig.rootDir,
+				files: typeTestFiles,
+				...(typecheck.tsconfig !== undefined ? { tsconfig: typecheck.tsconfig } : {}),
+			});
+		}
 
 		if (runtimeFiles.length === 0) {
 			continue;
-		}
-
-		// Same per-mount FS filter as the synthesizer's stubMounts loop:
-		// drop mounts where a user-authored `jest.config.luau` already
-		// exists. The runtime injector mustn't parent a duplicate
-		// `jest.config` over a Rojo-synced user file.
-		const runtimeInjectionPaths: Array<string> = [];
-		for (const mount of project.rojoMounts) {
-			const sourceMount = path.resolve(rootConfig.rootDir, mount.fsPath);
-			if (hasUserAuthoredConfig(sourceMount)) {
-				continue;
-			}
-
-			runtimeInjectionPaths.push(mount.dataModelPath);
 		}
 
 		pendingJobs.push({
@@ -380,11 +400,11 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 			displayColor: project.displayColor,
 			displayName: project.displayName,
 			runtimeFiles,
-			runtimeInjectionPaths,
+			runtimeInjectionPaths: collectRuntimeInjectionPaths(project, rootConfig.rootDir),
 		});
 	}
 
-	return { allTypeTestFiles, pendingJobs };
+	return { pendingJobs, typeTestEntries };
 }
 
 async function runJobs(

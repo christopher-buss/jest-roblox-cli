@@ -511,12 +511,57 @@ describe(runMultiProject, () => {
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
-		expect(mocks.runTypecheck).toHaveBeenCalledWith(
+		expect(mocks.runTypecheck).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({
 				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]) as unknown,
 			}),
 		);
 		expect(result.typecheckResult).toBeDefined();
+	});
+
+	it("should check projects with distinct typecheck tsconfigs against their own", async () => {
+		expect.assertions(3);
+
+		const { config } = setupDefaults({ typecheck: { enabled: true } });
+		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		vol.mkdirSync("/test/src/server", { recursive: true });
+		vol.writeFileSync("/test/src/server/b.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				include: ["src/client/**/*.spec.ts"],
+				typecheck: { tsconfig: "tsconfig.client.json" },
+			}),
+			makeResolvedProject({
+				displayName: "server",
+				include: ["src/server/**/*.spec.ts"],
+				outDir: "out/server",
+				rojoMounts: [{ dataModelPath: "ServerScriptService/server", fsPath: "out/server" }],
+				typecheck: { tsconfig: "tsconfig.server.json" },
+			}),
+		]);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
+
+		expect(mocks.runTypecheck).toHaveBeenCalledTimes(2);
+		expect(mocks.runTypecheck).toHaveBeenCalledWith(
+			expect.objectContaining({
+				files: ["src/client/a.spec-d.ts"],
+				tsconfig: "tsconfig.client.json",
+			}),
+		);
+		expect(mocks.runTypecheck).toHaveBeenCalledWith(
+			expect.objectContaining({
+				files: ["src/server/b.spec-d.ts"],
+				tsconfig: "tsconfig.server.json",
+			}),
+		);
 	});
 
 	it("should derive spec-d type tests from a runtime-only include", async () => {
