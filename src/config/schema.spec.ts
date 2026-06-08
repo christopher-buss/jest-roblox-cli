@@ -876,6 +876,16 @@ describe(validateConfig, () => {
 		}).not.toThrow();
 	});
 
+	it("should accept ignoreSourceErrors in the typecheck object", () => {
+		expect.assertions(1);
+
+		expect(() => {
+			return validateConfig({
+				test: { typecheck: { enabled: true, ignoreSourceErrors: true } },
+			});
+		}).not.toThrow();
+	});
+
 	it("should reject unknown keys inside the typecheck object", () => {
 		expect.assertions(1);
 

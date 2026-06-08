@@ -616,6 +616,33 @@ describe(runMultiProject, () => {
 		expect(result.typecheckResult).toBeDefined();
 	});
 
+	it("should forward test.typecheck.ignoreSourceErrors to the typecheck runner", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults({
+			typecheck: { enabled: true, ignoreSourceErrors: true, only: true },
+		});
+		mocks.runTypecheck.mockReturnValue(makeJestResult());
+		vol.mkdirSync("/test/src/client", { recursive: true });
+		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				include: ["src/client/**/*.spec-d.ts"],
+			}),
+		]);
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(mocks.runTypecheck).toHaveBeenCalledWith(
+			expect.objectContaining({ ignoreSourceErrors: true }),
+		);
+	});
+
 	it("should not discover type tests when include is set but typecheck is disabled", async () => {
 		expect.assertions(1);
 

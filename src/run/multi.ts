@@ -220,12 +220,17 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	// tsconfig collapse to a single compilation, projects with distinct
 	// tsconfigs are each checked against their own, and diagnostics are
 	// attributed back to each project's tests via the merged result.
+	// `ignoreSourceErrors` is a run-wide reporting policy, resolved from root
+	// `test.typecheck` + CLI (the per-project tsconfig drives grouping, not the
+	// source-error decision), then applied to every group's tsgo pass.
+	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
 	const typecheckResult =
 		typeTestEntries.length > 0
 			? timing.profile("runTypecheck", () => {
 					return groupTypecheckByTsconfig(typeTestEntries, (group) => {
 						return runTypecheck({
 							files: group.files,
+							ignoreSourceErrors: rootTypecheck.ignoreSourceErrors,
 							rootDir: group.cwd,
 							tsconfig: group.tsconfig,
 						});

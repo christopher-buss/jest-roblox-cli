@@ -13,6 +13,12 @@ import type { RawErrorsMap, TestDefinition, TscErrorInfo } from "./types.ts";
 
 export interface TypecheckOptions {
 	files: Array<string>;
+	/**
+	 * When `false` (default), tsgo errors in non-test source files surface as
+	 * source-level failures. When `true`, only errors inside the discovered Type
+	 * Test files are reported.
+	 */
+	ignoreSourceErrors?: boolean;
 	rootDir: string;
 	tsconfig?: string;
 }
@@ -52,6 +58,7 @@ export function mapErrorsToTests(
 	errors: RawErrorsMap,
 	files: Map<string, FileInfo>,
 	startTime: number,
+	ignoreSourceErrors = false,
 ): JestResult {
 	const testResults: Array<TestFileResult> = [];
 	let numberFailed = 0;
@@ -63,6 +70,18 @@ export function mapErrorsToTests(
 		testResults.push(fileResult);
 		numberFailed += fileResult.numFailingTests;
 		numberPassed += fileResult.numPassingTests;
+	}
+
+	if (!ignoreSourceErrors) {
+		for (const [filePath, fileErrors] of errors) {
+			if (files.has(filePath)) {
+				continue;
+			}
+
+			const sourceResult = buildSourceResult(filePath, fileErrors);
+			testResults.push(sourceResult);
+			numberFailed += sourceResult.numFailingTests;
+		}
 	}
 
 	return {
@@ -120,7 +139,7 @@ export function runTypecheck(options: TypecheckOptions): JestResult {
 		resolvedErrors.set(key, errorList);
 	}
 
-	return mapErrorsToTests(resolvedErrors, files, startTime);
+	return mapErrorsToTests(resolvedErrors, files, startTime, options.ignoreSourceErrors);
 }
 
 function buildFileResult(
@@ -182,6 +201,28 @@ function buildFileResult(
 		numPendingTests: 0,
 		testFilePath: filePath,
 		testResults: testCases,
+	};
+}
+
+function buildSourceResult(filePath: string, errors: Array<TscErrorInfo>): TestFileResult {
+	const failureMessages = errors.map(
+		(error) => `TS${String(error.errorCode)}: ${error.errorMessage}`,
+	);
+
+	return {
+		numFailingTests: 1,
+		numPassingTests: 0,
+		numPendingTests: 0,
+		testFilePath: filePath,
+		testResults: [
+			{
+				ancestorTitles: [],
+				failureMessages,
+				fullName: "<source type error>",
+				status: "failed",
+				title: "<source type error>",
+			},
+		],
 	};
 }
 

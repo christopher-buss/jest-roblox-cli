@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { runTypecheck } from "../../src/typecheck/runner.ts";
 
 const FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck");
+const SOURCE_FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck-source");
 
 // Each test spawns a real tsgo typecheck, which can exceed the 5s default under
 // parallel pre-push load; 10s keeps it from flaking without masking a hang.
@@ -13,6 +14,7 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 
 		const result = runTypecheck({
 			files: [path.join(FIXTURE_DIR, "passing.test-d.ts")],
+			ignoreSourceErrors: true,
 			rootDir: FIXTURE_DIR,
 			tsconfig: "tsconfig.json",
 		});
@@ -76,10 +78,43 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 
 		const result = runTypecheck({
 			files: [path.join(FIXTURE_DIR, "passing.test-d.ts")],
+			ignoreSourceErrors: true,
 			rootDir: FIXTURE_DIR,
 			tsconfig: "tsconfig.json",
 		});
 
 		expect(result.testResults[0]!.testFilePath).toContain("passing.test-d.ts");
+	});
+
+	it("should fail the run when a non-test source file has a type error", () => {
+		expect.assertions(3);
+
+		const result = runTypecheck({
+			files: [path.join(SOURCE_FIXTURE_DIR, "clean.test-d.ts")],
+			rootDir: SOURCE_FIXTURE_DIR,
+			tsconfig: "tsconfig.json",
+		});
+
+		const sourceResult = result.testResults.find((file) =>
+			file.testFilePath.includes("source.ts"),
+		);
+
+		expect(result.success).toBeFalse();
+		expect(sourceResult).toBeDefined();
+		expect(sourceResult!.testResults[0]!.failureMessages[0]).toContain("TS2322");
+	});
+
+	it("should suppress non-test source file errors when ignoreSourceErrors is true", () => {
+		expect.assertions(2);
+
+		const result = runTypecheck({
+			files: [path.join(SOURCE_FIXTURE_DIR, "clean.test-d.ts")],
+			ignoreSourceErrors: true,
+			rootDir: SOURCE_FIXTURE_DIR,
+			tsconfig: "tsconfig.json",
+		});
+
+		expect(result.success).toBeTrue();
+		expect(result.numPassedTests).toBe(1);
 	});
 });

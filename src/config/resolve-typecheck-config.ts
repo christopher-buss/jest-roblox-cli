@@ -2,6 +2,12 @@
 export interface TypecheckConfig {
 	enabled?: boolean;
 	exclude?: Array<string>;
+	/**
+	 * When `false` (default), type errors in non-test source files surface as
+	 * source-level failures (vitest parity). When `true`, errors outside the
+	 * discovered Type Test files are suppressed.
+	 */
+	ignoreSourceErrors?: boolean;
 	include?: Array<string>;
 	only?: boolean;
 	tsconfig?: string;
@@ -23,6 +29,7 @@ export interface TypecheckLayers {
 export interface ResolvedTypecheckConfig {
 	enabled: boolean;
 	exclude?: Array<string>;
+	ignoreSourceErrors?: boolean;
 	include?: Array<string>;
 	only: boolean;
 	tsconfig?: string;
@@ -51,6 +58,11 @@ export function resolveTypecheckConfig(layers: TypecheckLayers): ResolvedTypeche
 	const exclude = project.exclude ?? root.exclude;
 	if (exclude !== undefined) {
 		resolved.exclude = exclude;
+	}
+
+	const ignoreSourceErrors = project.ignoreSourceErrors ?? root.ignoreSourceErrors;
+	if (ignoreSourceErrors !== undefined) {
+		resolved.ignoreSourceErrors = ignoreSourceErrors;
 	}
 
 	const tsconfig = cli.tsconfig ?? project.tsconfig ?? root.tsconfig;

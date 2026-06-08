@@ -415,6 +415,28 @@ describe(runSingleProject, () => {
 		});
 	});
 
+	describe("when a non-test source file has a type error", () => {
+		it("should forward test.typecheck.ignoreSourceErrors to the typecheck runner", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			seedFile("src/a.spec-d.ts", "test('passes', () => {});");
+			await setupBackend();
+			vi.mocked(runTypecheck).mockReturnValue(makeJestResult());
+
+			await runSingleProject(
+				makeOptions({
+					testMatch: ["**/*.spec-d.ts"],
+					typecheck: { enabled: true, ignoreSourceErrors: true, only: true },
+				}),
+			);
+
+			expect(vi.mocked(runTypecheck)).toHaveBeenCalledWith(
+				expect.objectContaining({ ignoreSourceErrors: true }),
+			);
+		});
+	});
+
 	describe("when running mixed (typecheck + runtime)", () => {
 		it("should produce both a typecheckResult and a runtimeResult", async () => {
 			expect.assertions(3);

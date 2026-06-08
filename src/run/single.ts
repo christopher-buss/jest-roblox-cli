@@ -102,6 +102,7 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 			? timing.profile("runTypecheck", () => {
 					return runTypecheck({
 						files: typeTestFiles,
+						ignoreSourceErrors: typecheck.ignoreSourceErrors,
 						rootDir: effectiveConfig.rootDir,
 						tsconfig: typecheck.tsconfig,
 					});

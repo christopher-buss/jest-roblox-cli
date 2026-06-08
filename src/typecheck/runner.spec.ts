@@ -203,6 +203,85 @@ describe(mapErrorsToTests, () => {
 		expect(result.numTotalTests).toBe(2);
 	});
 
+	it("should surface errors for non-test source files as source-level failures", () => {
+		expect.assertions(4);
+
+		const errors: RawErrorsMap = new Map([
+			[
+				"src/source.ts",
+				[
+					{
+						column: 7,
+						errorCode: 2322,
+						errorMessage: "Type 'string' is not assignable to type 'number'.",
+						filePath: "src/source.ts",
+						line: 1,
+					},
+				],
+			],
+		]);
+		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+			[
+				"src/test.test-d.ts",
+				{
+					definitions: [
+						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
+					],
+					source: 'it("should pass", () => {});',
+				},
+			],
+		]);
+
+		const result = mapErrorsToTests(errors, files, Date.now(), false);
+
+		const sourceResult = result.testResults.find(
+			(file) => file.testFilePath === "src/source.ts",
+		);
+
+		expect(result.success).toBeFalse();
+		expect(result.numFailedTests).toBe(1);
+		expect(sourceResult).toBeDefined();
+		expect(sourceResult!.testResults[0]!.failureMessages[0]).toContain("TS2322");
+	});
+
+	it("should suppress non-test source file errors when ignoreSourceErrors is true", () => {
+		expect.assertions(3);
+
+		const errors: RawErrorsMap = new Map([
+			[
+				"src/source.ts",
+				[
+					{
+						column: 7,
+						errorCode: 2322,
+						errorMessage: "Type 'string' is not assignable to type 'number'.",
+						filePath: "src/source.ts",
+						line: 1,
+					},
+				],
+			],
+		]);
+		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+			[
+				"src/test.test-d.ts",
+				{
+					definitions: [
+						{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
+					],
+					source: 'it("should pass", () => {});',
+				},
+			],
+		]);
+
+		const result = mapErrorsToTests(errors, files, Date.now(), true);
+
+		expect(result.success).toBeTrue();
+		expect(result.numFailedTests).toBe(0);
+		expect(
+			result.testResults.find((file) => file.testFilePath === "src/source.ts"),
+		).toBeUndefined();
+	});
+
 	it("should produce correct JestResult counts", () => {
 		expect.assertions(4);
 
@@ -586,6 +665,47 @@ describe(runTypecheck, () => {
 		const result = runTypecheck({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
+		});
+
+		expect(result.success).toBeTrue();
+	});
+
+	it("should surface tsgo errors in non-test source files by default", () => {
+		expect.assertions(2);
+
+		const filePath = "src/test.spec.ts";
+		const resolvedFile = path.resolve(filePath);
+		const rootDirectory = path.dirname(resolvedFile);
+
+		vi.mocked(childProcess.execFileSync).mockReturnValue(
+			"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+		);
+		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+
+		const result = runTypecheck({ files: [filePath], rootDir: rootDirectory });
+
+		const sourceResult = result.testResults.find((file) => file.testFilePath === "other.ts");
+
+		expect(result.success).toBeFalse();
+		expect(sourceResult).toBeDefined();
+	});
+
+	it("should suppress non-test source file errors when ignoreSourceErrors is true", () => {
+		expect.assertions(1);
+
+		const filePath = "src/test.spec.ts";
+		const resolvedFile = path.resolve(filePath);
+		const rootDirectory = path.dirname(resolvedFile);
+
+		vi.mocked(childProcess.execFileSync).mockReturnValue(
+			"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+		);
+		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+
+		const result = runTypecheck({
+			files: [filePath],
+			ignoreSourceErrors: true,
+			rootDir: rootDirectory,
 		});
 
 		expect(result.success).toBeTrue();

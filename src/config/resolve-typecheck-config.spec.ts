@@ -34,6 +34,14 @@ const cases: Array<[TypecheckLayers, ResolvedTypecheckConfig]> = [
 		{ enabled: false, only: false, tsconfig: "p" },
 	],
 	[{ root: { tsconfig: "r" } }, { enabled: false, only: false, tsconfig: "r" }],
+	[
+		{ project: { ignoreSourceErrors: true }, root: { ignoreSourceErrors: false } },
+		{ enabled: false, ignoreSourceErrors: true, only: false },
+	],
+	[
+		{ root: { ignoreSourceErrors: true } },
+		{ enabled: false, ignoreSourceErrors: true, only: false },
+	],
 ];
 
 describe(resolveTypecheckConfig, () => {

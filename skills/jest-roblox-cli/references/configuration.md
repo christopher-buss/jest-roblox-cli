@@ -67,6 +67,10 @@ Host-only — never forwarded to the Roblox runtime.
 | `include` | Globs for Type Test files; when unset, derived from the project's runtime `include` (`.spec.`→`.spec-d.`, `.test.`→`.test-d.`) | derived |
 | `exclude` | Globs to exclude from Type Test discovery | — |
 | `tsconfig` | Custom tsconfig for type testing (root-only in projects mode) | — |
+| `ignoreSourceErrors` | When `false`, type errors in non-test source files surface as source-level failures (vitest parity); `true` reports only errors inside the Type Test files | `false` |
+
+tsgo type-checks the whole tsconfig program; the Type Test globs only select which
+files are collected as Type Tests and how diagnostics are attributed.
 
 The `--typecheck`, `--typecheckOnly`, and `--typecheckTsconfig` CLI flags map onto
 `enabled`, `only`, and `tsconfig`.

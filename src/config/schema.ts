@@ -369,6 +369,7 @@ const typecheckConfigSchema = type({
 	"+": "reject",
 	"enabled?": "boolean",
 	"exclude?": "string[]",
+	"ignoreSourceErrors?": "boolean",
 	"include?": "string[]",
 	"only?": "boolean",
 	"tsconfig?": "string",
