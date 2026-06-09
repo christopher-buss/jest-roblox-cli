@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+
 import type { JestResult } from "../types/jest-result.ts";
 
 /**
@@ -11,6 +13,16 @@ export interface TypecheckGroupEntry {
 }
 
 export type RunTypecheckGroup = (group: TypecheckGroupEntry) => Promise<JestResult>;
+
+/**
+ * Outcome of one timed Type Test pass: the merged result (undefined when no
+ * entry carried files) plus the wall-clock `elapsedMs` the caller records as the
+ * `runTypecheck` span after the concurrency barrier.
+ */
+export interface TypecheckPassOutcome {
+	elapsedMs: number;
+	result?: JestResult;
+}
 
 interface GroupAccumulator {
 	cwd: string;
@@ -69,6 +81,29 @@ export async function groupTypecheckByTsconfig(
 
 	const results = await Promise.all([toResult(firstGroup), ...otherGroups.map(toResult)]);
 	return mergeResults(results);
+}
+
+/**
+ * Times a Type Test pass over `entries` — grouping them by `(cwd, tsconfig)` and
+ * running each group via `run` — and returns the merged result with the elapsed
+ * wall-clock. Returns `elapsedMs: 0` and no result for an empty `entries`, so
+ * callers skip recording a zero span. Self-times with a plain clock rather than
+ * the timing collector (its LIFO stack is not concurrency-safe) because the pass
+ * runs concurrently with the Open Cloud dispatch. The mode-specific policy
+ * (run-wide vs per-package) and any per-group result post-processing live in the
+ * caller's `run` callback.
+ */
+export async function runTypecheckPass(
+	entries: ReadonlyArray<TypecheckGroupEntry>,
+	run: RunTypecheckGroup,
+): Promise<TypecheckPassOutcome> {
+	if (entries.length === 0) {
+		return { elapsedMs: 0 };
+	}
+
+	const start = performance.now();
+	const result = await groupTypecheckByTsconfig(entries, run);
+	return { elapsedMs: performance.now() - start, result };
 }
 
 function mergeResults(results: [JestResult, ...Array<JestResult>]): JestResult {

@@ -15,7 +15,11 @@ import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import { runWorkspace, type WorkspaceProjectResult } from "../workspace-runner.ts";
+import {
+	runWorkspace,
+	type WorkspaceProjectResult,
+	type WorkspaceRunnerOutput,
+} from "../workspace-runner.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
 import { resolvePackage } from "../workspace/package-resolver.ts";
@@ -42,6 +46,12 @@ interface ResolvedPackages {
 	noAffected?: true;
 	packageInfos?: Array<PackageInfo>;
 	workspaceRoot?: string;
+}
+
+interface WorkspaceBackendResolution {
+	backend?: Backend;
+	error?: { exitCode: 2; message: string };
+	workStealingCredentials?: { apiKey: string; baseUrl?: string; universeId: string };
 }
 
 export async function runWorkspaceMode(
@@ -105,27 +115,18 @@ export async function runWorkspaceMode(
 		};
 	}
 
-	let backend: Backend;
-	let workStealingCredentials: { apiKey: string; baseUrl?: string; universeId: string };
-	try {
-		const credentials = buildWorkspaceCredentials(cli, runOptions);
-		backend = createOpenCloudBackend(credentials);
-		const baseUrl = resolveOpenCloudBaseUrl();
-		workStealingCredentials = {
-			apiKey: credentials.apiKey,
-			...(baseUrl !== undefined ? { baseUrl } : {}),
-			universeId: credentials.universeId,
-		};
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
+	const resolution = resolveWorkspaceBackend(cli, runOptions);
+	if (resolution.error !== undefined) {
 		return {
 			...EMPTY_RESULT,
-			validationExitCode: 2,
-			validationMessage: `Error: ${message}\n`,
+			validationExitCode: resolution.error.exitCode,
+			validationMessage: resolution.error.message,
 		};
 	}
 
-	let runtimeResults;
+	const { backend, workStealingCredentials } = resolution;
+
+	let output;
 	try {
 		// `collectCoverage` is intentionally omitted: workspace coverage is
 		// per-package (driven by each package's manifest), so there is no
@@ -139,8 +140,8 @@ export async function runWorkspaceMode(
 			version: VERSION,
 		});
 		const onStreamingResult = resolveStreamingProgressSink(runOptions, cli);
-		runtimeResults = await runWorkspace({
-			backend,
+		output = await runWorkspace({
+			...(backend !== undefined ? { backend } : {}),
 			cli,
 			...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
 			packageInfos,
@@ -148,56 +149,47 @@ export async function runWorkspaceMode(
 			timing,
 			version: VERSION,
 			workspaceRoot,
-			workStealingCredentials,
+			...(workStealingCredentials !== undefined ? { workStealingCredentials } : {}),
 		});
 	} finally {
-		await backend.close?.();
+		await backend?.close?.();
 	}
 
-	if (runtimeResults === undefined) {
+	if (output === undefined) {
 		return { ...EMPTY_RESULT, validationExitCode: 2 };
 	}
 
-	if (runtimeResults.length === 0) {
-		return EMPTY_RESULT;
-	}
-
-	const projectResults: Array<ProjectResult> = runtimeResults.map((entry) => {
-		return {
-			displayName: composeWorkspaceDisplayName(entry.pkg, entry.displayName),
-			result: entry.result,
-		};
-	});
-
-	// Drive coverage off per-package manifests, not the workspace-level
-	// `collectCoverage`. A package that opted into coverage via its own
-	// jest.config will carry a `coverageManifest` here; aggregating
-	// regardless of workspace config keeps that report from being dropped.
-	const hasCoverage = runtimeResults.some((entry) => entry.coverageManifest !== undefined);
-	const coverageMapped = hasCoverage
-		? normalizeEmptyCoverage(aggregatePerPackageCoverage(runtimeResults))
-		: undefined;
-
-	return {
-		coverageMapped,
-		merged: {},
-		mode: "workspace",
-		preCoverageMs: 0,
-		projectResults,
-		...resolvedSinkPaths(runOptions),
-	};
+	return buildWorkspaceResult(output, runOptions);
 }
 
-// Surface the consensus-resolved aggregate sink paths the runner wrote so
-// formatters point "View …" hints at files that actually exist.
-function resolvedSinkPaths(runOptions: WorkspaceRunOptions): {
-	gameOutput?: string;
-	outputFile?: string;
-} {
-	return {
-		...(runOptions.gameOutput !== undefined ? { gameOutput: runOptions.gameOutput } : {}),
-		...(runOptions.outputFile !== undefined ? { outputFile: runOptions.outputFile } : {}),
-	};
+// Resolves the Open Cloud backend + work-stealing credentials, or an error to
+// surface. `--typecheckOnly` is pure-local tsgo — the runner short-circuits
+// before any dispatch — so it needs no credentials at all: skip backend
+// creation entirely and run with no secrets.
+function resolveWorkspaceBackend(
+	cli: CliOptions,
+	runOptions: WorkspaceRunOptions,
+): WorkspaceBackendResolution {
+	if (cli.typecheckOnly === true) {
+		return {};
+	}
+
+	try {
+		const credentials = buildWorkspaceCredentials(cli, runOptions);
+		const backend = createOpenCloudBackend(credentials);
+		const baseUrl = resolveOpenCloudBaseUrl();
+		return {
+			backend,
+			workStealingCredentials: {
+				apiKey: credentials.apiKey,
+				...(baseUrl !== undefined ? { baseUrl } : {}),
+				universeId: credentials.universeId,
+			},
+		};
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return { error: { exitCode: 2, message: `Error: ${message}\n` } };
+	}
 }
 
 function normalizeEmptyCoverage(mapped: MappedCoverageResult): MappedCoverageResult | undefined {
@@ -242,6 +234,69 @@ function aggregatePerPackageCoverage(
 	return aggregateWorkspaceCoverage([...byPackage.values()]);
 }
 
+// Drive coverage off per-package manifests, not the workspace-level
+// `collectCoverage`. A package that opted into coverage via its own jest.config
+// carries a `coverageManifest`; aggregating regardless of workspace config keeps
+// that report from being dropped.
+function resolveWorkspaceCoverageMapped(
+	runtimeResults: Array<WorkspaceProjectResult>,
+): MappedCoverageResult | undefined {
+	const hasCoverage = runtimeResults.some((entry) => entry.coverageManifest !== undefined);
+	return hasCoverage
+		? normalizeEmptyCoverage(aggregatePerPackageCoverage(runtimeResults))
+		: undefined;
+}
+
+// Surface the consensus-resolved aggregate sink paths the runner wrote so
+// formatters point "View …" hints at files that actually exist.
+function resolvedSinkPaths(runOptions: WorkspaceRunOptions): {
+	gameOutput?: string;
+	outputFile?: string;
+} {
+	return {
+		...(runOptions.gameOutput !== undefined ? { gameOutput: runOptions.gameOutput } : {}),
+		...(runOptions.outputFile !== undefined ? { outputFile: runOptions.outputFile } : {}),
+	};
+}
+
+function composeWorkspaceDisplayName(package_: string, project: string): string {
+	return package_ === project ? package_ : `${package_} › ${project}`;
+}
+
+// Builds the final `WorkspaceRunResult` from the runner's output: the runtime
+// project results plus (when present) the merged Type Test result.
+function buildWorkspaceResult(
+	output: WorkspaceRunnerOutput,
+	runOptions: WorkspaceRunOptions,
+): WorkspaceRunResult {
+	const { results, typecheckResult } = output;
+
+	// A run with neither runtime results nor a Type Test result tested nothing
+	// (no pending specs, typecheck off). `--typecheckOnly` lands here with zero
+	// runtime results but a populated `typecheckResult`, so it must not collapse
+	// to EMPTY_RESULT.
+	if (results.length === 0 && typecheckResult === undefined) {
+		return EMPTY_RESULT;
+	}
+
+	const projectResults: Array<ProjectResult> = results.map((entry) => {
+		return {
+			displayName: composeWorkspaceDisplayName(entry.pkg, entry.displayName),
+			result: entry.result,
+		};
+	});
+
+	return {
+		coverageMapped: resolveWorkspaceCoverageMapped(results),
+		merged: {},
+		mode: "workspace",
+		preCoverageMs: 0,
+		projectResults,
+		...(typecheckResult !== undefined ? { typecheckResult } : {}),
+		...resolvedSinkPaths(runOptions),
+	};
+}
+
 // `workspace.packages` (declared in a shared config, anchored absolute root)
 // enumerates packages by globbing for jest configs — no package-manager
 // workspace file required. Falls back to discovering a pnpm/turbo/nx root.
@@ -277,10 +332,6 @@ function resolvePackages(cli: CliOptions, workspace?: WorkspaceConfig): Resolved
 	} catch (err) {
 		return { error: { exitCode: 2, message: `Error: ${String(err)}\n` } };
 	}
-}
-
-function composeWorkspaceDisplayName(package_: string, project: string): string {
-	return package_ === project ? package_ : `${package_} › ${project}`;
 }
 
 /**

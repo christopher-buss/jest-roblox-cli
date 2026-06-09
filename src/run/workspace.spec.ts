@@ -11,6 +11,7 @@ import type { CliOptions } from "../config/schema.ts";
 import { MANIFEST_VERSION } from "../coverage/manifest.ts";
 import type { ExecuteResult } from "../executor.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import type { WorkspaceProjectResult } from "../workspace-runner.ts";
 import { runWorkspace } from "../workspace-runner.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
@@ -56,6 +57,16 @@ function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
+function mockRunWorkspace(
+	results: Array<WorkspaceProjectResult>,
+	typecheckResult?: JestResult,
+): void {
+	vi.mocked(runWorkspace).mockResolvedValue({
+		results,
+		...(typecheckResult !== undefined ? { typecheckResult } : {}),
+	});
+}
+
 function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResult {
 	return {
 		exitCode: 0,
@@ -89,7 +100,7 @@ function setupHappyPath(): { backend: Backend } {
 		return { name, packageDirectory: path.posix.join("/repo/packages", name) };
 	});
 	vi.mocked(createOpenCloudBackend).mockReturnValue(fromAny(backend));
-	vi.mocked(runWorkspace).mockResolvedValue([]);
+	mockRunWorkspace([]);
 	vi.mocked(loadRawConfig).mockResolvedValue({});
 	return { backend };
 }
@@ -140,7 +151,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(3);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 				{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
 			]);
@@ -160,7 +171,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(1);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 			]);
 			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -174,7 +185,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(1);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 			]);
 			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -191,7 +202,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			vi.mocked(loadRawConfig).mockResolvedValue({ gameOutput: true, outputFile: true });
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 			]);
 
@@ -208,7 +219,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			vi.mocked(resolveOpenCloudBaseUrl).mockReturnValue("http://127.0.0.1:4010");
-			vi.mocked(runWorkspace).mockResolvedValue([]);
+			mockRunWorkspace([]);
 
 			await runWorkspaceMode(makeCli({ packages: "@halcyon/foo", workspace: true }));
 
@@ -221,7 +232,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(1);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 			]);
 
@@ -236,7 +247,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(1);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([]);
+			mockRunWorkspace([]);
 
 			await runWorkspaceMode(makeCli({ packages: "@halcyon/foo", workspace: true }));
 
@@ -247,7 +258,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(1);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([]);
+			mockRunWorkspace([]);
 
 			await runWorkspaceMode(
 				makeCli({ formatters: ["json"], packages: "@halcyon/foo", workspace: true }),
@@ -260,7 +271,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(1);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([]);
+			mockRunWorkspace([]);
 
 			await runWorkspaceMode(
 				makeCli({ packages: "@halcyon/foo", silent: true, workspace: true }),
@@ -273,7 +284,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(1);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([]);
+			mockRunWorkspace([]);
 
 			await runWorkspaceMode(
 				makeCli({ formatters: ["agent"], packages: "@halcyon/foo", workspace: true }),
@@ -286,7 +297,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(1);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([]);
+			mockRunWorkspace([]);
 
 			const writes: Array<string> = [];
 			const writeSpy = vi
@@ -319,7 +330,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(2);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{ displayName: "client", pkg: "@halcyon/foo", result: makeExecuteResult() },
 				{ displayName: "server", pkg: "@halcyon/foo", result: makeExecuteResult() },
 			]);
@@ -331,6 +342,56 @@ describe(runWorkspaceMode, () => {
 			expect(result.projectResults[0]?.displayName).toBe("@halcyon/foo › client");
 			expect(result.projectResults[1]?.displayName).toBe("@halcyon/foo › server");
 		});
+
+		it("should forward the type test result alongside runtime project results", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			const typecheckResult = makeJestResult();
+			mockRunWorkspace(
+				[{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() }],
+				typecheckResult,
+			);
+
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
+
+			expect(result.typecheckResult).toBeDefined();
+			expect(result.projectResults).toHaveLength(1);
+		});
+
+		it("should surface a type-only result without collapsing to the empty result", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
+			mockRunWorkspace([], typecheckResult);
+
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", typecheckOnly: true, workspace: true }),
+			);
+
+			expect(result.typecheckResult).toStrictEqual(typecheckResult);
+			expect(result.projectResults).toStrictEqual([]);
+		});
+
+		it("should not create an Open Cloud backend under --typecheckOnly", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			const typecheckResult = makeJestResult();
+			mockRunWorkspace([], typecheckResult);
+
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", typecheckOnly: true, workspace: true }),
+			);
+
+			// Pure-local tsgo needs no credentials: the backend (and its secrets)
+			// must not be created when there is no Open Cloud dispatch.
+			expect(createOpenCloudBackend).not.toHaveBeenCalled();
+			expect(result.typecheckResult).toBeDefined();
+		});
 	});
 
 	describe("workspace.packages enumeration", () => {
@@ -338,9 +399,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(3);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([
-				{ displayName: "foo", pkg: "foo", result: makeExecuteResult() },
-			]);
+			mockRunWorkspace([{ displayName: "foo", pkg: "foo", result: makeExecuteResult() }]);
 
 			const result = await runWorkspaceMode(makeCli({ packages: "foo", workspace: true }), {
 				packages: ["packages/*"],
@@ -357,9 +416,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			vi.mocked(loadRawConfig).mockResolvedValue({ outputFile: true });
-			vi.mocked(runWorkspace).mockResolvedValue([
-				{ displayName: "foo", pkg: "foo", result: makeExecuteResult() },
-			]);
+			mockRunWorkspace([{ displayName: "foo", pkg: "foo", result: makeExecuteResult() }]);
 
 			const result = await runWorkspaceMode(makeCli({ packages: "foo", workspace: true }), {
 				packages: ["packages/*"],
@@ -376,7 +433,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			vi.mocked(getAffectedPackages).mockReturnValue(["@halcyon/foo", "@halcyon/bar"]);
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 				{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
 			]);
@@ -576,7 +633,7 @@ describe(runWorkspaceMode, () => {
 				shadowDir: "/shadow",
 				version: MANIFEST_VERSION,
 			};
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{
 					coverageManifest: manifest,
 					displayName: "@halcyon/foo",
@@ -636,7 +693,7 @@ describe(runWorkspaceMode, () => {
 				shadowDir: "/shadow",
 				version: MANIFEST_VERSION,
 			};
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				// Two projects under the same pkg — coverageData must MERGE
 				// (each project runs Jest with its own _G.__jest_roblox_cov
 				// reset, so the maps are disjoint).
@@ -694,7 +751,7 @@ describe(runWorkspaceMode, () => {
 				shadowDir: "/shadow",
 				version: MANIFEST_VERSION,
 			};
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{
 					coverageManifest: manifest,
 					displayName: "@halcyon/foo",
@@ -722,7 +779,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(2);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{
 					displayName: "@halcyon/foo",
 					pkg: "@halcyon/foo",
@@ -759,7 +816,7 @@ describe(runWorkspaceMode, () => {
 			// attached a manifest. The outer `runWorkspaceMode` must still
 			// produce a coverage report instead of gating on the workspace
 			// root's `collectCoverage` flag.
-			vi.mocked(runWorkspace).mockResolvedValue([
+			mockRunWorkspace([
 				{
 					coverageManifest: manifest,
 					displayName: "@halcyon/foo",
@@ -804,7 +861,7 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(2);
 
 			setupHappyPath();
-			vi.mocked(runWorkspace).mockResolvedValue([]);
+			mockRunWorkspace([]);
 
 			const result = await runWorkspaceMode(
 				makeCli({ packages: "@halcyon/foo", workspace: true }),

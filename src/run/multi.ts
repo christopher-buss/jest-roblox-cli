@@ -3,7 +3,6 @@ import { resolveNestedProjects } from "@isentinel/rojo-utils";
 import { type } from "arktype";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { performance } from "node:perf_hooks";
 import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -15,10 +14,7 @@ import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
-import type {
-	ResolvedTypecheckConfig,
-	TypecheckCliOptions,
-} from "../config/resolve-typecheck-config.ts";
+import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
 import {
@@ -39,9 +35,8 @@ import { buildPlace } from "../staging/place-builder.ts";
 import type { StubMount } from "../staging/synthesizer.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
-import { groupTypecheckByTsconfig } from "../typecheck/group-by-tsconfig.ts";
+import { runTypecheckPass } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
-import type { JestResult } from "../types/jest-result.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { classifyTestFiles, discoverTestFiles, resolveAllSetupFilePaths } from "./discovery.ts";
@@ -86,11 +81,6 @@ interface CollectPendingJobsArguments {
 interface SelectedProjects {
 	filesByProject?: ReadonlyMap<string, Array<string>>;
 	projects: Array<ResolvedProjectConfig>;
-}
-
-interface TypecheckPassOutcome {
-	elapsedMs: number;
-	result?: JestResult;
 }
 
 /**
@@ -238,7 +228,18 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
 	const [projectResults, typecheckPass] = await Promise.all([
 		runJobs(backend, pendingJobs, parallel, timing),
-		runTypecheckPass(typeTestEntries, rootTypecheck),
+		// Run-wide policy: every group's tsgo pass uses the root
+		// `ignoreSourceErrors`/`spawnTimeout` (the per-project tsconfig drives
+		// grouping, not the source-error decision).
+		runTypecheckPass(typeTestEntries, async (group) => {
+			return runTypecheck({
+				files: group.files,
+				ignoreSourceErrors: rootTypecheck.ignoreSourceErrors,
+				rootDir: group.cwd,
+				spawnTimeout: rootTypecheck.spawnTimeout,
+				tsconfig: group.tsconfig,
+			});
+		}),
 	]);
 	// Record the tsgo span at root once both branches settle — the collector's
 	// LIFO stack is not concurrency-safe, so the pass must not `profile` while
@@ -470,32 +471,6 @@ async function runJobs(
 			result: executeResult,
 		};
 	});
-}
-
-// One concurrent tsgo pass per `(tsconfig, cwd)` group, awaited alongside
-// `runJobs`. Times itself with a plain clock rather than `timing.profile` — the
-// collector's LIFO stack would corrupt if two branches profiled concurrently —
-// and returns `elapsedMs` so the caller records the span after the barrier.
-// `elapsedMs` is 0 when there are no Type Test files.
-async function runTypecheckPass(
-	entries: Array<TypecheckGroupEntry>,
-	typecheck: ResolvedTypecheckConfig,
-): Promise<TypecheckPassOutcome> {
-	if (entries.length === 0) {
-		return { elapsedMs: 0 };
-	}
-
-	const start = performance.now();
-	const result = await groupTypecheckByTsconfig(entries, async (group) => {
-		return runTypecheck({
-			files: group.files,
-			ignoreSourceErrors: typecheck.ignoreSourceErrors,
-			rootDir: group.cwd,
-			spawnTimeout: typecheck.spawnTimeout,
-			tsconfig: group.tsconfig,
-		});
-	});
-	return { elapsedMs: performance.now() - start, result };
 }
 
 function prepareMultiProjectCoverage(

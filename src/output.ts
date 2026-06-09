@@ -72,6 +72,32 @@ interface MultiOutputContext {
 	typecheckResult?: JestResult;
 }
 
+// Combines a Type Test result with the runtime result into one aggregate (counts
+// summed, testResults concatenated, success AND-ed). Shared with the workspace
+// runner, which owns the workspace `outputFile` sink.
+export function mergeResults(
+	typecheck: JestResult | undefined,
+	runtime: JestResult | undefined,
+): JestResult {
+	if (typecheck !== undefined && runtime !== undefined) {
+		return {
+			numFailedTests: typecheck.numFailedTests + runtime.numFailedTests,
+			numPassedTests: typecheck.numPassedTests + runtime.numPassedTests,
+			numPendingTests: typecheck.numPendingTests + runtime.numPendingTests,
+			numTodoTests: (typecheck.numTodoTests ?? 0) + (runtime.numTodoTests ?? 0),
+			numTotalTests: typecheck.numTotalTests + runtime.numTotalTests,
+			snapshot: runtime.snapshot,
+			startTime: Math.min(typecheck.startTime, runtime.startTime),
+			success: typecheck.success && runtime.success,
+			testResults: [...typecheck.testResults, ...runtime.testResults],
+		};
+	}
+
+	const result = typecheck ?? runtime;
+	assert(result !== undefined, "mergeResults requires at least one result");
+	return result;
+}
+
 export async function outputSingleResult(
 	config: ResolvedConfig,
 	result: SingleRunResult,
@@ -256,29 +282,6 @@ export async function outputMultiResult(
 	}
 
 	return passed ? 0 : 1;
-}
-
-function mergeResults(
-	typecheck: JestResult | undefined,
-	runtime: JestResult | undefined,
-): JestResult {
-	if (typecheck !== undefined && runtime !== undefined) {
-		return {
-			numFailedTests: typecheck.numFailedTests + runtime.numFailedTests,
-			numPassedTests: typecheck.numPassedTests + runtime.numPassedTests,
-			numPendingTests: typecheck.numPendingTests + runtime.numPendingTests,
-			numTodoTests: (typecheck.numTodoTests ?? 0) + (runtime.numTodoTests ?? 0),
-			numTotalTests: typecheck.numTotalTests + runtime.numTotalTests,
-			snapshot: runtime.snapshot,
-			startTime: Math.min(typecheck.startTime, runtime.startTime),
-			success: typecheck.success && runtime.success,
-			testResults: [...typecheck.testResults, ...runtime.testResults],
-		};
-	}
-
-	const result = typecheck ?? runtime;
-	assert(result !== undefined, "mergeResults requires at least one result");
-	return result;
 }
 
 function addCoverageTiming(timing: TimingResult, coverageMs: number): TimingResult {

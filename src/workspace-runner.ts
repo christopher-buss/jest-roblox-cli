@@ -7,11 +7,16 @@ import process from "node:process";
 
 import type { Backend, StreamingHooks } from "./backends/interface.ts";
 import { applyExcludes } from "./config/apply-excludes.ts";
+import { deriveTypecheckInclude } from "./config/derive-typecheck-include.ts";
 import { loadConfig } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
 import { narrowForLuauRun } from "./config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "./config/projects.ts";
 import { createFsClassifier, resolveAllProjects } from "./config/projects.ts";
+import type {
+	ResolvedTypecheckConfig,
+	TypecheckCliOptions,
+} from "./config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "./config/resolve-typecheck-config.ts";
 import type {
 	CliOptions,
@@ -39,7 +44,7 @@ import { writeJsonFile } from "./formatters/json.ts";
 import { usesAgentFormatter } from "./formatters/utils.ts";
 import { StreamingResultClient } from "./memory-store/sorted-map-client.ts";
 import { prepareWorkStealingQueue } from "./memory-store/work-stealing.ts";
-import { mergeProjectResults } from "./output.ts";
+import { mergeProjectResults, mergeResults } from "./output.ts";
 import {
 	StreamingAggregator,
 	type StreamingAggregatorOnEntry,
@@ -53,6 +58,10 @@ import {
 	type MaterializerInput,
 } from "./staging/test-script-staged.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
+import type { TypecheckGroupEntry, TypecheckPassOutcome } from "./typecheck/group-by-tsconfig.ts";
+import { runTypecheckPass } from "./typecheck/group-by-tsconfig.ts";
+import { runTypecheck } from "./typecheck/runner.ts";
+import type { JestResult } from "./types/jest-result.ts";
 import type { RojoTreeNode } from "./types/rojo.ts";
 import {
 	buildGroupedGameOutput,
@@ -73,7 +82,12 @@ const WORKSPACE_CACHE_DIRECTORY = path.join(".jest-roblox", "workspace");
 const ROJO_PROJECT_DEFAULT = "test.project.json";
 
 export interface RunWorkspaceOptions {
-	backend: Backend;
+	/**
+	 * Open Cloud backend for the runtime dispatch. Optional: `--typecheckOnly`
+	 * runs pure-local tsgo and short-circuits before any dispatch, so the caller
+	 * omits the backend (and its credentials) entirely for type-only runs.
+	 */
+	backend?: Backend;
 	cli: CliOptions;
 	/**
 	 * When provided, called once per newly-observed streaming result as
@@ -125,6 +139,18 @@ export interface WorkspaceProjectResult {
 	result: ExecuteResult;
 }
 
+/**
+ * What `runWorkspace` returns: the per-(package, project) runtime `results` plus
+ * the merged host-side Type Test result (set only when `test.typecheck`
+ * discovered any). `--typecheckOnly` returns empty `results` still carrying
+ * `typecheckResult`. `undefined` (not this shape) signals a preflight/empty-package
+ * failure.
+ */
+export interface WorkspaceRunnerOutput {
+	results: Array<WorkspaceProjectResult>;
+	typecheckResult?: JestResult;
+}
+
 interface PackageContext {
 	cacheRoot: string;
 	descriptor: PackageDescriptor;
@@ -146,6 +172,34 @@ interface PendingEntry {
 	testFiles: Array<string>;
 }
 
+/**
+ * Per-package Type Test reporting/runner policy, keyed by the package directory
+ * (each group's `cwd`). `ignoreSourceErrors`/`spawnTimeout` are package-wide —
+ * the workspace analogue of multi's run-wide root policy — while the per-project
+ * tsconfig (carried on the {@link TypecheckGroupEntry}) drives grouping. `pkg`
+ * composes package identity onto each merged file result.
+ */
+interface PackageTypecheck {
+	ignoreSourceErrors?: boolean;
+	pkg: string;
+	spawnTimeout?: number;
+}
+
+// A (package, project) pair that owns Type Tests. The type pass groups by
+// `(cwd, tsconfig)` and reports per package, so this records the project names a
+// package's type result is written under in the per-package result files.
+interface TypeTestProject {
+	pkg: string;
+	project: string;
+}
+
+interface DiscoveredTests {
+	pending: Array<PendingEntry>;
+	typecheckByDirectory: Map<string, PackageTypecheck>;
+	typeTestEntries: Array<TypecheckGroupEntry>;
+	typeTestProjects: Array<TypeTestProject>;
+}
+
 type WorkspaceDispatchSpec = Pick<
 	RunProjectsOptions,
 	"parallel" | "scriptOverride" | "streaming" | "workStealing"
@@ -153,7 +207,7 @@ type WorkspaceDispatchSpec = Pick<
 
 export async function runWorkspace(
 	options: RunWorkspaceOptions,
-): Promise<Array<WorkspaceProjectResult> | undefined> {
+): Promise<undefined | WorkspaceRunnerOutput> {
 	return runWorkspaceProfiled(options, options.timing ?? NOOP_TIMING_COLLECTOR);
 }
 
@@ -171,7 +225,7 @@ function buildCoverageMap(
 async function runWorkspaceProfiled(
 	options: RunWorkspaceOptions,
 	timing: TimingCollector,
-): Promise<Array<WorkspaceProjectResult> | undefined> {
+): Promise<undefined | WorkspaceRunnerOutput> {
 	const { backend, cli, packageInfos, version, workspaceRoot } = options;
 	const startTime = Date.now();
 
@@ -202,19 +256,33 @@ async function runWorkspaceProfiled(
 	// tests passes only when its OWN `passWithNoTests` is true; the
 	// workspace root's value is not aggregated over packages. Projects with
 	// zero tests inside a populated package are silently dropped.
-	const { emptyPackageErrors, filteredContexts, pending } = timing.profile(
-		"discoverTests",
-		() => {
-			const discoveredContexts = applyProjectFilter(contexts, cli.project);
-			const allEntries = collectPendingEntries(discoveredContexts);
-			const policy = applyEmptyPackagePolicy(allEntries, discoveredContexts);
-			return {
-				emptyPackageErrors: policy.emptyPackageErrors,
-				filteredContexts: discoveredContexts,
-				pending: policy.pending,
-			};
-		},
-	);
+	const {
+		emptyPackageErrors,
+		filteredContexts,
+		pending,
+		typecheckByDirectory,
+		typeTestEntries,
+		typeTestProjects,
+	} = timing.profile("discoverTests", () => {
+		const discoveredContexts = applyProjectFilter(contexts, cli.project);
+		const discovered = collectPendingEntries(discoveredContexts, cli);
+		const typeTestPackages = new Set(
+			[...discovered.typecheckByDirectory.values()].map((entry) => entry.pkg),
+		);
+		const policy = applyEmptyPackagePolicy(
+			discovered.pending,
+			discoveredContexts,
+			typeTestPackages,
+		);
+		return {
+			emptyPackageErrors: policy.emptyPackageErrors,
+			filteredContexts: discoveredContexts,
+			pending: policy.pending,
+			typecheckByDirectory: discovered.typecheckByDirectory,
+			typeTestEntries: discovered.typeTestEntries,
+			typeTestProjects: discovered.typeTestProjects,
+		};
+	});
 	if (emptyPackageErrors.length > 0) {
 		for (const error of emptyPackageErrors) {
 			process.stderr.write(`${error}\n`);
@@ -224,7 +292,22 @@ async function runWorkspaceProfiled(
 	}
 
 	if (pending.length === 0) {
-		return [];
+		// No runtime jobs. With Type Tests present (`--typecheckOnly`, or
+		// type-test-only packages), skip instrumentation, the synthesized place
+		// build, and Open Cloud dispatch entirely — run only the host-side type
+		// pass and return it. Without Type Tests, nothing to test.
+		if (typeTestEntries.length === 0) {
+			return { results: [] };
+		}
+
+		return runTypecheckOnlyWorkspace({
+			runOptions: options.runOptions,
+			timing,
+			typecheckByDirectory,
+			typeTestEntries,
+			typeTestProjects,
+			workspaceRoot,
+		});
 	}
 
 	// Limit instrumentation to packages that actually have pending tests
@@ -325,32 +408,51 @@ async function runWorkspaceProfiled(
 		});
 	});
 
-	const { results } = await timing.profileAsync("runProjects", async () => {
-		return runProjects({
-			backend,
-			deferFormatting: true,
-			projects: pending.map((entry) => {
-				return {
-					config: { ...entry.projectConfig, placeFile: synthRbxlPath },
-					displayColor: entry.project.displayColor,
-					displayName: entry.project.displayName,
-					pkg: entry.pkg,
-					testFiles: entry.testFiles,
-				};
-			}),
-			startTime,
-			timing,
-			version,
-			...dispatchSpec,
-		});
-	});
+	// The grouped tsgo pass depends only on the filesystem (discovery already
+	// ran), so it overlaps the network-bound Open Cloud upload/poll. Await both,
+	// then record the tsgo span — the collector's LIFO stack is not
+	// concurrency-safe, so the pass times itself and the span lands after the
+	// barrier (same caveat as single/multi).
+	const [{ results }, typecheckPass] = await Promise.all([
+		timing.profileAsync("runProjects", async () => {
+			return runProjects({
+				// Defined whenever runtime jobs exist: only `--typecheckOnly`
+				// omits the backend, and that path short-circuits above before
+				// reaching any runtime dispatch.
+				// eslint-disable-next-line ts/no-non-null-assertion -- backend present for runtime jobs
+				backend: backend!,
+				deferFormatting: true,
+				projects: pending.map((entry) => {
+					return {
+						config: { ...entry.projectConfig, placeFile: synthRbxlPath },
+						displayColor: entry.project.displayColor,
+						displayName: entry.project.displayName,
+						pkg: entry.pkg,
+						testFiles: entry.testFiles,
+					};
+				}),
+				startTime,
+				timing,
+				version,
+				...dispatchSpec,
+			});
+		}),
+		runWorkspaceTypecheckPass(typeTestEntries, typecheckByDirectory),
+	]);
 
 	if (runOptions.workspaceOutputFile) {
-		writePerPackageOutputFiles(workspaceRoot, pending, results);
+		writePerPackageOutputFiles(
+			workspaceRoot,
+			buildPerPackageResults(pending, results, typecheckPass.byPackage, typeTestProjects),
+		);
 	}
 
 	if (runOptions.outputFile !== undefined) {
-		await writeJsonFile(mergeProjectResults(results).result, runOptions.outputFile);
+		await writeWorkspaceOutputFile(
+			runOptions.outputFile,
+			mergeProjectResults(results).result,
+			typecheckPass.outcome.result,
+		);
 	}
 
 	emitWorkspaceGameOutput({
@@ -361,10 +463,29 @@ async function runWorkspaceProfiled(
 		workspaceRoot,
 	});
 
-	return attachCoverageManifests(results, pending, coverageByPackage);
+	return attachTypecheck(
+		attachCoverageManifests(results, pending, coverageByPackage),
+		typecheckPass.outcome,
+		timing,
+	);
 }
 
 const PER_PACKAGE_TIMEOUT_SECONDS = 60;
+
+// The workspace per-package variant of {@link runTypecheckPass}: each group's
+// package-wide `ignoreSourceErrors`/`spawnTimeout` come from
+// `typecheckByDirectory` (keyed by `cwd = package`), and `composePackageIdentity`
+// stamps the package name onto every file result so two packages'
+// identically-named `-d` files stay distinct after the merge.
+// Outcome of the workspace Type Test pass: the aggregate `outcome` (the merged
+// result + timing the existing sinks consume) plus `byPackage`, the merged Type
+// Test result keyed by package name. The per-package result files write each
+// package's result under every project that owns Type Tests, so they need the
+// split the aggregate has already collapsed.
+interface WorkspaceTypecheckPass {
+	byPackage: Map<string, JestResult>;
+	outcome: TypecheckPassOutcome;
+}
 
 function buildStreaming(input: {
 	credentials: { apiKey: string; baseUrl?: string; universeId: string };
@@ -768,14 +889,39 @@ function discoverProjectTestFiles(
 
 	// Workspace mode never consumes positional file args (no auto-pick path), so
 	// the exclude gate is unconditional — there is no user-chosen file set to
-	// bypass. Type Tests are not run in workspace mode, so only the Runtime
-	// `exclude` applies here; there is no `typecheck.exclude` set to split off.
+	// bypass. Runtime discovery globs the Runtime `include` only; Type Tests are
+	// discovered separately by `discoverProjectTypeTests` from the `-d` include.
 	return applyExcludes([...new Set(found)], project.exclude);
+}
+
+// Per-(package, project) Type Test discovery, mirroring multi's
+// `collectPendingJobs`: derive the `-d` include from the project's Runtime
+// `include` (unless an explicit `test.typecheck.include` is set), glob it
+// against the package directory, classify by `TYPE_TEST_PATTERN`, then subtract
+// `test.typecheck.exclude`. Returns absolute paths so `runTypecheck` reads them
+// cwd-independently (workspace mode runs from any directory) while still keying
+// each file result package-relative against `rootDir = packageDirectory`.
+function discoverProjectTypeTests(
+	project: ResolvedProjectConfig,
+	typecheck: ResolvedTypecheckConfig,
+	packageDirectory: string,
+): Array<string> {
+	const include = typecheck.include ?? deriveTypecheckInclude(project.include);
+	const found: Array<string> = [];
+	for (const pattern of include) {
+		found.push(...globSync(pattern, { cwd: packageDirectory }));
+	}
+
+	const { typeTestFiles } = classifyTestFiles([...new Set(found)], typecheck);
+	return applyExcludes(typeTestFiles, typecheck.exclude).map((file) => {
+		return path.resolve(packageDirectory, file);
+	});
 }
 
 function applyEmptyPackagePolicy(
 	allEntries: Array<PendingEntry>,
 	contexts: Array<PackageContext>,
+	typeTestPackages: ReadonlySet<string>,
 ): { emptyPackageErrors: Array<string>; pending: Array<PendingEntry> } {
 	const passByPackage = new Map<string, boolean>();
 	for (const ctx of contexts) {
@@ -802,7 +948,11 @@ function applyEmptyPackagePolicy(
 			continue;
 		}
 
-		if (passByPackage.get(package_) === true) {
+		// A package whose only tests are Type Tests (no runtime specs, or
+		// `--typecheckOnly`) is NOT empty — its type pass still reports. Mirrors
+		// multi's `projectResults.length === 0 && typecheckResult !== undefined`
+		// valid-result branch.
+		if (passByPackage.get(package_) === true || typeTestPackages.has(package_)) {
 			continue;
 		}
 
@@ -812,23 +962,184 @@ function applyEmptyPackagePolicy(
 	return { emptyPackageErrors, pending };
 }
 
-function collectPendingEntries(contexts: Array<PackageContext>): Array<PendingEntry> {
+function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions): DiscoveredTests {
+	const cliTypecheck: TypecheckCliOptions = {
+		enabled: cli.typecheck,
+		only: cli.typecheckOnly,
+		tsconfig: cli.typecheckTsconfig,
+	};
 	const pending: Array<PendingEntry> = [];
+	const typeTestEntries: Array<TypecheckGroupEntry> = [];
+	const typeTestProjects: Array<TypeTestProject> = [];
+	const typecheckByDirectory = new Map<string, PackageTypecheck>();
 
 	for (const ctx of contexts) {
+		const { packageDirectory } = ctx.info;
+		// `ignoreSourceErrors`/`spawnTimeout` are package-wide (no project
+		// layer); the per-project resolution below only drives
+		// enabled/include/exclude and the grouping tsconfig.
+		const packageTypecheck = resolveTypecheckConfig({
+			cli: cliTypecheck,
+			root: ctx.pkgConfig.typecheck,
+		});
+
 		for (const project of ctx.projects) {
+			const typecheck = resolveTypecheckConfig({
+				cli: cliTypecheck,
+				project: project.typecheck,
+				root: ctx.pkgConfig.typecheck,
+			});
 			const projectConfig = buildProjectExecutionConfig(ctx.pkgConfig, project);
-			const testFiles = discoverProjectTestFiles(project, ctx.info.packageDirectory);
-			pending.push({
+			// `--typecheckOnly` / per-project `only` means "don't run runtime
+			// tests": zero the runtime file set so the package contributes only
+			// Type Tests (the short-circuit then skips the place build +
+			// dispatch).
+			const testFiles = typecheck.only
+				? []
+				: discoverProjectTestFiles(project, packageDirectory);
+			pending.push({ pkg: ctx.info.name, project, projectConfig, testFiles });
+
+			if (!typecheck.enabled) {
+				continue;
+			}
+
+			const typeTestFiles = discoverProjectTypeTests(project, typecheck, packageDirectory);
+			if (typeTestFiles.length === 0) {
+				continue;
+			}
+
+			typeTestProjects.push({ pkg: ctx.info.name, project: project.displayName });
+
+			// cwd is the PACKAGE directory (not the workspace root): distinct
+			// packages form distinct `(cwd, tsconfig)` groups even when they
+			// share the same relative tsconfig name, while projects within a
+			// package that share a tsconfig collapse to one tsgo pass.
+			typeTestEntries.push({
+				cwd: packageDirectory,
+				files: typeTestFiles,
+				...(typecheck.tsconfig !== undefined ? { tsconfig: typecheck.tsconfig } : {}),
+			});
+			typecheckByDirectory.set(packageDirectory, {
+				ignoreSourceErrors: packageTypecheck.ignoreSourceErrors,
 				pkg: ctx.info.name,
-				project,
-				projectConfig,
-				testFiles,
+				spawnTimeout: packageTypecheck.spawnTimeout,
 			});
 		}
 	}
 
-	return pending;
+	return { pending, typecheckByDirectory, typeTestEntries, typeTestProjects };
+}
+
+// `runTypecheck` keys file results by `path.relative(cwd, file)` — package
+// relative, so `src/index.spec-d.ts` from two packages would be
+// indistinguishable once merged. Prefix the package name (parity with the
+// runtime path's `pkg › project` display) so each merged file result carries
+// package identity.
+function composePackageIdentity(result: JestResult, package_: string): JestResult {
+	return {
+		...result,
+		testResults: result.testResults.map((file) => {
+			return { ...file, testFilePath: `${package_}/${file.testFilePath}` };
+		}),
+	};
+}
+
+async function runWorkspaceTypecheckPass(
+	entries: Array<TypecheckGroupEntry>,
+	typecheckByDirectory: Map<string, PackageTypecheck>,
+): Promise<WorkspaceTypecheckPass> {
+	const byPackage = new Map<string, JestResult>();
+	const outcome = await runTypecheckPass(entries, async (group) => {
+		// Every group's cwd is a package directory recorded in
+		// `typecheckByDirectory` in the same loop iteration that pushed the
+		// entry, so the lookup is always present.
+		// eslint-disable-next-line ts/no-non-null-assertion -- invariant: cwd ∈ typecheckByDirectory
+		const policy = typecheckByDirectory.get(group.cwd)!;
+		const raw = await runTypecheck({
+			files: group.files,
+			ignoreSourceErrors: policy.ignoreSourceErrors,
+			rootDir: group.cwd,
+			spawnTimeout: policy.spawnTimeout,
+			...(group.tsconfig !== undefined ? { tsconfig: group.tsconfig } : {}),
+		});
+		const stamped = composePackageIdentity(raw, policy.pkg);
+		// A package with two distinct-tsconfig groups folds into one per-package
+		// result; `mergeResults` returns `stamped` verbatim for the first group.
+		byPackage.set(policy.pkg, mergeResults(stamped, byPackage.get(policy.pkg)));
+		return stamped;
+	});
+	return { byPackage, outcome };
+}
+
+// Records the tsgo span (when the pass actually ran) and builds the runner
+// output from the runtime `results` plus the merged Type Test result. Shared by
+// the overlap path (where the pass may be empty — typecheck off) and the
+// `--typecheckOnly` short-circuit, so both branches stay exercised regardless of
+// which path a given run takes.
+function attachTypecheck(
+	results: Array<WorkspaceProjectResult>,
+	pass: TypecheckPassOutcome,
+	timing: TimingCollector,
+): WorkspaceRunnerOutput {
+	if (pass.elapsedMs > 0) {
+		timing.record("runTypecheck", pass.elapsedMs);
+	}
+
+	return {
+		results,
+		...(pass.result !== undefined ? { typecheckResult: pass.result } : {}),
+	};
+}
+
+// Writes the aggregate result file (runtime ∪ Type Tests) to the workspace
+// `outputFile` sink. The runner owns this sink — `output.ts` only writes the
+// single/multi aggregates — so both the runtime path (where `typecheck` may be
+// undefined) and the `--typecheckOnly` short-circuit (where `runtime` is
+// undefined) route through here to keep the Type Test result from being dropped
+// from the JSON output. `mergeResults` collapses to whichever side is present.
+async function writeWorkspaceOutputFile(
+	outputFile: string,
+	runtime: JestResult | undefined,
+	typecheck: JestResult | undefined,
+): Promise<void> {
+	await writeJsonFile(mergeResults(typecheck, runtime), outputFile);
+}
+
+// The `--typecheckOnly` / no-runtime-specs short-circuit: run only the host-side
+// Type Test pass, write it to the workspace `outputFile` sink (no runtime side),
+// and return it. Skips instrumentation, the synthesized place build, and Open
+// Cloud dispatch entirely.
+async function runTypecheckOnlyWorkspace(input: {
+	runOptions: WorkspaceRunOptions;
+	timing: TimingCollector;
+	typecheckByDirectory: Map<string, PackageTypecheck>;
+	typeTestEntries: Array<TypecheckGroupEntry>;
+	typeTestProjects: Array<TypeTestProject>;
+	workspaceRoot: string;
+}): Promise<WorkspaceRunnerOutput> {
+	const typecheckPass = await runWorkspaceTypecheckPass(
+		input.typeTestEntries,
+		input.typecheckByDirectory,
+	);
+	if (input.runOptions.outputFile !== undefined) {
+		await writeWorkspaceOutputFile(
+			input.runOptions.outputFile,
+			undefined,
+			typecheckPass.outcome.result,
+		);
+	}
+
+	// Per-package files route through the same writer as the runtime path: there
+	// is no runtime side here, so every entry is the package's Type Test result
+	// under each of its type-test projects.
+	if (input.runOptions.workspaceOutputFile) {
+		writePerPackageOutputFiles(
+			input.workspaceRoot,
+			buildPerPackageResults([], [], typecheckPass.byPackage, input.typeTestProjects),
+		);
+	}
+
+	return attachTypecheck([], typecheckPass.outcome, input.timing);
 }
 
 function attachCoverageManifests(
@@ -865,27 +1176,79 @@ interface EmitWorkspaceGameOutputInput {
 	workspaceRoot: string;
 }
 
+// One per-package result file: the merged (runtime ∪ Type Test) result for a
+// single (package, project) pair, written as `<pkg>--<project>.jest-output.log`.
+interface PerPackageResultEntry {
+	pkg: string;
+	project: string;
+	result: JestResult;
+}
+
 function sanitizePathSegment(segment: string): string {
 	return segment.replace(FILESYSTEM_UNSAFE, "-");
 }
 
-function writePerPackageOutputFiles(
-	workspaceRoot: string,
+// JSON-encode the `(pkg, project)` pair so neither segment's content can collide
+// into another pair's key (parity with `groupTypecheckByTsconfig`).
+function projectKey(package_: string, project: string): string {
+	return JSON.stringify([package_, project]);
+}
+
+// Builds the per-(package, project) files the workspace writes when
+// `workspace.outputFile` is on: each file mirrors the aggregate at finer
+// granularity via the shared `mergeResults`, so the per-package sink can't drift
+// from the aggregate. Runtime pairs come from `pending`/`results`; Type Test
+// pairs reuse each package's whole type result (the tsgo pass collapses a
+// package's projects, so package-level is the finest honest split) under every
+// project that owns Type Tests. A pair present on both sides merges.
+function buildPerPackageResults(
 	pending: Array<PendingEntry>,
 	results: Array<ExecuteResult>,
-): void {
-	const directory = path.join(workspaceRoot, PER_PACKAGE_OUTPUT_DIRECTORY);
-	fs.mkdirSync(directory, { recursive: true });
+	typeByPackage: Map<string, JestResult>,
+	typeTestProjects: Array<TypeTestProject>,
+): Array<PerPackageResultEntry> {
+	const byKey = new Map<string, PerPackageResultEntry>();
 
 	for (const [index, result] of results.entries()) {
 		// eslint-disable-next-line ts/no-non-null-assertion -- runProjects preserves order
 		const entry = pending[index]!;
+		const { displayName } = entry.project;
+		byKey.set(projectKey(entry.pkg, displayName), {
+			pkg: entry.pkg,
+			project: displayName,
+			result: result.result,
+		});
+	}
+
+	for (const { pkg, project } of typeTestProjects) {
+		// Every type-test project's package ran a group, so `byPackage` has it.
+		// eslint-disable-next-line ts/no-non-null-assertion -- invariant: pkg ran a type pass
+		const typeResult = typeByPackage.get(pkg)!;
+		const key = projectKey(pkg, project);
+		byKey.set(key, {
+			pkg,
+			project,
+			result: mergeResults(typeResult, byKey.get(key)?.result),
+		});
+	}
+
+	return [...byKey.values()];
+}
+
+function writePerPackageOutputFiles(
+	workspaceRoot: string,
+	entries: Array<PerPackageResultEntry>,
+): void {
+	const directory = path.join(workspaceRoot, PER_PACKAGE_OUTPUT_DIRECTORY);
+	fs.mkdirSync(directory, { recursive: true });
+
+	for (const entry of entries) {
 		const filename = `${sanitizePathSegment(entry.pkg)}--${sanitizePathSegment(
-			entry.project.displayName,
+			entry.project,
 		)}.jest-output.log`;
 		fs.writeFileSync(
 			path.join(directory, filename),
-			JSON.stringify(result.result, null, 2),
+			JSON.stringify(entry.result, null, 2),
 			"utf8",
 		);
 	}

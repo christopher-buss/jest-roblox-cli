@@ -14,6 +14,9 @@ import type { WorkspacePackageCoverage } from "./coverage/workspace-prepare.ts";
 import { prepareWorkStealingQueue } from "./memory-store/work-stealing.ts";
 import { buildPlace } from "./staging/place-builder.ts";
 import { createTimingCollector } from "./timing/orchestration-collector.ts";
+import { runTypecheck } from "./typecheck/runner.ts";
+import type { JestResult } from "./types/jest-result.ts";
+import type { WorkspaceProjectResult } from "./workspace-runner.ts";
 import { runWorkspace } from "./workspace-runner.ts";
 
 vi.mock(import("./memory-store/work-stealing.ts"), () => {
@@ -41,6 +44,11 @@ vi.mock(import("./config/loader.ts"), async (importOriginal) => {
 // the real tree-walking helpers stay real while the filesystem walk is stubbed.
 
 vi.mock(import("./coverage/workspace-prepare.ts"));
+
+// The host-side Type Test pass spawns tsgo; mock the runner so the suite drives
+// attribution off fixture output rather than a real compile. The real
+// `groupTypecheckByTsconfig` still groups entries and calls this mock per group.
+vi.mock(import("./typecheck/runner.ts"));
 
 const ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(ROOT, "packages/foo");
@@ -133,6 +141,16 @@ function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): Workspace
 
 function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return { ...overrides };
+}
+
+// Most specs assert only on the runtime results array; unwrap it from the
+// runner output so they stay focused on the per-(package, project) entries.
+// Preserves the `undefined` preflight sentinel.
+async function runWorkspaceResults(
+	options: Parameters<typeof runWorkspace>[0],
+): Promise<Array<WorkspaceProjectResult> | undefined> {
+	const output = await runWorkspace(options);
+	return output?.results;
 }
 
 function coverageEntry(package_: string): WorkspacePackageCoverage {
@@ -325,7 +343,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -494,7 +512,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "server" },
 		]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -789,7 +807,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "server" },
 		]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -834,7 +852,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 		]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli({ project: ["client"] }),
 			packageInfos: [FOO_INFO],
@@ -1132,7 +1150,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "@halcyon/bar" },
 		]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -1189,7 +1207,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1244,7 +1262,7 @@ describe(runWorkspace, () => {
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [BAR_INFO],
@@ -1283,7 +1301,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -1313,7 +1331,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1344,7 +1362,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1375,7 +1393,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -1406,7 +1424,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1453,7 +1471,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/baz", project: "@halcyon/baz" },
 		]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO, BAZ_INFO],
@@ -1490,7 +1508,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -1606,7 +1624,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspace({
+		const results = await runWorkspaceResults({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1962,7 +1980,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			const results = await runWorkspace({
+			const results = await runWorkspaceResults({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -2729,6 +2747,132 @@ describe(runWorkspace, () => {
 		});
 	});
 
+	describe("per-package output files (type tests)", () => {
+		it("should write a package's type test result to .jest-roblox/output/<pkg>--<project>.jest-output.log under --typecheckOnly", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: {
+						[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+						[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+					},
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: {
+					...DEFAULT_CONFIG,
+					rootDir: FOO_DIR,
+					testMatch: ["**/*.spec.ts"],
+					typecheck: { enabled: true },
+				},
+			});
+			vi.mocked(runTypecheck).mockResolvedValue(
+				makeTypeResult({
+					testResults: [
+						{
+							numFailingTests: 0,
+							numPassingTests: 1,
+							numPendingTests: 0,
+							testFilePath: "src/foo.spec-d.ts",
+							testResults: [],
+						},
+					],
+				}),
+			);
+
+			const { backend } = createStubBackend([]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ typecheckOnly: true }),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ workspaceOutputFile: true }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const file = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--@halcyon-foo.jest-output.log",
+			);
+
+			expect(vol.existsSync(file)).toBeTrue();
+			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toMatchObject({
+				success: true,
+				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
+			});
+		});
+
+		it("should merge the type test result into the per-package file alongside runtime results", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: {
+						[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+						[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+					},
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: {
+					...DEFAULT_CONFIG,
+					rootDir: FOO_DIR,
+					testMatch: ["**/*.spec.ts"],
+					typecheck: { enabled: true },
+				},
+			});
+			vi.mocked(runTypecheck).mockResolvedValue(
+				makeTypeResult({
+					testResults: [
+						{
+							numFailingTests: 0,
+							numPassingTests: 1,
+							numPendingTests: 0,
+							testFilePath: "src/foo.spec-d.ts",
+							testResults: [],
+						},
+					],
+				}),
+			);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ workspaceOutputFile: true }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const file = path.join(
+				ROOT,
+				".jest-roblox",
+				"output",
+				"@halcyon-foo--@halcyon-foo.jest-output.log",
+			);
+
+			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toMatchObject({
+				numPassedTests: 2,
+				success: true,
+				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
+			});
+		});
+	});
+
 	describe("per-package gameOutput files", () => {
 		it("should write parsed entries to .jest-roblox/output/<pkg>--<project>.game-output.log when workspace.gameOutput is enabled", async () => {
 			expect.assertions(2);
@@ -3300,6 +3444,118 @@ describe(runWorkspace, () => {
 
 			expect(vol.existsSync(path.join(ROOT, "jest-output.log"))).toBeFalse();
 		});
+
+		it("should write the type test result to runOptions.outputFile under --typecheckOnly", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: {
+						[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+						[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+					},
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: {
+					...DEFAULT_CONFIG,
+					rootDir: FOO_DIR,
+					testMatch: ["**/*.spec.ts"],
+					typecheck: { enabled: true },
+				},
+			});
+			vi.mocked(runTypecheck).mockResolvedValue(
+				makeTypeResult({
+					testResults: [
+						{
+							numFailingTests: 0,
+							numPassingTests: 1,
+							numPendingTests: 0,
+							testFilePath: "src/foo.spec-d.ts",
+							testResults: [],
+						},
+					],
+				}),
+			);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+			]);
+			const outputFile = path.join(ROOT, "jest-output.log");
+
+			await runWorkspace({
+				backend,
+				cli: makeCli({ typecheckOnly: true }),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ outputFile, silent: true }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			expect(vol.existsSync(outputFile)).toBeTrue();
+			expect(JSON.parse(vol.readFileSync(outputFile, "utf8") as string)).toMatchObject({
+				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
+			});
+		});
+
+		it("should merge the type test result into runOptions.outputFile alongside runtime results", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: {
+						[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+						[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+					},
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: {
+					...DEFAULT_CONFIG,
+					rootDir: FOO_DIR,
+					testMatch: ["**/*.spec.ts"],
+					typecheck: { enabled: true },
+				},
+			});
+			vi.mocked(runTypecheck).mockResolvedValue(
+				makeTypeResult({
+					testResults: [
+						{
+							numFailingTests: 0,
+							numPassingTests: 1,
+							numPendingTests: 0,
+							testFilePath: "src/foo.spec-d.ts",
+							testResults: [],
+						},
+					],
+				}),
+			);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+			]);
+			const outputFile = path.join(ROOT, "jest-output.log");
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ outputFile, silent: true }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			expect(JSON.parse(vol.readFileSync(outputFile, "utf8") as string)).toMatchObject({
+				numPassedTests: 2,
+				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
+			});
+		});
 	});
 
 	describe("snapshot writeback", () => {
@@ -3459,5 +3715,543 @@ describe(runWorkspace, () => {
 				success: true,
 			});
 		});
+	});
+});
+
+function makeTypeResult(overrides: Partial<JestResult> = {}): JestResult {
+	return {
+		numFailedTests: 0,
+		numPassedTests: 1,
+		numPendingTests: 0,
+		numTotalTests: 1,
+		startTime: 0,
+		success: true,
+		testResults: [],
+		...overrides,
+	};
+}
+
+describe("workspace type tests", () => {
+	it("should discover a package's -d type tests via the derived include and return a typecheckResult", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+		});
+
+		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		const result = await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(vi.mocked(runTypecheck)).toHaveBeenCalledWith(
+			expect.objectContaining({
+				files: expect.arrayContaining([
+					expect.stringMatching(/foo\.spec-d\.ts$/),
+				]) as unknown,
+			}),
+		);
+		expect(result?.typecheckResult).toBeDefined();
+	});
+
+	it("should use an explicit test.typecheck.include instead of deriving from the runtime include", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+					[path.join(FOO_DIR, "src/types/x.spec-d.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true, include: ["src/types/**/*.spec-d.ts"] },
+			},
+		});
+
+		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		const { files } = vi.mocked(runTypecheck).mock.calls[0]![0];
+
+		expect(files.some((file) => file.endsWith("x.spec-d.ts"))).toBeTrue();
+		expect(files.some((file) => file.endsWith("foo.spec-d.ts"))).toBeFalse();
+	});
+
+	it("should subtract test.typecheck.exclude from the discovered type tests", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/a.gen.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/a.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/a.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true, exclude: ["src/**/*.gen.spec-d.ts"] },
+			},
+		});
+
+		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		const { files } = vi.mocked(runTypecheck).mock.calls[0]![0];
+
+		expect(files.some((file) => file.endsWith("a.spec-d.ts"))).toBeTrue();
+		expect(files.some((file) => file.endsWith("a.gen.spec-d.ts"))).toBeFalse();
+	});
+
+	it("should collapse multi-project packages sharing a tsconfig into one tsgo group at the package directory", async () => {
+		expect.assertions(3);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "out/Client/a.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "out/Client/a.spec.ts")]: "",
+					[path.join(FOO_DIR, "out/Server/b.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "out/Server/b.spec.ts")]: "",
+				},
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Client: { $path: "out/Client" } },
+					ServerScriptService: { Server: { $path: "out/Server" } },
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		const projects = fromAny([
+			{ test: { displayName: "client", include: ["out/Client/**/*.spec.ts"] } },
+			{ test: { displayName: "server", include: ["out/Server/**/*.spec.ts"] } },
+		]);
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				projects,
+				rootDir: FOO_DIR,
+				typecheck: { enabled: true, tsconfig: "tsconfig.types.json" },
+			},
+		});
+
+		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "server" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(vi.mocked(runTypecheck)).toHaveBeenCalledOnce();
+
+		const call = vi.mocked(runTypecheck).mock.calls[0]![0];
+
+		expect(call.rootDir).toBe(FOO_DIR);
+		expect(call.files).toHaveLength(2);
+	});
+
+	it("should form distinct groups per package even when they share the same relative tsconfig name", async () => {
+		expect.assertions(3);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/index.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/index.spec.ts")]: "",
+				},
+			}),
+			...seedPackage(BAR_DIR, {
+				name: "@halcyon/bar",
+				specFiles: {
+					[path.join(BAR_DIR, "src/index.spec-d.ts")]: "",
+					[path.join(BAR_DIR, "src/index.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[BAR_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: BAR_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true, tsconfig: "tsconfig.types.json" },
+			},
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true, tsconfig: "tsconfig.types.json" },
+			},
+		});
+
+		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "@halcyon/bar" },
+		]);
+
+		await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(vi.mocked(runTypecheck)).toHaveBeenCalledTimes(2);
+
+		const rootDirectories = vi
+			.mocked(runTypecheck)
+			.mock.calls.map((call) => call[0].rootDir)
+			.sort();
+
+		expect(rootDirectories).toStrictEqual([BAR_DIR, FOO_DIR].sort());
+		expect(
+			vi
+				.mocked(runTypecheck)
+				.mock.calls.every((call) => call[0].tsconfig === "tsconfig.types.json"),
+		).toBeTrue();
+	});
+
+	it("should compose package identity onto each merged type test file result", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/index.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/index.spec.ts")]: "",
+				},
+			}),
+			...seedPackage(BAR_DIR, {
+				name: "@halcyon/bar",
+				specFiles: {
+					[path.join(BAR_DIR, "src/index.spec-d.ts")]: "",
+					[path.join(BAR_DIR, "src/index.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[BAR_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: BAR_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+		});
+
+		// Each group's tsgo returns the SAME package-relative file path; identity
+		// composition must keep the two packages' results distinguishable.
+		vi.mocked(runTypecheck).mockResolvedValue(
+			makeTypeResult({
+				testResults: [
+					{
+						numFailingTests: 0,
+						numPassingTests: 1,
+						numPendingTests: 0,
+						testFilePath: "src/index.spec-d.ts",
+						testResults: [],
+					},
+				],
+			}),
+		);
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "@halcyon/bar" },
+		]);
+
+		const result = await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		const paths = result?.typecheckResult?.testResults.map((file) => file.testFilePath) ?? [];
+
+		expect(paths).toContain("@halcyon/foo/src/index.spec-d.ts");
+		expect(paths).toContain("@halcyon/bar/src/index.spec-d.ts");
+	});
+
+	it("should run the type pass concurrently with the Open Cloud run", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+		});
+
+		// A rendezvous: each side proceeds only once the other has started, so
+		// the run completes only when the two overlap. A strictly-sequential pass
+		// would deadlock (one side awaits a signal that never fires).
+		let signalRuntimeStarted!: () => void;
+		let signalTypecheckStarted!: () => void;
+		const runtimeStarted = new Promise<void>((resolve) => {
+			signalRuntimeStarted = resolve;
+		});
+		const typecheckStarted = new Promise<void>((resolve) => {
+			signalTypecheckStarted = resolve;
+		});
+		const backend: Backend = {
+			kind: "open-cloud",
+			runTests: async (): Promise<BackendResult> => {
+				signalRuntimeStarted();
+				await typecheckStarted;
+				return {
+					rawResults: [{ entry: { jestOutput: passingResult(), pkg: "@halcyon/foo" } }],
+					timing: { executionMs: 0, uploadMs: 0 },
+				};
+			},
+		};
+		vi.mocked(runTypecheck).mockImplementation(async () => {
+			signalTypecheckStarted();
+			await runtimeStarted;
+			return makeTypeResult();
+		});
+
+		const result = await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(result?.typecheckResult).toBeDefined();
+	});
+
+	it("should short-circuit --typecheckOnly: no place build, no backend dispatch, only the type pass", async () => {
+		expect.assertions(4);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.ts"] },
+		});
+
+		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		const result = await runWorkspace({
+			backend,
+			cli: makeCli({ typecheckOnly: true }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options).toBeUndefined();
+		expect(vi.mocked(buildPlace)).not.toHaveBeenCalled();
+		expect(result?.typecheckResult).toBeDefined();
+		expect(result?.results).toHaveLength(0);
+	});
+
+	it("should report results for a type-test-only package rather than erroring on no runtime specs", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec-d.ts")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		// passWithNoTests defaults false; only a `.spec-d.ts` exists, so runtime
+		// discovery finds nothing. The package must not error — its type tests
+		// run.
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+		});
+
+		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+
+		const { backend } = createStubBackend([]);
+
+		const result = await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(result).toBeDefined();
+		expect(result?.typecheckResult).toBeDefined();
+	});
+
+	it("should still error for a truly empty package even with typecheck enabled", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, { name: "@halcyon/foo" }),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+		});
+
+		const { backend } = createStubBackend([]);
+
+		const result = await runWorkspace({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(result).toBeUndefined();
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringMatching(/No test files found in package @halcyon\/foo/),
+		);
 	});
 });
