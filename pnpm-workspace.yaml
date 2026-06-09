@@ -2,7 +2,7 @@ packages:
   - "packages/*"
 
 minimumReleaseAgeExclude:
-  - '@isentinel/eslint-config@5.1.1'
+  - "@isentinel/eslint-config@5.2.0"
 
 publicHoistPattern:
   - "*@rbxts*"

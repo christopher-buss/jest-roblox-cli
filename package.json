@@ -81,7 +81,7 @@
 		"ws": "8.20.1"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "5.1.1",
+		"@isentinel/eslint-config": "5.2.0",
 		"@isentinel/luau-ast": "workspace:*",
 		"@isentinel/roblox-runner": "workspace:*",
 		"@isentinel/roblox-ts": "4.0.6",

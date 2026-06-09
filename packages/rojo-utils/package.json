@@ -29,7 +29,7 @@
 		"arktype": "2.2.0"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "5.1.1",
+		"@isentinel/eslint-config": "5.2.0",
 		"@isentinel/tsconfig": "1.2.0",
 		"@types/node": "24.12.3",
 		"@typescript/native-preview": "7.0.0-dev.20260607.1",
