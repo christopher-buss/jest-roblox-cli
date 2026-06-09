@@ -13,9 +13,9 @@ describe("test discovery", () => {
 
 			const result = runCli([], LUAU_FIXTURE);
 
-			// If test discovery succeeded, the CLI proceeds to the backend
-			// which fails with a backend error (game.rbxl not found).
-			// "No test files found" in stderr means discovery failed.
+			// Discovery runs before backend resolution, so reaching backend
+			// resolution proves discovery found the spec files. A discovery
+			// failure prints "No test files found" instead.
 			expect(result.stderr).not.toContain("No test files found");
 		});
 	});
@@ -26,8 +26,6 @@ describe("test discovery", () => {
 
 			const result = runCli([], RBXTS_FIXTURE);
 
-			// Backend error ("Failed to find Jest") means config + discovery
-			// worked.
 			expect(result.stderr).not.toContain("No test files found");
 		});
 	});

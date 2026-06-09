@@ -76,15 +76,24 @@ export class StudioBackend implements Backend {
 	}
 
 	public close(): void {
-		const server = this.wss;
+		// Fall back to the pre-connected server: the auto probe can detect a
+		// Studio (preConnected) and then close the backend via a zero-jobs flow
+		// that never calls runTests, so `this.wss` is never assigned.
+		const server = this.wss ?? this.preConnected?.server;
 		this.wss = undefined;
+		this.preConnected = undefined;
 		if (server === undefined) {
 			return;
 		}
 
-		// ws.WebSocketServer.close() stops accepting new connections. Existing
-		// sockets would linger, but since we only hold one CLI-scoped server
-		// that's torn down at process end, that's fine (see C5).
+		// ws.WebSocketServer.close() stops accepting new connections but leaves
+		// open sockets alive. A lingering plugin socket keeps the Node event
+		// loop running, so the CLI's process.exitCode-based shutdown hangs after
+		// a Studio run. Terminate the live sockets before closing the server.
+		for (const client of server.clients) {
+			client.terminate();
+		}
+
 		server.close();
 	}
 

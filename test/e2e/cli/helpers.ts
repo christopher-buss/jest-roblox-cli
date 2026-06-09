@@ -57,7 +57,7 @@ export function runCli(args: Array<string>, cwdOrOptions?: RunCliOptions | strin
 	const options = typeof cwdOrOptions === "string" ? { cwd: cwdOrOptions } : (cwdOrOptions ?? {});
 
 	try {
-		const stdout = execFileSync("node", [BIN, ...args], {
+		const stdout = execFileSync("node", [BIN, ...withIsolatedBackendPort(args)], {
 			cwd: options.cwd,
 			encoding: "utf-8",
 			env: buildCliEnvironment(options.env),
@@ -83,7 +83,7 @@ export async function runCliAsync(
 	return new Promise((resolve) => {
 		execFile(
 			"node",
-			[BIN, ...args],
+			[BIN, ...withIsolatedBackendPort(args)],
 			{
 				cwd: options.cwd,
 				encoding: "utf-8",
@@ -145,6 +145,19 @@ export function createRbxtsFixtureSandbox(sourcePath: string): string {
 	writeFileSync(path.join(outDirectory, "jest.config.luau"), RBXTS_JEST_CONFIG_LUAU);
 
 	return sandboxPath;
+}
+
+// The `auto` backend opens a WebSocket server on the configured port and waits
+// for a Studio plugin to connect. A developer's running Studio connects to the
+// fixed default port, so e2e runs flakily detect it and route to the Studio
+// backend (or hang). Binding the probe to an ephemeral port (0) — which no
+// Studio plugin knows to dial — makes `auto` deterministically fall through to
+// Open Cloud. Callers that need a real port pass their own `--port` and opt out.
+function withIsolatedBackendPort(args: Array<string>): Array<string> {
+	const declaresPort = args.some(
+		(argument) => argument === "--port" || argument.startsWith("--port="),
+	);
+	return declaresPort ? args : ["--port", "0", ...args];
 }
 
 function rewriteEscapingPaths(

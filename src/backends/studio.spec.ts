@@ -570,4 +570,45 @@ describe(StudioBackend, () => {
 
 		expect(wss.close).toHaveBeenCalledOnce();
 	});
+
+	it("should terminate the connected plugin socket on close so the CLI can exit", async () => {
+		// Regression: close() only closed the server, leaving the plugin socket
+		// open. That open handle kept the Node event loop alive and hung the
+		// CLI's process.exitCode-based shutdown whenever a Studio was detected.
+		expect.assertions(1);
+
+		const backend = new StudioBackend({ port: 0 });
+		const promise = backend.runTests(singleJobOptions);
+		const wss = getLastCreatedServer()!;
+		const socket = connectAndReply(wss, {});
+		await promise;
+
+		backend.close();
+
+		expect(socket.terminate).toHaveBeenCalledOnce();
+	});
+
+	it("should tear down a pre-connected server on close when runTests never ran", () => {
+		// The auto probe can detect a Studio (preConnected) and then hit a
+		// zero-jobs / passWithNoTests flow that closes the backend without ever
+		// calling runTests — so `this.wss` is never assigned. close() must still
+		// terminate the probe's socket and server, or the live handle hangs the
+		// CLI.
+		expect.assertions(2);
+
+		const wss = new MockWebSocketServer({ port: 0 });
+		const socket = new MockWebSocket();
+		// Mirror ws: the probe's connection is tracked in server.clients.
+		wss.emit("connection", socket);
+
+		const backend = new StudioBackend({
+			port: 0,
+			preConnected: fromPartial({ server: wss, socket }),
+		});
+
+		backend.close();
+
+		expect(socket.terminate).toHaveBeenCalledOnce();
+		expect(wss.close).toHaveBeenCalledOnce();
+	});
 });

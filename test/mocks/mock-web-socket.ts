@@ -7,4 +7,7 @@ export class MockWebSocket extends EventEmitter {
 		this.emit("close");
 	});
 	public readonly send: Mock<(data: string) => void> = vi.fn();
+	public readonly terminate: Mock<() => void> = vi.fn(() => {
+		this.emit("close");
+	});
 }
