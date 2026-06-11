@@ -134,6 +134,12 @@ export interface WorkspaceProjectResult {
 	 * back through this manifest to produce TS-coord Istanbul records.
 	 */
 	coverageManifest?: CoverageManifest;
+	/**
+	 * This package's effective `coveragePathIgnorePatterns`, carried so report-
+	 * time aggregation applies the same per-package patterns instrumentation
+	 * used. Present whenever `coverageManifest` is.
+	 */
+	coveragePathIgnorePatterns?: Array<string>;
 	displayName: string;
 	pkg: string;
 	result: ExecuteResult;
@@ -1153,6 +1159,7 @@ function attachCoverageManifests(
 		const coverage = coverageByPackage.get(pendingEntry.pkg);
 		return {
 			coverageManifest: coverage?.manifest,
+			coveragePathIgnorePatterns: coverage?.coveragePathIgnorePatterns,
 			displayName: pendingEntry.project.displayName,
 			pkg: pendingEntry.pkg,
 			result,

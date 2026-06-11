@@ -1,9 +1,17 @@
+import { filterCoverageUniverse } from "./coverage-universe.ts";
 import type { CoverageManifest } from "./manifest.ts";
 import { mapCoverageToTypeScript, type MappedCoverageResult } from "./mapper.ts";
 import type { RawCoverageData } from "./types.ts";
 
 export interface WorkspacePackageCoverageEntry {
 	coverageData: RawCoverageData | undefined;
+	/**
+	 * This package's effective `coveragePathIgnorePatterns`. Applied here —
+	 * before the cross-package merge — so a per-package override (e.g. one
+	 * package opting out of the workspace-root patterns) scopes to its own
+	 * files. Matched against the mapped TS source path.
+	 */
+	ignorePatterns?: Array<string>;
 	manifest: CoverageManifest;
 	pkg: string;
 }
@@ -28,7 +36,8 @@ export function aggregateWorkspaceCoverage(
 		}
 
 		const mapped = mapCoverageToTypeScript(entry.coverageData, entry.manifest);
-		for (const [tsPath, fileCoverage] of Object.entries(mapped.files)) {
+		const universe = filterCoverageUniverse(mapped, { ignore: entry.ignorePatterns });
+		for (const [tsPath, fileCoverage] of Object.entries(universe.files)) {
 			merged.files[tsPath] = fileCoverage;
 		}
 	}

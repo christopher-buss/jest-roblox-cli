@@ -207,6 +207,7 @@ function aggregatePerPackageCoverage(
 	// silently lose coverage from all but the first project.
 	interface PackageEntry {
 		coverageData: RawCoverageData | undefined;
+		ignorePatterns: Array<string> | undefined;
 		manifest: NonNullable<WorkspaceProjectResult["coverageManifest"]>;
 		pkg: string;
 	}
@@ -222,6 +223,7 @@ function aggregatePerPackageCoverage(
 		if (existing === undefined) {
 			byPackage.set(entry.pkg, {
 				coverageData: entry.result.coverageData,
+				ignorePatterns: entry.coveragePathIgnorePatterns,
 				manifest: entry.coverageManifest,
 				pkg: entry.pkg,
 			});

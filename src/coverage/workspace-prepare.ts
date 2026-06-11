@@ -64,6 +64,14 @@ export interface WorkspaceCoverageRoot {
 }
 
 export interface WorkspacePackageCoverage {
+	/**
+	 * This package's effective `coveragePathIgnorePatterns` (per-package override
+	 * or the `DEFAULT_CONFIG` fallback). Always populated by `prepareForPackage`;
+	 * optional only so test stubs need not restate it. Carried so report-time
+	 * aggregation applies the same patterns per-package that instrumentation used
+	 * for roots.
+	 */
+	coveragePathIgnorePatterns?: Array<string>;
 	coverageRoots: Array<WorkspaceCoverageRoot>;
 	manifest: CoverageManifest;
 	manifestPath: string;
@@ -75,6 +83,17 @@ export interface PrepareWorkspaceCoverageOptions {
 	/** Orchestration profiler; records the coverage sub-phases per instrumented root. */
 	timing?: TimingCollector;
 	workspaceRoot: string;
+}
+
+/**
+ * A package's effective `coveragePathIgnorePatterns`, as both the compiled
+ * root-matcher (used to skip instrumenting ignored directories) and the raw
+ * patterns (carried onto the result so report-time aggregation can re-apply
+ * them per-package against TS source paths).
+ */
+interface PackageIgnore {
+	matcher: (filePath: string) => boolean;
+	patterns: Array<string>;
 }
 
 /**
@@ -96,11 +115,14 @@ export function prepareWorkspaceCoverage(
 	const defaultMatcher = createIgnoreMatcher(DEFAULT_CONFIG.coveragePathIgnorePatterns);
 
 	return packages.map((descriptor) => {
-		const matchesIgnored =
-			descriptor.coveragePathIgnorePatterns !== undefined
-				? createIgnoreMatcher(descriptor.coveragePathIgnorePatterns)
-				: defaultMatcher;
-		return prepareForPackage(descriptor, workspaceRoot, matchesIgnored, timing);
+		const ignore: PackageIgnore = {
+			matcher:
+				descriptor.coveragePathIgnorePatterns !== undefined
+					? createIgnoreMatcher(descriptor.coveragePathIgnorePatterns)
+					: defaultMatcher,
+			patterns: descriptor.coveragePathIgnorePatterns ?? DEFAULT_CONFIG.coveragePathIgnorePatterns,
+		};
+		return prepareForPackage(descriptor, workspaceRoot, ignore, timing);
 	});
 }
 
@@ -411,7 +433,7 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 function prepareForPackage(
 	descriptor: WorkspacePackageDescriptor,
 	workspaceRoot: string,
-	matchesIgnored: (filePath: string) => boolean,
+	ignore: PackageIgnore,
 	timing: TimingCollector,
 ): WorkspacePackageCoverage {
 	const safeName = safePackageName(descriptor.name);
@@ -429,7 +451,7 @@ function prepareForPackage(
 	const coverageCache = descriptor.coverageCache ?? DEFAULT_CONFIG.coverageCache;
 	let useIncremental = canUseIncremental(previousManifest, coverageCache);
 
-	const luauRoots = discoverPackageLuauRoots(descriptor, matchesIgnored);
+	const luauRoots = discoverPackageLuauRoots(descriptor, ignore.matcher);
 
 	// When the user shrinks `luauRoots` (or adds new ignore patterns)
 	// between runs, previously-instrumented mounts disappear from the new set
@@ -503,7 +525,13 @@ function prepareForPackage(
 	// packageShadowRoot uncreated) still gets a manifest written.
 	atomicWrite(manifestPath, JSON.stringify(manifest, undefined, "\t"));
 
-	return { coverageRoots, manifest, manifestPath, pkg: descriptor.name };
+	return {
+		coveragePathIgnorePatterns: ignore.patterns,
+		coverageRoots,
+		manifest,
+		manifestPath,
+		pkg: descriptor.name,
+	};
 }
 
 function createIgnoreMatcher(patterns: Array<string>): (filePath: string) => boolean {

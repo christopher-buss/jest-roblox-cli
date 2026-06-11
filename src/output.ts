@@ -222,10 +222,7 @@ export async function outputMultiResult(
 	result: MultiRunResult | WorkspaceRunResult,
 ): Promise<number> {
 	const { mode, preCoverageMs, projectResults, typecheckResult } = result;
-	const collectCoverageFrom =
-		"collectCoverageFrom" in result ? result.collectCoverageFrom : undefined;
-	const config: ResolvedConfig =
-		collectCoverageFrom !== undefined ? { ...rootConfig, collectCoverageFrom } : rootConfig;
+	const config = buildReportConfig(rootConfig, result);
 
 	if (projectResults.length === 0 && typecheckResult !== undefined) {
 		return outputSingleResult(config, {
@@ -392,7 +389,12 @@ function enforceThresholds(config: ResolvedConfig, mapped: MappedCoverageResult)
 		return true;
 	}
 
-	const result = checkThresholds(mapped, config.coverageThreshold, config.collectCoverageFrom);
+	const result = checkThresholds(
+		mapped,
+		config.coverageThreshold,
+		config.collectCoverageFrom,
+		config.coveragePathIgnorePatterns,
+	);
 	if (result.passed) {
 		return true;
 	}
@@ -430,6 +432,7 @@ function processCoverage(
 		agentMode: usesAgentFormatter(config.formatters, config.verbose),
 		collectCoverageFrom: config.collectCoverageFrom,
 		coverageDirectory: path.resolve(config.rootDir, config.coverageDirectory),
+		coveragePathIgnorePatterns: config.coveragePathIgnorePatterns,
 		mapped,
 		reporters: config.coverageReporters,
 	});
@@ -493,6 +496,28 @@ function printFinalStatus(passed: boolean): void {
 		? color.bgGreen(color.black(color.bold(" PASS ")))
 		: color.bgRed(color.white(color.bold(" FAIL ")));
 	process.stdout.write(`${badge}\n`);
+}
+
+// Derives the config the reporter runs under for multi/workspace. Workspace
+// coverage already applied each package's own `coveragePathIgnorePatterns`
+// per-package in `aggregateWorkspaceCoverage` (where package identity and
+// per-package overrides are still known), so the report-time patterns are
+// blanked — otherwise the reporter would re-apply the workspace-root patterns
+// over a package that opted out via its own override.
+function buildReportConfig(
+	rootConfig: ResolvedConfig,
+	result: MultiRunResult | WorkspaceRunResult,
+): ResolvedConfig {
+	const config: ResolvedConfig = { ...rootConfig };
+	if ("collectCoverageFrom" in result && result.collectCoverageFrom !== undefined) {
+		config.collectCoverageFrom = result.collectCoverageFrom;
+	}
+
+	if (result.mode === "workspace") {
+		config.coveragePathIgnorePatterns = [];
+	}
+
+	return config;
 }
 
 function extractWorkspaceCoverageMapped(

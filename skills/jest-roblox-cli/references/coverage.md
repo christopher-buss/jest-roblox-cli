@@ -72,6 +72,17 @@ Put these under `test: { ... }`. Keep `luauRoots` at config root.
 | `coveragePathIgnorePatterns` | Globs to exclude from coverage         | test files, node_modules, rbxts_include |
 | `collectCoverageFrom`        | Globs for files to include in coverage | —                                       |
 
+`coveragePathIgnorePatterns` matches the **TypeScript source path** with
+substring semantics (Jest-style), so a file-level glob like `**/index.ts`
+excludes barrel files even when they are never required by a test. In workspace
+mode each package's own patterns apply to that package's files, so one package
+can opt out without affecting another.
+
+`collectCoverageFrom` is **not** scoped per-package in workspace mode — it is
+read from the workspace-root config and applied after the cross-package merge,
+unlike `coveragePathIgnorePatterns`. Per-package narrowing there comes from each
+package's instrumented manifest plus its own ignore patterns.
+
 ## Generated Files
 
 The `.jest-roblox/coverage/` directory holds instrumented Luau files and

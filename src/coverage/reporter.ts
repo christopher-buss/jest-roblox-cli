@@ -5,11 +5,10 @@ import istanbulReports, { type ReportOptions } from "istanbul-reports";
 import assert from "node:assert";
 import * as path from "node:path";
 import process from "node:process";
-import picomatch from "picomatch";
 import color from "tinyrainbow";
 
 import type { CoverageReporter } from "../config/schema.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { filterCoverageUniverse } from "./coverage-universe.ts";
 import type { MappedCoverageResult } from "./mapper.ts";
 
 const VALID_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>([
@@ -32,6 +31,7 @@ export interface CoverageReportOptions {
 	agentMode?: boolean;
 	collectCoverageFrom?: Array<string>;
 	coverageDirectory: string;
+	coveragePathIgnorePatterns?: Array<string>;
 	mapped: MappedCoverageResult;
 	reporters: Array<CoverageReporter>;
 }
@@ -52,7 +52,10 @@ export function printCoverageHeader(): void {
 const TEXT_REPORTERS: ReadonlySet<string> = new Set(["text", "text-summary"]);
 
 export function generateReports(options: CoverageReportOptions): void {
-	const filtered = filterMappedFiles(options.mapped, options.collectCoverageFrom);
+	const filtered = filterCoverageUniverse(options.mapped, {
+		ignore: options.coveragePathIgnorePatterns,
+		include: options.collectCoverageFrom,
+	});
 	const coverageMap = buildCoverageMap(filtered);
 
 	const agentMode = options.agentMode === true;
@@ -106,8 +109,12 @@ export function checkThresholds(
 	mapped: MappedCoverageResult,
 	thresholds: { branches?: number; functions?: number; lines?: number; statements?: number },
 	collectCoverageFrom?: Array<string>,
+	coveragePathIgnorePatterns?: Array<string>,
 ): ThresholdResult {
-	const filtered = filterMappedFiles(mapped, collectCoverageFrom);
+	const filtered = filterCoverageUniverse(mapped, {
+		ignore: coveragePathIgnorePatterns,
+		include: collectCoverageFrom,
+	});
 	const coverageMap = buildCoverageMap(filtered);
 	const summary = coverageMap.getCoverageSummary();
 
@@ -247,52 +254,6 @@ function buildCoverageMap(mapped: MappedCoverageResult): CoverageMap {
 	}
 
 	return coverageMap;
-}
-
-function createGlobMatcher(patterns: Array<string>): (filePath: string) => boolean {
-	const withPath = patterns.filter((pattern) => pattern.includes("/"));
-	const withoutPath = patterns.filter((pattern) => !pattern.includes("/"));
-
-	const matchers: Array<(filePath: string) => boolean> = [];
-	if (withPath.length > 0) {
-		matchers.push(picomatch(withPath));
-	}
-
-	if (withoutPath.length > 0) {
-		matchers.push(picomatch(withoutPath, { matchBase: true }));
-	}
-
-	return (filePath) => matchers.some((matcher) => matcher(filePath));
-}
-
-function filterMappedFiles(
-	mapped: MappedCoverageResult,
-	collectCoverageFrom: Array<string> | undefined,
-): MappedCoverageResult {
-	if (collectCoverageFrom === undefined || collectCoverageFrom.length === 0) {
-		return mapped;
-	}
-
-	const includePatterns = collectCoverageFrom.filter((pattern) => !pattern.startsWith("!"));
-	const excludePatterns = collectCoverageFrom
-		.filter((pattern) => pattern.startsWith("!"))
-		.map((pattern) => pattern.slice(1));
-
-	const isIncluded = includePatterns.length > 0 ? createGlobMatcher(includePatterns) : () => true;
-	const isExcluded =
-		excludePatterns.length > 0 ? createGlobMatcher(excludePatterns) : () => false;
-
-	const cwd = process.cwd();
-	const filtered = Object.fromEntries(
-		Object.entries(mapped.files).filter(([filePath]) => {
-			const relativePath = path.isAbsolute(filePath)
-				? normalizeWindowsPath(path.relative(cwd, filePath))
-				: filePath;
-			return isIncluded(relativePath) && !isExcluded(relativePath);
-		}),
-	);
-
-	return { files: filtered };
 }
 
 function isValidReporter(name: string): name is keyof ReportOptions {

@@ -133,6 +133,55 @@ describe(aggregateWorkspaceCoverage, () => {
 		expect(result.files).toStrictEqual({});
 	});
 
+	it("should drop files matching that package's own ignore patterns only", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const { mapCoverageToTypeScript } = await import("./mapper.ts");
+		const mapped = vi.mocked(mapCoverageToTypeScript);
+		mapped.mockImplementation((coverage) => {
+			const stem = Object.keys(coverage)[0]!.replace(/\.luau$/, "");
+			const tsPath = `${stem}/index.ts`;
+			return {
+				files: {
+					[tsPath]: {
+						b: {},
+						branchMap: {},
+						f: {},
+						fnMap: {},
+						path: tsPath,
+						s: { "0": 0 },
+						statementMap: {
+							"0": { end: { column: 1, line: 1 }, start: { column: 0, line: 1 } },
+						},
+					},
+				},
+			};
+		});
+
+		// foo ignores index barrels; bar does not. The pattern must scope to foo
+		// only — a package that opts out keeps its own index.ts.
+		const result = aggregateWorkspaceCoverage([
+			{
+				coverageData: { "foo.luau": { s: {} } },
+				ignorePatterns: ["**/index.ts"],
+				manifest: manifestStub(),
+				pkg: "@halcyon/foo",
+			},
+			{
+				coverageData: { "bar.luau": { s: {} } },
+				ignorePatterns: [],
+				manifest: manifestStub(),
+				pkg: "@halcyon/bar",
+			},
+		]);
+
+		expect(Object.keys(result.files)).toStrictEqual(["bar/index.ts"]);
+	});
+
 	it("should keep mapper outputs disjoint when packages map to the same TS file", async () => {
 		expect.assertions(2);
 
