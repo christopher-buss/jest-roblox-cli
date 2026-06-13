@@ -4,12 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { resolveAllProjects } from "../config/projects.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
-import type { AttributionResult } from "../coverage/attribution.ts";
-import type { CoverageArtifacts } from "../coverage/build-manifest.ts";
-import { emitBuildManifest } from "../coverage/build-manifest.ts";
-import type { CoverageManifest } from "../coverage/manifest.ts";
-import { MANIFEST_VERSION, readManifest, writeManifest } from "../coverage/manifest.ts";
-import { COVERAGE_BUILD_MANIFEST_PATH, COVERAGE_MANIFEST_PATH } from "../coverage/prepare.ts";
+import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
+import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
+import { emitBuildManifest } from "../coverage-pipeline/build-manifest.ts";
+import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
+import { MANIFEST_VERSION, readManifest, writeManifest } from "../coverage-pipeline/manifest.ts";
+import {
+	COVERAGE_BUILD_MANIFEST_PATH,
+	COVERAGE_MANIFEST_PATH,
+} from "../coverage-pipeline/prepare.ts";
 import { getRawProjects, runSingleOrMulti } from "../run.ts";
 import { collectStubMounts, loadRojoTree } from "../run/multi.ts";
 import type { MultiRunResult, SingleRunResult } from "../run/types.ts";
@@ -20,8 +23,8 @@ vi.mock(import("../run.ts"));
 vi.mock(import("../run/multi.ts"));
 vi.mock(import("../staging/place-builder.ts"));
 vi.mock(import("../config/projects.ts"));
-vi.mock(import("../coverage/build-manifest.ts"));
-vi.mock(import("../coverage/manifest.ts"), async (importOriginal) => {
+vi.mock(import("../coverage-pipeline/build-manifest.ts"));
+vi.mock(import("../coverage-pipeline/manifest.ts"), async (importOriginal) => {
 	const actual = await importOriginal();
 	return {
 		...actual,
@@ -29,7 +32,7 @@ vi.mock(import("../coverage/manifest.ts"), async (importOriginal) => {
 		writeManifest: vi.fn<typeof actual.writeManifest>(),
 	};
 });
-vi.mock(import("../coverage/prepare.ts"), () => {
+vi.mock(import("../coverage-pipeline/prepare.ts"), () => {
 	return {
 		COVERAGE_BUILD_MANIFEST_PATH: ".jest-roblox/coverage/build-manifest.json",
 		COVERAGE_MANIFEST_PATH: ".jest-roblox/coverage/coverage-manifest.json",

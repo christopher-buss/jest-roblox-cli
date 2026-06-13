@@ -1,6 +1,6 @@
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
-import type { CoverageArtifacts } from "../coverage/build-manifest.ts";
-import type { MappedCoverageResult } from "../coverage/mapper.ts";
+import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
+import type { MappedCoverageResult } from "../coverage-pipeline/mapper.ts";
 import type { ExecuteResult } from "../executor.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";

@@ -43,7 +43,7 @@ vi.mock(import("node:child_process"), async (importOriginal) => {
 	return fromAny({ ...actual, execFileSync: vi.fn<() => string>(() => "") });
 });
 
-vi.mock(import("../coverage/instrumenter"));
+vi.mock(import("../coverage-pipeline/instrumenter"));
 vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("../backends/auto"));
 vi.mock(import("../config/setup-resolver"));
@@ -574,7 +574,7 @@ describe(runSingleProject, () => {
 				JSON.stringify({ compilerOptions: { outDir: "out-tsc/test" } }),
 			);
 
-			const { instrumentRoot } = await import("../coverage/instrumenter");
+			const { instrumentRoot } = await import("../coverage-pipeline/instrumenter");
 			vi.mocked(instrumentRoot).mockReturnValue({});
 			const { buildWithRojo } = await import("../utils/rojo-builder");
 			vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
@@ -600,7 +600,7 @@ describe(runSingleProject, () => {
 			resetVol();
 			seedFile("src/a.spec-d.ts", "test('typed', () => {});");
 
-			const { instrumentRoot } = await import("../coverage/instrumenter");
+			const { instrumentRoot } = await import("../coverage-pipeline/instrumenter");
 			const instrumentMock = vi.mocked(instrumentRoot).mockReturnValue({});
 			await setupBackend();
 
@@ -622,7 +622,7 @@ describe(runSingleProject, () => {
 			resetVol();
 			seedFile("src/a.spec-d.ts", "test('typed', () => {});");
 
-			const { instrumentRoot } = await import("../coverage/instrumenter");
+			const { instrumentRoot } = await import("../coverage-pipeline/instrumenter");
 			const instrumentMock = vi.mocked(instrumentRoot).mockReturnValue({});
 			await setupBackend();
 

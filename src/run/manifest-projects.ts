@@ -4,7 +4,7 @@ import * as path from "node:path";
 
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import type { BuildManifestProject } from "../coverage/build-manifest.ts";
+import type { BuildManifestProject } from "../coverage-pipeline/build-manifest.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 
 /**

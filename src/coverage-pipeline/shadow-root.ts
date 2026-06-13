@@ -15,7 +15,7 @@ import type {
  * Suffixes for files that are not instrumented for coverage but still need
  * syncing to the shadow directory. Matches parse-ast.luau:131-139.
  */
-export const NON_INSTRUMENTED_SUFFIXES = [
+const NON_INSTRUMENTED_SUFFIXES = [
 	".spec.luau",
 	".test.luau",
 	".spec.lua",

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { type CliOptions, DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
-import type { CoverageArtifacts } from "./coverage/build-manifest.ts";
-import { emitBuildManifest } from "./coverage/build-manifest.ts";
-import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage/prepare.ts";
+import type { CoverageArtifacts } from "./coverage-pipeline/build-manifest.ts";
+import { emitBuildManifest } from "./coverage-pipeline/build-manifest.ts";
+import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
 import { runJestRoblox } from "./run.ts";
 import { runMultiProject } from "./run/multi.ts";
 import { runSingleProject } from "./run/single.ts";
@@ -13,7 +13,7 @@ import { runWorkspaceMode } from "./run/workspace.ts";
 vi.mock(import("./run/single"));
 vi.mock(import("./run/multi"));
 vi.mock(import("./run/workspace"));
-vi.mock(import("./coverage/build-manifest"));
+vi.mock(import("./coverage-pipeline/build-manifest"));
 
 const mocks = {
 	emitBuildManifest: vi.mocked(emitBuildManifest),

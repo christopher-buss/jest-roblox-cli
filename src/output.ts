@@ -6,10 +6,14 @@ import color from "tinyrainbow";
 
 import packageJson from "../package.json" with { type: "json" };
 import type { ResolvedConfig } from "./config/schema.ts";
-import { mapCoverageToTypeScript, type MappedCoverageResult } from "./coverage/mapper.ts";
-import { mergeRawCoverage } from "./coverage/merge-raw-coverage.ts";
-import { checkThresholds, generateReports, printCoverageHeader } from "./coverage/reporter.ts";
-import type { RawCoverageData } from "./coverage/types.ts";
+import { mapCoverageToTypeScript, type MappedCoverageResult } from "./coverage-pipeline/mapper.ts";
+import { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
+import {
+	checkThresholds,
+	generateReports,
+	printCoverageHeader,
+} from "./coverage-pipeline/reporter.ts";
+import type { RawCoverageData } from "./coverage-pipeline/types.ts";
 import { type ExecuteResult, formatExecuteOutput, loadCoverageManifest } from "./executor.ts";
 import { formatAgentMultiProject } from "./formatters/agent.ts";
 import {

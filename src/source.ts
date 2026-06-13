@@ -8,4 +8,4 @@
 // `dist` `.d.ts` via the `./artifacts` subpath export, not from source, so its
 // `.luau` graph never enters a consumer's typecheck.
 export * from "./config/schema.ts";
-export * from "./coverage/artifacts.ts";
+export * from "./coverage-pipeline/artifacts.ts";

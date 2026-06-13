@@ -57,7 +57,9 @@ export function filterCoverageUniverse(
 			const relativePath = path.isAbsolute(filePath)
 				? normalizeWindowsPath(path.relative(cwd, filePath))
 				: filePath;
-			return isIncluded(relativePath) && !isExcluded(relativePath) && !isIgnored(relativePath);
+			return (
+				isIncluded(relativePath) && !isExcluded(relativePath) && !isIgnored(relativePath)
+			);
 		}),
 	);
 

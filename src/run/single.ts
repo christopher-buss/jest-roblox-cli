@@ -7,8 +7,12 @@ import { applyExcludes } from "../config/apply-excludes.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import type { CoverageArtifacts } from "../coverage/build-manifest.ts";
-import { prepareCoverage, resolveLuauRoots, toCoverageArtifacts } from "../coverage/prepare.ts";
+import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
+import {
+	prepareCoverage,
+	resolveLuauRoots,
+	toCoverageArtifacts,
+} from "../coverage-pipeline/prepare.ts";
 import { type ExecuteResult, runProjects } from "../executor.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";

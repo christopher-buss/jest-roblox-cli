@@ -191,8 +191,14 @@ describe(applyAttribution, () => {
 		});
 
 		expect(result.tests).toStrictEqual([
-			{ testCaseId: "adds", testFilePath: "out/m.spec.luau", testFileSourceHash: "h", testId: "t1" },
+			{
+				testCaseId: "adds",
+				testFilePath: "out/m.spec.luau",
+				testFileSourceHash: "h",
+				testId: "t1",
+			},
 		]);
+
 		expect(result.files["out/m.luau"]!.coveringTestIds).toStrictEqual({
 			"1": ["t1"],
 			"2": ["t1", "t2"],
@@ -219,13 +225,23 @@ describe(mergeAttribution, () => {
 			{
 				coveringTestIds: { "out/m.luau": { "1": ["a"] } },
 				tests: [
-					{ testCaseId: "a", testFilePath: "out/a.spec.luau", testFileSourceHash: "h", testId: "a" },
+					{
+						testCaseId: "a",
+						testFilePath: "out/a.spec.luau",
+						testFileSourceHash: "h",
+						testId: "a",
+					},
 				],
 			},
 			{
 				coveringTestIds: { "out/m.luau": { "1": ["b"], "2": ["c"] } },
 				tests: [
-					{ testCaseId: "b", testFilePath: "out/b.spec.luau", testFileSourceHash: "h", testId: "b" },
+					{
+						testCaseId: "b",
+						testFilePath: "out/b.spec.luau",
+						testFileSourceHash: "h",
+						testId: "b",
+					},
 				],
 			},
 		);
@@ -233,8 +249,18 @@ describe(mergeAttribution, () => {
 		expect(merged).toStrictEqual({
 			coveringTestIds: { "out/m.luau": { "1": ["a", "b"], "2": ["c"] } },
 			tests: [
-				{ testCaseId: "a", testFilePath: "out/a.spec.luau", testFileSourceHash: "h", testId: "a" },
-				{ testCaseId: "b", testFilePath: "out/b.spec.luau", testFileSourceHash: "h", testId: "b" },
+				{
+					testCaseId: "a",
+					testFilePath: "out/a.spec.luau",
+					testFileSourceHash: "h",
+					testId: "a",
+				},
+				{
+					testCaseId: "b",
+					testFilePath: "out/b.spec.luau",
+					testFileSourceHash: "h",
+					testId: "b",
+				},
 			],
 		});
 	});

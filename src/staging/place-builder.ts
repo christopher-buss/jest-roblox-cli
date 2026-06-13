@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import type { BuildManifestArtifact } from "../coverage/build-manifest.ts";
+import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import { hashFile } from "../utils/hash.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
 import type { PackageDescriptor } from "./synthesizer.ts";

@@ -30,11 +30,13 @@ const INSTRUMENTABLE_STATEMENT_TAGS: ReadonlySet<string> = new Set([
 	"while",
 ]);
 
+/** @public */
 export interface StatementInfo {
 	index: number;
 	location: LuauSpan;
 }
 
+/** @public */
 export interface FunctionInfo {
 	name: string;
 	bodyFirstColumn: number;
@@ -43,18 +45,21 @@ export interface FunctionInfo {
 	location: LuauSpan;
 }
 
+/** @public */
 export interface BranchArmInfo {
 	bodyFirstColumn: number;
 	bodyFirstLine: number;
 	location: LuauSpan;
 }
 
+/** @public */
 export interface BranchInfo {
 	arms: Array<BranchArmInfo>;
 	branchType: string;
 	index: number;
 }
 
+/** @public */
 export interface ImplicitElseProbe {
 	armIndex: number;
 	branchIndex: number;
@@ -62,6 +67,7 @@ export interface ImplicitElseProbe {
 	endLine: number;
 }
 
+/** @public */
 export interface ExprIfProbe {
 	armIndex: number;
 	branchIndex: number;

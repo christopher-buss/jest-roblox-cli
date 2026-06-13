@@ -6,8 +6,12 @@ import type { MockInstance } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
-import { CoverageMapMalformedError, mapCoverageToTypeScript } from "./coverage/mapper.ts";
-import { checkThresholds, generateReports, printCoverageHeader } from "./coverage/reporter.ts";
+import { CoverageMapMalformedError, mapCoverageToTypeScript } from "./coverage-pipeline/mapper.ts";
+import {
+	checkThresholds,
+	generateReports,
+	printCoverageHeader,
+} from "./coverage-pipeline/reporter.ts";
 import { type ExecuteResult, formatExecuteOutput, loadCoverageManifest } from "./executor.ts";
 import { formatAgentMultiProject } from "./formatters/agent.ts";
 import {
@@ -40,8 +44,8 @@ vi.mock(import("node:fs"), async () => {
 });
 
 vi.mock(import("./executor"));
-vi.mock(import("./coverage/mapper"));
-vi.mock(import("./coverage/reporter"));
+vi.mock(import("./coverage-pipeline/mapper"));
+vi.mock(import("./coverage-pipeline/reporter"));
 vi.mock(import("./formatters/formatter"));
 vi.mock(import("./formatters/agent"));
 vi.mock(import("./formatters/github-actions"));

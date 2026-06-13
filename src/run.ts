@@ -1,7 +1,7 @@
 import { mergeCliWithConfig } from "./config/merge.ts";
 import type { CliOptions, ProjectEntry, ResolvedConfig } from "./config/schema.ts";
-import { emitBuildManifest } from "./coverage/build-manifest.ts";
-import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage/prepare.ts";
+import { emitBuildManifest } from "./coverage-pipeline/build-manifest.ts";
+import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
 import { runMultiProject } from "./run/multi.ts";
 import { runSingleProject } from "./run/single.ts";
 import type { MultiRunResult, RunResult, SingleRunResult } from "./run/types.ts";

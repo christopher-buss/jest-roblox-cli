@@ -6,7 +6,6 @@ export default isentinel(
 		ignores: [
 			"**/__fixtures__/**/*",
 			"**/fixtures/**/*",
-			"!./src/coverage",
 			"**/out-tsc/**/*",
 			"docs/**/*",
 			".standalone/**/*",

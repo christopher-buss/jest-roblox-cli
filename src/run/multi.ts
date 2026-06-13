@@ -24,13 +24,13 @@ import {
 	STUB_FILENAME,
 	syncStubsToShadowDirectory,
 } from "../config/stubs.ts";
-import type { AttributionResult } from "../coverage/attribution.ts";
-import { mergeAttribution } from "../coverage/attribution.ts";
-import type { CoverageArtifacts } from "../coverage/build-manifest.ts";
-import { deriveCoverageFromIncludes } from "../coverage/derive-coverage-from.ts";
-import { mergeRawCoverage } from "../coverage/merge-raw-coverage.ts";
-import { prepareCoverage, toCoverageArtifacts } from "../coverage/prepare.ts";
-import type { RawCoverageData } from "../coverage/types.ts";
+import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
+import { mergeAttribution } from "../coverage-pipeline/attribution.ts";
+import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
+import { deriveCoverageFromIncludes } from "../coverage-pipeline/derive-coverage-from.ts";
+import { mergeRawCoverage } from "../coverage-pipeline/merge-raw-coverage.ts";
+import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
+import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { runProjects } from "../executor.ts";
 import { combineSourceMappers, type SourceMapper } from "../source-mapper/index.ts";
 import { buildPlace } from "../staging/place-builder.ts";

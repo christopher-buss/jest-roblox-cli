@@ -10,8 +10,8 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { Backend, BackendOptions, BackendResult } from "./backends/interface.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
-import { MANIFEST_VERSION } from "./coverage/manifest.ts";
-import type { PerTestCoverageEntry, RawCoverageData } from "./coverage/types.ts";
+import { MANIFEST_VERSION } from "./coverage-pipeline/manifest.ts";
+import type { PerTestCoverageEntry, RawCoverageData } from "./coverage-pipeline/types.ts";
 import {
 	type ExecuteResult,
 	isLuauProject,

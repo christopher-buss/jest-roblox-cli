@@ -18,12 +18,12 @@ import type {
 import { applySnapshotFormatDefaults } from "./config/loader.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
 import { type TsconfigCompilerOptions, tsconfigShapeSchema } from "./config/tsconfig-schema.ts";
-import type { AttributionResult } from "./coverage/attribution.ts";
-import { harvestAttribution } from "./coverage/attribution.ts";
-import type { CoverageManifest } from "./coverage/manifest.ts";
-import { readManifest } from "./coverage/manifest.ts";
-import { resolveTestFileHash } from "./coverage/test-file-hash.ts";
-import type { RawCoverageData } from "./coverage/types.ts";
+import type { AttributionResult } from "./coverage-pipeline/attribution.ts";
+import { harvestAttribution } from "./coverage-pipeline/attribution.ts";
+import type { CoverageManifest } from "./coverage-pipeline/manifest.ts";
+import { readManifest } from "./coverage-pipeline/manifest.ts";
+import { resolveTestFileHash } from "./coverage-pipeline/test-file-hash.ts";
+import type { RawCoverageData } from "./coverage-pipeline/types.ts";
 import { formatAgent } from "./formatters/agent.ts";
 import { formatResult } from "./formatters/formatter.ts";
 import { formatJson } from "./formatters/json.ts";

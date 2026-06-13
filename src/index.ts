@@ -36,7 +36,7 @@ export {
 // Artifact contract (BuildManifest + CoverageManifest schemas, validating
 // readers, file-hash helper). Re-exported from a clean barrel shared with the
 // `source`-condition entry.
-export * from "./coverage/artifacts.ts";
+export * from "./coverage-pipeline/artifacts.ts";
 export { formatExecuteOutput, runProjects } from "./executor.ts";
 export type {
 	ExecuteResult,

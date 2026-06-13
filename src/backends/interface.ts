@@ -1,5 +1,5 @@
 import type { ResolvedConfig } from "../config/schema.ts";
-import type { PerTestCoverageEntry, RawCoverageData } from "../coverage/types.ts";
+import type { PerTestCoverageEntry, RawCoverageData } from "../coverage-pipeline/types.ts";
 import type {
 	StreamingResultEntry,
 	StreamingResultReader,

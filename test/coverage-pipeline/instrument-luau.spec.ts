@@ -1,42 +1,44 @@
+import type { AstStatBlock } from "@isentinel/luau-ast";
+
 import { type } from "arktype";
-import assert from "node:assert";
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
-import type { AstStatBlock } from "@isentinel/luau-ast";
-import { collectCoverage } from "../../src/coverage/coverage-collector.ts";
-import { buildCoverageMap } from "../../src/coverage/coverage-map-builder.ts";
-import { insertProbes } from "../../src/coverage/probe-inserter.ts";
+import { collectCoverage } from "../../src/coverage-pipeline/coverage-collector.ts";
+import { buildCoverageMap } from "../../src/coverage-pipeline/coverage-map-builder.ts";
+import { insertProbes } from "../../src/coverage-pipeline/probe-inserter.ts";
 
 const PARSE_SCRIPT = path.resolve(import.meta.dirname, "../../src/luau/parse-ast.luau");
-const FIXTURES_DIR = path.resolve(import.meta.dirname, "../fixtures/coverage");
+const FIXTURES_DIR = path.resolve(import.meta.dirname, "../fixtures/coverage-pipeline");
 
 // Cache the AST map from a single lute call for all fixtures
 let cachedAstMap: Record<string, unknown> | undefined;
-let cachedAstOutputDirectory: string | undefined;
 
 function getAstMap(): Record<string, unknown> {
 	if (cachedAstMap !== undefined) {
 		return cachedAstMap;
 	}
 
-	cachedAstOutputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-ast-"));
+	const astOutputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-ast-"));
 
 	const fileListJson = cp.execFileSync(
 		"lute",
-		["run", PARSE_SCRIPT, "--", FIXTURES_DIR, cachedAstOutputDirectory],
-		{ encoding: "utf-8", timeout: 10_000 },
+		["run", PARSE_SCRIPT, "--", FIXTURES_DIR, astOutputDirectory],
+		{ encoding: "utf-8", timeout: 10_000, windowsHide: true },
 	);
 
 	const fileList = type("string[]").assert(JSON.parse(fileListJson));
 	const astMap: Record<string, unknown> = {};
 	for (const relativePath of fileList) {
-		const astJsonPath = path.join(cachedAstOutputDirectory, `${relativePath}.json`);
+		const astJsonPath = path.join(astOutputDirectory, `${relativePath}.json`);
 		astMap[relativePath] = JSON.parse(fs.readFileSync(astJsonPath, "utf-8"));
 	}
+
+	// The parsed AST is now wholly in memory; the scratch dir can go.
+	fs.rmSync(astOutputDirectory, { force: true, recursive: true });
 
 	cachedAstMap = astMap;
 	return cachedAstMap;
@@ -82,6 +84,7 @@ function validateLuauSource(source: string): string {
 	const output = cp.execFileSync("lute", ["run", checkFile], {
 		encoding: "utf-8",
 		timeout: 10_000,
+		windowsHide: true,
 	});
 
 	fs.rmSync(temporaryDirectory, { force: true, recursive: true });
@@ -116,7 +119,10 @@ describe("instrumentation pipeline (integration)", () => {
 		it("should produce the expected instrumented source and cov-map", () => {
 			expect.assertions(2);
 
-			const { covMap, instrumentedSource } = instrumentFixture("if-only.luau", "if-only.luau");
+			const { covMap, instrumentedSource } = instrumentFixture(
+				"if-only.luau",
+				"if-only.luau",
+			);
 
 			expect(instrumentedSource).toMatchSnapshot("instrumented source");
 			expect(covMap).toMatchSnapshot("cov-map");
@@ -237,7 +243,10 @@ describe("instrumentation pipeline (integration)", () => {
 		it("should produce the expected instrumented source and cov-map", () => {
 			expect.assertions(2);
 
-			const { covMap, instrumentedSource } = instrumentFixture("if-else.luau", "if-else.luau");
+			const { covMap, instrumentedSource } = instrumentFixture(
+				"if-else.luau",
+				"if-else.luau",
+			);
 
 			expect(instrumentedSource).toMatchSnapshot("instrumented source");
 			expect(covMap).toMatchSnapshot("cov-map");
@@ -315,7 +324,10 @@ describe("instrumentation pipeline (integration)", () => {
 		it("should produce the expected instrumented source and cov-map", () => {
 			expect.assertions(2);
 
-			const { covMap, instrumentedSource } = instrumentFixture("expr-if.luau", "expr-if.luau");
+			const { covMap, instrumentedSource } = instrumentFixture(
+				"expr-if.luau",
+				"expr-if.luau",
+			);
 
 			expect(instrumentedSource).toMatchSnapshot("instrumented source");
 			expect(covMap).toMatchSnapshot("cov-map");

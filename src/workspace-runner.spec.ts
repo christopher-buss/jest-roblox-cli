@@ -9,8 +9,8 @@ import type { Backend, BackendOptions, BackendResult } from "./backends/interfac
 import { loadConfig } from "./config/loader.ts";
 import type { CliOptions, WorkspaceRunOptions } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
-import { MANIFEST_VERSION } from "./coverage/manifest.ts";
-import type { WorkspacePackageCoverage } from "./coverage/workspace-prepare.ts";
+import { MANIFEST_VERSION } from "./coverage-pipeline/manifest.ts";
+import type { WorkspacePackageCoverage } from "./coverage-pipeline/workspace-prepare.ts";
 import { prepareWorkStealingQueue } from "./memory-store/work-stealing.ts";
 import { buildPlace } from "./staging/place-builder.ts";
 import { createTimingCollector } from "./timing/orchestration-collector.ts";
@@ -43,7 +43,7 @@ vi.mock(import("./config/loader.ts"), async (importOriginal) => {
 // Tests grab RojoResolver via a (cached) dynamic import and spy on fromPath, so
 // the real tree-walking helpers stay real while the filesystem walk is stubbed.
 
-vi.mock(import("./coverage/workspace-prepare.ts"));
+vi.mock(import("./coverage-pipeline/workspace-prepare.ts"));
 
 // The host-side Type Test pass spawns tsgo; mock the runner so the suite drives
 // attribution off fixture output rather than a real compile. The real
@@ -1654,7 +1654,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
@@ -1720,7 +1721,8 @@ describe(runWorkspace, () => {
 				},
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
@@ -1794,7 +1796,8 @@ describe(runWorkspace, () => {
 				},
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
@@ -1851,7 +1854,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
@@ -1905,7 +1909,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [],
@@ -1956,7 +1961,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			const manifest = {
 				buildId: "test-build-id",
 				files: {},
@@ -2021,7 +2027,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
 
 			const { backend } = createStubBackend([
@@ -2058,7 +2065,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
@@ -2094,7 +2102,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
 
 			const { backend } = createStubBackend([
@@ -2136,7 +2145,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } = await import("./coverage/workspace-prepare.ts");
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
 
 			const { backend } = createStubBackend([
@@ -2176,7 +2186,7 @@ describe(runWorkspace, () => {
 
 			const entry = coverageEntry("@halcyon/foo");
 			const { emitWorkspaceBuildManifests, prepareWorkspaceCoverage } =
-				await import("./coverage/workspace-prepare.ts");
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([entry]);
 			const place = { hash: "place-hash", path: "synthesized.rbxl" };
 			vi.mocked(buildPlace).mockReturnValue(place);
@@ -2214,7 +2224,7 @@ describe(runWorkspace, () => {
 			});
 
 			const { emitWorkspaceBuildManifests, prepareWorkspaceCoverage } =
-				await import("./coverage/workspace-prepare.ts");
+				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([coverageEntry("@halcyon/foo")]);
 			vi.mocked(buildPlace).mockImplementationOnce(() => {
 				throw new Error("rojo boom");
@@ -2254,7 +2264,8 @@ describe(runWorkspace, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 			});
 
-			const { emitWorkspaceBuildManifests } = await import("./coverage/workspace-prepare.ts");
+			const { emitWorkspaceBuildManifests } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
 
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },

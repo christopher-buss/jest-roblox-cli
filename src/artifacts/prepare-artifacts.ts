@@ -3,17 +3,20 @@ import * as path from "node:path";
 import { mergeCliWithConfig } from "../config/merge.ts";
 import { resolveAllProjects } from "../config/projects.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
-import type { AttributionResult } from "../coverage/attribution.ts";
-import { applyAttribution } from "../coverage/attribution.ts";
-import type { BuildManifestArtifact, BuildManifestProject } from "../coverage/build-manifest.ts";
-import { emitBuildManifest } from "../coverage/build-manifest.ts";
-import { readManifest, writeManifest } from "../coverage/manifest.ts";
+import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
+import { applyAttribution } from "../coverage-pipeline/attribution.ts";
+import type {
+	BuildManifestArtifact,
+	BuildManifestProject,
+} from "../coverage-pipeline/build-manifest.ts";
+import { emitBuildManifest } from "../coverage-pipeline/build-manifest.ts";
+import { readManifest, writeManifest } from "../coverage-pipeline/manifest.ts";
 import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
 	findRojoProject,
-} from "../coverage/prepare.ts";
-import type { RawCoverageData } from "../coverage/types.ts";
+} from "../coverage-pipeline/prepare.ts";
+import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { getRawProjects, runSingleOrMulti } from "../run.ts";
 import { collectStubMounts, loadRojoTree } from "../run/multi.ts";
 import type { MultiRunResult, SingleRunResult } from "../run/types.ts";

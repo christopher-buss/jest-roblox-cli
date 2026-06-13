@@ -120,7 +120,8 @@ export function prepareWorkspaceCoverage(
 				descriptor.coveragePathIgnorePatterns !== undefined
 					? createIgnoreMatcher(descriptor.coveragePathIgnorePatterns)
 					: defaultMatcher,
-			patterns: descriptor.coveragePathIgnorePatterns ?? DEFAULT_CONFIG.coveragePathIgnorePatterns,
+			patterns:
+				descriptor.coveragePathIgnorePatterns ?? DEFAULT_CONFIG.coveragePathIgnorePatterns,
 		};
 		return prepareForPackage(descriptor, workspaceRoot, ignore, timing);
 	});

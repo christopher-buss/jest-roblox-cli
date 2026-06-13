@@ -23,8 +23,8 @@ import {
 	hasUserAuthoredConfig,
 	syncStubsToShadowDirectory,
 } from "../config/stubs.ts";
-import { MANIFEST_VERSION } from "../coverage/manifest.ts";
-import { prepareCoverage, toCoverageArtifacts } from "../coverage/prepare.ts";
+import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
+import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import { type ExecuteResult, runProjects } from "../executor.ts";
 import { synthesize } from "../staging/synthesizer.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
@@ -44,7 +44,7 @@ vi.mock(import("../config/stubs"));
 vi.mock(import("../config/filter-projects-by-files"));
 vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("../executor"));
-vi.mock(import("../coverage/prepare"));
+vi.mock(import("../coverage-pipeline/prepare"));
 vi.mock(import("../typecheck/runner"));
 vi.mock(import("../staging/synthesizer"));
 

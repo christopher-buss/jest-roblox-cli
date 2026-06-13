@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import assert from "node:assert";
 
-import type { PerTestCoverageEntry, RawCoverageData } from "../coverage/types.ts";
+import type { PerTestCoverageEntry, RawCoverageData } from "../coverage-pipeline/types.ts";
 import type { JestResult, SnapshotSummary } from "../types/jest-result.ts";
 
 export type SnapshotWrites = Record<string, string>;

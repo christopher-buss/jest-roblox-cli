@@ -24,7 +24,11 @@ function writeProject(tree: unknown): void {
 }
 
 function hashOf(luauRoots: Array<string> = []): string {
-	return computeRojoInputsHash({ luauRoots, rojoProjectPath: PROJECT, rootDirectory: "/project" });
+	return computeRojoInputsHash({
+		luauRoots,
+		rojoProjectPath: PROJECT,
+		rootDirectory: "/project",
+	});
 }
 
 describe(computeRojoInputsHash, () => {

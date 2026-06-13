@@ -8,7 +8,7 @@ import type { Backend, BackendOptions, BackendResult } from "../backends/interfa
 import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/open-cloud.ts";
 import { loadRawConfig } from "../config/loader.ts";
 import type { CliOptions } from "../config/schema.ts";
-import { MANIFEST_VERSION } from "../coverage/manifest.ts";
+import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import type { ExecuteResult } from "../executor.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { WorkspaceProjectResult } from "../workspace-runner.ts";
@@ -27,7 +27,7 @@ vi.mock(import("../workspace/package-resolver.ts"));
 vi.mock(import("../workspace/affected.ts"));
 vi.mock(import("../backends/open-cloud.ts"));
 vi.mock(import("../config/loader.ts"));
-vi.mock(import("../coverage/workspace-aggregate.ts"));
+vi.mock(import("../coverage-pipeline/workspace-aggregate.ts"));
 vi.mock(import("@isentinel/roblox-runner"), async (importOriginal) => {
 	const actual = await importOriginal();
 	return {
@@ -645,7 +645,7 @@ describe(runWorkspaceMode, () => {
 			]);
 
 			const { aggregateWorkspaceCoverage } =
-				await import("../coverage/workspace-aggregate.ts");
+				await import("../coverage-pipeline/workspace-aggregate.ts");
 			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
 				files: {
 					"foo.ts": {
@@ -722,7 +722,7 @@ describe(runWorkspaceMode, () => {
 			]);
 
 			const { aggregateWorkspaceCoverage } =
-				await import("../coverage/workspace-aggregate.ts");
+				await import("../coverage-pipeline/workspace-aggregate.ts");
 			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({ files: {} });
 
 			await runWorkspaceMode(
@@ -765,7 +765,7 @@ describe(runWorkspaceMode, () => {
 			// so the formatter's "coverage was empty" warning stays
 			// reachable.
 			const { aggregateWorkspaceCoverage } =
-				await import("../coverage/workspace-aggregate.ts");
+				await import("../coverage-pipeline/workspace-aggregate.ts");
 			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({ files: {} });
 
 			const result = await runWorkspaceMode(
@@ -788,7 +788,7 @@ describe(runWorkspaceMode, () => {
 			]);
 
 			const { aggregateWorkspaceCoverage } =
-				await import("../coverage/workspace-aggregate.ts");
+				await import("../coverage-pipeline/workspace-aggregate.ts");
 
 			const result = await runWorkspaceMode(
 				makeCli({ packages: "@halcyon/foo", workspace: true }),
@@ -828,7 +828,7 @@ describe(runWorkspaceMode, () => {
 			]);
 
 			const { aggregateWorkspaceCoverage } =
-				await import("../coverage/workspace-aggregate.ts");
+				await import("../coverage-pipeline/workspace-aggregate.ts");
 			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
 				files: {
 					"foo.ts": {

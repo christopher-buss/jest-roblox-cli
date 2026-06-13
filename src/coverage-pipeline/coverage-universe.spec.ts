@@ -34,9 +34,12 @@ describe(filterCoverageUniverse, () => {
 	it("should drop a file matching an ignore pattern", () => {
 		expect.assertions(1);
 
-		const filtered = filterCoverageUniverse(resultFor("src/foo/index.ts", "src/foo/player.ts"), {
-			ignore: ["**/index.ts"],
-		});
+		const filtered = filterCoverageUniverse(
+			resultFor("src/foo/index.ts", "src/foo/player.ts"),
+			{
+				ignore: ["**/index.ts"],
+			},
+		);
 
 		expect(keys(filtered)).toStrictEqual(["src/foo/player.ts"]);
 	});
@@ -76,9 +79,12 @@ describe(filterCoverageUniverse, () => {
 	it("should match slash-free include globs by basename", () => {
 		expect.assertions(1);
 
-		const filtered = filterCoverageUniverse(resultFor("src/foo/player.ts", "src/foo/enemy.ts"), {
-			include: ["player.ts"],
-		});
+		const filtered = filterCoverageUniverse(
+			resultFor("src/foo/player.ts", "src/foo/enemy.ts"),
+			{
+				include: ["player.ts"],
+			},
+		);
 
 		expect(keys(filtered)).toStrictEqual(["src/foo/player.ts"]);
 	});
@@ -107,10 +113,13 @@ describe(filterCoverageUniverse, () => {
 	it("should drop a file that is included but also ignored", () => {
 		expect.assertions(1);
 
-		const filtered = filterCoverageUniverse(resultFor("src/foo/index.ts", "src/foo/player.ts"), {
-			ignore: ["**/index.ts"],
-			include: ["src/**/*.ts"],
-		});
+		const filtered = filterCoverageUniverse(
+			resultFor("src/foo/index.ts", "src/foo/player.ts"),
+			{
+				ignore: ["**/index.ts"],
+				include: ["src/**/*.ts"],
+			},
+		);
 
 		expect(keys(filtered)).toStrictEqual(["src/foo/player.ts"]);
 	});

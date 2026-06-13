@@ -22,7 +22,9 @@ export function harvestAttribution(
 	for (const entry of entries) {
 		// A test that covered nothing new (e.g. a pure assertion against already-
 		// exercised state) carries no attribution, so it is not recorded.
-		const coveredAnything = Object.values(entry.delta).some((fileDelta) => fileDelta.s.length > 0);
+		const coveredAnything = Object.values(entry.delta).some(
+			(fileDelta) => fileDelta.s.length > 0,
+		);
 		if (!coveredAnything) {
 			continue;
 		}

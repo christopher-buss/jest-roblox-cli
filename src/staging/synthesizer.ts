@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { ConfigError } from "../config/errors.ts";
-import { redirectPathToShadow } from "../coverage/redirect-path.ts";
+import { redirectPathToShadow } from "../coverage-pipeline/redirect-path.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 

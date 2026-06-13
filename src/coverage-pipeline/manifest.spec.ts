@@ -303,7 +303,9 @@ describe(readManifest, () => {
 
 		const malformed = {
 			...exampleManifest(),
-			tests: [{ testCaseId: "math > adds", testFilePath: "out/math.spec.luau", testId: "t1" }],
+			tests: [
+				{ testCaseId: "math > adds", testFilePath: "out/math.spec.luau", testId: "t1" },
+			],
 		};
 		vol.mkdirSync("/coverage", { recursive: true });
 		vol.writeFileSync("/coverage/manifest.json", JSON.stringify(malformed));

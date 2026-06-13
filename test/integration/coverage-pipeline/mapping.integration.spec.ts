@@ -3,11 +3,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { INSTRUMENTER_VERSION, instrumentRoot } from "../../../src/coverage/instrumenter.ts";
-import type { CoverageManifest, InstrumentedFileRecord } from "../../../src/coverage/manifest.ts";
-import { MANIFEST_VERSION } from "../../../src/coverage/manifest.ts";
-import { mapCoverageToTypeScript } from "../../../src/coverage/mapper.ts";
-import type { RawCoverageData } from "../../../src/coverage/types.ts";
+import {
+	INSTRUMENTER_VERSION,
+	instrumentRoot,
+} from "../../../src/coverage-pipeline/instrumenter.ts";
+import type {
+	CoverageManifest,
+	InstrumentedFileRecord,
+} from "../../../src/coverage-pipeline/manifest.ts";
+import { MANIFEST_VERSION } from "../../../src/coverage-pipeline/manifest.ts";
+import { mapCoverageToTypeScript } from "../../../src/coverage-pipeline/mapper.ts";
+import type { RawCoverageData } from "../../../src/coverage-pipeline/types.ts";
 import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.ts";
 import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
@@ -94,8 +100,7 @@ describe("coverage mapping pipeline (roblox-ts)", () => {
 		expect(nonTsPaths).toStrictEqual([]);
 		expect(
 			resultPaths.some(
-				(filePath) =>
-					filePath.endsWith(".luau") && !filePath.endsWith("jest.config.luau"),
+				(filePath) => filePath.endsWith(".luau") && !filePath.endsWith("jest.config.luau"),
 			),
 		).toBeFalse();
 	});

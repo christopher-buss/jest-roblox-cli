@@ -33,12 +33,12 @@ import {
 	hasUserAuthoredConfig,
 	STUB_FILENAME,
 } from "./config/stubs.ts";
-import type { CoverageManifest } from "./coverage/manifest.ts";
+import type { CoverageManifest } from "./coverage-pipeline/manifest.ts";
 import {
 	emitWorkspaceBuildManifests,
 	prepareWorkspaceCoverage,
 	type WorkspacePackageCoverage,
-} from "./coverage/workspace-prepare.ts";
+} from "./coverage-pipeline/workspace-prepare.ts";
 import { type ExecuteResult, runProjects, type RunProjectsOptions } from "./executor.ts";
 import { writeJsonFile } from "./formatters/json.ts";
 import { usesAgentFormatter } from "./formatters/utils.ts";

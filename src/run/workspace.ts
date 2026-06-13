@@ -7,10 +7,10 @@ import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/ope
 import { loadRawConfig } from "../config/loader.ts";
 import type { CliOptions, WorkspaceConfig, WorkspaceRunOptions } from "../config/schema.ts";
 import { buildWorkspaceRunOptions } from "../config/workspace-run-options.ts";
-import type { MappedCoverageResult } from "../coverage/mapper.ts";
-import { mergeRawCoverage } from "../coverage/merge-raw-coverage.ts";
-import type { RawCoverageData } from "../coverage/types.ts";
-import { aggregateWorkspaceCoverage } from "../coverage/workspace-aggregate.ts";
+import type { MappedCoverageResult } from "../coverage-pipeline/mapper.ts";
+import { mergeRawCoverage } from "../coverage-pipeline/merge-raw-coverage.ts";
+import type { RawCoverageData } from "../coverage-pipeline/types.ts";
+import { aggregateWorkspaceCoverage } from "../coverage-pipeline/workspace-aggregate.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
