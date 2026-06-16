@@ -65,6 +65,30 @@ describe(OcaleRunner, () => {
 			expect(http.requests[0]!.request.url).toContain("/places/456/versions");
 		});
 
+		it("should request a Saved version type by default", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: { versionNumber: 1 }, status: 200 });
+
+			const runner = makeRunner(http);
+			await runner.uploadPlace({ placeFilePath: "/work/p.rbxl" });
+
+			expect(http.requests[0]!.request.url).toContain("versionType=Saved");
+		});
+
+		it("should request a Published version type when publish is true", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: { versionNumber: 1 }, status: 200 });
+
+			const runner = makeRunner(http);
+			await runner.uploadPlace({ placeFilePath: "/work/p.rbxl", publish: true });
+
+			expect(http.requests[0]!.request.url).toContain("versionType=Published");
+		});
+
 		it("should send rbxlx format when path extension is .rbxlx", async () => {
 			expect.assertions(1);
 

@@ -101,9 +101,11 @@ export class OcaleRunner implements RemoteRunner {
 			placeId: this.credentials.placeId,
 			universeId: this.credentials.universeId,
 		};
-		const result = await this.places.save(parameters, {
-			retryableTransportCodes: TRANSIENT_TRANSPORT_CODES,
-		});
+		const requestOptions = { retryableTransportCodes: TRANSIENT_TRANSPORT_CODES };
+		const result =
+			options.publish === true
+				? await this.places.publish(parameters, requestOptions)
+				: await this.places.save(parameters, requestOptions);
 		if (!result.success) {
 			throw new Error(`Failed to upload place: ${result.err.message}`, {
 				cause: result.err,

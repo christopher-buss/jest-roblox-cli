@@ -6,6 +6,12 @@ export interface RunnerCredentials {
 
 export interface UploadPlaceOptions {
 	placeFilePath: string;
+	/**
+	 * Publish as the live version instead of a Saved draft. Open Cloud Luau
+	 * Execution boots the live Published version on fresh and recycled servers,
+	 * so a Saved-only upload can be ignored mid-run when a warm server recycles.
+	 */
+	publish?: boolean;
 }
 
 export interface UploadPlaceResult {
