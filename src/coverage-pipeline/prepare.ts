@@ -30,7 +30,7 @@ import type {
 } from "./manifest.ts";
 import { MANIFEST_VERSION, readManifest, writeManifest } from "./manifest.ts";
 import { computeRojoInputsHash } from "./rojo-inputs.ts";
-import { cleanupDeletedFiles, detectDeletedFiles, prepareShadowRoot } from "./shadow-root.ts";
+import { prepareShadowRoot } from "./shadow-root.ts";
 
 const COVERAGE_DIR = ".jest-roblox/coverage";
 const COVERAGE_MANIFEST = "coverage-manifest.json";
@@ -172,7 +172,20 @@ export function prepareCoverage(
 	const manifestPath = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
 	const buildManifestPath = path.join(COVERAGE_DIR, BUILD_MANIFEST_FILE);
 	const previousManifest = loadCoverageManifest(manifestPath);
-	const useIncremental = canUseIncremental(previousManifest, config);
+	let useIncremental = canUseIncremental(previousManifest, config);
+
+	// A dropped luauRoot is invisible to the per-root reconcile — it only walks
+	// the current roots — so the dropped root's instrumented shadow subtree and
+	// its stale manifest entries would survive a reuse. Force a cold rebuild so
+	// the rmSync below wipes them. An *added* root needs no cold rebuild: the
+	// existing roots stay cached and the new one is instrumented normally.
+	if (
+		useIncremental &&
+		previousManifest !== undefined &&
+		hasDroppedLuauRoot(previousManifest.luauRoots, luauRoots)
+	) {
+		useIncremental = false;
+	}
 
 	if (!useIncremental && fs.existsSync(COVERAGE_DIR)) {
 		fs.rmSync(COVERAGE_DIR, { recursive: true });
@@ -202,15 +215,6 @@ export function prepareCoverage(
 			luauRoot: result.luauRoot,
 			shadowDir: normalizeWindowsPath(path.resolve(result.shadowDir)),
 		});
-	}
-
-	if (useIncremental && previousManifest !== undefined) {
-		const deleted = detectDeletedFiles(previousManifest, allFiles);
-		cleanupDeletedFiles(deleted);
-
-		if (deleted.length > 0) {
-			hasChanges = true;
-		}
 	}
 
 	if (beforeBuild !== undefined) {
@@ -511,4 +515,9 @@ function reuseCoverageResult(options: ReuseCoverageOptions): PrepareCoverageResu
 		placeFile: placeFilePath,
 		rebuilt: false,
 	};
+}
+
+function hasDroppedLuauRoot(previous: Array<string>, current: Array<string>): boolean {
+	const currentSet = new Set(current.map(normalizeWindowsPath));
+	return previous.some((root) => !currentSet.has(normalizeWindowsPath(root)));
 }

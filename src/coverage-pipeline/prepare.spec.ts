@@ -1447,6 +1447,124 @@ describe(prepareCoverage, () => {
 				).toBeFalse();
 			});
 
+			it("should remove orphaned non-luau files from the shadow when source is deleted", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				// A meta file a prior cold run copied in, whose source was later
+				// deleted. It is neither instrumented nor a spec/test/snap file,
+				// so only reconciling the shadow against source can drop it.
+				vol.writeFileSync(
+					".jest-roblox/coverage/out-tsc/test/init.meta.json",
+					'{"className":"Folder"}',
+				);
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(
+					vol.existsSync(".jest-roblox/coverage/out-tsc/test/init.meta.json"),
+				).toBeFalse();
+			});
+
+			it("should keep and sync non-luau files whose source still exists", async () => {
+				expect.assertions(2);
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/init.luau": "local x = 1",
+						"out-tsc/test/init.meta.json": '{"className":"Folder"}',
+					},
+				});
+
+				const result = prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(
+					vol.readFileSync(".jest-roblox/coverage/out-tsc/test/init.meta.json", "utf-8"),
+				).toBe('{"className":"Folder"}');
+				expect(
+					result.manifest.nonInstrumentedFiles["out-tsc/test/init.meta.json"],
+				).toBeDefined();
+			});
+
+			it("should remove an orphaned cov-map sidecar when its base source is gone", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/gone.cov-map.json", "{}");
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(
+					vol.existsSync(".jest-roblox/coverage/out-tsc/test/gone.cov-map.json"),
+				).toBeFalse();
+			});
+
+			it("should keep a cov-map sidecar whose base source still exists", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				// init.luau source is seeded by default; its sidecar must
+				// survive.
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/init.cov-map.json", "{}");
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(
+					vol.existsSync(".jest-roblox/coverage/out-tsc/test/init.cov-map.json"),
+				).toBeTrue();
+			});
+
+			it("should force a rebuild when an orphaned non-luau file is removed", async () => {
+				expect.assertions(1);
+
+				const { buildWithRojo, instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/init.meta.json", "{}");
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(buildWithRojo).toHaveBeenCalledWith(expect.any(String), expect.any(String));
+			});
+
+			it("should force a cold rebuild when a luauRoot is dropped from the set", async () => {
+				expect.assertions(2);
+
+				const { instrumentRoot } = await setupMocks();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				// The prior run also covered a second root, now gone from config.
+				// The per-root reconcile never walks it, so the set-change guard
+				// must cold-rebuild to purge its orphaned shadow subtree.
+				const manifestPath = ".jest-roblox/coverage/coverage-manifest.json";
+				const previous = readCoverageManifestFile(manifestPath);
+				previous.luauRoots = ["out-tsc/test", "out-tsc/extra"];
+				vol.writeFileSync(manifestPath, JSON.stringify(previous));
+				vol.mkdirSync(".jest-roblox/coverage/out-tsc/extra", { recursive: true });
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/extra/stale.luau", "-- stale");
+
+				const result = prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(result.rebuilt).toBeTrue();
+				expect(
+					vol.existsSync(".jest-roblox/coverage/out-tsc/extra/stale.luau"),
+				).toBeFalse();
+			});
+
 			it("should set changed=true when spec file changes (triggers rojo rebuild)", async () => {
 				expect.assertions(1);
 
@@ -1530,8 +1648,8 @@ describe(prepareCoverage, () => {
 				expect(callArgs.skipFiles).toBeUndefined();
 			});
 
-			it("should handle cleanup when spec shadow files are already missing", async () => {
-				expect.assertions(1);
+			it("should reuse the place when a deleted file's shadow copy is already gone", async () => {
+				expect.assertions(2);
 
 				const specRecord: NonInstrumentedFileRecord = {
 					shadowPath: ".jest-roblox/coverage/out-tsc/test/gone.spec.luau",
@@ -1539,7 +1657,7 @@ describe(prepareCoverage, () => {
 					sourcePath: "out-tsc/test/gone.spec.luau",
 				};
 
-				const { instrumentRoot } = await setupMocks();
+				const { buildWithRojo, instrumentRoot } = await setupMocks();
 				vi.mocked(instrumentRoot).mockReturnValue({});
 
 				seedIncrementalScenario({
@@ -1547,16 +1665,19 @@ describe(prepareCoverage, () => {
 						"out-tsc/test/gone.spec.luau": specRecord,
 					},
 				});
-				// Remove shadow file (simulating prior partial cleanup)
+				// Source and shadow copies are both already gone (prior partial
+				// cleanup). Reconciliation finds nothing to remove, so the place
+				// is reused rather than rebuilt to drop a benign stale record.
 				vol.unlinkSync(".jest-roblox/coverage/out-tsc/test/gone.spec.luau");
 
 				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
-				const result = prepareCoverage(config);
+				prepareCoverage(config);
 
 				expect(
-					result.manifest.nonInstrumentedFiles["out-tsc/test/gone.spec.luau"],
-				).toBeUndefined();
+					vol.existsSync(".jest-roblox/coverage/out-tsc/test/gone.spec.luau"),
+				).toBeFalse();
+				expect(buildWithRojo).not.toHaveBeenCalled();
 			});
 
 			it("should discover spec files in subdirectories", async () => {

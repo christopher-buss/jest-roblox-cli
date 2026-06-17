@@ -69,13 +69,14 @@ export function discoverInstrumentableFiles(luauRoot: string): Set<string> {
 }
 
 /**
- * Populate a shadow dir from one luauRoot: bulk-copy non-instrumented files
- * (cold path), run the instrumenter to overlay instrumented prod files, then
- * sync spec/test/snap files with hash-tracked records so the shadow is a
- * complete mirror that satisfies rojo + testMatch.
+ * Populate a shadow dir from one luauRoot: bulk-copy every file (cold path),
+ * run the instrumenter to overlay instrumented prod files, then sync the files
+ * the instrumenter never emits (spec/test/snap plus non-luau rojo files) with
+ * hash-tracked records so the shadow is a complete mirror that satisfies rojo +
+ * testMatch.
  *
- * On a warm run (cache hit) only changed files are re-instrumented and
- * stale shadow entries are pruned.
+ * On a warm run (cache hit) only changed files are re-instrumented, and the
+ * shadow is reconciled against source so files deleted upstream don't linger.
  */
 export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRootResult {
 	const { luauRoot, previousManifest, shadowDir, useIncremental } = options;
@@ -135,6 +136,10 @@ export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRoot
 		changed = true;
 	}
 
+	if (useIncremental && reconcileShadowToSource(luauRoot, shadowDir)) {
+		changed = true;
+	}
+
 	return {
 		changed,
 		files: allFiles,
@@ -144,34 +149,22 @@ export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRoot
 	};
 }
 
-export function detectDeletedFiles(
-	previousManifest: CoverageManifest,
-	currentFiles: Record<string, InstrumentedFileRecord>,
-): Array<InstrumentedFileRecord> {
-	const deleted: Array<InstrumentedFileRecord> = [];
-	for (const [fileKey, record] of Object.entries(previousManifest.files)) {
-		if (!(fileKey in currentFiles)) {
-			deleted.push(record);
-		}
+const COV_MAP_SUFFIX = ".cov-map.json";
+
+/**
+ * Does the source file backing a shadow entry still exist? A `.cov-map.json`
+ * sidecar has no direct twin — it is keyed to its base `.luau`/`.lua`.
+ */
+function sourceTwinExists(luauRoot: string, relativePath: string): boolean {
+	if (relativePath.endsWith(COV_MAP_SUFFIX)) {
+		const base = relativePath.slice(0, -COV_MAP_SUFFIX.length);
+		return (
+			fs.existsSync(path.resolve(luauRoot, `${base}.luau`)) ||
+			fs.existsSync(path.resolve(luauRoot, `${base}.lua`))
+		);
 	}
 
-	return deleted;
-}
-
-export function cleanupDeletedFiles(records: Array<InstrumentedFileRecord>): void {
-	for (const record of records) {
-		try {
-			if (fs.existsSync(record.instrumentedLuauPath)) {
-				fs.unlinkSync(record.instrumentedLuauPath);
-			}
-
-			if (fs.existsSync(record.coverageMapPath)) {
-				fs.unlinkSync(record.coverageMapPath);
-			}
-		} catch {
-			// Best-effort cleanup
-		}
-	}
+	return fs.existsSync(path.resolve(luauRoot, relativePath));
 }
 
 /**
@@ -205,8 +198,61 @@ function walkLuauDirectory(
 	}
 }
 
+/**
+ * Reconcile a warm shadow dir against its source root: unlink every shadow file
+ * whose source no longer exists. This is the warm-run deletion mechanism across
+ * every file category the pipeline manages — instrumented prod `.luau`,
+ * spec/test/snap, and non-luau rojo files (`init.meta.json`, `*.model.json`, …)
+ * alike. Diffing against source (rather than a recorded file set) means a file
+ * category the sync never tracked still gets cleaned up, so a stale
+ * `init.meta.json` can't survive into the rojo build and fail it. It walks with
+ * the same scope as the rest of the pipeline (`walkLuauDirectory` skips
+ * `node_modules`/dot-dirs); vendored content under those dirs is governed by
+ * `rojoInputsHash` instead, which forces a cold rebuild when it changes.
+ * `.cov-map.json` sidecars are instrumenter output with no 1:1 source twin;
+ * they map back to their base `.luau`/`.lua`. Returns whether anything was
+ * removed, so the caller forces a place rebuild.
+ */
+function reconcileShadowToSource(luauRoot: string, shadowDirectory: string): boolean {
+	if (!fs.existsSync(shadowDirectory)) {
+		return false;
+	}
+
+	const posixShadow = normalizeWindowsPath(shadowDirectory);
+	const shadowFiles: Array<string> = [];
+	walkLuauDirectory(posixShadow, posixShadow, () => true, shadowFiles);
+
+	let deleted = false;
+	for (const relativePath of shadowFiles) {
+		if (sourceTwinExists(luauRoot, relativePath)) {
+			continue;
+		}
+
+		try {
+			fs.unlinkSync(path.resolve(shadowDirectory, relativePath));
+			deleted = true;
+		} catch {
+			// Best-effort cleanup
+		}
+	}
+
+	return deleted;
+}
+
 function isInstrumentableFile(name: string): boolean {
 	return (name.endsWith(".luau") || name.endsWith(".lua")) && !isNonInstrumentedFile(name);
+}
+
+/**
+ * Every file the shadow dir must carry verbatim because the instrumenter never
+ * emits it: spec/test/snap `.luau` plus all non-luau rojo files
+ * (`init.meta.json`, `*.model.json`, …). The complement of
+ * `isInstrumentableFile` — prod `.luau` is excluded because `instrumentRoot`
+ * writes its instrumented copy into the shadow. `.cov-map.json` sidecars are
+ * instrumenter output, not source, so they are excluded too.
+ */
+function shouldSyncToShadow(name: string): boolean {
+	return !isInstrumentableFile(name) && !name.endsWith(COV_MAP_SUFFIX);
 }
 
 function carryForwardRecords(
@@ -223,45 +269,12 @@ function carryForwardRecords(
 	}
 }
 
-function discoverNonInstrumentedFiles(
+function discoverShadowSyncFiles(
 	directory: string,
 	relativeTo: string,
 	results: Array<string>,
 ): void {
-	walkLuauDirectory(directory, relativeTo, isNonInstrumentedFile, results);
-}
-
-function pruneStaleNonInstrumented(
-	posixRoot: string,
-	previousNonInstrumented: Record<string, NonInstrumentedFileRecord> | undefined,
-	currentFiles: Record<string, NonInstrumentedFileRecord>,
-): boolean {
-	if (previousNonInstrumented === undefined) {
-		return false;
-	}
-
-	let changed = false;
-	for (const [fileKey, record] of Object.entries(previousNonInstrumented)) {
-		if (!fileKey.startsWith(`${posixRoot}/`)) {
-			continue;
-		}
-
-		if (fileKey in currentFiles) {
-			continue;
-		}
-
-		try {
-			if (fs.existsSync(record.shadowPath)) {
-				fs.unlinkSync(record.shadowPath);
-			}
-		} catch {
-			// Best-effort cleanup
-		}
-
-		changed = true;
-	}
-
-	return changed;
+	walkLuauDirectory(directory, relativeTo, shouldSyncToShadow, results);
 }
 
 function syncNonInstrumentedFiles(
@@ -271,7 +284,7 @@ function syncNonInstrumentedFiles(
 ): SyncResult {
 	const posixRoot = normalizeWindowsPath(luauRoot);
 	const discovered: Array<string> = [];
-	discoverNonInstrumentedFiles(posixRoot, posixRoot, discovered);
+	discoverShadowSyncFiles(posixRoot, posixRoot, discovered);
 
 	const files: Record<string, NonInstrumentedFileRecord> = {};
 	let changed = false;
@@ -302,11 +315,6 @@ function syncNonInstrumentedFiles(
 		files[sourcePath] = { shadowPath, sourceHash: currentHash, sourcePath };
 		changed = true;
 	}
-
-	// `prune(...) || changed` (not `changed || prune(...)`) so the prune side
-	// effect always runs — short-circuit on an already-changed run would leave
-	// stale shadow files behind.
-	changed = pruneStaleNonInstrumented(posixRoot, previousNonInstrumented, files) || changed;
 
 	return { changed, files };
 }
@@ -396,9 +404,12 @@ function buildFullCacheResult(options: FullCacheOptions): ShadowRootResult {
 		shadowDirectory,
 		previousManifest.nonInstrumentedFiles,
 	);
+	// Call reconcile unconditionally (not inside the `||`) so its cleanup side
+	// effect always runs even when the sync already flagged a change.
+	const reconciled = reconcileShadowToSource(luauRoot, shadowDirectory);
 
 	return {
-		changed: syncResult.changed,
+		changed: syncResult.changed || reconciled,
 		files: allFiles,
 		luauRoot,
 		nonInstrumentedFiles: syncResult.files,

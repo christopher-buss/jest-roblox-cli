@@ -19,12 +19,7 @@ import type {
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
 import { MANIFEST_VERSION, readManifest } from "./manifest.ts";
-import {
-	cleanupDeletedFiles,
-	detectDeletedFiles,
-	isNonInstrumentedFile,
-	prepareShadowRoot,
-} from "./shadow-root.ts";
+import { isNonInstrumentedFile, prepareShadowRoot } from "./shadow-root.ts";
 
 const WORKSPACE_COVERAGE_DIR = ".jest-roblox/workspace";
 
@@ -503,11 +498,6 @@ function prepareForPackage(
 		Object.assign(allFiles, result.files);
 		Object.assign(allNonInstrumented, result.nonInstrumentedFiles);
 		coverageRoots.push({ luauRoot: relativeLuauRoot, shadowDir: shadowDirectory });
-	}
-
-	if (useIncremental && previousManifest !== undefined) {
-		const deleted = detectDeletedFiles(previousManifest, allFiles);
-		cleanupDeletedFiles(deleted);
 	}
 
 	const manifest: CoverageManifest = {

@@ -1629,7 +1629,11 @@ describe(prepareWorkspaceCoverage, () => {
 			vol.fromJSON({
 				[path.join(packageShadow, "coverage-manifest.json")]:
 					JSON.stringify(previousManifest),
-				[path.join(packageShadow, "out/preserved.txt")]: "cache-survives",
+				// A sidecar marker: reconciliation keeps it (its base
+				// `init.luau` source exists), but a cold rmSync would wipe it and
+				// cpSync can't restore it (sidecars aren't in source). So its
+				// survival proves the shadow was preserved, not rebuilt.
+				[path.join(packageShadow, "out/init.cov-map.json")]: "{}",
 			});
 			await mockInstrumentRoot();
 
@@ -1644,8 +1648,8 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			// Cache preserved → rmSync did not fire, the marker is still there.
-			expect(vol.existsSync(path.join(packageShadow, "out/preserved.txt"))).toBeTrue();
+			// Cache preserved → rmSync did not fire, the sidecar is still there.
+			expect(vol.existsSync(path.join(packageShadow, "out/init.cov-map.json"))).toBeTrue();
 		});
 
 		it("should skip rojo $path entries that escape the package directory", async () => {
