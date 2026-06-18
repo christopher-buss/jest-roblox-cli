@@ -3,7 +3,7 @@ packages:
 
 minimumReleaseAgeExclude:
   - "@isentinel/eslint-config@5.2.0"
-  - "@bedrock-rbx/ocale@0.1.0-beta.16"
+  - "@bedrock-rbx/ocale@0.1.0-beta.17"
 
 publicHoistPattern:
   - "*@rbxts*"
