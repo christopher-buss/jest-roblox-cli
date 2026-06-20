@@ -870,6 +870,29 @@ describe(printCoverageHeader, () => {
 			stdoutSpy.mockRestore();
 		}
 	});
+
+	it("should render the header without ANSI color in agent mode", () => {
+		expect.assertions(2);
+
+		const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+		printCoverageHeader(true);
+
+		const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+
+		// Snapshot the RAW output (not VT-stripped, unlike the human-mode
+		// header above): plain text has no escape codes, so the snapshot itself
+		// is proof the header renders in black and white.
+		expect(output).toMatchInlineSnapshot(`
+			"
+			 % Coverage report from istanbul
+			"
+		`);
+		// Invariant guard so a blanket snapshot update can't silently
+		// reintroduce color — agent mode emits plain text, ANSI only wastes
+		// tokens.
+		expect(output).toBe(stripVTControlCharacters(output));
+	});
 });
 
 describe(checkThresholds, () => {

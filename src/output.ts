@@ -428,12 +428,13 @@ function processCoverage(
 		return true;
 	}
 
+	const agentMode = usesAgentFormatter(config.formatters, config.verbose);
 	if (!config.silent) {
-		printCoverageHeader();
+		printCoverageHeader(agentMode);
 	}
 
 	generateReports({
-		agentMode: usesAgentFormatter(config.formatters, config.verbose),
+		agentMode,
 		collectCoverageFrom: config.collectCoverageFrom,
 		coverageDirectory: path.resolve(config.rootDir, config.coverageDirectory),
 		coveragePathIgnorePatterns: config.coveragePathIgnorePatterns,

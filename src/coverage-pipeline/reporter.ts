@@ -44,8 +44,10 @@ export interface ThresholdResult {
 type FileCoverageData = istanbulCoverage.FileCoverageData;
 type CoverageMap = ReturnType<typeof istanbulCoverage.createCoverageMap>;
 
-export function printCoverageHeader(): void {
-	const header = ` ${color.blue("%")} ${color.dim("Coverage report from")} ${color.yellow("istanbul")}`;
+export function printCoverageHeader(agentMode = false): void {
+	const header = agentMode
+		? " % Coverage report from istanbul"
+		: ` ${color.blue("%")} ${color.dim("Coverage report from")} ${color.yellow("istanbul")}`;
 	process.stdout.write(`\n${header}\n`);
 }
 
