@@ -275,6 +275,7 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 				ignoreSourceErrors: rootTypecheck.ignoreSourceErrors,
 				rootDir: group.cwd,
 				spawnTimeout: rootTypecheck.spawnTimeout,
+				timeout: rootConfig.timeout,
 				tsconfig: group.tsconfig,
 			});
 		}),

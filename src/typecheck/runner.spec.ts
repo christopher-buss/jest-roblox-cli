@@ -480,10 +480,28 @@ describe(runTypecheck, () => {
 
 	type TsgoCallback = (error: null | TsgoSpawnError, stdout: string, stderr: string) => void;
 
-	// `spawnTsgo` drives `execFile` in callback form. `stubTsgo` lets a test
-	// simulate tsgo finishing (exit 0), exiting non-zero with diagnostics,
-	// failing to spawn, or being killed by the `spawnTimeout`.
-	function stubTsgo(respond: (callback: TsgoCallback) => void): void {
+	// `spawnTsgo` drives `execFile` in callback form and listens once for the
+	// child `spawn` event to clear its launch timer. `stubTsgo` returns a fake
+	// child (`emitSpawn` fires the registered `spawn` listener, `kill` is the spy
+	// `spawnTsgo` calls on a launch timeout) and lets a test simulate tsgo
+	// finishing (exit 0), exiting non-zero with diagnostics, failing to spawn,
+	// or never launching.
+	function stubTsgo(respond: (callback: TsgoCallback) => void): {
+		emitSpawn: () => void;
+		kill: ReturnType<typeof vi.fn<() => void>>;
+	} {
+		let spawnListener: (() => void) | undefined;
+		const kill = vi.fn<() => void>();
+		const child = {
+			kill,
+			once(event: string, listener: () => void) {
+				if (event === "spawn") {
+					spawnListener = listener;
+				}
+
+				return child;
+			},
+		};
 		vi.mocked(childProcess.execFile).mockImplementation(((
 			_file: string,
 			_arguments: ReadonlyArray<string>,
@@ -491,7 +509,9 @@ describe(runTypecheck, () => {
 			callback: TsgoCallback,
 		) => {
 			respond(callback);
+			return child as unknown as childProcess.ChildProcess;
 		}) as unknown as typeof childProcess.execFile);
+		return { emitSpawn: () => spawnListener?.(), kill };
 	}
 
 	function exitWith(code: number): TsgoSpawnError {
@@ -619,7 +639,7 @@ describe(runTypecheck, () => {
 		);
 	});
 
-	it("should bound the tsgo spawn with the default spawnTimeout", async () => {
+	it("should bound the tsgo compile with the default run timeout", async () => {
 		expect.assertions(1);
 
 		stubTsgo((callback) => {
@@ -634,10 +654,10 @@ describe(runTypecheck, () => {
 
 		const options = vi.mocked(childProcess.execFile).mock.calls[0]![2] as { timeout?: number };
 
-		expect(options.timeout).toBe(10_000);
+		expect(options.timeout).toBe(300_000);
 	});
 
-	it("should bound the tsgo spawn with a custom spawnTimeout", async () => {
+	it("should bound the tsgo compile with a custom run timeout", async () => {
 		expect.assertions(1);
 
 		stubTsgo((callback) => {
@@ -648,7 +668,7 @@ describe(runTypecheck, () => {
 		await runTypecheck({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
-			spawnTimeout: 250,
+			timeout: 250,
 		});
 
 		const options = vi.mocked(childProcess.execFile).mock.calls[0]![2] as { timeout?: number };
@@ -656,7 +676,7 @@ describe(runTypecheck, () => {
 		expect(options.timeout).toBe(250);
 	});
 
-	it("should throw when the tsgo spawn exceeds spawnTimeout", async () => {
+	it("should throw when the tsgo compile exceeds the run timeout", async () => {
 		expect.assertions(1);
 
 		stubTsgo((callback) => {
@@ -672,9 +692,63 @@ describe(runTypecheck, () => {
 			runTypecheck({
 				files: ["src/test.spec.ts"],
 				rootDir: "/project",
-				spawnTimeout: 250,
+				timeout: 250,
 			}),
-		).rejects.toThrow(/timed out after 250ms/);
+		).rejects.toThrow(/timed out after 250ms \(timeout\)/);
+	});
+
+	it("should throw and kill tsgo when it does not launch within spawnTimeout", async () => {
+		expect.assertions(3);
+
+		// Capture but never invoke the callback, and never emit `spawn`: the
+		// process is stuck before launch, so only the launch timer can settle
+		// the promise.
+		let captured: TsgoCallback | undefined;
+		const { kill } = stubTsgo((callback) => {
+			captured = callback;
+		});
+		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+
+		await expect(
+			runTypecheck({
+				files: ["src/test.spec.ts"],
+				rootDir: "/project",
+				spawnTimeout: 1,
+			}),
+		).rejects.toThrow(/spawn timed out after 1ms \(spawnTimeout\)/);
+
+		expect(kill).toHaveBeenCalledOnce();
+
+		// The kill's late `killed` callback arrives after the launch timer
+		// already settled the promise — it must be a silent no-op.
+		expect(() => {
+			captured!(Object.assign(new Error("killed"), { killed: true }), "", "");
+		}).not.toThrow();
+	});
+
+	it("should clear the launch timer once tsgo spawns", async () => {
+		expect.assertions(2);
+
+		// Defer the exit callback past the synchronous setup so the launch timer
+		// is armed, then `emitSpawn` exercises the clear-on-spawn path.
+		const { emitSpawn, kill } = stubTsgo((callback) => {
+			queueMicrotask(() => {
+				callback(null, "", "");
+			});
+		});
+		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+
+		const promise = runTypecheck({
+			files: ["src/test.spec.ts"],
+			rootDir: "/project",
+			spawnTimeout: 10_000,
+		});
+		emitSpawn();
+
+		const result = await promise;
+
+		expect(result.success).toBeTrue();
+		expect(kill).not.toHaveBeenCalled();
 	});
 
 	it("should rethrow when the tsgo spawn fails to start", async () => {

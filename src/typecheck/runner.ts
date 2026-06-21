@@ -11,8 +11,20 @@ import { collectTestDefinitions } from "./collect.ts";
 import { parseTscOutput } from "./parse.ts";
 import type { RawErrorsMap, TestDefinition, TscErrorInfo } from "./types.ts";
 
-/** Milliseconds the tsgo spawn may run before it is killed and the pass fails. */
+/**
+ * Milliseconds to wait for tsgo to launch (the child `spawn` event) before the
+ * pass fails. Bounds only process startup, so a slow *compile* never trips it;
+ * the compile itself is governed by {@link TypecheckOptions.timeout}.
+ */
 const DEFAULT_SPAWN_TIMEOUT = 10_000;
+
+/**
+ * Milliseconds the tsgo compile may run before it is killed and the pass
+ * throws. Mirrors the run-level `timeout` default (`config.timeout`); callers
+ * pass the resolved run timeout so a wedged compile dies on the same deadline
+ * as the Roblox run instead of a tight typecheck-only number.
+ */
+const DEFAULT_RUN_TIMEOUT = 300_000;
 
 export interface TypecheckOptions {
 	files: Array<string>;
@@ -24,10 +36,16 @@ export interface TypecheckOptions {
 	ignoreSourceErrors?: boolean;
 	rootDir: string;
 	/**
-	 * Milliseconds the tsgo spawn may run before it is killed and the pass
-	 * throws. Defaults to {@link DEFAULT_SPAWN_TIMEOUT}.
+	 * Milliseconds to wait for the tsgo process to launch before the pass
+	 * throws. The timer is cleared the instant tsgo reports it spawned; it does
+	 * not bound the compile. Defaults to {@link DEFAULT_SPAWN_TIMEOUT}.
 	 */
 	spawnTimeout?: number;
+	/**
+	 * Milliseconds the tsgo *compile* may run before it is killed and the pass
+	 * throws. The run-level `timeout`. Defaults to {@link DEFAULT_RUN_TIMEOUT}.
+	 */
+	timeout?: number;
 	tsconfig?: string;
 }
 
@@ -237,8 +255,10 @@ function resolveTsgoScript(): string {
 
 // Async so the CPU-bound tsgo subprocess overlaps the network-bound Roblox run
 // (the host event loop stays free to drive the Open Cloud upload/poll while
-// tsgo compiles). `spawnTimeout` kills a wedged tsgo so the awaited pass can't
-// hang the run.
+// tsgo compiles). Two distinct guards keep the awaited pass from hanging: a
+// launch timer (`spawnTimeout`, cleared on the child `spawn` event) bounds
+// startup, and `execFile`'s own `timeout` (`options.timeout`, the run-level
+// deadline) bounds the compile.
 async function spawnTsgo(options: TypecheckOptions): Promise<string> {
 	const composite = isCompositeProject(options.rootDir, options.tsconfig);
 	const args: Array<string> = [];
@@ -262,30 +282,59 @@ async function spawnTsgo(options: TypecheckOptions): Promise<string> {
 
 	const tsgoScript = resolveTsgoScript();
 	const spawnTimeout = options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT;
+	const runTimeout = options.timeout ?? DEFAULT_RUN_TIMEOUT;
 
 	return new Promise<string>((resolve, reject) => {
-		execFile(
+		let launchTimer: ReturnType<typeof setTimeout> | undefined;
+		// `finish` settles the promise exactly once, guarding the two kill
+		// sources (launch timer + `execFile` run-timeout) from racing. A holder
+		// object, not a bare `let settled = false`: typescript-eslint's
+		// `no-unnecessary-condition` narrows a bare boolean to literal `false` at
+		// the `!state.settled` arming guard below (the closure that flips it has
+		// not run there) and flags it as always-true; an object property infers
+		// as `boolean`.
+		const state = { settled: false };
+
+		function finish(action: () => void): void {
+			if (state.settled) {
+				return;
+			}
+
+			state.settled = true;
+			if (launchTimer !== undefined) {
+				clearTimeout(launchTimer);
+			}
+
+			action();
+		}
+
+		const child = execFile(
 			process.execPath,
 			[tsgoScript, ...args],
-			{ cwd: options.rootDir, encoding: "utf-8", timeout: spawnTimeout, windowsHide: true },
+			{ cwd: options.rootDir, encoding: "utf-8", timeout: runTimeout, windowsHide: true },
 			(error, stdout, stderr) => {
 				if (error === null) {
-					resolve(stdout);
+					finish(() => {
+						resolve(stdout);
+					});
 					return;
 				}
 
-				// The `spawnTimeout` expiry is the only kill we cause, so
-				// `killed` is timeout-specific here: maxBuffer overflow surfaces
-				// as a distinct `code` (ERR_CHILD_PROCESS_STDIO_MAXBUFFER) with
-				// `killed` unset, and we never call `.kill()` ourselves. Fail
-				// loud rather than let truncated/empty output read as zero type
-				// errors.
+				// `execFile`'s `timeout` (the run-level deadline) is the only
+				// kill it causes, so `killed` is timeout-specific here: maxBuffer
+				// overflow surfaces as a distinct `code`
+				// (ERR_CHILD_PROCESS_STDIO_MAXBUFFER) with `killed` unset. (The
+				// launch-timer kill below settles the promise first, so its
+				// later `killed` callback is a no-op.) Fail loud rather than let
+				// truncated/empty output read as zero type errors.
 				if (error.killed === true) {
-					reject(
-						new Error(
-							`tsgo typecheck timed out after ${String(spawnTimeout)}ms (spawnTimeout)`,
-						),
-					);
+					finish(() => {
+						reject(
+							new Error(
+								`tsgo typecheck timed out after ${String(runTimeout)}ms (timeout)`,
+							),
+						);
+					});
 					return;
 				}
 
@@ -294,12 +343,37 @@ async function spawnTsgo(options: TypecheckOptions): Promise<string> {
 				// process never ran (e.g. ENOENT) — rethrow so a real spawn
 				// failure isn't masked as a clean pass.
 				if (typeof error.code === "number") {
-					resolve(stdout !== "" ? stdout : stderr);
+					finish(() => {
+						resolve(stdout !== "" ? stdout : stderr);
+					});
 					return;
 				}
 
-				reject(new Error(error.message, { cause: error }));
+				finish(() => {
+					reject(new Error(error.message, { cause: error }));
+				});
 			},
 		);
+
+		// Bound only the launch: cleared the instant tsgo reports it spawned, so
+		// a slow compile is governed by `runTimeout` above, not this. `spawn`
+		// fires at most once, so `once` is the right primitive. Arming is skipped
+		// below when the (synchronous-in-test) callback already settled.
+		child.once("spawn", () => {
+			clearTimeout(launchTimer);
+		});
+
+		if (!state.settled) {
+			launchTimer = setTimeout(() => {
+				child.kill();
+				finish(() => {
+					reject(
+						new Error(
+							`tsgo spawn timed out after ${String(spawnTimeout)}ms (spawnTimeout)`,
+						),
+					);
+				});
+			}, spawnTimeout);
+		}
 	});
 }

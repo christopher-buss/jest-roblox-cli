@@ -64,19 +64,25 @@ Type Tests (`*.spec-d.ts`, `*.test-d.ts`) are configured under
 `test: { typecheck: { ... } }`, valid at the root `test:` block and per-project.
 Host-only — never forwarded to the Roblox runtime.
 
-| Field                | Purpose                                                                                                   | Default |
-| -------------------- | --------------------------------------------------------------------------------------------------------- | ------- |
-| `enabled`            | Enable Type Tests (the only gate; setting other fields does not auto-enable)                              | `false` |
-| `only`               | Run only Type Tests, skip Runtime Tests                                                                   | `false` |
-| `include`            | Globs for Type Test files; when unset, derived from the project's runtime `include` (`.spec.`→`.spec-d.`) | derived |
-| `exclude`            | Globs to exclude from Type Test discovery                                                                 | —       |
-| `tsconfig`           | Custom tsconfig for type testing (root-only in projects mode)                                             | —       |
-| `ignoreSourceErrors` | `false`: surface type errors in non-test source files; `true`: report only errors inside Type Test files  | `false` |
-| `spawnTimeout`       | Milliseconds a tsgo spawn may run before it is killed and the run throws (per `(tsconfig, cwd)` group)    | `10000` |
+| Field                | Purpose                                                                                                           | Default |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- | ------- |
+| `enabled`            | Enable Type Tests (the only gate; setting other fields does not auto-enable)                                      | `false` |
+| `only`               | Run only Type Tests, skip Runtime Tests                                                                           | `false` |
+| `include`            | Globs for Type Test files; when unset, derived from the project's runtime `include` (`.spec.`→`.spec-d.`)         | derived |
+| `exclude`            | Globs to exclude from Type Test discovery                                                                         | —       |
+| `tsconfig`           | Custom tsconfig for type testing (root-only in projects mode)                                                     | —       |
+| `ignoreSourceErrors` | `false`: surface type errors in non-test source files; `true`: report only errors inside Type Test files          | `false` |
+| `spawnTimeout`       | Milliseconds to wait for the tsgo process to start before the run throws; bounds startup only, not the type-check | `10000` |
 
 The type pass runs concurrently with the Roblox runtime run, so the local
 CPU-bound tsgo work overlaps the network-bound Open Cloud upload/poll. Multiple
 tsconfig groups also run concurrently.
+
+`spawnTimeout` bounds only how long tsgo may take to start (until the process
+reports it has launched), so a slow type-check on a slow machine never trips it.
+The type-check itself is bounded by the run-level `timeout` (default `300000`) —
+the same deadline that abandons a non-responding Roblox run — which kills a
+wedged tsgo.
 
 tsgo type-checks the whole tsconfig program; the Type Test globs only select
 which files are collected as Type Tests and how diagnostics are attributed.

@@ -126,6 +126,7 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 							ignoreSourceErrors: typecheck.ignoreSourceErrors,
 							rootDir: effectiveConfig.rootDir,
 							spawnTimeout: typecheck.spawnTimeout,
+							timeout: effectiveConfig.timeout,
 							tsconfig: typecheck.tsconfig,
 						});
 					} finally {

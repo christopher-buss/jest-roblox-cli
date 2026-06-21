@@ -20,7 +20,11 @@ export interface TypecheckConfig {
 	include?: Array<string>;
 	/** Run only Type Tests and skip Runtime Tests. Implies `enabled`. Default `false`. */
 	only?: boolean;
-	/** Milliseconds the tsgo spawn may run before it is killed and the pass throws. */
+	/**
+	 * Milliseconds to wait for the tsgo process to start before the pass
+	 * throws. Bounds only startup, not the type-check itself — a slow check is
+	 * governed by the run-level `timeout`. Default `10000`.
+	 */
 	spawnTimeout?: number;
 	/** Custom tsconfig used for type checking (root-only in projects mode). */
 	tsconfig?: string;

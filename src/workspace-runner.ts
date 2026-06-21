@@ -188,6 +188,8 @@ interface PackageTypecheck {
 	ignoreSourceErrors?: boolean;
 	pkg: string;
 	spawnTimeout?: number;
+	/** Run-level `timeout` (package-wide); bounds the tsgo compile. */
+	timeout: number;
 }
 
 // A (package, project) pair that owns Type Tests. The type pass groups by
@@ -1030,6 +1032,7 @@ function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions)
 				ignoreSourceErrors: packageTypecheck.ignoreSourceErrors,
 				pkg: ctx.info.name,
 				spawnTimeout: packageTypecheck.spawnTimeout,
+				timeout: ctx.pkgConfig.timeout,
 			});
 		}
 	}
@@ -1067,6 +1070,7 @@ async function runWorkspaceTypecheckPass(
 			ignoreSourceErrors: policy.ignoreSourceErrors,
 			rootDir: group.cwd,
 			spawnTimeout: policy.spawnTimeout,
+			timeout: policy.timeout,
 			...(group.tsconfig !== undefined ? { tsconfig: group.tsconfig } : {}),
 		});
 		const stamped = composePackageIdentity(raw, policy.pkg);
