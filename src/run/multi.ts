@@ -85,6 +85,15 @@ interface SelectedProjects {
 	projects: Array<ResolvedProjectConfig>;
 }
 
+interface TypecheckOnlyArguments {
+	cliFiles: Array<string> | undefined;
+	cliTypecheck: TypecheckCliOptions;
+	filesByProject?: ReadonlyMap<string, Array<string>>;
+	projects: Array<ResolvedProjectConfig>;
+	rootConfig: ResolvedConfig;
+	timing: TimingCollector;
+}
+
 /**
  * `jest.config` stub mounts for a place build: one `$path` named-child per rojo
  * mount that lacks a user-authored config on disk, pointing at the cache stub.
@@ -150,6 +159,33 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	const { filesByProject, projects } = timing.profile("selectProjects", () => {
 		return selectProjects(allProjects, cli.project, cli.files, rootConfig.rootDir);
 	});
+
+	// Pure-local tsgo short-circuit. When every selected project runs
+	// Type-Tests-only (`--typecheckOnly`, or each project's own
+	// `test.typecheck.only`), no runtime jobs are possible — so skip the backend,
+	// the place build, and coverage entirely and run only the host-side tsgo
+	// pass. This restores parity with single and workspace mode, which both
+	// already avoid Open Cloud for type-only runs (single never resolves a
+	// backend when there are no runtime files; workspace short-circuits on an
+	// empty pending set). Without this, multi mode resolves a backend and builds
+	// a Rojo place even when nothing runs on Roblox.
+	const isTypecheckOnlyRun = projects.every((project) => {
+		return resolveTypecheckConfig({
+			cli: cliTypecheck,
+			project: project.typecheck,
+			root: rootConfig.typecheck,
+		}).only;
+	});
+	if (isTypecheckOnlyRun) {
+		return runMultiTypecheckOnly({
+			cliFiles: cli.files,
+			cliTypecheck,
+			filesByProject,
+			projects,
+			rootConfig,
+			timing,
+		});
+	}
 
 	// Stubs land in `.jest-roblox/cache/` instead of the user's source
 	// tree. Open-cloud builds the place from a synthesizer-produced
@@ -426,6 +462,67 @@ function collectPendingJobs(arguments_: CollectPendingJobsArguments): {
 	}
 
 	return { pendingJobs, typeTestEntries };
+}
+
+// Runs the host-side Type Test pass alone — no backend, no place build, no
+// coverage. Reached only when `runMultiProject` proves the run is type-only.
+// Discovery still goes through the shared `collectPendingJobs` (so `-d`
+// derivation, per-project tsconfig grouping, and excludes match the runtime
+// path); the runtime `pendingJobs` it returns are necessarily empty here and
+// ignored.
+async function runMultiTypecheckOnly(arguments_: TypecheckOnlyArguments): Promise<MultiRunResult> {
+	const { cliFiles, cliTypecheck, filesByProject, projects, rootConfig, timing } = arguments_;
+
+	const { typeTestEntries } = timing.profile("collectPendingJobs", () => {
+		return collectPendingJobs({
+			cliFiles,
+			cliTypecheck,
+			// No place is built on a type-only run; the runtime place file is
+			// unused because the (empty) `pendingJobs` are discarded.
+			effectivePlaceFile: rootConfig.placeFile,
+			filesByProject,
+			projects,
+			rootConfig,
+		});
+	});
+
+	if (typeTestEntries.length === 0) {
+		if (rootConfig.passWithNoTests) {
+			return { merged: {}, mode: "multi", preCoverageMs: 0, projectResults: [] };
+		}
+
+		return {
+			merged: {},
+			mode: "multi",
+			preCoverageMs: 0,
+			projectResults: [],
+			validationExitCode: 2,
+			validationMessage: "No test files found in any project\n",
+		};
+	}
+
+	// No run header: a type-only run drives no Roblox jobs, matching single mode
+	// (which emits the banner only from the runtime path) and the prior multi
+	// behaviour (the header was gated on a non-empty runtime job set).
+	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
+	const typecheckPass = await runTypecheckPass(typeTestEntries, async (group) => {
+		return runTypecheck({
+			files: group.files,
+			ignoreSourceErrors: rootTypecheck.ignoreSourceErrors,
+			rootDir: group.cwd,
+			spawnTimeout: rootTypecheck.spawnTimeout,
+			tsconfig: group.tsconfig,
+		});
+	});
+	timing.record("runTypecheck", typecheckPass.elapsedMs);
+
+	return {
+		merged: {},
+		mode: "multi",
+		preCoverageMs: 0,
+		projectResults: [],
+		typecheckResult: typecheckPass.result,
+	};
 }
 
 async function runJobs(

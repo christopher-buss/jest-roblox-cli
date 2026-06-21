@@ -1,0 +1,9 @@
+{
+	"compilerOptions": {
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"types": []
+	},
+	"include": ["src/**/*.spec-d.ts"]
+}

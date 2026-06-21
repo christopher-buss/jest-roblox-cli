@@ -45,14 +45,18 @@ describe("cli binary", () => {
 		expect(result.stderr).toContain("No backend available");
 	});
 
-	it("should still parse --typecheckOnly --passWithNoTests before backend resolution", () => {
+	it("should short-circuit --typecheckOnly --passWithNoTests before backend resolution", () => {
 		expect.assertions(3);
 
+		// `--typecheckOnly` is pure-local tsgo: with no Type Tests to run and
+		// `--passWithNoTests`, the run exits 0 WITHOUT resolving a backend. The
+		// absence of "No backend available" proves the type-only short-circuit
+		// fired ahead of any Open Cloud / Studio resolution.
 		const result = runCli(["--typecheckOnly", "--passWithNoTests"], RBXTS_FIXTURE);
 
-		expect(result.exitCode).toBe(2);
+		expect(result.exitCode).toBe(0);
 		expect(result.stderr).not.toContain("No test files found");
-		expect(result.stderr).toContain("No backend available");
+		expect(result.stderr).not.toContain("No backend available");
 	});
 
 	describe("--parallel", () => {
@@ -83,12 +87,14 @@ describe("cli binary", () => {
 		it("should accept --parallel auto", () => {
 			expect.assertions(2);
 
+			// A valid `--parallel` is accepted at parse time; the type-only
+			// short-circuit then exits 0 (no Type Tests + `--passWithNoTests`).
 			const result = runCli(
 				["--parallel", "auto", "--typecheckOnly", "--passWithNoTests"],
 				RBXTS_FIXTURE,
 			);
 
-			expect(result.exitCode).toBe(2);
+			expect(result.exitCode).toBe(0);
 			expect(result.stderr).not.toContain("Invalid --parallel");
 		});
 
@@ -100,7 +106,7 @@ describe("cli binary", () => {
 				RBXTS_FIXTURE,
 			);
 
-			expect(result.exitCode).toBe(2);
+			expect(result.exitCode).toBe(0);
 			expect(result.stderr).not.toContain("Invalid --parallel");
 		});
 	});

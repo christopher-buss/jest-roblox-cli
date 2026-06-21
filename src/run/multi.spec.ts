@@ -683,8 +683,8 @@ describe(runMultiProject, () => {
 		);
 	});
 
-	it("should run typecheck-only without runtime jobs", async () => {
-		expect.assertions(2);
+	it("should run typecheck-only without resolving a backend or runtime jobs", async () => {
+		expect.assertions(3);
 
 		const { config } = setupDefaults({ typecheck: { enabled: true, only: true } });
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
@@ -703,8 +703,59 @@ describe(runMultiProject, () => {
 			rawProjects: [makeProjectEntry("client")],
 		});
 
+		// The type-only short-circuit runs pure-local tsgo: no backend resolved,
+		// no place built, no Roblox jobs dispatched.
+		expect(mocks.resolveBackend).not.toHaveBeenCalled();
 		expect(mocks.runProjects).not.toHaveBeenCalled();
 		expect(result.typecheckResult).toBeDefined();
+	});
+
+	it("should return validationExitCode 2 on a typecheck-only run that finds no type tests", async () => {
+		expect.assertions(3);
+
+		const { config } = setupDefaults({ typecheck: { enabled: true, only: true } });
+		// No spec-d files seeded — the project produces no Type Tests.
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				include: ["src/client/**/*.spec-d.ts"],
+			}),
+		]);
+
+		const result = await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(result.validationExitCode).toBe(2);
+		expect(result.validationMessage).toBe("No test files found in any project\n");
+		expect(mocks.resolveBackend).not.toHaveBeenCalled();
+	});
+
+	it("should pass with no tests on a typecheck-only run when passWithNoTests is set", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults({
+			passWithNoTests: true,
+			typecheck: { enabled: true, only: true },
+		});
+		// No spec-d files seeded — the project produces no Type Tests.
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				include: ["src/client/**/*.spec-d.ts"],
+			}),
+		]);
+
+		const result = await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(result.validationExitCode).toBeUndefined();
+		expect(result.projectResults).toHaveLength(0);
 	});
 
 	it("should forward test.typecheck.ignoreSourceErrors to the typecheck runner", async () => {

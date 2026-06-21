@@ -1,0 +1,11 @@
+{
+	"name": "typecheck-multi-e2e",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Alpha": { "$path": "alpha/out" },
+			"Beta": { "$path": "beta/out" }
+		}
+	}
+}
