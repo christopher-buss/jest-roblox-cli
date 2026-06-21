@@ -854,6 +854,66 @@ describe(loadConfig, () => {
 		expect(result.verbose).toBeTrue();
 	});
 
+	it("should load TypeScript config in SEA mode", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "config-test-"));
+		const configPath = path.join(temporaryDirectory, "jest.config.ts");
+		fs.writeFileSync(
+			configPath,
+			"type C = { test?: { verbose?: boolean } };\n" +
+				"export default { test: { verbose: true } } satisfies C;\n",
+		);
+
+		const result = await loadConfig(configPath, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.verbose).toBeTrue();
+	});
+
+	it("should load ESM TypeScript (.mts) config in SEA mode", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "config-test-"));
+		const configPath = path.join(temporaryDirectory, "jest.config.mts");
+		fs.writeFileSync(
+			configPath,
+			"type C = { test?: { verbose?: boolean } };\n" +
+				"export default { test: { verbose: true } } satisfies C;\n",
+		);
+
+		const result = await loadConfig(configPath, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.verbose).toBeTrue();
+	});
+
+	it("should load CommonJS TypeScript (.cts) config in SEA mode", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "config-test-"));
+		const configPath = path.join(temporaryDirectory, "jest.config.cts");
+		// `.cts` is CommonJS — native type-stripping rejects `export default` /
+		// `export =`, so a `.cts` config uses `module.exports`.
+		fs.writeFileSync(
+			configPath,
+			"interface C { test?: { verbose?: boolean } }\n" +
+				"const config: C = { test: { verbose: true } };\n" +
+				"module.exports = config;\n",
+		);
+
+		const result = await loadConfig(configPath, temporaryDirectory);
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+
+		expect(result.verbose).toBeTrue();
+	});
+
 	it("should throw with clear message when extends target is missing", async () => {
 		expect.assertions(1);
 

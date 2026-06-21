@@ -1,6 +1,7 @@
 import { loadConfig as c12LoadConfig } from "c12";
 import { defuFn } from "defu";
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
 
@@ -105,13 +106,25 @@ function isSea(): boolean {
 	return process.env["JEST_ROBLOX_SEA"] === "true";
 }
 
+// A SEA binary's ESM loader can't `import()` a file off disk — Node routes every
+// dynamic import through the single-executable's built-in resolver, so any path
+// fails (`No such built-in module` / `ERR_UNKNOWN_BUILTIN_MODULE`). `require()`
+// is unaffected, and Node's `require` handles everything a config needs:
+// TypeScript type-stripping for `.ts`/`.mts`/`.cts`, ESM `export default`
+// (returned as `{ default }`), and bare-specifier resolution from the project's
+// on-disk `node_modules`. Anchoring the require at the config path lets a config
+// that imports a runtime value (e.g. `defineConfig` from
+// `@isentinel/jest-roblox`) resolve it relative to itself; a genuinely
+// unresolvable import surfaces Node's standard module-resolution error. `.json`
+// keeps its read + parse path (a bare `require` of JSON works too, but reading
+// avoids relying on CJS JSON-module semantics).
 async function seaImport(id: string): Promise<JSONValue> {
 	if (id.endsWith(".json")) {
 		const content = readFileSync(id, "utf-8");
 		return JSON.parse(content);
 	}
 
-	return import(id) as Promise<JSONValue>;
+	return createRequire(id)(id) as JSONValue;
 }
 
 // c12's merger signature and defuFn's generic signature are structurally
