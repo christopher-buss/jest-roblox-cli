@@ -6,6 +6,7 @@ import * as path from "node:path";
 import process from "node:process";
 
 import { NX_MARKER, TURBO_MARKER } from "./discovery.ts";
+import { type PackageInfo, readPackageJsonName } from "./package-resolver.ts";
 
 const JEST_CONFIG_MARKER = /^jest\.config\.[^.]+$/;
 
@@ -67,7 +68,12 @@ interface TurboPackage {
 }
 
 // turbo.json takes precedence when both markers are present (hybrid monorepo).
-export function getAffectedPackages(workspaceRoot: string, ref: string): Array<string> {
+//
+// Returns full `PackageInfo` (name + absolute directory), not bare names: the
+// name must match `package.json#name` so downstream resolution doesn't fail,
+// and turbo/nx already hand us the directory, so resolving it here skips a
+// redundant `resolvePackage` round-trip in the caller.
+export function getAffectedPackages(workspaceRoot: string, ref: string): Array<PackageInfo> {
 	if (!validRefPattern.test(ref) || ref.startsWith("-")) {
 		throw new Error(
 			`Invalid --affected-since ref ${JSON.stringify(ref)}. ` +
@@ -91,18 +97,27 @@ export function getAffectedPackages(workspaceRoot: string, ref: string): Array<s
 			["ls", `--filter=...[${ref}]`, "--output=json"],
 			workspaceRoot,
 		);
+		// turbo names projects by `package.json#name` by convention, so the
+		// name needs no further resolution — just anchor the directory. Filter
+		// before mapping so dropped packages don't pay for an extra alloc.
 		return parseTurboOutput(stdout)
 			.filter((item) => hasJestConfig(path.join(workspaceRoot, item.relativePath)))
-			.map((item) => item.name);
+			.map((item) => {
+				return {
+					name: item.name,
+					packageDirectory: path.join(workspaceRoot, item.relativePath),
+				};
+			});
 	}
 
 	if (fs.existsSync(path.join(workspaceRoot, NX_MARKER))) {
 		// nx project names live in a separate namespace from
 		// `package.json.name`, so we can't map them via pnpm-workspace.yaml
 		// without false-green-ing affected projects whose two names diverge.
-		// Ask nx itself for each project's root via `nx show project --json`
-		// and check for jest.config.* there. Mirrors the turbo path, which
-		// gets `path` for free from `turbo ls`.
+		// Ask nx itself for each project's root via `nx show project --json`,
+		// then read the real `package.json#name` there (falling back to the nx
+		// name when no package.json exists). Mirrors the turbo path, which gets
+		// `path` and the package name for free from `turbo ls`.
 		const affected = parseNxOutput(
 			runTool(
 				"nx",
@@ -110,8 +125,17 @@ export function getAffectedPackages(workspaceRoot: string, ref: string): Array<s
 				workspaceRoot,
 			),
 		);
-		return affected.filter((name) => {
-			return hasJestConfig(path.join(workspaceRoot, nxProjectRoot(workspaceRoot, name)));
+		return affected.flatMap((nxName) => {
+			const packageDirectory = path.join(workspaceRoot, nxProjectRoot(workspaceRoot, nxName));
+			if (!hasJestConfig(packageDirectory)) {
+				return [];
+			}
+
+			// Fall back to the nx name (not the directory basename, as
+			// `inferPackageName` does): a Luau-only nx project may have no
+			// package.json, and the nx name is its only stable identifier.
+			const name = readPackageJsonName(path.join(packageDirectory, "package.json")) ?? nxName;
+			return [{ name, packageDirectory }];
 		});
 	}
 

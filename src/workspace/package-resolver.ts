@@ -15,6 +15,20 @@ interface PnpmWorkspace {
 	packages?: Array<string>;
 }
 
+export function readPackageJsonName(packageJsonPath: string): string | undefined {
+	if (!fs.existsSync(packageJsonPath)) {
+		return undefined;
+	}
+
+	const raw = parsePackageJson(packageJsonPath);
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		return undefined;
+	}
+
+	const nameValue = Reflect.get(raw, "name");
+	return typeof nameValue === "string" ? nameValue : undefined;
+}
+
 /**
  * Enumerate workspace packages. With `patterns` (from `workspace.packages`),
  * resolve directories by globbing for a `jest.config.*` — works in any repo,
@@ -52,20 +66,6 @@ function parsePackageJson(packageJsonPath: string): unknown {
 	} catch (err) {
 		throw new Error(`Failed to parse ${packageJsonPath}.`, { cause: err });
 	}
-}
-
-function readPackageJsonName(packageJsonPath: string): string | undefined {
-	if (!fs.existsSync(packageJsonPath)) {
-		return undefined;
-	}
-
-	const raw = parsePackageJson(packageJsonPath);
-	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-		return undefined;
-	}
-
-	const nameValue = Reflect.get(raw, "name");
-	return typeof nameValue === "string" ? nameValue : undefined;
 }
 
 function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {

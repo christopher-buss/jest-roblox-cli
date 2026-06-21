@@ -2,6 +2,7 @@ import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-ru
 
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
+import { type PackageInfo, resolvePackage } from "../workspace/package-resolver.ts";
 
 interface WorkspaceValidationOk {
 	ok: true;
@@ -66,10 +67,17 @@ export function assertWorkspaceRunOptions(
 	return { ok: true };
 }
 
-export function resolveWorkspacePackageNames(
+/**
+ * Resolve the affected/requested packages to full `PackageInfo`. The
+ * `--affected-since` branch already carries directory + `package.json#name`
+ * from turbo/nx, so it skips the `resolvePackage` round-trip; the `--packages`
+ * branch resolves each comma-separated name against the workspace.
+ */
+export function resolveWorkspacePackages(
 	cli: CliOptions,
 	workspaceRoot: string,
-): Array<string> {
+	patterns?: Array<string>,
+): Array<PackageInfo> {
 	if (cli.affectedSince !== undefined) {
 		return getAffectedPackages(workspaceRoot, cli.affectedSince);
 	}
@@ -77,10 +85,11 @@ export function resolveWorkspacePackageNames(
 	// validateBasicWorkspaceFlags guarantees cli.packages is defined when
 	// affectedSince is undefined.
 	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed by validation
-	return cli
+	const names = cli
 		.packages!.split(",")
 		.map((name) => name.trim())
 		.filter((name) => name.length > 0);
+	return names.map((name) => resolvePackage(workspaceRoot, name, patterns));
 }
 
 export function buildWorkspaceCredentials(

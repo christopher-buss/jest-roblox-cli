@@ -22,13 +22,12 @@ import {
 } from "../workspace-runner.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
-import { resolvePackage } from "../workspace/package-resolver.ts";
 import { emitRunHeader } from "./run-header.ts";
 import type { ProjectResult, WorkspaceRunResult } from "./types.ts";
 import {
 	assertWorkspaceRunOptions,
 	buildWorkspaceCredentials,
-	resolveWorkspacePackageNames,
+	resolveWorkspacePackages,
 	validateBasicWorkspaceFlags,
 } from "./workspace-validation.ts";
 
@@ -319,17 +318,14 @@ function resolveEnumerationRoot(workspace?: WorkspaceConfig): {
 function resolvePackages(cli: CliOptions, workspace?: WorkspaceConfig): ResolvedPackages {
 	try {
 		const { patterns, workspaceRoot } = resolveEnumerationRoot(workspace);
-		const packageNames = resolveWorkspacePackageNames(cli, workspaceRoot);
+		const packageInfos = resolveWorkspacePackages(cli, workspaceRoot, patterns);
 
-		if (packageNames.length === 0) {
+		if (packageInfos.length === 0) {
 			// validateWorkspaceFlags requires --affected-since when --packages
 			// produces zero entries, so we can only land here via that branch.
 			return { noAffected: true };
 		}
 
-		const packageInfos = packageNames.map((name) =>
-			resolvePackage(workspaceRoot, name, patterns),
-		);
 		return { packageInfos, workspaceRoot };
 	} catch (err) {
 		return { error: { exitCode: 2, message: `Error: ${String(err)}\n` } };

@@ -5,11 +5,12 @@ import { DEFAULT_CONFIG } from "../config/schema.ts";
 import {
 	assertWorkspaceRunOptions,
 	buildWorkspaceCredentials,
-	resolveWorkspacePackageNames,
+	resolveWorkspacePackages,
 	validateBasicWorkspaceFlags,
 } from "./workspace-validation.ts";
 
 vi.mock(import("../workspace/affected"));
+vi.mock(import("../workspace/package-resolver"));
 vi.mock(import("@isentinel/roblox-runner"), async (importOriginal) => {
 	const actual = await importOriginal();
 	return {
@@ -158,38 +159,58 @@ describe(assertWorkspaceRunOptions, () => {
 	});
 });
 
-describe(resolveWorkspacePackageNames, () => {
-	it("should call getAffectedPackages when --affected-since is set", async () => {
+describe(resolveWorkspacePackages, () => {
+	it("should return getAffectedPackages output directly when --affected-since is set", async () => {
 		expect.assertions(2);
 
 		const { getAffectedPackages } = await import("../workspace/affected");
-		vi.mocked(getAffectedPackages).mockReturnValue(["pkg-a", "pkg-b"]);
-		const result = resolveWorkspacePackageNames(
-			makeCli({ affectedSince: "HEAD~1" }),
-			"/workspace",
-		);
+		const affected = [
+			{ name: "@org/pkg-a", packageDirectory: "/workspace/packages/a" },
+			{ name: "@org/pkg-b", packageDirectory: "/workspace/packages/b" },
+		];
+		vi.mocked(getAffectedPackages).mockReturnValue(affected);
+		const result = resolveWorkspacePackages(makeCli({ affectedSince: "HEAD~1" }), "/workspace");
 
-		expect(result).toStrictEqual(["pkg-a", "pkg-b"]);
+		// The affected branch carries name + directory from turbo/nx, so it
+		// must NOT round-trip through resolvePackage.
+		expect(result).toStrictEqual(affected);
 		expect(getAffectedPackages).toHaveBeenCalledWith("/workspace", "HEAD~1");
 	});
 
-	it("should split comma-separated --packages", () => {
-		expect.assertions(1);
+	it("should resolve each comma-separated --packages name against the workspace", async () => {
+		expect.assertions(4);
 
-		const result = resolveWorkspacePackageNames(makeCli({ packages: "a,b,c" }), "/workspace");
+		const { resolvePackage } = await import("../workspace/package-resolver");
+		vi.mocked(resolvePackage).mockImplementation((root, name) => {
+			return { name, packageDirectory: `${root}/packages/${name}` };
+		});
 
-		expect(result).toStrictEqual(["a", "b", "c"]);
+		const result = resolveWorkspacePackages(makeCli({ packages: "a,b,c" }), "/workspace", [
+			"packages/*",
+		]);
+
+		expect(result).toStrictEqual([
+			{ name: "a", packageDirectory: "/workspace/packages/a" },
+			{ name: "b", packageDirectory: "/workspace/packages/b" },
+			{ name: "c", packageDirectory: "/workspace/packages/c" },
+		]);
+		expect(resolvePackage).toHaveBeenCalledWith("/workspace", "a", ["packages/*"]);
+		expect(resolvePackage).toHaveBeenCalledWith("/workspace", "b", ["packages/*"]);
+		expect(resolvePackage).toHaveBeenCalledWith("/workspace", "c", ["packages/*"]);
 	});
 
-	it("should trim whitespace and drop empty entries", () => {
-		expect.assertions(1);
+	it("should trim whitespace and drop empty entries before resolving", async () => {
+		expect.assertions(2);
 
-		const result = resolveWorkspacePackageNames(
-			makeCli({ packages: " a , , b " }),
-			"/workspace",
-		);
+		const { resolvePackage } = await import("../workspace/package-resolver");
+		vi.mocked(resolvePackage).mockImplementation((root, name) => {
+			return { name, packageDirectory: `${root}/packages/${name}` };
+		});
 
-		expect(result).toStrictEqual(["a", "b"]);
+		const result = resolveWorkspacePackages(makeCli({ packages: " a , , b " }), "/workspace");
+
+		expect(result.map((info) => info.name)).toStrictEqual(["a", "b"]);
+		expect(resolvePackage).toHaveBeenCalledTimes(2);
 	});
 });
 

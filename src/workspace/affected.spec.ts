@@ -54,6 +54,13 @@ function turboItem(
 	return { name, path: relativePath };
 }
 
+function packageInfoFor(
+	name: string,
+	relativePath: string = packagePathFor(name),
+): { name: string; packageDirectory: string } {
+	return { name, packageDirectory: path.join(ROOT, relativePath) };
+}
+
 // Route execFileSync mock calls between `nx show projects` and per-project
 // `nx show project <name>`. Linux platforms only — on Windows the args are
 // wrapped in `cmd /c "<command> <quoted args>"`, so `args[0]` is `/d`, not
@@ -109,7 +116,10 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo", "@org/bar"]);
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([
+			packageInfoFor("@org/foo"),
+			packageInfoFor("@org/bar"),
+		]);
 		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
 			"turbo",
 			["ls", "--filter=...[main]", "--output=json"],
@@ -174,7 +184,7 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
 	it("should throw a friendly error when turbo is not on PATH", () => {
@@ -427,7 +437,10 @@ describe(getAffectedPackages, () => {
 			"proj-b": { root: packagePathFor("proj-b") },
 		});
 
-		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual(["proj-a", "proj-b"]);
+		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual([
+			packageInfoFor("proj-a"),
+			packageInfoFor("proj-b"),
+		]);
 		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
 			"nx",
 			["show", "projects", "--affected", "--base=develop", "--json"],
@@ -489,15 +502,15 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
-	it("should keep nx projects whose nx name differs from package.json name", () => {
+	it("should resolve the nx project to its package.json name when the two diverge", () => {
 		// Regression: nx project names live in a separate namespace from
-		// `package.json.name`. Resolving via pnpm-workspace.yaml would silently
-		// drop affected projects whose two names diverge, causing a false-green
-		// CI run. Use `nx show project <name>` to ask nx itself for the root,
-		// then check jest.config.* there.
+		// `package.json.name`. The returned PackageInfo must carry the
+		// `package.json` name — downstream resolution matches against it, so
+		// returning the nx name ("foo") would fail with "Package not found"
+		// whenever the two diverge (e.g. nx `foo` for `@org/foo`).
 		expect.assertions(1);
 
 		stubPlatform("linux");
@@ -509,7 +522,28 @@ describe(getAffectedPackages, () => {
 		});
 		mockNxResponses(["foo"], { foo: { root: "apps/foo" } });
 
-		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual(["foo"]);
+		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual([
+			{ name: "@org/foo", packageDirectory: path.join(ROOT, "apps/foo") },
+		]);
+	});
+
+	it("should fall back to the nx project name when the root has no package.json", () => {
+		// An nx project can carry a jest.config without a package.json (e.g. a
+		// Luau-only project). With no `package.json#name` to read, the nx
+		// project name is the only identifier we have.
+		expect.assertions(1);
+
+		stubPlatform("linux");
+		vol.reset();
+		vol.fromJSON({
+			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
+			[path.join(ROOT, "nx.json")]: "{}",
+		});
+		mockNxResponses(["foo"], { foo: { root: "apps/foo" } });
+
+		expect(getAffectedPackages(ROOT, "develop")).toStrictEqual([
+			{ name: "foo", packageDirectory: path.join(ROOT, "apps/foo") },
+		]);
 	});
 
 	it("should drop nx projects whose root has no jest.config.*", () => {
@@ -638,7 +672,7 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
 	it("should short-circuit empty nx output without firing any 'nx show project' calls", () => {
@@ -668,7 +702,7 @@ describe(getAffectedPackages, () => {
 			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
 		);
 
-		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
 	it("should drop affected packages that lack a jest.config.* marker", () => {
@@ -688,6 +722,6 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main")).toStrictEqual(["@org/foo"]);
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 });

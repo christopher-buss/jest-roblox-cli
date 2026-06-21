@@ -432,7 +432,10 @@ describe(runWorkspaceMode, () => {
 			expect.assertions(3);
 
 			setupHappyPath();
-			vi.mocked(getAffectedPackages).mockReturnValue(["@halcyon/foo", "@halcyon/bar"]);
+			vi.mocked(getAffectedPackages).mockReturnValue([
+				{ name: "@halcyon/foo", packageDirectory: "/repo/packages/@halcyon/foo" },
+				{ name: "@halcyon/bar", packageDirectory: "/repo/packages/@halcyon/bar" },
+			]);
 			mockRunWorkspace([
 				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
 				{ displayName: "@halcyon/bar", pkg: "@halcyon/bar", result: makeExecuteResult() },
