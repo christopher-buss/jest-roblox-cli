@@ -39,7 +39,16 @@
 			"dependsOn": ["build:bundle"]
 		},
 		"e2e": {
-			"command": "vitest run --project e2e --project live",
+			"command": "vitest run --project e2e",
+			"dependsOn": ["build", "^build"],
+			"cache": true,
+			"inputs": ["default", "^production"],
+			"options": {
+				"cwd": "tools/jest-roblox-cli"
+			}
+		},
+		"e2e-live-1of3": {
+			"command": "vitest run --project live --shard 1/3",
 			"dependsOn": ["build", "^build"],
 			"cache": true,
 			"inputs": [
@@ -47,6 +56,57 @@
 				"^production",
 				{
 					"env": "JEST_ROBLOX_LIVE"
+				},
+				{
+					"env": "ROBLOX_OPEN_CLOUD_API_KEY"
+				},
+				{
+					"env": "ROBLOX_UNIVERSE_ID"
+				},
+				{
+					"env": "ROBLOX_PLACE_ID"
+				}
+			],
+			"options": {
+				"cwd": "tools/jest-roblox-cli"
+			}
+		},
+		"e2e-live-2of3": {
+			"command": "vitest run --project live --shard 2/3",
+			"dependsOn": ["build", "^build"],
+			"cache": true,
+			"inputs": [
+				"default",
+				"^production",
+				{
+					"env": "JEST_ROBLOX_LIVE"
+				},
+				{
+					"env": "ROBLOX_OPEN_CLOUD_API_KEY"
+				},
+				{
+					"env": "ROBLOX_UNIVERSE_ID"
+				},
+				{
+					"env": "ROBLOX_PLACE_ID"
+				}
+			],
+			"options": {
+				"cwd": "tools/jest-roblox-cli"
+			}
+		},
+		"e2e-live-3of3": {
+			"command": "vitest run --project live --shard 3/3",
+			"dependsOn": ["build", "^build"],
+			"cache": true,
+			"inputs": [
+				"default",
+				"^production",
+				{
+					"env": "JEST_ROBLOX_LIVE"
+				},
+				{
+					"env": "ROBLOX_OPEN_CLOUD_API_KEY"
 				},
 				{
 					"env": "ROBLOX_UNIVERSE_ID"

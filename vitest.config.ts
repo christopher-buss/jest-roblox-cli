@@ -218,6 +218,12 @@ export default defineConfig({
 					maxWorkers: 1,
 					pool: "forks",
 					restoreMocks: true,
+					// Live tests hit the real Open Cloud API; transient network
+					// blips (latency, 5xx, OCALE rate limits) self-heal on a
+					// retry instead of forcing a manual shard re-run. Scoped to
+					// `live` only — `unit`/`integration`/`e2e` stay at 0 so real
+					// failures surface immediately.
+					retry: 2,
 					setupFiles,
 					testTimeout: 60_000,
 					unstubEnvs: true,
