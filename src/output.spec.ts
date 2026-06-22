@@ -927,6 +927,136 @@ describe("processCoverage via outputSingleResult", () => {
 	});
 });
 
+describe("agent-mode summary ordering vs coverage", () => {
+	it("should print coverage before the single-project agent summary so trimming keeps it", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
+		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const spies = setupOutputSpies();
+
+		await outputSingleResult(
+			makeConfig({ collectCoverage: true, formatters: ["agent"] }),
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
+			}),
+		);
+
+		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
+
+		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
+		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
+
+		expect(coverageOrder).toBeLessThan(summaryOrder);
+	});
+
+	it("should keep the summary before coverage for the default formatter", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
+		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const spies = setupOutputSpies();
+
+		await outputSingleResult(
+			makeConfig({ collectCoverage: true }),
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
+			}),
+		);
+
+		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
+
+		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
+		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
+
+		expect(summaryOrder).toBeLessThan(coverageOrder);
+	});
+
+	it("should keep the summary before coverage when verbose opts out of the agent formatter", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
+		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const spies = setupOutputSpies();
+
+		await outputSingleResult(
+			makeConfig({ collectCoverage: true, formatters: ["agent"], verbose: true }),
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
+			}),
+		);
+
+		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
+
+		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
+		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
+
+		expect(summaryOrder).toBeLessThan(coverageOrder);
+	});
+
+	it("should defer the multi-project agent summary until after the coverage report", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
+		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const spies = setupOutputSpies();
+
+		await outputMultiResult(
+			makeConfig({ collectCoverage: true, formatters: ["agent"] }),
+			makeMultiResult({
+				projectResults: [
+					makeProjectResult("client", { coverageData: fromAny({ "x.luau": {} }) }),
+				],
+			}),
+		);
+
+		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-agent");
+
+		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
+		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
+
+		expect(coverageOrder).toBeLessThan(summaryOrder);
+	});
+
+	it("should keep the agent summary inline when coverage is disabled", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		const spies = setupOutputSpies();
+
+		await outputSingleResult(makeConfig({ formatters: ["agent"] }), makeSingleResult());
+
+		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
+		expect(mocks.generateReports).not.toHaveBeenCalled();
+	});
+
+	it("should still print the deferred agent summary when coverage mapping throws", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
+		mocks.mapCoverageToTypeScript.mockImplementation(() => {
+			throw new CoverageMapMalformedError("out/foo.luau.cov-map.json");
+		});
+		const spies = setupOutputSpies();
+
+		await expect(
+			outputSingleResult(
+				makeConfig({ collectCoverage: true, formatters: ["agent"] }),
+				makeSingleResult({
+					runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
+				}),
+			),
+		).rejects.toThrow(CoverageMapMalformedError);
+
+		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
+	});
+});
+
 describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 	it("should use coverageMapped directly without consulting the single-pkg manifest", async () => {
 		expect.assertions(3);

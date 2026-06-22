@@ -128,15 +128,22 @@ export async function outputSingleResult(
 	const { preCoverageMs, runtimeResult, typecheckResult } = result;
 	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
 
-	if (!config.silent) {
-		const timing =
-			runtimeResult !== undefined
-				? addCoverageTiming(runtimeResult.timing, preCoverageMs)
-				: undefined;
-		printFormattedOutput({ config, mergedResult, runtimeResult, timing, typecheckResult });
-	}
+	const coveragePassed = emitResultsAndCoverage({
+		config,
+		coverageEnabled: config.collectCoverage,
+		printResults: () => {
+			if (config.silent) {
+				return;
+			}
 
-	const coveragePassed = processCoverage(config, runtimeResult?.coverageData);
+			const timing =
+				runtimeResult !== undefined
+					? addCoverageTiming(runtimeResult.timing, preCoverageMs)
+					: undefined;
+			printFormattedOutput({ config, mergedResult, runtimeResult, timing, typecheckResult });
+		},
+		runCoverage: () => processCoverage(config, runtimeResult?.coverageData),
+	});
 
 	await writeResultFile(config.outputFile, typecheckResult, runtimeResult?.result);
 
@@ -256,26 +263,30 @@ export async function outputMultiResult(
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
 	const mergedResult = mergeResults(typecheckResult, merged.result);
 
-	if (!config.silent) {
-		printMultiProjectOutput({
-			config,
-			...resolveSinkHints(result, config),
-			merged,
-			preCoverageMs,
-			projectResults,
-			typecheckResult,
-		});
-
-		if (typecheckResult !== undefined && !usesDefaultFormatter(config)) {
-			process.stderr.write(formatTypecheckSummary(typecheckResult));
-		}
-	}
-
-	const coveragePassed = processCoverage(
+	const workspaceCoverage = extractWorkspaceCoverageMapped(result);
+	const coveragePassed = emitResultsAndCoverage({
 		config,
-		merged.coverageData,
-		extractWorkspaceCoverageMapped(result),
-	);
+		coverageEnabled: config.collectCoverage || workspaceCoverage !== undefined,
+		printResults: () => {
+			if (config.silent) {
+				return;
+			}
+
+			printMultiProjectOutput({
+				config,
+				...resolveSinkHints(result, config),
+				merged,
+				preCoverageMs,
+				projectResults,
+				typecheckResult,
+			});
+
+			if (typecheckResult !== undefined && !usesDefaultFormatter(config)) {
+				process.stderr.write(formatTypecheckSummary(typecheckResult));
+			}
+		},
+		runCoverage: () => processCoverage(config, merged.coverageData, workspaceCoverage),
+	});
 
 	// Workspace runs write their own result + Game Output sinks (the runner
 	// has package identity, the workspace root, and the consensus-resolved
@@ -302,6 +313,41 @@ export async function outputMultiResult(
 
 function addCoverageTiming(timing: TimingResult, coverageMs: number): TimingResult {
 	return { ...timing, coverageMs, totalMs: timing.totalMs + coverageMs };
+}
+
+// In agent mode the run summary must survive an agent trimming the tail of the
+// output. The coverage report would otherwise print below the summary and bury
+// it, so when coverage is enabled the summary is deferred to print *after* the
+// report. Every other mode keeps the human reading order: results first,
+// coverage last. Single and multi both route through here so the ordering
+// can't drift between modes.
+//
+// `coverageEnabled` only decides *when* the summary prints relative to coverage;
+// it does not gate the coverage call itself. `runCoverage` (`processCoverage`)
+// already no-ops when coverage is off, so it is always invoked here.
+function emitResultsAndCoverage(options: {
+	config: ResolvedConfig;
+	coverageEnabled: boolean;
+	printResults: () => void;
+	runCoverage: () => boolean;
+}): boolean {
+	const { config, coverageEnabled, printResults, runCoverage } = options;
+	const deferResults = coverageEnabled && usesAgentFormatter(config.formatters, config.verbose);
+
+	if (!deferResults) {
+		printResults();
+	}
+
+	try {
+		return runCoverage();
+	} finally {
+		// `finally` so the deferred summary still reaches stdout even when
+		// coverage mapping throws (e.g. a malformed coverage map) — losing it
+		// would regress the unconditional "results print" of the non-agent path.
+		if (deferResults) {
+			printResults();
+		}
+	}
 }
 
 function usesDefaultFormatter(config: ResolvedConfig): boolean {
