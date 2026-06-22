@@ -365,6 +365,40 @@ describe(OcaleRunner, () => {
 			expect(http.requests).toHaveLength(3);
 		});
 
+		it("should submit against the head URL when placeVersion is omitted", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({ output: { results: [] }, state: "COMPLETE" }),
+				status: 200,
+			});
+
+			const runner = makeRunner(http);
+			await runner.executeScript({ script: "return 1", timeout: 30_000 });
+
+			expect(http.requests[0]!.request.url).not.toContain("/versions/");
+		});
+
+		it("should submit against the pinned version URL when placeVersion is provided", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({ output: { results: [] }, state: "COMPLETE" }),
+				status: 200,
+			});
+
+			const runner = makeRunner(http);
+			await runner.executeScript({ placeVersion: 99, script: "return 1", timeout: 30_000 });
+
+			expect(http.requests[0]!.request.url).toContain(
+				"/places/456/versions/99/luau-execution-session-tasks",
+			);
+		});
+
 		it("should clamp task timeout to 300 seconds when caller asks for more", async () => {
 			expect.assertions(1);
 

@@ -538,6 +538,43 @@ describe(OpenCloudBackend, () => {
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
 
+		it("should pin every executeScript to the uploaded place version", async () => {
+			expect.assertions(2);
+
+			const stub = createRunnerStub({
+				uploadResult: { uploadMs: 12, versionNumber: 42 },
+			});
+			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests(jobsOptions([job("alpha"), job("beta"), job("gamma")], 3));
+
+			// 3 jobs at parallel 3 ⇒ one bucket each ⇒ exactly 3 calls. An exact
+			// count catches a regression that re-executes between buckets.
+			expect(stub.executeCalls).toHaveLength(3);
+			expect(stub.executeCalls.every((call) => call.placeVersion === 42)).toBeTrue();
+		});
+
+		it("should pin work-stealing tasks to the uploaded place version", async () => {
+			expect.assertions(2);
+
+			const stub = createRunnerStub({
+				uploadResult: { uploadMs: 12, versionNumber: 7 },
+			});
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha")],
+				scriptOverride: "stealing-script",
+				workStealing: true,
+			});
+
+			// work-stealing over 1 job with default parallel ⇒ exactly 1 task.
+			expect(stub.executeCalls).toHaveLength(1);
+			expect(stub.executeCalls.every((call) => call.placeVersion === 7)).toBeTrue();
+		});
+
 		it("should propagate upload errors from the runner", async () => {
 			expect.assertions(1);
 

@@ -76,12 +76,13 @@ export class OpenCloudBackend implements Backend {
 				? await this.runWorkStealing({
 						jobs,
 						parallel,
+						placeVersion: upload.versionNumber,
 						primaryConfig: primary.config,
 						// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
 						scriptOverride: scriptOverride!,
 						streaming,
 					})
-				: await this.runStaticBuckets(jobs, parallel, scriptOverride);
+				: await this.runStaticBuckets(jobs, parallel, upload.versionNumber, scriptOverride);
 		const executionMs = Date.now() - executionStart;
 
 		return {
@@ -92,6 +93,7 @@ export class OpenCloudBackend implements Backend {
 
 	private async runBucket(
 		bucket: JobBucket,
+		placeVersion: number,
 		scriptOverride?: string,
 	): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
 		const { indices, jobs } = bucket;
@@ -104,6 +106,7 @@ export class OpenCloudBackend implements Backend {
 
 		const script = scriptOverride ?? generateTestScript(inputs);
 		const scriptResult = await this.runner.executeScript({
+			placeVersion,
 			script,
 			timeout: primary.config.timeout,
 		});
@@ -133,11 +136,12 @@ export class OpenCloudBackend implements Backend {
 	private async runStaticBuckets(
 		jobs: Array<ProjectJob>,
 		parallel: BackendOptions["parallel"],
+		placeVersion: number,
 		scriptOverride?: string,
 	): Promise<Array<RawBackendEntry>> {
 		const buckets = bucketJobs(jobs, parallel);
 		const bucketResults = await Promise.all(
-			buckets.map(async (bucket) => this.runBucket(bucket, scriptOverride)),
+			buckets.map(async (bucket) => this.runBucket(bucket, placeVersion, scriptOverride)),
 		);
 
 		// Flatten bucket results in original job order via the indices recorded
@@ -157,8 +161,10 @@ export class OpenCloudBackend implements Backend {
 	private async runStealingTask(
 		script: string,
 		primaryConfig: ResolvedConfig,
+		placeVersion: number,
 	): Promise<{ entries: Array<EnvelopeEntry>; gameOutput: string | undefined }> {
 		const result = await this.runner.executeScript({
+			placeVersion,
 			script,
 			timeout: primaryConfig.timeout,
 		});
@@ -174,17 +180,18 @@ export class OpenCloudBackend implements Backend {
 	private async runWorkStealing(args: {
 		jobs: Array<ProjectJob>;
 		parallel: BackendOptions["parallel"];
+		placeVersion: number;
 		primaryConfig: ResolvedConfig;
 		scriptOverride: string;
 		streaming: StreamingHooks | undefined;
 	}): Promise<Array<RawBackendEntry>> {
-		const { jobs, parallel, primaryConfig, scriptOverride, streaming } = args;
+		const { jobs, parallel, placeVersion, primaryConfig, scriptOverride, streaming } = args;
 		const taskCount = resolveBucketCount(parallel, jobs.length);
 		const tasksDone = { value: false };
 		const taskEnvelopesPromise = Promise.all(
-			Array.from({ length: taskCount }, async () =>
-				this.runStealingTask(scriptOverride, primaryConfig),
-			),
+			Array.from({ length: taskCount }, async () => {
+				return this.runStealingTask(scriptOverride, primaryConfig, placeVersion);
+			}),
 		).finally(() => {
 			tasksDone.value = true;
 		});

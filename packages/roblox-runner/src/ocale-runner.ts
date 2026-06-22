@@ -46,7 +46,7 @@ export class OcaleRunner implements RemoteRunner {
 	}
 
 	public async executeScript(options: ExecuteScriptOptions): Promise<ScriptResult> {
-		const { script, timeout } = options;
+		const { placeVersion, script, timeout } = options;
 		if (timeout <= 0) {
 			throw new Error("Timeout must be a positive number");
 		}
@@ -60,6 +60,7 @@ export class OcaleRunner implements RemoteRunner {
 				script,
 				timeoutSeconds,
 				universeId: this.credentials.universeId,
+				...(placeVersion !== undefined ? { versionId: String(placeVersion) } : {}),
 			},
 			{
 				retryableTransportCodes: TRANSIENT_TRANSPORT_CODES,
