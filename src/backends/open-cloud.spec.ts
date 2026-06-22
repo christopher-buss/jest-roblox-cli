@@ -16,7 +16,7 @@ import type {
 	StreamingResultRecord,
 } from "../memory-store/sorted-map-client.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
-import { createOpenCloudBackend, OpenCloudBackend } from "./open-cloud.ts";
+import { createOpenCloudBackend, OpenCloudBackend, resolveOcaleMaxRetries } from "./open-cloud.ts";
 
 interface StubStreamReader extends StreamingResultReader {
 	deleted: Array<string>;
@@ -1198,5 +1198,64 @@ describe(createOpenCloudBackend, () => {
 		const backend = new OpenCloudBackend(credentials);
 
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
+	});
+
+	it("should construct the default runner with JEST_ROBLOX_OCALE_MAX_RETRIES set", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "8");
+
+		const backend = new OpenCloudBackend(credentials);
+
+		expect(backend).toBeInstanceOf(OpenCloudBackend);
+	});
+});
+
+describe(resolveOcaleMaxRetries, () => {
+	it("should return undefined when the env var is unset", () => {
+		expect.assertions(1);
+
+		expect(resolveOcaleMaxRetries()).toBeUndefined();
+	});
+
+	it("should return undefined for an empty/whitespace value", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "   ");
+
+		expect(resolveOcaleMaxRetries()).toBeUndefined();
+	});
+
+	it("should parse a valid non-negative integer", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "8");
+
+		expect(resolveOcaleMaxRetries()).toBe(8);
+	});
+
+	it("should return undefined for a partial-numeric value (parseInt trap)", () => {
+		expect.assertions(1);
+
+		// Number.parseInt("8abc") would truncate to 8; Number() rejects it.
+		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "8abc");
+
+		expect(resolveOcaleMaxRetries()).toBeUndefined();
+	});
+
+	it("should return undefined for a decimal value", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "8.5");
+
+		expect(resolveOcaleMaxRetries()).toBeUndefined();
+	});
+
+	it("should return undefined for a negative value", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "-1");
+
+		expect(resolveOcaleMaxRetries()).toBeUndefined();
 	});
 });

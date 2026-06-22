@@ -208,14 +208,27 @@ export default defineConfig({
 						include: [],
 					},
 					clearMocks: true,
-					fileParallelism: false,
+					// Files in a shard run in parallel: execution is
+					// pinned to each run's uploaded version (no clobber),
+					// streaming keys are per-run UUIDs, and each test uses
+					// its own temp sandbox, so concurrent live runs do not
+					// collide. Shards run in parallel too (nx); the fixture
+					// compile is hoisted to the e2e-live-fixture target so
+					// parallel shards never race on out/.
+					env: {
+						// Concurrent runs across processes share one place's
+						// per-minute upload quota, so a burst can 429. The
+						// server's retry-after is short (~5-9s), so raise the
+						// client retry budget to ride it out in-place instead
+						// of failing (the CLI reads this for its OcaleRunner).
+						JEST_ROBLOX_OCALE_MAX_RETRIES: "8",
+					},
 					globalSetup: ["./test/e2e/fixtures/live-place/global-setup.ts"],
 					include: [
 						"test/e2e/contract/**/*.spec.ts",
 						"test/e2e/project/**/*.e2e.spec.ts",
 						"test/e2e/workspace/**/*.e2e.spec.ts",
 					],
-					maxWorkers: 1,
 					pool: "forks",
 					restoreMocks: true,
 					// Live tests hit the real Open Cloud API; transient network
@@ -225,7 +238,9 @@ export default defineConfig({
 					// failures surface immediately.
 					retry: 2,
 					setupFiles,
-					testTimeout: 60_000,
+					// Generous budget: a heavily-throttled upload can wait
+					// through several ~7s retry-after delays before landing.
+					testTimeout: 120_000,
 					unstubEnvs: true,
 				},
 			},

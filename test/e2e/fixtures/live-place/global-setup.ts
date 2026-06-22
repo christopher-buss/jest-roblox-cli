@@ -11,6 +11,12 @@ import * as path from "node:path";
 //
 // Sentinel-cached: re-runs only when `out/shared/example.luau` is missing.
 // To force a clean rebuild, delete `out/` before invoking vitest.
+//
+// Under Nx the compile is normally done upstream by the cacheable
+// `e2e-live-fixture` target (every live shard `dependsOn` it), so this hook
+// just hits the sentinel and returns — which is what lets the shards run in
+// parallel without racing on `out/`. It stays as the on-demand fallback for
+// direct `vitest run --project live` invocations.
 
 const FIXTURE_DIR = path.resolve(import.meta.dirname);
 const SENTINEL = path.join(FIXTURE_DIR, "out", "shared", "example.luau");

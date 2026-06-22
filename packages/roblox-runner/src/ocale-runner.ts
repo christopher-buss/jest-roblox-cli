@@ -22,6 +22,14 @@ const MAX_TASK_TIMEOUT_SECONDS = 300;
 export interface OcaleRunnerOptions {
 	baseUrl?: string;
 	httpClient?: HttpClient;
+	/**
+	 * Max retry attempts the underlying Open Cloud client makes per request.
+	 * Defaults to the client's own default (3). Raising it lets place uploads
+	 * and task submits ride out a transient 429 throttle (the server's
+	 * `retry-after` is honored) instead of surfacing the rate limit — useful
+	 * when many runs share one place's per-minute upload quota.
+	 */
+	maxRetries?: number;
 	readFile?: (filePath: string) => buffer.Buffer;
 	sleep?: SleepFunc;
 }
@@ -38,6 +46,7 @@ export class OcaleRunner implements RemoteRunner {
 			apiKey: credentials.apiKey,
 			...(options?.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
 			...(options?.httpClient !== undefined ? { httpClient: options.httpClient } : {}),
+			...(options?.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
 			...(options?.sleep !== undefined ? { sleep: options.sleep } : {}),
 		};
 		this.luau = new LuauExecutionClient(clientOptions);

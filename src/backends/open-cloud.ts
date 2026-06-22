@@ -21,6 +21,7 @@ import type {
 
 const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
+const MAX_RETRIES_ENV = "JEST_ROBLOX_OCALE_MAX_RETRIES";
 const DEFAULT_STREAM_POLL_MS = 250;
 
 export type OpenCloudCredentials = RunnerCredentials;
@@ -272,6 +273,25 @@ export function resolveOpenCloudBaseUrl(): string | undefined {
 	return override.replace(/\/+$/, "");
 }
 
+/**
+ * Reads {@link MAX_RETRIES_ENV} for an Open Cloud retry-budget override. Lets
+ * the live e2e suite raise the per-request retry count so concurrent place
+ * uploads (which share one per-minute quota across processes) ride out a
+ * transient 429 instead of failing. Returns undefined for unset, empty, or
+ * non-integer values so the client keeps its own default.
+ */
+export function resolveOcaleMaxRetries(): number | undefined {
+	const raw = process.env[MAX_RETRIES_ENV]?.trim();
+	if (raw === undefined || raw === "") {
+		return undefined;
+	}
+
+	// Number() (not parseInt) so partial/decimal strings like "8abc" or "8.5"
+	// reject instead of silently truncating to 8.
+	const parsed = Number(raw);
+	return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
 export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenCloudBackend {
 	return new OpenCloudBackend(credentials);
 }
@@ -333,9 +353,13 @@ async function sleep(ms: number): Promise<void> {
 	});
 }
 
-function resolveRunnerOptions(): { baseUrl?: string } {
+function resolveRunnerOptions(): { baseUrl?: string; maxRetries?: number } {
 	const baseUrl = resolveOpenCloudBaseUrl();
-	return baseUrl === undefined ? {} : { baseUrl };
+	const maxRetries = resolveOcaleMaxRetries();
+	return {
+		...(baseUrl === undefined ? {} : { baseUrl }),
+		...(maxRetries === undefined ? {} : { maxRetries }),
+	};
 }
 
 function resolveBucketCount(parallel: BackendOptions["parallel"], jobCount: number): number {

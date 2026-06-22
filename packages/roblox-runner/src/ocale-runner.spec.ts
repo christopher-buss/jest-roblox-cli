@@ -164,6 +164,33 @@ describe(OcaleRunner, () => {
 			expect(result.versionNumber).toBe(4);
 			expect(http.requests).toHaveLength(2);
 		});
+
+		it("should honor a higher maxRetries to ride out a 429 throttle", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			// Four consecutive 429s exhaust the bedrock default budget
+			// (maxRetries 3 = 4 attempts); maxRetries 5 grants a 5th attempt.
+			http.mockApiError({ message: "Rate limited", statusCode: 429 });
+			http.mockApiError({ message: "Rate limited", statusCode: 429 });
+			http.mockApiError({ message: "Rate limited", statusCode: 429 });
+			http.mockApiError({ message: "Rate limited", statusCode: 429 });
+			http.mockResponse({ body: { versionNumber: 9 }, status: 200 });
+
+			const runner = new OcaleRunner(
+				{ apiKey: "test-key", placeId: "456", universeId: "123" },
+				{
+					httpClient: http,
+					maxRetries: 5,
+					readFile: () => rbxlBuffer(),
+					sleep: createFakeSleep(),
+				},
+			);
+			const result = await runner.uploadPlace({ placeFilePath: "/work/p.rbxl" });
+
+			expect(result.versionNumber).toBe(9);
+			expect(http.requests).toHaveLength(5);
+		});
 	});
 
 	describe("executeScript", () => {
