@@ -6,10 +6,34 @@ import { insertProbes } from "./probe-inserter.ts";
 function emptyResult(): CollectorResult {
 	return {
 		branches: [],
-		exprIfProbes: [],
 		functions: [],
 		implicitElseProbes: [],
 		statements: [],
+		wrapProbes: [],
+	};
+}
+
+function binaryArm(
+	beginColumn: number,
+	endColumn: number,
+): CollectorResult["branches"][number]["arms"][number] {
+	return {
+		bodyFirstColumn: 0,
+		bodyFirstLine: 0,
+		location: { beginColumn, beginLine: 1, endColumn, endLine: 1 },
+	};
+}
+
+function wrap(
+	branchIndex: number,
+	armIndex: number,
+	beginColumn: number,
+	endColumn: number,
+): CollectorResult["wrapProbes"][number] {
+	return {
+		armIndex,
+		branchIndex,
+		exprLocation: { beginColumn, beginLine: 1, endColumn, endLine: 1 },
 	};
 }
 
@@ -324,7 +348,13 @@ describe("probe-inserter", () => {
 						index: 1,
 					},
 				],
-				exprIfProbes: [
+				statements: [
+					{
+						index: 1,
+						location: { beginColumn: 1, beginLine: 1, endColumn: 32, endLine: 1 },
+					},
+				],
+				wrapProbes: [
 					{
 						armIndex: 1,
 						branchIndex: 1,
@@ -334,12 +364,6 @@ describe("probe-inserter", () => {
 						armIndex: 2,
 						branchIndex: 1,
 						exprLocation: { beginColumn: 31, beginLine: 1, endColumn: 32, endLine: 1 },
-					},
-				],
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 32, endLine: 1 },
 					},
 				],
 			};
@@ -396,7 +420,13 @@ describe("probe-inserter", () => {
 						index: 1,
 					},
 				],
-				exprIfProbes: [
+				statements: [
+					{
+						index: 1,
+						location: { beginColumn: 1, beginLine: 1, endColumn: 45, endLine: 1 },
+					},
+				],
+				wrapProbes: [
 					{
 						armIndex: 1,
 						branchIndex: 1,
@@ -413,12 +443,6 @@ describe("probe-inserter", () => {
 						exprLocation: { beginColumn: 44, beginLine: 1, endColumn: 45, endLine: 1 },
 					},
 				],
-				statements: [
-					{
-						index: 1,
-						location: { beginColumn: 1, beginLine: 1, endColumn: 45, endLine: 1 },
-					},
-				],
 			};
 
 			const result = insertProbes(source, collector, "test.luau");
@@ -428,7 +452,144 @@ describe("probe-inserter", () => {
 			expect(result).toContain("__cov_br(1, 3, 3)");
 		});
 
-		it("should not emit __cov_br helper when no expr-if probes exist", () => {
+		it("should nest and/or wraps so outer wraps surround inner wraps", () => {
+			expect.assertions(1);
+
+			// `local v = a and b and c` parses as `(a and b) and c`. The outer
+			// node's lhs span (`a and b`) and the inner node's lhs span (`a`)
+			// both start at column 11; their closes both land at column 18. The
+			// inserter must order the colliding wraps so the outer wrap fully
+			// surrounds the inner one.
+			// columns:        1234567890123456789012345
+			const source = "local v = a and b and c";
+			const collector: CollectorResult = {
+				...emptyResult(),
+				branches: [
+					{
+						arms: [binaryArm(11, 18), binaryArm(23, 24)],
+						branchType: "binary-expr",
+						index: 1,
+					},
+					{
+						arms: [binaryArm(11, 12), binaryArm(17, 18)],
+						branchType: "binary-expr",
+						index: 2,
+					},
+				],
+				statements: [
+					{
+						index: 1,
+						location: { beginColumn: 1, beginLine: 1, endColumn: 24, endLine: 1 },
+					},
+				],
+				wrapProbes: [
+					wrap(1, 1, 11, 18),
+					wrap(1, 2, 23, 24),
+					wrap(2, 1, 11, 12),
+					wrap(2, 2, 17, 18),
+				],
+			};
+
+			const result = insertProbes(source, collector, "test.luau");
+
+			expect(result).toContain(
+				"__cov_br(1, 1, __cov_br(2, 1, a) and __cov_br(2, 2, b)) and __cov_br(1, 2, c)",
+			);
+		});
+
+		it("should nest wraps whose colliding opens close on different lines", () => {
+			expect.assertions(1);
+
+			// `local v = a\n\tand b and c` parses as `(a and b) and c`. The outer
+			// node's lhs operand (`a and b`) spans lines 1-2 while the inner `a`
+			// operand is line 1 only; both opens land at line 1 column 11 but
+			// their closes are on different lines, so ordering falls to the
+			// line component of the wrap's far end.
+			const source = "local v = a\n\tand b and c";
+			const collector: CollectorResult = {
+				...emptyResult(),
+				branches: [
+					{
+						arms: [binaryArm(11, 12), binaryArm(12, 13)],
+						branchType: "binary-expr",
+						index: 1,
+					},
+					{
+						arms: [binaryArm(11, 12), binaryArm(6, 7)],
+						branchType: "binary-expr",
+						index: 2,
+					},
+				],
+				statements: [
+					{
+						index: 1,
+						location: { beginColumn: 1, beginLine: 1, endColumn: 13, endLine: 2 },
+					},
+				],
+				wrapProbes: [
+					// outer lhs `a and b`: line 1 col 11 → line 2 col 7
+					{
+						armIndex: 1,
+						branchIndex: 1,
+						exprLocation: { beginColumn: 11, beginLine: 1, endColumn: 7, endLine: 2 },
+					},
+					// outer rhs `c`: line 2
+					{
+						armIndex: 2,
+						branchIndex: 1,
+						exprLocation: { beginColumn: 12, beginLine: 2, endColumn: 13, endLine: 2 },
+					},
+					// inner lhs `a`: line 1 col 11 → col 12
+					{
+						armIndex: 1,
+						branchIndex: 2,
+						exprLocation: { beginColumn: 11, beginLine: 1, endColumn: 12, endLine: 1 },
+					},
+					// inner rhs `b`: line 2
+					{
+						armIndex: 2,
+						branchIndex: 2,
+						exprLocation: { beginColumn: 6, beginLine: 2, endColumn: 7, endLine: 2 },
+					},
+				],
+			};
+
+			const result = insertProbes(source, collector, "test.luau");
+
+			// The outer open stays outside the inner open on line 1.
+			expect(result).toContain("local v = __cov_br(1, 1, __cov_br(2, 1, a)");
+		});
+
+		it("should keep a point probe outside a wrap opening at the same column", () => {
+			expect.assertions(1);
+
+			// A statement bump and a wrap open landing on the same column: the
+			// bump stays to the left of (outside) the wrap.
+			const source = "0000000000ab";
+			const collector: CollectorResult = {
+				...emptyResult(),
+				branches: [
+					{
+						arms: [binaryArm(11, 12), binaryArm(13, 14)],
+						branchType: "binary-expr",
+						index: 1,
+					},
+				],
+				statements: [
+					{
+						index: 1,
+						location: { beginColumn: 11, beginLine: 1, endColumn: 13, endLine: 1 },
+					},
+				],
+				wrapProbes: [wrap(1, 1, 11, 12)],
+			};
+
+			const result = insertProbes(source, collector, "test.luau");
+
+			expect(result.indexOf("__cov_s[1]")).toBeLessThan(result.indexOf("__cov_br(1, 1,"));
+		});
+
+		it("should not emit __cov_br helper when no wrap probes exist", () => {
 			expect.assertions(1);
 
 			const source = "local x = 1";

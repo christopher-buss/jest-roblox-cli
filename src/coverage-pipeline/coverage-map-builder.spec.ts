@@ -6,10 +6,10 @@ import { buildCoverageMap } from "./coverage-map-builder.ts";
 function emptyResult(): CollectorResult {
 	return {
 		branches: [],
-		exprIfProbes: [],
 		functions: [],
 		implicitElseProbes: [],
 		statements: [],
+		wrapProbes: [],
 	};
 }
 

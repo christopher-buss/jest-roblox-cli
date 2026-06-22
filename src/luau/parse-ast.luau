@@ -26,7 +26,9 @@ luauRoot = string.gsub(luauRoot, "\\", "/")
 -- Tags shared by stat/expr variants are merged — nil fields are harmless.
 local KEEP: { [string]: { string } } = {
 	assign = { "values", "variables" },
-	binary = { "lhsOperand", "rhsOperand" },
+	-- `operator` (reduced to its `.text` by the token branch in `strip`) lets
+	-- the collector tell `and`/`or` short-circuit branches from other binaries.
+	binary = { "lhsOperand", "rhsOperand", "operator" },
 	block = { "statements" },
 	boolean = { "value" },
 	call = { "arguments", "func" },

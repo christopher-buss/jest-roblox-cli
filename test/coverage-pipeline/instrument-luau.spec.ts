@@ -92,6 +92,26 @@ function validateLuauSource(source: string): string {
 	return output.trim();
 }
 
+// Executes instrumented Luau through Lute and returns its stdout. Used to prove
+// runtime behavior (short-circuit, value preservation) rather than just shape.
+// Lute's real `_G` is readonly, so shadow it with a writable local — the real
+// Roblox runtime's `_G` is writable, which is why the preamble targets it.
+function runLuau(source: string): string {
+	const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-run-"));
+	const luauFile = path.join(temporaryDirectory, "run.luau");
+	fs.writeFileSync(luauFile, `local _G = {}\n${source}`);
+
+	try {
+		return cp.execFileSync("lute", ["run", luauFile], {
+			encoding: "utf-8",
+			timeout: 10_000,
+			windowsHide: true,
+		});
+	} finally {
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+	}
+}
+
 describe("instrumentation pipeline (integration)", () => {
 	describe("when instrumenting a simple file", () => {
 		it("should produce the expected instrumented source and cov-map", () => {
@@ -331,6 +351,119 @@ describe("instrumentation pipeline (integration)", () => {
 
 			expect(instrumentedSource).toMatchSnapshot("instrumented source");
 			expect(covMap).toMatchSnapshot("cov-map");
+		});
+	});
+
+	describe("when instrumenting and/or branches", () => {
+		it("should record each and/or as a binary-expr branch in the cov-map", () => {
+			expect.assertions(3);
+
+			const { covMap } = instrumentFixture("and-or.luau", "and-or.luau");
+
+			const branchEntries = Object.values(covMap.branchMap ?? {});
+
+			// `x and y`, `p or q`, and `i and j and k` (two nested nodes) = 4.
+			expect(branchEntries).toHaveLength(4);
+			expect(branchEntries.every((entry) => entry.type === "binary-expr")).toBeTrue();
+			expect(branchEntries.every((entry) => entry.locations.length === 2)).toBeTrue();
+		});
+
+		it("should wrap operands with the __cov_br helper", () => {
+			expect.assertions(2);
+
+			const { instrumentedSource } = instrumentFixture("and-or.luau", "and-or.luau");
+
+			expect(instrumentedSource).toContain(
+				"local a = __cov_br(1, 1, x) and __cov_br(1, 2, y)",
+			);
+			expect(instrumentedSource).toContain(
+				"local b = __cov_br(2, 1, p) or __cov_br(2, 2, q)",
+			);
+		});
+
+		it("should nest a left-associative chain so outer wraps surround inner", () => {
+			expect.assertions(1);
+
+			const { instrumentedSource } = instrumentFixture("and-or.luau", "and-or.luau");
+
+			// `i and j and k` → `(i and j) and k`: branch 3 is the outer node,
+			// branch 4 the inner `i and j`.
+			expect(instrumentedSource).toContain(
+				"local c = __cov_br(3, 1, __cov_br(4, 1, i) and __cov_br(4, 2, j)) and __cov_br(3, 2, k)",
+			);
+		});
+
+		it("should produce valid Luau that Lute can parse", () => {
+			expect.assertions(1);
+
+			const { instrumentedSource } = instrumentFixture("and-or.luau", "and-or.luau");
+
+			expect(validateLuauSource(instrumentedSource)).toBe("OK");
+		});
+
+		it("should produce the expected instrumented source and cov-map", () => {
+			expect.assertions(2);
+
+			const { covMap, instrumentedSource } = instrumentFixture("and-or.luau", "and-or.luau");
+
+			expect(instrumentedSource).toMatchSnapshot("instrumented source");
+			expect(covMap).toMatchSnapshot("cov-map");
+		});
+
+		it("should preserve short-circuit evaluation and operand values at runtime", () => {
+			expect.assertions(4);
+
+			const fileKey = "and-or-short-circuit.luau";
+			const { instrumentedSource } = instrumentFixture(fileKey, fileKey);
+
+			// The fixture prints (1) the evaluation log, (2) the `and` result,
+			// (3) the `or` result. The driver appends the branch counters.
+			const driver = [
+				"",
+				`local __b = _G.__jest_roblox_cov["${fileKey}"].b`,
+				'print(__b[1][1] .. "," .. __b[1][2] .. "," .. __b[2][1] .. "," .. __b[2][2])',
+				"",
+			].join("\n");
+
+			const lines = runLuau(instrumentedSource + driver)
+				.trim()
+				.split(/\r?\n/u);
+
+			// Only the lhs of each operator ran — the rhs short-circuited, so
+			// `note("R1", …)` / `note("R2", …)` never executed.
+			expect(lines[0]).toBe("L1,L2");
+			// `false and …` yields false; `true or …` yields true.
+			expect(lines[1]).toBe("false");
+			expect(lines[2]).toBe("true");
+			// Each branch: arm 1 (lhs) ran once, arm 2 (rhs) short-circuited.
+			expect(lines[3]).toBe("1,0,1,0");
+		});
+
+		it("should increment the rhs arm and keep its value when the rhs runs", () => {
+			expect.assertions(4);
+
+			const fileKey = "and-or-rhs-eval.luau";
+			const { instrumentedSource } = instrumentFixture(fileKey, fileKey);
+
+			const driver = [
+				"",
+				`local __b = _G.__jest_roblox_cov["${fileKey}"].b`,
+				'print(__b[1][1] .. "," .. __b[1][2] .. "," .. __b[2][1] .. "," .. __b[2][2])',
+				"",
+			].join("\n");
+
+			const lines = runLuau(instrumentedSource + driver)
+				.trim()
+				.split(/\r?\n/u);
+
+			// `true and …` and `false or …` both evaluate the rhs, so every
+			// `note(...)` ran in order.
+			expect(lines[0]).toBe("L1,R1,L2,R2");
+			// The expression yields the rhs value in both cases.
+			expect(lines[1]).toBe("42");
+			expect(lines[2]).toBe("99");
+			// Both arms of each branch ran exactly once.
+			expect(lines[3]).toBe("1,1,1,1");
 		});
 	});
 

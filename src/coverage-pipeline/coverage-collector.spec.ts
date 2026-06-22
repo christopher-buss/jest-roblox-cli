@@ -1,4 +1,6 @@
 import type {
+	AstExpr,
+	AstExprBinaryWithOperator,
 	AstExprConstantBool,
 	AstExprConstantNumber,
 	AstExprFunction,
@@ -38,6 +40,18 @@ function emptyBlock(location?: LuauSpan): AstStatBlock {
 	};
 }
 
+function globalExpr(name: string, location: LuauSpan): AstExprGlobal {
+	return { name: { text: name }, kind: "expr", location, tag: "global" };
+}
+
+function localOf(value: AstExpr, location: LuauSpan): AstStatLocal {
+	return { kind: "stat", location, tag: "local", values: [{ node: value }], variables: [] };
+}
+
+function rootOf(statement: AstStatLocal, location: LuauSpan): AstStatBlock {
+	return { kind: "stat", location, statements: [statement], tag: "block" };
+}
+
 describe("coverage-collector", () => {
 	describe(collectCoverage, () => {
 		it("should return empty result for empty block", () => {
@@ -49,7 +63,7 @@ describe("coverage-collector", () => {
 			expect(result.functions).toBeEmpty();
 			expect(result.branches).toBeEmpty();
 			expect(result.implicitElseProbes).toBeEmpty();
-			expect(result.exprIfProbes).toBeEmpty();
+			expect(result.wrapProbes).toBeEmpty();
 		});
 
 		it("should collect instrumentable statements with 1-based indices", () => {
@@ -542,7 +556,7 @@ describe("coverage-collector", () => {
 			expect(result.branches[0]?.arms[1]?.bodyFirstLine).toBe(0);
 		});
 
-		it("should generate exprIfProbes for each expr-if arm", () => {
+		it("should generate wrapProbes for each expr-if arm", () => {
 			expect.assertions(3);
 
 			const exprIf = {
@@ -585,13 +599,13 @@ describe("coverage-collector", () => {
 
 			const result = collectCoverage(root);
 
-			expect(result.exprIfProbes).toHaveLength(2);
-			expect(result.exprIfProbes[0]).toStrictEqual({
+			expect(result.wrapProbes).toHaveLength(2);
+			expect(result.wrapProbes[0]).toStrictEqual({
 				armIndex: 1,
 				branchIndex: 1,
 				exprLocation: span(1, 24, 1, 25),
 			});
-			expect(result.exprIfProbes[1]).toStrictEqual({
+			expect(result.wrapProbes[1]).toStrictEqual({
 				armIndex: 2,
 				branchIndex: 1,
 				exprLocation: span(1, 31, 1, 32),
@@ -772,8 +786,8 @@ describe("coverage-collector", () => {
 			// 3 arms: then + elseif-then + else
 			expect(result.branches[0]?.arms).toHaveLength(3);
 			// 3 wrap probes: one per arm
-			expect(result.exprIfProbes).toHaveLength(3);
-			expect(result.exprIfProbes.map((probe) => probe.armIndex)).toStrictEqual([1, 2, 3]);
+			expect(result.wrapProbes).toHaveLength(3);
+			expect(result.wrapProbes.map((probe) => probe.armIndex)).toStrictEqual([1, 2, 3]);
 		});
 
 		it("should skip non-instrumentable statement tags", () => {
@@ -789,6 +803,109 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.statements).toBeEmpty();
+		});
+
+		it("should collect an and expression as a binary-expr branch", () => {
+			expect.assertions(5);
+
+			const binary = {
+				kind: "expr",
+				lhsOperand: globalExpr("a", span(1, 11, 1, 12)),
+				location: span(1, 11, 1, 18),
+				operator: { location: span(1, 13, 1, 16), text: "and" },
+				rhsOperand: globalExpr("b", span(1, 17, 1, 18)),
+				tag: "binary",
+			} satisfies AstExprBinaryWithOperator;
+			const root = rootOf(localOf(binary, span(1, 1, 1, 18)), span(1, 1, 1, 18));
+
+			const result = collectCoverage(root);
+
+			expect(result.branches).toHaveLength(1);
+			expect(result.branches[0]?.branchType).toBe("binary-expr");
+			expect(result.branches[0]?.arms).toHaveLength(2);
+			expect(result.branches[0]?.arms.map((arm) => arm.location)).toStrictEqual([
+				span(1, 11, 1, 12),
+				span(1, 17, 1, 18),
+			]);
+			expect(result.wrapProbes).toStrictEqual([
+				{ armIndex: 1, branchIndex: 1, exprLocation: span(1, 11, 1, 12) },
+				{ armIndex: 2, branchIndex: 1, exprLocation: span(1, 17, 1, 18) },
+			]);
+		});
+
+		it("should collect an or expression as a binary-expr branch", () => {
+			expect.assertions(2);
+
+			const binary = {
+				kind: "expr",
+				lhsOperand: globalExpr("p", span(1, 11, 1, 12)),
+				location: span(1, 11, 1, 17),
+				operator: { location: span(1, 13, 1, 15), text: "or" },
+				rhsOperand: globalExpr("q", span(1, 16, 1, 17)),
+				tag: "binary",
+			} satisfies AstExprBinaryWithOperator;
+			const root = rootOf(localOf(binary, span(1, 1, 1, 17)), span(1, 1, 1, 17));
+
+			const result = collectCoverage(root);
+
+			expect(result.branches[0]?.branchType).toBe("binary-expr");
+			expect(result.wrapProbes).toHaveLength(2);
+		});
+
+		it("should not treat a non-logical binary operator as a branch", () => {
+			expect.assertions(2);
+
+			const binary = {
+				kind: "expr",
+				lhsOperand: globalExpr("a", span(1, 11, 1, 12)),
+				location: span(1, 11, 1, 16),
+				operator: { location: span(1, 13, 1, 14), text: "+" },
+				rhsOperand: globalExpr("b", span(1, 15, 1, 16)),
+				tag: "binary",
+			} satisfies AstExprBinaryWithOperator;
+			const root = rootOf(localOf(binary, span(1, 1, 1, 16)), span(1, 1, 1, 16));
+
+			const result = collectCoverage(root);
+
+			expect(result.branches).toBeEmpty();
+			expect(result.wrapProbes).toBeEmpty();
+		});
+
+		it("should collect a left-associative and chain as two nested branches", () => {
+			expect.assertions(3);
+
+			// `a and b and c` parses as `(a and b) and c`. The outer node is
+			// visited first (branch 1, arms = `a and b` and `c`), then the
+			// inner (branch 2, arms = `a` and `b`).
+			const inner = {
+				kind: "expr",
+				lhsOperand: globalExpr("a", span(1, 11, 1, 12)),
+				location: span(1, 11, 1, 18),
+				operator: { location: span(1, 13, 1, 16), text: "and" },
+				rhsOperand: globalExpr("b", span(1, 17, 1, 18)),
+				tag: "binary",
+			} satisfies AstExprBinaryWithOperator;
+			const outer = {
+				kind: "expr",
+				lhsOperand: inner,
+				location: span(1, 11, 1, 25),
+				operator: { location: span(1, 19, 1, 22), text: "and" },
+				rhsOperand: globalExpr("c", span(1, 24, 1, 25)),
+				tag: "binary",
+			} satisfies AstExprBinaryWithOperator;
+			const root = rootOf(localOf(outer, span(1, 1, 1, 25)), span(1, 1, 1, 25));
+
+			const result = collectCoverage(root);
+
+			expect(result.branches.map((branch) => branch.index)).toStrictEqual([1, 2]);
+			expect(result.branches[0]?.arms.map((arm) => arm.location)).toStrictEqual([
+				span(1, 11, 1, 18),
+				span(1, 24, 1, 25),
+			]);
+			expect(result.branches[1]?.arms.map((arm) => arm.location)).toStrictEqual([
+				span(1, 11, 1, 12),
+				span(1, 17, 1, 18),
+			]);
 		});
 	});
 });
