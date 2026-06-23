@@ -1,6 +1,6 @@
 import { PermissionError } from "@bedrock-rbx/ocale";
-import { OcaleRunner } from "@isentinel/roblox-runner";
-import type { RemoteRunner, RunnerCredentials } from "@isentinel/roblox-runner";
+import { OcaleRunner, runTaskPool } from "@isentinel/roblox-runner";
+import type { RemoteRunner, RunnerCredentials, ScriptResult } from "@isentinel/roblox-runner";
 
 import * as path from "node:path";
 import process from "node:process";
@@ -159,25 +159,6 @@ export class OpenCloudBackend implements Backend {
 		return flattened;
 	}
 
-	private async runStealingTask(
-		script: string,
-		primaryConfig: ResolvedConfig,
-		placeVersion: number,
-	): Promise<{ entries: Array<EnvelopeEntry>; gameOutput: string | undefined }> {
-		const result = await this.runner.executeScript({
-			placeVersion,
-			script,
-			timeout: primaryConfig.timeout,
-		});
-
-		const jestOutput = result.outputs[0];
-		if (jestOutput === undefined) {
-			throw new Error(`No test results in output. Got: ${JSON.stringify(result.outputs)}`);
-		}
-
-		return { entries: parseEnvelope(jestOutput), gameOutput: result.outputs[1] };
-	}
-
 	private async runWorkStealing(args: {
 		jobs: Array<ProjectJob>;
 		parallel: BackendOptions["parallel"];
@@ -188,12 +169,42 @@ export class OpenCloudBackend implements Backend {
 	}): Promise<Array<RawBackendEntry>> {
 		const { jobs, parallel, placeVersion, primaryConfig, scriptOverride, streaming } = args;
 		const taskCount = resolveBucketCount(parallel, jobs.length);
+
+		// Drive the fixed task set through the shared roblox-runner pool. jest's
+		// work is single-wave — the queue is enqueued upstream and each task
+		// drains it until empty — so once `taskCount` tasks have launched the
+		// known set is covered. Gating `isDone` on the launch count is the
+		// "no-op replenishment": when a task returns its slot is never refilled,
+		// so the pool fires exactly `taskCount` tasks and behaves like the old
+		// `Promise.all` wave while reusing one orchestration path.
 		const tasksDone = { value: false };
-		const taskEnvelopesPromise = Promise.all(
-			Array.from({ length: taskCount }, async () => {
-				return this.runStealingTask(scriptOverride, primaryConfig, placeVersion);
-			}),
-		).finally(() => {
+		const taskResults: Array<ScriptResult> = [];
+		let launched = 0;
+		let taskFailure: undefined | { error: unknown };
+		const poolPromise = runTaskPool({
+			concurrency: taskCount,
+			isDone: () => launched >= taskCount,
+			onError: (error) => {
+				// The pool folds a task failure into a freed slot and resolves,
+				// so without this the failure would be masked whenever a sibling
+				// task drains the whole queue and covers every package. Capture
+				// it and rethrow once the pool settles so an infrastructure or
+				// script failure always fails the run, as the old `Promise.all`
+				// wave did.
+				taskFailure = { error };
+			},
+			onResult: (result) => {
+				taskResults.push(result);
+			},
+			runTask: async () => {
+				launched += 1;
+				return this.runner.executeScript({
+					placeVersion,
+					script: scriptOverride,
+					timeout: primaryConfig.timeout,
+				});
+			},
+		}).finally(() => {
 			tasksDone.value = true;
 		});
 
@@ -202,18 +213,19 @@ export class OpenCloudBackend implements Backend {
 				? pollStreamingResults(streaming, () => tasksDone.value)
 				: Promise.resolve();
 
-		// Settle both promises before letting any task failure escape: tasksDone
-		// is set by taskEnvelopesPromise.finally regardless of success/failure,
-		// so pollPromise terminates within ~pollMs of the task settling. If we
-		// went through `await Promise.all([...])` and the task rejected,
-		// pollPromise would be orphaned — its setTimeout chain could keep timers
-		// alive and write to stderr after the function has already returned.
-		const [taskSettlement] = await Promise.allSettled([taskEnvelopesPromise, pollPromise]);
-		if (taskSettlement.status === "rejected") {
-			throw taskSettlement.reason;
+		// The pool never rejects (it folds task errors into freed slots) and its
+		// `.finally` always flips tasksDone, so pollPromise terminates within
+		// ~pollMs — neither promise orphans the other.
+		await Promise.all([poolPromise, pollPromise]);
+
+		if (taskFailure !== undefined) {
+			throw taskFailure.error;
 		}
 
-		const taskEnvelopes = taskSettlement.value;
+		// Parse after the pool settles so a task that returned no usable output
+		// throws here, in the normal flow, rather than being swallowed by the
+		// pool's per-task error handling.
+		const taskEnvelopes = taskResults.map(parseStealingEnvelope);
 		const entryByKey = aggregateEntriesByKey(taskEnvelopes);
 
 		const missing: Array<string> = [];
@@ -404,6 +416,23 @@ function bucketJobs(
 
 function entryLookupKey(package_: string, project: string | undefined): string {
 	return project === undefined || project === package_ ? package_ : `${package_}::${project}`;
+}
+
+/**
+ * Decode one work-stealing task's return envelope. Throws when the task
+ * produced no Jest output so a broken task surfaces as a run failure rather
+ * than a silently-missing package.
+ */
+function parseStealingEnvelope(result: ScriptResult): {
+	entries: Array<EnvelopeEntry>;
+	gameOutput: string | undefined;
+} {
+	const jestOutput = result.outputs[0];
+	if (jestOutput === undefined) {
+		throw new Error(`No test results in output. Got: ${JSON.stringify(result.outputs)}`);
+	}
+
+	return { entries: parseEnvelope(jestOutput), gameOutput: result.outputs[1] };
 }
 
 // Aggregate entries from all task envelopes. Map by pkg::project so

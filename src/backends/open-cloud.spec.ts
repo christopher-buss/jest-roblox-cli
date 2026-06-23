@@ -631,6 +631,70 @@ describe(OpenCloudBackend, () => {
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
 
+		it("should not replenish a freed slot — single-wave fires exactly parallel tasks", async () => {
+			expect.assertions(1);
+
+			// One task returns immediately while the other lingers. The shared
+			// pool would relaunch the freed slot if jest didn't pass a no-op
+			// replenishment; single-wave must fire exactly `parallel` tasks total
+			// and never start a replacement when a slot drains early.
+			let taskIndex = 0;
+			const stub = createRunnerStub();
+			stub.setExecute(async () => {
+				const index = taskIndex;
+				taskIndex += 1;
+				if (index === 0) {
+					return scriptResult(envelope([packageEntry("alpha")]));
+				}
+
+				await new Promise<void>((resolve) => {
+					setTimeout(resolve, 10);
+				});
+				return scriptResult(envelope([packageEntry("beta")]));
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha"), job("beta")],
+				parallel: 2,
+				scriptOverride: "stealing-script",
+				workStealing: true,
+			});
+
+			expect(stub.executeCalls).toHaveLength(2);
+		});
+
+		it("should fail the run when a task errors even if a sibling covers every package", async () => {
+			expect.assertions(1);
+
+			// The shared pool folds a task failure into a freed slot and
+			// resolves, so without a post-pool guard an infrastructure/script
+			// failure would be masked whenever a sibling task happens to drain
+			// the whole queue and cover every package. The run must still fail.
+			let taskIndex = 0;
+			const stub = createRunnerStub();
+			stub.setExecute(() => {
+				const index = taskIndex;
+				taskIndex += 1;
+				if (index === 0) {
+					return scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")]));
+				}
+
+				throw new Error("open cloud task crashed");
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+			await expect(
+				backend.runTests({
+					jobs: [job("alpha"), job("beta")],
+					parallel: 2,
+					scriptOverride: "stealing-script",
+					workStealing: true,
+				}),
+			).rejects.toThrow(/open cloud task crashed/);
+		});
+
 		it("should drop duplicate-pkg entries from fault-recovery and keep the first occurrence", async () => {
 			expect.assertions(2);
 
