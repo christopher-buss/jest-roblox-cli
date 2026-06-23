@@ -54,7 +54,10 @@
 				"{projectRoot}/test/e2e/fixtures/live-place/src/**/*",
 				"{projectRoot}/test/e2e/fixtures/live-place/tsconfig*.json"
 			],
-			"outputs": ["{projectRoot}/test/e2e/fixtures/live-place/out"],
+			"outputs": [
+				"{projectRoot}/test/e2e/fixtures/live-place/out",
+				"{projectRoot}/test/e2e/fixtures/live-place/include"
+			],
 			"options": {
 				"cwd": "tools/jest-roblox-cli/test/e2e/fixtures/live-place"
 			}
