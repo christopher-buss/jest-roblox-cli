@@ -117,14 +117,50 @@ describe(parseEnvelope, () => {
 		]);
 	});
 
-	it("should rewrap a non-envelope-shaped payload as a length-1 entries array containing the raw jestOutput", () => {
+	it("should rewrap a bare non-error jest result as a length-1 entries array containing the raw jestOutput", () => {
 		expect.assertions(1);
 
-		const legacyPayload = JSON.stringify({ err: "boom", success: false });
+		const barePayload = successJest();
 
-		const result = parseEnvelope(legacyPayload);
+		const result = parseEnvelope(barePayload);
 
-		expect(result).toStrictEqual([{ jestOutput: legacyPayload }]);
+		expect(result).toStrictEqual([{ jestOutput: barePayload }]);
+	});
+
+	it("should surface a top-level whole-run error as a clean LuauScriptError", () => {
+		// A {success:false, err} payload is the runtime crashing before it emits
+		// any per-job entry. Surfacing it here (instead of rewrapping) keeps the
+		// caller's entries-vs-jobs count guard from masking the real cause.
+		expect.assertions(2);
+
+		const errorPayload = JSON.stringify({ err: "boom", success: false });
+
+		const thrown = captureThrown(() => {
+			parseEnvelope(errorPayload);
+		});
+
+		expect(thrown).toBeInstanceOf(LuauScriptError);
+		expect((thrown as Error).message).toBe("boom");
+	});
+
+	it("should extract the leaf cause from a promise-trace whole-run error", () => {
+		expect.assertions(2);
+
+		const promiseTrace = [
+			"-- Promise.Error(ExecutionError) --",
+			"",
+			"...Rejected because it was chained to the following Promise, which encountered an error:",
+			"",
+			"ReplicatedStorage.rbxts_include.RobloxShared.nodeUtils:25: LoadString must be enabled",
+		].join("\n");
+		const errorPayload = JSON.stringify({ err: promiseTrace, success: false });
+
+		const thrown = captureThrown(() => {
+			parseEnvelope(errorPayload);
+		});
+
+		expect(thrown).toBeInstanceOf(LuauScriptError);
+		expect((thrown as Error).message).toBe("LoadString must be enabled");
 	});
 
 	it("should propagate JSON.parse errors when the input is not valid JSON", () => {

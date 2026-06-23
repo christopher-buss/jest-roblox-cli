@@ -298,8 +298,10 @@ describe(StudioBackend, () => {
 		expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
 	});
 
-	it("should rewrap legacy plugin error payloads as a single rawResult carrying the raw payload", async () => {
-		expect.assertions(2);
+	it("should surface a top-level whole-run error as a clean message, not the raw payload", async () => {
+		// A bare {success:false, err} is a wholesale failure (no per-job entry).
+		// Surface the err itself rather than the JSON blob or the count guard.
+		expect.assertions(1);
 
 		const rawJestOutput = JSON.stringify({
 			err: "Failed to find Jest instance",
@@ -312,10 +314,7 @@ describe(StudioBackend, () => {
 		const wss = getLastCreatedServer()!;
 		connectAndReply(wss, { rawJestOutput });
 
-		const { rawResults } = await promise;
-
-		expect(rawResults).toHaveLength(1);
-		expect(rawResults[0]!.entry.jestOutput).toBe(rawJestOutput);
+		await expect(promise).rejects.toThrow(/^Failed to find Jest instance$/);
 	});
 
 	it("should rethrow syntax errors when jestOutput is not valid JSON", async () => {
@@ -550,6 +549,30 @@ describe(StudioBackend, () => {
 		await expect(promise).rejects.toThrow(
 			/Studio backend returned 1 entries but request had 2 jobs/,
 		);
+	});
+
+	it("should surface a top-level whole-run error instead of the count-mismatch guard", async () => {
+		// Regression: a wholesale failure (e.g. LoadString disabled) returns a
+		// bare {success:false, err} for the whole request, not one entry per job.
+		// The entries-vs-jobs guard used to mask the real cause behind
+		// "returned 1 entries but request had N jobs". The error must win.
+		expect.assertions(2);
+
+		const backend = new StudioBackend({ port: 0 });
+		const promise = backend.runTests({ jobs: [job("alpha"), job("beta")] });
+
+		const wss = getLastCreatedServer()!;
+		connectAndReply(wss, {
+			rawJestOutput: JSON.stringify({
+				err: "LoadString must be enabled in ServerScriptService to run tests",
+				success: false,
+			}),
+		});
+
+		await expect(promise).rejects.toThrow(
+			/LoadString must be enabled in ServerScriptService to run tests/,
+		);
+		await expect(promise).rejects.not.toThrow(/entries but request had/);
 	});
 
 	it("should terminate the underlying WebSocketServer via close()", async () => {

@@ -3,6 +3,14 @@ import { type } from "arktype";
 import { LuauScriptError, parseJestOutput } from "../reporter/parser.ts";
 import type { EnvelopeEntry, ProjectBackendResult, ProjectJob } from "./interface.ts";
 
+// Mirrors parser.ts `unwrapResult`: a top-level {success:false, err} payload is
+// a wholesale failure, not an envelope. `err: unknown` requires the key to be
+// present; `success: false` pins the literal.
+const wholeRunErrorSchema = type({
+	err: "unknown",
+	success: "false",
+});
+
 const envelopeSchema = type({
 	entries: type({
 		"bannerOutput?": "string",
@@ -19,6 +27,18 @@ export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
 	const raw = JSON.parse(jestOutput);
 	const envelope = envelopeSchema(raw);
 	if (envelope instanceof type.errors) {
+		// A non-envelope payload is one of two things. A top-level whole-run
+		// error ({success:false, err}) means the runtime crashed before emitting
+		// any per-job entry: there's no result to map. Re-run it through
+		// parseJestOutput, which recognizes that shape and throws a clean
+		// LuauScriptError (leaf-cause message), so the caller surfaces the real
+		// cause instead of masking it behind the entries-vs-jobs count guard.
+		// Anything else is a legacy bare jest result — rewrap it as one entry so
+		// buildProjectResult parses it like any other.
+		if (!(wholeRunErrorSchema(raw) instanceof type.errors)) {
+			parseJestOutput(jestOutput);
+		}
+
 		return [{ jestOutput }];
 	}
 
