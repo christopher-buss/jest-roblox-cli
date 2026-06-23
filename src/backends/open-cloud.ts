@@ -196,14 +196,18 @@ export class OpenCloudBackend implements Backend {
 			onResult: (result) => {
 				taskResults.push(result);
 			},
-			runTask: async () => {
-				launched += 1;
-				return this.runner.executeScript({
-					placeVersion,
-					script: scriptOverride,
-					timeout: primaryConfig.timeout,
-				});
-			},
+			places: [
+				{
+					runTask: async () => {
+						launched += 1;
+						return this.runner.executeScript({
+							placeVersion,
+							script: scriptOverride,
+							timeout: primaryConfig.timeout,
+						});
+					},
+				},
+			],
 		}).finally(() => {
 			tasksDone.value = true;
 		});
