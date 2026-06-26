@@ -7,7 +7,12 @@ import type { WebSocket } from "ws";
 
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
-import type { Backend, BackendOptions, BackendResult } from "./interface.ts";
+import {
+	type Backend,
+	type BackendOptions,
+	type BackendResult,
+	isShardedParallel,
+} from "./interface.ts";
 import { createOpenCloudBackend } from "./open-cloud.ts";
 import { createStudioCliBackend } from "./studio-cli.ts";
 import { createStudioBackend } from "./studio.ts";
@@ -159,7 +164,7 @@ export async function resolveBackend(
 // parallel request up front (the CLI otherwise drops `--parallel` for non-
 // open-cloud backends, which would silently ignore the user's intent).
 function assertStudioCliSerial(parallel: ResolvedConfig["parallel"]): void {
-	if (parallel === "auto" || (typeof parallel === "number" && parallel > 1)) {
+	if (isShardedParallel(parallel)) {
 		throw new Error(
 			"studio-cli backend is serial (one Studio instance); --parallel > 1 is not supported.",
 		);

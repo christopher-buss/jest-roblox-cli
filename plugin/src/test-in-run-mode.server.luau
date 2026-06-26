@@ -7,16 +7,32 @@ if not RunService:IsRunning() then
 	return
 end
 
-local function endWithError(err: string): ()
+-- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
+-- `src/backends/studio.ts` and `STUDIO_CLI_PROTOCOL_VERSION` in
+-- `src/backends/studio-cli.ts`. v3 added the run-mode workspace dispatch + this
+-- version echo. The runner validates the version the CLI sent and echoes its own
+-- in `EndTest`, so the CLI surfaces a clean "update the plugin" error against a
+-- mismatched plugin rather than running with stale runtime semantics.
+local PROTOCOL_VERSION = 3
+
+-- Every result (success or failure) echoes `protocolVersion` so the studio-cli
+-- host can detect a stale plugin: one predating this echo omits the field and
+-- the host rejects it as a version mismatch.
+local function endTest(jestOutput: string, gameOutput: string?): ()
 	local ok, endErr = pcall(function()
 		StudioTestService:EndTest({
-			jestOutput = HttpService:JSONEncode({ success = false, err = err }),
-			gameOutput = "[]",
+			jestOutput = jestOutput,
+			gameOutput = gameOutput or "[]",
+			protocolVersion = PROTOCOL_VERSION,
 		})
 	end)
 	if not ok then
 		warn("[jest-roblox] EndTest failed: " .. tostring(endErr))
 	end
+end
+
+local function endWithError(err: string): ()
+	endTest(HttpService:JSONEncode({ success = false, err = err }), "[]")
 end
 
 local testArgs = StudioTestService:GetTestArgs()
@@ -34,15 +50,23 @@ if testArgs == nil then
 	return
 end
 
-if testArgs.config == nil or testArgs.config.configs == nil then
-	local keysOk, keys = pcall(HttpService.JSONEncode, HttpService, testArgs)
+-- Version handshake: reject a missing or mismatched `protocolVersion` before
+-- running anything, mirroring the WebSocket `version_mismatch` path. The error
+-- envelope still echoes our version (via endTest), so the CLI surfaces the
+-- upgrade message either through this error or the version echo.
+local clientVersion = if typeof(testArgs.protocolVersion) == "number"
+	then testArgs.protocolVersion
+	else nil
+if clientVersion ~= PROTOCOL_VERSION then
 	endWithError(
-		"testArgs.config.configs is nil. Keys: " .. (if keysOk then keys else "<unencodable>")
+		"Studio plugin protocol version mismatch — plugin v"
+			.. tostring(PROTOCOL_VERSION)
+			.. ", CLI v"
+			.. tostring(clientVersion)
+			.. ". Update the jest-roblox Studio plugin to match the CLI."
 	)
 	return
 end
-
-local configs = testArgs.config.configs
 
 local loadStringEnabled = pcall(function()
 	loadstring("return true")
@@ -52,6 +76,41 @@ if not loadStringEnabled then
 	endWithError("LoadString must be enabled in ServerScriptService to run tests")
 	return
 end
+
+-- Dispatch by payload shape. A `workspace` payload drives the staged
+-- materializer (clone each package from the mega-place's `__pkg_stage`, run,
+-- reset) via the shared single-process embedded runner — the same code OCALE
+-- runs, minus the MemoryStore queue. Otherwise the existing single-/multi-
+-- project configs path runs `Runner.runProjects`.
+if testArgs.workspace ~= nil then
+	local embeddedOk, EmbeddedRunner =
+		pcall(require, script.Parent.shared.staging["embedded-runner"])
+	if not embeddedOk then
+		endWithError(
+			"Failed to require shared.staging.embedded-runner: " .. tostring(EmbeddedRunner)
+		)
+		return
+	end
+
+	local runOk, entriesOrErr = pcall(EmbeddedRunner.runEmbedded, script, testArgs.workspace)
+	if not runOk then
+		endWithError("EmbeddedRunner.runEmbedded threw: " .. tostring(entriesOrErr))
+		return
+	end
+
+	endTest(HttpService:JSONEncode({ entries = entriesOrErr }), "[]")
+	return
+end
+
+if testArgs.config == nil or testArgs.config.configs == nil then
+	local keysOk, keys = pcall(HttpService.JSONEncode, HttpService, testArgs)
+	endWithError(
+		"testArgs.config.configs is nil. Keys: " .. (if keysOk then keys else "<unencodable>")
+	)
+	return
+end
+
+local configs = testArgs.config.configs
 
 local requireOk, Runner = pcall(require, script.Parent.shared.runner)
 if not requireOk then
@@ -117,11 +176,7 @@ local function injectStubsForConfig(cfg, configIndex: number, injectionPaths: { 
 		)
 		local stub = Instance.new("ModuleScript")
 		stub.Name = "jest.config"
-		stub.Source = string.format(
-			'return _G["%s"].configs[%d]',
-			SESSION_KEY,
-			configIndex
-		)
+		stub.Source = string.format('return _G["%s"].configs[%d]', SESSION_KEY, configIndex)
 		stub.Parent = leaf
 		-- Record immediately after parenting so a subsequent mount's
 		-- failure does not strand this one.
@@ -133,7 +188,9 @@ local function cleanupStubsForConfig(configIndex: number)
 	local injected = injectedPerConfig[configIndex]
 	if injected ~= nil then
 		for _, inst in injected do
-			pcall(function() inst:Destroy() end)
+			pcall(function()
+				inst:Destroy()
+			end)
 		end
 		injectedPerConfig[configIndex] = nil
 	end
@@ -159,8 +216,7 @@ end
 -- nested-project mounts (e.g. `ReplicatedStorage` and `ReplicatedStorage/Foo`)
 -- never have stubs in DataModel simultaneously — which would let Jest's
 -- parent-traversal config lookup resolve the wrong project's config.
-local runtimeStubMounts: { { string } } = testArgs.runtimeStubMounts
-	or table.create(#configs, {})
+local runtimeStubMounts: { { string } } = testArgs.runtimeStubMounts or table.create(#configs, {})
 
 local hooks = {
 	beforeConfig = function(cfg, index)
@@ -181,7 +237,4 @@ if not runOk then
 	return
 end
 
-StudioTestService:EndTest({
-	jestOutput = HttpService:JSONEncode({ entries = entriesOrErr }),
-	gameOutput = "[]",
-})
+endTest(HttpService:JSONEncode({ entries = entriesOrErr }), "[]")

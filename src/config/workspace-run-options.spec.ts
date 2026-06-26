@@ -320,6 +320,44 @@ describe(buildWorkspaceRunOptions, () => {
 		});
 	});
 
+	describe("studioPath resolution", () => {
+		it("should let the CLI override studioPath for studio-cli workspace runs", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: { studioPath: "C:/custom/RobloxStudioBeta.exe" },
+				perPackageConfigs: [{ name: "alpha", config: {} }],
+			});
+
+			expect(result.studioPath).toBe("C:/custom/RobloxStudioBeta.exe");
+		});
+
+		it("should propagate per-package studioPath when all agree", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: {},
+				perPackageConfigs: [
+					{ name: "alpha", config: { studioPath: "C:/s.exe" } },
+					{ name: "beta", config: { studioPath: "C:/s.exe" } },
+				],
+			});
+
+			expect(result.studioPath).toBe("C:/s.exe");
+		});
+
+		it("should leave studioPath undefined when no one declares it", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: {},
+				perPackageConfigs: [{ name: "alpha", config: {} }],
+			});
+
+			expect(result.studioPath).toBeUndefined();
+		});
+	});
+
 	describe("optional-field consensus", () => {
 		it("should propagate per-package universeId when all agree", () => {
 			expect.assertions(1);

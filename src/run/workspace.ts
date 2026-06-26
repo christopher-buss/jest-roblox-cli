@@ -4,6 +4,8 @@ import process from "node:process";
 import packageJson from "../../package.json" with { type: "json" };
 import type { Backend } from "../backends/interface.ts";
 import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/open-cloud.ts";
+import { createStudioCliBackend } from "../backends/studio-cli.ts";
+import { createStudioBackend } from "../backends/studio.ts";
 import { loadRawConfig } from "../config/loader.ts";
 import type { CliOptions, WorkspaceConfig, WorkspaceRunOptions } from "../config/schema.ts";
 import { buildWorkspaceRunOptions } from "../config/workspace-run-options.ts";
@@ -161,16 +163,36 @@ export async function runWorkspaceMode(
 	return buildWorkspaceResult(output, runOptions);
 }
 
-// Resolves the Open Cloud backend + work-stealing credentials, or an error to
-// surface. `--typecheckOnly` is pure-local tsgo — the runner short-circuits
-// before any dispatch — so it needs no credentials at all: skip backend
+// Resolves the backend for a workspace run, plus work-stealing credentials when
+// it's Open Cloud. `--typecheckOnly` is pure-local tsgo — the runner
+// short-circuits before any dispatch — so it needs no backend at all: skip
 // creation entirely and run with no secrets.
+//
+// The local Studio backends need no Open Cloud credentials. studio-cli launches
+// its own Studio against the synthesized mega-place the workspace runner builds;
+// the attached `studio` backend runs the workspace against a developer's open
+// Studio (debug/introspection). Both bypass the credential path entirely; only
+// open-cloud (and `auto`, which never probes in workspace mode) resolves them.
 function resolveWorkspaceBackend(
 	cli: CliOptions,
 	runOptions: WorkspaceRunOptions,
 ): WorkspaceBackendResolution {
 	if (cli.typecheckOnly === true) {
 		return {};
+	}
+
+	if (runOptions.backend === "studio-cli") {
+		return {
+			backend: createStudioCliBackend({
+				...(runOptions.studioPath !== undefined
+					? { studioPath: runOptions.studioPath }
+					: {}),
+			}),
+		};
+	}
+
+	if (runOptions.backend === "studio") {
+		return { backend: createStudioBackend({ port: runOptions.port }) };
 	}
 
 	try {

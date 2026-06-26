@@ -12,11 +12,11 @@ local WEBSOCKET_URL = "ws://localhost:3001"
 local RECONNECT_DELAY = 0.1
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
--- `src/backends/studio.ts`. Bumped when the runtime contract changes (e.g.
--- runtime-injection payload shape). The plugin rejects mismatched CLI
--- versions with a `version_mismatch` response so users see a clear upgrade
+-- `src/backends/studio.ts`. Bumped when the runtime contract changes — v3 added
+-- the run-mode workspace dispatch + version echo. The plugin rejects mismatched
+-- CLI versions with a `version_mismatch` response so users see a clear upgrade
 -- message rather than running with stale behaviour or an opaque timeout.
-local PROTOCOL_VERSION = 2
+local PROTOCOL_VERSION = 3
 
 local IsDebug = ReplicatedStorage:GetAttribute("JEST_ROBLOX_DEBUG") == true
 ReplicatedStorage:GetAttributeChangedSignal("JEST_ROBLOX_DEBUG"):Connect(function(): ()
@@ -130,11 +130,18 @@ local function connect(): ()
 				local runOk, result = pcall(function(): any
 					return StudioTestService:ExecuteRunModeAsync({
 						test = true,
+						-- Echo the negotiated version into the Run-mode payload so
+						-- the run-mode runner's own handshake passes (it validates
+						-- `protocolVersion`, shared with the studio-cli path).
+						protocolVersion = PROTOCOL_VERSION,
 						config = message.config,
 						-- Filtered injection targets (parallel to configs)
 						-- so the Run Mode runner skips mounts that already
 						-- have a user-authored jest.config on disk.
 						runtimeStubMounts = message.runtimeStubMounts,
+						-- Present only for workspace runs: the staged entries the
+						-- run-mode runner dispatches to the embedded materializer.
+						workspace = message.workspace,
 					})
 				end)
 

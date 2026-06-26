@@ -61,8 +61,16 @@ function envelope(entries: Array<{ elapsedMs?: number; jestOutput: string }>): s
 	return JSON.stringify({ entries });
 }
 
-function wrappedLog(wrapper: { gameOutput?: string; jestOutput: string }): string {
-	return `Roblox Studio engine line\n${DELIMITER}${JSON.stringify(wrapper)}${DELIMITER}\nbye\n`;
+// The run-mode runner echoes protocolVersion in its result; the host requires
+// it to match. Default to the current protocol so happy-path helpers round-trip;
+// version-handshake tests build their own wrapper inline to omit/mismatch it.
+function wrappedLog(wrapper: {
+	gameOutput?: string;
+	jestOutput: string;
+	protocolVersion?: number;
+}): string {
+	const echoed = { protocolVersion: 3, ...wrapper };
+	return `Roblox Studio engine line\n${DELIMITER}${JSON.stringify(echoed)}${DELIMITER}\nbye\n`;
 }
 
 function launchWriting(content: string): StudioCliLauncher {
@@ -87,6 +95,23 @@ function makeBackend(launch: StudioCliLauncher): StudioCliBackend {
 		discover: () => "C:/Studio/RobloxStudioBeta.exe",
 		launch,
 	});
+}
+
+// Workspace jobs carry `pkg` (set only in workspace mode) and a `placeFile`
+// pointing at the mega-place the workspace runner already built. studio-cli
+// keys off `pkg` to switch into the staged/materializer dispatch.
+function workspaceJob(
+	package_: string,
+	displayName: string,
+	overrides: Partial<ResolvedConfig> = {},
+): ProjectJob {
+	return {
+		...job(displayName, {
+			placeFile: "/repo/.jest-roblox/workspace/synthesized.rbxl",
+			...overrides,
+		}),
+		pkg: package_,
+	};
 }
 
 const singleJob: BackendOptions = { jobs: [job("")] };
@@ -230,6 +255,44 @@ describe(StudioCliBackend, () => {
 		// inside without closing it.
 		expect(bootstrap).toContain("JSONDecode([==[");
 		expect(bootstrap).toContain("x]=]y");
+	});
+
+	it("should surface a version-mismatch error when the plugin omits the protocolVersion echo", async () => {
+		// A stale plugin (a runner predating the handshake) returns a valid
+		// envelope but never echoes protocolVersion. The host must reject it as a
+		// version mismatch ("update the plugin"), not run with stale semantics.
+		expect.assertions(1);
+
+		resetVol();
+
+		const backend = makeBackend(
+			launchWriting(
+				`${DELIMITER}${JSON.stringify({
+					gameOutput: "[]",
+					jestOutput: envelope([{ jestOutput: successResult() }]),
+				})}${DELIMITER}`,
+			),
+		);
+
+		await expect(backend.runTests(singleJob)).rejects.toThrow(/protocol.*mismatch/i);
+	});
+
+	it("should surface a version-mismatch error when the plugin echoes a different protocolVersion", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		const backend = makeBackend(
+			launchWriting(
+				`${DELIMITER}${JSON.stringify({
+					gameOutput: "[]",
+					jestOutput: envelope([{ jestOutput: successResult() }]),
+					protocolVersion: 2,
+				})}${DELIMITER}`,
+			),
+		);
+
+		await expect(backend.runTests(singleJob)).rejects.toThrow(/protocol.*mismatch/i);
 	});
 
 	it("should throw a clear error when the result wrapper JSON is truncated", async () => {
@@ -427,6 +490,95 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTests(singleJob)).rejects.toThrow(
 			/returned 2 entries but request had 1 jobs/,
 		);
+	});
+
+	it("should run a workspace config against the pre-built mega-place without building its own", async () => {
+		expect.assertions(2);
+
+		resetVol();
+
+		const buildPlace =
+			vi.fn<(options: BuildPlaceOptions) => { hash: string; path: string }>(fakeBuildPlace());
+		let localPlaceFile = "";
+		const backend = new StudioCliBackend({
+			buildPlace,
+			discover: () => "C:/Studio/RobloxStudioBeta.exe",
+			launch: async (request) => {
+				const index = request.args.indexOf("--localPlaceFile");
+				localPlaceFile = request.args[index + 1]!;
+				fs.writeFileSync(
+					request.outputFile,
+					wrappedLog({
+						jestOutput: envelope([{ jestOutput: successResult() }]),
+					}),
+				);
+			},
+		});
+
+		await backend.runTests({ jobs: [workspaceJob("@scope/a", "a")] });
+
+		// The mega-place is already built by the workspace runner; studio-cli
+		// must drive it, not build a second place from one package's rojo
+		// project.
+		expect(buildPlace).not.toHaveBeenCalled();
+		expect(localPlaceFile).toContain("synthesized.rbxl");
+	});
+
+	it("should drive the staged workspace entries (pkg/project per job), not a configs payload", async () => {
+		expect.assertions(3);
+
+		resetVol();
+
+		let bootstrap = "";
+		const backend = new StudioCliBackend({
+			buildPlace: fakeBuildPlace(),
+			discover: () => "C:/Studio/RobloxStudioBeta.exe",
+			launch: async (request) => {
+				const index = request.args.indexOf("--runScriptFile");
+				bootstrap = fs.readFileSync(request.args[index + 1]!, "utf8");
+				fs.writeFileSync(
+					request.outputFile,
+					wrappedLog({
+						jestOutput: envelope([
+							{ jestOutput: successResult() },
+							{ jestOutput: successResult() },
+						]),
+					}),
+				);
+			},
+		});
+
+		await backend.runTests({
+			jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+		});
+
+		expect(bootstrap).toContain("workspace");
+		expect(bootstrap).toContain("@scope/a");
+		expect(bootstrap).toContain("@scope/b");
+	});
+
+	it("should return one rawResult per workspace package, in submitted order", async () => {
+		expect.assertions(2);
+
+		resetVol();
+
+		const backend = makeBackend(
+			launchWriting(
+				wrappedLog({
+					jestOutput: envelope([
+						{ elapsedMs: 5, jestOutput: successResult() },
+						{ elapsedMs: 7, jestOutput: successResult() },
+					]),
+				}),
+			),
+		);
+
+		const { rawResults } = await backend.runTests({
+			jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+		});
+
+		expect(rawResults).toHaveLength(2);
+		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([5, 7]);
 	});
 
 	it("should construct with default seams via createStudioCliBackend", () => {

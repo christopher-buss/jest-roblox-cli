@@ -19,7 +19,7 @@ const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.ho
 vi.mock(import("ws"), async () => fromPartial({ WebSocketServer: MockWebSocketServer }));
 
 // Mirrors the wire format StudioBackend emits in `attachSocket` — used by the
-// send-mock to assert the backend keeps sending the v2 handshake fields.
+// send-mock to assert the backend keeps sending the handshake fields.
 // Drift here means the protocol-version handshake regressed.
 const pluginRequest = type({
 	action: "string",
@@ -35,6 +35,12 @@ function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): Proj
 		displayName,
 		testFiles: [`${displayName}/test.spec.ts`],
 	};
+}
+
+// Workspace jobs carry `pkg`; the backend then drives the staged materializer
+// dispatch by sending `workspace.entries` rather than `config.configs`.
+function wsJob(package_: string, displayName: string): ProjectJob {
+	return { ...job(displayName), pkg: package_ };
 }
 
 const singleJobOptions: BackendOptions = { jobs: [job("")] };
@@ -81,7 +87,7 @@ function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): Moc
 						JSON.stringify({
 							gameOutput: reply.gameOutput ?? JSON.stringify([]),
 							jestOutput,
-							protocolVersion: 2,
+							protocolVersion: 3,
 							request_id: message.request_id,
 							type: "results",
 						}),
@@ -115,7 +121,7 @@ describe("protocol version handshake", () => {
 						JSON.stringify({
 							gameOutput: "[]",
 							jestOutput: envelope([{ elapsedMs: 1, jestOutput: successResult() }]),
-							protocolVersion: 2,
+							protocolVersion: 3,
 							request_id: captured!.request_id,
 							type: "results",
 						}),
@@ -156,6 +162,41 @@ describe("protocol version handshake", () => {
 							request_id,
 							type: "results",
 							// no protocolVersion — simulating stale plugin
+						}),
+					),
+				);
+			});
+		});
+
+		wss.emit("connection", socket);
+
+		await expect(promise).rejects.toThrow(/invalid plugin message/i);
+	});
+
+	it("should reject a v2 plugin echo now that the protocol is v3", async () => {
+		// The workspace dispatch + run-mode handshake bumped the contract to v3.
+		// A plugin that still echoes v2 predates this CLI and must be rejected so
+		// the user upgrades rather than running with stale runtime semantics.
+		expect.assertions(1);
+
+		const backend = new StudioBackend({ port: 0 });
+		const promise = backend.runTests(singleJobOptions);
+
+		const wss = getLastCreatedServer()!;
+		const socket = new MockWebSocket();
+
+		socket.send.mockImplementation((data) => {
+			const { request_id } = pluginRequest.assert(JSON.parse(data));
+			queueMicrotask(() => {
+				socket.emit(
+					"message",
+					Buffer.from(
+						JSON.stringify({
+							gameOutput: "[]",
+							jestOutput: envelope([{ jestOutput: successResult() }]),
+							protocolVersion: 2,
+							request_id,
+							type: "results",
 						}),
 					),
 				);
@@ -228,7 +269,7 @@ describe(StudioBackend, () => {
 								{ elapsedMs: 10, jestOutput: successResult() },
 								{ elapsedMs: 20, jestOutput: successResult() },
 							]),
-							protocolVersion: 2,
+							protocolVersion: 3,
 							request_id: message.request_id,
 							type: "results",
 						}),
@@ -245,6 +286,71 @@ describe(StudioBackend, () => {
 		expect(capturedConfig?.configs).toHaveLength(2);
 		expect(capturedConfig?.configs[0]?.testNamePattern).toBe("alpha-pattern");
 		expect(capturedConfig?.configs[1]?.testNamePattern).toBe("beta-pattern");
+	});
+
+	it("should send a workspace entries payload when jobs carry pkg", async () => {
+		// The same run-mode dispatch lights up workspace in the attached
+		// (WebSocket) studio backend. A workspace run sends `workspace.entries`,
+		// not `config.configs` — the plugin's run-mode runner dispatches on
+		// shape.
+		expect.assertions(3);
+
+		const backend = new StudioBackend({ port: 0 });
+		const promise = backend.runTests({
+			jobs: [wsJob("@scope/a", "a"), wsJob("@scope/b", "b")],
+		});
+
+		const workspaceRequest = type({
+			request_id: "string",
+			workspace: { entries: type({ pkg: "string", project: "string" }).array() },
+		});
+
+		const wss = getLastCreatedServer()!;
+		const socket = new MockWebSocket();
+		let captured: typeof workspaceRequest.infer | undefined;
+
+		socket.send.mockImplementation((data) => {
+			captured = workspaceRequest.assert(JSON.parse(data));
+			const { request_id } = captured;
+			queueMicrotask(() => {
+				socket.emit(
+					"message",
+					Buffer.from(
+						JSON.stringify({
+							gameOutput: "[]",
+							jestOutput: envelope([
+								{ jestOutput: successResult() },
+								{ jestOutput: successResult() },
+							]),
+							protocolVersion: 3,
+							request_id,
+							type: "results",
+						}),
+					),
+				);
+			});
+		});
+
+		wss.emit("connection", socket);
+		await promise;
+
+		expect(captured?.workspace.entries).toHaveLength(2);
+		expect(captured?.workspace.entries[0]!.pkg).toBe("@scope/a");
+		expect(captured?.workspace.entries[1]!.project).toBe("b");
+	});
+
+	it("should fail fast when a workspace run has a job missing its package name", async () => {
+		// Workspace jobs are built all-or-none; a job without `pkg` alongside one
+		// that has it means a malformed (mixed) array reached the backend. The
+		// materializer keys entries by `pkg`, so reject rather than send a
+		// `pkg`-less entry that would fail opaquely inside Studio.
+		expect.assertions(1);
+
+		const backend = new StudioBackend({ port: 0 });
+
+		await expect(
+			backend.runTests({ jobs: [wsJob("@scope/a", "a"), job("b")] }),
+		).rejects.toThrow(/missing its package name/);
 	});
 
 	it("should return rawResults in the same order as the submitted jobs", async () => {
@@ -381,7 +487,7 @@ describe(StudioBackend, () => {
 									}),
 								},
 							]),
-							protocolVersion: 2,
+							protocolVersion: 3,
 							request_id: message.request_id,
 							type: "results",
 						}),
@@ -470,7 +576,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: "wrong",
-							protocolVersion: 2,
+							protocolVersion: 3,
 							request_id: "wrong-id",
 							type: "results",
 						}),
@@ -481,7 +587,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: envelope([{ jestOutput: successResult() }]),
-							protocolVersion: 2,
+							protocolVersion: 3,
 							request_id: message.request_id,
 							type: "results",
 						}),

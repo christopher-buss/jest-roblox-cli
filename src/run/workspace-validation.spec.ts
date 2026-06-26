@@ -130,16 +130,51 @@ describe(validateBasicWorkspaceFlags, () => {
 });
 
 describe(assertWorkspaceRunOptions, () => {
-	it("should reject studio backend", () => {
+	it("should accept the studio backend (workspace debug via an open Studio)", () => {
 		expect.assertions(1);
 
 		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio" }));
 
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message: "Error: --workspace requires --backend open-cloud (Studio not supported).\n",
-			ok: false,
-		});
+		expect(result).toStrictEqual({ ok: true });
+	});
+
+	it("should accept the studio-cli backend", () => {
+		expect.assertions(1);
+
+		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio-cli" }));
+
+		expect(result).toStrictEqual({ ok: true });
+	});
+
+	it("should reject studio-cli with --parallel > 1 (it is serial)", () => {
+		expect.assertions(2);
+
+		const result = assertWorkspaceRunOptions(
+			makeRunOptions({ backend: "studio-cli", parallel: 2 }),
+		);
+
+		expect(result.ok).toBeFalse();
+		expect((result as { message: string }).message).toContain("serial");
+	});
+
+	it("should reject studio-cli with --parallel auto", () => {
+		expect.assertions(1);
+
+		const result = assertWorkspaceRunOptions(
+			makeRunOptions({ backend: "studio-cli", parallel: "auto" }),
+		);
+
+		expect(result.ok).toBeFalse();
+	});
+
+	it("should accept studio-cli with --parallel 1", () => {
+		expect.assertions(1);
+
+		const result = assertWorkspaceRunOptions(
+			makeRunOptions({ backend: "studio-cli", parallel: 1 }),
+		);
+
+		expect(result).toStrictEqual({ ok: true });
 	});
 
 	it("should accept open-cloud backend", () => {

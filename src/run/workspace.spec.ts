@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Backend, BackendOptions, BackendResult } from "../backends/interface.ts";
 import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/open-cloud.ts";
+import { createStudioCliBackend } from "../backends/studio-cli.ts";
+import { createStudioBackend } from "../backends/studio.ts";
 import { loadRawConfig } from "../config/loader.ts";
 import type { CliOptions } from "../config/schema.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
@@ -26,6 +28,8 @@ vi.mock(import("../workspace/discovery.ts"));
 vi.mock(import("../workspace/package-resolver.ts"));
 vi.mock(import("../workspace/affected.ts"));
 vi.mock(import("../backends/open-cloud.ts"));
+vi.mock(import("../backends/studio-cli.ts"));
+vi.mock(import("../backends/studio.ts"));
 vi.mock(import("../config/loader.ts"));
 vi.mock(import("../coverage-pipeline/workspace-aggregate.ts"));
 vi.mock(import("@isentinel/roblox-runner"), async (importOriginal) => {
@@ -83,10 +87,10 @@ function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResul
 	};
 }
 
-function makeFakeBackend(): Backend {
+function makeFakeBackend(kind: Backend["kind"] = "open-cloud"): Backend {
 	return {
 		close: vi.fn<() => void>(),
-		kind: "open-cloud",
+		kind,
 		runTests: vi.fn<(options: BackendOptions) => Promise<BackendResult>>(async () => {
 			return { rawResults: [], timing: { executionMs: 0 } };
 		}),
@@ -133,16 +137,68 @@ describe(runWorkspaceMode, () => {
 			);
 		});
 
-		it("should surface studio-backend-with-workspace failure", async () => {
+		it("should reject studio-cli with --parallel > 1", async () => {
 			expect.assertions(2);
 
 			setupHappyPath();
 			const result = await runWorkspaceMode(
-				makeCli({ backend: "studio", packages: "a", workspace: true }),
+				makeCli({ backend: "studio-cli", packages: "a", parallel: 2, workspace: true }),
 			);
 
 			expect(result.validationExitCode).toBe(2);
-			expect(result.validationMessage).toContain("--workspace requires --backend open-cloud");
+			expect(result.validationMessage).toContain("serial");
+		});
+	});
+
+	describe("backend resolution", () => {
+		it("should resolve the studio-cli backend without Open Cloud credentials", async () => {
+			expect.assertions(3);
+
+			setupHappyPath();
+			const backend = makeFakeBackend("studio-cli");
+			vi.mocked(createStudioCliBackend).mockReturnValue(fromAny(backend));
+			mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+
+			await runWorkspaceMode(
+				makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
+			);
+
+			expect(createStudioCliBackend).toHaveBeenCalledOnce();
+			expect(createOpenCloudBackend).not.toHaveBeenCalled();
+			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].backend).toBe(backend);
+		});
+
+		it("should forward the resolved studioPath to the studio-cli backend", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(createStudioCliBackend).mockReturnValue(
+				fromAny(makeFakeBackend("studio-cli")),
+			);
+			vi.mocked(loadRawConfig).mockResolvedValue({ studioPath: "C:/s.exe" });
+			mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+
+			await runWorkspaceMode(
+				makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
+			);
+
+			expect(createStudioCliBackend).toHaveBeenCalledWith(
+				expect.objectContaining({ studioPath: "C:/s.exe" }),
+			);
+		});
+
+		it("should resolve the attached studio backend without Open Cloud credentials", async () => {
+			expect.assertions(2);
+
+			setupHappyPath();
+			const backend = makeFakeBackend("studio");
+			vi.mocked(createStudioBackend).mockReturnValue(fromAny(backend));
+			mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+
+			await runWorkspaceMode(makeCli({ backend: "studio", packages: "a", workspace: true }));
+
+			expect(createStudioBackend).toHaveBeenCalledOnce();
+			expect(createOpenCloudBackend).not.toHaveBeenCalled();
 		});
 	});
 

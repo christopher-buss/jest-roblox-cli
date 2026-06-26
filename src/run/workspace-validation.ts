@@ -1,5 +1,6 @@
 import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-runner";
 
+import { isShardedParallel } from "../backends/interface.ts";
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
 import { type PackageInfo, resolvePackage } from "../workspace/package-resolver.ts";
@@ -52,14 +53,22 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
 /**
  * Checks the resolved WorkspaceRunOptions for invariants that depend on the
  * fully resolved values (CLI > per-package consensus > defaults).
+ *
+ * Every backend now runs workspace (studio-cli launches its own mega-place;
+ * the attached `studio` backend runs against an open Studio for debugging),
+ * so the only resolved-value invariant left is studio-cli's serial constraint:
+ * it drives one Studio instance and cannot shard.
  */
 export function assertWorkspaceRunOptions(
 	runOptions: WorkspaceRunOptions,
 ): WorkspaceValidationResult {
-	if (runOptions.backend === "studio") {
+	const { backend, parallel } = runOptions;
+	if (backend === "studio-cli" && isShardedParallel(parallel)) {
 		return {
 			exitCode: 2,
-			message: "Error: --workspace requires --backend open-cloud (Studio not supported).\n",
+			message:
+				"Error: studio-cli backend is serial (one Studio instance) and cannot " +
+				"shard; drop --parallel or set it to 1 for a --workspace run.\n",
 			ok: false,
 		};
 	}

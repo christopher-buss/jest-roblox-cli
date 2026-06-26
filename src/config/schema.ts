@@ -424,6 +424,8 @@ export interface WorkspaceRunOptions {
 	placeId?: string;
 	port: number;
 	silent: boolean;
+	/** Studio executable override for the `studio-cli` backend; undefined = auto-discover. */
+	studioPath?: string;
 	universeId?: string;
 	/** When true, emit Per-package Game Output files under `.jest-roblox/output/`. */
 	workspaceGameOutput: boolean;

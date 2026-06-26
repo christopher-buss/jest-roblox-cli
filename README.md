@@ -381,7 +381,11 @@ file reports **0%** and fails `coverageThreshold`).
 ## Workspace mode
 
 Run tests across multiple packages in a pnpm workspace in a single invocation.
-Open Cloud only — Studio backend is not supported.
+Works on every backend: Open Cloud (fans packages across parallel tasks),
+`studio-cli` (one self-launched Studio process drives every package, no
+sharding), and the attached `studio` backend (runs the workspace inside an open
+Studio — handy for debugging the flow). `studio-cli` is serial, so
+`--parallel > 1` is rejected with `--workspace`.
 
 <!-- prettier-ignore -->
 > [!NOTE]

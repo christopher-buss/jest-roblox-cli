@@ -11,16 +11,17 @@ import {
 	type BuildPlaceOptions,
 	buildPlace as defaultBuildPlace,
 } from "../staging/place-builder.ts";
-import { buildJestArgv, type JestArgv } from "../test-script.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { parseEnvelope } from "./envelope.ts";
-import type {
-	Backend,
-	BackendOptions,
-	BackendResult,
-	ProjectJob,
-	RawBackendEntry,
+import {
+	type Backend,
+	type BackendOptions,
+	type BackendResult,
+	isWorkspaceRun,
+	type ProjectJob,
+	type RawBackendEntry,
 } from "./interface.ts";
+import { buildConfigEntries, buildWorkspaceEntries } from "./plugin-payload.ts";
 import { discoverStudioPath } from "./studio-discovery.ts";
 
 const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
@@ -30,11 +31,13 @@ const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
 
 /**
  * Plugin/CLI protocol version, carried in the Run-mode payload. Matches
- * `STUDIO_PROTOCOL_VERSION` in the WebSocket `studio` backend. The rich version
- * handshake (mismatch detection + echo) is a sibling slice; this slice only
- * carries the field forward.
+ * `STUDIO_PROTOCOL_VERSION` in the WebSocket `studio` backend and
+ * `PROTOCOL_VERSION` in the plugin. The bootstrap echoes the version the
+ * run-mode runner returns; {@link assertProtocolMatch} rejects a plugin that
+ * omits the echo (a stale runner predating the handshake) or returns a
+ * different number, surfacing a clean "update the plugin" error.
  */
-const STUDIO_CLI_PROTOCOL_VERSION = 2;
+const STUDIO_CLI_PROTOCOL_VERSION = 3;
 
 /**
  * Stable marker the bootstrap brackets the result envelope with so the host can
@@ -53,7 +56,11 @@ const NO_RESULT_ERROR =
 	"studio-cli: no test result was produced. Ensure Roblox Studio launched and " +
 	"the jest-roblox Studio plugin is installed.";
 
-const resultWrapperSchema = type({ "gameOutput?": "string", "jestOutput": "string" });
+const resultWrapperSchema = type({
+	"gameOutput?": "string",
+	"jestOutput": "string",
+	"protocolVersion?": "number",
+});
 
 export interface StudioCliLaunchRequest {
 	/** Full Studio CLI argument vector (already absolute paths). */
@@ -125,23 +132,36 @@ export class StudioCliBackend implements Backend {
 		// jobs[0] is the per-run knob source (rootDir, rojoProject, timeout).
 		// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
 		const primary = jobs[0]!;
+
 		const rootDirectory = path.resolve(primary.config.rootDir);
 		const workDirectory = path.join(rootDirectory, WORK_DIR);
 		fs.mkdirSync(workDirectory, { recursive: true });
 
-		// Coverage runs open the Coverage-Instrumented Place the run layer
-		// (`prepareCoverage`) already built and recorded in `config.placeFile`;
-		// building a fresh Clean Place here would drop the instrumentation and
-		// report 0% for every file. The clean-place build is only for normal
-		// runs. The shared coverage place is built with LoadStringEnabled (see
-		// `prepareCoverage`) so the Run-mode runner's LoadString gate passes.
-		const placeFile = primary.config.collectCoverage
-			? resolvePlaceFilePath(primary.config)
-			: this.buildCleanPlace(primary, rootDirectory, workDirectory);
+		// Which place studio-cli drives, by run shape:
+		// - workspace: the synthesized mega-place the workspace runner already
+		//   built (with the `__pkg_stage` staging the materializer clones from);
+		// - coverage: the Coverage-Instrumented Place `prepareCoverage` built and
+		//   recorded in `config.placeFile` — a Clean Place here drops the
+		//   instrumentation and reports 0% for every file;
+		// - normal: a freshly built Clean Place.
+		// Only the normal path builds here; the others reuse `config.placeFile`,
+		// already built with LoadStringEnabled so the Run-mode gate passes.
+		const workspace = isWorkspaceRun(jobs);
+		let placeFile: string;
+		if (workspace) {
+			placeFile = path.resolve(primary.config.placeFile);
+		} else if (primary.config.collectCoverage) {
+			placeFile = resolvePlaceFilePath(primary.config);
+		} else {
+			placeFile = this.buildCleanPlace(primary, rootDirectory, workDirectory);
+		}
 
 		const bootstrapFile = path.join(workDirectory, BOOTSTRAP_FILE);
 		const outputFile = path.join(workDirectory, OUTPUT_FILE);
-		fs.writeFileSync(bootstrapFile, buildBootstrap(jobs));
+		fs.writeFileSync(
+			bootstrapFile,
+			buildBootstrap(workspace ? buildWorkspacePayload(jobs) : buildConfigsPayload(jobs)),
+		);
 
 		const studioPath = this.discover(this.studioPath);
 		const args = [
@@ -160,8 +180,16 @@ export class StudioCliBackend implements Backend {
 		await this.launch({ args, outputFile, studioPath, timeout: this.timeout });
 		const executionMs = Date.now() - executionStart;
 
-		const { gameOutput, jestOutput } = readStudioResult(outputFile);
+		const { gameOutput, jestOutput, protocolVersion } = readStudioResult(outputFile);
+		// parseEnvelope before the version check: when the bootstrap reached the
+		// plugin but got nothing back (ExecuteRunModeAsync threw, or returned no
+		// result) it emits a `{success:false, err}` envelope with no
+		// protocolVersion, and that error must win over assertProtocolMatch so
+		// the real cause surfaces instead of a misleading version mismatch. (A
+		// plugin that produced no delimited result at all is already caught
+		// upstream by readStudioResult's NO_RESULT_ERROR.)
 		const entries = parseEnvelope(jestOutput);
+		assertProtocolMatch(protocolVersion);
 		if (entries.length !== jobs.length) {
 			throw new Error(
 				`studio-cli backend returned ${entries.length.toString()} entries but request had ${jobs.length.toString()} jobs`,
@@ -209,6 +237,33 @@ export function createStudioCliBackend(options: StudioCliOptions = {}): StudioCl
 }
 
 /**
+ * Single-/multi-project payload: the run-mode runner reads `config.configs` and
+ * drives `Runner.runProjects`.
+ */
+function buildConfigsPayload(jobs: Array<ProjectJob>): object {
+	const { configs, runtimeStubMounts } = buildConfigEntries(jobs);
+	return {
+		config: { configs },
+		protocolVersion: STUDIO_CLI_PROTOCOL_VERSION,
+		runtimeStubMounts,
+		test: true,
+	};
+}
+
+/**
+ * Workspace payload: the run-mode runner sees the `workspace` shape and drives
+ * the staged materializer (`runEmbedded`) — cloning each package from the
+ * mega-place's `__pkg_stage`, running, resetting.
+ */
+function buildWorkspacePayload(jobs: Array<ProjectJob>): object {
+	return {
+		protocolVersion: STUDIO_CLI_PROTOCOL_VERSION,
+		test: true,
+		workspace: { entries: buildWorkspaceEntries(jobs) },
+	};
+}
+
+/**
  * Wrap `content` in a Luau long string, escalating the bracket level
  * (`[=[`, `[==[`, …) until the chosen `]=*]` terminator does not occur in the
  * content. Without this, a config string carrying the level-1 terminator
@@ -226,27 +281,18 @@ function luauLongString(content: string): string {
 }
 
 /**
- * The `--runScriptFile` payload. Runs at command-bar level in the edit
- * DataModel and drives the installed plugin's Run-mode runner via
- * `ExecuteRunModeAsync`, then prints the delimited result envelope so it lands
- * in `--outputFile`. A plugin that is absent or returns nothing produces a
- * `{ success = false }` envelope, so the host surfaces a clean error rather
- * than hanging.
+ * The `--runScriptFile` script. Runs at command-bar level in the edit DataModel
+ * and drives the installed plugin's Run-mode runner via `ExecuteRunModeAsync`
+ * with the given `payload`, then prints the delimited result envelope so it
+ * lands in `--outputFile`. A plugin that is absent or returns nothing produces a
+ * `{ success = false }` envelope, so the host surfaces a clean error rather than
+ * hanging.
  */
-function buildBootstrap(jobs: Array<ProjectJob>): string {
-	const configs: Array<JestArgv> = jobs.map((job) => buildJestArgv(job));
-	const runtimeStubMounts = jobs.map((job) => job.runtimeInjectionPaths ?? []);
-	const payload = JSON.stringify({
-		config: { configs },
-		protocolVersion: STUDIO_CLI_PROTOCOL_VERSION,
-		runtimeStubMounts,
-		test: true,
-	});
-
+function buildBootstrap(payload: object): string {
 	return [
 		'local HttpService = game:GetService("HttpService")',
 		'local StudioTestService = game:GetService("StudioTestService")',
-		`local payload = HttpService:JSONDecode(${luauLongString(payload)})`,
+		`local payload = HttpService:JSONDecode(${luauLongString(String(JSON.stringify(payload)))})`,
 		`local DELIMITER = "${RESULT_DELIMITER}"`,
 		"local function emit(value)",
 		"\tprint(DELIMITER .. HttpService:JSONEncode(value) .. DELIMITER)",
@@ -259,13 +305,37 @@ function buildBootstrap(jobs: Array<ProjectJob>): string {
 		'elseif typeof(result) ~= "table" or result.jestOutput == nil then',
 		'\temit({ gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = "studio-cli: the jest plugin produced no result. Install or update the jest-roblox Studio plugin.", success = false }) })',
 		"else",
-		'\temit({ gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput })',
+		'\temit({ gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput, protocolVersion = result.protocolVersion })',
 		"end",
 		"",
 	].join("\n");
 }
 
-function readStudioResult(outputFile: string): { gameOutput?: string; jestOutput: string } {
+/**
+ * Reject a run-mode result whose echoed `protocolVersion` doesn't match the
+ * CLI's. A stale plugin (run-mode runner predating the handshake) omits the
+ * echo entirely (`undefined`); a divergent plugin echoes a different number.
+ * Either way the user must update the plugin. Mirrors the WebSocket backend's
+ * `version_mismatch` path.
+ */
+function assertProtocolMatch(actual: number | undefined): void {
+	if (actual === STUDIO_CLI_PROTOCOL_VERSION) {
+		return;
+	}
+
+	const reported = actual === undefined ? "no version" : `v${actual.toString()}`;
+	throw new Error(
+		"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
+			`(plugin reported ${reported}, CLI expects v${STUDIO_CLI_PROTOCOL_VERSION.toString()}). ` +
+			"Update the jest-roblox Studio plugin to match this CLI version.",
+	);
+}
+
+function readStudioResult(outputFile: string): {
+	gameOutput?: string;
+	jestOutput: string;
+	protocolVersion?: number;
+} {
 	let log: string;
 	try {
 		log = fs.readFileSync(outputFile, "utf8");
@@ -302,7 +372,11 @@ function readStudioResult(outputFile: string): { gameOutput?: string; jestOutput
 		throw new Error(`studio-cli: malformed result envelope: ${wrapper.summary}`);
 	}
 
-	return { gameOutput: wrapper.gameOutput, jestOutput: wrapper.jestOutput };
+	return {
+		gameOutput: wrapper.gameOutput,
+		jestOutput: wrapper.jestOutput,
+		protocolVersion: wrapper.protocolVersion,
+	};
 }
 
 /**

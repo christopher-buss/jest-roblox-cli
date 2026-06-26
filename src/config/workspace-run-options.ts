@@ -106,6 +106,14 @@ export function buildWorkspaceRunOptions(
 		readConfig: (entry) => entry.universeId,
 	});
 
+	// studio-cli's Studio-executable override. Resolved like placeId/universeId
+	// so a config or CLI `studioPath` reaches the workspace studio-cli backend.
+	const studioPath = resolveOptionalField(cli, perPackageConfigs, {
+		name: "studioPath",
+		readCli: (entry) => entry.studioPath,
+		readConfig: (entry) => entry.studioPath,
+	});
+
 	const formatters = resolveFormatters(cli, perPackageConfigs);
 
 	const rawGameOutput = resolveOptionalField(cli, perPackageConfigs, {
@@ -181,6 +189,10 @@ export function buildWorkspaceRunOptions(
 
 	if (placeId !== undefined) {
 		runOptions.placeId = placeId;
+	}
+
+	if (studioPath !== undefined) {
+		runOptions.studioPath = studioPath;
 	}
 
 	if (universeId !== undefined) {

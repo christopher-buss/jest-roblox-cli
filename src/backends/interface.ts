@@ -134,3 +134,25 @@ export interface Backend {
 }
 
 type BackendKind = "open-cloud" | "studio" | "studio-cli";
+
+/**
+ * Whether this is a workspace (multi-package) run. Workspace jobs each carry
+ * their owning package name (`pkg`); single-/multi-project jobs never do, and
+ * the run layer builds them all-or-none — so any job with `pkg` means the whole
+ * run is a workspace run. The Studio backends key off this to drive the plugin's
+ * staged-materializer dispatch (`workspace.entries`) instead of the configs
+ * path. `buildWorkspaceEntries` then fails fast if a job is missing `pkg`, so a
+ * malformed (mixed) array surfaces as a clear error rather than a bad payload.
+ */
+export function isWorkspaceRun(jobs: ReadonlyArray<ProjectJob>): boolean {
+	return jobs.some((job) => job.pkg !== undefined);
+}
+
+/**
+ * A request to shard across multiple sessions: `"auto"` (the backend picks a
+ * count) or an explicit count > 1. The serial backends (studio, studio-cli)
+ * reject this — they drive a single Studio instance.
+ */
+export function isShardedParallel(parallel: "auto" | number | undefined): boolean {
+	return parallel === "auto" || (typeof parallel === "number" && parallel > 1);
+}
