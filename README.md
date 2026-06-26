@@ -18,7 +18,9 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 - Two backends: Open Cloud (remote) and Studio (local)
 - Multiple output formatters (human, agent, JSON, GitHub Actions)
 
-> [!NOTE] roblox-ts projects currently require
+<!-- prettier-ignore -->
+> [!NOTE]
+> roblox-ts projects currently require
 > [@isentinel/roblox-ts](https://npmx.dev/package/@isentinel/roblox-ts) for
 > source maps and coverage support.
 
@@ -181,7 +183,9 @@ Put these under `test: { ... }`.
 
 Put these under `test: { ... }`.
 
-> [!IMPORTANT] Coverage requires [Lute](https://github.com/luau-lang/lute) to be
+<!-- prettier-ignore -->
+> [!IMPORTANT]
+> Coverage requires [Lute](https://github.com/luau-lang/lute) to be
 > installed and on your `PATH`. Lute parses Luau ASTs so the CLI can insert
 > coverage probes.
 
@@ -194,7 +198,9 @@ Put these under `test: { ... }`.
 | `coveragePathIgnorePatterns` | Files to leave out of coverage         | test files, `node_modules`, `rbxts_include` |
 | `collectCoverageFrom`        | Globs for files to include in coverage | —                                           |
 
-> [!NOTE] Coverage uses vitest `all` / Istanbul semantics: every instrumented
+<!-- prettier-ignore -->
+> [!NOTE]
+> Coverage uses vitest `all` / Istanbul semantics: every instrumented
 > file matching the include globs is reported, so a source file with no test
 > shows **0%** (and fails `coverageThreshold`) instead of being silently
 > omitted. When `collectCoverageFrom` is unset for a multi-project run, the
@@ -320,7 +326,9 @@ Connects to Roblox Studio over WebSocket. Faster than Open Cloud (no upload
 step), but Studio must be open with the plugin running. Studio doesn't expose
 which place is open, so multiple concurrent projects aren't supported yet.
 
-> [!NOTE] For `--coverage`, prefer `--backend open-cloud` since the coverage
+<!-- prettier-ignore -->
+> [!NOTE]
+> For `--coverage`, prefer `--backend open-cloud` since the coverage
 > output is built to a separate output under `.jest-roblox/coverage/` that is
 > likely not the studio place being served.
 
@@ -347,7 +355,9 @@ and drop it into your Studio plugins folder.
 Run tests across multiple packages in a pnpm workspace in a single invocation.
 Open Cloud only — Studio backend is not supported.
 
-> [!NOTE] Package discovery uses one of two sources. By default it reads
+<!-- prettier-ignore -->
+> [!NOTE]
+> Package discovery uses one of two sources. By default it reads
 > `pnpm-workspace.yaml` at the workspace root. Alternatively, declare a
 > `workspace` block in your jest config (see
 > [Workspaces without pnpm](#workspaces-without-pnpm)) to enumerate packages by
@@ -486,7 +496,9 @@ project) under `.jest-roblox/output/`.
 5. Maps Luau line numbers to TypeScript via source maps (roblox-ts only)
 6. Prints results
 
-> [!NOTE] Coverage adds extra steps: copy Luau files, insert tracking probes,
+<!-- prettier-ignore -->
+> [!NOTE]
+> Coverage adds extra steps: copy Luau files, insert tracking probes,
 > build a separate place file, then map hit counts back to source. For
 > roblox-ts, this goes through source maps to report TypeScript lines.
 
