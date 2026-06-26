@@ -7,7 +7,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { resolveBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
-import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
+import { collectProjectRoots, filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
 import {
@@ -29,6 +29,7 @@ import { type ExecuteResult, runProjects } from "../executor.ts";
 import { synthesize } from "../staging/synthesizer.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { runMultiProject } from "./multi.ts";
 
@@ -266,6 +267,93 @@ describe(runMultiProject, () => {
 
 		expect(result.projectResults).toHaveLength(1);
 		expect(result.projectResults[0]?.displayName).toBe("client");
+	});
+
+	describe("coverage display filter", () => {
+		it("should expose a source-twin filter for positional files", async () => {
+			expect.assertions(1);
+
+			const { config } = setupDefaults();
+			seedProjectFiles();
+
+			const result = await runMultiProject({
+				cli: makeCli({ files: ["src/client/a.spec.ts"] }),
+				config,
+				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+			});
+
+			const twin = normalizeWindowsPath(path.resolve("/test", "src/client/a.ts"));
+
+			expect(result.coverageDisplayFilter?.(twin)).toBeTrue();
+		});
+
+		it("should twin the matched runtime files for a testPathPattern run", async () => {
+			expect.assertions(1);
+
+			const { config } = setupDefaults({ testPathPattern: "a" });
+			seedProjectFiles();
+
+			const result = await runMultiProject({
+				cli: makeCli(),
+				config,
+				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+			});
+
+			const twin = normalizeWindowsPath(path.resolve("/test", "src/client/a.ts"));
+
+			expect(result.coverageDisplayFilter?.(twin)).toBeTrue();
+		});
+
+		it("should expose a project-scope filter for a --project run", async () => {
+			expect.assertions(1);
+
+			const { config } = setupDefaults();
+			seedProjectFiles();
+
+			const result = await runMultiProject({
+				cli: makeCli({ project: ["client"] }),
+				config,
+				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+			});
+
+			expect(result.coverageDisplayFilter).toBeTypeOf("function");
+		});
+
+		it("should leave the filter undefined on a bare run", async () => {
+			expect.assertions(1);
+
+			const { config } = setupDefaults();
+			seedProjectFiles();
+
+			const result = await runMultiProject({
+				cli: makeCli(),
+				config,
+				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+			});
+
+			expect(result.coverageDisplayFilter).toBeUndefined();
+		});
+
+		it("should leave the filter undefined for --project when no static roots derive", async () => {
+			expect.assertions(1);
+
+			const { config } = setupDefaults();
+			seedProjectFiles();
+			// A project whose include is a bare glob yields no containment root.
+			vi.mocked(collectProjectRoots).mockReturnValue([]);
+
+			const result = await runMultiProject({
+				cli: makeCli({ project: ["client"] }),
+				config,
+				rawProjects: [makeProjectEntry("client")],
+			});
+
+			expect(result.coverageDisplayFilter).toBeUndefined();
+
+			// `restoreMocks` doesn't reset auto-mocked module fns, so undo the
+			// per-test return value for any later `--project` test.
+			vi.mocked(collectProjectRoots).mockReset();
+		});
 	});
 
 	it("should throw on unknown --project displayName", async () => {

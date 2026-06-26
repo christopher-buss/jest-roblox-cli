@@ -16,6 +16,25 @@ export interface ProjectFileMatch {
 	project: ResolvedProjectConfig;
 }
 
+export function collectProjectRoots(
+	project: ResolvedProjectConfig,
+	posixRootDirectory: string,
+): Array<string> {
+	const roots: Array<string> = [];
+	for (const pattern of project.include) {
+		try {
+			const { root } = extractStaticRoot(normalizeWindowsPath(pattern));
+			roots.push(resolveAgainst(posixRootDirectory, root));
+		} catch {
+			// Pattern has no static directory prefix — cannot test containment,
+			// so this project is excluded from auto-pick. Caller can still pass
+			// --project explicitly.
+		}
+	}
+
+	return roots;
+}
+
 /**
  * Pair each project with the subset of cli files whose include roots own them.
  * Used so a positional file arg can auto-pick its owning project without
@@ -102,23 +121,4 @@ function buildNoMatchMessage(files: ReadonlyArray<string>, roots: ReadonlyArray<
 			? uniqueRoots.map((root) => `  - ${root}`).join("\n")
 			: "  (none — projects use include patterns with no static directory prefix; pass --project explicitly)";
 	return `No project contains the requested file(s):\n${filesList}\n\nProject roots searched:\n${rootsList}`;
-}
-
-function collectProjectRoots(
-	project: ResolvedProjectConfig,
-	posixRootDirectory: string,
-): Array<string> {
-	const roots: Array<string> = [];
-	for (const pattern of project.include) {
-		try {
-			const { root } = extractStaticRoot(normalizeWindowsPath(pattern));
-			roots.push(resolveAgainst(posixRootDirectory, root));
-		} catch {
-			// Pattern has no static directory prefix — cannot test containment,
-			// so this project is excluded from auto-pick. Caller can still pass
-			// --project explicitly.
-		}
-	}
-
-	return roots;
 }

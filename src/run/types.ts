@@ -1,4 +1,5 @@
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
+import type { CoverageDisplayPredicate } from "../coverage-pipeline/agent-table-filter.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import type { MappedCoverageResult } from "../coverage-pipeline/mapper.ts";
 import type { ExecuteResult } from "../executor.ts";
@@ -27,6 +28,13 @@ export interface SingleRunResult {
 	 * place set it has.
 	 */
 	coverageArtifacts?: CoverageArtifacts;
+	/**
+	 * Narrows the agent coverage **text table** to the directly-filtered source
+	 * files on a filtered run (single file / `--testPathPattern`). Display-only:
+	 * thresholds, totals, and lcov/html/json keep the full universe. Undefined on
+	 * a full run.
+	 */
+	coverageDisplayFilter?: CoverageDisplayPredicate;
 	mode: "single";
 	preCoverageMs: number;
 	runtimeResult?: ExecuteResult;
@@ -38,6 +46,13 @@ export interface MultiRunResult {
 	collectCoverageFrom?: Array<string>;
 	/** Producer record for the entry point to emit a Build Manifest from. */
 	coverageArtifacts?: CoverageArtifacts;
+	/**
+	 * Narrows the agent coverage **text table** to the directly-filtered source
+	 * files on a filtered run (positional files / `--testPathPattern`, or the
+	 * selected `--project` scope). Display-only: thresholds, totals, and
+	 * lcov/html/json keep the full universe. Undefined on a full run.
+	 */
+	coverageDisplayFilter?: CoverageDisplayPredicate;
 	merged: MultiProjectMerged;
 	mode: "multi";
 	preCoverageMs: number;

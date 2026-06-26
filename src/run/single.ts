@@ -7,6 +7,7 @@ import { applyExcludes } from "../config/apply-excludes.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
+import { sourceTwinFilter } from "../coverage-pipeline/agent-table-filter.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import {
 	prepareCoverage,
@@ -151,7 +152,20 @@ export async function runSingleProject(options: RunOptions): Promise<SingleRunRe
 		timing.record("runTypecheck", typecheckMs);
 	}
 
-	return { coverageArtifacts, mode: "single", preCoverageMs, runtimeResult, typecheckResult };
+	// On a filtered run, narrow the agent coverage text table to the source twins
+	// of the matched runtime test files (display-only; see the report pipeline).
+	const coverageDisplayFilter = filterActive
+		? sourceTwinFilter(runtimeFiles, baseConfig.rootDir)
+		: undefined;
+
+	return {
+		coverageArtifacts,
+		coverageDisplayFilter,
+		mode: "single",
+		preCoverageMs,
+		runtimeResult,
+		typecheckResult,
+	};
 }
 
 async function executeRuntimeTests(options: ExecuteRuntimeTestsOptions): Promise<ExecuteResult> {

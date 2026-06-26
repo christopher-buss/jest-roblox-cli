@@ -5,6 +5,7 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
+import { projectRootFilter, sourceTwinFilter } from "./agent-table-filter.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
 import { checkThresholds, generateReports, printCoverageHeader } from "./reporter.ts";
 
@@ -827,6 +828,195 @@ describe(generateReports, () => {
 				stdoutSpy.mockRestore();
 				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 			}
+		});
+	});
+
+	describe("agent text-table filtering", () => {
+		// Two universe files, each 2/3 statements covered (the default fixture).
+		function twoFileUniverse(): MappedCoverageResult {
+			return createResult({
+				"src/shared/enemy.ts": createMappedFile({ path: "src/shared/enemy.ts" }),
+				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
+			});
+		}
+
+		it("should narrow the text table to the matched file but total the full universe", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				agentTextFilter: sourceTwinFilter(["src/shared/player.test.ts"], process.cwd()),
+				coverageDirectory: "/tmp/unused",
+				mapped: twoFileUniverse(),
+				reporters: ["text"],
+			});
+
+			// Table shows only player.ts; the totals line still counts both
+			// files (4/6 statements), the full-universe gate number.
+			expect(stdoutOutput()).toMatchInlineSnapshot(`
+				"-----------|---------|----------|---------|---------|-------------------
+				File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+				-----------|---------|----------|---------|---------|-------------------
+				All files  |   66.66 |      100 |     100 |   66.66 |                   
+				 player.ts |   66.66 |      100 |     100 |   66.66 | 3                 
+				-----------|---------|----------|---------|---------|-------------------
+				Coverage: 66.66% stmts (4/6) | 100% branch (0/0) | 100% funcs (2/2) | 66.66% lines (4/6)
+				"
+			`);
+		});
+
+		it("should restrict the table to a project scope filter", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				agentTextFilter: projectRootFilter([path.resolve(process.cwd(), "src/shared")]),
+				coverageDirectory: "/tmp/unused",
+				mapped: createResult({
+					"src/server/boot.ts": createMappedFile({ path: "src/server/boot.ts" }),
+					"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
+				}),
+				reporters: ["text"],
+			});
+
+			// Only the shared-scoped file; server/boot.ts dropped from the
+			// table but still counted in the totals.
+			expect(stdoutOutput()).toMatchInlineSnapshot(`
+				"-----------|---------|----------|---------|---------|-------------------
+				File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+				-----------|---------|----------|---------|---------|-------------------
+				All files  |   66.66 |      100 |     100 |   66.66 |                   
+				 player.ts |   66.66 |      100 |     100 |   66.66 | 3                 
+				-----------|---------|----------|---------|---------|-------------------
+				Coverage: 66.66% stmts (4/6) | 100% branch (0/0) | 100% funcs (2/2) | 66.66% lines (4/6)
+				"
+			`);
+		});
+
+		it("should ignore the filter outside agent mode", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentTextFilter: sourceTwinFilter(["src/shared/player.test.ts"], process.cwd()),
+				coverageDirectory: "/tmp/unused",
+				mapped: twoFileUniverse(),
+				reporters: ["text"],
+			});
+
+			// Non-agent: filter ignored, both files shown, no totals line.
+			expect(stdoutOutput()).toMatchInlineSnapshot(`
+				"-----------|---------|----------|---------|---------|-------------------
+				File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+				-----------|---------|----------|---------|---------|-------------------
+				All files  |   66.66 |      100 |     100 |   66.66 |                   
+				 enemy.ts  |   66.66 |      100 |     100 |   66.66 | 3                 
+				 player.ts |   66.66 |      100 |     100 |   66.66 | 3                 
+				-----------|---------|----------|---------|---------|-------------------
+				"
+			`);
+		});
+
+		it("should keep the full table on an agent run with no filter", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: "/tmp/unused",
+				mapped: twoFileUniverse(),
+				reporters: ["text"],
+			});
+
+			// Agent full run: both files shown plus the totals line.
+			expect(stdoutOutput()).toMatchInlineSnapshot(`
+				"-----------|---------|----------|---------|---------|-------------------
+				File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+				-----------|---------|----------|---------|---------|-------------------
+				All files  |   66.66 |      100 |     100 |   66.66 |                   
+				 enemy.ts  |   66.66 |      100 |     100 |   66.66 | 3                 
+				 player.ts |   66.66 |      100 |     100 |   66.66 | 3                 
+				-----------|---------|----------|---------|---------|-------------------
+				Coverage: 66.66% stmts (4/6) | 100% branch (0/0) | 100% funcs (2/2) | 66.66% lines (4/6)
+				"
+			`);
+		});
+
+		it("should not narrow the text-summary reporter", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				agentTextFilter: sourceTwinFilter(["src/shared/player.test.ts"], process.cwd()),
+				coverageDirectory: "/tmp/unused",
+				mapped: twoFileUniverse(),
+				reporters: ["text-summary"],
+			});
+
+			// text-summary is never narrowed; aggregates the full universe.
+			expect(stdoutOutput()).toMatchInlineSnapshot(`
+				"
+				=============================== Coverage summary ===============================
+				Statements   : 66.66% ( 4/6 )
+				Branches     : 100% ( 0/0 )
+				Functions    : 100% ( 2/2 )
+				Lines        : 66.66% ( 4/6 )
+				================================================================================
+				Coverage: 66.66% stmts (4/6) | 100% branch (0/0) | 100% funcs (2/2) | 66.66% lines (4/6)
+				"
+			`);
+		});
+
+		it("should leave lcov on the full universe when the table is filtered", () => {
+			expect.assertions(2);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
+			try {
+				generateReports({
+					agentMode: true,
+					agentTextFilter: sourceTwinFilter(["src/shared/player.test.ts"], process.cwd()),
+					coverageDirectory: temporaryDirectory,
+					mapped: twoFileUniverse(),
+					reporters: ["lcov"],
+				});
+
+				const lcov = fs.readFileSync(path.join(temporaryDirectory, "lcov.info"), "utf8");
+
+				expect(lcov).toContain("player.ts");
+				expect(lcov).toContain("enemy.ts");
+			} finally {
+				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+			}
+		});
+
+		it("should print only the totals when the filter matches no universe file", () => {
+			expect.assertions(1);
+
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				agentTextFilter: sourceTwinFilter(["src/shared/missing.test.ts"], process.cwd()),
+				coverageDirectory: "/tmp/unused",
+				mapped: twoFileUniverse(),
+				reporters: ["text"],
+			});
+
+			// No table (no header/rows), only the full-universe totals.
+			expect(stdoutOutput()).toMatchInlineSnapshot(`
+				"Coverage: 66.66% stmts (4/6) | 100% branch (0/0) | 100% funcs (2/2) | 66.66% lines (4/6)
+				"
+			`);
 		});
 	});
 

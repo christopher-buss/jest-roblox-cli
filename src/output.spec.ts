@@ -759,6 +759,36 @@ describe(outputMultiResult, () => {
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
 	});
+
+	it("should forward the result's coverage display filter to the reporter", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
+		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		setupOutputSpies();
+
+		function displayFilter(): boolean {
+			return true;
+		}
+
+		await outputMultiResult(
+			makeConfig({ collectCoverage: true }),
+			makeMultiResult({
+				coverageDisplayFilter: displayFilter,
+				projectResults: [
+					{
+						displayName: "client",
+						result: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
+					},
+				],
+			}),
+		);
+
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({ agentTextFilter: displayFilter }),
+		);
+	});
 });
 
 describe("processCoverage via outputSingleResult", () => {

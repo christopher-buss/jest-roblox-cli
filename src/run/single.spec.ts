@@ -10,6 +10,7 @@ import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { runSingleProject } from "./single.ts";
 import type { RunOptions } from "./types.ts";
 
@@ -650,6 +651,39 @@ describe(runSingleProject, () => {
 			await runSingleProject(makeOptions({}, { files: ["src/a.spec.ts"] }));
 
 			expect(capture.runOptions?.jobs[0]?.config.testPathPattern).toBe("(a\\.spec)");
+		});
+	});
+
+	describe("coverage display filter", () => {
+		it("should expose a source-twin filter for a positional run", async () => {
+			expect.assertions(2);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			await setupBackend(createFakeBackend(makeJestResult()));
+
+			const result = await runSingleProject(makeOptions({}, { files: ["src/a.spec.ts"] }));
+
+			const twin = normalizeWindowsPath(path.resolve(PROJECT_ROOT, "src/a.ts"));
+
+			expect(result.coverageDisplayFilter?.(twin)).toBeTrue();
+			expect(
+				result.coverageDisplayFilter?.(
+					normalizeWindowsPath(path.resolve(PROJECT_ROOT, "src/b.ts")),
+				),
+			).toBeFalse();
+		});
+
+		it("should leave the filter undefined on a bare run", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			seedFile("src/a.spec.ts");
+			await setupBackend(createFakeBackend(makeJestResult()));
+
+			const result = await runSingleProject(makeOptions({}));
+
+			expect(result.coverageDisplayFilter).toBeUndefined();
 		});
 	});
 

@@ -10,7 +10,7 @@ import { resolveBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { applyExcludes } from "../config/apply-excludes.ts";
 import { deriveTypecheckInclude } from "../config/derive-typecheck-include.ts";
-import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
+import { collectProjectRoots, filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { resolveAllProjects } from "../config/projects.ts";
@@ -25,6 +25,11 @@ import {
 	STUB_FILENAME,
 	syncStubsToShadowDirectory,
 } from "../config/stubs.ts";
+import {
+	type CoverageDisplayPredicate,
+	projectRootFilter,
+	sourceTwinFilter,
+} from "../coverage-pipeline/agent-table-filter.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
 import { mergeAttribution } from "../coverage-pipeline/attribution.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
@@ -42,6 +47,7 @@ import { runTypecheckPass } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheck } from "../typecheck/runner.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { classifyTestFiles, discoverTestFiles, resolveAllSetupFilePaths } from "./discovery.ts";
 import { toBuildManifestProjects } from "./manifest-projects.ts";
 import { emitRunHeader } from "./run-header.ts";
@@ -318,15 +324,69 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 		? (rootConfig.collectCoverageFrom ?? deriveCoverageFromIncludes(projects))
 		: rootConfig.collectCoverageFrom;
 
+	const coverageDisplayFilter = buildMultiDisplayFilter({
+		cliFiles: cli.files,
+		matchedRuntimeFiles: pendingJobs.flatMap((job) => job.runtimeFiles),
+		projectNames: cli.project,
+		projects,
+		rootDir: rootConfig.rootDir,
+		testPathPattern: rootConfig.testPathPattern,
+	});
+
 	return {
 		collectCoverageFrom,
 		coverageArtifacts,
+		coverageDisplayFilter,
 		merged: mergeForMultiResult(projectResults),
 		mode: "multi",
 		preCoverageMs,
 		projectResults,
 		typecheckResult,
 	};
+}
+
+// Builds the agent text-table narrowing for a filtered multi run. Files named
+// directly (positionals) win as source twins; a `--testPathPattern` twins the
+// matched runtime files; a bare `--project` scopes the table to the selected
+// projects' source roots (so the project's untested files still report 0%). A
+// full run (none of these) returns undefined — the table keeps the full
+// universe. Display-only: never reaches thresholds, totals, or lcov/html/json.
+function buildMultiDisplayFilter(options: {
+	cliFiles: Array<string> | undefined;
+	matchedRuntimeFiles: Array<string>;
+	projectNames: Array<string> | undefined;
+	projects: Array<ResolvedProjectConfig>;
+	rootDir: string;
+	testPathPattern: string | undefined;
+}): CoverageDisplayPredicate | undefined {
+	const { cliFiles, matchedRuntimeFiles, projectNames, projects, rootDir, testPathPattern } =
+		options;
+
+	// Positionals name the files directly; twin the raw CLI args (not the
+	// post-discovery set) so the table reflects exactly what the user typed. The
+	// single-mode twin uses post-discovery `runtimeFiles` because there is no
+	// auto-pick partitioning to preserve there.
+	if (cliFiles !== undefined && cliFiles.length > 0) {
+		return sourceTwinFilter(cliFiles, rootDir);
+	}
+
+	if (testPathPattern !== undefined) {
+		return sourceTwinFilter(matchedRuntimeFiles, rootDir);
+	}
+
+	if (projectNames !== undefined) {
+		const posixRootDirectory = normalizeWindowsPath(rootDir);
+		const roots = projects.flatMap((project) =>
+			collectProjectRoots(project, posixRootDirectory),
+		);
+		// Projects whose `include` is a bare glob (no static directory prefix)
+		// yield no roots, so there is no containment boundary to scope by. Fall
+		// back to the full universe rather than an empty table — the user passed
+		// `--project`, so showing every file beats showing nothing.
+		return roots.length > 0 ? projectRootFilter(roots) : undefined;
+	}
+
+	return undefined;
 }
 
 function buildOpenCloudPlace(

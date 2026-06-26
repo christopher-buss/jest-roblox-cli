@@ -6,6 +6,7 @@ import color from "tinyrainbow";
 
 import packageJson from "../package.json" with { type: "json" };
 import type { ResolvedConfig } from "./config/schema.ts";
+import type { CoverageDisplayPredicate } from "./coverage-pipeline/agent-table-filter.ts";
 import { mapCoverageToTypeScript, type MappedCoverageResult } from "./coverage-pipeline/mapper.ts";
 import { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
 import {
@@ -125,8 +126,9 @@ export async function outputSingleResult(
 	config: ResolvedConfig,
 	result: SingleRunResult,
 ): Promise<number> {
-	const { preCoverageMs, runtimeResult, typecheckResult } = result;
+	const { coverageDisplayFilter, preCoverageMs, runtimeResult, typecheckResult } = result;
 	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
+	const coverageData = runtimeResult?.coverageData;
 
 	const coveragePassed = emitResultsAndCoverage({
 		config,
@@ -142,7 +144,7 @@ export async function outputSingleResult(
 					: undefined;
 			printFormattedOutput({ config, mergedResult, runtimeResult, timing, typecheckResult });
 		},
-		runCoverage: () => processCoverage(config, runtimeResult?.coverageData),
+		runCoverage: () => processCoverage(config, coverageData, undefined, coverageDisplayFilter),
 	});
 
 	await writeResultFile(config.outputFile, typecheckResult, runtimeResult?.result);
@@ -264,6 +266,7 @@ export async function outputMultiResult(
 	const mergedResult = mergeResults(typecheckResult, merged.result);
 
 	const workspaceCoverage = extractWorkspaceCoverageMapped(result);
+	const displayFilter = extractCoverageDisplayFilter(result);
 	const coveragePassed = emitResultsAndCoverage({
 		config,
 		coverageEnabled: config.collectCoverage || workspaceCoverage !== undefined,
@@ -285,7 +288,8 @@ export async function outputMultiResult(
 				process.stderr.write(formatTypecheckSummary(typecheckResult));
 			}
 		},
-		runCoverage: () => processCoverage(config, merged.coverageData, workspaceCoverage),
+		runCoverage: () =>
+			processCoverage(config, merged.coverageData, workspaceCoverage, displayFilter),
 	});
 
 	// Workspace runs write their own result + Game Output sinks (the runner
@@ -477,6 +481,7 @@ function processCoverage(
 	config: ResolvedConfig,
 	coverageData: RawCoverageData | undefined,
 	preMapped?: MappedCoverageResult,
+	agentTextFilter?: CoverageDisplayPredicate,
 ): boolean {
 	// preMapped is workspace pre-aggregated coverage from per-package opt-ins.
 	// When present, generate reports regardless of workspace `collectCoverage`.
@@ -496,6 +501,7 @@ function processCoverage(
 
 	generateReports({
 		agentMode,
+		agentTextFilter,
 		collectCoverageFrom: config.collectCoverageFrom,
 		coverageDirectory: path.resolve(config.rootDir, config.coverageDirectory),
 		coveragePathIgnorePatterns: config.coveragePathIgnorePatterns,
@@ -590,6 +596,16 @@ function extractWorkspaceCoverageMapped(
 	result: MultiRunResult | WorkspaceRunResult,
 ): MappedCoverageResult | undefined {
 	return "coverageMapped" in result ? result.coverageMapped : undefined;
+}
+
+// `coverageDisplayFilter` lives on `MultiRunResult` only; workspace runs never
+// narrow the agent table (they consume no positional/file filter). The mode
+// discriminant states that invariant directly — immune to the field ever being
+// added to `WorkspaceRunResult`.
+function extractCoverageDisplayFilter(
+	result: MultiRunResult | WorkspaceRunResult,
+): CoverageDisplayPredicate | undefined {
+	return result.mode === "multi" ? result.coverageDisplayFilter : undefined;
 }
 
 // Workspace sinks are consensus-resolved by the runner (not from the
