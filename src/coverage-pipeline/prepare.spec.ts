@@ -285,6 +285,25 @@ describe(prepareCoverage, () => {
 		});
 	});
 
+	describe("when building the coverage place for the run-mode runner", () => {
+		it("should enable LoadString so the studio-cli Run-mode runner's gate passes", async () => {
+			expect.assertions(1);
+
+			seedFilesystem();
+			await setupMocks();
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			prepareCoverage(config);
+
+			const written = readRojoProjectJson(
+				vol.readFileSync(".jest-roblox/coverage/default.project.json", "utf-8") as string,
+			);
+			const tree = written["tree"] as Record<string, Record<string, Record<string, unknown>>>;
+
+			expect(tree["ServerScriptService"]!["$properties"]!["LoadStringEnabled"]).toBeTrue();
+		});
+	});
+
 	describe("when computing $path entries for the rewritten project", () => {
 		it("should absolutize $path entries so the rewritten project resolves regardless of its disk location", async () => {
 			expect.assertions(2);

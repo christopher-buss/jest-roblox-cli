@@ -2,10 +2,10 @@ import { PermissionError } from "@bedrock-rbx/ocale";
 import { OcaleRunner, runTaskPool } from "@isentinel/roblox-runner";
 import type { RemoteRunner, RunnerCredentials, ScriptResult } from "@isentinel/roblox-runner";
 
-import * as path from "node:path";
 import process from "node:process";
 
 import type { ResolvedConfig } from "../config/schema.ts";
+import { resolvePlaceFilePath } from "../config/schema.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
 import { formatMissingScopes } from "../utils/error-chain.ts";
 import { parseEnvelope } from "./envelope.ts";
@@ -67,7 +67,7 @@ export class OpenCloudBackend implements Backend {
 		// timeout is picked from the first job — it's a per-run knob.
 		// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
 		const primary = jobs[0]!;
-		const placeFilePath = path.resolve(primary.config.rootDir, primary.config.placeFile);
+		const placeFilePath = resolvePlaceFilePath(primary.config);
 
 		const upload = await this.runner.uploadPlace({ placeFilePath });
 

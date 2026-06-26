@@ -1,6 +1,7 @@
 import { type, type Type } from "arktype";
 import { createDefineConfig } from "c12";
 import type { ReportOptions } from "istanbul-reports";
+import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
 
@@ -443,6 +444,15 @@ export const VALID_BACKENDS: ReadonlySet<string> = new Set<Backend>([
 
 export function isValidBackend(value: string): value is Backend {
 	return VALID_BACKENDS.has(value);
+}
+
+/**
+ * Resolve a config's `placeFile` against its `rootDir` to an absolute path. The
+ * one resolution every backend shares: `placeFile` is rootDir-relative, and a
+ * coverage run has the run layer point it at the instrumented place.
+ */
+export function resolvePlaceFilePath(config: ResolvedConfig): string {
+	return path.resolve(config.rootDir, config.placeFile);
 }
 
 export const DEFAULT_CONFIG: ResolvedConfig = {

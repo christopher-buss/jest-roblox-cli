@@ -17,6 +17,7 @@ import { resolveAllProjects } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
+import { resolvePlaceFilePath } from "../config/schema.ts";
 import {
 	cleanLeftoverStubs,
 	generateProjectStubs,
@@ -337,7 +338,7 @@ function buildOpenCloudPlace(
 		rootConfig.rootDir,
 		rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
 	);
-	const placeFilePath = path.resolve(rootConfig.rootDir, rootConfig.placeFile);
+	const placeFilePath = resolvePlaceFilePath(rootConfig);
 
 	buildPlace({
 		packages: [

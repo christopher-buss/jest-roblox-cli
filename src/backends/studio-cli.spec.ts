@@ -3,12 +3,14 @@ import { fromAny, fromExact } from "@total-typescript/shoehorn";
 import { vol } from "memfs";
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { BuildPlaceOptions } from "../staging/place-builder.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import { createStudioCliBackend, StudioCliBackend } from "./studio-cli.ts";
 import type { StudioCliLauncher, StudioCliLaunchRequest } from "./studio-cli.ts";
@@ -479,6 +481,70 @@ describe(StudioCliBackend, () => {
 		await backend.runTests(singleJob);
 
 		expect(launchedPath).toBe("C:/from-env/RobloxStudioBeta.exe");
+	});
+
+	describe("coverage", () => {
+		function coverageJob(): ProjectJob {
+			return job("", {
+				collectCoverage: true,
+				placeFile: ".jest-roblox/coverage/game.rbxl",
+			});
+		}
+
+		function argumentValue(args: Array<string>, flag: string): string {
+			return args[args.indexOf(flag) + 1]!;
+		}
+
+		it("should open the coverage-instrumented place instead of building a Clean Place", async () => {
+			expect.assertions(2);
+
+			resetVol();
+
+			const buildPlace =
+				vi.fn<(options: BuildPlaceOptions) => { hash: string; path: string }>(
+					fakeBuildPlace(),
+				);
+			let localPlaceFile = "";
+			const backend = new StudioCliBackend({
+				buildPlace,
+				discover: () => "C:/Studio/RobloxStudioBeta.exe",
+				launch: async (request) => {
+					localPlaceFile = argumentValue(request.args, "--localPlaceFile");
+					fs.writeFileSync(
+						request.outputFile,
+						wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
+					);
+				},
+			});
+
+			await backend.runTests({ jobs: [coverageJob()] });
+
+			// Exact path (not just `toContain`) so a rootDir/CWD resolution drift
+			// is caught, and the clean place is provably never built.
+			expect(localPlaceFile).toBe(
+				normalizeWindowsPath(path.resolve("/repo", ".jest-roblox/coverage/game.rbxl")),
+			);
+			expect(buildPlace).not.toHaveBeenCalled();
+		});
+
+		it("should carry the runtime coverage data through to the rawResult entry", async () => {
+			expect.assertions(1);
+
+			resetVol();
+
+			const coverageData = { "ReplicatedStorage/mod": { f: {}, s: { "1": 1 } } };
+			const jestOutput = successResult({ _coverage: coverageData });
+			const backend = makeBackend(
+				launchWriting(wrappedLog({ jestOutput: envelope([{ jestOutput }]) })),
+			);
+
+			const { rawResults } = await backend.runTests({ jobs: [coverageJob()] });
+
+			// The coverage-bearing jestOutput rides through verbatim, so the
+			// downstream parser/mapper produce the report exactly as on
+			// open-cloud.
+			expect(rawResults[0]!.entry.jestOutput).toBe(jestOutput);
+		});
 	});
 
 	describe("default launcher (spawnStudio)", () => {

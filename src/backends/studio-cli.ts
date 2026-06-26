@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
+import { resolvePlaceFilePath } from "../config/schema.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import { findRojoProject } from "../coverage-pipeline/prepare.ts";
 import {
@@ -128,20 +129,15 @@ export class StudioCliBackend implements Backend {
 		const workDirectory = path.join(rootDirectory, WORK_DIR);
 		fs.mkdirSync(workDirectory, { recursive: true });
 
-		const placeFile = path.join(workDirectory, PLACE_FILE);
-		this.buildPlace({
-			loadStringEnabled: true,
-			packages: [
-				{
-					name: BACKEND_NAME,
-					packageDirectory: rootDirectory,
-					rojoProjectPath: path.resolve(findRojoProject(primary.config)),
-				},
-			],
-			placeFile,
-			projectFile: path.join(workDirectory, PLACE_PROJECT_FILE),
-			wrap: false,
-		});
+		// Coverage runs open the Coverage-Instrumented Place the run layer
+		// (`prepareCoverage`) already built and recorded in `config.placeFile`;
+		// building a fresh Clean Place here would drop the instrumentation and
+		// report 0% for every file. The clean-place build is only for normal
+		// runs. The shared coverage place is built with LoadStringEnabled (see
+		// `prepareCoverage`) so the Run-mode runner's LoadString gate passes.
+		const placeFile = primary.config.collectCoverage
+			? resolvePlaceFilePath(primary.config)
+			: this.buildCleanPlace(primary, rootDirectory, workDirectory);
 
 		const bootstrapFile = path.join(workDirectory, BOOTSTRAP_FILE);
 		const outputFile = path.join(workDirectory, OUTPUT_FILE);
@@ -177,6 +173,34 @@ export class StudioCliBackend implements Backend {
 		});
 
 		return { rawResults, timing: { executionMs } };
+	}
+
+	/**
+	 * Build the Clean Place for a normal (non-coverage) run and return its path.
+	 * `loadStringEnabled` is forced on so the Run-mode runner's LoadString gate
+	 * passes. Coverage runs skip this and open the instrumented place instead.
+	 */
+	private buildCleanPlace(
+		primary: ProjectJob,
+		rootDirectory: string,
+		workDirectory: string,
+	): string {
+		const placeFile = path.join(workDirectory, PLACE_FILE);
+		this.buildPlace({
+			loadStringEnabled: true,
+			packages: [
+				{
+					name: BACKEND_NAME,
+					packageDirectory: rootDirectory,
+					rojoProjectPath: path.resolve(findRojoProject(primary.config)),
+				},
+			],
+			placeFile,
+			projectFile: path.join(workDirectory, PLACE_PROJECT_FILE),
+			wrap: false,
+		});
+
+		return placeFile;
 	}
 }
 

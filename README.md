@@ -367,6 +367,12 @@ Studio process on its own. Studio is auto-discovered per-OS; override the
 executable with `studioPath` (config key), `--studioPath`, or
 `JEST_ROBLOX_STUDIO_PATH`. The backend is serial: `--parallel > 1` errors.
 
+Unlike the attached `studio` backend, `--coverage` works here: studio-cli opens
+the Coverage-Instrumented Place instead of the Clean Place, so the report
+universe, thresholds, reporters, and exclusions behave identically to the
+open-cloud backend (including the all-files semantics where an untested included
+file reports **0%** and fails `coverageThreshold`).
+
 <!-- prettier-ignore -->
 > [!NOTE]
 > studio-cli is a local-developer convenience backend (it needs a logged-in

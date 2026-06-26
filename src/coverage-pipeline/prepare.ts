@@ -345,6 +345,12 @@ function buildRojoProject(
 	placeFile: string,
 ): BuildManifestArtifact {
 	return buildPlace({
+		// The coverage place is shared by every backend. studio-cli opens it
+		// directly and drives the plugin's Run-mode runner, which refuses to run
+		// unless LoadString is enabled; enabling it here is benign for the
+		// open-cloud path (OCALE does not gate on it). Forcing it on at build
+		// time keeps "studio-cli only selects the coverage place" true.
+		loadStringEnabled: true,
 		packages: [
 			{
 				name: "jest-roblox-coverage",
