@@ -9,6 +9,7 @@ import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
 import type { Backend, BackendOptions, BackendResult } from "./interface.ts";
 import { createOpenCloudBackend } from "./open-cloud.ts";
+import { createStudioCliBackend } from "./studio-cli.ts";
 import { createStudioBackend } from "./studio.ts";
 
 const ENV_PREFIX = "JEST_";
@@ -105,6 +106,14 @@ export async function resolveBackend(
 		return createStudioBackend({ port: config.port, timeout: config.timeout });
 	}
 
+	if (config.backend === "studio-cli") {
+		assertStudioCliSerial(config.parallel);
+		return createStudioCliBackend({
+			studioPath: config.studioPath,
+			timeout: config.timeout,
+		});
+	}
+
 	if (config.backend === "open-cloud") {
 		return createOpenCloudBackend(buildCredentials(cli, config));
 	}
@@ -144,6 +153,17 @@ export async function resolveBackend(
 			"and ROBLOX_PLACE_ID (or pass --apiKey, --universeId, --placeId; " +
 			"or set universeId/placeId in jest.config.ts).",
 	);
+}
+
+// studio-cli drives a single Studio instance, so it cannot shard. Reject a
+// parallel request up front (the CLI otherwise drops `--parallel` for non-
+// open-cloud backends, which would silently ignore the user's intent).
+function assertStudioCliSerial(parallel: ResolvedConfig["parallel"]): void {
+	if (parallel === "auto" || (typeof parallel === "number" && parallel > 1)) {
+		throw new Error(
+			"studio-cli backend is serial (one Studio instance); --parallel > 1 is not supported.",
+		);
+	}
 }
 
 function hasUserOverrides(cli: CliOptions): boolean {

@@ -53,6 +53,14 @@ export interface PackageDescriptor {
 }
 
 interface SynthesizeInput {
+	/**
+	 * Force `ServerScriptService.LoadStringEnabled = true` on the synthesized
+	 * place. The wrap (workspace) path always sets it; this flag is for the
+	 * no-wrap path (studio-cli's Clean Place), whose Run-mode runner gates on
+	 * LoadString. Merged into any existing `ServerScriptService`, preserving its
+	 * `$path`/children/other properties.
+	 */
+	loadStringEnabled?: boolean;
 	packages: Array<PackageDescriptor>;
 	/**
 	 * Default `true`: wrap each package under `ServerStorage.__pkg_stage.<name>`
@@ -103,7 +111,7 @@ interface AbsolutizeOptions {
 
 export function synthesize(input: SynthesizeInput): string {
 	if (input.wrap === false) {
-		return synthesizeNoWrap(input.packages);
+		return synthesizeNoWrap(input.packages, input.loadStringEnabled);
 	}
 
 	const stage: RojoTreeNode = { $className: "Folder" };
@@ -337,7 +345,36 @@ function injectStubMounts(root: RojoTreeNode, stubMounts: Array<StubMount> | und
 	}
 }
 
-function synthesizeNoWrap(packages: Array<PackageDescriptor>): string {
+function isProperties(value: RojoTreeNode[string]): value is Record<string, unknown> {
+	// `typeof null === "object"`, so guard it explicitly — a null `$properties`
+	// from a malformed `.project.json` would otherwise reach
+	// `Object.entries(null)` and throw. The static type excludes null (it's a
+	// JSON-deserialization boundary), so the lint rule can't see the runtime
+	// case the guard exists for.
+	// eslint-disable-next-line ts/no-unnecessary-condition -- runtime JSON may be null
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Force `ServerScriptService.LoadStringEnabled = true` on a no-wrap tree,
+ * creating the service node if the user's project omits it and merging into any
+ * existing `$properties` so a hand-set property is preserved. studio-cli's
+ * Run-mode runner gates on LoadString, so the Clean Place must enable it
+ * regardless of what the user's `.project.json` declares.
+ */
+function enableLoadString(tree: RojoTreeNode): void {
+	const existing = tree["ServerScriptService"];
+	const service: RojoTreeNode = isTreeNode(existing)
+		? existing
+		: { $className: "ServerScriptService" };
+	service.$className ??= "ServerScriptService";
+
+	const properties = isProperties(service.$properties) ? service.$properties : {};
+	service.$properties = { ...properties, LoadStringEnabled: true };
+	tree["ServerScriptService"] = service;
+}
+
+function synthesizeNoWrap(packages: Array<PackageDescriptor>, loadStringEnabled = false): string {
 	if (packages.length !== 1) {
 		throw new ConfigError(
 			`synthesize wrap:false requires exactly one package, got ${String(packages.length)}`,
@@ -355,6 +392,10 @@ function synthesizeNoWrap(packages: Array<PackageDescriptor>): string {
 	// Inject in no-wrap mode too so single-package callers (multi-project +
 	// open-cloud) share the same `$path` named-child mounting workspace uses.
 	injectStubMounts(tree, descriptor.stubMounts);
+
+	if (loadStringEnabled) {
+		enableLoadString(tree);
+	}
 
 	// `raw` carries top-level fields (gameId, placeId, globIgnorePaths, etc.)
 	// that the narrow `RojoProject` shape strips; `tree` then overrides the
@@ -396,10 +437,6 @@ function filterServiceProperties(props: Record<string, unknown>): Record<string,
 	}
 
 	return filtered;
-}
-
-function isProperties(value: RojoTreeNode[string]): value is Record<string, unknown> {
-	return typeof value === "object" && !Array.isArray(value);
 }
 
 function transformChildEntry(

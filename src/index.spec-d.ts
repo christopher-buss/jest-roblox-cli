@@ -21,6 +21,7 @@ import type {
 	RunProjectsOptions,
 	RunProjectsResult,
 	StudioBackend,
+	StudioCliBackend,
 	TestCaseResult,
 	TestDefinition,
 	TestFileResult,
@@ -34,6 +35,7 @@ import {
 	coverageManifestSchema,
 	createOpenCloudBackend,
 	createStudioBackend,
+	createStudioCliBackend,
 	DEFAULT_CONFIG,
 	defineConfig,
 	extractJsonFromOutput,
@@ -93,7 +95,9 @@ describe("DEFAULT_CONFIG", () => {
 	});
 
 	it("should have backend typed as string literal union", () => {
-		expectTypeOf<ResolvedConfig["backend"]>().toEqualTypeOf<"auto" | "open-cloud" | "studio">();
+		expectTypeOf<ResolvedConfig["backend"]>().toEqualTypeOf<
+			"auto" | "open-cloud" | "studio" | "studio-cli"
+		>();
 	});
 });
 
@@ -205,11 +209,13 @@ describe("backends", () => {
 	it("should implement Backend interface", () => {
 		expectTypeOf<OpenCloudBackend>().toExtend<Backend>();
 		expectTypeOf<StudioBackend>().toExtend<Backend>();
+		expectTypeOf<StudioCliBackend>().toExtend<Backend>();
 	});
 
 	it("should return backend instances from factory functions", () => {
 		expectTypeOf(createOpenCloudBackend).returns.toExtend<Backend>();
 		expectTypeOf(createStudioBackend).returns.toExtend<Backend>();
+		expectTypeOf(createStudioCliBackend).returns.toExtend<Backend>();
 	});
 });
 

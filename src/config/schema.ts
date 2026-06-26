@@ -6,7 +6,7 @@ import type { Except } from "type-fest";
 
 import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
 
-export type Backend = "auto" | "open-cloud" | "studio";
+export type Backend = "auto" | "open-cloud" | "studio" | "studio-cli";
 
 export type CoverageReporter = keyof ReportOptions;
 
@@ -279,7 +279,9 @@ export interface Config {
 	/**
 	 * Execution backend. `"auto"` probes for a running Studio then falls back to
 	 * Open Cloud; `"open-cloud"` uploads and runs via Roblox Open Cloud;
-	 * `"studio"` drives a locally running Studio. Default `"auto"`.
+	 * `"studio"` drives a locally running Studio; `"studio-cli"` launches its own
+	 * headless Studio via `--task RunScript` and quits it. Default `"auto"`.
+	 * `"studio-cli"` is never selected by `"auto"` — request it explicitly.
 	 */
 	backend?: Backend;
 	/** Force ANSI colour in output. Default `true`. */
@@ -345,6 +347,12 @@ export interface Config {
 	showLuau?: boolean;
 	/** Map Luau stack traces back to TypeScript source. Default `true`. */
 	sourceMap?: boolean;
+	/**
+	 * Path to the Roblox Studio executable the `"studio-cli"` backend launches.
+	 * Overrides per-OS auto-discovery. Also settable via `--studioPath` or the
+	 * `JEST_ROBLOX_STUDIO_PATH` environment variable.
+	 */
+	studioPath?: string;
 	/**
 	 * The Jest options block. Every jest-passthrough setting lives here, kept
 	 * separate from the CLI/runner keys above.
@@ -430,6 +438,7 @@ export const VALID_BACKENDS: ReadonlySet<string> = new Set<Backend>([
 	"auto",
 	"open-cloud",
 	"studio",
+	"studio-cli",
 ]);
 
 export function isValidBackend(value: string): value is Backend {
@@ -505,6 +514,7 @@ export interface CliOptions {
 	showLuau?: boolean;
 	silent?: boolean;
 	sourceMap?: boolean;
+	studioPath?: string;
 	testNamePattern?: string;
 	testPathPattern?: string;
 	timeout?: number;
@@ -650,7 +660,7 @@ const globalTestConfigSchema = type({
 
 export const configSchema: Type<Config> = type({
 	"+": "reject",
-	"backend?": type("'auto'|'open-cloud'|'studio'"),
+	"backend?": type("'auto'|'open-cloud'|'studio'|'studio-cli'"),
 	"color?": "boolean",
 	"config?": "string",
 	"coverageCache?": "boolean",
@@ -668,6 +678,7 @@ export const configSchema: Type<Config> = type({
 	"rootDir?": "string",
 	"showLuau?": "boolean",
 	"sourceMap?": "boolean",
+	"studioPath?": "string",
 	"test?": globalTestConfigSchema,
 	"timeout?": "number",
 	"universeId?": "string",
@@ -735,6 +746,7 @@ export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"rootDir",
 	"showLuau",
 	"sourceMap",
+	"studioPath",
 	"timeout",
 	"universeId",
 	"workspace",

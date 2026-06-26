@@ -49,11 +49,12 @@ describe(defineConfig, () => {
 
 describe(isValidBackend, () => {
 	it("should return true for valid backends", () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		expect(isValidBackend("auto")).toBeTrue();
 		expect(isValidBackend("open-cloud")).toBeTrue();
 		expect(isValidBackend("studio")).toBeTrue();
+		expect(isValidBackend("studio-cli")).toBeTrue();
 	});
 
 	it("should return false for invalid backends", () => {
@@ -259,11 +260,19 @@ describe(configSchema, () => {
 		});
 
 		it("should accept all valid backend values", () => {
-			expect.assertions(3);
+			expect.assertions(4);
 
-			for (const backend of ["auto", "open-cloud", "studio"]) {
+			for (const backend of ["auto", "open-cloud", "studio", "studio-cli"]) {
 				expect(configSchema({ backend })).not.toBeInstanceOf(type.errors);
 			}
+		});
+
+		it("should accept a studioPath string", () => {
+			expect.assertions(1);
+
+			expect(
+				configSchema({ studioPath: "C:/Studio/RobloxStudioBeta.exe" }),
+			).not.toBeInstanceOf(type.errors);
 		});
 
 		it("should accept valid jest passthrough keys under test:", () => {
@@ -738,7 +747,7 @@ describe(configSchema, () => {
 
 			expect(result).toBeInstanceOf(type.errors);
 			expect((result as type.errors).summary).toMatchInlineSnapshot(
-				'"backend must be "auto", "open-cloud" or "studio" (was "bad")"',
+				'"backend must be "auto", "open-cloud", "studio" or "studio-cli" (was "bad")"',
 			);
 		});
 

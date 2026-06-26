@@ -25,6 +25,7 @@ export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): Res
 		showLuau: cli.showLuau ?? config.showLuau,
 		silent: cli.silent ?? config.silent,
 		sourceMap: cli.sourceMap ?? config.sourceMap,
+		studioPath: cli.studioPath ?? config.studioPath,
 		testNamePattern: cli.testNamePattern ?? config.testNamePattern,
 		testPathPattern: cli.testPathPattern ?? config.testPathPattern,
 		timeout: cli.timeout ?? config.timeout,

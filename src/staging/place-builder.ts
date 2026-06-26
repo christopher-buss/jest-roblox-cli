@@ -8,6 +8,12 @@ import type { PackageDescriptor } from "./synthesizer.ts";
 import { synthesize } from "./synthesizer.ts";
 
 export interface BuildPlaceOptions {
+	/**
+	 * Force `ServerScriptService.LoadStringEnabled = true` on the built place.
+	 * Used by studio-cli's Clean Place, whose Run-mode runner gates on
+	 * LoadString. Forwarded verbatim to {@link synthesize}.
+	 */
+	loadStringEnabled?: boolean;
 	packages: Array<PackageDescriptor>;
 	placeFile: string;
 	projectFile: string;
@@ -22,9 +28,9 @@ export interface BuildPlaceOptions {
  * `coverageRoots`.
  */
 export function buildPlace(options: BuildPlaceOptions): BuildManifestArtifact {
-	const { packages, placeFile, projectFile, wrap } = options;
+	const { loadStringEnabled, packages, placeFile, projectFile, wrap } = options;
 
-	const projectJson = synthesize({ packages, wrap });
+	const projectJson = synthesize({ loadStringEnabled, packages, wrap });
 	fs.mkdirSync(path.dirname(projectFile), { recursive: true });
 	fs.writeFileSync(projectFile, projectJson);
 	// `rojo build -o` fails if the output directory is missing, so ensure it

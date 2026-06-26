@@ -6,6 +6,8 @@ export type { ArtifactBundle } from "./artifacts/prepare-artifacts.ts";
 export type { Backend, BackendOptions } from "./backends/interface.ts";
 export { OpenCloudBackend, createOpenCloudBackend } from "./backends/open-cloud.ts";
 
+export { StudioCliBackend, createStudioCliBackend } from "./backends/studio-cli.ts";
+
 export { StudioBackend, createStudioBackend } from "./backends/studio.ts";
 
 export { loadConfig, resolveConfig } from "./config/loader.ts";

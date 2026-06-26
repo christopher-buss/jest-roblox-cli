@@ -24,8 +24,11 @@ const HELP_TEXT = `
 Usage: jest-roblox [options] [files...]
 
 Options:
-  --backend <type>                  Backend: "auto", "open-cloud", or "studio" (default: auto)
+  --backend <type>                  Backend: "auto", "open-cloud", "studio", or
+                                    "studio-cli" (default: auto)
   --port <number>                   WebSocket port for studio backend (default: 3001)
+  --studioPath <path>               Roblox Studio executable for the studio-cli
+                                    backend (auto-detected if not set)
   --config <path>                   Path to config file
   --testPathPattern <regex>         Filter test files by path pattern
   -t, --testNamePattern <regex>     Filter tests by name pattern
@@ -121,6 +124,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 			"showLuau": { type: "boolean" },
 			"silent": { type: "boolean" },
 			"sourceMap": { type: "boolean" },
+			"studioPath": { type: "string" },
 			"testNamePattern": { short: "t", type: "string" },
 			"testPathPattern": { type: "string" },
 			"timeout": { type: "string" },
@@ -169,6 +173,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		showLuau: values["no-show-luau"] === true ? false : values.showLuau,
 		silent: values.silent,
 		sourceMap: values.sourceMap,
+		studioPath: values.studioPath,
 		testNamePattern: values.testNamePattern,
 		testPathPattern: values.testPathPattern,
 		timeout,

@@ -83,6 +83,30 @@ describe(buildPlace, () => {
 		expect(buildWithRojo).toHaveBeenCalledWith(PROJECT_FILE, PLACE_FILE);
 	});
 
+	it("should forward wrap and loadStringEnabled to synthesize", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vi.mocked(synthesize).mockReturnValue("PROJECT_JSON");
+		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
+			vol.writeFileSync(outputPath, PLACE_BYTES);
+		});
+
+		const packages = [makeDescriptor()];
+		buildPlace({
+			loadStringEnabled: true,
+			packages,
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+			wrap: false,
+		});
+
+		expect(synthesize).toHaveBeenCalledWith({ loadStringEnabled: true, packages, wrap: false });
+	});
+
 	it("should create the place file's parent directory before building", () => {
 		expect.assertions(1);
 

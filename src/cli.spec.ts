@@ -281,10 +281,19 @@ describe(parseArgs, () => {
 	});
 
 	it("should parse valid --backend values", () => {
-		expect.assertions(3);
+		expect.assertions(4);
 		expect(parseArgs(["--backend", "auto"]).backend).toBe("auto");
 		expect(parseArgs(["--backend", "open-cloud"]).backend).toBe("open-cloud");
 		expect(parseArgs(["--backend", "studio"]).backend).toBe("studio");
+		expect(parseArgs(["--backend", "studio-cli"]).backend).toBe("studio-cli");
+	});
+
+	it("should parse --studioPath", () => {
+		expect.assertions(2);
+		expect(parseArgs(["--studioPath", "C:/Studio/RobloxStudioBeta.exe"]).studioPath).toBe(
+			"C:/Studio/RobloxStudioBeta.exe",
+		);
+		expect(parseArgs([]).studioPath).toBeUndefined();
 	});
 
 	it("should leave backend undefined when not passed", () => {
@@ -298,7 +307,7 @@ describe(parseArgs, () => {
 			'Invalid backend "not-a-backend"',
 		);
 		expect(() => parseArgs(["--backend", "invalid"])).toThrow(
-			"Must be one of: auto, open-cloud, studio",
+			"Must be one of: auto, open-cloud, studio, studio-cli",
 		);
 	});
 

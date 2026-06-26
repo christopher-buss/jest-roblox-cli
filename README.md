@@ -15,7 +15,8 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 - roblox-ts and pure Luau
 - Source-mapped errors (Luau line numbers back to `.ts` files)
 - Code coverage (via [Lute](https://github.com/luau-lang/lute) instrumentation)
-- Two backends: Open Cloud (remote) and Studio (local)
+- Three backends: Open Cloud (remote), Studio (attached, local), and Studio CLI
+  (self-launched headless Studio, local)
 - Multiple output formatters (human, agent, JSON, GitHub Actions)
 
 <!-- prettier-ignore -->
@@ -90,6 +91,7 @@ jest-roblox --testPathPattern="modifiers|define\\.spec|triggers"
 # Use a specific backend (default "auto" picks Studio if the plugin is
 # connected, else Open Cloud if credentials are set — see Backends below)
 jest-roblox --backend studio
+jest-roblox --backend studio-cli
 jest-roblox --backend open-cloud
 
 # Collect coverage
@@ -135,7 +137,7 @@ per-package declarations error loudly.
 
 | Field                  | What it does                                                                                                                                                        | Default       |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `backend`              | `"auto"`, `"open-cloud"`, or `"studio"`                                                                                                                             | `"auto"`      |
+| `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                             | `"auto"`      |
 | `color`                | Use ANSI colors in console output                                                                                                                                   | `true`        |
 | `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                            | `["default"]` |
 | `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package | —             |
@@ -146,6 +148,7 @@ per-package declarations error loudly.
 | `placeId`              | Open Cloud place ID                                                                                                                                                 | —             |
 | `port`                 | WebSocket port for Studio backend                                                                                                                                   | `3001`        |
 | `silent`               | Suppress console output                                                                                                                                             | `false`       |
+| `studioPath`           | Roblox Studio executable for the `studio-cli` backend (auto-detected if unset; also `--studioPath` / `JEST_ROBLOX_STUDIO_PATH`)                                     | —             |
 | `universeId`           | Open Cloud universe ID                                                                                                                                              | —             |
 
 #### Per-package fields
@@ -264,7 +267,7 @@ export default defineConfig({
 
 ## Backends
 
-Two ways to run tests, plus an auto-pick:
+Three ways to run tests, plus an auto-pick:
 
 ### Auto (default)
 
@@ -349,6 +352,25 @@ you.
 Or download `JestRobloxRunner.rbxm` from the
 [latest release](https://github.com/christopher-buss/jest-roblox-cli/releases)
 and drop it into your Studio plugins folder.
+
+### Studio CLI (self-launched, local)
+
+`--backend studio-cli` owns the whole Studio lifecycle: it builds its own place,
+launches Roblox Studio headless via Studio's `--task RunScript` interface,
+drives the installed plugin's Run mode, reads the result from Studio's output
+log, and quits Studio. No API key, no upload, no pre-opened editor — you just
+need Studio installed (logged in) with the jest plugin. It spawns its own
+isolated Studio instance, so any editor you already have open is untouched.
+
+It is selected only when you ask for it explicitly — `auto` never launches a
+Studio process on its own. Studio is auto-discovered per-OS; override the
+executable with `studioPath` (config key), `--studioPath`, or
+`JEST_ROBLOX_STUDIO_PATH`. The backend is serial: `--parallel > 1` errors.
+
+<!-- prettier-ignore -->
+> [!NOTE]
+> studio-cli is a local-developer convenience backend (it needs a logged-in
+> Studio and the installed plugin), not a CI path.
 
 ## Workspace mode
 
@@ -450,8 +472,9 @@ project) under `.jest-roblox/output/`.
 
 | Flag                             | What it does                                                                                                |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `--backend <type>`               | Choose `auto`, `open-cloud`, or `studio`                                                                    |
+| `--backend <type>`               | Choose `auto`, `open-cloud`, `studio`, or `studio-cli`                                                      |
 | `--port <n>`                     | WebSocket port for Studio                                                                                   |
+| `--studioPath <path>`            | Roblox Studio executable for `studio-cli` (auto-detected if unset)                                          |
 | `--config <path>`                | Path to config file                                                                                         |
 | `--testPathPattern <regex>`      | Filter test files by path                                                                                   |
 | `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                        |

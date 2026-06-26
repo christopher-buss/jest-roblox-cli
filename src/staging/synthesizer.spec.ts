@@ -1820,6 +1820,168 @@ describe(synthesize, () => {
 			expect(parsed.tree.ServerStorage?.__pkg_stage).toBeUndefined();
 		});
 
+		it("should inject ServerScriptService.LoadStringEnabled when loadStringEnabled is set", () => {
+			expect.assertions(2);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				loadStringEnabled: true,
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const parsed = parseFixture(result) as {
+				tree: {
+					ServerScriptService: {
+						$className: string;
+						$properties: { LoadStringEnabled: boolean };
+					};
+				};
+			};
+
+			expect(parsed.tree.ServerScriptService.$className).toBe("ServerScriptService");
+			expect(parsed.tree.ServerScriptService.$properties.LoadStringEnabled).toBeTrue();
+		});
+
+		it("should merge LoadStringEnabled into an existing ServerScriptService, keeping its $path and props", () => {
+			expect.assertions(3);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ServerScriptService: {
+							$className: "ServerScriptService",
+							$path: "server",
+							$properties: { OtherProp: "kept" },
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "server/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				loadStringEnabled: true,
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const parsed = parseFixture(result) as {
+				tree: {
+					ServerScriptService: {
+						$path: string;
+						$properties: { LoadStringEnabled: boolean; OtherProp: string };
+					};
+				};
+			};
+
+			expect(parsed.tree.ServerScriptService.$properties.LoadStringEnabled).toBeTrue();
+			expect(parsed.tree.ServerScriptService.$properties.OtherProp).toBe("kept");
+			expect(parsed.tree.ServerScriptService.$path).toContain("server");
+		});
+
+		it("should tolerate a malformed null $properties on ServerScriptService", () => {
+			// `typeof null === "object"`, so an unguarded property check would
+			// treat null as a record and `Object.entries(null)` would throw.
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ServerScriptService: {
+							$className: "ServerScriptService",
+							$path: "server",
+							$properties: null,
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "server/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				loadStringEnabled: true,
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const parsed = parseFixture(result) as {
+				tree: { ServerScriptService: { $properties: { LoadStringEnabled: boolean } } };
+			};
+
+			expect(parsed.tree.ServerScriptService.$properties.LoadStringEnabled).toBeTrue();
+		});
+
+		it("should not inject ServerScriptService when loadStringEnabled is unset", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const parsed = parseFixture(result) as {
+				tree: { ServerScriptService?: unknown };
+			};
+
+			expect(parsed.tree.ServerScriptService).toBeUndefined();
+		});
+
 		it("should preserve all top-level project fields (gameId, placeId, globIgnorePaths, servePort, name)", () => {
 			expect.assertions(1);
 

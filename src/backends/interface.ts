@@ -133,4 +133,4 @@ export interface Backend {
 	runTests(options: BackendOptions): Promise<BackendResult>;
 }
 
-type BackendKind = "open-cloud" | "studio";
+type BackendKind = "open-cloud" | "studio" | "studio-cli";

@@ -15,6 +15,7 @@ import {
 import type { ProbeDetected, ProbeResult } from "./auto.ts";
 import type { Backend } from "./interface.ts";
 import { OpenCloudBackend } from "./open-cloud.ts";
+import { StudioCliBackend } from "./studio-cli.ts";
 import { StudioBackend } from "./studio.ts";
 
 const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.hoisted(
@@ -173,6 +174,58 @@ describe(resolveBackend, () => {
 		const backend = await resolveBackend(makeCli(), makeConfig({ backend: "studio" }), probe);
 
 		expect(backend).toBeInstanceOf(StudioBackend);
+	});
+
+	it("should return studio-cli backend for explicit studio-cli config", async () => {
+		expect.assertions(1);
+
+		const probe =
+			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
+		const backend = await resolveBackend(
+			makeCli(),
+			makeConfig({ backend: "studio-cli" }),
+			probe,
+		);
+
+		expect(backend).toBeInstanceOf(StudioCliBackend);
+	});
+
+	it("should never select studio-cli from the auto probe chain", async () => {
+		expect.assertions(1);
+
+		async function probe(): Promise<ProbeDetected> {
+			return mockDetected();
+		}
+
+		const backend = await resolveBackend(makeCli(), makeConfig({ backend: "auto" }), probe);
+
+		expect(backend).not.toBeInstanceOf(StudioCliBackend);
+	});
+
+	it("should reject --parallel > 1 for studio-cli with a clear message", async () => {
+		expect.assertions(1);
+
+		const probe =
+			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
+
+		await expect(
+			resolveBackend(makeCli(), makeConfig({ backend: "studio-cli", parallel: 2 }), probe),
+		).rejects.toThrow(/--parallel > 1 is not supported/);
+	});
+
+	it("should reject --parallel auto for studio-cli with a clear message", async () => {
+		expect.assertions(1);
+
+		const probe =
+			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
+
+		await expect(
+			resolveBackend(
+				makeCli(),
+				makeConfig({ backend: "studio-cli", parallel: "auto" }),
+				probe,
+			),
+		).rejects.toThrow(/--parallel/);
 	});
 
 	it("should return open-cloud backend for explicit open-cloud config", async () => {
