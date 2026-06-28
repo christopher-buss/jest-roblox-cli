@@ -4,6 +4,7 @@ packages:
 minimumReleaseAgeExclude:
   - "@isentinel/eslint-config@5.2.0"
   - "@bedrock-rbx/ocale@0.1.0-beta.19"
+  - "@isentinel/roblox-ts@4.0.10"
 
 publicHoistPattern:
   - "*@rbxts*"

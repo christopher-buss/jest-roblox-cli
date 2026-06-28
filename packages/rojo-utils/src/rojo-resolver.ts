@@ -462,6 +462,18 @@ export class RojoResolver {
 
 	private parsePath(itemPath: string): void {
 		const luauPath = convertToLuau(itemPath);
+
+		// A $path pointing straight at a *.project.json file embeds that nested
+		// project at the current rbxPath (Rojo composes projects this way), the
+		// same as a directory whose default.project.json is discovered below.
+		// Without this, the .json extension routes the file into
+		// filePathToRbxPathMap as an opaque leaf and the nested tree's mounts
+		// (its partitions, its @rbxts mounts) are never read.
+		if (ROJO_FILE_REGEX.test(path.basename(luauPath))) {
+			this.parseConfig(luauPath, true);
+			return;
+		}
+
 		const realPath = fs.existsSync(luauPath) ? this.cachedRealpath(luauPath) : luauPath;
 		const extension = path.extname(luauPath);
 		if (ROJO_MODULE_EXTS.has(extension)) {

@@ -67,8 +67,8 @@ importers:
         specifier: workspace:*
         version: link:packages/roblox-runner
       '@isentinel/roblox-ts':
-        specifier: 4.0.7
-        version: 4.0.7
+        specifier: 4.0.10
+        version: 4.0.10
       '@isentinel/rojo-utils':
         specifier: workspace:*
         version: link:packages/rojo-utils
@@ -885,8 +885,8 @@ packages:
     peerDependencies:
       eslint: '>=8.0.0'
 
-  '@isentinel/roblox-ts@4.0.7':
-    resolution: {integrity: sha512-qHZcL7WxJkeZjcboZcijwT803FowiSFXXMWDI9cUAyVpUY0QHB7d2Xnv8yFQYcMca6+cgsaAICPt3hHkK0lNOA==}
+  '@isentinel/roblox-ts@4.0.10':
+    resolution: {integrity: sha512-KZOR6izNLmKbttaSWqMP1y7PH0dhJNHGCYcs6ngYFrKbPezlio/89RdLfg2t1RAjNC7C1Ws5blDvofZ+HhfY+g==}
     hasBin: true
 
   '@isentinel/stylua@2.1.0-esm.3':
@@ -5059,7 +5059,7 @@ snapshots:
       - supports-color
       - typescript
 
-  '@isentinel/roblox-ts@4.0.7':
+  '@isentinel/roblox-ts@4.0.10':
     dependencies:
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31

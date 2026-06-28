@@ -244,6 +244,60 @@ describe("fromPath", () => {
 		);
 	});
 
+	it("should embed a nested project referenced by a project file and ignore its name", () => {
+		expect.assertions(1);
+
+		withProject(
+			{
+				"default.project.json": project({
+					$className: "DataModel",
+					Pkg: { $path: "shared.project.json" },
+				}),
+				"shared.project.json": project({ $path: "src" }, "IgnoredName"),
+				"src/mod.luau": "return {}",
+			},
+			(directory) => {
+				// Mounts under the parent key "Pkg", not the nested project's own
+				// name "IgnoredName".
+				expect(
+					fromProject(directory).getRbxPathFromFilePath(
+						path.join(directory, "src/mod.luau"),
+					),
+				).toStrictEqual(["Pkg", "mod"]);
+			},
+		);
+	});
+
+	it("should register the nested partition and not map the project file as a leaf", () => {
+		expect.assertions(3);
+
+		withProject(
+			{
+				"default.project.json": project({
+					$className: "DataModel",
+					Pkg: { $path: "shared.project.json" },
+				}),
+				"shared.project.json": project({ $path: "src" }, "Pkg"),
+				"src/mod.luau": "return {}",
+			},
+			(directory) => {
+				const resolver = fromProject(directory);
+				const state = resolver.getState();
+				const projectFile = path.join(directory, "shared.project.json");
+
+				expect(
+					state.partitions.some((partition) => partition.fsPath.endsWith("src")),
+				).toBeTrue();
+				expect(
+					state.filePathToRbxPathMap.some(([filePath]) => filePath === projectFile),
+				).toBeFalse();
+				// The nested project file is walked, so cache invalidation tracks
+				// edits to it (RojoResolverCache keys on walkedConfigFiles).
+				expect([...resolver.walkedConfigFiles]).toContain(projectFile);
+			},
+		);
+	});
+
 	it("should return undefined for an unmapped file", () => {
 		expect.assertions(1);
 
