@@ -226,7 +226,12 @@ export interface GlobalTestConfig extends SharedTestConfig {
 	expand?: boolean;
 	/** A JSON string of globals to expose in every test environment. */
 	globals?: string;
-	/** Globs selecting Runtime Test files when no `projects` are configured. */
+	/**
+	 * Per-project globs selecting Runtime Test files. With no `projects`
+	 * configured, the run derives one project per `luauRoots` mount and runtime
+	 * discovery uses `testMatch` — this root-level `include` is not consumed
+	 * there.
+	 */
 	include?: Array<string>;
 	/**
 	 * Maximum worker count, or a percentage string like `"50%"`, for parallel

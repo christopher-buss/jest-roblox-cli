@@ -144,20 +144,25 @@ export function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 	return resolveNestedProjects(validated.tree, path.dirname(rojoPath));
 }
 
-export async function runMultiProject(options: MultiRunOptions): Promise<MultiRunResult> {
-	const { cli, config: rootConfig, rawProjects } = options;
-	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
+/**
+ * Multi-project execution core: stub generation, place build, discovery, and
+ * job dispatch over a set of already-resolved projects. Shared by the
+ * `projects:`-configured path (`runMultiProject`) and the no-`projects` collapse
+ * (`run.ts` synthesizes one project from the config's luau roots and calls this),
+ * so both paths get identical per-root `jest.config` stub injection, place
+ * rebuild, coverage, and result shaping.
+ */
+export async function runResolvedProjects(
+	allProjects: Array<ResolvedProjectConfig>,
+	rootConfig: ResolvedConfig,
+	cli: RunOptions["cli"],
+	timing: TimingCollector,
+): Promise<MultiRunResult> {
 	const cliTypecheck: TypecheckCliOptions = {
 		enabled: cli.typecheck,
 		only: cli.typecheckOnly,
 		tsconfig: cli.typecheckTsconfig,
 	};
-
-	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(rootConfig));
-
-	const allProjects = await timing.profileAsync("resolveAllProjects", async () => {
-		return resolveAllProjects(rawProjects, rootConfig, rojoTree, rootConfig.rootDir);
-	});
 
 	timing.profile("resolveSetupFilePaths", () => {
 		resolveAllSetupFilePaths(allProjects.map((project) => project.config));
@@ -343,6 +348,18 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 		projectResults,
 		typecheckResult,
 	};
+}
+
+export async function runMultiProject(options: MultiRunOptions): Promise<MultiRunResult> {
+	const { cli, config: rootConfig, rawProjects } = options;
+	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
+	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(rootConfig));
+
+	const allProjects = await timing.profileAsync("resolveAllProjects", async () => {
+		return resolveAllProjects(rawProjects, rootConfig, rojoTree, rootConfig.rootDir);
+	});
+
+	return runResolvedProjects(allProjects, rootConfig, cli, timing);
 }
 
 // Builds the agent text-table narrowing for a filtered multi run. Files named

@@ -136,6 +136,35 @@ describe("live project pipeline", () => {
 		RUN_TIMEOUT_MS + 5000,
 	);
 
+	// No-`projects` regression: a bare `test:` config must run end-to-end. With
+	// no explicit `projects`, the run collapses into the multi pipeline — one
+	// project is synthesized from the config's `luauRoots` via the Rojo tree, so
+	// the runner gets the per-root `jest.config` stub and rebuilt place it
+	// requires (the runner resolves per-project config from a `jest.config`
+	// ModuleScript at each root, which a bare config never supplied). The
+	// fixture's `luauRoots` pins to the shared mount so exactly one project
+	// resolves and "1 passed" is deterministic.
+	it.runIf(isLive)(
+		"should run a no-projects config by collapsing it into the multi pipeline",
+		async () => {
+			expect.assertions(2);
+
+			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
+			const result = await runCliAsync(
+				["--backend", "open-cloud", "--config", "jest.no-projects.config.ts"],
+				{
+					cwd: sandbox,
+					env: liveEnvironment(),
+					timeoutMs: RUN_TIMEOUT_MS,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(result.stdout).toContain("1 passed");
+		},
+		RUN_TIMEOUT_MS + 5000,
+	);
+
 	// Regression: native Roblox `warn(...)` emitted from a spec must
 	// be captured into the `--gameOutput` JSON dump. Pre-#150 used
 	// LogService:GetLogHistory which captured all output; #150 swapped to

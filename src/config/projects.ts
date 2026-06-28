@@ -178,6 +178,19 @@ const PROJECT_ONLY_KEYS: ReadonlySet<string> = new Set([
 	"root",
 ]);
 
+export function dedupeMounts(mounts: Array<Mount>): Array<Mount> {
+	const seen = new Set<string>();
+	const result: Array<Mount> = [];
+	for (const mount of mounts) {
+		if (!seen.has(mount.dataModelPath)) {
+			seen.add(mount.dataModelPath);
+			result.push(mount);
+		}
+	}
+
+	return result;
+}
+
 export function resolveProjectConfig(
 	project: ProjectTestConfig,
 	rootConfig: ResolvedConfig,
@@ -302,19 +315,6 @@ function mergeProjectConfig(
 	}
 
 	return merged as unknown as ResolvedConfig;
-}
-
-function dedupeMounts(mounts: Array<Mount>): Array<Mount> {
-	const seen = new Set<string>();
-	const result: Array<Mount> = [];
-	for (const mount of mounts) {
-		if (!seen.has(mount.dataModelPath)) {
-			seen.add(mount.dataModelPath);
-			result.push(mount);
-		}
-	}
-
-	return result;
 }
 
 function joinProjectRoot(relativePath: string, projectRoot: string | undefined): string {

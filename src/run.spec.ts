@@ -5,19 +5,23 @@ import type { CoverageArtifacts } from "./coverage-pipeline/build-manifest.ts";
 import { emitBuildManifest } from "./coverage-pipeline/build-manifest.ts";
 import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
 import { runJestRoblox } from "./run.ts";
-import { runMultiProject } from "./run/multi.ts";
+import { runMultiProject, runResolvedProjects } from "./run/multi.ts";
 import { runSingleProject } from "./run/single.ts";
 import type { MultiRunResult, SingleRunResult, WorkspaceRunResult } from "./run/types.ts";
 import { runWorkspaceMode } from "./run/workspace.ts";
 
 vi.mock(import("./run/single"));
 vi.mock(import("./run/multi"));
+// `loadRojoTree` + `buildImplicitProject` are auto-mocked here so the collapse
+// path resolves to the `runResolvedProjects` mock without touching real Rojo.
+vi.mock(import("./run/single-projects"));
 vi.mock(import("./run/workspace"));
 vi.mock(import("./coverage-pipeline/build-manifest"));
 
 const mocks = {
 	emitBuildManifest: vi.mocked(emitBuildManifest),
 	runMultiProject: vi.mocked(runMultiProject),
+	runResolvedProjects: vi.mocked(runResolvedProjects),
 	runSingleProject: vi.mocked(runSingleProject),
 	runWorkspaceMode: vi.mocked(runWorkspaceMode),
 };
@@ -105,28 +109,40 @@ describe(runJestRoblox, () => {
 		expect(mocks.runMultiProject).toHaveBeenCalledOnce();
 	});
 
-	it("should dispatch to runSingleProject when no workspace flags and no config.projects", async () => {
-		expect.assertions(2);
+	it("should collapse a no-projects runtime run into runResolvedProjects", async () => {
+		expect.assertions(3);
 
-		mocks.runSingleProject.mockResolvedValue(SINGLE);
+		mocks.runResolvedProjects.mockResolvedValue(MULTI);
 
 		const result = await runJestRoblox(makeCli(), makeConfig());
 
-		expect(result).toBe(SINGLE);
-		expect(mocks.runSingleProject).toHaveBeenCalledOnce();
+		expect(result).toBe(MULTI);
+		expect(mocks.runResolvedProjects).toHaveBeenCalledOnce();
+		expect(mocks.runSingleProject).not.toHaveBeenCalled();
 	});
 
-	it("should dispatch to runSingleProject when config.projects is empty array", async () => {
+	it("should collapse to runResolvedProjects when config.projects is an empty array", async () => {
 		expect.assertions(1);
 
-		mocks.runSingleProject.mockResolvedValue(SINGLE);
+		mocks.runResolvedProjects.mockResolvedValue(MULTI);
 
 		const config = makeConfig();
 		(config as unknown as { projects: Array<unknown> }).projects = [];
 
 		await runJestRoblox(makeCli(), config);
 
-		expect(mocks.runSingleProject).toHaveBeenCalledOnce();
+		expect(mocks.runResolvedProjects).toHaveBeenCalledOnce();
+	});
+
+	it("should dispatch to runSingleProject for a typecheck-only no-projects run", async () => {
+		expect.assertions(2);
+
+		mocks.runSingleProject.mockResolvedValue(SINGLE);
+
+		const result = await runJestRoblox(makeCli({ typecheckOnly: true }), makeConfig());
+
+		expect(result).toBe(SINGLE);
+		expect(mocks.runResolvedProjects).not.toHaveBeenCalled();
 	});
 
 	it("should pass cli through to workspace mode without merging workspace-root config", async () => {
@@ -158,8 +174,8 @@ describe(runJestRoblox, () => {
 	it("should emit a coveragePlace-only build manifest on a rebuilt coverage run", async () => {
 		expect.assertions(1);
 
-		mocks.runSingleProject.mockResolvedValue({
-			...SINGLE,
+		mocks.runResolvedProjects.mockResolvedValue({
+			...MULTI,
 			coverageArtifacts: COVERAGE_ARTIFACTS,
 		});
 
@@ -174,8 +190,8 @@ describe(runJestRoblox, () => {
 	it("should not emit a build manifest when the coverage place was reused", async () => {
 		expect.assertions(1);
 
-		mocks.runSingleProject.mockResolvedValue({
-			...SINGLE,
+		mocks.runResolvedProjects.mockResolvedValue({
+			...MULTI,
 			coverageArtifacts: { ...COVERAGE_ARTIFACTS, rebuilt: false },
 		});
 
@@ -187,7 +203,7 @@ describe(runJestRoblox, () => {
 	it("should not emit a build manifest for a non-coverage run", async () => {
 		expect.assertions(1);
 
-		mocks.runSingleProject.mockResolvedValue(SINGLE);
+		mocks.runResolvedProjects.mockResolvedValue(MULTI);
 
 		await runJestRoblox(makeCli(), makeConfig());
 

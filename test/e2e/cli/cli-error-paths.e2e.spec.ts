@@ -81,13 +81,15 @@ describe("cli error paths", () => {
 		});
 	});
 
-	describe("invalid place file", () => {
-		it("should exit non-zero and name the missing place file path", async () => {
-			expect.assertions(3);
+	describe("unreachable backend", () => {
+		it("should build the place then exit non-zero with an upload error", async () => {
+			expect.assertions(2);
 
-			// LUAU_FIXTURE goes through the single-project path, which skips
-			// the rojo build step. The backend reads placeFile directly, so a
-			// missing file surfaces as ENOENT naming the resolved path.
+			// A no-`projects` config collapses into the multi pipeline, which
+			// builds the place from the Rojo project (it no longer uploads a
+			// pre-built `placeFile` as-is). With the backend unreachable the
+			// build succeeds and the run fails at upload, surfacing a clear
+			// "Failed to upload place".
 			const sandbox = createFixtureSandbox(LUAU_FIXTURE);
 
 			const result = await runCliAsync(["--backend", "open-cloud"], {
@@ -96,8 +98,7 @@ describe("cli error paths", () => {
 			});
 
 			expect(result.exitCode).toBeGreaterThan(0);
-			expect(result.stderr).toContain("ENOENT");
-			expect(result.stderr).toContain("game.rbxl");
+			expect(result.stderr).toContain("Failed to upload place");
 		});
 	});
 });

@@ -71,6 +71,15 @@ Then run:
 jest-roblox
 ```
 
+<!-- prettier-ignore -->
+> [!NOTE]
+> `projects` is optional. With it omitted, the CLI derives one project per
+> `luauRoots` mount (the compiled-output dirs your Rojo project mounts,
+> auto-detected from your tsconfig `outDir`), generating each project's
+> `jest.config` stub for you. Set `projects` explicitly when you need
+> per-project overrides (a distinct `displayName`, `setupFiles`, `include`,
+> etc.) or a tighter project layout than the luau roots imply.
+
 ## Usage
 
 ```bash
@@ -174,7 +183,7 @@ Put these under `test: { ... }`.
 
 | Field                    | What it does                                     | Default                              |
 | ------------------------ | ------------------------------------------------ | ------------------------------------ |
-| `projects`               | Where to look for tests in the DataModel         | **required**                         |
+| `projects`               | Where to look for tests in the DataModel         | one project per `luauRoots` mount    |
 | `testMatch`              | Glob patterns that find test files               | `**/*.spec.ts`, `**/*.test.ts`, etc. |
 | `testPathIgnorePatterns` | Patterns to skip                                 | `/node_modules/`, `/dist/`, `/out/`  |
 | `setupFiles`             | Scripts to run before the test environment loads | —                                    |

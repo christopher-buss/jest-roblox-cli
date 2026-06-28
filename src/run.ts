@@ -1,8 +1,10 @@
 import { mergeCliWithConfig } from "./config/merge.ts";
+import { resolveTypecheckConfig } from "./config/resolve-typecheck-config.ts";
 import type { CliOptions, ProjectEntry, ResolvedConfig } from "./config/schema.ts";
 import { emitBuildManifest } from "./coverage-pipeline/build-manifest.ts";
 import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
-import { runMultiProject } from "./run/multi.ts";
+import { loadRojoTree, runMultiProject, runResolvedProjects } from "./run/multi.ts";
+import { buildImplicitProject } from "./run/single-projects.ts";
 import { runSingleProject } from "./run/single.ts";
 import type { MultiRunResult, RunResult, SingleRunResult } from "./run/types.ts";
 import { runWorkspaceMode } from "./run/workspace.ts";
@@ -38,7 +40,24 @@ export async function runSingleOrMulti(
 		return runMultiProject({ cli, config: merged, rawProjects, timing });
 	}
 
-	return runSingleProject({ cli, config: merged, timing });
+	// No explicit `projects`. A pure typecheck-only run stays local in single
+	// mode (no backend, place, or Rojo project required). Any run that can
+	// produce runtime tests collapses into the multi pipeline: synthesize one
+	// project from the config's luau roots so the runner gets the per-root
+	// `jest.config` stub and rebuilt place it requires (the runner resolves
+	// per-project config from a `jest.config` ModuleScript at each project root,
+	// which single mode never generated).
+	const typecheck = resolveTypecheckConfig({
+		cli: { enabled: cli.typecheck, only: cli.typecheckOnly, tsconfig: cli.typecheckTsconfig },
+		root: merged.typecheck,
+	});
+	if (typecheck.only) {
+		return runSingleProject({ cli, config: merged, timing });
+	}
+
+	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(merged));
+	const project = buildImplicitProject(merged, rojoTree);
+	return runResolvedProjects([project], merged, cli, timing);
 }
 
 export async function runJestRoblox(cli: CliOptions, config: ResolvedConfig): Promise<RunResult> {
