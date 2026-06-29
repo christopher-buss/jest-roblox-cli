@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { load, resolve as resolveLuau } from "../loaders/luau-raw.mjs";
+
 const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "../src/cli.ts");
 
-const { register } = await import("node:module");
-register("../loaders/luau-raw.mjs", import.meta.url);
+registerHooks({ load, resolve: resolveLuau });
 
 if (existsSync(sourceEntry)) {
 	const { main } = await import("../src/cli.ts");

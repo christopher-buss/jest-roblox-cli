@@ -9,7 +9,7 @@ interface ResolveResult {
 	url: string;
 }
 
-type NextResolve = (specifier: string, context: ResolveContext) => Promise<ResolveResult>;
+type NextResolve = (specifier: string, context: ResolveContext) => ResolveResult;
 
 interface LoadContext {
 	conditions?: Array<string>;
@@ -23,12 +23,12 @@ interface LoadResult {
 	source: string;
 }
 
-type NextLoad = (url: string, context: LoadContext) => Promise<LoadResult>;
+type NextLoad = (url: string, context: LoadContext) => LoadResult;
 
 export function resolve(
 	specifier: string,
 	context: ResolveContext,
 	nextResolve: NextResolve,
-): Promise<ResolveResult>;
+): ResolveResult;
 
-export function load(url: string, context: LoadContext, nextLoad: NextLoad): Promise<LoadResult>;
+export function load(url: string, context: LoadContext, nextLoad: NextLoad): LoadResult;

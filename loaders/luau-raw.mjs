@@ -1,8 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-export async function resolve(specifier, context, nextResolve) {
-	const resolved = await nextResolve(specifier, context);
+export function resolve(specifier, context, nextResolve) {
+	const resolved = nextResolve(specifier, context);
 
 	if (resolved.url.endsWith(".luau") || resolved.url.endsWith(".lua")) {
 		return { ...resolved, format: "luau-raw" };
@@ -11,7 +11,7 @@ export async function resolve(specifier, context, nextResolve) {
 	return resolved;
 }
 
-export async function load(url, context, nextLoad) {
+export function load(url, context, nextLoad) {
 	if (context.format === "luau-raw") {
 		if (url.endsWith(".lua")) {
 			return {
@@ -21,7 +21,7 @@ export async function load(url, context, nextLoad) {
 			};
 		}
 
-		const content = await readFile(fileURLToPath(url), "utf-8");
+		const content = readFileSync(fileURLToPath(url), "utf-8");
 		return {
 			format: "module",
 			shortCircuit: true,
