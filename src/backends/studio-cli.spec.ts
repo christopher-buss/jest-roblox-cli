@@ -61,6 +61,20 @@ function envelope(entries: Array<{ elapsedMs?: number; jestOutput: string }>): s
 	return JSON.stringify({ entries });
 }
 
+// Mirror the bootstrap's chunked emit: a `DELIMITER` marker line, the envelope
+// JSON sliced into small per-line chunks, then a closing `DELIMITER` marker
+// line — surrounded by engine noise. A deliberately tiny chunk size makes even
+// short fixtures span several lines so every test exercises host reassembly.
+// `body` need not be valid JSON (malformed-envelope tests pass a bad fragment).
+function chunkedEnvelope(body: string, chunkSize = 16): string {
+	const chunks: Array<string> = [];
+	for (let offset = 0; offset < body.length; offset += chunkSize) {
+		chunks.push(body.slice(offset, offset + chunkSize));
+	}
+
+	return ["Roblox Studio engine line", DELIMITER, ...chunks, DELIMITER, "bye", ""].join("\n");
+}
+
 // The run-mode runner echoes protocolVersion in its result; the host requires
 // it to match. Default to the current protocol so happy-path helpers round-trip;
 // version-handshake tests build their own wrapper inline to omit/mismatch it.
@@ -69,8 +83,11 @@ function wrappedLog(wrapper: {
 	jestOutput: string;
 	protocolVersion?: number;
 }): string {
+	// Hardcoded like DELIMITER (not imported from studio-cli.ts) so a silent
+	// bump of STUDIO_CLI_PROTOCOL_VERSION drifts from this fixture and fails the
+	// happy-path tests rather than passing against a stale echo.
 	const echoed = { protocolVersion: 3, ...wrapper };
-	return `Roblox Studio engine line\n${DELIMITER}${JSON.stringify(echoed)}${DELIMITER}\nbye\n`;
+	return chunkedEnvelope(JSON.stringify(echoed));
 }
 
 function launchWriting(content: string): StudioCliLauncher {
@@ -267,10 +284,12 @@ describe(StudioCliBackend, () => {
 
 		const backend = makeBackend(
 			launchWriting(
-				`${DELIMITER}${JSON.stringify({
-					gameOutput: "[]",
-					jestOutput: envelope([{ jestOutput: successResult() }]),
-				})}${DELIMITER}`,
+				chunkedEnvelope(
+					JSON.stringify({
+						gameOutput: "[]",
+						jestOutput: envelope([{ jestOutput: successResult() }]),
+					}),
+				),
 			),
 		);
 
@@ -284,11 +303,13 @@ describe(StudioCliBackend, () => {
 
 		const backend = makeBackend(
 			launchWriting(
-				`${DELIMITER}${JSON.stringify({
-					gameOutput: "[]",
-					jestOutput: envelope([{ jestOutput: successResult() }]),
-					protocolVersion: 2,
-				})}${DELIMITER}`,
+				chunkedEnvelope(
+					JSON.stringify({
+						gameOutput: "[]",
+						jestOutput: envelope([{ jestOutput: successResult() }]),
+						protocolVersion: 2,
+					}),
+				),
 			),
 		);
 
@@ -296,14 +317,14 @@ describe(StudioCliBackend, () => {
 	});
 
 	it("should throw a clear error when the result wrapper JSON is truncated", async () => {
-		// Studio crashing mid-write leaves truncated JSON between the delimiters;
-		// the raw JSON.parse SyntaxError must surface as the backend's clean
-		// diagnostic, not a bare "Unexpected end of JSON input".
+		// Studio crashing mid-write leaves truncated JSON between the marker
+		// lines; the raw JSON.parse SyntaxError must surface as the backend's
+		// clean diagnostic, not a bare "Unexpected end of JSON input".
 		expect.assertions(1);
 
 		resetVol();
 
-		const backend = makeBackend(launchWriting(`${DELIMITER}{"jestOutput":${DELIMITER}`));
+		const backend = makeBackend(launchWriting(chunkedEnvelope('{"jestOutput":')));
 
 		await expect(backend.runTests(singleJob)).rejects.toThrow(/malformed result envelope/);
 	});
@@ -431,13 +452,64 @@ describe(StudioCliBackend, () => {
 	});
 
 	it("should throw a clear error when only an opening delimiter is present", async () => {
+		// A single marker line (closing delimiter never written — e.g. Studio
+		// quit mid-emit) leaves fewer than two markers; the host treats it as no
+		// result rather than rejoining a half envelope.
 		expect.assertions(1);
 
 		resetVol();
 
-		const backend = makeBackend(launchWriting(`prefix\n${DELIMITER}{"jestOutput":"x"}\n`));
+		const backend = makeBackend(launchWriting(`prefix\n${DELIMITER}\n{"jestOutput":"x"}\n`));
 
 		await expect(backend.runTests(singleJob)).rejects.toThrow(/no test result was produced/);
+	});
+
+	it("should recover the envelope when the echoed bootstrap script also contains the delimiter", async () => {
+		// Studio's `--task RunScript` echoes the whole runScriptFile into the
+		// outputFile, and that echo carries the bootstrap's
+		// `local DELIMITER = "…"` and `print(DELIMITER)` lines — they contain the
+		// marker text but are never equal to it. The host matches markers by
+		// whole-line equality, so those echoed lines are ignored and only the
+		// real emit's pair brackets the envelope.
+		expect.assertions(2);
+
+		resetVol();
+
+		const echoedScript =
+			`> local DELIMITER = "${DELIMITER}"\n` +
+			"local function emit(value)\n" +
+			"\tprint(DELIMITER)\n" +
+			"end\n";
+		const backend = makeBackend(
+			launchWriting(
+				echoedScript +
+					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
+			),
+		);
+
+		const { rawResults } = await backend.runTests(singleJob);
+
+		expect(rawResults).toHaveLength(1);
+		expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":2');
+	});
+
+	it("should reassemble an envelope chunked across many lines (large output)", async () => {
+		// The bootstrap slices the JSON into sub-100k-char `print` chunks to
+		// dodge Studio's per-message truncation. The host must rejoin every line
+		// between the markers — not just the first — into the original JSON.
+		expect.assertions(2);
+
+		resetVol();
+
+		// A jestOutput large enough to span many tiny chunk lines via the helper.
+		const bigName = "x".repeat(500);
+		const jestOutput = envelope([{ jestOutput: `{"success":true,"value":"${bigName}"}` }]);
+		const backend = makeBackend(launchWriting(wrappedLog({ jestOutput })));
+
+		const { rawResults } = await backend.runTests(singleJob);
+
+		expect(rawResults).toHaveLength(1);
+		expect(rawResults[0]!.entry.jestOutput).toContain(bigName);
 	});
 
 	it("should throw on a malformed result wrapper", async () => {
@@ -445,9 +517,7 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(
-			launchWriting(`${DELIMITER}${JSON.stringify({ notJest: 1 })}${DELIMITER}`),
-		);
+		const backend = makeBackend(launchWriting(chunkedEnvelope(JSON.stringify({ notJest: 1 }))));
 
 		await expect(backend.runTests(singleJob)).rejects.toThrow(/malformed result envelope/);
 	});

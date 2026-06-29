@@ -42,8 +42,21 @@ const STUDIO_CLI_PROTOCOL_VERSION = 3;
 /**
  * Stable marker the bootstrap brackets the result envelope with so the host can
  * recover it from a `--outputFile` log interleaved with engine/plugin lines.
+ * Emitted on its own line (before and after the JSON chunks) — see
+ * {@link RESULT_CHUNK_SIZE}.
  */
 const RESULT_DELIMITER = "@@JEST_ROBLOX_STUDIO_CLI_RESULT@@";
+
+/**
+ * Max characters per `print` in the chunked result envelope. Studio truncates a
+ * single console message at ~100k chars (observed: a 100,010-char envelope lost
+ * its tail and its closing delimiter, producing "invalid JSON"). So the
+ * bootstrap slices the JSON-encoded envelope into sub-cap chunks, each on its
+ * own `print` line bracketed by {@link RESULT_DELIMITER} marker lines, and the
+ * host rejoins the lines between the markers. 8000 keeps a wide margin under the
+ * cap while bounding the emitted line count even for very large suites.
+ */
+const RESULT_CHUNK_SIZE = 8000;
 
 const BACKEND_NAME = "studio-cli";
 const WORK_DIR = path.join(".jest-roblox", BACKEND_NAME);
@@ -294,8 +307,21 @@ function buildBootstrap(payload: object): string {
 		'local StudioTestService = game:GetService("StudioTestService")',
 		`local payload = HttpService:JSONDecode(${luauLongString(String(JSON.stringify(payload)))})`,
 		`local DELIMITER = "${RESULT_DELIMITER}"`,
+		// Emit as `DELIMITER` / chunk* / `DELIMITER`, one chunk per `print`. A
+		// single `print` of the whole envelope is truncated at Studio's
+		// ~100k-char message cap (losing the closing delimiter → "invalid JSON"),
+		// so the JSON is sliced into sub-cap pieces and the host rejoins the
+		// lines between the markers. See RESULT_CHUNK_SIZE.
 		"local function emit(value)",
-		"\tprint(DELIMITER .. HttpService:JSONEncode(value) .. DELIMITER)",
+		"\tlocal encoded = HttpService:JSONEncode(value)",
+		"\tprint(DELIMITER)",
+		"\tlocal total = #encoded",
+		"\tlocal index = 1",
+		"\twhile index <= total do",
+		`\t\tprint(string.sub(encoded, index, index + ${(RESULT_CHUNK_SIZE - 1).toString()}))`,
+		`\t\tindex = index + ${RESULT_CHUNK_SIZE.toString()}`,
+		"\tend",
+		"\tprint(DELIMITER)",
 		"end",
 		"local ok, result = pcall(function()",
 		"\treturn StudioTestService:ExecuteRunModeAsync(payload)",
@@ -343,17 +369,35 @@ function readStudioResult(outputFile: string): {
 		throw new Error(NO_RESULT_ERROR);
 	}
 
-	const start = log.indexOf(RESULT_DELIMITER);
-	if (start === -1) {
+	// The bootstrap brackets the envelope with `RESULT_DELIMITER` on its OWN
+	// line, before and after the JSON chunks (chunked to dodge Studio's ~100k
+	// per-message truncation — see RESULT_CHUNK_SIZE). Recover it by the last two
+	// whole-line markers and rejoin everything between them:
+	//   - whole-line match (trimmed === delimiter) ignores the echoed bootstrap
+	//     script's `local DELIMITER = "…"` / `print(DELIMITER)` lines, which
+	//     contain the delimiter but are never equal to it;
+	//   - the LAST two markers are the real emit's pair, after any echo/engine
+	//     lines;
+	//   - joining the lines between them concatenates the chunks back into the
+	//     original JSON (JSONEncode output carries no literal newlines).
+	const lines = log.split(/\r?\n/);
+	const markerLines: Array<number> = [];
+	for (const [lineIndex, line] of lines.entries()) {
+		if (line.trim() === RESULT_DELIMITER) {
+			markerLines.push(lineIndex);
+		}
+	}
+
+	const endMarker = markerLines.at(-1);
+	const startMarker = markerLines.at(-2);
+	if (startMarker === undefined || endMarker === undefined) {
 		throw new Error(NO_RESULT_ERROR);
 	}
 
-	const end = log.indexOf(RESULT_DELIMITER, start + RESULT_DELIMITER.length);
-	if (end === -1) {
-		throw new Error(NO_RESULT_ERROR);
-	}
-
-	const between = log.slice(start + RESULT_DELIMITER.length, end).trim();
+	const between = lines
+		.slice(startMarker + 1, endMarker)
+		.join("")
+		.trim();
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(between);

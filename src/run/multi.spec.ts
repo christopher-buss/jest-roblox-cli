@@ -579,6 +579,48 @@ describe(runMultiProject, () => {
 		);
 	});
 
+	it("should NOT bake stubs into the coverage place for the studio-cli backend", async () => {
+		// studio-cli drives the plugin's Run-mode runner, which injects
+		// `jest.config` ModuleScripts from the payload at runtime. Baking them
+		// into the instrumented place too would make the runner collide with an
+		// already-present `jest.config` ("Structural collision …"). So coverage
+		// prep must skip the stub-sync `beforeBuild` for this backend and let
+		// runtime injection be the sole config source.
+		expect.assertions(1);
+
+		const { config } = setupDefaults({ backend: "studio-cli", collectCoverage: true });
+		mocks.prepareCoverage.mockImplementation((_config, beforeBuild) => {
+			beforeBuild?.(".jest-roblox/coverage");
+			return {
+				buildId: "test-build-id",
+				coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
+				files: {},
+				manifest: {
+					buildId: "test-build-id",
+					files: {},
+					generatedAt: new Date().toISOString(),
+					instrumenterVersion: 1,
+					luauRoots: [],
+					nonInstrumentedFiles: {},
+					placeFilePath: "/coverage/game.rbxl",
+					shadowDir: ".jest-roblox/coverage",
+					version: MANIFEST_VERSION,
+				},
+				placeFile: "/coverage/game.rbxl",
+				rebuilt: true,
+			};
+		});
+		seedProjectFiles();
+
+		await runMultiProject({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(mocks.syncStubsToShadowDirectory).not.toHaveBeenCalled();
+	});
+
 	it("should return validationExitCode 2 with message when no test files found", async () => {
 		expect.assertions(3);
 

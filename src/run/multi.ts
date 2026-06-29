@@ -664,14 +664,30 @@ function prepareMultiProjectCoverage(
 		return { effectiveConfig: rootConfig, preCoverageMs: 0 };
 	}
 
+	// Baked `jest.config` stubs are how a backend that can't inject at runtime
+	// (open-cloud) gets each project's config into the place. studio-cli instead
+	// drives the plugin's Run-mode runner, which materializes `jest.config`
+	// ModuleScripts from the payload configs — so baking them here too would have
+	// the runner collide with an already-present `jest.config` ("Structural
+	// collision …"). Skip baking for studio-cli and let runtime injection be the
+	// sole config source, mirroring its non-coverage Clean Place (which carries
+	// no baked stubs either). `auto` never resolves to studio-cli, so the config
+	// flag is the exact, probe-free signal.
+	const bakeStubs = rootConfig.backend !== "studio-cli";
+
 	const start = Date.now();
-	const coverage = prepareCoverage(rootConfig, (shadowDirectory) => {
-		// Mirror cache stubs into the shadow tree. The source tree is
-		// clean post-refactor (stubs land in `cacheRoot`, not `rootDir`),
-		// so without this the coverage place would build without any
-		// `jest.config` ModuleScripts.
-		return syncStubsToShadowDirectory(projects, cacheRoot, shadowDirectory);
-	});
+	const coverage = prepareCoverage(
+		rootConfig,
+		bakeStubs
+			? (shadowDirectory) => {
+					// Mirror cache stubs into the shadow tree. The source tree is
+					// clean post-refactor (stubs land in `cacheRoot`, not
+					// `rootDir`), so without this the coverage place would build
+					// without any `jest.config` ModuleScripts.
+					return syncStubsToShadowDirectory(projects, cacheRoot, shadowDirectory);
+				}
+			: undefined,
+	);
 	return {
 		coverageArtifacts: toCoverageArtifacts(coverage, toBuildManifestProjects(projects)),
 		effectiveConfig: { ...rootConfig, placeFile: coverage.placeFile },
