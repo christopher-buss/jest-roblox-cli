@@ -184,6 +184,9 @@ function resolveWorkspaceBackend(
 	if (runOptions.backend === "studio-cli") {
 		return {
 			backend: createStudioCliBackend({
+				// `headed` is CLI-only — read straight from `cli`, not the
+				// consensus-resolved run options.
+				headed: cli.headed,
 				...(runOptions.studioPath !== undefined
 					? { studioPath: runOptions.studioPath }
 					: {}),

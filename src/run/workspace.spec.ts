@@ -187,6 +187,24 @@ describe(runWorkspaceMode, () => {
 			);
 		});
 
+		it("should forward cli.headed to the studio-cli backend", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(createStudioCliBackend).mockReturnValue(
+				fromAny(makeFakeBackend("studio-cli")),
+			);
+			mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+
+			await runWorkspaceMode(
+				makeCli({ backend: "studio-cli", headed: true, packages: "a", workspace: true }),
+			);
+
+			expect(createStudioCliBackend).toHaveBeenCalledWith(
+				expect.objectContaining({ headed: true }),
+			);
+		});
+
 		it("should resolve the attached studio backend without Open Cloud credentials", async () => {
 			expect.assertions(2);
 

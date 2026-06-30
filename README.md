@@ -376,6 +376,11 @@ Studio process on its own. Studio is auto-discovered per-OS; override the
 executable with `studioPath` (config key), `--studioPath`, or
 `JEST_ROBLOX_STUDIO_PATH`. The backend is serial: `--parallel > 1` errors.
 
+Pass `--headed` to show the Studio window during the run instead of the default
+hidden one — useful for watching a slow run or a hang (Studio still self-quits
+when tests finish, so a fast run just flashes). It is a per-run debugging flag,
+CLI-only and inert on every other backend.
+
 Unlike the attached `studio` backend, `--coverage` works here: studio-cli opens
 the Coverage-Instrumented Place instead of the Clean Place, so the report
 universe, thresholds, reporters, and exclusions behave identically to the
@@ -494,6 +499,7 @@ project) under `.jest-roblox/output/`.
 | `--backend <type>`               | Choose `auto`, `open-cloud`, `studio`, or `studio-cli`                                                      |
 | `--port <n>`                     | WebSocket port for Studio                                                                                   |
 | `--studioPath <path>`            | Roblox Studio executable for `studio-cli` (auto-detected if unset)                                          |
+| `--headed`                       | Show the Studio window during the run (`studio-cli` only; default: hidden)                                  |
 | `--config <path>`                | Path to config file                                                                                         |
 | `--testPathPattern <regex>`      | Filter test files by path                                                                                   |
 | `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                        |

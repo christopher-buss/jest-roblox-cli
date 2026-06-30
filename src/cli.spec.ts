@@ -296,6 +296,12 @@ describe(parseArgs, () => {
 		expect(parseArgs([]).studioPath).toBeUndefined();
 	});
 
+	it("should parse --headed", () => {
+		expect.assertions(2);
+		expect(parseArgs(["--headed"]).headed).toBeTrue();
+		expect(parseArgs([]).headed).toBeUndefined();
+	});
+
 	it("should leave backend undefined when not passed", () => {
 		expect.assertions(1);
 		expect(parseArgs([]).backend).toBeUndefined();

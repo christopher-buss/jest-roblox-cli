@@ -286,8 +286,9 @@ export interface Config {
 	 * Execution backend. `"auto"` probes for a running Studio then falls back to
 	 * Open Cloud; `"open-cloud"` uploads and runs via Roblox Open Cloud;
 	 * `"studio"` drives a locally running Studio; `"studio-cli"` launches its own
-	 * headless Studio via `--task RunScript` and quits it. Default `"auto"`.
-	 * `"studio-cli"` is never selected by `"auto"` — request it explicitly.
+	 * headless Studio via `--task RunScript` and quits it (pass `--headed` to show
+	 * the Studio window during the run). Default `"auto"`. `"studio-cli"` is never
+	 * selected by `"auto"` — request it explicitly.
 	 */
 	backend?: Backend;
 	/** Force ANSI colour in output. Default `true`. */
@@ -516,6 +517,11 @@ export interface CliOptions {
 	files?: Array<string>;
 	formatters?: Array<string>;
 	gameOutput?: string;
+	/**
+	 * Show the Studio window during a `studio-cli` run (`--headed`). CLI-only;
+	 * inert for every other backend. Never sourced from config or env.
+	 */
+	headed?: boolean;
 	help?: boolean;
 	outputFile?: string;
 	packages?: string;

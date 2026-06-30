@@ -106,6 +106,24 @@ function singleOk(): StudioCliLauncher {
 	);
 }
 
+// Capture the request the backend builds while still writing a passing result,
+// so a test can assert on a forwarded field (e.g. `headed`) without rebuilding
+// the success-log boilerplate.
+function capturingLaunch(): {
+	launch: StudioCliLauncher;
+	request: () => StudioCliLaunchRequest;
+} {
+	const write = singleOk();
+	let captured: StudioCliLaunchRequest | undefined;
+	return {
+		launch: async (request) => {
+			captured = request;
+			await write(request);
+		},
+		request: () => captured!,
+	};
+}
+
 function makeBackend(launch: StudioCliLauncher): StudioCliBackend {
 	return new StudioCliBackend({
 		buildPlace: fakeBuildPlace(),
@@ -360,6 +378,41 @@ describe(StudioCliBackend, () => {
 				"--quitAfterExecution",
 			]),
 		);
+	});
+
+	it("should forward headed=true to the launcher when constructed headed", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		const capture = capturingLaunch();
+		const backend = new StudioCliBackend({
+			buildPlace: fakeBuildPlace(),
+			discover: () => "C:/Studio/RobloxStudioBeta.exe",
+			headed: true,
+			launch: capture.launch,
+		});
+
+		await backend.runTests(singleJob);
+
+		expect(capture.request().headed).toBeTrue();
+	});
+
+	it("should default headed to false in the launch request", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		const capture = capturingLaunch();
+		const backend = new StudioCliBackend({
+			buildPlace: fakeBuildPlace(),
+			discover: () => "C:/Studio/RobloxStudioBeta.exe",
+			launch: capture.launch,
+		});
+
+		await backend.runTests(singleJob);
+
+		expect(capture.request().headed).toBeFalse();
 	});
 
 	it("should pass the studioPath override to the discover seam", async () => {

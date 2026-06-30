@@ -78,6 +78,11 @@ const resultWrapperSchema = type({
 export interface StudioCliLaunchRequest {
 	/** Full Studio CLI argument vector (already absolute paths). */
 	args: Array<string>;
+	/**
+	 * Show the Studio window during the run (`--headed`) instead of the default
+	 * hidden window. Maps to `windowsHide: !headed` in {@link spawnStudio}.
+	 */
+	headed: boolean;
 	/** Absolute path of the log file Studio writes (the `--outputFile`). */
 	outputFile: string;
 	/** Absolute path to the Studio executable. */
@@ -98,6 +103,11 @@ export interface StudioCliOptions {
 	buildPlace?: (options: BuildPlaceOptions) => BuildManifestArtifact;
 	/** Studio-executable resolver seam; defaults to {@link discoverStudioPath}. */
 	discover?: (override: string | undefined) => string;
+	/**
+	 * Show the Studio window during the run (`--headed`). CLI-only — never read
+	 * from config. Defaults to false (hidden window).
+	 */
+	headed?: boolean;
 	/** Process launcher seam; defaults to the real {@link spawnStudio}. */
 	launch?: StudioCliLauncher;
 	/** Explicit Studio executable path (override from config / CLI / env). */
@@ -109,6 +119,7 @@ export interface StudioCliOptions {
 export class StudioCliBackend implements Backend {
 	private readonly buildPlace: (options: BuildPlaceOptions) => BuildManifestArtifact;
 	private readonly discover: (override: string | undefined) => string;
+	private readonly headed: boolean;
 	private readonly launch: StudioCliLauncher;
 	private readonly studioPath?: string;
 	private readonly timeout: number;
@@ -121,6 +132,7 @@ export class StudioCliBackend implements Backend {
 			options.discover ??
 			((override) =>
 				discoverStudioPath({ override: override ?? process.env[STUDIO_PATH_ENV] }));
+		this.headed = options.headed ?? false;
 		this.launch = options.launch ?? spawnStudio;
 		this.studioPath = options.studioPath;
 		this.timeout = options.timeout ?? DEFAULT_STUDIO_CLI_TIMEOUT;
@@ -190,7 +202,13 @@ export class StudioCliBackend implements Backend {
 		];
 
 		const executionStart = Date.now();
-		await this.launch({ args, outputFile, studioPath, timeout: this.timeout });
+		await this.launch({
+			args,
+			headed: this.headed,
+			outputFile,
+			studioPath,
+			timeout: this.timeout,
+		});
 		const executionMs = Date.now() - executionStart;
 
 		const { gameOutput, jestOutput, protocolVersion } = readStudioResult(outputFile);
@@ -432,10 +450,12 @@ function readStudioResult(outputFile: string): {
  */
 async function spawnStudio(request: StudioCliLaunchRequest): Promise<void> {
 	return new Promise<void>((resolve, reject) => {
+		// headed mode intentionally shows the Studio window; `!request.headed` is
+		// the deliberate lever, not an accidental terminal popup.
 		execFile(
 			request.studioPath,
 			request.args,
-			{ timeout: request.timeout, windowsHide: true },
+			{ timeout: request.timeout, windowsHide: !request.headed },
 			(error) => {
 				if (error === null) {
 					resolve();

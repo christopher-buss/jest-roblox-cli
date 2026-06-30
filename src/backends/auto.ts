@@ -113,7 +113,9 @@ export async function resolveBackend(
 
 	if (config.backend === "studio-cli") {
 		assertStudioCliSerial(config.parallel);
+		// `headed` is CLI-only — read straight from `cli`, never from `config`.
 		return createStudioCliBackend({
+			headed: cli.headed,
 			studioPath: config.studioPath,
 			timeout: config.timeout,
 		});

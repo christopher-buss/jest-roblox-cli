@@ -29,6 +29,8 @@ Options:
   --port <number>                   WebSocket port for studio backend (default: 3001)
   --studioPath <path>               Roblox Studio executable for the studio-cli
                                     backend (auto-detected if not set)
+  --headed                          Show the Studio window during the run
+                                    (studio-cli backend only; default: hidden)
   --config <path>                   Path to config file
   --testPathPattern <regex>         Filter test files by path pattern
   -t, --testNamePattern <regex>     Filter tests by name pattern
@@ -106,6 +108,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 			"coverageReporters": { multiple: true, type: "string" },
 			"formatters": { multiple: true, type: "string" },
 			"gameOutput": { type: "string" },
+			"headed": { type: "boolean" },
 			"help": { default: false, type: "boolean" },
 			"no-color": { type: "boolean" },
 			"no-coverage": { type: "boolean" },
@@ -159,6 +162,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		files: positionals.length > 0 ? positionals : undefined,
 		formatters: values.formatters,
 		gameOutput: values.gameOutput,
+		headed: values.headed,
 		help: values.help,
 		outputFile: values.outputFile,
 		packages: values.packages,
