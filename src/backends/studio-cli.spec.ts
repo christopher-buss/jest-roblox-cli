@@ -1,11 +1,15 @@
-import { fromAny, fromExact } from "@total-typescript/shoehorn";
+import { fromAny, fromExact, fromPartial } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
-import { execFile } from "node:child_process";
+import { Buffer } from "node:buffer";
+import { type ChildProcess, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
+import type { WebSocketServer } from "ws";
 
+import type { MockWebSocketServer as MockWebSocketServerType } from "../../test/mocks/mock-web-socket-server.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { BuildPlaceOptions } from "../staging/place-builder.ts";
@@ -13,7 +17,13 @@ import type { JestResult } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import { createStudioCliBackend, StudioCliBackend } from "./studio-cli.ts";
-import type { StudioCliLauncher, StudioCliLaunchRequest } from "./studio-cli.ts";
+import type { StudioCliLauncher, StudioCliProcess } from "./studio-cli.ts";
+
+const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.hoisted(
+	async () => import("../../test/mocks/mock-ws"),
+);
+
+vi.mock(import("ws"), async () => fromPartial({ WebSocketServer: MockWebSocketServer }));
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -22,10 +32,24 @@ vi.mock(import("node:fs"), async () => {
 
 vi.mock(import("node:child_process"));
 
-// Must match RESULT_DELIMITER in studio-cli.ts — the wire contract the bootstrap
-// (Luau producer) and readStudioResult (host parser) share. Hard-coded so a
-// silent drift in the delimiter fails this test.
-const DELIMITER = "@@JEST_ROBLOX_STUDIO_CLI_RESULT@@";
+/**
+ * A launched Studio the backend can kill. `onError` mirrors the real seam (a
+ * spawn failure); `emitError` lets a test drive that failure once the backend
+ * has subscribed.
+ */
+interface FakeProcess extends StudioCliProcess {
+	emitError: (error: Error) => void;
+	kill: Mock<StudioCliProcess["kill"]>;
+	killOnLockRelease: Mock<StudioCliProcess["killOnLockRelease"]>;
+}
+
+interface ReplyOptions {
+	entries?: Array<{ elapsedMs?: number; jestOutput: string }>;
+	gameOutput?: string;
+	omitProtocolVersion?: boolean;
+	protocolVersion?: number;
+	rawJestOutput?: string;
+}
 
 function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
 	return {
@@ -61,38 +85,73 @@ function envelope(entries: Array<{ elapsedMs?: number; jestOutput: string }>): s
 	return JSON.stringify({ entries });
 }
 
-// Mirror the bootstrap's chunked emit: a `DELIMITER` marker line, the envelope
-// JSON sliced into small per-line chunks, then a closing `DELIMITER` marker
-// line — surrounded by engine noise. A deliberately tiny chunk size makes even
-// short fixtures span several lines so every test exercises host reassembly.
-// `body` need not be valid JSON (malformed-envelope tests pass a bad fragment).
-function chunkedEnvelope(body: string, chunkSize = 16): string {
-	const chunks: Array<string> = [];
-	for (let offset = 0; offset < body.length; offset += chunkSize) {
-		chunks.push(body.slice(offset, offset + chunkSize));
-	}
-
-	return ["Roblox Studio engine line", DELIMITER, ...chunks, DELIMITER, "bye", ""].join("\n");
+function makeFakeProcess(): FakeProcess {
+	const errors = new EventEmitter();
+	return {
+		emitError: (error) => {
+			errors.emit("error", error);
+		},
+		kill: vi.fn<StudioCliProcess["kill"]>(),
+		killOnLockRelease: vi.fn<StudioCliProcess["killOnLockRelease"]>(),
+		onError: (listener) => {
+			errors.on("error", listener);
+		},
+	};
 }
 
-// The run-mode runner echoes protocolVersion in its result; the host requires
-// it to match. Default to the current protocol so happy-path helpers round-trip;
-// version-handshake tests build their own wrapper inline to omit/mismatch it.
-function wrappedLog(wrapper: {
-	gameOutput?: string;
-	jestOutput: string;
-	protocolVersion?: number;
-}): string {
-	// Hardcoded like DELIMITER (not imported from studio-cli.ts) so a silent
-	// bump of STUDIO_CLI_PROTOCOL_VERSION drifts from this fixture and fails the
-	// happy-path tests rather than passing against a stale echo.
-	const echoed = { protocolVersion: 3, ...wrapper };
-	return chunkedEnvelope(JSON.stringify(echoed));
+// The bootstrap bakes its `request_id` as a Luau long string
+// (`local REQUEST_ID = [=[<uuid>]=]`); the reply must echo it for the host's
+// correlation check to accept the frame. Read it back from the written
+// bootstrap the same way real Studio would.
+function readRequestId(args: Array<string>): string {
+	const bootstrapPath = args[args.indexOf("--runScriptFile") + 1]!;
+	const bootstrap = fs.readFileSync(bootstrapPath, "utf8");
+	return /REQUEST_ID = \[=*\[(.+?)\]=*\]/.exec(bootstrap)![1]!;
 }
 
-function launchWriting(content: string): StudioCliLauncher {
-	return async (request) => {
-		fs.writeFileSync(request.outputFile, content);
+function resultFrame(requestId: string, reply: ReplyOptions): string {
+	return JSON.stringify({
+		gameOutput: reply.gameOutput ?? "[]",
+		jestOutput:
+			reply.rawJestOutput ?? envelope(reply.entries ?? [{ jestOutput: successResult() }]),
+		request_id: requestId,
+		type: "results",
+		...(reply.omitProtocolVersion === true
+			? {}
+			: { protocolVersion: reply.protocolVersion ?? 3 }),
+	});
+}
+
+/**
+ * A launcher that, once the backend is listening, drives the canned result frame
+ * back over the mock WebSocket server — the socket stand-in for a real bootstrap
+ * pushing its envelope. `onLaunch` runs synchronously with the launch request
+ * (to capture args/bootstrap before the reply).
+ */
+function replyWith(
+	reply: ReplyOptions = {},
+	onLaunch?: (request: Parameters<StudioCliLauncher>[0]) => void,
+): { launch: StudioCliLauncher; process: FakeProcess } {
+	const process = makeFakeProcess();
+	return {
+		launch: (request) => {
+			onLaunch?.(request);
+			queueMicrotask(() => {
+				const server = getLastCreatedServer();
+				if (server === undefined) {
+					return;
+				}
+
+				const socket = new MockWebSocket();
+				server.emit("connection", socket);
+				socket.emit(
+					"message",
+					Buffer.from(resultFrame(readRequestId(request.args), reply)),
+				);
+			});
+			return process;
+		},
+		process,
 	};
 }
 
@@ -100,36 +159,20 @@ function fakeBuildPlace(): (options: BuildPlaceOptions) => { hash: string; path:
 	return (options) => ({ hash: "hash", path: options.placeFile });
 }
 
-function singleOk(): StudioCliLauncher {
-	return launchWriting(
-		wrappedLog({ gameOutput: "[]", jestOutput: envelope([{ jestOutput: successResult() }]) }),
-	);
-}
-
-// Capture the request the backend builds while still writing a passing result,
-// so a test can assert on a forwarded field (e.g. `headed`) without rebuilding
-// the success-log boilerplate.
-function capturingLaunch(): {
-	launch: StudioCliLauncher;
-	request: () => StudioCliLaunchRequest;
-} {
-	const write = singleOk();
-	let captured: StudioCliLaunchRequest | undefined;
-	return {
-		launch: async (request) => {
-			captured = request;
-			await write(request);
-		},
-		request: () => captured!,
-	};
-}
-
-function makeBackend(launch: StudioCliLauncher): StudioCliBackend {
+function makeBackend(
+	launch: StudioCliLauncher,
+	extra: Partial<ConstructorParameters<typeof StudioCliBackend>[0]> = {},
+): StudioCliBackend {
 	return new StudioCliBackend({
 		buildPlace: fakeBuildPlace(),
 		discover: () => "C:/Studio/RobloxStudioBeta.exe",
 		launch,
+		...extra,
 	});
+}
+
+function backendReplying(reply: ReplyOptions = {}): StudioCliBackend {
+	return makeBackend(replyWith(reply).launch);
 }
 
 // Workspace jobs carry `pkg` (set only in workspace mode) and a `placeFile`
@@ -163,8 +206,7 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(singleOk());
-		const { rawResults, timing } = await backend.runTests(singleJob);
+		const { rawResults, timing } = await backendReplying().runTests(singleJob);
 
 		expect(rawResults).toHaveLength(1);
 		expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":2');
@@ -176,16 +218,12 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(
-			launchWriting(
-				wrappedLog({
-					jestOutput: envelope([
-						{ elapsedMs: 11, jestOutput: successResult() },
-						{ elapsedMs: 22, jestOutput: successResult() },
-					]),
-				}),
-			),
-		);
+		const backend = backendReplying({
+			entries: [
+				{ elapsedMs: 11, jestOutput: successResult() },
+				{ elapsedMs: 22, jestOutput: successResult() },
+			],
+		});
 
 		const { rawResults } = await backend.runTests({ jobs: [job("alpha"), job("beta")] });
 
@@ -193,20 +231,16 @@ describe(StudioCliBackend, () => {
 		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([11, 22]);
 	});
 
-	it("should surface the wrapper gameOutput as the fallback on each rawResult", async () => {
+	it("should surface the frame gameOutput as the fallback on each rawResult", async () => {
 		expect.assertions(1);
 
 		resetVol();
 
 		const fallback = JSON.stringify([{ message: "hi", messageType: 0, timestamp: 0 }]);
-		const backend = makeBackend(
-			launchWriting(
-				wrappedLog({
-					gameOutput: fallback,
-					jestOutput: envelope([{ jestOutput: successResult() }]),
-				}),
-			),
-		);
+		const backend = backendReplying({
+			entries: [{ jestOutput: successResult() }],
+			gameOutput: fallback,
+		});
 
 		const { rawResults } = await backend.runTests(singleJob);
 
@@ -223,7 +257,7 @@ describe(StudioCliBackend, () => {
 		const backend = new StudioCliBackend({
 			buildPlace,
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			launch: singleOk(),
+			launch: replyWith().launch,
 		});
 
 		await backend.runTests(singleJob);
@@ -236,30 +270,26 @@ describe(StudioCliBackend, () => {
 		expect(built.placeFile).toContain("place.rbxl");
 	});
 
-	it("should write a bootstrap that drives ExecuteRunModeAsync with the per-job configs", async () => {
-		expect.assertions(3);
+	it("should write a bootstrap that drives ExecuteRunModeAsync over a result socket", async () => {
+		expect.assertions(4);
 
 		resetVol();
 
 		let bootstrap = "";
-		const backend = new StudioCliBackend({
-			buildPlace: fakeBuildPlace(),
-			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			launch: async (request) => {
-				const index = request.args.indexOf("--runScriptFile");
-				bootstrap = fs.readFileSync(request.args[index + 1]!, "utf8");
-				fs.writeFileSync(
-					request.outputFile,
-					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-				);
-			},
+		const { launch } = replyWith({ entries: [{ jestOutput: successResult() }] }, (request) => {
+			bootstrap = fs.readFileSync(
+				request.args[request.args.indexOf("--runScriptFile") + 1]!,
+				"utf8",
+			);
 		});
+		const backend = makeBackend(launch);
 
 		await backend.runTests({ jobs: [job("alpha", { testNamePattern: "alpha-pattern" })] });
 
 		expect(bootstrap).toContain("ExecuteRunModeAsync");
 		expect(bootstrap).toContain("alpha-pattern");
-		expect(bootstrap).toContain(DELIMITER);
+		expect(bootstrap).toContain("CreateWebStreamClient");
+		expect(bootstrap).toContain("ws://localhost:");
 	});
 
 	it("should escape a config value containing the Luau long-string terminator", async () => {
@@ -271,18 +301,13 @@ describe(StudioCliBackend, () => {
 		resetVol();
 
 		let bootstrap = "";
-		const backend = new StudioCliBackend({
-			buildPlace: fakeBuildPlace(),
-			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			launch: async (request) => {
-				const index = request.args.indexOf("--runScriptFile");
-				bootstrap = fs.readFileSync(request.args[index + 1]!, "utf8");
-				fs.writeFileSync(
-					request.outputFile,
-					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-				);
-			},
+		const { launch } = replyWith({ entries: [{ jestOutput: successResult() }] }, (request) => {
+			bootstrap = fs.readFileSync(
+				request.args[request.args.indexOf("--runScriptFile") + 1]!,
+				"utf8",
+			);
 		});
+		const backend = makeBackend(launch);
 
 		await backend.runTests({ jobs: [job("alpha", { testNamePattern: "x]=]y" })] });
 
@@ -300,16 +325,7 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(
-			launchWriting(
-				chunkedEnvelope(
-					JSON.stringify({
-						gameOutput: "[]",
-						jestOutput: envelope([{ jestOutput: successResult() }]),
-					}),
-				),
-			),
-		);
+		const backend = backendReplying({ omitProtocolVersion: true });
 
 		await expect(backend.runTests(singleJob)).rejects.toThrow(/protocol.*mismatch/i);
 	});
@@ -319,32 +335,124 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(
-			launchWriting(
-				chunkedEnvelope(
-					JSON.stringify({
-						gameOutput: "[]",
-						jestOutput: envelope([{ jestOutput: successResult() }]),
-						protocolVersion: 2,
-					}),
-				),
-			),
-		);
+		const backend = backendReplying({ protocolVersion: 2 });
 
 		await expect(backend.runTests(singleJob)).rejects.toThrow(/protocol.*mismatch/i);
 	});
 
-	it("should throw a clear error when the result wrapper JSON is truncated", async () => {
-		// Studio crashing mid-write leaves truncated JSON between the marker
-		// lines; the raw JSON.parse SyntaxError must surface as the backend's
-		// clean diagnostic, not a bare "Unexpected end of JSON input".
+	it("should carry a large jestOutput through the socket frame intact (no print cap)", async () => {
+		// The old file channel capped a single `print` at ~100k chars; the socket
+		// carries the whole envelope in one frame, so a large jestOutput rides
+		// through verbatim.
+		expect.assertions(2);
+
+		resetVol();
+
+		const bigName = "x".repeat(200_000);
+		const jestOutput = envelope([{ jestOutput: `{"success":true,"value":"${bigName}"}` }]);
+		const backend = backendReplying({ rawJestOutput: jestOutput });
+
+		const { rawResults } = await backend.runTests(singleJob);
+
+		expect(rawResults).toHaveLength(1);
+		expect(rawResults[0]!.entry.jestOutput).toContain(bigName);
+	});
+
+	it("should surface a whole-run plugin error (success:false) as its message", async () => {
 		expect.assertions(1);
 
 		resetVol();
 
-		const backend = makeBackend(launchWriting(chunkedEnvelope('{"jestOutput":')));
+		const backend = backendReplying({
+			rawJestOutput: JSON.stringify({ err: "plugin produced no result", success: false }),
+		});
 
-		await expect(backend.runTests(singleJob)).rejects.toThrow(/malformed result envelope/);
+		await expect(backend.runTests(singleJob)).rejects.toThrow(/plugin produced no result/);
+	});
+
+	it("should ignore non-result frames and resolve on the matching result", async () => {
+		// The server can see engine/plugin chatter and stray frames; only a
+		// well-formed `results` frame for THIS request_id resolves the run.
+		expect.assertions(1);
+
+		resetVol();
+
+		const process = makeFakeProcess();
+		const { rawResults } = await makeBackend((request) => {
+			queueMicrotask(() => {
+				const server = getLastCreatedServer()!;
+				const socket = new MockWebSocket();
+				server.emit("connection", socket);
+				// Non-JSON noise, a non-results frame, and a result for a
+				// different request — each ignored — then the real one.
+				socket.emit("message", Buffer.from("not json {{"));
+				socket.emit("message", Buffer.from(JSON.stringify({ hello: 1, type: "log" })));
+				socket.emit("message", Buffer.from(resultFrame("a-different-request", {})));
+				const frame = Buffer.from(resultFrame(readRequestId(request.args), {}));
+				socket.emit("message", frame);
+				// A duplicate frame after the first resolves must be ignored, not
+				// re-settle the run.
+				socket.emit("message", frame);
+			});
+			return process;
+		}).runTests(singleJob);
+
+		expect(rawResults).toHaveLength(1);
+	});
+
+	it("should reject with a timeout when no result frame arrives", async () => {
+		expect.assertions(2);
+
+		resetVol();
+
+		// A Studio that never sends a result drives the timeout path.
+		const process = makeFakeProcess();
+		const backend = new StudioCliBackend({
+			buildPlace: fakeBuildPlace(),
+			discover: () => "C:/Studio/RobloxStudioBeta.exe",
+			launch: () => process,
+			timeout: 40,
+		});
+
+		await expect(backend.runTests(singleJob)).rejects.toThrow(
+			/timed out after 40ms and was terminated/,
+		);
+		// The run kills Studio on the way out even on the timeout path.
+		expect(process.kill).toHaveBeenCalledOnce();
+	});
+
+	it("should reject when the result server errors", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		const process = makeFakeProcess();
+
+		await expect(
+			makeBackend(() => {
+				queueMicrotask(() => {
+					getLastCreatedServer()!.emit("error", new Error("EADDRINUSE"));
+				});
+				return process;
+			}).runTests(singleJob),
+		).rejects.toThrow(/EADDRINUSE/);
+	});
+
+	it("should reject when Studio fails to spawn", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		const process = makeFakeProcess();
+
+		await expect(
+			makeBackend(() => {
+				queueMicrotask(() => {
+					process.emitError(new Error("spawn ENOENT"));
+				});
+				return process;
+			}).runTests(singleJob),
+		).rejects.toThrow(/spawn ENOENT/);
 	});
 
 	it("should launch Studio with the RunScript task argument set", async () => {
@@ -352,18 +460,11 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		let captured: Pick<StudioCliLaunchRequest, "args" | "studioPath"> | undefined;
-		const backend = new StudioCliBackend({
-			buildPlace: fakeBuildPlace(),
-			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			launch: async (request) => {
-				captured = { args: request.args, studioPath: request.studioPath };
-				fs.writeFileSync(
-					request.outputFile,
-					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-				);
-			},
+		let captured: undefined | { args: Array<string>; studioPath: string };
+		const { launch } = replyWith({}, (request) => {
+			captured = { args: request.args, studioPath: request.studioPath };
 		});
+		const backend = makeBackend(launch);
 
 		await backend.runTests(singleJob);
 
@@ -380,22 +481,19 @@ describe(StudioCliBackend, () => {
 		);
 	});
 
-	it("should forward headed=true to the launcher when constructed headed", async () => {
+	it("should forward headed=true to the launch request when constructed headed", async () => {
 		expect.assertions(1);
 
 		resetVol();
 
-		const capture = capturingLaunch();
-		const backend = new StudioCliBackend({
-			buildPlace: fakeBuildPlace(),
-			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			headed: true,
-			launch: capture.launch,
+		let captured: boolean | undefined;
+		const { launch } = replyWith({}, (request) => {
+			captured = request.headed;
 		});
 
-		await backend.runTests(singleJob);
+		await makeBackend(launch, { headed: true }).runTests(singleJob);
 
-		expect(capture.request().headed).toBeTrue();
+		expect(captured).toBeTrue();
 	});
 
 	it("should default headed to false in the launch request", async () => {
@@ -403,16 +501,14 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const capture = capturingLaunch();
-		const backend = new StudioCliBackend({
-			buildPlace: fakeBuildPlace(),
-			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			launch: capture.launch,
+		let captured: boolean | undefined;
+		const { launch } = replyWith({}, (request) => {
+			captured = request.headed;
 		});
 
-		await backend.runTests(singleJob);
+		await makeBackend(launch).runTests(singleJob);
 
-		expect(capture.request().headed).toBeFalse();
+		expect(captured).toBeFalse();
 	});
 
 	it("should pass the studioPath override to the discover seam", async () => {
@@ -426,7 +522,7 @@ describe(StudioCliBackend, () => {
 		const backend = new StudioCliBackend({
 			buildPlace: fakeBuildPlace(),
 			discover,
-			launch: singleOk(),
+			launch: replyWith().launch,
 			studioPath: "C:/override/RobloxStudioBeta.exe",
 		});
 
@@ -440,9 +536,7 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(singleOk());
-
-		await expect(backend.runTests({ jobs: [job("")], parallel: 2 })).rejects.toThrow(
+		await expect(backendReplying().runTests({ jobs: [job("")], parallel: 2 })).rejects.toThrow(
 			/--parallel > 1 is not supported/,
 		);
 	});
@@ -452,8 +546,7 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(singleOk());
-		const { rawResults } = await backend.runTests({ jobs: [job("")], parallel: 1 });
+		const { rawResults } = await backendReplying().runTests({ jobs: [job("")], parallel: 1 });
 
 		expect(rawResults).toHaveLength(1);
 	});
@@ -463,11 +556,9 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(singleOk());
-
-		await expect(backend.runTests({ jobs: [job("")], workStealing: true })).rejects.toThrow(
-			/does not support work-stealing/,
-		);
+		await expect(
+			backendReplying().runTests({ jobs: [job("")], workStealing: true }),
+		).rejects.toThrow(/does not support work-stealing/);
 	});
 
 	it("should throw when given no jobs", async () => {
@@ -475,123 +566,9 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(singleOk());
-
-		await expect(backend.runTests({ jobs: [] })).rejects.toThrow(
+		await expect(backendReplying().runTests({ jobs: [] })).rejects.toThrow(
 			"StudioCliBackend requires at least one job",
 		);
-	});
-
-	it("should throw a clear error when the output log has no result envelope", async () => {
-		expect.assertions(1);
-
-		resetVol();
-
-		const backend = makeBackend(launchWriting("engine log with no delimiter\n"));
-
-		await expect(backend.runTests(singleJob)).rejects.toThrow(/no test result was produced/);
-	});
-
-	it("should throw a clear error when no output file is written at all", async () => {
-		expect.assertions(1);
-
-		resetVol();
-
-		const backend = makeBackend(async () => {
-			// Launch returns without writing the output file.
-		});
-
-		await expect(backend.runTests(singleJob)).rejects.toThrow(/no test result was produced/);
-	});
-
-	it("should throw a clear error when only an opening delimiter is present", async () => {
-		// A single marker line (closing delimiter never written — e.g. Studio
-		// quit mid-emit) leaves fewer than two markers; the host treats it as no
-		// result rather than rejoining a half envelope.
-		expect.assertions(1);
-
-		resetVol();
-
-		const backend = makeBackend(launchWriting(`prefix\n${DELIMITER}\n{"jestOutput":"x"}\n`));
-
-		await expect(backend.runTests(singleJob)).rejects.toThrow(/no test result was produced/);
-	});
-
-	it("should recover the envelope when the echoed bootstrap script also contains the delimiter", async () => {
-		// Studio's `--task RunScript` echoes the whole runScriptFile into the
-		// outputFile, and that echo carries the bootstrap's
-		// `local DELIMITER = "…"` and `print(DELIMITER)` lines — they contain the
-		// marker text but are never equal to it. The host matches markers by
-		// whole-line equality, so those echoed lines are ignored and only the
-		// real emit's pair brackets the envelope.
-		expect.assertions(2);
-
-		resetVol();
-
-		const echoedScript =
-			`> local DELIMITER = "${DELIMITER}"\n` +
-			"local function emit(value)\n" +
-			"\tprint(DELIMITER)\n" +
-			"end\n";
-		const backend = makeBackend(
-			launchWriting(
-				echoedScript +
-					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-			),
-		);
-
-		const { rawResults } = await backend.runTests(singleJob);
-
-		expect(rawResults).toHaveLength(1);
-		expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":2');
-	});
-
-	it("should reassemble an envelope chunked across many lines (large output)", async () => {
-		// The bootstrap slices the JSON into sub-100k-char `print` chunks to
-		// dodge Studio's per-message truncation. The host must rejoin every line
-		// between the markers — not just the first — into the original JSON.
-		expect.assertions(2);
-
-		resetVol();
-
-		// A jestOutput large enough to span many tiny chunk lines via the helper.
-		const bigName = "x".repeat(500);
-		const jestOutput = envelope([{ jestOutput: `{"success":true,"value":"${bigName}"}` }]);
-		const backend = makeBackend(launchWriting(wrappedLog({ jestOutput })));
-
-		const { rawResults } = await backend.runTests(singleJob);
-
-		expect(rawResults).toHaveLength(1);
-		expect(rawResults[0]!.entry.jestOutput).toContain(bigName);
-	});
-
-	it("should throw on a malformed result wrapper", async () => {
-		expect.assertions(1);
-
-		resetVol();
-
-		const backend = makeBackend(launchWriting(chunkedEnvelope(JSON.stringify({ notJest: 1 }))));
-
-		await expect(backend.runTests(singleJob)).rejects.toThrow(/malformed result envelope/);
-	});
-
-	it("should surface a whole-run plugin error (success:false) as its message", async () => {
-		expect.assertions(1);
-
-		resetVol();
-
-		const backend = makeBackend(
-			launchWriting(
-				wrappedLog({
-					jestOutput: JSON.stringify({
-						err: "plugin produced no result",
-						success: false,
-					}),
-				}),
-			),
-		);
-
-		await expect(backend.runTests(singleJob)).rejects.toThrow(/plugin produced no result/);
 	});
 
 	it("should throw when the runtime returns a different entry count than jobs", async () => {
@@ -599,16 +576,9 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(
-			launchWriting(
-				wrappedLog({
-					jestOutput: envelope([
-						{ jestOutput: successResult() },
-						{ jestOutput: successResult() },
-					]),
-				}),
-			),
-		);
+		const backend = backendReplying({
+			entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }],
+		});
 
 		await expect(backend.runTests(singleJob)).rejects.toThrow(
 			/returned 2 entries but request had 1 jobs/,
@@ -623,19 +593,13 @@ describe(StudioCliBackend, () => {
 		const buildPlace =
 			vi.fn<(options: BuildPlaceOptions) => { hash: string; path: string }>(fakeBuildPlace());
 		let localPlaceFile = "";
+		const { launch } = replyWith({ entries: [{ jestOutput: successResult() }] }, (request) => {
+			localPlaceFile = request.args[request.args.indexOf("--localPlaceFile") + 1]!;
+		});
 		const backend = new StudioCliBackend({
 			buildPlace,
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			launch: async (request) => {
-				const index = request.args.indexOf("--localPlaceFile");
-				localPlaceFile = request.args[index + 1]!;
-				fs.writeFileSync(
-					request.outputFile,
-					wrappedLog({
-						jestOutput: envelope([{ jestOutput: successResult() }]),
-					}),
-				);
-			},
+			launch,
 		});
 
 		await backend.runTests({ jobs: [workspaceJob("@scope/a", "a")] });
@@ -653,23 +617,18 @@ describe(StudioCliBackend, () => {
 		resetVol();
 
 		let bootstrap = "";
-		const backend = new StudioCliBackend({
-			buildPlace: fakeBuildPlace(),
-			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			launch: async (request) => {
-				const index = request.args.indexOf("--runScriptFile");
-				bootstrap = fs.readFileSync(request.args[index + 1]!, "utf8");
-				fs.writeFileSync(
-					request.outputFile,
-					wrappedLog({
-						jestOutput: envelope([
-							{ jestOutput: successResult() },
-							{ jestOutput: successResult() },
-						]),
-					}),
+		const { launch } = replyWith(
+			{
+				entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }],
+			},
+			(request) => {
+				bootstrap = fs.readFileSync(
+					request.args[request.args.indexOf("--runScriptFile") + 1]!,
+					"utf8",
 				);
 			},
-		});
+		);
+		const backend = makeBackend(launch);
 
 		await backend.runTests({
 			jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
@@ -685,16 +644,12 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		const backend = makeBackend(
-			launchWriting(
-				wrappedLog({
-					jestOutput: envelope([
-						{ elapsedMs: 5, jestOutput: successResult() },
-						{ elapsedMs: 7, jestOutput: successResult() },
-					]),
-				}),
-			),
-		);
+		const backend = backendReplying({
+			entries: [
+				{ elapsedMs: 5, jestOutput: successResult() },
+				{ elapsedMs: 7, jestOutput: successResult() },
+			],
+		});
 
 		const { rawResults } = await backend.runTests({
 			jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
@@ -717,15 +672,12 @@ describe(StudioCliBackend, () => {
 
 		vol.fromJSON({ "C:/seeded/RobloxStudioBeta.exe": "binary" });
 		let launchedPath = "";
+		const { launch } = replyWith({}, (request) => {
+			launchedPath = request.studioPath;
+		});
 		const backend = new StudioCliBackend({
 			buildPlace: fakeBuildPlace(),
-			launch: async (request) => {
-				launchedPath = request.studioPath;
-				fs.writeFileSync(
-					request.outputFile,
-					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-				);
-			},
+			launch,
 			studioPath: "C:/seeded/RobloxStudioBeta.exe",
 		});
 
@@ -742,20 +694,78 @@ describe(StudioCliBackend, () => {
 		vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", "C:/from-env/RobloxStudioBeta.exe");
 		vol.fromJSON({ "C:/from-env/RobloxStudioBeta.exe": "binary" });
 		let launchedPath = "";
-		const backend = new StudioCliBackend({
-			buildPlace: fakeBuildPlace(),
-			launch: async (request) => {
-				launchedPath = request.studioPath;
-				fs.writeFileSync(
-					request.outputFile,
-					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-				);
-			},
+		const { launch } = replyWith({}, (request) => {
+			launchedPath = request.studioPath;
 		});
+		const backend = new StudioCliBackend({ buildPlace: fakeBuildPlace(), launch });
 
 		await backend.runTests(singleJob);
 
 		expect(launchedPath).toBe("C:/from-env/RobloxStudioBeta.exe");
+	});
+
+	describe("result server port", () => {
+		// The default ephemeral-port path: a real `ws` server binds
+		// asynchronously, so the backend waits for `listening` then reads the
+		// assigned port. These drive that path with a fake server (the mock
+		// reports its port up front and is returned without waiting).
+		function pendingServer(boundPort: number | undefined): WebSocketServer {
+			const server: MockWebSocketServerType = new MockWebSocketServer({ port: 0 });
+			// Report "not yet bound" until `listening` fires, then the assigned
+			// port. State on an object so the lazy implementation re-reads it.
+			const state = { listening: false };
+			vi.spyOn(server, "address").mockImplementation(() => {
+				if (state.listening && boundPort !== undefined) {
+					return { port: boundPort };
+				}
+
+				return fromAny(null);
+			});
+			queueMicrotask(() => {
+				state.listening = true;
+				server.emit("listening");
+			});
+			return fromAny(server);
+		}
+
+		it("should wait for `listening` and bake the assigned ephemeral port", async () => {
+			expect.assertions(1);
+
+			resetVol();
+
+			let bootstrap = "";
+			const { launch } = replyWith({}, (request) => {
+				bootstrap = fs.readFileSync(
+					request.args[request.args.indexOf("--runScriptFile") + 1]!,
+					"utf8",
+				);
+			});
+			const backend = new StudioCliBackend({
+				buildPlace: fakeBuildPlace(),
+				createServer: () => pendingServer(54_321),
+				discover: () => "C:/Studio/RobloxStudioBeta.exe",
+				launch,
+			});
+
+			await backend.runTests(singleJob);
+
+			expect(bootstrap).toContain("ws://localhost:54321");
+		});
+
+		it("should throw when the result server never reports a bound port", async () => {
+			expect.assertions(1);
+
+			resetVol();
+
+			const backend = new StudioCliBackend({
+				buildPlace: fakeBuildPlace(),
+				createServer: () => pendingServer(undefined),
+				discover: () => "C:/Studio/RobloxStudioBeta.exe",
+				launch: replyWith().launch,
+			});
+
+			await expect(backend.runTests(singleJob)).rejects.toThrow(/failed to bind a port/);
+		});
 	});
 
 	describe("coverage", () => {
@@ -764,10 +774,6 @@ describe(StudioCliBackend, () => {
 				collectCoverage: true,
 				placeFile: ".jest-roblox/coverage/game.rbxl",
 			});
-		}
-
-		function argumentValue(args: Array<string>, flag: string): string {
-			return args[args.indexOf(flag) + 1]!;
 		}
 
 		it("should open the coverage-instrumented place instead of building a Clean Place", async () => {
@@ -780,22 +786,22 @@ describe(StudioCliBackend, () => {
 					fakeBuildPlace(),
 				);
 			let localPlaceFile = "";
+			const { launch } = replyWith(
+				{ entries: [{ jestOutput: successResult() }] },
+				(request) => {
+					localPlaceFile = request.args[request.args.indexOf("--localPlaceFile") + 1]!;
+				},
+			);
 			const backend = new StudioCliBackend({
 				buildPlace,
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
-				launch: async (request) => {
-					localPlaceFile = argumentValue(request.args, "--localPlaceFile");
-					fs.writeFileSync(
-						request.outputFile,
-						wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-					);
-				},
+				launch,
 			});
 
 			await backend.runTests({ jobs: [coverageJob()] });
 
-			// Exact path (not just `toContain`) so a rootDir/CWD resolution drift
-			// is caught, and the clean place is provably never built.
+			// Exact path (not just `toContain`) so a rootDir/CWD resolution
+			// drift is caught, and the clean place is provably never built.
 			expect(localPlaceFile).toBe(
 				normalizeWindowsPath(path.resolve("/repo", ".jest-roblox/coverage/game.rbxl")),
 			);
@@ -809,9 +815,7 @@ describe(StudioCliBackend, () => {
 
 			const coverageData = { "ReplicatedStorage/mod": { f: {}, s: { "1": 1 } } };
 			const jestOutput = successResult({ _coverage: coverageData });
-			const backend = makeBackend(
-				launchWriting(wrappedLog({ jestOutput: envelope([{ jestOutput }]) })),
-			);
+			const backend = backendReplying({ entries: [{ jestOutput }] });
 
 			const { rawResults } = await backend.runTests({ jobs: [coverageJob()] });
 
@@ -822,70 +826,138 @@ describe(StudioCliBackend, () => {
 		});
 	});
 
-	describe("default launcher (spawnStudio)", () => {
-		function stubExecFile(
-			impl: (
-				file: string,
-				args: Array<string>,
-				callback: (
-					error: (Error & { code?: number | string; killed?: boolean }) | null,
-				) => void,
-			) => void,
-		): void {
-			vi.mocked(execFile).mockImplementation(((
-				file: string,
-				args: Array<string>,
-				_options: unknown,
-				callback: (
-					error: (Error & { code?: number | string; killed?: boolean }) | null,
-				) => void,
-			) => {
-				impl(file, args, callback);
-				return fromAny({});
-			}) as unknown as typeof execFile);
-		}
-
-		function backendWithDefaultLaunch(): StudioCliBackend {
-			return new StudioCliBackend({
-				buildPlace: fakeBuildPlace(),
-				discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			});
-		}
-
-		it("should spawn Studio and parse the result it writes", async () => {
+	describe("graceful shutdown", () => {
+		it("should, by default, kill on lock release rather than instant-kill", async () => {
 			expect.assertions(2);
 
 			resetVol();
 
-			let spawnedFile = "";
-			stubExecFile((file, args, callback) => {
-				spawnedFile = file;
-				const index = args.indexOf("--outputFile");
-				fs.writeFileSync(
-					args[index + 1]!,
-					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-				);
-				callback(null);
-			});
+			const { launch, process } = replyWith();
 
-			const { rawResults } = await backendWithDefaultLaunch().runTests(singleJob);
+			await makeBackend(launch).runTests(singleJob);
 
-			expect(spawnedFile).toBe("C:/Studio/RobloxStudioBeta.exe");
-			expect(rawResults).toHaveLength(1);
+			// Default ON: hand teardown to the lock-release watch (which lets
+			// edit- mode BindToClose run + frees the lock) instead of
+			// TerminateProcess.
+			expect(process.killOnLockRelease).toHaveBeenCalledOnce();
+			expect(process.kill).not.toHaveBeenCalled();
 		});
 
-		it("should reject with a timeout message when Studio is killed", async () => {
+		it("should pass the configured grace cap to the lock-release watch", async () => {
 			expect.assertions(1);
 
 			resetVol();
 
-			stubExecFile((_file, _args, callback) => {
-				callback(Object.assign(new Error("killed"), { killed: true }));
-			});
+			const { launch, process } = replyWith();
 
-			await expect(backendWithDefaultLaunch().runTests(singleJob)).rejects.toThrow(
-				/timed out after .* and was terminated/,
+			await makeBackend(launch, { gracefulShutdownTimeout: 9999 }).runTests(singleJob);
+
+			expect(process.killOnLockRelease).toHaveBeenCalledWith(9999);
+		});
+
+		it("should let the background watch own teardown when a post-result check throws", async () => {
+			// The result frame landed (Studio is idle and gracefully closeable),
+			// so even though the protocol check then rejects the run, the
+			// graceful watch already owns the kill — the run must not also
+			// hard-kill.
+			expect.assertions(3);
+
+			resetVol();
+
+			const { launch, process } = replyWith({ protocolVersion: 2 });
+
+			await expect(makeBackend(launch).runTests(singleJob)).rejects.toThrow(
+				/protocol.*mismatch/i,
 			);
+			expect(process.killOnLockRelease).toHaveBeenCalledOnce();
+			expect(process.kill).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("default launcher (spawnStudio)", () => {
+		// The real spawnStudio clears a stale lock, spawns Studio, and returns a
+		// handle the host can kill; the result arrives over the (mock) server.
+		// The fake child is an EventEmitter with a `kill` spy and `error` event.
+		class FakeChild extends EventEmitter {
+			public readonly kill = vi.fn<ChildProcess["kill"]>();
+		}
+
+		function stubSpawn(): { args: () => Array<string>; child: FakeChild } {
+			const child = new FakeChild();
+			let capturedArgs: Array<string> = [];
+			vi.mocked(spawn).mockImplementation(((_file: string, args: Array<string>) => {
+				capturedArgs = args;
+				return child as unknown as ChildProcess;
+			}) as unknown as typeof spawn);
+			return { args: () => capturedArgs, child };
+		}
+
+		function backendWithDefaultLaunch(
+			extra: Partial<ConstructorParameters<typeof StudioCliBackend>[0]> = {},
+		): StudioCliBackend {
+			return new StudioCliBackend({
+				buildPlace: fakeBuildPlace(),
+				discover: () => "C:/Studio/RobloxStudioBeta.exe",
+				...extra,
+			});
+		}
+
+		// The `<place>.lock` the real spawnStudio clears pre-launch and the
+		// graceful watch polls for release.
+		const lockPath = `${path.join(path.resolve("/repo"), ".jest-roblox", "studio-cli", "place.rbxl")}.lock`;
+
+		// Drive the result frame back over the server once the backend is
+		// listening (the real spawnStudio does not reply on its own).
+		async function replyOverServer(args: () => Array<string>): Promise<void> {
+			await Promise.resolve();
+			const server = getLastCreatedServer()!;
+			const socket = new MockWebSocket();
+			server.emit("connection", socket);
+			socket.emit("message", Buffer.from(resultFrame(readRequestId(args()), {})));
+		}
+
+		// Fake setInterval/Date only (not the microtask queue the result reply
+		// rides on), so the background lock-poll is fully under timer control
+		// while the canned frame still lands normally.
+		function useLockPollTimers(): void {
+			vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+		}
+
+		it("should spawn Studio and return its result", async () => {
+			expect.assertions(2);
+
+			resetVol();
+			useLockPollTimers();
+
+			const { args } = stubSpawn();
+			const promise = backendWithDefaultLaunch().runTests(singleJob);
+			await replyOverServer(args);
+			const { rawResults } = await promise;
+
+			expect(rawResults).toHaveLength(1);
+			expect(args()).toContain("RunScript");
+		});
+
+		it("should clear a stale place lock a killed Studio left behind before launching", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			useLockPollTimers();
+
+			// A killed Studio cannot remove its own `<place>.lock`; the next run
+			// must, or its Studio opens onto the stale lock and crashes.
+			fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+			fs.writeFileSync(lockPath, "stale lock from a killed Studio");
+
+			const { args } = stubSpawn();
+			const promise = backendWithDefaultLaunch().runTests(singleJob);
+			await replyOverServer(args);
+			await promise;
+
+			expect(fs.existsSync(lockPath)).toBeFalse();
 		});
 
 		it("should reject when Studio fails to spawn", async () => {
@@ -893,32 +965,78 @@ describe(StudioCliBackend, () => {
 
 			resetVol();
 
-			stubExecFile((_file, _args, callback) => {
-				callback(Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }));
-			});
+			const { child } = stubSpawn();
+			const promise = backendWithDefaultLaunch().runTests(singleJob);
+			await Promise.resolve();
+			child.emit("error", Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }));
 
-			await expect(backendWithDefaultLaunch().runTests(singleJob)).rejects.toThrow(
-				/spawn ENOENT/,
-			);
+			await expect(promise).rejects.toThrow(/spawn ENOENT/);
 		});
 
-		it("should still read the result on a non-zero Studio exit code", async () => {
-			expect.assertions(1);
+		it("should kill Studio and reject when no result arrives before the timeout", async () => {
+			expect.assertions(2);
 
 			resetVol();
 
-			stubExecFile((_file, args, callback) => {
-				const index = args.indexOf("--outputFile");
-				fs.writeFileSync(
-					args[index + 1]!,
-					wrappedLog({ jestOutput: envelope([{ jestOutput: successResult() }]) }),
-				);
-				callback(Object.assign(new Error("exit 1"), { code: 1 }));
+			const { child } = stubSpawn();
+
+			await expect(
+				backendWithDefaultLaunch({ timeout: 40 }).runTests(singleJob),
+			).rejects.toThrow(/timed out after 40ms and was terminated/);
+			expect(child.kill).toHaveBeenCalledOnce();
+		});
+
+		describe("graceful kill on lock release", () => {
+			it("should kill the instant Studio releases the place lock", async () => {
+				expect.assertions(2);
+
+				resetVol();
+				useLockPollTimers();
+
+				const { args, child } = stubSpawn();
+				const promise = backendWithDefaultLaunch().runTests(singleJob);
+				await replyOverServer(args);
+				await promise;
+
+				// Studio holds the lock through the graceful ClosePlace; the
+				// watch must wait, not kill.
+				fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+				fs.writeFileSync(lockPath, "held by a closing Studio");
+				await vi.advanceTimersByTimeAsync(1000);
+
+				expect(child.kill).not.toHaveBeenCalled();
+
+				// ClosePlace releases the lock → kill fires on the next poll.
+				fs.rmSync(lockPath);
+				await vi.advanceTimersByTimeAsync(1000);
+
+				expect(child.kill).toHaveBeenCalledOnce();
 			});
 
-			const { rawResults } = await backendWithDefaultLaunch().runTests(singleJob);
+			it("should hard-kill after the grace cap when the lock is never released", async () => {
+				expect.assertions(2);
 
-			expect(rawResults).toHaveLength(1);
+				resetVol();
+				useLockPollTimers();
+
+				const { args, child } = stubSpawn();
+				const promise = backendWithDefaultLaunch({
+					gracefulShutdownTimeout: 5000,
+				}).runTests(singleJob);
+				await replyOverServer(args);
+				await promise;
+
+				// A long-yielding BindToClose keeps the lock held past the cap.
+				fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+				fs.writeFileSync(lockPath, "never released");
+				await vi.advanceTimersByTimeAsync(4000);
+
+				expect(child.kill).not.toHaveBeenCalled();
+
+				await vi.advanceTimersByTimeAsync(1000);
+
+				expect(child.kill).toHaveBeenCalledOnce();
+			});
 		});
 	});
 });

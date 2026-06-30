@@ -381,6 +381,12 @@ hidden one — useful for watching a slow run or a hang (Studio still self-quits
 when tests finish, so a fast run just flashes). It is a per-run debugging flag,
 CLI-only and inert on every other backend.
 
+Once the result lands, Studio is shut down gracefully: it is allowed to close
+the place — running any edit-mode plugin `BindToClose` handlers and freeing the
+place lock — and is then killed the instant the lock releases, skipping Studio's
+slow telemetry teardown. The shutdown is decoupled from the result, so pass/fail
+prints immediately and the process exits once teardown finishes.
+
 Unlike the attached `studio` backend, `--coverage` works here: studio-cli opens
 the Coverage-Instrumented Place instead of the Clean Place, so the report
 universe, thresholds, reporters, and exclusions behave identically to the
