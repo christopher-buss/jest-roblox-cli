@@ -1,0 +1,48 @@
+name: Notify monorepo
+
+# Push half of the bidirectional jest-roblox-cli mirror. Whenever main moves to a
+# commit that did NOT come from a monorepo sync push, tell the private monorepo
+# to pull the change back (sync-from-remote.yaml there opens an auto-PR).
+#
+# Loop guard: every monorepo sync commit carries a `Source-Sha` trailer (added by
+# sync.sh build_commit_message). Release bumps (bumpp) and contributor merges do
+# not. We skip the dispatch when the trailer is present, so our own pushes never
+# bounce back.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: guard
+        name: Skip monorepo-originated sync commits
+        run: |
+          TRAILER=$(git log -1 --format='%(trailers:key=Source-Sha,valueonly=true)' | tr -d '[:space:]')
+          if [[ -n "$TRAILER" ]]; then
+            echo "HEAD carries a Source-Sha trailer ($TRAILER) — monorepo-originated. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "External change — dispatching to the monorepo."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - env:
+          # PAT with permission to send a repository_dispatch to the private
+          # monorepo (classic `repo` scope, or fine-grained Contents:read+write).
+          GH_TOKEN: ${{ secrets.MONOREPO_DISPATCH_PAT }}
+          # Private monorepo slug (owner/repo) kept out of this public file.
+          MONOREPO: ${{ secrets.MONOREPO_REPO }}
+        if: steps.guard.outputs.skip == 'false'
+        name: Dispatch to monorepo
+        run: |
+          gh api "repos/$MONOREPO/dispatches" \
+            -f event_type=jest-roblox-sync \
+            -f 'client_payload[sha]=${{ github.sha }}'
