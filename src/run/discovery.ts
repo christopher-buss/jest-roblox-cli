@@ -38,10 +38,11 @@ export function discoverTestFiles(
 	const ignoredPatterns = config.testPathIgnorePatterns.map((pat) => new RegExp(pat));
 
 	const baseFiles = allFiles.filter((file) => {
-		return !ignoredPatterns.some((pattern) => pattern.test(file));
+		return ignoredPatterns.every((pattern) => !pattern.test(file));
 	});
 
-	const totalFiles = new Set(baseFiles).size;
+	const uniqueBaseFiles = new Set(baseFiles);
+	const totalFiles = uniqueBaseFiles.size;
 
 	let filtered: Array<string> = baseFiles;
 	if (config.testPathPattern !== undefined) {

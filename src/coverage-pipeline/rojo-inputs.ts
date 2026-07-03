@@ -114,7 +114,8 @@ function walkDirectory(
 
 	visitedDirectories.add(real);
 
-	for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+	const entries = fs.readdirSync(directory, { withFileTypes: true });
+	for (const entry of entries) {
 		// Skip .git, .jest-roblox, and other dot entries.
 		if (entry.name.startsWith(".")) {
 			continue;

@@ -170,7 +170,7 @@ function buildFileResult(
 ): TestFileResult {
 	const indexMap = createLocationsIndexMap(fileInfo.source);
 	const testDefinitions = fileInfo.definitions.filter((definition) => definition.type === "test");
-	const sortedDefinitions = [...testDefinitions].sort((a, b) => b.start - a.start);
+	const sortedDefinitions = testDefinitions.toSorted((a, b) => b.start - a.start);
 
 	const errorsByTest = new Map<string, Array<string>>();
 	const fileErrors: Array<string> = [];

@@ -20,5 +20,5 @@ export class MockWebSocketServer extends EventEmitter {
 }
 
 export function getLastCreatedServer(): MockWebSocketServer | undefined {
-	return instances[instances.length - 1];
+	return instances.at(-1);
 }

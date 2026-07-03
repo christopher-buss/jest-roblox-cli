@@ -45,6 +45,9 @@ import { parseGameOutput } from "./utils/game-output.ts";
 import { normalizeWindowsPath } from "./utils/normalize-windows-path.ts";
 import { replacePrefix } from "./utils/tsconfig-mapping.ts";
 
+const TS_SOURCE_EXTENSION = /\.tsx?$/;
+const TSCONFIG_FILENAME = /^tsconfig.*\.json$/i;
+
 export interface ExecuteResult {
 	attribution?: AttributionResult;
 	coverageData?: RawCoverageData;
@@ -134,7 +137,7 @@ export function isLuauProject(
 		return false;
 	}
 
-	if (testFiles.some((file) => /\.tsx?$/.test(file))) {
+	if (testFiles.some((file) => TS_SOURCE_EXTENSION.test(file))) {
 		return false;
 	}
 
@@ -159,7 +162,7 @@ export function resolveAllTsconfigMappings(projectRoot: string): Array<TsconfigM
 	const resolvedRoot = path.resolve(projectRoot);
 	let files: Array<string>;
 	try {
-		files = fs.readdirSync(resolvedRoot).filter((file) => /^tsconfig.*\.json$/i.test(file));
+		files = fs.readdirSync(resolvedRoot).filter((file) => TSCONFIG_FILENAME.test(file));
 	} catch {
 		return [];
 	}

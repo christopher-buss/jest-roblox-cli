@@ -75,7 +75,7 @@ describe("rOOT_CLI_KEYS", () => {
 	it("should contain exactly the CLI/runner key list", () => {
 		expect.assertions(1);
 
-		expect([...ROOT_CLI_KEYS].sort()).toStrictEqual([...ROOT_CLI_KEYS_LIST].sort());
+		expect([...ROOT_CLI_KEYS].sort()).toStrictEqual(ROOT_CLI_KEYS_LIST.toSorted());
 	});
 
 	it("should not contain shared jest passthrough keys", () => {

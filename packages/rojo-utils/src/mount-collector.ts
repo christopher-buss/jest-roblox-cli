@@ -9,6 +9,8 @@ export interface Mount {
 	fsPath: string;
 }
 
+const TrailingSlashPattern = /\/$/;
+
 export function collectMounts(
 	node: RojoTreeNode,
 	currentDataModelPath: string,
@@ -20,10 +22,9 @@ export function collectMounts(
 }
 
 export function pruneAncestors(paths: Array<string>): Array<string> {
-	return paths.filter(
-		(candidate) =>
-			!paths.some((other) => other !== candidate && candidate.startsWith(`${other}/`)),
-	);
+	return paths.filter((candidate) => {
+		return paths.every((other) => other === candidate || !candidate.startsWith(`${other}/`));
+	});
 }
 
 function addDirectoryMount(
@@ -41,7 +42,7 @@ function addDirectoryMount(
 		return;
 	}
 
-	const fsPath = rawPath.replace(/\/$/, "");
+	const fsPath = rawPath.replace(TrailingSlashPattern, "");
 	if (classify(fsPath) === "directory") {
 		result.push({ dataModelPath, fsPath });
 	}

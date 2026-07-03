@@ -26,9 +26,9 @@ export function isGeneratedStub(filePath: string): boolean {
 	try {
 		const fd = fs.openSync(filePath, "r");
 		try {
-			const buf = Buffer.alloc(HEADER.length);
-			const bytesRead = fs.readSync(fd, buf, 0, HEADER.length, 0);
-			return bytesRead === HEADER.length && buf.toString("utf8") === HEADER;
+			const buffer = Buffer.alloc(HEADER.length);
+			const bytesRead = fs.readSync(fd, buffer, 0, HEADER.length, 0);
+			return bytesRead === HEADER.length && buffer.toString("utf8") === HEADER;
 		} finally {
 			fs.closeSync(fd);
 		}
@@ -219,28 +219,7 @@ export function cleanLeftoverStubs(
 	}
 
 	for (const project of projects) {
-		for (const mount of project.rojoMounts) {
-			assertMountContained(project, mount.fsPath, rootDirectory);
-			const stubPath = path.resolve(rootDirectory, mount.fsPath, STUB_FILENAME);
-			if (!isGeneratedStub(stubPath)) {
-				continue;
-			}
-
-			const realStubPath = fs.realpathSync(stubPath);
-			const root = realRootResolved();
-			const relativePath = path.relative(root, realStubPath);
-			const inRoot =
-				relativePath === "" ||
-				(!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
-			if (!inRoot) {
-				throw new Error(
-					`Project "${project.displayName}" mount fsPath resolves outside root via symlink: ${mount.fsPath} → ${realStubPath}`,
-				);
-			}
-
-			fs.unlinkSync(stubPath);
-			cleaned.push(stubPath);
-		}
+		cleaned.push(...cleanLeftoverStubsForProject(project, rootDirectory, realRootResolved));
 	}
 
 	return cleaned;
@@ -264,21 +243,7 @@ export function generateProjectStubs(
 			testMatch: project.testMatch,
 		};
 
-		for (const mount of project.rojoMounts) {
-			assertMountContained(project, mount.fsPath, writeRoot);
-			// Per-mount FS check — skip generation when a non-marker
-			// `jest.config.luau` already exists at the mount on disk.
-			// A schema-level "is this a user-authored project" hint is
-			// not enough: a TS string-entry whose compile hasn't run
-			// yet still needs a generated stub for the mount.
-			const sourceMount = path.resolve(rootDirectory, mount.fsPath);
-			if (hasUserAuthoredConfig(sourceMount)) {
-				continue;
-			}
-
-			const outputPath = path.resolve(writeRoot, mount.fsPath, STUB_FILENAME);
-			entries.push({ config: stubConfig, outputPath });
-		}
+		entries.push(...buildStubEntriesForProject(project, stubConfig, rootDirectory, writeRoot));
 	}
 
 	generateProjectConfigs(entries);
@@ -324,6 +289,64 @@ export function syncStubsToShadowDirectory(
 	}
 
 	return changed;
+}
+
+function cleanLeftoverStubsForProject(
+	project: ResolvedProjectConfig,
+	rootDirectory: string,
+	realRootResolved: () => string,
+): Array<string> {
+	const cleaned: Array<string> = [];
+	for (const mount of project.rojoMounts) {
+		assertMountContained(project, mount.fsPath, rootDirectory);
+		const stubPath = path.resolve(rootDirectory, mount.fsPath, STUB_FILENAME);
+		if (!isGeneratedStub(stubPath)) {
+			continue;
+		}
+
+		const realStubPath = fs.realpathSync(stubPath);
+		const root = realRootResolved();
+		const relativePath = path.relative(root, realStubPath);
+		const inRoot =
+			relativePath === "" ||
+			(!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+		if (!inRoot) {
+			throw new Error(
+				`Project "${project.displayName}" mount fsPath resolves outside root via symlink: ${mount.fsPath} → ${realStubPath}`,
+			);
+		}
+
+		fs.unlinkSync(stubPath);
+		cleaned.push(stubPath);
+	}
+
+	return cleaned;
+}
+
+function buildStubEntriesForProject(
+	project: ResolvedProjectConfig,
+	stubConfig: ProjectTestConfig,
+	rootDirectory: string,
+	writeRoot: string,
+): Array<{ config: ProjectTestConfig; outputPath: string }> {
+	const entries: Array<{ config: ProjectTestConfig; outputPath: string }> = [];
+	for (const mount of project.rojoMounts) {
+		assertMountContained(project, mount.fsPath, writeRoot);
+		// Per-mount FS check — skip generation when a non-marker
+		// `jest.config.luau` already exists at the mount on disk.
+		// A schema-level "is this a user-authored project" hint is
+		// not enough: a TS string-entry whose compile hasn't run
+		// yet still needs a generated stub for the mount.
+		const sourceMount = path.resolve(rootDirectory, mount.fsPath);
+		if (hasUserAuthoredConfig(sourceMount)) {
+			continue;
+		}
+
+		const outputPath = path.resolve(writeRoot, mount.fsPath, STUB_FILENAME);
+		entries.push({ config: stubConfig, outputPath });
+	}
+
+	return entries;
 }
 
 function buildStubConfig(config: ResolvedConfig): Partial<ProjectTestConfig> {

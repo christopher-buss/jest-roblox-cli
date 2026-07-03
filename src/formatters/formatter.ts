@@ -23,6 +23,12 @@ import { highlightCode } from "../utils/colors.ts";
 
 const DEFAULT_SLOW_TEST_THRESHOLD_MS = 300;
 
+const SNAPSHOT_HEADER = /^- Snapshot\s+- \d+/;
+const EXPECTED_VALUE = /Expected\b.*?:\s*(.+)/;
+const RECEIVED_VALUE = /Received\b.*?:\s*(.+)/;
+const ROBLOX_PATH_CHAIN = /^(?:[A-Za-z][\w.@-]*:\d+:\s*)+/;
+const SOURCE_LOCATION = /([^\s:]+\.(?:tsx?|luau?)):(\d+)(?::(\d+))?/;
+
 const EXEC_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [
 	[
 		/loadstring\(\) is not available/,
@@ -135,7 +141,7 @@ export function parseErrorMessage(message: string): ParsedError {
 	const firstLine = lines[0];
 	assert(firstLine !== undefined, "split always returns ≥1 element");
 
-	const snapshotHeaderIndex = lines.findIndex((line) => /^- Snapshot\s+- \d+/.test(line));
+	const snapshotHeaderIndex = lines.findIndex((line) => SNAPSHOT_HEADER.test(line));
 	if (snapshotHeaderIndex !== -1) {
 		const diffLines: Array<string> = [];
 		for (let index = snapshotHeaderIndex; index < lines.length; index++) {
@@ -154,8 +160,8 @@ export function parseErrorMessage(message: string): ParsedError {
 		};
 	}
 
-	const expectedMatch = message.match(/Expected\b.*?:\s*(.+)/);
-	const receivedMatch = message.match(/Received\b.*?:\s*(.+)/);
+	const expectedMatch = message.match(EXPECTED_VALUE);
+	const receivedMatch = message.match(RECEIVED_VALUE);
 	return {
 		expected: expectedMatch?.[1],
 		message: firstLine,
@@ -196,8 +202,7 @@ export function cleanExecErrorMessage(raw: string): string {
 	}
 
 	// Strip chained Roblox path prefixes: "Path:123: Path:456: actual message"
-	const robloxPathChain = /^(?:[A-Za-z][\w.@-]*:\d+:\s*)+/;
-	return contentLine.replace(robloxPathChain, "");
+	return contentLine.replace(ROBLOX_PATH_CHAIN, "");
 }
 
 export function formatSourceSnippet(
@@ -251,7 +256,7 @@ export function formatSourceSnippet(
 
 export function parseSourceLocation(message: string): SourceLocation | undefined {
 	// Match patterns like "path/to/file.ts:25" or "path/to/file.ts:25:12"
-	const match = message.match(/([^\s:]+\.(?:tsx?|luau?)):(\d+)(?::(\d+))?/);
+	const match = message.match(SOURCE_LOCATION);
 	if (match === null) {
 		return undefined;
 	}
@@ -517,22 +522,32 @@ export function formatTypecheckSummary(result: JestResult, useColor = true): str
 	return parts.join("\n");
 }
 
+function formatTypecheckFileFailures(
+	file: JestResult["testResults"][number],
+	styles: Styles,
+): Array<string> {
+	const lines: Array<string> = [];
+	for (const test of file.testResults) {
+		if (test.status !== "failed") {
+			continue;
+		}
+
+		const badge = styles.failBadge(" FAIL ");
+		lines.push(`  ${badge} ${styles.status.fail(test.fullName)}`);
+		for (const message of test.failureMessages) {
+			lines.push(`    ${styles.dim(message)}`);
+		}
+	}
+
+	return lines;
+}
+
 function formatTypecheckFailures(result: JestResult, useColor = true): string {
 	const styles = createStyles(useColor);
 	const lines: Array<string> = [];
 
 	for (const file of result.testResults) {
-		for (const test of file.testResults) {
-			if (test.status !== "failed") {
-				continue;
-			}
-
-			const badge = styles.failBadge(" FAIL ");
-			lines.push(`  ${badge} ${styles.status.fail(test.fullName)}`);
-			for (const message of test.failureMessages) {
-				lines.push(`    ${styles.dim(message)}`);
-			}
-		}
+		lines.push(...formatTypecheckFileFailures(file, styles));
 	}
 
 	return lines.join("\n");
@@ -899,23 +914,25 @@ function formatFileFailures(
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
 
 	for (const testCase of file.testResults) {
-		if (testCase.status === "failed") {
-			const index = failureCtx.currentIndex;
-			failureCtx.currentIndex++;
-
-			lines.push(
-				formatFailure({
-					failureIndex: index,
-					filePath: displayPath,
-					showLuau: options.showLuau,
-					sourceMapper: options.sourceMapper,
-					styles,
-					test: testCase,
-					totalFailures: failureCtx.totalFailures,
-					useColor: options.color,
-				}),
-			);
+		if (testCase.status !== "failed") {
+			continue;
 		}
+
+		const index = failureCtx.currentIndex;
+		failureCtx.currentIndex++;
+
+		lines.push(
+			formatFailure({
+				failureIndex: index,
+				filePath: displayPath,
+				showLuau: options.showLuau,
+				sourceMapper: options.sourceMapper,
+				styles,
+				test: testCase,
+				totalFailures: failureCtx.totalFailures,
+				useColor: options.color,
+			}),
+		);
 	}
 
 	return lines.join("\n");

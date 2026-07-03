@@ -6,6 +6,7 @@ import { hasExecError } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 const SEPARATOR = " · ";
+const TRAILING_SLASH = /\/$/;
 
 export interface GitHubActionsFormatterOptions {
 	/**
@@ -159,16 +160,7 @@ export function formatJobSummary(result: JestResult, options: GitHubActionsOptio
 			continue;
 		}
 
-		for (const test of file.testResults) {
-			if (test.status !== "failed") {
-				continue;
-			}
-
-			failures.push({
-				file: makeRelative(file.testFilePath, options.workspace),
-				title: test.fullName,
-			});
-		}
+		failures.push(...collectFileFailures(file, options));
 	}
 
 	if (failures.length > 0) {
@@ -208,7 +200,7 @@ function makeRelative(filePath: string, workspace: string | undefined): string {
 	}
 
 	const normalized = normalizeWindowsPath(filePath);
-	const normalizedWorkspace = normalizeWindowsPath(workspace).replace(/\/$/, "");
+	const normalizedWorkspace = normalizeWindowsPath(workspace).replace(TRAILING_SLASH, "");
 
 	if (normalized.startsWith(`${normalizedWorkspace}/`)) {
 		return normalized.slice(normalizedWorkspace.length + 1);
@@ -268,6 +260,25 @@ function collectTestFailureAnnotations(
 			title: test.fullName,
 		});
 	}
+}
+
+function collectFileFailures(
+	file: JestResult["testResults"][number],
+	options: GitHubActionsOptions,
+): Array<{ file: string; title: string }> {
+	const failures: Array<{ file: string; title: string }> = [];
+	for (const test of file.testResults) {
+		if (test.status !== "failed") {
+			continue;
+		}
+
+		failures.push({
+			file: makeRelative(file.testFilePath, options.workspace),
+			title: test.fullName,
+		});
+	}
+
+	return failures;
 }
 
 function noun(count: number, singular: string, plural: string): string {

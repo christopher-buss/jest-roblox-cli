@@ -9,6 +9,8 @@ import {
 } from "./config/schema.ts";
 import template from "./test-runner.bundled.luau";
 
+const TS_OR_LUAU_EXTENSION = /\.(tsx?|luau?)$/;
+
 export type JestArgv = Argv & {
 	snapshotFormat?: SnapshotFormatOptions;
 	testMatch: Array<string>;
@@ -47,7 +49,7 @@ export function buildJestArgv(options: JestArgvInput): JestArgv {
 		...argv,
 		reporters: argv["reporters"] ?? [],
 		testMatch: options.config.testMatch.map((pattern) =>
-			pattern.replace(/\.(tsx?|luau?)$/, ""),
+			pattern.replace(TS_OR_LUAU_EXTENSION, ""),
 		),
 	} as JestArgv;
 }

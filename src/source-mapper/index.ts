@@ -13,6 +13,9 @@ import { getSourceContent, mapFromSourceMap } from "./v3-mapper.ts";
 
 export type { RojoProject } from "../types/rojo.ts";
 
+const TS_EXTENSION = /\.ts$/;
+const LEADING_SLASH = /^\//;
+
 export interface MappedLocation {
 	luauLine: number;
 	luauPath: string;
@@ -70,7 +73,7 @@ export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
 
 		const { filePath, mapping } = resolved;
 		const luauPath = replacePrefix(filePath, mapping.rootDir, mapping.outDir).replace(
-			/\.ts$/,
+			TS_EXTENSION,
 			".luau",
 		);
 
@@ -184,7 +187,7 @@ export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
 	};
 
 	function resolveTestFilePath(testFilePath: string): string | undefined {
-		const normalized = testFilePath.replace(/^\//, "");
+		const normalized = testFilePath.replace(LEADING_SLASH, "");
 		const dataModelPath = normalized.replaceAll("/", ".");
 		return pathResolver.resolve(dataModelPath)?.filePath;
 	}

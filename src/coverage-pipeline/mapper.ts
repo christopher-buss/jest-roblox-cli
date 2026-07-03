@@ -283,7 +283,7 @@ function passthroughFileBranches(
 		}
 
 		const firstLocation = locations[0];
-		const lastLocation = locations[locations.length - 1];
+		const lastLocation = locations.at(-1);
 		assert(
 			firstLocation !== undefined && lastLocation !== undefined,
 			"Branch locations must not be empty after filtering",
@@ -592,7 +592,7 @@ function mapFileBranches(
 		}
 
 		const firstLocation = result.locations[0];
-		const lastLocation = result.locations[result.locations.length - 1];
+		const lastLocation = result.locations.at(-1);
 		assert(
 			firstLocation !== undefined && lastLocation !== undefined,
 			"Branch locations must not be empty after successful mapping",

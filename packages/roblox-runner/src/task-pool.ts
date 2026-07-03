@@ -94,13 +94,6 @@ interface PlaceState {
  */
 export async function runTaskPool(options: TaskPoolOptions): Promise<void> {
 	const { concurrency, isDone, onError, onResult, places } = options;
-	const now = options.now ?? Date.now;
-	const sleep = options.sleep ?? delay;
-	const warn =
-		options.warn ??
-		((message: string): void => {
-			console.warn(message);
-		});
 
 	if (concurrency < 1) {
 		throw new Error(`runTaskPool concurrency must be >= 1, got ${String(concurrency)}`);
@@ -109,6 +102,14 @@ export async function runTaskPool(options: TaskPoolOptions): Promise<void> {
 	if (places.length === 0) {
 		throw new Error("runTaskPool requires at least one place");
 	}
+
+	const now = options.now ?? Date.now;
+	const sleep = options.sleep ?? delay;
+	const warn =
+		options.warn ??
+		((message: string): void => {
+			console.warn(message);
+		});
 
 	const allocations = distributeSlots(places, concurrency, warn);
 

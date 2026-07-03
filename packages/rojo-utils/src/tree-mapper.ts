@@ -1,5 +1,7 @@
 import type { RojoTreeNode } from "./types.ts";
 
+const TRAILING_SLASH = /\/$/;
+
 export function matchNodePath(
 	childNode: RojoTreeNode,
 	targetPath: string,
@@ -10,7 +12,7 @@ export function matchNodePath(
 		return undefined;
 	}
 
-	const normalizedNodePath = nodePath.replace(/\/$/, "");
+	const normalizedNodePath = nodePath.replace(TRAILING_SLASH, "");
 	if (normalizedNodePath === targetPath) {
 		return childDataModelPath;
 	}

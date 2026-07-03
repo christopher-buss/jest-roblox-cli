@@ -445,10 +445,11 @@ function buildAndWriteManifest(options: WriteManifestOptions): CoverageManifest 
 		rojoInputsHash,
 	} = options;
 
+	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
 		buildId,
 		files: allFiles,
-		generatedAt: new Date().toISOString(),
+		generatedAt: generatedAtDate.toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots,
 		nonInstrumentedFiles,

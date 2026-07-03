@@ -18,6 +18,9 @@ import type {
 	ResolvedConfig,
 } from "./schema.ts";
 
+const TRAILING_SLASH = /\/$/;
+const TS_OR_LUAU_EXTENSION = /\.(tsx?|luau?)$/;
+
 export interface ResolvedProjectConfig {
 	config: ResolvedConfig;
 	displayColor?: string;
@@ -82,7 +85,7 @@ export function extractStaticRoot(pattern: string): { glob: string; root: string
 export { stripTsExtension } from "../utils/extensions.ts";
 
 export function mapFsRootToDataModel(outDirectory: string, rojoTree: RojoTreeNode): string {
-	const normalized = outDirectory.replace(/\/$/, "");
+	const normalized = outDirectory.replace(TRAILING_SLASH, "");
 	const result = findInTree(rojoTree, normalized, "");
 	if (result === undefined) {
 		const available: Array<string> = [];
@@ -122,7 +125,7 @@ export function extractProjectRoots(
 		patterns.push(qualified);
 	}
 
-	return [...rootMap.entries()].map(([root, testMatch]) => ({ root, testMatch }));
+	return Array.from(rootMap, ([root, testMatch]) => ({ root, testMatch }));
 }
 
 export function applyProjectRoot(
@@ -182,10 +185,12 @@ export function dedupeMounts(mounts: Array<Mount>): Array<Mount> {
 	const seen = new Set<string>();
 	const result: Array<Mount> = [];
 	for (const mount of mounts) {
-		if (!seen.has(mount.dataModelPath)) {
-			seen.add(mount.dataModelPath);
-			result.push(mount);
+		if (seen.has(mount.dataModelPath)) {
+			continue;
 		}
+
+		seen.add(mount.dataModelPath);
+		result.push(mount);
 	}
 
 	return result;
@@ -495,7 +500,7 @@ function deriveIncludeFromTestMatch(
 	}
 
 	config.include = (raw["testMatch"] as Array<string>).flatMap((pattern) => {
-		const withExtensions = /\.(tsx?|luau?)$/.test(pattern)
+		const withExtensions = TS_OR_LUAU_EXTENSION.test(pattern)
 			? [pattern]
 			: [`${pattern}.ts`, `${pattern}.tsx`];
 

@@ -229,13 +229,15 @@ export function collectCoverage(root: AstStatBlock): CollectorResult {
 
 		visitStatBlock(block: AstStatBlock): boolean {
 			for (const stmt of block.statements) {
-				if (INSTRUMENTABLE_STATEMENT_TAGS.has(stmt.tag)) {
-					statements.push({
-						index: statementIndex,
-						location: { ...stmt.location },
-					});
-					statementIndex++;
+				if (!INSTRUMENTABLE_STATEMENT_TAGS.has(stmt.tag)) {
+					continue;
 				}
+
+				statements.push({
+					index: statementIndex,
+					location: { ...stmt.location },
+				});
+				statementIndex++;
 			}
 
 			return true;
@@ -296,9 +298,7 @@ export function collectCoverage(root: AstStatBlock): CollectorResult {
 					bodyFirstLine: elseFirst.line,
 					location: { ...elseBlock.location },
 				});
-			}
-
-			if (!hasExplicitElse) {
+			} else {
 				// Implicit else — arm location is the if statement location
 				// itself
 				branch.arms.push({

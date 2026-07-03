@@ -12,6 +12,8 @@ import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import { TYPE_TEST_PATTERN } from "./discovery.ts";
 
+const TRAILING_SLASH = /\/$/;
+
 /**
  * Map each compiled-Luau root to its Rojo mount (FS path ↔ DataModel path) via
  * the Rojo tree. Roots that don't map (a compiled-output dir the Rojo project
@@ -26,7 +28,7 @@ export function deriveProjectMounts(
 		// Strip a trailing separator before the lookup, mirroring
 		// `mapFsRootToDataModel` — a tsconfig `outDir` like "out/shared/" must
 		// still match the Rojo `$path: "out/shared"` mount.
-		const fsPath = luauRoot.replace(/\/$/, "");
+		const fsPath = luauRoot.replace(TRAILING_SLASH, "");
 		const dataModelPath = findInTree(rojoTree, fsPath, "");
 		return dataModelPath !== undefined ? [{ dataModelPath, fsPath }] : [];
 	});

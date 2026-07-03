@@ -71,6 +71,7 @@ interface SynthesizeInput {
 	wrap?: boolean;
 }
 
+const TRAILING_SLASH = /\/$/;
 const STUB_INJECTION_KEY = "jest.config";
 const COLLIDING_SOURCE_FILES = ["jest.config.lua", "jest.config.luau"];
 
@@ -185,7 +186,7 @@ function resolveDollarPath(
 	const resolvedRoots = coverageRoots.map((root) => {
 		return {
 			luauRoot: normalizeWindowsPath(path.resolve(coverageBase, root.luauRoot)).replace(
-				/\/$/,
+				TRAILING_SLASH,
 				"",
 			),
 			shadowDir: normalizeWindowsPath(root.shadowDir),

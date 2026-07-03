@@ -12,6 +12,7 @@ import { onTestFinished } from "vitest";
 
 const createTaskRequestSchema = type({ script: "string", timeout: "string" });
 const JSON_CONTENT_TYPE = "application/json";
+const QUEUE_PATH_PATTERN = /\/memory-store\/queues\/([^/]+)(\/items(?::read|:discard)?)?$/;
 
 export interface FakeOpenCloudTask {
 	elapsedMs?: number;
@@ -236,7 +237,7 @@ function handlePoll(options: {
 
 function parseQueuePath(pathname: string): undefined | { queue: string; suffix: string } {
 	// /cloud/v2/universes/{universe}/memory-store/queues/{queue}{suffix}
-	const match = /\/memory-store\/queues\/([^/]+)(\/items(?::read|:discard)?)?$/.exec(pathname);
+	const match = QUEUE_PATH_PATTERN.exec(pathname);
 	if (match === null) {
 		return undefined;
 	}

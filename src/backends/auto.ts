@@ -19,6 +19,8 @@ import { createStudioBackend } from "./studio.ts";
 
 const ENV_PREFIX = "JEST_";
 
+const StudioBusyPattern = /previous call to start play session/i;
+
 export interface ProbeResult {
 	detected: false;
 }
@@ -60,7 +62,7 @@ export class StudioWithFallback implements Backend {
 
 export function isStudioBusyError(error: unknown): boolean {
 	if (error instanceof LuauScriptError) {
-		return /previous call to start play session/i.test(error.message);
+		return StudioBusyPattern.test(error.message);
 	}
 
 	return (

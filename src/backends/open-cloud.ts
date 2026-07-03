@@ -23,6 +23,7 @@ const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
 const MAX_RETRIES_ENV = "JEST_ROBLOX_OCALE_MAX_RETRIES";
 const DEFAULT_STREAM_POLL_MS = 250;
+const TrailingSlashesPattern = /\/+$/;
 
 export type OpenCloudCredentials = RunnerCredentials;
 
@@ -286,7 +287,7 @@ export function resolveOpenCloudBaseUrl(): string | undefined {
 		return undefined;
 	}
 
-	return override.replace(/\/+$/, "");
+	return override.replace(TrailingSlashesPattern, "");
 }
 
 /**
@@ -439,6 +440,23 @@ function parseStealingEnvelope(result: ScriptResult): {
 	return { entries: parseEnvelope(jestOutput), gameOutput: result.outputs[1] };
 }
 
+function addEntriesToMap(
+	entryByKey: Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }>,
+	entries: Array<EnvelopeEntry>,
+	gameOutput: string | undefined,
+): void {
+	for (const entry of entries) {
+		if (entry.pkg === undefined) {
+			continue;
+		}
+
+		const key = entryLookupKey(entry.pkg, entry.project);
+		if (!entryByKey.has(key)) {
+			entryByKey.set(key, { entry, gameOutput });
+		}
+	}
+}
+
 // Aggregate entries from all task envelopes. Map by pkg::project so
 // multi-project packages don't collide on a shared `pkg`. The first
 // observed entry per key wins; subsequent duplicates (from fault-
@@ -448,14 +466,7 @@ function aggregateEntriesByKey(
 ): Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }> {
 	const entryByKey = new Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }>();
 	for (const { entries, gameOutput } of taskEnvelopes) {
-		for (const entry of entries) {
-			if (entry.pkg !== undefined) {
-				const key = entryLookupKey(entry.pkg, entry.project);
-				if (!entryByKey.has(key)) {
-					entryByKey.set(key, { entry, gameOutput });
-				}
-			}
-		}
+		addEntriesToMap(entryByKey, entries, gameOutput);
 	}
 
 	return entryByKey;

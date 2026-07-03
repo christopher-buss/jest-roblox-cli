@@ -208,6 +208,7 @@ export async function main(): Promise<void> {
 }
 
 const PARALLEL_FLAG = "--parallel";
+const IntegerLikePattern = /^-?\d+$/;
 
 type ParallelOption = "auto" | number | undefined;
 
@@ -225,7 +226,7 @@ function normalizeParallelFlag(args: Array<string>): Array<string> {
 		const looksLikeValue =
 			next !== undefined &&
 			!next.startsWith("-") &&
-			(next === "auto" || /^-?\d+$/.test(next));
+			(next === "auto" || IntegerLikePattern.test(next));
 		if (looksLikeValue) {
 			out.push(PARALLEL_FLAG, next);
 			index += 1;

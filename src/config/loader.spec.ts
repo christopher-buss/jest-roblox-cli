@@ -306,9 +306,9 @@ describe(loadConfig, () => {
 		expect.assertions(1);
 
 		const parentDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "config-test-"));
-		const subDirectory = path.join(parentDirectory, "packages", "core");
-		fs.mkdirSync(subDirectory, { recursive: true });
-		const configPath = path.join(subDirectory, "jest.config.mjs");
+		const subdirectory = path.join(parentDirectory, "packages", "core");
+		fs.mkdirSync(subdirectory, { recursive: true });
+		const configPath = path.join(subdirectory, "jest.config.mjs");
 		fs.writeFileSync(configPath, "export default { test: { verbose: true } };");
 
 		const result = await loadConfig(configPath, parentDirectory);

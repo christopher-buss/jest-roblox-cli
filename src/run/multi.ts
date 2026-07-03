@@ -116,17 +116,7 @@ export function collectStubMounts(
 	// than the entry shape.
 	const stubMounts: Array<StubMount> = [];
 	for (const project of projects) {
-		for (const mount of project.rojoMounts) {
-			const sourceMount = path.resolve(rootDirectory, mount.fsPath);
-			if (hasUserAuthoredConfig(sourceMount)) {
-				continue;
-			}
-
-			stubMounts.push({
-				absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
-				dataModelPath: mount.dataModelPath,
-			});
-		}
+		stubMounts.push(...collectStubMountsForProject(project, rootDirectory, cacheRoot));
 	}
 
 	return stubMounts;
@@ -360,6 +350,27 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 	});
 
 	return runResolvedProjects(allProjects, rootConfig, cli, timing);
+}
+
+function collectStubMountsForProject(
+	project: ResolvedProjectConfig,
+	rootDirectory: string,
+	cacheRoot: string,
+): Array<StubMount> {
+	const stubMounts: Array<StubMount> = [];
+	for (const mount of project.rojoMounts) {
+		const sourceMount = path.resolve(rootDirectory, mount.fsPath);
+		if (hasUserAuthoredConfig(sourceMount)) {
+			continue;
+		}
+
+		stubMounts.push({
+			absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
+			dataModelPath: mount.dataModelPath,
+		});
+	}
+
+	return stubMounts;
 }
 
 // Builds the agent text-table narrowing for a filtered multi run. Files named

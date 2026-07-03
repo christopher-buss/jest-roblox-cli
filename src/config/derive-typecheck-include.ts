@@ -7,13 +7,16 @@
  * `/\.(test-d|spec-d)\.ts$/`), so patterns ending in any other extension, lacking
  * a trailing `.spec.`/`.test.` marker, or already carrying `-d` are dropped.
  */
+const SpecTsSuffixPattern = /\.spec\.ts$/;
+const TestTsSuffixPattern = /\.test\.ts$/;
+
 export function deriveTypecheckInclude(runtimeInclude: ReadonlyArray<string>): Array<string> {
 	const derived: Array<string> = [];
 	for (const pattern of runtimeInclude) {
-		if (/\.spec\.ts$/.test(pattern)) {
-			derived.push(pattern.replace(/\.spec\.ts$/, ".spec-d.ts"));
-		} else if (/\.test\.ts$/.test(pattern)) {
-			derived.push(pattern.replace(/\.test\.ts$/, ".test-d.ts"));
+		if (SpecTsSuffixPattern.test(pattern)) {
+			derived.push(pattern.replace(SpecTsSuffixPattern, ".spec-d.ts"));
+		} else if (TestTsSuffixPattern.test(pattern)) {
+			derived.push(pattern.replace(TestTsSuffixPattern, ".test-d.ts"));
 		}
 	}
 

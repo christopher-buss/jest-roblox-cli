@@ -33,7 +33,7 @@ describe("parse-ast.luau lute integration", () => {
 		const ast = JSON.parse(json) as { location: Record<string, unknown> };
 		const keys = Object.keys(ast.location).sort();
 
-		expect(keys).toStrictEqual([...EXPECTED_SPAN_KEYS].sort());
+		expect(keys).toStrictEqual(EXPECTED_SPAN_KEYS.toSorted());
 	});
 
 	it("should preserve string literal values on string AST nodes", () => {

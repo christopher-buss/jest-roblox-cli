@@ -10,10 +10,7 @@ const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "../src/cli
 
 registerHooks({ load, resolve: resolveLuau });
 
-if (existsSync(sourceEntry)) {
-	const { main } = await import("../src/cli.ts");
-	await main();
-} else {
-	const { main } = await import("../dist/cli.mjs");
-	await main();
-}
+const { main } = existsSync(sourceEntry)
+	? await import("../src/cli.ts")
+	: await import("../dist/cli.mjs");
+await main();

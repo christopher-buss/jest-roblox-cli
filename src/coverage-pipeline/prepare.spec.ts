@@ -45,6 +45,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isoNow(): string {
+	const now = new Date();
+	return now.toISOString();
+}
+
 function readRojoProjectJson(text: string): Record<string, unknown> {
 	const parsed = JSON.parse(text);
 	if (!isPlainObject(parsed)) {
@@ -635,7 +640,7 @@ describe(prepareCoverage, () => {
 
 			seedPreviousManifest({
 				files: previousFiles,
-				generatedAt: new Date().toISOString(),
+				generatedAt: isoNow(),
 				instrumenterVersion: previousInstrumenterVersion,
 				luauRoots: ["out-tsc/test"],
 				nonInstrumentedFiles: previousNonInstrumentedFiles,
@@ -886,7 +891,7 @@ describe(prepareCoverage, () => {
 						path: ".jest-roblox/coverage/game.rbxl",
 					},
 					files: {},
-					generatedAt: new Date().toISOString(),
+					generatedAt: isoNow(),
 					projects: [],
 					version: 1,
 				}),
@@ -917,7 +922,7 @@ describe(prepareCoverage, () => {
 						path: ".jest-roblox/coverage/game.rbxl",
 					},
 					files: {},
-					generatedAt: new Date().toISOString(),
+					generatedAt: isoNow(),
 					projects: [],
 					version: 1,
 				}),
@@ -1127,7 +1132,7 @@ describe(prepareCoverage, () => {
 					files: {
 						"out-tsc/test/init.luau": { key: "out-tsc/test/init.luau" },
 					},
-					generatedAt: new Date().toISOString(),
+					generatedAt: isoNow(),
 					instrumenterVersion: INSTRUMENTER_VERSION,
 					luauRoots: ["out-tsc/test"],
 					shadowDir: ".jest-roblox/coverage",
@@ -1189,7 +1194,7 @@ describe(prepareCoverage, () => {
 					"packages/core/out/init.luau": coreRecord,
 					"packages/utils/out/init.luau": utilsRecord,
 				},
-				generatedAt: new Date().toISOString(),
+				generatedAt: isoNow(),
 				instrumenterVersion: INSTRUMENTER_VERSION,
 				luauRoots: ["packages/core/out", "packages/utils/out"],
 				nonInstrumentedFiles: {},
@@ -1266,7 +1271,7 @@ describe(prepareCoverage, () => {
 
 				seedPreviousManifest({
 					files: { "out-tsc/test/init.luau": record },
-					generatedAt: new Date().toISOString(),
+					generatedAt: isoNow(),
 					instrumenterVersion: INSTRUMENTER_VERSION,
 					luauRoots: ["out-tsc/test"],
 					nonInstrumentedFiles: {},
@@ -1291,7 +1296,7 @@ describe(prepareCoverage, () => {
 							path: ".jest-roblox/coverage/game.rbxl",
 						},
 						files: {},
-						generatedAt: new Date().toISOString(),
+						generatedAt: isoNow(),
 						projects: [],
 						version: 1,
 					}),
@@ -1649,7 +1654,7 @@ describe(prepareCoverage, () => {
 								key: "out-tsc/test/init.luau",
 							}),
 						},
-						generatedAt: new Date().toISOString(),
+						generatedAt: isoNow(),
 						instrumenterVersion: INSTRUMENTER_VERSION,
 						luauRoots: ["out-tsc/test"],
 						shadowDir: ".jest-roblox/coverage",
@@ -1768,7 +1773,7 @@ describe(prepareCoverage, () => {
 						"packages/core/out/init.luau": coreRecord,
 						"packages/utils/out/init.luau": utilsRecord,
 					},
-					generatedAt: new Date().toISOString(),
+					generatedAt: isoNow(),
 					instrumenterVersion: INSTRUMENTER_VERSION,
 					luauRoots: ["packages/core/out", "packages/utils/out"],
 					nonInstrumentedFiles: {

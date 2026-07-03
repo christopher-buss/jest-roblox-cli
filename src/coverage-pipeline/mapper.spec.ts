@@ -55,8 +55,8 @@ function createCoverageMap(
 ): CoverageMap {
 	return {
 		statementMap,
-		...(functionMap !== undefined && { functionMap }),
-		...(branchMap !== undefined && { branchMap }),
+		...(functionMap !== undefined ? { functionMap } : {}),
+		...(branchMap !== undefined ? { branchMap } : {}),
 	};
 }
 
@@ -535,7 +535,7 @@ describe(mapCoverageToTypeScript, () => {
 			});
 
 			mockOriginalPositionFor.mockImplementation(
-				(_map: unknown, position: { column: number; line: number }) => {
+				(_map: unknown, position: { column: number }) => {
 					// start maps to a.ts, end maps to b.ts
 					if (position.column === 0) {
 						return { name: null, column: 0, line: 3, source: "src/a.ts" };
@@ -1354,7 +1354,7 @@ describe(mapCoverageToTypeScript, () => {
 
 			// First arm maps to a.ts, second arm maps to b.ts
 			mockOriginalPositionFor.mockImplementation(
-				(_map: unknown, position: { column: number; line: number }) => {
+				(_map: unknown, position: { line: number }) => {
 					if (position.line === 3) {
 						return { name: null, column: 0, line: 2, source: "src/a.ts" };
 					}

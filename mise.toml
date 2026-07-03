@@ -15,6 +15,15 @@ node = { version = "25.9.0", postinstall = "corepack enable" }
 "npm:corepack" = "latest"
 watchexec = "latest"
 
+[tasks.dev]
+description = "Starts the Rojo server and compiler in watch mode"
+alias = "d"
+depends = [
+  "watch-drillbit",
+  "compile --watch",
+  "serve" 
+]
+
 [tasks.drillbit]
 run = "drillbit"
 sources = [
@@ -24,12 +33,3 @@ sources = [
 
 [tasks.watch-drillbit]
 run = "mise watch drillbit"
-
-[tasks.dev]
-description = "Starts the Rojo server and compiler in watch mode"
-alias = "d"
-depends = [
-  "watch-drillbit",
-  "compile --watch",
-  "serve" 
-]

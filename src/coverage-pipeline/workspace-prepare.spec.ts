@@ -17,6 +17,11 @@ function sha256(content: string): string {
 	return crypto.createHash("sha256").update(content).digest("hex");
 }
 
+function isoNow(): string {
+	const now = new Date();
+	return now.toISOString();
+}
+
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
 	return fromAny({ ...memfs.fs, cpSync: memfs.vol.cpSync.bind(memfs.vol), default: memfs.fs });
@@ -1489,7 +1494,7 @@ describe(prepareWorkspaceCoverage, () => {
 						statementCount: 1,
 					},
 				},
-				generatedAt: new Date().toISOString(),
+				generatedAt: isoNow(),
 				instrumenterVersion: INSTRUMENTER_VERSION,
 				// Prior run instrumented BOTH mounts; the new run only lists
 				// `src`.
@@ -1557,7 +1562,7 @@ describe(prepareWorkspaceCoverage, () => {
 						statementCount: 1,
 					},
 				},
-				generatedAt: new Date().toISOString(),
+				generatedAt: isoNow(),
 				instrumenterVersion: INSTRUMENTER_VERSION,
 				luauRoots: [path.join(packageShadow, "vendored-packages").replaceAll("\\", "/")],
 				nonInstrumentedFiles: {},
@@ -1617,7 +1622,7 @@ describe(prepareWorkspaceCoverage, () => {
 						statementCount: 1,
 					},
 				},
-				generatedAt: new Date().toISOString(),
+				generatedAt: isoNow(),
 				instrumenterVersion: INSTRUMENTER_VERSION,
 				luauRoots: [path.join(packageShadow, "out").replaceAll("\\", "/")],
 				nonInstrumentedFiles: {},

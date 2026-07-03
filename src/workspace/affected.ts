@@ -30,7 +30,7 @@ function resolvePosixShim(binDirectory: string, command: string): string {
 // cmd resolve it through PATH normally and %~dp0 points at the shim's own
 // directory. `command` here is a hard-coded "turbo" or "nx", so no quoting
 // is required for safety.
-function buildCmdExeArgs(command: string, args: Array<string>): Array<string> {
+function buildCommandExeArgs(command: string, args: Array<string>): Array<string> {
 	const quotedArgs = args.map((argument) => `"${argument}"`).join(" ");
 	return ["/d", "/s", "/c", `"${command} ${quotedArgs}"`];
 }
@@ -195,7 +195,7 @@ function runTool(command: string, args: Array<string>, cwd: string): string {
 		? { ...process.env, PATH: `${binDirectory}${path.delimiter}${process.env["PATH"]}` }
 		: process.env;
 	const file = isWindows ? "cmd.exe" : resolvePosixShim(binDirectory, command);
-	const spawnArgs = isWindows ? buildCmdExeArgs(command, args) : args;
+	const spawnArgs = isWindows ? buildCommandExeArgs(command, args) : args;
 	try {
 		return cp.execFileSync(file, spawnArgs, {
 			cwd,

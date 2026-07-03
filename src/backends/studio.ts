@@ -117,7 +117,6 @@ export class StudioBackend implements Backend {
 
 		const executionStart = Date.now();
 		const message = await this.waitForResult(wss, requestMessage, requestId, existingSocket);
-		const executionMs = Date.now() - executionStart;
 
 		if (message.type === "version_mismatch") {
 			throw new Error(
@@ -126,6 +125,7 @@ export class StudioBackend implements Backend {
 			);
 		}
 
+		const executionMs = Date.now() - executionStart;
 		const entries = parseEnvelope(message.jestOutput);
 		if (entries.length !== jobs.length) {
 			throw new Error(

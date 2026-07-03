@@ -17,8 +17,8 @@ import {
 } from "./sorted-map-client.ts";
 
 interface SortedMapStub {
-	createCalls: Array<CreateSortedMapItemParameters>;
-	deleteCalls: Array<DeleteSortedMapItemParameters>;
+	createdRequests: Array<CreateSortedMapItemParameters>;
+	deletedRequests: Array<DeleteSortedMapItemParameters>;
 	listCalls: Array<ListSortedMapItemsParameters>;
 	storage: StorageClient;
 }
@@ -35,12 +35,12 @@ type DeleteFunc = StorageClient["sortedMaps"]["delete"];
 type ListFunc = StorageClient["sortedMaps"]["list"];
 
 function createSortedMapStub(behavior: StubBehavior = {}): SortedMapStub {
-	const createCalls: Array<CreateSortedMapItemParameters> = [];
-	const deleteCalls: Array<DeleteSortedMapItemParameters> = [];
+	const createdRequests: Array<CreateSortedMapItemParameters> = [];
+	const deletedRequests: Array<DeleteSortedMapItemParameters> = [];
 	const listCalls: Array<ListSortedMapItemsParameters> = [];
 
 	const create = vi.fn<CreateFunc>(async (parameters) => {
-		createCalls.push(parameters);
+		createdRequests.push(parameters);
 		if (behavior.createError !== undefined) {
 			return { err: behavior.createError as never, success: false };
 		}
@@ -58,7 +58,7 @@ function createSortedMapStub(behavior: StubBehavior = {}): SortedMapStub {
 	});
 
 	const remove = vi.fn<DeleteFunc>(async (parameters) => {
-		deleteCalls.push(parameters);
+		deletedRequests.push(parameters);
 		if (behavior.deleteError !== undefined) {
 			return { err: behavior.deleteError as never, success: false };
 		}
@@ -83,7 +83,7 @@ function createSortedMapStub(behavior: StubBehavior = {}): SortedMapStub {
 		value: { create, delete: remove, list },
 	});
 
-	return { createCalls, deleteCalls, listCalls, storage };
+	return { createdRequests, deletedRequests, listCalls, storage };
 }
 
 const CREDENTIALS = { apiKey: "test-key", universeId: "123" };
@@ -137,8 +137,8 @@ describe(StreamingResultClient, () => {
 				}),
 			);
 
-			expect(stub.createCalls).toHaveLength(1);
-			expect(stub.createCalls[0]).toStrictEqual({
+			expect(stub.createdRequests).toHaveLength(1);
+			expect(stub.createdRequests[0]).toStrictEqual({
 				itemId: "@halcyon/foo::alpha",
 				mapId: "results-uuid",
 				ttl: 600,
@@ -168,7 +168,7 @@ describe(StreamingResultClient, () => {
 
 			await client.write(makeEntry());
 
-			expect(stub.createCalls[0]?.ttl).toBe(120);
+			expect(stub.createdRequests[0]?.ttl).toBe(120);
 		});
 
 		it("should throw when sortedMaps.create returns a failure Result", async () => {
@@ -332,7 +332,7 @@ describe(StreamingResultClient, () => {
 
 			await client.delete("a::p");
 
-			expect(stub.deleteCalls[0]).toStrictEqual({
+			expect(stub.deletedRequests[0]).toStrictEqual({
 				itemId: "a::p",
 				mapId: "results-uuid",
 				universeId: "123",

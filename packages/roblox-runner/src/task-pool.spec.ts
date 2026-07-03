@@ -262,8 +262,11 @@ describe("runTaskPool multi-place fan-out", () => {
 			places: [makePlace(0), makePlace(1)],
 		});
 
-		expect([...processed].sort()).toStrictEqual(["w0", "w1", "w2", "w3", "w4", "w5"]);
-		expect(new Set(processed).size).toBe(processed.length);
+		expect(processed.toSorted()).toStrictEqual(["w0", "w1", "w2", "w3", "w4", "w5"]);
+
+		const uniqueProcessed = new Set(processed);
+
+		expect(uniqueProcessed.size).toBe(processed.length);
 		expect(placeCalls[0]! > 0 && placeCalls[1]! > 0).toBeTrue();
 	});
 

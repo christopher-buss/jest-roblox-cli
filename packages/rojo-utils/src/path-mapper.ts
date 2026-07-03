@@ -2,8 +2,10 @@ import { collectPaths } from "./rojo-tree.ts";
 import { findInTree } from "./tree-mapper.ts";
 import type { RojoTreeNode } from "./types.ts";
 
+const TRAILING_SLASH = /\/$/;
+
 export function mapFsRootToDataModel(outDirectory: string, rojoTree: RojoTreeNode): string {
-	const normalized = outDirectory.replace(/\/$/, "");
+	const normalized = outDirectory.replace(TRAILING_SLASH, "");
 	const result = findInTree(rojoTree, normalized, "");
 	if (result === undefined) {
 		const available: Array<string> = [];
@@ -29,7 +31,7 @@ export function mapFsPathToDataModel(fsPath: string, rojoTree: RojoTreeNode): st
 
 	const rootPath = rojoTree.$path;
 	if (typeof rootPath === "string") {
-		const normalizedRootPath = rootPath.replace(/\/$/, "");
+		const normalizedRootPath = rootPath.replace(TRAILING_SLASH, "");
 		if (withoutInit === normalizedRootPath) {
 			return "";
 		}

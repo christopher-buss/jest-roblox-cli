@@ -1,6 +1,8 @@
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { extractStaticRoot } from "../config/projects.ts";
 
+const SPEC_OR_TEST_EXTENSION = /\.(?:spec|test)(\.\w+)$/;
+
 /**
  * Derives `collectCoverageFrom` glob patterns from project `include` patterns.
  *
@@ -63,7 +65,7 @@ export function deriveCoverageFromIncludes(
  * extension so that misconfigured globs fail loudly.
  */
 function inferSourceExtension(pattern: string): string {
-	const match = pattern.match(/\.(?:spec|test)(\.\w+)$/);
+	const match = pattern.match(SPEC_OR_TEST_EXTENSION);
 	if (!match) {
 		throw new Error(
 			`Cannot infer source extension from include pattern "${pattern}". ` +

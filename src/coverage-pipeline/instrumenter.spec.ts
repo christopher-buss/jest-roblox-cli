@@ -122,7 +122,7 @@ describe(instrumentRoot, () => {
 			});
 
 			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]![1] as Array<string>;
-			const skipListPath = luteArgs[luteArgs.length - 1]!;
+			const skipListPath = luteArgs.at(-1)!;
 
 			expect(skipListPath).toContain("skip-list.json");
 			expect(JSON.parse(vol.readFileSync(skipListPath, "utf-8") as string)).toStrictEqual([

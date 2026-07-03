@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { globSync } from "../utils/glob.ts";
 
 const JEST_CONFIG_MARKER = /^jest\.config\.[^.]+$/;
+const TRAILING_SLASH = /\/$/;
 
 export interface PackageInfo {
 	name: string;
@@ -84,7 +85,7 @@ function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
 
 	const packages: Array<PackageInfo> = [];
 	for (const pattern of patterns) {
-		const packageJsonPattern = `${pattern.replace(/\/$/, "")}/package.json`;
+		const packageJsonPattern = `${pattern.replace(TRAILING_SLASH, "")}/package.json`;
 		const matches = globSync(packageJsonPattern, { cwd: workspaceRoot });
 		for (const match of matches) {
 			const packageJsonPath = path.join(workspaceRoot, match);
@@ -96,11 +97,6 @@ function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
 	}
 
 	return packages;
-}
-
-function inferPackageName(packageDirectory: string): string {
-	const packageJsonPath = path.join(packageDirectory, "package.json");
-	return readPackageJsonName(packageJsonPath) ?? path.basename(packageDirectory);
 }
 
 function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: string): void {
@@ -116,7 +112,7 @@ function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: str
 
 	for (const [name, paths] of byName) {
 		if (paths.length > 1) {
-			const sorted = [...paths].sort();
+			const sorted = paths.toSorted();
 			throw new Error(
 				`Duplicate package name "${name}" from ${sorted.join(" and ")}. ` +
 					"Add a package.json with a unique `name`, or rename a directory.",
@@ -125,27 +121,40 @@ function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: str
 	}
 }
 
+function inferPackageName(packageDirectory: string): string {
+	const packageJsonPath = path.join(packageDirectory, "package.json");
+	return readPackageJsonName(packageJsonPath) ?? path.basename(packageDirectory);
+}
+
+function collectPackagesFromMatches(
+	matches: Array<string>,
+	workspaceRoot: string,
+	seenDirectories: Set<string>,
+	packages: Array<PackageInfo>,
+): void {
+	for (const match of matches) {
+		if (!JEST_CONFIG_MARKER.test(path.basename(match))) {
+			continue;
+		}
+
+		const packageDirectory = path.dirname(path.join(workspaceRoot, match));
+		if (seenDirectories.has(packageDirectory)) {
+			continue;
+		}
+
+		seenDirectories.add(packageDirectory);
+		packages.push({ name: inferPackageName(packageDirectory), packageDirectory });
+	}
+}
+
 function enumerateFromGlobs(workspaceRoot: string, patterns: Array<string>): Array<PackageInfo> {
 	const seenDirectories = new Set<string>();
 	const packages: Array<PackageInfo> = [];
 
 	for (const pattern of patterns) {
-		const jestConfigPattern = `${pattern.replace(/\/$/, "")}/jest.config.*`;
+		const jestConfigPattern = `${pattern.replace(TRAILING_SLASH, "")}/jest.config.*`;
 		const matches = globSync(jestConfigPattern, { cwd: workspaceRoot });
-
-		for (const match of matches) {
-			if (!JEST_CONFIG_MARKER.test(path.basename(match))) {
-				continue;
-			}
-
-			const packageDirectory = path.dirname(path.join(workspaceRoot, match));
-			if (seenDirectories.has(packageDirectory)) {
-				continue;
-			}
-
-			seenDirectories.add(packageDirectory);
-			packages.push({ name: inferPackageName(packageDirectory), packageDirectory });
-		}
+		collectPackagesFromMatches(matches, workspaceRoot, seenDirectories, packages);
 	}
 
 	assertNoDuplicateNames(packages, workspaceRoot);

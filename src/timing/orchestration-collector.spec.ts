@@ -17,7 +17,7 @@ function createScriptedClock(times: Array<number>): { now: () => number } {
 	let index = 0;
 	return {
 		now: () => {
-			const value = index < times.length ? times[index]! : times[times.length - 1]!;
+			const value = index < times.length ? times[index]! : times.at(-1)!;
 			index += 1;
 			return value;
 		},

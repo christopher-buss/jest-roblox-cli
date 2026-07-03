@@ -4,6 +4,9 @@ import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
+const INIT_SEGMENT = /(^|\/)(init)(\.|\/)/;
+const LEADING_DOT_SLASH = /^\.\//;
+
 interface ResolvedPath {
 	filePath: string;
 	mapping?: TsconfigMapping;
@@ -19,7 +22,7 @@ interface PathResolverConfig {
 
 /** roblox-ts compiles index.ts → init.luau; reverse the rename for TS paths. */
 export function luauInitToIndex(filePath: string): string {
-	return filePath.replace(/(^|\/)(init)(\.|\/)/, "$1index$3");
+	return filePath.replace(INIT_SEGMENT, "$1index$3");
 }
 
 export function createPathResolver(
@@ -48,7 +51,7 @@ export function createPathResolver(
 	walkTree(rojoProject.tree, "");
 
 	const tsconfigMappings = config?.mappings ?? [];
-	const sortedRojoMappings = [...rojoMappings.entries()].sort(([a], [b]) => b.length - a.length);
+	const sortedRojoMappings = [...rojoMappings].sort(([a], [b]) => b.length - a.length);
 
 	return {
 		resolve(dataModelPath: string): ResolvedPath | undefined {
@@ -64,7 +67,7 @@ export function createPathResolver(
 				const mapping = findMapping(result, tsconfigMappings);
 				if (mapping !== undefined) {
 					const mapped = replacePrefix(result, mapping.outDir, mapping.rootDir).replace(
-						/^\.\//,
+						LEADING_DOT_SLASH,
 						"",
 					);
 					return { filePath: `${luauInitToIndex(mapped)}.ts`, mapping };

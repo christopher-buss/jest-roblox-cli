@@ -500,10 +500,11 @@ function prepareForPackage(
 		coverageRoots.push({ luauRoot: relativeLuauRoot, shadowDir: shadowDirectory });
 	}
 
+	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
 		buildId: crypto.randomUUID(),
 		files: allFiles,
-		generatedAt: new Date().toISOString(),
+		generatedAt: generatedAtDate.toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots: coverageRoots.map((entry) => entry.shadowDir),
 		nonInstrumentedFiles: allNonInstrumented,

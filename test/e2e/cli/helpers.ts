@@ -207,6 +207,7 @@ function absolutizeEscapingProjectPaths(sourceDirectory: string, sandboxDirector
 	writeFileSync(projectFile, `${JSON.stringify(raw, null, "\t")}\n`);
 }
 
+/* eslint-disable unicorn/no-incorrect-template-string-interpolation -- Luau `{name}` interpolation syntax, not a JS placeholder; fixture text for a compiled Luau file, must stay byte-exact */
 const RBXTS_EXAMPLE_LUAU = `-- Compiled with @isentinel/roblox-ts v3.1.5
 local function greet(name)
 	return \`hello {name}\`
@@ -219,6 +220,7 @@ return {
 	add = add,
 }
 `;
+/* eslint-enable unicorn/no-incorrect-template-string-interpolation */
 
 // cspell:ignore AACC AACD AAEA AACA
 const RBXTS_EXAMPLE_LUAU_MAP = JSON.stringify({
@@ -287,7 +289,8 @@ function buildCliEnvironment(overrides?: Record<string, string | undefined>): No
 		}
 	}
 
-	for (const [key, value] of Object.entries(overrides ?? {})) {
+	const overrideEntries = Object.entries(overrides ?? {});
+	for (const [key, value] of overrideEntries) {
 		if (value === undefined) {
 			delete environment[key];
 		} else {

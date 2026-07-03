@@ -3,6 +3,7 @@ import type { ResolvedConfig } from "./schema.ts";
 const REGEX_METACHARACTERS = /[.*+?^${}()|[\]\\]/g;
 const TEST_FILE_EXTENSION = /\.(tsx?|luau?)$/;
 const TS_SOURCE_EXTENSION = /\.tsx?$/;
+const INDEX_STEM = /^index(\.|$)/;
 
 /**
  * Translate a list of explicit test files (typically from CLI positional args)
@@ -78,7 +79,7 @@ export function narrowForLuauRun(
  * rewritten (else a pure-Luau project's positional arg matches zero tests).
  */
 function indexStemToInit(basename: string): string {
-	return basename.replace(/^index(\.|$)/, "init$1");
+	return basename.replace(INDEX_STEM, "init$1");
 }
 
 function toBasenamePattern(file: string): string {

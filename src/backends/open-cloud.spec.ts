@@ -217,7 +217,8 @@ describe(OpenCloudBackend, () => {
 			expect(stub.executeCalls).toHaveLength(1);
 
 			const { script } = stub.executeCalls[0]!;
-			const patterns = [...script.matchAll(/"testNamePattern":"([^"]+)"/g)].map(
+			const patterns = Array.from(
+				script.matchAll(/"testNamePattern":"([^"]+)"/g),
 				(match) => match[1],
 			);
 
@@ -325,7 +326,8 @@ describe(OpenCloudBackend, () => {
 			const bucketPatterns: Array<Array<string>> = [];
 			const stub = createRunnerStub();
 			stub.setExecute((options) => {
-				const patterns = [...options.script.matchAll(/"testNamePattern":"([^"]+)"/g)].map(
+				const patterns = Array.from(
+					options.script.matchAll(/"testNamePattern":"([^"]+)"/g),
 					(match) => match[1]!,
 				);
 				bucketPatterns.push(patterns);

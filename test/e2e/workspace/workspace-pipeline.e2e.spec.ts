@@ -183,7 +183,9 @@ describe("workspace --parallel work-stealing", () => {
 				(request) => /"queueId":"([^"]+)"/.exec(request.script)?.[1] ?? "",
 			);
 
-			expect(new Set(queueIds).size).toBe(1);
+			const uniqueQueueIds = new Set(queueIds);
+
+			expect(uniqueQueueIds.size).toBe(1);
 			// Single place upload regardless of --parallel.
 			expect(server.uploadCount).toBe(1);
 		},

@@ -306,10 +306,10 @@ describe(resolveNestedProjects, () => {
 		expect.assertions(1);
 
 		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
-		const subDirectory = path.join(temporaryDirectory, "packages", "my-pkg");
-		fs.mkdirSync(subDirectory, { recursive: true });
+		const subdirectory = path.join(temporaryDirectory, "packages", "my-pkg");
+		fs.mkdirSync(subdirectory, { recursive: true });
 		fs.writeFileSync(
-			path.join(subDirectory, "default.project.json"),
+			path.join(subdirectory, "default.project.json"),
 			JSON.stringify({ name: "my-pkg", tree: { $path: "src" } }),
 		);
 

@@ -144,6 +144,11 @@ function makeProjectEntry(name: string): InlineProjectConfig {
 	};
 }
 
+function isoNow(): string {
+	const now = new Date();
+	return now.toISOString();
+}
+
 function writeRojoProject(): void {
 	const tree = { $className: "DataModel" };
 	vol.mkdirSync("/test", { recursive: true });
@@ -471,7 +476,7 @@ describe(runMultiProject, () => {
 			manifest: {
 				buildId: "test-build-id",
 				files: {},
-				generatedAt: new Date().toISOString(),
+				generatedAt: isoNow(),
 				instrumenterVersion: 1,
 				luauRoots: [],
 				nonInstrumentedFiles: {},
@@ -506,7 +511,7 @@ describe(runMultiProject, () => {
 			manifest: {
 				buildId: "test-build-id",
 				files: {},
-				generatedAt: new Date().toISOString(),
+				generatedAt: isoNow(),
 				instrumenterVersion: 1,
 				luauRoots: [],
 				nonInstrumentedFiles: {},
@@ -550,7 +555,7 @@ describe(runMultiProject, () => {
 				manifest: {
 					buildId: "test-build-id",
 					files: {},
-					generatedAt: new Date().toISOString(),
+					generatedAt: isoNow(),
 					instrumenterVersion: 1,
 					luauRoots: [],
 					nonInstrumentedFiles: {},
@@ -598,7 +603,7 @@ describe(runMultiProject, () => {
 				manifest: {
 					buildId: "test-build-id",
 					files: {},
-					generatedAt: new Date().toISOString(),
+					generatedAt: isoNow(),
 					instrumenterVersion: 1,
 					luauRoots: [],
 					nonInstrumentedFiles: {},
@@ -1062,7 +1067,7 @@ describe(runMultiProject, () => {
 			manifest: {
 				buildId: "test-build-id",
 				files: {},
-				generatedAt: new Date().toISOString(),
+				generatedAt: isoNow(),
 				instrumenterVersion: 1,
 				luauRoots: [],
 				nonInstrumentedFiles: {},

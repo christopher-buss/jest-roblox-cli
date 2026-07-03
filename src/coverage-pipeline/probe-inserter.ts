@@ -25,6 +25,9 @@ interface ProbeInfo {
 // application lands further left), so a lower rank here is applied earlier and
 // ends up further right.
 const KIND_RANK: Record<ProbeKind, number> = { close: 2, open: 0, point: 1 };
+const TRAILING_WHITESPACE = /\s$/;
+const IDENTIFIER_START = /^[a-zA-Z_]/;
+const MODE_DIRECTIVE = /^--![a-z]+/;
 
 export function insertProbes(source: string, result: CollectorResult, fileKey: string): string {
 	const lines = splitLines(source);
@@ -156,13 +159,14 @@ function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): voi
 		assert(line !== undefined, `Invalid probe line number: ${probeLine}`);
 		const before = line.slice(0, column - 1);
 		const after = line.slice(column - 1);
-		const needsSeparator = before.length > 0 && !/\s$/.test(before) && /^[a-zA-Z_]/.test(text);
+		const needsSeparator =
+			before.length > 0 && !TRAILING_WHITESPACE.test(before) && IDENTIFIER_START.test(text);
 		mutableLines[lineIndex] = before + (needsSeparator ? " " : "") + text + after;
 	}
 }
 
 function extractModeDirective(lines: Array<string>): string {
-	if (lines.length > 0 && lines[0] !== undefined && /^--![a-z]+/.test(lines[0])) {
+	if (lines.length > 0 && lines[0] !== undefined && MODE_DIRECTIVE.test(lines[0])) {
 		const directive = `${lines[0]}\n`;
 		lines.splice(0, 1);
 		return directive;

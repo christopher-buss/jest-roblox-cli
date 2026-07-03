@@ -313,7 +313,7 @@ export class RojoResolver {
 					relativeParts.pop();
 				}
 
-				return partition.rbxPath.concat(relativeParts);
+				return [...partition.rbxPath, ...relativeParts];
 			}
 		}
 
@@ -349,8 +349,8 @@ export class RojoResolver {
 			partitions: this.partitions.map((partition) => {
 				return { fsPath: partition.fsPath, rbxPath: partition.rbxPath.slice() };
 			}),
-			walkedConfigFiles: Array.from(this.walkedConfigFilesInternal),
-			walkedDirs: Array.from(this.walkedDirectoriesInternal),
+			walkedConfigFiles: [...this.walkedConfigFilesInternal],
+			walkedDirs: [...this.walkedDirectoriesInternal],
 			warnings: this.warnings.slice(),
 		};
 	}
@@ -517,7 +517,8 @@ export class RojoResolver {
 			this.isGame = true;
 		}
 
-		for (const childName of Object.keys(tree).filter((value) => !value.startsWith("$"))) {
+		const childNames = Object.keys(tree).filter((value) => !value.startsWith("$"));
+		for (const childName of childNames) {
 			// eslint-disable-next-line ts/no-non-null-assertion -- Object.keys ensures this is defined
 			this.parseTree(basePath, childName, tree[childName]!);
 		}

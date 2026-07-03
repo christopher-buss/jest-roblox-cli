@@ -19,6 +19,8 @@ import { insertProbes } from "./probe-inserter.ts";
 
 export const INSTRUMENTER_VERSION = 2;
 
+const LUAU_EXTENSION = /\.luau?$/;
+
 // Temp directory is never explicitly cleaned up (OS handles it).
 // Tests use the parseScript override to bypass this cache entirely.
 let cachedTemporaryDirectory: string | undefined;
@@ -104,7 +106,7 @@ export function instrumentRoot(
 		throw new Error("Failed to parse file list from lute", { cause: err });
 	}
 
-	if (!Array.isArray(parsed) || !parsed.every((entry) => typeof entry === "string")) {
+	if (!isStringArray(parsed)) {
 		throw new Error("Expected file list array from lute");
 	}
 
@@ -133,7 +135,7 @@ export function instrumentRoot(
 		const instrumentedLuauPath = normalizeWindowsPath(path.join(shadowDir, relativePath));
 		const coverageMapOutputPath = path.join(
 			shadowDir,
-			relativePath.replace(/\.luau?$/, ".cov-map.json"),
+			relativePath.replace(LUAU_EXTENSION, ".cov-map.json"),
 		);
 		const sourceMapPath = `${originalLuauPath}.map`;
 
@@ -177,10 +179,11 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 	const files = instrumentRoot(options);
 	const posixLuauRoot = normalizeWindowsPath(luauRoot);
 
+	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
 		buildId: crypto.randomUUID(),
 		files,
-		generatedAt: new Date().toISOString(),
+		generatedAt: generatedAtDate.toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots: [posixLuauRoot],
 		nonInstrumentedFiles: {},
@@ -191,6 +194,10 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 	writeManifest(manifestPath, manifest);
 
 	return manifest;
+}
+
+function isStringArray(value: JSONValue): value is Array<string> {
+	return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function shouldSkipFile(relativePath: string, skipFiles: Set<string> | undefined): boolean {

@@ -274,7 +274,7 @@ async function runWorkspaceProfiled(
 		const discoveredContexts = applyProjectFilter(contexts, cli.project);
 		const discovered = collectPendingEntries(discoveredContexts, cli);
 		const typeTestPackages = new Set(
-			[...discovered.typecheckByDirectory.values()].map((entry) => entry.pkg),
+			Array.from(discovered.typecheckByDirectory.values(), (entry) => entry.pkg),
 		);
 		const policy = applyEmptyPackagePolicy(
 			discovered.pending,
@@ -468,7 +468,7 @@ async function runWorkspaceProfiled(
 		pending,
 		results,
 		runOptions,
-		verbose: options.cli.verbose,
+		verbose: cli.verbose,
 		workspaceRoot,
 	});
 
@@ -494,6 +494,13 @@ const PER_PACKAGE_TIMEOUT_SECONDS = 60;
 interface WorkspaceTypecheckPass {
 	byPackage: Map<string, JestResult>;
 	outcome: TypecheckPassOutcome;
+}
+
+interface PendingEntryAccumulators {
+	pending: Array<PendingEntry>;
+	typecheckByDirectory: Map<string, PackageTypecheck>;
+	typeTestEntries: Array<TypecheckGroupEntry>;
+	typeTestProjects: Array<TypeTestProject>;
 }
 
 function buildStreaming(input: {
@@ -971,6 +978,58 @@ function applyEmptyPackagePolicy(
 	return { emptyPackageErrors, pending };
 }
 
+function collectPackageProjectEntries(
+	ctx: PackageContext,
+	cliTypecheck: TypecheckCliOptions,
+	packageTypecheck: ResolvedTypecheckConfig,
+	accumulators: PendingEntryAccumulators,
+): void {
+	const { pending, typecheckByDirectory, typeTestEntries, typeTestProjects } = accumulators;
+	const { packageDirectory } = ctx.info;
+
+	for (const project of ctx.projects) {
+		const typecheck = resolveTypecheckConfig({
+			cli: cliTypecheck,
+			project: project.typecheck,
+			root: ctx.pkgConfig.typecheck,
+		});
+		const projectConfig = buildProjectExecutionConfig(ctx.pkgConfig, project);
+		// `--typecheckOnly` / per-project `only` means "don't run runtime
+		// tests": zero the runtime file set so the package contributes only
+		// Type Tests (the short-circuit then skips the place build +
+		// dispatch).
+		const testFiles = typecheck.only ? [] : discoverProjectTestFiles(project, packageDirectory);
+		pending.push({ pkg: ctx.info.name, project, projectConfig, testFiles });
+
+		if (!typecheck.enabled) {
+			continue;
+		}
+
+		const typeTestFiles = discoverProjectTypeTests(project, typecheck, packageDirectory);
+		if (typeTestFiles.length === 0) {
+			continue;
+		}
+
+		typeTestProjects.push({ pkg: ctx.info.name, project: project.displayName });
+
+		// cwd is the PACKAGE directory (not the workspace root): distinct
+		// packages form distinct `(cwd, tsconfig)` groups even when they
+		// share the same relative tsconfig name, while projects within a
+		// package that share a tsconfig collapse to one tsgo pass.
+		typeTestEntries.push({
+			cwd: packageDirectory,
+			files: typeTestFiles,
+			...(typecheck.tsconfig !== undefined ? { tsconfig: typecheck.tsconfig } : {}),
+		});
+		typecheckByDirectory.set(packageDirectory, {
+			ignoreSourceErrors: packageTypecheck.ignoreSourceErrors,
+			pkg: ctx.info.name,
+			spawnTimeout: packageTypecheck.spawnTimeout,
+			timeout: ctx.pkgConfig.timeout,
+		});
+	}
+}
+
 function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions): DiscoveredTests {
 	const cliTypecheck: TypecheckCliOptions = {
 		enabled: cli.typecheck,
@@ -983,7 +1042,6 @@ function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions)
 	const typecheckByDirectory = new Map<string, PackageTypecheck>();
 
 	for (const ctx of contexts) {
-		const { packageDirectory } = ctx.info;
 		// `ignoreSourceErrors`/`spawnTimeout` are package-wide (no project
 		// layer); the per-project resolution below only drives
 		// enabled/include/exclude and the grouping tsconfig.
@@ -992,49 +1050,12 @@ function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions)
 			root: ctx.pkgConfig.typecheck,
 		});
 
-		for (const project of ctx.projects) {
-			const typecheck = resolveTypecheckConfig({
-				cli: cliTypecheck,
-				project: project.typecheck,
-				root: ctx.pkgConfig.typecheck,
-			});
-			const projectConfig = buildProjectExecutionConfig(ctx.pkgConfig, project);
-			// `--typecheckOnly` / per-project `only` means "don't run runtime
-			// tests": zero the runtime file set so the package contributes only
-			// Type Tests (the short-circuit then skips the place build +
-			// dispatch).
-			const testFiles = typecheck.only
-				? []
-				: discoverProjectTestFiles(project, packageDirectory);
-			pending.push({ pkg: ctx.info.name, project, projectConfig, testFiles });
-
-			if (!typecheck.enabled) {
-				continue;
-			}
-
-			const typeTestFiles = discoverProjectTypeTests(project, typecheck, packageDirectory);
-			if (typeTestFiles.length === 0) {
-				continue;
-			}
-
-			typeTestProjects.push({ pkg: ctx.info.name, project: project.displayName });
-
-			// cwd is the PACKAGE directory (not the workspace root): distinct
-			// packages form distinct `(cwd, tsconfig)` groups even when they
-			// share the same relative tsconfig name, while projects within a
-			// package that share a tsconfig collapse to one tsgo pass.
-			typeTestEntries.push({
-				cwd: packageDirectory,
-				files: typeTestFiles,
-				...(typecheck.tsconfig !== undefined ? { tsconfig: typecheck.tsconfig } : {}),
-			});
-			typecheckByDirectory.set(packageDirectory, {
-				ignoreSourceErrors: packageTypecheck.ignoreSourceErrors,
-				pkg: ctx.info.name,
-				spawnTimeout: packageTypecheck.spawnTimeout,
-				timeout: ctx.pkgConfig.timeout,
-			});
-		}
+		collectPackageProjectEntries(ctx, cliTypecheck, packageTypecheck, {
+			pending,
+			typecheckByDirectory,
+			typeTestEntries,
+			typeTestProjects,
+		});
 	}
 
 	return { pending, typecheckByDirectory, typeTestEntries, typeTestProjects };
@@ -1350,6 +1371,26 @@ function liveProjectsByPackage(pending: Array<PendingEntry>): Map<string, Set<st
 	return live;
 }
 
+function collectLiveProjectStubMounts(
+	project: ResolvedProjectConfig,
+	ctx: PackageContext,
+): Array<StubMount> {
+	const stubMounts: Array<StubMount> = [];
+	for (const mount of project.rojoMounts) {
+		const sourceMount = path.resolve(ctx.info.packageDirectory, mount.fsPath);
+		if (hasUserAuthoredConfig(sourceMount)) {
+			continue;
+		}
+
+		stubMounts.push({
+			absStubPath: path.resolve(ctx.cacheRoot, mount.fsPath, STUB_FILENAME),
+			dataModelPath: mount.dataModelPath,
+		});
+	}
+
+	return stubMounts;
+}
+
 // stubMounts inject `jest.config` at each rojoMount leaf. Projects whose
 // runtime discovery returned zero files are already dropped from `pending`
 // (workspace-runner.ts ~L162), so their stubs would never run. Emitting them
@@ -1377,17 +1418,7 @@ function writeStubsAndBuildDescriptors(
 
 		const stubMounts: Array<StubMount> = [];
 		for (const project of liveProjectsForPackage) {
-			for (const mount of project.rojoMounts) {
-				const sourceMount = path.resolve(ctx.info.packageDirectory, mount.fsPath);
-				if (hasUserAuthoredConfig(sourceMount)) {
-					continue;
-				}
-
-				stubMounts.push({
-					absStubPath: path.resolve(ctx.cacheRoot, mount.fsPath, STUB_FILENAME),
-					dataModelPath: mount.dataModelPath,
-				});
-			}
+			stubMounts.push(...collectLiveProjectStubMounts(project, ctx));
 		}
 
 		return { ...ctx.descriptor, stubMounts };

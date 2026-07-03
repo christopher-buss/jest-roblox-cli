@@ -60,10 +60,11 @@ function buildManifest(
 	fixtureOut: string,
 	shadowDirectory: string,
 ): CoverageManifest {
+	const generatedAtDate = new Date();
 	return {
 		buildId: "test-build-id",
 		files,
-		generatedAt: new Date().toISOString(),
+		generatedAt: generatedAtDate.toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
 		luauRoots: [normalize(fixtureOut)],
 		nonInstrumentedFiles: {},

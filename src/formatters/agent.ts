@@ -187,10 +187,12 @@ function formatFileHeaderFailures(
 	lines.push(` ❯ ${relativePath} (${totalTests} ${testWord} | ${file.numFailingTests} failed)`);
 
 	for (const test of file.testResults) {
-		if (test.status === "failed") {
-			const duration = test.duration !== undefined ? ` ${String(test.duration)}ms` : "";
-			lines.push(`   × ${test.title}${duration}`);
+		if (test.status !== "failed") {
+			continue;
 		}
+
+		const duration = test.duration !== undefined ? ` ${String(test.duration)}ms` : "";
+		lines.push(`   × ${test.title}${duration}`);
 	}
 
 	return lines;

@@ -34,15 +34,15 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - env:
-          # PAT with permission to send a repository_dispatch to the private
-          # monorepo (classic `repo` scope, or fine-grained Contents:read+write).
-          GH_TOKEN: ${{ secrets.MONOREPO_DISPATCH_PAT }}
-          # Private monorepo slug (owner/repo) kept out of this public file.
-          MONOREPO: ${{ secrets.MONOREPO_REPO }}
-        if: steps.guard.outputs.skip == 'false'
+      - if: steps.guard.outputs.skip == 'false'
         name: Dispatch to monorepo
         run: |
           gh api "repos/$MONOREPO/dispatches" \
             -f event_type=jest-roblox-sync \
             -f 'client_payload[sha]=${{ github.sha }}'
+        env:
+          # PAT with permission to send a repository_dispatch to the private
+          # monorepo (classic `repo` scope, or fine-grained Contents:read+write).
+          GH_TOKEN: ${{ secrets.MONOREPO_DISPATCH_PAT }}
+          # Private monorepo slug (owner/repo) kept out of this public file.
+          MONOREPO: ${{ secrets.MONOREPO_REPO }}

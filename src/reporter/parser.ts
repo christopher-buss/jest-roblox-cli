@@ -104,9 +104,7 @@ function countBraces(line: string): number {
 	for (const character of line) {
 		if (character === "{") {
 			count++;
-		}
-
-		if (character === "}") {
+		} else if (character === "}") {
 			count--;
 		}
 	}
@@ -264,14 +262,16 @@ function extractCoverageData(parsed: Record<string, unknown>): RawCoverageData |
 
 	const record: RawCoverageData = {};
 	for (const [key, value] of Object.entries(coverage)) {
-		if (typeof value === "object" && value !== null && "s" in value) {
-			const raw = value as { b?: unknown; f?: unknown; s: unknown };
-			record[key] = {
-				b: raw.b !== undefined ? normalizeBranchCounts(raw.b) : undefined,
-				f: raw.f !== undefined ? normalizeHitCounts(raw.f) : undefined,
-				s: normalizeHitCounts(raw.s),
-			};
+		if (typeof value !== "object" || value === null || !("s" in value)) {
+			continue;
 		}
+
+		const raw = value as { b?: unknown; f?: unknown; s: unknown };
+		record[key] = {
+			b: raw.b !== undefined ? normalizeBranchCounts(raw.b) : undefined,
+			f: raw.f !== undefined ? normalizeHitCounts(raw.f) : undefined,
+			s: normalizeHitCounts(raw.s),
+		};
 	}
 
 	return Object.keys(record).length > 0 ? record : undefined;

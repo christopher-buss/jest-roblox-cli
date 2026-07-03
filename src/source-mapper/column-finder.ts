@@ -1,3 +1,5 @@
+const EXPECT_CALL = /\bexpect\s*[.(]/;
+
 /**
  * Finds the column position of the failing matcher in an expect() call. Returns
  * 1-indexed column position, or undefined if no expect is found.
@@ -8,7 +10,7 @@ export function findExpectationColumn(lineText: string): number | undefined {
 	}
 
 	// Match expect(...) or expect.method(...) (e.g. expect.assertions)
-	const expectIndex = lineText.search(/\bexpect\s*[.(]/);
+	const expectIndex = lineText.search(EXPECT_CALL);
 	if (expectIndex === -1) {
 		return undefined;
 	}

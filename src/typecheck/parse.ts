@@ -1,11 +1,12 @@
 import type { RawErrorsMap, TscErrorInfo } from "./types.ts";
 
 const errorCodeRegExp = /error TS(?<errorCode>\d+)/;
+const LINE_SPLIT = /\r?\n/;
 
 export function parseTscOutput(stdout: string): RawErrorsMap {
 	const map: RawErrorsMap = new Map();
 
-	const merged = stdout.split(/\r?\n/).reduce<Array<string>>((lines, next) => {
+	const merged = stdout.split(LINE_SPLIT).reduce<Array<string>>((lines, next) => {
 		if (!next) {
 			return lines;
 		}
