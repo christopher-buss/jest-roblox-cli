@@ -1,3 +1,8 @@
+// Offline build-only seam: produce the Coverage-Instrumented Place without
+// running any suite (no backend, no network), for a machine that cannot execute
+// Roblox. Hands back the place file + sibling manifest paths.
+export { buildCoveragePlace } from "./artifacts/build-coverage-place.ts";
+export type { CoveragePlaceBundle } from "./artifacts/build-coverage-place.ts";
 // Build Artifacts API: the programmatic seam consumers drive to produce a Clean
 // Place + Coverage-Instrumented Place in one pass (the sole producer of a Clean
 // Place — no CLI flag).
@@ -39,6 +44,14 @@ export {
 // readers, file-hash helper). Re-exported from a clean barrel shared with the
 // `source`-condition entry.
 export * from "./coverage-pipeline/artifacts.ts";
+export { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
+// Companion harvest seam: turn the raw hit counters a run emits (the
+// `_G.__jest_roblox_cov` global, or a run envelope's `_coverage` field) into
+// typed coverage keyed by the same fileKey the static maps use. For a run this
+// CLI did not launch.
+export { normalizeRawCoverage, parseCoverageEnvelope } from "./coverage-pipeline/raw-coverage.ts";
+export type { RawCoverageData, RawFileCoverage } from "./coverage-pipeline/types.ts";
+
 export { formatExecuteOutput, runProjects } from "./executor.ts";
 export type {
 	ExecuteResult,
@@ -47,11 +60,10 @@ export type {
 	RunProjectsOptions,
 	RunProjectsResult,
 } from "./executor.ts";
-export { formatResult, formatTestSummary, formatFailure } from "./formatters/formatter.ts";
 
+export { formatResult, formatTestSummary, formatFailure } from "./formatters/formatter.ts";
 export { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
 export type { GitHubActionsFormatterOptions } from "./formatters/github-actions.ts";
-
 export { formatJson, writeJsonFile } from "./formatters/json.ts";
 export { parseJestOutput, extractJsonFromOutput } from "./reporter/parser.ts";
 export { runJestRoblox } from "./run.ts";

@@ -83,6 +83,42 @@ function setupFilesystem(
 }
 
 describe(instrumentRoot, () => {
+	// Cross-machine join-key guard. The per-file key recorded in the manifest
+	// MUST be byte-identical to the `__cov_file_key` literal baked into the
+	// instrumented preamble — the runtime bumps
+	// `_G.__jest_roblox_cov[__cov_file_key]` with that exact literal, so the
+	// manifest key, the preamble key, and the harvested hit-table key are one
+	// string. If a refactor let the two writers (manifest record vs preamble)
+	// diverge, coverage would silently map to the wrong source lines across the
+	// build/run machine boundary with no type error to catch it.
+	describe("cross-machine join key", () => {
+		it("should bake the manifest file key verbatim into the instrumented preamble", () => {
+			expect.assertions(4);
+
+			setupFilesystem({
+				files: { "init.luau": EMPTY_AST, "shared/player.luau": EMPTY_AST },
+			});
+
+			const files = instrumentRoot({
+				astOutputDirectory: "/tmp/asts",
+				luauRoot: "/luau-root",
+				parseScript: "mock.luau",
+				shadowDir: "/shadow",
+			});
+
+			for (const [key, record] of Object.entries(files)) {
+				// The manifest record keys on `key`; the preamble embeds the same
+				// literal (JSON string encoding matches the preamble's escape
+				// rules for these path keys).
+				const relativePath = key.slice("/luau-root/".length);
+				const instrumented = vol.readFileSync(`/shadow/${relativePath}`, "utf-8") as string;
+
+				expect(record.key).toBe(key);
+				expect(instrumented).toContain(`local __cov_file_key = ${JSON.stringify(key)}\n`);
+			}
+		});
+	});
+
 	describe("when skipFiles is provided", () => {
 		it("should skip files listed in skipFiles", () => {
 			expect.assertions(2);

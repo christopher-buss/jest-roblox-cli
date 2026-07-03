@@ -537,7 +537,7 @@ End of output
 
 		expect(setupSeconds).toBe(0.25);
 		expect(coverageData).toStrictEqual({
-			"shared/player.luau": { b: undefined, f: undefined, s: { 0: 1 } },
+			"shared/player.luau": { s: { 0: 1 } },
 		});
 		expect(coverageData?.["shared/player.luau"]?.s["0"]).toBe(1);
 	});
@@ -832,7 +832,7 @@ End of output
 
 		expect(result.success).toBeTrue();
 		expect(coverageData).toStrictEqual({
-			"shared/player.luau": { b: undefined, f: undefined, s: { 0: 1, 1: 3, 2: 0 } },
+			"shared/player.luau": { s: { 0: 1, 1: 3, 2: 0 } },
 		});
 	});
 
@@ -1429,7 +1429,7 @@ End of output
 		const { coverageData } = parseJestOutput(output);
 
 		expect(coverageData).toStrictEqual({
-			"good.luau": { b: undefined, f: undefined, s: { "1": 1 } },
+			"good.luau": { s: { "1": 1 } },
 		});
 	});
 });

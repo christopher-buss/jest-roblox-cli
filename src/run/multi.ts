@@ -35,6 +35,7 @@ import { mergeAttribution } from "../coverage-pipeline/attribution.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import { deriveCoverageFromIncludes } from "../coverage-pipeline/derive-coverage-from.ts";
 import { mergeRawCoverage } from "../coverage-pipeline/merge-raw-coverage.ts";
+import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
 import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { runProjects } from "../executor.ts";
@@ -132,6 +133,37 @@ export function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 	}
 
 	return resolveNestedProjects(validated.tree, path.dirname(rojoPath));
+}
+
+/**
+ * Instrument + rojo-build the coverage place and project it to a
+ * `CoverageArtifacts`, optionally baking each project's `jest.config` stub into
+ * the place. The single seam the run path (`prepareMultiProjectCoverage`) and
+ * the offline build path (`buildCoveragePlace`) both drive, so the
+ * prepare-and-bake mechanism can't drift between them. The caller owns the
+ * `bakeStubs` decision (the run path skips baking for studio-cli, which injects
+ * `jest.config` at runtime; the build path always bakes so a place opened by a
+ * foreign runner is self-contained). Stubs must already be generated into
+ * `cacheRoot`. Baking mirrors those cache stubs into the shadow tree — the
+ * source tree is clean (stubs land in `cacheRoot`, not `rootDir`), so without it
+ * the coverage place would build with no `jest.config` ModuleScripts.
+ */
+export function prepareBakedCoverage(
+	config: ResolvedConfig,
+	projects: Array<ResolvedProjectConfig>,
+	cacheRoot: string,
+	bakeStubs: boolean,
+): { artifacts: CoverageArtifacts; coverage: PrepareCoverageResult } {
+	const coverage = prepareCoverage(
+		config,
+		bakeStubs
+			? (shadowDirectory) => syncStubsToShadowDirectory(projects, cacheRoot, shadowDirectory)
+			: undefined,
+	);
+	return {
+		artifacts: toCoverageArtifacts(coverage, toBuildManifestProjects(projects)),
+		coverage,
+	};
 }
 
 /**
@@ -675,32 +707,21 @@ function prepareMultiProjectCoverage(
 		return { effectiveConfig: rootConfig, preCoverageMs: 0 };
 	}
 
-	// Baked `jest.config` stubs are how a backend that can't inject at runtime
-	// (open-cloud) gets each project's config into the place. studio-cli instead
-	// drives the plugin's Run-mode runner, which materializes `jest.config`
-	// ModuleScripts from the payload configs — so baking them here too would have
-	// the runner collide with an already-present `jest.config` ("Structural
-	// collision …"). Skip baking for studio-cli and let runtime injection be the
-	// sole config source, mirroring its non-coverage Clean Place (which carries
-	// no baked stubs either). `auto` never resolves to studio-cli, so the config
-	// flag is the exact, probe-free signal.
+	// studio-cli drives the plugin's Run-mode runner, which materializes
+	// `jest.config` ModuleScripts from the payload configs — baking here too
+	// would collide ("Structural collision …"). Every other backend needs the
+	// stubs baked in. `auto` never resolves to studio-cli, so the config flag is
+	// the exact, probe-free signal.
 	const bakeStubs = rootConfig.backend !== "studio-cli";
-
 	const start = Date.now();
-	const coverage = prepareCoverage(
+	const { artifacts, coverage } = prepareBakedCoverage(
 		rootConfig,
-		bakeStubs
-			? (shadowDirectory) => {
-					// Mirror cache stubs into the shadow tree. The source tree is
-					// clean post-refactor (stubs land in `cacheRoot`, not
-					// `rootDir`), so without this the coverage place would build
-					// without any `jest.config` ModuleScripts.
-					return syncStubsToShadowDirectory(projects, cacheRoot, shadowDirectory);
-				}
-			: undefined,
+		projects,
+		cacheRoot,
+		bakeStubs,
 	);
 	return {
-		coverageArtifacts: toCoverageArtifacts(coverage, toBuildManifestProjects(projects)),
+		coverageArtifacts: artifacts,
 		effectiveConfig: { ...rootConfig, placeFile: coverage.placeFile },
 		preCoverageMs: Date.now() - start,
 	};

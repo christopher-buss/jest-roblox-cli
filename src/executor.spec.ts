@@ -650,7 +650,7 @@ describe("execute single-project helper", () => {
 		const result = await executeSingle(options);
 
 		expect(result.coverageData).toStrictEqual({
-			"shared/player.luau": { b: undefined, f: undefined, s: { "0": 3, "1": 0, "2": 1 } },
+			"shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } },
 		});
 	});
 
@@ -675,7 +675,7 @@ describe("execute single-project helper", () => {
 		// coverageData is still returned (backend always provides it), but
 		// coverage processing is now handled by cli.ts
 		expect(result.coverageData).toStrictEqual({
-			"shared/player.luau": { b: undefined, f: undefined, s: { "0": 3, "1": 0, "2": 1 } },
+			"shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } },
 		});
 	});
 

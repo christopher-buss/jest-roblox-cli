@@ -1,6 +1,7 @@
 import { type } from "arktype";
 import assert from "node:assert";
 
+import { normalizeRawCoverage } from "../coverage-pipeline/raw-coverage.ts";
 import type { PerTestCoverageEntry, RawCoverageData } from "../coverage-pipeline/types.ts";
 import type { JestResult, SnapshotSummary } from "../types/jest-result.ts";
 
@@ -199,82 +200,8 @@ function extractLuauTiming(parsed: Record<string, unknown>): Record<string, numb
 	return Object.keys(record).length > 0 ? record : undefined;
 }
 
-/**
- * Luau 1-based integer-keyed tables serialize as JSON arrays.
- * Convert arrays to string-keyed Records with 1-based keys to match cov-map format.
- */
-function normalizeHitCounts(data: unknown): Record<string, number> {
-	if (Array.isArray(data)) {
-		const result: Record<string, number> = {};
-		let index = 0;
-		for (const element of data) {
-			result[String(index + 1)] = typeof element === "number" ? element : 0;
-			index++;
-		}
-
-		return result;
-	}
-
-	if (typeof data === "object" && data !== null) {
-		return data as Record<string, number>;
-	}
-
-	return {};
-}
-
-/**
- * Normalize branch hit counts from Luau's nested array format.
- * Luau serializes `__cov_b` as an array of arrays: `[[0,0,0], [0,0]]`.
- * Convert outer array to string-keyed Record with 1-based keys,
- * keeping inner arrays as-is.
- */
-function normalizeBranchCounts(data: unknown): Record<string, Array<number>> {
-	if (Array.isArray(data)) {
-		const result: Record<string, Array<number>> = {};
-		let index = 0;
-		for (const inner of data) {
-			if (Array.isArray(inner)) {
-				result[String(index + 1)] = inner.map((value) =>
-					typeof value === "number" ? value : 0,
-				);
-			} else {
-				result[String(index + 1)] = [];
-			}
-
-			index++;
-		}
-
-		return result;
-	}
-
-	if (typeof data === "object" && data !== null) {
-		return data as Record<string, Array<number>>;
-	}
-
-	return {};
-}
-
 function extractCoverageData(parsed: Record<string, unknown>): RawCoverageData | undefined {
-	const coverage = parsed["_coverage"];
-	if (coverage === undefined || coverage === null || typeof coverage !== "object") {
-		return undefined;
-	}
-
-	const record: RawCoverageData = {};
-	for (const [key, value] of Object.entries(coverage)) {
-		if (typeof value !== "object" || value === null || !("s" in value)) {
-			continue;
-		}
-
-		const raw = value as { b?: unknown; f?: unknown; s: unknown };
-		record[key] = {
-			b: raw.b !== undefined ? normalizeBranchCounts(raw.b) : undefined,
-			f: raw.f !== undefined ? normalizeHitCounts(raw.f) : undefined,
-			s: normalizeHitCounts(raw.s),
-		};
-	}
-
-	return Object.keys(record).length > 0 ? record : undefined;
+	return normalizeRawCoverage(parsed["_coverage"]);
 }
 
 function extractPerTestCoverage(

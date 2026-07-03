@@ -270,7 +270,7 @@ describe(buildProjectResult, () => {
 		);
 
 		expect(result.coverageData).toStrictEqual({
-			"src/foo.luau": { b: undefined, f: undefined, s: { "1": 5 } },
+			"src/foo.luau": { s: { "1": 5 } },
 		});
 		expect(result.luauTiming).toStrictEqual({ setup: 0.5, total: 1.25 });
 		expect(result.snapshotWrites).toStrictEqual({
