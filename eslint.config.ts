@@ -34,6 +34,12 @@ export default isentinel(
 				projectService: true,
 			},
 		},
+		// Luau AST vocabulary (expr/stmt) is not an abbreviation to expand, and
+		// `references/configuration.md` (linked from SKILL.md) must keep its
+		// name.
+		unicorn: {
+			nameReplacements: { configuration: false, expr: false, stmt: false, stmts: false },
+		},
 	},
 	{
 		name: "project/luau-declaration",

@@ -2,6 +2,7 @@ import isentinel from "@isentinel/eslint-config";
 
 export default isentinel({
 	name: "packages/shared/roblox-runner",
+	jsdoc: false,
 	namedConfigs: true,
 	roblox: false,
 	rules: {

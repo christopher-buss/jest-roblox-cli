@@ -2,6 +2,7 @@ import isentinel from "@isentinel/eslint-config";
 
 export default isentinel({
 	name: "packages/luau-ast",
+	jsdoc: false,
 	namedConfigs: true,
 	roblox: false,
 	rules: {
@@ -19,5 +20,9 @@ export default isentinel({
 		parserOptionsTypeAware: {
 			projectService: true,
 		},
+	},
+	// `AstExpr*` mirror Luau's own AST node names — keep the vocabulary.
+	unicorn: {
+		nameReplacements: { expr: false },
 	},
 });
