@@ -1,6 +1,14 @@
 packages:
   - "packages/*"
 
+overrides:
+  "@typescript-eslint/eslint-plugin": 8.62.1
+  "@typescript-eslint/parser": 8.62.1
+  "@typescript-eslint/type-utils": 8.62.1
+  "@typescript-eslint/types": 8.62.1
+  "@typescript-eslint/typescript-estree": 8.62.1
+  "@typescript-eslint/utils": 8.62.1
+
 minimumReleaseAgeExclude:
   - "@bedrock-rbx/ocale@0.1.0-beta.19"
   - "@isentinel/eslint-config@6.0.0-beta.3"
