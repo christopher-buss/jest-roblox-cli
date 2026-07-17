@@ -22,7 +22,11 @@ export interface FakeOpenCloudTask {
 	 */
 	errorMessage?: string;
 	gameOutput?: string;
-	jestOutput: string;
+	/**
+	 * Jest JSON payload wrapped into the envelope entry. Optional only when
+	 * `rawOutput` supplies the task's results verbatim instead.
+	 */
+	jestOutput?: string;
 	/**
 	 * Workspace-mode `pkg` field on the auto-wrapped entry. Required for
 	 * work-stealing aggregation to match entries back to jobs.
@@ -35,6 +39,12 @@ export interface FakeOpenCloudTask {
 	 * sibling projects within the same package.
 	 */
 	project?: string;
+	/**
+	 * Verbatim `output.results[0]` for this task, bypassing the envelope
+	 * wrap — for outputs that are not Jest envelopes, e.g. the version-guard
+	 * race sentinel.
+	 */
+	rawOutput?: string;
 	/**
 	 * Per-package snapshot writes returned on the auto-wrapped entry.
 	 * Mirrors the envelope field captured by the staged materializer:
@@ -208,6 +218,20 @@ function handlePoll(options: {
 		return;
 	}
 
+	if (queuedTask.rawOutput !== undefined) {
+		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+		response.end(
+			JSON.stringify(
+				validInProgressTaskBody({
+					output: { results: [queuedTask.rawOutput] },
+					path: taskPath,
+					state: "COMPLETE",
+				}),
+			),
+		);
+		return;
+	}
+
 	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
 	response.end(
 		JSON.stringify(
@@ -219,7 +243,7 @@ function handlePoll(options: {
 								{
 									elapsedMs: queuedTask.elapsedMs ?? 25,
 									gameOutput: queuedTask.gameOutput,
-									jestOutput: queuedTask.jestOutput,
+									jestOutput: queuedTask.jestOutput ?? "",
 									pkg: queuedTask.pkg,
 									project: queuedTask.project,
 									snapshotWrites: queuedTask.snapshotWrites,

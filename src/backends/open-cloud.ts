@@ -19,6 +19,16 @@ import type {
 	StreamingHooks,
 } from "./interface.ts";
 
+/**
+ * The value the version guard returns when the booted server is not running
+ * the version this run uploaded — i.e. a concurrent upload won the boot race.
+ * The backend retries that task once, pinned to the uploaded version.
+ *
+ * Embedded verbatim in a Luau double-quoted string literal, so it must not
+ * contain backslashes, double quotes, or newlines.
+ */
+export const PLACE_VERSION_RACE_SENTINEL = "__JEST_ROBLOX_PLACE_VERSION_RACE__";
+
 const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
 const MAX_RETRIES_ENV = "JEST_ROBLOX_OCALE_MAX_RETRIES";
@@ -49,6 +59,9 @@ interface PollState {
 export class OpenCloudBackend implements Backend {
 	private readonly runner: RemoteRunner;
 
+	/** One-shot per run so parallel raced tasks don't repeat the warning. */
+	private raceWarned = false;
+
 	public readonly kind = "open-cloud" as const;
 
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
@@ -56,6 +69,7 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	public async runTests(options: BackendOptions): Promise<BackendResult> {
+		this.raceWarned = false;
 		const { jobs, parallel, scriptOverride, streaming, workStealing } = options;
 		if (jobs.length === 0) {
 			throw new Error("OpenCloudBackend requires at least one job");
@@ -93,6 +107,41 @@ export class OpenCloudBackend implements Backend {
 		};
 	}
 
+	/**
+	 * Optimistic version pinning. Pinned tasks
+	 * (`/versions/{v}/luau-execution-session-tasks`) miss the warm-server pool
+	 * whenever no server holds the freshly-uploaded version yet, costing a cold
+	 * place boot per task (~10-45s, scaling with place size). Unpinned tasks
+	 * boot the latest saved version from the warm pool, so the first attempt
+	 * runs unpinned with a guard prepended: if the booted server is not on this
+	 * run's version (a concurrent upload won the boot race), the task returns
+	 * {@link PLACE_VERSION_RACE_SENTINEL} instead of running. On the sentinel,
+	 * the task is retried once, pinned — correct by construction, no re-upload
+	 * (the version exists even when it is no longer head), and no unpinned
+	 * retry loop for a concurrent uploader to keep winning against.
+	 */
+	private async executeGuarded(options: {
+		placeVersion: number;
+		script: string;
+		timeout: number;
+	}): Promise<ScriptResult> {
+		const { placeVersion, script, timeout } = options;
+		const guarded = injectVersionGuard(script, placeVersion);
+		const first = await this.runner.executeScript({ script: guarded, timeout });
+		if (first.outputs[0] !== PLACE_VERSION_RACE_SENTINEL) {
+			return first;
+		}
+
+		if (!this.raceWarned) {
+			this.raceWarned = true;
+			process.stderr.write(
+				"Warning: place version raced by a concurrent upload — raced tasks retried pinned (slower, cold place boot).\n",
+			);
+		}
+
+		return this.runner.executeScript({ placeVersion, script, timeout });
+	}
+
 	private async runBucket(
 		bucket: JobBucket,
 		placeVersion: number,
@@ -107,7 +156,7 @@ export class OpenCloudBackend implements Backend {
 		});
 
 		const script = scriptOverride ?? generateTestScript(inputs);
-		const scriptResult = await this.runner.executeScript({
+		const scriptResult = await this.executeGuarded({
 			placeVersion,
 			script,
 			timeout: primary.config.timeout,
@@ -201,7 +250,7 @@ export class OpenCloudBackend implements Backend {
 				{
 					runTask: async () => {
 						launched += 1;
-						return this.runner.executeScript({
+						return this.executeGuarded({
 							placeVersion,
 							script: scriptOverride,
 							timeout: primaryConfig.timeout,
@@ -368,6 +417,27 @@ async function sleep(ms: number): Promise<void> {
 	await new Promise((resolve) => {
 		setTimeout(resolve, ms);
 	});
+}
+
+/**
+ * Insert the version guard after any leading `--!` directive lines — Luau
+ * honors directives only in the leading comment block, so a plain line-1
+ * prepend would silently disable a caller's `--!strict`/`--!native`/etc.
+ */
+function injectVersionGuard(script: string, placeVersion: number): string {
+	const guard = `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}" end`;
+	const lines = script.split("\n");
+	let insertAt = 0;
+	for (const line of lines) {
+		if (!line.startsWith("--!")) {
+			break;
+		}
+
+		insertAt += 1;
+	}
+
+	lines.splice(insertAt, 0, guard);
+	return lines.join("\n");
 }
 
 function resolveRunnerOptions(): { baseUrl?: string; maxRetries?: number } {

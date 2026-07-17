@@ -271,6 +271,62 @@ return {
 }
 `;
 
+/**
+ * Mixed stdout the Luau runner produces around the Jest JSON payload —
+ * exercises `extractJsonFromOutput`'s log-noise stripping.
+ */
+export function buildMixedOutput(payload: Record<string, unknown>): string {
+	return [
+		"Booting fake Roblox runner",
+		JSON.stringify(payload),
+		"Finished fake Roblox runner",
+	].join("\n");
+}
+
+/** A minimal passing single-suite Jest payload in the runner's wire shape. */
+export function buildPassingPayload(): Record<string, unknown> {
+	return {
+		_setup: 0.1,
+		success: true,
+		value: {
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 1_710_000_000_000,
+			success: true,
+			testResults: [
+				{
+					numFailingTests: 0,
+					numPassingTests: 1,
+					numPendingTests: 0,
+					testFilePath: "ReplicatedStorage/shared/example.spec",
+					testResults: [
+						{
+							ancestorTitles: ["example"],
+							duration: 12,
+							failureMessages: [],
+							fullName: "example greets",
+							status: "passed",
+							title: "greets",
+						},
+					],
+				},
+			],
+		},
+	};
+}
+
+/** Env vars pointing the CLI's open-cloud backend at a fake server. */
+export function createOpenCloudEnvironment(baseUrl: string): Record<string, string> {
+	return {
+		JEST_ROBLOX_OPEN_CLOUD_BASE_URL: baseUrl,
+		ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
+		ROBLOX_PLACE_ID: "456",
+		ROBLOX_UNIVERSE_ID: "123",
+	};
+}
+
 function getProperty<T>(error: unknown, key: string, fallback: T): T {
 	if (typeof error === "object" && error !== null && key in error) {
 		return (error as Record<string, unknown>)[key] as T;

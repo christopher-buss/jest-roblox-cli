@@ -16,7 +16,12 @@ import type {
 	StreamingResultRecord,
 } from "../memory-store/sorted-map-client.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
-import { createOpenCloudBackend, OpenCloudBackend, resolveOcaleMaxRetries } from "./open-cloud.ts";
+import {
+	createOpenCloudBackend,
+	OpenCloudBackend,
+	PLACE_VERSION_RACE_SENTINEL,
+	resolveOcaleMaxRetries,
+} from "./open-cloud.ts";
 
 interface StubStreamReader extends StreamingResultReader {
 	deleted: Array<string>;
@@ -54,6 +59,11 @@ function createStreamReader(pages: Array<Array<StreamingResultRecord>>): StubStr
 }
 
 const DEFAULT_UPLOAD: UploadPlaceResult = { uploadMs: 12, versionNumber: 1 };
+
+interface StderrCapture {
+	restore: () => void;
+	writes: Array<string>;
+}
 
 function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 	const executeCalls: Array<ExecuteScriptOptions> = [];
@@ -121,6 +131,28 @@ function packageEntry(packageName: string): { jestOutput: string; pkg: string } 
 
 function scriptResult(jestOutput: string, gameOutput = "[]"): ScriptResult {
 	return { durationMs: 5, outputs: [jestOutput, gameOutput] };
+}
+
+/** The exact guard line `executeGuarded` prepends to unpinned first attempts. */
+function guardPrefix(placeVersion: number): string {
+	return `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}" end\n`;
+}
+
+function captureStderr(): StderrCapture {
+	const writes: Array<string> = [];
+	const spy = vi
+		.spyOn(process.stderr, "write")
+		.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
+			writes.push(typeof chunk === "string" ? chunk : String(chunk));
+			return true;
+		});
+
+	return {
+		restore: () => {
+			spy.mockRestore();
+		},
+		writes,
+	};
 }
 
 function job(
@@ -465,7 +497,7 @@ describe(OpenCloudBackend, () => {
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			await backend.runTests({ jobs: [job("alpha")], scriptOverride: customScript });
 
-			expect(stub.executeCalls[0]!.script).toBe(customScript);
+			expect(stub.executeCalls[0]!.script).toBe(`${guardPrefix(1)}${customScript}`);
 			expect(stub.executeCalls[0]!.script).not.toContain("Jest.runCLI");
 		});
 	});
@@ -540,8 +572,8 @@ describe(OpenCloudBackend, () => {
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
 
-		it("should pin every executeScript to the uploaded place version", async () => {
-			expect.assertions(2);
+		it("should run every bucket unpinned with a version guard prepended", async () => {
+			expect.assertions(3);
 
 			const stub = createRunnerStub({
 				uploadResult: { uploadMs: 12, versionNumber: 42 },
@@ -554,11 +586,14 @@ describe(OpenCloudBackend, () => {
 			// 3 jobs at parallel 3 ⇒ one bucket each ⇒ exactly 3 calls. An exact
 			// count catches a regression that re-executes between buckets.
 			expect(stub.executeCalls).toHaveLength(3);
-			expect(stub.executeCalls.every((call) => call.placeVersion === 42)).toBeTrue();
+			expect(stub.executeCalls.every((call) => call.placeVersion === undefined)).toBeTrue();
+			expect(
+				stub.executeCalls.every((call) => call.script.startsWith(guardPrefix(42))),
+			).toBeTrue();
 		});
 
-		it("should pin work-stealing tasks to the uploaded place version", async () => {
-			expect.assertions(2);
+		it("should run work-stealing tasks unpinned with the version guard", async () => {
+			expect.assertions(3);
 
 			const stub = createRunnerStub({
 				uploadResult: { uploadMs: 12, versionNumber: 7 },
@@ -574,7 +609,91 @@ describe(OpenCloudBackend, () => {
 
 			// work-stealing over 1 job with default parallel ⇒ exactly 1 task.
 			expect(stub.executeCalls).toHaveLength(1);
-			expect(stub.executeCalls.every((call) => call.placeVersion === 7)).toBeTrue();
+			expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
+			expect(stub.executeCalls[0]!.script).toBe(`${guardPrefix(7)}stealing-script`);
+		});
+
+		it("should inject the guard after leading Luau directives", async () => {
+			expect.assertions(1);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha")],
+				scriptOverride: "--!strict\n--!optimize 2\nreturn nil",
+			});
+
+			// Luau honors `--!` directives only in the leading comment block —
+			// a plain line-1 prepend would silently disable them.
+			expect(stub.executeCalls[0]!.script).toBe(
+				`--!strict\n--!optimize 2\n${guardPrefix(1)}return nil`,
+			);
+		});
+
+		it("should retry a raced bucket once, pinned to the uploaded version", async () => {
+			expect.assertions(5);
+
+			let callIndex = 0;
+			const stub = createRunnerStub({
+				uploadResult: { uploadMs: 12, versionNumber: 42 },
+			});
+			stub.setExecute(() => {
+				const index = callIndex;
+				callIndex += 1;
+				if (index === 0) {
+					return { durationMs: 3, outputs: [PLACE_VERSION_RACE_SENTINEL] };
+				}
+
+				return scriptResult(envelope([{ elapsedMs: 55, jestOutput: successJest() }]));
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const { rawResults } = await backend.runTests(jobsOptions([job("alpha")]));
+
+			expect(stub.executeCalls).toHaveLength(2);
+
+			const [raced, retried] = stub.executeCalls;
+
+			expect(raced!.placeVersion).toBeUndefined();
+			expect(retried!.placeVersion).toBe(42);
+			// The pinned retry re-runs the original script, guard stripped — a
+			// pinned task can't race, so the guard would only be dead weight.
+			expect(`${guardPrefix(42)}${retried!.script}`).toBe(raced!.script);
+			expect(rawResults[0]!.entry.elapsedMs).toBe(55);
+		});
+
+		it("should retry only the raced work-stealing task", async () => {
+			expect.assertions(3);
+
+			let callIndex = 0;
+			const stub = createRunnerStub({
+				uploadResult: { uploadMs: 12, versionNumber: 9 },
+			});
+			stub.setExecute(() => {
+				const index = callIndex;
+				callIndex += 1;
+				if (index === 0) {
+					return { durationMs: 3, outputs: [PLACE_VERSION_RACE_SENTINEL] };
+				}
+
+				return scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")]));
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests({
+				jobs: [job("alpha"), job("beta")],
+				parallel: 2,
+				scriptOverride: "stealing-script",
+				workStealing: true,
+			});
+
+			// 2 tasks fired; the raced one retried pinned ⇒ exactly 3 calls, of
+			// which exactly one is pinned.
+			expect(stub.executeCalls).toHaveLength(3);
+			expect(stub.executeCalls.filter((call) => call.placeVersion === 9)).toHaveLength(1);
+			expect(stub.uploadCalls).toHaveLength(1);
 		});
 
 		it("should propagate upload errors from the runner", async () => {
@@ -588,6 +707,50 @@ describe(OpenCloudBackend, () => {
 			await expect(backend.runTests(jobsOptions([job("alpha")]))).rejects.toThrow(
 				/Failed to upload place/,
 			);
+		});
+
+		it("should warn once on stderr when tasks race, even across multiple raced buckets", async () => {
+			expect.assertions(2);
+
+			const { restore, writes } = captureStderr();
+
+			let callIndex = 0;
+			const stub = createRunnerStub();
+			stub.setExecute((options) => {
+				const index = callIndex;
+				callIndex += 1;
+				// Both buckets' unpinned first attempts race; the pinned
+				// retries (recognizable by placeVersion) succeed.
+				if (options.placeVersion === undefined && index < 2) {
+					return { durationMs: 3, outputs: [PLACE_VERSION_RACE_SENTINEL] };
+				}
+
+				return scriptResult(envelope([{ jestOutput: successJest() }]));
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests(jobsOptions([job("alpha"), job("beta")], 2));
+			restore();
+
+			const warnings = writes.filter((line) => line.includes("place version raced"));
+
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toContain("retried pinned");
+		});
+
+		it("should not warn when no task races", async () => {
+			expect.assertions(1);
+
+			const { restore, writes } = captureStderr();
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTests(jobsOptions([job("alpha")]));
+			restore();
+
+			expect(writes.filter((line) => line.includes("place version raced"))).toHaveLength(0);
 		});
 	});
 
@@ -625,10 +788,13 @@ describe(OpenCloudBackend, () => {
 			});
 
 			expect(stub.executeCalls).toHaveLength(3);
+
+			const guardedStealingScript = `${guardPrefix(1)}${stealingScript}`;
+
 			expect(stub.executeCalls.map((call) => call.script)).toStrictEqual([
-				stealingScript,
-				stealingScript,
-				stealingScript,
+				guardedStealingScript,
+				guardedStealingScript,
+				guardedStealingScript,
 			]);
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
@@ -943,13 +1109,7 @@ describe(OpenCloudBackend, () => {
 			expect.assertions(2);
 
 			const { PermissionError } = await import("@bedrock-rbx/ocale");
-			const writes: Array<string> = [];
-			const stderrSpy = vi
-				.spyOn(process.stderr, "write")
-				.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
-					writes.push(typeof chunk === "string" ? chunk : String(chunk));
-					return true;
-				});
+			const { restore, writes } = captureStderr();
 
 			const reader = {
 				delete: async (): Promise<void> => {
@@ -986,7 +1146,7 @@ describe(OpenCloudBackend, () => {
 				},
 				workStealing: true,
 			});
-			stderrSpy.mockRestore();
+			restore();
 
 			const joined = writes.join("");
 
@@ -1000,13 +1160,7 @@ describe(OpenCloudBackend, () => {
 			expect.assertions(1);
 
 			const { PermissionError } = await import("@bedrock-rbx/ocale");
-			const writes: Array<string> = [];
-			const stderrSpy = vi
-				.spyOn(process.stderr, "write")
-				.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
-					writes.push(typeof chunk === "string" ? chunk : String(chunk));
-					return true;
-				});
+			const { restore, writes } = captureStderr();
 
 			const reader = {
 				delete: async (): Promise<void> => {
@@ -1043,7 +1197,7 @@ describe(OpenCloudBackend, () => {
 				},
 				workStealing: true,
 			});
-			stderrSpy.mockRestore();
+			restore();
 
 			expect(writes.join("")).toContain("missing scopes scope-a, scope-b");
 		});
@@ -1051,13 +1205,7 @@ describe(OpenCloudBackend, () => {
 		it("should stringify a non-Error thrown by the streaming reader", async () => {
 			expect.assertions(1);
 
-			const writes: Array<string> = [];
-			const stderrSpy = vi
-				.spyOn(process.stderr, "write")
-				.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
-					writes.push(typeof chunk === "string" ? chunk : String(chunk));
-					return true;
-				});
+			const { restore, writes } = captureStderr();
 
 			const reader = {
 				delete: async (): Promise<void> => {
@@ -1090,7 +1238,7 @@ describe(OpenCloudBackend, () => {
 				},
 				workStealing: true,
 			});
-			stderrSpy.mockRestore();
+			restore();
 
 			expect(writes.join("")).toContain("string-error");
 		});
@@ -1098,13 +1246,7 @@ describe(OpenCloudBackend, () => {
 		it("should emit a one-shot stderr warning for non-permission streaming reader errors", async () => {
 			expect.assertions(1);
 
-			const writes: Array<string> = [];
-			const stderrSpy = vi
-				.spyOn(process.stderr, "write")
-				.mockImplementation((chunk: Parameters<typeof process.stderr.write>[0]) => {
-					writes.push(typeof chunk === "string" ? chunk : String(chunk));
-					return true;
-				});
+			const { restore, writes } = captureStderr();
 
 			const reader = {
 				delete: async (): Promise<void> => {
@@ -1135,7 +1277,7 @@ describe(OpenCloudBackend, () => {
 				},
 				workStealing: true,
 			});
-			stderrSpy.mockRestore();
+			restore();
 
 			expect(writes.filter((line) => line.includes("streaming disabled"))).toHaveLength(1);
 		});
