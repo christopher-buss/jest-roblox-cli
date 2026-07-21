@@ -20,10 +20,13 @@ Requires three environment variables. The CLI uploads the place file to Roblox
 via the Open Cloud API, creates a Luau execution task, polls for completion, and
 parses the JSON result.
 
-Every invocation uploads the place file fresh — Open Cloud has no read endpoint
-to verify a previously-uploaded version is still current, so caching is unsafe
-when a place ID is shared across worktrees. The poll cadence for task completion
-is managed internally by the Open Cloud client and is not user-configurable.
+Every invocation uploads the place file fresh. Execution tasks then run
+_unpinned_ so they can land on a warm server holding the latest saved version;
+an injected guard compares `game.PlaceVersion` against the version this run
+uploaded and bails with a sentinel if a concurrent upload won the boot race.
+Raced tasks are retried once pinned to the uploaded version — correct by
+construction, but a cold place boot. The poll cadence for task completion is
+managed internally by the Open Cloud client and is not user-configurable.
 
 ## Studio
 
