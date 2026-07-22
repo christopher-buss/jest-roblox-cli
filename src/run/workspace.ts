@@ -7,12 +7,20 @@ import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/ope
 import { createStudioCliBackend } from "../backends/studio-cli.ts";
 import { createStudioBackend } from "../backends/studio.ts";
 import { loadRawConfig } from "../config/loader.ts";
-import type { CliOptions, WorkspaceConfig, WorkspaceRunOptions } from "../config/schema.ts";
+import type {
+	CliOptions,
+	ResolvedConfig,
+	WorkspaceConfig,
+	WorkspaceRunOptions,
+} from "../config/schema.ts";
 import { buildWorkspaceRunOptions } from "../config/workspace-run-options.ts";
 import type { MappedCoverageResult } from "../coverage-pipeline/mapper.ts";
 import { mergeRawCoverage } from "../coverage-pipeline/merge-raw-coverage.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
-import { aggregateWorkspaceCoverage } from "../coverage-pipeline/workspace-aggregate.ts";
+import {
+	aggregateWorkspaceCoverage,
+	type WorkspaceAggregatedCoverage,
+} from "../coverage-pipeline/workspace-aggregate.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
@@ -220,9 +228,10 @@ function normalizeEmptyCoverage(mapped: MappedCoverageResult): MappedCoverageRes
 	return Object.keys(mapped.files).length === 0 ? undefined : mapped;
 }
 
-function aggregatePerPackageCoverage(
-	runtimeResults: Array<WorkspaceProjectResult>,
-): MappedCoverageResult {
+function aggregatePerPackageCoverage(runtimeResults: Array<WorkspaceProjectResult>): {
+	aggregated: WorkspaceAggregatedCoverage;
+	thresholdByPackage: Map<string, ResolvedConfig["coverageThreshold"]>;
+} {
 	// A package with multiple projects emits one entry per project. Each
 	// project runs Jest with its own `_G.__jest_roblox_cov` reset, so the
 	// per-entry `coverageData` captures DIFFERENT hits across projects. We
@@ -237,6 +246,7 @@ function aggregatePerPackageCoverage(
 	}
 
 	const byPackage = new Map<string, PackageEntry>();
+	const thresholdByPackage = new Map<string, ResolvedConfig["coverageThreshold"]>();
 
 	for (const entry of runtimeResults) {
 		if (entry.coverageManifest === undefined) {
@@ -251,26 +261,47 @@ function aggregatePerPackageCoverage(
 				manifest: entry.coverageManifest,
 				pkg: entry.pkg,
 			});
+			thresholdByPackage.set(entry.pkg, entry.coverageThreshold);
 			continue;
 		}
 
 		existing.coverageData = mergeRawCoverage(existing.coverageData, entry.result.coverageData);
 	}
 
-	return aggregateWorkspaceCoverage([...byPackage.values()]);
+	return {
+		aggregated: aggregateWorkspaceCoverage([...byPackage.values()]),
+		thresholdByPackage,
+	};
 }
 
 // Drive coverage off per-package manifests, not the workspace-level
 // `collectCoverage`. A package that opted into coverage via its own jest.config
 // carries a `coverageManifest`; aggregating regardless of workspace config keeps
-// that report from being dropped.
-function resolveWorkspaceCoverageMapped(
+// that report from being dropped. The per-package gates ride alongside the
+// merge so the report layer can judge each package against its own universe.
+function resolveWorkspaceCoverage(
 	runtimeResults: Array<WorkspaceProjectResult>,
-): MappedCoverageResult | undefined {
+): Pick<WorkspaceRunResult, "coverageMapped" | "coveragePackages"> {
 	const hasCoverage = runtimeResults.some((entry) => entry.coverageManifest !== undefined);
-	return hasCoverage
-		? normalizeEmptyCoverage(aggregatePerPackageCoverage(runtimeResults))
-		: undefined;
+	if (!hasCoverage) {
+		return {};
+	}
+
+	const { aggregated, thresholdByPackage } = aggregatePerPackageCoverage(runtimeResults);
+	const coveragePackages = aggregated.perPackage.map(({ pkg, universe }) => {
+		const coverageThreshold = thresholdByPackage.get(pkg);
+		return {
+			...(coverageThreshold !== undefined ? { coverageThreshold } : {}),
+			pkg,
+			universe,
+		};
+	});
+
+	const coverageMapped = normalizeEmptyCoverage(aggregated.merged);
+	return {
+		...(coverageMapped !== undefined ? { coverageMapped } : {}),
+		coveragePackages,
+	};
 }
 
 // Surface the consensus-resolved aggregate sink paths the runner wrote so
@@ -313,7 +344,7 @@ function buildWorkspaceResult(
 	});
 
 	return {
-		coverageMapped: resolveWorkspaceCoverageMapped(results),
+		...resolveWorkspaceCoverage(results),
 		merged: {},
 		mode: "workspace",
 		preCoverageMs: 0,

@@ -139,6 +139,12 @@ export interface WorkspaceProjectResult {
 	 * used. Present whenever `coverageManifest` is.
 	 */
 	coveragePathIgnorePatterns?: Array<string>;
+	/**
+	 * The package's own declared `coverageThreshold` (undefined when the
+	 * package config never set one). Carried only alongside `coverageManifest`
+	 * so the report layer can gate each package against its own coverage.
+	 */
+	coverageThreshold?: ResolvedConfig["coverageThreshold"];
 	displayName: string;
 	pkg: string;
 	result: ExecuteResult;
@@ -216,6 +222,19 @@ export async function runWorkspace(
 	options: RunWorkspaceOptions,
 ): Promise<undefined | WorkspaceRunnerOutput> {
 	return runWorkspaceProfiled(options, options.timing ?? NOOP_TIMING_COLLECTOR);
+}
+
+// A threshold without collectCoverage can never be enforced — the package is
+// never instrumented, so its gate silently vanishes. Surface the
+// misconfiguration instead of letting it pass unnoticed.
+function warnUnenforceableThresholds(contexts: Array<PackageContext>): void {
+	for (const ctx of contexts) {
+		if (ctx.pkgConfig.coverageThreshold !== undefined && !ctx.pkgConfig.collectCoverage) {
+			process.stderr.write(
+				`jest-roblox: ${ctx.info.name} declares coverageThreshold but not collectCoverage; the threshold is not enforced\n`,
+			);
+		}
+	}
 }
 
 function buildCoverageMap(
@@ -327,6 +346,7 @@ async function runWorkspaceProfiled(
 	const coverageOptIn = new Set(
 		filteredContexts.filter((ctx) => ctx.pkgConfig.collectCoverage).map((ctx) => ctx.info.name),
 	);
+	warnUnenforceableThresholds(filteredContexts);
 	const coveragePackages = loaded
 		.map((entry) => entry.descriptor)
 		.filter(
@@ -1166,6 +1186,9 @@ function attachCoverageManifests(
 		return {
 			coverageManifest: coverage?.manifest,
 			coveragePathIgnorePatterns: coverage?.coveragePathIgnorePatterns,
+			...(coverage !== undefined
+				? { coverageThreshold: pendingEntry.projectConfig.coverageThreshold }
+				: {}),
 			displayName: pendingEntry.project.displayName,
 			pkg: pendingEntry.pkg,
 			result,

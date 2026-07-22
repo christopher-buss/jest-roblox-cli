@@ -486,6 +486,15 @@ Per-package coverage is aggregated into a single report under
 directory, so run from the workspace root (or set `rootDir`) if you want the
 report to land there.
 
+Coverage is opt-in per package (each package's own `collectCoverage`), and
+`coverageThreshold` is enforced per package: every opted-in package is gated
+against its own files. The workspace-root config's threshold is the metric-level
+base for all packages; a package's own declaration overrides the metrics it
+names — even downward — while unnamed metrics inherit the root's. There is no
+pooled cross-package gate, so one package's high coverage cannot mask another's
+shortfall. Declaring a threshold without `collectCoverage` prints a warning: it
+cannot be enforced without instrumentation.
+
 Game Output has two independent sinks. Setting `gameOutput` (a path, or `true`)
 writes one **grouped** aggregate file at the workspace root —
 `[{ package, project, entries }]`, one group per (package, project) that ran.

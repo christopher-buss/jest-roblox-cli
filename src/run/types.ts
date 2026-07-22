@@ -2,6 +2,7 @@ import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import type { CoverageDisplayPredicate } from "../coverage-pipeline/agent-table-filter.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import type { MappedCoverageResult } from "../coverage-pipeline/mapper.ts";
+import type { WorkspacePackageUniverse } from "../coverage-pipeline/workspace-aggregate.ts";
 import type { ExecuteResult } from "../executor.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -62,6 +63,16 @@ export interface MultiRunResult {
 	validationMessage?: string;
 }
 
+/**
+ * One package's coverage gate: its own mapped universe plus its declared
+ * threshold. The report layer judges each package against its own universe;
+ * `coverageThreshold` is undefined when the package never declared one, in
+ * which case the workspace root's threshold applies (metric-level merge).
+ */
+export interface WorkspacePackageCoverageGate extends WorkspacePackageUniverse {
+	coverageThreshold?: ResolvedConfig["coverageThreshold"];
+}
+
 export interface WorkspaceRunResult {
 	/**
 	 * Pre-aggregated TS-coord coverage merged from every package's
@@ -70,6 +81,12 @@ export interface WorkspaceRunResult {
 	 * `collectCoverage` is off or no package produced coverage data.
 	 */
 	coverageMapped?: MappedCoverageResult;
+	/**
+	 * Per-package coverage gates, in aggregation order. Undefined when no
+	 * package carries a coverage manifest; present (possibly empty) whenever
+	 * coverage ran, so the report layer enforces thresholds per package.
+	 */
+	coveragePackages?: Array<WorkspacePackageCoverageGate>;
 	/**
 	 * Consensus-resolved Aggregated Game Output path the runner wrote (if any).
 	 * Surfaced so formatters point "View …" hints at the file that exists,

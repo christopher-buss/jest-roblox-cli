@@ -6,7 +6,11 @@ import type { MockInstance } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
-import { CoverageMapMalformedError, mapCoverageToTypeScript } from "./coverage-pipeline/mapper.ts";
+import {
+	CoverageMapMalformedError,
+	mapCoverageToTypeScript,
+	type MappedCoverageResult,
+} from "./coverage-pipeline/mapper.ts";
 import {
 	checkThresholds,
 	generateReports,
@@ -1177,6 +1181,136 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 		expect(spies.stderr).toHaveBeenCalledWith(
 			expect.stringContaining("Coverage threshold not met"),
 		);
+	});
+});
+
+describe("per-package threshold gates via outputMultiResult", () => {
+	const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
+		files: { "foo.ts": {} },
+	});
+
+	it("should gate each package against its own universe, package threshold overriding root", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
+		const code = await outputMultiResult(
+			makeConfig({ coverageThreshold: { lines: 80 } }),
+			makeWorkspaceResult({
+				coverageMapped: preMapped,
+				coveragePackages: [
+					{
+						coverageThreshold: { lines: 70 },
+						pkg: "@halcyon/foo",
+						universe: fooUniverse,
+					},
+				],
+			}),
+		);
+
+		// One call only: the pooled merged-universe check is replaced by the
+		// per-package gates.
+		expect(mocks.checkThresholds).toHaveBeenCalledExactlyOnceWith(fooUniverse, { lines: 70 });
+		expect(code).toBe(0);
+	});
+
+	it("should metric-merge the root threshold under a partial package override", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
+		await outputMultiResult(
+			makeConfig({ coverageThreshold: { branches: 70, statements: 80 } }),
+			makeWorkspaceResult({
+				coverageMapped: preMapped,
+				coveragePackages: [
+					{
+						coverageThreshold: { statements: 70 },
+						pkg: "@halcyon/foo",
+						universe: fooUniverse,
+					},
+				],
+			}),
+		);
+
+		expect(mocks.checkThresholds).toHaveBeenCalledWith(fooUniverse, {
+			branches: 70,
+			statements: 70,
+		});
+	});
+
+	it("should fall back to the root threshold for a package that declared none", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
+		await outputMultiResult(
+			makeConfig({ coverageThreshold: { lines: 80 } }),
+			makeWorkspaceResult({
+				coverageMapped: preMapped,
+				coveragePackages: [{ pkg: "@halcyon/foo", universe: fooUniverse }],
+			}),
+		);
+
+		expect(mocks.checkThresholds).toHaveBeenCalledWith(fooUniverse, { lines: 80 });
+	});
+
+	it("should print package-prefixed failures and exit 1 when a package misses its threshold", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.checkThresholds
+			.mockReturnValueOnce({ failures: [], passed: true })
+			.mockReturnValueOnce({
+				failures: [{ actual: 75, metric: "lines", threshold: 80 }],
+				passed: false,
+			});
+		const spies = setupOutputSpies();
+
+		const emptyUniverse: MappedCoverageResult = { files: {} };
+		const code = await outputMultiResult(
+			makeConfig({ coverageThreshold: { lines: 80 } }),
+			makeWorkspaceResult({
+				coverageMapped: preMapped,
+				coveragePackages: [
+					{
+						coverageThreshold: { lines: 70 },
+						pkg: "@halcyon/foo",
+						universe: emptyUniverse,
+					},
+					{ pkg: "@halcyon/bar", universe: emptyUniverse },
+				],
+			}),
+		);
+
+		expect(code).toBe(1);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			"Coverage threshold not met for @halcyon/bar lines: 75.00% < 80%\n",
+		);
+	});
+
+	it("should skip the check entirely when neither root nor package declares a threshold", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const code = await outputMultiResult(
+			makeConfig(),
+			makeWorkspaceResult({
+				coverageMapped: preMapped,
+				coveragePackages: [{ pkg: "@halcyon/foo", universe: { files: {} } }],
+			}),
+		);
+
+		expect(mocks.checkThresholds).not.toHaveBeenCalled();
+		expect(code).toBe(0);
 	});
 });
 

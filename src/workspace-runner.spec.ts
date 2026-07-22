@@ -1999,6 +1999,112 @@ describe(runWorkspace, () => {
 			expect(results?.[0]?.pkg).toBe("@halcyon/foo");
 		});
 
+		it("should carry the package's declared coverageThreshold onto the workspace result", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: {
+					...DEFAULT_CONFIG,
+					collectCoverage: true,
+					coverageThreshold: { branches: 70, statements: 90 },
+					rootDir: FOO_DIR,
+				},
+			});
+
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([coverageEntry("@halcyon/foo")]);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			const results = await runWorkspaceResults({
+				backend,
+				cli: makeCli({ collectCoverage: true }),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			expect(results?.[0]?.coverageThreshold).toStrictEqual({
+				branches: 70,
+				statements: 90,
+			});
+		});
+
+		it("should warn when a package declares coverageThreshold without collectCoverage", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				...seedPackage(BAR_DIR, {
+					name: "@halcyon/bar",
+					specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+
+			// foo's threshold can never be enforced (no instrumentation without
+			// collectCoverage); bar opted in properly and must not be flagged.
+			setLoadedConfigPerPackage({
+				[BAR_DIR]: {
+					...DEFAULT_CONFIG,
+					collectCoverage: true,
+					coverageThreshold: { lines: 100 },
+					rootDir: BAR_DIR,
+				},
+				[FOO_DIR]: {
+					...DEFAULT_CONFIG,
+					coverageThreshold: { statements: 90 },
+					rootDir: FOO_DIR,
+				},
+			});
+
+			const { prepareWorkspaceCoverage } =
+				await import("./coverage-pipeline/workspace-prepare.ts");
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([coverageEntry("@halcyon/bar")]);
+
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+			const { backend } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
+			]);
+
+			await runWorkspace({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO, BAR_INFO],
+				runOptions: makeRunOptions(),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			});
+
+			const warnings = stderr.mock.calls
+				.map(([chunk]) => String(chunk))
+				.filter((line) => line.includes("coverageThreshold"));
+
+			expect(warnings).toStrictEqual([
+				"jest-roblox: @halcyon/foo declares coverageThreshold but not collectCoverage; the threshold is not enforced\n",
+			]);
+			expect(warnings[0]).not.toContain("@halcyon/bar");
+		});
+
 		it("should restrict prepareWorkspaceCoverage to packages with pending test files", async () => {
 			expect.assertions(1);
 

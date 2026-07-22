@@ -59,6 +59,15 @@ const config = {
 
 Available metrics: `statements`, `branches`, `functions`, `lines`.
 
+In `--workspace` mode thresholds are **per-package**: each package that opted
+into coverage (its own `collectCoverage`) is gated against its own files. The
+workspace-root config's `coverageThreshold` is the metric-level base for every
+package; a package's own declaration overrides the metrics it names — even
+downward — and unnamed metrics inherit the root's. There is no pooled
+cross-package check, so one package's high coverage can't mask another's
+shortfall. A package that declares a threshold without `collectCoverage` gets a
+warning: the threshold cannot be enforced without instrumentation.
+
 ## Config Fields
 
 Put these under `test: { ... }`. Keep `luauRoots` at config root.

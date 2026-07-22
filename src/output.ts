@@ -13,6 +13,7 @@ import {
 	checkThresholds,
 	generateReports,
 	printCoverageHeader,
+	type ThresholdResult,
 } from "./coverage-pipeline/reporter.ts";
 import type { RawCoverageData } from "./coverage-pipeline/types.ts";
 import { type ExecuteResult, formatExecuteOutput, loadCoverageManifest } from "./executor.ts";
@@ -41,6 +42,7 @@ import type {
 	MultiRunResult,
 	ProjectResult,
 	SingleRunResult,
+	WorkspacePackageCoverageGate,
 	WorkspaceRunResult,
 } from "./run/types.ts";
 import { combineSourceMappers, type SourceMapper } from "./source-mapper/index.ts";
@@ -126,7 +128,12 @@ export async function outputSingleResult(
 	config: ResolvedConfig,
 	result: SingleRunResult,
 ): Promise<number> {
-	const { coverageDisplayFilter, preCoverageMs, runtimeResult, typecheckResult } = result;
+	const {
+		coverageDisplayFilter: agentTextFilter,
+		preCoverageMs,
+		runtimeResult,
+		typecheckResult,
+	} = result;
 	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
 	const coverageData = runtimeResult?.coverageData;
 
@@ -144,7 +151,7 @@ export async function outputSingleResult(
 					: undefined;
 			printFormattedOutput({ config, mergedResult, runtimeResult, timing, typecheckResult });
 		},
-		runCoverage: () => processCoverage(config, coverageData, undefined, coverageDisplayFilter),
+		runCoverage: () => processCoverage({ agentTextFilter, config, coverageData }),
 	});
 
 	await writeResultFile(config.outputFile, typecheckResult, runtimeResult?.result);
@@ -288,8 +295,15 @@ export async function outputMultiResult(
 				process.stderr.write(formatTypecheckSummary(typecheckResult));
 			}
 		},
-		runCoverage: () =>
-			processCoverage(config, merged.coverageData, workspaceCoverage, displayFilter),
+		runCoverage: () => {
+			return processCoverage({
+				agentTextFilter: displayFilter,
+				config,
+				coverageData: merged.coverageData,
+				packageGates: extractCoveragePackages(result),
+				preMapped: workspaceCoverage,
+			});
+		},
 	});
 
 	// Workspace runs write their own result + Game Output sinks (the runner
@@ -453,6 +467,16 @@ function resolveMappedCoverage(
 	return mapCoverageToTypeScript(coverageData, manifest);
 }
 
+// Single owner of the threshold-failure wire format: the pooled path passes no
+// prefix, the per-package path prefixes the package name.
+function writeThresholdFailures(failures: ThresholdResult["failures"], prefix = ""): void {
+	for (const failure of failures) {
+		process.stderr.write(
+			`Coverage threshold not met for ${prefix}${failure.metric}: ${String(failure.actual.toFixed(2))}% < ${String(failure.threshold)}%\n`,
+		);
+	}
+}
+
 function enforceThresholds(config: ResolvedConfig, mapped: MappedCoverageResult): boolean {
 	if (config.coverageThreshold === undefined) {
 		return true;
@@ -468,21 +492,53 @@ function enforceThresholds(config: ResolvedConfig, mapped: MappedCoverageResult)
 		return true;
 	}
 
-	for (const failure of result.failures) {
-		process.stderr.write(
-			`Coverage threshold not met for ${failure.metric}: ${String(failure.actual.toFixed(2))}% < ${String(failure.threshold)}%\n`,
-		);
-	}
-
+	writeThresholdFailures(result.failures);
 	return false;
 }
 
-function processCoverage(
+// Workspace thresholds are per-package: each package is judged against its own
+// universe, with the workspace-root threshold as the metric-level base and the
+// package's declared threshold overriding the metrics it names (even
+// downward — an explicit per-package value always wins). The pooled
+// merged-universe check does not run in workspace mode; a cross-package
+// average could mask a failing package.
+function enforcePackageThresholds(
 	config: ResolvedConfig,
-	coverageData: RawCoverageData | undefined,
-	preMapped?: MappedCoverageResult,
-	agentTextFilter?: CoverageDisplayPredicate,
+	packages: Array<WorkspacePackageCoverageGate>,
 ): boolean {
+	let passed = true;
+
+	for (const gate of packages) {
+		const effective = { ...config.coverageThreshold, ...gate.coverageThreshold };
+		if (Object.keys(effective).length === 0) {
+			continue;
+		}
+
+		// Unlike the pooled path, no `collectCoverageFrom` /
+		// `coveragePathIgnorePatterns` narrowing here: each gate's universe was
+		// already filtered per-package (its own ignore patterns) in
+		// `aggregateWorkspaceCoverage`, and re-applying the workspace-root
+		// values would override a package's own opt-out.
+		const result = checkThresholds(gate.universe, effective);
+		if (result.passed) {
+			continue;
+		}
+
+		passed = false;
+		writeThresholdFailures(result.failures, `${gate.pkg} `);
+	}
+
+	return passed;
+}
+
+function processCoverage(options: {
+	agentTextFilter?: CoverageDisplayPredicate;
+	config: ResolvedConfig;
+	coverageData: RawCoverageData | undefined;
+	packageGates?: Array<WorkspacePackageCoverageGate>;
+	preMapped?: MappedCoverageResult;
+}): boolean {
+	const { agentTextFilter, config, coverageData, packageGates, preMapped } = options;
 	// preMapped is workspace pre-aggregated coverage from per-package opt-ins.
 	// When present, generate reports regardless of workspace `collectCoverage`.
 	if (!config.collectCoverage && preMapped === undefined) {
@@ -508,6 +564,10 @@ function processCoverage(
 		mapped,
 		reporters: config.coverageReporters,
 	});
+
+	if (packageGates !== undefined) {
+		return enforcePackageThresholds(config, packageGates);
+	}
 
 	return enforceThresholds(config, mapped);
 }
@@ -596,6 +656,14 @@ function extractWorkspaceCoverageMapped(
 	result: MultiRunResult | WorkspaceRunResult,
 ): MappedCoverageResult | undefined {
 	return "coverageMapped" in result ? result.coverageMapped : undefined;
+}
+
+// Present only on workspace results that ran coverage; multi mode stays on the
+// pooled `enforceThresholds` path.
+function extractCoveragePackages(
+	result: MultiRunResult | WorkspaceRunResult,
+): Array<WorkspacePackageCoverageGate> | undefined {
+	return result.mode === "workspace" ? result.coveragePackages : undefined;
 }
 
 // `coverageDisplayFilter` lives on `MultiRunResult` only; workspace runs never

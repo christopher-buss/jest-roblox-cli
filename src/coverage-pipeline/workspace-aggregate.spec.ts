@@ -99,8 +99,8 @@ describe(aggregateWorkspaceCoverage, () => {
 			},
 		]);
 
-		expect(Object.keys(result.files).sort()).toStrictEqual(["bar.ts", "foo.ts"]);
-		expect(result.files["foo.ts"]?.s).toStrictEqual({ "0": 1 });
+		expect(Object.keys(result.merged.files).sort()).toStrictEqual(["bar.ts", "foo.ts"]);
+		expect(result.merged.files["foo.ts"]!.s).toStrictEqual({ "0": 1 });
 	});
 
 	it("should skip packages whose coverageData is undefined", async () => {
@@ -122,7 +122,7 @@ describe(aggregateWorkspaceCoverage, () => {
 	});
 
 	it("should be a no-op when given no packages", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		onTestFinished(() => {
 			vol.reset();
@@ -130,7 +130,8 @@ describe(aggregateWorkspaceCoverage, () => {
 
 		const result = aggregateWorkspaceCoverage([]);
 
-		expect(result.files).toStrictEqual({});
+		expect(result.merged.files).toStrictEqual({});
+		expect(result.perPackage).toStrictEqual([]);
 	});
 
 	it("should drop files matching that package's own ignore patterns only", async () => {
@@ -179,7 +180,61 @@ describe(aggregateWorkspaceCoverage, () => {
 			},
 		]);
 
-		expect(Object.keys(result.files)).toStrictEqual(["bar/index.ts"]);
+		expect(Object.keys(result.merged.files)).toStrictEqual(["bar/index.ts"]);
+	});
+
+	it("should expose each package's own filtered universe alongside the merge", async () => {
+		expect.assertions(3);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const { mapCoverageToTypeScript } = await import("./mapper.ts");
+		const mapped = vi.mocked(mapCoverageToTypeScript);
+		mapped.mockImplementation((coverage) => {
+			const stem = Object.keys(coverage)[0]!.replace(/\.luau$/, "");
+			const tsPath = `${stem}/index.ts`;
+			return {
+				files: {
+					[tsPath]: {
+						b: {},
+						branchMap: {},
+						f: {},
+						fnMap: {},
+						path: tsPath,
+						s: { "0": 0 },
+						statementMap: {
+							"0": { end: { column: 1, line: 1 }, start: { column: 0, line: 1 } },
+						},
+					},
+				},
+			};
+		});
+
+		// A package with no coverageData contributes no universe entry — same
+		// skip rule the merge applies.
+		const result = aggregateWorkspaceCoverage([
+			{
+				coverageData: { "foo.luau": { s: {} } },
+				ignorePatterns: ["**/index.ts"],
+				manifest: manifestStub(),
+				pkg: "@halcyon/foo",
+			},
+			{
+				coverageData: { "bar.luau": { s: {} } },
+				manifest: manifestStub(),
+				pkg: "@halcyon/bar",
+			},
+			{ coverageData: undefined, manifest: manifestStub(), pkg: "@halcyon/baz" },
+		]);
+
+		expect(result.perPackage.map((entry) => entry.pkg)).toStrictEqual([
+			"@halcyon/foo",
+			"@halcyon/bar",
+		]);
+		expect(result.perPackage[0]!.universe.files).toStrictEqual({});
+		expect(Object.keys(result.perPackage[1]!.universe.files)).toStrictEqual(["bar/index.ts"]);
 	});
 
 	it("should keep mapper outputs disjoint when packages map to the same TS file", async () => {
@@ -239,7 +294,7 @@ describe(aggregateWorkspaceCoverage, () => {
 			},
 		]);
 
-		expect(Object.keys(result.files)).toStrictEqual(["shared.ts"]);
-		expect(result.files["shared.ts"]?.path).toBe("shared.ts");
+		expect(Object.keys(result.merged.files)).toStrictEqual(["shared.ts"]);
+		expect(result.merged.files["shared.ts"]!.path).toBe("shared.ts");
 	});
 });

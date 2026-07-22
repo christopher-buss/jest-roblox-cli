@@ -724,22 +724,25 @@ describe(runWorkspaceMode, () => {
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
 			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
-				files: {
-					"foo.ts": {
-						b: {},
-						branchMap: {},
-						f: {},
-						fnMap: {},
-						path: "foo.ts",
-						s: { "0": 3 },
-						statementMap: {
-							"0": {
-								end: { column: 1, line: 1 },
-								start: { column: 0, line: 1 },
+				merged: {
+					files: {
+						"foo.ts": {
+							b: {},
+							branchMap: {},
+							f: {},
+							fnMap: {},
+							path: "foo.ts",
+							s: { "0": 3 },
+							statementMap: {
+								"0": {
+									end: { column: 1, line: 1 },
+									start: { column: 0, line: 1 },
+								},
 							},
 						},
 					},
 				},
+				perPackage: [],
 			});
 
 			const result = await runWorkspaceMode(
@@ -800,7 +803,10 @@ describe(runWorkspaceMode, () => {
 
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
-			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({ files: {} });
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
+				merged: { files: {} },
+				perPackage: [],
+			});
 
 			await runWorkspaceMode(
 				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
@@ -843,7 +849,10 @@ describe(runWorkspaceMode, () => {
 			// reachable.
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
-			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({ files: {} });
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
+				merged: { files: {} },
+				perPackage: [],
+			});
 
 			const result = await runWorkspaceMode(
 				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
@@ -907,22 +916,25 @@ describe(runWorkspaceMode, () => {
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
 			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
-				files: {
-					"foo.ts": {
-						b: {},
-						branchMap: {},
-						f: {},
-						fnMap: {},
-						path: "foo.ts",
-						s: { "0": 3 },
-						statementMap: {
-							"0": {
-								end: { column: 1, line: 1 },
-								start: { column: 0, line: 1 },
+				merged: {
+					files: {
+						"foo.ts": {
+							b: {},
+							branchMap: {},
+							f: {},
+							fnMap: {},
+							path: "foo.ts",
+							s: { "0": 3 },
+							statementMap: {
+								"0": {
+									end: { column: 1, line: 1 },
+									start: { column: 0, line: 1 },
+								},
 							},
 						},
 					},
 				},
+				perPackage: [],
 			});
 
 			const result = await runWorkspaceMode(
@@ -930,6 +942,89 @@ describe(runWorkspaceMode, () => {
 			);
 
 			expect(result.coverageMapped?.files["foo.ts"]).toBeDefined();
+		});
+
+		it("should surface per-package coverage gates with each package's own threshold", async () => {
+			expect.assertions(3);
+
+			setupHappyPath();
+			const manifest = {
+				buildId: "test-build-id",
+				files: {},
+				generatedAt: "x",
+				instrumenterVersion: 2,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				shadowDir: "/shadow",
+				version: MANIFEST_VERSION,
+			};
+			mockRunWorkspace([
+				{
+					coverageManifest: manifest,
+					coverageThreshold: { statements: 90 },
+					displayName: "@halcyon/foo",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult({
+						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+					}),
+				},
+				// No declared threshold — the gate entry must omit it so the
+				// report layer falls back to the workspace root's value.
+				{
+					coverageManifest: manifest,
+					displayName: "@halcyon/bar",
+					pkg: "@halcyon/bar",
+					result: makeExecuteResult({
+						coverageData: { "out/bar.luau": { s: { "1": 1 } } },
+					}),
+				},
+			]);
+
+			const fooUniverse = { files: {} };
+			const barUniverse = { files: {} };
+			const { aggregateWorkspaceCoverage } =
+				await import("../coverage-pipeline/workspace-aggregate.ts");
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
+				merged: { files: {} },
+				perPackage: [
+					{ pkg: "@halcyon/foo", universe: fooUniverse },
+					{ pkg: "@halcyon/bar", universe: barUniverse },
+				],
+			});
+
+			const result = await runWorkspaceMode(
+				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
+			);
+
+			expect(result.coveragePackages).toStrictEqual([
+				{
+					coverageThreshold: { statements: 90 },
+					pkg: "@halcyon/foo",
+					universe: fooUniverse,
+				},
+				{ pkg: "@halcyon/bar", universe: barUniverse },
+			]);
+			expect(result.coveragePackages![0]!.universe).toBe(fooUniverse);
+			expect(result.coveragePackages![1]!.universe).toBe(barUniverse);
+		});
+
+		it("should leave coveragePackages undefined when no package carries a manifest", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			mockRunWorkspace([
+				{
+					displayName: "@halcyon/foo",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult(),
+				},
+			]);
+
+			const result = await runWorkspaceMode(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
+
+			expect(result.coveragePackages).toBeUndefined();
 		});
 	});
 
