@@ -13,6 +13,7 @@ import type {
 	BackendTiming,
 	ProjectBackendResult,
 	ProjectJob,
+	RawBackendEntry,
 	StreamingHooks,
 } from "./backends/interface.ts";
 import { applySnapshotFormatDefaults } from "./config/loader.ts";
@@ -32,7 +33,11 @@ import {
 	DEFAULT_MAX_FAILURES,
 	findFormatterOptions,
 } from "./formatters/utils.ts";
-import { LuauScriptError, type SnapshotWrites } from "./reporter/parser.ts";
+import {
+	extractLuauTimingFromOutput,
+	LuauScriptError,
+	type SnapshotWrites,
+} from "./reporter/parser.ts";
 import { createSnapshotPathResolver } from "./snapshot/path-resolver.ts";
 import { createSourceMapper, type SourceMapper } from "./source-mapper/index.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
@@ -304,6 +309,11 @@ export async function runProjects(options: RunProjectsOptions): Promise<RunProje
 			// absolute numbers the backend already measured itself —
 			// `record` injects them directly instead of re-timing in JS.
 			recordBackendTimingSpans(timing, result.timing);
+			// Same idea for the per-VM Luau phase breakdown: extracted here
+			// (rather than from the parsed `ProjectBackendResult` in
+			// `processResults` below) so the spans land under this frame
+			// instead of the sibling `processResults` frame.
+			recordLuauTimingSpans(timing, result.rawResults);
 			return result;
 		},
 	);
@@ -438,6 +448,42 @@ function recordBackendTimingSpans(timing: TimingCollector, backendTiming: Backen
 	}
 
 	timing.record("executionMs", backendTiming.executionMs);
+}
+
+function recordLuauPhases(timing: TimingCollector, luauTiming: Record<string, number>): void {
+	for (const [phase, seconds] of Object.entries(luauTiming)) {
+		if (phase !== "total") {
+			timing.record(`luau.${phase}`, seconds * 1000);
+		}
+	}
+}
+
+// Surfaces each project's Luau-side phase breakdown (findJest, jestRunCLI,
+// etc.) as nested spans of `backend.runTests`, matching uploadMs/executionMs.
+// Phases are prefixed `luau.` so they group together and read distinctly
+// from the host-measured spans; repeated phases across projects accumulate,
+// same as uploadMs. The raw `total` key is skipped — it's the Luau-measured
+// wall clock for the whole run, and a second "total" leaf next to the host's
+// own executionMs would read as double-counting even though the tree math
+// doesn't actually double it.
+//
+// Gated on `timing.enabled` (unlike `recordBackendTimingSpans`, whose
+// `record` calls are already free): extracting `_timing` re-parses each
+// project's full jestOutput, which is wasted work on an ordinary run where
+// TIMING isn't set (the Luau side doesn't even emit `_timing` in that case)
+// and would otherwise put a parse/schema-assert failure on the
+// `backend.runTests` frame of every non-debug run.
+function recordLuauTimingSpans(timing: TimingCollector, rawResults: Array<RawBackendEntry>): void {
+	if (!timing.enabled) {
+		return;
+	}
+
+	for (const raw of rawResults) {
+		const luauTiming = extractLuauTimingFromOutput(raw.entry.jestOutput);
+		if (luauTiming !== undefined) {
+			recordLuauPhases(timing, luauTiming);
+		}
+	}
 }
 
 const EXIT_CODE_MESSAGE = /^Exited with code: \d+$/;
@@ -817,7 +863,10 @@ function processProjectResult(
 				})
 			: "";
 
-	if (luauTiming !== undefined) {
+	// Workspace runs (deferFormatting) surface these phases as nested
+	// `luau.*` spans in the collector tree instead; the flat print would
+	// duplicate them unindented above it, once per project.
+	if (luauTiming !== undefined && deferFormatting !== true) {
 		printLuauTiming(luauTiming);
 	}
 

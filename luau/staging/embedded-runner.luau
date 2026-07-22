@@ -12,6 +12,7 @@ local MemoryStoreService = game:GetService("MemoryStoreService")
 local InstanceResolver = require("../instance-resolver")
 local InterceptWriteable = require("../intercept-writeable")
 local Materializer = require("./materializer")
+local PhaseTiming = require("../phase-timing")
 local PromiseError = require("../promise-error")
 local SnapshotPatch = require("../snapshot-patch")
 
@@ -28,6 +29,7 @@ export type EntryPayload = {
 		setupFiles: { string }?,
 		setupFilesAfterEnv: { string }?,
 		_coverage: boolean?,
+		_timing: boolean?,
 		[string]: any,
 	},
 }
@@ -70,6 +72,7 @@ type JestResultPayload = {
 	value: any?,
 	err: any?,
 	_coverage: { [string]: any }?,
+	_timing: { [string]: number }?,
 }
 
 local function resolveSetupPaths(paths: { string }?): { Instance }?
@@ -101,7 +104,12 @@ local function runEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload
 ): (boolean, string, SnapshotWrites?, string?, string?)
+	local t0 = os.clock()
+	local timingEnabled = entry.config._timing == true
+
+	local t_findJest0 = os.clock()
 	local JestModule = InstanceResolver.getJest(entry.config)
+	local t_findJest = os.clock()
 
 	-- Per-entry Game Output capture. Connected before SnapshotPatch.patch
 	-- so any patch-time warning (e.g. RobloxShared shape changes) lands in
@@ -125,7 +133,9 @@ local function runEntry(
 	-- saves the live getDataModelService each call, so re-patching without
 	-- unpatch would freeze the previous mock as the restoration target.
 	local snapshotWrites: SnapshotWrites = {}
+	local t_patchSnapshot0 = os.clock()
 	local patchState = SnapshotPatch.patch(JestModule, snapshotWrites)
+	local t_patchSnapshot = os.clock()
 
 	-- Intercept Jest's stdout/stderr around runCLI so per-pkg failure messages
 	-- (e.g. "No tests found, exiting with code 1") are captured into the
@@ -149,8 +159,11 @@ local function runEntry(
 	-- next package's patch would save the stale mock as "original",
 	-- causing cross-package contamination.
 	local ok, jestResultOrError = pcall(function()
+		local t_requireJest0 = os.clock()
 		local Jest = (require :: any)(JestModule)
+		local t_requireJest = os.clock()
 
+		local t_resolveProjects0 = os.clock()
 		local projectInstances = {}
 		if entry.config.projects then
 			for _, projectPath in entry.config.projects do
@@ -158,13 +171,16 @@ local function runEntry(
 			end
 		end
 		entry.config.projects = {}
+		local t_resolveProjects = os.clock()
 
 		-- Resolve setupFiles / setupFilesAfterEnv from DataModel-path
 		-- strings to ModuleScript Instances. Jest expects Instances;
 		-- without this the run crashes when setup files are configured
 		-- at the package level.
+		local t_resolveSetupFiles0 = os.clock()
 		entry.config.setupFiles = resolveSetupPaths(entry.config.setupFiles) :: any
 		entry.config.setupFilesAfterEnv = resolveSetupPaths(entry.config.setupFilesAfterEnv) :: any
+		local t_resolveSetupFiles = os.clock()
 
 		local coverageEnabled = entry.config._coverage == true
 		if coverageEnabled then
@@ -175,7 +191,13 @@ local function runEntry(
 			entry.config._coverage = nil :: any
 		end
 
+		-- Strip before Jest.runCLI, mirroring runner.luau — per-entry config
+		-- table, so this only affects this entry, not siblings in the batch.
+		entry.config._timing = nil :: any
+
+		local t_jestRunCLI0 = os.clock()
 		local result = Jest.runCLI(callingScript, entry.config, projectInstances):expect()
+		local t_jestRunCLI = os.clock()
 
 		local payload: JestResultPayload = {
 			success = true,
@@ -184,6 +206,16 @@ local function runEntry(
 		if coverageEnabled then
 			payload._coverage = _G.__jest_roblox_cov
 		end
+
+		payload._timing = PhaseTiming.build(timingEnabled, {
+			{ name = "findJest", seconds = t_findJest - t_findJest0 },
+			{ name = "patchSnapshot", seconds = t_patchSnapshot - t_patchSnapshot0 },
+			{ name = "requireJest", seconds = t_requireJest - t_requireJest0 },
+			{ name = "resolveProjects", seconds = t_resolveProjects - t_resolveProjects0 },
+			{ name = "resolveSetupFiles", seconds = t_resolveSetupFiles - t_resolveSetupFiles0 },
+			{ name = "jestRunCLI", seconds = t_jestRunCLI - t_jestRunCLI0 },
+			{ name = "total", seconds = os.clock() - t0 },
+		})
 
 		return HttpService:JSONEncode(payload)
 	end)

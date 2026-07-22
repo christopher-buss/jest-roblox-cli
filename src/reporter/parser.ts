@@ -136,6 +136,43 @@ const PROMISE_TRACE_HEADER = /^-- Promise\.Error\(/;
 // `path:N:msg` from Luau `error(msg, 0)` calls that don't add a space.
 const PROMISE_TRACE_CAUSE_LINE = /:\d+:\s*(.+)$/;
 
+/**
+ * Standalone extraction of the `_timing` field from a raw envelope entry's
+ * `jestOutput`, for callers that want the Luau phase breakdown without
+ * running the full `parseJestOutput` pipeline (schema validation,
+ * coverage/snapshot extraction) — namely the orchestrator surfacing it into
+ * the host `TimingCollector` span tree while `backend.runTests` is still on
+ * the stack. Returns undefined when no JSON candidate is found; mirrors
+ * `parseJestOutput`'s assumption that a found candidate always parses (its
+ * source, `findJestJsonCandidate`, only ever returns pre-validated JSON).
+ */
+export function extractLuauTimingFromOutput(
+	jestOutput: string,
+): Record<string, number> | undefined {
+	const candidate = findJestJsonCandidate(jestOutput);
+	if (candidate === undefined) {
+		return undefined;
+	}
+
+	return extractLuauTiming(jestEnvelopeSchema.assert(JSON.parse(candidate)));
+}
+
+function extractLuauTiming(parsed: Record<string, unknown>): Record<string, number> | undefined {
+	const timing = parsed["_timing"];
+	if (timing === undefined || timing === null || typeof timing !== "object") {
+		return undefined;
+	}
+
+	const record: Record<string, number> = {};
+	for (const [key, value] of Object.entries(timing)) {
+		if (typeof value === "number") {
+			record[key] = value;
+		}
+	}
+
+	return Object.keys(record).length > 0 ? record : undefined;
+}
+
 function looksLikePromiseTrace(text: string): boolean {
 	return PROMISE_TRACE_HEADER.test(text);
 }
@@ -182,22 +219,6 @@ function extractExecutionError(object: Record<string, unknown>): string {
 	}
 
 	return errorValue;
-}
-
-function extractLuauTiming(parsed: Record<string, unknown>): Record<string, number> | undefined {
-	const timing = parsed["_timing"];
-	if (timing === undefined || timing === null || typeof timing !== "object") {
-		return undefined;
-	}
-
-	const record: Record<string, number> = {};
-	for (const [key, value] of Object.entries(timing)) {
-		if (typeof value === "number") {
-			record[key] = value;
-		}
-	}
-
-	return Object.keys(record).length > 0 ? record : undefined;
 }
 
 function extractCoverageData(parsed: Record<string, unknown>): RawCoverageData | undefined {

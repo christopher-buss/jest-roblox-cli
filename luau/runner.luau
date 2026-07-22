@@ -5,6 +5,7 @@ local LogService = game:GetService("LogService")
 local InstanceResolver = require("./instance-resolver")
 local InterceptWriteable = require("./intercept-writeable")
 local PerTestCoverage = require("./per-test-coverage")
+local PhaseTiming = require("./phase-timing")
 local PromiseError = require("./promise-error")
 local SetupTiming = require("./setup-timing")
 local SnapshotPatch = require("./snapshot-patch")
@@ -211,17 +212,15 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 			result._setup = setupSeconds
 		end
 
-		if timingEnabled then
-			result._timing = {
-				findJest = t_findJest - t_findJest0,
-				patchSnapshot = t_patchSnapshot - t_patchSnapshot0,
-				requireJest = t_requireJest - t_requireJest0,
-				resolveProjects = t_resolveProjects - t_resolveProjects0,
-				resolveSetupFiles = t_resolveSetupFiles - t_resolveSetupFiles0,
-				jestRunCLI = t_jestRunCLI - t_jestRunCLI0,
-				total = os.clock() - t0,
-			}
-		end
+		result._timing = PhaseTiming.build(timingEnabled, {
+			{ name = "findJest", seconds = t_findJest - t_findJest0 },
+			{ name = "patchSnapshot", seconds = t_patchSnapshot - t_patchSnapshot0 },
+			{ name = "requireJest", seconds = t_requireJest - t_requireJest0 },
+			{ name = "resolveProjects", seconds = t_resolveProjects - t_resolveProjects0 },
+			{ name = "resolveSetupFiles", seconds = t_resolveSetupFiles - t_resolveSetupFiles0 },
+			{ name = "jestRunCLI", seconds = t_jestRunCLI - t_jestRunCLI0 },
+			{ name = "total", seconds = os.clock() - t0 },
+		})
 
 		if next(snapshotWrites) then
 			result._snapshotWrites = snapshotWrites

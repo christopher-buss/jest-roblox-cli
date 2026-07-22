@@ -8,6 +8,15 @@ export interface CreateTimingCollectorOptions {
 }
 
 export interface TimingCollector {
+	/**
+	 * Whether this collector actually records/emits anything (`TIMING` env var
+	 * set, or an explicit `enabled: true` override). Callers whose work exists
+	 * only to feed `record()` — e.g. parsing a raw envelope purely to extract a
+	 * value to record — should check this first and skip that work entirely
+	 * when disabled, rather than doing it and letting `record()` silently
+	 * discard the result.
+	 */
+	readonly enabled: boolean;
 	flushTimingReport: () => void;
 	profile: <T>(name: string, func: () => T extends Promise<unknown> ? never : T) => T;
 	profileAsync: <T>(name: string, func: () => Promise<T>) => Promise<T>;
@@ -122,7 +131,7 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 		roots.clear();
 	}
 
-	return { flushTimingReport, profile, profileAsync, record };
+	return { enabled, flushTimingReport, profile, profileAsync, record };
 }
 
 /**

@@ -23,6 +23,7 @@ import {
 } from "./executor.ts";
 import type { SnapshotWrites } from "./reporter/parser.ts";
 import { parseJestOutput } from "./reporter/parser.ts";
+import * as parserModule from "./reporter/parser.ts";
 import { createTimingCollector } from "./timing/orchestration-collector.ts";
 import type { JestResult } from "./types/jest-result.ts";
 
@@ -610,6 +611,144 @@ describe("execute single-project helper", () => {
 		expect(lines.some((line) => line.includes("uploadMs"))).toBeFalse();
 	});
 
+	it("should record luau phase timings nested under backend.runTests", async () => {
+		expect.assertions(2);
+
+		const lines: Array<string> = [];
+		const timing = createTimingCollector({
+			enabled: true,
+			sink: (line) => {
+				lines.push(line);
+			},
+		});
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async () => {
+				return singleEntryResult({
+					luauTiming: { findJest: 0.1, jestRunCLI: 2.5 },
+					result: createPassingResult(),
+				});
+			},
+		};
+
+		await runProjects({
+			backend,
+			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			startTime: Date.now(),
+			timing,
+			version: "0.0.0-test",
+		});
+
+		timing.flushTimingReport();
+
+		expect(lines).toContain("[TIMING]   luau.findJest: 100ms");
+		expect(lines).toContain("[TIMING]   luau.jestRunCLI: 2500ms");
+	});
+
+	it("should skip the raw luau total phase to avoid a second host total", async () => {
+		expect.assertions(2);
+
+		const lines: Array<string> = [];
+		const timing = createTimingCollector({
+			enabled: true,
+			sink: (line) => {
+				lines.push(line);
+			},
+		});
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async () => {
+				return singleEntryResult({
+					luauTiming: { findJest: 0.1, total: 3 },
+					result: createPassingResult(),
+				});
+			},
+		};
+
+		await runProjects({
+			backend,
+			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			startTime: Date.now(),
+			timing,
+			version: "0.0.0-test",
+		});
+
+		timing.flushTimingReport();
+
+		expect(lines).toContain("[TIMING]   luau.findJest: 100ms");
+		expect(lines.some((line) => line.includes("luau.total"))).toBeFalse();
+	});
+
+	it("should accumulate luau phase timings across multiple projects", async () => {
+		expect.assertions(1);
+
+		const lines: Array<string> = [];
+		const timing = createTimingCollector({
+			enabled: true,
+			sink: (line) => {
+				lines.push(line);
+			},
+		});
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async () => {
+				return multiEntryResult([
+					{ luauTiming: { findJest: 0.10025 }, result: createPassingResult() },
+					{ luauTiming: { findJest: 0.20035 }, result: createPassingResult() },
+				]);
+			},
+		};
+
+		await runProjects({
+			backend,
+			projects: [
+				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
+				{ config: DEFAULT_CONFIG, testFiles: ["src/b.spec.ts"] },
+			],
+			startTime: Date.now(),
+			timing,
+			version: "0.0.0-test",
+		});
+
+		timing.flushTimingReport();
+
+		// 100.25ms + 200.35ms = 300.6ms — sub-ms fractions must survive until
+		// the emit-time round, not be rounded away per project.
+		expect(lines).toContain("[TIMING]   luau.findJest: 301ms");
+	});
+
+	it("should skip luau timing extraction entirely when the collector is disabled", async () => {
+		expect.assertions(2);
+
+		const extractSpy = vi.spyOn(parserModule, "extractLuauTimingFromOutput");
+
+		const timing = createTimingCollector({ enabled: false });
+
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async () => {
+				return singleEntryResult({
+					luauTiming: { findJest: 0.1 },
+					result: createPassingResult(),
+				});
+			},
+		};
+
+		const { results } = await runProjects({
+			backend,
+			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			startTime: Date.now(),
+			timing,
+			version: "0.0.0-test",
+		});
+
+		expect(results[0]?.exitCode).toBe(0);
+		expect(extractSpy).not.toHaveBeenCalled();
+	});
+
 	it("should return empty output when deferFormatting is true", async () => {
 		expect.assertions(2);
 
@@ -626,6 +765,61 @@ describe("execute single-project helper", () => {
 
 		expect(result.output).toBe("");
 		expect(result.timing.totalMs).toBeGreaterThanOrEqual(0);
+	});
+
+	it("should flat-print luau timing when deferFormatting is not set", async () => {
+		expect.assertions(1);
+
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async () => {
+				return singleEntryResult({
+					luauTiming: { findJest: 0.1 },
+					result: createPassingResult(),
+				});
+			},
+		};
+
+		await executeSingle({
+			backend,
+			config: DEFAULT_CONFIG,
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		const written = stderrSpy.mock.calls.map(([chunk]) => String(chunk));
+		stderrSpy.mockRestore();
+
+		expect(written).toContain("[TIMING] findJest: 100ms\n");
+	});
+
+	it("should not flat-print luau timing when deferFormatting is true", async () => {
+		expect.assertions(1);
+
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const backend: Backend = {
+			kind: "studio",
+			runTests: async () => {
+				return singleEntryResult({
+					luauTiming: { findJest: 0.1 },
+					result: createPassingResult(),
+				});
+			},
+		};
+
+		await executeSingle({
+			backend,
+			config: DEFAULT_CONFIG,
+			deferFormatting: true,
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		const written = stderrSpy.mock.calls.map(([chunk]) => String(chunk));
+		stderrSpy.mockRestore();
+
+		expect(written.some((chunk) => chunk.includes("[TIMING]"))).toBeFalse();
 	});
 
 	it("should return coverageData when backend provides it", async () => {

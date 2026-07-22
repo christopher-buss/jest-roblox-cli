@@ -271,6 +271,42 @@ describe(createTimingCollector, () => {
 		expect(lines).toStrictEqual([]);
 	});
 
+	it("should expose enabled true when constructed with enabled: true", () => {
+		expect.assertions(1);
+
+		const collector = createTimingCollector({ enabled: true });
+
+		expect(collector.enabled).toBeTrue();
+	});
+
+	it("should expose enabled false when constructed with enabled: false", () => {
+		expect.assertions(1);
+
+		const collector = createTimingCollector({ enabled: false });
+
+		expect(collector.enabled).toBeFalse();
+	});
+
+	it("should expose enabled true when the TIMING env var is present", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("TIMING", "");
+
+		const collector = createTimingCollector();
+
+		expect(collector.enabled).toBeTrue();
+	});
+
+	it("should expose enabled false when the TIMING env var is absent", () => {
+		expect.assertions(1);
+
+		vi.stubEnv("TIMING", undefined);
+
+		const collector = createTimingCollector();
+
+		expect(collector.enabled).toBeFalse();
+	});
+
 	it("should use a real clock by default", () => {
 		expect.assertions(1);
 

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { JestResult } from "../types/jest-result.ts";
-import { extractJsonFromOutput, LuauScriptError, parseJestOutput } from "./parser.ts";
+import {
+	extractJsonFromOutput,
+	extractLuauTimingFromOutput,
+	LuauScriptError,
+	parseJestOutput,
+} from "./parser.ts";
 
 describe(extractJsonFromOutput, () => {
 	it("should extract JSON from output with surrounding text", () => {
@@ -50,6 +55,50 @@ More logs after
 		const json = extractJsonFromOutput(output);
 
 		expect(json).toBeUndefined();
+	});
+});
+
+describe(extractLuauTimingFromOutput, () => {
+	it("should extract the _timing phases from a raw jestOutput string", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			_timing: { findJest: 0.1, jestRunCLI: 2.5 },
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 0,
+			success: true,
+			testResults: [],
+		});
+
+		expect(extractLuauTimingFromOutput(output)).toStrictEqual({
+			findJest: 0.1,
+			jestRunCLI: 2.5,
+		});
+	});
+
+	it("should return undefined when no JSON candidate is found", () => {
+		expect.assertions(1);
+
+		expect(extractLuauTimingFromOutput("Just plain text output")).toBeUndefined();
+	});
+
+	it("should return undefined when _timing is absent", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 0,
+			success: true,
+			testResults: [],
+		});
+
+		expect(extractLuauTimingFromOutput(output)).toBeUndefined();
 	});
 });
 
