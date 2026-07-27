@@ -66,8 +66,6 @@ describe(mapFromSourceMap, () => {
 
 		onTestFinished(clearMapCache);
 
-		vi.clearAllMocks();
-
 		const sourceMap = JSON.stringify({
 			file: "output.luau",
 			mappings: "AAAA",

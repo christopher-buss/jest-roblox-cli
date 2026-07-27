@@ -2781,9 +2781,8 @@ describe("formatSnapshotCallSnippet getSourceSnippet guard via formatFailure", (
 		const filePath = path.join(os.tmpdir(), `formatter-snap-guard-${Date.now()}.ts`);
 		fs.writeFileSync(filePath, "expect(x).toMatchSnapshot();", "utf-8");
 
-		const spy = vi.spyOn(sourceMapperModule, "getSourceSnippet").mockReturnValue(undefined);
+		vi.spyOn(sourceMapperModule, "getSourceSnippet").mockReturnValue(undefined);
 		onTestFinished(() => {
-			spy.mockRestore();
 			fs.unlinkSync(filePath);
 		});
 

@@ -4,7 +4,7 @@ import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import {
@@ -433,9 +433,6 @@ describe(isCompositeProject, () => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		onTestFinished(() => {
-			stderrSpy.mockRestore();
-		});
 
 		vi.mocked(fs.readFileSync).mockImplementation(() => {
 			throw new Error("ENOENT");
@@ -451,9 +448,6 @@ describe(isCompositeProject, () => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		onTestFinished(() => {
-			stderrSpy.mockRestore();
-		});
 
 		vi.mocked(fs.readFileSync).mockImplementation(() => {
 			// eslint-disable-next-line ts/only-throw-error -- testing non-Error throw
@@ -470,9 +464,6 @@ describe(isCompositeProject, () => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		onTestFinished(() => {
-			stderrSpy.mockRestore();
-		});
 
 		vi.mocked(fs.readFileSync).mockImplementation(() => {
 			throw new Error("ENOENT");

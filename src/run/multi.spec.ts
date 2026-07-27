@@ -1554,9 +1554,6 @@ describe(runMultiProject, () => {
 			"/test/src/server/jest.config.luau",
 		]);
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		onTestFinished(() => {
-			stderr.mockRestore();
-		});
 		seedProjectFiles();
 
 		await runMultiProject({
