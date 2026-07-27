@@ -6,8 +6,7 @@ export default isentinel({
 	namedConfigs: true,
 	roblox: false,
 	rules: {
-		"max-lines": "off",
-		"max-lines-per-function": "off",
+		"package-json/restrict-private-properties": "off",
 	},
 	test: {
 		vitest: {

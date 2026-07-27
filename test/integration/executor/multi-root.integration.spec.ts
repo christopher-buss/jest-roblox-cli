@@ -128,16 +128,14 @@ describe("executor multi-root pipeline", () => {
 		// dataModel paths. The Open Cloud backend feeds this config straight into
 		// generateTestScript, so the script body necessarily mentions both
 		// mounts.
-		expect(captured?.jobs).toHaveLength(1);
-		expect(captured?.jobs[0]?.config.projects).toStrictEqual([SHARED_MOUNT, SERVER_MOUNT]);
+		expect(captured!.jobs).toHaveLength(1);
+		expect(captured!.jobs[0]!.config.projects).toStrictEqual([SHARED_MOUNT, SERVER_MOUNT]);
 
 		const script = generateTestScript(
-			(captured?.jobs ?? []).map((entry) => {
-				return { config: entry.config, testFiles: entry.testFiles };
-			}),
+			captured!.jobs.map((entry) => ({ config: entry.config, testFiles: entry.testFiles })),
 		);
 
 		expect(script).toMatch(new RegExp(`${SHARED_MOUNT}[\\s\\S]*${SERVER_MOUNT}`));
-		expect(results[0]?.output).toContain("2 passed");
+		expect(results[0]!.output).toContain("2 passed");
 	});
 });

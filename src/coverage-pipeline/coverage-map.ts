@@ -61,7 +61,7 @@ export function readCoverageMap(filePath: string): ReadCoverageMapResult {
 		throw err;
 	}
 
-	let parsed: unknown;
+	let parsed: JSONValue;
 	try {
 		parsed = JSON.parse(contents);
 	} catch {

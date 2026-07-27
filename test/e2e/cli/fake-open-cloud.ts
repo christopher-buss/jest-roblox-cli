@@ -7,7 +7,13 @@ import {
 
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+	createServer,
+	type IncomingMessage,
+	type RequestListener,
+	type Server,
+	type ServerResponse,
+} from "node:http";
 import { onTestFinished } from "vitest";
 
 const createTaskRequestSchema = type({ script: "string", timeout: "string" });
@@ -80,88 +86,50 @@ interface FakeOpenCloudServer {
 	uploadCount: number;
 }
 
+/**
+ * Mutable per-server state, threaded through every route handler. The
+ * `counters` are read back by the returned server's `uploadCount` getter, so
+ * they must stay one shared object rather than copied numbers.
+ */
+interface FakeOpenCloudState {
+	calls: FakeOpenCloudServer["calls"];
+	counters: { itemSeq: number; taskIndex: number; uploadCount: number };
+	pollCounts: Map<string, number>;
+	queueAdds: FakeOpenCloudServer["queueAdds"];
+	queueDiscards: FakeOpenCloudServer["queueDiscards"];
+	queues: Map<string, Array<QueuedItem>>;
+	requests: FakeOpenCloudServer["requests"];
+	taskQueue: Array<FakeOpenCloudTask>;
+	taskResults: Map<string, FakeOpenCloudTask>;
+}
+
 export async function startFakeOpenCloudServer(
 	tasks: Array<FakeOpenCloudTask>,
 ): Promise<FakeOpenCloudServer> {
-	const calls: FakeOpenCloudServer["calls"] = [];
-	const requests: FakeOpenCloudServer["requests"] = [];
-	const queueAdds: FakeOpenCloudServer["queueAdds"] = [];
-	const queueDiscards: FakeOpenCloudServer["queueDiscards"] = [];
-	const queues = new Map<string, Array<QueuedItem>>();
-	const taskQueue = [...tasks];
-	const taskResults = new Map<string, FakeOpenCloudTask>();
-	const pollCounts = new Map<string, number>();
-	let uploadCount = 0;
-	let taskIndex = 0;
-	let itemSeq = 0;
+	const state: FakeOpenCloudState = {
+		calls: [],
+		counters: { itemSeq: 0, taskIndex: 0, uploadCount: 0 },
+		pollCounts: new Map(),
+		queueAdds: [],
+		queueDiscards: [],
+		queues: new Map(),
+		requests: [],
+		taskQueue: [...tasks],
+		taskResults: new Map(),
+	};
 
-	const server = createServer((request, response) => {
-		const apiKeyHeader = request.headers["x-api-key"];
-		calls.push({
-			apiKey: typeof apiKeyHeader === "string" ? apiKeyHeader : undefined,
-			method: request.method ?? "",
-			url: request.url ?? "",
-		});
-
-		void handleRequest({
-			pollCounts,
-			queueAdds,
-			queueDiscards,
-			queues,
-			request,
-			requests,
-			response,
-			taskQueue,
-			taskResults,
-			updateItemSeq: () => {
-				itemSeq += 1;
-				return itemSeq;
-			},
-			updateTaskIndex: () => {
-				taskIndex += 1;
-				return taskIndex;
-			},
-			updateUploadCount: () => {
-				uploadCount += 1;
-				return uploadCount;
-			},
-		});
-	});
-
-	await new Promise<void>((resolve, reject) => {
-		server.once("error", reject);
-		server.listen(0, "127.0.0.1", () => {
-			server.off("error", reject);
-			resolve();
-		});
-	});
-
-	onTestFinished(async () => {
-		await new Promise<void>((resolve, reject) => {
-			server.close((error) => {
-				if (error) {
-					reject(error);
-					return;
-				}
-
-				resolve();
-			});
-		});
-	});
-
-	const address = server.address();
-	if (address === null || typeof address === "string") {
-		throw new Error("Fake Open Cloud server failed to bind to a TCP port");
-	}
+	const server = createServer(createRequestListener(state));
+	await listenOnEphemeralPort(server);
+	closeServerWhenTestFinishes(server);
 
 	return {
-		baseUrl: `http://127.0.0.1:${address.port}`,
-		calls,
-		queueAdds,
-		queueDiscards,
-		requests,
+		baseUrl: resolveBaseUrl(server),
+		calls: state.calls,
+		queueAdds: state.queueAdds,
+		queueDiscards: state.queueDiscards,
+		requests: state.requests,
 		get uploadCount() {
-			return uploadCount;
+			return state.counters.uploadCount;
 		},
 	};
 }
@@ -175,16 +143,67 @@ async function readBody(request: IncomingMessage): Promise<string> {
 	return Buffer.concat(chunks).toString("utf-8");
 }
 
-function handlePoll(options: {
-	pollCounts: Map<string, number>;
+/** The auto-wrapped envelope entry returned when no `rawOutput` is supplied. */
+function buildJestEnvelope(queuedTask: FakeOpenCloudTask): string {
+	return JSON.stringify({
+		entries: [
+			{
+				elapsedMs: queuedTask.elapsedMs ?? 25,
+				gameOutput: queuedTask.gameOutput,
+				jestOutput: queuedTask.jestOutput ?? "",
+				pkg: queuedTask.pkg,
+				project: queuedTask.project,
+				snapshotWrites: queuedTask.snapshotWrites,
+			},
+		],
+	});
+}
+
+function buildCompletedTaskBody({
+	queuedTask,
+	taskPath,
+}: {
+	queuedTask: FakeOpenCloudTask;
+	taskPath: string;
+}): ReturnType<typeof validInProgressTaskBody> {
+	if (queuedTask.state === "FAILED") {
+		return validInProgressTaskBody({
+			error: {
+				code: "SCRIPT_ERROR",
+				message: queuedTask.errorMessage ?? "Execution failed",
+			},
+			path: taskPath,
+			state: "FAILED",
+		});
+	}
+
+	if (queuedTask.rawOutput !== undefined) {
+		return validInProgressTaskBody({
+			output: { results: [queuedTask.rawOutput] },
+			path: taskPath,
+			state: "COMPLETE",
+		});
+	}
+
+	return validInProgressTaskBody({
+		output: { results: [buildJestEnvelope(queuedTask)] },
+		path: taskPath,
+		state: "COMPLETE",
+	});
+}
+
+function handlePoll({
+	response,
+	state,
+	url,
+}: {
 	response: ServerResponse;
-	taskResults: Map<string, FakeOpenCloudTask>;
+	state: FakeOpenCloudState;
 	url: URL;
 }): void {
-	const { pollCounts, response, taskResults, url } = options;
 	const taskPath = url.pathname.replace("/cloud/v2/", "");
-	const remainingPolls = pollCounts.get(taskPath);
-	const queuedTask = taskResults.get(taskPath);
+	const remainingPolls = state.pollCounts.get(taskPath);
+	const queuedTask = state.taskResults.get(taskPath);
 
 	if (queuedTask === undefined || remainingPolls === undefined) {
 		response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
@@ -193,7 +212,7 @@ function handlePoll(options: {
 	}
 
 	if (remainingPolls > 0) {
-		pollCounts.set(taskPath, remainingPolls - 1);
+		state.pollCounts.set(taskPath, remainingPolls - 1);
 		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
 		response.end(
 			JSON.stringify(validInProgressTaskBody({ path: taskPath, state: "PROCESSING" })),
@@ -201,62 +220,8 @@ function handlePoll(options: {
 		return;
 	}
 
-	if (queuedTask.state === "FAILED") {
-		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-		response.end(
-			JSON.stringify(
-				validInProgressTaskBody({
-					error: {
-						code: "SCRIPT_ERROR",
-						message: queuedTask.errorMessage ?? "Execution failed",
-					},
-					path: taskPath,
-					state: "FAILED",
-				}),
-			),
-		);
-		return;
-	}
-
-	if (queuedTask.rawOutput !== undefined) {
-		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-		response.end(
-			JSON.stringify(
-				validInProgressTaskBody({
-					output: { results: [queuedTask.rawOutput] },
-					path: taskPath,
-					state: "COMPLETE",
-				}),
-			),
-		);
-		return;
-	}
-
 	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-	response.end(
-		JSON.stringify(
-			validInProgressTaskBody({
-				output: {
-					results: [
-						JSON.stringify({
-							entries: [
-								{
-									elapsedMs: queuedTask.elapsedMs ?? 25,
-									gameOutput: queuedTask.gameOutput,
-									jestOutput: queuedTask.jestOutput ?? "",
-									pkg: queuedTask.pkg,
-									project: queuedTask.project,
-									snapshotWrites: queuedTask.snapshotWrites,
-								},
-							],
-						}),
-					],
-				},
-				path: taskPath,
-				state: "COMPLETE",
-			}),
-		),
-	);
+	response.end(JSON.stringify(buildCompletedTaskBody({ queuedTask, taskPath })));
 }
 
 function parseQueuePath(pathname: string): undefined | { queue: string; suffix: string } {
@@ -269,21 +234,42 @@ function parseQueuePath(pathname: string): undefined | { queue: string; suffix: 
 	return { queue: match[1] ?? "", suffix: match[2] ?? "" };
 }
 
-function handleQueueAdd(options: {
-	parsed: unknown;
+function isJsonObject(value: JSONValue): value is JSONObject {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The queue-add body's `data` field. Open Cloud rejects an absent or null
+ * value, so a fake handed one is being driven wrongly — fail loudly rather than
+ * enqueue a bogus item.
+ */
+function readItemData(parsed: JSONValue): Exclude<JSONValue, null> {
+	const data = isJsonObject(parsed) ? parsed["data"] : undefined;
+	if (data === undefined || data === null) {
+		throw new Error("Queue add request body must carry a non-null `data` value");
+	}
+
+	return data;
+}
+
+function handleQueueAdd({
+	parsed,
+	queue,
+	response,
+	state,
+}: {
+	parsed: JSONValue;
 	queue: string;
-	queueAdds: FakeOpenCloudServer["queueAdds"];
-	queues: Map<string, Array<QueuedItem>>;
 	response: ServerResponse;
-	updateItemSeq: () => number;
+	state: FakeOpenCloudState;
 }): void {
-	const { parsed, queue, queueAdds, queues, response, updateItemSeq } = options;
-	const itemValue = (parsed as { data: Exclude<JSONValue, null> }).data;
-	queueAdds.push({ queue, value: itemValue });
-	const itemId = `item-${updateItemSeq().toString()}`;
-	const items = queues.get(queue) ?? [];
+	const itemValue = readItemData(parsed);
+	state.queueAdds.push({ queue, value: itemValue });
+	state.counters.itemSeq += 1;
+	const itemId = `item-${state.counters.itemSeq.toString()}`;
+	const items = state.queues.get(queue) ?? [];
 	items.push({ id: itemId, value: itemValue });
-	queues.set(queue, items);
+	state.queues.set(queue, items);
 	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
 	response.end(
 		JSON.stringify(
@@ -296,15 +282,18 @@ function handleQueueAdd(options: {
 	);
 }
 
-function handleQueueRead(options: {
+function handleQueueRead({
+	queue,
+	response,
+	state,
+}: {
 	queue: string;
-	queues: Map<string, Array<QueuedItem>>;
 	response: ServerResponse;
+	state: FakeOpenCloudState;
 }): void {
-	const { queue, queues, response } = options;
-	const queued = queues.get(queue) ?? [];
+	const queued = state.queues.get(queue) ?? [];
 	const next = queued.shift();
-	queues.set(queue, queued);
+	state.queues.set(queue, queued);
 	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
 	if (next === undefined) {
 		response.end(JSON.stringify(validDequeueBody({ id: "read-empty", queueItems: [] })));
@@ -327,43 +316,49 @@ function handleQueueRead(options: {
 	);
 }
 
-function handleQueueDiscard(options: {
-	parsed: unknown;
+function handleQueueDiscard({
+	parsed,
+	queue,
+	response,
+	state,
+}: {
+	parsed: JSONValue;
 	queue: string;
-	queueDiscards: FakeOpenCloudServer["queueDiscards"];
 	response: ServerResponse;
+	state: FakeOpenCloudState;
 }): void {
-	const { parsed, queue, queueDiscards, response } = options;
-	const id = (parsed as { readId?: string }).readId ?? "";
-	queueDiscards.push({ id, queue });
+	const rawReadId = isJsonObject(parsed) ? parsed["readId"] : undefined;
+	const id = typeof rawReadId === "string" ? rawReadId : "";
+	state.queueDiscards.push({ id, queue });
 	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
 	response.end("{}");
 }
 
-async function handleQueueRequest(options: {
+function handleQueueRequest({
+	body,
+	queuePath,
+	response,
+	state,
+}: {
 	body: string;
-	queueAdds: FakeOpenCloudServer["queueAdds"];
-	queueDiscards: FakeOpenCloudServer["queueDiscards"];
 	queuePath: { queue: string; suffix: string };
-	queues: Map<string, Array<QueuedItem>>;
 	response: ServerResponse;
-	updateItemSeq: () => number;
-}): Promise<void> {
-	const { body, queueAdds, queueDiscards, queuePath, queues, response, updateItemSeq } = options;
+	state: FakeOpenCloudState;
+}): void {
 	const { queue, suffix } = queuePath;
-	const parsed = body === "" ? {} : JSON.parse(body);
+	const parsed: JSONValue = body === "" ? {} : JSON.parse(body);
 
 	switch (suffix) {
 		case "/items": {
-			handleQueueAdd({ parsed, queue, queueAdds, queues, response, updateItemSeq });
+			handleQueueAdd({ parsed, queue, response, state });
 			return;
 		}
 		case "/items:discard": {
-			handleQueueDiscard({ parsed, queue, queueDiscards, response });
+			handleQueueDiscard({ parsed, queue, response, state });
 			return;
 		}
 		case "/items:read": {
-			handleQueueRead({ queue, queues, response });
+			handleQueueRead({ queue, response, state });
 			return;
 		}
 	}
@@ -372,92 +367,135 @@ async function handleQueueRequest(options: {
 	response.end(JSON.stringify({ error: { message: `Unknown queue suffix: ${suffix}` } }));
 }
 
-async function handleRequest(options: {
-	pollCounts: Map<string, number>;
-	queueAdds: FakeOpenCloudServer["queueAdds"];
-	queueDiscards: FakeOpenCloudServer["queueDiscards"];
-	queues: Map<string, Array<QueuedItem>>;
-	request: IncomingMessage;
-	requests: FakeOpenCloudServer["requests"];
+function handlePublishVersion({
+	response,
+	state,
+}: {
 	response: ServerResponse;
-	taskQueue: Array<FakeOpenCloudTask>;
-	taskResults: Map<string, FakeOpenCloudTask>;
-	updateItemSeq: () => number;
-	updateTaskIndex: () => number;
-	updateUploadCount: () => number;
+	state: FakeOpenCloudState;
+}): void {
+	state.counters.uploadCount += 1;
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(
+		JSON.stringify(validPublishResponseBody({ versionNumber: state.counters.uploadCount })),
+	);
+}
+
+function handleCreateTask({
+	body,
+	response,
+	state,
+}: {
+	body: string;
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+}): void {
+	let parsed;
+	try {
+		parsed = createTaskRequestSchema.assert(JSON.parse(body));
+	} catch {
+		response.writeHead(400, { "content-type": JSON_CONTENT_TYPE });
+		response.end(JSON.stringify({ error: { message: "Invalid request body" } }));
+		return;
+	}
+
+	state.requests.push(parsed);
+
+	const nextTask = state.taskQueue.shift();
+	if (nextTask === undefined) {
+		response.writeHead(500, { "content-type": JSON_CONTENT_TYPE });
+		response.end(JSON.stringify({ error: { message: "No fake task queued" } }));
+		return;
+	}
+
+	state.counters.taskIndex += 1;
+	const taskIndex = String(state.counters.taskIndex);
+	const taskPath = `universes/123/places/456/versions/1/luau-execution-sessions/session-${taskIndex}/tasks/task-${taskIndex}`;
+	state.taskResults.set(taskPath, nextTask);
+	state.pollCounts.set(taskPath, nextTask.pollsBeforeComplete ?? 0);
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(JSON.stringify(validInProgressTaskBody({ path: taskPath })));
+}
+
+async function handleRequest({
+	request,
+	response,
+	state,
+}: {
+	request: IncomingMessage;
+	response: ServerResponse;
+	state: FakeOpenCloudState;
 }): Promise<void> {
-	const {
-		pollCounts,
-		queueAdds,
-		queueDiscards,
-		queues,
-		request,
-		requests,
-		response,
-		taskQueue,
-		taskResults,
-	} = options;
 	const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
 	if (request.method === "POST" && url.pathname.endsWith("/versions")) {
-		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-		response.end(
-			JSON.stringify(
-				validPublishResponseBody({ versionNumber: options.updateUploadCount() }),
-			),
-		);
+		handlePublishVersion({ response, state });
 		return;
 	}
 
 	const queuePath = parseQueuePath(url.pathname);
-	const { updateItemSeq } = options;
-	if (request.method === "POST" && queuePath !== undefined) {
-		await handleQueueRequest({
-			body: await readBody(request),
-			queueAdds,
-			queueDiscards,
-			queuePath,
-			queues,
-			response,
-			updateItemSeq,
-		});
+	if (queuePath !== undefined && request.method === "POST") {
+		handleQueueRequest({ body: await readBody(request), queuePath, response, state });
 		return;
 	}
 
 	if (request.method === "POST" && url.pathname.endsWith("/luau-execution-session-tasks")) {
-		const body = await readBody(request);
-		let parsed;
-		try {
-			parsed = createTaskRequestSchema.assert(JSON.parse(body));
-		} catch {
-			response.writeHead(400, { "content-type": JSON_CONTENT_TYPE });
-			response.end(JSON.stringify({ error: { message: "Invalid request body" } }));
-			return;
-		}
-
-		requests.push(parsed);
-
-		const nextTask = taskQueue.shift();
-		if (nextTask === undefined) {
-			response.writeHead(500, { "content-type": JSON_CONTENT_TYPE });
-			response.end(JSON.stringify({ error: { message: "No fake task queued" } }));
-			return;
-		}
-
-		const taskIndex = options.updateTaskIndex();
-		const taskPath = `universes/123/places/456/versions/1/luau-execution-sessions/session-${String(taskIndex)}/tasks/task-${String(taskIndex)}`;
-		taskResults.set(taskPath, nextTask);
-		pollCounts.set(taskPath, nextTask.pollsBeforeComplete ?? 0);
-		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-		response.end(JSON.stringify(validInProgressTaskBody({ path: taskPath })));
+		handleCreateTask({ body: await readBody(request), response, state });
 		return;
 	}
 
 	if (request.method === "GET" && url.pathname.startsWith("/cloud/v2/universes/")) {
-		handlePoll({ pollCounts, response, taskResults, url });
+		handlePoll({ response, state, url });
 		return;
 	}
 
 	response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
 	response.end(JSON.stringify({ error: { message: `Unhandled route: ${url.pathname}` } }));
+}
+
+function createRequestListener(state: FakeOpenCloudState): RequestListener {
+	return (request, response) => {
+		const apiKeyHeader = request.headers["x-api-key"];
+		state.calls.push({
+			apiKey: typeof apiKeyHeader === "string" ? apiKeyHeader : undefined,
+			method: request.method ?? "",
+			url: request.url ?? "",
+		});
+
+		void handleRequest({ request, response, state });
+	};
+}
+
+async function listenOnEphemeralPort(server: Server): Promise<void> {
+	await new Promise<void>((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			server.off("error", reject);
+			resolve();
+		});
+	});
+}
+
+function closeServerWhenTestFinishes(server: Server): void {
+	onTestFinished(async () => {
+		await new Promise<void>((resolve, reject) => {
+			server.close((error) => {
+				if (error) {
+					reject(error);
+					return;
+				}
+
+				resolve();
+			});
+		});
+	});
+}
+
+function resolveBaseUrl(server: Server): string {
+	const address = server.address();
+	if (address === null || typeof address === "string") {
+		throw new Error("Fake Open Cloud server failed to bind to a TCP port");
+	}
+
+	return `http://127.0.0.1:${address.port}`;
 }

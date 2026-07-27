@@ -1743,6 +1743,7 @@ describe(mergeProjectResults, () => {
 
 	it("should leave setupMs undefined when no result has any setup time", () => {
 		expect.assertions(1);
+
 		expect(
 			mergeProjectResults([makeExecuteResult(), makeExecuteResult()]).timing.setupMs,
 		).toBeUndefined();
@@ -1752,7 +1753,6 @@ describe(mergeProjectResults, () => {
 		expect.assertions(1);
 
 		const sourceMapper = {
-			mapFailureMessage: (message: string) => `[a] ${message}`,
 			mapFailureWithLocations: (message: string) => ({ locations: [], message }),
 			resolveDisplayPath: (testFilePath: string) => testFilePath,
 			resolveTestFilePath: (): undefined => undefined,
@@ -1765,6 +1765,7 @@ describe(mergeProjectResults, () => {
 
 	it("should yield exitCode 0 when all results succeeded", () => {
 		expect.assertions(1);
+
 		expect(mergeProjectResults([makeExecuteResult(), makeExecuteResult()]).exitCode).toBe(0);
 	});
 

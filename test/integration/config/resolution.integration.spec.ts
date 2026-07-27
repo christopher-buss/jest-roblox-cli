@@ -63,8 +63,8 @@ describe("config resolution", () => {
 			const mappings = resolveAllTsconfigMappings(RBXTS_FIXTURE);
 
 			expect(mappings.length).toBeGreaterThan(0);
-			expect(mappings[0]?.outDir).toContain("out");
-			expect(mappings[0]?.rootDir).toContain("src");
+			expect(mappings[0]!.outDir).toContain("out");
+			expect(mappings[0]!.rootDir).toContain("src");
 		});
 
 		it("should resolve projects from rojo tree", async () => {
@@ -75,7 +75,7 @@ describe("config resolution", () => {
 			const rojo = rojoProjectSchema.assert(rojoData);
 
 			const projects = await resolveAllProjects(
-				config.projects ?? [],
+				config.projects!,
 				{ ...config, rootDir: RBXTS_FIXTURE },
 				rojo.tree,
 				RBXTS_FIXTURE,

@@ -12,6 +12,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { BuildManifestProject } from "./build-manifest.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
@@ -19,7 +20,13 @@ import type {
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
 import { MANIFEST_VERSION, manifestSchema } from "./manifest.ts";
-import { collectLuauRootsFromRojo, prepareCoverage, resolveLuauRoots } from "./prepare.ts";
+import type { PrepareCoverageResult } from "./prepare.ts";
+import {
+	collectLuauRootsFromRojo,
+	prepareCoverage,
+	resolveLuauRoots,
+	toCoverageArtifacts,
+} from "./prepare.ts";
 import { computeRojoInputsHash } from "./rojo-inputs.ts";
 import { discoverInstrumentableFiles } from "./shadow-root.ts";
 
@@ -50,13 +57,31 @@ function isoNow(): string {
 	return now.toISOString();
 }
 
-function readRojoProjectJson(text: string): Record<string, unknown> {
-	const parsed = JSON.parse(text);
+function readRojoProjectJson(filePath: string): Record<string, unknown> {
+	const parsed = JSON.parse(vol.readFileSync(filePath, "utf-8").toString());
 	if (!isPlainObject(parsed)) {
 		throw new Error("Expected rojo project to be a JSON object");
 	}
 
 	return parsed;
+}
+
+/**
+ * Walks a nested plain-object tree by key, so a test can reach into a parsed
+ * rojo project without asserting a shape onto it. Lives at module scope — the
+ * per-key guard would otherwise be a conditional inside a test body.
+ */
+function readNestedProperty(source: Record<string, unknown>, ...keys: Array<string>): unknown {
+	let current: unknown = source;
+	for (const key of keys) {
+		if (!isPlainObject(current)) {
+			throw new Error(`Expected an object while reading "${keys.join(".")}"`);
+		}
+
+		current = current[key];
+	}
+
+	return current;
 }
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -68,11 +93,10 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	};
 }
 
-async function setupMocks(options: { outDir?: string } = {}) {
+async function setupMocks({ outDir }: { outDir?: string } = {}) {
 	onTestFinished(() => {
 		vol.reset();
 	});
-	const { outDir } = options;
 
 	const { getTsconfig } = await import("get-tsconfig");
 	vi.mocked(getTsconfig).mockReturnValue(
@@ -97,8 +121,10 @@ async function setupMocks(options: { outDir?: string } = {}) {
 	return { buildWithRojo, instrumentRoot };
 }
 
-function seedFilesystem(options: { luauRoot?: string; rojoProject?: string } = {}) {
-	const { luauRoot = "out-tsc/test", rojoProject = "/project/default.project.json" } = options;
+function seedFilesystem({
+	luauRoot = "out-tsc/test",
+	rojoProject = "/project/default.project.json",
+}: { luauRoot?: string; rojoProject?: string } = {}) {
 	vol.mkdirSync("/project", { recursive: true });
 	vol.mkdirSync(luauRoot, { recursive: true });
 	vol.writeFileSync(`${luauRoot}/init.luau`, "local x = 1");
@@ -106,7 +132,7 @@ function seedFilesystem(options: { luauRoot?: string; rojoProject?: string } = {
 }
 
 function readCoverageManifestFile(filePath: string): CoverageManifest {
-	const parsed = manifestSchema(JSON.parse(vol.readFileSync(filePath, "utf-8") as string));
+	const parsed = manifestSchema(JSON.parse(vol.readFileSync(filePath, "utf-8").toString()));
 	if (parsed instanceof type.errors) {
 		throw new Error(parsed.summary);
 	}
@@ -300,12 +326,17 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			const written = readRojoProjectJson(
-				vol.readFileSync(".jest-roblox/coverage/default.project.json", "utf-8") as string,
-			);
-			const tree = written["tree"] as Record<string, Record<string, Record<string, unknown>>>;
+			const written = readRojoProjectJson(".jest-roblox/coverage/default.project.json");
 
-			expect(tree["ServerScriptService"]!["$properties"]!["LoadStringEnabled"]).toBeTrue();
+			expect(
+				readNestedProperty(
+					written,
+					"tree",
+					"ServerScriptService",
+					"$properties",
+					"LoadStringEnabled",
+				),
+			).toBeTrue();
 		});
 	});
 
@@ -336,17 +367,14 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			const written = readRojoProjectJson(
-				vol.readFileSync(".jest-roblox/coverage/default.project.json", "utf-8") as string,
-			);
-			const tree = written["tree"] as Record<string, Record<string, string>>;
+			const written = readRojoProjectJson(".jest-roblox/coverage/default.project.json");
 
 			// Matching path: absolute path inside the shadow dir.
-			expect(tree["ReplicatedStorage"]!["$path"]).toBe(
+			expect(readNestedProperty(written, "tree", "ReplicatedStorage", "$path")).toBe(
 				normalizeWindowsPath(path.resolve(".jest-roblox/coverage/out-tsc/test/client")),
 			);
 			// Non-matching path: absolute path to the original source dir.
-			expect(tree["ServerScriptService"]!["$path"]).toBe(
+			expect(readNestedProperty(written, "tree", "ServerScriptService", "$path")).toBe(
 				normalizeWindowsPath(path.resolve("include")),
 			);
 		});
@@ -381,15 +409,12 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			const parsed = readRojoProjectJson(
-				vol.readFileSync(".jest-roblox/coverage/dev.project.json", "utf-8") as string,
-			);
-			const tree = parsed["tree"] as Record<string, Record<string, string>>;
+			const parsed = readRojoProjectJson(".jest-roblox/coverage/dev.project.json");
 
 			// $path "../out" resolves against "config" → absolute "out";
 			// luauRoot "out" resolves against rootDir "." → absolute "out";
 			// match → redirect to shadow dir.
-			expect(tree["ReplicatedStorage"]!["$path"]).toBe(
+			expect(readNestedProperty(parsed, "tree", "ReplicatedStorage", "$path")).toBe(
 				normalizeWindowsPath(path.resolve(".jest-roblox/coverage/out")),
 			);
 		});
@@ -435,20 +460,14 @@ describe(prepareCoverage, () => {
 
 			prepareCoverage(config);
 
-			const written = readRojoProjectJson(
-				vol.readFileSync(
-					".jest-roblox/coverage/development.project.json",
-					"utf-8",
-				) as string,
-			);
-			const tree = written["tree"] as Record<string, Record<string, Record<string, string>>>;
+			const written = readRojoProjectJson(".jest-roblox/coverage/development.project.json");
 
 			// The nested $path: "default.project.json" is resolved to $path:
 			// "src", absolutized, then redirected to the instrumented shadow
 			// dir since "src" matches the configured luauRoot.
-			expect(tree["ReplicatedStorage"]!["uuid-generator"]!["$path"]).toBe(
-				normalizeWindowsPath(path.resolve(".jest-roblox/coverage/src")),
-			);
+			expect(
+				readNestedProperty(written, "tree", "ReplicatedStorage", "uuid-generator", "$path"),
+			).toBe(normalizeWindowsPath(path.resolve(".jest-roblox/coverage/src")));
 		});
 	});
 
@@ -522,7 +541,7 @@ describe(prepareCoverage, () => {
 
 			const result = prepareCoverage(config);
 
-			expect(result.files["out-tsc/test/init.luau"]?.sourceHash).toBe("deadbeef");
+			expect(result.files["out-tsc/test/init.luau"]!.sourceHash).toBe("deadbeef");
 		});
 
 		it("should not write a build manifest (the entry point owns emission)", async () => {
@@ -583,27 +602,23 @@ describe(prepareCoverage, () => {
 			);
 		}
 
-		function seedIncrementalScenario(
-			options: {
-				fileContents?: Record<string, string>;
-				previousFiles?: Record<string, InstrumentedFileRecord>;
-				previousInstrumenterVersion?: number;
-				previousNonInstrumentedFiles?: Record<string, NonInstrumentedFileRecord>;
-				previousPlaceFilePath?: string;
-			} = {},
-		) {
-			const {
-				fileContents = { "out-tsc/test/init.luau": "local x = 1" },
-				previousFiles = {
-					"out-tsc/test/init.luau": makeFileRecord({
-						key: "out-tsc/test/init.luau",
-					}),
-				},
-				previousInstrumenterVersion = INSTRUMENTER_VERSION,
-				previousNonInstrumentedFiles = {},
-				previousPlaceFilePath = ".jest-roblox/coverage/game.rbxl",
-			} = options;
-
+		function seedIncrementalScenario({
+			fileContents = { "out-tsc/test/init.luau": "local x = 1" },
+			previousFiles = {
+				"out-tsc/test/init.luau": makeFileRecord({
+					key: "out-tsc/test/init.luau",
+				}),
+			},
+			previousInstrumenterVersion = INSTRUMENTER_VERSION,
+			previousNonInstrumentedFiles = {},
+			previousPlaceFilePath = ".jest-roblox/coverage/game.rbxl",
+		}: {
+			fileContents?: Record<string, string>;
+			previousFiles?: Record<string, InstrumentedFileRecord>;
+			previousInstrumenterVersion?: number;
+			previousNonInstrumentedFiles?: Record<string, NonInstrumentedFileRecord>;
+			previousPlaceFilePath?: string;
+		} = {}) {
 			seedFilesystem();
 
 			// Seed source files with specified content
@@ -1435,7 +1450,7 @@ describe(prepareCoverage, () => {
 				const result = prepareCoverage(config);
 
 				expect(
-					result.manifest.nonInstrumentedFiles["out-tsc/test/init.spec.luau"]?.sourceHash,
+					result.manifest.nonInstrumentedFiles["out-tsc/test/init.spec.luau"]!.sourceHash,
 				).toBe(sha256(specContent));
 			});
 
@@ -1631,7 +1646,7 @@ describe(prepareCoverage, () => {
 				const record = result.manifest.nonInstrumentedFiles["out-tsc/test/init.spec.luau"];
 
 				expect(record).toBeDefined();
-				expect(record?.sourceHash).toBe(sha256("-- test code"));
+				expect(record!.sourceHash).toBe(sha256("-- test code"));
 			});
 
 			it("should force cold rebuild when previous manifest lacks nonInstrumentedFiles", async () => {
@@ -2363,5 +2378,38 @@ describe(discoverInstrumentableFiles, () => {
 		const result = discoverInstrumentableFiles("out");
 
 		expect(result).toStrictEqual(new Set());
+	});
+});
+
+describe(toCoverageArtifacts, () => {
+	it("should project a prepare result and the caller's projects onto one record", () => {
+		expect.assertions(1);
+
+		const result: PrepareCoverageResult = {
+			buildId: "build-7",
+			coveragePlace: { hash: "cov-hash", path: ".jest-roblox/coverage/game.rbxl" },
+			files: { "out/init.luau": { sourceHash: "h" } },
+			manifest: fromAny({ generatedAt: "2026-07-25T00:00:00.000Z" }),
+			placeFile: ".jest-roblox/coverage/game.rbxl",
+			rebuilt: true,
+		};
+		const projects: Array<BuildManifestProject> = [
+			{
+				displayName: "client",
+				projectDataModelPath: "ReplicatedStorage/client",
+				setupFiles: [],
+				setupFilesAfterEnv: [],
+				testMatch: ["**/*.spec"],
+			},
+		];
+
+		expect(toCoverageArtifacts(result, projects)).toStrictEqual({
+			buildId: "build-7",
+			coveragePlace: { hash: "cov-hash", path: ".jest-roblox/coverage/game.rbxl" },
+			files: { "out/init.luau": { sourceHash: "h" } },
+			generatedAt: "2026-07-25T00:00:00.000Z",
+			projects,
+			rebuilt: true,
+		});
 	});
 });

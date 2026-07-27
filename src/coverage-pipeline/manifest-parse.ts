@@ -1,3 +1,4 @@
+import type { distill } from "arktype";
 import { type } from "arktype";
 import * as fs from "node:fs";
 
@@ -26,7 +27,7 @@ export function parseVersionedManifest<T>(
 	filePath: string,
 	schema: type<T>,
 	expectedVersion: number,
-): ParsedManifest<T> {
+): ParsedManifest<distill.Out<T>> {
 	let contents: string;
 	try {
 		contents = fs.readFileSync(filePath, "utf-8");
@@ -38,7 +39,7 @@ export function parseVersionedManifest<T>(
 		throw err;
 	}
 
-	let raw: unknown;
+	let raw: JSONValue;
 	try {
 		raw = JSON.parse(contents);
 	} catch {
@@ -49,7 +50,7 @@ export function parseVersionedManifest<T>(
 		return { kind: "invalid", summary: "manifest must be a JSON object" };
 	}
 
-	const peeked = (raw as { version?: unknown }).version;
+	const peeked = raw["version"];
 	if (typeof peeked === "number" && peeked !== expectedVersion) {
 		return { actual: peeked, expected: expectedVersion, kind: "version-mismatch" };
 	}
@@ -59,7 +60,5 @@ export function parseVersionedManifest<T>(
 		return { kind: "invalid", summary: parsed.summary };
 	}
 
-	// `schema` is a `type<T>`, so a non-error result is `T` at runtime; the
-	// generic distillation type just can't prove that to the compiler.
-	return { kind: "ok", manifest: parsed as T };
+	return { kind: "ok", manifest: parsed };
 }

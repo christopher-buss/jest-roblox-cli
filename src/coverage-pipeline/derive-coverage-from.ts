@@ -15,6 +15,40 @@ const SPEC_OR_TEST_EXTENSION = /\.(?:spec|test)(\.\w+)$/;
 export function deriveCoverageFromIncludes(
 	projects: ReadonlyArray<Pick<ResolvedProjectConfig, "include">>,
 ): Array<string> | undefined {
+	const rootsByExtension = collectRootsByExtension(projects);
+	if (rootsByExtension.size === 0) {
+		return undefined;
+	}
+
+	return buildCoveragePatterns(rootsByExtension);
+}
+
+/**
+ * Infers the source file extension from an include pattern by stripping the
+ * `.spec` or `.test` suffix. Throws when the pattern has no recognizable test
+ * extension so that misconfigured globs fail loudly.
+ */
+function inferSourceExtension(pattern: string): string {
+	const match = pattern.match(SPEC_OR_TEST_EXTENSION);
+	if (!match) {
+		throw new Error(
+			`Cannot infer source extension from include pattern "${pattern}". ` +
+				"Patterns must end with .spec.<ext> or .test.<ext> (e.g. **/*.spec.ts, **/*.test.luau).",
+		);
+	}
+
+	const [, extension] = match;
+	// eslint-disable-next-line ts/no-non-null-assertion -- capture group 1 always present when match succeeds
+	return extension!;
+}
+
+/**
+ * Groups the static root of every include pattern by the source extension that
+ * pattern implies. A pattern with no static root is skipped.
+ */
+function collectRootsByExtension(
+	projects: ReadonlyArray<Pick<ResolvedProjectConfig, "include">>,
+): Map<string, Set<string>> {
 	const rootsByExtension = new Map<string, Set<string>>();
 
 	for (const project of projects) {
@@ -31,10 +65,10 @@ export function deriveCoverageFromIncludes(
 		}
 	}
 
-	if (rootsByExtension.size === 0) {
-		return undefined;
-	}
+	return rootsByExtension;
+}
 
+function buildCoveragePatterns(rootsByExtension: Map<string, Set<string>>): Array<string> {
 	const patterns: Array<string> = [];
 
 	for (const [extension, roots] of rootsByExtension) {
@@ -57,23 +91,4 @@ export function deriveCoverageFromIncludes(
 	}
 
 	return patterns;
-}
-
-/**
- * Infers the source file extension from an include pattern by stripping the
- * `.spec` or `.test` suffix. Throws when the pattern has no recognizable test
- * extension so that misconfigured globs fail loudly.
- */
-function inferSourceExtension(pattern: string): string {
-	const match = pattern.match(SPEC_OR_TEST_EXTENSION);
-	if (!match) {
-		throw new Error(
-			`Cannot infer source extension from include pattern "${pattern}". ` +
-				"Patterns must end with .spec.<ext> or .test.<ext> (e.g. **/*.spec.ts, **/*.test.luau).",
-		);
-	}
-
-	const [, extension] = match;
-	// eslint-disable-next-line ts/no-non-null-assertion -- capture group 1 always present when match succeeds
-	return extension!;
 }

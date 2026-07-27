@@ -22,6 +22,21 @@ function makeResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
+/** One group fails, so the merge is exercised over a mixed pass/fail pair. */
+function resultForTsconfig(tsconfig?: string): JestResult {
+	const isFailing = tsconfig === "b.json";
+	return makeResult({
+		numFailedTests: isFailing ? 1 : 0,
+		numTotalTests: 1,
+		success: !isFailing,
+	});
+}
+
+/** Out-of-order start times, so the merge has to take the earliest. */
+function startTimeForCwd(cwd: string): number {
+	return cwd === "/a" ? 50 : 20;
+}
+
 function deferred(): Deferred {
 	let resolveResult!: (result: JestResult) => void;
 	const promise = new Promise<JestResult>((resolve) => {
@@ -54,13 +69,7 @@ describe(groupTypecheckByTsconfig, () => {
 	it("should check projects with distinct tsconfigs against their own", async () => {
 		expect.assertions(3);
 
-		const run = vi.fn<RunTypecheckGroup>(async (group) => {
-			return makeResult({
-				numFailedTests: group.tsconfig === "b.json" ? 1 : 0,
-				numTotalTests: 1,
-				success: group.tsconfig !== "b.json",
-			});
-		});
+		const run = vi.fn<RunTypecheckGroup>(async (group) => resultForTsconfig(group.tsconfig));
 
 		const result = await groupTypecheckByTsconfig(
 			[
@@ -133,7 +142,7 @@ describe(groupTypecheckByTsconfig, () => {
 		expect.assertions(2);
 
 		const run = vi.fn<RunTypecheckGroup>(async (group) => {
-			return makeResult({ startTime: group.cwd === "/a" ? 50 : 20 });
+			return makeResult({ startTime: startTimeForCwd(group.cwd) });
 		});
 
 		const result = await groupTypecheckByTsconfig(
@@ -145,7 +154,7 @@ describe(groupTypecheckByTsconfig, () => {
 		);
 
 		expect(run).toHaveBeenCalledWith({ cwd: "/a", files: ["x.spec-d.ts"] });
-		expect(result?.startTime).toBe(20);
+		expect(result!.startTime).toBe(20);
 	});
 
 	it("should return undefined when no entries are given", async () => {

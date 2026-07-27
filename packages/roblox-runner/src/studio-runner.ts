@@ -28,6 +28,14 @@ const resultMessageSchema = type({
 
 type ResultMessage = typeof resultMessageSchema.infer;
 
+interface PendingRequest {
+	reject: (reason: Error) => void;
+	requestId: string;
+	resolve: (message: ResultMessage) => void;
+	script: string;
+	timer: ReturnType<typeof setTimeout>;
+}
+
 export class StudioRunner implements RemoteRunner {
 	private readonly createServerFn: (port: number) => WebSocketServer;
 	private readonly port: number;
@@ -39,12 +47,12 @@ export class StudioRunner implements RemoteRunner {
 		this.createServerFn = options.createServer ?? ((port) => new WebSocketServer({ port }));
 	}
 
-	public async executeScript(options: ExecuteScriptOptions): Promise<ScriptResult> {
+	public async executeScriptAsync(options: ExecuteScriptOptions): Promise<ScriptResult> {
 		const wss = this.createServerFn(this.port);
 
 		try {
 			const startTime = Date.now();
-			const message = await this.waitForResult(wss, options.script);
+			const message = await this.waitForResultAsync(wss, options.script);
 
 			return {
 				durationMs: Date.now() - startTime,
@@ -55,11 +63,18 @@ export class StudioRunner implements RemoteRunner {
 		}
 	}
 
-	public async uploadPlace(_options: UploadPlaceOptions): Promise<UploadPlaceResult> {
+	/**
+	 * Studio runs the place already open, so there is nothing to upload. The
+	 * no-op await is load-bearing: `RemoteRunner` requires a promise return,
+	 * and dropping `async` to satisfy `require-await` then trips
+	 * `promise-function-async`.
+	 */
+	public async uploadPlaceAsync(_options: UploadPlaceOptions): Promise<UploadPlaceResult> {
+		await Promise.resolve();
 		return { uploadMs: 0, versionNumber: 0 };
 	}
 
-	private async waitForResult(wss: WebSocketServer, script: string): Promise<ResultMessage> {
+	private async waitForResultAsync(wss: WebSocketServer, script: string): Promise<ResultMessage> {
 		const requestId = randomUUID();
 
 		return new Promise((resolve, reject) => {
@@ -67,44 +82,8 @@ export class StudioRunner implements RemoteRunner {
 				reject(new Error("Timed out waiting for Studio plugin connection"));
 			}, this.timeout);
 
-			function attachSocket(ws: WebSocket): void {
-				ws.send(
-					JSON.stringify({
-						action: "execute",
-						request_id: requestId,
-						script,
-					}),
-				);
-
-				ws.on("message", (data: buffer.Buffer) => {
-					const raw = JSON.parse(data.toString());
-					const message = resultMessageSchema(raw);
-
-					if (message instanceof type.errors) {
-						clearTimeout(timer);
-						reject(new Error(`Invalid plugin message: ${message.summary}`));
-						return;
-					}
-
-					if (message.request_id === requestId) {
-						clearTimeout(timer);
-						resolve(message);
-					}
-				});
-
-				ws.on("close", () => {
-					clearTimeout(timer);
-					reject(new Error("Studio plugin disconnected before sending results"));
-				});
-
-				ws.on("error", (err: Error) => {
-					clearTimeout(timer);
-					reject(err);
-				});
-			}
-
 			wss.on("connection", (ws: WebSocket) => {
-				attachSocket(ws);
+				attachSocket(ws, { reject, requestId, resolve, script, timer });
 			});
 
 			wss.on("error", (err: Error) => {
@@ -113,4 +92,47 @@ export class StudioRunner implements RemoteRunner {
 			});
 		});
 	}
+}
+
+function settleFromMessage(
+	data: buffer.Buffer,
+	{ reject, requestId, resolve, timer }: PendingRequest,
+): void {
+	const raw = JSON.parse(data.toString());
+	const message = resultMessageSchema(raw);
+
+	if (message instanceof type.errors) {
+		clearTimeout(timer);
+		reject(new Error(`Invalid plugin message: ${message.summary}`));
+		return;
+	}
+
+	if (message.request_id === requestId) {
+		clearTimeout(timer);
+		resolve(message);
+	}
+}
+
+function attachSocket(ws: WebSocket, pending: PendingRequest): void {
+	ws.send(
+		JSON.stringify({
+			action: "execute",
+			request_id: pending.requestId,
+			script: pending.script,
+		}),
+	);
+
+	ws.on("message", (data: buffer.Buffer) => {
+		settleFromMessage(data, pending);
+	});
+
+	ws.on("close", () => {
+		clearTimeout(pending.timer);
+		pending.reject(new Error("Studio plugin disconnected before sending results"));
+	});
+
+	ws.on("error", (err: Error) => {
+		clearTimeout(pending.timer);
+		pending.reject(err);
+	});
 }

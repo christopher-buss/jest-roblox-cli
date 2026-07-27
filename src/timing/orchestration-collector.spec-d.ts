@@ -2,7 +2,7 @@ import { describe, expectTypeOf, it } from "vitest";
 
 import { createTimingCollector } from "./orchestration-collector.ts";
 
-describe("createTimingCollector", () => {
+describe(createTimingCollector, () => {
 	const collector = createTimingCollector({ enabled: false });
 
 	it("should reject Promise-returning functions in the sync profile", () => {

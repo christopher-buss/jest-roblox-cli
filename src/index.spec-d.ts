@@ -58,7 +58,7 @@ import {
 	writeJsonFile,
 } from "./index.ts";
 
-describe("defineConfig", () => {
+describe(defineConfig, () => {
 	it("should accept empty config", () => {
 		expectTypeOf(defineConfig).toBeCallableWith({});
 	});
@@ -101,14 +101,14 @@ describe("DEFAULT_CONFIG", () => {
 	});
 });
 
-describe("resolveConfig", () => {
+describe(resolveConfig, () => {
 	it("should accept Config and return ResolvedConfig", () => {
 		expectTypeOf(resolveConfig).parameter(0).toExtend<Config>();
 		expectTypeOf(resolveConfig).returns.toEqualTypeOf<ResolvedConfig>();
 	});
 });
 
-describe("loadConfig", () => {
+describe(loadConfig, () => {
 	it("should return Promise<ResolvedConfig>", () => {
 		expectTypeOf(loadConfig).returns.toEqualTypeOf<Promise<ResolvedConfig>>();
 	});
@@ -125,7 +125,7 @@ describe("loadConfig", () => {
 	});
 });
 
-describe("runProjects", () => {
+describe(runProjects, () => {
 	it("should accept RunProjectsOptions and return Promise<RunProjectsResult>", () => {
 		expectTypeOf(runProjects).parameter(0).toExtend<RunProjectsOptions>();
 		expectTypeOf(runProjects).returns.toEqualTypeOf<Promise<RunProjectsResult>>();
@@ -219,7 +219,7 @@ describe("backends", () => {
 	});
 });
 
-describe("runTypecheck", () => {
+describe(runTypecheck, () => {
 	it("should accept TypecheckOptions and return a Promise of JestResult", () => {
 		expectTypeOf(runTypecheck).parameter(0).toExtend<TypecheckOptions>();
 		expectTypeOf(runTypecheck).returns.toEqualTypeOf<Promise<JestResult>>();
@@ -315,7 +315,7 @@ describe("artifact contract", () => {
 	});
 
 	it("should expose prepareArtifacts returning an ArtifactBundle", () => {
-		expectTypeOf(prepareArtifacts).returns.resolves.toEqualTypeOf<ArtifactBundle>();
+		expectTypeOf(prepareArtifacts).returns.toEqualTypeOf<Promise<ArtifactBundle>>();
 	});
 
 	it("should export ArtifactBundle with both places and the manifest paths", () => {

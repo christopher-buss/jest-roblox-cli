@@ -50,56 +50,73 @@ export function luauGrammar(hljs: HLJSApi): Language {
 		name: "Luau",
 		contains: [
 			...comments,
-			// Function definitions
-			{
-				beginKeywords: "function",
-				contains: [
-					hljs.inherit(hljs.TITLE_MODE, {
-						begin: "([_a-zA-Z]\\w*\\.)*([_a-zA-Z]\\w*:)?[_a-zA-Z]\\w*",
-					}),
-					{
-						begin: "\\(",
-						contains: comments,
-						endsWithParent: true,
-						scope: "params",
-					},
-					...comments,
-				],
-				end: "\\)",
-				scope: "function",
-			},
+			buildFunctionMode(hljs, comments),
 			// Numbers
 			hljs.C_NUMBER_MODE,
 			hljs.APOS_STRING_MODE,
 			// Double quote strings
 			hljs.QUOTE_STRING_MODE,
-			// Long bracket strings [[...]]
-			{
-				begin: OPENING_LONG_BRACKET,
-				contains: [longBrackets],
-				end: CLOSING_LONG_BRACKET,
-				relevance: 5,
-				scope: "string",
-			},
-			// Backtick strings with interpolation (Luau-specific)
-			{
-				begin: "`",
-				contains: [
-					{
-						begin: "\\{",
-						end: "\\}",
-						scope: "subst",
-					},
-				],
-				end: "`",
-				scope: "string",
-			},
+			...buildStringModes(longBrackets),
 		],
-		keywords: {
-			$pattern: hljs.UNDERSCORE_IDENT_RE,
-			built_in: BUILT_IN,
-			keyword: KEYWORD,
-			literal: "true false nil",
+		keywords: buildKeywords(hljs),
+	};
+}
+
+// A `function` definition: the (optionally dotted / colon-qualified) name, then
+// the parameter list, which ends the mode at the closing paren. Comments are
+// allowed both inside the parameter list and around it.
+function buildFunctionMode(hljs: HLJSApi, comments: Array<Mode>): Mode {
+	return {
+		beginKeywords: "function",
+		contains: [
+			hljs.inherit(hljs.TITLE_MODE, {
+				begin: "([_a-zA-Z]\\w*\\.)*([_a-zA-Z]\\w*:)?[_a-zA-Z]\\w*",
+			}),
+			{
+				begin: "\\(",
+				contains: comments,
+				endsWithParent: true,
+				scope: "params",
+			},
+			...comments,
+		],
+		end: "\\)",
+		scope: "function",
+	};
+}
+
+// The two Luau-specific string forms, in match order: long bracket `[[...]]`
+// (nesting through the caller's own long-bracket mode) and backtick strings
+// with `{...}` interpolation.
+function buildStringModes(longBrackets: Mode): Array<Mode> {
+	return [
+		{
+			begin: OPENING_LONG_BRACKET,
+			contains: [longBrackets],
+			end: CLOSING_LONG_BRACKET,
+			relevance: 5,
+			scope: "string",
 		},
+		{
+			begin: "`",
+			contains: [
+				{
+					begin: "\\{",
+					end: "\\}",
+					scope: "subst",
+				},
+			],
+			end: "`",
+			scope: "string",
+		},
+	];
+}
+
+function buildKeywords(hljs: HLJSApi): NonNullable<Language["keywords"]> {
+	return {
+		$pattern: hljs.UNDERSCORE_IDENT_RE,
+		built_in: BUILT_IN,
+		keyword: KEYWORD,
+		literal: "true false nil",
 	};
 }

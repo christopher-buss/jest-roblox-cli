@@ -181,4 +181,59 @@ describe(buildImplicitProject, () => {
 
 		expect(() => buildImplicitProject(makeConfig(), tree)).toThrow(ConfigError);
 	});
+
+	// `--typecheckOnly` is host-local tsgo, so the collapse hands over no Rojo
+	// tree at all — nothing is mounted and no luau roots are resolved.
+	it("should build a project with no mounts when no rojo tree is supplied", () => {
+		expect.assertions(4);
+
+		const project = buildImplicitProject(makeConfig(), undefined);
+
+		expect(project.rojoMounts).toStrictEqual([]);
+		expect(project.projects).toStrictEqual([]);
+		expect(project.outDir).toBeUndefined();
+		expect(resolveLuauRoots).not.toHaveBeenCalled();
+	});
+
+	it("should not throw the no-mounts ConfigError when no rojo tree is supplied", () => {
+		expect.assertions(1);
+
+		expect(() => buildImplicitProject(makeConfig(), undefined)).not.toThrow();
+	});
+
+	// `include` strips `-d` globs and the multi pipeline derives Type Tests from
+	// `include`, so a `testMatch` of only `-d` globs would otherwise discover
+	// nothing.
+	it("should seed typecheck.include from the -d globs in testMatch", () => {
+		expect.assertions(1);
+
+		const project = buildImplicitProject(
+			makeConfig({ testMatch: ["**/*.spec.ts", "**/*.spec-d.ts", "**/*.test-d.ts"] }),
+			undefined,
+		);
+
+		expect(project.typecheck!.include).toStrictEqual(["**/*.spec-d.ts", "**/*.test-d.ts"]);
+	});
+
+	it("should keep an explicit typecheck.include over the derived -d globs", () => {
+		expect.assertions(1);
+
+		const project = buildImplicitProject(
+			makeConfig({
+				testMatch: ["**/*.spec.ts", "**/*.spec-d.ts"],
+				typecheck: { enabled: true, include: ["types/**/*.spec-d.ts"] },
+			}),
+			undefined,
+		);
+
+		expect(project.typecheck!.include).toStrictEqual(["types/**/*.spec-d.ts"]);
+	});
+
+	it("should leave typecheck unset when testMatch carries no -d globs", () => {
+		expect.assertions(1);
+
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+
+		expect(buildImplicitProject(makeConfig(), tree).typecheck).toBeUndefined();
+	});
 });

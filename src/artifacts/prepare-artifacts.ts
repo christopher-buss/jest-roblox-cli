@@ -8,6 +8,7 @@ import { applyAttribution } from "../coverage-pipeline/attribution.ts";
 import type {
 	BuildManifestArtifact,
 	BuildManifestProject,
+	CoverageArtifacts,
 } from "../coverage-pipeline/build-manifest.ts";
 import { emitBuildManifest } from "../coverage-pipeline/build-manifest.ts";
 import { readManifest, writeManifest } from "../coverage-pipeline/manifest.ts";
@@ -18,8 +19,8 @@ import {
 } from "../coverage-pipeline/prepare.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { getRawProjects, runSingleOrMulti } from "../run.ts";
-import { collectStubMounts, loadRojoTree } from "../run/multi.ts";
-import type { MultiRunResult, SingleRunResult } from "../run/types.ts";
+import { loadRojoTree } from "../run/multi.ts";
+import { collectStubMounts } from "../run/staging.ts";
 import { buildPlace } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import { createTimingCollector } from "../timing/orchestration-collector.ts";
@@ -38,19 +39,22 @@ export interface ArtifactBundle {
 	buildId: string;
 	buildManifestPath: string;
 	cleanPlace: BuildManifestArtifact;
-	coverageData?: RawCoverageData;
+	coverageData?: RawCoverageData | undefined;
 	coverageManifestPath: string;
 	coveragePlace: BuildManifestArtifact;
-	/** Per-project DataModel paths the kernel consumes, resolved from the run. */
+	/**
+	 * Per-project DataModel paths the kernel consumes, resolved from the run.
+	 */
 	projects: Array<BuildManifestProject>;
 }
 
 /**
- * The sole producer of a Clean Place. Builds the Coverage-Instrumented Place and
- * runs the instrumented suite once (via the shared single/multi core), builds an
- * uninstrumented Clean Place through the Place Builder, then emits the Build
- * Manifest with both places in a single atomic write. `runJestRoblox` / the CLI
- * never build a Clean Place — opting in is calling this entry point.
+ * The sole producer of a Clean Place. Builds the Coverage-Instrumented Place
+ * and runs the instrumented suite once (via the shared single/multi core),
+ * builds an uninstrumented Clean Place through the Place Builder, then emits
+ * the Build Manifest with both places in a single atomic write.
+ * `runJestRoblox` / the CLI never build a Clean Place — opting in is calling
+ * this entry point.
  */
 export async function prepareArtifacts(config: ResolvedConfig): Promise<ArtifactBundle> {
 	const cli: CliOptions = {};
@@ -62,14 +66,7 @@ export async function prepareArtifacts(config: ResolvedConfig): Promise<Artifact
 			collectPerTestCoverage: true,
 		});
 		const result = await runSingleOrMulti(cli, merged, timing);
-
-		const { coverageArtifacts } = result;
-		if (coverageArtifacts === undefined) {
-			throw new Error(
-				"prepareArtifacts: the coverage run produced no artifacts. Ensure the project has runtime tests and that `typecheckOnly` is not set.",
-			);
-		}
-
+		const coverageArtifacts = requireCoverageArtifacts(result.coverageArtifacts);
 		const cleanPlace = await buildCleanPlace(merged);
 
 		// One atomic write that knows both places — never write-then-patch.
@@ -78,13 +75,13 @@ export async function prepareArtifacts(config: ResolvedConfig): Promise<Artifact
 		// Fold per-test attribution into the coverage manifest the instrument
 		// step already published, so the consumer reads tests[] + coveringTestIds
 		// from the same artifact as the file records.
-		writeManifestAttribution(COVERAGE_MANIFEST_PATH, extractAttribution(result));
+		writeManifestAttribution(COVERAGE_MANIFEST_PATH, result.merged.attribution);
 
 		return {
 			buildId: coverageArtifacts.buildId,
 			buildManifestPath: COVERAGE_BUILD_MANIFEST_PATH,
 			cleanPlace,
-			coverageData: extractCoverageData(result),
+			coverageData: result.merged.coverageData,
 			coverageManifestPath: COVERAGE_MANIFEST_PATH,
 			coveragePlace: coverageArtifacts.coveragePlace,
 			projects: coverageArtifacts.projects,
@@ -94,18 +91,21 @@ export async function prepareArtifacts(config: ResolvedConfig): Promise<Artifact
 	}
 }
 
-function extractCoverageData(
-	result: MultiRunResult | SingleRunResult,
-): RawCoverageData | undefined {
-	return result.mode === "single"
-		? result.runtimeResult?.coverageData
-		: result.merged.coverageData;
-}
+/**
+ * A `typecheckOnly` config, or a project with no runtime tests, produces no
+ * coverage artifacts — which makes the whole bundle meaningless. Fail loud
+ * rather than emit a half-written Build Manifest.
+ */
+function requireCoverageArtifacts(
+	coverageArtifacts: CoverageArtifacts | undefined,
+): CoverageArtifacts {
+	if (coverageArtifacts === undefined) {
+		throw new Error(
+			"prepareArtifacts: the coverage run produced no artifacts. Ensure the project has runtime tests and that `typecheckOnly` is not set.",
+		);
+	}
 
-function extractAttribution(
-	result: MultiRunResult | SingleRunResult,
-): AttributionResult | undefined {
-	return result.mode === "single" ? result.runtimeResult?.attribution : result.merged.attribution;
+	return coverageArtifacts;
 }
 
 /**

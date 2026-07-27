@@ -144,7 +144,7 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.functions).toHaveLength(1);
-			expect(result.functions[0]?.name).toBe("greet");
+			expect(result.functions[0]!.name).toBe("greet");
 			expect(result.functions[0]).toStrictEqual({
 				name: "greet",
 				bodyFirstColumn: 5,
@@ -185,7 +185,7 @@ describe("coverage-collector", () => {
 
 			const result = collectCoverage(root);
 
-			expect(result.functions[0]?.name).toBe("(anonymous)");
+			expect(result.functions[0]!.name).toBe("(anonymous)");
 		});
 
 		it("should collect named functions from global function statements", () => {
@@ -226,7 +226,7 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.functions).toHaveLength(1);
-			expect(result.functions[0]?.name).toBe("globalFunc");
+			expect(result.functions[0]!.name).toBe("globalFunc");
 		});
 
 		it("should collect anonymous function expressions in local assignments", () => {
@@ -266,7 +266,7 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.functions).toHaveLength(1);
-			expect(result.functions[0]?.name).toBe("(anonymous)");
+			expect(result.functions[0]!.name).toBe("(anonymous)");
 		});
 
 		it("should collect if-else branches with then, elseif, and else arms", () => {
@@ -340,9 +340,9 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.branches).toHaveLength(1);
-			expect(result.branches[0]?.branchType).toBe("if");
-			expect(result.branches[0]?.arms).toHaveLength(3);
-			expect(result.branches[0]?.arms[0]?.bodyFirstLine).toBe(4);
+			expect(result.branches[0]!.branchType).toBe("if");
+			expect(result.branches[0]!.arms).toHaveLength(3);
+			expect(result.branches[0]!.arms[0]!.bodyFirstLine).toBe(4);
 			expect(result.implicitElseProbes).toBeEmpty();
 		});
 
@@ -384,10 +384,10 @@ describe("coverage-collector", () => {
 
 			expect(result.branches).toHaveLength(1);
 			// then arm + implicit else arm
-			expect(result.branches[0]?.arms).toHaveLength(2);
+			expect(result.branches[0]!.arms).toHaveLength(2);
 			expect(result.implicitElseProbes).toHaveLength(1);
-			expect(result.implicitElseProbes[0]?.endLine).toBe(3);
-			expect(result.implicitElseProbes[0]?.endColumn).toBe(1);
+			expect(result.implicitElseProbes[0]!.endLine).toBe(3);
+			expect(result.implicitElseProbes[0]!.endColumn).toBe(1);
 		});
 
 		it("should place implicit else probe at start of `end` when source has trailing semicolon", () => {
@@ -432,8 +432,8 @@ describe("coverage-collector", () => {
 
 			const result = collectCoverage(root);
 
-			expect(result.implicitElseProbes[0]?.endLine).toBe(3);
-			expect(result.implicitElseProbes[0]?.endColumn).toBe(1);
+			expect(result.implicitElseProbes[0]!.endLine).toBe(3);
+			expect(result.implicitElseProbes[0]!.endColumn).toBe(1);
 		});
 
 		it("should place implicit else probe at start of `end` for if/elseif with trailing semicolon", () => {
@@ -502,8 +502,8 @@ describe("coverage-collector", () => {
 
 			const result = collectCoverage(root);
 
-			expect(result.implicitElseProbes[0]?.endLine).toBe(5);
-			expect(result.implicitElseProbes[0]?.endColumn).toBe(1);
+			expect(result.implicitElseProbes[0]!.endLine).toBe(5);
+			expect(result.implicitElseProbes[0]!.endColumn).toBe(1);
 		});
 
 		it("should collect expr-if branches with bodyFirstLine=0", () => {
@@ -550,10 +550,10 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.branches).toHaveLength(1);
-			expect(result.branches[0]?.branchType).toBe("expr-if");
-			expect(result.branches[0]?.arms).toHaveLength(2);
-			expect(result.branches[0]?.arms[0]?.bodyFirstLine).toBe(0);
-			expect(result.branches[0]?.arms[1]?.bodyFirstLine).toBe(0);
+			expect(result.branches[0]!.branchType).toBe("expr-if");
+			expect(result.branches[0]!.arms).toHaveLength(2);
+			expect(result.branches[0]!.arms[0]!.bodyFirstLine).toBe(0);
+			expect(result.branches[0]!.arms[1]!.bodyFirstLine).toBe(0);
 		});
 
 		it("should generate wrapProbes for each expr-if arm", () => {
@@ -650,7 +650,7 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.functions).toHaveLength(1);
-			expect(result.functions[0]?.name).toBe("Obj.method");
+			expect(result.functions[0]!.name).toBe("Obj.method");
 		});
 
 		it("should extract colon name from colon-method function", () => {
@@ -691,7 +691,7 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.functions).toHaveLength(1);
-			expect(result.functions[0]?.name).toBe("Obj:method");
+			expect(result.functions[0]!.name).toBe("Obj:method");
 		});
 
 		it("should use body block start position for empty-body function", () => {
@@ -719,8 +719,8 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.functions).toHaveLength(1);
-			expect(result.functions[0]?.bodyFirstLine).toBe(1);
-			expect(result.functions[0]?.bodyFirstColumn).toBe(25);
+			expect(result.functions[0]!.bodyFirstLine).toBe(1);
+			expect(result.functions[0]!.bodyFirstColumn).toBe(25);
 		});
 
 		it("should collect expr-if with elseif arms", () => {
@@ -782,9 +782,9 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.branches).toHaveLength(1);
-			expect(result.branches[0]?.branchType).toBe("expr-if");
+			expect(result.branches[0]!.branchType).toBe("expr-if");
 			// 3 arms: then + elseif-then + else
-			expect(result.branches[0]?.arms).toHaveLength(3);
+			expect(result.branches[0]!.arms).toHaveLength(3);
 			// 3 wrap probes: one per arm
 			expect(result.wrapProbes).toHaveLength(3);
 			expect(result.wrapProbes.map((probe) => probe.armIndex)).toStrictEqual([1, 2, 3]);
@@ -821,9 +821,9 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.branches).toHaveLength(1);
-			expect(result.branches[0]?.branchType).toBe("binary-expr");
-			expect(result.branches[0]?.arms).toHaveLength(2);
-			expect(result.branches[0]?.arms.map((arm) => arm.location)).toStrictEqual([
+			expect(result.branches[0]!.branchType).toBe("binary-expr");
+			expect(result.branches[0]!.arms).toHaveLength(2);
+			expect(result.branches[0]!.arms.map((arm) => arm.location)).toStrictEqual([
 				span(1, 11, 1, 12),
 				span(1, 17, 1, 18),
 			]);
@@ -848,7 +848,7 @@ describe("coverage-collector", () => {
 
 			const result = collectCoverage(root);
 
-			expect(result.branches[0]?.branchType).toBe("binary-expr");
+			expect(result.branches[0]!.branchType).toBe("binary-expr");
 			expect(result.wrapProbes).toHaveLength(2);
 		});
 
@@ -898,11 +898,11 @@ describe("coverage-collector", () => {
 			const result = collectCoverage(root);
 
 			expect(result.branches.map((branch) => branch.index)).toStrictEqual([1, 2]);
-			expect(result.branches[0]?.arms.map((arm) => arm.location)).toStrictEqual([
+			expect(result.branches[0]!.arms.map((arm) => arm.location)).toStrictEqual([
 				span(1, 11, 1, 18),
 				span(1, 24, 1, 25),
 			]);
-			expect(result.branches[1]?.arms.map((arm) => arm.location)).toStrictEqual([
+			expect(result.branches[1]!.arms.map((arm) => arm.location)).toStrictEqual([
 				span(1, 11, 1, 12),
 				span(1, 17, 1, 18),
 			]);

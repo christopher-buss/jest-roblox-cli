@@ -10,7 +10,6 @@ import {
 	classifyTestFiles,
 	discoverTestFiles,
 	resolveAllSetupFilePaths,
-	resolveSetupFilePaths,
 	TYPE_TEST_PATTERN,
 } from "./discovery.ts";
 
@@ -164,13 +163,13 @@ describe(classifyTestFiles, () => {
 	});
 });
 
-describe(resolveSetupFilePaths, () => {
+describe(resolveAllSetupFilePaths, () => {
 	it("should be a no-op when no setup files are configured", async () => {
 		expect.assertions(1);
 
 		const { createSetupResolver } = await import("../config/setup-resolver");
 		const config = makeConfig();
-		resolveSetupFilePaths(config);
+		resolveAllSetupFilePaths([config]);
 
 		expect(createSetupResolver).not.toHaveBeenCalled();
 	});
@@ -181,7 +180,7 @@ describe(resolveSetupFilePaths, () => {
 		const { createSetupResolver } = await import("../config/setup-resolver");
 		vi.mocked(createSetupResolver).mockReturnValue((input: string) => `resolved:${input}`);
 		const config = makeConfig({ setupFiles: ["./a.ts"] });
-		resolveSetupFilePaths(config);
+		resolveAllSetupFilePaths([config]);
 
 		expect(config.setupFiles).toStrictEqual(["resolved:./a.ts"]);
 		expect(createSetupResolver).toHaveBeenCalledWith({
@@ -196,7 +195,7 @@ describe(resolveSetupFilePaths, () => {
 		const { createSetupResolver } = await import("../config/setup-resolver");
 		vi.mocked(createSetupResolver).mockReturnValue((input: string) => `r:${input}`);
 		const config = makeConfig({ setupFilesAfterEnv: ["./post.ts"] });
-		resolveSetupFilePaths(config);
+		resolveAllSetupFilePaths([config]);
 
 		expect(config.setupFilesAfterEnv).toStrictEqual(["r:./post.ts"]);
 	});
@@ -210,7 +209,7 @@ describe(resolveSetupFilePaths, () => {
 			rojoProject: "custom.project.json",
 			setupFiles: ["./a.ts"],
 		});
-		resolveSetupFilePaths(config);
+		resolveAllSetupFilePaths([config]);
 
 		expect(createSetupResolver).toHaveBeenCalledWith({
 			configDirectory: "/project",

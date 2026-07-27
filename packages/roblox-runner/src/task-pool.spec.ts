@@ -2,8 +2,16 @@ import { ApiError, RateLimitError } from "@bedrock-rbx/ocale";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { runTaskPool } from "./task-pool.ts";
+import { runTaskPoolAsync } from "./task-pool.ts";
+import type { TaskPoolPlace } from "./task-pool.ts";
 import type { ScriptResult } from "./types.ts";
+
+/** Envelope a task returns when it finds the shared queue already drained. */
+const EMPTY_MARKER = "EMPTY";
+
+interface AttemptCounter {
+	attempt: number;
+}
 
 interface Deferred {
 	promise: Promise<ScriptResult>;
@@ -26,41 +34,73 @@ function makeScriptResult(outputs: Array<string> = ["[]"]): ScriptResult {
 }
 
 /** Flush the microtask queue so settled-task continuations run. */
-async function flush(): Promise<void> {
+async function flushAsync(): Promise<void> {
 	await Promise.resolve();
 	await Promise.resolve();
 }
 
-describe(runTaskPool, () => {
-	it("should fill to concurrency on start", async () => {
-		expect.assertions(1);
+function describeError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
 
-		const pending: Array<Deferred> = [];
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			const deferred = makeDeferred();
-			pending.push(deferred);
-			return deferred.promise;
-		});
+function hasEvery(seen: ReadonlySet<string>, entries: ReadonlyArray<string>): boolean {
+	return entries.every((entry) => seen.has(entry));
+}
 
-		let done = false;
-		const pool = runTaskPool({
-			concurrency: 3,
-			isDone: () => done,
-			onResult: () => {},
-			places: [{ runTask }],
-		});
+/** A task that hands out the next queued item, or {@link EMPTY_MARKER}. */
+function makeQueueDrainingTask(queue: Array<string>): () => Promise<ScriptResult> {
+	return async () => makeScriptResult([queue.shift() ?? EMPTY_MARKER]);
+}
 
-		expect(runTask).toHaveBeenCalledTimes(3);
+/** A place drawing from `queue`, tallying its launches in `placeCalls`. */
+function makeSharedQueuePlace(
+	queue: Array<string>,
+	placeCalls: Array<number>,
+	placeIndex: number,
+): TaskPoolPlace {
+	const drainAsync = makeQueueDrainingTask(queue);
+	return {
+		runTask: async () => {
+			placeCalls[placeIndex] = (placeCalls[placeIndex] ?? 0) + 1;
+			return drainAsync();
+		},
+	};
+}
 
-		done = true;
-		for (const deferred of pending) {
-			deferred.resolve(makeScriptResult());
+function makeNonEmptyCollector(processed: Array<string>): (result: ScriptResult) => void {
+	return (result) => {
+		const item = result.outputs[0]!;
+		if (item !== EMPTY_MARKER) {
+			processed.push(item);
+		}
+	};
+}
+
+/** A task throwing on `throwingAttempt`, returning an envelope after. */
+function makeThrowingTask(
+	counter: AttemptCounter,
+	throwingAttempt: number,
+	makeError: () => unknown,
+): () => Promise<ScriptResult> {
+	return async () => {
+		counter.attempt += 1;
+		if (counter.attempt === throwingAttempt) {
+			throw makeError();
 		}
 
-		await pool;
-	});
+		return makeScriptResult();
+	};
+}
 
-	it("should relaunch a slot when a task returns while work remains", async () => {
+function throwOnceThenSucceed(
+	counter: AttemptCounter,
+	error: unknown,
+): () => Promise<ScriptResult> {
+	return makeThrowingTask(counter, 1, () => error);
+}
+
+describe(runTaskPoolAsync, () => {
+	it("should fill to concurrency on start", async () => {
 		expect.assertions(2);
 
 		const pending: Array<Deferred> = [];
@@ -70,10 +110,38 @@ describe(runTaskPool, () => {
 			return deferred.promise;
 		});
 
-		let done = false;
-		const pool = runTaskPool({
+		let isDone = false;
+		const pool = runTaskPoolAsync({
+			concurrency: 3,
+			isDone: () => isDone,
+			onResult: () => {},
+			places: [{ runTask }],
+		});
+
+		expect(runTask).toHaveBeenCalledTimes(3);
+
+		isDone = true;
+		for (const deferred of pending) {
+			deferred.resolve(makeScriptResult());
+		}
+
+		await expect(pool).resolves.toBeUndefined();
+	});
+
+	it("should relaunch a slot when a task returns while work remains", async () => {
+		expect.assertions(3);
+
+		const pending: Array<Deferred> = [];
+		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
+			const deferred = makeDeferred();
+			pending.push(deferred);
+			return deferred.promise;
+		});
+
+		let isDone = false;
+		const pool = runTaskPoolAsync({
 			concurrency: 1,
-			isDone: () => done,
+			isDone: () => isDone,
 			onResult: () => {},
 			places: [{ runTask }],
 		});
@@ -81,13 +149,14 @@ describe(runTaskPool, () => {
 		expect(runTask).toHaveBeenCalledOnce();
 
 		pending[0]!.resolve(makeScriptResult());
-		await flush();
+		await flushAsync();
 
 		expect(runTask).toHaveBeenCalledTimes(2);
 
-		done = true;
+		isDone = true;
 		pending[1]!.resolve(makeScriptResult());
-		await pool;
+
+		await expect(pool).resolves.toBeUndefined();
 	});
 
 	it("should stop launching once done and resolve after in-flight settle", async () => {
@@ -100,12 +169,12 @@ describe(runTaskPool, () => {
 			return deferred.promise;
 		});
 
-		let done = false;
-		const pool = runTaskPool({
+		let isDone = false;
+		const pool = runTaskPoolAsync({
 			concurrency: 2,
-			isDone: () => done,
+			isDone: () => isDone,
 			onResult: () => {
-				done = true;
+				isDone = true;
 			},
 			places: [{ runTask }],
 		});
@@ -117,7 +186,7 @@ describe(runTaskPool, () => {
 		await pool;
 
 		expect(runTask).toHaveBeenCalledTimes(2);
-		expect(done).toBeTrue();
+		expect(isDone).toBeTrue();
 	});
 
 	it("should fold every settled task's envelope", async () => {
@@ -126,43 +195,37 @@ describe(runTaskPool, () => {
 		// Eager relaunch means slots may over-launch past the real work; those
 		// tasks find an empty queue and return a benign empty envelope. What the
 		// pool guarantees is that every settled envelope is folded.
-		const work = ["a", "b", "c"];
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			return makeScriptResult([work.shift() ?? "[]"]);
-		});
+		const expected = ["a", "b", "c"];
+		const work = [...expected];
+		const runTask = vi.fn<() => Promise<ScriptResult>>(makeQueueDrainingTask(work));
 
 		const seen = new Set<string>();
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 3,
-			isDone: () => seen.has("a") && seen.has("b") && seen.has("c"),
+			isDone: () => hasEvery(seen, expected),
 			onResult: (result) => {
 				seen.add(result.outputs[0]!);
 			},
 			places: [{ runTask }],
 		});
 
-		expect(["a", "b", "c"].every((entry) => seen.has(entry))).toBeTrue();
+		expect(hasEvery(seen, expected)).toBeTrue();
 	});
 
 	it("should free and relaunch a slot when a task throws, surfacing the error", async () => {
 		expect.assertions(2);
 
-		let attempt = 0;
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			attempt += 1;
-			if (attempt === 1) {
-				throw new Error("transient");
-			}
-
-			return makeScriptResult();
-		});
+		const counter = { attempt: 0 };
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			throwOnceThenSucceed(counter, new Error("transient")),
+		);
 
 		const errors: Array<string> = [];
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 1,
-			isDone: () => attempt >= 2,
+			isDone: () => counter.attempt >= 2,
 			onError: (error) => {
-				errors.push(error instanceof Error ? error.message : String(error));
+				errors.push(describeError(error));
 			},
 			onResult: () => {},
 			places: [{ runTask }],
@@ -175,20 +238,15 @@ describe(runTaskPool, () => {
 	it("should swallow a task error when no onError handler is provided", async () => {
 		expect.assertions(1);
 
-		let attempt = 0;
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			attempt += 1;
-			if (attempt === 1) {
-				throw new Error("transient");
-			}
-
-			return makeScriptResult();
-		});
+		const counter = { attempt: 0 };
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			throwOnceThenSucceed(counter, new Error("transient")),
+		);
 
 		await expect(
-			runTaskPool({
+			runTaskPoolAsync({
 				concurrency: 1,
-				isDone: () => attempt >= 2,
+				isDone: () => counter.attempt >= 2,
 				onResult: () => {},
 				places: [{ runTask }],
 			}),
@@ -201,7 +259,7 @@ describe(runTaskPool, () => {
 		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => makeScriptResult());
 
 		await expect(
-			runTaskPool({
+			runTaskPoolAsync({
 				concurrency: 0,
 				isDone: () => false,
 				onResult: () => {},
@@ -214,7 +272,12 @@ describe(runTaskPool, () => {
 		expect.assertions(1);
 
 		await expect(
-			runTaskPool({ concurrency: 1, isDone: () => false, onResult: () => {}, places: [] }),
+			runTaskPoolAsync({
+				concurrency: 1,
+				isDone: () => false,
+				onResult: () => {},
+				places: [],
+			}),
 		).rejects.toThrow(/at least one place/);
 	});
 
@@ -222,7 +285,7 @@ describe(runTaskPool, () => {
 		expect.assertions(1);
 
 		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => makeScriptResult());
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 4,
 			isDone: () => true,
 			onResult: () => {},
@@ -239,27 +302,16 @@ describe("runTaskPool multi-place fan-out", () => {
 
 		const queue = ["w0", "w1", "w2", "w3", "w4", "w5"];
 		const placeCalls = [0, 0];
-		function makePlace(placeIndex: number): { runTask: () => Promise<ScriptResult> } {
-			return {
-				runTask: async (): Promise<ScriptResult> => {
-					placeCalls[placeIndex] = (placeCalls[placeIndex] ?? 0) + 1;
-					const item = queue.shift();
-					return makeScriptResult([item ?? "EMPTY"]);
-				},
-			};
-		}
 
 		const processed: Array<string> = [];
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 4,
 			isDone: () => queue.length === 0,
-			onResult: (result) => {
-				const item = result.outputs[0]!;
-				if (item !== "EMPTY") {
-					processed.push(item);
-				}
-			},
-			places: [makePlace(0), makePlace(1)],
+			onResult: makeNonEmptyCollector(processed),
+			places: [
+				makeSharedQueuePlace(queue, placeCalls, 0),
+				makeSharedQueuePlace(queue, placeCalls, 1),
+			],
 		});
 
 		expect(processed.toSorted()).toStrictEqual(["w0", "w1", "w2", "w3", "w4", "w5"]);
@@ -277,7 +329,7 @@ describe("runTaskPool multi-place fan-out", () => {
 		const runTaskB = vi.fn<() => Promise<ScriptResult>>(async () => makeDeferred().promise);
 
 		// 5 slots across 2 places ⇒ ⌊5/2⌋ = 2 each, remainder 1 to the first.
-		void runTaskPool({
+		void runTaskPoolAsync({
 			concurrency: 5,
 			isDone: () => false,
 			onResult: () => {},
@@ -295,7 +347,7 @@ describe("runTaskPool multi-place fan-out", () => {
 		const runTaskB = vi.fn<() => Promise<ScriptResult>>(async () => makeDeferred().promise);
 		const warn = vi.fn<(message: string) => void>();
 
-		void runTaskPool({
+		void runTaskPoolAsync({
 			concurrency: 25,
 			isDone: () => false,
 			onResult: () => {},
@@ -314,7 +366,7 @@ describe("runTaskPool multi-place fan-out", () => {
 		const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => makeDeferred().promise);
 
-		void runTaskPool({
+		void runTaskPoolAsync({
 			concurrency: 50,
 			isDone: () => false,
 			onResult: () => {},
@@ -329,21 +381,19 @@ describe("runTaskPool backoff", () => {
 	it("should back off a rate-limit 429 by the server retry delay and retry", async () => {
 		expect.assertions(3);
 
-		let attempt = 0;
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			attempt += 1;
-			if (attempt === 1) {
-				throw new RateLimitError("slow down", { retryAfterSeconds: 7 });
-			}
-
-			return makeScriptResult();
-		});
+		const counter = { attempt: 0 };
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			throwOnceThenSucceed(
+				counter,
+				new RateLimitError("slow down", { retryAfterSeconds: 7 }),
+			),
+		);
 		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue();
 		const onError = vi.fn<(error: unknown) => void>();
 
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 1,
-			isDone: () => attempt >= 2,
+			isDone: () => counter.attempt >= 2,
 			now: () => 0,
 			onError,
 			onResult: () => {},
@@ -359,21 +409,19 @@ describe("runTaskPool backoff", () => {
 	it("should floor a zero retry-after to the default delay, not spin", async () => {
 		expect.assertions(2);
 
-		let attempt = 0;
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			attempt += 1;
-			if (attempt === 1) {
-				// A 429 with retry-after 0 must not yield a sleep(0) tight loop.
-				throw new RateLimitError("slow down", { retryAfterSeconds: 0 });
-			}
-
-			return makeScriptResult();
-		});
+		const counter = { attempt: 0 };
+		// A 429 with retry-after 0 must not yield a sleep(0) tight loop.
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			throwOnceThenSucceed(
+				counter,
+				new RateLimitError("slow down", { retryAfterSeconds: 0 }),
+			),
+		);
 		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue();
 
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 1,
-			isDone: () => attempt >= 2,
+			isDone: () => counter.attempt >= 2,
 			now: () => 0,
 			onResult: () => {},
 			places: [{ runTask }],
@@ -387,20 +435,18 @@ describe("runTaskPool backoff", () => {
 	it("should back off a genuinely-full place by the default delay and retry", async () => {
 		expect.assertions(2);
 
-		let attempt = 0;
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			attempt += 1;
-			if (attempt === 1) {
-				throw new ApiError("full", { code: "RESOURCE_EXHAUSTED", statusCode: 429 });
-			}
-
-			return makeScriptResult();
-		});
+		const counter = { attempt: 0 };
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			throwOnceThenSucceed(
+				counter,
+				new ApiError("full", { code: "RESOURCE_EXHAUSTED", statusCode: 429 }),
+			),
+		);
 		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue();
 
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 1,
-			isDone: () => attempt >= 2,
+			isDone: () => counter.attempt >= 2,
 			now: () => 0,
 			onResult: () => {},
 			places: [{ runTask }],
@@ -414,24 +460,21 @@ describe("runTaskPool backoff", () => {
 	it("should treat a backoff signal right after a completion as recycle lag, not place-full", async () => {
 		expect.assertions(2);
 
-		let attempt = 0;
+		const counter = { attempt: 0 };
 		const clock = { ms: 0 };
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			attempt += 1;
-			if (attempt === 2) {
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			makeThrowingTask(counter, 2, () => {
 				// 2s after the first task completed (at clock 0): inside the ~10s
 				// recycle window, so the long server retry-after must NOT win.
 				clock.ms = 2000;
-				throw new RateLimitError("slow down", { retryAfterSeconds: 30 });
-			}
-
-			return makeScriptResult();
-		});
+				return new RateLimitError("slow down", { retryAfterSeconds: 30 });
+			}),
+		);
 		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue();
 
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 1,
-			isDone: () => attempt >= 3,
+			isDone: () => counter.attempt >= 3,
 			now: () => clock.ms,
 			onResult: () => {},
 			places: [{ runTask }],
@@ -446,22 +489,20 @@ describe("runTaskPool backoff", () => {
 	it("should unwrap a backoff signal carried on the error cause chain", async () => {
 		expect.assertions(2);
 
-		let attempt = 0;
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			attempt += 1;
-			if (attempt === 1) {
-				throw new Error("execute failed", {
+		const counter = { attempt: 0 };
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			throwOnceThenSucceed(
+				counter,
+				new Error("execute failed", {
 					cause: new RateLimitError("slow down", { retryAfterSeconds: 3 }),
-				});
-			}
-
-			return makeScriptResult();
-		});
+				}),
+			),
+		);
 		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue();
 
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 1,
-			isDone: () => attempt >= 2,
+			isDone: () => counter.attempt >= 2,
 			now: () => 0,
 			onResult: () => {},
 			places: [{ runTask }],
@@ -475,22 +516,15 @@ describe("runTaskPool backoff", () => {
 	it("should surface an API error it does not back off on rather than backing off", async () => {
 		expect.assertions(3);
 
-		let attempt = 0;
+		const counter = { attempt: 0 };
 		const apiError = new ApiError("not found", { code: "NotFound", statusCode: 404 });
-		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
-			attempt += 1;
-			if (attempt === 1) {
-				throw apiError;
-			}
-
-			return makeScriptResult();
-		});
+		const runTask = vi.fn<() => Promise<ScriptResult>>(throwOnceThenSucceed(counter, apiError));
 		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue();
 		const onError = vi.fn<(error: unknown) => void>();
 
-		await runTaskPool({
+		await runTaskPoolAsync({
 			concurrency: 1,
-			isDone: () => attempt >= 2,
+			isDone: () => counter.attempt >= 2,
 			onError,
 			onResult: () => {},
 			places: [{ runTask }],

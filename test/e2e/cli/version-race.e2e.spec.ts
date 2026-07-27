@@ -13,6 +13,10 @@ import {
 
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 
+function isTaskCreatePost(call: { method: string; url: string }): boolean {
+	return call.method === "POST" && call.url.endsWith("/luau-execution-session-tasks");
+}
+
 describe("optimistic place-version pinning", () => {
 	it("should retry a raced task pinned to the uploaded version and still pass", async () => {
 		expect.assertions(7);
@@ -35,9 +39,7 @@ describe("optimistic place-version pinning", () => {
 		expect(result.stderr).toContain("place version raced");
 		expect(server.requests[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
 
-		const taskPosts = server.calls.filter(
-			(call) => call.method === "POST" && call.url.endsWith("/luau-execution-session-tasks"),
-		);
+		const taskPosts = server.calls.filter(isTaskCreatePost);
 
 		expect(taskPosts).toHaveLength(2);
 		// First attempt is unpinned (warm-pool route), the retry is pinned to

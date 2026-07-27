@@ -1,3 +1,5 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -628,7 +630,11 @@ describe("luau-visitor", () => {
 		it("should silently skip unknown statement tags", () => {
 			expect.assertions(1);
 
-			const node = { kind: "stat", location: span, tag: "unknown" } as unknown as AstStat;
+			const node = fromAny({
+				kind: "stat",
+				location: span,
+				tag: "unknown",
+			}) satisfies AstStat;
 
 			expect(() => {
 				visitStatement(node, {});
@@ -1081,11 +1087,11 @@ describe("luau-visitor", () => {
 		it("should silently skip unknown expression tags", () => {
 			expect.assertions(1);
 
-			const node = {
+			const node = fromAny({
 				kind: "expr",
 				location: span,
 				tag: "unknown",
-			} as unknown as AstExpr;
+			}) satisfies AstExpr;
 
 			expect(() => {
 				visitExpression(node, {});

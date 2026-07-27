@@ -68,14 +68,14 @@ export function narrowForLuauRun(
 }
 
 /**
- * roblox-ts renames an `index` module to `init` (PathTranslator: a filename stem
- * of exactly `index` becomes `init`), so the Roblox Instance — and thus the path
- * Jest matches against — is named `init`, never `index`. Mirror that rename on
- * the basename stem so a positional `index.spec.ts` resolves to the on-Roblox
- * `init.spec`. Inverse of `luauInitToIndex` in the source mapper.
+ * roblox-ts renames an `index` module to `init` (PathTranslator: a filename
+ * stem of exactly `index` becomes `init`), so the Roblox Instance — and thus
+ * the path Jest matches against — is named `init`, never `index`. Mirror that
+ * rename on the basename stem so a positional `index.spec.ts` resolves to the
+ * on-Roblox `init.spec`. Inverse of `luauInitToIndex` in the source mapper.
  *
- * Scoped to TS/TSX sources by the caller: the rename is roblox-ts-specific, so a
- * hand-authored Luau/Lua `index` file keeps its name in Rojo and must not be
+ * Scoped to TS/TSX sources by the caller: the rename is roblox-ts-specific, so
+ * a hand-authored Luau/Lua `index` file keeps its name in Rojo and must not be
  * rewritten (else a pure-Luau project's positional arg matches zero tests).
  */
 function indexStemToInit(basename: string): string {

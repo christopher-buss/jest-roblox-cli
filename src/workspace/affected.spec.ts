@@ -4,7 +4,7 @@ import { vol } from "memfs";
 import * as cp from "node:child_process";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { getAffectedPackages } from "./affected.ts";
 
@@ -25,7 +25,7 @@ vi.mock(import("node:child_process"));
 
 const ROOT = path.resolve("/repo");
 
-type NxResolveResult = "not-found" | "schema-violation" | { root: string };
+type NxResolveResult = "non-json" | "not-found" | "schema-violation" | { root: string };
 
 function packagePathFor(name: string): string {
 	return `packages/${name.replace(/^@[^/]+\//, "")}`;
@@ -90,10 +90,36 @@ function mockNxResponses(
 				return JSON.stringify({ name, type: "library" });
 			}
 
+			if (entry === "non-json") {
+				return "Welcome to nx!\nnot-json-at-all";
+			}
+
 			return JSON.stringify({ name, root: entry.root, type: "library" });
 		}
 
 		throw new Error(`unexpected nx args: ${args.join(" ")}`);
+	});
+}
+
+// Windows wraps the nx args in `cmd /c "<command> <quoted args>"`, so
+// `mockNxResponses`' arg-routing falls through — route on the inner `/c` string
+// instead.
+function mockWindowsNxResponses(
+	affected: Array<string>,
+	project: { name: string; root: string; type: string },
+): void {
+	vi.mocked(cp.execFileSync).mockImplementation((...callArgs) => {
+		const args = callArgs[1] ?? [];
+		const inner = typeof args[3] === "string" ? args[3] : "";
+		if (inner.includes('"projects"')) {
+			return JSON.stringify(affected);
+		}
+
+		if (inner.includes('"project"')) {
+			return JSON.stringify(project);
+		}
+
+		throw new Error(`unexpected inner: ${inner}`);
 	});
 }
 
@@ -260,12 +286,17 @@ describe(getAffectedPackages, () => {
 			throw bareError;
 		});
 
-		function act(): unknown {
-			return getAffectedPackages(ROOT, "main");
+		let caught: unknown;
+		try {
+			getAffectedPackages(ROOT, "main");
+		} catch (err) {
+			caught = err;
 		}
 
-		expect(act).toThrowWithMessage(Error, "turbo failed");
-		expect(act).toThrow(expect.objectContaining({ cause: bareError }) as Error);
+		assert(caught instanceof Error);
+
+		expect(caught.message).toBe("turbo failed");
+		expect(caught.cause).toBe(bareError);
 	});
 
 	it.for<[string, string]>([
@@ -342,7 +373,7 @@ describe(getAffectedPackages, () => {
 			windowsHide: true,
 			windowsVerbatimArguments: true,
 		});
-		expect(options?.env?.["PATH"]).toStartWith(`${binDirectory}${path.delimiter}`);
+		expect(options!.env!["PATH"]).toStartWith(`${binDirectory}${path.delimiter}`);
 	});
 
 	// cspell:words PATHEXT
@@ -363,7 +394,7 @@ describe(getAffectedPackages, () => {
 
 		const [, args] = vi.mocked(cp.execFileSync).mock.calls[0]!;
 
-		expect(args?.[3]).toStartWith('"turbo "');
+		expect(args![3]).toStartWith('"turbo "');
 	});
 
 	it("should preserve cmd metacharacters like ^ inside double-quoted args on Windows", () => {
@@ -378,7 +409,7 @@ describe(getAffectedPackages, () => {
 
 		const [, args] = vi.mocked(cp.execFileSync).mock.calls[0]!;
 
-		expect(args?.[3]).toContain('"--filter=...[HEAD^]"');
+		expect(args![3]).toContain('"--filter=...[HEAD^]"');
 	});
 
 	it("should resolve nx from node_modules/.bin without a shell on POSIX", () => {
@@ -599,18 +630,7 @@ describe(getAffectedPackages, () => {
 		stubPlatform("linux");
 		vol.reset();
 		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
-		vi.mocked(cp.execFileSync).mockImplementation((...callArgs) => {
-			const args = callArgs[1] ?? [];
-			if (args[0] === "show" && args[1] === "projects") {
-				return JSON.stringify(["weird"]);
-			}
-
-			if (args[0] === "show" && args[1] === "project") {
-				return "Welcome to nx!\nnot-json-at-all";
-			}
-
-			throw new Error(`unexpected args: ${args.join(" ")}`);
-		});
+		mockNxResponses(["weird"], { weird: "non-json" });
 
 		expect(() => getAffectedPackages(ROOT, "develop")).toThrow(/nx show project "weird"/);
 	});
@@ -624,22 +644,7 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
 			[path.join(ROOT, "nx.json")]: "{}",
 		});
-		// mockNxResponses can't be used here — Windows wraps the args in
-		// `cmd /c "..."` so its arg-routing falls through. Hand-mock by
-		// inspecting the inner /c string.
-		vi.mocked(cp.execFileSync).mockImplementation((...callArgs) => {
-			const args = callArgs[1] ?? [];
-			const inner = typeof args[3] === "string" ? args[3] : "";
-			if (inner.includes('"projects"')) {
-				return JSON.stringify(["foo"]);
-			}
-
-			if (inner.includes('"project"')) {
-				return JSON.stringify({ name: "foo", root: "apps/foo", type: "library" });
-			}
-
-			throw new Error(`unexpected inner: ${inner}`);
-		});
+		mockWindowsNxResponses(["foo"], { name: "foo", root: "apps/foo", type: "library" });
 
 		getAffectedPackages(ROOT, "develop");
 
@@ -650,7 +655,7 @@ describe(getAffectedPackages, () => {
 		const [perProjectFile, perProjectArgs] = calls[1]!;
 
 		expect(perProjectFile).toBe("cmd.exe");
-		expect(perProjectArgs?.[3]).toBe('"nx "show" "project" "foo" "--json""');
+		expect(perProjectArgs![3]).toBe('"nx "show" "project" "foo" "--json""');
 	});
 
 	it("should silently drop turbo items whose path no longer exists on disk", () => {

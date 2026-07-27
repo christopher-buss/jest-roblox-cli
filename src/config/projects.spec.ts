@@ -1,7 +1,8 @@
 import type { PathClassifier, PathKind } from "@isentinel/rojo-utils";
+import { fromAny } from "@total-typescript/shoehorn";
 
 import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { ConfigError } from "./errors.ts";
@@ -36,9 +37,7 @@ vi.mock<typeof import("c12")>(import("c12"), async (importOriginal) => {
 
 	return {
 		...actual,
-		loadConfig: vi.fn<
-			(options: LoadConfigOptions) => Promise<C12ResolvedConfig>
-		>() as typeof actual.loadConfig,
+		loadConfig: fromAny(vi.fn<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>()),
 	};
 });
 
@@ -298,45 +297,43 @@ describe(mapFsRootToDataModel, () => {
 	});
 
 	it("should include hint when path starts with src/", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		let caught: ConfigError | undefined;
+		let caught: unknown;
 		try {
 			mapFsRootToDataModel("src/client", simpleRojoTree);
 		} catch (err) {
-			caught = err as ConfigError;
+			caught = err;
 		}
 
-		expect(caught).toBeInstanceOf(ConfigError);
-		expect(caught?.hint).toMatch(/set "outDir"/);
+		assert(caught instanceof ConfigError);
+
+		expect(caught.hint).toMatch(/set "outDir"/);
 	});
 
 	it("should omit hint when path does not start with src/", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		let caught: ConfigError | undefined;
+		let caught: unknown;
 		try {
 			mapFsRootToDataModel("out/unknown", simpleRojoTree);
 		} catch (err) {
-			caught = err as ConfigError;
+			caught = err;
 		}
 
-		expect(caught).toBeInstanceOf(ConfigError);
-		expect(caught?.hint).toBeUndefined();
+		assert(caught instanceof ConfigError);
+
+		expect(caught.hint).toBeUndefined();
 	});
 
 	it("should omit available paths line when tree has no $path entries", () => {
 		expect.assertions(1);
 
 		const emptyTree: RojoTreeNode = { $className: "DataModel" };
-		let message = "";
-		try {
-			mapFsRootToDataModel("out/foo", emptyTree);
-		} catch (err) {
-			({ message } = err as Error);
-		}
 
-		expect(message).toBe("No Rojo tree mapping found for path: out/foo");
+		expect(() => {
+			mapFsRootToDataModel("out/foo", emptyTree);
+		}).toThrowWithMessage(Error, "No Rojo tree mapping found for path: out/foo");
 	});
 
 	it("should strip trailing slash before lookup", () => {
@@ -564,9 +561,11 @@ describe(resolveProjectConfig, () => {
 	it("should skip undefined project override values", () => {
 		expect.assertions(1);
 
-		const project = makeProject({
-			displayName: "client",
-			outDir: "out/client",
+		// `testTimeout: undefined` cannot be expressed under
+		// exactOptionalPropertyTypes, but a hand-written config can still
+		// deliver it at runtime — which is the path under test.
+		const project: ProjectTestConfig = fromAny({
+			...makeProject({ displayName: "client", outDir: "out/client" }),
 			testTimeout: undefined,
 		});
 
@@ -712,9 +711,9 @@ describe(resolveProjectConfig, () => {
 			include: ["src/Cli/**/*.spec.luau"],
 		});
 
-		expect(() =>
-			resolveProjectConfig(project, rootConfig, tree, allDirectories),
-		).toThrowWithMessage(
+		expect(() => {
+			return resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		}).toThrowWithMessage(
 			ConfigError,
 			/include root "src\/Cli" did not match any Rojo \$path entry/,
 		);
@@ -872,9 +871,9 @@ describe(resolveProjectConfig, () => {
 			outDir: "out/nonexistent",
 		});
 
-		expect(() =>
-			resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories),
-		).toThrowWithMessage(ConfigError, /No Rojo tree mapping found for path: out\/nonexistent/);
+		expect(() => {
+			return resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		}).toThrowWithMessage(ConfigError, /No Rojo tree mapping found for path: out\/nonexistent/);
 	});
 
 	it("should apply project root before extracting include roots", () => {
@@ -919,9 +918,9 @@ describe(resolveProjectConfig, () => {
 			include: ["ghost/**/*.spec.luau"],
 		});
 
-		expect(() =>
-			resolveProjectConfig(project, rootConfig, tree, allDirectories),
-		).toThrowWithMessage(ConfigError, /Available \$path entries: out\/Client, out\/Shared/);
+		expect(() => {
+			return resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		}).toThrowWithMessage(ConfigError, /Available \$path entries: out\/Client, out\/Shared/);
 	});
 
 	it("should omit available-entries line when rojo tree has no $path entries", () => {
@@ -934,18 +933,13 @@ describe(resolveProjectConfig, () => {
 			include: ["ghost/**/*.spec.luau"],
 		});
 
-		let caught: ConfigError | undefined;
-		try {
+		expect(() => {
 			resolveProjectConfig(project, rootConfig, emptyTree, allDirectories);
-		} catch (err) {
-			caught = err as ConfigError;
-		}
-
-		expect(caught?.message).not.toContain("Available $path entries");
+		}).not.toThrow(/Available \$path entries/);
 	});
 
 	it("should hint about outDir when unmappable root starts with src/", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const tree = {
 			$className: "DataModel",
@@ -959,15 +953,16 @@ describe(resolveProjectConfig, () => {
 			include: ["src/ghost/**/*.spec.ts"],
 		});
 
-		let caught: ConfigError | undefined;
+		let caught: unknown;
 		try {
 			resolveProjectConfig(project, rootConfig, tree, allDirectories);
 		} catch (err) {
-			caught = err as ConfigError;
+			caught = err;
 		}
 
-		expect(caught).toBeInstanceOf(ConfigError);
-		expect(caught?.hint).toMatch(/set "outDir"/);
+		assert(caught instanceof ConfigError);
+
+		expect(caught.hint).toMatch(/set "outDir"/);
 	});
 
 	it("should resolve includes from cwd when root is not set", () => {
@@ -1145,7 +1140,7 @@ describe(loadProjectConfigFile, () => {
 
 		const result = await loadProjectConfigFile("./minimal.config.ts", "/project");
 
-		expect((result as unknown as Record<string, unknown>)["include"]).toBeUndefined();
+		expect(result).not.toHaveProperty("include");
 	});
 
 	it("should derive outDir from config path for roblox-ts projects", async () => {
@@ -1561,9 +1556,7 @@ describe(createFsClassifier, () => {
 		expect.assertions(1);
 
 		const fs = await import("node:fs");
-		vi.spyOn(fs.default, "statSync").mockReturnValueOnce({
-			isDirectory: () => true,
-		} as unknown as ReturnType<typeof fs.statSync>);
+		vi.spyOn(fs.default, "statSync").mockReturnValueOnce(fromAny({ isDirectory: () => true }));
 
 		const classify = createFsClassifier("/root");
 
@@ -1574,9 +1567,7 @@ describe(createFsClassifier, () => {
 		expect.assertions(1);
 
 		const fs = await import("node:fs");
-		vi.spyOn(fs.default, "statSync").mockReturnValueOnce({
-			isDirectory: () => false,
-		} as unknown as ReturnType<typeof fs.statSync>);
+		vi.spyOn(fs.default, "statSync").mockReturnValueOnce(fromAny({ isDirectory: () => false }));
 
 		const classify = createFsClassifier("/root");
 
@@ -1598,9 +1589,9 @@ describe(createFsClassifier, () => {
 		expect.assertions(1);
 
 		const fs = await import("node:fs");
-		const spy = vi.spyOn(fs.default, "statSync").mockReturnValueOnce({
-			isDirectory: () => true,
-		} as unknown as ReturnType<typeof fs.statSync>);
+		const spy = vi
+			.spyOn(fs.default, "statSync")
+			.mockReturnValueOnce(fromAny({ isDirectory: () => true }));
 
 		const classify = createFsClassifier("/workspace/root");
 		classify("src/Client");
@@ -1614,9 +1605,9 @@ describe(createFsClassifier, () => {
 		expect.assertions(1);
 
 		const fs = await import("node:fs");
-		const spy = vi.spyOn(fs.default, "statSync").mockReturnValueOnce({
-			isDirectory: () => true,
-		} as unknown as ReturnType<typeof fs.statSync>);
+		const spy = vi
+			.spyOn(fs.default, "statSync")
+			.mockReturnValueOnce(fromAny({ isDirectory: () => true }));
 
 		const classify = createFsClassifier("/workspace/root");
 		classify("/absolute/path");

@@ -123,10 +123,10 @@ function resultFrame(requestId: string, reply: ReplyOptions): string {
 }
 
 /**
- * A launcher that, once the backend is listening, drives the canned result frame
- * back over the mock WebSocket server — the socket stand-in for a real bootstrap
- * pushing its envelope. `onLaunch` runs synchronously with the launch request
- * (to capture args/bootstrap before the reply).
+ * A launcher that, once the backend is listening, drives the canned result
+ * frame back over the mock WebSocket server — the socket stand-in for a real
+ * bootstrap pushing its envelope. `onLaunch` runs synchronously with the
+ * launch request (to capture args/bootstrap before the reply).
  */
 function replyWith(
 	reply: ReplyOptions = {},
@@ -179,7 +179,7 @@ function backendReplying(reply: ReplyOptions = {}): StudioCliBackend {
 // pointing at the mega-place the workspace runner already built. studio-cli
 // keys off `pkg` to switch into the staged/materializer dispatch.
 function workspaceJob(
-	package_: string,
+	packageName: string,
 	displayName: string,
 	overrides: Partial<ResolvedConfig> = {},
 ): ProjectJob {
@@ -188,7 +188,7 @@ function workspaceJob(
 			placeFile: "/repo/.jest-roblox/workspace/synthesized.rbxl",
 			...overrides,
 		}),
-		pkg: package_,
+		pkg: packageName,
 	};
 }
 
@@ -468,8 +468,8 @@ describe(StudioCliBackend, () => {
 
 		await backend.runTests(singleJob);
 
-		expect(captured?.studioPath).toBe("C:/Studio/RobloxStudioBeta.exe");
-		expect(captured?.args).toStrictEqual(
+		expect(captured!.studioPath).toBe("C:/Studio/RobloxStudioBeta.exe");
+		expect(captured!.args).toStrictEqual(
 			expect.arrayContaining([
 				"--task",
 				"RunScript",
@@ -486,14 +486,14 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		let captured: boolean | undefined;
+		let wasHeadedRequested: boolean | undefined;
 		const { launch } = replyWith({}, (request) => {
-			captured = request.headed;
+			wasHeadedRequested = request.headed;
 		});
 
 		await makeBackend(launch, { headed: true }).runTests(singleJob);
 
-		expect(captured).toBeTrue();
+		expect(wasHeadedRequested).toBeTrue();
 	});
 
 	it("should default headed to false in the launch request", async () => {
@@ -501,14 +501,14 @@ describe(StudioCliBackend, () => {
 
 		resetVol();
 
-		let captured: boolean | undefined;
+		let wasHeadedRequested: boolean | undefined;
 		const { launch } = replyWith({}, (request) => {
-			captured = request.headed;
+			wasHeadedRequested = request.headed;
 		});
 
 		await makeBackend(launch).runTests(singleJob);
 
-		expect(captured).toBeFalse();
+		expect(wasHeadedRequested).toBeFalse();
 	});
 
 	it("should pass the studioPath override to the discover seam", async () => {
@@ -715,7 +715,7 @@ describe(StudioCliBackend, () => {
 			// port. State on an object so the lazy implementation re-reads it.
 			const state = { listening: false };
 			vi.spyOn(server, "address").mockImplementation(() => {
-				if (state.listening && boundPort !== undefined) {
+				if (boundPort !== undefined && state.listening) {
 					return { port: boundPort };
 				}
 
@@ -885,10 +885,12 @@ describe(StudioCliBackend, () => {
 		function stubSpawn(): { args: () => Array<string>; child: FakeChild } {
 			const child = new FakeChild();
 			let capturedArgs: Array<string> = [];
-			vi.mocked(spawn).mockImplementation(((_file: string, args: Array<string>) => {
-				capturedArgs = args;
-				return child as unknown as ChildProcess;
-			}) as unknown as typeof spawn);
+			vi.mocked(spawn).mockImplementation(
+				fromAny((_file: string, args: Array<string>) => {
+					capturedArgs = args;
+					return child;
+				}),
+			);
 			return { args: () => capturedArgs, child };
 		}
 

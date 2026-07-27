@@ -5,7 +5,6 @@
 		"tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
 		"lib": ["esnext"],
 		"libReplacement": true,
-		"allowImportingTsExtensions": true,
 		"allowJs": false,
 		"emitDeclarationOnly": true,
 		"noEmit": false,

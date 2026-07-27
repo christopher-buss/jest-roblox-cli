@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
@@ -94,20 +94,23 @@ describe(validateBasicWorkspaceFlags, () => {
 	it("should reject --workspace with empty --packages string", () => {
 		expect.assertions(1);
 
-		const result = validateBasicWorkspaceFlags(makeCli({ packages: "   ", workspace: true }));
+		const result = validateBasicWorkspaceFlags(
+			makeCli({ packages: " ".repeat(3), workspace: true }),
+		);
 
 		expect(result.ok).toBeFalse();
 	});
 
 	it("should reject --packages that splits to zero entries", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(makeCli({ packages: "  ,  ", workspace: true }));
 
-		expect(result.ok).toBeFalse();
-		expect((result as { message: string }).message).toBe(
-			"Error: --workspace requires --packages or --affected-since.\n",
-		);
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			message: "Error: --workspace requires --packages or --affected-since.\n",
+			ok: false,
+		});
 	});
 
 	it("should accept --workspace with --packages", () => {
@@ -152,9 +155,10 @@ describe(assertWorkspaceRunOptions, () => {
 		const result = assertWorkspaceRunOptions(
 			makeRunOptions({ backend: "studio-cli", parallel: 2 }),
 		);
+		assert(!result.ok);
 
 		expect(result.ok).toBeFalse();
-		expect((result as { message: string }).message).toContain("serial");
+		expect(result.message).toContain("serial");
 	});
 
 	it("should reject studio-cli with --parallel auto", () => {

@@ -1,29 +1,28 @@
 /**
- * E2e — single + projects(multi) `--typecheckOnly`.
+ * E2e — bare-config + `projects:` `--typecheckOnly`.
  *
- * Drives the real CLI binary through config-load → discovery → classification →
- * grouping → real tsgo → result-merge → exit-code, in single and multi mode.
- * `--typecheckOnly` is pure-local tsgo: no rojo build, no Open Cloud, no secrets
- * — so this lives in the default `e2e` project (not the rojo/live-gated ones).
+ * Drives the real CLI binary through config-load → discovery → classification
+ * → grouping → real tsgo → result-merge → exit-code, for a bare config (which
+ * collapses into the multi pipeline with no Rojo project on disk) and for an
+ * explicit `projects:` config.
+ * `--typecheckOnly` is pure-local tsgo: no rojo build, no Open Cloud, no
+ * secrets — so this lives in the default `e2e` project (not the
+ * rojo/live-gated ones).
  *
  * The runner-level integration spec (`typecheck.integration.spec.ts`) calls
- * `runTypecheck` directly; the flow specs (`run/single.spec.ts`,
- * `run/multi.spec.ts`) mock it. Nothing else runs the binary end to end, so this
- * is the only guard on the CLI-arg → populated-`typecheckResult` wiring
- * (discovery globs, `-d` derivation, per-project grouping, exit code).
+ * `runTypecheck` directly; the flow spec (`run/multi.spec.ts`) mocks it.
+ * Nothing else runs the binary end to end, so this is the only guard on the
+ * CLI-arg → populated-`typecheckResult` wiring (discovery globs, `-d`
+ * derivation, per-project grouping, exit code).
  */
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createFixtureSandbox, readJsonSync, runCliAsync } from "./helpers.ts";
+import { createFixtureSandbox, readMergedTestFilePaths, runCliAsync } from "./helpers.ts";
 
 const SINGLE_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-single");
 const SINGLE_BROKEN_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-single-broken");
 const MULTI_FIXTURE = path.resolve(__dirname, "../fixtures/typecheck-multi");
-
-interface MergedResult {
-	testResults: Array<{ testFilePath: string }>;
-}
 
 describe("single --typecheckOnly e2e", () => {
 	it("should run config-enabled type tests and exit 0 when they pass", async () => {
@@ -73,8 +72,7 @@ describe("multi --typecheckOnly e2e", () => {
 		expect(result.exitCode).toBe(1);
 		expect(output).toContain("should reject a string assigned to number");
 
-		const merged = readJsonSync(outputFile) as MergedResult;
-		const paths = merged.testResults.map((file) => file.testFilePath);
+		const paths = readMergedTestFilePaths(outputFile);
 
 		expect(paths.some((filePath) => filePath.includes("alpha"))).toBeTrue();
 		expect(paths.some((filePath) => filePath.includes("beta"))).toBeTrue();

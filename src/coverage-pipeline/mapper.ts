@@ -80,7 +80,10 @@ interface MappedPosition {
 interface FileResources {
 	coverageMap: CoverageMap;
 	sourceKey: string;
-	/** Directory containing the source map, used to resolve relative source paths. */
+	/**
+	 * Directory containing the source map, used to resolve relative source
+	 * paths.
+	 */
 	sourceMapDirectory: string;
 	traceMap: TraceMap | undefined;
 }
@@ -91,6 +94,15 @@ interface MappedArmLocations {
 		start: { column: number; line: number };
 	}>;
 	tsPath: string;
+}
+
+interface PushPendingBranchOptions {
+	armHitCounts: Array<number>;
+	/** Names the caller's own "locations are non-empty here" invariant. */
+	emptyMessage: string;
+	entry: { locations: ReadonlyArray<SourceLocation>; type: string };
+	fileBranches: Array<PendingBranch>;
+	locations: PendingBranch["locations"];
 }
 
 interface SourceMapped {
@@ -216,6 +228,17 @@ function passthroughFileStatements(
 	}
 }
 
+/** Get the list a file's entries accumulate into, creating it on demand. */
+function pendingListFor<T>(pending: Map<string, Array<T>>, key: string): Array<T> {
+	let list = pending.get(key);
+	if (list === undefined) {
+		list = [];
+		pending.set(key, list);
+	}
+
+	return list;
+}
+
 function passthroughFileFunctions(
 	resources: FileResources,
 	fileCoverage: RawCoverageData[string],
@@ -225,11 +248,7 @@ function passthroughFileFunctions(
 		return;
 	}
 
-	let fileFunctions = pendingFunctions.get(resources.sourceKey);
-	if (fileFunctions === undefined) {
-		fileFunctions = [];
-		pendingFunctions.set(resources.sourceKey, fileFunctions);
-	}
+	const fileFunctions = pendingListFor(pendingFunctions, resources.sourceKey);
 
 	for (const [functionId, entry] of Object.entries(resources.coverageMap.functionMap)) {
 		fileFunctions.push({
@@ -249,6 +268,42 @@ function passthroughFileFunctions(
 	}
 }
 
+function toIstanbulLocations(locations: ReadonlyArray<SourceLocation>): PendingBranch["locations"] {
+	return locations.map((location) => {
+		return {
+			end: { column: toIstanbulColumn(location.end.column), line: location.end.line },
+			start: { column: toIstanbulColumn(location.start.column), line: location.start.line },
+		};
+	});
+}
+
+/**
+ * Record one branch, spanning its arms from the first arm's start to the last
+ * arm's end. `emptyMessage` names the caller's own invariant, since the two
+ * callers reach a non-empty `locations` by different routes.
+ */
+function pushPendingBranch({
+	armHitCounts,
+	emptyMessage,
+	entry,
+	fileBranches,
+	locations,
+}: PushPendingBranchOptions): void {
+	const firstLocation = locations[0];
+	const lastLocation = locations.at(-1);
+	assert(firstLocation !== undefined && lastLocation !== undefined, emptyMessage);
+
+	fileBranches.push({
+		armHitCounts: entry.locations.map((_, index) => armHitCounts[index] ?? 0),
+		loc: {
+			end: lastLocation.end,
+			start: firstLocation.start,
+		},
+		locations,
+		type: entry.type,
+	});
+}
+
 // --- Source-mapped helpers (roblox-ts → TypeScript) ---
 
 function passthroughFileBranches(
@@ -260,43 +315,21 @@ function passthroughFileBranches(
 		return;
 	}
 
-	let fileBranches = pendingBranches.get(resources.sourceKey);
-	if (fileBranches === undefined) {
-		fileBranches = [];
-		pendingBranches.set(resources.sourceKey, fileBranches);
-	}
+	const fileBranches = pendingListFor(pendingBranches, resources.sourceKey);
 
 	for (const [branchId, entry] of Object.entries(resources.coverageMap.branchMap)) {
 		const armHitCounts = fileCoverage.b?.[branchId] ?? [];
-		const locations: PendingBranch["locations"] = entry.locations.map((location) => {
-			return {
-				end: { column: toIstanbulColumn(location.end.column), line: location.end.line },
-				start: {
-					column: toIstanbulColumn(location.start.column),
-					line: location.start.line,
-				},
-			};
-		});
-
+		const locations = toIstanbulLocations(entry.locations);
 		if (locations.length === 0) {
 			continue;
 		}
 
-		const firstLocation = locations[0];
-		const lastLocation = locations.at(-1);
-		assert(
-			firstLocation !== undefined && lastLocation !== undefined,
-			"Branch locations must not be empty after filtering",
-		);
-
-		fileBranches.push({
-			armHitCounts: entry.locations.map((_, index) => armHitCounts[index] ?? 0),
-			loc: {
-				end: lastLocation.end,
-				start: firstLocation.start,
-			},
+		pushPendingBranch({
+			armHitCounts,
+			emptyMessage: "Branch locations must not be empty after filtering",
+			entry,
+			fileBranches,
 			locations,
-			type: entry.type,
 		});
 	}
 }
@@ -426,6 +459,35 @@ function mapFileStatements(
 	return resolvedTsPaths;
 }
 
+/**
+ * Function location couldn't be source-mapped — fall back to the TS path
+ * inferred from successfully-mapped statements so the function still appears in
+ * % Funcs (typically uncovered). Picks the first resolved path; roblox-ts emits
+ * one .luau per .ts file so multi-source is not expected in practice.
+ */
+function addUnmappedFunction(
+	pendingFunctions: Map<string, Array<PendingFunction>>,
+	resolvedTsPaths: Set<string>,
+	name: string,
+	hitCount: number,
+): void {
+	const fallbackPath = resolvedTsPaths.values().next().value;
+	if (fallbackPath === undefined) {
+		return;
+	}
+
+	// Use line 1, column 0 — Istanbul consumers expect 1-based lines; line 0 may
+	// render oddly in HTML/lcov reporters.
+	pendingListFor(pendingFunctions, fallbackPath).push({
+		name,
+		hitCount,
+		loc: {
+			end: { column: 0, line: 1 },
+			start: { column: 0, line: 1 },
+		},
+	});
+}
+
 function mapFileFunctions(
 	resources: SourceMapped,
 	fileCoverage: RawCoverageData[string],
@@ -445,49 +507,17 @@ function mapFileFunctions(
 			resources.sourceMapDirectory,
 		);
 
-		if (mapped !== undefined) {
-			const tsPath = mapped.start.source;
-			let fileFunctions = pendingFunctions.get(tsPath);
-			if (fileFunctions === undefined) {
-				fileFunctions = [];
-				pendingFunctions.set(tsPath, fileFunctions);
-			}
-
-			fileFunctions.push({
-				name: entry.name,
-				hitCount,
-				loc: {
-					end: { column: mapped.end.column, line: mapped.end.line },
-					start: { column: mapped.start.column, line: mapped.start.line },
-				},
-			});
+		if (mapped === undefined) {
+			addUnmappedFunction(pendingFunctions, resolvedTsPaths, entry.name, hitCount);
 			continue;
 		}
 
-		// Function location couldn't be source-mapped — fall back to
-		// the TS path inferred from successfully-mapped statements so
-		// the function still appears in % Funcs (typically uncovered).
-		// Picks the first resolved path; roblox-ts emits one .luau per
-		// .ts file so multi-source is not expected in practice.
-		const fallbackPath = resolvedTsPaths.values().next().value;
-		if (fallbackPath === undefined) {
-			continue;
-		}
-
-		let fileFunctions = pendingFunctions.get(fallbackPath);
-		if (fileFunctions === undefined) {
-			fileFunctions = [];
-			pendingFunctions.set(fallbackPath, fileFunctions);
-		}
-
-		// Use line 1, column 0 — Istanbul consumers expect 1-based
-		// lines; line 0 may render oddly in HTML/lcov reporters.
-		fileFunctions.push({
+		pendingListFor(pendingFunctions, mapped.start.source).push({
 			name: entry.name,
 			hitCount,
 			loc: {
-				end: { column: 0, line: 1 },
-				start: { column: 0, line: 1 },
+				end: { column: mapped.end.column, line: mapped.end.line },
+				start: { column: mapped.start.column, line: mapped.start.line },
 			},
 		});
 	}
@@ -542,8 +572,8 @@ function mapBranchArmLocations(
  */
 function hasCollapsedPhantomArm(locations: MappedArmLocations["locations"]): boolean {
 	return locations.some((arm, index) => {
-		const zeroWidth = arm.start.line === arm.end.line && arm.start.column === arm.end.column;
-		if (!zeroWidth) {
+		const isZeroWidth = arm.start.line === arm.end.line && arm.start.column === arm.end.column;
+		if (!isZeroWidth) {
 			return false;
 		}
 
@@ -585,27 +615,12 @@ function mapFileBranches(
 			continue;
 		}
 
-		let fileBranches = pendingBranches.get(result.tsPath);
-		if (fileBranches === undefined) {
-			fileBranches = [];
-			pendingBranches.set(result.tsPath, fileBranches);
-		}
-
-		const firstLocation = result.locations[0];
-		const lastLocation = result.locations.at(-1);
-		assert(
-			firstLocation !== undefined && lastLocation !== undefined,
-			"Branch locations must not be empty after successful mapping",
-		);
-
-		fileBranches.push({
-			armHitCounts: entry.locations.map((_, index) => armHitCounts[index] ?? 0),
-			loc: {
-				end: lastLocation.end,
-				start: firstLocation.start,
-			},
+		pushPendingBranch({
+			armHitCounts,
+			emptyMessage: "Branch locations must not be empty after successful mapping",
+			entry,
+			fileBranches: pendingListFor(pendingBranches, result.tsPath),
 			locations: result.locations,
-			type: entry.type,
 		});
 	}
 }

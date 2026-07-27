@@ -2,6 +2,14 @@ import type { CollectorResult } from "./coverage-collector.ts";
 import type { CoverageMap, SourceLocation } from "./coverage-map.ts";
 
 export function buildCoverageMap(result: CollectorResult): CoverageMap {
+	return {
+		branchMap: buildBranchMap(result),
+		functionMap: buildFunctionMap(result),
+		statementMap: buildStatementMap(result),
+	};
+}
+
+function buildStatementMap(result: CollectorResult): Record<string, SourceLocation> {
 	const statementMap: Record<string, SourceLocation> = {};
 	for (const statement of result.statements) {
 		statementMap[String(statement.index)] = {
@@ -10,6 +18,12 @@ export function buildCoverageMap(result: CollectorResult): CoverageMap {
 		};
 	}
 
+	return statementMap;
+}
+
+function buildFunctionMap(
+	result: CollectorResult,
+): Record<string, { location: SourceLocation; name: string }> {
 	const functionMap: Record<string, { location: SourceLocation; name: string }> = {};
 	for (const func of result.functions) {
 		functionMap[String(func.index)] = {
@@ -21,6 +35,12 @@ export function buildCoverageMap(result: CollectorResult): CoverageMap {
 		};
 	}
 
+	return functionMap;
+}
+
+function buildBranchMap(
+	result: CollectorResult,
+): Record<string, { locations: Array<SourceLocation>; type: string }> {
 	const branchMap: Record<string, { locations: Array<SourceLocation>; type: string }> = {};
 	for (const branch of result.branches) {
 		branchMap[String(branch.index)] = {
@@ -34,5 +54,5 @@ export function buildCoverageMap(result: CollectorResult): CoverageMap {
 		};
 	}
 
-	return { branchMap, functionMap, statementMap };
+	return branchMap;
 }

@@ -5,10 +5,6 @@ export default isentinel({
 	jsdoc: false,
 	namedConfigs: true,
 	roblox: false,
-	rules: {
-		"max-lines": "off",
-		"max-lines-per-function": "off",
-	},
 	test: {
 		vitest: {
 			extended: false,

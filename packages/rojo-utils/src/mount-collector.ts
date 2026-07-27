@@ -9,7 +9,7 @@ export interface Mount {
 	fsPath: string;
 }
 
-const TrailingSlashPattern = /\/$/;
+const TRAILING_SLASH_PATTERN = /\/$/;
 
 export function collectMounts(
 	node: RojoTreeNode,
@@ -42,7 +42,7 @@ function addDirectoryMount(
 		return;
 	}
 
-	const fsPath = rawPath.replace(TrailingSlashPattern, "");
+	const fsPath = rawPath.replace(TRAILING_SLASH_PATTERN, "");
 	if (classify(fsPath) === "directory") {
 		result.push({ dataModelPath, fsPath });
 	}

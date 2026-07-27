@@ -28,7 +28,9 @@ interface PrepareWorkStealingOptions {
 }
 
 interface PreparedWorkStealing {
-	/** Materializer-side invisibility window = perPackageTimeoutSeconds + 30. */
+	/**
+	 * Materializer-side invisibility window = perPackageTimeoutSeconds + 30.
+	 */
 	invisibilityWindowSeconds: number;
 	/** Per-run UUID-keyed queue name. */
 	queueId: string;
@@ -39,7 +41,9 @@ export function encodeQueueItem(item: QueueItem): { pkg: string; project: string
 	return { pkg: item.pkg, project: item.project };
 }
 
-/** Validates the wire payload against the QueueItem shape; throws on mismatch. */
+/**
+ * Validates the wire payload against the QueueItem shape; throws on mismatch.
+ */
 export function decodeQueueItem(value: unknown): QueueItem {
 	return queueItemSchema.assert(value);
 }
@@ -68,7 +72,7 @@ export async function prepareWorkStealingQueue(
 			universeId: options.credentials.universeId,
 		});
 
-	await queue.enqueue(options.packages, { ttlMs: ttlSeconds * 1000 });
+	await queue.enqueueAsync(options.packages, { ttlMs: ttlSeconds * 1000 });
 
 	return {
 		invisibilityWindowSeconds: options.perPackageTimeoutSeconds + INVISIBILITY_BUFFER_SECONDS,

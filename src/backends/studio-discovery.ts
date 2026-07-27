@@ -10,15 +10,18 @@ export interface StudioDiscoveryOptions {
 	 * Environment to read discovery hints from (Windows `LOCALAPPDATA`).
 	 * Defaults to `process.env`; injectable so tests stub it.
 	 */
-	environment?: NodeJS.ProcessEnv;
+	environment?: NodeJS.ProcessEnv | undefined;
 	/**
 	 * Explicit Studio executable path (from `studioPath` config key, the
 	 * `--studioPath` CLI flag, or `JEST_ROBLOX_STUDIO_PATH`). Takes precedence
 	 * over per-OS discovery.
 	 */
-	override?: string;
-	/** OS to discover for. Defaults to `process.platform`; injectable for tests. */
-	platform?: NodeJS.Platform;
+	override?: string | undefined;
+	/**
+	 * OS to discover for. Defaults to `process.platform`; injectable for
+	 * tests.
+	 */
+	platform?: NodeJS.Platform | undefined;
 }
 
 const WINDOWS_STUDIO_EXECUTABLE = "RobloxStudioBeta.exe";
@@ -35,9 +38,11 @@ const NOT_FOUND_HINT =
  * executable can be found so the CLI surfaces "install Studio or set
  * studioPath" rather than a downstream spawn failure.
  */
-export function discoverStudioPath(options: StudioDiscoveryOptions = {}): string {
-	const { environment = process.env, override, platform = process.platform } = options;
-
+export function discoverStudioPath({
+	environment = process.env,
+	override,
+	platform = process.platform,
+}: StudioDiscoveryOptions = {}): string {
 	if (override !== undefined) {
 		const stat = fs.statSync(override, { throwIfNoEntry: false });
 		if (stat === undefined) {
@@ -71,20 +76,15 @@ function notFound(): Error {
 	return new Error(`Roblox Studio not found. ${NOT_FOUND_HINT}`);
 }
 
-function discoverWindows(environment: NodeJS.ProcessEnv): string {
-	const localAppData = environment["LOCALAPPDATA"];
-	if (localAppData === undefined || localAppData === "") {
-		throw new Error(`Cannot locate Roblox Studio: LOCALAPPDATA is not set. ${NOT_FOUND_HINT}`);
-	}
-
-	const versionsDirectory = path.join(localAppData, "Roblox", "Versions");
-	let entries: Array<fs.Dirent>;
-	try {
-		entries = fs.readdirSync(versionsDirectory, { withFileTypes: true });
-	} catch {
-		throw notFound();
-	}
-
+/**
+ * The most recently modified `RobloxStudioBeta.exe` across the version
+ * directories, normalized. Undefined when no version directory holds one —
+ * `Versions` exists but every entry is a stale/partial install.
+ */
+function findNewestStudioExecutable(
+	versionsDirectory: string,
+	entries: Array<fs.Dirent>,
+): string | undefined {
 	let newest: undefined | { mtimeMs: number; path: string };
 	for (const entry of entries) {
 		if (!entry.isDirectory()) {
@@ -102,11 +102,29 @@ function discoverWindows(environment: NodeJS.ProcessEnv): string {
 		}
 	}
 
+	return newest?.path;
+}
+
+function discoverWindows(environment: NodeJS.ProcessEnv): string {
+	const localAppData = environment["LOCALAPPDATA"];
+	if (localAppData === undefined || localAppData === "") {
+		throw new Error(`Cannot locate Roblox Studio: LOCALAPPDATA is not set. ${NOT_FOUND_HINT}`);
+	}
+
+	const versionsDirectory = path.join(localAppData, "Roblox", "Versions");
+	let entries: Array<fs.Dirent>;
+	try {
+		entries = fs.readdirSync(versionsDirectory, { withFileTypes: true });
+	} catch {
+		throw notFound();
+	}
+
+	const newest = findNewestStudioExecutable(versionsDirectory, entries);
 	if (newest === undefined) {
 		throw notFound();
 	}
 
-	return newest.path;
+	return newest;
 }
 
 function discoverMacOs(): string {

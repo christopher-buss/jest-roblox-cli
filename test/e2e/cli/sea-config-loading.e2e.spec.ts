@@ -23,7 +23,7 @@ const NO_OPEN_CLOUD_CREDENTIALS = {
 	ROBLOX_OPEN_CLOUD_API_KEY: undefined,
 	ROBLOX_PLACE_ID: undefined,
 	ROBLOX_UNIVERSE_ID: undefined,
-} as const;
+} as const satisfies Record<string, string | undefined>;
 
 // A SEA binary can't `import()` a config off disk, and only the `.json` branch
 // of `seaImport` was ever SEA-safe, so any `.ts`/`.js` config failed before the

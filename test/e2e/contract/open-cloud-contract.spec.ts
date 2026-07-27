@@ -134,7 +134,7 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 
 			expect(status.state).toBe("COMPLETE");
 
-			const results = status.output?.results ?? [];
+			const results = status.output!.results!;
 			const envelopeRaw = results[0];
 			const parsed = parseEnvelope(envelopeRaw);
 
@@ -142,12 +142,10 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 			// Assert at least one entry has a `jestOutput` string — the
 			// minimum shape `parseEnvelope` and `buildProjectResult` rely on.
 			expect(
-				parsed?.entries.some((entry) => typeof entry.jestOutput === "string"),
+				parsed!.entries.some((entry) => typeof entry.jestOutput === "string"),
 			).toBeTrue();
 
-			const second: unknown = results[1];
-
-			expect(second === undefined || typeof second === "string").toBeTrue();
+			expect(isAbsentOrString(results[1])).toBeTrue();
 		},
 		SUCCESS_TIMEOUT_MS + 5000,
 	);
@@ -171,11 +169,19 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 			const status = await pollUntilTerminal(http, baseUrl, taskPath, FAILURE_TIMEOUT_MS);
 
 			expect(status.state).toBe("FAILED");
-			expect(status.error?.message).toBeString();
+			expect(status.error!.message).toBeString();
 		},
 		FAILURE_TIMEOUT_MS + 5000,
 	);
 });
+
+/**
+ * A `results` slot past the envelope is optional on the wire, but when present
+ * the backend reads it as a string.
+ */
+function isAbsentOrString(value: string | undefined): boolean {
+	return value === undefined || typeof value === "string";
+}
 
 function createHttpClient(apiKey: string): HttpClient {
 	return {
@@ -190,8 +196,14 @@ function createHttpClient(apiKey: string): HttpClient {
 				if (options.body instanceof buffer.Buffer) {
 					fetchOptions.body = options.body;
 				} else {
-					fetchOptions.body = JSON.stringify(options.body);
-					headers["Content-Type"] = "application/json";
+					// `JSON.stringify` is typed as possibly returning undefined,
+					// which `RequestInit.body` refuses under
+					// exactOptionalPropertyTypes.
+					const serialized = JSON.stringify(options.body);
+					if (serialized !== undefined) {
+						fetchOptions.body = serialized;
+						headers["Content-Type"] = "application/json";
+					}
 				}
 			}
 
@@ -237,14 +249,19 @@ function resolveLiveCase(): ContractCase | undefined {
 	};
 }
 
-async function createTask(args: {
+async function createTask({
+	baseUrl,
+	http,
+	placeId,
+	script,
+	universeId,
+}: {
 	baseUrl: string;
 	http: HttpClient;
 	placeId: string;
 	script: string;
 	universeId: string;
 }): Promise<string> {
-	const { baseUrl, http, placeId, script, universeId } = args;
 	const url = `${baseUrl}/cloud/v2/universes/${universeId}/places/${placeId}/luau-execution-session-tasks`;
 	const response = await http.request("POST", url, {
 		body: { script, timeout: "60s" },

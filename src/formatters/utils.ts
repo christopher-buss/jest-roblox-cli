@@ -1,14 +1,15 @@
 import type { FormatterEntry } from "../config/schema.ts";
 
 export interface AgentFormatterOptions {
-	maxFailures?: number;
+	maxFailures?: number | undefined;
 }
 
 export const DEFAULT_MAX_FAILURES = 10;
 
 /**
  * Find the options object for a named formatter in a resolved formatter list.
- * Returns `{}` if the formatter is present without options, or `undefined` if absent.
+ * Returns `{}` if the formatter is present without options, or `undefined` if
+ * absent.
  */
 export function findFormatterOptions(
 	formatters: Array<FormatterEntry>,
@@ -49,9 +50,9 @@ export function usesAgentFormatter(
  * of truth so these sinks can't drift apart.
  */
 export function isDefaultHumanFormatter(options: {
-	formatters?: Array<FormatterEntry>;
-	silent?: boolean;
-	verbose?: boolean;
+	formatters?: Array<FormatterEntry> | undefined;
+	silent?: boolean | undefined;
+	verbose?: boolean | undefined;
 }): boolean {
 	return (
 		options.silent !== true &&

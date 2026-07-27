@@ -101,7 +101,7 @@ describe(formatBanner, () => {
 		const closingLine = lines.findLast((line) => stripVTControlCharacters(line).includes("⎯"));
 
 		// Closing bar should not contain the title
-		expect(stripVTControlCharacters(closingLine ?? "")).not.toContain("Test");
+		expect(stripVTControlCharacters(closingLine!)).not.toContain("Test");
 	});
 
 	it("should handle empty body", () => {

@@ -69,6 +69,7 @@ describe(parseTscOutput, () => {
 
 	it("should return empty map for empty output", () => {
 		expect.assertions(1);
+
 		expect(parseTscOutput("").size).toBe(0);
 	});
 

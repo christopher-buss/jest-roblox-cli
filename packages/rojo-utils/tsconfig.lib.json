@@ -6,7 +6,6 @@
 		"lib": ["esnext"],
 		"libReplacement": true,
 		"rootDir": "src",
-		"allowImportingTsExtensions": true,
 		"rewriteRelativeImportExtensions": true,
 		"allowJs": false,
 		"noEmit": false,

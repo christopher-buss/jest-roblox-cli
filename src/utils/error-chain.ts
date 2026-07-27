@@ -2,11 +2,11 @@ import { PermissionError } from "@bedrock-rbx/ocale";
 
 export interface ChainEntry {
 	readonly name: string;
-	readonly code?: string;
-	readonly errno?: string;
+	readonly code?: string | undefined;
+	readonly errno?: string | undefined;
 	readonly message: string;
-	readonly requiredScopes?: ReadonlyArray<string>;
-	readonly syscall?: string;
+	readonly requiredScopes?: ReadonlyArray<string> | undefined;
+	readonly syscall?: string | undefined;
 }
 
 const MAX_DEPTH = 5;
@@ -39,11 +39,17 @@ export function formatMissingScopes(scopes: ReadonlyArray<string>): string {
 }
 
 function readStringProperty(err: Error, key: string): string | undefined {
-	const value = Reflect.get(err, key);
+	const value: unknown = Reflect.get(err, key);
 
-	if (value === undefined || value === null) {
-		return undefined;
+	if (typeof value === "string") {
+		return value;
 	}
 
-	return String(value);
+	// Node errors carry `errno` as a number; anything else (object, boolean) has
+	// no useful string form, so it reads as absent.
+	if (typeof value === "number") {
+		return String(value);
+	}
+
+	return undefined;
 }

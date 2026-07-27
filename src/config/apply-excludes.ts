@@ -15,7 +15,7 @@ export function applyExcludes(
 		return files;
 	}
 
-	return files.filter((file) =>
-		excludeGlobs.every((pattern) => !matchesGlobPattern(file, pattern)),
-	);
+	return files.filter((file) => {
+		return excludeGlobs.every((pattern) => !matchesGlobPattern(file, pattern));
+	});
 }

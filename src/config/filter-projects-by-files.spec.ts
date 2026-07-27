@@ -1,3 +1,5 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import { describe, expect, it } from "vitest";
 
 import { filterProjectsByFiles } from "./filter-projects-by-files.ts";
@@ -5,7 +7,7 @@ import type { ResolvedProjectConfig } from "./projects.ts";
 
 function makeProject(overrides: Partial<ResolvedProjectConfig> = {}): ResolvedProjectConfig {
 	return {
-		config: {} as unknown as ResolvedProjectConfig["config"],
+		config: fromAny({}),
 		displayName: "client",
 		exclude: [],
 		include: ["src/client/**/*.spec.ts"],
@@ -32,7 +34,7 @@ describe(filterProjectsByFiles, () => {
 		const result = filterProjectsByFiles([client, server], ["src/client/foo.spec.ts"], "/repo");
 
 		expect(result).toHaveLength(1);
-		expect(result[0]?.project.displayName).toBe("client");
+		expect(result[0]!.project.displayName).toBe("client");
 	});
 
 	it("should return projects matching across multiple positional files", () => {
@@ -78,8 +80,8 @@ describe(filterProjectsByFiles, () => {
 			"/repo",
 		);
 
-		expect(result[0]?.matchingFiles).toStrictEqual(["src/client/a.spec.ts"]);
-		expect(result[1]?.matchingFiles).toStrictEqual(["src/server/b.spec.ts"]);
+		expect(result[0]!.matchingFiles).toStrictEqual(["src/client/a.spec.ts"]);
+		expect(result[1]!.matchingFiles).toStrictEqual(["src/server/b.spec.ts"]);
 	});
 
 	it("should give overlapping projects each only their owning files", () => {
@@ -102,11 +104,11 @@ describe(filterProjectsByFiles, () => {
 
 		// Wide root `src` contains both files; narrow root `src/client` contains
 		// only `a`.
-		expect(result[0]?.matchingFiles).toStrictEqual([
+		expect(result[0]!.matchingFiles).toStrictEqual([
 			"src/client/a.spec.ts",
 			"src/server/b.spec.ts",
 		]);
-		expect(result[1]?.matchingFiles).toStrictEqual(["src/client/a.spec.ts"]);
+		expect(result[1]!.matchingFiles).toStrictEqual(["src/client/a.spec.ts"]);
 	});
 
 	it("should return projects in the same order as the input list", () => {
@@ -148,7 +150,7 @@ describe(filterProjectsByFiles, () => {
 		);
 
 		expect(result).toHaveLength(1);
-		expect(result[0]?.matchingFiles).toStrictEqual([
+		expect(result[0]!.matchingFiles).toStrictEqual([
 			"src/client/a.spec.ts",
 			"src/client/b.spec.ts",
 		]);
@@ -267,9 +269,9 @@ describe(filterProjectsByFiles, () => {
 			include: ["src/server/**/*.spec.ts"],
 		});
 
-		expect(() =>
-			filterProjectsByFiles([client, server], ["src/shared/foo.spec.ts"], "/repo"),
-		).toThrow(/src\/shared\/foo\.spec\.ts[\s\S]*src\/client[\s\S]*src\/server/);
+		expect(() => {
+			return filterProjectsByFiles([client, server], ["src/shared/foo.spec.ts"], "/repo");
+		}).toThrow(/src\/shared\/foo\.spec\.ts[\s\S]*src\/client[\s\S]*src\/server/);
 	});
 
 	it("should skip projects whose includes have no static root and still throw on overall no-match", () => {

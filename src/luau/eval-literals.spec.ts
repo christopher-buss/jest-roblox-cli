@@ -1,16 +1,18 @@
 import type { AstStatBlock } from "@isentinel/luau-ast";
+import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it } from "vitest";
 
 import { evalLuauReturnLiterals, isAstStatBlock } from "./eval-literals.ts";
 
 function makeBlock(...statements: Array<unknown>): AstStatBlock {
-	return {
+	const block: AstStatBlock = fromAny({
 		kind: "stat",
 		location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
 		statements,
 		tag: "block",
-	} as AstStatBlock;
+	});
+	return block;
 }
 
 function makeReturn(...expressions: Array<unknown>) {
@@ -158,29 +160,35 @@ describe(evalLuauReturnLiterals, () => {
 	it("should throw when root has no statements array", () => {
 		expect.assertions(1);
 
-		expect(() =>
-			evalLuauReturnLiterals({ tag: "block" } as unknown as AstStatBlock),
-		).toThrowWithMessage(Error, "Config file has no return statement");
+		const root: AstStatBlock = fromAny({ tag: "block" });
+
+		expect(() => {
+			return evalLuauReturnLiterals(root);
+		}).toThrowWithMessage(Error, "Config file has no return statement");
 	});
 
 	describe(isAstStatBlock, () => {
 		it("should reject null", () => {
 			expect.assertions(1);
+
 			expect(isAstStatBlock(null)).toBeFalse();
 		});
 
 		it("should reject arrays", () => {
 			expect.assertions(1);
+
 			expect(isAstStatBlock([])).toBeFalse();
 		});
 
 		it("should reject non-block tag", () => {
 			expect.assertions(1);
+
 			expect(isAstStatBlock({ tag: "expr" })).toBeFalse();
 		});
 
 		it("should accept block-tagged objects", () => {
 			expect.assertions(1);
+
 			expect(isAstStatBlock({ tag: "block" })).toBeTrue();
 		});
 	});

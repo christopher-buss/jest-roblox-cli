@@ -23,10 +23,10 @@ interface PreConnected {
 }
 
 interface StudioOptions {
-	createServer?: (port: number) => WebSocketServer;
+	createServer?: ((port: number) => WebSocketServer) | undefined;
 	port: number;
-	preConnected?: PreConnected;
-	timeout?: number;
+	preConnected?: PreConnected | undefined;
+	timeout?: number | undefined;
 }
 
 /**
@@ -59,13 +59,32 @@ const pluginMessageSchema = pluginResultSchema.or(pluginVersionMismatchSchema);
 
 type PluginMessage = typeof pluginMessageSchema.infer;
 
+interface PluginMessageWait {
+	existingSocket: undefined | WebSocket;
+	reject: (err: Error) => void;
+	requestId: string;
+	requestMessage: object;
+	resolve: (message: PluginMessage) => void;
+	timeout: number;
+	wss: WebSocketServer;
+}
+
+interface PluginSocketAttachment {
+	reject: (err: Error) => void;
+	requestId: string;
+	requestMessage: object;
+	resolve: (message: PluginMessage) => void;
+	socket: WebSocket;
+	timer: NodeJS.Timeout;
+}
+
 export class StudioBackend implements Backend {
 	private readonly createServer: (port: number) => WebSocketServer;
 	private readonly port: number;
 	private readonly timeout: number;
 
-	private preConnected?: PreConnected;
-	private wss?: WebSocketServer;
+	private preConnected: PreConnected | undefined;
+	private wss: undefined | WebSocketServer;
 
 	public readonly kind = "studio" as const;
 
@@ -147,51 +166,14 @@ export class StudioBackend implements Backend {
 		existingSocket?: WebSocket,
 	): Promise<PluginMessage> {
 		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => {
-				reject(new Error("Timed out waiting for Studio plugin connection"));
-			}, this.timeout);
-
-			function attachSocket(ws: WebSocket): void {
-				ws.send(String(JSON.stringify(requestMessage)));
-
-				ws.on("message", (data: buffer.Buffer) => {
-					const raw = JSON.parse(data.toString());
-					const message = pluginMessageSchema(raw);
-
-					if (message instanceof type.errors) {
-						clearTimeout(timer);
-						reject(new Error(`Invalid plugin message: ${message.summary}`));
-						return;
-					}
-
-					if (message.request_id === requestId) {
-						clearTimeout(timer);
-						resolve(message);
-					}
-				});
-
-				ws.on("close", () => {
-					clearTimeout(timer);
-					reject(new Error("Studio plugin disconnected before sending results"));
-				});
-
-				ws.on("error", (err: Error) => {
-					clearTimeout(timer);
-					reject(err);
-				});
-			}
-
-			if (existingSocket) {
-				attachSocket(existingSocket);
-			}
-
-			wss.on("connection", (ws: WebSocket) => {
-				attachSocket(ws);
-			});
-
-			wss.on("error", (err: Error) => {
-				clearTimeout(timer);
-				reject(err);
+			awaitPluginMessage({
+				existingSocket,
+				reject,
+				requestId,
+				requestMessage,
+				resolve,
+				timeout: this.timeout,
+				wss,
 			});
 		});
 	}
@@ -202,12 +184,90 @@ export function createStudioBackend(options: StudioOptions): StudioBackend {
 }
 
 /**
+ * Send the `run_tests` request over `socket` and settle the run on the
+ * plugin's reply — resolving the correlated `results`/`version_mismatch`
+ * message, or rejecting on a message that fails validation, a disconnect, or a
+ * socket error.
+ */
+function attachPluginSocket({
+	reject,
+	requestId,
+	requestMessage,
+	resolve,
+	socket,
+	timer,
+}: PluginSocketAttachment): void {
+	socket.send(String(JSON.stringify(requestMessage)));
+
+	socket.on("message", (data: buffer.Buffer) => {
+		const raw = JSON.parse(data.toString());
+		const message = pluginMessageSchema(raw);
+
+		if (message instanceof type.errors) {
+			clearTimeout(timer);
+			reject(new Error(`Invalid plugin message: ${message.summary}`));
+			return;
+		}
+
+		if (message.request_id === requestId) {
+			clearTimeout(timer);
+			resolve(message);
+		}
+	});
+
+	socket.on("close", () => {
+		clearTimeout(timer);
+		reject(new Error("Studio plugin disconnected before sending results"));
+	});
+
+	socket.on("error", (err: Error) => {
+		clearTimeout(timer);
+		reject(err);
+	});
+}
+
+/**
+ * Settle the run on whichever source fires first: the connection timeout, a
+ * plugin message on an already-connected socket (the auto probe hands one
+ * over), a message on a socket that connects later, or a server error.
+ */
+function awaitPluginMessage({
+	existingSocket,
+	reject,
+	requestId,
+	requestMessage,
+	resolve,
+	timeout,
+	wss,
+}: PluginMessageWait): void {
+	const timer = setTimeout(() => {
+		reject(new Error("Timed out waiting for Studio plugin connection"));
+	}, timeout);
+
+	const attachment = { reject, requestId, requestMessage, resolve, timer };
+
+	if (existingSocket) {
+		attachPluginSocket({ ...attachment, socket: existingSocket });
+	}
+
+	wss.on("connection", (ws: WebSocket) => {
+		attachPluginSocket({ ...attachment, socket: ws });
+	});
+
+	wss.on("error", (err: Error) => {
+		clearTimeout(timer);
+		reject(err);
+	});
+}
+
+/**
  * Build the `run_tests` WebSocket message the plugin forwards into
  * `ExecuteRunModeAsync`. A workspace run (jobs carry `pkg`) sends
  * `workspace.entries` — the staged-materializer shape the plugin's run-mode
- * runner dispatches on. A single-/multi-project run sends `config.configs` plus
- * the filtered `runtimeStubMounts` (parallel to `configs`) so the runner injects
- * `jest.config` only where Rojo doesn't already sync a user-authored one.
+ * runner dispatches on. A single-/multi-project run sends `config.configs`
+ * plus the filtered `runtimeStubMounts` (parallel to `configs`) so the runner
+ * injects `jest.config` only where Rojo doesn't already sync a user-authored
+ * one.
  */
 function buildRunTestsMessage(jobs: Array<ProjectJob>, requestId: string): object {
 	const base = {

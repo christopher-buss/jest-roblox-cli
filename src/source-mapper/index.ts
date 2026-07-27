@@ -1,28 +1,25 @@
 import assert from "node:assert";
 import * as fs from "node:fs";
-import * as path from "node:path";
 
 import type { RojoProject } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { replacePrefix } from "../utils/tsconfig-mapping.ts";
 import { findExpectationColumn } from "./column-finder.ts";
+import { createFrameMapper, type MappedFrame } from "./frame-mapper.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";
 import { parseStack } from "./stack-parser.ts";
-import { getSourceContent, mapFromSourceMap } from "./v3-mapper.ts";
+import type { StackFrame } from "./types.ts";
 
 export type { RojoProject } from "../types/rojo.ts";
 
-const TS_EXTENSION = /\.ts$/;
 const LEADING_SLASH = /^\//;
 
 export interface MappedLocation {
 	luauLine: number;
 	luauPath: string;
-	sourceContent?: string;
-	tsColumn?: number;
-	tsLine?: number;
-	tsPath?: string;
+	sourceContent?: string | undefined;
+	tsColumn?: number | undefined;
+	tsLine?: number | undefined;
+	tsPath?: string | undefined;
 }
 
 export interface MappedFailure {
@@ -30,8 +27,15 @@ export interface MappedFailure {
 	message: string;
 }
 
+/**
+ * Rewrites Luau stack frames to the sources they came from.
+ *
+ * Not pure: `resolveTestFilePath` (and so `resolveDisplayPath`, which calls it)
+ * touches the filesystem — a DataModel path with no tsconfig mapping is probed
+ * on disk as `.luau` then `.lua`. `mapFailureWithLocations` reads source maps
+ * and TS sources off disk too.
+ */
 export interface SourceMapper {
-	mapFailureMessage(message: string): string;
 	mapFailureWithLocations(message: string): MappedFailure;
 	resolveDisplayPath(testFilePath: string): string;
 	resolveTestFilePath(testFilePath: string): string | undefined;
@@ -43,7 +47,7 @@ export interface SourceMapperConfig {
 }
 
 export interface SourceSnippet {
-	column?: number;
+	column?: number | undefined;
 	failureLine: number;
 	lines: Array<{ content: string; num: number }>;
 }
@@ -53,129 +57,11 @@ export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
 		mappings: config.mappings,
 	});
 
-	function mapFrame(frame: { column?: number; dataModelPath: string; line: number }):
-		| undefined
-		| {
-				luauPath: string;
-				mapped:
-					| undefined
-					| { column?: number; line: number; path: string; sourceContent?: string };
-		  } {
-		const resolved = pathResolver.resolve(frame.dataModelPath);
-		if (resolved === undefined) {
-			return undefined;
-		}
-
-		// No matched tsconfig mapping — path is Luau, skip source map lookup.
-		if (resolved.mapping === undefined) {
-			return { luauPath: resolved.filePath, mapped: undefined };
-		}
-
-		const { filePath, mapping } = resolved;
-		const luauPath = replacePrefix(filePath, mapping.rootDir, mapping.outDir).replace(
-			TS_EXTENSION,
-			".luau",
-		);
-
-		const v3Result = mapFromSourceMap(luauPath, frame.line, frame.column);
-		// eslint-disable-next-line ts/prefer-optional-chain -- explicit checks needed for type narrowing
-		if (v3Result !== undefined && v3Result.source !== null && v3Result.line !== null) {
-			const mapDirectory = path.dirname(luauPath);
-			const resolvedTsPath = normalizeWindowsPath(
-				path.resolve(mapDirectory, v3Result.source),
-			);
-			const tsLine = v3Result.line;
-
-			const embeddedContent = getSourceContent(luauPath, v3Result.source) ?? undefined;
-			const tsContent =
-				embeddedContent ??
-				(fs.existsSync(resolvedTsPath)
-					? fs.readFileSync(resolvedTsPath, "utf-8")
-					: undefined);
-			const tsColumn =
-				tsContent !== undefined
-					? findExpectationColumn(tsContent.split("\n")[tsLine - 1] ?? "")
-					: undefined;
-
-			return {
-				luauPath,
-				mapped: {
-					column: tsColumn,
-					line: tsLine,
-					path: resolvedTsPath,
-					sourceContent: embeddedContent,
-				},
-			};
-		}
-
-		return { luauPath, mapped: undefined };
-	}
+	const mapFrame = createFrameMapper(pathResolver);
 
 	return {
-		mapFailureMessage(message: string): string {
-			const parsed = parseStack(message);
-			let result = message;
-
-			for (const frame of parsed.frames) {
-				const frameResult = mapFrame(frame);
-				if (frameResult === undefined) {
-					continue;
-				}
-
-				const original = `[string "${frame.dataModelPath}"]:${frame.line}`;
-				if (frameResult.mapped !== undefined) {
-					const mapped = `${frameResult.mapped.path}:${frameResult.mapped.line}`;
-					result = result.replace(original, mapped);
-				} else {
-					const replacement = `${frameResult.luauPath}:${frame.line}`;
-					result = result.replace(original, replacement);
-				}
-			}
-
-			return result;
-		},
-
 		mapFailureWithLocations(message: string): MappedFailure {
-			const parsed = parseStack(message);
-			let mappedMessage = message;
-			const locations: Array<MappedLocation> = [];
-
-			for (const frame of parsed.frames) {
-				const frameResult = mapFrame(frame);
-				if (frameResult === undefined) {
-					continue;
-				}
-
-				const original = `[string "${frame.dataModelPath}"]:${frame.line}`;
-				if (frameResult.mapped !== undefined) {
-					const mapped = `${frameResult.mapped.path}:${frameResult.mapped.line}`;
-					mappedMessage = mappedMessage.replace(original, mapped);
-
-					locations.push({
-						luauLine: frame.line,
-						luauPath: frameResult.luauPath,
-						sourceContent: frameResult.mapped.sourceContent,
-						tsColumn: frameResult.mapped.column,
-						tsLine: frameResult.mapped.line,
-						tsPath: frameResult.mapped.path,
-					});
-				} else {
-					const replacement = `${frameResult.luauPath}:${frame.line}`;
-					mappedMessage = mappedMessage.replace(original, replacement);
-
-					// Only push the first Luau-only frame as a location —
-					// subsequent frames are internal stack trace (Jest, Promise)
-					// and would produce noisy snippets.
-					if (locations.length === 0) {
-						locations.push({
-							luauLine: frame.line,
-							luauPath: frameResult.luauPath,
-						});
-					}
-				}
-			}
-
-			return { locations, message: mappedMessage };
+			return rewriteFrames(message, mapFrame);
 		},
 
 		resolveDisplayPath(testFilePath: string): string {
@@ -199,11 +85,10 @@ export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
  * annotations can resolve frames from any project's TS/Luau mapping.
  *
  * Each child mapper only rewrites frames it can resolve, leaving the rest
- * untouched. Chaining `mapFailureMessage` / `mapFailureWithLocations` calls
- * through every child is therefore safe: later mappers see the partially
- * rewritten string and still parse any remaining `[string "..."]` frames.
- * Locations accumulate across mappers; `resolveTestFilePath` returns the
- * first child's hit.
+ * untouched. Chaining `mapFailureWithLocations` calls through every child is
+ * therefore safe: later mappers see the partially rewritten string and still
+ * parse any remaining `[string "..."]` frames. Locations accumulate across
+ * mappers; `resolveTestFilePath` returns the first child's hit.
  */
 export function combineSourceMappers(
 	mappers: ReadonlyArray<SourceMapper>,
@@ -219,50 +104,19 @@ export function combineSourceMappers(
 	}
 
 	return {
-		mapFailureMessage(message: string): string {
-			let result = message;
-			for (const mapper of mappers) {
-				result = mapper.mapFailureMessage(result);
-			}
-
-			return result;
-		},
-
 		mapFailureWithLocations(message: string): MappedFailure {
-			let mappedMessage = message;
-			const locations: Array<MappedLocation> = [];
-			for (const mapper of mappers) {
-				const partial = mapper.mapFailureWithLocations(mappedMessage);
-				mappedMessage = partial.message;
-				locations.push(...partial.locations);
-			}
-
-			return { locations, message: mappedMessage };
+			return chainFailures(mappers, message);
 		},
 
 		resolveDisplayPath(testFilePath: string): string {
-			// Ownership gate: only let a child rewrite if it can actually
-			// resolve the path. Without this, a roblox-ts mapper would apply
-			// `init→index` to paths owned by other projects (incl. pure-Luau
-			// projects whose on-disk file is genuinely `init.*`).
-			for (const mapper of mappers) {
-				if (mapper.resolveTestFilePath(testFilePath) !== undefined) {
-					return mapper.resolveDisplayPath(testFilePath);
-				}
-			}
-
-			return testFilePath;
+			return (
+				findOwningMapper(mappers, testFilePath)?.resolveDisplayPath(testFilePath) ??
+				testFilePath
+			);
 		},
 
 		resolveTestFilePath(testFilePath: string): string | undefined {
-			for (const mapper of mappers) {
-				const resolved = mapper.resolveTestFilePath(testFilePath);
-				if (resolved !== undefined) {
-					return resolved;
-				}
-			}
-
-			return undefined;
+			return findOwningMapper(mappers, testFilePath)?.resolveTestFilePath(testFilePath);
 		},
 	};
 }
@@ -274,11 +128,11 @@ export function getSourceSnippet({
 	line,
 	sourceContent,
 }: {
-	column?: number;
-	context?: number;
+	column?: number | undefined;
+	context?: number | undefined;
 	filePath: string;
 	line: number;
-	sourceContent?: string;
+	sourceContent?: string | undefined;
 }): SourceSnippet | undefined {
 	const content =
 		sourceContent ?? (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf-8") : undefined);
@@ -306,4 +160,88 @@ export function getSourceSnippet({
 		failureLine: line,
 		lines,
 	};
+}
+
+function collectLocation(
+	locations: Array<MappedLocation>,
+	frame: StackFrame,
+	{ luauPath, source }: MappedFrame,
+): void {
+	if (source === undefined) {
+		// Only push the first Luau-only frame as a location — subsequent frames
+		// are internal stack trace (Jest, Promise) and would produce noisy
+		// snippets.
+		if (locations.length === 0) {
+			locations.push({ luauLine: frame.line, luauPath });
+		}
+
+		return;
+	}
+
+	locations.push({
+		luauLine: frame.line,
+		luauPath,
+		sourceContent: source.sourceContent,
+		tsColumn: source.column,
+		tsLine: source.line,
+		tsPath: source.path,
+	});
+}
+
+function rewriteFrames(
+	message: string,
+	mapFrame: (frame: StackFrame) => MappedFrame | undefined,
+): MappedFailure {
+	const locations: Array<MappedLocation> = [];
+	let mappedMessage = message;
+
+	for (const frame of parseStack(message).frames) {
+		const mapped = mapFrame(frame);
+		if (mapped === undefined) {
+			continue;
+		}
+
+		const original = `[string "${frame.dataModelPath}"]:${frame.line}`;
+		const replacement =
+			mapped.source === undefined
+				? `${mapped.luauPath}:${frame.line}`
+				: `${mapped.source.path}:${mapped.source.line}`;
+
+		// `() => replacement` rather than the string itself: a `$` sequence in a
+		// Windows path would otherwise be read as a replacement pattern.
+		mappedMessage = mappedMessage.replace(original, () => replacement);
+
+		collectLocation(locations, frame, mapped);
+	}
+
+	return { locations, message: mappedMessage };
+}
+
+function chainFailures(mappers: ReadonlyArray<SourceMapper>, message: string): MappedFailure {
+	let mappedMessage = message;
+	const locations: Array<MappedLocation> = [];
+	for (const mapper of mappers) {
+		const partial = mapper.mapFailureWithLocations(mappedMessage);
+		mappedMessage = partial.message;
+		locations.push(...partial.locations);
+	}
+
+	return { locations, message: mappedMessage };
+}
+
+/**
+ * Ownership gate: only let a child act on a path it can actually resolve.
+ * Without this, a roblox-ts mapper would apply `init→index` to paths owned by
+ * other projects (incl. pure-Luau projects whose on-disk file is genuinely
+ * `init.*`).
+ *
+ * @param mappers - The child mappers, tried in order.
+ * @param testFilePath - The path to find an owner for.
+ * @returns The first child that resolves the path, or `undefined`.
+ */
+function findOwningMapper(
+	mappers: ReadonlyArray<SourceMapper>,
+	testFilePath: string,
+): SourceMapper | undefined {
+	return mappers.find((mapper) => mapper.resolveTestFilePath(testFilePath) !== undefined);
 }

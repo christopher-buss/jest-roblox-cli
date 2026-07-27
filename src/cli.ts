@@ -1,6 +1,7 @@
 import { OpenCloudError } from "@bedrock-rbx/ocale";
 
 import process from "node:process";
+import type { ParseArgsOptionsConfig } from "node:util";
 import { parseArgs as nodeParseArgs } from "node:util";
 import color from "tinyrainbow";
 
@@ -9,11 +10,16 @@ import { ConfigError } from "./config/errors.ts";
 import { loadConfig } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
 import type { Backend, CliOptions, CoverageReporter, ResolvedConfig } from "./config/schema.ts";
-import { isValidBackend, VALID_BACKENDS } from "./config/schema.ts";
-import { outputMultiResult, outputSingleResult } from "./output.ts";
+import {
+	isCoverageReporter,
+	isValidBackend,
+	VALID_BACKENDS,
+	VALID_COVERAGE_REPORTERS,
+} from "./config/schema.ts";
+import { outputMultiResult } from "./output.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
 import { runJestRoblox } from "./run.ts";
-import type { RunResult } from "./run/types.ts";
+import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
 import { formatBanner } from "./utils/banner.ts";
 import { type ChainEntry, formatMissingScopes, walkErrorChain } from "./utils/error-chain.ts";
 import { parseGameOutput } from "./utils/game-output.ts";
@@ -91,102 +97,79 @@ Examples:
   jest-roblox --no-coverage           Skip coverage instrumentation for this run
 `;
 
+// `as const` is what keeps the per-flag `type`/`multiple`/`default` literals —
+// node's `parseArgs` types derive the shape of `values` from them, so widening
+// any of these to `string`/`boolean` would collapse every parsed value to
+// `string | boolean | undefined`.
+const CLI_OPTION_SPEC = {
+	"affected-since": { type: "string" },
+	"apiKey": { type: "string" },
+	"backend": { type: "string" },
+	"collectCoverageFrom": { multiple: true, type: "string" },
+	"color": { type: "boolean" },
+	"config": { type: "string" },
+	"coverage": { type: "boolean" },
+	"coverage-cache": { type: "boolean" },
+	"coverageDirectory": { type: "string" },
+	"coverageReporters": { multiple: true, type: "string" },
+	"formatters": { multiple: true, type: "string" },
+	"gameOutput": { type: "string" },
+	"headed": { type: "boolean" },
+	"help": { default: false, type: "boolean" },
+	"no-color": { type: "boolean" },
+	"no-coverage": { type: "boolean" },
+	"no-coverage-cache": { type: "boolean" },
+	"no-show-luau": { type: "boolean" },
+	"outputFile": { type: "string" },
+	"packages": { type: "string" },
+	"parallel": { type: "string" },
+	"passWithNoTests": { type: "boolean" },
+	"placeId": { type: "string" },
+	"port": { type: "string" },
+	"project": { multiple: true, type: "string" },
+	"rojoProject": { type: "string" },
+	"setupFiles": { multiple: true, type: "string" },
+	"setupFilesAfterEnv": { multiple: true, type: "string" },
+	"showLuau": { type: "boolean" },
+	"silent": { type: "boolean" },
+	"sourceMap": { type: "boolean" },
+	"studioPath": { type: "string" },
+	"testNamePattern": { short: "t", type: "string" },
+	"testPathPattern": { type: "string" },
+	"timeout": { type: "string" },
+	"typecheck": { type: "boolean" },
+	"typecheckOnly": { type: "boolean" },
+	"typecheckTsconfig": { type: "string" },
+	"universeId": { type: "string" },
+	"updateSnapshot": { short: "u", type: "boolean" },
+	"verbose": { type: "boolean" },
+	"version": { default: false, type: "boolean" },
+	"workspace": { type: "boolean" },
+	"workspace-root": { type: "string" },
+} as const satisfies ParseArgsOptionsConfig;
+
 export function parseArgs(args: Array<string>): CliOptions {
-	const { positionals, values } = nodeParseArgs({
-		allowPositionals: true,
-		args: normalizeParallelFlag(args),
-		options: {
-			"affected-since": { type: "string" },
-			"apiKey": { type: "string" },
-			"backend": { type: "string" },
-			"collectCoverageFrom": { multiple: true, type: "string" },
-			"color": { type: "boolean" },
-			"config": { type: "string" },
-			"coverage": { type: "boolean" },
-			"coverage-cache": { type: "boolean" },
-			"coverageDirectory": { type: "string" },
-			"coverageReporters": { multiple: true, type: "string" },
-			"formatters": { multiple: true, type: "string" },
-			"gameOutput": { type: "string" },
-			"headed": { type: "boolean" },
-			"help": { default: false, type: "boolean" },
-			"no-color": { type: "boolean" },
-			"no-coverage": { type: "boolean" },
-			"no-coverage-cache": { type: "boolean" },
-			"no-show-luau": { type: "boolean" },
-			"outputFile": { type: "string" },
-			"packages": { type: "string" },
-			"parallel": { type: "string" },
-			"passWithNoTests": { type: "boolean" },
-			"placeId": { type: "string" },
-			"port": { type: "string" },
-			"project": { multiple: true, type: "string" },
-			"rojoProject": { type: "string" },
-			"setupFiles": { multiple: true, type: "string" },
-			"setupFilesAfterEnv": { multiple: true, type: "string" },
-			"showLuau": { type: "boolean" },
-			"silent": { type: "boolean" },
-			"sourceMap": { type: "boolean" },
-			"studioPath": { type: "string" },
-			"testNamePattern": { short: "t", type: "string" },
-			"testPathPattern": { type: "string" },
-			"timeout": { type: "string" },
-			"typecheck": { type: "boolean" },
-			"typecheckOnly": { type: "boolean" },
-			"typecheckTsconfig": { type: "string" },
-			"universeId": { type: "string" },
-			"updateSnapshot": { short: "u", type: "boolean" },
-			"verbose": { type: "boolean" },
-			"version": { default: false, type: "boolean" },
-			"workspace": { type: "boolean" },
-			"workspace-root": { type: "string" },
-		},
-		strict: true,
-	});
+	const { positionals, values } = parseWithOptionSpec(args);
 
-	const port = values.port !== undefined ? Number.parseInt(values.port, 10) : undefined;
-
-	const timeout = values.timeout !== undefined ? Number.parseInt(values.timeout, 10) : undefined;
-
+	// Spread order matters: `toBackendOptions` and `toCoverageOptions` are the
+	// only groups that validate, and they run ahead of the inline `parallel`
+	// entry so a run with several bad flags reports the same one it always has.
 	return {
+		...toBackendOptions(values),
+		...toCoverageOptions(values),
+		...toFilterOptions(values, positionals),
+		...toOutputOptions(values),
+		...toTypecheckOptions(values),
 		affectedSince: values["affected-since"],
-		apiKey: values.apiKey,
-		backend: validateBackend(values.backend),
-		collectCoverage: values["no-coverage"] === true ? false : values.coverage,
-		collectCoverageFrom: values.collectCoverageFrom,
-		color: values["no-color"] === true ? false : values.color,
 		config: values.config,
-		coverageCache: values["no-coverage-cache"] === true ? false : values["coverage-cache"],
-		coverageDirectory: values.coverageDirectory,
-		coverageReporters: values.coverageReporters as Array<CoverageReporter> | undefined,
-		files: positionals.length > 0 ? positionals : undefined,
-		formatters: values.formatters,
-		gameOutput: values.gameOutput,
-		headed: values.headed,
 		help: values.help,
-		outputFile: values.outputFile,
 		packages: values.packages,
 		parallel: parseParallelValue(values.parallel),
 		passWithNoTests: values.passWithNoTests,
-		placeId: values.placeId,
-		port,
-		project: values.project,
 		rojoProject: values.rojoProject,
 		setupFiles: values.setupFiles,
 		setupFilesAfterEnv: values.setupFilesAfterEnv,
-		showLuau: values["no-show-luau"] === true ? false : values.showLuau,
-		silent: values.silent,
-		sourceMap: values.sourceMap,
-		studioPath: values.studioPath,
-		testNamePattern: values.testNamePattern,
-		testPathPattern: values.testPathPattern,
-		timeout,
-		typecheck: values.typecheckOnly === true ? true : values.typecheck,
-		typecheckOnly: values.typecheckOnly,
-		typecheckTsconfig: values.typecheckTsconfig,
-		universeId: values.universeId,
 		updateSnapshot: values.updateSnapshot,
-		verbose: values.verbose,
 		version: values.version,
 		workspace: values.workspace,
 		workspaceRoot: values["workspace-root"],
@@ -208,9 +191,11 @@ export async function main(): Promise<void> {
 }
 
 const PARALLEL_FLAG = "--parallel";
-const IntegerLikePattern = /^-?\d+$/;
+const INTEGER_LIKE_PATTERN = /^-?\d+$/;
 
 type ParallelOption = "auto" | number | undefined;
+
+type ParsedCliValues = ReturnType<typeof parseWithOptionSpec>["values"];
 
 function normalizeParallelFlag(args: Array<string>): Array<string> {
 	const out: Array<string> = [];
@@ -223,11 +208,11 @@ function normalizeParallelFlag(args: Array<string>): Array<string> {
 		}
 
 		const next = args[index + 1];
-		const looksLikeValue =
+		const isValueLike =
 			next !== undefined &&
 			!next.startsWith("-") &&
-			(next === "auto" || IntegerLikePattern.test(next));
-		if (looksLikeValue) {
+			(next === "auto" || INTEGER_LIKE_PATTERN.test(next));
+		if (isValueLike) {
 			out.push(PARALLEL_FLAG, next);
 			index += 1;
 		} else {
@@ -236,6 +221,99 @@ function normalizeParallelFlag(args: Array<string>): Array<string> {
 	}
 
 	return out;
+}
+
+function parseWithOptionSpec(args: Array<string>) {
+	return nodeParseArgs({
+		allowPositionals: true,
+		args: normalizeParallelFlag(args),
+		options: CLI_OPTION_SPEC,
+		strict: true,
+	});
+}
+
+function toBackendOptions(
+	values: ParsedCliValues,
+): Pick<
+	CliOptions,
+	"apiKey" | "backend" | "headed" | "placeId" | "port" | "studioPath" | "timeout" | "universeId"
+> {
+	return {
+		apiKey: values.apiKey,
+		backend: validateBackend(values.backend),
+		headed: values.headed,
+		placeId: values.placeId,
+		port: values.port !== undefined ? Number.parseInt(values.port, 10) : undefined,
+		studioPath: values.studioPath,
+		timeout: values.timeout !== undefined ? Number.parseInt(values.timeout, 10) : undefined,
+		universeId: values.universeId,
+	};
+}
+
+function toCoverageOptions(
+	values: ParsedCliValues,
+): Pick<
+	CliOptions,
+	| "collectCoverage"
+	| "collectCoverageFrom"
+	| "coverageCache"
+	| "coverageDirectory"
+	| "coverageReporters"
+> {
+	return {
+		collectCoverage: values["no-coverage"] === true ? false : values.coverage,
+		collectCoverageFrom: values.collectCoverageFrom,
+		coverageCache: values["no-coverage-cache"] === true ? false : values["coverage-cache"],
+		coverageDirectory: values.coverageDirectory,
+		coverageReporters: validateCoverageReporters(values.coverageReporters),
+	};
+}
+
+function toFilterOptions(
+	values: ParsedCliValues,
+	positionals: Array<string>,
+): Pick<CliOptions, "files" | "project" | "testNamePattern" | "testPathPattern"> {
+	return {
+		files: positionals.length > 0 ? positionals : undefined,
+		project: values.project,
+		testNamePattern: values.testNamePattern,
+		testPathPattern: values.testPathPattern,
+	};
+}
+
+function toOutputOptions(
+	values: ParsedCliValues,
+): Pick<
+	CliOptions,
+	| "color"
+	| "formatters"
+	| "gameOutput"
+	| "outputFile"
+	| "showLuau"
+	| "silent"
+	| "sourceMap"
+	| "verbose"
+> {
+	return {
+		color: values["no-color"] === true ? false : values.color,
+		formatters: values.formatters,
+		gameOutput: values.gameOutput,
+		outputFile: values.outputFile,
+		showLuau: values["no-show-luau"] === true ? false : values.showLuau,
+		silent: values.silent,
+		sourceMap: values.sourceMap,
+		verbose: values.verbose,
+	};
+}
+
+function toTypecheckOptions(
+	values: ParsedCliValues,
+): Pick<CliOptions, "typecheck" | "typecheckOnly" | "typecheckTsconfig"> {
+	return {
+		typecheck: values.typecheckOnly === true ? true : values.typecheck,
+		typecheckOnly: values.typecheckOnly,
+		typecheckTsconfig: values.typecheckTsconfig,
+	};
 }
 
 function parseParallelValue(raw: string | undefined): ParallelOption {
@@ -276,7 +354,7 @@ function formatLuauErrorBanner(err: LuauScriptError): string {
 	// When the message is just "Exited with code: N", Jest's real error is in
 	// the captured stdout, not in the message itself — surface stdout as the
 	// primary content and demote the exit-code transport to a dim footer.
-	if (EXIT_CODE_MESSAGE.test(err.message) && bannerLines !== undefined) {
+	if (bannerLines !== undefined && EXIT_CODE_MESSAGE.test(err.message)) {
 		const body = [bannerLines, `\n  ${color.dim(err.message)}`];
 		return formatBanner({ body, level: "error", title: "Test Run Failed" });
 	}
@@ -347,21 +425,16 @@ function printError(err: unknown): void {
 	}
 }
 
-async function dispatchResult(config: ResolvedConfig, result: RunResult): Promise<number> {
+async function dispatchResult(
+	config: ResolvedConfig,
+	result: MultiRunResult | WorkspaceRunResult,
+): Promise<number> {
 	if (result.validationExitCode !== undefined) {
-		if ("validationMessage" in result && result.validationMessage !== undefined) {
+		if (result.validationMessage !== undefined) {
 			process.stderr.write(result.validationMessage);
 		}
 
 		return result.validationExitCode;
-	}
-
-	if (result.mode === "single") {
-		if (result.runtimeResult === undefined && result.typecheckResult === undefined) {
-			return 0;
-		}
-
-		return outputSingleResult(config, result);
 	}
 
 	if (result.projectResults.length === 0 && result.typecheckResult === undefined) {
@@ -435,6 +508,25 @@ function validateBackend(value: string | undefined): Backend | undefined {
 	}
 
 	return value;
+}
+
+function validateCoverageReporters(
+	values: Array<string> | undefined,
+): Array<CoverageReporter> | undefined {
+	if (values === undefined) {
+		return undefined;
+	}
+
+	const reporters = values.filter(isCoverageReporter);
+	if (reporters.length !== values.length) {
+		const valid = [...VALID_COVERAGE_REPORTERS].join(", ");
+		const unknown = values.filter((value) => !isCoverageReporter(value));
+		throw new Error(
+			`Invalid coverage reporter "${unknown.join('", "')}". Must be one of: ${valid}`,
+		);
+	}
+
+	return reporters;
 }
 
 function getLuauErrorHint(message: string): string | undefined {

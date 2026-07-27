@@ -4,7 +4,6 @@
 		"composite": true,
 		"lib": ["esnext"],
 		"libReplacement": true,
-		"allowImportingTsExtensions": true,
 		"emitDeclarationOnly": true,
 		"noEmit": false,
 		"outDir": "./out-tsc/vitest"

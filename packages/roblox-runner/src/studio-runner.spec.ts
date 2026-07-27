@@ -11,9 +11,11 @@ const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.ho
 );
 
 vi.mock(import("ws"), async () => {
-	return {
+	const { fromPartial: coerce } = await import("@total-typescript/shoehorn");
+
+	return coerce({
 		WebSocketServer: MockWebSocketServer,
-	} as never;
+	});
 });
 
 const executeRequest = type({ action: "string", request_id: "string", script: "string" });
@@ -46,7 +48,7 @@ describe(StudioRunner, () => {
 		expect.assertions(2);
 
 		const runner = new StudioRunner({ port: 0 });
-		const promise = runner.executeScript({
+		const promise = runner.executeScriptAsync({
 			script: "return 'hello'",
 			timeout: 30_000,
 		});
@@ -65,16 +67,16 @@ describe(StudioRunner, () => {
 
 		const runner = new StudioRunner({ port: 0, timeout: 100 });
 
-		await expect(runner.executeScript({ script: "return 1", timeout: 30_000 })).rejects.toThrow(
-			"Timed out waiting for Studio plugin connection",
-		);
+		await expect(
+			runner.executeScriptAsync({ script: "return 1", timeout: 30_000 }),
+		).rejects.toThrow("Timed out waiting for Studio plugin connection");
 	});
 
 	it("should throw on plugin disconnect", async () => {
 		expect.assertions(1);
 
 		const runner = new StudioRunner({ port: 0 });
-		const promise = runner.executeScript({
+		const promise = runner.executeScriptAsync({
 			script: "return 1",
 			timeout: 30_000,
 		});
@@ -94,7 +96,7 @@ describe(StudioRunner, () => {
 		expect.assertions(1);
 
 		const runner = new StudioRunner({ port: 0 });
-		const promise = runner.executeScript({
+		const promise = runner.executeScriptAsync({
 			script: "return 1",
 			timeout: 30_000,
 		});
@@ -117,7 +119,7 @@ describe(StudioRunner, () => {
 		expect.assertions(1);
 
 		const runner = new StudioRunner({ port: 0 });
-		const promise = runner.executeScript({
+		const promise = runner.executeScriptAsync({
 			script: "return 1",
 			timeout: 30_000,
 		});
@@ -137,7 +139,7 @@ describe(StudioRunner, () => {
 		expect.assertions(1);
 
 		const runner = new StudioRunner({ port: 0 });
-		const promise = runner.executeScript({
+		const promise = runner.executeScriptAsync({
 			script: "return 1",
 			timeout: 30_000,
 		});
@@ -155,7 +157,7 @@ describe(StudioRunner, () => {
 		expect.assertions(1);
 
 		const runner = new StudioRunner({ port: 0 });
-		const promise = runner.executeScript({
+		const promise = runner.executeScriptAsync({
 			script: "return 1",
 			timeout: 30_000,
 		});
@@ -202,7 +204,7 @@ describe(StudioRunner, () => {
 		expect.assertions(1);
 
 		const runner = new StudioRunner({ port: 0 });
-		const promise = runner.executeScript({
+		const promise = runner.executeScriptAsync({
 			script: "return 1",
 			timeout: 30_000,
 		});
@@ -220,9 +222,9 @@ describe(StudioRunner, () => {
 
 		const runner = new StudioRunner({ port: 0, timeout: 50 });
 
-		await expect(runner.executeScript({ script: "return 1", timeout: 30_000 })).rejects.toThrow(
-			"Timed out waiting for Studio plugin connection",
-		);
+		await expect(
+			runner.executeScriptAsync({ script: "return 1", timeout: 30_000 }),
+		).rejects.toThrow("Timed out waiting for Studio plugin connection");
 
 		const wss = getLastCreatedServer()!;
 
@@ -233,7 +235,7 @@ describe(StudioRunner, () => {
 		expect.assertions(2);
 
 		const runner = new StudioRunner({ port: 0 });
-		const result = await runner.uploadPlace({ placeFilePath: "./test.rbxl" });
+		const result = await runner.uploadPlaceAsync({ placeFilePath: "./test.rbxl" });
 
 		expect(result.uploadMs).toBe(0);
 		expect(result.versionNumber).toBe(0);

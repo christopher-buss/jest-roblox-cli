@@ -31,14 +31,14 @@ export interface WorkspacePackageDescriptor {
 	 * per-package only; the workspace-root `config.coverageCache` is
 	 * intentionally not consulted.
 	 */
-	coverageCache?: boolean;
+	coverageCache?: boolean | undefined;
 	/**
 	 * Per-package `coveragePathIgnorePatterns`. When undefined, the matcher
 	 * falls back to `DEFAULT_CONFIG.coveragePathIgnorePatterns` — workspace
 	 * mode reads this knob per-package only. An empty array means "no
 	 * ignore patterns" (user opted out of every default pattern).
 	 */
-	coveragePathIgnorePatterns?: Array<string>;
+	coveragePathIgnorePatterns?: Array<string> | undefined;
 	/**
 	 * Per-package override for `luauRoots`. When set to a non-empty array,
 	 * `discoverPackageLuauRoots` skips the rojo-tree walk and uses these roots
@@ -46,13 +46,15 @@ export interface WorkspacePackageDescriptor {
 	 * An empty array or undefined falls back to the rojo walk — matches single
 	 * mode's `> 0` gate at `prepare.ts:resolveLuauRootsWithRojo`.
 	 */
-	luauRoots?: Array<string>;
+	luauRoots?: Array<string> | undefined;
 	packageDirectory: string;
 	rojoProjectPath: string;
 }
 
 export interface WorkspaceCoverageRoot {
-	/** Path relative to the package directory (matches what rojo $path uses). */
+	/**
+	 * Path relative to the package directory (matches what rojo $path uses).
+	 */
 	luauRoot: string;
 	/** Absolute, POSIX-normalized path to the instrumented shadow directory. */
 	shadowDir: string;
@@ -60,13 +62,13 @@ export interface WorkspaceCoverageRoot {
 
 export interface WorkspacePackageCoverage {
 	/**
-	 * This package's effective `coveragePathIgnorePatterns` (per-package override
-	 * or the `DEFAULT_CONFIG` fallback). Always populated by `prepareForPackage`;
-	 * optional only so test stubs need not restate it. Carried so report-time
-	 * aggregation applies the same patterns per-package that instrumentation used
-	 * for roots.
+	 * This package's effective `coveragePathIgnorePatterns` (per-package
+	 * override or the `DEFAULT_CONFIG` fallback). Always populated by
+	 * `prepareForPackage`; optional only so test stubs need not restate it.
+	 * Carried so report-time aggregation applies the same patterns per-package
+	 * that instrumentation used for roots.
 	 */
-	coveragePathIgnorePatterns?: Array<string>;
+	coveragePathIgnorePatterns?: Array<string> | undefined;
 	coverageRoots: Array<WorkspaceCoverageRoot>;
 	manifest: CoverageManifest;
 	manifestPath: string;
@@ -75,8 +77,11 @@ export interface WorkspacePackageCoverage {
 
 export interface PrepareWorkspaceCoverageOptions {
 	packages: Array<WorkspacePackageDescriptor>;
-	/** Orchestration profiler; records the coverage sub-phases per instrumented root. */
-	timing?: TimingCollector;
+	/**
+	 * Orchestration profiler; records the coverage sub-phases per instrumented
+	 * root.
+	 */
+	timing?: TimingCollector | undefined;
 	workspaceRoot: string;
 }
 
@@ -89,6 +94,28 @@ export interface PrepareWorkspaceCoverageOptions {
 interface PackageIgnore {
 	matcher: (filePath: string) => boolean;
 	patterns: Array<string>;
+}
+
+/** Where one package's coverage artifacts are published. */
+interface PackagePaths {
+	manifestPath: string;
+	packageShadowRoot: string;
+}
+
+interface InstrumentPackageOptions {
+	descriptor: WorkspacePackageDescriptor;
+	isIncremental: boolean;
+	luauRoots: Array<string>;
+	packageShadowRoot: string;
+	previousManifest: CoverageManifest | undefined;
+	timing: TimingCollector;
+}
+
+/** The merged instrumentation output across one package's luau roots. */
+interface InstrumentedPackage {
+	coverageRoots: Array<WorkspaceCoverageRoot>;
+	files: Record<string, InstrumentedFileRecord>;
+	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 }
 
 /**
@@ -360,14 +387,6 @@ function discoverPackageLuauRoots(
 	return discoverFromRojoWalk(descriptor, matchesIgnored);
 }
 
-/**
- * Map an npm-style package name (`@scope/name`) to a filesystem-safe directory
- * segment. Replaces "/" with "-" so the on-disk path is one segment deep.
- */
-function safePackageName(name: string): string {
-	return name.replaceAll("/", "-");
-}
-
 function loadPackageManifest(manifestPath: string): CoverageManifest | undefined {
 	const result = readManifest(manifestPath);
 	switch (result.kind) {
@@ -391,6 +410,29 @@ function loadPackageManifest(manifestPath: string): CoverageManifest | undefined
 			return result.manifest;
 		}
 	}
+}
+
+/**
+ * Map an npm-style package name (`@scope/name`) to a filesystem-safe directory
+ * segment. Replaces "/" with "-" so the on-disk path is one segment deep.
+ */
+function safePackageName(name: string): string {
+	return name.replaceAll("/", "-");
+}
+
+/** Where one package's shadow tree and its Coverage Manifest live on disk. */
+function resolvePackagePaths(name: string, workspaceRoot: string): PackagePaths {
+	const packageShadowRoot = path.join(
+		workspaceRoot,
+		WORKSPACE_COVERAGE_DIR,
+		safePackageName(name),
+		"coverage",
+	);
+
+	return {
+		manifestPath: normalizeWindowsPath(path.join(packageShadowRoot, "coverage-manifest.json")),
+		packageShadowRoot,
+	};
 }
 
 function canUseIncremental(
@@ -426,28 +468,18 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 	return true;
 }
 
-function prepareForPackage(
+/**
+ * Decide whether this package can reuse its cached shadow tree, nuking the
+ * shadow root when it can't.
+ */
+function decidePackageIncremental(
 	descriptor: WorkspacePackageDescriptor,
-	workspaceRoot: string,
-	ignore: PackageIgnore,
-	timing: TimingCollector,
-): WorkspacePackageCoverage {
-	const safeName = safePackageName(descriptor.name);
-	const packageShadowRoot = path.join(
-		workspaceRoot,
-		WORKSPACE_COVERAGE_DIR,
-		safeName,
-		"coverage",
-	);
-	const manifestPath = normalizeWindowsPath(
-		path.join(packageShadowRoot, "coverage-manifest.json"),
-	);
-
-	const previousManifest = loadPackageManifest(manifestPath);
-	const coverageCache = descriptor.coverageCache ?? DEFAULT_CONFIG.coverageCache;
-	let useIncremental = canUseIncremental(previousManifest, coverageCache);
-
-	const luauRoots = discoverPackageLuauRoots(descriptor, ignore.matcher);
+	previousManifest: CoverageManifest | undefined,
+	packageShadowRoot: string,
+	luauRoots: Array<string>,
+): boolean {
+	const isCoverageCacheEnabled = descriptor.coverageCache ?? DEFAULT_CONFIG.coverageCache;
+	let isIncremental = canUseIncremental(previousManifest, isCoverageCacheEnabled);
 
 	// When the user shrinks `luauRoots` (or adds new ignore patterns)
 	// between runs, previously-instrumented mounts disappear from the new set
@@ -455,15 +487,15 @@ function prepareForPackage(
 	// (cpSync), so a stale `vendored-packages/dep/init.luau` would survive
 	// into the redirected `$path` mount and the runtime would load it. Force
 	// a cold rebuild for that package so the rmSync below nukes the shadow.
-	if (useIncremental && previousManifest !== undefined) {
+	if (isIncremental && previousManifest !== undefined) {
 		const computedShadowDirectories = new Set(
-			luauRoots.map((relative) =>
-				normalizeWindowsPath(path.join(packageShadowRoot, relative)),
-			),
+			luauRoots.map((relative) => {
+				return normalizeWindowsPath(path.join(packageShadowRoot, relative));
+			}),
 		);
 		const previousShadowDirectories = new Set(previousManifest.luauRoots);
 		if (!setsEqual(computedShadowDirectories, previousShadowDirectories)) {
-			useIncremental = false;
+			isIncremental = false;
 		}
 	}
 
@@ -471,10 +503,22 @@ function prepareForPackage(
 	// from source between runs don't survive into the redirected `$path`
 	// mount. `prepareShadowRoot`'s cpSync merges; without an explicit rmSync
 	// here a stale `*.spec.luau` could still be discovered at runtime.
-	if (!useIncremental && fs.existsSync(packageShadowRoot)) {
+	if (!isIncremental && fs.existsSync(packageShadowRoot)) {
 		fs.rmSync(packageShadowRoot, { recursive: true });
 	}
 
+	return isIncremental;
+}
+
+/** Instrument each of the package's luau roots into its shadow tree. */
+function instrumentPackageRoots({
+	descriptor,
+	isIncremental,
+	luauRoots,
+	packageShadowRoot,
+	previousManifest,
+	timing,
+}: InstrumentPackageOptions): InstrumentedPackage {
 	const coverageRoots: Array<WorkspaceCoverageRoot> = [];
 	const allFiles: Record<string, InstrumentedFileRecord> = {};
 	const allNonInstrumented: Record<string, NonInstrumentedFileRecord> = {};
@@ -492,7 +536,7 @@ function prepareForPackage(
 			previousManifest,
 			shadowDir: shadowDirectory,
 			timing,
-			useIncremental,
+			useIncremental: isIncremental,
 		});
 
 		Object.assign(allFiles, result.files);
@@ -500,14 +544,22 @@ function prepareForPackage(
 		coverageRoots.push({ luauRoot: relativeLuauRoot, shadowDir: shadowDirectory });
 	}
 
+	return { coverageRoots, files: allFiles, nonInstrumentedFiles: allNonInstrumented };
+}
+
+function writePackageManifest(
+	manifestPath: string,
+	packageShadowRoot: string,
+	instrumented: InstrumentedPackage,
+): CoverageManifest {
 	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
 		buildId: crypto.randomUUID(),
-		files: allFiles,
+		files: instrumented.files,
 		generatedAt: generatedAtDate.toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
-		luauRoots: coverageRoots.map((entry) => entry.shadowDir),
-		nonInstrumentedFiles: allNonInstrumented,
+		luauRoots: instrumented.coverageRoots.map((entry) => entry.shadowDir),
+		nonInstrumentedFiles: instrumented.nonInstrumentedFiles,
 		shadowDir: normalizeWindowsPath(packageShadowRoot),
 		version: MANIFEST_VERSION,
 	};
@@ -517,9 +569,39 @@ function prepareForPackage(
 	// packageShadowRoot uncreated) still gets a manifest written.
 	atomicWrite(manifestPath, JSON.stringify(manifest, undefined, "\t"));
 
+	return manifest;
+}
+
+function prepareForPackage(
+	descriptor: WorkspacePackageDescriptor,
+	workspaceRoot: string,
+	ignore: PackageIgnore,
+	timing: TimingCollector,
+): WorkspacePackageCoverage {
+	const { manifestPath, packageShadowRoot } = resolvePackagePaths(descriptor.name, workspaceRoot);
+
+	const previousManifest = loadPackageManifest(manifestPath);
+	const luauRoots = discoverPackageLuauRoots(descriptor, ignore.matcher);
+	const isIncremental = decidePackageIncremental(
+		descriptor,
+		previousManifest,
+		packageShadowRoot,
+		luauRoots,
+	);
+
+	const instrumented = instrumentPackageRoots({
+		descriptor,
+		isIncremental,
+		luauRoots,
+		packageShadowRoot,
+		previousManifest,
+		timing,
+	});
+	const manifest = writePackageManifest(manifestPath, packageShadowRoot, instrumented);
+
 	return {
 		coveragePathIgnorePatterns: ignore.patterns,
-		coverageRoots,
+		coverageRoots: instrumented.coverageRoots,
 		manifest,
 		manifestPath,
 		pkg: descriptor.name,

@@ -44,9 +44,9 @@ describe(createSourceMapper, () => {
 		const input = `Error: test failed
 [string "ReplicatedStorage.test"]:2`;
 
-		const result = mapper.mapFailureMessage(input);
+		const result = mapper.mapFailureWithLocations(input);
 
-		expect(result).toContain(`${resolvedTsPath}:2`);
+		expect(result.message).toContain(`${resolvedTsPath}:2`);
 	});
 
 	it("should look up the sourcemap under outDir when rootDir is '.' (rootDirs project)", () => {
@@ -90,33 +90,6 @@ describe(createSourceMapper, () => {
 		);
 	});
 
-	it("should keep original frame when path cannot be resolved", () => {
-		expect.assertions(1);
-
-		const rojoProject = {
-			name: "test",
-			tree: {
-				ReplicatedStorage: {
-					$path: "out/shared",
-				},
-			},
-		};
-
-		vi.mocked(fs.existsSync).mockReturnValue(false);
-
-		const mapper = createSourceMapper({
-			mappings: [{ outDir: "out", rootDir: "src" }],
-			rojoProject,
-		});
-
-		const input = `Error: test failed
-[string "ServerStorage.unknown"]:5`;
-
-		const result = mapper.mapFailureMessage(input);
-
-		expect(result).toContain('[string "ServerStorage.unknown"]:5');
-	});
-
 	it("should snapshot mapped failure message", () => {
 		expect.assertions(1);
 
@@ -154,7 +127,9 @@ Expected: "hello"
 Received: "world"
 [string "ReplicatedStorage.test"]:10`;
 
-		const result = mapper.mapFailureMessage(input).replaceAll(resolvedTsPath, "<mapped>");
+		const result = mapper
+			.mapFailureWithLocations(input)
+			.message.replaceAll(resolvedTsPath, "<mapped>");
 
 		expect(result).toMatchInlineSnapshot(`
 			"expect(received).toBe(expected)
@@ -225,34 +200,6 @@ Received: "world"
 		expect(result.locations).toHaveLength(1);
 		expect(result.locations[0]!.tsLine).toBe(5);
 		expect(result.locations[0]!.luauLine).toBe(10);
-	});
-
-	it("should replace DataModel path with Luau path when sourcemap has no mapping", () => {
-		expect.assertions(2);
-
-		const rojoProject = {
-			name: "test",
-			tree: {
-				ReplicatedStorage: {
-					$path: "out/shared",
-				},
-			},
-		};
-
-		vi.mocked(mapFromSourceMap).mockReturnValue(undefined);
-
-		const mapper = createSourceMapper({
-			mappings: [{ outDir: "out", rootDir: "src" }],
-			rojoProject,
-		});
-
-		const input = `Error: test failed
-[string "ReplicatedStorage.test"]:5`;
-
-		const result = mapper.mapFailureMessage(input);
-
-		expect(result).not.toContain('[string "ReplicatedStorage.test"]:5');
-		expect(result).toContain("out/shared/test.luau:5");
 	});
 
 	it("should skip unresolvable frames in mapFailureWithLocations", () => {
@@ -438,7 +385,7 @@ Received: "world"
 	});
 
 	it("should return luau-only location when source map is unavailable", () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const rojoProject = {
 			name: "test",
@@ -463,6 +410,7 @@ Received: "world"
 
 		expect(result.locations).toHaveLength(1);
 		expect(result.locations[0]).toMatchObject({ luauLine: 5 });
+		expect(result.message).not.toContain('[string "ReplicatedStorage.test"]:5');
 		expect(result.message).toContain("out/shared/test.luau:5");
 	});
 });
@@ -556,11 +504,10 @@ describe("resolveDisplayPath", () => {
 describe(combineSourceMappers, () => {
 	function makeStub(tag: string): SourceMapper {
 		return {
-			mapFailureMessage: (message) => message.replace(tag, `${tag}_TS`),
 			mapFailureWithLocations: (message) => {
 				return {
 					locations: [{ luauLine: 1, luauPath: `${tag}.luau`, tsPath: `${tag}.ts` }],
-					message: message.replace(tag, `${tag}_TS`),
+					message: message.replace(tag, () => `${tag}_TS`),
 				};
 			},
 			resolveDisplayPath: (file) => (file === `${tag}.spec` ? `${tag}.spec.ts` : file),
@@ -582,22 +529,14 @@ describe(combineSourceMappers, () => {
 		expect(combineSourceMappers([mapper])).toBe(mapper);
 	});
 
-	it("should chain mapFailureMessage through every child", () => {
-		expect.assertions(1);
-
-		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
-
-		expect(composite?.mapFailureMessage("A B")).toBe("A_TS B_TS");
-	});
-
-	it("should accumulate locations from mapFailureWithLocations across children", () => {
+	it("should accumulate locations and chain the message across children", () => {
 		expect.assertions(2);
 
 		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
-		const result = composite?.mapFailureWithLocations("A B");
+		const result = composite!.mapFailureWithLocations("A B");
 
-		expect(result?.locations).toHaveLength(2);
-		expect(result?.message).toBe("A_TS B_TS");
+		expect(result.locations).toHaveLength(2);
+		expect(result.message).toBe("A_TS B_TS");
 	});
 
 	it("should return the first resolveTestFilePath hit", () => {
@@ -605,8 +544,8 @@ describe(combineSourceMappers, () => {
 
 		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
 
-		expect(composite?.resolveTestFilePath("B.spec")).toBe("B.spec.ts");
-		expect(composite?.resolveTestFilePath("missing")).toBeUndefined();
+		expect(composite!.resolveTestFilePath("B.spec")).toBe("B.spec.ts");
+		expect(composite!.resolveTestFilePath("missing")).toBeUndefined();
 	});
 
 	it("should return the first resolveDisplayPath hit and fall back otherwise", () => {
@@ -614,8 +553,8 @@ describe(combineSourceMappers, () => {
 
 		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
 
-		expect(composite?.resolveDisplayPath("B.spec")).toBe("B.spec.ts");
-		expect(composite?.resolveDisplayPath("missing")).toBe("missing");
+		expect(composite!.resolveDisplayPath("B.spec")).toBe("B.spec.ts");
+		expect(composite!.resolveDisplayPath("missing")).toBe("missing");
 	});
 
 	it("should not let a non-owning roblox-ts child rewrite another project's path", () => {
@@ -635,7 +574,7 @@ describe(combineSourceMappers, () => {
 		// Path belongs to the pure-Luau project (`lib/init.spec.luau` is the real
 		// on-disk file). The roblox-ts mapper cannot resolve it, so the combiner
 		// must NOT apply init→index just because the rewrite changes the string.
-		expect(composite?.resolveDisplayPath("/ServerStorage/lib/init.spec")).toBe(
+		expect(composite!.resolveDisplayPath("/ServerStorage/lib/init.spec")).toBe(
 			"lib/init.spec.luau",
 		);
 	});
@@ -657,8 +596,8 @@ line 5`;
 		const snippet = getSourceSnippet({ context: 1, filePath: "test.ts", line: 3 });
 
 		expect(snippet).toBeDefined();
-		expect(snippet?.failureLine).toBe(3);
-		expect(snippet?.lines).toHaveLength(3);
+		expect(snippet!.failureLine).toBe(3);
+		expect(snippet!.lines).toHaveLength(3);
 	});
 
 	it("should include column if provided", () => {
@@ -674,7 +613,7 @@ line 3`;
 		const snippet = getSourceSnippet({ column: 10, context: 1, filePath: "test.ts", line: 2 });
 
 		expect(snippet).toBeDefined();
-		expect(snippet?.column).toBe(10);
+		expect(snippet!.column).toBe(10);
 	});
 
 	it("should return undefined when file does not exist", () => {
@@ -700,7 +639,7 @@ line 3`;
 		const snippet = getSourceSnippet({ filePath: "test.ts", line: 1 });
 
 		expect(snippet).toBeDefined();
-		expect(snippet?.lines[0]?.num).toBe(1);
+		expect(snippet!.lines[0]!.num).toBe(1);
 	});
 
 	it("should snapshot rendered snippet with context", () => {
@@ -743,7 +682,7 @@ describe("math", () => {
 		});
 
 		expect(snippet).toBeDefined();
-		expect(snippet?.lines).toHaveLength(3);
+		expect(snippet!.lines).toHaveLength(3);
 	});
 
 	it("should handle out-of-bounds line in getSourceSnippet", () => {
@@ -758,7 +697,7 @@ describe("math", () => {
 		});
 
 		expect(snippet).toBeDefined();
-		expect(snippet?.failureLine).toBe(100);
+		expect(snippet!.failureLine).toBe(100);
 	});
 
 	it("should compute column from expect line when not provided", () => {
@@ -775,6 +714,6 @@ describe("math", () => {
 
 		expect(snippet).toBeDefined();
 		// '  expect(2 + 2).toBe' -> 'toBe' starts at col 17 (1-indexed)
-		expect(snippet?.column).toBe(17);
+		expect(snippet!.column).toBe(17);
 	});
 });

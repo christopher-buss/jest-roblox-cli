@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import type { CliOptions } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
@@ -60,7 +60,7 @@ describe(buildWorkspaceRunOptions, () => {
 
 	describe("workspace.packages convergence", () => {
 		it("should throw when packages disagree on workspace.packages", () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			let thrown: unknown;
 			try {
@@ -81,8 +81,9 @@ describe(buildWorkspaceRunOptions, () => {
 				thrown = err;
 			}
 
-			expect(thrown).toBeInstanceOf(WorkspaceConsensusError);
-			expect((thrown as Error).message).toContain("workspace.packages");
+			assert(thrown instanceof WorkspaceConsensusError);
+
+			expect(thrown.message).toContain("workspace.packages");
 		});
 
 		it("should throw when packages disagree on workspace.root", () => {
@@ -190,9 +191,9 @@ describe(buildWorkspaceRunOptions, () => {
 		});
 
 		it("should list each declared value with the packages declaring it", () => {
-			expect.assertions(4);
+			expect.assertions(3);
 
-			let captured: undefined | WorkspaceConsensusError;
+			let captured: unknown;
 			try {
 				buildWorkspaceRunOptions({
 					cli: emptyCli(),
@@ -203,13 +204,14 @@ describe(buildWorkspaceRunOptions, () => {
 					],
 				});
 			} catch (err) {
-				captured = err as WorkspaceConsensusError;
+				captured = err;
 			}
 
-			expect(captured).toBeInstanceOf(WorkspaceConsensusError);
-			expect(captured?.message).toContain("backend");
-			expect(captured?.message).toContain("alpha");
-			expect(captured?.message).toContain("beta");
+			assert(captured instanceof WorkspaceConsensusError);
+
+			expect(captured.message).toContain("backend");
+			expect(captured.message).toContain("alpha");
+			expect(captured.message).toContain("beta");
 		});
 
 		it("should reject mixed values for deep-compared arrays", () => {
@@ -245,7 +247,7 @@ describe(buildWorkspaceRunOptions, () => {
 		it("should use the partial-variant wording in the error message", () => {
 			expect.assertions(2);
 
-			let captured: undefined | WorkspaceConsensusError;
+			let captured: unknown;
 			try {
 				buildWorkspaceRunOptions({
 					cli: emptyCli(),
@@ -255,11 +257,13 @@ describe(buildWorkspaceRunOptions, () => {
 					],
 				});
 			} catch (err) {
-				captured = err as WorkspaceConsensusError;
+				captured = err;
 			}
 
-			expect(captured?.message).toContain("not declared by");
-			expect(captured?.message).toContain("beta");
+			assert(captured instanceof WorkspaceConsensusError);
+
+			expect(captured.message).toContain("not declared by");
+			expect(captured.message).toContain("beta");
 		});
 	});
 

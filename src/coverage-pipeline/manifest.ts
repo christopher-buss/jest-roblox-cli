@@ -20,10 +20,10 @@ export interface InstrumentedFileRecord {
 	branchCount?: number;
 	coverageMapPath: string;
 	/**
-	 * Per-statement attribution: maps a Luau statement id (the probe index, same
-	 * key space as the coverage-map sidecar) to the ids of the tests that covered
-	 * it. Populated after a coverage run by the per-test attribution harvester;
-	 * absent on a freshly-instrumented manifest (no run yet).
+	 * Per-statement attribution: maps a Luau statement id (the probe index,
+	 * same key space as the coverage-map sidecar) to the ids of the tests that
+	 * covered it. Populated after a coverage run by the per-test attribution
+	 * harvester; absent on a freshly-instrumented manifest (no run yet).
 	 */
 	coveringTestIds?: Record<string, Array<string>>;
 	functionCount?: number;
@@ -34,9 +34,10 @@ export interface InstrumentedFileRecord {
 	statementCount: number;
 	/**
 	 * Statement ids hit during the coverage run but credited to no per-test
-	 * window (executed at module load or in a hook). Computed by the per-test
-	 * attribution harvester; a consumer marks a mutant on one of these as
-	 * Ignored (ADR-0003). Absent on a freshly-instrumented manifest (no run yet).
+	 * window (executed at module load or in a hook). Computed by the
+	 * per-test attribution harvester; a consumer marks a mutant on one of
+	 * these as Ignored (ADR-0003). Absent on a freshly-instrumented
+	 * manifest (no run yet).
 	 */
 	staticStatementIds?: Array<string>;
 }
@@ -73,18 +74,18 @@ export interface CoverageManifest {
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 	placeFilePath?: string;
 	/**
-	 * SHA-256 over every rojo build input OUTSIDE the luauRoots (non-luauRoot
-	 * `$path` mounts plus the rojo project files), per `computeRojoInputsHash`.
-	 * The incremental cache rebuilds the place when it drifts. Absent on manifests
-	 * written before this field existed; a missing value is treated as changed so
-	 * the next run repopulates it.
+	 * SHA-256 over every rojo build input OUTSIDE the luauRoots
+	 * (non-luauRoot `$path` mounts plus the rojo project files), per
+	 * `computeRojoInputsHash`. The incremental cache rebuilds the place when
+	 * it drifts. Absent on manifests written before this field existed; a
+	 * missing value is treated as changed so the next run repopulates it.
 	 */
 	rojoInputsHash?: string;
 	shadowDir: string;
 	/**
-	 * Per-test attribution records, one per Jest test case that covered at least
-	 * one statement. Populated by the harvester after a coverage run; absent on a
-	 * freshly-instrumented manifest.
+	 * Per-test attribution records, one per Jest test case that covered at
+	 * least one statement. Populated by the harvester after a coverage run;
+	 * absent on a freshly-instrumented manifest.
 	 */
 	tests?: Array<TestRecord>;
 	version: typeof MANIFEST_VERSION;

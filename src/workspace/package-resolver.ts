@@ -101,13 +101,13 @@ function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
 
 function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: string): void {
 	const byName = new Map<string, Array<string>>();
-	for (const package_ of packages) {
+	for (const packageInfo of packages) {
 		const relative = path
-			.relative(workspaceRoot, package_.packageDirectory)
+			.relative(workspaceRoot, packageInfo.packageDirectory)
 			.replaceAll("\\", "/");
-		const list = byName.get(package_.name) ?? [];
+		const list = byName.get(packageInfo.name) ?? [];
 		list.push(relative);
-		byName.set(package_.name, list);
+		byName.set(packageInfo.name, list);
 	}
 
 	for (const [name, paths] of byName) {

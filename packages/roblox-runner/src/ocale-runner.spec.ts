@@ -4,7 +4,9 @@ import {
 	createFakeSleep,
 	type FakeHttpClient,
 } from "@bedrock-rbx/ocale/testing";
+import { fromAny } from "@total-typescript/shoehorn";
 
+import { type } from "arktype";
 import buffer from "node:buffer";
 import { assert, describe, expect, it, vi } from "vitest";
 
@@ -35,6 +37,8 @@ function taskBody(overrides: TaskBodyOverrides = {}): Record<string, unknown> {
 	};
 }
 
+const submitBodySchema = type({ timeout: "string" });
+
 function rbxlBuffer(): buffer.Buffer {
 	return buffer.Buffer.from(RBXL_SIGNATURE);
 }
@@ -59,7 +63,7 @@ describe(OcaleRunner, () => {
 			http.mockResponse({ body: { versionNumber: 7 }, status: 200 });
 
 			const runner = makeRunner(http);
-			const result = await runner.uploadPlace({ placeFilePath: "/work/test.rbxl" });
+			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/test.rbxl" });
 
 			expect(result.versionNumber).toBe(7);
 			expect(http.requests[0]!.request.url).toContain("/places/456/versions");
@@ -72,7 +76,7 @@ describe(OcaleRunner, () => {
 			http.mockResponse({ body: { versionNumber: 1 }, status: 200 });
 
 			const runner = makeRunner(http);
-			await runner.uploadPlace({ placeFilePath: "/work/p.rbxl" });
+			await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
 
 			expect(http.requests[0]!.request.url).toContain("versionType=Saved");
 		});
@@ -84,7 +88,7 @@ describe(OcaleRunner, () => {
 			http.mockResponse({ body: { versionNumber: 1 }, status: 200 });
 
 			const runner = makeRunner(http);
-			await runner.uploadPlace({ placeFilePath: "/work/p.rbxl", publish: true });
+			await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl", publish: true });
 
 			expect(http.requests[0]!.request.url).toContain("versionType=Published");
 		});
@@ -97,12 +101,12 @@ describe(OcaleRunner, () => {
 
 			const xmlBody = buffer.Buffer.from('<roblox version="4"></roblox>');
 			const runner = makeRunner(http, xmlBody);
-			await runner.uploadPlace({ placeFilePath: "/work/test.rbxlx" });
+			await runner.uploadPlaceAsync({ placeFilePath: "/work/test.rbxlx" });
 
 			const captured = http.requests[0]!.request;
-			const headers = captured.headers ?? {};
+			const headers = captured.headers!;
 
-			expect(headers["Content-Type"] ?? headers["content-type"]).toMatch(/xml/i);
+			expect(headers["content-type"]).toMatch(/xml/i);
 		});
 
 		it("should always upload on repeat calls with identical bytes", async () => {
@@ -114,8 +118,8 @@ describe(OcaleRunner, () => {
 
 			const runner = makeRunner(http);
 
-			await runner.uploadPlace({ placeFilePath: "/work/p.rbxl" });
-			await runner.uploadPlace({ placeFilePath: "/work/p.rbxl" });
+			await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
+			await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
 
 			expect(http.requests).toHaveLength(2);
 		});
@@ -128,9 +132,9 @@ describe(OcaleRunner, () => {
 
 			const runner = makeRunner(http);
 
-			await expect(runner.uploadPlace({ placeFilePath: "/work/p.rbxl" })).rejects.toThrow(
-				/Unauthorized/,
-			);
+			await expect(
+				runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" }),
+			).rejects.toThrow(/Unauthorized/);
 		});
 
 		it("should preserve the underlying OpenCloudError as cause on the thrown Error from uploadPlace", async () => {
@@ -142,7 +146,7 @@ describe(OcaleRunner, () => {
 			const runner = makeRunner(http);
 
 			const caught: unknown = await runner
-				.uploadPlace({ placeFilePath: "/work/p.rbxl" })
+				.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" })
 				.catch((err: unknown) => err);
 
 			assert(caught instanceof Error);
@@ -159,7 +163,7 @@ describe(OcaleRunner, () => {
 			http.mockResponse({ body: { versionNumber: 4 }, status: 200 });
 
 			const runner = makeRunner(http);
-			const result = await runner.uploadPlace({ placeFilePath: "/work/p.rbxl" });
+			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
 
 			expect(result.versionNumber).toBe(4);
 			expect(http.requests).toHaveLength(2);
@@ -186,7 +190,7 @@ describe(OcaleRunner, () => {
 					sleep: createFakeSleep(),
 				},
 			);
-			const result = await runner.uploadPlace({ placeFilePath: "/work/p.rbxl" });
+			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
 
 			expect(result.versionNumber).toBe(9);
 			expect(http.requests).toHaveLength(5);
@@ -200,11 +204,11 @@ describe(OcaleRunner, () => {
 			const http = createFakeHttpClient();
 			const runner = makeRunner(http);
 
-			await expect(runner.executeScript({ script: "return 1", timeout: 0 })).rejects.toThrow(
-				"Timeout must be a positive number",
-			);
 			await expect(
-				runner.executeScript({ script: "return 1", timeout: -100 }),
+				runner.executeScriptAsync({ script: "return 1", timeout: 0 }),
+			).rejects.toThrow("Timeout must be a positive number");
+			await expect(
+				runner.executeScriptAsync({ script: "return 1", timeout: -100 }),
 			).rejects.toThrow("Timeout must be a positive number");
 		});
 
@@ -222,7 +226,7 @@ describe(OcaleRunner, () => {
 			});
 
 			const runner = makeRunner(http);
-			const result = await runner.executeScript({ script: "return 1", timeout: 30_000 });
+			const result = await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
 
 			expect(result.outputs).toStrictEqual(["hello", "world"]);
 			expect(result.durationMs).toBeGreaterThanOrEqual(0);
@@ -239,7 +243,7 @@ describe(OcaleRunner, () => {
 			});
 
 			const runner = makeRunner(http);
-			const result = await runner.executeScript({ script: "return 1", timeout: 30_000 });
+			const result = await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
 
 			expect(result.outputs).toStrictEqual([]);
 		});
@@ -257,7 +261,7 @@ describe(OcaleRunner, () => {
 			});
 
 			const runner = makeRunner(http);
-			const result = await runner.executeScript({ script: "return 1", timeout: 30_000 });
+			const result = await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
 
 			expect(result.outputs).toStrictEqual(["done"]);
 		});
@@ -278,7 +282,7 @@ describe(OcaleRunner, () => {
 			const runner = makeRunner(http);
 
 			await expect(
-				runner.executeScript({ script: "return 1", timeout: 30_000 }),
+				runner.executeScriptAsync({ script: "return 1", timeout: 30_000 }),
 			).rejects.toThrow("Script blew up");
 		});
 
@@ -287,7 +291,8 @@ describe(OcaleRunner, () => {
 
 			let clock = 1_000_000;
 			vi.spyOn(Date, "now").mockImplementation(() => clock);
-			async function advancingSleep(ms: number): Promise<void> {
+
+			function advancingSleep(ms: number): void {
 				clock += ms;
 			}
 
@@ -297,11 +302,11 @@ describe(OcaleRunner, () => {
 
 			const runner = new OcaleRunner(
 				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http, readFile: () => rbxlBuffer(), sleep: advancingSleep },
+				{ httpClient: http, readFile: () => rbxlBuffer(), sleep: fromAny(advancingSleep) },
 			);
 
 			const caught: unknown = await runner
-				.executeScript({ script: "return 1", timeout: 100 })
+				.executeScriptAsync({ script: "return 1", timeout: 100 })
 				.catch((err: unknown) => err);
 
 			assert(caught instanceof Error);
@@ -320,7 +325,7 @@ describe(OcaleRunner, () => {
 			const runner = makeRunner(http);
 
 			await expect(
-				runner.executeScript({ script: "return 1", timeout: 30_000 }),
+				runner.executeScriptAsync({ script: "return 1", timeout: 30_000 }),
 			).rejects.toThrow("Execution was cancelled");
 		});
 
@@ -333,7 +338,7 @@ describe(OcaleRunner, () => {
 			const runner = makeRunner(http);
 
 			await expect(
-				runner.executeScript({ script: "return 1", timeout: 30_000 }),
+				runner.executeScriptAsync({ script: "return 1", timeout: 30_000 }),
 			).rejects.toThrow(/Bad request/);
 		});
 
@@ -346,7 +351,7 @@ describe(OcaleRunner, () => {
 			const runner = makeRunner(http);
 
 			const caught: unknown = await runner
-				.executeScript({ script: "return 1", timeout: 30_000 })
+				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
 				.catch((err: unknown) => err);
 
 			assert(caught instanceof Error);
@@ -368,7 +373,7 @@ describe(OcaleRunner, () => {
 			});
 
 			const runner = makeRunner(http);
-			const result = await runner.executeScript({ script: "return 1", timeout: 30_000 });
+			const result = await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
 
 			expect(result.outputs).toStrictEqual(["42", '{"nested":true}', "raw"]);
 		});
@@ -386,7 +391,7 @@ describe(OcaleRunner, () => {
 			});
 
 			const runner = makeRunner(http);
-			const result = await runner.executeScript({ script: "return 1", timeout: 30_000 });
+			const result = await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
 
 			expect(result.outputs).toStrictEqual(["ok"]);
 			expect(http.requests).toHaveLength(3);
@@ -403,7 +408,7 @@ describe(OcaleRunner, () => {
 			});
 
 			const runner = makeRunner(http);
-			await runner.executeScript({ script: "return 1", timeout: 30_000 });
+			await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
 
 			expect(http.requests[0]!.request.url).not.toContain("/versions/");
 		});
@@ -419,7 +424,11 @@ describe(OcaleRunner, () => {
 			});
 
 			const runner = makeRunner(http);
-			await runner.executeScript({ placeVersion: 99, script: "return 1", timeout: 30_000 });
+			await runner.executeScriptAsync({
+				placeVersion: 99,
+				script: "return 1",
+				timeout: 30_000,
+			});
 
 			expect(http.requests[0]!.request.url).toContain(
 				"/places/456/versions/99/luau-execution-session-tasks",
@@ -437,11 +446,11 @@ describe(OcaleRunner, () => {
 			});
 
 			const runner = makeRunner(http);
-			await runner.executeScript({ script: "return 1", timeout: 600_000 });
+			await runner.executeScriptAsync({ script: "return 1", timeout: 600_000 });
 
-			const submitBody = http.requests[0]!.request.body as Record<string, unknown>;
+			const submitBody = http.requests[0]!.request.body!;
 
-			expect(submitBody["timeout"]).toBe("300s");
+			expect(submitBodySchema.assert(submitBody).timeout).toBe("300s");
 		});
 	});
 
@@ -456,7 +465,7 @@ describe(OcaleRunner, () => {
 			);
 
 			await expect(
-				runner.uploadPlace({ placeFilePath: "/nonexistent.rbxl" }),
+				runner.uploadPlaceAsync({ placeFilePath: "/nonexistent.rbxl" }),
 			).rejects.toThrow(/ENOENT/);
 		});
 

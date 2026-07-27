@@ -11,8 +11,11 @@ export interface SetupResolverOptions {
 
 const PROBE_EXTENSIONS = [".ts", ".tsx", ".lua", ".luau"];
 
-export function createSetupResolver(options: SetupResolverOptions): (input: string) => string {
-	const { configDirectory, resolveModule, rojoConfigPath } = options;
+export function createSetupResolver({
+	configDirectory,
+	resolveModule,
+	rojoConfigPath,
+}: SetupResolverOptions): (input: string) => string {
 	const resolve = resolveModule ?? createRequire(path.join(configDirectory, "noop.js")).resolve;
 	const rojoResolver = RojoResolver.fromPath(rojoConfigPath);
 

@@ -46,17 +46,16 @@ export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
 }
 
 export function buildProjectResult(
-	entry: EnvelopeEntry,
-	job: ProjectJob,
-	fallbackGameOutput: string | undefined,
-): ProjectBackendResult {
-	const {
+	{
 		bannerOutput,
 		elapsedMs,
 		gameOutput: entryGameOutput,
 		jestOutput,
 		snapshotWrites,
-	} = entry;
+	}: EnvelopeEntry,
+	job: ProjectJob,
+	fallbackGameOutput: string | undefined,
+): ProjectBackendResult {
 	const gameOutput = entryGameOutput ?? fallbackGameOutput;
 
 	let parsed;

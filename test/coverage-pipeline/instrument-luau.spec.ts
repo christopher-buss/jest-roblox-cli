@@ -44,16 +44,24 @@ function getAstMap(): Record<string, unknown> {
 	return cachedAstMap;
 }
 
+/**
+ * Shallow guard over the AST JSON `parse-ast.luau` emits, mirroring
+ * `instrumenter.ts`: only the root tag is checked, since the file is our own
+ * output.
+ */
+function isAstStatBlock(value: unknown): value is AstStatBlock {
+	return typeof value === "object" && value !== null && Reflect.get(value, "tag") === "block";
+}
+
 function instrumentFixture(fixtureName: string, fileKey: string) {
 	const fixturePath = path.join(FIXTURES_DIR, fixtureName);
 	const source = fs.readFileSync(fixturePath, "utf-8");
 
 	const astMap = getAstMap();
 	const rawAst = astMap[fixtureName];
-	assert(rawAst !== undefined, `Fixture ${fixtureName} not found in AST map`);
+	assert(isAstStatBlock(rawAst), `Fixture ${fixtureName} has no parsed AST block`);
 
-	const ast = rawAst as AstStatBlock;
-	const result = collectCoverage(ast);
+	const result = collectCoverage(rawAst);
 	const instrumentedSource = insertProbes(source, result, fileKey);
 	const covMap = buildCoverageMap(result);
 
@@ -188,7 +196,7 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("functions.luau", "functions.luau");
 
-			const functionEntries = Object.values(covMap.functionMap ?? {});
+			const functionEntries = Object.values(covMap.functionMap!);
 
 			expect(functionEntries).not.toBeEmpty();
 			expect(covMap.functionMap).toBeDefined();
@@ -204,9 +212,7 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("functions.luau", "functions.luau");
 
-			const functionNames = Object.values(covMap.functionMap ?? {}).map(
-				(entry) => entry.name,
-			);
+			const functionNames = Object.values(covMap.functionMap!).map((entry) => entry.name);
 
 			expect(functionNames).toContain("(anonymous)");
 		});
@@ -236,11 +242,11 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("if-else.luau", "if-else.luau");
 
-			const branchEntries = Object.values(covMap.branchMap ?? {});
+			const branchEntries = Object.values(covMap.branchMap!);
 
 			expect(branchEntries).toHaveLength(1);
 			expect(covMap.branchMap).toBeDefined();
-			expect(covMap.branchMap?.["1"]?.locations).toHaveLength(3);
+			expect(covMap.branchMap!["1"]!.locations).toHaveLength(3);
 		});
 
 		it("should set branch type to if in the cov-map", () => {
@@ -248,7 +254,7 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("if-else.luau", "if-else.luau");
 
-			expect(covMap.branchMap?.["1"]?.type).toBe("if");
+			expect(covMap.branchMap!["1"]!.type).toBe("if");
 		});
 
 		it("should initialize __cov_b preamble with correct arm counts", () => {
@@ -287,9 +293,9 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("if-only.luau", "if-only.luau");
 
-			expect(Object.values(covMap.branchMap ?? {})).toHaveLength(1);
+			expect(Object.values(covMap.branchMap!)).toHaveLength(1);
 			// then arm + implicit else arm
-			expect(covMap.branchMap?.["1"]?.locations).toHaveLength(2);
+			expect(covMap.branchMap!["1"]!.locations).toHaveLength(2);
 		});
 	});
 
@@ -299,7 +305,7 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("expr-if.luau", "expr-if.luau");
 
-			const branchEntries = Object.values(covMap.branchMap ?? {});
+			const branchEntries = Object.values(covMap.branchMap!);
 
 			expect(branchEntries.length).toBeGreaterThanOrEqual(2);
 			expect(covMap.branchMap).toBeDefined();
@@ -314,7 +320,7 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("expr-if.luau", "expr-if.luau");
 
-			expect(covMap.branchMap?.["1"]?.locations).toHaveLength(2);
+			expect(covMap.branchMap!["1"]!.locations).toHaveLength(2);
 		});
 
 		it("should record correct arm count for expression-if with elseif", () => {
@@ -322,7 +328,7 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("expr-if.luau", "expr-if.luau");
 
-			expect(covMap.branchMap?.["2"]?.locations).toHaveLength(3);
+			expect(covMap.branchMap!["2"]!.locations).toHaveLength(3);
 		});
 
 		it("should not inject runtime probes for expression-if", () => {
@@ -360,7 +366,7 @@ describe("instrumentation pipeline (integration)", () => {
 
 			const { covMap } = instrumentFixture("and-or.luau", "and-or.luau");
 
-			const branchEntries = Object.values(covMap.branchMap ?? {});
+			const branchEntries = Object.values(covMap.branchMap!);
 
 			// `x and y`, `p or q`, and `i and j and k` (two nested nodes) = 4.
 			expect(branchEntries).toHaveLength(4);

@@ -99,7 +99,3 @@ export function resolveAllSetupFilePaths(configs: Array<ResolvedConfig>): void {
 		}
 	}
 }
-
-export function resolveSetupFilePaths(config: ResolvedConfig): void {
-	resolveAllSetupFilePaths([config]);
-}

@@ -85,7 +85,7 @@ function convertHljsToAnsi(html: string): string {
 			(_, cssClasses, content) => {
 				// Multi-class spans (e.g., "hljs-title function_") use first
 				// class
-				const primaryClass = String(cssClasses).split(" ")[0];
+				const primaryClass = String(cssClasses).split(" ", 1)[0];
 				assert(primaryClass !== undefined, "split always returns ≥1 element");
 				const text = String(content);
 				const colorFunc = HLJS_CLASS_TO_COLOR[primaryClass];
@@ -111,5 +111,6 @@ function highlightTypeScript(source: string): string {
 	const result = hljs.highlight(source, { language: "typescript" });
 	const ansi = convertHljsToAnsi(result.value);
 	// highlight.js doesn't emit classes for arrow operators
-	return ansi.replace(/=>/g, color.yellow("=>"));
+	const arrow = color.yellow("=>");
+	return ansi.replace(/=>/g, () => arrow);
 }

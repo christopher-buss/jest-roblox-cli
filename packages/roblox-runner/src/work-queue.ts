@@ -5,7 +5,7 @@ import { StorageClient } from "@bedrock-rbx/ocale/storage";
 export interface WorkQueueOptions<T> {
 	readonly apiKey: string;
 	readonly baseUrl?: string;
-	readonly decode: (value: unknown) => T;
+	readonly decode: (value: JSONValue) => T;
 	readonly encode: (item: T) => unknown;
 	readonly httpClient?: HttpClient;
 	readonly queueId: string;
@@ -21,7 +21,7 @@ export interface ClaimedBatch<T> {
 type QueueData = EnqueueQueueItemParameters["data"];
 
 export class WorkQueue<T> {
-	private readonly decode: (value: unknown) => T;
+	private readonly decode: (value: JSONValue) => T;
 	private readonly encode: (item: T) => unknown;
 	private readonly queueId: string;
 	private readonly storage: StorageClient;
@@ -40,7 +40,7 @@ export class WorkQueue<T> {
 		});
 	}
 
-	public async claim(count: number, invisibilityMs: number): Promise<ClaimedBatch<T>> {
+	public async claimAsync(count: number, invisibilityMs: number): Promise<ClaimedBatch<T>> {
 		const invisibilityWindow = msToSecondsCeil(invisibilityMs);
 		const result = await this.storage.queues.dequeue({
 			count,
@@ -55,12 +55,12 @@ export class WorkQueue<T> {
 		const { readId } = result.data;
 		const items = result.data.items.map((item) => this.decode(item.data));
 		return {
-			commit: async () => this.commitBatch(readId),
+			commit: async () => this.commitBatchAsync(readId),
 			items,
 		};
 	}
 
-	public async enqueue(
+	public async enqueueAsync(
 		items: ReadonlyArray<T>,
 		options: { readonly ttlMs?: number } = {},
 	): Promise<void> {
@@ -86,7 +86,7 @@ export class WorkQueue<T> {
 		}
 	}
 
-	private async commitBatch(readId: string): Promise<void> {
+	private async commitBatchAsync(readId: string): Promise<void> {
 		const result = await this.storage.queues.discard({
 			queueId: this.queueId,
 			readId,

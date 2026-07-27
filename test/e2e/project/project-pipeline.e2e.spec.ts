@@ -23,7 +23,7 @@ const LIVE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place");
 const USER_AUTHORED_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/user-authored-config");
 const RUN_TIMEOUT_MS = 120_000;
 
-const isLive = process.env["JEST_ROBLOX_LIVE"] === "1";
+const IS_LIVE = process.env["JEST_ROBLOX_LIVE"] === "1";
 
 function rojoOnPath(): boolean {
 	try {
@@ -68,7 +68,7 @@ const gameOutputSchema = type({
 }).array();
 
 describe("live project pipeline", () => {
-	it.runIf(isLive)(
+	it.runIf(IS_LIVE)(
 		"should pass end-to-end against live Open Cloud",
 		async () => {
 			expect.assertions(7);
@@ -144,7 +144,7 @@ describe("live project pipeline", () => {
 	// ModuleScript at each root, which a bare config never supplied). The
 	// fixture's `luauRoots` pins to the shared mount so exactly one project
 	// resolves and "1 passed" is deterministic.
-	it.runIf(isLive)(
+	it.runIf(IS_LIVE)(
 		"should run a no-projects config by collapsing it into the multi pipeline",
 		async () => {
 			expect.assertions(2);
@@ -177,7 +177,7 @@ describe("live project pipeline", () => {
 	// Note: after editing fixture sources, run `rm -rf
 	// tools/jest-roblox-cli/test/e2e/fixtures/live-place/out` once so
 	// global-setup's sentinel cache re-compiles the spec with the marker.
-	it.runIf(isLive)(
+	it.runIf(IS_LIVE)(
 		"should capture native warn() from a spec into the --gameOutput dump",
 		async () => {
 			expect.assertions(4);
@@ -216,7 +216,7 @@ describe("live project pipeline", () => {
 		RUN_TIMEOUT_MS + 5000,
 	);
 
-	it.runIf(isLive)(
+	it.runIf(IS_LIVE)(
 		"should produce a typescript-keyed coverage report with non-zero statement counts",
 		async () => {
 			expect.assertions(4);
@@ -253,9 +253,9 @@ describe("live project pipeline", () => {
 
 			expect(keys.some((key) => key.endsWith(".ts"))).toBeTrue();
 			expect(
-				Object.values(report).some((entry) =>
-					Object.values(entry.s).some((count) => count > 0),
-				),
+				Object.values(report).some((entry) => {
+					return Object.values(entry.s).some((count) => count > 0);
+				}),
 			).toBeTrue();
 		},
 		RUN_TIMEOUT_MS + 5000,

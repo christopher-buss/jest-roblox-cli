@@ -6,7 +6,7 @@ export { ProgressMap } from "./progress-map.ts";
 export type { ProgressMapOptions } from "./progress-map.ts";
 export { StudioRunner } from "./studio-runner.ts";
 export type { StudioRunnerOptions } from "./studio-runner.ts";
-export { runTaskPool } from "./task-pool.ts";
+export { runTaskPoolAsync as runTaskPool } from "./task-pool.ts";
 export type { TaskPoolOptions, TaskPoolPlace } from "./task-pool.ts";
 export type {
 	ExecuteScriptOptions,

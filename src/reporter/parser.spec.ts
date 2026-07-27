@@ -588,7 +588,7 @@ End of output
 		expect(coverageData).toStrictEqual({
 			"shared/player.luau": { s: { 0: 1 } },
 		});
-		expect(coverageData?.["shared/player.luau"]?.s["0"]).toBe(1);
+		expect(coverageData!["shared/player.luau"]!.s["0"]).toBe(1);
 	});
 
 	it("should extract _perTestCoverage entries from the envelope", () => {

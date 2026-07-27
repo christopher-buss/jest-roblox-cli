@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
@@ -131,7 +131,7 @@ describe(parseEnvelope, () => {
 		// A {success:false, err} payload is the runtime crashing before it emits
 		// any per-job entry. Surfacing it here (instead of rewrapping) keeps the
 		// caller's entries-vs-jobs count guard from masking the real cause.
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const errorPayload = JSON.stringify({ err: "boom", success: false });
 
@@ -139,12 +139,13 @@ describe(parseEnvelope, () => {
 			parseEnvelope(errorPayload);
 		});
 
-		expect(thrown).toBeInstanceOf(LuauScriptError);
-		expect((thrown as Error).message).toBe("boom");
+		assert(thrown instanceof LuauScriptError);
+
+		expect(thrown.message).toBe("boom");
 	});
 
 	it("should extract the leaf cause from a promise-trace whole-run error", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const promiseTrace = [
 			"-- Promise.Error(ExecutionError) --",
@@ -159,8 +160,9 @@ describe(parseEnvelope, () => {
 			parseEnvelope(errorPayload);
 		});
 
-		expect(thrown).toBeInstanceOf(LuauScriptError);
-		expect((thrown as Error).message).toBe("LoadString must be enabled");
+		assert(thrown instanceof LuauScriptError);
+
+		expect(thrown.message).toBe("LoadString must be enabled");
 	});
 
 	it("should propagate JSON.parse errors when the input is not valid JSON", () => {
@@ -313,7 +315,7 @@ describe(buildProjectResult, () => {
 	});
 
 	it("should attach the resolved gameOutput to LuauScriptError when parseJestOutput throws it", () => {
-		expect.assertions(3);
+		expect.assertions(2);
 
 		const errorPayload = JSON.stringify({ err: "boom", success: false });
 
@@ -325,9 +327,10 @@ describe(buildProjectResult, () => {
 			);
 		});
 
-		expect(thrown).toBeInstanceOf(LuauScriptError);
-		expect((thrown as Error).message).toBe("boom");
-		expect((thrown as LuauScriptError).gameOutput).toBe("fallback-output");
+		assert(thrown instanceof LuauScriptError);
+
+		expect(thrown.message).toBe("boom");
+		expect(thrown.gameOutput).toBe("fallback-output");
 	});
 
 	it("should prefer per-entry gameOutput over the backend fallback on the failure path", () => {
@@ -336,7 +339,7 @@ describe(buildProjectResult, () => {
 		// (e.g. "No tests found, exiting with code 1") in `entry.gameOutput`.
 		// buildProjectResult must hand that to LuauScriptError.gameOutput so
 		// the CLI banner's "Test Run Failed" branch can render it as the body.
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const capturedStdout = JSON.stringify([
 			{
@@ -355,8 +358,9 @@ describe(buildProjectResult, () => {
 			);
 		});
 
-		expect(thrown).toBeInstanceOf(LuauScriptError);
-		expect((thrown as LuauScriptError).gameOutput).toBe(capturedStdout);
+		assert(thrown instanceof LuauScriptError);
+
+		expect(thrown.gameOutput).toBe(capturedStdout);
 	});
 
 	it("should extract trailing cause when entry encodes err as a Promise-trace string", () => {
@@ -365,7 +369,7 @@ describe(buildProjectResult, () => {
 		// }. buildProjectResult must surface the leaf cause and attach gameOutput
 		// so the CLI banner renders "Test Run Failed" + captured stdout instead
 		// of the multi-frame Promise.Error blob.
-		expect.assertions(3);
+		expect.assertions(2);
 
 		const promiseTrace = [
 			"-- Promise.Error(ExecutionError) --",
@@ -381,9 +385,10 @@ describe(buildProjectResult, () => {
 			buildProjectResult(entry({ jestOutput: errorPayload }), job("alpha"), "No tests found");
 		});
 
-		expect(thrown).toBeInstanceOf(LuauScriptError);
-		expect((thrown as Error).message).toBe("Exited with code: 1");
-		expect((thrown as LuauScriptError).gameOutput).toBe("No tests found");
+		assert(thrown instanceof LuauScriptError);
+
+		expect(thrown.message).toBe("Exited with code: 1");
+		expect(thrown.gameOutput).toBe("No tests found");
 	});
 
 	it("should propagate non-LuauScriptError errors from parseJestOutput unchanged", () => {

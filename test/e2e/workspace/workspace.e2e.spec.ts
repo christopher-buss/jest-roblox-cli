@@ -85,7 +85,7 @@ describe("workspace e2e — foundation pipeline", () => {
 	it.skipIf(!rojoOnPath())(
 		"should produce a buildable rbxl when synthesizing two packages together",
 		() => {
-			expect.assertions(2);
+			expect.assertions(3);
 
 			const sandbox = createFixtureSandbox(FIXTURE);
 			const fooDirectory = path.join(sandbox, "packages/foo");
@@ -115,14 +115,16 @@ describe("workspace e2e — foundation pipeline", () => {
 			const synthRbxlPath = path.join(cacheDirectory, "synthesized.rbxl");
 			fs.writeFileSync(synthProjectPath, projectJson);
 			buildWithRojo(synthProjectPath, synthRbxlPath);
+
+			expect(fs.statSync(synthRbxlPath).size).toBeGreaterThan(0);
 		},
 	);
 
 	it("should report live OCALE credential availability", () => {
 		expect.assertions(1);
 
-		const configured = liveOpenCloudConfigured();
+		const isConfigured = liveOpenCloudConfigured();
 
-		expect([true, false]).toContain(configured);
+		expect([true, false]).toContain(isConfigured);
 	});
 });

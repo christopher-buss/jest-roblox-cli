@@ -18,13 +18,13 @@ export function formatStreamingProgressLine(
 	entry: StreamingResultEntry,
 	options: ProgressLineOptions,
 ): string {
-	const useColor = options.color;
+	const isColorEnabled = options.color;
 	const label = formatLabel(entry);
-	const dim = useColor ? color.dim : identity;
+	const dim = isColorEnabled ? color.dim : identity;
 	const elapsed = dim(`(${entry.elapsedMs.toString()}ms)`);
 
-	const breakdown = formatBreakdown(entry, useColor);
-	const arrow = useColor ? color.cyan("▶") : "▶";
+	const breakdown = formatBreakdown(entry, isColorEnabled);
+	const arrow = isColorEnabled ? color.cyan("▶") : "▶";
 	return `${arrow} ${label}  ${breakdown} ${elapsed}`;
 }
 
@@ -43,11 +43,11 @@ function pushPart(
 	}
 }
 
-function formatBreakdown(entry: StreamingResultEntry, useColor: boolean): string {
+function formatBreakdown(entry: StreamingResultEntry, isColorEnabled: boolean): string {
 	const parts: Array<string> = [];
-	pushPart(parts, entry.numPassedTests, "passed", useColor ? color.green : identity);
-	pushPart(parts, entry.numFailedTests, "failed", useColor ? color.red : identity);
-	pushPart(parts, entry.numPendingTests, "skipped", useColor ? color.yellow : identity);
+	pushPart(parts, entry.numPassedTests, "passed", isColorEnabled ? color.green : identity);
+	pushPart(parts, entry.numFailedTests, "failed", isColorEnabled ? color.red : identity);
+	pushPart(parts, entry.numPendingTests, "skipped", isColorEnabled ? color.yellow : identity);
 	return parts.length > 0 ? parts.join(" | ") : "0 tests";
 }
 

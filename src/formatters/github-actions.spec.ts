@@ -233,7 +233,7 @@ describe(collectAnnotations, () => {
 			file: "lib/test.spec.luau",
 			line: 15,
 		});
-		expect(annotations[0]?.col).toBeUndefined();
+		expect(annotations[0]!.col).toBeUndefined();
 	});
 
 	it("should make paths relative to GITHUB_WORKSPACE", () => {
@@ -269,7 +269,7 @@ describe(collectAnnotations, () => {
 			workspace: "/home/runner/work/project",
 		});
 
-		expect(annotations[0]?.file).toBe("src/test.spec.ts");
+		expect(annotations[0]!.file).toBe("src/test.spec.ts");
 	});
 });
 

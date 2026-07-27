@@ -78,7 +78,7 @@ describe(probeStudioPlugin, () => {
 
 		await probeStudioPlugin(0, 50);
 
-		expect(getLastCreatedServer()?.close).toHaveBeenCalledWith();
+		expect(getLastCreatedServer()!.close).toHaveBeenCalledWith();
 	});
 });
 
@@ -160,9 +160,9 @@ describe(resolveBackend, () => {
 		vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
 
 		await expect(
-			resolveBackend(makeCli(), makeConfig({ backend: "auto" }), async () =>
-				mockNotDetected(),
-			),
+			resolveBackend(makeCli(), makeConfig({ backend: "auto" }), async () => {
+				return mockNotDetected();
+			}),
 		).rejects.toThrowWithMessage(Error, /No backend available/);
 	});
 

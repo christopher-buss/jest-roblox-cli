@@ -9,12 +9,12 @@ import type { AstStatBlock } from "@isentinel/luau-ast";
  * the type predicate carries the shape invariant without a cast.
  */
 export function evalLuauReturnLiterals(root: AstStatBlock): unknown {
-	const block = root as unknown as Record<string, unknown>;
-	if (!Array.isArray(block["statements"])) {
+	const statements: unknown = Reflect.get(root, "statements");
+	if (!Array.isArray(statements)) {
 		throw new Error("Config file has no return statement");
 	}
 
-	const returnStat = block["statements"].find(
+	const returnStat = statements.find(
 		(stat: unknown) => isObject(stat) && stat["tag"] === "return",
 	);
 
@@ -41,7 +41,7 @@ export function isAstStatBlock(value: unknown): value is AstStatBlock {
 		typeof value === "object" &&
 		value !== null &&
 		!Array.isArray(value) &&
-		(value as Record<string, unknown>)["tag"] === "block"
+		Reflect.get(value, "tag") === "block"
 	);
 }
 

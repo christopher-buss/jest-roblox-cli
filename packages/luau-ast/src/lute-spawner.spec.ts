@@ -28,6 +28,7 @@ describe(spawnLute, () => {
 				encoding: "utf-8",
 				maxBuffer: 1024 * 1024,
 				timeout: 30_000,
+				windowsHide: true,
 			},
 		);
 	});
@@ -76,6 +77,7 @@ describe(spawnLute, () => {
 				encoding: "utf-8",
 				maxBuffer: 5 * 1024 * 1024,
 				timeout: 60_000,
+				windowsHide: true,
 			},
 		);
 	});

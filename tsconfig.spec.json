@@ -3,8 +3,10 @@
 	"compilerOptions": {
 		"composite": true,
 		"libReplacement": true,
-		"types": ["jest-extended"],
-		"allowImportingTsExtensions": true,
+		"paths": {
+			"jest-extended": ["./types/jest-extended.d.ts"]
+		},
+		"types": [],
 		"emitDeclarationOnly": true,
 		"outDir": "./out-tsc/vitest"
 	},

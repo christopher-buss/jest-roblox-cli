@@ -35,6 +35,8 @@ interface RunnerStubOptions {
 
 type ExecuteHandler = (options: ExecuteScriptOptions) => Promise<ScriptResult> | ScriptResult;
 
+type ExecuteStep = () => Promise<ScriptResult> | ScriptResult;
+
 interface RunnerStub {
 	executeCalls: Array<ExecuteScriptOptions>;
 	runner: RemoteRunner;
@@ -94,7 +96,7 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 
 	return {
 		executeCalls,
-		runner: { executeScript, uploadPlace },
+		runner: { executeScriptAsync: executeScript, uploadPlaceAsync: uploadPlace },
 		setExecute,
 		uploadCalls,
 	};
@@ -133,7 +135,44 @@ function scriptResult(jestOutput: string, gameOutput = "[]"): ScriptResult {
 	return { durationMs: 5, outputs: [jestOutput, gameOutput] };
 }
 
-/** The exact guard line `executeGuarded` prepends to unpinned first attempts. */
+/**
+ * An execute handler that runs `steps[callIndex]`, repeating the final step
+ * once the list is exhausted. Keeps per-call-index dispatch out of `it` bodies.
+ */
+function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
+	let callIndex = 0;
+	return (): Promise<ScriptResult> | ScriptResult => {
+		const step = steps[Math.min(callIndex, steps.length - 1)]!;
+		callIndex += 1;
+		return step();
+	};
+}
+
+function racedOnce(): ScriptResult {
+	return { durationMs: 3, outputs: [PLACE_VERSION_RACE_SENTINEL] };
+}
+
+function oneSuccessEntry(): ScriptResult {
+	return scriptResult(envelope([{ jestOutput: successJest() }]));
+}
+
+/**
+ * An execute handler that races the first `raceCount` calls — returning
+ * {@link PLACE_VERSION_RACE_SENTINEL} — and succeeds on every other call,
+ * including a pinned retry (`placeVersion` set), which never races.
+ */
+function raceUnpinnedExecute(raceCount: number): ExecuteHandler {
+	let callIndex = 0;
+	return (options): ScriptResult => {
+		const isRaced = options.placeVersion === undefined && callIndex < raceCount;
+		callIndex += 1;
+		return isRaced ? racedOnce() : oneSuccessEntry();
+	};
+}
+
+/**
+ * The exact guard line `executeGuarded` prepends to unpinned first attempts.
+ */
 function guardPrefix(placeVersion: number): string {
 	return `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}" end\n`;
 }
@@ -158,7 +197,7 @@ function captureStderr(): StderrCapture {
 function job(
 	displayName: string,
 	overrides: Partial<ResolvedConfig> = {},
-	package_?: string,
+	packageName?: string,
 ): ProjectJob {
 	return {
 		config: {
@@ -168,7 +207,7 @@ function job(
 		},
 		displayColor: `${displayName}-color`,
 		displayName,
-		pkg: package_,
+		pkg: packageName,
 		testFiles: [`${displayName}/test.spec.ts`],
 	};
 }
@@ -466,17 +505,16 @@ describe(OpenCloudBackend, () => {
 		it("should reject the whole call when any parallel bucket fails first", async () => {
 			expect.assertions(1);
 
-			let bucketIndex = 0;
 			const stub = createRunnerStub();
-			stub.setExecute(() => {
-				const index = bucketIndex;
-				bucketIndex += 1;
-				if (index === 2) {
-					throw new Error("bucket two blew up");
-				}
-
-				return scriptResult(envelope([{ jestOutput: successJest() }]));
-			});
+			stub.setExecute(
+				stepExecute([
+					oneSuccessEntry,
+					oneSuccessEntry,
+					() => {
+						throw new Error("bucket two blew up");
+					},
+				]),
+			);
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 
@@ -510,9 +548,9 @@ describe(OpenCloudBackend, () => {
 				{ message: "fallback", messageType: 0, timestamp: 0 },
 			]);
 			const stub = createRunnerStub();
-			stub.setExecute(() =>
-				scriptResult(envelope([{ jestOutput: successJest() }]), fallback),
-			);
+			stub.setExecute(() => {
+				return scriptResult(envelope([{ jestOutput: successJest() }]), fallback);
+			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			const { rawResults } = await backend.runTests(jobsOptions([job("alpha")]));
@@ -558,7 +596,7 @@ describe(OpenCloudBackend, () => {
 	});
 
 	describe("upload integration", () => {
-		it("should call runner.uploadPlace exactly once regardless of bucket count", async () => {
+		it("should call runner.uploadPlaceAsync exactly once regardless of bucket count", async () => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
@@ -635,19 +673,15 @@ describe(OpenCloudBackend, () => {
 		it("should retry a raced bucket once, pinned to the uploaded version", async () => {
 			expect.assertions(5);
 
-			let callIndex = 0;
 			const stub = createRunnerStub({
 				uploadResult: { uploadMs: 12, versionNumber: 42 },
 			});
-			stub.setExecute(() => {
-				const index = callIndex;
-				callIndex += 1;
-				if (index === 0) {
-					return { durationMs: 3, outputs: [PLACE_VERSION_RACE_SENTINEL] };
-				}
-
-				return scriptResult(envelope([{ elapsedMs: 55, jestOutput: successJest() }]));
-			});
+			stub.setExecute(
+				stepExecute([
+					racedOnce,
+					() => scriptResult(envelope([{ elapsedMs: 55, jestOutput: successJest() }])),
+				]),
+			);
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			const { rawResults } = await backend.runTests(jobsOptions([job("alpha")]));
@@ -667,19 +701,15 @@ describe(OpenCloudBackend, () => {
 		it("should retry only the raced work-stealing task", async () => {
 			expect.assertions(3);
 
-			let callIndex = 0;
 			const stub = createRunnerStub({
 				uploadResult: { uploadMs: 12, versionNumber: 9 },
 			});
-			stub.setExecute(() => {
-				const index = callIndex;
-				callIndex += 1;
-				if (index === 0) {
-					return { durationMs: 3, outputs: [PLACE_VERSION_RACE_SENTINEL] };
-				}
-
-				return scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")]));
-			});
+			stub.setExecute(
+				stepExecute([
+					racedOnce,
+					() => scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")])),
+				]),
+			);
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			await backend.runTests({
@@ -714,19 +744,10 @@ describe(OpenCloudBackend, () => {
 
 			const { restore, writes } = captureStderr();
 
-			let callIndex = 0;
 			const stub = createRunnerStub();
-			stub.setExecute((options) => {
-				const index = callIndex;
-				callIndex += 1;
-				// Both buckets' unpinned first attempts race; the pinned
-				// retries (recognizable by placeVersion) succeed.
-				if (options.placeVersion === undefined && index < 2) {
-					return { durationMs: 3, outputs: [PLACE_VERSION_RACE_SENTINEL] };
-				}
-
-				return scriptResult(envelope([{ jestOutput: successJest() }]));
-			});
+			// Both buckets' unpinned first attempts race; the pinned retries
+			// (recognizable by placeVersion) succeed.
+			stub.setExecute(raceUnpinnedExecute(2));
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			await backend.runTests(jobsOptions([job("alpha"), job("beta")], 2));
@@ -764,13 +785,14 @@ describe(OpenCloudBackend, () => {
 				["beta", "epsilon"],
 				["gamma", "zeta"],
 			] as const;
-			let taskIndex = 0;
 			const stub = createRunnerStub();
-			stub.setExecute(() => {
-				const handledPkgs = taskPkgs[taskIndex] ?? [];
-				taskIndex += 1;
-				return scriptResult(envelope(handledPkgs.map(packageEntry)));
-			});
+			stub.setExecute(
+				stepExecute(
+					taskPkgs.map((handledPkgs) => {
+						return () => scriptResult(envelope(handledPkgs.map(packageEntry)));
+					}),
+				),
+			);
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			await backend.runTests({
@@ -806,20 +828,18 @@ describe(OpenCloudBackend, () => {
 			// pool would relaunch the freed slot if jest didn't pass a no-op
 			// replenishment; single-wave must fire exactly `parallel` tasks total
 			// and never start a replacement when a slot drains early.
-			let taskIndex = 0;
 			const stub = createRunnerStub();
-			stub.setExecute(async () => {
-				const index = taskIndex;
-				taskIndex += 1;
-				if (index === 0) {
-					return scriptResult(envelope([packageEntry("alpha")]));
-				}
-
-				await new Promise<void>((resolve) => {
-					setTimeout(resolve, 10);
-				});
-				return scriptResult(envelope([packageEntry("beta")]));
-			});
+			stub.setExecute(
+				stepExecute([
+					() => scriptResult(envelope([packageEntry("alpha")])),
+					async () => {
+						await new Promise<void>((resolve) => {
+							setTimeout(resolve, 10);
+						});
+						return scriptResult(envelope([packageEntry("beta")]));
+					},
+				]),
+			);
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			await backend.runTests({
@@ -839,17 +859,15 @@ describe(OpenCloudBackend, () => {
 			// resolves, so without a post-pool guard an infrastructure/script
 			// failure would be masked whenever a sibling task happens to drain
 			// the whole queue and cover every package. The run must still fail.
-			let taskIndex = 0;
 			const stub = createRunnerStub();
-			stub.setExecute(() => {
-				const index = taskIndex;
-				taskIndex += 1;
-				if (index === 0) {
-					return scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")]));
-				}
-
-				throw new Error("open cloud task crashed");
-			});
+			stub.setExecute(
+				stepExecute([
+					() => scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")])),
+					() => {
+						throw new Error("open cloud task crashed");
+					},
+				]),
+			);
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 
@@ -866,20 +884,24 @@ describe(OpenCloudBackend, () => {
 		it("should drop duplicate-pkg entries from fault-recovery and keep the first occurrence", async () => {
 			expect.assertions(2);
 
-			let taskIndex = 0;
 			const stub = createRunnerStub();
-			stub.setExecute(() => {
-				const index = taskIndex;
-				taskIndex += 1;
-				const entries =
-					index === 0
-						? [
+			stub.setExecute(
+				stepExecute([
+					() => {
+						return scriptResult(
+							envelope([
 								{ elapsedMs: 1, jestOutput: successJest(), pkg: "alpha" },
 								{ elapsedMs: 2, jestOutput: successJest(), pkg: "beta" },
-							]
-						: [{ elapsedMs: 99, jestOutput: successJest(), pkg: "alpha" }];
-				return scriptResult(envelope(entries));
-			});
+							]),
+						);
+					},
+					() => {
+						return scriptResult(
+							envelope([{ elapsedMs: 99, jestOutput: successJest(), pkg: "alpha" }]),
+						);
+					},
+				]),
+			);
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			const { rawResults } = await backend.runTests({
@@ -899,9 +921,9 @@ describe(OpenCloudBackend, () => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
-			stub.setExecute(() =>
-				scriptResult(envelope([{ jestOutput: successJest(), pkg: "alpha" }])),
-			);
+			stub.setExecute(() => {
+				return scriptResult(envelope([{ jestOutput: successJest(), pkg: "alpha" }]));
+			});
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 
@@ -925,7 +947,7 @@ describe(OpenCloudBackend, () => {
 			let taskIndex = 0;
 			const stub = createRunnerStub();
 			stub.setExecute(() => {
-				const pkgs = taskPkgs[taskIndex] ?? [];
+				const pkgs = taskPkgs[taskIndex]!;
 				taskIndex += 1;
 				return scriptResult(envelope(pkgs.map(packageEntry)));
 			});
@@ -1429,7 +1451,7 @@ describe(resolveOcaleMaxRetries, () => {
 	it("should return undefined for an empty/whitespace value", () => {
 		expect.assertions(1);
 
-		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "   ");
+		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", " ".repeat(3));
 
 		expect(resolveOcaleMaxRetries()).toBeUndefined();
 	});

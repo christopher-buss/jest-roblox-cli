@@ -19,7 +19,13 @@ import { createStudioBackend } from "./studio.ts";
 
 const ENV_PREFIX = "JEST_";
 
-const StudioBusyPattern = /previous call to start play session/i;
+const STUDIO_BUSY_PATTERN = /previous call to start play session/i;
+
+const NO_BACKEND_MESSAGE =
+	"No backend available: Studio plugin not detected and no Open Cloud " +
+	"credentials found. Set ROBLOX_OPEN_CLOUD_API_KEY, ROBLOX_UNIVERSE_ID, " +
+	"and ROBLOX_PLACE_ID (or pass --apiKey, --universeId, --placeId; " +
+	"or set universeId/placeId in jest.config.ts).";
 
 export interface ProbeResult {
 	detected: false;
@@ -62,7 +68,7 @@ export class StudioWithFallback implements Backend {
 
 export function isStudioBusyError(error: unknown): boolean {
 	if (error instanceof LuauScriptError) {
-		return StudioBusyPattern.test(error.message);
+		return STUDIO_BUSY_PATTERN.test(error.message);
 	}
 
 	return (
@@ -109,6 +115,38 @@ export async function resolveBackend(
 		timeoutMs: number,
 	) => Promise<ProbeDetected | ProbeResult> = probeStudioPlugin,
 ): Promise<Backend> {
+	const explicit = createExplicitBackend(cli, config);
+	if (explicit !== undefined) {
+		return explicit;
+	}
+
+	return resolveAutoBackend({ cli, config, probe });
+}
+
+// studio-cli drives a single Studio instance, so it cannot shard. Reject a
+// parallel request up front (the CLI otherwise drops `--parallel` for non-
+// open-cloud backends, which would silently ignore the user's intent).
+function assertStudioCliSerial(parallel: ResolvedConfig["parallel"]): void {
+	if (isShardedParallel(parallel)) {
+		throw new Error(
+			"studio-cli backend is serial (one Studio instance); --parallel > 1 is not supported.",
+		);
+	}
+}
+
+function buildCredentials(cli: CliOptions, config: ResolvedConfig): RunnerCredentials {
+	return resolveCredentials({
+		defaults: { placeId: config.placeId, universeId: config.universeId },
+		envPrefix: ENV_PREFIX,
+		overrides: { apiKey: cli.apiKey, placeId: cli.placeId, universeId: cli.universeId },
+	});
+}
+
+/**
+ * The backend an explicit `backend:` setting selects, or undefined when the
+ * config leaves the choice to auto-detection.
+ */
+function createExplicitBackend(cli: CliOptions, config: ResolvedConfig): Backend | undefined {
 	if (config.backend === "studio") {
 		return createStudioBackend({ port: config.port, timeout: config.timeout });
 	}
@@ -127,6 +165,38 @@ export async function resolveBackend(
 		return createOpenCloudBackend(buildCredentials(cli, config));
 	}
 
+	return undefined;
+}
+
+function hasUserOverrides(cli: CliOptions): boolean {
+	return cli.apiKey !== undefined || cli.universeId !== undefined || cli.placeId !== undefined;
+}
+
+function tryBuildCredentials(
+	cli: CliOptions,
+	config: ResolvedConfig,
+): RunnerCredentials | undefined {
+	try {
+		return buildCredentials(cli, config);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Auto-detection: probe for a live Studio plugin first, fall back to Open
+ * Cloud when credentials resolve, and otherwise fail with the actionable
+ * "no backend" error.
+ */
+async function resolveAutoBackend({
+	cli,
+	config,
+	probe,
+}: {
+	cli: CliOptions;
+	config: ResolvedConfig;
+	probe: (port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>;
+}): Promise<Backend> {
 	const credentials = tryBuildCredentials(cli, config);
 	const probeResult = await probe(config.port, 500);
 
@@ -156,44 +226,5 @@ export async function resolveBackend(
 		buildCredentials(cli, config);
 	}
 
-	throw new Error(
-		"No backend available: Studio plugin not detected and no Open Cloud " +
-			"credentials found. Set ROBLOX_OPEN_CLOUD_API_KEY, ROBLOX_UNIVERSE_ID, " +
-			"and ROBLOX_PLACE_ID (or pass --apiKey, --universeId, --placeId; " +
-			"or set universeId/placeId in jest.config.ts).",
-	);
-}
-
-// studio-cli drives a single Studio instance, so it cannot shard. Reject a
-// parallel request up front (the CLI otherwise drops `--parallel` for non-
-// open-cloud backends, which would silently ignore the user's intent).
-function assertStudioCliSerial(parallel: ResolvedConfig["parallel"]): void {
-	if (isShardedParallel(parallel)) {
-		throw new Error(
-			"studio-cli backend is serial (one Studio instance); --parallel > 1 is not supported.",
-		);
-	}
-}
-
-function hasUserOverrides(cli: CliOptions): boolean {
-	return cli.apiKey !== undefined || cli.universeId !== undefined || cli.placeId !== undefined;
-}
-
-function buildCredentials(cli: CliOptions, config: ResolvedConfig): RunnerCredentials {
-	return resolveCredentials({
-		defaults: { placeId: config.placeId, universeId: config.universeId },
-		envPrefix: ENV_PREFIX,
-		overrides: { apiKey: cli.apiKey, placeId: cli.placeId, universeId: cli.universeId },
-	});
-}
-
-function tryBuildCredentials(
-	cli: CliOptions,
-	config: ResolvedConfig,
-): RunnerCredentials | undefined {
-	try {
-		return buildCredentials(cli, config);
-	} catch {
-		return undefined;
-	}
+	throw new Error(NO_BACKEND_MESSAGE);
 }

@@ -153,7 +153,7 @@ async function runWorkspaceResults(
 	return output?.results;
 }
 
-function coverageEntry(package_: string): WorkspacePackageCoverage {
+function coverageEntry(packageName: string): WorkspacePackageCoverage {
 	return {
 		coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
 		manifest: {
@@ -167,7 +167,7 @@ function coverageEntry(package_: string): WorkspacePackageCoverage {
 			version: MANIFEST_VERSION,
 		},
 		manifestPath: "/shadow/coverage-manifest.json",
-		pkg: package_,
+		pkg: packageName,
 	};
 }
 
@@ -249,8 +249,8 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options?.scriptOverride).toContain('"testTimeout":1234');
-		expect(captured.options?.scriptOverride).toContain('"testTimeout":5678');
+		expect(captured.options!.scriptOverride).toContain('"testTimeout":1234');
+		expect(captured.options!.scriptOverride).toContain('"testTimeout":5678');
 	});
 
 	it("should forward a basename testPathPattern when --testPathPattern is a filesystem path", async () => {
@@ -352,8 +352,8 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options?.scriptOverride).toContain('"project":"@halcyon/foo"');
-		expect(results?.[0]?.displayName).toBe("@halcyon/foo");
+		expect(captured.options!.scriptOverride).toContain('"project":"@halcyon/foo"');
+		expect(results![0]!.displayName).toBe("@halcyon/foo");
 	});
 
 	it("should print a nested host [TIMING] report when TIMING is set", async () => {
@@ -521,9 +521,9 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options?.scriptOverride).toContain('"project":"client"');
-		expect(captured.options?.scriptOverride).toContain('"project":"server"');
-		expect(results?.map((entry) => entry.displayName)).toStrictEqual(["client", "server"]);
+		expect(captured.options!.scriptOverride).toContain('"project":"client"');
+		expect(captured.options!.scriptOverride).toContain('"project":"server"');
+		expect(results!.map((entry) => entry.displayName)).toStrictEqual(["client", "server"]);
 	});
 
 	it("should drop runtime test files matching a per-project exclude glob", async () => {
@@ -567,7 +567,7 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options?.jobs[0]?.testFiles).toStrictEqual(["src/a.spec.luau"]);
+		expect(captured.options!.jobs[0]!.testFiles).toStrictEqual(["src/a.spec.luau"]);
 	});
 
 	it("should drop runtime test files matching a package-level test.exclude glob", async () => {
@@ -604,7 +604,7 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options?.jobs[0]?.testFiles).toStrictEqual(["src/a.spec.luau"]);
+		expect(captured.options!.jobs[0]!.testFiles).toStrictEqual(["src/a.spec.luau"]);
 	});
 
 	it("should pre-flight clean marker-bearing leftover stubs from package source and emit a stderr notice", async () => {
@@ -652,11 +652,9 @@ describe(runWorkspace, () => {
 			expect.stringContaining("cleaned 1 leftover stub(s) from @halcyon/foo"),
 		);
 
-		const writes = stderr.mock.calls.map((call) => call[0] as string).join("");
+		const writes = stderr.mock.calls.map((call) => String(call[0])).join("");
 
 		expect(writes).toContain(leftoverStub);
-
-		stderr.mockRestore();
 	});
 
 	it("should skip stubMounts construction for mounts that already have a user-authored config on disk", async () => {
@@ -816,7 +814,7 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options?.jobs).toHaveLength(4);
+		expect(captured.options!.jobs).toHaveLength(4);
 		expect(results).toHaveLength(4);
 	});
 
@@ -862,7 +860,7 @@ describe(runWorkspace, () => {
 		});
 
 		expect(results).toHaveLength(1);
-		expect(results?.[0]?.displayName).toBe("client");
+		expect(results![0]!.displayName).toBe("client");
 	});
 
 	it("should throw when --project filter names match no project across packages", async () => {
@@ -955,10 +953,10 @@ describe(runWorkspace, () => {
 		// path so the materializer payload carries the resolved setup
 		// location, not the raw source path. Both setupFiles and
 		// setupFilesAfterEnv are resolved.
-		expect(captured.options?.scriptOverride).toContain(
+		expect(captured.options!.scriptOverride).toContain(
 			'"setupFiles":["ReplicatedStorage/Pkg/Shared/setup"]',
 		);
-		expect(captured.options?.scriptOverride).toContain(
+		expect(captured.options!.scriptOverride).toContain(
 			'"setupFilesAfterEnv":["ReplicatedStorage/Pkg/Shared/setup"]',
 		);
 	});
@@ -1046,10 +1044,10 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options?.scriptOverride).toContain(
+		expect(captured.options!.scriptOverride).toContain(
 			'"setupFiles":["ReplicatedStorage/Pkg/Shared/setup"]',
 		);
-		expect(captured.options?.scriptOverride).not.toContain('"setupFilesAfterEnv"');
+		expect(captured.options!.scriptOverride).not.toContain('"setupFilesAfterEnv"');
 	});
 
 	it("should resolve a project that declares only setupFilesAfterEnv", async () => {
@@ -1097,10 +1095,10 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options?.scriptOverride).toContain(
+		expect(captured.options!.scriptOverride).toContain(
 			'"setupFilesAfterEnv":["ReplicatedStorage/Pkg/Shared/setup"]',
 		);
-		expect(captured.options?.scriptOverride).not.toContain('"setupFiles":');
+		expect(captured.options!.scriptOverride).not.toContain('"setupFiles":');
 	});
 
 	it("should honor per-package rojoProject from each package's own jest.config", async () => {
@@ -1162,8 +1160,8 @@ describe(runWorkspace, () => {
 		// Both packages produce jobs because each package's own rojoProject
 		// resolves correctly. Without the fix, Bar's preflight fails on the
 		// non-existent test.project.json (the parent default).
-		expect(captured.options?.jobs).toHaveLength(2);
-		expect(results?.map((entry) => entry.pkg)).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
+		expect(captured.options!.jobs).toHaveLength(2);
+		expect(results!.map((entry) => entry.pkg)).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
 	});
 
 	it("should resolve a Nevermore-style subdir rojoProject that mounts the package via '..'", async () => {
@@ -1219,10 +1217,10 @@ describe(runWorkspace, () => {
 		// The "src" include root (package-relative) resolves through the
 		// package's default.project.json into the ServerScriptService/Pkg mount
 		// declared by the subdirectory test project.
-		expect(captured.options?.scriptOverride).toContain(
+		expect(captured.options!.scriptOverride).toContain(
 			'"projects":["ServerScriptService/Pkg"]',
 		);
-		expect(results?.[0]?.displayName).toBe("@halcyon/foo");
+		expect(results![0]!.displayName).toBe("@halcyon/foo");
 	});
 
 	// Workspace-root `config.rojoProject` no longer falls back into
@@ -1312,8 +1310,8 @@ describe(runWorkspace, () => {
 
 		// The empty bar package must NOT produce a job; only foo's job is
 		// enqueued because foo is the only package with discovered specs.
-		expect(captured.options?.jobs).toHaveLength(1);
-		expect(results?.map((entry) => entry.pkg)).toStrictEqual(["@halcyon/foo"]);
+		expect(captured.options!.jobs).toHaveLength(1);
+		expect(results!.map((entry) => entry.pkg)).toStrictEqual(["@halcyon/foo"]);
 	});
 
 	it("should pass with no tests when passWithNoTests is true and zero specs are discovered", async () => {
@@ -1480,14 +1478,14 @@ describe(runWorkspace, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(results?.map((entry) => entry.pkg)).toStrictEqual([
+		expect(results!.map((entry) => entry.pkg)).toStrictEqual([
 			"@halcyon/foo",
 			"@halcyon/bar",
 			"@halcyon/baz",
 		]);
-		expect(results?.[0]?.displayName).toBe("@halcyon/foo");
-		expect(results?.[1]?.result.exitCode).toBe(1);
-		expect(results?.[2]?.result.exitCode).toBe(0);
+		expect(results![0]!.displayName).toBe("@halcyon/foo");
+		expect(results![1]!.result.exitCode).toBe(1);
+		expect(results![2]!.result.exitCode).toBe(0);
 	});
 
 	it("should surface preflight errors and skip the backend", async () => {
@@ -1607,7 +1605,7 @@ describe(runWorkspace, () => {
 		// The virtual-wrap project must include the dotted-name directory
 		// mount; without the fix the directory is mis-classified as a file
 		// and produces zero jobs.
-		expect(captured.options?.jobs).toHaveLength(1);
+		expect(captured.options!.jobs).toHaveLength(1);
 	});
 
 	it("should defer malformed rojo project to preflight without crashing ensure-paths", async () => {
@@ -1942,7 +1940,7 @@ describe(runWorkspace, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(captured.options?.scriptOverride).toContain('"_coverage":true');
+			expect(captured.options!.scriptOverride).toContain('"_coverage":true');
 		});
 
 		it("should expose per-package coverage descriptors on the workspace result", async () => {
@@ -1995,8 +1993,8 @@ describe(runWorkspace, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(results?.[0]?.coverageManifest).toBe(manifest);
-			expect(results?.[0]?.pkg).toBe("@halcyon/foo");
+			expect(results![0]!.coverageManifest).toBe(manifest);
+			expect(results![0]!.pkg).toBe("@halcyon/foo");
 		});
 
 		it("should carry the package's declared coverageThreshold onto the workspace result", async () => {
@@ -2037,7 +2035,7 @@ describe(runWorkspace, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(results?.[0]?.coverageThreshold).toStrictEqual({
+			expect(results![0]!.coverageThreshold).toStrictEqual({
 				branches: 70,
 				statements: 90,
 			});
@@ -2225,9 +2223,9 @@ describe(runWorkspace, () => {
 				workspaceRoot: ROOT,
 			});
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]?.[0];
+			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
 
-			expect(callArgs?.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
+			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
 		});
 
 		it("should restrict prepareWorkspaceCoverage to packages that opted in via per-package collectCoverage", async () => {
@@ -2269,9 +2267,9 @@ describe(runWorkspace, () => {
 				workspaceRoot: ROOT,
 			});
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]?.[0];
+			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
 
-			expect(callArgs?.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
+			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
 		});
 
 		it("should emit per-package build manifests over the built place after a coverage run", async () => {
@@ -2437,12 +2435,12 @@ describe(runWorkspace, () => {
 				workStealingCredentials: testCredentials,
 			});
 
-			expect(captured.options?.workStealing).toBeTrue();
-			expect(captured.options?.parallel).toBe(2);
+			expect(captured.options!.workStealing).toBeTrue();
+			expect(captured.options!.parallel).toBe(2);
 
-			const prepareCall = vi.mocked(prepareWorkStealingQueue).mock.calls[0]?.[0];
+			const prepareCall = vi.mocked(prepareWorkStealingQueue).mock.calls[0]![0];
 
-			expect(prepareCall?.packages).toIncludeAllMembers([
+			expect(prepareCall.packages).toIncludeAllMembers([
 				{ pkg: "@halcyon/foo", project: "@halcyon/foo" },
 				{ pkg: "@halcyon/bar", project: "@halcyon/bar" },
 			]);
@@ -2478,7 +2476,7 @@ describe(runWorkspace, () => {
 				workStealingCredentials: testCredentials,
 			});
 
-			expect(captured.options?.scriptOverride).toContain('"queueId":"specific-queue-id"');
+			expect(captured.options!.scriptOverride).toContain('"queueId":"specific-queue-id"');
 		});
 
 		it("should keep the existing single-task path when parallel is unset", async () => {
@@ -2510,7 +2508,7 @@ describe(runWorkspace, () => {
 				workStealingCredentials: testCredentials,
 			});
 
-			expect(captured.options?.workStealing).toBeUndefined();
+			expect(captured.options!.workStealing).toBeUndefined();
 			expect(vi.mocked(prepareWorkStealingQueue)).not.toHaveBeenCalled();
 		});
 
@@ -2542,8 +2540,8 @@ describe(runWorkspace, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(captured.options?.workStealing).toBeUndefined();
-			expect(captured.options?.scriptOverride).not.toContain('"queueId"');
+			expect(captured.options!.workStealing).toBeUndefined();
+			expect(captured.options!.scriptOverride).not.toContain('"queueId"');
 		});
 
 		it("should forward workStealingCredentials.baseUrl into prepareWorkStealingQueue", async () => {
@@ -2582,7 +2580,7 @@ describe(runWorkspace, () => {
 				workStealingCredentials: { ...testCredentials, baseUrl: "http://127.0.0.1:4010" },
 			});
 
-			expect(vi.mocked(prepareWorkStealingQueue).mock.calls[0]?.[0]?.baseUrl).toBe(
+			expect(vi.mocked(prepareWorkStealingQueue).mock.calls[0]![0].baseUrl).toBe(
 				"http://127.0.0.1:4010",
 			);
 		});
@@ -2618,8 +2616,8 @@ describe(runWorkspace, () => {
 				workStealingCredentials: testCredentials,
 			});
 
-			expect(captured.options?.streaming?.reader).toBeDefined();
-			expect(captured.options?.streaming?.onPackageResult).toBeFunction();
+			expect(captured.options!.streaming!.reader).toBeDefined();
+			expect(captured.options!.streaming!.onPackageResult).toBeFunction();
 		});
 
 		it("should embed a sortedMapId in the work-stealing script when onStreamingResult is set", async () => {
@@ -2653,7 +2651,7 @@ describe(runWorkspace, () => {
 				workStealingCredentials: testCredentials,
 			});
 
-			expect(captured.options?.scriptOverride).toContain('"sortedMapId":');
+			expect(captured.options!.scriptOverride).toContain('"sortedMapId":');
 		});
 
 		it("should skip streaming setup when onStreamingResult is omitted (no SortedMap polling overhead)", async () => {
@@ -2684,8 +2682,8 @@ describe(runWorkspace, () => {
 				workStealingCredentials: testCredentials,
 			});
 
-			expect(captured.options?.streaming).toBeUndefined();
-			expect(captured.options?.scriptOverride).not.toContain('"sortedMapId":');
+			expect(captured.options!.streaming).toBeUndefined();
+			expect(captured.options!.scriptOverride).not.toContain('"sortedMapId":');
 		});
 
 		it("should route streaming entries through the supplied onStreamingResult", async () => {
@@ -2721,7 +2719,7 @@ describe(runWorkspace, () => {
 			const wrappedBackend: Backend = {
 				kind: "open-cloud",
 				runTests: async (options) => {
-					options.streaming?.onPackageResult(streamedEntry);
+					options.streaming!.onPackageResult(streamedEntry);
 					return backend.runTests(options);
 				},
 			};
@@ -2778,7 +2776,7 @@ describe(runWorkspace, () => {
 			);
 
 			expect(vol.existsSync(file)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toMatchObject({
 				numFailedTests: 0,
 				numPassedTests: 1,
 				success: true,
@@ -2920,7 +2918,7 @@ describe(runWorkspace, () => {
 			);
 
 			expect(vol.existsSync(file)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toMatchObject({
 				success: true,
 				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
 			});
@@ -2982,7 +2980,7 @@ describe(runWorkspace, () => {
 				"@halcyon-foo--@halcyon-foo.jest-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toMatchObject({
 				numPassedTests: 2,
 				success: true,
 				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
@@ -3028,7 +3026,7 @@ describe(runWorkspace, () => {
 			);
 
 			expect(vol.existsSync(file)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toStrictEqual([
+			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toStrictEqual([
 				{ message: "hello", messageType: 0, timestamp: 1000 },
 			]);
 		});
@@ -3121,7 +3119,7 @@ describe(runWorkspace, () => {
 				"@halcyon-foo--@halcyon-foo.game-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toStrictEqual([]);
+			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toStrictEqual([]);
 		});
 
 		it("should write an empty array when the package's gameOutput is invalid JSON", async () => {
@@ -3157,7 +3155,7 @@ describe(runWorkspace, () => {
 				"@halcyon-foo--@halcyon-foo.game-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(file, "utf8") as string)).toStrictEqual([]);
+			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toStrictEqual([]);
 		});
 
 		// A failure envelope synthesizes an ExecuteResult
@@ -3219,10 +3217,10 @@ describe(runWorkspace, () => {
 				"@halcyon-bar--@halcyon-bar.game-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(fooFile, "utf8") as string)).toStrictEqual([
+			expect(JSON.parse(vol.readFileSync(fooFile, "utf-8").toString())).toStrictEqual([
 				{ message: "captured before crash", messageType: 2, timestamp: 5 },
 			]);
-			expect(JSON.parse(vol.readFileSync(barFile, "utf8") as string)).toStrictEqual([]);
+			expect(JSON.parse(vol.readFileSync(barFile, "utf-8").toString())).toStrictEqual([]);
 		});
 
 		it("should emit a separate gameOutput file per project for multi-project packages", async () => {
@@ -3298,10 +3296,10 @@ describe(runWorkspace, () => {
 
 			expect(vol.existsSync(clientFile)).toBeTrue();
 			expect(vol.existsSync(serverFile)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(clientFile, "utf8") as string)).toStrictEqual([
+			expect(JSON.parse(vol.readFileSync(clientFile, "utf-8").toString())).toStrictEqual([
 				{ message: "client", messageType: 0, timestamp: 1 },
 			]);
-			expect(JSON.parse(vol.readFileSync(serverFile, "utf8") as string)).toStrictEqual([
+			expect(JSON.parse(vol.readFileSync(serverFile, "utf-8").toString())).toStrictEqual([
 				{ message: "server", messageType: 1, timestamp: 2 },
 			]);
 		});
@@ -3346,7 +3344,7 @@ describe(runWorkspace, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(JSON.parse(vol.readFileSync(aggregateFile, "utf8") as string)).toStrictEqual([
+			expect(JSON.parse(vol.readFileSync(aggregateFile, "utf-8").toString())).toStrictEqual([
 				{
 					entries: [{ message: "hello", messageType: 0, timestamp: 1000 }],
 					package: "@halcyon/foo",
@@ -3527,7 +3525,7 @@ describe(runWorkspace, () => {
 			});
 
 			expect(vol.existsSync(outputFile)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(outputFile, "utf8") as string)).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
 				numPassedTests: 1,
 				success: true,
 			});
@@ -3613,7 +3611,7 @@ describe(runWorkspace, () => {
 			});
 
 			expect(vol.existsSync(outputFile)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(outputFile, "utf8") as string)).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
 				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
 			});
 		});
@@ -3668,7 +3666,7 @@ describe(runWorkspace, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(JSON.parse(vol.readFileSync(outputFile, "utf8") as string)).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
 				numPassedTests: 2,
 				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
 			});
@@ -3824,10 +3822,10 @@ describe(runWorkspace, () => {
 
 			expect(vol.existsSync(fooOutput)).toBeTrue();
 			expect(vol.existsSync(barOutput)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(fooOutput, "utf8") as string)).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(fooOutput, "utf-8").toString())).toMatchObject({
 				success: false,
 			});
-			expect(JSON.parse(vol.readFileSync(barOutput, "utf8") as string)).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(barOutput, "utf-8").toString())).toMatchObject({
 				numPassedTests: 1,
 				success: true,
 			});
@@ -3895,7 +3893,7 @@ describe("workspace type tests", () => {
 				]) as unknown,
 			}),
 		);
-		expect(result?.typecheckResult).toBeDefined();
+		expect(result!.typecheckResult).toBeDefined();
 	});
 
 	it("should use an explicit test.typecheck.include instead of deriving from the runtime include", async () => {
@@ -4184,7 +4182,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		const paths = result?.typecheckResult?.testResults.map((file) => file.testFilePath) ?? [];
+		const paths = result!.typecheckResult!.testResults.map((file) => file.testFilePath);
 
 		expect(paths).toContain("@halcyon/foo/src/index.spec-d.ts");
 		expect(paths).toContain("@halcyon/bar/src/index.spec-d.ts");
@@ -4251,7 +4249,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(result?.typecheckResult).toBeDefined();
+		expect(result!.typecheckResult).toBeDefined();
 	});
 
 	it("should short-circuit --typecheckOnly: no place build, no backend dispatch, only the type pass", async () => {
@@ -4290,8 +4288,8 @@ describe("workspace type tests", () => {
 
 		expect(captured.options).toBeUndefined();
 		expect(vi.mocked(buildPlace)).not.toHaveBeenCalled();
-		expect(result?.typecheckResult).toBeDefined();
-		expect(result?.results).toHaveLength(0);
+		expect(result!.typecheckResult).toBeDefined();
+		expect(result!.results).toHaveLength(0);
 	});
 
 	it("should report results for a type-test-only package rather than erroring on no runtime specs", async () => {
@@ -4332,7 +4330,7 @@ describe("workspace type tests", () => {
 		});
 
 		expect(result).toBeDefined();
-		expect(result?.typecheckResult).toBeDefined();
+		expect(result!.typecheckResult).toBeDefined();
 	});
 
 	it("should still error for a truly empty package even with typecheck enabled", async () => {

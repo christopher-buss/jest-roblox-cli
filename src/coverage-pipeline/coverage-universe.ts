@@ -11,12 +11,12 @@ export interface CoverageUniverseFilter {
 	 * `contains: true`, mirroring Jest's regex-based semantics (and the
 	 * instrument-time matcher in `prepare.ts`). Any match drops the file.
 	 */
-	ignore?: Array<string>;
+	ignore?: Array<string> | undefined;
 	/**
-	 * `collectCoverageFrom`-style globs. A leading `!` negates. When omitted or
-	 * empty, every file is included (subject to `ignore`).
+	 * `collectCoverageFrom`-style globs. A leading `!` negates. When omitted
+	 * or empty, every file is included (subject to `ignore`).
 	 */
-	include?: Array<string>;
+	include?: Array<string> | undefined;
 }
 
 /**

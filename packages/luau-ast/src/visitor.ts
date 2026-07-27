@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Visitor pattern is inherently verbose. */
 /**
  * Visitor pattern for traversing Lute's Luau AST.
  * Mirrors @std/syntax/visitor.luau — each callback returns boolean
@@ -98,6 +99,7 @@ export interface LuauVisitor {
 	visitTableExprItem?(node: AstTableExprItem): boolean;
 }
 
+// eslint-disable-next-line flawless/max-lines-per-function -- Visitor pattern is inherently verbose.
 export function visitExpression(expression: AstExpr, visitor: LuauVisitor): void {
 	if (visitor.visitExpr?.(expression) === false) {
 		return;
@@ -189,6 +191,7 @@ export function visitExpression(expression: AstExpr, visitor: LuauVisitor): void
 	visitor.visitExprEnd?.(expression);
 }
 
+// eslint-disable-next-line flawless/max-lines-per-function -- Visitor pattern is inherently verbose.
 export function visitStatement(statement: AstStat, visitor: LuauVisitor): void {
 	const { tag } = statement;
 	switch (tag) {

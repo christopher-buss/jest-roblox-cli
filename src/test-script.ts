@@ -22,36 +22,36 @@ export interface JestArgvInput {
 }
 
 export function buildJestArgv(options: JestArgvInput): JestArgv {
-	const argv: Record<string, unknown> = {};
+	// Jest passthrough keys are copied by name, so they land via `Reflect.set`
+	// on an already-typed argv rather than being asserted onto one afterwards.
+	const argv: JestArgv = { testMatch: [] };
 	for (const [key, value] of Object.entries(options.config)) {
-		if (!JEST_ARGV_EXCLUDED_KEYS.has(key) && value !== undefined) {
-			argv[key] = value;
+		if (value !== undefined && !JEST_ARGV_EXCLUDED_KEYS.has(key)) {
+			Reflect.set(argv, key, value);
 		}
 	}
 
 	if (options.config.jestPath !== undefined) {
-		argv["jestPath"] = options.config.jestPath;
+		Reflect.set(argv, "jestPath", options.config.jestPath);
 	}
 
 	if (process.env["TIMING"] !== undefined) {
-		argv["_timing"] = true;
+		Reflect.set(argv, "_timing", true);
 	}
 
 	if (options.config.collectCoverage) {
-		argv["_coverage"] = true;
+		Reflect.set(argv, "_coverage", true);
 	}
 
 	if (options.config.collectPerTestCoverage === true) {
-		argv["_perTestCoverage"] = true;
+		Reflect.set(argv, "_perTestCoverage", true);
 	}
 
-	return {
-		...argv,
-		reporters: argv["reporters"] ?? [],
-		testMatch: options.config.testMatch.map((pattern) =>
-			pattern.replace(TS_OR_LUAU_EXTENSION, ""),
-		),
-	} as JestArgv;
+	argv.reporters ??= [];
+	argv.testMatch = options.config.testMatch.map((pattern) => {
+		return pattern.replace(TS_OR_LUAU_EXTENSION, "");
+	});
+	return argv;
 }
 
 export function generateTestScript(options: Array<JestArgvInput> | JestArgvInput): string {

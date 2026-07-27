@@ -1,5 +1,5 @@
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
-import { collectPaths, loadRojoProject, resolveNestedProjectSources } from "@isentinel/rojo-utils";
+import { collectPaths, resolveNestedProjectSources } from "@isentinel/rojo-utils";
 
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
@@ -9,7 +9,10 @@ import { hashFile } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 export interface RojoInputsOptions {
-	/** Instrumented roots, excluded because the shadow diff already hashes them. */
+	/**
+	 * Instrumented roots, excluded because the shadow diff already hashes
+	 * them.
+	 */
 	luauRoots: Array<string>;
 	rojoProjectPath: string;
 	rootDirectory: string;
@@ -17,25 +20,27 @@ export interface RojoInputsOptions {
 
 /**
  * SHA-256 over every rojo build input that lives OUTSIDE the instrumented
- * luauRoots: non-luauRoot `$path` mounts (e.g. `include/RuntimeLib.lua`, vendored
- * `@rbxts`, game assets) plus the rojo project file(s) themselves. The
- * incremental coverage cache folds a mismatch into its rebuild decision so an
- * edit to any of these — which the per-luauRoot shadow diff never observes —
- * still forces a fresh place build instead of silently reusing a stale one.
+ * luauRoots: non-luauRoot `$path` mounts (e.g. `include/RuntimeLib.lua`,
+ * vendored `@rbxts`, game assets) plus the rojo project file(s) themselves.
+ * The incremental coverage cache folds a mismatch into its rebuild decision so
+ * an edit to any of these — which the per-luauRoot shadow diff never observes
+ * — still forces a fresh place build instead of silently reusing a stale one.
  *
  * luauRoot files are skipped: the shadow diff already content-hashes them, so
  * re-reading the compiled output here would be wasted work. Throws on a
  * malformed or circular rojo project; the caller degrades to a rebuild.
  */
-export function computeRojoInputsHash(options: RojoInputsOptions): string {
-	const { luauRoots, rojoProjectPath, rootDirectory } = options;
+export function computeRojoInputsHash({
+	luauRoots,
+	rojoProjectPath,
+	rootDirectory,
+}: RojoInputsOptions): string {
 	const projectDirectory = path.dirname(rojoProjectPath);
 
-	// loadRojoProject validates the file but its `tree` is already
-	// nested-resolved, so resolve the RAW tree here to surface the inlined
-	// project files for hashing.
-	const rawTree = loadRojoProject(rojoProjectPath).raw["tree"] as RojoTreeNode;
-	const { projectFiles, tree } = resolveNestedProjectSources(rawTree, projectDirectory);
+	const { projectFiles, tree } = resolveNestedProjectSources(
+		readRawTree(rojoProjectPath),
+		projectDirectory,
+	);
 
 	const mounts: Array<string> = [];
 	collectPaths(tree, mounts);
@@ -58,6 +63,24 @@ export function computeRojoInputsHash(options: RojoInputsOptions): string {
 	}
 
 	return digestFiles(files, rootDirectory);
+}
+
+function isTreeNode(value: unknown): value is RojoTreeNode {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Reads the project's tree as written on disk. `loadRojoProject` hands back a
+ * nested-resolved tree, which has already erased the inlined project files this
+ * hash has to cover, so the file is parsed here instead.
+ */
+function readRawTree(rojoProjectPath: string): RojoTreeNode {
+	const parsed = JSON.parse(fs.readFileSync(rojoProjectPath, "utf-8"));
+	if (!isTreeNode(parsed) || !isTreeNode(parsed["tree"])) {
+		throw new Error(`Rojo project must have a "tree" object: ${rojoProjectPath}`);
+	}
+
+	return parsed["tree"];
 }
 
 function toKey(filePath: string): string {

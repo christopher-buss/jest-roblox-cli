@@ -18,8 +18,8 @@ export type CoverageDisplayPredicate = (normalizedAbsolutePath: string) => boole
 const TEST_MARKER = /\.(?:test|spec)(?:-d)?(\.[^./]+)$/;
 
 /**
- * Build a predicate that keeps a universe file when it is the **source twin** of
- * one of `testFiles` — the file under test reached by stripping the
+ * Build a predicate that keeps a universe file when it is the **source twin**
+ * of one of `testFiles` — the file under test reached by stripping the
  * `.test`/`.spec` marker and keeping the same directory. Membership is exact
  * (not glob), so source paths carrying glob metacharacters (route-group
  * directories like `(foo)`) compare literally. Each test file is resolved
@@ -42,9 +42,9 @@ export function sourceTwinFilter(
 }
 
 /**
- * Build a predicate that keeps a universe file living under one of `roots` — the
- * static include roots of the selected `--project`(s). Containment is a path
- * prefix at a directory boundary (so root `src/shared` matches
+ * Build a predicate that keeps a universe file living under one of `roots` —
+ * the static include roots of the selected `--project`(s). Containment is a
+ * path prefix at a directory boundary (so root `src/shared` matches
  * `src/shared/x.ts` but not `src/shared-extra/x.ts`). Roots are normalized to
  * the same absolute namespace as the resolved universe keys.
  */
@@ -59,11 +59,11 @@ export function projectRootFilter(roots: ReadonlyArray<string>): CoverageDisplay
 }
 
 /**
- * Narrow a mapped coverage universe to the files `predicate` keeps. Each key is
- * resolved to a normalized-absolute path before the predicate runs, mirroring
- * how `filterCoverageUniverse` canonicalizes paths so the two layers agree. Used
- * only for the agent text table; every other reporter and the totals line keep
- * the full universe.
+ * Narrow a mapped coverage universe to the files `predicate` keeps. Each key
+ * is resolved to a normalized-absolute path before the predicate runs,
+ * mirroring how `filterCoverageUniverse` canonicalizes paths so the two layers
+ * agree. Used only for the agent text table; every other reporter and the
+ * totals line keep the full universe.
  */
 export function narrowMappedForAgentTable(
 	mapped: MappedCoverageResult,

@@ -19,8 +19,6 @@ export default isentinel(
 		roblox: false,
 		rules: {
 			"max-lines": "off",
-			"max-lines-per-function": "off",
-			"test/require-hook": "off",
 		},
 		test: {
 			vitest: {

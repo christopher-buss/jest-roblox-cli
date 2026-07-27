@@ -1,20 +1,22 @@
 import * as path from "node:path";
 import process from "node:process";
-import { isDeepStrictEqual } from "node:util";
 import { isAgent } from "std-env";
 
-import type { CliOptions, Config, FormatterEntry, WorkspaceRunOptions } from "./schema.ts";
+import { omitUndefined } from "../utils/omit-undefined.ts";
+import type { CliOptions, FormatterEntry, WorkspaceRunOptions } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
-
-interface ConsensusGroup<T> {
-	packages: Array<string>;
-	value: T;
-}
-
-interface PackageConfigEntry {
-	name: string;
-	config: Config;
-}
+import type {
+	ConsensusSpec,
+	OptionalFieldSpec,
+	PackageConfigEntry,
+	RequiredFieldSpec,
+} from "./workspace-consensus.ts";
+import {
+	assertConsensus,
+	computeConsensus,
+	resolveField,
+	resolveOptionalField,
+} from "./workspace-consensus.ts";
 
 interface BuildWorkspaceRunOptionsInput {
 	cli: CliOptions;
@@ -23,276 +25,154 @@ interface BuildWorkspaceRunOptionsInput {
 	workspaceRoot?: string;
 }
 
-interface ConsensusSpec<T> {
-	name: string;
-	readConfig: (config: Config) => T | undefined;
+interface ResolvedOptionalFields {
+	formatters: Array<FormatterEntry>;
+	gameOutput: string | undefined;
+	outputFile: string | undefined;
+	parallel: "auto" | number | undefined;
+	placeId: string | undefined;
+	studioPath: string | undefined;
+	universeId: string | undefined;
 }
 
-interface RequiredFieldSpec<T> extends ConsensusSpec<T> {
-	default: T;
-	readCli: (cli: CliOptions) => T | undefined;
-}
-
-interface OptionalFieldSpec<T> extends ConsensusSpec<T> {
-	readCli: (cli: CliOptions) => T | undefined;
-}
-
-export class WorkspaceConsensusError extends Error {
-	public readonly field: string;
-	public readonly groups: ReadonlyArray<ConsensusGroup<unknown>>;
-	public override readonly name = "WorkspaceConsensusError";
-	public readonly omittedBy: ReadonlyArray<string>;
-
-	constructor(
-		field: string,
-		groups: ReadonlyArray<ConsensusGroup<unknown>>,
-		omittedBy: ReadonlyArray<string> = [],
-	) {
-		super(formatMessage(field, groups, omittedBy));
-		this.field = field;
-		this.groups = groups;
-		this.omittedBy = omittedBy;
-	}
-}
-
-export function buildWorkspaceRunOptions(
-	input: BuildWorkspaceRunOptionsInput,
-): WorkspaceRunOptions {
-	const { cli, perPackageConfigs, workspaceRoot = process.cwd() } = input;
-
-	const backend = resolveField(cli, perPackageConfigs, {
+/**
+ * Fields resolved as CLI override > per-package consensus > `DEFAULT_CONFIG`.
+ */
+const DEFAULTED_FIELD_SPECS = {
+	backend: {
 		name: "backend",
 		default: DEFAULT_CONFIG.backend,
 		readCli: (entry) => entry.backend,
 		readConfig: (entry) => entry.backend,
-	});
-
-	const color = resolveField(cli, perPackageConfigs, {
+	},
+	color: {
 		name: "color",
 		default: DEFAULT_CONFIG.color,
 		readCli: (entry) => entry.color,
 		readConfig: (entry) => entry.color,
-	});
-
-	const port = resolveField(cli, perPackageConfigs, {
+	},
+	port: {
 		name: "port",
 		default: DEFAULT_CONFIG.port,
 		readCli: (entry) => entry.port,
 		readConfig: (entry) => entry.port,
-	});
-
-	const silent = resolveField(cli, perPackageConfigs, {
+	},
+	silent: {
 		name: "silent",
 		default: DEFAULT_CONFIG.silent,
 		readCli: (entry) => entry.silent,
 		readConfig: (entry) => entry.test?.silent,
-	});
+	},
+} satisfies Record<string, RequiredFieldSpec<unknown>>;
 
-	const parallel = resolveOptionalField(cli, perPackageConfigs, {
-		name: "parallel",
-		readCli: (entry) => entry.parallel,
-		readConfig: (entry) => entry.parallel,
-	});
-
-	const placeId = resolveOptionalField(cli, perPackageConfigs, {
-		name: "placeId",
-		readCli: (entry) => entry.placeId,
-		readConfig: (entry) => entry.placeId,
-	});
-
-	const universeId = resolveOptionalField(cli, perPackageConfigs, {
-		name: "universeId",
-		readCli: (entry) => entry.universeId,
-		readConfig: (entry) => entry.universeId,
-	});
-
-	// studio-cli's Studio-executable override. Resolved like placeId/universeId
-	// so a config or CLI `studioPath` reaches the workspace studio-cli backend.
-	const studioPath = resolveOptionalField(cli, perPackageConfigs, {
-		name: "studioPath",
-		readCli: (entry) => entry.studioPath,
-		readConfig: (entry) => entry.studioPath,
-	});
-
-	const formatters = resolveFormatters(cli, perPackageConfigs);
-
-	const rawGameOutput = resolveOptionalField(cli, perPackageConfigs, {
+/** Fields resolved as CLI override > per-package consensus > absent. */
+const OPTIONAL_FIELD_SPECS = {
+	gameOutput: {
 		name: "gameOutput",
 		readCli: (entry) => entry.gameOutput,
 		readConfig: (entry) => entry.gameOutput,
-	});
-
-	const rawOutputFile = resolveOptionalField(cli, perPackageConfigs, {
+	},
+	outputFile: {
 		name: "outputFile",
 		readCli: (entry) => entry.outputFile,
 		readConfig: (entry) => entry.outputFile,
-	});
+	},
+	parallel: {
+		name: "parallel",
+		readCli: (entry) => entry.parallel,
+		readConfig: (entry) => entry.parallel,
+	},
+	placeId: {
+		name: "placeId",
+		readCli: (entry) => entry.placeId,
+		readConfig: (entry) => entry.placeId,
+	},
+	// studio-cli's Studio-executable override. Resolved like placeId/universeId
+	// so a config or CLI `studioPath` reaches the workspace studio-cli backend.
+	studioPath: {
+		name: "studioPath",
+		readCli: (entry) => entry.studioPath,
+		readConfig: (entry) => entry.studioPath,
+	},
+	universeId: {
+		name: "universeId",
+		readCli: (entry) => entry.universeId,
+		readConfig: (entry) => entry.universeId,
+	},
+} satisfies Record<string, OptionalFieldSpec<unknown>>;
 
-	const workspaceGameOutput =
-		computeConsensus(perPackageConfigs, {
-			name: "workspace.gameOutput",
-			readConfig: (entry) => entry.workspace?.gameOutput,
-		}) === true;
+/**
+ * Fields resolved by per-package consensus alone — there is no CLI flag to
+ * override them, so a disagreement can only be settled in the configs.
+ */
+const CONSENSUS_ONLY_SPECS = {
+	workspaceGameOutput: {
+		name: "workspace.gameOutput",
+		readConfig: (entry) => entry.workspace?.gameOutput,
+	},
+	workspaceOutputFile: {
+		name: "workspace.outputFile",
+		readConfig: (entry) => entry.workspace?.outputFile,
+	},
+} satisfies Record<string, ConsensusSpec<unknown>>;
 
-	const workspaceOutputFile =
-		computeConsensus(perPackageConfigs, {
-			name: "workspace.outputFile",
-			readConfig: (entry) => entry.workspace?.outputFile,
-		}) === true;
-
-	// Convergence guard. `workspace.packages`/`root` live in a shared config
-	// reached via `extends:`, so every selected package resolves the same
-	// value. A package that overrides it — or forgets to extend the shared
-	// config — surfaces here as a conflict rather than silently running against
-	// a different package set. Throws on disagreement; the values themselves
-	// were already consumed for enumeration.
-	computeConsensus(perPackageConfigs, {
+// Convergence guard. `workspace.packages`/`root` live in a shared config
+// reached via `extends:`, so every selected package resolves the same value. A
+// package that overrides it — or forgets to extend the shared config — surfaces
+// here as a conflict rather than silently running against a different package
+// set. The values themselves were already consumed for enumeration, so only the
+// disagreement is read out.
+const CONVERGENCE_GUARD_SPECS = [
+	{
 		name: "workspace.packages",
 		readConfig: (entry) => entry.workspace?.packages,
-	});
-	computeConsensus(perPackageConfigs, {
+	},
+	{
 		name: "workspace.root",
 		readConfig: (entry) => entry.workspace?.root,
-	});
+	},
+] satisfies Array<ConsensusSpec<unknown>>;
 
-	const runOptions: WorkspaceRunOptions = {
-		backend,
-		color,
-		formatters,
-		port,
-		silent,
-		workspaceGameOutput,
-		workspaceOutputFile,
+export function buildWorkspaceRunOptions({
+	cli,
+	perPackageConfigs,
+	workspaceRoot = process.cwd(),
+}: BuildWorkspaceRunOptionsInput): WorkspaceRunOptions {
+	return {
+		...resolveDefaultedFields(cli, perPackageConfigs),
+		...resolveConsensusOnlyFields(perPackageConfigs),
+		...omitUndefined(resolveOptionalFields(cli, perPackageConfigs, workspaceRoot)),
 	};
-
-	const gameOutput = resolveAggregateArtifactPath(
-		rawGameOutput,
-		workspaceRoot,
-		"game-output.log",
-	);
-	if (gameOutput !== undefined) {
-		runOptions.gameOutput = gameOutput;
-	}
-
-	const outputFile = resolveAggregateArtifactPath(
-		rawOutputFile,
-		workspaceRoot,
-		"jest-output.log",
-	);
-	if (outputFile !== undefined) {
-		runOptions.outputFile = outputFile;
-	}
-
-	if (parallel !== undefined) {
-		runOptions.parallel = parallel;
-	}
-
-	if (placeId !== undefined) {
-		runOptions.placeId = placeId;
-	}
-
-	if (studioPath !== undefined) {
-		runOptions.studioPath = studioPath;
-	}
-
-	if (universeId !== undefined) {
-		runOptions.universeId = universeId;
-	}
-
-	return runOptions;
 }
 
-function formatMessage(
-	field: string,
-	groups: ReadonlyArray<ConsensusGroup<unknown>>,
-	omittedBy: ReadonlyArray<string>,
-): string {
-	const lines = [`workspace packages disagree on \`${field}\`.`, ""];
-
-	for (const group of groups) {
-		const valueText = JSON.stringify(group.value);
-		if (omittedBy.length > 0) {
-			lines.push(`  - declared as ${valueText} by: ${group.packages.join(", ")}`);
-		} else {
-			lines.push(`  - ${valueText} — declared by ${group.packages.join(", ")}`);
-		}
-	}
-
-	if (omittedBy.length > 0) {
-		lines.push(`  - not declared by: ${omittedBy.join(", ")}`);
-	}
-
-	lines.push(
-		"",
-		"In workspace mode this field must be uniform across all selected",
-		`packages — the entire run uses one ${field}. Either:`,
-		"  - Declare it consistently across packages (typically by inheriting",
-		"    from a shared config), OR",
-		"  - Pass the CLI override to set a single value for the run.",
-	);
-
-	return lines.join("\n");
-}
-
-function computeConsensus<T>(
-	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
-	spec: ConsensusSpec<T>,
-): T | undefined {
-	const groups: Array<ConsensusGroup<T>> = [];
-	const omittedBy: Array<string> = [];
-
-	for (const entry of perPackageConfigs) {
-		const value = spec.readConfig(entry.config);
-		if (value === undefined) {
-			omittedBy.push(entry.name);
-			continue;
-		}
-
-		const existing = groups.find((group) => isDeepStrictEqual(group.value, value));
-		if (existing === undefined) {
-			groups.push({ packages: [entry.name], value });
-		} else {
-			existing.packages.push(entry.name);
-		}
-	}
-
-	const [first] = groups;
-	if (first === undefined) {
-		return undefined;
-	}
-
-	if (groups.length === 1 && omittedBy.length === 0) {
-		return first.value;
-	}
-
-	throw new WorkspaceConsensusError(spec.name, groups, omittedBy);
-}
-
-function resolveField<T>(
+function resolveDefaultedFields(
 	cli: CliOptions,
 	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
-	spec: RequiredFieldSpec<T>,
-): T {
-	const cliValue = spec.readCli(cli);
-	if (cliValue !== undefined) {
-		return cliValue;
-	}
-
-	const consensus = computeConsensus(perPackageConfigs, spec);
-	return consensus ?? spec.default;
+): Pick<WorkspaceRunOptions, "backend" | "color" | "port" | "silent"> {
+	return {
+		backend: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.backend),
+		color: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.color),
+		port: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.port),
+		silent: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.silent),
+	};
 }
 
-function resolveOptionalField<T>(
-	cli: CliOptions,
+function resolveConsensusOnlyFields(
 	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
-	spec: OptionalFieldSpec<T>,
-): T | undefined {
-	const cliValue = spec.readCli(cli);
-	if (cliValue !== undefined) {
-		return cliValue;
+): Pick<WorkspaceRunOptions, "workspaceGameOutput" | "workspaceOutputFile"> {
+	const isWorkspaceGameOutputEnabled =
+		computeConsensus(perPackageConfigs, CONSENSUS_ONLY_SPECS.workspaceGameOutput) === true;
+	const isWorkspaceOutputFileEnabled =
+		computeConsensus(perPackageConfigs, CONSENSUS_ONLY_SPECS.workspaceOutputFile) === true;
+
+	for (const spec of CONVERGENCE_GUARD_SPECS) {
+		assertConsensus(perPackageConfigs, spec);
 	}
 
-	return computeConsensus(perPackageConfigs, spec);
+	return {
+		workspaceGameOutput: isWorkspaceGameOutputEnabled,
+		workspaceOutputFile: isWorkspaceOutputFileEnabled,
+	};
 }
 
 function defaultFormatters(): Array<FormatterEntry> {
@@ -342,4 +222,32 @@ function resolveAggregateArtifactPath(
 	return path.isAbsolute(target) ? target : path.join(workspaceRoot, target);
 }
 
-export type { ConsensusGroup };
+// `formatters` rides along here rather than with the defaulted fields: it has
+// no `DEFAULT_CONFIG` entry either, but falls back to an env-probed list rather
+// than to nothing. The two aggregate sinks resolve to a path on the way out;
+// the rest pass through untouched.
+function resolveOptionalFields(
+	cli: CliOptions,
+	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
+	workspaceRoot: string,
+): ResolvedOptionalFields {
+	return {
+		formatters: resolveFormatters(cli, perPackageConfigs),
+		gameOutput: resolveAggregateArtifactPath(
+			resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.gameOutput),
+			workspaceRoot,
+			"game-output.log",
+		),
+		outputFile: resolveAggregateArtifactPath(
+			resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.outputFile),
+			workspaceRoot,
+			"jest-output.log",
+		),
+		parallel: resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.parallel),
+		placeId: resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.placeId),
+		studioPath: resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.studioPath),
+		universeId: resolveOptionalField(cli, perPackageConfigs, OPTIONAL_FIELD_SPECS.universeId),
+	};
+}
+
+export { WorkspaceConsensusError } from "./workspace-consensus.ts";

@@ -19,16 +19,21 @@ function createQueueStub(enqueueImpl?: () => Promise<void>): {
 
 	function factory(queueId: string): WorkQueue<{ pkg: string; project: string }> {
 		queueIds.push(queueId);
-		const queue = Object.create(WorkQueue.prototype) as WorkQueue<{
-			pkg: string;
-			project: string;
-		}>;
-		vi.spyOn(queue, "enqueue").mockImplementation(async (items, options): Promise<void> => {
-			enqueueCalls.push({ items, ...(options ? { options } : {}) });
-			if (enqueueImpl) {
-				await enqueueImpl();
-			}
+		const queue = new WorkQueue<{ pkg: string; project: string }>({
+			apiKey: "test-key",
+			decode: decodeQueueItem,
+			encode: encodeQueueItem,
+			queueId,
+			universeId: "123",
 		});
+		vi.spyOn(queue, "enqueueAsync").mockImplementation(
+			async (items, options): Promise<void> => {
+				enqueueCalls.push({ items, ...(options ? { options } : {}) });
+				if (enqueueImpl) {
+					await enqueueImpl();
+				}
+			},
+		);
 		return queue;
 	}
 
@@ -56,7 +61,7 @@ describe(prepareWorkStealingQueue, () => {
 
 		expect(queueIds).toStrictEqual(["queue-uuid-1"]);
 		expect(enqueueCalls).toHaveLength(1);
-		expect(enqueueCalls[0]?.options?.ttlMs).toBe(600_000);
+		expect(enqueueCalls[0]!.options!.ttlMs).toBe(600_000);
 	});
 
 	it("should accept a custom ttlSeconds override", async () => {
@@ -73,7 +78,7 @@ describe(prepareWorkStealingQueue, () => {
 			uuid: () => "qid",
 		});
 
-		expect(enqueueCalls[0]?.options?.ttlMs).toBe(120_000);
+		expect(enqueueCalls[0]!.options!.ttlMs).toBe(120_000);
 	});
 
 	it("should set invisibilityWindowSeconds to perPackageTimeoutSeconds + 30", async () => {
@@ -121,7 +126,7 @@ describe(prepareWorkStealingQueue, () => {
 			uuid: () => "qid",
 		});
 
-		expect(enqueueCalls[0]?.items).toStrictEqual([{ pkg: "@halcyon/foo", project: "alpha" }]);
+		expect(enqueueCalls[0]!.items).toStrictEqual([{ pkg: "@halcyon/foo", project: "alpha" }]);
 	});
 
 	it("should call enqueue with empty items array when packages array is empty", async () => {
@@ -137,7 +142,7 @@ describe(prepareWorkStealingQueue, () => {
 			uuid: () => "qid",
 		});
 
-		expect(enqueueCalls[0]?.items).toStrictEqual([]);
+		expect(enqueueCalls[0]!.items).toStrictEqual([]);
 		expect(prepared.queueId).toBe("qid");
 	});
 

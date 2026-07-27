@@ -2,18 +2,18 @@ export type TestStatus = "disabled" | "failed" | "passed" | "pending" | "skipped
 
 export interface TestCaseResult {
 	ancestorTitles: Array<string>;
-	duration?: number;
+	duration?: number | undefined;
 	failureMessages: Array<string>;
 	fullName: string;
 	location?: { column: number; line: number };
-	numPassingAsserts?: number;
-	retryReasons?: Array<string>;
+	numPassingAsserts?: number | undefined;
+	retryReasons?: Array<string> | undefined;
 	status: TestStatus;
 	title: string;
 }
 
 export interface TestFileResult {
-	failureMessage?: string;
+	failureMessage?: string | undefined;
 	numFailingTests: number;
 	numPassingTests: number;
 	numPendingTests: number;
@@ -23,11 +23,11 @@ export interface TestFileResult {
 
 export interface SnapshotSummary {
 	added: number;
-	didUpdate?: boolean;
-	filesRemoved?: number;
+	didUpdate?: boolean | undefined;
+	filesRemoved?: number | undefined;
 	matched: number;
 	total: number;
-	unchecked?: number;
+	unchecked?: number | undefined;
 	unmatched: number;
 	updated: number;
 }
@@ -36,9 +36,9 @@ export interface JestResult {
 	numFailedTests: number;
 	numPassedTests: number;
 	numPendingTests: number;
-	numTodoTests?: number;
+	numTodoTests?: number | undefined;
 	numTotalTests: number;
-	snapshot?: SnapshotSummary;
+	snapshot?: SnapshotSummary | undefined;
 	startTime: number;
 	success: boolean;
 	testResults: Array<TestFileResult>;

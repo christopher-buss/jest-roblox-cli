@@ -26,10 +26,10 @@ const NON_INSTRUMENTED_SUFFIXES = [
 
 export interface PrepareShadowRootOptions {
 	luauRoot: string;
-	previousManifest?: CoverageManifest;
+	previousManifest?: CoverageManifest | undefined;
 	shadowDir: string;
 	/** Orchestration profiler forwarded to `instrumentRoot`. */
-	timing?: TimingCollector;
+	timing?: TimingCollector | undefined;
 	useIncremental: boolean;
 }
 
@@ -53,6 +53,23 @@ interface FullCacheOptions {
 	skipFiles: Set<string>;
 }
 
+interface IncrementalPlan {
+	/**
+	 * Populated only on a full cache hit — every file in this root was
+	 * unchanged, so the caller returns this verbatim without instrumenting.
+	 */
+	fullCacheResult?: ShadowRootResult | undefined;
+	/** Previously-instrumented files were deleted or modified. */
+	hasChanged: boolean;
+	/** Relative paths the instrumenter can skip; undefined on a cold run. */
+	skipFiles: Set<string> | undefined;
+}
+
+interface InstrumentedFiles {
+	allFiles: Record<string, InstrumentedFileRecord>;
+	changed: boolean;
+}
+
 export function isNonInstrumentedFile(filename: string): boolean {
 	return NON_INSTRUMENTED_SUFFIXES.some((suffix) => filename.endsWith(suffix));
 }
@@ -72,76 +89,40 @@ export function discoverInstrumentableFiles(luauRoot: string): Set<string> {
  * Populate a shadow dir from one luauRoot: bulk-copy every file (cold path),
  * run the instrumenter to overlay instrumented prod files, then sync the files
  * the instrumenter never emits (spec/test/snap plus non-luau rojo files) with
- * hash-tracked records so the shadow is a complete mirror that satisfies rojo +
- * testMatch.
+ * hash-tracked records so the shadow is a complete mirror that satisfies rojo
+ * + testMatch.
  *
  * On a warm run (cache hit) only changed files are re-instrumented, and the
  * shadow is reconciled against source so files deleted upstream don't linger.
  */
 export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRootResult {
-	const { luauRoot, previousManifest, shadowDir, useIncremental } = options;
+	const { luauRoot, previousManifest, shadowDir, useIncremental: shouldUseIncremental } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
-	let changed = false;
 
-	if (!useIncremental) {
-		fs.mkdirSync(shadowDir, { recursive: true });
-		fs.cpSync(luauRoot, shadowDir, { recursive: true });
+	seedColdShadow(luauRoot, shadowDir, shouldUseIncremental);
+
+	const plan = planIncremental(options);
+	if (plan.fullCacheResult !== undefined) {
+		return plan.fullCacheResult;
 	}
 
-	let skipFiles: Set<string> | undefined;
-
-	if (useIncremental && previousManifest !== undefined) {
-		const {
-			allCached,
-			changed: hasChanges,
-			skipFiles: computed,
-		} = computeIncrementalState(luauRoot, previousManifest);
-		skipFiles = computed;
-		changed = hasChanges;
-
-		if (allCached) {
-			return buildFullCacheResult({
-				luauRoot,
-				previousManifest,
-				shadowDirectory: shadowDir,
-				skipFiles,
-			});
-		}
-	}
-
-	const files = instrumentRoot({
-		luauRoot,
-		shadowDir,
-		skipFiles,
+	const { allFiles, changed: hasInstrumented } = instrumentChangedFiles(
+		options,
+		plan.skipFiles,
 		timing,
-	});
-
-	if (Object.keys(files).length > 0) {
-		changed = true;
-	}
-
-	const allFiles: Record<string, InstrumentedFileRecord> = { ...files };
-
-	if (useIncremental && previousManifest !== undefined && skipFiles !== undefined) {
-		carryForwardRecords(luauRoot, previousManifest, allFiles, skipFiles);
-	}
+	);
 
 	const syncResult = syncNonInstrumentedFiles(
 		luauRoot,
 		shadowDir,
 		previousManifest?.nonInstrumentedFiles,
 	);
-
-	if (syncResult.changed) {
-		changed = true;
-	}
-
-	if (useIncremental && reconcileShadowToSource(luauRoot, shadowDir)) {
-		changed = true;
-	}
+	// Kept out of the `changed` expression below so its cleanup side effect runs
+	// even when an earlier phase already flagged a change.
+	const hasReconciled = shouldUseIncremental && reconcileShadowToSource(luauRoot, shadowDir);
 
 	return {
-		changed,
+		changed: plan.hasChanged || hasInstrumented || syncResult.changed || hasReconciled,
 		files: allFiles,
 		luauRoot,
 		nonInstrumentedFiles: syncResult.files,
@@ -199,14 +180,14 @@ function walkLuauDirectory(
 }
 
 /**
- * Reconcile a warm shadow dir against its source root: unlink every shadow file
- * whose source no longer exists. This is the warm-run deletion mechanism across
- * every file category the pipeline manages — instrumented prod `.luau`,
- * spec/test/snap, and non-luau rojo files (`init.meta.json`, `*.model.json`, …)
- * alike. Diffing against source (rather than a recorded file set) means a file
- * category the sync never tracked still gets cleaned up, so a stale
- * `init.meta.json` can't survive into the rojo build and fail it. It walks with
- * the same scope as the rest of the pipeline (`walkLuauDirectory` skips
+ * Reconcile a warm shadow dir against its source root: unlink every shadow
+ * file whose source no longer exists. This is the warm-run deletion mechanism
+ * across every file category the pipeline manages — instrumented prod `.luau`,
+ * spec/test/snap, and non-luau rojo files (`init.meta.json`, `*.model.json`,
+ * …) alike. Diffing against source (rather than a recorded file set) means a
+ * file category the sync never tracked still gets cleaned up, so a stale
+ * `init.meta.json` can't survive into the rojo build and fail it. It walks
+ * with the same scope as the rest of the pipeline (`walkLuauDirectory` skips
  * `node_modules`/dot-dirs); vendored content under those dirs is governed by
  * `rojoInputsHash` instead, which forces a cold rebuild when it changes.
  * `.cov-map.json` sidecars are instrumenter output with no 1:1 source twin;
@@ -222,7 +203,7 @@ function reconcileShadowToSource(luauRoot: string, shadowDirectory: string): boo
 	const shadowFiles: Array<string> = [];
 	walkLuauDirectory(posixShadow, posixShadow, () => true, shadowFiles);
 
-	let deleted = false;
+	let hasDeleted = false;
 	for (const relativePath of shadowFiles) {
 		if (sourceTwinExists(luauRoot, relativePath)) {
 			continue;
@@ -230,13 +211,13 @@ function reconcileShadowToSource(luauRoot: string, shadowDirectory: string): boo
 
 		try {
 			fs.unlinkSync(path.resolve(shadowDirectory, relativePath));
-			deleted = true;
+			hasDeleted = true;
 		} catch {
 			// Best-effort cleanup
 		}
 	}
 
-	return deleted;
+	return hasDeleted;
 }
 
 function isInstrumentableFile(name: string): boolean {
@@ -287,7 +268,7 @@ function syncNonInstrumentedFiles(
 	discoverShadowSyncFiles(posixRoot, posixRoot, discovered);
 
 	const files: Record<string, NonInstrumentedFileRecord> = {};
-	let changed = false;
+	let hasChanged = false;
 
 	for (const relativePath of discovered) {
 		const sourcePath = `${posixRoot}/${relativePath}`;
@@ -313,10 +294,10 @@ function syncNonInstrumentedFiles(
 		fs.copyFileSync(path.resolve(sourcePath), shadowPath);
 
 		files[sourcePath] = { shadowPath, sourceHash: currentHash, sourcePath };
-		changed = true;
+		hasChanged = true;
 	}
 
-	return { changed, files };
+	return { changed: hasChanged, files };
 }
 
 function computeSkipFiles(luauRoot: string, previousManifest: CoverageManifest): Set<string> {
@@ -380,22 +361,25 @@ function computeIncrementalState(
 ): { allCached: boolean; changed: boolean; skipFiles: Set<string> } {
 	const skipFiles = computeSkipFiles(luauRoot, previousManifest);
 	const previousCount = countPreviousFilesForRoot(luauRoot, previousManifest);
-	const changed = skipFiles.size !== previousCount;
+	const hasChanged = skipFiles.size !== previousCount;
 
-	if (changed) {
-		return { allCached: false, changed, skipFiles };
+	if (hasChanged) {
+		return { allCached: false, changed: hasChanged, skipFiles };
 	}
 
 	// All previous files match. Check if any new files appeared on disk.
 	const discovered = discoverInstrumentableFiles(luauRoot);
-	const allCached = discovered.size === previousCount;
+	const isFullyCached = discovered.size === previousCount;
 
-	return { allCached, changed, skipFiles };
+	return { allCached: isFullyCached, changed: hasChanged, skipFiles };
 }
 
-function buildFullCacheResult(options: FullCacheOptions): ShadowRootResult {
-	const { luauRoot, previousManifest, shadowDirectory, skipFiles } = options;
-
+function buildFullCacheResult({
+	luauRoot,
+	previousManifest,
+	shadowDirectory,
+	skipFiles,
+}: FullCacheOptions): ShadowRootResult {
 	const allFiles: Record<string, InstrumentedFileRecord> = {};
 	carryForwardRecords(luauRoot, previousManifest, allFiles, skipFiles);
 
@@ -406,13 +390,89 @@ function buildFullCacheResult(options: FullCacheOptions): ShadowRootResult {
 	);
 	// Call reconcile unconditionally (not inside the `||`) so its cleanup side
 	// effect always runs even when the sync already flagged a change.
-	const reconciled = reconcileShadowToSource(luauRoot, shadowDirectory);
+	const hasReconciled = reconcileShadowToSource(luauRoot, shadowDirectory);
 
 	return {
-		changed: syncResult.changed || reconciled,
+		changed: syncResult.changed || hasReconciled,
 		files: allFiles,
 		luauRoot,
 		nonInstrumentedFiles: syncResult.files,
 		shadowDir: shadowDirectory,
 	};
+}
+
+/**
+ * Cold path only: bulk-copy the whole root so the shadow starts as a complete
+ * mirror, before the instrumenter overlays its instrumented twins.
+ */
+function seedColdShadow(
+	luauRoot: string,
+	shadowDirectory: string,
+	shouldUseIncremental: boolean,
+): void {
+	if (shouldUseIncremental) {
+		return;
+	}
+
+	fs.mkdirSync(shadowDirectory, { recursive: true });
+	fs.cpSync(luauRoot, shadowDirectory, { recursive: true });
+}
+
+/**
+ * Decide what the instrumenter can skip this run, and short-circuit to the
+ * carried-forward result when nothing in the root changed at all.
+ */
+function planIncremental({
+	luauRoot,
+	previousManifest,
+	shadowDir,
+	useIncremental: shouldUseIncremental,
+}: PrepareShadowRootOptions): IncrementalPlan {
+	if (!shouldUseIncremental || previousManifest === undefined) {
+		return { hasChanged: false, skipFiles: undefined };
+	}
+
+	const {
+		allCached: isFullyCached,
+		changed: hasChanged,
+		skipFiles,
+	} = computeIncrementalState(luauRoot, previousManifest);
+	if (!isFullyCached) {
+		return { hasChanged, skipFiles };
+	}
+
+	return {
+		fullCacheResult: buildFullCacheResult({
+			luauRoot,
+			previousManifest,
+			shadowDirectory: shadowDir,
+			skipFiles,
+		}),
+		hasChanged,
+		skipFiles,
+	};
+}
+
+/**
+ * Instrument everything the plan didn't skip, then fold the skipped files'
+ * previous manifest records back in so the result covers the whole root.
+ */
+function instrumentChangedFiles(
+	{
+		luauRoot,
+		previousManifest,
+		shadowDir,
+		useIncremental: shouldUseIncremental,
+	}: PrepareShadowRootOptions,
+	skipFiles: Set<string> | undefined,
+	timing: TimingCollector,
+): InstrumentedFiles {
+	const files = instrumentRoot({ luauRoot, shadowDir, skipFiles, timing });
+	const allFiles: Record<string, InstrumentedFileRecord> = { ...files };
+
+	if (shouldUseIncremental && previousManifest !== undefined && skipFiles !== undefined) {
+		carryForwardRecords(luauRoot, previousManifest, allFiles, skipFiles);
+	}
+
+	return { allFiles, changed: Object.keys(files).length > 0 };
 }

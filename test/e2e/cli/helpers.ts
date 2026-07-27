@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import { execFile, execFileSync } from "node:child_process";
 import {
@@ -26,6 +27,8 @@ interface RunCliOptions {
 }
 
 const BIN = path.resolve(__dirname, "../../../bin/jest-roblox.js");
+
+const mergedResultSchema = type({ testResults: type({ testFilePath: "string" }).array() });
 
 // cspell:ignore LOCALAPPDATA MSYSTEM PATHEXT PROGRAMDATA WINDIR
 const ALLOWED_ENV_VARS = [
@@ -68,9 +71,9 @@ export function runCli(args: Array<string>, cwdOrOptions?: RunCliOptions | strin
 		return { exitCode: 0, stderr: "", stdout };
 	} catch (err: unknown) {
 		return {
-			exitCode: getProperty(err, "status", 1),
-			stderr: normalizeOutput(getProperty(err, "stderr", "")),
-			stdout: normalizeOutput(getProperty(err, "stdout", "")),
+			exitCode: normalizeExitCode(readProperty(err, "status")),
+			stderr: normalizeOutput(readProperty(err, "stderr")),
+			stdout: normalizeOutput(readProperty(err, "stdout")),
 		};
 	}
 }
@@ -115,6 +118,16 @@ export function readJsonSync(filePath: string): unknown {
 	return JSON.parse(readFileSync(filePath, "utf-8"));
 }
 
+/**
+ * The `testFilePath`s of a merged result sink (`--outputFile`), validated
+ * against the one field the type-test e2e specs read rather than asserted onto
+ * the parsed JSON.
+ */
+export function readMergedTestFilePaths(filePath: string): Array<string> {
+	const merged = mergedResultSchema.assert(readJsonSync(filePath));
+	return merged.testResults.map((file) => file.testFilePath);
+}
+
 export function createFixtureSandbox(sourcePath: string): string {
 	const sandboxRoot = path.resolve(__dirname, ".tmp");
 	mkdirSync(sandboxRoot, { recursive: true });
@@ -155,10 +168,10 @@ export function createRbxtsFixtureSandbox(sourcePath: string): string {
 // Studio plugin knows to dial — makes `auto` deterministically fall through to
 // Open Cloud. Callers that need a real port pass their own `--port` and opt out.
 function withIsolatedBackendPort(args: Array<string>): Array<string> {
-	const declaresPort = args.some(
+	const hasPort = args.some(
 		(argument) => argument === "--port" || argument.startsWith("--port="),
 	);
-	return declaresPort ? args : ["--port", "0", ...args];
+	return hasPort ? args : ["--port", "0", ...args];
 }
 
 function rewriteEscapingPaths(
@@ -284,6 +297,7 @@ export function buildMixedOutput(payload: Record<string, unknown>): string {
 }
 
 /** A minimal passing single-suite Jest payload in the runner's wire shape. */
+// eslint-disable-next-line flawless/max-lines-per-function -- Returns a cohesive single object; splitting would scatter the fields and make it harder to see the shape.
 export function buildPassingPayload(): Record<string, unknown> {
 	return {
 		_setup: 0.1,
@@ -327,12 +341,16 @@ export function createOpenCloudEnvironment(baseUrl: string): Record<string, stri
 	};
 }
 
-function getProperty<T>(error: unknown, key: string, fallback: T): T {
-	if (typeof error === "object" && error !== null && key in error) {
-		return (error as Record<string, unknown>)[key] as T;
+function readProperty(source: unknown, key: string): unknown {
+	if (typeof source === "object" && source !== null && key in source) {
+		return Reflect.get(source, key);
 	}
 
-	return fallback;
+	return undefined;
+}
+
+function normalizeExitCode(value: unknown): number {
+	return typeof value === "number" ? value : 1;
 }
 
 function buildCliEnvironment(overrides?: Record<string, string | undefined>): NodeJS.ProcessEnv {

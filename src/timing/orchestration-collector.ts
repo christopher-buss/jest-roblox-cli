@@ -1,6 +1,8 @@
 import { performance } from "node:perf_hooks";
 import process from "node:process";
 
+import { createSpanTree, emitSpanTree, type SpanTree } from "./span-tree.ts";
+
 export interface CreateTimingCollectorOptions {
 	clock?: { now: () => number };
 	enabled?: boolean;
@@ -37,12 +39,6 @@ export interface TimingCollector {
 	record: (name: string, elapsedMs: number) => void;
 }
 
-interface SpanNode {
-	name: string;
-	children: Map<string, SpanNode>;
-	elapsedMs: number;
-}
-
 /**
  * A buffered span-tree profiler for a single, sequential host run. Nesting is
  * tracked with one shared stack, so spans must open and close in LIFO order:
@@ -55,27 +51,47 @@ interface SpanNode {
 export function createTimingCollector(options: CreateTimingCollectorOptions = {}): TimingCollector {
 	const clock = options.clock ?? { now: () => performance.now() };
 	const sink = options.sink ?? ((line: string) => void process.stderr.write(`${line}\n`));
-	const enabled = options.enabled ?? process.env["TIMING"] !== undefined;
-	const roots = new Map<string, SpanNode>();
-	const stack: Array<SpanNode> = [];
+	const isEnabled = options.enabled ?? process.env["TIMING"] !== undefined;
+	const spans = createSpanTree(clock);
+	const { profile, profileAsync } = createProfilers(isEnabled, spans);
 
-	function open(name: string): () => void {
-		const top = stack.at(-1);
-		const node = childOf(top === undefined ? roots : top.children, name);
-		stack.push(node);
-		const start = clock.now();
-		return () => {
-			node.elapsedMs += clock.now() - start;
-			stack.pop();
-		};
+	function record(name: string, elapsedMs: number): void {
+		if (!isEnabled) {
+			return;
+		}
+
+		spans.record(name, elapsedMs);
 	}
 
+	function flushTimingReport(): void {
+		if (!isEnabled || spans.roots.size === 0) {
+			return;
+		}
+
+		const total = emitSpanTree(spans.roots, sink);
+		sink(`[TIMING] TOTAL (host): ${String(total)}ms`);
+		// Clear so a second flush (the run wraps this in a `finally`) is a no-op
+		// rather than re-emitting every recorded span.
+		spans.roots.clear();
+	}
+
+	return { enabled: isEnabled, flushTimingReport, profile, profileAsync, record };
+}
+
+/**
+ * The two span-opening entry points. Both call `func` directly when the
+ * collector is disabled, so a disabled run pays nothing beyond the extra call.
+ */
+function createProfilers(
+	isEnabled: boolean,
+	spans: SpanTree,
+): Pick<TimingCollector, "profile" | "profileAsync"> {
 	function profile<T>(name: string, func: () => T extends Promise<unknown> ? never : T): T {
-		if (!enabled) {
+		if (!isEnabled) {
 			return func();
 		}
 
-		const close = open(name);
+		const close = spans.open(name);
 		try {
 			return func();
 		} finally {
@@ -84,11 +100,11 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 	}
 
 	async function profileAsync<T>(name: string, func: () => Promise<T>): Promise<T> {
-		if (!enabled) {
+		if (!isEnabled) {
 			return func();
 		}
 
-		const close = open(name);
+		const close = spans.open(name);
 		try {
 			return await func();
 		} finally {
@@ -96,42 +112,7 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 		}
 	}
 
-	function record(name: string, elapsedMs: number): void {
-		if (!enabled) {
-			return;
-		}
-
-		const top = stack.at(-1);
-		const node = childOf(top === undefined ? roots : top.children, name);
-		node.elapsedMs += elapsedMs;
-	}
-
-	function emit(node: SpanNode, depth: number): void {
-		const indent = "  ".repeat(depth);
-		sink(`[TIMING] ${indent}${node.name}: ${String(Math.round(node.elapsedMs))}ms`);
-		for (const child of node.children.values()) {
-			emit(child, depth + 1);
-		}
-	}
-
-	function flushTimingReport(): void {
-		if (!enabled || roots.size === 0) {
-			return;
-		}
-
-		let total = 0;
-		for (const node of roots.values()) {
-			emit(node, 0);
-			total += Math.round(node.elapsedMs);
-		}
-
-		sink(`[TIMING] TOTAL (host): ${String(total)}ms`);
-		// Clear so a second flush (the run wraps this in a `finally`) is a no-op
-		// rather than re-emitting every recorded span.
-		roots.clear();
-	}
-
-	return { enabled, flushTimingReport, profile, profileAsync, record };
+	return { profile, profileAsync };
 }
 
 /**
@@ -140,13 +121,3 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
  * coverage, the `instrument` subcommand, tests). Every method is a no-op.
  */
 export const NOOP_TIMING_COLLECTOR: TimingCollector = createTimingCollector({ enabled: false });
-
-function childOf(parent: Map<string, SpanNode>, name: string): SpanNode {
-	let node = parent.get(name);
-	if (node === undefined) {
-		node = { name, children: new Map(), elapsedMs: 0 };
-		parent.set(name, node);
-	}
-
-	return node;
-}

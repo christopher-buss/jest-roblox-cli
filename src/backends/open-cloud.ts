@@ -33,7 +33,6 @@ const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
 const MAX_RETRIES_ENV = "JEST_ROBLOX_OCALE_MAX_RETRIES";
 const DEFAULT_STREAM_POLL_MS = 250;
-const TrailingSlashesPattern = /\/+$/;
 
 export type OpenCloudCredentials = RunnerCredentials;
 
@@ -44,7 +43,7 @@ export interface OpenCloudOptions {
 	 * the injected runner already owns its own credentials. Intended
 	 * primarily as a test seam.
 	 */
-	runner?: RemoteRunner;
+	runner?: RemoteRunner | undefined;
 }
 
 interface JobBucket {
@@ -54,6 +53,15 @@ interface JobBucket {
 
 interface PollState {
 	warned: boolean;
+}
+
+interface StealingPoolOutcome {
+	/**
+	 * A holder rather than a bare `unknown` so "no failure" stays
+	 * distinguishable from "failed with an undefined reason".
+	 */
+	failure?: undefined | { error: unknown };
+	results: Array<ScriptResult>;
 }
 
 export class OpenCloudBackend implements Backend {
@@ -68,9 +76,14 @@ export class OpenCloudBackend implements Backend {
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
 	}
 
-	public async runTests(options: BackendOptions): Promise<BackendResult> {
+	public async runTests({
+		jobs,
+		parallel,
+		scriptOverride,
+		streaming,
+		workStealing,
+	}: BackendOptions): Promise<BackendResult> {
 		this.raceWarned = false;
-		const { jobs, parallel, scriptOverride, streaming, workStealing } = options;
 		if (jobs.length === 0) {
 			throw new Error("OpenCloudBackend requires at least one job");
 		}
@@ -84,7 +97,7 @@ export class OpenCloudBackend implements Backend {
 		const primary = jobs[0]!;
 		const placeFilePath = resolvePlaceFilePath(primary.config);
 
-		const upload = await this.runner.uploadPlace({ placeFilePath });
+		const upload = await this.runner.uploadPlaceAsync({ placeFilePath });
 
 		const executionStart = Date.now();
 		const flattened =
@@ -120,14 +133,17 @@ export class OpenCloudBackend implements Backend {
 	 * (the version exists even when it is no longer head), and no unpinned
 	 * retry loop for a concurrent uploader to keep winning against.
 	 */
-	private async executeGuarded(options: {
+	private async executeGuarded({
+		placeVersion,
+		script,
+		timeout,
+	}: {
 		placeVersion: number;
 		script: string;
 		timeout: number;
 	}): Promise<ScriptResult> {
-		const { placeVersion, script, timeout } = options;
 		const guarded = injectVersionGuard(script, placeVersion);
-		const first = await this.runner.executeScript({ script: guarded, timeout });
+		const first = await this.runner.executeScriptAsync({ script: guarded, timeout });
 		if (first.outputs[0] !== PLACE_VERSION_RACE_SENTINEL) {
 			return first;
 		}
@@ -139,15 +155,14 @@ export class OpenCloudBackend implements Backend {
 			);
 		}
 
-		return this.runner.executeScript({ placeVersion, script, timeout });
+		return this.runner.executeScriptAsync({ placeVersion, script, timeout });
 	}
 
 	private async runBucket(
-		bucket: JobBucket,
+		{ indices, jobs }: JobBucket,
 		placeVersion: number,
 		scriptOverride?: string,
 	): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
-		const { indices, jobs } = bucket;
 		// A bucket is only created for at least one job, so jobs[0] is defined.
 		// eslint-disable-next-line ts/no-non-null-assertion -- bucket non-empty
 		const primary = jobs[0]!;
@@ -209,7 +224,14 @@ export class OpenCloudBackend implements Backend {
 		return flattened;
 	}
 
-	private async runWorkStealing(args: {
+	private async runWorkStealing({
+		jobs,
+		parallel,
+		placeVersion,
+		primaryConfig,
+		scriptOverride,
+		streaming,
+	}: {
 		jobs: Array<ProjectJob>;
 		parallel: BackendOptions["parallel"];
 		placeVersion: number;
@@ -217,93 +239,57 @@ export class OpenCloudBackend implements Backend {
 		scriptOverride: string;
 		streaming: StreamingHooks | undefined;
 	}): Promise<Array<RawBackendEntry>> {
-		const { jobs, parallel, placeVersion, primaryConfig, scriptOverride, streaming } = args;
-		const taskCount = resolveBucketCount(parallel, jobs.length);
-
-		// Drive the fixed task set through the shared roblox-runner pool. jest's
-		// work is single-wave — the queue is enqueued upstream and each task
-		// drains it until empty — so once `taskCount` tasks have launched the
-		// known set is covered. Gating `isDone` on the launch count is the
-		// "no-op replenishment": when a task returns its slot is never refilled,
-		// so the pool fires exactly `taskCount` tasks and behaves like the old
-		// `Promise.all` wave while reusing one orchestration path.
-		const tasksDone = { value: false };
-		const taskResults: Array<ScriptResult> = [];
-		let launched = 0;
-		let taskFailure: undefined | { error: unknown };
-		const poolPromise = runTaskPool({
-			concurrency: taskCount,
-			isDone: () => launched >= taskCount,
-			onError: (error) => {
-				// The pool folds a task failure into a freed slot and resolves,
-				// so without this the failure would be masked whenever a sibling
-				// task drains the whole queue and covers every package. Capture
-				// it and rethrow once the pool settles so an infrastructure or
-				// script failure always fails the run, as the old `Promise.all`
-				// wave did.
-				taskFailure = { error };
+		const taskResults = await drainStealingPool(
+			resolveBucketCount(parallel, jobs.length),
+			async () => {
+				return this.executeGuarded({
+					placeVersion,
+					script: scriptOverride,
+					timeout: primaryConfig.timeout,
+				});
 			},
-			onResult: (result) => {
-				taskResults.push(result);
-			},
-			places: [
-				{
-					runTask: async () => {
-						launched += 1;
-						return this.executeGuarded({
-							placeVersion,
-							script: scriptOverride,
-							timeout: primaryConfig.timeout,
-						});
-					},
-				},
-			],
-		}).finally(() => {
-			tasksDone.value = true;
-		});
-
-		const pollPromise =
-			streaming !== undefined
-				? pollStreamingResults(streaming, () => tasksDone.value)
-				: Promise.resolve();
-
-		// The pool never rejects (it folds task errors into freed slots) and its
-		// `.finally` always flips tasksDone, so pollPromise terminates within
-		// ~pollMs — neither promise orphans the other.
-		await Promise.all([poolPromise, pollPromise]);
-
-		if (taskFailure !== undefined) {
-			throw taskFailure.error;
-		}
+			streaming,
+		);
 
 		// Parse after the pool settles so a task that returned no usable output
 		// throws here, in the normal flow, rather than being swallowed by the
 		// pool's per-task error handling.
 		const taskEnvelopes = taskResults.map(parseStealingEnvelope);
-		const entryByKey = aggregateEntriesByKey(taskEnvelopes);
-
-		const missing: Array<string> = [];
-		const rawResults: Array<RawBackendEntry> = [];
-		for (const job of jobs) {
-			const found = entryByKey.get(
-				entryLookupKey(job.pkg ?? job.displayName, job.displayName),
-			);
-			if (found === undefined) {
-				missing.push(job.displayName);
-				continue;
-			}
-
-			rawResults.push({ entry: found.entry, fallbackGameOutput: found.gameOutput });
-		}
-
-		if (missing.length > 0) {
-			throw new Error(
-				`Open Cloud work-stealing returned no entries for ${missing.length.toString()} package(s): ${missing.join(", ")}`,
-			);
-		}
-
-		return rawResults;
+		return collectStealingResults(jobs, aggregateEntriesByKey(taskEnvelopes));
 	}
+}
+
+export function resolveOpenCloudBaseUrl(): string | undefined {
+	const override = process.env[BASE_URL_ENV]?.trim();
+	if (override === undefined || override === "") {
+		return undefined;
+	}
+
+	let end = override.length;
+	while (end > 0 && override.charAt(end - 1) === "/") {
+		end -= 1;
+	}
+
+	return override.slice(0, end);
+}
+
+/**
+ * Reads {@link MAX_RETRIES_ENV} for an Open Cloud retry-budget override. Lets
+ * the live e2e suite raise the per-request retry count so concurrent place
+ * uploads (which share one per-minute quota across processes) ride out a
+ * transient 429 instead of failing. Returns undefined for unset, empty, or
+ * non-integer values so the client keeps its own default.
+ */
+export function resolveOcaleMaxRetries(): number | undefined {
+	const raw = process.env[MAX_RETRIES_ENV]?.trim();
+	if (raw === undefined || raw === "") {
+		return undefined;
+	}
+
+	// Number() (not parseInt) so partial/decimal strings like "8abc" or "8.5"
+	// reject instead of silently truncating to 8.
+	const parsed = Number(raw);
+	return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 /**
@@ -330,93 +316,8 @@ export async function pollStreamingResults(
 	await drainOnce(hooks, state);
 }
 
-export function resolveOpenCloudBaseUrl(): string | undefined {
-	const override = process.env[BASE_URL_ENV]?.trim();
-	if (override === undefined || override === "") {
-		return undefined;
-	}
-
-	return override.replace(TrailingSlashesPattern, "");
-}
-
-/**
- * Reads {@link MAX_RETRIES_ENV} for an Open Cloud retry-budget override. Lets
- * the live e2e suite raise the per-request retry count so concurrent place
- * uploads (which share one per-minute quota across processes) ride out a
- * transient 429 instead of failing. Returns undefined for unset, empty, or
- * non-integer values so the client keeps its own default.
- */
-export function resolveOcaleMaxRetries(): number | undefined {
-	const raw = process.env[MAX_RETRIES_ENV]?.trim();
-	if (raw === undefined || raw === "") {
-		return undefined;
-	}
-
-	// Number() (not parseInt) so partial/decimal strings like "8abc" or "8.5"
-	// reject instead of silently truncating to 8.
-	const parsed = Number(raw);
-	return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
 export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenCloudBackend {
 	return new OpenCloudBackend(credentials);
-}
-
-function describeError(err: unknown): string {
-	const cause = err instanceof Error ? err.cause : undefined;
-	if (cause instanceof PermissionError) {
-		return formatMissingScopes(cause.requiredScopes);
-	}
-
-	return err instanceof Error ? err.message : String(err);
-}
-
-function warnStreamingDisabled(err: unknown, state: PollState): void {
-	if (state.warned) {
-		return;
-	}
-
-	state.warned = true;
-	process.stderr.write(`Warning: live per-package streaming disabled — ${describeError(err)}\n`);
-	process.stderr.write("  Tests still run; results print as usual once each task finishes.\n");
-}
-
-async function drainOnce(hooks: StreamingHooks, state: PollState): Promise<void> {
-	let records;
-	try {
-		records = await hooks.reader.readAll();
-	} catch (err) {
-		warnStreamingDisabled(err, state);
-		return;
-	}
-
-	// Forward in arrival order so the streaming-progress lines stay
-	// deterministic, then fire deletes in parallel — when several packages
-	// land between two poll ticks, serial deletes can stack up to a full
-	// poll interval of latency before the next read sees fresh entries.
-	for (const record of records) {
-		hooks.onPackageResult(record.value);
-	}
-
-	await Promise.all(
-		records.map(async (record) => {
-			try {
-				await hooks.reader.delete(record.id);
-			} catch (err) {
-				// Best-effort; if delete fails the entry will reappear on the
-				// next poll and onPackageResult dedupes downstream. Still surface
-				// the first failure so users know their key can read but not
-				// write.
-				warnStreamingDisabled(err, state);
-			}
-		}),
-	);
-}
-
-async function sleep(ms: number): Promise<void> {
-	await new Promise((resolve) => {
-		setTimeout(resolve, ms);
-	});
 }
 
 /**
@@ -489,8 +390,172 @@ function bucketJobs(
 	return buckets;
 }
 
-function entryLookupKey(package_: string, project: string | undefined): string {
-	return project === undefined || project === package_ ? package_ : `${package_}::${project}`;
+function describeError(err: unknown): string {
+	const cause = err instanceof Error ? err.cause : undefined;
+	if (cause instanceof PermissionError) {
+		return formatMissingScopes(cause.requiredScopes);
+	}
+
+	return err instanceof Error ? err.message : String(err);
+}
+
+function warnStreamingDisabled(err: unknown, state: PollState): void {
+	if (state.warned) {
+		return;
+	}
+
+	state.warned = true;
+	process.stderr.write(`Warning: live per-package streaming disabled — ${describeError(err)}\n`);
+	process.stderr.write("  Tests still run; results print as usual once each task finishes.\n");
+}
+
+async function drainOnce(hooks: StreamingHooks, state: PollState): Promise<void> {
+	let records;
+	try {
+		records = await hooks.reader.readAll();
+	} catch (err) {
+		warnStreamingDisabled(err, state);
+		return;
+	}
+
+	// Forward in arrival order so the streaming-progress lines stay
+	// deterministic, then fire deletes in parallel — when several packages
+	// land between two poll ticks, serial deletes can stack up to a full
+	// poll interval of latency before the next read sees fresh entries.
+	for (const record of records) {
+		hooks.onPackageResult(record.value);
+	}
+
+	await Promise.all(
+		records.map(async (record) => {
+			try {
+				await hooks.reader.delete(record.id);
+			} catch (err) {
+				// Best-effort; if delete fails the entry will reappear on the
+				// next poll and onPackageResult dedupes downstream. Still surface
+				// the first failure so users know their key can read but not
+				// write.
+				warnStreamingDisabled(err, state);
+			}
+		}),
+	);
+}
+
+async function sleep(ms: number): Promise<void> {
+	await new Promise((resolve) => {
+		setTimeout(resolve, ms);
+	});
+}
+
+/**
+ * Drive the fixed task set through the shared roblox-runner pool. jest's work
+ * is single-wave — the queue is enqueued upstream and each task drains it
+ * until empty — so once `taskCount` tasks have launched the known set is
+ * covered. Gating `isDone` on the launch count is the "no-op replenishment":
+ * when a task returns its slot is never refilled, so the pool fires exactly
+ * `taskCount` tasks and behaves like the old `Promise.all` wave while reusing
+ * one orchestration path.
+ */
+async function runStealingTasks(
+	taskCount: number,
+	runTask: () => Promise<ScriptResult>,
+	outcome: StealingPoolOutcome,
+): Promise<void> {
+	let launched = 0;
+	await runTaskPool({
+		concurrency: taskCount,
+		isDone: () => launched >= taskCount,
+		onError: (error) => {
+			// The pool folds a task failure into a freed slot and resolves, so
+			// without this the failure would be masked whenever a sibling task
+			// drains the whole queue and covers every package. Capture it and
+			// rethrow once the pool settles so an infrastructure or script
+			// failure always fails the run, as the old `Promise.all` wave did.
+			outcome.failure = { error };
+		},
+		onResult: (result) => {
+			outcome.results.push(result);
+		},
+		places: [
+			{
+				runTask: async () => {
+					launched += 1;
+					return runTask();
+				},
+			},
+		],
+	});
+}
+
+/**
+ * Run the work-stealing task wave and, when streaming is enabled, poll the
+ * streaming map alongside it. Returns every task's result once the wave has
+ * settled; rethrows the first task failure the pool folded into a freed slot.
+ */
+async function drainStealingPool(
+	taskCount: number,
+	runTask: () => Promise<ScriptResult>,
+	streaming: StreamingHooks | undefined,
+): Promise<Array<ScriptResult>> {
+	// A holder, not a plain boolean, so the poll's `isDone` arrow reads the
+	// live value instead of capturing false forever.
+	const tasksDone = { value: false };
+	const outcome: StealingPoolOutcome = { results: [] };
+	const poolPromise = runStealingTasks(taskCount, runTask, outcome).finally(() => {
+		tasksDone.value = true;
+	});
+
+	const pollPromise =
+		streaming !== undefined
+			? pollStreamingResults(streaming, () => tasksDone.value)
+			: Promise.resolve();
+
+	// The pool never rejects (it folds task errors into freed slots) and its
+	// `.finally` always flips tasksDone, so pollPromise terminates within
+	// ~pollMs — neither promise orphans the other.
+	await Promise.all([poolPromise, pollPromise]);
+
+	if (outcome.failure !== undefined) {
+		throw outcome.failure.error;
+	}
+
+	return outcome.results;
+}
+
+function entryLookupKey(packageName: string, project: string | undefined): string {
+	return project === undefined || project === packageName
+		? packageName
+		: `${packageName}::${project}`;
+}
+
+/**
+ * Pair every job with its aggregated entry, in request order. Jobs whose
+ * package never came back are collected so one failure message names them all
+ * rather than failing on the first gap.
+ */
+function collectStealingResults(
+	jobs: Array<ProjectJob>,
+	entryByKey: Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }>,
+): Array<RawBackendEntry> {
+	const missing: Array<string> = [];
+	const rawResults: Array<RawBackendEntry> = [];
+	for (const job of jobs) {
+		const found = entryByKey.get(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
+		if (found === undefined) {
+			missing.push(job.displayName);
+			continue;
+		}
+
+		rawResults.push({ entry: found.entry, fallbackGameOutput: found.gameOutput });
+	}
+
+	if (missing.length > 0) {
+		throw new Error(
+			`Open Cloud work-stealing returned no entries for ${missing.length.toString()} package(s): ${missing.join(", ")}`,
+		);
+	}
+
+	return rawResults;
 }
 
 /**

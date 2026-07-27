@@ -1,12 +1,23 @@
 import { loadConfig as c12LoadConfig } from "c12";
 import { defuFn } from "defu";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
 
 import type { Config, ResolvedConfig } from "./schema.ts";
 import { DEFAULT_CONFIG, validateConfig } from "./schema.ts";
+
+interface ExtendsLayerRequest {
+	/**
+	 * Absolute path of the config declaring `extends`; entries resolve against
+	 * its directory.
+	 */
+	canonicalFile: string;
+	extendList: Array<string>;
+	visited: Set<string>;
+}
 
 export function applySnapshotFormatDefaults(
 	config: ResolvedConfig,
@@ -118,25 +129,27 @@ function isSea(): boolean {
 // unresolvable import surfaces Node's standard module-resolution error. `.json`
 // keeps its read + parse path (a bare `require` of JSON works too, but reading
 // avoids relying on CJS JSON-module semantics).
-async function seaImport(id: string): Promise<JSONValue> {
+async function seaImport(id: string): Promise<unknown> {
 	if (id.endsWith(".json")) {
-		const content = readFileSync(id, "utf-8");
+		const content = await readFile(id, "utf-8");
 		return JSON.parse(content);
 	}
 
-	return createRequire(id)(id) as JSONValue;
+	const required: unknown = createRequire(id)(id);
+	return required;
 }
 
-// c12's merger signature and defuFn's generic signature are structurally
-// incompatible. This wrapper bridges the two with a single boundary cast.
+// defuFn wants a non-empty argument list, which a variadic array can't prove.
+// The leading `{}` supplies it and contributes nothing: defu gives the first
+// source the highest priority, so an empty one leaves the merge order intact.
 function merger(...sources: Array<Config | null | undefined>): Config {
-	return defuFn(...(sources.filter(Boolean) as [Config, ...Array<Config>]));
+	return defuFn({}, ...sources.filter(Boolean));
 }
 
 async function invokeC12(configFile: string | undefined, cwd: string) {
 	return c12LoadConfig<Config>({
 		name: "jest",
-		configFile,
+		...(configFile !== undefined ? { configFile } : {}),
 		configFileRequired: configFile !== undefined,
 		cwd,
 		dotenv: false,
@@ -145,7 +158,7 @@ async function invokeC12(configFile: string | undefined, cwd: string) {
 		// In SEA mode, jiti's babel.cjs can't be resolved from the
 		// single-executable archive. Bypass jiti entirely by providing a
 		// custom import function.
-		import: isSea() ? seaImport : undefined,
+		...(isSea() ? { import: seaImport } : {}),
 		merger,
 		omit$Keys: true,
 		packageJson: false,
@@ -207,31 +220,43 @@ async function processExtends(
 	visited.add(canonicalFile);
 	try {
 		const extendList = Array.isArray(extendsValue) ? extendsValue : [extendsValue];
-		const configFileDirectory = path.dirname(canonicalFile);
-		const layers: Array<Config> = [];
-
-		for (const entry of extendList) {
-			const target = path.isAbsolute(entry)
-				? entry
-				: path.resolve(configFileDirectory, entry);
-
-			let extendedResult;
-			try {
-				extendedResult = await invokeC12(target, path.dirname(target));
-			} catch (err) {
-				throw new Error(`Failed to resolve extends "${entry}" from "${canonicalFile}".`, {
-					cause: err,
-				});
-			}
-
-			const extendedConfig = await processExtends(extendedResult, visited);
-			layers.push(extendedConfig);
-		}
-
+		const layers = await loadExtendsLayers({ canonicalFile, extendList, visited });
 		return merger(configWithoutExtends, ...layers);
 	} finally {
 		visited.delete(canonicalFile);
 	}
+}
+
+/**
+ * Load each `extends` entry in declaration order, recursing so a base config
+ * may itself extend. Returned layers are lowest-priority-last, matching the
+ * order `merger` expects.
+ */
+async function loadExtendsLayers({
+	canonicalFile,
+	extendList,
+	visited,
+}: ExtendsLayerRequest): Promise<Array<Config>> {
+	const configFileDirectory = path.dirname(canonicalFile);
+	const layers: Array<Config> = [];
+
+	for (const entry of extendList) {
+		const target = path.isAbsolute(entry) ? entry : path.resolve(configFileDirectory, entry);
+
+		let extendedResult;
+		try {
+			extendedResult = await invokeC12(target, path.dirname(target));
+		} catch (err) {
+			throw new Error(`Failed to resolve extends "${entry}" from "${canonicalFile}".`, {
+				cause: err,
+			});
+		}
+
+		const extendedConfig = await processExtends(extendedResult, visited);
+		layers.push(extendedConfig);
+	}
+
+	return layers;
 }
 
 const EMPTY_ARRAY_DEFAULT_KEYS = new Set([
@@ -269,7 +294,7 @@ function shouldResolveMergerFunction(
 }
 
 function defaultForMergerKey(key: string): unknown {
-	const defaultValue = (DEFAULT_CONFIG as unknown as Record<string, unknown>)[key];
+	const defaultValue: unknown = Reflect.get(DEFAULT_CONFIG, key);
 	if (Array.isArray(defaultValue)) {
 		return [...defaultValue];
 	}
@@ -281,9 +306,7 @@ function defaultForMergerKey(key: string): unknown {
 	return {};
 }
 
-function resolveFunctionValues(config: Config): Config {
-	const { test, ...rest } = config;
-
+function resolveFunctionValues({ test, ...rest }: Config): Config {
 	const resolvedRest: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(rest)) {
 		resolvedRest[key] = shouldResolveMergerFunction(key, value)

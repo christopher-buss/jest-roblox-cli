@@ -52,15 +52,36 @@ const EMPTY_RESULT = {
 
 interface ResolvedPackages {
 	error?: { exitCode: 2; message: string };
-	noAffected?: true;
-	packageInfos?: Array<PackageInfo>;
-	workspaceRoot?: string;
+	noAffected?: true | undefined;
+	packageInfos?: Array<PackageInfo> | undefined;
+	workspaceRoot?: string | undefined;
 }
 
 interface WorkspaceBackendResolution {
-	backend?: Backend;
+	backend?: Backend | undefined;
 	error?: { exitCode: 2; message: string };
 	workStealingCredentials?: { apiKey: string; baseUrl?: string; universeId: string };
+}
+
+interface WorkspaceRunOptionsResolution {
+	error?: { exitCode: 2; message: string };
+	runOptions?: undefined | WorkspaceRunOptions;
+}
+
+/** One package's accumulated coverage inputs, merged across its projects. */
+interface PackageEntry {
+	coverageData: RawCoverageData | undefined;
+	ignorePatterns: Array<string> | undefined;
+	manifest: NonNullable<WorkspaceProjectResult["coverageManifest"]>;
+	pkg: string;
+}
+
+interface ExecuteWorkspaceRunOptions {
+	cli: CliOptions;
+	packageInfos: Array<PackageInfo>;
+	runOptions: WorkspaceRunOptions;
+	timing?: TimingCollector | undefined;
+	workspaceRoot: string;
 }
 
 export async function runWorkspaceMode(
@@ -70,20 +91,12 @@ export async function runWorkspaceMode(
 ): Promise<WorkspaceRunResult> {
 	const basicValidation = validateBasicWorkspaceFlags(cli);
 	if (!basicValidation.ok) {
-		return {
-			...EMPTY_RESULT,
-			validationExitCode: basicValidation.exitCode,
-			validationMessage: basicValidation.message,
-		};
+		return bail(basicValidation.exitCode, basicValidation.message);
 	}
 
 	const resolved = resolvePackages(cli, workspace);
 	if (resolved.error !== undefined) {
-		return {
-			...EMPTY_RESULT,
-			validationExitCode: resolved.error.exitCode,
-			validationMessage: resolved.error.message,
-		};
+		return bail(resolved.error.exitCode, resolved.error.message);
 	}
 
 	if (resolved.noAffected === true) {
@@ -96,7 +109,44 @@ export async function runWorkspaceMode(
 	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
 	const workspaceRoot = resolved.workspaceRoot!;
 
-	let runOptions: WorkspaceRunOptions;
+	const optionsResolution = await resolveWorkspaceRunOptions(cli, packageInfos, workspaceRoot);
+	if (optionsResolution.error !== undefined) {
+		return bail(optionsResolution.error.exitCode, optionsResolution.error.message);
+	}
+
+	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when there is no error
+	const runOptions = optionsResolution.runOptions!;
+
+	return executeWorkspaceRun({
+		cli,
+		packageInfos,
+		runOptions,
+		timing,
+		workspaceRoot,
+	});
+}
+
+// Every validation failure reports through the same empty result, so the
+// per-branch difference is only the exit code and (optionally) the message.
+// `validationMessage` is spread conditionally rather than assigned `undefined`
+// so the "no message" case keeps the key absent, as before.
+function bail(validationExitCode: 2, validationMessage?: string): WorkspaceRunResult {
+	return {
+		...EMPTY_RESULT,
+		validationExitCode,
+		...(validationMessage !== undefined ? { validationMessage } : {}),
+	};
+}
+
+// Load every package's raw config, fold them into the consensus-resolved
+// WorkspaceRunOptions, and check the resolved-value invariants. A config that
+// fails to load and a consensus conflict both surface as the same validation
+// error the caller bails on.
+async function resolveWorkspaceRunOptions(
+	cli: CliOptions,
+	packageInfos: Array<PackageInfo>,
+	workspaceRoot: string,
+): Promise<WorkspaceRunOptionsResolution> {
 	try {
 		const perPackageConfigs = await Promise.all(
 			packageInfos.map(async (info) => {
@@ -106,69 +156,60 @@ export async function runWorkspaceMode(
 				};
 			}),
 		);
-		runOptions = buildWorkspaceRunOptions({ cli, perPackageConfigs, workspaceRoot });
+		const runOptions = buildWorkspaceRunOptions({ cli, perPackageConfigs, workspaceRoot });
 		const assertion = assertWorkspaceRunOptions(runOptions);
 		if (!assertion.ok) {
-			return {
-				...EMPTY_RESULT,
-				validationExitCode: assertion.exitCode,
-				validationMessage: assertion.message,
-			};
+			return { error: { exitCode: assertion.exitCode, message: assertion.message } };
 		}
+
+		return { runOptions };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		return {
-			...EMPTY_RESULT,
-			validationExitCode: 2,
-			validationMessage: `Error: ${message}\n`,
-		};
+		return { error: { exitCode: 2, message: `Error: ${message}\n` } };
 	}
+}
 
-	const resolution = resolveWorkspaceBackend(cli, runOptions);
-	if (resolution.error !== undefined) {
-		return {
-			...EMPTY_RESULT,
-			validationExitCode: resolution.error.exitCode,
-			validationMessage: resolution.error.message,
-		};
-	}
+// `collectCoverage` is intentionally omitted: workspace coverage is per-package
+// (driven by each package's manifest), so there is no workspace-level flag to
+// surface the "Coverage enabled" subtitle.
+function emitWorkspaceRunHeader(
+	cli: CliOptions,
+	runOptions: WorkspaceRunOptions,
+	workspaceRoot: string,
+): void {
+	emitRunHeader({
+		color: runOptions.color,
+		formatters: runOptions.formatters,
+		rootDir: workspaceRoot,
+		silent: runOptions.silent,
+		verbose: cli.verbose,
+		version: VERSION,
+	});
+}
 
-	const { backend, workStealingCredentials } = resolution;
-
-	let output;
+// Credential resolution is the only failing step here, so the whole Open Cloud
+// branch is a try/catch that converts a missing/invalid secret into the
+// validation error the caller bails on.
+function resolveOpenCloudBackendFor(
+	cli: CliOptions,
+	runOptions: WorkspaceRunOptions,
+): WorkspaceBackendResolution {
 	try {
-		// `collectCoverage` is intentionally omitted: workspace coverage is
-		// per-package (driven by each package's manifest), so there is no
-		// workspace-level flag to surface the "Coverage enabled" subtitle.
-		emitRunHeader({
-			color: runOptions.color,
-			formatters: runOptions.formatters,
-			rootDir: workspaceRoot,
-			silent: runOptions.silent,
-			verbose: cli.verbose,
-			version: VERSION,
-		});
-		const onStreamingResult = resolveStreamingProgressSink(runOptions, cli);
-		output = await runWorkspace({
-			...(backend !== undefined ? { backend } : {}),
-			cli,
-			...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
-			packageInfos,
-			runOptions,
-			timing,
-			version: VERSION,
-			workspaceRoot,
-			...(workStealingCredentials !== undefined ? { workStealingCredentials } : {}),
-		});
-	} finally {
-		await backend?.close?.();
+		const credentials = buildWorkspaceCredentials(cli, runOptions);
+		const backend = createOpenCloudBackend(credentials);
+		const baseUrl = resolveOpenCloudBaseUrl();
+		return {
+			backend,
+			workStealingCredentials: {
+				apiKey: credentials.apiKey,
+				...(baseUrl !== undefined ? { baseUrl } : {}),
+				universeId: credentials.universeId,
+			},
+		};
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return { error: { exitCode: 2, message: `Error: ${message}\n` } };
 	}
-
-	if (output === undefined) {
-		return { ...EMPTY_RESULT, validationExitCode: 2 };
-	}
-
-	return buildWorkspaceResult(output, runOptions);
 }
 
 // Resolves the backend for a workspace run, plus work-stealing credentials when
@@ -206,22 +247,7 @@ function resolveWorkspaceBackend(
 		return { backend: createStudioBackend({ port: runOptions.port }) };
 	}
 
-	try {
-		const credentials = buildWorkspaceCredentials(cli, runOptions);
-		const backend = createOpenCloudBackend(credentials);
-		const baseUrl = resolveOpenCloudBaseUrl();
-		return {
-			backend,
-			workStealingCredentials: {
-				apiKey: credentials.apiKey,
-				...(baseUrl !== undefined ? { baseUrl } : {}),
-				universeId: credentials.universeId,
-			},
-		};
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		return { error: { exitCode: 2, message: `Error: ${message}\n` } };
-	}
+	return resolveOpenCloudBackendFor(cli, runOptions);
 }
 
 function normalizeEmptyCoverage(mapped: MappedCoverageResult): MappedCoverageResult | undefined {
@@ -238,13 +264,6 @@ function aggregatePerPackageCoverage(runtimeResults: Array<WorkspaceProjectResul
 	// must additively merge those maps per pkg (not drop them) before passing
 	// one entry per pkg into the mapper — otherwise multi-project packages
 	// silently lose coverage from all but the first project.
-	interface PackageEntry {
-		coverageData: RawCoverageData | undefined;
-		ignorePatterns: Array<string> | undefined;
-		manifest: NonNullable<WorkspaceProjectResult["coverageManifest"]>;
-		pkg: string;
-	}
-
 	const byPackage = new Map<string, PackageEntry>();
 	const thresholdByPackage = new Map<string, ResolvedConfig["coverageThreshold"]>();
 
@@ -307,8 +326,8 @@ function resolveWorkspaceCoverage(
 // Surface the consensus-resolved aggregate sink paths the runner wrote so
 // formatters point "View …" hints at files that actually exist.
 function resolvedSinkPaths(runOptions: WorkspaceRunOptions): {
-	gameOutput?: string;
-	outputFile?: string;
+	gameOutput?: string | undefined;
+	outputFile?: string | undefined;
 } {
 	return {
 		...(runOptions.gameOutput !== undefined ? { gameOutput: runOptions.gameOutput } : {}),
@@ -316,23 +335,21 @@ function resolvedSinkPaths(runOptions: WorkspaceRunOptions): {
 	};
 }
 
-function composeWorkspaceDisplayName(package_: string, project: string): string {
-	return package_ === project ? package_ : `${package_} › ${project}`;
+function composeWorkspaceDisplayName(packageName: string, project: string): string {
+	return packageName === project ? packageName : `${packageName} › ${project}`;
 }
 
 // Builds the final `WorkspaceRunResult` from the runner's output: the runtime
 // project results plus (when present) the merged Type Test result.
 function buildWorkspaceResult(
-	output: WorkspaceRunnerOutput,
+	{ results, typecheckResult }: WorkspaceRunnerOutput,
 	runOptions: WorkspaceRunOptions,
 ): WorkspaceRunResult {
-	const { results, typecheckResult } = output;
-
 	// A run with neither runtime results nor a Type Test result tested nothing
 	// (no pending specs, typecheck off). `--typecheckOnly` lands here with zero
 	// runtime results but a populated `typecheckResult`, so it must not collapse
 	// to EMPTY_RESULT.
-	if (results.length === 0 && typecheckResult === undefined) {
+	if (typecheckResult === undefined && results.length === 0) {
 		return EMPTY_RESULT;
 	}
 
@@ -354,11 +371,79 @@ function buildWorkspaceResult(
 	};
 }
 
+/**
+ * Build a streaming progress sink when the human formatter is active. Returns
+ * undefined for JSON/agent/silent runs — those formatters buffer a single
+ * final envelope so live per-package stdout writes would
+ * either break the structured output or be silenced anyway.
+ */
+function resolveStreamingProgressSink(
+	runOptions: WorkspaceRunOptions,
+	cli: CliOptions,
+): StreamingAggregatorOnEntry | undefined {
+	if (
+		!isDefaultHumanFormatter({
+			formatters: runOptions.formatters,
+			silent: runOptions.silent,
+			verbose: cli.verbose,
+		})
+	) {
+		return undefined;
+	}
+
+	return (entry) => {
+		const line = formatStreamingProgressLine(entry, { color: runOptions.color });
+		process.stdout.write(`${line}\n`);
+	};
+}
+
+// Resolve the backend, emit the run header, and drive the workspace runner,
+// always closing the backend afterwards.
+async function executeWorkspaceRun({
+	cli,
+	packageInfos,
+	runOptions,
+	timing,
+	workspaceRoot,
+}: ExecuteWorkspaceRunOptions): Promise<WorkspaceRunResult> {
+	const resolution = resolveWorkspaceBackend(cli, runOptions);
+	if (resolution.error !== undefined) {
+		return bail(resolution.error.exitCode, resolution.error.message);
+	}
+
+	const { backend, workStealingCredentials } = resolution;
+
+	let output;
+	try {
+		emitWorkspaceRunHeader(cli, runOptions, workspaceRoot);
+		const onStreamingResult = resolveStreamingProgressSink(runOptions, cli);
+		output = await runWorkspace({
+			...(backend !== undefined ? { backend } : {}),
+			cli,
+			...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
+			packageInfos,
+			runOptions,
+			timing,
+			version: VERSION,
+			workspaceRoot,
+			...(workStealingCredentials !== undefined ? { workStealingCredentials } : {}),
+		});
+	} finally {
+		await backend?.close?.();
+	}
+
+	if (output === undefined) {
+		return bail(2);
+	}
+
+	return buildWorkspaceResult(output, runOptions);
+}
+
 // `workspace.packages` (declared in a shared config, anchored absolute root)
 // enumerates packages by globbing for jest configs — no package-manager
 // workspace file required. Falls back to discovering a pnpm/turbo/nx root.
 function resolveEnumerationRoot(workspace?: WorkspaceConfig): {
-	patterns?: Array<string>;
+	patterns?: Array<string> | undefined;
 	workspaceRoot: string;
 } {
 	if (workspace?.packages !== undefined) {
@@ -386,30 +471,4 @@ function resolvePackages(cli: CliOptions, workspace?: WorkspaceConfig): Resolved
 	} catch (err) {
 		return { error: { exitCode: 2, message: `Error: ${String(err)}\n` } };
 	}
-}
-
-/**
- * Build a streaming progress sink when the human formatter is active. Returns
- * undefined for JSON/agent/silent runs — those formatters buffer a single
- * final envelope so live per-package stdout writes would
- * either break the structured output or be silenced anyway.
- */
-function resolveStreamingProgressSink(
-	runOptions: WorkspaceRunOptions,
-	cli: CliOptions,
-): StreamingAggregatorOnEntry | undefined {
-	if (
-		!isDefaultHumanFormatter({
-			formatters: runOptions.formatters,
-			silent: runOptions.silent,
-			verbose: cli.verbose,
-		})
-	) {
-		return undefined;
-	}
-
-	return (entry) => {
-		const line = formatStreamingProgressLine(entry, { color: runOptions.color });
-		process.stdout.write(`${line}\n`);
-	};
 }

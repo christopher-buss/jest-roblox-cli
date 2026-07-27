@@ -13,6 +13,7 @@ export function isStringRecord(value: unknown): value is Record<string, string> 
 		return false;
 	}
 
-	const record = value as Record<string, unknown>;
-	return Object.getOwnPropertyNames(record).every((key) => typeof record[key] === "string");
+	return Object.getOwnPropertyNames(value).every(
+		(key) => typeof Reflect.get(value, key) === "string",
+	);
 }

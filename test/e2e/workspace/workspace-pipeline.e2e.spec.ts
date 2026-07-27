@@ -36,7 +36,7 @@ const LIVE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place");
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 const RUN_TIMEOUT_MS = 120_000;
 
-const isLive = process.env["JEST_ROBLOX_LIVE"] === "1";
+const IS_LIVE = process.env["JEST_ROBLOX_LIVE"] === "1";
 
 function rojoOnPath(): boolean {
 	try {
@@ -48,7 +48,7 @@ function rojoOnPath(): boolean {
 }
 
 describe("live workspace pipeline", () => {
-	it.runIf(isLive)(
+	it.runIf(IS_LIVE)(
 		"should merge results from both mounts end-to-end against live Open Cloud",
 		async () => {
 			expect.assertions(7);
@@ -94,7 +94,7 @@ describe("live workspace pipeline", () => {
 	// Note: after editing fixture sources, run `rm -rf
 	// tools/jest-roblox-cli/test/e2e/fixtures/live-place/out` once so
 	// global-setup's sentinel cache re-compiles the spec with the marker.
-	it.runIf(isLive)(
+	it.runIf(IS_LIVE)(
 		"should aggregate native warn() from a spec into --gameOutput across both mounts",
 		async () => {
 			expect.assertions(4);
@@ -180,7 +180,7 @@ describe("workspace --parallel work-stealing", () => {
 			expect(server.requests).toHaveLength(2);
 
 			const queueIds = server.requests.map(
-				(request) => /"queueId":"([^"]+)"/.exec(request.script)?.[1] ?? "",
+				(request) => /"queueId":"([^"]+)"/.exec(request.script)![1]!,
 			);
 
 			const uniqueQueueIds = new Set(queueIds);

@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import * as sourceMapperModule from "../source-mapper/index.ts";
 import type { SourceMapper, SourceSnippet } from "../source-mapper/index.ts";
@@ -654,8 +654,8 @@ describe(parseSourceLocation, () => {
 
 		const result = parseSourceLocation("path/test.luau:25");
 
-		expect(result?.path).toBe("path/test.luau");
-		expect(result?.line).toBe(25);
+		expect(result!.path).toBe("path/test.luau");
+		expect(result!.line).toBe(25);
 	});
 
 	it("should parse .lua file location with column", () => {
@@ -663,9 +663,9 @@ describe(parseSourceLocation, () => {
 
 		const result = parseSourceLocation("path/test.lua:10:5");
 
-		expect(result?.path).toBe("path/test.lua");
-		expect(result?.line).toBe(10);
-		expect(result?.column).toBe(5);
+		expect(result!.path).toBe("path/test.lua");
+		expect(result!.line).toBe(10);
+		expect(result!.column).toBe(5);
 	});
 });
 
@@ -684,15 +684,14 @@ describe(formatFailedTestsHeader, () => {
 
 		const original = process.stdout.columns;
 		process.stdout.columns = 40;
-
-		try {
-			const header = formatFailedTestsHeader(1, undefined);
-			const stripped = stripVTControlCharacters(header);
-
-			expect(stripped).toHaveLength(40);
-		} finally {
+		onTestFinished(() => {
 			process.stdout.columns = original;
-		}
+		});
+
+		const header = formatFailedTestsHeader(1, undefined);
+		const stripped = stripVTControlCharacters(header);
+
+		expect(stripped).toHaveLength(40);
 	});
 
 	it("should fill terminal width with odd-length badge", () => {
@@ -700,31 +699,29 @@ describe(formatFailedTestsHeader, () => {
 
 		const original = process.stdout.columns;
 		process.stdout.columns = 41;
-
-		try {
-			const header = formatFailedTestsHeader(10, undefined);
-			const stripped = stripVTControlCharacters(header);
-
-			expect(stripped).toHaveLength(41);
-		} finally {
+		onTestFinished(() => {
 			process.stdout.columns = original;
-		}
+		});
+
+		const header = formatFailedTestsHeader(10, undefined);
+		const stripped = stripVTControlCharacters(header);
+
+		expect(stripped).toHaveLength(41);
 	});
 
 	it("should fall back to 80 columns when stdout has no columns", () => {
 		expect.assertions(1);
 
 		const original = process.stdout.columns;
-		delete (process.stdout as unknown as Record<string, unknown>)["columns"];
-
-		try {
-			const header = formatFailedTestsHeader(1, undefined);
-			const stripped = stripVTControlCharacters(header);
-
-			expect(stripped).toHaveLength(80);
-		} finally {
+		Reflect.deleteProperty(process.stdout, "columns");
+		onTestFinished(() => {
 			process.stdout.columns = original;
-		}
+		});
+
+		const header = formatFailedTestsHeader(1, undefined);
+		const stripped = stripVTControlCharacters(header);
+
+		expect(stripped).toHaveLength(80);
 	});
 });
 
@@ -846,7 +843,6 @@ describe(formatFailure, () => {
 		sourceContent[28] = "expect(player).toMatchSnapshot();";
 
 		const sourceMapper = fromPartial<SourceMapper>({
-			mapFailureMessage: (message: string) => message,
 			mapFailureWithLocations: () => {
 				return {
 					locations: [
@@ -899,46 +895,45 @@ describe(formatFailure, () => {
 
 		expect(formatted).toContain("❯ src/traits.spec.ts:29:16");
 		expect(formatted).toContain("- Snapshot  - 1");
-		expect(formatted.match(/src\/traits\.spec\.ts:29/g)?.length).toBe(1);
+		expect(formatted.match(/src\/traits\.spec\.ts:29/g)!).toHaveLength(1);
 	});
 
 	it("should show Luau snippet for Luau-only mapped location", () => {
 		expect.assertions(3);
 
 		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "fmt-test-"));
+		onTestFinished(() => {
+			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+		});
 		const luauFile = path.join(temporaryDirectory, "test.spec.luau");
 		fs.writeFileSync(luauFile, "line1\nline2\nline3\nline4\nexpect(x).toBe(1)\nline6");
 
-		try {
-			const luauOnlyResult = {
-				locations: [{ luauLine: 5, luauPath: luauFile }],
-				message: `${luauFile}:5`,
-			};
-			const sourceMapper = fromPartial<SourceMapper>({
-				mapFailureWithLocations: () => luauOnlyResult,
-			});
+		const luauOnlyResult = {
+			locations: [{ luauLine: 5, luauPath: luauFile }],
+			message: `${luauFile}:5`,
+		};
+		const sourceMapper = fromPartial<SourceMapper>({
+			mapFailureWithLocations: () => luauOnlyResult,
+		});
 
-			const test: TestCaseResult = {
-				ancestorTitles: ["Suite"],
-				duration: 10,
-				failureMessages: ["Expected: 1\nReceived: 2"],
-				fullName: "Suite should work",
-				status: "failed",
-				title: "should work",
-			};
+		const test: TestCaseResult = {
+			ancestorTitles: ["Suite"],
+			duration: 10,
+			failureMessages: ["Expected: 1\nReceived: 2"],
+			fullName: "Suite should work",
+			status: "failed",
+			title: "should work",
+		};
 
-			const formatted = formatFailure({
-				sourceMapper,
-				test,
-				useColor: false,
-			});
+		const formatted = formatFailure({
+			sourceMapper,
+			test,
+			useColor: false,
+		});
 
-			expect(formatted).toContain(`❯ ${luauFile}:5`);
-			expect(formatted).not.toContain("(TypeScript)");
-			expect(formatted).not.toContain("(Luau)");
-		} finally {
-			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-		}
+		expect(formatted).toContain(`❯ ${luauFile}:5`);
+		expect(formatted).not.toContain("(TypeScript)");
+		expect(formatted).not.toContain("(Luau)");
 	});
 
 	it("should format multiple failure messages", () => {
@@ -2316,6 +2311,9 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 	function writeTemporary(content: string): string {
 		const filePath = path.join(os.tmpdir(), `formatter-test-${Date.now()}.ts`);
 		fs.writeFileSync(filePath, content, "utf-8");
+		onTestFinished(() => {
+			fs.unlinkSync(filePath);
+		});
 		return filePath;
 	}
 
@@ -2348,27 +2346,23 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 			].join("\n"),
 		);
 
-		try {
-			const test: TestCaseResult = {
-				ancestorTitles: [],
-				duration: 1,
-				failureMessages: [makeSnapshotMessage()],
-				fullName: "test",
-				status: "failed",
-				title: "test",
-			};
+		const test: TestCaseResult = {
+			ancestorTitles: [],
+			duration: 1,
+			failureMessages: [makeSnapshotMessage()],
+			fullName: "test",
+			status: "failed",
+			title: "test",
+		};
 
-			const formatted = formatFailure({
-				filePath,
-				test,
-				useColor: false,
-			});
+		const formatted = formatFailure({
+			filePath,
+			test,
+			useColor: false,
+		});
 
-			expect(formatted).toContain(`❯ ${filePath}:5`);
-			expect(formatted).toContain("toMatchSnapshot");
-		} finally {
-			fs.unlinkSync(filePath);
-		}
+		expect(formatted).toContain(`❯ ${filePath}:5`);
+		expect(formatted).toContain("toMatchSnapshot");
 	});
 
 	it("should not show snippet when file has multiple toMatchSnapshot calls", () => {
@@ -2378,27 +2372,23 @@ describe("formatSnapshotCallSnippet via formatFailure", () => {
 			["expect(a).toMatchSnapshot();", "expect(b).toMatchSnapshot();"].join("\n"),
 		);
 
-		try {
-			const test: TestCaseResult = {
-				ancestorTitles: [],
-				duration: 1,
-				failureMessages: [makeSnapshotMessage()],
-				fullName: "test",
-				status: "failed",
-				title: "test",
-			};
+		const test: TestCaseResult = {
+			ancestorTitles: [],
+			duration: 1,
+			failureMessages: [makeSnapshotMessage()],
+			fullName: "test",
+			status: "failed",
+			title: "test",
+		};
 
-			const formatted = formatFailure({
-				filePath,
-				test,
-				useColor: false,
-			});
+		const formatted = formatFailure({
+			filePath,
+			test,
+			useColor: false,
+		});
 
-			// Multiple toMatchSnapshot calls — no snippet shown
-			expect(formatted).not.toContain("❯");
-		} finally {
-			fs.unlinkSync(filePath);
-		}
+		// Multiple toMatchSnapshot calls — no snippet shown
+		expect(formatted).not.toContain("❯");
 	});
 });
 
@@ -2409,52 +2399,51 @@ describe("showLuau mapped location snippets", () => {
 		const luauContent = Array.from({ length: 15 }, (_, index) => `-- line ${index + 1}`);
 		luauContent[9] = "expect(value).toBe(42)";
 		const luauFile = path.join(os.tmpdir(), `formatter-test-${Date.now()}.luau`);
+		onTestFinished(() => {
+			fs.unlinkSync(luauFile);
+		});
 		fs.writeFileSync(luauFile, luauContent.join("\n"), "utf-8");
 
-		try {
-			const sourceContent = Array.from({ length: 10 }, (_, index) => `line ${index + 1}`);
-			sourceContent[4] = "expect(value).toBe(42);";
+		const sourceContent = Array.from({ length: 10 }, (_, index) => `line ${index + 1}`);
+		sourceContent[4] = "expect(value).toBe(42);";
 
-			const sourceMapper = fromPartial<SourceMapper>({
-				mapFailureWithLocations: () => {
-					return {
-						locations: [
-							{
-								luauLine: 10,
-								luauPath: luauFile,
-								sourceContent: sourceContent.join("\n"),
-								tsColumn: 15,
-								tsLine: 5,
-								tsPath: "src/test.ts",
-							},
-						],
-						message: "Expected: 42\nReceived: 0\n\nsrc/test.ts:5",
-					};
-				},
-			});
+		const sourceMapper = fromPartial<SourceMapper>({
+			mapFailureWithLocations: () => {
+				return {
+					locations: [
+						{
+							luauLine: 10,
+							luauPath: luauFile,
+							sourceContent: sourceContent.join("\n"),
+							tsColumn: 15,
+							tsLine: 5,
+							tsPath: "src/test.ts",
+						},
+					],
+					message: "Expected: 42\nReceived: 0\n\nsrc/test.ts:5",
+				};
+			},
+		});
 
-			const test: TestCaseResult = {
-				ancestorTitles: [],
-				duration: 1,
-				failureMessages: ["Expected: 42\nReceived: 0"],
-				fullName: "test",
-				status: "failed",
-				title: "test",
-			};
+		const test: TestCaseResult = {
+			ancestorTitles: [],
+			duration: 1,
+			failureMessages: ["Expected: 42\nReceived: 0"],
+			fullName: "test",
+			status: "failed",
+			title: "test",
+		};
 
-			const formatted = formatFailure({
-				showLuau: true,
-				sourceMapper,
-				test,
-				useColor: false,
-			});
+		const formatted = formatFailure({
+			showLuau: true,
+			sourceMapper,
+			test,
+			useColor: false,
+		});
 
-			expect(formatted).toContain("(TypeScript)");
-			expect(formatted).toContain("(Luau)");
-			expect(formatted).toContain("❯ src/test.ts:5:15");
-		} finally {
-			fs.unlinkSync(luauFile);
-		}
+		expect(formatted).toContain("(TypeScript)");
+		expect(formatted).toContain("(Luau)");
+		expect(formatted).toContain("❯ src/test.ts:5:15");
 	});
 });
 
@@ -2472,25 +2461,24 @@ describe("formatFallbackSnippet via formatFailure", () => {
 			"});",
 		].join("\n");
 		const temporaryFile = path.join("src", "formatters", `__tmp-fallback-${Date.now()}.ts`);
+		onTestFinished(() => {
+			fs.unlinkSync(temporaryFile);
+		});
 		fs.writeFileSync(temporaryFile, fileContent, "utf-8");
 
-		try {
-			const test: TestCaseResult = {
-				ancestorTitles: [],
-				duration: 1,
-				failureMessages: [`LoadModule error: ${temporaryFile}:5:10`],
-				fullName: "test",
-				status: "failed",
-				title: "test",
-			};
+		const test: TestCaseResult = {
+			ancestorTitles: [],
+			duration: 1,
+			failureMessages: [`LoadModule error: ${temporaryFile}:5:10`],
+			fullName: "test",
+			status: "failed",
+			title: "test",
+		};
 
-			const formatted = formatFailure({ test, useColor: false });
+		const formatted = formatFailure({ test, useColor: false });
 
-			expect(formatted).toContain(`❯ ${temporaryFile}:5:10`);
-			expect(formatted).toContain("expect(1 + 1).toBe(3)");
-		} finally {
-			fs.unlinkSync(temporaryFile);
-		}
+		expect(formatted).toContain(`❯ ${temporaryFile}:5:10`);
+		expect(formatted).toContain("expect(1 + 1).toBe(3)");
 	});
 });
 
@@ -2794,36 +2782,35 @@ describe("formatSnapshotCallSnippet getSourceSnippet guard via formatFailure", (
 		fs.writeFileSync(filePath, "expect(x).toMatchSnapshot();", "utf-8");
 
 		const spy = vi.spyOn(sourceMapperModule, "getSourceSnippet").mockReturnValue(undefined);
-
-		try {
-			const test: TestCaseResult = {
-				ancestorTitles: [],
-				duration: 1,
-				failureMessages: [
-					[
-						"expect(received).toMatchSnapshot()",
-						"",
-						"- Snapshot  - 1",
-						"+ Received  + 1",
-						"",
-						'-   "a": 1,',
-						'+   "a": 2,',
-						"",
-						'[string "RS.test"]:10',
-					].join("\n"),
-				],
-				fullName: "test",
-				status: "failed",
-				title: "test",
-			};
-
-			const formatted = formatFailure({ filePath, test, useColor: false });
-
-			expect(formatted).not.toContain("❯");
-		} finally {
+		onTestFinished(() => {
 			spy.mockRestore();
 			fs.unlinkSync(filePath);
-		}
+		});
+
+		const test: TestCaseResult = {
+			ancestorTitles: [],
+			duration: 1,
+			failureMessages: [
+				[
+					"expect(received).toMatchSnapshot()",
+					"",
+					"- Snapshot  - 1",
+					"+ Received  + 1",
+					"",
+					'-   "a": 1,',
+					'+   "a": 2,',
+					"",
+					'[string "RS.test"]:10',
+				].join("\n"),
+			],
+			fullName: "test",
+			status: "failed",
+			title: "test",
+		};
+
+		const formatted = formatFailure({ filePath, test, useColor: false });
+
+		expect(formatted).not.toContain("❯");
 	});
 });
 
@@ -2917,8 +2904,9 @@ describe("formatResult testFilePath resolution", () => {
 				color: false,
 				sourceMapper: fromPartial({
 					mapFailureWithLocations: (message: string) => ({ locations: [], message }),
-					resolveDisplayPath: (testFilePath: string) =>
-						testFilePath.replace("init.spec", "index.spec"),
+					resolveDisplayPath: (testFilePath: string) => {
+						return testFilePath.replace("init.spec", "index.spec");
+					},
 					resolveTestFilePath: () => {},
 				}),
 			}),
@@ -3613,26 +3601,24 @@ describe(formatProjectBadge, () => {
 	});
 
 	it("should apply all named displayColors", () => {
-		expect.assertions(7);
+		expect.assertions(1);
 
 		const colors = ["blue", "cyan", "green", "magenta", "red", "white", "yellow"];
 
-		for (const colorName of colors) {
-			const output = formatProjectBadge("x", true, colorName);
+		const badges = colors.map((colorName) => formatProjectBadge("x", true, colorName));
 
-			expect(output).not.toBe("▶ x");
-		}
+		expect(badges).not.toContain("▶ x");
 	});
 
 	it("should use all hash-based badge colors", () => {
-		expect.assertions(4);
+		expect.assertions(1);
 
 		// d→0 (bgYellow), a→1 (bgCyan), b→2 (bgGreen), c→3 (bgMagenta)
-		for (const name of ["d", "a", "b", "c"]) {
-			const output = formatProjectBadge(name, true);
+		const names = ["d", "a", "b", "c"];
 
-			expect(output).not.toBe(`▶ ${name}`);
-		}
+		const badges = names.map((name) => formatProjectBadge(name, true));
+
+		expect(badges).not.toIncludeAnyMembers(names.map((name) => `▶ ${name}`));
 	});
 
 	it("should honor caller-supplied slowTestThreshold for duration coloring", () => {

@@ -55,11 +55,11 @@ describe("coverage instrumentation", () => {
 			});
 
 			const records = Object.values(files);
-			const allHaveCoverageMaps = records.every((record) =>
-				existsSync(record.coverageMapPath),
-			);
+			const hasEveryCoverageMap = records.every((record) => {
+				return existsSync(record.coverageMapPath);
+			});
 
-			expect(allHaveCoverageMaps).toBeTrue();
+			expect(hasEveryCoverageMap).toBeTrue();
 		});
 	});
 
@@ -97,11 +97,11 @@ describe("coverage instrumentation", () => {
 			});
 
 			const records = Object.values(files);
-			const allHaveSourceMapPaths = records.every((record) =>
-				record.sourceMapPath.endsWith(".map"),
-			);
+			const hasEverySourceMapPath = records.every((record) => {
+				return record.sourceMapPath.endsWith(".map");
+			});
 
-			expect(allHaveSourceMapPaths).toBeTrue();
+			expect(hasEverySourceMapPath).toBeTrue();
 		});
 	});
 });

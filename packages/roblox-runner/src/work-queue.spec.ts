@@ -1,4 +1,5 @@
 import { createFakeHttpClient, type FakeHttpClient } from "@bedrock-rbx/ocale/testing";
+import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it } from "vitest";
 
@@ -15,7 +16,7 @@ function makeQueue(
 ): WorkQueue<Job> {
 	return new WorkQueue<Job>({
 		apiKey: "test-key",
-		decode: overrides.decode ?? ((value) => value as Job),
+		decode: overrides.decode ?? ((value) => fromAny(value)),
 		encode: overrides.encode ?? ((job) => job),
 		httpClient,
 		queueId: "test-queue",
@@ -48,7 +49,7 @@ describe(WorkQueue, () => {
 			});
 
 			const queue = makeQueue(http);
-			await queue.enqueue([
+			await queue.enqueueAsync([
 				{ name: "a", priority: 1 },
 				{ name: "b", priority: 2 },
 			]);
@@ -68,11 +69,11 @@ describe(WorkQueue, () => {
 			const queue = makeQueue(http, {
 				encode: (job) => ({ packed: `job:${job.name}` }),
 			});
-			await queue.enqueue([{ name: "a", priority: 0 }]);
+			await queue.enqueueAsync([{ name: "a", priority: 0 }]);
 
-			const sentBody = http.requests[0]!.request.body as Record<string, unknown>;
-
-			expect(sentBody["data"]).toStrictEqual({ packed: "job:a" });
+			expect(http.requests[0]!.request.body).toStrictEqual({
+				data: { packed: "job:a" },
+			});
 		});
 
 		it("should encode ttlMs as seconds via 'Ns' duration string", async () => {
@@ -85,11 +86,9 @@ describe(WorkQueue, () => {
 			});
 
 			const queue = makeQueue(http);
-			await queue.enqueue([{ name: "a", priority: 0 }], { ttlMs: 30_000 });
+			await queue.enqueueAsync([{ name: "a", priority: 0 }], { ttlMs: 30_000 });
 
-			const sentBody = http.requests[0]!.request.body as Record<string, unknown>;
-
-			expect(sentBody["ttl"]).toBe("30s");
+			expect(http.requests[0]!.request.body).toHaveProperty("ttl", "30s");
 		});
 
 		it("should round sub-second ttlMs up to 1 second", async () => {
@@ -102,11 +101,9 @@ describe(WorkQueue, () => {
 			});
 
 			const queue = makeQueue(http);
-			await queue.enqueue([{ name: "a", priority: 0 }], { ttlMs: 500 });
+			await queue.enqueueAsync([{ name: "a", priority: 0 }], { ttlMs: 500 });
 
-			const sentBody = http.requests[0]!.request.body as Record<string, unknown>;
-
-			expect(sentBody["ttl"]).toBe("1s");
+			expect(http.requests[0]!.request.body).toHaveProperty("ttl", "1s");
 		});
 
 		it("should omit ttl when ttlMs not provided", async () => {
@@ -119,11 +116,9 @@ describe(WorkQueue, () => {
 			});
 
 			const queue = makeQueue(http);
-			await queue.enqueue([{ name: "a", priority: 0 }]);
+			await queue.enqueueAsync([{ name: "a", priority: 0 }]);
 
-			const sentBody = http.requests[0]!.request.body as Record<string, unknown>;
-
-			expect(sentBody).not.toHaveProperty("ttl");
+			expect(http.requests[0]!.request.body).not.toHaveProperty("ttl");
 		});
 
 		it("should throw when encode returns null", async () => {
@@ -132,7 +127,7 @@ describe(WorkQueue, () => {
 			const http = createFakeHttpClient();
 			const queue = makeQueue(http, { encode: () => null });
 
-			await expect(queue.enqueue([{ name: "a", priority: 0 }])).rejects.toThrow(
+			await expect(queue.enqueueAsync([{ name: "a", priority: 0 }])).rejects.toThrow(
 				/null\/undefined/,
 			);
 		});
@@ -145,7 +140,7 @@ describe(WorkQueue, () => {
 			// ({})`.
 			const queue = makeQueue(http, { encode: () => {} });
 
-			await expect(queue.enqueue([{ name: "a", priority: 0 }])).rejects.toThrow(
+			await expect(queue.enqueueAsync([{ name: "a", priority: 0 }])).rejects.toThrow(
 				/null\/undefined/,
 			);
 		});
@@ -158,7 +153,7 @@ describe(WorkQueue, () => {
 
 			const queue = makeQueue(http);
 
-			await expect(queue.enqueue([{ name: "a", priority: 0 }])).rejects.toThrow(
+			await expect(queue.enqueueAsync([{ name: "a", priority: 0 }])).rejects.toThrow(
 				/Server unavailable/,
 			);
 		});
@@ -181,7 +176,7 @@ describe(WorkQueue, () => {
 			});
 
 			const queue = makeQueue(http);
-			const batch = await queue.claim(2, 30_000);
+			const batch = await queue.claimAsync(2, 30_000);
 
 			expect(batch.items).toStrictEqual([
 				{ name: "a", priority: 1 },
@@ -206,7 +201,7 @@ describe(WorkQueue, () => {
 			const queue = makeQueue(http, {
 				decode: (value) => ({ name: String(value).replace("job:", ""), priority: 7 }),
 			});
-			const batch = await queue.claim(1, 30_000);
+			const batch = await queue.claimAsync(1, 30_000);
 
 			expect(batch.items).toStrictEqual([{ name: "a", priority: 7 }]);
 		});
@@ -225,7 +220,7 @@ describe(WorkQueue, () => {
 			http.mockResponse({ body: {}, status: 200 });
 
 			const queue = makeQueue(http);
-			const batch = await queue.claim(1, 30_000);
+			const batch = await queue.claimAsync(1, 30_000);
 			await batch.commit();
 
 			const discardRequest = http.requests[1]!.request;
@@ -244,7 +239,7 @@ describe(WorkQueue, () => {
 			});
 
 			const queue = makeQueue(http);
-			await queue.claim(1, 250);
+			await queue.claimAsync(1, 250);
 
 			const captured = http.requests[0]!.request;
 
@@ -259,7 +254,7 @@ describe(WorkQueue, () => {
 
 			const queue = makeQueue(http);
 
-			await expect(queue.claim(1, 30_000)).rejects.toThrow(/Forbidden/);
+			await expect(queue.claimAsync(1, 30_000)).rejects.toThrow(/Forbidden/);
 		});
 
 		it("should throw when commit (discard) returns API error", async () => {
@@ -276,7 +271,7 @@ describe(WorkQueue, () => {
 			http.mockApiError({ message: "Conflict", statusCode: 409 });
 
 			const queue = makeQueue(http);
-			const batch = await queue.claim(1, 30_000);
+			const batch = await queue.claimAsync(1, 30_000);
 
 			await expect(batch.commit()).rejects.toThrow(/Conflict/);
 		});
@@ -288,7 +283,7 @@ describe(WorkQueue, () => {
 
 			const queue = new WorkQueue<Job>({
 				apiKey: "test-key",
-				decode: (value) => value as Job,
+				decode: (value) => fromAny(value),
 				encode: (job) => job,
 				queueId: "test-queue",
 				universeId: "123",
@@ -300,14 +295,14 @@ describe(WorkQueue, () => {
 		it("should accept an injected sleep function", () => {
 			expect.assertions(1);
 
-			async function sleep(): Promise<void> {}
+			async function sleepAsync(): Promise<void> {}
 
 			const queue = new WorkQueue<Job>({
 				apiKey: "test-key",
-				decode: (value) => value as Job,
+				decode: (value) => fromAny(value),
 				encode: (job) => job,
 				queueId: "test-queue",
-				sleep,
+				sleep: sleepAsync,
 				universeId: "123",
 			});
 
@@ -326,13 +321,13 @@ describe(WorkQueue, () => {
 			const queue = new WorkQueue<Job>({
 				apiKey: "test-key",
 				baseUrl: "http://127.0.0.1:4010",
-				decode: (value) => value as Job,
+				decode: (value) => fromAny(value),
 				encode: (job) => job,
 				httpClient: http,
 				queueId: "test-queue",
 				universeId: "123",
 			});
-			await queue.enqueue([{ name: "a", priority: 1 }]);
+			await queue.enqueueAsync([{ name: "a", priority: 1 }]);
 
 			expect(http.requests[0]!.config.baseUrl).toBe("http://127.0.0.1:4010");
 		});

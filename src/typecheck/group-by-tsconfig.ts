@@ -9,33 +9,33 @@ import type { JestResult } from "../types/jest-result.ts";
 export interface TypecheckGroupEntry {
 	cwd: string;
 	files: Array<string>;
-	tsconfig?: string;
+	tsconfig?: string | undefined;
 }
 
 export type RunTypecheckGroup = (group: TypecheckGroupEntry) => Promise<JestResult>;
 
 /**
  * Outcome of one timed Type Test pass: the merged result (undefined when no
- * entry carried files) plus the wall-clock `elapsedMs` the caller records as the
- * `runTypecheck` span after the concurrency barrier.
+ * entry carried files) plus the wall-clock `elapsedMs` the caller records as
+ * the `runTypecheck` span after the concurrency barrier.
  */
 export interface TypecheckPassOutcome {
 	elapsedMs: number;
-	result?: JestResult;
+	result?: JestResult | undefined;
 }
 
 interface GroupAccumulator {
 	cwd: string;
 	files: Set<string>;
-	tsconfig?: string;
+	tsconfig?: string | undefined;
 }
 
 /**
  * Groups Type Test entries by their effective `(tsconfig, cwd)` and runs one
- * tsgo pass per distinct group via `run`, then merges the per-group results into
- * one. Projects sharing a `(tsconfig, cwd)` collapse to a single pass; projects
- * with distinct tsconfigs are each checked against their own. Groups run
- * concurrently. Returns undefined when no entry carries any files.
+ * tsgo pass per distinct group via `run`, then merges the per-group results
+ * into one. Projects sharing a `(tsconfig, cwd)` collapse to a single pass;
+ * projects with distinct tsconfigs are each checked against their own. Groups
+ * run concurrently. Returns undefined when no entry carries any files.
  */
 export async function groupTypecheckByTsconfig(
 	entries: ReadonlyArray<TypecheckGroupEntry>,
@@ -49,6 +49,41 @@ export async function groupTypecheckByTsconfig(
 		});
 	}
 
+	const [firstGroup, ...otherGroups] = collectGroups(entries);
+	if (firstGroup === undefined) {
+		return undefined;
+	}
+
+	const results = await Promise.all([toResult(firstGroup), ...otherGroups.map(toResult)]);
+	return mergeResults(results);
+}
+
+/**
+ * Times a Type Test pass over `entries` — grouping them by `(cwd, tsconfig)`
+ * and running each group via `run` — and returns the merged result with the
+ * elapsed wall-clock. Returns `elapsedMs: 0` and no result for an empty
+ * `entries`, so callers skip recording a zero span. Self-times with a plain
+ * clock rather than the timing collector (its LIFO stack is not
+ * concurrency-safe) because the pass runs concurrently with the Open Cloud
+ * dispatch. The mode-specific policy (run-wide vs per-package) and any
+ * per-group result post-processing live in the caller's `run` callback.
+ */
+export async function runTypecheckPassAsync(
+	entries: ReadonlyArray<TypecheckGroupEntry>,
+	run: RunTypecheckGroup,
+): Promise<TypecheckPassOutcome> {
+	if (entries.length === 0) {
+		return { elapsedMs: 0 };
+	}
+
+	const start = performance.now();
+	const result = await groupTypecheckByTsconfig(entries, run);
+	return { elapsedMs: performance.now() - start, result };
+}
+
+// Collapses entries sharing a `(cwd, tsconfig)` pair into one accumulator each,
+// in first-seen order. Entries carrying no files are dropped.
+function collectGroups(entries: ReadonlyArray<TypecheckGroupEntry>): Array<GroupAccumulator> {
 	const groups = new Map<string, GroupAccumulator>();
 	for (const entry of entries) {
 		if (entry.files.length === 0) {
@@ -74,36 +109,7 @@ export async function groupTypecheckByTsconfig(
 		}
 	}
 
-	const [firstGroup, ...otherGroups] = [...groups.values()];
-	if (firstGroup === undefined) {
-		return undefined;
-	}
-
-	const results = await Promise.all([toResult(firstGroup), ...otherGroups.map(toResult)]);
-	return mergeResults(results);
-}
-
-/**
- * Times a Type Test pass over `entries` — grouping them by `(cwd, tsconfig)` and
- * running each group via `run` — and returns the merged result with the elapsed
- * wall-clock. Returns `elapsedMs: 0` and no result for an empty `entries`, so
- * callers skip recording a zero span. Self-times with a plain clock rather than
- * the timing collector (its LIFO stack is not concurrency-safe) because the pass
- * runs concurrently with the Open Cloud dispatch. The mode-specific policy
- * (run-wide vs per-package) and any per-group result post-processing live in the
- * caller's `run` callback.
- */
-export async function runTypecheckPass(
-	entries: ReadonlyArray<TypecheckGroupEntry>,
-	run: RunTypecheckGroup,
-): Promise<TypecheckPassOutcome> {
-	if (entries.length === 0) {
-		return { elapsedMs: 0 };
-	}
-
-	const start = performance.now();
-	const result = await groupTypecheckByTsconfig(entries, run);
-	return { elapsedMs: performance.now() - start, result };
+	return [...groups.values()];
 }
 
 function mergeResults(results: [JestResult, ...Array<JestResult>]): JestResult {

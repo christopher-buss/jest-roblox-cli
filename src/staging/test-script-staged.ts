@@ -16,7 +16,10 @@ export interface ScriptOptions {
 interface StreamingOptions {
 	/** Per-run UUID-keyed SortedMap id for live per-package result publish. */
 	sortedMapId: string;
-	/** TTL applied to each SortedMap write. Defaults to the materializer's 600s. */
+	/**
+	 * TTL applied to each SortedMap write. Defaults to the materializer's
+	 * 600s.
+	 */
 	ttlSeconds?: number;
 }
 
@@ -55,8 +58,9 @@ export function generateMaterializerScript(
 /**
  * Generate the materializer script for work-stealing mode. The Roblox-side
  * runtime sees the `queueId` field and switches from sequential walk to
- * popping items off `MemoryStoreService:GetQueue(queueId, invisibilityWindowSeconds)`,
- * looking each one up in the embedded `entries` map.
+ * popping items off `MemoryStoreService:GetQueue(queueId,
+ * invisibilityWindowSeconds)`, looking each one up in the embedded `entries`
+ * map.
  *
  * When `options.streaming` is provided, each per-package result is also
  * published to `MemoryStoreService:GetSortedMap(sortedMapId):SetAsync(...)`

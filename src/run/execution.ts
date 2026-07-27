@@ -1,0 +1,204 @@
+import * as path from "node:path";
+
+import packageJson from "../../package.json" with { type: "json" };
+import { resolveBackend } from "../backends/auto.ts";
+import type { Backend } from "../backends/interface.ts";
+import type { ResolvedProjectConfig } from "../config/projects.ts";
+import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
+import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
+import type { ResolvedConfig } from "../config/schema.ts";
+import { resolvePlaceFilePath } from "../config/schema.ts";
+import { runProjects } from "../executor.ts";
+import { buildPlace } from "../staging/place-builder.ts";
+import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
+import { runTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
+import { runTypecheck } from "../typecheck/runner.ts";
+import { emitRunHeader } from "./run-header.ts";
+import type { StagedRun } from "./staging.ts";
+import { collectStubMounts } from "./staging.ts";
+import type { PendingJob, RunDiscovery, TestPlan } from "./test-plan.ts";
+import type { ProjectResult, RunOptions } from "./types.ts";
+
+const DEFAULT_ROJO_PROJECT = "default.project.json";
+const VERSION: string = packageJson.version;
+
+export interface ExecutionInput {
+	cli: RunOptions["cli"];
+	discovery: RunDiscovery;
+	plan: TestPlan;
+	staged: StagedRun;
+}
+
+export interface ExecutionOutcome {
+	projectResults: Array<ProjectResult>;
+	typecheck: TypecheckPassOutcome;
+}
+
+type ParallelOption = "auto" | number | undefined;
+
+/**
+ * One tsgo pass per distinct `(tsconfig, cwd)` group: projects sharing a
+ * tsconfig collapse to a single compilation, projects with distinct tsconfigs
+ * are each checked against their own, and diagnostics are attributed back to
+ * each project's tests via the merged result. `ignoreSourceErrors` and
+ * `spawnTimeout` are run-wide reporting policy, resolved from root
+ * `test.typecheck` + CLI (the per-project tsconfig drives grouping, not the
+ * source-error decision), then applied to every group's pass.
+ */
+export async function runTypecheckPass(
+	entries: Array<TypecheckGroupEntry>,
+	rootConfig: ResolvedConfig,
+	cliTypecheck: TypecheckCliOptions,
+): Promise<TypecheckPassOutcome> {
+	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
+	return runTypecheckPassAsync(entries, async (group) => {
+		return runTypecheck({
+			files: group.files,
+			ignoreSourceErrors: rootTypecheck.ignoreSourceErrors,
+			rootDir: group.cwd,
+			spawnTimeout: rootTypecheck.spawnTimeout,
+			timeout: rootConfig.timeout,
+			tsconfig: group.tsconfig,
+		});
+	});
+}
+
+/**
+ * Run a `TestPlan`: resolve a backend, build the open-cloud place when one is
+ * needed, then run the Roblox jobs and the host-side tsgo pass concurrently.
+ *
+ * Everything that needs a backend lives inside the `finally` guard — including
+ * the place build, which reads `backend.kind`. Building outside the guard would
+ * leak an unclosed backend whenever rojo fails.
+ */
+export async function executeTestPlan(input: ExecutionInput): Promise<ExecutionOutcome> {
+	const { cli, staged } = input;
+	const backend = await input.discovery.timing.profileAsync("resolveBackend", async () => {
+		return resolveBackend(cli, staged.effectiveConfig);
+	});
+
+	try {
+		return await runAgainstBackend(backend, input);
+	} finally {
+		await backend.close?.();
+	}
+}
+
+function buildOpenCloudPlace(
+	rootConfig: ResolvedConfig,
+	projects: Array<ResolvedProjectConfig>,
+	cacheRoot: string,
+): void {
+	const userRojoProjectPath = path.resolve(
+		rootConfig.rootDir,
+		rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
+	);
+
+	buildPlace({
+		packages: [
+			{
+				name: "multi-project",
+				packageDirectory: rootConfig.rootDir,
+				rojoProjectPath: userRojoProjectPath,
+				stubMounts: collectStubMounts(projects, rootConfig.rootDir, cacheRoot),
+			},
+		],
+		placeFile: resolvePlaceFilePath(rootConfig),
+		projectFile: path.resolve(cacheRoot, "synth.project.json"),
+		wrap: false,
+	});
+}
+
+function toExecutorProject(job: PendingJob) {
+	return {
+		config: job.config,
+		displayColor: job.displayColor,
+		displayName: job.displayName,
+		runtimeInjectionPaths: job.runtimeInjectionPaths,
+		testFiles: job.runtimeFiles,
+	};
+}
+
+async function runJobs(
+	backend: Backend,
+	jobs: Array<PendingJob>,
+	parallel: ParallelOption,
+	timing: TimingCollector,
+): Promise<Array<ProjectResult>> {
+	if (jobs.length === 0) {
+		return [];
+	}
+
+	const runResult = await timing.profileAsync("runProjects", async () => {
+		return runProjects({
+			backend,
+			deferFormatting: true,
+			parallel,
+			projects: jobs.map(toExecutorProject),
+			startTime: Date.now(),
+			timing,
+			version: VERSION,
+		});
+	});
+
+	return runResult.results.map((executeResult, index) => {
+		// eslint-disable-next-line ts/no-non-null-assertion -- runProjects preserves order
+		const job = jobs[index]!;
+		return {
+			displayColor: job.displayColor,
+			displayName: job.displayName,
+			result: executeResult,
+		};
+	});
+}
+
+function effectiveParallelForBackend(
+	parallel: ParallelOption,
+	backend: { kind: string },
+): ParallelOption {
+	return backend.kind === "open-cloud" ? parallel : undefined;
+}
+
+async function runAgainstBackend(
+	backend: Backend,
+	{ discovery, plan, staged }: ExecutionInput,
+): Promise<ExecutionOutcome> {
+	const { cliTypecheck, projects, rootConfig, timing } = discovery;
+	if (!rootConfig.collectCoverage && backend.kind === "open-cloud") {
+		timing.profile("buildOpenCloudPlace", () => {
+			buildOpenCloudPlace(rootConfig, projects, staged.cacheRoot);
+		});
+	}
+
+	if (plan.jobs.length > 0) {
+		emitRunHeader({
+			collectCoverage: rootConfig.collectCoverage,
+			color: rootConfig.color,
+			formatters: rootConfig.formatters,
+			rootDir: rootConfig.rootDir,
+			silent: rootConfig.silent,
+			verbose: rootConfig.verbose,
+			version: VERSION,
+		});
+	}
+
+	// The tsgo pass runs concurrently with the jobs so the local CPU-bound type
+	// checking overlaps the network-bound Open Cloud upload/poll.
+	const parallel = effectiveParallelForBackend(staged.effectiveConfig.parallel, backend);
+	const [projectResults, typecheck] = await Promise.all([
+		runJobs(backend, plan.jobs, parallel, timing),
+		runTypecheckPass(plan.typeTestEntries, rootConfig, cliTypecheck),
+	]);
+
+	// Record the tsgo span at root once both branches settle — the collector's
+	// LIFO stack is not concurrency-safe, so the pass must not `profile` while
+	// `runJobs` is open. `elapsedMs` is 0 (and skipped) when there are no Type
+	// Tests; otherwise the sibling span makes the overlap visible (host TOTAL
+	// sums the two while wall-clock is the longer of them).
+	if (typecheck.elapsedMs > 0) {
+		timing.record("runTypecheck", typecheck.elapsedMs);
+	}
+
+	return { projectResults, typecheck };
+}

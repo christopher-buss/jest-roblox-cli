@@ -28,9 +28,9 @@ describe("multi-root projects", () => {
 		const resolved = await resolveFixtureProjects();
 
 		expect(resolved).toHaveLength(1);
-		expect(resolved[0]?.rojoMounts).toHaveLength(2);
+		expect(resolved[0]!.rojoMounts).toHaveLength(2);
 
-		const dataModelPaths = resolved[0]?.rojoMounts.map((mount) => mount.dataModelPath);
+		const dataModelPaths = resolved[0]!.rojoMounts.map((mount) => mount.dataModelPath);
 
 		expect(dataModelPaths).toContainEqual("ReplicatedStorage/PkgShared");
 		expect(dataModelPaths).toContainEqual("ServerScriptService/PkgServer");
@@ -41,16 +41,16 @@ describe("multi-root projects", () => {
 
 		const resolved = await resolveFixtureProjects();
 
-		expect(resolved[0]?.outDir).toBeUndefined();
+		expect(resolved[0]!.outDir).toBeUndefined();
 	});
 
 	it("should mirror rojoMount dataModel paths in the projects array", async () => {
 		expect.assertions(1);
 
 		const resolved = await resolveFixtureProjects();
-		const mountPaths = resolved[0]?.rojoMounts.map((mount) => mount.dataModelPath);
+		const mountPaths = resolved[0]!.rojoMounts.map((mount) => mount.dataModelPath);
 
-		expect(resolved[0]?.projects).toStrictEqual(mountPaths);
+		expect(resolved[0]!.projects).toStrictEqual(mountPaths);
 	});
 
 	it("should pin to a single mount when outDir is set on the project", async () => {
@@ -75,7 +75,7 @@ describe("multi-root projects", () => {
 			MULTI_ROOT_FIXTURE,
 		);
 
-		expect(resolved[0]?.rojoMounts).toHaveLength(1);
-		expect(resolved[0]?.rojoMounts[0]?.dataModelPath).toBe("ReplicatedStorage/PkgShared");
+		expect(resolved[0]!.rojoMounts).toHaveLength(1);
+		expect(resolved[0]!.rojoMounts[0]!.dataModelPath).toBe("ReplicatedStorage/PkgShared");
 	});
 });

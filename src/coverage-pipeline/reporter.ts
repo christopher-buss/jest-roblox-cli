@@ -1,35 +1,20 @@
 import { type } from "arktype";
 import istanbulCoverage from "istanbul-lib-coverage";
 import istanbulReport from "istanbul-lib-report";
-import istanbulReports, { type ReportOptions } from "istanbul-reports";
+import istanbulReports from "istanbul-reports";
 import assert from "node:assert";
 import * as path from "node:path";
 import process from "node:process";
 import color from "tinyrainbow";
 
 import type { CoverageReporter } from "../config/schema.ts";
+import { isCoverageReporter } from "../config/schema.ts";
 import { type CoverageDisplayPredicate, narrowMappedForAgentTable } from "./agent-table-filter.ts";
 import { filterCoverageUniverse } from "./coverage-universe.ts";
-import type { MappedCoverageResult } from "./mapper.ts";
-
-const VALID_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>([
-	"clover",
-	"cobertura",
-	"html",
-	"html-spa",
-	"json",
-	"json-summary",
-	"lcov",
-	"lcovonly",
-	"none",
-	"teamcity",
-	"text",
-	"text-lcov",
-	"text-summary",
-]);
+import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
 
 export interface CoverageReportOptions {
-	agentMode?: boolean;
+	agentMode?: boolean | undefined;
 	/**
 	 * Display-only narrowing for the agent **text table** on a filtered run
 	 * (single file / `--testPathPattern` / `--project`). Keeps just the matched
@@ -37,10 +22,10 @@ export interface CoverageReportOptions {
 	 * lcov/html/json reporters always report the full universe. Ignored outside
 	 * agent mode and on a full run (`undefined`).
 	 */
-	agentTextFilter?: CoverageDisplayPredicate;
-	collectCoverageFrom?: Array<string>;
+	agentTextFilter?: CoverageDisplayPredicate | undefined;
+	collectCoverageFrom?: Array<string> | undefined;
 	coverageDirectory: string;
-	coveragePathIgnorePatterns?: Array<string>;
+	coveragePathIgnorePatterns?: Array<string> | undefined;
 	mapped: MappedCoverageResult;
 	reporters: Array<CoverageReporter>;
 }
@@ -50,8 +35,19 @@ export interface ThresholdResult {
 	passed: boolean;
 }
 
+const summarySchema = type({
+	"[string]": { pct: "number | string" },
+});
+
+/**
+ * Metric order is the reported order of threshold failures — statements first,
+ * lines last — so it is a fixed list rather than `Object.keys(thresholds)`.
+ */
+const THRESHOLD_METRICS = ["statements", "functions", "branches", "lines"] as const;
+
 type FileCoverageData = istanbulCoverage.FileCoverageData;
 type CoverageMap = ReturnType<typeof istanbulCoverage.createCoverageMap>;
+type CoverageSummaryData = typeof summarySchema.infer;
 
 export function printCoverageHeader(agentMode = false): void {
 	const header = agentMode
@@ -64,7 +60,9 @@ const TEXT_REPORTERS: ReadonlySet<string> = new Set(["text", "text-summary"]);
 
 interface TextTableView {
 	context: ReturnType<typeof istanbulReport.createContext>;
-	/** The filter matched no universe file — skip the `text` reporter entirely. */
+	/**
+	 * The filter matched no universe file — skip the `text` reporter entirely.
+	 */
 	isEmpty: boolean;
 }
 
@@ -75,8 +73,8 @@ export function generateReports(options: CoverageReportOptions): void {
 	});
 	const coverageMap = buildCoverageMap(filtered);
 
-	const agentMode = options.agentMode === true;
-	const defaultSummarizer = agentMode ? "flat" : "pkg";
+	const isAgentMode = options.agentMode === true;
+	const defaultSummarizer = isAgentMode ? "flat" : "pkg";
 	const context = istanbulReport.createContext({
 		coverageMap,
 		defaultSummarizer,
@@ -89,40 +87,20 @@ export function generateReports(options: CoverageReportOptions): void {
 	// json, the totals line, and threshold checks all keep `coverageMap` (the
 	// gate view).
 	const textTable = resolveTextTableView({
-		agentTextFilter: agentMode ? options.agentTextFilter : undefined,
+		agentTextFilter: isAgentMode ? options.agentTextFilter : undefined,
 		coverageDirectory: options.coverageDirectory,
 		defaultSummarizer,
 		fallback: context,
 		filtered,
 	});
 
-	const terminalColumns = getTerminalColumns();
-	const hasTextReporter = options.reporters.some((name) => TEXT_REPORTERS.has(name));
-	const allFilesFull = agentMode && isAllFilesFull(coverageMap);
-
-	// Fully-covered runs collapse the text table to a single line; print it once
-	// rather than per text reporter so configuring both text reporters can't
-	// duplicate it.
-	if (allFilesFull && hasTextReporter) {
-		printCompactFullSummary(coverageMap);
-	}
-
-	runReporters({
-		agentMode,
-		allFilesFull,
+	emitReports({
+		coverageMap,
 		fullContext: context,
+		isAgentMode,
 		reporters: options.reporters,
-		terminalColumns,
 		textTable,
 	});
-
-	// skipFull leaves the table showing only sub-100% files; give the agent the
-	// overall totals with raw counts so it knows exactly how much remains. An
-	// empty map has nothing to total (Istanbul reports its pct as "Unknown"), so
-	// skip it.
-	if (agentMode && !allFilesFull && hasTextReporter && coverageMap.files().length > 0) {
-		process.stdout.write(formatAgentTotals(coverageMap));
-	}
 }
 
 export function checkThresholds(
@@ -138,36 +116,10 @@ export function checkThresholds(
 	const coverageMap = buildCoverageMap(filtered);
 	const summary = coverageMap.getCoverageSummary();
 
-	const failures: ThresholdResult["failures"] = [];
-
-	const checks: Array<{ metric: string; threshold: number | undefined }> = [
-		{ metric: "statements", threshold: thresholds.statements },
-		{ metric: "functions", threshold: thresholds.functions },
-		{ metric: "branches", threshold: thresholds.branches },
-		{ metric: "lines", threshold: thresholds.lines },
-	];
-
-	const summarySchema = type({
-		"[string]": { pct: "number | string" },
-	});
-
 	const summaryData = summarySchema(summary.toJSON());
 	assert(!(summaryData instanceof type.errors), "Istanbul summary produced invalid data");
 
-	for (const { metric, threshold } of checks) {
-		if (threshold === undefined) {
-			continue;
-		}
-
-		const pct = summaryData[metric]?.pct;
-		if (typeof pct !== "number") {
-			continue;
-		}
-
-		if (pct < threshold) {
-			failures.push({ actual: pct, metric, threshold });
-		}
-	}
+	const failures = collectThresholdFailures(summaryData, thresholds);
 
 	return {
 		failures,
@@ -175,8 +127,95 @@ export function checkThresholds(
 	};
 }
 
-function isValidReporter(name: string): name is keyof ReportOptions {
-	return VALID_REPORTERS.has(name);
+/** Restate our branch entries in Istanbul's shape (it also wants `line`). */
+function toIstanbulBranchMap(
+	branchMap: MappedFileCoverage["branchMap"],
+): FileCoverageData["branchMap"] {
+	return Object.fromEntries(
+		Object.entries(branchMap).map(([id, entry]) => {
+			return [
+				id,
+				{
+					line: entry.loc.start.line,
+					loc: entry.loc,
+					locations: entry.locations,
+					type: entry.type,
+				},
+			];
+		}),
+	);
+}
+
+/** Restate our function entries in Istanbul's shape (it also wants `decl`). */
+function toIstanbulFuncMap(funcMap: MappedFileCoverage["fnMap"]): FileCoverageData["fnMap"] {
+	return Object.fromEntries(
+		Object.entries(funcMap).map(([id, entry]) => {
+			return [
+				id,
+				{
+					name: entry.name,
+					decl: entry.loc,
+					line: entry.loc.start.line,
+					loc: entry.loc,
+				},
+			];
+		}),
+	);
+}
+
+function buildCoverageMap(mapped: MappedCoverageResult): CoverageMap {
+	const coverageMap = istanbulCoverage.createCoverageMap({});
+
+	for (const [filePath, fileCoverage] of Object.entries(mapped.files)) {
+		const fileCoverageData = {
+			b: fileCoverage.b,
+			branchMap: toIstanbulBranchMap(fileCoverage.branchMap),
+			f: fileCoverage.f,
+			fnMap: toIstanbulFuncMap(fileCoverage.fnMap),
+			path: path.resolve(filePath),
+			s: fileCoverage.s,
+			statementMap: fileCoverage.statementMap,
+		} satisfies FileCoverageData;
+		coverageMap.addFileCoverage(fileCoverageData);
+	}
+
+	return coverageMap;
+}
+
+// Picks the context the `text` reporter renders against. With a filter present
+// (agent + filtered run) it narrows to the matched source files, layered on
+// `filtered`; otherwise it falls back to the full-universe context. The
+// narrowing never reaches `text-summary`, the other reporters, the totals line,
+// or the threshold path — all of those keep the full universe.
+function resolveTextTableView({
+	agentTextFilter,
+	coverageDirectory,
+	defaultSummarizer,
+	fallback,
+	filtered,
+}: {
+	agentTextFilter: CoverageDisplayPredicate | undefined;
+	coverageDirectory: string;
+	defaultSummarizer: "flat" | "pkg";
+	fallback: ReturnType<typeof istanbulReport.createContext>;
+	filtered: MappedCoverageResult;
+}): TextTableView {
+	if (agentTextFilter === undefined) {
+		return { context: fallback, isEmpty: false };
+	}
+
+	const textCoverageMap = buildCoverageMap(narrowMappedForAgentTable(filtered, agentTextFilter));
+	const context = istanbulReport.createContext({
+		coverageMap: textCoverageMap,
+		defaultSummarizer,
+		dir: coverageDirectory,
+	});
+
+	return { context, isEmpty: textCoverageMap.files().length === 0 };
+}
+
+function unknownReporterError(name: string): Error {
+	return new Error(`Unknown coverage reporter: ${name}`);
 }
 
 // Runs each configured reporter against its context. The `text` reporter renders
@@ -184,7 +223,14 @@ function isValidReporter(name: string): name is keyof ReportOptions {
 // the full-universe `fullContext`. A fully-covered agent run skips the text
 // reporters (the compact summary already printed); an empty narrowed table skips
 // `text` so only the totals line prints.
-function runReporters(options: {
+function runReporters({
+	agentMode,
+	allFilesFull,
+	fullContext,
+	reporters,
+	terminalColumns,
+	textTable,
+}: {
 	agentMode: boolean;
 	allFilesFull: boolean;
 	fullContext: ReturnType<typeof istanbulReport.createContext>;
@@ -192,11 +238,12 @@ function runReporters(options: {
 	terminalColumns: number | undefined;
 	textTable: TextTableView;
 }): void {
-	const { agentMode, allFilesFull, fullContext, reporters, terminalColumns, textTable } = options;
-
 	for (const reporterName of reporters) {
-		if (!isValidReporter(reporterName)) {
-			throw new Error(`Unknown coverage reporter: ${reporterName}`);
+		if (!isCoverageReporter(reporterName)) {
+			// The declared element type makes this branch `never`, but the value
+			// reaches here from user config, so the name is formatted through a
+			// `string` parameter.
+			throw unknownReporterError(reporterName);
 		}
 
 		if (allFilesFull && TEXT_REPORTERS.has(reporterName)) {
@@ -217,76 +264,6 @@ function runReporters(options: {
 		const report = istanbulReports.create(reporterName, reporterOptions);
 		report.execute(reporterName === "text" ? textTable.context : fullContext);
 	}
-}
-
-function buildCoverageMap(mapped: MappedCoverageResult): CoverageMap {
-	const coverageMap = istanbulCoverage.createCoverageMap({});
-
-	for (const [filePath, fileCoverage] of Object.entries(mapped.files)) {
-		const fileCoverageData = {
-			b: fileCoverage.b,
-			branchMap: Object.fromEntries(
-				Object.entries(fileCoverage.branchMap).map(([id, entry]) => {
-					return [
-						id,
-						{
-							line: entry.loc.start.line,
-							loc: entry.loc,
-							locations: entry.locations,
-							type: entry.type,
-						},
-					];
-				}),
-			),
-			f: fileCoverage.f,
-			fnMap: Object.fromEntries(
-				Object.entries(fileCoverage.fnMap).map(([id, entry]) => {
-					return [
-						id,
-						{
-							name: entry.name,
-							decl: entry.loc,
-							line: entry.loc.start.line,
-							loc: entry.loc,
-						},
-					];
-				}),
-			),
-			path: path.resolve(filePath),
-			s: fileCoverage.s,
-			statementMap: fileCoverage.statementMap,
-		} satisfies FileCoverageData;
-		coverageMap.addFileCoverage(fileCoverageData);
-	}
-
-	return coverageMap;
-}
-
-// Picks the context the `text` reporter renders against. With a filter present
-// (agent + filtered run) it narrows to the matched source files, layered on
-// `filtered`; otherwise it falls back to the full-universe context. The
-// narrowing never reaches `text-summary`, the other reporters, the totals line,
-// or the threshold path — all of those keep the full universe.
-function resolveTextTableView(options: {
-	agentTextFilter: CoverageDisplayPredicate | undefined;
-	coverageDirectory: string;
-	defaultSummarizer: "flat" | "pkg";
-	fallback: ReturnType<typeof istanbulReport.createContext>;
-	filtered: MappedCoverageResult;
-}): TextTableView {
-	const { agentTextFilter, coverageDirectory, defaultSummarizer, fallback, filtered } = options;
-	if (agentTextFilter === undefined) {
-		return { context: fallback, isEmpty: false };
-	}
-
-	const textCoverageMap = buildCoverageMap(narrowMappedForAgentTable(filtered, agentTextFilter));
-	const context = istanbulReport.createContext({
-		coverageMap: textCoverageMap,
-		defaultSummarizer,
-		dir: coverageDirectory,
-	});
-
-	return { context, isEmpty: textCoverageMap.files().length === 0 };
 }
 
 function printCompactFullSummary(coverageMap: CoverageMap): void {
@@ -345,4 +322,81 @@ function isAllFilesFull(coverageMap: CoverageMap): boolean {
 			summary.lines.pct === 100
 		);
 	});
+}
+
+/**
+ * Render the configured reporters plus the two agent-only extras that bracket
+ * them: the compact one-liner a fully-covered run collapses to, and the totals
+ * line that tells an agent how much `skipFull` hid.
+ */
+function emitReports({
+	coverageMap,
+	fullContext,
+	isAgentMode,
+	reporters,
+	textTable,
+}: {
+	coverageMap: CoverageMap;
+	fullContext: ReturnType<typeof istanbulReport.createContext>;
+	isAgentMode: boolean;
+	reporters: Array<CoverageReporter>;
+	textTable: TextTableView;
+}): void {
+	const terminalColumns = getTerminalColumns();
+	const hasTextReporter = reporters.some((name) => TEXT_REPORTERS.has(name));
+	const areAllFilesFull = isAgentMode && isAllFilesFull(coverageMap);
+
+	// Fully-covered runs collapse the text table to a single line; print it once
+	// rather than per text reporter so configuring both text reporters can't
+	// duplicate it.
+	if (areAllFilesFull && hasTextReporter) {
+		printCompactFullSummary(coverageMap);
+	}
+
+	runReporters({
+		agentMode: isAgentMode,
+		allFilesFull: areAllFilesFull,
+		fullContext,
+		reporters,
+		terminalColumns,
+		textTable,
+	});
+
+	// skipFull leaves the table showing only sub-100% files; give the agent the
+	// overall totals with raw counts so it knows exactly how much remains. An
+	// empty map has nothing to total (Istanbul reports its pct as "Unknown"), so
+	// skip it.
+	if (isAgentMode && !areAllFilesFull && hasTextReporter && coverageMap.files().length > 0) {
+		process.stdout.write(formatAgentTotals(coverageMap));
+	}
+}
+
+/**
+ * Collect the metrics whose measured percentage falls below a configured
+ * threshold. A metric with no configured threshold, or whose summary pct is
+ * Istanbul's non-numeric "Unknown", is skipped rather than failed.
+ */
+function collectThresholdFailures(
+	summaryData: CoverageSummaryData,
+	thresholds: { branches?: number; functions?: number; lines?: number; statements?: number },
+): ThresholdResult["failures"] {
+	const failures: ThresholdResult["failures"] = [];
+
+	for (const metric of THRESHOLD_METRICS) {
+		const threshold = thresholds[metric];
+		if (threshold === undefined) {
+			continue;
+		}
+
+		const pct = summaryData[metric]?.pct;
+		if (typeof pct !== "number") {
+			continue;
+		}
+
+		if (pct < threshold) {
+			failures.push({ actual: pct, metric, threshold });
+		}
+	}
+
+	return failures;
 }

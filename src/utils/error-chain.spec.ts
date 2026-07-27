@@ -7,6 +7,7 @@ import { formatMissingScopes, walkErrorChain } from "./error-chain.ts";
 describe(formatMissingScopes, () => {
 	it("should list a single scope in the singular", () => {
 		expect.assertions(1);
+
 		expect(formatMissingScopes(["universe-places:write"])).toBe(
 			"API key missing scope universe-places:write. Add via Creator Dashboard.",
 		);
@@ -14,6 +15,7 @@ describe(formatMissingScopes, () => {
 
 	it("should list multiple scopes in the plural", () => {
 		expect.assertions(1);
+
 		expect(formatMissingScopes(["a", "b"])).toBe(
 			"API key missing scopes a, b. Add via Creator Dashboard.",
 		);
@@ -21,6 +23,7 @@ describe(formatMissingScopes, () => {
 
 	it("should fall back to a scope-less hint when no scopes are carried", () => {
 		expect.assertions(1);
+
 		expect(formatMissingScopes([])).toBe(
 			"API key has insufficient scopes. Add via Creator Dashboard.",
 		);
@@ -54,9 +57,9 @@ describe(walkErrorChain, () => {
 
 		const [entry] = walkErrorChain(cause);
 
-		expect(entry?.code).toBeUndefined();
-		expect(entry?.errno).toBeUndefined();
-		expect(entry?.syscall).toBeUndefined();
+		expect(entry!.code).toBeUndefined();
+		expect(entry!.errno).toBeUndefined();
+		expect(entry!.syscall).toBeUndefined();
 	});
 
 	it("should walk Error.cause and emit entries in nest order", () => {
@@ -118,7 +121,7 @@ describe(walkErrorChain, () => {
 
 		const [entry] = walkErrorChain(cause);
 
-		expect(entry?.requiredScopes).toStrictEqual(["universe-places:write"]);
+		expect(entry!.requiredScopes).toStrictEqual(["universe-places:write"]);
 	});
 
 	it("should leave requiredScopes undefined for a plain Error", () => {
@@ -126,7 +129,7 @@ describe(walkErrorChain, () => {
 
 		const [entry] = walkErrorChain(new Error("plain"));
 
-		expect(entry?.requiredScopes).toBeUndefined();
+		expect(entry!.requiredScopes).toBeUndefined();
 	});
 
 	it("should terminate at the first non-Error link mid-chain", () => {

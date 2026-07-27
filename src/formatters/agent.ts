@@ -17,14 +17,14 @@ import {
 } from "./formatter.ts";
 
 export interface AgentOptions {
-	gameOutput?: string;
-	gameOutputSize?: number;
+	gameOutput?: string | undefined;
+	gameOutputSize?: number | undefined;
 	maxFailures: number;
-	outputFile?: string;
-	outputFileSize?: number;
+	outputFile?: string | undefined;
+	outputFileSize?: number | undefined;
 	rootDir: string;
-	sourceMapper?: SourceMapper;
-	typeErrorCount?: number;
+	sourceMapper?: SourceMapper | undefined;
+	typeErrorCount?: number | undefined;
 }
 
 interface AgentProjectEntry {
@@ -33,6 +33,14 @@ interface AgentProjectEntry {
 }
 
 type SnippetLevel = "both" | "none" | "ts-only";
+
+interface FormatFailureMessageOptions {
+	agentOptions: AgentOptions;
+	filePath: string;
+	originalMessage: string;
+	snippetLevel: SnippetLevel;
+	test: TestCaseResult;
+}
 
 interface AgentProjectStats {
 	allExecErrors: Array<JestResult["testResults"][number]>;
@@ -106,9 +114,10 @@ function formatTypeErrorLabel(count: number): string {
 	return `${count} error${count === 1 ? "" : "s"}`;
 }
 
-function formatSummarySection(result: JestResult, options: AgentOptions): Array<string> {
-	const lines: Array<string> = [];
-
+// The " Test Files  …" row: file-level pass/fail counts, each bucket omitted
+// when zero. A file with an exec error counts as failed even when it reported
+// no failing tests.
+function formatTestFilesLine(result: JestResult): string {
 	const failedFiles = result.testResults.filter(
 		(file) => file.numFailingTests > 0 || hasExecError(file),
 	).length;
@@ -126,7 +135,11 @@ function formatSummarySection(result: JestResult, options: AgentOptions): Array<
 		fileParts.push(`${passedFiles} passed`);
 	}
 
-	lines.push(` Test Files  ${fileParts.join(" | ")} (${totalFiles})`);
+	return ` Test Files  ${fileParts.join(" | ")} (${totalFiles})`;
+}
+
+function formatSummarySection(result: JestResult, options: AgentOptions): Array<string> {
+	const lines: Array<string> = [formatTestFilesLine(result)];
 
 	const testParts: Array<string> = [];
 
@@ -420,6 +433,65 @@ function getFailureSnippets(
 	return [];
 }
 
+// The expectation detail under a failure header: a snapshot diff, an
+// expected/received pair, or the raw message when neither was parsed out.
+function buildFailureDetail(parsed: ReturnType<typeof parseErrorMessage>): Array<string> {
+	if (parsed.snapshotDiff !== undefined) {
+		return [parsed.snapshotDiff];
+	}
+
+	if (parsed.expected !== undefined && parsed.received !== undefined) {
+		return [`Expected: ${parsed.expected}`, `Received: ${parsed.received}`];
+	}
+
+	return [parsed.message];
+}
+
+// One failure message: the ` FAIL <file>:<line> > <test>` header, the
+// expectation detail (snapshot diff, expected/received pair, or the raw
+// message), the source snippets, and a trailing blank line.
+function formatFailureMessage({
+	agentOptions,
+	filePath,
+	originalMessage,
+	snippetLevel,
+	test,
+}: FormatFailureMessageOptions): Array<string> {
+	const lines: Array<string> = [];
+
+	let mappedLocations: Array<MappedLocation> = [];
+	let message = originalMessage;
+
+	if (agentOptions.sourceMapper !== undefined) {
+		({ locations: mappedLocations, message } =
+			agentOptions.sourceMapper.mapFailureWithLocations(originalMessage));
+	}
+
+	const parsed = parseErrorMessage(originalMessage);
+	const location = findFailureLocation(mappedLocations, message);
+	const relativePath = makeRelative(location?.path ?? filePath, agentOptions.rootDir);
+	const lineInfo = location?.line !== undefined ? `:${location.line}` : "";
+	const ancestors = test.ancestorTitles.length > 0 ? ` > ${test.ancestorTitles.join(" > ")}` : "";
+
+	lines.push(
+		` FAIL ${relativePath}${lineInfo}${ancestors} > ${test.title}`,
+		...buildFailureDetail(parsed),
+	);
+
+	const snippets = getFailureSnippets(
+		mappedLocations,
+		location,
+		snippetLevel,
+		agentOptions.rootDir,
+	);
+	for (const snippet of snippets) {
+		lines.push(snippet);
+	}
+
+	lines.push("");
+	return lines;
+}
+
 function formatAgentFailure(
 	test: TestCaseResult,
 	filePath: string,
@@ -429,42 +501,15 @@ function formatAgentFailure(
 	const lines: Array<string> = [];
 
 	for (const originalMessage of test.failureMessages) {
-		let mappedLocations: Array<MappedLocation> = [];
-		let message = originalMessage;
-
-		if (options.sourceMapper !== undefined) {
-			({ locations: mappedLocations, message } =
-				options.sourceMapper.mapFailureWithLocations(originalMessage));
-		}
-
-		const parsed = parseErrorMessage(originalMessage);
-		const location = findFailureLocation(mappedLocations, message);
-		const relativePath = makeRelative(location?.path ?? filePath, options.rootDir);
-		const lineInfo = location?.line !== undefined ? `:${location.line}` : "";
-		const ancestors =
-			test.ancestorTitles.length > 0 ? ` > ${test.ancestorTitles.join(" > ")}` : "";
-
-		lines.push(` FAIL ${relativePath}${lineInfo}${ancestors} > ${test.title}`);
-
-		if (parsed.snapshotDiff !== undefined) {
-			lines.push(parsed.snapshotDiff);
-		} else if (parsed.expected !== undefined && parsed.received !== undefined) {
-			lines.push(`Expected: ${parsed.expected}`, `Received: ${parsed.received}`);
-		} else {
-			lines.push(parsed.message);
-		}
-
-		const snippets = getFailureSnippets(
-			mappedLocations,
-			location,
-			snippetLevel,
-			options.rootDir,
+		lines.push(
+			...formatFailureMessage({
+				agentOptions: options,
+				filePath,
+				originalMessage,
+				snippetLevel,
+				test,
+			}),
 		);
-		for (const snippet of snippets) {
-			lines.push(snippet);
-		}
-
-		lines.push("");
 	}
 
 	return lines.join("\n");
@@ -545,10 +590,9 @@ function collectMultiProjectStats(projects: Array<AgentProjectEntry>): AgentProj
 		const failedFiles = result.testResults.filter(
 			(file) => file.numFailingTests > 0 || hasExecError(file),
 		).length;
-		const skippedFiles = result.testResults.filter(
-			(file) =>
-				file.numFailingTests === 0 && file.numPassingTests === 0 && !hasExecError(file),
-		).length;
+		const skippedFiles = result.testResults.filter((file) => {
+			return file.numFailingTests === 0 && file.numPassingTests === 0 && !hasExecError(file);
+		}).length;
 
 		stats.totalFailed += result.numFailedTests;
 		stats.totalPassed += result.numPassedTests;

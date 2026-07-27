@@ -22,6 +22,10 @@
 		"./package.json": "./package.json"
 	},
 	"types": "./dist/index.d.mts",
+	"files": [
+		"dist",
+		"src"
+	],
 	"scripts": {
 		"build": "tsdown"
 	},
@@ -29,22 +33,22 @@
 		"arktype": "2.2.0"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "6.0.0-beta.3",
-		"@isentinel/tsconfig": "1.2.0",
+		"@isentinel/eslint-config": "6.0.0-beta.30",
+		"@isentinel/tsconfig": "2.0.0",
 		"@types/node": "24.12.3",
 		"@typescript/native-preview": "7.0.0-dev.20260607.1",
 		"@vitest/coverage-v8": "4.1.8",
 		"@vitest/eslint-plugin": "1.6.19",
-		"eslint": "10.6.0",
+		"eslint": "10.7.0",
 		"eslint-plugin-jest-extended": "3.0.1",
-		"eslint-plugin-n": "18.2.1",
-		"eslint-plugin-pnpm": "1.6.1",
+		"eslint-plugin-n": "18.2.2",
+		"eslint-plugin-pnpm": "1.7.0",
 		"jest-extended": "7.0.0",
-		"tsdown": "0.22.0",
+		"tsdown": "0.22.14",
 		"typescript": "6.0.3",
 		"vitest": "4.1.8"
 	},
-	"packageManager": "pnpm@11.5.2+sha512.71c631e382066efc25625d5cf029075de07b61b37f6e27350fbd84b1bda5864c8c1967adc280776b45c30a715c0359a3be08fef42d5bb09e2b99029979692916",
+	"packageManager": "pnpm@11.17.0+sha512.cca3cea332ad254bb84145f966d19f4879615210346fc92c79a047f23a0d7b3cca3c3792f0076ba1f1831d277efbcf0a9119b31a9a60eca7fb3d6231f331ef72",
 	"engines": {
 		"node": ">=24.12.0"
 	}

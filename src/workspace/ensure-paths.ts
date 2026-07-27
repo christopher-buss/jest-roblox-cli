@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
+import { isRojoTreeNode } from "../utils/rojo-tree-node.ts";
 import type { PackageDescriptor } from "./preflight.ts";
 
 export function ensurePackageDirectories(descriptors: Array<PackageDescriptor>): void {
@@ -37,8 +38,8 @@ function collectDirectoryPaths(node: RojoTreeNode, projectDirectory: string): vo
 			continue;
 		}
 
-		if (!key.startsWith("$") && typeof value === "object" && !Array.isArray(value)) {
-			collectDirectoryPaths(value as RojoTreeNode, projectDirectory);
+		if (isRojoTreeNode(value) && !key.startsWith("$")) {
+			collectDirectoryPaths(value, projectDirectory);
 		}
 	}
 }

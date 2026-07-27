@@ -1,6 +1,6 @@
 // cspell:words bakcend
 import { type } from "arktype";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
 	configSchema,
@@ -43,9 +43,13 @@ describe(defineConfig, () => {
 			},
 		});
 
-		expect(config.test?.setupFiles).toBeFunction();
+		expect(config.test!.setupFiles).toBeFunction();
 	});
 });
+
+function schemaAcceptsBackend(backend: string): boolean {
+	return !(configSchema({ backend }) instanceof type.errors);
+}
 
 describe(isValidBackend, () => {
 	it("should return true for valid backends", () => {
@@ -260,11 +264,11 @@ describe(configSchema, () => {
 		});
 
 		it("should accept all valid backend values", () => {
-			expect.assertions(4);
+			expect.assertions(1);
 
-			for (const backend of ["auto", "open-cloud", "studio", "studio-cli"]) {
-				expect(configSchema({ backend })).not.toBeInstanceOf(type.errors);
-			}
+			expect(["auto", "open-cloud", "studio", "studio-cli"]).toSatisfyAll(
+				schemaAcceptsBackend,
+			);
 		});
 
 		it("should accept a studioPath string", () => {
@@ -680,7 +684,7 @@ describe(configSchema, () => {
 		});
 
 		it("should reject global-only key verbose inside an inline project", () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const result = configSchema({
 				test: {
@@ -696,8 +700,9 @@ describe(configSchema, () => {
 				},
 			});
 
-			expect(result).toBeInstanceOf(type.errors);
-			expect(String(result)).toContain("verbose");
+			assert(result instanceof type.errors);
+
+			expect(result.summary).toContain("verbose");
 		});
 
 		it("should reject parallel: 0", () => {
@@ -741,47 +746,47 @@ describe(configSchema, () => {
 
 	describe("error messages", () => {
 		it("should produce readable error for invalid backend", () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const result = configSchema({ backend: "bad" });
 
-			expect(result).toBeInstanceOf(type.errors);
-			expect((result as type.errors).summary).toMatchInlineSnapshot(
+			assert(result instanceof type.errors);
+
+			expect(result.summary).toMatchInlineSnapshot(
 				'"backend must be "auto", "open-cloud", "studio" or "studio-cli" (was "bad")"',
 			);
 		});
 
 		it("should produce readable error for wrong type", () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const result = configSchema({ port: "not-a-number" });
 
-			expect(result).toBeInstanceOf(type.errors);
-			expect((result as type.errors).summary).toMatchInlineSnapshot(
-				'"port must be a number (was a string)"',
-			);
+			assert(result instanceof type.errors);
+
+			expect(result.summary).toMatchInlineSnapshot('"port must be a number (was a string)"');
 		});
 
 		it("should produce readable error for undeclared key", () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const result = configSchema({ bakcend: "studio" });
 
-			expect(result).toBeInstanceOf(type.errors);
-			expect((result as type.errors).summary).toMatchInlineSnapshot(
-				'"bakcend must be removed"',
-			);
+			assert(result instanceof type.errors);
+
+			expect(result.summary).toMatchInlineSnapshot('"bakcend must be removed"');
 		});
 
 		it("should produce readable error for nested validation", () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const result = configSchema({
 				test: { coverageThreshold: { lines: "high" } },
 			});
 
-			expect(result).toBeInstanceOf(type.errors);
-			expect((result as type.errors).summary).toMatchInlineSnapshot(
+			assert(result instanceof type.errors);
+
+			expect(result.summary).toMatchInlineSnapshot(
 				'"test.coverageThreshold.lines must be a number (was a string)"',
 			);
 		});
@@ -1002,9 +1007,9 @@ describe(validateConfig, () => {
 	it("should accept workspace.root with workspace.packages", () => {
 		expect.assertions(1);
 
-		expect(() =>
-			validateConfig({ workspace: { packages: ["packages/*"], root: "." } }),
-		).not.toThrow();
+		expect(() => {
+			return validateConfig({ workspace: { packages: ["packages/*"], root: "." } });
+		}).not.toThrow();
 	});
 
 	it("should reject workspace.packages without workspace.root", () => {
@@ -1052,7 +1057,7 @@ describe(validateConfig, () => {
 	it("should reject NaN test.slowTestThreshold", () => {
 		expect.assertions(1);
 
-		expect(() => validateConfig({ test: { slowTestThreshold: Number.NaN } })).toThrow(
+		expect(() => validateConfig({ test: { slowTestThreshold: NaN } })).toThrow(
 			/slowTestThreshold/,
 		);
 	});

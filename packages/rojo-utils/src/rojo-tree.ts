@@ -1,9 +1,18 @@
+import { type } from "arktype";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 import type { RojoTreeNode } from "./types.ts";
+import { isRojoTreeNode } from "./types.ts";
 
-/** Mutable state threaded through {@link resolveTree} during a single resolution. */
+// Validate only the field the resolver reads; resolveTree handles arbitrary
+// tree shapes defensively (same contract as `isValidRojoConfig`).
+const nestedProjectSchema = type({ tree: "object" });
+
+/**
+ * Mutable state threaded through {@link resolveTree} during a single
+ * resolution.
+ */
 interface ResolveContext {
 	/** Absolute paths of every nested project file inlined so far. */
 	sources: Set<string>;
@@ -12,9 +21,10 @@ interface ResolveContext {
 }
 
 /**
- * Like {@link resolveNestedProjects}, but also reports the absolute path of every
- * nested project file inlined during resolution. Change-detection callers hash
- * these so an edit to a nested `*.project.json` invalidates the build.
+ * Like {@link resolveNestedProjects}, but also reports the absolute path of
+ * every nested project file inlined during resolution. Change-detection
+ * callers hash these so an edit to a nested `*.project.json` invalidates the
+ * build.
  */
 export function resolveNestedProjectSources(
 	tree: RojoTreeNode,
@@ -33,8 +43,8 @@ export function collectPaths(node: RojoTreeNode, result: Array<string>): void {
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
 			result.push(value.replaceAll("\\", "/"));
-		} else if (typeof value === "object" && !Array.isArray(value) && !key.startsWith("$")) {
-			collectPaths(value as RojoTreeNode, result);
+		} else if (!key.startsWith("$") && isRojoTreeNode(value)) {
+			collectPaths(value, result);
 		}
 	}
 }
@@ -53,12 +63,12 @@ export function rebaseTreePaths(
 			continue;
 		}
 
-		if (key.startsWith("$") || typeof value !== "object" || Array.isArray(value)) {
+		if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			result[key] = value;
 			continue;
 		}
 
-		result[key] = rebaseTreePaths(value as RojoTreeNode, fromDirectory, toDirectory);
+		result[key] = rebaseTreePaths(value, fromDirectory, toDirectory);
 	}
 
 	return result;
@@ -76,6 +86,19 @@ function nestedProjectPath(currentDirectory: string, value: string): string | un
 
 	const directoryDefault = join(currentDirectory, value, "default.project.json");
 	return existsSync(directoryDefault) ? directoryDefault : undefined;
+}
+
+function parseNestedTree(content: string): RojoTreeNode {
+	const result = nestedProjectSchema(JSON.parse(content));
+	if (result instanceof type.errors) {
+		throw new Error(result.summary);
+	}
+
+	if (!isRojoTreeNode(result.tree)) {
+		throw new Error("Expected `tree` to be an object");
+	}
+
+	return result.tree;
 }
 
 function inlineNestedProject(
@@ -96,15 +119,15 @@ function inlineNestedProject(
 		throw new Error(`Could not read nested Rojo project: ${relativePath}`, { cause: err });
 	}
 
-	let project: { tree: RojoTreeNode };
+	let tree: RojoTreeNode;
 	try {
-		project = JSON.parse(content) as { tree: RojoTreeNode };
+		tree = parseNestedTree(content);
 	} catch (err) {
 		const relativePath = relative(currentDirectory, projectPath);
 		throw new Error(`Failed to parse nested Rojo project: ${relativePath}`, { cause: err });
 	}
 
-	return resolveTree(project.tree, dirname(projectPath), originalRoot, {
+	return resolveTree(tree, dirname(projectPath), originalRoot, {
 		sources: context.sources,
 		visited: chain,
 	});
@@ -146,12 +169,12 @@ function resolveTree(
 			continue;
 		}
 
-		if (key.startsWith("$") || typeof value !== "object" || Array.isArray(value)) {
+		if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			resolved[key] = value;
 			continue;
 		}
 
-		resolved[key] = resolveTree(value as RojoTreeNode, currentDirectory, originalRoot, context);
+		resolved[key] = resolveTree(value, currentDirectory, originalRoot, context);
 	}
 
 	return resolved;

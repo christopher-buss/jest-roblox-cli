@@ -38,23 +38,26 @@ function callInstrumentWithDefaults() {
 	});
 }
 
+/** Reads back the `__cov_file_key` literal baked into an instrumented file. */
+function readEmbeddedFileKey(fileKey: string): string | undefined {
+	const relativePath = fileKey.slice("/luau-root/".length);
+	const instrumented = vol.readFileSync(`/shadow/${relativePath}`, "utf-8").toString();
+	return /^local __cov_file_key = (.+)$/m.exec(instrumented)?.[1];
+}
+
 /**
  * Seed memfs with source + AST files and configure lute mock.
  * Returns the file list that lute would return.
  */
-function setupFilesystem(
-	options: {
-		astOutputDirectory?: string;
-		files?: Record<string, unknown>;
-		luauRoot?: string;
-	} = {},
-): void {
-	const {
-		astOutputDirectory = "/tmp/asts",
-		files = DEFAULT_FILES,
-		luauRoot = "/luau-root",
-	} = options;
-
+function setupFilesystem({
+	astOutputDirectory = "/tmp/asts",
+	files = DEFAULT_FILES,
+	luauRoot = "/luau-root",
+}: {
+	astOutputDirectory?: string;
+	files?: Record<string, unknown>;
+	luauRoot?: string;
+} = {}): void {
 	onTestFinished(() => {
 		vol.reset();
 	});
@@ -93,7 +96,7 @@ describe(instrumentRoot, () => {
 	// build/run machine boundary with no type error to catch it.
 	describe("cross-machine join key", () => {
 		it("should bake the manifest file key verbatim into the instrumented preamble", () => {
-			expect.assertions(4);
+			expect.assertions(2);
 
 			setupFilesystem({
 				files: { "init.luau": EMPTY_AST, "shared/player.luau": EMPTY_AST },
@@ -105,17 +108,15 @@ describe(instrumentRoot, () => {
 				parseScript: "mock.luau",
 				shadowDir: "/shadow",
 			});
+			const keys = Object.keys(files);
 
-			for (const [key, record] of Object.entries(files)) {
-				// The manifest record keys on `key`; the preamble embeds the same
-				// literal (JSON string encoding matches the preamble's escape
-				// rules for these path keys).
-				const relativePath = key.slice("/luau-root/".length);
-				const instrumented = vol.readFileSync(`/shadow/${relativePath}`, "utf-8") as string;
-
-				expect(record.key).toBe(key);
-				expect(instrumented).toContain(`local __cov_file_key = ${JSON.stringify(key)}\n`);
-			}
+			// The manifest record keys on `key`; the preamble embeds the same
+			// literal (JSON string encoding matches the preamble's escape rules
+			// for these path keys).
+			expect(Object.values(files).map((record) => record.key)).toStrictEqual(keys);
+			expect(keys.map(readEmbeddedFileKey)).toStrictEqual(
+				keys.map((key) => JSON.stringify(key)),
+			);
 		});
 	});
 
@@ -157,11 +158,11 @@ describe(instrumentRoot, () => {
 				skipFiles: new Set(["shared/player.luau"]),
 			});
 
-			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]![1] as Array<string>;
+			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]![1]!;
 			const skipListPath = luteArgs.at(-1)!;
 
 			expect(skipListPath).toContain("skip-list.json");
-			expect(JSON.parse(vol.readFileSync(skipListPath, "utf-8") as string)).toStrictEqual([
+			expect(JSON.parse(vol.readFileSync(skipListPath, "utf-8").toString())).toStrictEqual([
 				"shared/player.luau",
 			]);
 		});
@@ -179,7 +180,7 @@ describe(instrumentRoot, () => {
 				skipFiles: new Set(),
 			});
 
-			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]?.[1] as Array<string>;
+			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]![1]!;
 
 			// 5 args: run, scriptPath, --, luauRoot, astOutputDir (no skip list)
 			expect(luteArgs).toHaveLength(5);
@@ -197,10 +198,29 @@ describe(instrumentRoot, () => {
 				shadowDir: "/shadow",
 			});
 
-			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]?.[1] as Array<string>;
+			const luteArgs = vi.mocked(cp.execFileSync).mock.calls[0]![1]!;
 
 			expect(luteArgs).toHaveLength(5);
 		});
+	});
+
+	it.for([
+		{ name: "a JSON string", ast: "not an ast" },
+		{ name: "JSON null", ast: null },
+		{ name: "a block-less root node", ast: { tag: "if" } },
+	])("should throw when the AST sidecar is $name", ({ ast }) => {
+		expect.assertions(1);
+
+		setupFilesystem({ files: { "init.luau": ast } });
+
+		expect(() => {
+			instrumentRoot({
+				astOutputDirectory: "/tmp/asts",
+				luauRoot: "/luau-root",
+				parseScript: "mock.luau",
+				shadowDir: "/shadow",
+			});
+		}).toThrowWithMessage(Error, "Malformed AST for init.luau");
 	});
 
 	describe("when the file list includes snapshot files", () => {
@@ -360,7 +380,7 @@ describe(instrument, () => {
 
 			const record = result.files["/luau-root/init.luau"];
 
-			expect(record?.sourceHash).toMatch(/^[a-f0-9]{64}$/);
+			expect(record!.sourceHash).toMatch(/^[a-f0-9]{64}$/);
 		});
 
 		it("should include instrumenterVersion in manifest", () => {
@@ -408,8 +428,8 @@ describe(instrument, () => {
 			});
 
 			expect(result.files["/luau-root/init.luau"]).toBeDefined();
-			expect(result.files["/luau-root/init.luau"]?.statementCount).toBe(1);
-			expect(result.files["/luau-root/init.luau"]?.key).toBe("/luau-root/init.luau");
+			expect(result.files["/luau-root/init.luau"]!.statementCount).toBe(1);
+			expect(result.files["/luau-root/init.luau"]!.key).toBe("/luau-root/init.luau");
 		});
 
 		it("should write covmap sidecar for each file", () => {
@@ -479,8 +499,8 @@ describe(instrument, () => {
 
 			const record = result.files["/luau-root/shared/player.luau"];
 
-			expect(record?.originalLuauPath).not.toContain("\\");
-			expect(record?.instrumentedLuauPath).not.toContain("\\");
+			expect(record!.originalLuauPath).not.toContain("\\");
+			expect(record!.instrumentedLuauPath).not.toContain("\\");
 		});
 	});
 
@@ -719,7 +739,7 @@ describe(instrument, () => {
 			});
 
 			const luteCall = vi.mocked(cp.execFileSync).mock.calls[0];
-			const luteArguments = luteCall?.[1] as Array<string>;
+			const luteArguments = luteCall![1]!;
 
 			expect(luteArguments).toContain("/tmp/asts");
 		});

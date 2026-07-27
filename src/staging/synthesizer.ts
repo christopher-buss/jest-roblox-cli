@@ -14,7 +14,10 @@ export interface StubMount {
 }
 
 export interface CoverageRoot {
-	/** Path relative to `packageDirectory` that points at the original luau root. */
+	/**
+	 * Path relative to `packageDirectory` that points at the original luau
+	 * root.
+	 */
 	luauRoot: string;
 	/** Absolute path to the instrumented shadow directory for the same root. */
 	shadowDir: string;
@@ -27,29 +30,29 @@ export interface PackageDescriptor {
 	 * `prepareWorkspaceCoverage` so the cache gate honors each package's own
 	 * declaration. Not read by synthesis itself.
 	 */
-	coverageCache?: boolean;
+	coverageCache?: boolean | undefined;
 	/**
 	 * Per-package coverage ignore patterns, forwarded to
 	 * `prepareWorkspaceCoverage` so the matcher reflects the merged pkgConfig
 	 * instead of the workspace-root default. Not read by synthesis itself.
 	 */
-	coveragePathIgnorePatterns?: Array<string>;
+	coveragePathIgnorePatterns?: Array<string> | undefined;
 	/**
 	 * When set, $path entries that fall inside any listed `luauRoot` are
 	 * redirected to the corresponding `shadowDir` so the synthesized place
 	 * picks up instrumented sources for this package only. Packages without
 	 * `coverageRoots` use their original $path entries unchanged.
 	 */
-	coverageRoots?: Array<CoverageRoot>;
+	coverageRoots?: Array<CoverageRoot> | undefined;
 	/**
 	 * Per-package `luauRoots`, forwarded to `prepareWorkspaceCoverage` so the
 	 * short-circuit honors the user-listed source dirs. Not read by synthesis
 	 * itself.
 	 */
-	luauRoots?: Array<string>;
+	luauRoots?: Array<string> | undefined;
 	packageDirectory: string;
 	rojoProjectPath: string;
-	stubMounts?: Array<StubMount>;
+	stubMounts?: Array<StubMount> | undefined;
 }
 
 interface SynthesizeInput {
@@ -57,18 +60,18 @@ interface SynthesizeInput {
 	 * Force `ServerScriptService.LoadStringEnabled = true` on the synthesized
 	 * place. The wrap (workspace) path always sets it; this flag is for the
 	 * no-wrap path (studio-cli's Clean Place), whose Run-mode runner gates on
-	 * LoadString. Merged into any existing `ServerScriptService`, preserving its
-	 * `$path`/children/other properties.
+	 * LoadString. Merged into any existing `ServerScriptService`, preserving
+	 * its `$path`/children/other properties.
 	 */
-	loadStringEnabled?: boolean;
+	loadStringEnabled?: boolean | undefined;
 	packages: Array<PackageDescriptor>;
 	/**
-	 * Default `true`: wrap each package under `ServerStorage.__pkg_stage.<name>`
-	 * (multi-package workspace mode). Set to `false` for single-package
-	 * coverage — the package's project tree is emitted verbatim so the runtime
-	 * layout matches a direct `rojo build`.
+	 * Default `true`: wrap each package under
+	 * `ServerStorage.__pkg_stage.<name>` (multi-package workspace mode). Set to
+	 * `false` for single-package coverage — the package's project tree is
+	 * emitted verbatim so the runtime layout matches a direct `rojo build`.
 	 */
-	wrap?: boolean;
+	wrap?: boolean | undefined;
 }
 
 const TRAILING_SLASH = /\/$/;
@@ -105,7 +108,10 @@ const SERVICE_CLASSES = new Set([
 const SERVICE_PROPERTIES = new Set(["AutoRuns", "ExecuteWithStudioRun", "LoadStringEnabled"]);
 
 interface AbsolutizeOptions {
-	/** Base for resolving `coverageRoots[].luauRoot`. Typically `packageDirectory`. */
+	/**
+	 * Base for resolving `coverageRoots[].luauRoot`. Typically
+	 * `packageDirectory`.
+	 */
 	coverageBase: string;
 	coverageRoots: Array<CoverageRoot> | undefined;
 }
@@ -148,10 +154,10 @@ function sortKeys(value: unknown): unknown {
 		return value;
 	}
 
-	const source = value as Record<string, unknown>;
 	const sorted: Record<string, unknown> = {};
-	for (const key of Object.keys(source).sort()) {
-		sorted[key] = sortKeys(source[key]);
+	for (const key of Object.keys(value).sort()) {
+		const member: unknown = Reflect.get(value, key);
+		sorted[key] = sortKeys(member);
 	}
 
 	return sorted;
@@ -358,8 +364,8 @@ function isProperties(value: RojoTreeNode[string]): value is Record<string, unkn
 
 /**
  * Force `ServerScriptService.LoadStringEnabled = true` on a no-wrap tree,
- * creating the service node if the user's project omits it and merging into any
- * existing `$properties` so a hand-set property is preserved. studio-cli's
+ * creating the service node if the user's project omits it and merging into
+ * any existing `$properties` so a hand-set property is preserved. studio-cli's
  * Run-mode runner gates on LoadString, so the Clean Place must enable it
  * regardless of what the user's `.project.json` declares.
  */

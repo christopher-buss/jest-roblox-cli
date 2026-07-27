@@ -97,6 +97,15 @@ function makeFakeBackend(kind: Backend["kind"] = "open-cloud"): Backend {
 	};
 }
 
+function toStdoutText(chunk: Parameters<typeof process.stdout.write>[0]): string {
+	return typeof chunk === "string" ? chunk : String(chunk);
+}
+
+/** Per-package `color`, disagreeing across packages to trip consensus. */
+function colorForPackageDirectory(cwd: string | undefined): { color: boolean } {
+	return { color: cwd!.endsWith("foo") };
+}
+
 function setupHappyPath(): { backend: Backend } {
 	const backend = makeFakeBackend();
 	vi.mocked(discoverWorkspaceRoot).mockReturnValue("/repo");
@@ -165,7 +174,7 @@ describe(runWorkspaceMode, () => {
 
 			expect(createStudioCliBackend).toHaveBeenCalledOnce();
 			expect(createOpenCloudBackend).not.toHaveBeenCalled();
-			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].backend).toBe(backend);
+			expect(vi.mocked(runWorkspace).mock.calls[0]![0].backend).toBe(backend);
 		});
 
 		it("should forward the resolved studioPath to the studio-cli backend", async () => {
@@ -237,7 +246,7 @@ describe(runWorkspaceMode, () => {
 			expect(result.validationExitCode).toBeUndefined();
 			expect(result.projectResults).toHaveLength(2);
 			expect(
-				vi.mocked(runWorkspace).mock.calls[0]?.[0].packageInfos.map((info) => info.name),
+				vi.mocked(runWorkspace).mock.calls[0]![0].packageInfos.map((info) => info.name),
 			).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
 		});
 
@@ -297,9 +306,9 @@ describe(runWorkspaceMode, () => {
 
 			await runWorkspaceMode(makeCli({ packages: "@halcyon/foo", workspace: true }));
 
-			expect(
-				vi.mocked(runWorkspace).mock.calls[0]?.[0].workStealingCredentials?.baseUrl,
-			).toBe("http://127.0.0.1:4010");
+			expect(vi.mocked(runWorkspace).mock.calls[0]![0].workStealingCredentials!.baseUrl).toBe(
+				"http://127.0.0.1:4010",
+			);
 		});
 
 		it("should collapse displayName when project name matches package name", async () => {
@@ -314,7 +323,7 @@ describe(runWorkspaceMode, () => {
 				makeCli({ packages: "@halcyon/foo", workspace: true }),
 			);
 
-			expect(result.projectResults[0]?.displayName).toBe("@halcyon/foo");
+			expect(result.projectResults[0]!.displayName).toBe("@halcyon/foo");
 		});
 
 		it("should pass an onStreamingResult hook when the default human formatter is active", async () => {
@@ -325,7 +334,7 @@ describe(runWorkspaceMode, () => {
 
 			await runWorkspaceMode(makeCli({ packages: "@halcyon/foo", workspace: true }));
 
-			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeFunction();
+			expect(vi.mocked(runWorkspace).mock.calls[0]![0].onStreamingResult).toBeFunction();
 		});
 
 		it("should omit onStreamingResult when the JSON formatter is active", async () => {
@@ -338,7 +347,7 @@ describe(runWorkspaceMode, () => {
 				makeCli({ formatters: ["json"], packages: "@halcyon/foo", workspace: true }),
 			);
 
-			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
+			expect(vi.mocked(runWorkspace).mock.calls[0]![0].onStreamingResult).toBeUndefined();
 		});
 
 		it("should omit onStreamingResult when silent is true", async () => {
@@ -351,7 +360,7 @@ describe(runWorkspaceMode, () => {
 				makeCli({ packages: "@halcyon/foo", silent: true, workspace: true }),
 			);
 
-			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
+			expect(vi.mocked(runWorkspace).mock.calls[0]![0].onStreamingResult).toBeUndefined();
 		});
 
 		it("should omit onStreamingResult when the non-verbose agent formatter is active", async () => {
@@ -364,7 +373,7 @@ describe(runWorkspaceMode, () => {
 				makeCli({ formatters: ["agent"], packages: "@halcyon/foo", workspace: true }),
 			);
 
-			expect(vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult).toBeUndefined();
+			expect(vi.mocked(runWorkspace).mock.calls[0]![0].onStreamingResult).toBeUndefined();
 		});
 
 		it("should write a progress line to stdout when the human-formatter sink is called", async () => {
@@ -377,7 +386,7 @@ describe(runWorkspaceMode, () => {
 			const writeSpy = vi
 				.spyOn(process.stdout, "write")
 				.mockImplementation((chunk: Parameters<typeof process.stdout.write>[0]) => {
-					writes.push(typeof chunk === "string" ? chunk : String(chunk));
+					writes.push(toStdoutText(chunk));
 					return true;
 				});
 
@@ -385,8 +394,8 @@ describe(runWorkspaceMode, () => {
 				makeCli({ color: false, packages: "@halcyon/foo", workspace: true }),
 			);
 
-			const onStreamingResult = vi.mocked(runWorkspace).mock.calls[0]?.[0].onStreamingResult;
-			onStreamingResult?.({
+			const { onStreamingResult } = vi.mocked(runWorkspace).mock.calls[0]![0];
+			onStreamingResult!({
 				elapsedMs: 42,
 				numFailedTests: 0,
 				numPassedTests: 1,
@@ -413,8 +422,8 @@ describe(runWorkspaceMode, () => {
 				makeCli({ packages: "@halcyon/foo", workspace: true }),
 			);
 
-			expect(result.projectResults[0]?.displayName).toBe("@halcyon/foo › client");
-			expect(result.projectResults[1]?.displayName).toBe("@halcyon/foo › server");
+			expect(result.projectResults[0]!.displayName).toBe("@halcyon/foo › client");
+			expect(result.projectResults[1]!.displayName).toBe("@halcyon/foo › server");
 		});
 
 		it("should forward the type test result alongside runtime project results", async () => {
@@ -522,7 +531,7 @@ describe(runWorkspaceMode, () => {
 			expect(result.projectResults).toHaveLength(2);
 			expect(getAffectedPackages).toHaveBeenCalledWith("/repo", "main");
 			expect(
-				vi.mocked(runWorkspace).mock.calls[0]?.[0].packageInfos.map((info) => info.name),
+				vi.mocked(runWorkspace).mock.calls[0]![0].packageInfos.map((info) => info.name),
 			).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
 		});
 
@@ -638,7 +647,7 @@ describe(runWorkspaceMode, () => {
 
 			setupHappyPath();
 			vi.mocked(loadRawConfig).mockImplementation(async (_configPath, cwd) => {
-				return cwd?.endsWith("foo") === true ? { color: true } : { color: false };
+				return colorForPackageDirectory(cwd);
 			});
 
 			const result = await runWorkspaceMode(
@@ -756,7 +765,7 @@ describe(runWorkspaceMode, () => {
 					pkg: "@halcyon/foo",
 				}),
 			]);
-			expect(result.coverageMapped?.files["foo.ts"]).toBeDefined();
+			expect(result.coverageMapped!.files["foo.ts"]).toBeDefined();
 		});
 
 		it("should merge raw coverageData across same-pkg multi-project entries and skip pkgs without a manifest", async () => {
@@ -812,12 +821,12 @@ describe(runWorkspaceMode, () => {
 				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
 			);
 
-			const aggregateCall = vi.mocked(aggregateWorkspaceCoverage).mock.calls[0]?.[0];
+			const aggregateCall = vi.mocked(aggregateWorkspaceCoverage).mock.calls[0]![0];
 
 			expect(aggregateCall).toHaveLength(1);
-			expect(aggregateCall?.[0]?.pkg).toBe("@halcyon/foo");
+			expect(aggregateCall[0]!.pkg).toBe("@halcyon/foo");
 			// 3 + 4 = 7 — both project hits summed.
-			expect(aggregateCall?.[0]?.coverageData?.["out/foo.luau"]?.s["1"]).toBe(7);
+			expect(aggregateCall[0]!.coverageData!["out/foo.luau"]!.s["1"]).toBe(7);
 		});
 
 		it("should leave coverageMapped undefined when the aggregator returns an empty files map", async () => {
@@ -941,7 +950,7 @@ describe(runWorkspaceMode, () => {
 				makeCli({ packages: "@halcyon/foo", workspace: true }),
 			);
 
-			expect(result.coverageMapped?.files["foo.ts"]).toBeDefined();
+			expect(result.coverageMapped!.files["foo.ts"]).toBeDefined();
 		});
 
 		it("should surface per-package coverage gates with each package's own threshold", async () => {

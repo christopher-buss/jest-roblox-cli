@@ -95,9 +95,9 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 			tsconfig: "tsconfig.json",
 		});
 
-		const sourceResult = result.testResults.find((file) =>
-			file.testFilePath.includes("source.ts"),
-		);
+		const sourceResult = result.testResults.find((file) => {
+			return file.testFilePath.includes("source.ts");
+		});
 
 		expect(result.success).toBeFalse();
 		expect(sourceResult).toBeDefined();

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import {
 	collectPaths,
@@ -10,6 +10,14 @@ import {
 	resolveNestedProjectSources,
 } from "./rojo-tree.ts";
 import type { RojoTreeNode } from "./types.ts";
+
+function createTemporaryDirectory(): string {
+	const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+	onTestFinished(() => {
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+	});
+	return temporaryDirectory;
+}
 
 describe(collectPaths, () => {
 	it("should collect all $path strings from a tree", () => {
@@ -186,7 +194,7 @@ describe(resolveNestedProjects, () => {
 	it("should throw with file path when nested project has malformed JSON", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const temporaryDirectory = createTemporaryDirectory();
 		fs.writeFileSync(path.join(temporaryDirectory, "bad.project.json"), "not valid json {{{");
 
 		const tree: RojoTreeNode = {
@@ -196,19 +204,55 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		try {
-			expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
-				"bad.project.json",
-			);
-		} finally {
-			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-		}
+		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow("bad.project.json");
+	});
+
+	it("should throw with file path when a nested project has no tree", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory();
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "treeless.project.json"),
+			'{ "name": "treeless" }',
+		);
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				treeless: { $path: "treeless.project.json" },
+			},
+		};
+
+		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
+			"Failed to parse nested Rojo project: treeless.project.json",
+		);
+	});
+
+	it("should throw with file path when a nested project's tree is an array", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory();
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "array.project.json"),
+			'{ "name": "array", "tree": [] }',
+		);
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				array: { $path: "array.project.json" },
+			},
+		};
+
+		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
+			"Failed to parse nested Rojo project: array.project.json",
+		);
 	});
 
 	it("should throw when a referenced .project.json does not exist", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const temporaryDirectory = createTemporaryDirectory();
 		const tree: RojoTreeNode = {
 			$className: "DataModel",
 			ReplicatedStorage: {
@@ -216,19 +260,15 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		try {
-			expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
-				"Could not read nested Rojo project: nonexistent.project.json",
-			);
-		} finally {
-			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-		}
+		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
+			"Could not read nested Rojo project: nonexistent.project.json",
+		);
 	});
 
 	it("should throw on circular project references", () => {
 		expect.assertions(1);
 
-		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "rojo-tree-test-"));
+		const temporaryDirectory = createTemporaryDirectory();
 		fs.writeFileSync(
 			path.join(temporaryDirectory, "a.project.json"),
 			JSON.stringify({ name: "A", tree: { $path: "b.project.json" } }),
@@ -245,13 +285,9 @@ describe(resolveNestedProjects, () => {
 			},
 		};
 
-		try {
-			expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
-				"Circular project reference",
-			);
-		} finally {
-			fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-		}
+		expect(() => resolveNestedProjects(tree, temporaryDirectory)).toThrow(
+			"Circular project reference",
+		);
 	});
 
 	it("should leave non-string $path values unchanged", () => {

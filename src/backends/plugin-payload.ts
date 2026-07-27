@@ -16,8 +16,8 @@ export interface ConfigEntries {
  * The per-(package, project) entries the plugin's Run-mode runner feeds to its
  * embedded materializer for a workspace run. Shared by both Studio backends —
  * studio-cli writes them into the bootstrap payload, the WebSocket studio
- * backend sends them in the `run_tests` message — so the entry shape can't drift
- * between the two transports.
+ * backend sends them in the `run_tests` message — so the entry shape can't
+ * drift between the two transports.
  */
 export function buildWorkspaceEntries(jobs: Array<ProjectJob>): Array<WorkspaceEntry> {
 	return jobs.map((job) => {
@@ -36,8 +36,8 @@ export function buildWorkspaceEntries(jobs: Array<ProjectJob>): Array<WorkspaceE
 }
 
 /**
- * The configs + filtered injection mounts the single-/multi-project configs path
- * consumes (`Runner.runProjects`). `runtimeStubMounts[i]` is parallel to
+ * The configs + filtered injection mounts the single-/multi-project configs
+ * path consumes (`Runner.runProjects`). `runtimeStubMounts[i]` is parallel to
  * `configs[i]`: the DataModel paths the runner injects `jest.config` into,
  * excluding mounts where Rojo already syncs a user-authored config.
  */

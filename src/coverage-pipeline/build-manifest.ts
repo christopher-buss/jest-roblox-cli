@@ -13,7 +13,10 @@ import { parseVersionedManifest } from "./manifest-parse.ts";
  */
 export const BUILD_MANIFEST_VERSION = 1 as const;
 
-/** Filename the Build Manifest is published under, next to its Coverage Manifest. */
+/**
+ * Filename the Build Manifest is published under, next to its Coverage
+ * Manifest.
+ */
 export const BUILD_MANIFEST_FILE = "build-manifest.json";
 
 export interface BuildManifestProject {
@@ -38,14 +41,18 @@ export interface BuildManifest {
 	/** Shared UUID linking this manifest to its sibling `CoverageManifest`. */
 	buildId: string;
 	/**
-	 * The uninstrumented place a consumer mutates and runs against. Present only
-	 * when produced by `prepareArtifacts`; `runJestRoblox` / the CLI never build
-	 * one, so coverage-only manifests omit it.
+	 * The uninstrumented place a consumer mutates and runs against. Present
+	 * only when produced by `prepareArtifacts`; `runJestRoblox` / the CLI never
+	 * build one, so coverage-only manifests omit it.
 	 */
 	cleanPlace?: BuildManifestArtifact;
-	/** The coverage-instrumented place — the only source of coverage hit data. */
+	/**
+	 * The coverage-instrumented place — the only source of coverage hit data.
+	 */
 	coveragePlace: BuildManifestArtifact;
-	/** SHA-256 of each compiled `.luau`, keyed by package-relative POSIX path. */
+	/**
+	 * SHA-256 of each compiled `.luau`, keyed by package-relative POSIX path.
+	 */
 	files: Record<string, BuildManifestFileRecord>;
 	generatedAt: string;
 	projects: Array<BuildManifestProject>;
@@ -122,8 +129,8 @@ export function writeBuildManifest(filePath: string, manifest: BuildManifest): v
 /**
  * Project a coverage file map down to the Build Manifest's `{ sourceHash }`
  * records, dropping the instrumentation metadata only the coverage pipeline
- * needs. The input is structural so both the single/multi and workspace coverage
- * paths can feed their richer per-file records.
+ * needs. The input is structural so both the single/multi and workspace
+ * coverage paths can feed their richer per-file records.
  */
 export function toBuildManifestFiles(
 	files: Record<string, { sourceHash: string }>,
@@ -135,9 +142,9 @@ export function toBuildManifestFiles(
 
 /**
  * Emit the Build Manifest for a coverage run in a single atomic write. The
- * `coveragePlace` is always recorded; `cleanPlace` is added only when the caller
- * (`prepareArtifacts`) actually built one — so the producer can never record a
- * place it didn't build.
+ * `coveragePlace` is always recorded; `cleanPlace` is added only when the
+ * caller (`prepareArtifacts`) actually built one — so the producer can never
+ * record a place it didn't build.
  */
 export function emitBuildManifest(
 	filePath: string,
@@ -157,7 +164,7 @@ export function emitBuildManifest(
 
 export function readBuildManifest(
 	filePath: string,
-	options: ReadBuildManifestOptions = {},
+	{ expectedBuildId, rootDir: rootDirectory }: ReadBuildManifestOptions = {},
 ): ReadBuildManifestResult {
 	const parsed = parseVersionedManifest(filePath, buildManifestSchema, BUILD_MANIFEST_VERSION);
 	if (parsed.kind !== "ok") {
@@ -165,52 +172,19 @@ export function readBuildManifest(
 	}
 
 	const { manifest } = parsed;
-	const { expectedBuildId, rootDir: rootDirectory } = options;
 
 	if (expectedBuildId !== undefined && manifest.buildId !== expectedBuildId) {
 		return { actual: manifest.buildId, expected: expectedBuildId, kind: "buildid-mismatch" };
 	}
 
-	// The coverage place is always present and is checked first: a drifted
-	// instrumented place poisons the coverage hit data every consumer relies on.
-	const coverageRefusal = verifyPlace(
-		manifest.coveragePlace,
-		"coverage-place-hash-mismatch",
-		rootDirectory,
-	);
-	if (coverageRefusal !== undefined) {
-		return coverageRefusal;
+	const placeRefusal = verifyPlaces(manifest, rootDirectory);
+	if (placeRefusal !== undefined) {
+		return placeRefusal;
 	}
 
-	// The clean place is optional (only `prepareArtifacts` emits it); re-hash it
-	// only when present.
-	if (manifest.cleanPlace !== undefined) {
-		const cleanRefusal = verifyPlace(
-			manifest.cleanPlace,
-			"clean-place-hash-mismatch",
-			rootDirectory,
-		);
-		if (cleanRefusal !== undefined) {
-			return cleanRefusal;
-		}
-	}
-
-	// Iterating in the manifest's recorded key order keeps "report the first
-	// mismatch" deterministic without a comparator.
-	for (const [key, record] of Object.entries(manifest.files)) {
-		const result = verifyArtifact(key, record.sourceHash, rootDirectory);
-		if (result.kind === "missing") {
-			return { kind: "missing-referenced-artifact", path: key };
-		}
-
-		if (result.kind === "mismatch") {
-			return {
-				actual: result.actual,
-				expected: record.sourceHash,
-				kind: "source-drift",
-				path: key,
-			};
-		}
+	const sourceRefusal = verifySourceFiles(manifest, rootDirectory);
+	if (sourceRefusal !== undefined) {
+		return sourceRefusal;
 	}
 
 	return { kind: "ok", manifest };
@@ -256,6 +230,59 @@ function verifyPlace(
 			kind: mismatchKind,
 			path: artifact.path,
 		};
+	}
+
+	return undefined;
+}
+
+/**
+ * Re-hash both recorded places. The coverage place is always present and is
+ * checked first: a drifted instrumented place poisons the coverage hit data
+ * every consumer relies on. The clean place is optional (only
+ * `prepareArtifacts` emits it), so it is re-hashed only when present.
+ */
+function verifyPlaces(
+	manifest: BuildManifest,
+	rootDirectory: string | undefined,
+): ReadBuildManifestResult | undefined {
+	const coverageRefusal = verifyPlace(
+		manifest.coveragePlace,
+		"coverage-place-hash-mismatch",
+		rootDirectory,
+	);
+	if (coverageRefusal !== undefined) {
+		return coverageRefusal;
+	}
+
+	if (manifest.cleanPlace === undefined) {
+		return undefined;
+	}
+
+	return verifyPlace(manifest.cleanPlace, "clean-place-hash-mismatch", rootDirectory);
+}
+
+/**
+ * Re-hash every recorded source file. Iterating in the manifest's recorded key
+ * order keeps "report the first mismatch" deterministic without a comparator.
+ */
+function verifySourceFiles(
+	manifest: BuildManifest,
+	rootDirectory: string | undefined,
+): ReadBuildManifestResult | undefined {
+	for (const [key, record] of Object.entries(manifest.files)) {
+		const result = verifyArtifact(key, record.sourceHash, rootDirectory);
+		if (result.kind === "missing") {
+			return { kind: "missing-referenced-artifact", path: key };
+		}
+
+		if (result.kind === "mismatch") {
+			return {
+				actual: result.actual,
+				expected: record.sourceHash,
+				kind: "source-drift",
+				path: key,
+			};
+		}
 	}
 
 	return undefined;

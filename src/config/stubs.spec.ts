@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { ConfigError } from "./errors.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
@@ -129,7 +129,7 @@ describe(serializeToLuau, () => {
 	it("should skip undefined values", () => {
 		expect.assertions(1);
 
-		const result = serializeToLuau(minimalConfig({ setupFiles: undefined }));
+		const result = serializeToLuau({ ...minimalConfig(), setupFiles: undefined });
 
 		expect(result).not.toContain("setupFiles");
 	});
@@ -330,9 +330,9 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
+		const hasChanged = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(result).toBeTrue();
+		expect(hasChanged).toBeTrue();
 	});
 
 	it("should return true when stub content changed", () => {
@@ -349,9 +349,9 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
+		const hasChanged = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(result).toBeTrue();
+		expect(hasChanged).toBeTrue();
 	});
 
 	it("should return false when stub content identical", () => {
@@ -368,9 +368,9 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
+		const hasChanged = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(result).toBeFalse();
+		expect(hasChanged).toBeFalse();
 	});
 
 	it("should skip projects with empty rojoMounts", () => {
@@ -382,9 +382,9 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: undefined, rojoMounts: [] })];
 
-		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
+		const hasChanged = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(result).toBeFalse();
+		expect(hasChanged).toBeFalse();
 	});
 
 	it("should create directories in shadow dir as needed", () => {
@@ -427,9 +427,9 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
-		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
+		const hasChanged = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(result).toBeTrue();
+		expect(hasChanged).toBeTrue();
 		expect(vol.existsSync("/shadow/out/removed/jest.config.luau")).toBeFalse();
 	});
 
@@ -492,9 +492,9 @@ describe(syncStubsToShadowDirectory, () => {
 		// No stubs anywhere, no mounts tracked
 		const projects = [makeResolvedProject({ outDir: undefined, rojoMounts: [] })];
 
-		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
+		const hasChanged = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(result).toBeFalse();
+		expect(hasChanged).toBeFalse();
 	});
 
 	it("should not remove parent when it still contains other files", () => {
@@ -531,9 +531,9 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
-		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
+		const hasChanged = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(result).toBeFalse();
+		expect(hasChanged).toBeFalse();
 	});
 
 	it("should skip project when source stub does not exist", () => {
@@ -548,9 +548,9 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		const result = syncStubsToShadowDirectory(projects, "/root", "/shadow");
+		const hasChanged = syncStubsToShadowDirectory(projects, "/root", "/shadow");
 
-		expect(result).toBeFalse();
+		expect(hasChanged).toBeFalse();
 	});
 
 	it("should copy stubs from every mount of a multi-mount project", () => {
@@ -717,7 +717,7 @@ describe(assertStubCollisionRule, () => {
 	});
 
 	it("should throw when only some mounts have a user config", () => {
-		expect.assertions(3);
+		expect.assertions(2);
 
 		onTestFinished(() => {
 			vol.reset();
@@ -736,16 +736,17 @@ describe(assertStubCollisionRule, () => {
 			],
 		});
 
-		let caught: ConfigError | undefined;
+		let caught: unknown;
 		try {
 			assertStubCollisionRule(project, "/root");
 		} catch (err) {
-			caught = err as ConfigError;
+			caught = err;
 		}
 
-		expect(caught).toBeInstanceOf(ConfigError);
-		expect(caught?.message).toContain("src/Client");
-		expect(caught?.message).toContain("src/Server");
+		assert(caught instanceof ConfigError);
+
+		expect(caught.message).toContain("src/Client");
+		expect(caught.message).toContain("src/Server");
 	});
 
 	it("should ignore our own generated .lua when counting user configs", () => {
@@ -1409,14 +1410,10 @@ describe(isGeneratedStub, () => {
 		vol.fromJSON({ "/root/file.luau": "anything" });
 
 		const fs = await import("node:fs");
-		const spy = vi.spyOn(fs.default, "openSync").mockImplementation(() => {
+		vi.spyOn(fs.default, "openSync").mockImplementation(() => {
 			throw new Error("EACCES: permission denied");
 		});
 
-		try {
-			expect(isGeneratedStub("/root/file.luau")).toBeFalse();
-		} finally {
-			spy.mockRestore();
-		}
+		expect(isGeneratedStub("/root/file.luau")).toBeFalse();
 	});
 });

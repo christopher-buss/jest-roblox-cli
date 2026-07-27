@@ -18,8 +18,8 @@ describe(createSnapshotPathResolver, () => {
 		});
 
 		expect(
-			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")
-				?.filePath,
+			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")!
+				.filePath,
 		).toBe("out/shared/components/__snapshots__/Button.spec.snap.luau");
 	});
 
@@ -39,8 +39,8 @@ describe(createSnapshotPathResolver, () => {
 		});
 
 		expect(
-			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")
-				?.filePath,
+			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")!
+				.filePath,
 		).toBe("src/shared/components/__snapshots__/Button.spec.snap.luau");
 	});
 
@@ -63,11 +63,11 @@ describe(createSnapshotPathResolver, () => {
 		});
 
 		expect(
-			resolver.resolve("ReplicatedStorage/client/__snapshots__/Foo.spec.snap.luau")?.filePath,
+			resolver.resolve("ReplicatedStorage/client/__snapshots__/Foo.spec.snap.luau")!.filePath,
 		).toBe("src/client/__snapshots__/Foo.spec.snap.luau");
 
 		expect(
-			resolver.resolve("ReplicatedStorage/other/__snapshots__/Bar.spec.snap.luau")?.filePath,
+			resolver.resolve("ReplicatedStorage/other/__snapshots__/Bar.spec.snap.luau")!.filePath,
 		).toBe("src/shared/other/__snapshots__/Bar.spec.snap.luau");
 	});
 
@@ -91,7 +91,7 @@ describe(createSnapshotPathResolver, () => {
 		// Without boundary guard, replace("out","src") would corrupt to
 		// "srcput/client/..."
 		expect(
-			resolver.resolve("ReplicatedStorage/lib/__snapshots__/foo.spec.snap.luau")?.filePath,
+			resolver.resolve("ReplicatedStorage/lib/__snapshots__/foo.spec.snap.luau")!.filePath,
 		).toBe("output/client/lib/__snapshots__/foo.spec.snap.luau");
 	});
 
@@ -149,8 +149,8 @@ describe(createSnapshotPathResolver, () => {
 		});
 
 		expect(
-			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")
-				?.mapping,
+			resolver.resolve("ReplicatedStorage/components/__snapshots__/Button.spec.snap.luau")!
+				.mapping,
 		).toStrictEqual(mapping);
 	});
 
@@ -175,8 +175,8 @@ describe(createSnapshotPathResolver, () => {
 		});
 
 		expect(
-			resolver.resolve("ReplicatedStorage/shared-tests/foo/__snapshots__/Bar.spec.snap.luau")
-				?.filePath,
+			resolver.resolve("ReplicatedStorage/shared-tests/foo/__snapshots__/Bar.spec.snap.luau")!
+				.filePath,
 		).toBe("./src/shared/foo/__snapshots__/Bar.spec.snap.luau");
 	});
 
@@ -195,6 +195,6 @@ describe(createSnapshotPathResolver, () => {
 			},
 		});
 
-		expect(resolver.resolve("ReplicatedStorage/foo/snap.luau")?.mapping).toBeUndefined();
+		expect(resolver.resolve("ReplicatedStorage/foo/snap.luau")!.mapping).toBeUndefined();
 	});
 });

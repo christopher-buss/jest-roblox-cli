@@ -50,8 +50,8 @@ export interface PrepareCoverageResult {
 	placeFile: string;
 	/**
 	 * `true` when the place was rebuilt this run. `false` on the incremental
-	 * no-change short-circuit, so an entry point can skip rewriting an identical
-	 * Build Manifest.
+	 * no-change short-circuit, so an entry point can skip rewriting an
+	 * identical Build Manifest.
 	 */
 	rebuilt: boolean;
 }
@@ -68,20 +68,36 @@ interface WriteManifestOptions {
 
 interface PriorPlaceReuse {
 	/**
-	 * The prior manifest's validated coverage place, when a build manifest exists.
-	 * `readBuildManifest` already re-hashed it, so the caller reuses this rather
-	 * than hashing the same `.rbxl` a second time. Absent for pre-BuildManifest
-	 * caches (coverage manifest only).
+	 * The prior manifest's validated coverage place, when a build manifest
+	 * exists. `readBuildManifest` already re-hashed it, so the caller reuses
+	 * this rather than hashing the same `.rbxl` a second time. Absent for
+	 * pre-BuildManifest caches (coverage manifest only).
 	 */
-	coveragePlace?: BuildManifestArtifact;
+	coveragePlace?: BuildManifestArtifact | undefined;
 	reusable: boolean;
 }
 
-interface ReuseCoverageOptions {
+/** Everything resolved from config before any shadow dir is touched. */
+interface CoverageInputs {
 	buildManifestPath: string;
-	files: Record<string, BuildManifestFileRecord>;
-	hasChanges: boolean;
+	/**
+	 * `false` when the rojo inputs could not be hashed, which turns the
+	 * inputs-drift check off rather than forcing a rebuild.
+	 */
+	hasResolvedInputs: boolean;
+	luauRoots: Array<string>;
+	manifestPath: string;
 	previousManifest: CoverageManifest | undefined;
+	rojoInputsHash: string;
+	rojoProjectPath: string;
+}
+
+/** The merged instrumentation output across every luauRoot. */
+interface ShadowRootsResult {
+	changed: boolean;
+	coverageRoots: Array<CoverageRoot>;
+	files: Record<string, InstrumentedFileRecord>;
+	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 }
 
 /** Project the coverage result down to the record an entry point emits. */
@@ -158,86 +174,22 @@ export function prepareCoverage(
 	config: ResolvedConfig,
 	beforeBuild?: (shadowDirectory: string) => boolean,
 ): PrepareCoverageResult {
-	const rojoProjectPath = findRojoProject(config);
-	const luauRoots = resolveLuauRootsWithRojo(config, rojoProjectPath);
+	const inputs = resolveCoverageInputs(config);
+	const { luauRoots, previousManifest } = inputs;
+	const isIncremental = decideIncremental(config, inputs);
 
-	validateRelativeRoots(luauRoots);
-
-	const { hash: rojoInputsHash, resolved: inputsResolved } = resolveRojoInputsHash(
-		config,
-		rojoProjectPath,
-		luauRoots,
-	);
-
-	const manifestPath = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
-	const buildManifestPath = path.join(COVERAGE_DIR, BUILD_MANIFEST_FILE);
-	const previousManifest = loadCoverageManifest(manifestPath);
-	let useIncremental = canUseIncremental(previousManifest, config);
-
-	// A dropped luauRoot is invisible to the per-root reconcile — it only walks
-	// the current roots — so the dropped root's instrumented shadow subtree and
-	// its stale manifest entries would survive a reuse. Force a cold rebuild so
-	// the rmSync below wipes them. An *added* root needs no cold rebuild: the
-	// existing roots stay cached and the new one is instrumented normally.
-	if (
-		useIncremental &&
-		previousManifest !== undefined &&
-		hasDroppedLuauRoot(previousManifest.luauRoots, luauRoots)
-	) {
-		useIncremental = false;
-	}
-
-	if (!useIncremental && fs.existsSync(COVERAGE_DIR)) {
-		fs.rmSync(COVERAGE_DIR, { recursive: true });
-	}
-
-	const allFiles: Record<string, InstrumentedFileRecord> = {};
-	const allNonInstrumented: Record<string, NonInstrumentedFileRecord> = {};
-	const coverageRoots: Array<CoverageRoot> = [];
-	let hasChanges = !useIncremental;
-
-	for (const luauRoot of luauRoots) {
-		const shadowDirectory = normalizeWindowsPath(path.join(COVERAGE_DIR, luauRoot));
-		const result = prepareShadowRoot({
-			luauRoot,
-			previousManifest,
-			shadowDir: shadowDirectory,
-			useIncremental,
-		});
-
-		if (result.changed) {
-			hasChanges = true;
-		}
-
-		Object.assign(allFiles, result.files);
-		Object.assign(allNonInstrumented, result.nonInstrumentedFiles);
-		coverageRoots.push({
-			luauRoot: result.luauRoot,
-			shadowDir: normalizeWindowsPath(path.resolve(result.shadowDir)),
-		});
-	}
-
-	if (beforeBuild !== undefined) {
-		const extraChanges = beforeBuild(COVERAGE_DIR);
-		if (extraChanges) {
-			hasChanges = true;
-		}
-	}
-
-	// A non-luauRoot rojo input changed — the shadow diff can't see those, so
-	// force a rebuild rather than reuse a stale place built from the old include/
-	// or vendored sources. When the inputs couldn't be hashed the check is
-	// skipped (not forced): a project too broken to hash would also fail the
-	// rebuild's own parse, so preserve the prior reuse behavior instead of
-	// converting it into a hard failure.
-	if (useIncremental && inputsResolved && previousManifest?.rojoInputsHash !== rojoInputsHash) {
-		hasChanges = true;
-	}
+	const shadow = prepareShadowRoots(luauRoots, previousManifest, isIncremental);
+	const hasExtraChanges = beforeBuild?.(COVERAGE_DIR) === true;
+	const hasChanges =
+		!isIncremental ||
+		shadow.changed ||
+		hasExtraChanges ||
+		hasRojoInputDrift(inputs, isIncremental);
 
 	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
-	const files = toBuildManifestFiles(allFiles);
+	const files = toBuildManifestFiles(shadow.files);
 
-	const reused = reuseCoverageResult({ buildManifestPath, files, hasChanges, previousManifest });
+	const reused = reuseCoverageResult(inputs, files, hasChanges);
 	if (reused !== undefined) {
 		process.stderr.write(
 			`Reusing cached coverage place (built ${reused.manifest.generatedAt})\n`,
@@ -245,30 +197,16 @@ export function prepareCoverage(
 		return reused;
 	}
 
-	// Build the `.rbxl` first, then hash it. The order matters: a failed
-	// `buildRojoProject` throws before the coverage manifest is written, so an
-	// interrupted run never leaves a manifest claiming an artifact that isn't on
-	// disk. The caller owns Build Manifest emission (it alone knows the full
-	// place set), keeping that write a single atomic operation.
-	const coveragePlace = buildRojoProject(
-		rojoProjectPath,
-		config.rootDir,
-		coverageRoots,
-		placeFile,
-	);
+	const built = buildCoveragePlaceAndManifest(config, inputs, shadow, placeFile);
 
-	const buildId = crypto.randomUUID();
-	const manifest = buildAndWriteManifest({
-		allFiles,
-		buildId,
-		luauRoots,
-		manifestPath,
-		nonInstrumentedFiles: allNonInstrumented,
+	return {
+		buildId: built.buildId,
+		coveragePlace: built.coveragePlace,
+		files,
+		manifest: built.manifest,
 		placeFile,
-		rojoInputsHash,
-	});
-
-	return { buildId, coveragePlace, files, manifest, placeFile, rebuilt: true };
+		rebuilt: true,
+	};
 }
 
 function containsLuauFiles(directoryPath: string): boolean {
@@ -286,12 +224,15 @@ function containsLuauFiles(directoryPath: string): boolean {
 	});
 }
 
-function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: string): Array<string> {
-	if (config.luauRoots !== undefined && config.luauRoots.length > 0) {
-		return config.luauRoots;
-	}
-
-	// Auto-detect from Rojo project
+/**
+ * Auto-detect coverage roots from the Rojo project's `$path` mounts. Returns
+ * `undefined` when no project file was found or it mounted nothing
+ * instrumentable, so the caller falls through to the tsconfig `outDir`.
+ */
+function detectRootsFromRojo(
+	config: ResolvedConfig,
+	rojoProjectPath?: string,
+): Array<string> | undefined {
 	try {
 		const resolvedPath = rojoProjectPath ?? findRojoProject(config);
 		const validated = rojoProjectSchema(JSON.parse(fs.readFileSync(resolvedPath, "utf-8")));
@@ -316,6 +257,19 @@ function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: stri
 		}
 	}
 
+	return undefined;
+}
+
+function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: string): Array<string> {
+	if (config.luauRoots !== undefined && config.luauRoots.length > 0) {
+		return config.luauRoots;
+	}
+
+	const rojoRoots = detectRootsFromRojo(config, rojoProjectPath);
+	if (rojoRoots !== undefined) {
+		return rojoRoots;
+	}
+
 	const tsconfig = getTsconfig(config.rootDir) ?? undefined;
 	const outDirectory = tsconfig?.config.compilerOptions?.outDir;
 	if (outDirectory !== undefined) {
@@ -338,31 +292,30 @@ function validateRelativeRoots(luauRoots: Array<string>): void {
 	}
 }
 
-function buildRojoProject(
+/**
+ * Hash the rojo build inputs the per-luauRoot shadow diff never sees
+ * (include/, vendored @rbxts, assets, the project files). Runs regardless of
+ * how luauRoots resolved. A malformed/circular project throws; degrade to
+ * `resolved: false` so the caller skips the inputs check (a project too broken
+ * to hash would also fail the rebuild's own parse) rather than hard-failing a
+ * working run.
+ */
+function resolveRojoInputsHash(
+	config: ResolvedConfig,
 	rojoProjectPath: string,
-	packageDirectory: string,
-	coverageRoots: Array<CoverageRoot>,
-	placeFile: string,
-): BuildManifestArtifact {
-	return buildPlace({
-		// The coverage place is shared by every backend. studio-cli opens it
-		// directly and drives the plugin's Run-mode runner, which refuses to run
-		// unless LoadString is enabled; enabling it here is benign for the
-		// open-cloud path (OCALE does not gate on it). Forcing it on at build
-		// time keeps "studio-cli only selects the coverage place" true.
-		loadStringEnabled: true,
-		packages: [
-			{
-				name: "jest-roblox-coverage",
-				coverageRoots,
-				packageDirectory: path.resolve(packageDirectory),
-				rojoProjectPath: path.resolve(rojoProjectPath),
-			},
-		],
-		placeFile,
-		projectFile: path.join(COVERAGE_DIR, path.basename(rojoProjectPath)),
-		wrap: false,
-	});
+	luauRoots: Array<string>,
+): { hash: string; resolved: boolean } {
+	try {
+		const hash = computeRojoInputsHash({
+			luauRoots,
+			rojoProjectPath,
+			rootDirectory: config.rootDir,
+		});
+		return { hash, resolved: true };
+	} catch (err) {
+		process.stderr.write(`Warning: could not hash rojo build inputs: ${String(err)}\n`);
+		return { hash: "", resolved: false };
+	}
 }
 
 function loadCoverageManifest(manifestPath: string): CoverageManifest | undefined {
@@ -390,6 +343,35 @@ function loadCoverageManifest(manifestPath: string): CoverageManifest | undefine
 	}
 }
 
+/**
+ * Resolve the rojo project, the luau roots, the non-luauRoot inputs hash and
+ * the prior manifest — everything the rest of the run reads but never mutates.
+ */
+function resolveCoverageInputs(config: ResolvedConfig): CoverageInputs {
+	const rojoProjectPath = findRojoProject(config);
+	const luauRoots = resolveLuauRootsWithRojo(config, rojoProjectPath);
+
+	validateRelativeRoots(luauRoots);
+
+	const { hash: rojoInputsHash, resolved: hasResolvedInputs } = resolveRojoInputsHash(
+		config,
+		rojoProjectPath,
+		luauRoots,
+	);
+
+	const manifestPath = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
+
+	return {
+		buildManifestPath: path.join(COVERAGE_DIR, BUILD_MANIFEST_FILE),
+		hasResolvedInputs,
+		luauRoots,
+		manifestPath,
+		previousManifest: loadCoverageManifest(manifestPath),
+		rojoInputsHash,
+		rojoProjectPath,
+	};
+}
+
 function canUseIncremental(
 	previousManifest: CoverageManifest | undefined,
 	config: ResolvedConfig,
@@ -409,59 +391,91 @@ function canUseIncremental(
 	return true;
 }
 
-/**
- * Hash the rojo build inputs the per-luauRoot shadow diff never sees (include/,
- * vendored @rbxts, assets, the project files). Runs regardless of how luauRoots
- * resolved. A malformed/circular project throws; degrade to `resolved: false` so
- * the caller skips the inputs check (a project too broken to hash would also
- * fail the rebuild's own parse) rather than hard-failing a working run.
- */
-function resolveRojoInputsHash(
-	config: ResolvedConfig,
-	rojoProjectPath: string,
-	luauRoots: Array<string>,
-): { hash: string; resolved: boolean } {
-	try {
-		const hash = computeRojoInputsHash({
-			luauRoots,
-			rojoProjectPath,
-			rootDirectory: config.rootDir,
-		});
-		return { hash, resolved: true };
-	} catch (err) {
-		process.stderr.write(`Warning: could not hash rojo build inputs: ${String(err)}\n`);
-		return { hash: "", resolved: false };
-	}
+function hasDroppedLuauRoot(previous: Array<string>, current: Array<string>): boolean {
+	const currentSet = new Set(current.map(normalizeWindowsPath));
+	return previous.some((root) => !currentSet.has(normalizeWindowsPath(root)));
 }
 
-function buildAndWriteManifest(options: WriteManifestOptions): CoverageManifest {
-	const {
-		allFiles,
-		buildId,
-		luauRoots,
-		manifestPath,
-		nonInstrumentedFiles,
-		placeFile,
-		rojoInputsHash,
-	} = options;
+/**
+ * Decide whether the cached shadow dirs can be reused, wiping the coverage dir
+ * when they can't so a cold run starts from nothing.
+ */
+function decideIncremental(
+	config: ResolvedConfig,
+	{ luauRoots, previousManifest }: CoverageInputs,
+): boolean {
+	let isIncremental = canUseIncremental(previousManifest, config);
 
-	const generatedAtDate = new Date();
-	const manifest: CoverageManifest = {
-		buildId,
-		files: allFiles,
-		generatedAt: generatedAtDate.toISOString(),
-		instrumenterVersion: INSTRUMENTER_VERSION,
-		luauRoots,
-		nonInstrumentedFiles,
-		placeFilePath: placeFile,
-		rojoInputsHash,
-		shadowDir: COVERAGE_DIR,
-		version: MANIFEST_VERSION,
-	};
+	// A dropped luauRoot is invisible to the per-root reconcile — it only walks
+	// the current roots — so the dropped root's instrumented shadow subtree and
+	// its stale manifest entries would survive a reuse. Force a cold rebuild so
+	// the rmSync below wipes them. An *added* root needs no cold rebuild: the
+	// existing roots stay cached and the new one is instrumented normally.
+	if (
+		isIncremental &&
+		previousManifest !== undefined &&
+		hasDroppedLuauRoot(previousManifest.luauRoots, luauRoots)
+	) {
+		isIncremental = false;
+	}
 
-	writeManifest(manifestPath, manifest);
+	if (!isIncremental && fs.existsSync(COVERAGE_DIR)) {
+		fs.rmSync(COVERAGE_DIR, { recursive: true });
+	}
 
-	return manifest;
+	return isIncremental;
+}
+
+/** Instrument every luauRoot into its shadow dir and merge the results. */
+function prepareShadowRoots(
+	luauRoots: Array<string>,
+	previousManifest: CoverageManifest | undefined,
+	isIncremental: boolean,
+): ShadowRootsResult {
+	const files: Record<string, InstrumentedFileRecord> = {};
+	const nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord> = {};
+	const coverageRoots: Array<CoverageRoot> = [];
+	let hasChanges = false;
+
+	for (const luauRoot of luauRoots) {
+		const shadowDirectory = normalizeWindowsPath(path.join(COVERAGE_DIR, luauRoot));
+		const result = prepareShadowRoot({
+			luauRoot,
+			previousManifest,
+			shadowDir: shadowDirectory,
+			useIncremental: isIncremental,
+		});
+
+		if (result.changed) {
+			hasChanges = true;
+		}
+
+		Object.assign(files, result.files);
+		Object.assign(nonInstrumentedFiles, result.nonInstrumentedFiles);
+		coverageRoots.push({
+			luauRoot: result.luauRoot,
+			shadowDir: normalizeWindowsPath(path.resolve(result.shadowDir)),
+		});
+	}
+
+	return { changed: hasChanges, coverageRoots, files, nonInstrumentedFiles };
+}
+
+/**
+ * A non-luauRoot rojo input changed — the shadow diff can't see those, so force
+ * a rebuild rather than reuse a stale place built from the old include/ or
+ * vendored sources. When the inputs couldn't be hashed the check is skipped
+ * (not forced): a project too broken to hash would also fail the rebuild's own
+ * parse, so preserve the prior reuse behavior instead of converting it into a
+ * hard failure.
+ */
+function hasRojoInputDrift(
+	{ hasResolvedInputs, previousManifest, rojoInputsHash }: CoverageInputs,
+	isIncremental: boolean,
+): boolean {
+	return (
+		isIncremental && hasResolvedInputs && previousManifest?.rojoInputsHash !== rojoInputsHash
+	);
 }
 
 function priorPlaceIsReusable(placeFilePath: string, buildManifestPath: string): PriorPlaceReuse {
@@ -491,14 +505,17 @@ function priorPlaceIsReusable(placeFilePath: string, buildManifestPath: string):
 }
 
 /**
- * Incremental no-change short-circuit: reuse the prior place only if it is still
- * on disk and its bytes match the prior build manifest's record. A missing or
- * drifted artifact (e.g. an interrupted prior build) returns `undefined` so the
- * caller does a full rebuild rather than publishing a manifest that points at a
- * stale or absent `.rbxl`.
+ * Incremental no-change short-circuit: reuse the prior place only if it is
+ * still on disk and its bytes match the prior build manifest's record. A
+ * missing or drifted artifact (e.g. an interrupted prior build) returns
+ * `undefined` so the caller does a full rebuild rather than publishing a
+ * manifest that points at a stale or absent `.rbxl`.
  */
-function reuseCoverageResult(options: ReuseCoverageOptions): PrepareCoverageResult | undefined {
-	const { buildManifestPath, files, hasChanges, previousManifest } = options;
+function reuseCoverageResult(
+	{ buildManifestPath, previousManifest }: CoverageInputs,
+	files: Record<string, BuildManifestFileRecord>,
+	hasChanges: boolean,
+): PrepareCoverageResult | undefined {
 	if (hasChanges || previousManifest?.placeFilePath === undefined) {
 		return undefined;
 	}
@@ -524,7 +541,91 @@ function reuseCoverageResult(options: ReuseCoverageOptions): PrepareCoverageResu
 	};
 }
 
-function hasDroppedLuauRoot(previous: Array<string>, current: Array<string>): boolean {
-	const currentSet = new Set(current.map(normalizeWindowsPath));
-	return previous.some((root) => !currentSet.has(normalizeWindowsPath(root)));
+function buildRojoProject(
+	rojoProjectPath: string,
+	packageDirectory: string,
+	coverageRoots: Array<CoverageRoot>,
+	placeFile: string,
+): BuildManifestArtifact {
+	return buildPlace({
+		// The coverage place is shared by every backend. studio-cli opens it
+		// directly and drives the plugin's Run-mode runner, which refuses to run
+		// unless LoadString is enabled; enabling it here is benign for the
+		// open-cloud path (OCALE does not gate on it). Forcing it on at build
+		// time keeps "studio-cli only selects the coverage place" true.
+		loadStringEnabled: true,
+		packages: [
+			{
+				name: "jest-roblox-coverage",
+				coverageRoots,
+				packageDirectory: path.resolve(packageDirectory),
+				rojoProjectPath: path.resolve(rojoProjectPath),
+			},
+		],
+		placeFile,
+		projectFile: path.join(COVERAGE_DIR, path.basename(rojoProjectPath)),
+		wrap: false,
+	});
+}
+
+function buildAndWriteManifest({
+	allFiles,
+	buildId,
+	luauRoots,
+	manifestPath,
+	nonInstrumentedFiles,
+	placeFile,
+	rojoInputsHash,
+}: WriteManifestOptions): CoverageManifest {
+	const generatedAtDate = new Date();
+	const manifest: CoverageManifest = {
+		buildId,
+		files: allFiles,
+		generatedAt: generatedAtDate.toISOString(),
+		instrumenterVersion: INSTRUMENTER_VERSION,
+		luauRoots,
+		nonInstrumentedFiles,
+		placeFilePath: placeFile,
+		rojoInputsHash,
+		shadowDir: COVERAGE_DIR,
+		version: MANIFEST_VERSION,
+	};
+
+	writeManifest(manifestPath, manifest);
+
+	return manifest;
+}
+
+/**
+ * Build the `.rbxl` first, then write the manifest. The order matters: a failed
+ * `buildRojoProject` throws before the coverage manifest is written, so an
+ * interrupted run never leaves a manifest claiming an artifact that isn't on
+ * disk. The caller owns Build Manifest emission (it alone knows the full place
+ * set), keeping that write a single atomic operation.
+ */
+function buildCoveragePlaceAndManifest(
+	config: ResolvedConfig,
+	inputs: CoverageInputs,
+	shadow: ShadowRootsResult,
+	placeFile: string,
+): { buildId: string; coveragePlace: BuildManifestArtifact; manifest: CoverageManifest } {
+	const coveragePlace = buildRojoProject(
+		inputs.rojoProjectPath,
+		config.rootDir,
+		shadow.coverageRoots,
+		placeFile,
+	);
+
+	const buildId = crypto.randomUUID();
+	const manifest = buildAndWriteManifest({
+		allFiles: shadow.files,
+		buildId,
+		luauRoots: inputs.luauRoots,
+		manifestPath: inputs.manifestPath,
+		nonInstrumentedFiles: shadow.nonInstrumentedFiles,
+		placeFile,
+		rojoInputsHash: inputs.rojoInputsHash,
+	});
+
+	return { buildId, coveragePlace, manifest };
 }

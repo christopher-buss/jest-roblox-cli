@@ -11,56 +11,56 @@ import type { JestResult } from "../types/jest-result.ts";
 export type RunMode = "multi" | "single" | "workspace";
 
 export interface ProjectResult {
-	displayColor?: string;
+	displayColor?: string | undefined;
 	displayName: string;
 	result: ExecuteResult;
 }
 
 export interface MultiProjectMerged {
-	attribution?: ExecuteResult["attribution"];
-	coverageData?: ExecuteResult["coverageData"];
-	sourceMapper?: SourceMapper;
+	attribution?: NonNullable<ExecuteResult["attribution"]> | undefined;
+	coverageData?: NonNullable<ExecuteResult["coverageData"]> | undefined;
+	sourceMapper?: SourceMapper | undefined;
 }
 
 export interface SingleRunResult {
 	/**
-	 * Producer record for the entry point to emit a Build Manifest from. Set only
-	 * on a coverage run; an entry point reads it to write the manifest with the
-	 * place set it has.
+	 * Producer record for the entry point to emit a Build Manifest from. Set
+	 * only on a coverage run; an entry point reads it to write the manifest
+	 * with the place set it has.
 	 */
-	coverageArtifacts?: CoverageArtifacts;
+	coverageArtifacts?: CoverageArtifacts | undefined;
 	/**
-	 * Narrows the agent coverage **text table** to the directly-filtered source
-	 * files on a filtered run (single file / `--testPathPattern`). Display-only:
-	 * thresholds, totals, and lcov/html/json keep the full universe. Undefined on
-	 * a full run.
+	 * Narrows the agent coverage **text table** to the directly-filtered
+	 * source files on a filtered run (single file / `--testPathPattern`).
+	 * Display-only: thresholds, totals, and lcov/html/json keep the full
+	 * universe. Undefined on a full run.
 	 */
-	coverageDisplayFilter?: CoverageDisplayPredicate;
+	coverageDisplayFilter?: CoverageDisplayPredicate | undefined;
 	mode: "single";
 	preCoverageMs: number;
-	runtimeResult?: ExecuteResult;
-	typecheckResult?: JestResult;
-	validationExitCode?: 2;
+	runtimeResult?: ExecuteResult | undefined;
+	typecheckResult?: JestResult | undefined;
+	validationExitCode?: 2 | undefined;
 }
 
 export interface MultiRunResult {
-	collectCoverageFrom?: Array<string>;
+	collectCoverageFrom?: Array<string> | undefined;
 	/** Producer record for the entry point to emit a Build Manifest from. */
-	coverageArtifacts?: CoverageArtifacts;
+	coverageArtifacts?: CoverageArtifacts | undefined;
 	/**
 	 * Narrows the agent coverage **text table** to the directly-filtered source
 	 * files on a filtered run (positional files / `--testPathPattern`, or the
 	 * selected `--project` scope). Display-only: thresholds, totals, and
 	 * lcov/html/json keep the full universe. Undefined on a full run.
 	 */
-	coverageDisplayFilter?: CoverageDisplayPredicate;
+	coverageDisplayFilter?: CoverageDisplayPredicate | undefined;
 	merged: MultiProjectMerged;
 	mode: "multi";
 	preCoverageMs: number;
 	projectResults: Array<ProjectResult>;
-	typecheckResult?: JestResult;
-	validationExitCode?: 2;
-	validationMessage?: string;
+	typecheckResult?: JestResult | undefined;
+	validationExitCode?: 2 | undefined;
+	validationMessage?: string | undefined;
 }
 
 /**
@@ -80,29 +80,29 @@ export interface WorkspaceRunResult {
 	 * `loadCoverageManifest(rootDir)` path entirely. Undefined when
 	 * `collectCoverage` is off or no package produced coverage data.
 	 */
-	coverageMapped?: MappedCoverageResult;
+	coverageMapped?: MappedCoverageResult | undefined;
 	/**
 	 * Per-package coverage gates, in aggregation order. Undefined when no
 	 * package carries a coverage manifest; present (possibly empty) whenever
 	 * coverage ran, so the report layer enforces thresholds per package.
 	 */
-	coveragePackages?: Array<WorkspacePackageCoverageGate>;
+	coveragePackages?: Array<WorkspacePackageCoverageGate> | undefined;
 	/**
 	 * Consensus-resolved Aggregated Game Output path the runner wrote (if any).
 	 * Surfaced so formatters point "View …" hints at the file that exists,
 	 * rather than the workspace-root `config.gameOutput` (which the runner does
 	 * not consult).
 	 */
-	gameOutput?: string;
+	gameOutput?: string | undefined;
 	merged: MultiProjectMerged;
 	mode: "workspace";
 	/** Consensus-resolved aggregated result path the runner wrote (if any). */
-	outputFile?: string;
+	outputFile?: string | undefined;
 	preCoverageMs: number;
 	projectResults: Array<ProjectResult>;
-	typecheckResult?: JestResult;
-	validationExitCode?: 2;
-	validationMessage?: string;
+	typecheckResult?: JestResult | undefined;
+	validationExitCode?: 2 | undefined;
+	validationMessage?: string | undefined;
 }
 
 export type RunResult = MultiRunResult | SingleRunResult | WorkspaceRunResult;
@@ -115,5 +115,5 @@ export interface RunOptions {
 	 * seams keep working with the existing two-property shape; production
 	 * callers always pass one through.
 	 */
-	timing?: TimingCollector;
+	timing?: TimingCollector | undefined;
 }

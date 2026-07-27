@@ -1,6 +1,7 @@
 import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { isRojoTreeNode } from "../utils/rojo-tree-node.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
 interface ResolvedSnapshotPath {
@@ -30,7 +31,7 @@ export function createSnapshotPathResolver(
 			const normalized = normalizeWindowsPath(virtualPath);
 
 			for (const [prefix, basePath] of rojoMappings) {
-				if (!normalized.startsWith(`${prefix}/`) && normalized !== prefix) {
+				if (normalized !== prefix && !normalized.startsWith(`${prefix}/`)) {
 					continue;
 				}
 
@@ -57,18 +58,17 @@ function buildMappings(tree: RojoTreeNode, prefix: string): Array<[string, strin
 	const mappings: Array<[string, string]> = [];
 
 	for (const [key, value] of Object.entries(tree)) {
-		if (key.startsWith("$") || typeof value !== "object") {
+		if (!isRojoTreeNode(value) || key.startsWith("$")) {
 			continue;
 		}
 
 		const dataModelPath = prefix ? `${prefix}/${key}` : key;
-		const node = value as RojoTreeNode;
 
-		if (typeof node.$path === "string") {
-			mappings.push([dataModelPath, node.$path]);
+		if (typeof value.$path === "string") {
+			mappings.push([dataModelPath, value.$path]);
 		}
 
-		mappings.push(...buildMappings(node, dataModelPath));
+		mappings.push(...buildMappings(value, dataModelPath));
 	}
 
 	// Longest prefix first for greedy matching

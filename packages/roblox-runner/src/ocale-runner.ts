@@ -1,5 +1,6 @@
-import type { HttpClient, SleepFunc } from "@bedrock-rbx/ocale";
+import type { HttpClient, OpenCloudError, Result, SleepFunc } from "@bedrock-rbx/ocale";
 import { PollTimeoutError, TRANSIENT_TRANSPORT_CODES } from "@bedrock-rbx/ocale";
+import type { LuauExecutionTask } from "@bedrock-rbx/ocale/luau-execution";
 import { LuauExecutionClient } from "@bedrock-rbx/ocale/luau-execution";
 import type { PublishParameters } from "@bedrock-rbx/ocale/places";
 import { PlacesClient } from "@bedrock-rbx/ocale/places";
@@ -54,8 +55,11 @@ export class OcaleRunner implements RemoteRunner {
 		this.readFileFn = options?.readFile ?? ((filePath) => fs.readFileSync(filePath));
 	}
 
-	public async executeScript(options: ExecuteScriptOptions): Promise<ScriptResult> {
-		const { placeVersion, script, timeout } = options;
+	public async executeScriptAsync({
+		placeVersion,
+		script,
+		timeout,
+	}: ExecuteScriptOptions): Promise<ScriptResult> {
 		if (timeout <= 0) {
 			throw new Error("Timeout must be a positive number");
 		}
@@ -77,30 +81,10 @@ export class OcaleRunner implements RemoteRunner {
 			},
 		);
 
-		if (!result.success) {
-			if (result.err instanceof PollTimeoutError) {
-				throw new Error("Execution timed out", { cause: result.err });
-			}
-
-			throw new Error(result.err.message, { cause: result.err });
-		}
-
-		const task = result.data;
-		if (task.state === "COMPLETE") {
-			return {
-				durationMs: Date.now() - startTime,
-				outputs: task.output.results.map(coerceOutputToString),
-			};
-		}
-
-		if (task.state === "FAILED") {
-			throw new Error(task.error.message);
-		}
-
-		throw new Error("Execution was cancelled");
+		return toScriptResult(result, startTime);
 	}
 
-	public async uploadPlace(options: UploadPlaceOptions): Promise<UploadPlaceResult> {
+	public async uploadPlaceAsync(options: UploadPlaceOptions): Promise<UploadPlaceResult> {
 		const placeFilePath = path.resolve(options.placeFilePath);
 		const uploadStart = Date.now();
 		const placeData = this.readFileFn(placeFilePath);
@@ -138,6 +122,33 @@ function coerceOutputToString(value: unknown): string {
 	// or symbol entries), so JSON.stringify always returns a string here. The
 	// outer `String()` satisfies the union return type without adding a branch.
 	return String(JSON.stringify(value));
+}
+
+function toScriptResult(
+	result: Result<LuauExecutionTask, OpenCloudError>,
+	startTime: number,
+): ScriptResult {
+	if (!result.success) {
+		if (result.err instanceof PollTimeoutError) {
+			throw new Error("Execution timed out", { cause: result.err });
+		}
+
+		throw new Error(result.err.message, { cause: result.err });
+	}
+
+	const task = result.data;
+	if (task.state === "COMPLETE") {
+		return {
+			durationMs: Date.now() - startTime,
+			outputs: task.output.results.map(coerceOutputToString),
+		};
+	}
+
+	if (task.state === "FAILED") {
+		throw new Error(task.error.message);
+	}
+
+	throw new Error("Execution was cancelled");
 }
 
 function toArrayBufferView(data: buffer.Buffer): Uint8Array<ArrayBuffer> {

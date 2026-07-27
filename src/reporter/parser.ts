@@ -8,12 +8,12 @@ import type { JestResult, SnapshotSummary } from "../types/jest-result.ts";
 export type SnapshotWrites = Record<string, string>;
 
 interface ParseResult {
-	coverageData?: RawCoverageData;
-	luauTiming?: Record<string, number>;
-	perTestCoverage?: Array<PerTestCoverageEntry>;
+	coverageData?: RawCoverageData | undefined;
+	luauTiming?: Record<string, number> | undefined;
+	perTestCoverage?: Array<PerTestCoverageEntry> | undefined;
 	result: JestResult;
-	setupSeconds?: number;
-	snapshotWrites?: SnapshotWrites;
+	setupSeconds?: number | undefined;
+	snapshotWrites?: SnapshotWrites | undefined;
 }
 
 const TASK_SCRIPT_PREFIX = /^TaskScript:\d+:\s*/;
@@ -25,13 +25,13 @@ export class LuauScriptError extends Error {
 	 * (e.g. "No tests found, exiting with code 1"). Narrower than
 	 * {@link gameOutput}; see CONTEXT.md for the split.
 	 */
-	public bannerOutput?: string;
+	public bannerOutput: string | undefined;
 	/**
 	 * The LogService.MessageOut dump for the failed run. Propagated through
 	 * the exec-error path so `--gameOutput <path>` still receives the full
 	 * log when an entry's envelope decodes to a Luau-level script failure.
 	 */
-	public gameOutput?: string;
+	public gameOutput: string | undefined;
 
 	constructor(rawMessage: string) {
 		super(rawMessage.replace(TASK_SCRIPT_PREFIX, ""));
@@ -46,7 +46,7 @@ const jestResultSchema = type({
 	startTime: "number",
 	success: "boolean",
 	testResults: "object[]",
-});
+}).as<JestResult>();
 
 const jestEnvelopeSchema = type("Record<string, unknown>");
 
@@ -59,17 +59,17 @@ const perTestCoverageSchema = type({
 export function extractJsonFromOutput(output: string): string | undefined {
 	const lines = output.split("\n");
 	let braceCount = 0;
-	let collecting = false;
+	let isCollecting = false;
 	const jsonLines: Array<string> = [];
 
 	for (const line of lines) {
-		if (!collecting && line.trim().startsWith("{")) {
-			collecting = true;
+		if (!isCollecting && line.trimStart().startsWith("{")) {
+			isCollecting = true;
 			braceCount = 0;
 			jsonLines.length = 0;
 		}
 
-		if (!collecting) {
+		if (!isCollecting) {
 			continue;
 		}
 
@@ -85,7 +85,7 @@ export function extractJsonFromOutput(output: string): string | undefined {
 			return candidate;
 		}
 
-		collecting = false;
+		isCollecting = false;
 	}
 
 	return undefined;
@@ -134,7 +134,7 @@ function findJestJsonCandidate(output: string): string | undefined {
 const PROMISE_TRACE_HEADER = /^-- Promise\.Error\(/;
 // Accept zero-or-more spaces after the second colon so we also catch
 // `path:N:msg` from Luau `error(msg, 0)` calls that don't add a space.
-const PROMISE_TRACE_CAUSE_LINE = /:\d+:\s*(.+)$/;
+const PROMISE_TRACE_CAUSE_LINE = /:\d+:\s*(\S.*)$/;
 
 /**
  * Standalone extraction of the `_timing` field from a raw envelope entry's
@@ -193,17 +193,22 @@ function extractCauseFromPromiseTrace(trace: string): string | undefined {
 	return undefined;
 }
 
+// Envelope fields are parsed JSON read by key, so `typeof null === "object"` is
+// the only case that has to be rejected.
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
 function extractExecutionError(object: Record<string, unknown>): string {
-	// Traverse nested parent chain to find root error. `typeof null === "object"`
-	// in JS, so an explicit null guard is required to stop at the leaf.
+	// Traverse nested parent chain to find root error, stopping at the leaf.
 	let current = object;
 	while (true) {
 		const { parent } = current;
-		if (parent === null || typeof parent !== "object") {
+		if (!isRecord(parent)) {
 			break;
 		}
 
-		current = parent as Record<string, unknown>;
+		current = parent;
 	}
 
 	const errorValue = current["error"];
@@ -319,7 +324,7 @@ function unwrapResult(parsed: Record<string, unknown>): Record<string, unknown> 
 	}
 
 	if ("value" in parsed && parsed["success"] === true) {
-		return parsed["value"] as Record<string, unknown>;
+		return jestEnvelopeSchema.assert(parsed["value"]);
 	}
 
 	return parsed;
@@ -331,7 +336,7 @@ function validateJestResult(value: unknown): JestResult {
 		throw new Error(`Invalid Jest result: ${result.summary}`);
 	}
 
-	return result as JestResult;
+	return result;
 }
 
 function extractSetupSeconds(parsed: Record<string, unknown>): number | undefined {
@@ -348,36 +353,40 @@ function numericField(source: Record<string, unknown>, key: string): number {
 	return typeof value === "number" ? value : 0;
 }
 
-function extractSnapshotSummary(
-	resultsObject: Record<string, unknown>,
-): SnapshotSummary | undefined {
-	const { snapshot } = resultsObject;
-	if (snapshot === undefined || snapshot === null || typeof snapshot !== "object") {
+function extractSnapshotSummary({
+	snapshot,
+}: Record<string, unknown>): SnapshotSummary | undefined {
+	if (!isRecord(snapshot)) {
 		return undefined;
 	}
 
-	const source = snapshot as Record<string, unknown>;
 	const summary: SnapshotSummary = {
-		added: numericField(source, "added"),
-		matched: numericField(source, "matched"),
-		total: numericField(source, "total"),
-		unmatched: numericField(source, "unmatched"),
-		updated: numericField(source, "updated"),
+		added: numericField(snapshot, "added"),
+		matched: numericField(snapshot, "matched"),
+		total: numericField(snapshot, "total"),
+		unmatched: numericField(snapshot, "unmatched"),
+		updated: numericField(snapshot, "updated"),
 	};
 
-	if (typeof source["filesRemoved"] === "number") {
-		summary.filesRemoved = source["filesRemoved"];
+	if (typeof snapshot["filesRemoved"] === "number") {
+		summary.filesRemoved = snapshot["filesRemoved"];
 	}
 
-	if (typeof source["unchecked"] === "number") {
-		summary.unchecked = source["unchecked"];
+	if (typeof snapshot["unchecked"] === "number") {
+		summary.unchecked = snapshot["unchecked"];
 	}
 
-	if (typeof source["didUpdate"] === "boolean") {
-		summary.didUpdate = source["didUpdate"];
+	if (typeof snapshot["didUpdate"] === "boolean") {
+		summary.didUpdate = snapshot["didUpdate"];
 	}
 
 	return summary;
+}
+
+function buildJestResult(source: Record<string, unknown>): JestResult {
+	const validated = validateJestResult(source);
+	const snapshot = extractSnapshotSummary(source);
+	return snapshot !== undefined ? { ...validated, snapshot } : validated;
 }
 
 function parseParsedOutput(parsed: Record<string, unknown>): ParseResult {
@@ -393,27 +402,14 @@ function parseParsedOutput(parsed: Record<string, unknown>): ParseResult {
 		throw new LuauScriptError(`Jest execution failed: ${errorMessage}`);
 	}
 
-	if (unwrapped["results"] !== undefined && typeof unwrapped["results"] === "object") {
-		const resultsObject = unwrapped["results"] as Record<string, unknown>;
-		const validated = validateJestResult(resultsObject);
-		const snapshot = extractSnapshotSummary(resultsObject);
-		return {
-			coverageData,
-			luauTiming,
-			perTestCoverage,
-			result: snapshot !== undefined ? { ...validated, snapshot } : validated,
-			setupSeconds,
-			snapshotWrites,
-		};
-	}
-
-	const validated = validateJestResult(unwrapped);
-	const snapshot = extractSnapshotSummary(unwrapped);
+	// The Jest result is either nested under `results` or is the envelope
+	// itself; the snapshot summary rides alongside whichever one carries it.
+	const { results } = unwrapped;
 	return {
 		coverageData,
 		luauTiming,
 		perTestCoverage,
-		result: snapshot !== undefined ? { ...validated, snapshot } : validated,
+		result: buildJestResult(isRecord(results) ? results : unwrapped),
 		setupSeconds,
 		snapshotWrites,
 	};

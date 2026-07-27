@@ -23,6 +23,11 @@ function writeProject(tree: unknown): void {
 	vol.writeFileSync(PROJECT, JSON.stringify({ name: "test", tree }));
 }
 
+function writeRawProject(contents: string): void {
+	vol.mkdirSync("/project", { recursive: true });
+	vol.writeFileSync(PROJECT, contents);
+}
+
 function hashOf(luauRoots: Array<string> = []): string {
 	return computeRojoInputsHash({
 		luauRoots,
@@ -190,5 +195,43 @@ describe(computeRojoInputsHash, () => {
 		vol.symlinkSync("/project/include", "/project/include/loop");
 
 		expect(hashOf()).toMatch(/^[a-f0-9]{64}$/);
+	});
+
+	describe("when the project file has no tree object", () => {
+		it("should throw when the project is not a JSON object", () => {
+			expect.assertions(1);
+
+			reset();
+			writeRawProject('"just a string"');
+
+			expect(hashOf).toThrowWithMessage(Error, /must have a "tree" object/);
+		});
+
+		it("should throw when the project is JSON null", () => {
+			expect.assertions(1);
+
+			reset();
+			writeRawProject("null");
+
+			expect(hashOf).toThrowWithMessage(Error, /must have a "tree" object/);
+		});
+
+		it("should throw when the project is a JSON array", () => {
+			expect.assertions(1);
+
+			reset();
+			writeRawProject("[]");
+
+			expect(hashOf).toThrowWithMessage(Error, /must have a "tree" object/);
+		});
+
+		it("should throw when tree is missing", () => {
+			expect.assertions(1);
+
+			reset();
+			writeRawProject('{ "name": "test" }');
+
+			expect(hashOf).toThrowWithMessage(Error, /must have a "tree" object/);
+		});
 	});
 });

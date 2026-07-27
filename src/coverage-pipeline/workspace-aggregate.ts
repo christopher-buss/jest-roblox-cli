@@ -11,7 +11,7 @@ export interface WorkspacePackageCoverageEntry {
 	 * package opting out of the workspace-root patterns) scopes to its own
 	 * files. Matched against the mapped TS source path.
 	 */
-	ignorePatterns?: Array<string>;
+	ignorePatterns?: Array<string> | undefined;
 	manifest: CoverageManifest;
 	pkg: string;
 }

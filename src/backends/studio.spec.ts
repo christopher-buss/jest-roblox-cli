@@ -39,8 +39,8 @@ function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): Proj
 
 // Workspace jobs carry `pkg`; the backend then drives the staged materializer
 // dispatch by sending `workspace.entries` rather than `config.configs`.
-function wsJob(package_: string, displayName: string): ProjectJob {
-	return { ...job(displayName), pkg: package_ };
+function wsJob(packageName: string, displayName: string): ProjectJob {
+	return { ...job(displayName), pkg: packageName };
 }
 
 const singleJobOptions: BackendOptions = { jobs: [job("")] };
@@ -133,7 +133,7 @@ describe("protocol version handshake", () => {
 		wss.emit("connection", socket);
 		await promise;
 
-		expect(captured?.protocolVersion).toBeTypeOf("number");
+		expect(captured!.protocolVersion).toBeTypeOf("number");
 	});
 
 	it("should reject a stale v1 plugin response that omits protocolVersion echo", async () => {
@@ -252,13 +252,20 @@ describe(StudioBackend, () => {
 			],
 		});
 
+		// Narrower than the shared `pluginRequest` (whose `configs` is
+		// `unknown[]`): this test reads back each job's `testNamePattern`.
+		const configsRequest = type({
+			config: { configs: type({ "testNamePattern?": "string" }).array() },
+			request_id: "string",
+		});
+
 		const wss = getLastCreatedServer()!;
 		const socket = new MockWebSocket();
-		let capturedConfig: undefined | { configs: Array<{ testNamePattern?: string }> };
+		let capturedConfig: typeof configsRequest.infer.config | undefined;
 
 		socket.send.mockImplementation((data) => {
-			const message = pluginRequest.assert(JSON.parse(data));
-			capturedConfig = message.config as { configs: Array<{ testNamePattern?: string }> };
+			const message = configsRequest.assert(JSON.parse(data));
+			capturedConfig = message.config;
 			queueMicrotask(() => {
 				socket.emit(
 					"message",
@@ -283,9 +290,9 @@ describe(StudioBackend, () => {
 		await promise;
 
 		expect(socket.send).toHaveBeenCalledOnce();
-		expect(capturedConfig?.configs).toHaveLength(2);
-		expect(capturedConfig?.configs[0]?.testNamePattern).toBe("alpha-pattern");
-		expect(capturedConfig?.configs[1]?.testNamePattern).toBe("beta-pattern");
+		expect(capturedConfig!.configs).toHaveLength(2);
+		expect(capturedConfig!.configs[0]!.testNamePattern).toBe("alpha-pattern");
+		expect(capturedConfig!.configs[1]!.testNamePattern).toBe("beta-pattern");
 	});
 
 	it("should send a workspace entries payload when jobs carry pkg", async () => {
@@ -334,9 +341,9 @@ describe(StudioBackend, () => {
 		wss.emit("connection", socket);
 		await promise;
 
-		expect(captured?.workspace.entries).toHaveLength(2);
-		expect(captured?.workspace.entries[0]!.pkg).toBe("@scope/a");
-		expect(captured?.workspace.entries[1]!.project).toBe("b");
+		expect(captured!.workspace.entries).toHaveLength(2);
+		expect(captured!.workspace.entries[0]!.pkg).toBe("@scope/a");
+		expect(captured!.workspace.entries[1]!.project).toBe("b");
 	});
 
 	it("should fail fast when a workspace run has a job missing its package name", async () => {

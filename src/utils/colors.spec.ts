@@ -1,3 +1,5 @@
+import { fromPartial } from "@total-typescript/shoehorn";
+
 import hljs from "highlight.js/lib/core";
 import { describe, expect, it, vi } from "vitest";
 
@@ -121,20 +123,18 @@ describe(highlightCode, () => {
 		it("should return plain text when hljs emits an unknown CSS class", () => {
 			expect.assertions(1);
 
-			const spy = vi.spyOn(hljs, "highlight").mockReturnValueOnce({
-				_emitter: {} as never,
-				_top: {} as never,
-				illegal: false,
-				language: "typescript",
-				relevance: 10,
-				value: '<span class="hljs-unknown-class">hello</span>',
-			});
+			vi.spyOn(hljs, "highlight").mockReturnValueOnce(
+				fromPartial({
+					illegal: false,
+					language: "typescript",
+					relevance: 10,
+					value: '<span class="hljs-unknown-class">hello</span>',
+				}),
+			);
 
 			const result = highlightCode("file.ts", "hello");
 
 			expect(result).toBe("hello");
-
-			spy.mockRestore();
 		});
 	});
 });

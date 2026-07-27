@@ -17,7 +17,8 @@
 						"$path": "node_modules/@rbxts"
 					},
 					"@rbxts-js": {
-						"$path": "../../../../../../rojo-sync/@rbxts-js"
+						"$className": "Folder",
+						"$path": "../../../../../../node_modules/@rbxts-js.project.json"
 					}
 				}
 			}

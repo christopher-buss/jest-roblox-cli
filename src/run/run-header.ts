@@ -5,7 +5,7 @@ import { formatRunHeader } from "../formatters/formatter.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 
 export interface RunHeaderInput {
-	collectCoverage?: boolean;
+	collectCoverage?: boolean | undefined;
 	color: boolean;
 	formatters: Array<FormatterEntry> | undefined;
 	rootDir: string;
@@ -15,9 +15,10 @@ export interface RunHeaderInput {
 }
 
 /**
- * Print the ` RUN  vX.Y  <rootDir>` header to stdout at the moment a run begins
- * (right before the backend uploads), so the CLI doesn't look stalled while it
- * waits for remote results. The end-of-run formatters no longer emit it.
+ * Print the ` RUN  vX.Y  <rootDir>` header to stdout at the moment a run
+ * begins (right before the backend uploads), so the CLI doesn't look stalled
+ * while it waits for remote results. The end-of-run formatters no longer emit
+ * it.
  *
  * Self-gates to the default human formatter: nothing is written under
  * `--silent`, `--formatters json`, or `--formatters agent` (without

@@ -8,18 +8,18 @@ import type { SnapshotWrites } from "../reporter/parser.ts";
 import type { JestResult } from "../types/jest-result.ts";
 
 export interface EnvelopeEntry {
-	bannerOutput?: string;
-	elapsedMs?: number;
-	gameOutput?: string;
+	bannerOutput?: string | undefined;
+	elapsedMs?: number | undefined;
+	gameOutput?: string | undefined;
 	jestOutput: string;
-	pkg?: string;
-	project?: string;
-	snapshotWrites?: SnapshotWrites;
+	pkg?: string | undefined;
+	project?: string | undefined;
+	snapshotWrites?: SnapshotWrites | undefined;
 }
 
 export interface ProjectJob {
 	config: ResolvedConfig;
-	displayColor?: string;
+	displayColor?: string | undefined;
 	displayName: string;
 	/**
 	 * Workspace-mode only: the npm package name (e.g. `@halcyon/foo`) that
@@ -28,7 +28,7 @@ export interface ProjectJob {
 	 * workspace mode this is undefined and the lookup falls back to
 	 * `displayName` alone.
 	 */
-	pkg?: string;
+	pkg?: string | undefined;
 	/**
 	 * Studio-only: filtered list of DataModel paths that should receive
 	 * runtime `jest.config` ModuleScript injection. The CLI excludes mount
@@ -42,7 +42,7 @@ export interface ProjectJob {
 	 * mounts needing runtime injection. Open-cloud backend ignores this
 	 * field; it bakes stubs into the place file via the synthesizer.
 	 */
-	runtimeInjectionPaths?: Array<string>;
+	runtimeInjectionPaths?: Array<string> | undefined;
 	testFiles: Array<string>;
 }
 
@@ -58,7 +58,7 @@ export interface StreamingHooks {
 	 * Optional poll cadence in milliseconds. Defaults to 250ms — fast
 	 * enough to feel live without saturating the Open Cloud rate limit.
 	 */
-	pollMs?: number;
+	pollMs?: number | undefined;
 	reader: StreamingResultReader;
 }
 
@@ -66,18 +66,19 @@ export interface BackendOptions {
 	jobs: Array<ProjectJob>;
 	/**
 	 * Open-Cloud-only: number of concurrent Open Cloud Luau execution sessions
-	 * to fire. Unset or 1 means one session carrying all jobs. `"auto"` resolves
-	 * to min(jobs.length, 3). Studio backend must error when this is set to
-	 * anything other than undefined/1 (Phase 4 enforces at the CLI layer).
+	 * to fire. Unset or 1 means one session carrying all jobs. `"auto"`
+	 * resolves to min(jobs.length, 3). Studio backend must error when this is
+	 * set to anything other than undefined/1 (Phase 4 enforces at the CLI
+	 * layer).
 	 */
-	parallel?: "auto" | number;
+	parallel?: "auto" | number | undefined;
 	/**
 	 * Workspace mode: pre-built Luau script that the backend should send
 	 * verbatim instead of generating one from `jobs`. Used by the staged
 	 * materializer pipeline so the CLI layer chooses the script and the
 	 * backend stays unaware of the difference.
 	 */
-	scriptOverride?: string;
+	scriptOverride?: string | undefined;
 	/**
 	 * Open-Cloud-only, work-stealing only: when provided, the backend polls
 	 * the SortedMap concurrently with executeScript and invokes
@@ -86,7 +87,7 @@ export interface BackendOptions {
 	 * poll/delete does not affect the final results returned in the task
 	 * envelope.
 	 */
-	streaming?: StreamingHooks;
+	streaming?: StreamingHooks | undefined;
 	/**
 	 * Open-Cloud-only: when true, fire `parallel` tasks all running the SAME
 	 * `scriptOverride` (no static job-bucket split). Each task pulls work from
@@ -95,31 +96,31 @@ export interface BackendOptions {
 	 * envelopes and maps each to the matching `ProjectJob.displayName` by the
 	 * entry's `pkg` field. `scriptOverride` is required when this is true.
 	 */
-	workStealing?: boolean;
+	workStealing?: boolean | undefined;
 }
 
 export interface BackendTiming {
 	executionMs: number;
-	uploadMs?: number;
+	uploadMs?: number | undefined;
 }
 
 export interface ProjectBackendResult {
-	bannerOutput?: string;
-	coverageData?: RawCoverageData;
-	displayColor?: string;
+	bannerOutput?: string | undefined;
+	coverageData?: RawCoverageData | undefined;
+	displayColor?: string | undefined;
 	displayName: string;
 	elapsedMs: number;
-	gameOutput?: string;
-	luauTiming?: Record<string, number>;
-	perTestCoverage?: Array<PerTestCoverageEntry>;
+	gameOutput?: string | undefined;
+	luauTiming?: Record<string, number> | undefined;
+	perTestCoverage?: Array<PerTestCoverageEntry> | undefined;
 	result: JestResult;
-	setupMs?: number;
-	snapshotWrites?: SnapshotWrites;
+	setupMs?: number | undefined;
+	snapshotWrites?: SnapshotWrites | undefined;
 }
 
 export interface RawBackendEntry {
 	entry: EnvelopeEntry;
-	fallbackGameOutput?: string;
+	fallbackGameOutput?: string | undefined;
 }
 
 export interface BackendResult {
@@ -138,11 +139,12 @@ type BackendKind = "open-cloud" | "studio" | "studio-cli";
 /**
  * Whether this is a workspace (multi-package) run. Workspace jobs each carry
  * their owning package name (`pkg`); single-/multi-project jobs never do, and
- * the run layer builds them all-or-none — so any job with `pkg` means the whole
- * run is a workspace run. The Studio backends key off this to drive the plugin's
- * staged-materializer dispatch (`workspace.entries`) instead of the configs
- * path. `buildWorkspaceEntries` then fails fast if a job is missing `pkg`, so a
- * malformed (mixed) array surfaces as a clear error rather than a bad payload.
+ * the run layer builds them all-or-none — so any job with `pkg` means the
+ * whole run is a workspace run. The Studio backends key off this to drive the
+ * plugin's staged-materializer dispatch (`workspace.entries`) instead of the
+ * configs path. `buildWorkspaceEntries` then fails fast if a job is missing
+ * `pkg`, so a malformed (mixed) array surfaces as a clear error rather than a
+ * bad payload.
  */
 export function isWorkspaceRun(jobs: ReadonlyArray<ProjectJob>): boolean {
 	return jobs.some((job) => job.pkg !== undefined);

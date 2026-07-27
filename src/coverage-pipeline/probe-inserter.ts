@@ -5,9 +5,9 @@ import type { CollectorResult } from "./coverage-collector.ts";
 /**
  * `point` — a self-contained insertion (`__cov_s`/`__cov_f`/`__cov_b` bump).
  * `open`/`close` — the two halves of an expression wrap (`__cov_br(bi, ai, ` …
- * `)`). For a wrap, `spanLine`/`spanColumn` carry the *other* end of the wrapped
- * span (an `open` carries its close position, a `close` its open position) so
- * colliding nested wraps can be ordered to nest correctly.
+ * `)`). For a wrap, `spanLine`/`spanColumn` carry the *other* end of the
+ * wrapped span (an `open` carries its close position, a `close` its open
+ * position) so colliding nested wraps can be ordered to nest correctly.
  */
 type ProbeKind = "close" | "open" | "point";
 
@@ -41,17 +41,57 @@ export function insertProbes(source: string, result: CollectorResult, fileKey: s
 	return preamble + lines.join("\n");
 }
 
-function collectProbes(result: CollectorResult): Array<ProbeInfo> {
-	const probes: Array<ProbeInfo> = [];
+/**
+ * Apply right-to-left (later insertion lands further left), so sort descending
+ * by (line, column). At a shared position, order by kind and then by the wrap's
+ * opposite end so nested wraps surround inner ones; point probes keep their
+ * (stable) insertion order.
+ */
+function compareProbes(left: ProbeInfo, right: ProbeInfo): number {
+	if (left.line !== right.line) {
+		return right.line - left.line;
+	}
 
-	for (const stmt of result.statements) {
-		probes.push({
+	if (left.column !== right.column) {
+		return right.column - left.column;
+	}
+
+	if (KIND_RANK[left.kind] !== KIND_RANK[right.kind]) {
+		return KIND_RANK[left.kind] - KIND_RANK[right.kind];
+	}
+
+	// Ascending here, unlike the descending primary sort — same direction as
+	// KIND_RANK: a probe sorted earlier is applied earlier and ends up further
+	// right, so the inner wrap (nearer far end for an open, nearer near end for
+	// a close) lands closest to the operand.
+	if (
+		left.spanLine !== undefined &&
+		right.spanLine !== undefined &&
+		left.spanLine !== right.spanLine
+	) {
+		return left.spanLine - right.spanLine;
+	}
+
+	if (left.spanColumn !== undefined && right.spanColumn !== undefined) {
+		return left.spanColumn - right.spanColumn;
+	}
+
+	return 0;
+}
+
+function statementProbes(result: CollectorResult): Array<ProbeInfo> {
+	return Array.from(result.statements, (stmt) => {
+		return {
 			column: stmt.location.beginColumn,
 			kind: "point",
 			line: stmt.location.beginLine,
 			text: `__cov_s[${stmt.index}] += 1; `,
-		});
-	}
+		};
+	});
+}
+
+function functionProbes(result: CollectorResult): Array<ProbeInfo> {
+	const probes: Array<ProbeInfo> = [];
 
 	for (const func of result.functions) {
 		if (func.bodyFirstLine > 0) {
@@ -63,6 +103,16 @@ function collectProbes(result: CollectorResult): Array<ProbeInfo> {
 			});
 		}
 	}
+
+	return probes;
+}
+
+/**
+ * Arm-body bumps, followed by the implicit-`else` bumps that give an `if`
+ * without an `else` a countable second arm.
+ */
+function branchPointProbes(result: CollectorResult): Array<ProbeInfo> {
+	const probes: Array<ProbeInfo> = [];
 
 	for (const branch of result.branches) {
 		for (let armIndex = 0; armIndex < branch.arms.length; armIndex++) {
@@ -86,6 +136,21 @@ function collectProbes(result: CollectorResult): Array<ProbeInfo> {
 			text: `else __cov_b[${probe.branchIndex}][${probe.armIndex}] += 1 `,
 		});
 	}
+
+	return probes;
+}
+
+/**
+ * Every self-contained bump: statements, function bodies, branch arm bodies and
+ * the synthesized `else` arm an `if` without one still needs to count.
+ */
+function pointProbes(result: CollectorResult): Array<ProbeInfo> {
+	return [...statementProbes(result), ...functionProbes(result), ...branchPointProbes(result)];
+}
+
+/** The two halves of each expression wrap, emitted as an adjacent pair. */
+function wrapProbes(result: CollectorResult): Array<ProbeInfo> {
+	const probes: Array<ProbeInfo> = [];
 
 	for (const probe of result.wrapProbes) {
 		const { beginColumn, beginLine, endColumn, endLine } = probe.exprLocation;
@@ -116,42 +181,17 @@ function collectProbes(result: CollectorResult): Array<ProbeInfo> {
 		);
 	}
 
-	// Apply right-to-left (later insertion lands further left), so sort
-	// descending by (line, column). At a shared position, order by kind and then
-	// by the wrap's opposite end so nested wraps surround inner ones; point
-	// probes keep their (stable) insertion order.
-	probes.sort((a, b) => {
-		if (a.line !== b.line) {
-			return b.line - a.line;
-		}
-
-		if (a.column !== b.column) {
-			return b.column - a.column;
-		}
-
-		if (KIND_RANK[a.kind] !== KIND_RANK[b.kind]) {
-			return KIND_RANK[a.kind] - KIND_RANK[b.kind];
-		}
-
-		// Ascending here, unlike the descending primary sort — same direction as
-		// KIND_RANK: a probe sorted earlier is applied earlier and ends up
-		// further right, so the inner wrap (nearer far end for an open, nearer
-		// near end for a close) lands closest to the operand.
-		if (a.spanLine !== undefined && b.spanLine !== undefined && a.spanLine !== b.spanLine) {
-			return a.spanLine - b.spanLine;
-		}
-
-		if (a.spanColumn !== undefined && b.spanColumn !== undefined) {
-			return a.spanColumn - b.spanColumn;
-		}
-
-		return 0;
-	});
-
 	return probes;
 }
 
-/** Mutates `mutableLines` in place, inserting probe text at each probe's position. */
+function collectProbes(result: CollectorResult): Array<ProbeInfo> {
+	return [...pointProbes(result), ...wrapProbes(result)].sort(compareProbes);
+}
+
+/**
+ * Mutates `mutableLines` in place, inserting probe text at each probe's
+ * position.
+ */
 function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): void {
 	for (const { column, line: probeLine, text } of probes) {
 		const lineIndex = probeLine - 1;
@@ -159,9 +199,9 @@ function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): voi
 		assert(line !== undefined, `Invalid probe line number: ${probeLine}`);
 		const before = line.slice(0, column - 1);
 		const after = line.slice(column - 1);
-		const needsSeparator =
+		const shouldInsertSeparator =
 			before.length > 0 && !TRAILING_WHITESPACE.test(before) && IDENTIFIER_START.test(text);
-		mutableLines[lineIndex] = before + (needsSeparator ? " " : "") + text + after;
+		mutableLines[lineIndex] = before + (shouldInsertSeparator ? " " : "") + text + after;
 	}
 }
 
@@ -204,13 +244,49 @@ function splitLines(source: string): Array<string> {
 	return lines;
 }
 
-function buildPreamble(modeDirective: string, fileKey: string, result: CollectorResult): string {
-	const escapedKey = fileKey
+/**
+ * The only escaper for the file key. `local __cov_file_key = "<escaped>"` is
+ * one half of the cross-machine join key pair — the other half is the manifest
+ * record `instrumentRoot` writes from the same string — so a second escaper
+ * would silently split the two.
+ */
+function escapeLuauString(value: string): string {
+	return value
 		.replaceAll("\\", "\\\\")
 		.replaceAll('"', '\\"')
 		.replaceAll("\n", "\\n")
 		.replaceAll("\r", "\\r")
 		.replaceAll("\0", "");
+}
+
+/**
+ * The branch half of the preamble: the shared `__cov_b` table, one zero-filled
+ * arm vector per branch, and the `__cov_br` wrap helper when any expression
+ * wrap probe needs it. Empty when the file has no branches.
+ */
+function buildBranchInit(result: CollectorResult): string {
+	if (result.branches.length === 0) {
+		return "";
+	}
+
+	let init =
+		"if _G.__jest_roblox_cov[__cov_file_key].b == nil then _G.__jest_roblox_cov[__cov_file_key].b = {} end\n";
+	init += "local __cov_b = _G.__jest_roblox_cov[__cov_file_key].b\n";
+	for (const branch of result.branches) {
+		const zeros = branch.arms.map(() => "0").join(", ");
+		init += `if __cov_b[${branch.index}] == nil then __cov_b[${branch.index}] = {${zeros}} end\n`;
+	}
+
+	if (result.wrapProbes.length > 0) {
+		init +=
+			"local function __cov_br(__bi, __ai, ...) __cov_b[__bi][__ai] += 1; return ... end\n";
+	}
+
+	return init;
+}
+
+function buildPreamble(modeDirective: string, fileKey: string, result: CollectorResult): string {
+	const escapedKey = escapeLuauString(fileKey);
 
 	let preamble = modeDirective;
 	preamble += "if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end\n";
@@ -232,20 +308,7 @@ function buildPreamble(modeDirective: string, fileKey: string, result: Collector
 		preamble += `for __i = 1, ${result.functions.length} do if __cov_f[__i] == nil then __cov_f[__i] = 0 end end\n`;
 	}
 
-	if (result.branches.length > 0) {
-		preamble +=
-			"if _G.__jest_roblox_cov[__cov_file_key].b == nil then _G.__jest_roblox_cov[__cov_file_key].b = {} end\n";
-		preamble += "local __cov_b = _G.__jest_roblox_cov[__cov_file_key].b\n";
-		for (const branch of result.branches) {
-			const zeros = branch.arms.map(() => "0").join(", ");
-			preamble += `if __cov_b[${branch.index}] == nil then __cov_b[${branch.index}] = {${zeros}} end\n`;
-		}
-
-		if (result.wrapProbes.length > 0) {
-			preamble +=
-				"local function __cov_br(__bi, __ai, ...) __cov_b[__bi][__ai] += 1; return ... end\n";
-		}
-	}
+	preamble += buildBranchInit(result);
 
 	return preamble;
 }

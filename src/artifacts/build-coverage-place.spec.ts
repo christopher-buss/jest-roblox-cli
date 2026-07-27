@@ -12,13 +12,15 @@ import {
 	COVERAGE_MANIFEST_PATH,
 } from "../coverage-pipeline/prepare.ts";
 import { getRawProjects } from "../run.ts";
-import { loadRojoTree, prepareBakedCoverage } from "../run/multi.ts";
+import { loadRojoTree } from "../run/multi.ts";
 import { buildImplicitProject } from "../run/single-projects.ts";
+import { prepareBakedCoverage } from "../run/staging.ts";
 import { buildCoveragePlace } from "./build-coverage-place.ts";
 
 vi.mock(import("../run.ts"));
 vi.mock(import("../run/multi.ts"));
 vi.mock(import("../run/single-projects.ts"));
+vi.mock(import("../run/staging.ts"));
 vi.mock(import("../config/projects.ts"));
 vi.mock(import("../config/stubs.ts"));
 vi.mock(import("../coverage-pipeline/build-manifest.ts"));

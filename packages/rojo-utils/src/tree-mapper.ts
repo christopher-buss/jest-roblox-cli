@@ -1,4 +1,5 @@
 import type { RojoTreeNode } from "./types.ts";
+import { isRojoTreeNode } from "./types.ts";
 
 const TRAILING_SLASH = /\/$/;
 
@@ -31,11 +32,11 @@ export function findInTree(
 	currentDataModelPath: string,
 ): string | undefined {
 	for (const [key, value] of Object.entries(node)) {
-		if (key.startsWith("$") || typeof value !== "object") {
+		if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			continue;
 		}
 
-		const childNode = value as RojoTreeNode;
+		const childNode = value;
 		const childDataModelPath =
 			currentDataModelPath === "" ? key : `${currentDataModelPath}/${key}`;
 

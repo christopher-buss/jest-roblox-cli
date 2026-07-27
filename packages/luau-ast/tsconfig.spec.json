@@ -3,7 +3,6 @@
 	"compilerOptions": {
 		"composite": true,
 		"libReplacement": true,
-		"allowImportingTsExtensions": true,
 		"outDir": "./out-tsc/vitest"
 	},
 	"references": [

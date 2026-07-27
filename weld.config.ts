@@ -3,7 +3,7 @@ import { defineConfig } from "@isentinel/weld";
 const shared = {
 	luauRoot: "luau",
 	requireMode: "path",
-} as const;
+} satisfies Parameters<typeof defineConfig>[0];
 
 export default defineConfig([
 	{

@@ -62,7 +62,7 @@ seedCwd();
 interface ExecuteOptions {
 	backend: Backend;
 	config: ResolvedConfig;
-	deferFormatting?: boolean;
+	deferFormatting?: boolean | undefined;
 	testFiles: Array<string>;
 	version: string;
 }
@@ -122,14 +122,14 @@ const DEFAULT_TIMING: BackendResult["timing"] = {
 };
 
 interface EntryInput {
-	coverageData?: RawCoverageData;
-	elapsedMs?: number;
-	gameOutput?: string;
-	luauTiming?: Record<string, number>;
-	perTestCoverage?: Array<PerTestCoverageEntry>;
+	coverageData?: RawCoverageData | undefined;
+	elapsedMs?: number | undefined;
+	gameOutput?: string | undefined;
+	luauTiming?: Record<string, number> | undefined;
+	perTestCoverage?: Array<PerTestCoverageEntry> | undefined;
 	result: JestResult;
-	setupSeconds?: number;
-	snapshotWrites?: SnapshotWrites;
+	setupSeconds?: number | undefined;
+	snapshotWrites?: SnapshotWrites | undefined;
 }
 
 function buildJestOutputPayload(entry: EntryInput): string {
@@ -395,8 +395,8 @@ describe("execute single-project helper", () => {
 		let capturedOptions: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (options_): Promise<BackendResult> => {
-				capturedOptions = options_;
+			runTests: async (runOptions): Promise<BackendResult> => {
+				capturedOptions = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
 		};
@@ -411,7 +411,7 @@ describe("execute single-project helper", () => {
 
 		await executeSingle(options);
 
-		expect(capturedOptions?.jobs[0]?.config.testNamePattern).toBe("should pass");
+		expect(capturedOptions!.jobs[0]!.config.testNamePattern).toBe("should pass");
 	});
 
 	it("should format output as human-readable by default", async () => {
@@ -593,8 +593,9 @@ describe("execute single-project helper", () => {
 		// emitting an "undefined ms" line.
 		const studioBackend: Backend = {
 			kind: "studio",
-			runTests: async () =>
-				singleEntryResult({ result: createPassingResult() }, { executionMs: 100 }),
+			runTests: async () => {
+				return singleEntryResult({ result: createPassingResult() }, { executionMs: 100 });
+			},
 		};
 
 		await runProjects({
@@ -745,7 +746,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		});
 
-		expect(results[0]?.exitCode).toBe(0);
+		expect(results[0]!.exitCode).toBe(0);
 		expect(extractSpy).not.toHaveBeenCalled();
 	});
 
@@ -789,7 +790,6 @@ describe("execute single-project helper", () => {
 		});
 
 		const written = stderrSpy.mock.calls.map(([chunk]) => String(chunk));
-		stderrSpy.mockRestore();
 
 		expect(written).toContain("[TIMING] findJest: 100ms\n");
 	});
@@ -817,7 +817,6 @@ describe("execute single-project helper", () => {
 		});
 
 		const written = stderrSpy.mock.calls.map(([chunk]) => String(chunk));
-		stderrSpy.mockRestore();
 
 		expect(written.some((chunk) => chunk.includes("[TIMING]"))).toBeFalse();
 	});
@@ -898,7 +897,7 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingle(options);
 
-		expect(result.attribution?.tests).toStrictEqual([
+		expect(result.attribution!.tests).toStrictEqual([
 			{
 				testCaseId: "math > adds",
 				testFilePath: "out/m.spec.luau",
@@ -906,7 +905,7 @@ describe("execute single-project helper", () => {
 				testId: "out/m.spec.luau::math > adds",
 			},
 		]);
-		expect(result.attribution?.coveringTestIds).toStrictEqual({
+		expect(result.attribution!.coveringTestIds).toStrictEqual({
 			"out/m.luau": {
 				"1": ["out/m.spec.luau::math > adds"],
 				"2": ["out/m.spec.luau::math > adds"],
@@ -947,7 +946,7 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingle(options);
 
-		expect(result.attribution?.staticStatementIds).toStrictEqual({ "out/m.luau": ["0"] });
+		expect(result.attribution!.staticStatementIds).toStrictEqual({ "out/m.luau": ["0"] });
 	});
 
 	it("should derive an all-static set when per-test collection ran but credited nothing", async () => {
@@ -973,7 +972,7 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingle(options);
 
-		expect(result.attribution?.staticStatementIds).toStrictEqual({ "out/m.luau": ["0", "1"] });
+		expect(result.attribution!.staticStatementIds).toStrictEqual({ "out/m.luau": ["0", "1"] });
 	});
 
 	it("should not factor coverage into exit code", async () => {
@@ -1270,7 +1269,6 @@ describe("execute single-project helper", () => {
 		});
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
-		stderrSpy.mockRestore();
 
 		expect(output).toMatch(/Wrote 1 of 2 snapshot files/);
 	});
@@ -1318,7 +1316,6 @@ describe("execute single-project helper", () => {
 		});
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
-		stderrSpy.mockRestore();
 
 		expect(output).not.toMatch(/Wrote \d+ snapshot/);
 	});
@@ -1419,7 +1416,6 @@ describe("execute single-project helper", () => {
 		});
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
-		stderrSpy.mockRestore();
 		cwdSpy.mockRestore();
 
 		// CWD-relative misresolution would land here and falsely "exist".
@@ -1478,8 +1474,6 @@ describe("execute single-project helper", () => {
 		expect(stderrSpy).toHaveBeenCalledWith(
 			expect.stringContaining("Cannot resolve snapshot path"),
 		);
-
-		stderrSpy.mockRestore();
 	});
 
 	it("should warn when rojo project has invalid schema for snapshots", async () => {
@@ -1520,8 +1514,6 @@ describe("execute single-project helper", () => {
 		await executeSingle(options);
 
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("invalid rojo project"));
-
-		stderrSpy.mockRestore();
 	});
 
 	it("should warn distinctly when rojo project cannot be read", async () => {
@@ -1560,7 +1552,6 @@ describe("execute single-project helper", () => {
 		});
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
-		stderrSpy.mockRestore();
 
 		expect(output).toContain("Cannot read rojo project");
 		expect(output).toContain("default.project.json");
@@ -1609,7 +1600,6 @@ describe("execute single-project helper", () => {
 		});
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
-		stderrSpy.mockRestore();
 
 		expect(output).toContain("Cannot resolve rojo project tree");
 		expect(result.snapshotWriteFailures).toBe(1);
@@ -1658,8 +1648,6 @@ describe("execute single-project helper", () => {
 		expect(output).toContain("Snapshot Warning");
 		expect(output).toContain("Failed to parse rojo project");
 		expect(output).toContain("default.project.json");
-
-		stderrSpy.mockRestore();
 	});
 
 	it("should warn generically when snapshot write throws non-SyntaxError", async () => {
@@ -1710,7 +1698,6 @@ describe("execute single-project helper", () => {
 		await executeSingle(options);
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
-		stderrSpy.mockRestore();
 
 		expect(output).toMatch(
 			/Failed to write snapshot ReplicatedStorage\/__snapshots__\/test\.snap\.luau/,
@@ -2436,8 +2423,6 @@ describe(loadCoverageManifest, () => {
 
 		expect(loadCoverageManifest(temporaryDirectory)).toBeUndefined();
 		expect(spy).toHaveBeenCalledWith(expect.stringContaining("malformed JSON"));
-
-		spy.mockRestore();
 	});
 
 	it("should warn and return undefined for schema-invalid manifest", () => {
@@ -2454,8 +2439,6 @@ describe(loadCoverageManifest, () => {
 
 		expect(loadCoverageManifest(temporaryDirectory)).toBeUndefined();
 		expect(spy).toHaveBeenCalledWith(expect.stringContaining("manifest is invalid"));
-
-		spy.mockRestore();
 	});
 
 	it("should warn and return undefined for version-mismatched manifest", () => {
@@ -2472,8 +2455,6 @@ describe(loadCoverageManifest, () => {
 
 		expect(loadCoverageManifest(temporaryDirectory)).toBeUndefined();
 		expect(spy).toHaveBeenCalledWith(expect.stringContaining("version 99"));
-
-		spy.mockRestore();
 	});
 
 	it("should load valid manifest", () => {
@@ -2547,8 +2528,6 @@ describe(loadCoverageManifest, () => {
 
 		expect(loadCoverageManifest(temporaryDirectory)).toBeUndefined();
 		expect(spy).toHaveBeenCalledWith(expect.stringContaining("manifest is invalid"));
-
-		spy.mockRestore();
 	});
 });
 
@@ -2566,7 +2545,7 @@ describe(runProjects, () => {
 		});
 
 		expect(results).toHaveLength(1);
-		expect(results[0]?.exitCode).toBe(0);
+		expect(results[0]!.exitCode).toBe(0);
 		expect(backendTiming.executionMs).toBe(100);
 	});
 
@@ -2602,8 +2581,8 @@ describe(runProjects, () => {
 		});
 
 		expect(results).toHaveLength(2);
-		expect(results[0]?.exitCode).toBe(0);
-		expect(results[1]?.exitCode).toBe(1);
+		expect(results[0]!.exitCode).toBe(0);
+		expect(results[1]!.exitCode).toBe(1);
 	});
 
 	it("should forward parallel to backend.runTests", async () => {
@@ -2612,8 +2591,8 @@ describe(runProjects, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTests: async (options_) => {
-				captured = options_;
+			runTests: async (runOptions) => {
+				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
 		};
@@ -2626,7 +2605,7 @@ describe(runProjects, () => {
 			version: "0.0.0-test",
 		});
 
-		expect(captured?.parallel).toBe(3);
+		expect(captured!.parallel).toBe(3);
 	});
 
 	it("should forward scriptOverride, workStealing, and streaming hooks", async () => {
@@ -2635,8 +2614,8 @@ describe(runProjects, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTests: async (options_) => {
-				captured = options_;
+			runTests: async (runOptions) => {
+				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
 		};
@@ -2656,9 +2635,9 @@ describe(runProjects, () => {
 			workStealing: true,
 		});
 
-		expect(captured?.scriptOverride).toBe("-- staged materializer");
-		expect(captured?.workStealing).toBeTrue();
-		expect(captured?.streaming).toBe(streaming);
+		expect(captured!.scriptOverride).toBe("-- staged materializer");
+		expect(captured!.workStealing).toBeTrue();
+		expect(captured!.streaming).toBe(streaming);
 	});
 
 	it("should post-process each result with its own project config", async () => {
@@ -2692,8 +2671,8 @@ describe(runProjects, () => {
 			version: "0.0.0-test",
 		});
 
-		expect(results[0]?.output).toBe("");
-		expect(results[1]?.output).not.toBe("");
+		expect(results[0]!.output).toBe("");
+		expect(results[1]!.output).not.toBe("");
 	});
 
 	it("should share backend timing across every project result", async () => {
@@ -2720,8 +2699,8 @@ describe(runProjects, () => {
 		});
 
 		expect(backendTiming.executionMs).toBe(250);
-		expect(results[0]?.timing.executionMs).toBe(250);
-		expect(results[1]?.timing.executionMs).toBe(250);
+		expect(results[0]!.timing.executionMs).toBe(250);
+		expect(results[1]!.timing.executionMs).toBe(250);
 	});
 
 	it("should throw when backend rawResults length does not match jobs length", async () => {
@@ -2772,8 +2751,8 @@ describe(runProjects, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (options_) => {
-				captured = options_;
+			runTests: async (runOptions) => {
+				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
 		};
@@ -2793,9 +2772,9 @@ describe(runProjects, () => {
 			version: "0.0.0-test",
 		});
 
-		expect(captured?.jobs[0]?.displayColor).toBe("green");
-		expect(captured?.jobs[0]?.displayName).toBe("client");
-		expect(captured?.jobs[0]?.pkg).toBe("@halcyon/client");
+		expect(captured!.jobs[0]!.displayColor).toBe("green");
+		expect(captured!.jobs[0]!.displayName).toBe("client");
+		expect(captured!.jobs[0]!.pkg).toBe("@halcyon/client");
 	});
 
 	it("should apply per-project snapshotFormat defaults before backend dispatch", async () => {
@@ -2804,8 +2783,8 @@ describe(runProjects, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (options_) => {
-				captured = options_;
+			runTests: async (runOptions) => {
+				captured = runOptions;
 				return multiEntryResult([
 					{ result: createPassingResult() },
 					{ result: createPassingResult() },
@@ -2831,8 +2810,8 @@ describe(runProjects, () => {
 			version: "0.0.0-test",
 		});
 
-		expect(captured?.jobs[0]?.config.snapshotFormat?.printBasicPrototype).toBeTrue();
-		expect(captured?.jobs[1]?.config.snapshotFormat?.printBasicPrototype).toBeFalse();
+		expect(captured!.jobs[0]!.config.snapshotFormat!.printBasicPrototype).toBeTrue();
+		expect(captured!.jobs[1]!.config.snapshotFormat!.printBasicPrototype).toBeFalse();
 	});
 
 	// Parse failures on one entry must not halt sibling processing.
@@ -2878,8 +2857,8 @@ describe(runProjects, () => {
 			});
 
 			expect(results).toHaveLength(2);
-			expect(results[0]?.exitCode).toBe(0);
-			expect(results[1]?.exitCode).toBe(1);
+			expect(results[0]!.exitCode).toBe(0);
+			expect(results[1]!.exitCode).toBe(1);
 		});
 
 		it("should use the exec-error file shape on the synthetic failure (failureMessage + empty testResults, counts stay 0)", async () => {
@@ -2902,12 +2881,12 @@ describe(runProjects, () => {
 
 			// `hasExecError` is true when failureMessage is set AND testResults
 			// is empty. Aggregate `numFailedTests` is 0 because no tests ran.
-			expect(results[0]?.result.success).toBeFalse();
-			expect(results[0]?.result.numFailedTests).toBe(0);
-			expect(results[0]?.result.testResults[0]?.failureMessage).toContain(
+			expect(results[0]!.result.success).toBeFalse();
+			expect(results[0]!.result.numFailedTests).toBe(0);
+			expect(results[0]!.result.testResults[0]!.failureMessage).toContain(
 				"Exited with code: 1",
 			);
-			expect(results[0]?.result.testResults[0]?.testResults).toHaveLength(0);
+			expect(results[0]!.result.testResults[0]!.testResults).toHaveLength(0);
 		});
 
 		it("should format the failure's human output when deferFormatting is not set", async () => {
@@ -2929,8 +2908,8 @@ describe(runProjects, () => {
 
 			// Without deferFormatting, the recovered failure still emits
 			// formatted output so single-mode callers see the human banner.
-			expect(results[0]?.output.length).toBeGreaterThan(0);
-			expect(results[0]?.output).toContain("Exited with code: 1");
+			expect(results[0]!.output.length).toBeGreaterThan(0);
+			expect(results[0]!.output).toContain("Exited with code: 1");
 		});
 
 		it("should keep the raw error message when it is not an exit-code transport error", async () => {
@@ -2968,7 +2947,7 @@ describe(runProjects, () => {
 				version: "0.0.0-test",
 			});
 
-			expect(results[0]?.result.testResults[0]?.failureMessage).toBe(
+			expect(results[0]!.result.testResults[0]!.failureMessage).toBe(
 				"Resolver crashed: invalid jest path",
 			);
 		});
@@ -3003,7 +2982,7 @@ describe(runProjects, () => {
 				version: "0.0.0-test",
 			});
 
-			expect(results[0]?.result.testResults[0]?.failureMessage).toBe("Exited with code: 1");
+			expect(results[0]!.result.testResults[0]!.failureMessage).toBe("Exited with code: 1");
 		});
 
 		// When Jest's exit(1) fires for "no tests found", the underlying
@@ -3041,7 +3020,7 @@ describe(runProjects, () => {
 				version: "0.0.0-test",
 			});
 
-			const failureMessage = results[0]?.result.testResults[0]?.failureMessage ?? "";
+			const failureMessage = results[0]!.result.testResults[0]!.failureMessage!;
 
 			// Meaningful cause leads so `cleanExecErrorMessage` picks it.
 			expect(failureMessage).toContain("No tests found in /repo/packages/foo");
@@ -3074,7 +3053,7 @@ describe(runProjects, () => {
 				version: "0.0.0-test",
 			});
 
-			expect(results[0]?.gameOutput).toBe("captured-game-output");
+			expect(results[0]!.gameOutput).toBe("captured-game-output");
 		});
 
 		it("should rethrow non-LuauScriptError failures so unexpected internal errors still surface", async () => {

@@ -1,8 +1,10 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import {
@@ -365,6 +367,30 @@ describe(isCompositeProject, () => {
 		expect(isCompositeProject("/project")).toBeFalse();
 	});
 
+	it("should return false when compilerOptions is absent", () => {
+		expect.assertions(1);
+
+		vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ include: ["src"] }));
+
+		expect(isCompositeProject("/project")).toBeFalse();
+	});
+
+	it("should return false when compilerOptions is null", () => {
+		expect.assertions(1);
+
+		vi.mocked(fs.readFileSync).mockReturnValue('{ "compilerOptions": null }');
+
+		expect(isCompositeProject("/project")).toBeFalse();
+	});
+
+	it("should return false when compilerOptions is an array", () => {
+		expect.assertions(1);
+
+		vi.mocked(fs.readFileSync).mockReturnValue('{ "compilerOptions": [] }');
+
+		expect(isCompositeProject("/project")).toBeFalse();
+	});
+
 	it("should return false when tsconfig does not exist", () => {
 		expect.assertions(1);
 
@@ -407,52 +433,55 @@ describe(isCompositeProject, () => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		onTestFinished(() => {
+			stderrSpy.mockRestore();
+		});
 
 		vi.mocked(fs.readFileSync).mockImplementation(() => {
 			throw new Error("ENOENT");
 		});
 
-		const result = isCompositeProject("/project", "tsconfig.build.json");
+		const isComposite = isCompositeProject("/project", "tsconfig.build.json");
 
-		expect(result).toBeFalse();
+		expect(isComposite).toBeFalse();
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("tsconfig.build.json"));
-
-		stderrSpy.mockRestore();
 	});
 
 	it("should warn with stringified error when thrown value is not an Error", () => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		onTestFinished(() => {
+			stderrSpy.mockRestore();
+		});
 
 		vi.mocked(fs.readFileSync).mockImplementation(() => {
 			// eslint-disable-next-line ts/only-throw-error -- testing non-Error throw
 			throw "raw string error";
 		});
 
-		const result = isCompositeProject("/project", "tsconfig.build.json");
+		const isComposite = isCompositeProject("/project", "tsconfig.build.json");
 
-		expect(result).toBeFalse();
+		expect(isComposite).toBeFalse();
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("raw string error"));
-
-		stderrSpy.mockRestore();
 	});
 
 	it("should not warn when default tsconfig does not exist", () => {
 		expect.assertions(2);
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		onTestFinished(() => {
+			stderrSpy.mockRestore();
+		});
 
 		vi.mocked(fs.readFileSync).mockImplementation(() => {
 			throw new Error("ENOENT");
 		});
 
-		const result = isCompositeProject("/project");
+		const isComposite = isCompositeProject("/project");
 
-		expect(result).toBeFalse();
+		expect(isComposite).toBeFalse();
 		expect(stderrSpy).not.toHaveBeenCalled();
-
-		stderrSpy.mockRestore();
 	});
 
 	it("should resolve custom tsconfig path against root directory", () => {
@@ -480,19 +509,27 @@ describe(runTypecheck, () => {
 
 	type TsgoCallback = (error: null | TsgoSpawnError, stdout: string, stderr: string) => void;
 
+	/** One `execFile` invocation, in the shape `spawnTsgo` calls it. */
+	interface TsgoInvocation {
+		arguments: Array<string>;
+		options: { timeout?: number };
+	}
+
 	// `spawnTsgo` drives `execFile` in callback form and listens once for the
-	// child `spawn` event to clear its launch timer. `stubTsgo` returns a fake
-	// child (`emitSpawn` fires the registered `spawn` listener, `kill` is the spy
-	// `spawnTsgo` calls on a launch timeout) and lets a test simulate tsgo
-	// finishing (exit 0), exiting non-zero with diagnostics, failing to spawn,
-	// or never launching.
+	// child `spawn` event to clear its launch timer. `stubTsgo` returns the
+	// recorded invocations plus a fake child (`emitSpawn` fires the registered
+	// `spawn` listener, `kill` is the spy `spawnTsgo` calls on a launch timeout)
+	// and lets a test simulate tsgo finishing (exit 0), exiting non-zero with
+	// diagnostics, failing to spawn, or never launching.
 	function stubTsgo(respond: (callback: TsgoCallback) => void): {
 		emitSpawn: () => void;
+		invocations: Array<TsgoInvocation>;
 		kill: ReturnType<typeof vi.fn<() => void>>;
 	} {
 		let spawnListener: (() => void) | undefined;
+		const invocations: Array<TsgoInvocation> = [];
 		const kill = vi.fn<() => void>();
-		const child = {
+		const child: childProcess.ChildProcess = fromAny({
 			kill,
 			once(event: string, listener: () => void) {
 				if (event === "spawn") {
@@ -501,17 +538,21 @@ describe(runTypecheck, () => {
 
 				return child;
 			},
-		};
-		vi.mocked(childProcess.execFile).mockImplementation(((
-			_file: string,
-			_arguments: ReadonlyArray<string>,
-			_options: object,
-			callback: TsgoCallback,
-		) => {
-			respond(callback);
-			return child as unknown as childProcess.ChildProcess;
-		}) as unknown as typeof childProcess.execFile);
-		return { emitSpawn: () => spawnListener?.(), kill };
+		});
+		const execFileStub: typeof childProcess.execFile = fromAny(
+			(
+				_file: string,
+				commandArguments: Array<string>,
+				options: { timeout?: number },
+				callback: TsgoCallback,
+			) => {
+				invocations.push({ arguments: commandArguments, options });
+				respond(callback);
+				return child;
+			},
+		);
+		vi.mocked(childProcess.execFile).mockImplementation(execFileStub);
+		return { emitSpawn: () => spawnListener?.(), invocations, kill };
 	}
 
 	function exitWith(code: number): TsgoSpawnError {
@@ -532,7 +573,7 @@ describe(runTypecheck, () => {
 	it("should pass tsconfig option to tsgo for non-composite project", async () => {
 		expect.assertions(4);
 
-		stubTsgo((callback) => {
+		const { invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
@@ -545,7 +586,7 @@ describe(runTypecheck, () => {
 
 		expect(result.success).toBeTrue();
 
-		const callArgs = vi.mocked(childProcess.execFile).mock.calls[0]![1] as Array<string>;
+		const callArgs = invocations[0]!.arguments;
 
 		expect(vi.mocked(childProcess.execFile)).toHaveBeenCalledWith(
 			process.execPath,
@@ -560,7 +601,7 @@ describe(runTypecheck, () => {
 	it("should use --noEmit for non-composite projects", async () => {
 		expect.assertions(2);
 
-		stubTsgo((callback) => {
+		const { invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
@@ -570,7 +611,7 @@ describe(runTypecheck, () => {
 			rootDir: "/project",
 		});
 
-		const callArgs = vi.mocked(childProcess.execFile).mock.calls[0]![1] as Array<string>;
+		const callArgs = invocations[0]!.arguments;
 
 		expect(result.success).toBeTrue();
 		expect(callArgs).toContain("--noEmit");
@@ -579,7 +620,7 @@ describe(runTypecheck, () => {
 	it("should use --build --emitDeclarationOnly for composite projects", async () => {
 		expect.assertions(3);
 
-		stubTsgo((callback) => {
+		const { invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
 		mockReadFileSync(
@@ -592,7 +633,7 @@ describe(runTypecheck, () => {
 			rootDir: "/project",
 		});
 
-		const callArgs = vi.mocked(childProcess.execFile).mock.calls[0]![1] as Array<string>;
+		const callArgs = invocations[0]!.arguments;
 
 		expect(result.success).toBeTrue();
 		expect(callArgs).toContain("--build");
@@ -602,7 +643,7 @@ describe(runTypecheck, () => {
 	it("should pass tsconfig as positional arg for composite --build", async () => {
 		expect.assertions(1);
 
-		stubTsgo((callback) => {
+		const { invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
 		mockReadFileSync(
@@ -616,7 +657,7 @@ describe(runTypecheck, () => {
 			tsconfig: "tsconfig.test.json",
 		});
 
-		const callArgs = vi.mocked(childProcess.execFile).mock.calls[0]![1] as Array<string>;
+		const callArgs = invocations[0]!.arguments;
 
 		expect(callArgs.at(-1)).toBe(path.resolve("/project", "tsconfig.test.json"));
 	});
@@ -642,7 +683,7 @@ describe(runTypecheck, () => {
 	it("should bound the tsgo compile with the default run timeout", async () => {
 		expect.assertions(1);
 
-		stubTsgo((callback) => {
+		const { invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
@@ -652,15 +693,13 @@ describe(runTypecheck, () => {
 			rootDir: "/project",
 		});
 
-		const options = vi.mocked(childProcess.execFile).mock.calls[0]![2] as { timeout?: number };
-
-		expect(options.timeout).toBe(300_000);
+		expect(invocations[0]!.options.timeout).toBe(300_000);
 	});
 
 	it("should bound the tsgo compile with a custom run timeout", async () => {
 		expect.assertions(1);
 
-		stubTsgo((callback) => {
+		const { invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
@@ -671,9 +710,7 @@ describe(runTypecheck, () => {
 			timeout: 250,
 		});
 
-		const options = vi.mocked(childProcess.execFile).mock.calls[0]![2] as { timeout?: number };
-
-		expect(options.timeout).toBe(250);
+		expect(invocations[0]!.options.timeout).toBe(250);
 	});
 
 	it("should throw when the tsgo compile exceeds the run timeout", async () => {

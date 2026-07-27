@@ -15,8 +15,9 @@ import {
 	COVERAGE_MANIFEST_PATH,
 } from "../coverage-pipeline/prepare.ts";
 import { getRawProjects } from "../run.ts";
-import { loadRojoTree, prepareBakedCoverage } from "../run/multi.ts";
+import { loadRojoTree } from "../run/multi.ts";
 import { buildImplicitProject } from "../run/single-projects.ts";
+import { prepareBakedCoverage } from "../run/staging.ts";
 
 const CACHE_DIR = path.join(".jest-roblox", "cache");
 
@@ -24,8 +25,8 @@ const CACHE_DIR = path.join(".jest-roblox", "cache");
  * Everything a caller (a Node-only "Machine A") needs after producing the
  * coverage-instrumented place offline, without executing any suite: the built
  * place (`coveragePlace.path` + content hash) and the paths of the sibling
- * manifests it shares a `buildId` with. The place is left on disk for the caller
- * to copy to the run machine — it is never cleaned.
+ * manifests it shares a `buildId` with. The place is left on disk for the
+ * caller to copy to the run machine — it is never cleaned.
  */
 export interface CoveragePlaceBundle {
 	buildId: string;
@@ -37,7 +38,9 @@ export interface CoveragePlaceBundle {
 	coveragePlace: BuildManifestArtifact;
 	/** Per-project DataModel paths baked into the place. */
 	projects: Array<BuildManifestProject>;
-	/** `false` on the incremental no-change reuse path (place was not rebuilt). */
+	/**
+	 * `false` on the incremental no-change reuse path (place was not rebuilt).
+	 */
 	rebuilt: boolean;
 }
 
@@ -51,10 +54,10 @@ export interface CoveragePlaceBundle {
  * regardless of the input config.
  *
  * The counterpart to `prepareArtifacts`, minus the run and the Clean Place —
- * the entry point for a machine that cannot execute Roblox at all. It shares the
- * `prepareBakedCoverage` seam with the run path but always bakes stubs (the run
- * path skips baking for studio-cli, which injects configs at runtime), because a
- * place handed to a foreign runner must be self-contained.
+ * the entry point for a machine that cannot execute Roblox at all. It shares
+ * the `prepareBakedCoverage` seam with the run path but always bakes stubs
+ * (the run path skips baking for studio-cli, which injects configs at
+ * runtime), because a place handed to a foreign runner must be self-contained.
  */
 export async function buildCoveragePlace(config: ResolvedConfig): Promise<CoveragePlaceBundle> {
 	const cli: CliOptions = {};
@@ -89,10 +92,11 @@ export async function buildCoveragePlace(config: ResolvedConfig): Promise<Covera
 }
 
 /**
- * Resolve the project set the place is built from, mirroring `runSingleOrMulti`
- * dispatch: an explicit `projects:` config resolves through `resolveAllProjects`;
- * a bare config collapses to the single implicit project derived from its luau
- * roots. Type-only configs are irrelevant here — a build always instruments.
+ * Resolve the project set the place is built from, mirroring
+ * `runSingleOrMulti` dispatch: an explicit `projects:` config resolves through
+ * `resolveAllProjects`; a bare config collapses to the single implicit project
+ * derived from its luau roots. Type-only configs are irrelevant here — a build
+ * always instruments.
  */
 async function resolveProjects(config: ResolvedConfig): Promise<Array<ResolvedProjectConfig>> {
 	const rojoTree = loadRojoTree(config);

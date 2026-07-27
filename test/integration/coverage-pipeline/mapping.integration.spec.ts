@@ -71,6 +71,18 @@ function buildSyntheticCoverage(files: Record<string, InstrumentedFileRecord>): 
 	return data;
 }
 
+/**
+ * A mapped path the pipeline failed to bring back to TypeScript. The generated
+ * `jest.config.luau` has no TS twin, so it is expected to stay Luau.
+ */
+function isUnmappedPath(filePath: string): boolean {
+	return !filePath.endsWith(".ts") && !filePath.endsWith("jest.config.luau");
+}
+
+function isUnmappedLuauPath(filePath: string): boolean {
+	return filePath.endsWith(".luau") && !filePath.endsWith("jest.config.luau");
+}
+
 function buildCoverageResult(coverage?: RawCoverageData) {
 	const shadowDirectory = createTemporaryDirectory();
 	const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
@@ -94,16 +106,10 @@ describe("coverage mapping pipeline (roblox-ts)", () => {
 		// Coverage should be keyed by TypeScript paths, not Luau paths
 		expect(resultPaths.length).toBeGreaterThan(0);
 
-		const nonTsPaths = resultPaths.filter((filePath) => {
-			return !filePath.endsWith(".ts") && !filePath.endsWith("jest.config.luau");
-		});
+		const nonTsPaths = resultPaths.filter(isUnmappedPath);
 
 		expect(nonTsPaths).toStrictEqual([]);
-		expect(
-			resultPaths.some(
-				(filePath) => filePath.endsWith(".luau") && !filePath.endsWith("jest.config.luau"),
-			),
-		).toBeFalse();
+		expect(resultPaths.some(isUnmappedLuauPath)).toBeFalse();
 	});
 
 	it("should produce statement mappings pointing at typescript source lines", () => {
@@ -151,9 +157,9 @@ describe("coverage mapping pipeline (roblox-ts)", () => {
 		const result = buildCoverageResult();
 
 		// All resolved paths should point to files that actually exist
-		const allPathsExist = Object.keys(result.files).every((filePath) => existsSync(filePath));
+		const hasEveryPath = Object.keys(result.files).every((filePath) => existsSync(filePath));
 
-		expect(allPathsExist).toBeTrue();
+		expect(hasEveryPath).toBeTrue();
 	});
 
 	it("should report an instrumented file with zero hits when no test exercised it", () => {
@@ -169,8 +175,8 @@ describe("coverage mapping pipeline (roblox-ts)", () => {
 		expect(exampleCoverage).toBeDefined();
 
 		const [, coverage] = exampleCoverage!;
-		const everyStatementZero = Object.values(coverage.s).every((hits) => hits === 0);
+		const isEveryStatementZero = Object.values(coverage.s).every((hits) => hits === 0);
 
-		expect(everyStatementZero).toBeTrue();
+		expect(isEveryStatementZero).toBeTrue();
 	});
 });

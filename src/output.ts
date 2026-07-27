@@ -1,30 +1,12 @@
 import assert from "node:assert";
 import * as fs from "node:fs";
-import * as path from "node:path";
 import process from "node:process";
-import color from "tinyrainbow";
 
-import packageJson from "../package.json" with { type: "json" };
 import type { ResolvedConfig } from "./config/schema.ts";
-import type { CoverageDisplayPredicate } from "./coverage-pipeline/agent-table-filter.ts";
-import { mapCoverageToTypeScript, type MappedCoverageResult } from "./coverage-pipeline/mapper.ts";
 import { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
-import {
-	checkThresholds,
-	generateReports,
-	printCoverageHeader,
-	type ThresholdResult,
-} from "./coverage-pipeline/reporter.ts";
 import type { RawCoverageData } from "./coverage-pipeline/types.ts";
-import { type ExecuteResult, formatExecuteOutput, loadCoverageManifest } from "./executor.ts";
-import { formatAgentMultiProject } from "./formatters/agent.ts";
-import {
-	formatMultiProjectResult,
-	formatResult,
-	type FormatterProjectEntry,
-	formatTypecheckSummary,
-	mergeSnapshotSummaries,
-} from "./formatters/formatter.ts";
+import type { ExecuteResult } from "./executor.ts";
+import { mergeSnapshotSummaries } from "./formatters/formatter.ts";
 import {
 	formatAnnotations,
 	formatJobSummary,
@@ -32,21 +14,28 @@ import {
 	resolveGitHubActionsOptions,
 } from "./formatters/github-actions.ts";
 import { writeJsonFile } from "./formatters/json.ts";
+import { findFormatterOptions, usesAgentFormatter } from "./formatters/utils.ts";
 import {
-	DEFAULT_MAX_FAILURES,
-	findFormatterOptions,
-	hasFormatter,
-	usesAgentFormatter,
-} from "./formatters/utils.ts";
+	extractCoverageDisplayFilter,
+	extractCoveragePackages,
+	extractWorkspaceCoverageMapped,
+	printFinalStatus,
+	processCoverage,
+} from "./reporting/coverage-report.ts";
+import {
+	type MultiOutputContext,
+	printMultiResults,
+	printSingleResults,
+} from "./reporting/print.ts";
+import { mergeJestTotals } from "./results/merge.ts";
 import type {
 	MultiRunResult,
 	ProjectResult,
 	SingleRunResult,
-	WorkspacePackageCoverageGate,
 	WorkspaceRunResult,
 } from "./run/types.ts";
 import { combineSourceMappers, type SourceMapper } from "./source-mapper/index.ts";
-import type { JestResult, SnapshotSummary } from "./types/jest-result.ts";
+import type { JestResult } from "./types/jest-result.ts";
 import type { TimingResult } from "./types/timing.ts";
 import {
 	buildGroupedGameOutput,
@@ -57,26 +46,22 @@ import {
 	writeGroupedGameOutput,
 } from "./utils/game-output.ts";
 
-const VERSION: string = packageJson.version;
-
-interface FormattedOutputOptions {
-	config: ResolvedConfig;
-	mergedResult: JestResult;
-	runtimeResult?: ExecuteResult;
-	timing?: TimingResult;
-	typecheckResult?: JestResult;
+/**
+ * Per-project fields the shared Jest merge doesn't know about — the timing
+ * splits, the snapshot-write tally, and the raw coverage fold.
+ */
+interface ProjectExtras {
+	coverageData: RawCoverageData | undefined;
+	setupMs: number;
+	snapshotWriteFailures: number;
+	testsMs: number;
 }
 
-interface MultiOutputContext {
-	config: ResolvedConfig;
-	/** Resolved Game Output path for "View …" hints (workspace consensus or config). */
-	gameOutputHint?: string;
-	merged: ExecuteResult;
-	/** Resolved result-file path for "View …" hints (workspace consensus or config). */
-	outputFileHint?: string;
-	preCoverageMs: number;
-	projectResults: Array<ProjectResult>;
-	typecheckResult?: JestResult;
+/** The pass/fail inputs shared by the single- and multi-run tails. */
+interface RunStatus {
+	isCoveragePassed: boolean;
+	mergedResult: JestResult;
+	snapshotWriteFailures: number | undefined;
 }
 
 // Combines a Type Test result with the runtime result into one aggregate (counts
@@ -126,30 +111,26 @@ export async function writeResultFile(
 
 export async function outputSingleResult(
 	config: ResolvedConfig,
-	result: SingleRunResult,
-): Promise<number> {
-	const {
+	{
 		coverageDisplayFilter: agentTextFilter,
 		preCoverageMs,
 		runtimeResult,
 		typecheckResult,
-	} = result;
+	}: SingleRunResult,
+): Promise<number> {
 	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
 	const coverageData = runtimeResult?.coverageData;
 
-	const coveragePassed = emitResultsAndCoverage({
+	const isCoveragePassed = emitResultsAndCoverage({
 		config,
 		coverageEnabled: config.collectCoverage,
 		printResults: () => {
-			if (config.silent) {
-				return;
-			}
-
-			const timing =
-				runtimeResult !== undefined
-					? addCoverageTiming(runtimeResult.timing, preCoverageMs)
-					: undefined;
-			printFormattedOutput({ config, mergedResult, runtimeResult, timing, typecheckResult });
+			printSingleResults(config, {
+				mergedResult,
+				preCoverageMs,
+				runtimeResult,
+				typecheckResult,
+			});
 		},
 		runCoverage: () => processCoverage({ agentTextFilter, config, coverageData }),
 	});
@@ -164,93 +145,40 @@ export async function outputSingleResult(
 
 	runGitHubActionsFormatter(config, mergedResult, runtimeResult?.sourceMapper);
 
-	const snapshotsPersisted = (runtimeResult?.snapshotWriteFailures ?? 0) === 0;
-	const snapshotsCurrent = (mergedResult.snapshot?.unchecked ?? 0) === 0;
-	const passed = mergedResult.success && coveragePassed && snapshotsPersisted && snapshotsCurrent;
-	if (!config.silent && config.collectCoverage) {
-		printFinalStatus(passed);
-	}
-
-	return passed ? 0 : 1;
+	return emitFinalStatus(config, {
+		isCoveragePassed,
+		mergedResult,
+		snapshotWriteFailures: runtimeResult?.snapshotWriteFailures,
+	});
 }
 
 export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResult {
-	assert(results.length > 0, "mergeProjectResults requires at least one result");
+	const [firstResult] = results;
+	assert(firstResult !== undefined, "mergeProjectResults requires at least one result");
 
 	if (results.length === 1) {
-		const [first] = results as [ExecuteResult];
-		return first;
+		return firstResult;
 	}
 
-	let numberFailedTests = 0;
-	let numberPassedTests = 0;
-	let numberPendingTests = 0;
-	let numberTodoTests = 0;
-	let numberTotalTests = 0;
-	let startTime = Number.POSITIVE_INFINITY;
-	let success = true;
-	const testResults: Array<JestResult["testResults"][number]> = [];
-	let testsMs = 0;
-	let setupMs = 0;
-	let mergedCoverage: RawCoverageData | undefined;
-	let snapshotWriteFailures = 0;
-	const snapshots: Array<SnapshotSummary> = [];
-
-	for (const result of results) {
-		numberFailedTests += result.result.numFailedTests;
-		numberPassedTests += result.result.numPassedTests;
-		numberPendingTests += result.result.numPendingTests;
-		numberTodoTests += result.result.numTodoTests ?? 0;
-		numberTotalTests += result.result.numTotalTests;
-		startTime = Math.min(startTime, result.result.startTime);
-		success &&= result.result.success;
-		testResults.push(...result.result.testResults);
-		testsMs += result.timing.testsMs;
-		setupMs += result.timing.setupMs ?? 0;
-		snapshotWriteFailures += result.snapshotWriteFailures ?? 0;
-		if (result.result.snapshot !== undefined) {
-			snapshots.push(result.result.snapshot);
-		}
-
-		if (result.coverageData !== undefined) {
-			mergedCoverage = mergeRawCoverage(mergedCoverage, result.coverageData);
-		}
-	}
-
-	const [sharedTiming] = results as [ExecuteResult, ...Array<ExecuteResult>];
-	const mergedStartTime = Math.min(...results.map((entry) => entry.timing.startTime));
-	const totalMs = Math.max(...results.map((entry) => entry.timing.totalMs));
-
-	const mergedSourceMapper = combineSourceMappers(
-		results.flatMap((entry) => (entry.sourceMapper !== undefined ? [entry.sourceMapper] : [])),
-	);
+	const jestResults = results.map((entry) => entry.result);
+	const extras = mergeProjectExtras(results);
+	const snapshots = jestResults
+		.map((result) => result.snapshot)
+		.filter((snapshot) => snapshot !== undefined);
+	const sourceMappers = results
+		.map((entry) => entry.sourceMapper)
+		.filter((sourceMapper) => sourceMapper !== undefined);
+	const totals = mergeJestTotals(jestResults);
 
 	return {
-		coverageData: mergedCoverage,
-		exitCode: success && snapshotWriteFailures === 0 ? 0 : 1,
+		coverageData: extras.coverageData,
+		exitCode: totals.success && extras.snapshotWriteFailures === 0 ? 0 : 1,
 		output: "",
-		result: {
-			numFailedTests: numberFailedTests,
-			numPassedTests: numberPassedTests,
-			numPendingTests: numberPendingTests,
-			numTodoTests: numberTodoTests,
-			numTotalTests: numberTotalTests,
-			snapshot: mergeSnapshotSummaries(snapshots),
-			startTime,
-			success,
-			testResults,
-		},
-		snapshotWriteFailures: snapshotWriteFailures > 0 ? snapshotWriteFailures : undefined,
-		sourceMapper: mergedSourceMapper,
-		timing: {
-			coverageMs: sharedTiming.timing.coverageMs,
-			executionMs: sharedTiming.timing.executionMs,
-			setupMs: setupMs > 0 ? setupMs : undefined,
-			startTime: mergedStartTime,
-			testsMs,
-			totalMs,
-			uploadMs: sharedTiming.timing.uploadMs,
-		},
+		result: { ...totals, snapshot: mergeSnapshotSummaries(snapshots) },
+		snapshotWriteFailures:
+			extras.snapshotWriteFailures > 0 ? extras.snapshotWriteFailures : undefined,
+		sourceMapper: combineSourceMappers(sourceMappers),
+		timing: mergeProjectTiming(results, firstResult, extras),
 	};
 }
 
@@ -261,50 +189,13 @@ export async function outputMultiResult(
 	const { mode, preCoverageMs, projectResults, typecheckResult } = result;
 	const config = buildReportConfig(rootConfig, result);
 
-	if (projectResults.length === 0 && typecheckResult !== undefined) {
-		return outputSingleResult(config, {
-			mode: "single",
-			preCoverageMs,
-			typecheckResult,
-		});
+	if (typecheckResult !== undefined && projectResults.length === 0) {
+		return outputSingleResult(config, { mode: "single", preCoverageMs, typecheckResult });
 	}
 
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
 	const mergedResult = mergeResults(typecheckResult, merged.result);
-
-	const workspaceCoverage = extractWorkspaceCoverageMapped(result);
-	const displayFilter = extractCoverageDisplayFilter(result);
-	const coveragePassed = emitResultsAndCoverage({
-		config,
-		coverageEnabled: config.collectCoverage || workspaceCoverage !== undefined,
-		printResults: () => {
-			if (config.silent) {
-				return;
-			}
-
-			printMultiProjectOutput({
-				config,
-				...resolveSinkHints(result, config),
-				merged,
-				preCoverageMs,
-				projectResults,
-				typecheckResult,
-			});
-
-			if (typecheckResult !== undefined && !usesDefaultFormatter(config)) {
-				process.stderr.write(formatTypecheckSummary(typecheckResult));
-			}
-		},
-		runCoverage: () => {
-			return processCoverage({
-				agentTextFilter: displayFilter,
-				config,
-				coverageData: merged.coverageData,
-				packageGates: extractCoveragePackages(result),
-				preMapped: workspaceCoverage,
-			});
-		},
-	});
+	const isCoveragePassed = emitMultiResults(toMultiOutputContext(config, result, merged), result);
 
 	// Workspace runs write their own result + Game Output sinks (the runner
 	// has package identity, the workspace root, and the consensus-resolved
@@ -319,18 +210,11 @@ export async function outputMultiResult(
 
 	runGitHubActionsFormatter(config, mergedResult, merged.sourceMapper);
 
-	const snapshotsPersisted = (merged.snapshotWriteFailures ?? 0) === 0;
-	const snapshotsCurrent = (mergedResult.snapshot?.unchecked ?? 0) === 0;
-	const passed = mergedResult.success && coveragePassed && snapshotsPersisted && snapshotsCurrent;
-	if (!config.silent && config.collectCoverage) {
-		printFinalStatus(passed);
-	}
-
-	return passed ? 0 : 1;
-}
-
-function addCoverageTiming(timing: TimingResult, coverageMs: number): TimingResult {
-	return { ...timing, coverageMs, totalMs: timing.totalMs + coverageMs };
+	return emitFinalStatus(config, {
+		isCoveragePassed,
+		mergedResult,
+		snapshotWriteFailures: merged.snapshotWriteFailures,
+	});
 }
 
 // In agent mode the run summary must survive an agent trimming the tail of the
@@ -343,16 +227,21 @@ function addCoverageTiming(timing: TimingResult, coverageMs: number): TimingResu
 // `coverageEnabled` only decides *when* the summary prints relative to coverage;
 // it does not gate the coverage call itself. `runCoverage` (`processCoverage`)
 // already no-ops when coverage is off, so it is always invoked here.
-function emitResultsAndCoverage(options: {
+function emitResultsAndCoverage({
+	config,
+	coverageEnabled,
+	printResults,
+	runCoverage,
+}: {
 	config: ResolvedConfig;
 	coverageEnabled: boolean;
 	printResults: () => void;
 	runCoverage: () => boolean;
 }): boolean {
-	const { config, coverageEnabled, printResults, runCoverage } = options;
-	const deferResults = coverageEnabled && usesAgentFormatter(config.formatters, config.verbose);
+	const shouldDeferResults =
+		coverageEnabled && usesAgentFormatter(config.formatters, config.verbose);
 
-	if (!deferResults) {
+	if (!shouldDeferResults) {
 		printResults();
 	}
 
@@ -362,214 +251,30 @@ function emitResultsAndCoverage(options: {
 		// `finally` so the deferred summary still reaches stdout even when
 		// coverage mapping throws (e.g. a malformed coverage map) — losing it
 		// would regress the unconditional "results print" of the non-agent path.
-		if (deferResults) {
+		if (shouldDeferResults) {
 			printResults();
 		}
 	}
 }
 
-function usesDefaultFormatter(config: ResolvedConfig): boolean {
-	return (
-		!hasFormatter(config.formatters, "json") &&
-		!usesAgentFormatter(config.formatters, config.verbose)
-	);
-}
-
-function printOutput(out: string): void {
-	if (out !== "") {
-		// eslint-disable-next-line no-console -- formatted output is intentional stdout
-		console.log(out);
-	}
-}
-
-function formatRuntimeOutput(
+function writeGameOutputIfConfigured(
 	config: ResolvedConfig,
-	runtimeResult: ExecuteResult,
-	timing: TimingResult,
-): string {
-	return formatExecuteOutput({
-		config,
-		result: runtimeResult.result,
-		snapshotWriteFailures: runtimeResult.snapshotWriteFailures,
-		sourceMapper: runtimeResult.sourceMapper,
-		timing,
-		version: VERSION,
-	});
-}
-
-function printFormattedOutput(options: FormattedOutputOptions): void {
-	const { config, mergedResult, runtimeResult, timing, typecheckResult } = options;
-
-	if (typecheckResult !== undefined && runtimeResult !== undefined && timing !== undefined) {
-		if (usesDefaultFormatter(config)) {
-			printOutput(
-				formatResult(mergedResult, timing, {
-					collectCoverage: config.collectCoverage,
-					color: config.color,
-					rootDir: config.rootDir,
-					showLuau: config.showLuau,
-					slowTestThreshold: config.slowTestThreshold,
-					snapshotWriteFailures: runtimeResult.snapshotWriteFailures,
-					sourceMapper: runtimeResult.sourceMapper,
-					typeErrors: typecheckResult.numFailedTests,
-					verbose: config.verbose,
-					version: VERSION,
-				}),
-			);
-		} else {
-			printOutput(formatRuntimeOutput(config, runtimeResult, timing));
-			process.stderr.write(formatTypecheckSummary(typecheckResult));
-		}
-
+	gameOutput: string | undefined,
+	options: { hintsShown?: boolean },
+): void {
+	if (config.gameOutput === undefined) {
 		return;
 	}
 
-	if (typecheckResult !== undefined) {
-		process.stdout.write(formatTypecheckSummary(typecheckResult));
-		return;
-	}
+	const entries = parseGameOutput(gameOutput);
+	writeGameOutput(config.gameOutput, entries);
 
-	assert(runtimeResult !== undefined && timing !== undefined, "runtime result required");
-	printOutput(formatRuntimeOutput(config, runtimeResult, timing));
-}
-
-function resolveMappedCoverage(
-	config: ResolvedConfig,
-	coverageData: RawCoverageData | undefined,
-	preMapped: MappedCoverageResult | undefined,
-): MappedCoverageResult | undefined {
-	if (preMapped !== undefined) {
-		// Workspace mode pre-aggregates per-package coverage using each
-		// package's own manifest before reaching the formatter; skip the
-		// single-package manifest lookup entirely.
-		return preMapped;
-	}
-
-	if (coverageData === undefined) {
-		if (!config.silent) {
-			process.stderr.write(
-				"Warning: coverage data was empty — the Rojo project may point at uninstrumented source\n",
-			);
+	if (!config.silent && options.hintsShown !== true) {
+		const notice = formatGameOutputNotice(config.gameOutput, entries.length);
+		if (notice) {
+			console.error(notice);
 		}
-
-		return undefined;
 	}
-
-	const manifest = loadCoverageManifest(config.rootDir);
-	if (manifest === undefined) {
-		if (!config.silent) {
-			process.stderr.write("Warning: Coverage manifest not found, skipping TS mapping\n");
-		}
-
-		return undefined;
-	}
-
-	return mapCoverageToTypeScript(coverageData, manifest);
-}
-
-// Single owner of the threshold-failure wire format: the pooled path passes no
-// prefix, the per-package path prefixes the package name.
-function writeThresholdFailures(failures: ThresholdResult["failures"], prefix = ""): void {
-	for (const failure of failures) {
-		process.stderr.write(
-			`Coverage threshold not met for ${prefix}${failure.metric}: ${String(failure.actual.toFixed(2))}% < ${String(failure.threshold)}%\n`,
-		);
-	}
-}
-
-function enforceThresholds(config: ResolvedConfig, mapped: MappedCoverageResult): boolean {
-	if (config.coverageThreshold === undefined) {
-		return true;
-	}
-
-	const result = checkThresholds(
-		mapped,
-		config.coverageThreshold,
-		config.collectCoverageFrom,
-		config.coveragePathIgnorePatterns,
-	);
-	if (result.passed) {
-		return true;
-	}
-
-	writeThresholdFailures(result.failures);
-	return false;
-}
-
-// Workspace thresholds are per-package: each package is judged against its own
-// universe, with the workspace-root threshold as the metric-level base and the
-// package's declared threshold overriding the metrics it names (even
-// downward — an explicit per-package value always wins). The pooled
-// merged-universe check does not run in workspace mode; a cross-package
-// average could mask a failing package.
-function enforcePackageThresholds(
-	config: ResolvedConfig,
-	packages: Array<WorkspacePackageCoverageGate>,
-): boolean {
-	let passed = true;
-
-	for (const gate of packages) {
-		const effective = { ...config.coverageThreshold, ...gate.coverageThreshold };
-		if (Object.keys(effective).length === 0) {
-			continue;
-		}
-
-		// Unlike the pooled path, no `collectCoverageFrom` /
-		// `coveragePathIgnorePatterns` narrowing here: each gate's universe was
-		// already filtered per-package (its own ignore patterns) in
-		// `aggregateWorkspaceCoverage`, and re-applying the workspace-root
-		// values would override a package's own opt-out.
-		const result = checkThresholds(gate.universe, effective);
-		if (result.passed) {
-			continue;
-		}
-
-		passed = false;
-		writeThresholdFailures(result.failures, `${gate.pkg} `);
-	}
-
-	return passed;
-}
-
-function processCoverage(options: {
-	agentTextFilter?: CoverageDisplayPredicate;
-	config: ResolvedConfig;
-	coverageData: RawCoverageData | undefined;
-	packageGates?: Array<WorkspacePackageCoverageGate>;
-	preMapped?: MappedCoverageResult;
-}): boolean {
-	const { agentTextFilter, config, coverageData, packageGates, preMapped } = options;
-	// preMapped is workspace pre-aggregated coverage from per-package opt-ins.
-	// When present, generate reports regardless of workspace `collectCoverage`.
-	if (!config.collectCoverage && preMapped === undefined) {
-		return true;
-	}
-
-	const mapped = resolveMappedCoverage(config, coverageData, preMapped);
-	if (mapped === undefined) {
-		return true;
-	}
-
-	const agentMode = usesAgentFormatter(config.formatters, config.verbose);
-	if (!config.silent) {
-		printCoverageHeader(agentMode);
-	}
-
-	generateReports({
-		agentMode,
-		agentTextFilter,
-		collectCoverageFrom: config.collectCoverageFrom,
-		coverageDirectory: path.resolve(config.rootDir, config.coverageDirectory),
-		coveragePathIgnorePatterns: config.coveragePathIgnorePatterns,
-		mapped,
-		reporters: config.coverageReporters,
-	});
-
-	if (packageGates !== undefined) {
-		return enforcePackageThresholds(config, packageGates);
-	}
-
-	return enforceThresholds(config, mapped);
 }
 
 function runGitHubActionsFormatter(
@@ -603,31 +308,60 @@ function runGitHubActionsFormatter(
 	}
 }
 
-function writeGameOutputIfConfigured(
+// The shared pass/fail tail: single and multi judge a run on the same four
+// inputs, so the PASS/FAIL badge and the exit code can't drift between modes.
+// Obsolete snapshots (`unchecked`) fail the run just like a snapshot the writer
+// couldn't persist.
+function emitFinalStatus(
 	config: ResolvedConfig,
-	gameOutput: string | undefined,
-	options: { hintsShown?: boolean },
-): void {
-	if (config.gameOutput === undefined) {
-		return;
+	{ isCoveragePassed, mergedResult, snapshotWriteFailures }: RunStatus,
+): number {
+	const areSnapshotsPersisted = (snapshotWriteFailures ?? 0) === 0;
+	const areSnapshotsCurrent = (mergedResult.snapshot?.unchecked ?? 0) === 0;
+	const isPassed =
+		mergedResult.success && isCoveragePassed && areSnapshotsPersisted && areSnapshotsCurrent;
+	if (!config.silent && config.collectCoverage) {
+		printFinalStatus(isPassed);
 	}
 
-	const entries = parseGameOutput(gameOutput);
-	writeGameOutput(config.gameOutput, entries);
-
-	if (!config.silent && options.hintsShown !== true) {
-		const notice = formatGameOutputNotice(config.gameOutput, entries.length);
-		if (notice) {
-			console.error(notice);
-		}
-	}
+	return isPassed ? 0 : 1;
 }
 
-function printFinalStatus(passed: boolean): void {
-	const badge = passed
-		? color.bgGreen(color.black(color.bold(" PASS ")))
-		: color.bgRed(color.white(color.bold(" FAIL ")));
-	process.stdout.write(`${badge}\n`);
+function mergeProjectExtras(results: Array<ExecuteResult>): ProjectExtras {
+	let coverageData: RawCoverageData | undefined;
+	let setupMs = 0;
+	let snapshotWriteFailures = 0;
+	let testsMs = 0;
+
+	for (const entry of results) {
+		setupMs += entry.timing.setupMs ?? 0;
+		snapshotWriteFailures += entry.snapshotWriteFailures ?? 0;
+		testsMs += entry.timing.testsMs;
+
+		if (entry.coverageData !== undefined) {
+			coverageData = mergeRawCoverage(coverageData, entry.coverageData);
+		}
+	}
+
+	return { coverageData, setupMs, snapshotWriteFailures, testsMs };
+}
+
+function mergeProjectTiming(
+	results: Array<ExecuteResult>,
+	firstResult: ExecuteResult,
+	extras: ProjectExtras,
+): TimingResult {
+	return {
+		// Upload, coverage, and execution are one shared phase across the
+		// projects, so they read off the first result rather than summing.
+		coverageMs: firstResult.timing.coverageMs,
+		executionMs: firstResult.timing.executionMs,
+		setupMs: extras.setupMs > 0 ? extras.setupMs : undefined,
+		startTime: Math.min(...results.map((entry) => entry.timing.startTime)),
+		testsMs: extras.testsMs,
+		totalMs: Math.max(...results.map((entry) => entry.timing.totalMs)),
+		uploadMs: firstResult.timing.uploadMs,
+	};
 }
 
 // Derives the config the reporter runs under for multi/workspace. Workspace
@@ -652,30 +386,6 @@ function buildReportConfig(
 	return config;
 }
 
-function extractWorkspaceCoverageMapped(
-	result: MultiRunResult | WorkspaceRunResult,
-): MappedCoverageResult | undefined {
-	return "coverageMapped" in result ? result.coverageMapped : undefined;
-}
-
-// Present only on workspace results that ran coverage; multi mode stays on the
-// pooled `enforceThresholds` path.
-function extractCoveragePackages(
-	result: MultiRunResult | WorkspaceRunResult,
-): Array<WorkspacePackageCoverageGate> | undefined {
-	return result.mode === "workspace" ? result.coveragePackages : undefined;
-}
-
-// `coverageDisplayFilter` lives on `MultiRunResult` only; workspace runs never
-// narrow the agent table (they consume no positional/file filter). The mode
-// discriminant states that invariant directly — immune to the field ever being
-// added to `WorkspaceRunResult`.
-function extractCoverageDisplayFilter(
-	result: MultiRunResult | WorkspaceRunResult,
-): CoverageDisplayPredicate | undefined {
-	return result.mode === "multi" ? result.coverageDisplayFilter : undefined;
-}
-
 // Workspace sinks are consensus-resolved by the runner (not from the
 // workspace-root config), so "View …" hints must point at those resolved
 // paths; single/multi use the resolved config values.
@@ -692,71 +402,45 @@ function resolveSinkHints(
 	};
 }
 
-function getAgentMaxFailures(config: ResolvedConfig): number {
-	assert(config.formatters !== undefined, "formatters is set by resolveFormatters");
-	const options = findFormatterOptions(config.formatters, "agent");
-	if (options !== undefined && typeof options["maxFailures"] === "number") {
-		return options["maxFailures"];
-	}
-
-	return DEFAULT_MAX_FAILURES;
-}
-
-function toProjectEntries(projectResults: Array<ProjectResult>): Array<FormatterProjectEntry> {
-	return projectResults.map((entry) => {
-		return {
-			displayColor: entry.displayColor,
-			displayName: entry.displayName,
-			result: entry.result.result,
-		};
-	});
-}
-
-function printMultiProjectOutput(options: MultiOutputContext): void {
-	const {
+function toMultiOutputContext(
+	config: ResolvedConfig,
+	result: MultiRunResult | WorkspaceRunResult,
+	merged: ExecuteResult,
+): MultiOutputContext {
+	return {
 		config,
-		gameOutputHint,
+		...resolveSinkHints(result, config),
 		merged,
-		outputFileHint,
-		preCoverageMs,
-		projectResults,
-		typecheckResult,
-	} = options;
-	const timing = addCoverageTiming(merged.timing, preCoverageMs);
+		preCoverageMs: result.preCoverageMs,
+		projectResults: result.projectResults,
+		typecheckResult: result.typecheckResult,
+	};
+}
 
-	if (usesAgentFormatter(config.formatters, config.verbose)) {
-		printOutput(
-			formatAgentMultiProject(toProjectEntries(projectResults), {
-				gameOutput: gameOutputHint,
-				maxFailures: getAgentMaxFailures(config),
-				outputFile: outputFileHint,
-				rootDir: config.rootDir,
-				sourceMapper: merged.sourceMapper,
-				typeErrorCount: typecheckResult?.numFailedTests,
-			}),
-		);
-		return;
-	}
+function emitMultiResults(
+	context: MultiOutputContext,
+	result: MultiRunResult | WorkspaceRunResult,
+): boolean {
+	const { config, merged } = context;
+	const workspaceCoverage = extractWorkspaceCoverageMapped(result);
+	const displayFilter = extractCoverageDisplayFilter(result);
 
-	if (hasFormatter(config.formatters, "json")) {
-		printOutput(formatRuntimeOutput(config, merged, timing));
-		return;
-	}
-
-	printOutput(
-		formatMultiProjectResult(toProjectEntries(projectResults), timing, {
-			collectCoverage: config.collectCoverage,
-			color: config.color,
-			rootDir: config.rootDir,
-			showLuau: config.showLuau,
-			slowTestThreshold: config.slowTestThreshold,
-			snapshotWriteFailures: merged.snapshotWriteFailures,
-			sourceMapper: merged.sourceMapper,
-			typeErrors: typecheckResult?.numFailedTests,
-			verbose: config.verbose,
-			version: VERSION,
-		}),
-	);
+	return emitResultsAndCoverage({
+		config,
+		coverageEnabled: config.collectCoverage || workspaceCoverage !== undefined,
+		printResults: () => {
+			printMultiResults(context);
+		},
+		runCoverage: () => {
+			return processCoverage({
+				agentTextFilter: displayFilter,
+				config,
+				coverageData: merged.coverageData,
+				packageGates: extractCoveragePackages(result),
+				preMapped: workspaceCoverage,
+			});
+		},
+	});
 }
 
 function writeAggregatedGameOutput(

@@ -40,6 +40,7 @@ import type {
 	AstStatWhile,
 	LuauSpan,
 } from "@isentinel/luau-ast";
+import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -629,7 +630,7 @@ describe("luau-visitor", () => {
 		it("should silently skip unknown statement tags", () => {
 			expect.assertions(1);
 
-			const node = { kind: "stat", location: span, tag: "unknown" } as unknown as AstStat;
+			const node: AstStat = fromAny({ kind: "stat", location: span, tag: "unknown" });
 
 			expect(() => {
 				visitStatement(node, {});
@@ -1082,11 +1083,11 @@ describe("luau-visitor", () => {
 		it("should silently skip unknown expression tags", () => {
 			expect.assertions(1);
 
-			const node = {
+			const node: AstExpr = fromAny({
 				kind: "expr",
 				location: span,
 				tag: "unknown",
-			} as unknown as AstExpr;
+			});
 
 			expect(() => {
 				visitExpression(node, {});

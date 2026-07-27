@@ -12,16 +12,21 @@ import { createSetupResolver } from "./setup-resolver.ts";
 // The coercion helper is imported inside the factory: vi.mock is hoisted above
 // the file's imports, so it loads lazily rather than using the top-level binding
 // (also avoids shadowing the `fromAny` the tests below use).
-vi.mock(import("@isentinel/rojo-utils"), async (importOriginal) => {
+vi.mock(import("@isentinel/rojo-utils"), async () => {
 	const { fromAny: coerce } = await import("@total-typescript/shoehorn");
+	// `importOriginal()` types every re-export as possibly-undefined, which
+	// `exactOptionalPropertyTypes` refuses to spread into the module shape.
+	// `importActual` hands back the full module type instead.
+	const actual =
+		await vi.importActual<typeof import("@isentinel/rojo-utils")>("@isentinel/rojo-utils");
 	return {
-		...(await importOriginal()),
+		...actual,
 		RojoResolver: coerce({ fromPath: vi.fn<typeof RojoResolver.fromPath>() }),
-	};
+	} satisfies typeof import("@isentinel/rojo-utils");
 });
 
-const configDirectory = "/project";
-const rojoConfigPath = "/project/default.project.json";
+const CONFIG_DIRECTORY = "/project";
+const ROJO_CONFIG_PATH = "/project/default.project.json";
 
 function mockRojoResolver(mapping: Record<string, Array<string>>) {
 	vi.mocked(RojoResolver.fromPath).mockReturnValue(
@@ -35,8 +40,8 @@ function mockRojoResolver(mapping: Record<string, Array<string>>) {
 
 function makeResolver(overrides: Partial<Parameters<typeof createSetupResolver>[0]> = {}) {
 	return createSetupResolver({
-		configDirectory,
-		rojoConfigPath,
+		configDirectory: CONFIG_DIRECTORY,
+		rojoConfigPath: ROJO_CONFIG_PATH,
 		...overrides,
 	});
 }
@@ -52,9 +57,12 @@ function fakeModuleResolver(mapping: Record<string, string>) {
 	};
 }
 
-/** Build the absolute logical path that the resolver constructs for package specifiers */
+/**
+ * Build the absolute logical path that the resolver constructs for package
+ * specifiers
+ */
 function logicalNodeModulesPath(specifier: string): string {
-	return path.resolve(configDirectory, "node_modules", specifier);
+	return path.resolve(CONFIG_DIRECTORY, "node_modules", specifier);
 }
 
 describe(createSetupResolver, () => {
@@ -63,7 +71,7 @@ describe(createSetupResolver, () => {
 			expect.assertions(1);
 
 			mockRojoResolver({
-				[path.resolve(configDirectory, "./src/client/test-setup.ts")]: [
+				[path.resolve(CONFIG_DIRECTORY, "./src/client/test-setup.ts")]: [
 					"ReplicatedStorage",
 					"client",
 					"test-setup",
@@ -80,7 +88,7 @@ describe(createSetupResolver, () => {
 			expect.assertions(1);
 
 			mockRojoResolver({
-				[path.resolve(configDirectory, "./src/client/test-setup")]: [
+				[path.resolve(CONFIG_DIRECTORY, "./src/client/test-setup")]: [
 					"ReplicatedStorage",
 					"client",
 					"test-setup",
@@ -115,7 +123,7 @@ describe(createSetupResolver, () => {
 			expect.assertions(1);
 
 			mockRojoResolver({
-				[path.resolve(configDirectory, "./src/server/bootstrap")]: [
+				[path.resolve(CONFIG_DIRECTORY, "./src/server/bootstrap")]: [
 					"ServerScriptService",
 					"server",
 					"bootstrap",

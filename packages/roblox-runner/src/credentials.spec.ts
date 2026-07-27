@@ -215,7 +215,7 @@ describe(resolveCredentials, () => {
 			expect.assertions(1);
 
 			clearAllEnvironment();
-			vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "   ");
+			vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", " ".repeat(3));
 			vi.stubEnv("ROBLOX_UNIVERSE_ID", "\t\n");
 			vi.stubEnv("ROBLOX_PLACE_ID", " ");
 
@@ -265,12 +265,12 @@ describe(resolveCredentials, () => {
 
 			clearAllEnvironment();
 
-			expect(() =>
-				resolveCredentials({ defaults: { placeId: "456", universeId: "123" } }),
-			).toThrow(/Missing: apiKey\./);
-			expect(() =>
-				resolveCredentials({ defaults: { placeId: "456", universeId: "123" } }),
-			).not.toThrow(/UNIVERSE_ID|PLACE_ID/);
+			expect(() => {
+				return resolveCredentials({ defaults: { placeId: "456", universeId: "123" } });
+			}).toThrow(/Missing: apiKey\./);
+			expect(() => {
+				return resolveCredentials({ defaults: { placeId: "456", universeId: "123" } });
+			}).not.toThrow(/UNIVERSE_ID|PLACE_ID/);
 		});
 
 		it("should mention JEST_ROBLOX_ alternates when envPrefix is set", () => {

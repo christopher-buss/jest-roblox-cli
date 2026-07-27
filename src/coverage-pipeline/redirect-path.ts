@@ -1,7 +1,9 @@
 export interface CoverageRoot {
 	/** Normalized path of the source root (no trailing slash). */
 	luauRoot: string;
-	/** Path the shadow directory lives at (caller picks absolute vs relocated). */
+	/**
+	 * Path the shadow directory lives at (caller picks absolute vs relocated).
+	 */
 	shadowDir: string;
 }
 

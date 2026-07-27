@@ -40,9 +40,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => {
-				return "hash-a";
-			},
+			() => "hash-a",
 		);
 
 		expect(result.tests).toStrictEqual([
@@ -70,9 +68,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => {
-				return "hash-a";
-			},
+			() => "hash-a",
 		);
 
 		expect(result.coveringTestIds).toStrictEqual({
@@ -100,9 +96,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => {
-				return "hash-a";
-			},
+			() => "hash-a",
 		);
 
 		expect(result.tests).toHaveLength(2);
@@ -127,9 +121,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => {
-				return "hash-a";
-			},
+			() => "hash-a",
 		);
 
 		expect(result.tests).toStrictEqual([]);
@@ -150,9 +142,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => {
-				return "hash-a";
-			},
+			() => "hash-a",
 		);
 
 		expect(result.tests).toHaveLength(1);
@@ -175,9 +165,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{ "out/m.luau": { s: { "0": 1, "1": 1, "2": 1 } } },
-			() => {
-				return "hash-a";
-			},
+			() => "hash-a",
 		);
 
 		expect(result.staticStatementIds).toStrictEqual({ "out/m.luau": ["0", "1"] });
@@ -209,9 +197,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{ "out/m.luau": { s: { "1": 1 } } },
-			() => {
-				return "hash-a";
-			},
+			() => "hash-a",
 		);
 
 		expect(result.staticStatementIds).toStrictEqual({});

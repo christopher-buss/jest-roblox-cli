@@ -6,10 +6,10 @@ import type { RawCoverageData, RawFileCoverage } from "./types.ts";
  * `_G.__jest_roblox_cov` global, or the `_coverage` field of a run envelope —
  * keyed by the stable per-file join key (`fileKey`). Luau serializes the
  * `s`/`f` counters as 1-based arrays and `b` as an array of arrays; this
- * canonicalizes them to string-keyed records while leaving the fileKey verbatim
- * (it is the byte-identical join key the static maps are also keyed to). Returns
- * `undefined` when the input is not an object or carries no file with a
- * statement map.
+ * canonicalizes them to string-keyed records while leaving the fileKey
+ * verbatim (it is the byte-identical join key the static maps are also keyed
+ * to). Returns `undefined` when the input is not an object or carries no file
+ * with a statement map.
  */
 export function normalizeRawCoverage(coverage: unknown): RawCoverageData | undefined {
 	if (coverage === undefined || coverage === null || typeof coverage !== "object") {
@@ -40,10 +40,10 @@ export function normalizeRawCoverage(coverage: unknown): RawCoverageData | undef
 
 /**
  * Extract raw coverage from a completed run's result envelope — the companion
- * seam for a run this CLI did not launch. Accepts the plugin's `jestOutput`
- * (a JSON string or an already-parsed object), or the bare `_G.__jest_roblox_cov`
- * table read straight off the run. When an object carries a `_coverage` field it
- * is used; otherwise the object is treated as the hit table itself. Returns
+ * seam for a run this CLI did not launch. Accepts the plugin's `jestOutput` (a
+ * JSON string or an already-parsed object), or the bare `_G.__jest_roblox_cov`
+ * table read straight off the run. When an object carries a `_coverage` field
+ * it is used; otherwise the object is treated as the hit table itself. Returns
  * `undefined` for malformed JSON or an envelope with no coverage.
  *
  * A multi-project result (`{ entries: [{ jestOutput }, …] }`) carries one
@@ -51,15 +51,7 @@ export function normalizeRawCoverage(coverage: unknown): RawCoverageData | undef
  * `mergeRawCoverage`.
  */
 export function parseCoverageEnvelope(output: unknown): RawCoverageData | undefined {
-	let parsed: unknown = output;
-	if (typeof output === "string") {
-		try {
-			parsed = JSON.parse(output);
-		} catch {
-			return undefined;
-		}
-	}
-
+	const parsed: unknown = typeof output === "string" ? parseJson(output) : output;
 	if (parsed === null || typeof parsed !== "object") {
 		return undefined;
 	}
@@ -125,4 +117,13 @@ function normalizeBranchCounts(data: unknown): Record<string, Array<number>> {
 	}
 
 	return {};
+}
+
+/** Returns `undefined` for malformed JSON rather than throwing. */
+function parseJson(text: string): JSONValue | undefined {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return undefined;
+	}
 }

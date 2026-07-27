@@ -63,6 +63,22 @@ function createResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
+/**
+ * Snippet stub routed by the requested file's extension: `getSourceSnippet` is
+ * called once per language per failure, so a test that only stubs one of them
+ * gets `undefined` for the other.
+ */
+function snippetByExtension(
+	filePath: string,
+	snippets: { luau?: SourceSnippet; ts?: SourceSnippet },
+): SourceSnippet | undefined {
+	if (filePath.endsWith(".luau")) {
+		return snippets.luau;
+	}
+
+	return filePath.endsWith(".ts") ? snippets.ts : undefined;
+}
+
 describe("formatAgent summary", () => {
 	it("should show file and test counts when all tests pass", () => {
 		expect.assertions(1);
@@ -377,7 +393,6 @@ describe("formatAgent failure details", () => {
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
-				mapFailureMessage: (message: string) => message,
 				mapFailureWithLocations: () => {
 					return {
 						locations: [
@@ -409,7 +424,7 @@ describe("formatAgent failure details", () => {
 		expect(output).toContain(
 			" FAIL src/traits.spec.ts:29 > trait data > Apex matches snapshot",
 		);
-		expect(output.match(/src\/traits\.spec\.ts:29/g)?.length).toBe(1);
+		expect(output.match(/src\/traits\.spec\.ts:29/g)!).toHaveLength(1);
 	});
 
 	it("should surface timeout error message", () => {
@@ -476,7 +491,7 @@ describe("formatAgent failure details", () => {
 		const output = formatAgent(result, { maxFailures: 2, rootDir: "/project" });
 
 		expect(output).toContain("... 3 more failures omitted");
-		expect(output.match(/ FAIL /g)?.length).toBe(2);
+		expect(output.match(/ FAIL /g)!).toHaveLength(2);
 	});
 
 	it("should show exec error message in failure details", () => {
@@ -525,11 +540,7 @@ describe("formatAgent snippets", () => {
 		};
 
 		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
-			if (options.filePath.endsWith(".luau")) {
-				return luauSnippet;
-			}
-
-			return options.filePath.endsWith(".ts") ? tsSnippet : undefined;
+			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
 		});
 
 		const failedTest = createTestCase({
@@ -603,11 +614,7 @@ describe("formatAgent snippets", () => {
 		};
 
 		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
-			if (options.filePath.endsWith(".luau")) {
-				return luauSnippet;
-			}
-
-			return options.filePath.endsWith(".ts") ? tsSnippet : undefined;
+			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
 		});
 
 		const failedTest = createTestCase({
@@ -671,7 +678,7 @@ describe("formatAgent snippets", () => {
 		};
 
 		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
-			return options.filePath.endsWith(".ts") ? tsSnippet : undefined;
+			return snippetByExtension(options.filePath, { ts: tsSnippet });
 		});
 
 		const failures = Array.from({ length: 3 }, (_, index) => {

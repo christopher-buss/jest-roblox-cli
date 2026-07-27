@@ -149,7 +149,7 @@ describe(emitBuildManifest, () => {
 			path: CLEAN_PLACE,
 		});
 
-		expect(expectOk(readBuildManifest(MANIFEST_PATH)).cleanPlace?.path).toBe(CLEAN_PLACE);
+		expect(expectOk(readBuildManifest(MANIFEST_PATH)).cleanPlace!.path).toBe(CLEAN_PLACE);
 	});
 
 	it("should record the projects carried by the coverage artifacts", () => {
@@ -450,7 +450,7 @@ describe(readBuildManifest, () => {
 		});
 
 		seedArtifacts();
-		seedManifest(JSON.stringify(exampleManifest({ cleanPlace: undefined })));
+		seedManifest(JSON.stringify({ ...exampleManifest(), cleanPlace: undefined }));
 
 		expect(readBuildManifest(MANIFEST_PATH).kind).toBe("ok");
 	});
@@ -463,7 +463,7 @@ describe(readBuildManifest, () => {
 		});
 
 		seedArtifacts();
-		seedManifest(JSON.stringify(exampleManifest({ cleanPlace: undefined })));
+		seedManifest(JSON.stringify({ ...exampleManifest(), cleanPlace: undefined }));
 		vol.writeFileSync(COVERAGE_PLACE, "TAMPERED");
 
 		expect(readBuildManifest(MANIFEST_PATH).kind).toBe("coverage-place-hash-mismatch");

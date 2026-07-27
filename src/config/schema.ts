@@ -13,7 +13,11 @@ export type CoverageReporter = keyof ReportOptions;
 
 export type FormatterEntry = [string, Record<string, unknown>] | string;
 
-/** pretty-format options controlling how snapshots are serialized. */
+/**
+ * pretty-format options controlling how snapshots are serialized.
+ *
+ * @external
+ */
 export interface SnapshotFormatOptions {
 	/** Call a value's `toJSON` method (when present) before serializing it. */
 	callToJSON?: boolean;
@@ -56,8 +60,8 @@ export interface SharedTestConfig {
 	 */
 	injectGlobals?: boolean;
 	/**
-	 * Swap the live Roblox DataModel for a fresh mock instance per test file so
-	 * tests can mutate the tree in isolation. Default `false`.
+	 * Swap the live Roblox DataModel for a fresh mock instance per test file
+	 * so tests can mutate the tree in isolation. Default `false`.
 	 */
 	mockDataModel?: boolean;
 	/**
@@ -75,7 +79,10 @@ export interface SharedTestConfig {
 	 * (like `jest.restoreAllMocks()`). Default `false`.
 	 */
 	restoreMocks?: boolean;
-	/** DataModel paths to scripts run once before the test framework is installed. */
+	/**
+	 * DataModel paths to scripts run once before the test framework is
+	 * installed.
+	 */
 	setupFiles?: Array<string>;
 	/**
 	 * DataModel paths to scripts run after the framework is installed, before
@@ -94,9 +101,15 @@ export interface SharedTestConfig {
 	testEnvironmentOptions?: Record<string, unknown> | string;
 	/** Glob patterns Jest uses to detect test files. */
 	testMatch?: Array<string>;
-	/** Regex patterns; a test file is skipped when its path matches any of them. */
+	/**
+	 * Regex patterns; a test file is skipped when its path matches any of
+	 * them.
+	 */
 	testPathIgnorePatterns?: Array<string>;
-	/** Regex pattern(s) Jest uses to detect test files (alternative to `testMatch`). */
+	/**
+	 * Regex pattern(s) Jest uses to detect test files (alternative to
+	 * `testMatch`).
+	 */
 	testRegex?: Array<string> | string;
 	/** Default per-test timeout in milliseconds. Default `5000`. */
 	testTimeout?: number;
@@ -123,13 +136,16 @@ export interface ProjectTestConfig extends SharedTestConfig {
 	 */
 	include: Array<string>;
 	/**
-	 * Compiled-output directory the project's `.luau` lives in. Setting it pins
-	 * the project to a single DataModel mount (exact Rojo lookup, no
+	 * Compiled-output directory the project's `.luau` lives in. Setting it
+	 * pins the project to a single DataModel mount (exact Rojo lookup, no
 	 * auto-expand). roblox-ts users point this at the compiled output (e.g.
 	 * `"out/client"`), not `"src/…"`.
 	 */
 	outDir?: string;
-	/** Base path prepended to this project's `include`, `exclude`, and `outDir`. */
+	/**
+	 * Base path prepended to this project's `include`, `exclude`, and
+	 * `outDir`.
+	 */
 	root?: string;
 }
 
@@ -240,7 +256,10 @@ export interface GlobalTestConfig extends SharedTestConfig {
 	maxWorkers?: number | string;
 	/** Omit stack traces from failure output. */
 	noStackTrace?: boolean;
-	/** Default compiled-output directory for test discovery when not set per-project. */
+	/**
+	 * Default compiled-output directory for test discovery when not set
+	 * per-project.
+	 */
 	outDir?: string;
 	/** Exit `0` even when no tests are found. Default `false`. */
 	passWithNoTests?: boolean;
@@ -273,7 +292,10 @@ export interface GlobalTestConfig extends SharedTestConfig {
 	timers?: string;
 	/** Update stored snapshots to match current output. */
 	updateSnapshot?: boolean;
-	/** Report each individual test result, not just suite summaries. Default `false`. */
+	/**
+	 * Report each individual test result, not just suite summaries. Default
+	 * `false`.
+	 */
 	verbose?: boolean;
 }
 
@@ -283,12 +305,12 @@ export interface GlobalTestConfig extends SharedTestConfig {
  */
 export interface Config {
 	/**
-	 * Execution backend. `"auto"` probes for a running Studio then falls back to
-	 * Open Cloud; `"open-cloud"` uploads and runs via Roblox Open Cloud;
-	 * `"studio"` drives a locally running Studio; `"studio-cli"` launches its own
-	 * headless Studio via `--task RunScript` and quits it (pass `--headed` to show
-	 * the Studio window during the run). Default `"auto"`. `"studio-cli"` is never
-	 * selected by `"auto"` — request it explicitly.
+	 * Execution backend. `"auto"` probes for a running Studio then falls back
+	 * to Open Cloud; `"open-cloud"` uploads and runs via Roblox Open Cloud;
+	 * `"studio"` drives a locally running Studio; `"studio-cli"` launches its
+	 * own headless Studio via `--task RunScript` and quits it (pass `--headed`
+	 * to show the Studio window during the run). Default `"auto"`.
+	 * `"studio-cli"` is never selected by `"auto"` — request it explicitly.
 	 */
 	backend?: Backend;
 	/** Force ANSI colour in output. Default `true`. */
@@ -299,8 +321,8 @@ export interface Config {
 	 */
 	coverageCache?: boolean;
 	/**
-	 * One or more config files to inherit from (c12 layering), relative to this
-	 * file. Local keys win over extended ones.
+	 * One or more config files to inherit from (c12 layering), relative to
+	 * this file. Local keys win over extended ones.
 	 */
 	extends?: Array<string> | string;
 	/**
@@ -332,7 +354,10 @@ export interface Config {
 	 * single aggregated result file (consensus-resolved).
 	 */
 	outputFile?: string | true;
-	/** Number of places to shard the run across, or `"auto"` to pick automatically. */
+	/**
+	 * Number of places to shard the run across, or `"auto"` to pick
+	 * automatically.
+	 */
 	parallel?: "auto" | number;
 	/** Path to the `.rbxl` place uploaded and run. Default `"./game.rbxl"`. */
 	placeFile?: string;
@@ -350,14 +375,16 @@ export interface Config {
 	 * working directory.
 	 */
 	rootDir?: string;
-	/** Include the translated Luau line in error/stack output. Default `true`. */
+	/**
+	 * Include the translated Luau line in error/stack output. Default `true`.
+	 */
 	showLuau?: boolean;
 	/** Map Luau stack traces back to TypeScript source. Default `true`. */
 	sourceMap?: boolean;
 	/**
-	 * Path to the Roblox Studio executable the `"studio-cli"` backend launches.
-	 * Overrides per-OS auto-discovery. Also settable via `--studioPath` or the
-	 * `JEST_ROBLOX_STUDIO_PATH` environment variable.
+	 * Path to the Roblox Studio executable the `"studio-cli"` backend
+	 * launches. Overrides per-OS auto-discovery. Also settable via
+	 * `--studioPath` or the `JEST_ROBLOX_STUDIO_PATH` environment variable.
 	 */
 	studioPath?: string;
 	/**
@@ -380,29 +407,53 @@ export interface Config {
 }
 
 /**
+ * Relaxes optional properties to accept an explicit `undefined`.
+ *
+ * Only for internal, already-resolved shapes. The authoring surface (`Config`
+ * and friends) must stay strict: `validateConfig` counts keys with
+ * `Object.keys` and the arktype schema rejects unknown/misplaced ones, so a
+ * present-but-undefined key there is a validation error, not a no-op.
+ * Homomorphic (`[K in keyof T]`) so each property keeps its source JSDoc on
+ * hover, same as {@link ConfigInput}.
+ */
+export type UndefinedTolerant<T> = { [K in keyof T]: T[K] | undefined };
+
+/**
  * Resolved config flattens the root CLI keys with the `test:` jest options
  * so downstream code (executor, projects, test-script, formatters) can read
  * options uniformly. Refactoring those consumers to read `config.test.foo`
  * is follow-up work; this shape lets the structural split land first.
+ *
+ * Its optional properties tolerate an explicit `undefined`: every producer
+ * (`mergeCliWithConfig`, `narrowForLuauRun`) writes the key unconditionally,
+ * and every consumer reads by value.
  */
 export interface ResolvedConfig
-	extends Except<Config, "test">, Except<GlobalTestConfig, "projects"> {
+	extends
+		UndefinedTolerant<Except<Config, "test">>,
+		UndefinedTolerant<Except<GlobalTestConfig, "projects">> {
 	backend: Backend;
 	collectCoverage: boolean;
-	collectPerTestCoverage?: boolean;
+	collectPerTestCoverage?: boolean | undefined;
 	color: boolean;
 	coverageCache: boolean;
 	coverageDirectory: string;
 	coveragePathIgnorePatterns: Array<string>;
 	coverageReporters: Array<CoverageReporter>;
-	/** `true` is expanded to `<rootDir>/game-output.log` at resolve time; an explicit path is kept as-is. */
-	gameOutput?: string;
-	/** `true` is expanded to `<rootDir>/jest-output.log` at resolve time; an explicit path is kept as-is. */
-	outputFile?: string;
+	/**
+	 * `true` is expanded to `<rootDir>/game-output.log` at resolve time; an
+	 * explicit path is kept as-is.
+	 */
+	gameOutput?: string | undefined;
+	/**
+	 * `true` is expanded to `<rootDir>/jest-output.log` at resolve time; an
+	 * explicit path is kept as-is.
+	 */
+	outputFile?: string | undefined;
 	passWithNoTests: boolean;
 	placeFile: string;
 	port: number;
-	projects?: Array<string>;
+	projects?: Array<string> | undefined;
 	rootDir: string;
 	showLuau: boolean;
 	silent: boolean;
@@ -430,12 +481,20 @@ export interface WorkspaceRunOptions {
 	placeId?: string;
 	port: number;
 	silent: boolean;
-	/** Studio executable override for the `studio-cli` backend; undefined = auto-discover. */
+	/**
+	 * Studio executable override for the `studio-cli` backend; undefined =
+	 * auto-discover.
+	 */
 	studioPath?: string;
 	universeId?: string;
-	/** When true, emit Per-package Game Output files under `.jest-roblox/output/`. */
+	/**
+	 * When true, emit Per-package Game Output files under
+	 * `.jest-roblox/output/`.
+	 */
 	workspaceGameOutput: boolean;
-	/** When true, emit per-package result files under `.jest-roblox/output/`. */
+	/**
+	 * When true, emit per-package result files under `.jest-roblox/output/`.
+	 */
 	workspaceOutputFile: boolean;
 }
 
@@ -454,10 +513,30 @@ export function isValidBackend(value: string): value is Backend {
 	return VALID_BACKENDS.has(value);
 }
 
+export const VALID_COVERAGE_REPORTERS: ReadonlySet<string> = new Set<CoverageReporter>([
+	"clover",
+	"cobertura",
+	"html",
+	"html-spa",
+	"json",
+	"json-summary",
+	"lcov",
+	"lcovonly",
+	"none",
+	"teamcity",
+	"text",
+	"text-lcov",
+	"text-summary",
+]);
+
+export function isCoverageReporter(value: string): value is CoverageReporter {
+	return VALID_COVERAGE_REPORTERS.has(value);
+}
+
 /**
- * Resolve a config's `placeFile` against its `rootDir` to an absolute path. The
- * one resolution every backend shares: `placeFile` is rootDir-relative, and a
- * coverage run has the run layer point it at the instrumented place.
+ * Resolve a config's `placeFile` against its `rootDir` to an absolute path.
+ * The one resolution every backend shares: `placeFile` is rootDir-relative,
+ * and a coverage run has the run layer point it at the instrumented place.
  */
 export function resolvePlaceFilePath(config: ResolvedConfig): string {
 	return path.resolve(config.rootDir, config.placeFile);
@@ -503,54 +582,56 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 };
 
 export interface CliOptions {
-	affectedSince?: string;
-	apiKey?: string;
-	backend?: Backend;
-	collectCoverage?: boolean;
-	collectCoverageFrom?: Array<string>;
-	color?: boolean;
+	affectedSince?: string | undefined;
+	apiKey?: string | undefined;
+	backend?: Backend | undefined;
+	collectCoverage?: boolean | undefined;
+	collectCoverageFrom?: Array<string> | undefined;
+	color?: boolean | undefined;
 
-	config?: string;
-	coverageCache?: boolean;
-	coverageDirectory?: string;
-	coverageReporters?: Array<CoverageReporter>;
-	files?: Array<string>;
-	formatters?: Array<string>;
-	gameOutput?: string;
+	config?: string | undefined;
+	coverageCache?: boolean | undefined;
+	coverageDirectory?: string | undefined;
+	coverageReporters?: Array<CoverageReporter> | undefined;
+	files?: Array<string> | undefined;
+	formatters?: Array<string> | undefined;
+	gameOutput?: string | undefined;
 	/**
 	 * Show the Studio window during a `studio-cli` run (`--headed`). CLI-only;
 	 * inert for every other backend. Never sourced from config or env.
 	 */
-	headed?: boolean;
-	help?: boolean;
-	outputFile?: string;
-	packages?: string;
-	parallel?: "auto" | number;
-	passWithNoTests?: boolean;
-	placeId?: string;
-	port?: number;
-	project?: Array<string>;
-	reporters?: Array<string>;
-	rojoProject?: string;
-	setupFiles?: Array<string>;
-	setupFilesAfterEnv?: Array<string>;
-	showLuau?: boolean;
-	silent?: boolean;
-	sourceMap?: boolean;
-	studioPath?: string;
-	testNamePattern?: string;
-	testPathPattern?: string;
-	timeout?: number;
-	typecheck?: boolean;
-	typecheckOnly?: boolean;
-	typecheckTsconfig?: string;
-	universeId?: string;
-	updateSnapshot?: boolean;
-	verbose?: boolean;
-	version?: boolean;
-	workspace?: boolean;
-	/** Directory to load the workspace config from when run outside a package. */
-	workspaceRoot?: string;
+	headed?: boolean | undefined;
+	help?: boolean | undefined;
+	outputFile?: string | undefined;
+	packages?: string | undefined;
+	parallel?: "auto" | number | undefined;
+	passWithNoTests?: boolean | undefined;
+	placeId?: string | undefined;
+	port?: number | undefined;
+	project?: Array<string> | undefined;
+	reporters?: Array<string> | undefined;
+	rojoProject?: string | undefined;
+	setupFiles?: Array<string> | undefined;
+	setupFilesAfterEnv?: Array<string> | undefined;
+	showLuau?: boolean | undefined;
+	silent?: boolean | undefined;
+	sourceMap?: boolean | undefined;
+	studioPath?: string | undefined;
+	testNamePattern?: string | undefined;
+	testPathPattern?: string | undefined;
+	timeout?: number | undefined;
+	typecheck?: boolean | undefined;
+	typecheckOnly?: boolean | undefined;
+	typecheckTsconfig?: string | undefined;
+	universeId?: string | undefined;
+	updateSnapshot?: boolean | undefined;
+	verbose?: boolean | undefined;
+	version?: boolean | undefined;
+	workspace?: boolean | undefined;
+	/**
+	 * Directory to load the workspace config from when run outside a package.
+	 */
+	workspaceRoot?: string | undefined;
 }
 
 const snapshotFormatSchema = type({
@@ -590,7 +671,7 @@ const typecheckConfigSchema = type({
 	"tsconfig?": "string",
 });
 
-const sharedTestSchemaShape = {
+const SHARED_TEST_SCHEMA_SHAPE = {
 	"automock?": "boolean",
 	"clearMocks?": "boolean",
 	"injectGlobals?": "boolean",
@@ -610,11 +691,11 @@ const sharedTestSchemaShape = {
 	"testRegex?": type("string").or(type("string[]")),
 	"testTimeout?": "number",
 	"typecheck?": typecheckConfigSchema,
-} as const;
+} as const satisfies Record<string, unknown>;
 
 const projectTestConfigSchema = type({
 	"+": "reject",
-	...sharedTestSchemaShape,
+	...SHARED_TEST_SCHEMA_SHAPE,
 	"displayName": type("string").or(displayNameSchema),
 	"exclude?": "string[]",
 	"include": "string[]",
@@ -641,7 +722,7 @@ const projectEntrySchema = type("string").or(inlineProjectSchema);
 
 const globalTestConfigSchema = type({
 	"+": "reject",
-	...sharedTestSchemaShape,
+	...SHARED_TEST_SCHEMA_SHAPE,
 	"all?": "boolean",
 	"bail?": type("boolean").or(type("number")),
 	"changedSince?": "string",
@@ -850,10 +931,15 @@ export const SHARED_TEST_KEYS: ReadonlySet<string> = new Set<SharedKey>(SHARED_T
 /** Keys valid in `test:` (root) but not per-project (`projects[N].test`). */
 export const GLOBAL_TEST_KEYS: ReadonlySet<string> = new Set<GlobalOnlyKey>(GLOBAL_ONLY_KEYS_LIST);
 
-/** Root-level CLI/runner keys. The complement of `test:` jest-passthrough keys. */
+/**
+ * Root-level CLI/runner keys. The complement of `test:` jest-passthrough keys.
+ */
 export const ROOT_CLI_KEYS: ReadonlySet<string> = new Set<RootCliKey>(ROOT_CLI_KEYS_LIST);
 
-/** Keys valid per-project (`projects[N].test`). Used to filter `ResolvedConfig` when generating stubs. */
+/**
+ * Keys valid per-project (`projects[N].test`). Used to filter `ResolvedConfig`
+ * when generating stubs.
+ */
 export const PROJECT_TEST_KEYS: ReadonlySet<string> = new Set<keyof ProjectTestConfig>(
 	PROJECT_TEST_KEYS_LIST,
 );
@@ -878,8 +964,8 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
 
 /**
  * Removed flat root keys mapped to their `test.typecheck.*` replacements.
- * `validateConfig` emits a migration error naming these so upgraders see the
- * targets, mirroring the "wrap jest options in a `test:` block" directive.
+ * `assertNoLegacyKeys` emits a migration error naming these so upgraders see
+ * the targets, mirroring the "wrap jest options in a `test:` block" directive.
  */
 const MIGRATED_TYPECHECK_KEYS: Readonly<Record<string, string>> = {
 	typecheck: "test.typecheck.enabled",
@@ -889,7 +975,7 @@ const MIGRATED_TYPECHECK_KEYS: Readonly<Record<string, string>> = {
 
 /**
  * Source of truth for jest-passthrough vs CLI key partitioning.  Used by
- * `validateConfig` to emit a migration error when jest options appear at
+ * `assertNoLegacyKeys` to emit a migration error when jest options appear at
  * config root.
  */
 const KEY_LOCATIONS: Readonly<Record<string, "root" | "test">> = (() => {
@@ -910,28 +996,7 @@ const KEY_LOCATIONS: Readonly<Record<string, "root" | "test">> = (() => {
 })();
 
 export function validateConfig(raw: unknown): Config {
-	if (typeof raw === "object" && raw !== null) {
-		const migrated = Object.keys(raw)
-			.filter((key) => key in MIGRATED_TYPECHECK_KEYS)
-			.sort();
-		if (migrated.length > 0) {
-			const targets = migrated
-				.map((key) => `${key} → ${MIGRATED_TYPECHECK_KEYS[key]}`)
-				.join(", ");
-			throw new Error(
-				`\`typecheck\` options have moved under \`test.typecheck\`. Replace these keys: ${targets}`,
-			);
-		}
-
-		const misplaced = Object.keys(raw)
-			.filter((key) => KEY_LOCATIONS[key] === "test")
-			.sort();
-		if (misplaced.length > 0) {
-			throw new Error(
-				`jest options must be wrapped in a \`test:\` block. Move these keys under \`test:\`: ${misplaced.join(", ")}`,
-			);
-		}
-	}
+	assertNoLegacyKeys(raw);
 
 	const result = configSchema(raw);
 	if (result instanceof type.errors) {
@@ -947,6 +1012,38 @@ export function validateConfig(raw: unknown): Config {
 	}
 
 	return result;
+}
+
+/**
+ * Reject configs still written against the pre-`test:` layout. Both checks run
+ * before the arktype pass so a migrating config gets a directive naming the
+ * replacement keys, rather than a generic "unknown key" schema summary.
+ */
+function assertNoLegacyKeys(raw: unknown): void {
+	if (typeof raw !== "object" || raw === null) {
+		return;
+	}
+
+	const migrated = Object.keys(raw)
+		.filter((key) => key in MIGRATED_TYPECHECK_KEYS)
+		.sort();
+	if (migrated.length > 0) {
+		const targets = migrated
+			.map((key) => `${key} → ${MIGRATED_TYPECHECK_KEYS[key]}`)
+			.join(", ");
+		throw new Error(
+			`\`typecheck\` options have moved under \`test.typecheck\`. Replace these keys: ${targets}`,
+		);
+	}
+
+	const misplaced = Object.keys(raw)
+		.filter((key) => KEY_LOCATIONS[key] === "test")
+		.sort();
+	if (misplaced.length > 0) {
+		throw new Error(
+			`jest options must be wrapped in a \`test:\` block. Move these keys under \`test:\`: ${misplaced.join(", ")}`,
+		);
+	}
 }
 
 /**

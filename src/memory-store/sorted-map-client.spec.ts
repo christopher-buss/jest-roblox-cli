@@ -24,9 +24,9 @@ interface SortedMapStub {
 }
 
 interface StubBehavior {
-	createError?: { message: string };
-	deleteError?: { message: string };
-	listError?: { message: string };
+	createError?: Error;
+	deleteError?: Error;
+	listError?: Error;
 	listPages?: Array<ListSortedMapItemsResult>;
 }
 
@@ -42,7 +42,7 @@ function createSortedMapStub(behavior: StubBehavior = {}): SortedMapStub {
 	const create = vi.fn<CreateFunc>(async (parameters) => {
 		createdRequests.push(parameters);
 		if (behavior.createError !== undefined) {
-			return { err: behavior.createError as never, success: false };
+			return { err: behavior.createError, success: false };
 		}
 
 		const item: SortedMapItem = {
@@ -60,7 +60,7 @@ function createSortedMapStub(behavior: StubBehavior = {}): SortedMapStub {
 	const remove = vi.fn<DeleteFunc>(async (parameters) => {
 		deletedRequests.push(parameters);
 		if (behavior.deleteError !== undefined) {
-			return { err: behavior.deleteError as never, success: false };
+			return { err: behavior.deleteError, success: false };
 		}
 
 		return { data: undefined, success: true };
@@ -69,7 +69,7 @@ function createSortedMapStub(behavior: StubBehavior = {}): SortedMapStub {
 	const list = vi.fn<ListFunc>(async (parameters) => {
 		listCalls.push(parameters);
 		if (behavior.listError !== undefined) {
-			return { err: behavior.listError as never, success: false };
+			return { err: behavior.listError, success: false };
 		}
 
 		const pages = behavior.listPages ?? [{ items: [], nextPageToken: undefined }];
@@ -168,13 +168,13 @@ describe(StreamingResultClient, () => {
 
 			await client.write(makeEntry());
 
-			expect(stub.createdRequests[0]?.ttl).toBe(120);
+			expect(stub.createdRequests[0]!.ttl).toBe(120);
 		});
 
 		it("should throw when sortedMaps.create returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ createError: { message: "rate limited" } });
+			const stub = createSortedMapStub({ createError: new Error("rate limited") });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",
@@ -215,7 +215,7 @@ describe(StreamingResultClient, () => {
 
 			await client.readAll();
 
-			expect(stub.listCalls[0]?.maxPageSize).toBe(100);
+			expect(stub.listCalls[0]!.maxPageSize).toBe(100);
 		});
 
 		it("should decode each item's value into a StreamingResultEntry", async () => {
@@ -280,13 +280,13 @@ describe(StreamingResultClient, () => {
 			const results = await client.readAll();
 
 			expect(results.map((entry) => entry.id)).toStrictEqual(["a::p", "b::q"]);
-			expect(stub.listCalls[1]?.pageToken).toBe("page-2");
+			expect(stub.listCalls[1]!.pageToken).toBe("page-2");
 		});
 
 		it("should throw when sortedMaps.list returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ listError: { message: "auth failed" } });
+			const stub = createSortedMapStub({ listError: new Error("auth failed") });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",
@@ -342,7 +342,7 @@ describe(StreamingResultClient, () => {
 		it("should throw when sortedMaps.delete returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ deleteError: { message: "not found" } });
+			const stub = createSortedMapStub({ deleteError: new Error("not found") });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",

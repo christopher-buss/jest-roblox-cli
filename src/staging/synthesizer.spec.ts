@@ -1,10 +1,12 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import { type, type Type } from "arktype";
 import { vol } from "memfs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { ConfigError } from "../config/errors.ts";
+import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { synthesize } from "./synthesizer.ts";
 
@@ -21,13 +23,39 @@ function projectJson(json: object): string {
 	return String(JSON.stringify(json));
 }
 
-// Test seam: the synthesized result is JSON we wrote in the test fixture
-// above, so the caller asserts the deterministic shape via `as`. Returning
-// `unknown` rather than a generic moves the `JSONValue`-sourced cast into
-// one place — the rule only flags casts whose source is `JSONValue`, so
-// `unknown as ShapeT` at the call sites is rule-clean.
-function parseFixture(json: string): unknown {
-	return JSON.parse(json);
+// Rojo tree nodes are keyed by arbitrary instance/service names dictated by
+// the fixture's project.json — not declared properties — so they're read
+// through one owned schema (@isentinel/rojo-utils' RojoTreeNode) rather than
+// ad-hoc inline cast types per test.
+const rojoTreeNodeSchema: Type<RojoTreeNode> = type({
+	"[string]": "unknown",
+}).as<RojoTreeNode>();
+
+interface SynthesizedResult extends Record<string, unknown> {
+	tree: RojoTreeNode;
+}
+
+const synthesizedResultSchema: Type<SynthesizedResult> = type({
+	"[string]": "unknown",
+	"tree": "object",
+}).as<SynthesizedResult>();
+
+function parseFixture(json: string): SynthesizedResult {
+	return synthesizedResultSchema.assert(JSON.parse(json));
+}
+
+/** Reads a foreign tree-node key, validating the child is itself a node. */
+function child(node: RojoTreeNode, key: string): RojoTreeNode | undefined {
+	const value = node[key];
+	return value === undefined ? undefined : rojoTreeNodeSchema.assert(value);
+}
+
+/** Walks a chain of foreign tree-node keys, short-circuiting on a miss. */
+function descend(node: RojoTreeNode | undefined, ...keys: Array<string>): RojoTreeNode | undefined {
+	return keys.reduce<RojoTreeNode | undefined>(
+		(current, key) => (current === undefined ? undefined : child(current, key)),
+		node,
+	);
 }
 
 describe(synthesize, () => {
@@ -74,17 +102,12 @@ describe(synthesize, () => {
 		});
 
 		// Service-class node at non-root → Folder.
-		const { tree } = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, { ReplicatedStorage: { $className: string } }>;
-				};
-			};
-		};
+		const { tree } = parseFixture(result);
 
-		expect(tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.$className).toBe(
-			"Folder",
-		);
+		expect(
+			descend(tree, "ServerStorage", "__pkg_stage", "@halcyon/foo", "ReplicatedStorage")!
+				.$className,
+		).toBe("Folder");
 	});
 
 	it("should hardcode LoadStringEnabled at synth root", () => {
@@ -149,16 +172,16 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, { ServerScriptService: { $properties?: unknown } }>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ServerScriptService.$properties,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ServerScriptService",
+			)!.$properties,
 		).toBeUndefined();
 	});
 
@@ -190,16 +213,11 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, { TestService: { $properties?: unknown } }>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.TestService.$properties,
+			descend(parsed.tree, "ServerStorage", "__pkg_stage", "@halcyon/foo", "TestService")!
+				.$properties,
 		).toBeUndefined();
 	});
 
@@ -231,19 +249,16 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{ ServerScriptService: { $properties?: Record<string, unknown> } }
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ServerScriptService.$properties,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ServerScriptService",
+			)!.$properties,
 		).toStrictEqual({ OtherProp: "kept" });
 	});
 
@@ -294,16 +309,11 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, Record<string, { $className: string }>>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.[serviceClass]?.$className,
+			descend(parsed.tree, "ServerStorage", "__pkg_stage", "@halcyon/foo", serviceClass)!
+				.$className,
 		).toBe("Folder");
 	});
 
@@ -338,17 +348,16 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, Record<string, { $className: string }>>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.["ServerScriptService"]
-				?.$className,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ServerScriptService",
+			)!.$className,
 		).toBe("Folder");
 	});
 
@@ -380,17 +389,16 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, Record<string, { $className?: string }>>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.["ServerScriptService"]
-				?.$className,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ServerScriptService",
+			)!.$className,
 		).toBeUndefined();
 	});
 
@@ -434,20 +442,26 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, { ReplicatedStorage: { $path: string } }>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		expect(parsed.tree.ServerStorage.__pkg_stage["@halcyon/bar"]?.ReplicatedStorage.$path).toBe(
-			normalizeWindowsPath(path.join(ROOT, "packages/bar/src")),
-		);
-		expect(parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.$path).toBe(
-			normalizeWindowsPath(path.join(FOO_DIR, "src")),
-		);
+		expect(
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/bar",
+				"ReplicatedStorage",
+			)!.$path,
+		).toBe(normalizeWindowsPath(path.join(ROOT, "packages/bar/src")));
+		expect(
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+			)!.$path,
+		).toBe(normalizeWindowsPath(path.join(FOO_DIR, "src")));
 	});
 
 	it("should inject jest.config child at dataModelPath leaf for stubMounts", () => {
@@ -484,25 +498,18 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								Common: { "$path": string; "jest.config": { $path: string } };
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Common[
-				"jest.config"
-			].$path,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+				"Common",
+				"jest.config",
+			)!.$path,
 		).toBe(stubPath.replaceAll("\\", "/"));
 	});
 
@@ -545,30 +552,18 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								A: { "jest.config": { $path: string } };
-								B: { "jest.config": { $path: string } };
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		const package_ = parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"];
+		const fooPackage = descend(
+			parsed.tree,
+			"ServerStorage",
+			"__pkg_stage",
+			"@halcyon/foo",
+			"ReplicatedStorage",
+		);
 
-		expect(package_?.ReplicatedStorage.A["jest.config"].$path).toBe(
-			stubA.replaceAll("\\", "/"),
-		);
-		expect(package_?.ReplicatedStorage.B["jest.config"].$path).toBe(
-			stubB.replaceAll("\\", "/"),
-		);
+		expect(descend(fooPackage, "A", "jest.config")!.$path).toBe(stubA.replaceAll("\\", "/"));
+		expect(descend(fooPackage, "B", "jest.config")!.$path).toBe(stubB.replaceAll("\\", "/"));
 	});
 
 	it("should keep stubMounts isolated per package", () => {
@@ -628,30 +623,16 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: Record<
-								string,
-								{ "jest.config"?: { $path: string } }
-							>;
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		const stage = parsed.tree.ServerStorage.__pkg_stage;
+		const stage = descend(parsed.tree, "ServerStorage", "__pkg_stage");
 
-		expect(stage["@halcyon/bar"]?.ReplicatedStorage["BarMount"]?.["jest.config"]?.$path).toBe(
-			stubBar.replaceAll("\\", "/"),
-		);
-		expect(stage["@halcyon/foo"]?.ReplicatedStorage["FooMount"]?.["jest.config"]?.$path).toBe(
-			stubFoo.replaceAll("\\", "/"),
-		);
+		expect(
+			descend(stage, "@halcyon/bar", "ReplicatedStorage", "BarMount", "jest.config")!.$path,
+		).toBe(stubBar.replaceAll("\\", "/"));
+		expect(
+			descend(stage, "@halcyon/foo", "ReplicatedStorage", "FooMount", "jest.config")!.$path,
+		).toBe(stubFoo.replaceAll("\\", "/"));
 	});
 
 	it.for(["jest.config.lua", "jest.config.luau"])(
@@ -852,29 +833,21 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								"foo:tests": {
-									$path: string;
-									src: { "$path": string; "jest.config": { $path: string } };
-								};
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		const fooTests =
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage["foo:tests"];
+		const fooTests = descend(
+			parsed.tree,
+			"ServerStorage",
+			"__pkg_stage",
+			"@halcyon/foo",
+			"ReplicatedStorage",
+			"foo:tests",
+		);
 
-		expect(fooTests?.src.$path).toBe(normalizeWindowsPath(path.join(FOO_DIR, "out-test/src")));
-		expect(fooTests?.src["jest.config"].$path).toBe(stubPath.replaceAll("\\", "/"));
+		expect(descend(fooTests, "src")!.$path).toBe(
+			normalizeWindowsPath(path.join(FOO_DIR, "out-test/src")),
+		);
+		expect(descend(fooTests, "src", "jest.config")!.$path).toBe(stubPath.replaceAll("\\", "/"));
 	});
 
 	it("should demote $path-mounted parent so rojo does not auto-mount duplicate siblings", () => {
@@ -912,40 +885,28 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								"foo:tests": {
-									$className?: string;
-									$path?: string;
-									src: { "$path"?: string; "jest.config"?: { $path: string } };
-									test: { $path?: string };
-								};
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		const fooTests =
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage["foo:tests"];
+		const fooTests = descend(
+			parsed.tree,
+			"ServerStorage",
+			"__pkg_stage",
+			"@halcyon/foo",
+			"ReplicatedStorage",
+			"foo:tests",
+		);
 
 		// Parent must not retain `$path` — rojo would auto-mount a duplicate
 		// `src`/`test` sibling alongside the explicit overlay.
-		expect(fooTests?.$path).toBeUndefined();
-		expect(fooTests?.$className).toBe("Folder");
+		expect(fooTests!.$path).toBeUndefined();
+		expect(fooTests!.$className).toBe("Folder");
 		// Every on-disk sibling at the parent's $path becomes an explicit child
 		// so rojo's auto-mount behaviour is preserved despite the $path
 		// removal.
-		expect(fooTests?.test.$path).toBe(
+		expect(descend(fooTests, "test")!.$path).toBe(
 			normalizeWindowsPath(path.join(FOO_DIR, "out-test/test")),
 		);
-		expect(fooTests?.src["jest.config"]?.$path).toBe(stubPath.replaceAll("\\", "/"));
+		expect(descend(fooTests, "src", "jest.config")!.$path).toBe(stubPath.replaceAll("\\", "/"));
 	});
 
 	it("should skip non-directory siblings during demotion", () => {
@@ -983,29 +944,22 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								Tests: Record<string, unknown>;
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		const tests =
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Tests;
+		const tests = descend(
+			parsed.tree,
+			"ServerStorage",
+			"__pkg_stage",
+			"@halcyon/foo",
+			"ReplicatedStorage",
+			"Tests",
+		);
 
 		// Loose file siblings (which rojo cannot $path-mount as Instances of
 		// arbitrary class) are not promoted to explicit children during
 		// demotion.
-		expect(tests?.["loose.luau"]).toBeUndefined();
-		expect(tests?.["src"]).toBeDefined();
+		expect(tests!["loose.luau"]).toBeUndefined();
+		expect(tests!["src"]).toBeDefined();
 	});
 
 	it("should preserve existing explicit children during demotion", () => {
@@ -1047,31 +1001,24 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								Tests: { keep: { $path: string } };
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		const tests =
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Tests;
+		const tests = descend(
+			parsed.tree,
+			"ServerStorage",
+			"__pkg_stage",
+			"@halcyon/foo",
+			"ReplicatedStorage",
+			"Tests",
+		);
 
 		// Explicit `keep` already pointed at `../other/extra` — demotion must
 		// not overwrite it with the same-named on-disk `out-test/keep`
 		// directory.
-		expect(tests?.keep.$path).toBe(
+		expect(descend(tests, "keep")!.$path).toBe(
 			normalizeWindowsPath(path.join(ROOT, "packages/other/extra")),
 		);
-		expect(tests?.keep.$path).not.toContain("out-test/keep");
+		expect(descend(tests, "keep")!.$path).not.toContain("out-test/keep");
 	});
 
 	it("should throw ConfigError when virtualization target segment starts with $", () => {
@@ -1147,29 +1094,22 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								Tests: Record<string, unknown>;
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		const tests =
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Tests;
+		const tests = descend(
+			parsed.tree,
+			"ServerStorage",
+			"__pkg_stage",
+			"@halcyon/foo",
+			"ReplicatedStorage",
+			"Tests",
+		);
 
 		// `$`-prefixed names collide with rojo's reserved project.json keys
 		// (`$path`, `$className`, …) so they must not be added as explicit
 		// children even when present on disk.
-		expect(tests?.["$weird"]).toBeUndefined();
-		expect(tests?.["src"]).toBeDefined();
+		expect(tests!["$weird"]).toBeUndefined();
+		expect(tests!["src"]).toBeDefined();
 	});
 
 	it("should virtualize multiple consecutive $path-mounted segments", () => {
@@ -1209,29 +1149,20 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								Tests: {
-									src: {
-										foo: { "$path": string; "jest.config": { $path: string } };
-									};
-								};
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Tests.src.foo[
-				"jest.config"
-			].$path,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+				"Tests",
+				"src",
+				"foo",
+				"jest.config",
+			)!.$path,
 		).toBe(stubPath.replaceAll("\\", "/"));
 	});
 
@@ -1390,33 +1321,22 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{
-							ReplicatedStorage: {
-								Tests: {
-									$className?: string;
-									$path?: string;
-									src: { "$path": string; "jest.config": { $path: string } };
-								};
-							};
-						}
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
-		const tests =
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Tests;
+		const tests = descend(
+			parsed.tree,
+			"ServerStorage",
+			"__pkg_stage",
+			"@halcyon/foo",
+			"ReplicatedStorage",
+			"Tests",
+		);
 
 		// Parent demoted (no $path) so rojo doesn't auto-mount a duplicate `src`
 		// alongside the explicit overlay; the shadowed prefix is carried on the
 		// explicit child instead.
-		expect(tests?.$path).toBeUndefined();
-		expect(tests?.src.$path).toBe(`${shadowOut}/src`);
+		expect(tests!.$path).toBeUndefined();
+		expect(descend(tests, "src")!.$path).toBe(`${shadowOut}/src`);
 	});
 
 	it.for(["jest.config.lua", "jest.config.luau"])(
@@ -1538,16 +1458,17 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Pkg.$path,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+				"Pkg",
+			)!.$path,
 		).toBe(shadowOut);
 	});
 
@@ -1595,19 +1516,27 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/bar"]?.ReplicatedStorage.Pkg.$path,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/bar",
+				"ReplicatedStorage",
+				"Pkg",
+			)!.$path,
 		).toBe(normalizeWindowsPath(path.join(ROOT, "packages/bar/out")));
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Pkg.$path,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+				"Pkg",
+			)!.$path,
 		).toBe(fooShadow);
 	});
 
@@ -1641,19 +1570,17 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{ ReplicatedStorage: { Client: { $path: string } } }
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Client.$path,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+				"Client",
+			)!.$path,
 		).toBe(`${shadowOut}/client`);
 	});
 
@@ -1687,17 +1614,18 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<string, { ReplicatedStorage: { Pkg: { $path: string } } }>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		// Must NOT have a trailing slash → not "<shadowOut>/".
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Pkg.$path,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+				"Pkg",
+			)!.$path,
 		).toBe(shadowOut);
 	});
 
@@ -1731,19 +1659,17 @@ describe(synthesize, () => {
 			],
 		});
 
-		const parsed = parseFixture(result) as {
-			tree: {
-				ServerStorage: {
-					__pkg_stage: Record<
-						string,
-						{ ReplicatedStorage: { Other: { $path: string } } }
-					>;
-				};
-			};
-		};
+		const parsed = parseFixture(result);
 
 		expect(
-			parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.Other.$path,
+			descend(
+				parsed.tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+				"Other",
+			)!.$path,
 		).toBe(normalizeWindowsPath(path.join(FOO_DIR, "vendor")));
 	});
 
@@ -1808,16 +1734,10 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: {
-					$className: string;
-					ReplicatedStorage: { $className: string };
-					ServerStorage?: { __pkg_stage?: unknown };
-				};
-			};
+			const parsed = parseFixture(result);
 
-			expect(parsed.tree.ReplicatedStorage.$className).toBe("ReplicatedStorage");
-			expect(parsed.tree.ServerStorage?.__pkg_stage).toBeUndefined();
+			expect(child(parsed.tree, "ReplicatedStorage")!.$className).toBe("ReplicatedStorage");
+			expect(descend(parsed.tree, "ServerStorage", "__pkg_stage")).toBeUndefined();
 		});
 
 		it("should inject ServerScriptService.LoadStringEnabled when loadStringEnabled is set", () => {
@@ -1848,17 +1768,11 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: {
-					ServerScriptService: {
-						$className: string;
-						$properties: { LoadStringEnabled: boolean };
-					};
-				};
-			};
+			const parsed = parseFixture(result);
+			const serverScriptService = child(parsed.tree, "ServerScriptService");
 
-			expect(parsed.tree.ServerScriptService.$className).toBe("ServerScriptService");
-			expect(parsed.tree.ServerScriptService.$properties.LoadStringEnabled).toBeTrue();
+			expect(serverScriptService!.$className).toBe("ServerScriptService");
+			expect(serverScriptService!.$properties!["LoadStringEnabled"]).toBeTrue();
 		});
 
 		it("should merge LoadStringEnabled into an existing ServerScriptService, keeping its $path and props", () => {
@@ -1893,18 +1807,12 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: {
-					ServerScriptService: {
-						$path: string;
-						$properties: { LoadStringEnabled: boolean; OtherProp: string };
-					};
-				};
-			};
+			const parsed = parseFixture(result);
+			const serverScriptService = child(parsed.tree, "ServerScriptService");
 
-			expect(parsed.tree.ServerScriptService.$properties.LoadStringEnabled).toBeTrue();
-			expect(parsed.tree.ServerScriptService.$properties.OtherProp).toBe("kept");
-			expect(parsed.tree.ServerScriptService.$path).toContain("server");
+			expect(serverScriptService!.$properties!["LoadStringEnabled"]).toBeTrue();
+			expect(serverScriptService!.$properties!["OtherProp"]).toBe("kept");
+			expect(serverScriptService!.$path).toContain("server");
 		});
 
 		it("should tolerate a malformed null $properties on ServerScriptService", () => {
@@ -1941,11 +1849,11 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: { ServerScriptService: { $properties: { LoadStringEnabled: boolean } } };
-			};
+			const parsed = parseFixture(result);
 
-			expect(parsed.tree.ServerScriptService.$properties.LoadStringEnabled).toBeTrue();
+			expect(
+				child(parsed.tree, "ServerScriptService")!.$properties!["LoadStringEnabled"],
+			).toBeTrue();
 		});
 
 		it("should not inject ServerScriptService when loadStringEnabled is unset", () => {
@@ -1975,11 +1883,9 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: { ServerScriptService?: unknown };
-			};
+			const parsed = parseFixture(result);
 
-			expect(parsed.tree.ServerScriptService).toBeUndefined();
+			expect(parsed.tree["ServerScriptService"]).toBeUndefined();
 		});
 
 		it("should preserve all top-level project fields (gameId, placeId, globIgnorePaths, servePort, name)", () => {
@@ -2045,11 +1951,9 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: { ReplicatedStorage: { $path: string } };
-			};
+			const parsed = parseFixture(result);
 
-			expect(parsed.tree.ReplicatedStorage.$path).toBe(
+			expect(child(parsed.tree, "ReplicatedStorage")!.$path).toBe(
 				normalizeWindowsPath(path.join(FOO_DIR, "src")),
 			);
 		});
@@ -2083,11 +1987,11 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: { ReplicatedStorage: { $path: string } };
-			};
+			const parsed = parseFixture(result);
 
-			expect(parsed.tree.ReplicatedStorage.$path).toBe(normalizeWindowsPath(shadowDirectory));
+			expect(child(parsed.tree, "ReplicatedStorage")!.$path).toBe(
+				normalizeWindowsPath(shadowDirectory),
+			);
 		});
 
 		it("should redirect coverageRoots[].luauRoot resolved against packageDirectory when rojoProject sits in a subdirectory", () => {
@@ -2120,11 +2024,11 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: { ReplicatedStorage: { $path: string } };
-			};
+			const parsed = parseFixture(result);
 
-			expect(parsed.tree.ReplicatedStorage.$path).toBe(normalizeWindowsPath(shadowDirectory));
+			expect(child(parsed.tree, "ReplicatedStorage")!.$path).toBe(
+				normalizeWindowsPath(shadowDirectory),
+			);
 		});
 	});
 
@@ -2158,16 +2062,16 @@ describe(synthesize, () => {
 				],
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: {
-					ServerStorage: {
-						__pkg_stage: Record<string, { ReplicatedStorage: { $path: string } }>;
-					};
-				};
-			};
+			const parsed = parseFixture(result);
 
 			expect(
-				parsed.tree.ServerStorage.__pkg_stage["@halcyon/foo"]?.ReplicatedStorage.$path,
+				descend(
+					parsed.tree,
+					"ServerStorage",
+					"__pkg_stage",
+					"@halcyon/foo",
+					"ReplicatedStorage",
+				)!.$path,
 			).toBe(normalizeWindowsPath(shadowDirectory));
 		});
 	});
@@ -2175,6 +2079,7 @@ describe(synthesize, () => {
 	describe("no-wrap mode validation", () => {
 		it("should throw ConfigError when wrap=false with zero packages", () => {
 			expect.assertions(1);
+
 			expect(() => synthesize({ packages: [], wrap: false })).toThrow(ConfigError);
 		});
 
@@ -2216,11 +2121,9 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as {
-				tree: { ReplicatedStorage: { Common: { Sub: { $path: string } } } };
-			};
+			const parsed = parseFixture(result);
 
-			expect(parsed.tree.ReplicatedStorage.Common.Sub.$path).toBe(
+			expect(descend(parsed.tree, "ReplicatedStorage", "Common", "Sub")!.$path).toBe(
 				normalizeWindowsPath(path.join(FOO_DIR, "src")),
 			);
 		});
@@ -2321,25 +2224,20 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as Record<string, unknown>;
+			const parsed = parseFixture(result);
 
 			// Top-level user fields preserved.
 			expect(parsed).toMatchObject({ name: "user-game", gameId: 4242, placeId: 9999 });
 
 			// Both project mounts retained with stubs injected as named children.
-			const tree = parsed["tree"] as {
-				ReplicatedStorage: {
-					Shared: { "$path": string; "jest.config": { $path: string } };
-				};
-				ServerStorage: {
-					Server: { "$path": string; "jest.config": { $path: string } };
-				};
-			};
-
-			expect(tree.ReplicatedStorage.Shared.$path).toContain("out");
-			expect(tree.ReplicatedStorage.Shared["jest.config"].$path).toContain("shared");
-			expect(tree.ServerStorage.Server.$path).toContain("out");
-			expect(tree.ServerStorage.Server["jest.config"].$path).toContain("server");
+			expect(descend(parsed.tree, "ReplicatedStorage", "Shared")!.$path).toContain("out");
+			expect(
+				descend(parsed.tree, "ReplicatedStorage", "Shared", "jest.config")!.$path,
+			).toContain("shared");
+			expect(descend(parsed.tree, "ServerStorage", "Server")!.$path).toContain("out");
+			expect(descend(parsed.tree, "ServerStorage", "Server", "jest.config")!.$path).toContain(
+				"server",
+			);
 		});
 
 		// Structural collision: the synthesizer must refuse to overwrite a
@@ -2436,7 +2334,7 @@ describe(synthesize, () => {
 				wrap: false,
 			});
 
-			const parsed = parseFixture(result) as Record<string, unknown>;
+			const parsed = parseFixture(result);
 
 			// Unknown top-level fields survive.
 			expect(parsed).toMatchObject({
@@ -2446,18 +2344,15 @@ describe(synthesize, () => {
 			});
 
 			// Unknown $-prefixed nested key survives the absolutizePaths walk.
-			const tree = parsed["tree"] as {
-				ReplicatedStorage: {
-					"$bonusUnknownKey"?: string;
-					"jest.config"?: { $path: string };
-				};
-			};
+			const replicatedStorage = child(parsed.tree, "ReplicatedStorage");
 
-			expect(tree.ReplicatedStorage.$bonusUnknownKey).toBe("placeholder");
+			expect(replicatedStorage!["$bonusUnknownKey"]).toBe("placeholder");
 
 			// Stub injection landed at the right leaf as a named child.
-			expect(tree.ReplicatedStorage["jest.config"]).toBeDefined();
-			expect(tree.ReplicatedStorage["jest.config"]?.$path).toContain("jest.config.luau");
+			const jestConfig = descend(replicatedStorage, "jest.config");
+
+			expect(jestConfig).toBeDefined();
+			expect(jestConfig!.$path).toContain("jest.config.luau");
 		});
 	});
 });

@@ -5,8 +5,9 @@ export interface AttributionResult {
 	/** Per Luau file: statement id → ids of the tests that covered it. */
 	coveringTestIds: Record<string, Record<string, Array<string>>>;
 	/**
-	 * Per Luau file: statement ids hit during the run but credited to no per-test
-	 * window (module-load or hook code). The static-mutant set of ADR-0003.
+	 * Per Luau file: statement ids hit during the run but credited to no
+	 * per-test window (module-load or hook code). The static-mutant set of
+	 * ADR-0003.
 	 */
 	staticStatementIds: Record<string, Array<string>>;
 	tests: Array<TestRecord>;
@@ -14,10 +15,10 @@ export interface AttributionResult {
 
 /**
  * Assemble the per-test attribution records the coverage manifest carries from
- * the runner's per-test deltas. `cumulative` is the whole-run hit table, used to
- * derive the static set (statements hit but credited to no test window).
- * `resolveSourceHash` maps a test file path to its source hash (an injected seam
- * so the harvester stays pure and fs-free).
+ * the runner's per-test deltas. `cumulative` is the whole-run hit table, used
+ * to derive the static set (statements hit but credited to no test window).
+ * `resolveSourceHash` maps a test file path to its source hash (an injected
+ * seam so the harvester stays pure and fs-free).
  */
 export function harvestAttribution(
 	entries: ReadonlyArray<PerTestCoverageEntry>,
@@ -30,10 +31,10 @@ export function harvestAttribution(
 	for (const entry of entries) {
 		// A test that covered nothing new (e.g. a pure assertion against already-
 		// exercised state) carries no attribution, so it is not recorded.
-		const coveredAnything = Object.values(entry.delta).some(
+		const hasCoveredAnything = Object.values(entry.delta).some(
 			(fileDelta) => fileDelta.s.length > 0,
 		);
-		if (!coveredAnything) {
+		if (!hasCoveredAnything) {
 			continue;
 		}
 
@@ -62,11 +63,11 @@ export function harvestAttribution(
 }
 
 /**
- * Write an attribution result into a coverage manifest: set `tests[]` and place
- * each file's per-statement `coveringTestIds` and `staticStatementIds` on its
- * record. Attribution for a file absent from the manifest (e.g. a covered helper
- * outside the report universe) is dropped — the manifest's file set stays the
- * source of truth.
+ * Write an attribution result into a coverage manifest: set `tests[]` and
+ * place each file's per-statement `coveringTestIds` and `staticStatementIds`
+ * on its record. Attribution for a file absent from the manifest (e.g. a
+ * covered helper outside the report universe) is dropped — the manifest's file
+ * set stays the source of truth.
  */
 export function applyAttribution(
 	manifest: CoverageManifest,
@@ -94,8 +95,9 @@ export function applyAttribution(
  * Merge two attribution results: concatenate the test records, union the
  * per-statement covering ids, and union the static sets. A statement static in
  * one project but credited to a test in the other is not static across the
- * merged run, so the union drops any id credited in the merged `coveringTestIds`.
- * Used to combine per-project attribution from a multi-project run.
+ * merged run, so the union drops any id credited in the merged
+ * `coveringTestIds`. Used to combine per-project attribution from a
+ * multi-project run.
  */
 export function mergeAttribution(a: AttributionResult, b: AttributionResult): AttributionResult {
 	const coveringTestIds: Record<string, Record<string, Array<string>>> = {};

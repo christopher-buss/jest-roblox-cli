@@ -61,8 +61,8 @@ describe("source mapping", () => {
 			const result = mapper.mapFailureWithLocations(message);
 
 			expect(result.locations).toHaveLength(1);
-			expect(result.locations[0]?.tsLine).toBe(2);
-			expect(result.locations[0]?.tsPath).toContain("example.ts");
+			expect(result.locations[0]!.tsLine).toBe(2);
+			expect(result.locations[0]!.tsPath).toContain("example.ts");
 		});
 
 		it("should map spec file luau line to typescript source", () => {
@@ -77,8 +77,8 @@ describe("source mapping", () => {
 			const result = mapper.mapFailureWithLocations(message);
 
 			expect(result.locations).toHaveLength(1);
-			expect(result.locations[0]?.tsLine).toBe(3);
-			expect(result.locations[0]?.tsPath).toContain("example.spec.ts");
+			expect(result.locations[0]!.tsLine).toBe(3);
+			expect(result.locations[0]!.tsPath).toContain("example.spec.ts");
 		});
 
 		it("should resolve test file path from DataModel path", () => {
@@ -104,7 +104,7 @@ describe("source mapping", () => {
 
 			// Luau project: no TS mapping, path resolves to luau file
 			expect(result.locations).toHaveLength(1);
-			expect(result.locations[0]?.tsPath).toBeUndefined();
+			expect(result.locations[0]!.tsPath).toBeUndefined();
 		});
 	});
 });

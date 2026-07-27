@@ -15,10 +15,10 @@ const RUN_TIMEOUT_MS = 180_000;
 // plugin installed, so it can't run in CI. It stays dormant unless a developer
 // opts in with `JEST_ROBLOX_STUDIO_LIVE=1`; with the gate off, vitest reports it
 // skipped and the file runs on any machine without secrets or Studio.
-const isStudioLive = process.env["JEST_ROBLOX_STUDIO_LIVE"] === "1";
+const IS_STUDIO_LIVE = process.env["JEST_ROBLOX_STUDIO_LIVE"] === "1";
 
 describe("workspace studio-cli smoke", () => {
-	it.runIf(isStudioLive)(
+	it.runIf(IS_STUDIO_LIVE)(
 		"should run every workspace package in one Studio process under backend studio-cli",
 		async () => {
 			expect.assertions(3);

@@ -9,10 +9,7 @@ const { load, resolve }: { load: typeof LoadFunc; resolve: typeof ResolveFunc } 
 	await import("../loaders/luau-raw.mjs");
 
 function mockNextResolve(url: string) {
-	return vi.fn<Parameters<typeof ResolveFunc>[2]>().mockReturnValue({
-		format: undefined,
-		url,
-	});
+	return vi.fn<Parameters<typeof ResolveFunc>[2]>().mockReturnValue({ url });
 }
 
 function mockNextLoad() {

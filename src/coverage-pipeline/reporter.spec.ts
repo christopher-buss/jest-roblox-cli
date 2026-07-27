@@ -1,9 +1,11 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { projectRootFilter, sourceTwinFilter } from "./agent-table-filter.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
@@ -33,6 +35,15 @@ function createMappedFile(overrides: Partial<MappedFileCoverage> = {}): MappedFi
 
 function createResult(files: Record<string, MappedFileCoverage> = {}): MappedCoverageResult {
 	return { files };
+}
+
+function createTemporaryDirectory(): string {
+	const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
+	onTestFinished(() => {
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+	});
+
+	return temporaryDirectory;
 }
 
 function stdoutOutput(): string {
@@ -83,21 +94,16 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile(),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
 		});
 	});
 
@@ -130,24 +136,20 @@ describe(generateReports, () => {
 		it("should generate lcov.info file", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				const result = createResult({
-					"src/shared/player.ts": createMappedFile(),
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			const result = createResult({
+				"src/shared/player.ts": createMappedFile(),
+			});
 
-				generateReports({
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["lcov"],
-				});
+			generateReports({
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["lcov"],
+			});
 
-				const lcovPath = path.join(temporaryDirectory, "lcov.info");
+			const lcovPath = path.join(temporaryDirectory, "lcov.info");
 
-				expect(fs.existsSync(lcovPath)).toBeTrue();
-			} finally {
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(fs.existsSync(lcovPath)).toBeTrue();
 		});
 	});
 
@@ -155,24 +157,20 @@ describe(generateReports, () => {
 		it("should generate coverage-final.json file", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				const result = createResult({
-					"src/shared/player.ts": createMappedFile(),
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			const result = createResult({
+				"src/shared/player.ts": createMappedFile(),
+			});
 
-				generateReports({
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["json"],
-				});
+			generateReports({
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["json"],
+			});
 
-				const jsonPath = path.join(temporaryDirectory, "coverage-final.json");
+			const jsonPath = path.join(temporaryDirectory, "coverage-final.json");
 
-				expect(fs.existsSync(jsonPath)).toBeTrue();
-			} finally {
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(fs.existsSync(jsonPath)).toBeTrue();
 		});
 	});
 
@@ -207,30 +205,25 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile(),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(stripVTControlCharacters(output)).toMatchInlineSnapshot(`
-					"--------------|---------|----------|---------|---------|-------------------
-					File          | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
-					--------------|---------|----------|---------|---------|-------------------
-					All files     |   71.42 |      100 |   66.66 |   71.42 |                   
-					 inventory.ts |      75 |      100 |      50 |      75 | 3                 
-					 player.ts    |   66.66 |      100 |     100 |   66.66 | 3                 
-					--------------|---------|----------|---------|---------|-------------------
-					"
-				`);
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(stripVTControlCharacters(output)).toMatchInlineSnapshot(`
+				"--------------|---------|----------|---------|---------|-------------------
+				File          | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+				--------------|---------|----------|---------|---------|-------------------
+				All files     |   71.42 |      100 |   66.66 |   71.42 |                   
+				 inventory.ts |      75 |      100 |      50 |      75 | 3                 
+				 player.ts    |   66.66 |      100 |     100 |   66.66 | 3                 
+				--------------|---------|----------|---------|---------|-------------------
+				"
+			`);
 		});
 
 		it("should disambiguate files with identical names via flat paths in agent mode", () => {
@@ -408,21 +401,17 @@ describe(generateReports, () => {
 		it("should not print totals when no text reporter is present", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				vi.spyOn(process.stdout, "write").mockReturnValue(true);
+			const temporaryDirectory = createTemporaryDirectory();
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-				generateReports({
-					agentMode: true,
-					coverageDirectory: temporaryDirectory,
-					mapped: createResult({ "src/shared/player.ts": createMappedFile() }),
-					reporters: ["lcov"],
-				});
+			generateReports({
+				agentMode: true,
+				coverageDirectory: temporaryDirectory,
+				mapped: createResult({ "src/shared/player.ts": createMappedFile() }),
+				reporters: ["lcov"],
+			});
 
-				expect(stdoutOutput()).not.toContain("Coverage:");
-			} finally {
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(stdoutOutput()).not.toContain("Coverage:");
 		});
 
 		it("should print the compact full-coverage summary once for multiple text reporters", () => {
@@ -527,36 +516,32 @@ describe(generateReports, () => {
 		it("should generate report without throwing when file has branch coverage data", () => {
 			expect.assertions(1);
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				const result = createResult({
-					"src/shared/player.ts": createMappedFile({
-						b: { "0": [3, 1] },
-						branchMap: {
-							"0": {
-								loc: { end: { column: 1, line: 5 }, start: { column: 0, line: 2 } },
-								locations: [
-									{ end: { column: 10, line: 3 }, start: { column: 0, line: 2 } },
-									{ end: { column: 1, line: 5 }, start: { column: 0, line: 4 } },
-								],
-								type: "if",
-							},
+			const temporaryDirectory = createTemporaryDirectory();
+			const result = createResult({
+				"src/shared/player.ts": createMappedFile({
+					b: { "0": [3, 1] },
+					branchMap: {
+						"0": {
+							loc: { end: { column: 1, line: 5 }, start: { column: 0, line: 2 } },
+							locations: [
+								{ end: { column: 10, line: 3 }, start: { column: 0, line: 2 } },
+								{ end: { column: 1, line: 5 }, start: { column: 0, line: 4 } },
+							],
+							type: "if",
 						},
-					}),
-				});
+					},
+				}),
+			});
 
-				generateReports({
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["json"],
-				});
+			generateReports({
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["json"],
+			});
 
-				const jsonPath = path.join(temporaryDirectory, "coverage-final.json");
+			const jsonPath = path.join(temporaryDirectory, "coverage-final.json");
 
-				expect(fs.existsSync(jsonPath)).toBeTrue();
-			} finally {
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(fs.existsSync(jsonPath)).toBeTrue();
 		});
 	});
 
@@ -571,23 +556,18 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					collectCoverageFrom: ["src/**/*.ts"],
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				collectCoverageFrom: ["src/**/*.ts"],
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-				expect(output).not.toContain("utils.ts");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
+			expect(output).not.toContain("utils.ts");
 		});
 
 		it("should include all files when collectCoverageFrom is undefined", () => {
@@ -600,22 +580,17 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-				expect(output).toContain("utils.ts");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
+			expect(output).toContain("utils.ts");
 		});
 
 		it("should support multiple glob patterns", () => {
@@ -629,24 +604,19 @@ describe(generateReports, () => {
 				"vendor/external.ts": createMappedFile({ path: "vendor/external.ts" }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					collectCoverageFrom: ["src/**/*.ts", "lib/**/*.ts"],
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				collectCoverageFrom: ["src/**/*.ts", "lib/**/*.ts"],
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-				expect(output).toContain("utils.ts");
-				expect(output).not.toContain("external.ts");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
+			expect(output).toContain("utils.ts");
+			expect(output).not.toContain("external.ts");
 		});
 
 		it("should support negated globs", () => {
@@ -661,23 +631,18 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					collectCoverageFrom: ["src/**/*.ts", "!**/*.spec.ts"],
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				collectCoverageFrom: ["src/**/*.ts", "!**/*.spec.ts"],
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-				expect(output).not.toContain("spec");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
+			expect(output).not.toContain("spec");
 		});
 
 		it("should support exclude-only patterns", () => {
@@ -692,23 +657,18 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					collectCoverageFrom: ["!**/*.spec.ts"],
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				collectCoverageFrom: ["!**/*.spec.ts"],
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-				expect(output).not.toContain("spec");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
+			expect(output).not.toContain("spec");
 		});
 
 		it("should include all files when collectCoverageFrom is empty array", () => {
@@ -721,23 +681,18 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					collectCoverageFrom: [],
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				collectCoverageFrom: [],
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-				expect(output).toContain("utils.ts");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
+			expect(output).toContain("utils.ts");
 		});
 
 		it("should match short globs with matchBase semantics", () => {
@@ -752,23 +707,18 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					collectCoverageFrom: ["*.ts", "!*.spec.ts"],
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				collectCoverageFrom: ["*.ts", "!*.spec.ts"],
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-				expect(output).not.toContain("spec");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
+			expect(output).not.toContain("spec");
 		});
 
 		it("should handle absolute file paths by normalizing to relative", () => {
@@ -784,23 +734,18 @@ describe(generateReports, () => {
 				[absoluteSpecPath]: createMappedFile({ path: absoluteSpecPath }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					collectCoverageFrom: ["src/**/*.ts", "!**/*.spec.ts"],
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				collectCoverageFrom: ["src/**/*.ts", "!**/*.spec.ts"],
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).toContain("player.ts");
-				expect(output).not.toContain("spec");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).toContain("player.ts");
+			expect(output).not.toContain("spec");
 		});
 
 		it("should produce empty report when all files are filtered out", () => {
@@ -812,22 +757,17 @@ describe(generateReports, () => {
 				"src/shared/player.ts": createMappedFile({ path: "src/shared/player.ts" }),
 			});
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					collectCoverageFrom: ["nonexistent/**/*.ts"],
-					coverageDirectory: temporaryDirectory,
-					mapped: result,
-					reporters: ["text"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				collectCoverageFrom: ["nonexistent/**/*.ts"],
+				coverageDirectory: temporaryDirectory,
+				mapped: result,
+				reporters: ["text"],
+			});
 
-				const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-				expect(output).not.toContain("player.ts");
-			} finally {
-				stdoutSpy.mockRestore();
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(output).not.toContain("player.ts");
 		});
 	});
 
@@ -980,23 +920,19 @@ describe(generateReports, () => {
 
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-			const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-report-"));
-			try {
-				generateReports({
-					agentMode: true,
-					agentTextFilter: sourceTwinFilter(["src/shared/player.test.ts"], process.cwd()),
-					coverageDirectory: temporaryDirectory,
-					mapped: twoFileUniverse(),
-					reporters: ["lcov"],
-				});
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				agentMode: true,
+				agentTextFilter: sourceTwinFilter(["src/shared/player.test.ts"], process.cwd()),
+				coverageDirectory: temporaryDirectory,
+				mapped: twoFileUniverse(),
+				reporters: ["lcov"],
+			});
 
-				const lcov = fs.readFileSync(path.join(temporaryDirectory, "lcov.info"), "utf8");
+			const lcov = fs.readFileSync(path.join(temporaryDirectory, "lcov.info"), "utf8");
 
-				expect(lcov).toContain("player.ts");
-				expect(lcov).toContain("enemy.ts");
-			} finally {
-				fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-			}
+			expect(lcov).toContain("player.ts");
+			expect(lcov).toContain("enemy.ts");
 		});
 
 		it("should print only the totals when the filter matches no universe file", () => {
@@ -1032,8 +968,8 @@ describe(generateReports, () => {
 				generateReports({
 					coverageDirectory: "/tmp/unused",
 					mapped: result,
-					// eslint-disable-next-line ts/no-unsafe-assignment -- intentionally invalid reporter for error path test
-					reporters: ["not-a-real-reporter" as any],
+					// Intentionally invalid reporter for the error path.
+					reporters: [fromAny("not-a-real-reporter")],
 				});
 			}).toThrow("Unknown coverage reporter: not-a-real-reporter");
 		});
@@ -1046,19 +982,15 @@ describe(printCoverageHeader, () => {
 
 		const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-		try {
-			printCoverageHeader();
+		printCoverageHeader();
 
-			const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+		const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
 
-			expect(stripVTControlCharacters(output)).toMatchInlineSnapshot(`
-				"
-				 % Coverage report from istanbul
-				"
-			`);
-		} finally {
-			stdoutSpy.mockRestore();
-		}
+		expect(stripVTControlCharacters(output)).toMatchInlineSnapshot(`
+			"
+			 % Coverage report from istanbul
+			"
+		`);
 	});
 
 	it("should render the header without ANSI color in agent mode", () => {
@@ -1143,7 +1075,10 @@ describe(checkThresholds, () => {
 	});
 
 	describe("with a touched + untested + excluded mix", () => {
-		/** Every statement at zero hits — the shape a never-required file maps to. */
+		/**
+		 * Every statement at zero hits — the shape a never-required file maps
+		 * to.
+		 */
 		function untestedFile(filePath: string): MappedFileCoverage {
 			return createMappedFile({
 				f: { "0": 0 },

@@ -65,5 +65,8 @@ committed. Rebuild only when the runtime, Rojo, or the fixture sources change.
   layout. Switching to the workspace path causes a "Could not find Rojo data"
   diagnostic because the resolver looks up file paths relative to the project
   root, not the realpath through pnpm's `.pnpm/` store.
+- The `@rbxts-js` mount uses the workspace's generated
+  `node_modules/@rbxts-js.project.json`. Root `postinstall` regenerates it from
+  pnpm's package map.
 - `tsconfig.json` sets `"nx": { "addTypecheckTarget": false }` so the
   `@nx/js/typescript` plugin does not produce a `typecheck` target either.

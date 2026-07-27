@@ -59,10 +59,10 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
  * so the only resolved-value invariant left is studio-cli's serial constraint:
  * it drives one Studio instance and cannot shard.
  */
-export function assertWorkspaceRunOptions(
-	runOptions: WorkspaceRunOptions,
-): WorkspaceValidationResult {
-	const { backend, parallel } = runOptions;
+export function assertWorkspaceRunOptions({
+	backend,
+	parallel,
+}: WorkspaceRunOptions): WorkspaceValidationResult {
 	if (backend === "studio-cli" && isShardedParallel(parallel)) {
 		return {
 			exitCode: 2,

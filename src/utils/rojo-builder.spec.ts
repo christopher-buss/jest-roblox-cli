@@ -64,6 +64,6 @@ describe(buildWithRojo, () => {
 		}
 
 		expect(act).toThrowWithMessage(Error, "rojo build failed");
-		expect(act).toThrow(expect.objectContaining({ cause: originalError }) as Error);
+		expect(act).toThrow(expect.objectContaining({ cause: originalError }));
 	});
 });

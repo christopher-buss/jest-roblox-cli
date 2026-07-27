@@ -7,14 +7,14 @@ import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.
 
 const normalize = normalizeWindowsPath;
 const FIXTURE_DIR = normalize(path.resolve(__dirname, "../../fixtures"));
-const rootDirectory = normalize(path.join(FIXTURE_DIR, "src"));
-const outDirectory = normalize(path.join(FIXTURE_DIR, "out"));
+const ROOT_DIRECTORY = normalize(path.join(FIXTURE_DIR, "src"));
+const OUT_DIRECTORY = normalize(path.join(FIXTURE_DIR, "out"));
 
 const DATA_MODEL_PATH = "ReplicatedStorage.player.spec";
 
 function createFixtureSourceMapper(): SourceMapper {
 	return createSourceMapper({
-		mappings: [{ outDir: outDirectory, rootDir: rootDirectory }],
+		mappings: [{ outDir: OUT_DIRECTORY, rootDir: ROOT_DIRECTORY }],
 		rojoProject: {
 			name: "test",
 			tree: {
@@ -29,8 +29,8 @@ function createFixtureSourceMapper(): SourceMapper {
 
 function normalizePaths(output: string): string {
 	return output
-		.replaceAll(rootDirectory, "<rootDirectory>")
-		.replaceAll(outDirectory, "<outDirectory>");
+		.replaceAll(ROOT_DIRECTORY, "<ROOT_DIRECTORY>")
+		.replaceAll(OUT_DIRECTORY, "<OUT_DIRECTORY>");
 }
 
 function stack(luauLine: number): string {
@@ -64,9 +64,9 @@ describe("source-mapper pipeline", () => {
 
 		const { locations } = sourceMapper.mapFailureWithLocations(stack(15));
 
-		expect(locations[0]?.luauLine).toBe(15);
-		expect(locations[0]?.tsLine).toBe(6);
-		expect(locations[0]?.tsColumn).toBe(23);
+		expect(locations[0]!.luauLine).toBe(15);
+		expect(locations[0]!.tsLine).toBe(6);
+		expect(locations[0]!.tsColumn).toBe(23);
 	});
 
 	it("should map .never.toBe() with column on toBe not never", () => {
@@ -74,9 +74,9 @@ describe("source-mapper pipeline", () => {
 
 		const { locations } = sourceMapper.mapFailureWithLocations(stack(20));
 
-		expect(locations[0]?.luauLine).toBe(20);
-		expect(locations[0]?.tsLine).toBe(11);
-		expect(locations[0]?.tsColumn).toBe(24);
+		expect(locations[0]!.luauLine).toBe(20);
+		expect(locations[0]!.tsLine).toBe(11);
+		expect(locations[0]!.tsColumn).toBe(24);
 	});
 
 	it("should map expect() inside closure despite function()/arrow offset", () => {
@@ -84,9 +84,9 @@ describe("source-mapper pipeline", () => {
 
 		const { locations } = sourceMapper.mapFailureWithLocations(stack(28));
 
-		expect(locations[0]?.luauLine).toBe(28);
-		expect(locations[0]?.tsLine).toBe(18);
-		expect(locations[0]?.tsColumn).toBe(18);
+		expect(locations[0]!.luauLine).toBe(28);
+		expect(locations[0]!.tsLine).toBe(18);
+		expect(locations[0]!.tsColumn).toBe(18);
 	});
 
 	it("should map optional chaining temp vars via pattern match", () => {
@@ -94,9 +94,9 @@ describe("source-mapper pipeline", () => {
 
 		const { locations } = sourceMapper.mapFailureWithLocations(stack(36));
 
-		expect(locations[0]?.luauLine).toBe(36);
-		expect(locations[0]?.tsLine).toBe(24);
-		expect(locations[0]?.tsColumn).toBe(32);
+		expect(locations[0]!.luauLine).toBe(36);
+		expect(locations[0]!.tsLine).toBe(24);
+		expect(locations[0]!.tsColumn).toBe(32);
 	});
 
 	it("should map .toMatchSnapshot() to exact TS line", () => {
@@ -104,9 +104,9 @@ describe("source-mapper pipeline", () => {
 
 		const { locations } = sourceMapper.mapFailureWithLocations(stack(41));
 
-		expect(locations[0]?.luauLine).toBe(41);
-		expect(locations[0]?.tsLine).toBe(29);
-		expect(locations[0]?.tsColumn).toBe(18);
+		expect(locations[0]!.luauLine).toBe(41);
+		expect(locations[0]!.tsLine).toBe(29);
+		expect(locations[0]!.tsColumn).toBe(18);
 	});
 });
 
@@ -140,7 +140,7 @@ describe("formatter output", () => {
 			  - 100
 			  + 0
 			  
-			   ❯ <rootDirectory>/shared/player.spec.ts:6:23
+			   ❯ <ROOT_DIRECTORY>/shared/player.spec.ts:6:23
 				4|     it("should have correct name", () => {
 				5|         const player = createPlayer("Alice");
 				6|         expect(player.name).toBe("Alice");
@@ -178,7 +178,7 @@ describe("formatter output", () => {
 			  - 100
 			  + 0
 			  
-			   ❯ <rootDirectory>/shared/player.spec.ts:6:23  (TypeScript)
+			   ❯ <ROOT_DIRECTORY>/shared/player.spec.ts:6:23  (TypeScript)
 				4|     it("should have correct name", () => {
 				5|         const player = createPlayer("Alice");
 				6|         expect(player.name).toBe("Alice");
@@ -186,7 +186,7 @@ describe("formatter output", () => {
 				7|     });
 				8| 
 			  
-			   ❯ <outDirectory>/shared/player.spec.luau:15:22  (Luau)
+			   ❯ <OUT_DIRECTORY>/shared/player.spec.luau:15:22  (Luau)
 				13|         expect(player.name):toBe("Alice")
 				14|     end)
 				15|     expect(player.name):toBe("Alice")
@@ -223,7 +223,7 @@ describe("formatter output", () => {
 			  - 100
 			  + 0
 			  
-			   ❯ <rootDirectory>/shared/player.spec.ts:11:24
+			   ❯ <ROOT_DIRECTORY>/shared/player.spec.ts:11:24
 				 9|     it("should never be zero", () => {
 				10|         const health = 100;
 				11|         expect(health).never.toBe(0);
@@ -260,7 +260,7 @@ describe("formatter output", () => {
 			  - 100
 			  + 0
 			  
-			   ❯ <rootDirectory>/shared/player.spec.ts:18:18
+			   ❯ <ROOT_DIRECTORY>/shared/player.spec.ts:18:18
 				16|         [10, 20].forEach((score) => {
 				17|             scores.push(score);
 				18|             expect(score).toBeGreaterThan(0);
@@ -297,7 +297,7 @@ describe("formatter output", () => {
 			  - 100
 			  + 0
 			  
-			   ❯ <rootDirectory>/shared/player.spec.ts:29:18
+			   ❯ <ROOT_DIRECTORY>/shared/player.spec.ts:29:18
 				27|     it("should match snapshot", () => {
 				28|         const player = createPlayer("Dave");
 				29|         expect(player).toMatchSnapshot();
@@ -337,7 +337,7 @@ describe("formatter output", () => {
 			  +   "health": 150,
 			    }
 			  
-			   ❯ <rootDirectory>/shared/player.spec.ts:29:18
+			   ❯ <ROOT_DIRECTORY>/shared/player.spec.ts:29:18
 				27|     it("should match snapshot", () => {
 				28|         const player = createPlayer("Dave");
 				29|         expect(player).toMatchSnapshot();
@@ -374,7 +374,7 @@ describe("formatter output", () => {
 			  - 100
 			  + 0
 			  
-			   ❯ <rootDirectory>/shared/player.spec.ts:24:32
+			   ❯ <ROOT_DIRECTORY>/shared/player.spec.ts:24:32
 				22|     it("should read optional stats", () => {
 				23|         const player = createPlayer("Charlie");
 				24|         expect(player.stats?.health).toBe(100);
