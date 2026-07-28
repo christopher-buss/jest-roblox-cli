@@ -849,12 +849,12 @@ packages:
     resolution: {integrity: sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==}
     engines: {node: '>=18.18'}
 
-  '@isentinel/dict-rbxts@1.0.14':
-    resolution: {integrity: sha512-NNJmTv9SVw/h1Qff6JFSpTusR1RJAfYNP6FGX2jyqlKwXcdN3wXV/ZWJ/u7v6ORt3UpLLx3ZotnnXSimqQSm0A==}
+  '@isentinel/dict-rbxts@1.0.16':
+    resolution: {integrity: sha512-BC3Lv+F95LBCpIFsRn7nNX8nVsw3gxw6pgyX9rWoJ7K6W3m3qnncUIUtk6CJ9Pf1U8aNHdBn0E0fR/+LmAfSdw==}
     engines: {node: '>=22'}
 
-  '@isentinel/dict-roblox@1.0.7':
-    resolution: {integrity: sha512-9vKzvWcnPGkD2qVzsOQEa3JQofcmEZR6iCxQurEl00BnafZteroSv5EnBRcoVcCP4lwPL2iOAmdC05H92YFM1g==}
+  '@isentinel/dict-roblox@1.0.9':
+    resolution: {integrity: sha512-bycT5ybSkwS0g9fCz4D0b5Oq9zhJJbfaE8e/OdyvO+Rpt00mUlxgG8lYXQYnH/QHyfuxYocMAhPEd3PNTViZPg==}
     engines: {node: '>=20.18.0'}
 
   '@isentinel/eslint-config@6.0.0-beta.30':
@@ -5190,9 +5190,9 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
-  '@isentinel/dict-rbxts@1.0.14': {}
+  '@isentinel/dict-rbxts@1.0.16': {}
 
-  '@isentinel/dict-roblox@1.0.7': {}
+  '@isentinel/dict-roblox@1.0.9': {}
 
   '@isentinel/eslint-config@6.0.0-beta.30(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/estree@1.0.9)(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@4.1.8))(eslint-plugin-jest-extended@3.0.1(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.2.2(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))(oxlint@1.75.0)(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
@@ -5202,8 +5202,8 @@ snapshots:
       '@e18e/eslint-plugin': 0.5.1(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))(oxlint@1.75.0)
       '@eslint-community/eslint-plugin-eslint-comments': 4.7.2(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))
       '@eslint/markdown': 8.0.3(supports-color@10.2.2)
-      '@isentinel/dict-rbxts': 1.0.14
-      '@isentinel/dict-roblox': 1.0.7
+      '@isentinel/dict-rbxts': 1.0.16
+      '@isentinel/dict-roblox': 1.0.9
       '@oxlint/plugins': 1.74.0
       '@pobammer-ts/small-rules': 2.9.0(typescript@6.0.3)
       '@stylistic/eslint-plugin': 5.10.0(eslint@10.7.0(jiti@2.7.0)(supports-color@10.2.2))

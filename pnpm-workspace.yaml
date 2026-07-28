@@ -11,8 +11,6 @@ overrides:
 
 minimumReleaseAgeExclude:
   - "@isentinel/eslint-config"
-  - "@pobammer-ts/small-rules@2.9.0"
-  - "eslint-plugin-flawless@1.4.3"
 
 publicHoistPattern:
   - "*@rbxts*"
