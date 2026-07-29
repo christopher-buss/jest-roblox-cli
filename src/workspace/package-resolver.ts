@@ -60,7 +60,7 @@ export function resolvePackage(
 	throw new Error(`Package "${name}" not found in workspace. Available: ${names}`);
 }
 
-function parsePackageJson(packageJsonPath: string): unknown {
+function parsePackageJson(packageJsonPath: string): JSONValue {
 	const contents = fs.readFileSync(packageJsonPath, "utf-8");
 	try {
 		return JSON.parse(contents);

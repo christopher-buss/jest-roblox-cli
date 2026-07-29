@@ -114,7 +114,7 @@ export async function runCliAsync(
 	});
 }
 
-export function readJsonSync(filePath: string): unknown {
+export function readJsonSync(filePath: string): JSONValue {
 	return JSON.parse(readFileSync(filePath, "utf-8"));
 }
 

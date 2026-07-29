@@ -24,14 +24,16 @@
 	"exports": {
 		".": {
 			"source": "./src/source.ts",
-			"types": "./dist/index.d.mts",
 			"default": "./dist/index.mjs"
 		},
 		"./artifacts": {
-			"types": "./dist/index.d.mts",
+			"source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./cli": "./dist/cli.mjs",
+		"./cli": {
+			"source": "./src/cli.ts",
+			"default": "./dist/cli.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"types": "./dist/index.d.mts",
@@ -119,5 +121,13 @@
 	"packageManager": "pnpm@11.17.0+sha512.cca3cea332ad254bb84145f966d19f4879615210346fc92c79a047f23a0d7b3cca3c3792f0076ba1f1831d277efbcf0a9119b31a9a60eca7fb3d6231f331ef72",
 	"engines": {
 		"node": ">=24.12.0"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./artifacts": "./dist/index.mjs",
+			"./cli": "./dist/cli.mjs",
+			"./package.json": "./package.json"
+		}
 	}
 }

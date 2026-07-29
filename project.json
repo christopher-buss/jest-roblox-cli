@@ -17,7 +17,8 @@
 			"outputs": [
 				"{projectRoot}/out/**/*.{js,cjs,mjs,jsx,json,d.ts,d.cts,d.mts,luau}{,.map}",
 				"{projectRoot}/out/tsconfig.lib.tsbuildinfo",
-				"{projectRoot}/dist/*.{mjs,d.mts}{,.map}"
+				"{projectRoot}/dist/*.{mjs,d.mts}{,.map}",
+				"{projectRoot}/src/*.bundled.luau"
 			]
 		},
 		"lint": {
@@ -29,7 +30,8 @@
 			"options": {
 				"cwd": "tools/jest-roblox-cli"
 			},
-			"dependsOn": ["weld:build"]
+			"dependsOn": ["weld:build"],
+			"outputs": ["{projectRoot}/src/*.bundled.luau"]
 		},
 		"test": {
 			"command": "tsgo --build --emitDeclarationOnly && vitest run --project unit --coverage && vitest run --project integration",

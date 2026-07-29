@@ -178,7 +178,7 @@ function runTool(command: string, args: Array<string>, cwd: string): string {
 	}
 }
 
-function parseJson(stdout: string, command: string): unknown {
+function parseJson(stdout: string, command: string): JSONValue {
 	try {
 		return JSON.parse(stdout);
 	} catch (err) {
@@ -237,7 +237,7 @@ function parseNxOutput(stdout: string): Array<string> {
 // locate is a real inconsistency the user needs to see, not silently drop.
 function nxProjectRoot(workspaceRoot: string, name: string): string {
 	const errorContext = `nx show project ${JSON.stringify(name)}`;
-	let parsed: unknown;
+	let parsed: JSONValue;
 	try {
 		const stdout = runTool("nx", ["show", "project", name, "--json"], workspaceRoot);
 		parsed = parseJson(stdout, "nx");
