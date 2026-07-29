@@ -2,7 +2,7 @@ import { type } from "arktype";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServer } from "./fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -25,7 +25,7 @@ describe("--formatters json stream isolation", () => {
 		expect.assertions(5);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-		const server = await startFakeOpenCloudServer([
+		const server = await startFakeOpenCloudServerAsync([
 			{
 				jestOutput: buildMixedOutput(buildPassingPayload()),
 			},

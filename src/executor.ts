@@ -131,11 +131,15 @@ interface ProjectArtifacts {
  * raw entry, so out-of-order results would post-process with the wrong
  * config.
  */
-export async function runProjects(options: RunProjectsOptions): Promise<RunProjectsResult> {
+export async function runProjectsAsync(options: RunProjectsOptions): Promise<RunProjectsResult> {
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 	const jobs = buildJobs(options.projects, timing);
 
-	const { rawResults, timing: backendTiming } = await dispatchToBackend(options, jobs, timing);
+	const { rawResults, timing: backendTiming } = await dispatchToBackendAsync(
+		options,
+		jobs,
+		timing,
+	);
 
 	assertResultParity(rawResults.length, jobs.length);
 
@@ -188,13 +192,13 @@ function buildJobs(
 	});
 }
 
-async function dispatchToBackend(
+async function dispatchToBackendAsync(
 	options: RunProjectsOptions,
 	jobs: Array<ProjectJob>,
 	timing: TimingCollector,
 ): Promise<BackendResult> {
 	return timing.profileAsync("backend.runTests", async () => {
-		const result = await options.backend.runTests({
+		const result = await options.backend.runTestsAsync({
 			jobs,
 			parallel: options.parallel,
 			scriptOverride: options.scriptOverride,

@@ -25,13 +25,13 @@ import {
 	mergeSnapshotSummaries,
 } from "./formatters/formatter.ts";
 import { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
-import { writeJsonFile } from "./formatters/json.ts";
+import { writeJsonFileAsync } from "./formatters/json.ts";
 import {
 	mergeProjectResults,
 	mergeResults,
-	outputMultiResult,
-	outputSingleResult,
-	writeResultFile,
+	outputMultiResultAsync,
+	outputSingleResultAsync,
+	writeResultFileAsync,
 } from "./output.ts";
 import type {
 	MultiRunResult,
@@ -91,7 +91,7 @@ const mocks = {
 	printCoverageHeader: vi.mocked(printCoverageHeader),
 	writeGameOutput: vi.mocked(writeGameOutput),
 	writeGroupedGameOutput: vi.mocked(writeGroupedGameOutput),
-	writeJsonFile: vi.mocked(writeJsonFile),
+	writeJsonFile: vi.mocked(writeJsonFileAsync),
 };
 
 function setupCleanup(): void {
@@ -203,7 +203,7 @@ function setupDefaults(): void {
 	mocks.writeJsonFile.mockResolvedValue(undefined);
 }
 
-describe(outputSingleResult, () => {
+describe(outputSingleResultAsync, () => {
 	it("should print formatted runtime output and return 0 when runtime succeeds", async () => {
 		expect.assertions(2);
 
@@ -211,7 +211,7 @@ describe(outputSingleResult, () => {
 		const spies = setupOutputSpies();
 		const config = makeConfig();
 
-		const code = await outputSingleResult(config, makeSingleResult());
+		const code = await outputSingleResultAsync(config, makeSingleResult());
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
@@ -223,7 +223,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		const code = await outputSingleResult(
+		const code = await outputSingleResultAsync(
 			makeConfig(),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeJestResult({ success: false }) }),
@@ -239,7 +239,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		const code = await outputSingleResult(
+		const code = await outputSingleResultAsync(
 			makeConfig(),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 2 }),
@@ -255,7 +255,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		const code = await outputSingleResult(
+		const code = await outputSingleResultAsync(
 			makeConfig(),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({
@@ -282,7 +282,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig(),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 3 }),
@@ -300,7 +300,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(makeConfig({ silent: true }), makeSingleResult());
+		await outputSingleResultAsync(makeConfig({ silent: true }), makeSingleResult());
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -311,7 +311,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ outputFile: "/tmp/results.json" }),
 			makeSingleResult(),
 		);
@@ -326,7 +326,7 @@ describe(outputSingleResult, () => {
 		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
 		setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ gameOutput: "raw" }),
@@ -342,7 +342,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig(),
 			makeSingleResult({
 				runtimeResult: undefined,
@@ -359,7 +359,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig(),
 			makeSingleResult({
 				typecheckResult: makeJestResult({ numFailedTests: 1, success: false }),
@@ -375,7 +375,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ formatters: ["json"] }),
 			makeSingleResult({ typecheckResult: makeJestResult() }),
 		);
@@ -390,7 +390,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(makeConfig({ collectCoverage: true }), makeSingleResult());
+		await outputSingleResultAsync(makeConfig({ collectCoverage: true }), makeSingleResult());
 
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("PASS"));
 	});
@@ -401,7 +401,7 @@ describe(outputSingleResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeJestResult({ success: false }) }),
@@ -412,14 +412,14 @@ describe(outputSingleResult, () => {
 	});
 });
 
-describe(outputMultiResult, () => {
+describe(outputMultiResultAsync, () => {
 	it("should print formatted multi-project output and return 0 when all succeed", async () => {
 		expect.assertions(2);
 
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		const code = await outputMultiResult(makeConfig(), makeMultiResult());
+		const code = await outputMultiResultAsync(makeConfig(), makeMultiResult());
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
@@ -431,7 +431,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		const code = await outputMultiResult(
+		const code = await outputMultiResultAsync(
 			makeConfig(),
 			makeMultiResult({
 				projectResults: [
@@ -452,7 +452,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		const code = await outputMultiResult(
+		const code = await outputMultiResultAsync(
 			makeConfig(),
 			makeMultiResult({
 				projectResults: [
@@ -485,7 +485,7 @@ describe(outputMultiResult, () => {
 		});
 		setupOutputSpies();
 
-		const code = await outputMultiResult(
+		const code = await outputMultiResultAsync(
 			makeConfig(),
 			makeMultiResult({
 				projectResults: [
@@ -521,7 +521,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig(),
 			makeMultiResult({
 				projectResults: [
@@ -550,7 +550,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(makeConfig({ silent: true }), makeMultiResult());
+		await outputMultiResultAsync(makeConfig({ silent: true }), makeMultiResult());
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -561,7 +561,10 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputMultiResult(makeConfig({ outputFile: "/tmp/results.json" }), makeMultiResult());
+		await outputMultiResultAsync(
+			makeConfig({ outputFile: "/tmp/results.json" }),
+			makeMultiResult(),
+		);
 
 		expect(mocks.writeJsonFile).toHaveBeenCalledWith(expect.any(Object), "/tmp/results.json");
 	});
@@ -572,7 +575,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ outputFile: "/tmp/results.json" }),
 			makeWorkspaceResult(),
 		);
@@ -589,7 +592,10 @@ describe(outputMultiResult, () => {
 		]);
 		setupOutputSpies();
 
-		await outputMultiResult(makeConfig({ gameOutput: "/tmp/game.json" }), makeMultiResult());
+		await outputMultiResultAsync(
+			makeConfig({ gameOutput: "/tmp/game.json" }),
+			makeMultiResult(),
+		);
 
 		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledOnce();
 	});
@@ -600,7 +606,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeWorkspaceResult(),
 		);
@@ -614,7 +620,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig(),
 			makeMultiResult({
 				projectResults: [],
@@ -631,7 +637,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(makeConfig({ formatters: ["agent"] }), makeMultiResult());
+		await outputMultiResultAsync(makeConfig({ formatters: ["agent"] }), makeMultiResult());
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-agent");
 	});
@@ -642,7 +648,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ formatters: [["agent", { maxFailures: 5 }]] }),
 			makeMultiResult(),
 		);
@@ -659,7 +665,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({
 				formatters: ["agent"],
 				gameOutput: "/root/cfg.log",
@@ -686,7 +692,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({
 				formatters: ["agent"],
 				gameOutput: "/root/cfg.log",
@@ -707,7 +713,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(makeConfig({ formatters: ["json"] }), makeMultiResult());
+		await outputMultiResultAsync(makeConfig({ formatters: ["json"] }), makeMultiResult());
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 	});
@@ -718,7 +724,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ formatters: ["json"] }),
 			makeMultiResult({ typecheckResult: makeJestResult() }),
 		);
@@ -734,7 +740,7 @@ describe(outputMultiResult, () => {
 		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeMultiResult({
 				collectCoverageFrom: ["src/**/*.ts"],
@@ -758,7 +764,7 @@ describe(outputMultiResult, () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		const code = await outputMultiResult(makeConfig(), makeWorkspaceResult());
+		const code = await outputMultiResultAsync(makeConfig(), makeWorkspaceResult());
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
@@ -776,7 +782,7 @@ describe(outputMultiResult, () => {
 			return true;
 		}
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeMultiResult({
 				coverageDisplayFilter: displayFilter,
@@ -802,7 +808,7 @@ describe("processCoverage via outputSingleResult", () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputSingleResult(makeConfig(), makeSingleResult());
+		await outputSingleResultAsync(makeConfig(), makeSingleResult());
 
 		expect(mocks.generateReports).not.toHaveBeenCalled();
 	});
@@ -813,7 +819,7 @@ describe("processCoverage via outputSingleResult", () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(makeConfig({ collectCoverage: true }), makeSingleResult());
+		await outputSingleResultAsync(makeConfig({ collectCoverage: true }), makeSingleResult());
 
 		expect(spies.stderr).toHaveBeenCalledWith(
 			expect.stringContaining("coverage data was empty"),
@@ -826,7 +832,7 @@ describe("processCoverage via outputSingleResult", () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true, silent: true }),
 			makeSingleResult(),
 		);
@@ -840,7 +846,7 @@ describe("processCoverage via outputSingleResult", () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -858,7 +864,7 @@ describe("processCoverage via outputSingleResult", () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true, silent: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -876,7 +882,7 @@ describe("processCoverage via outputSingleResult", () => {
 		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -895,7 +901,7 @@ describe("processCoverage via outputSingleResult", () => {
 		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true, silent: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -918,7 +924,7 @@ describe("processCoverage via outputSingleResult", () => {
 		});
 		const spies = setupOutputSpies();
 
-		const code = await outputSingleResult(
+		const code = await outputSingleResultAsync(
 			makeConfig({
 				collectCoverage: true,
 				coverageThreshold: { lines: 100 },
@@ -945,7 +951,7 @@ describe("processCoverage via outputSingleResult", () => {
 		setupOutputSpies();
 
 		await expect(
-			outputSingleResult(
+			outputSingleResultAsync(
 				makeConfig({
 					collectCoverage: true,
 					coverageThreshold: { lines: 100 },
@@ -970,7 +976,7 @@ describe("agent-mode summary ordering vs coverage", () => {
 		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true, formatters: ["agent"] }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -993,7 +999,7 @@ describe("agent-mode summary ordering vs coverage", () => {
 		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -1016,7 +1022,7 @@ describe("agent-mode summary ordering vs coverage", () => {
 		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true, formatters: ["agent"], verbose: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -1039,7 +1045,7 @@ describe("agent-mode summary ordering vs coverage", () => {
 		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ collectCoverage: true, formatters: ["agent"] }),
 			makeMultiResult({
 				projectResults: [
@@ -1062,7 +1068,7 @@ describe("agent-mode summary ordering vs coverage", () => {
 		setupDefaults();
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(makeConfig({ formatters: ["agent"] }), makeSingleResult());
+		await outputSingleResultAsync(makeConfig({ formatters: ["agent"] }), makeSingleResult());
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 		expect(mocks.generateReports).not.toHaveBeenCalled();
@@ -1079,7 +1085,7 @@ describe("agent-mode summary ordering vs coverage", () => {
 		const spies = setupOutputSpies();
 
 		await expect(
-			outputSingleResult(
+			outputSingleResultAsync(
 				makeConfig({ collectCoverage: true, formatters: ["agent"] }),
 				makeSingleResult({
 					runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
@@ -1101,7 +1107,7 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
 			files: { "foo.ts": {} },
 		});
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeWorkspaceResult({
 				coverageMapped: preMapped,
@@ -1123,7 +1129,7 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeWorkspaceResult({
 				projectResults: [
@@ -1147,7 +1153,7 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
 			files: { "foo.ts": {} },
 		});
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig(),
 			makeWorkspaceResult({
 				coverageMapped: preMapped,
@@ -1172,7 +1178,7 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
 			files: { "foo.ts": {} },
 		});
-		const code = await outputMultiResult(
+		const code = await outputMultiResultAsync(
 			makeConfig({ coverageThreshold: { lines: 100 } }),
 			makeWorkspaceResult({ coverageMapped: preMapped }),
 		);
@@ -1196,7 +1202,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
-		const code = await outputMultiResult(
+		const code = await outputMultiResultAsync(
 			makeConfig({ coverageThreshold: { lines: 80 } }),
 			makeWorkspaceResult({
 				coverageMapped: preMapped,
@@ -1223,7 +1229,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ coverageThreshold: { branches: 70, statements: 80 } }),
 			makeWorkspaceResult({
 				coverageMapped: preMapped,
@@ -1250,7 +1256,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ coverageThreshold: { lines: 80 } }),
 			makeWorkspaceResult({
 				coverageMapped: preMapped,
@@ -1274,7 +1280,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		const spies = setupOutputSpies();
 
 		const emptyUniverse: MappedCoverageResult = { files: {} };
-		const code = await outputMultiResult(
+		const code = await outputMultiResultAsync(
 			makeConfig({ coverageThreshold: { lines: 80 } }),
 			makeWorkspaceResult({
 				coverageMapped: preMapped,
@@ -1301,7 +1307,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		const code = await outputMultiResult(
+		const code = await outputMultiResultAsync(
 			makeConfig(),
 			makeWorkspaceResult({
 				coverageMapped: preMapped,
@@ -1321,7 +1327,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputSingleResult(makeConfig(), makeSingleResult());
+		await outputSingleResultAsync(makeConfig(), makeSingleResult());
 
 		expect(mocks.formatAnnotations).not.toHaveBeenCalled();
 		expect(mocks.formatJobSummary).not.toHaveBeenCalled();
@@ -1334,7 +1340,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		mocks.formatAnnotations.mockReturnValue("::error::oops");
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
 			makeSingleResult(),
 		);
@@ -1348,7 +1354,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({
 				formatters: ["default", ["github-actions", { displayAnnotations: false }]],
 			}),
@@ -1365,7 +1371,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		mocks.formatAnnotations.mockReturnValue("");
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
 			makeSingleResult(),
 		);
@@ -1382,7 +1388,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		vol.mkdirSync("/tmp", { recursive: true });
 		vol.writeFileSync("/tmp/summary.md", "");
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
 			makeSingleResult(),
 		);
@@ -1398,7 +1404,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		vol.mkdirSync("/tmp", { recursive: true });
 		vol.writeFileSync("/tmp/explicit.md", "");
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({
 				formatters: [
 					"default",
@@ -1418,7 +1424,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		setupOutputSpies();
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({
 				formatters: ["default", ["github-actions", { jobSummary: { enabled: false } }]],
 			}),
@@ -1434,7 +1440,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
 			makeSingleResult(),
 		);
@@ -1452,7 +1458,10 @@ describe("writeGameOutput integration", () => {
 		mocks.formatGameOutputNotice.mockReturnValue("Game output written to ...");
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(makeConfig({ gameOutput: "/tmp/game.json" }), makeSingleResult());
+		await outputSingleResultAsync(
+			makeConfig({ gameOutput: "/tmp/game.json" }),
+			makeSingleResult(),
+		);
 
 		expect(spies.consoleError).toHaveBeenCalledWith("Game output written to ...");
 	});
@@ -1464,7 +1473,7 @@ describe("writeGameOutput integration", () => {
 		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({
@@ -1485,7 +1494,10 @@ describe("writeGameOutput integration", () => {
 		mocks.formatGameOutputNotice.mockReturnValue("");
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(makeConfig({ gameOutput: "/tmp/game.json" }), makeSingleResult());
+		await outputSingleResultAsync(
+			makeConfig({ gameOutput: "/tmp/game.json" }),
+			makeSingleResult(),
+		);
 
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
@@ -1498,7 +1510,10 @@ describe("writeGameOutput integration", () => {
 		mocks.formatGameOutputNotice.mockReturnValue("Game output written to ...");
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(makeConfig({ gameOutput: "/tmp/game.json" }), makeMultiResult());
+		await outputMultiResultAsync(
+			makeConfig({ gameOutput: "/tmp/game.json" }),
+			makeMultiResult(),
+		);
 
 		expect(spies.consoleError).toHaveBeenCalledWith("Game output written to ...");
 	});
@@ -1511,7 +1526,7 @@ describe("writeGameOutput integration", () => {
 		mocks.formatGameOutputNotice.mockReturnValue("notice");
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeMultiResult({
 				projectResults: [
@@ -1533,13 +1548,16 @@ describe("writeGameOutput integration", () => {
 		mocks.formatGameOutputNotice.mockReturnValue("");
 		const spies = setupOutputSpies();
 
-		await outputMultiResult(makeConfig({ gameOutput: "/tmp/game.json" }), makeMultiResult());
+		await outputMultiResultAsync(
+			makeConfig({ gameOutput: "/tmp/game.json" }),
+			makeMultiResult(),
+		);
 
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 });
 
-describe(writeResultFile, () => {
+describe(writeResultFileAsync, () => {
 	it("should serialize the shared mergeResults output to the given path", async () => {
 		expect.assertions(1);
 
@@ -1549,7 +1567,7 @@ describe(writeResultFile, () => {
 		const typecheck = makeJestResult({ numPassedTests: 1, numTotalTests: 1 });
 		const runtime = makeJestResult({ numPassedTests: 2, numTotalTests: 2 });
 
-		await writeResultFile("/tmp/results.json", typecheck, runtime);
+		await writeResultFileAsync("/tmp/results.json", typecheck, runtime);
 
 		expect(mocks.writeJsonFile).toHaveBeenCalledWith(
 			mergeResults(typecheck, runtime),
@@ -1563,7 +1581,7 @@ describe(writeResultFile, () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		await writeResultFile(undefined, makeJestResult(), makeJestResult());
+		await writeResultFileAsync(undefined, makeJestResult(), makeJestResult());
 
 		expect(mocks.writeJsonFile).not.toHaveBeenCalled();
 	});
@@ -1576,7 +1594,7 @@ describe(writeResultFile, () => {
 
 		const typecheck = makeJestResult({ numFailedTests: 1, success: false });
 
-		await writeResultFile("/tmp/results.json", typecheck, undefined);
+		await writeResultFileAsync("/tmp/results.json", typecheck, undefined);
 
 		expect(mocks.writeJsonFile).toHaveBeenCalledWith(typecheck, "/tmp/results.json");
 	});
@@ -1595,7 +1613,7 @@ describe(writeResultFile, () => {
 		const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
 		const runtime = makeJestResult({ numPassedTests: 3, numTotalTests: 3 });
 
-		await outputSingleResult(
+		await outputSingleResultAsync(
 			makeConfig({ outputFile: "/tmp/results.json" }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: runtime }),
@@ -1618,7 +1636,7 @@ describe(writeResultFile, () => {
 		const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
 		const runtime = makeJestResult({ numPassedTests: 3, numTotalTests: 3 });
 
-		await outputMultiResult(
+		await outputMultiResultAsync(
 			makeConfig({ outputFile: "/tmp/results.json" }),
 			makeMultiResult({
 				projectResults: [makeProjectResult("client", { result: runtime })],
@@ -1837,7 +1855,7 @@ describe("merged typecheck + runtime branches", () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		const code = await outputSingleResult(
+		const code = await outputSingleResultAsync(
 			makeConfig(),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({
@@ -1859,7 +1877,7 @@ describe("printOutput empty branch", () => {
 		mocks.formatExecuteOutput.mockReturnValue("");
 		const spies = setupOutputSpies();
 
-		await outputSingleResult(makeConfig(), makeSingleResult());
+		await outputSingleResultAsync(makeConfig(), makeSingleResult());
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -1875,7 +1893,7 @@ describe("processCoverage threshold passed branch", () => {
 		mocks.checkThresholds.mockReturnValue({ failures: [], passed: true });
 		const spies = setupOutputSpies();
 
-		const code = await outputSingleResult(
+		const code = await outputSingleResultAsync(
 			makeConfig({
 				collectCoverage: true,
 				coverageThreshold: { lines: 80 },

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./coverage-pipeline/mapper.ts";
-import { outputMultiResult } from "./output.ts";
+import { outputMultiResultAsync } from "./output.ts";
 import type { WorkspaceRunResult } from "./run/types.ts";
 import type { JestResult, TestCaseResult } from "./types/jest-result.ts";
 
@@ -132,7 +132,7 @@ describe("agent-mode output ordering", () => {
 		});
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		await outputMultiResult(makeConfig(), makeWorkspaceResult());
+		await outputMultiResultAsync(makeConfig(), makeWorkspaceResult());
 
 		expect(stripVTControlCharacters(chunks.join(""))).toMatchInlineSnapshot(`
 			"

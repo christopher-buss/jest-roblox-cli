@@ -3,10 +3,10 @@ import { mergeResults } from "../output.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
-import { runTypecheck } from "../typecheck/runner.ts";
+import { runTypecheckAsync } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { WorkspaceProjectResult } from "./coverage-attach.ts";
-import { writeTypecheckOnlySinks } from "./output-sinks.ts";
+import { writeTypecheckOnlySinksAsync } from "./output-sinks.ts";
 import type { PackageTypecheck, TypeTestProject } from "./test-selection.ts";
 
 /**
@@ -45,7 +45,7 @@ interface TypecheckOnlyInput {
 // `typecheckByDirectory` (keyed by `cwd = package`), and `composePackageIdentity`
 // stamps the package name onto every file result so two packages'
 // identically-named `-d` files stay distinct after the merge.
-export async function runWorkspaceTypecheckPass(
+export async function runWorkspaceTypecheckPassAsync(
 	entries: Array<TypecheckGroupEntry>,
 	typecheckByDirectory: Map<string, PackageTypecheck>,
 ): Promise<WorkspaceTypecheckPass> {
@@ -56,7 +56,7 @@ export async function runWorkspaceTypecheckPass(
 		// entry, so the lookup is always present.
 		// eslint-disable-next-line ts/no-non-null-assertion -- invariant: cwd ∈ typecheckByDirectory
 		const policy = typecheckByDirectory.get(group.cwd)!;
-		const raw = await runTypecheck({
+		const raw = await runTypecheckAsync({
 			files: group.files,
 			ignoreSourceErrors: policy.ignoreSourceErrors,
 			rootDir: group.cwd,
@@ -97,14 +97,14 @@ export function attachTypecheck(
 // Type Test pass, write it to the workspace `outputFile` sink (no runtime side),
 // and return it. Skips instrumentation, the synthesized place build, and Open
 // Cloud dispatch entirely.
-export async function runTypecheckOnlyWorkspace(
+export async function runTypecheckOnlyWorkspaceAsync(
 	input: TypecheckOnlyInput,
 ): Promise<WorkspaceRunnerOutput> {
-	const typecheckPass = await runWorkspaceTypecheckPass(
+	const typecheckPass = await runWorkspaceTypecheckPassAsync(
 		input.typeTestEntries,
 		input.typecheckByDirectory,
 	);
-	await writeTypecheckOnlySinks({
+	await writeTypecheckOnlySinksAsync({
 		runOptions: input.runOptions,
 		typecheckByPackage: typecheckPass.byPackage,
 		typecheckResult: typecheckPass.outcome.result,

@@ -19,7 +19,7 @@ export interface LoadedPackage {
 	pkgConfig: ResolvedConfig;
 }
 
-export async function loadWorkspacePackages({
+export async function loadWorkspacePackagesAsync({
 	cli,
 	packageInfos,
 	timing,

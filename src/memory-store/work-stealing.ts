@@ -56,7 +56,7 @@ export function decodeQueueItem(value: unknown): QueueItem {
  * execution plus a small buffer so a crashing task lets its in-flight
  * package become visible again to siblings.
  */
-export async function prepareWorkStealingQueue(
+export async function prepareWorkStealingQueueAsync(
 	options: PrepareWorkStealingOptions,
 ): Promise<PreparedWorkStealing> {
 	const queueId = (options.uuid ?? randomUUID)();

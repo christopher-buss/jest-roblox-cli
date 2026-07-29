@@ -10,9 +10,9 @@ _.path = [
 "github:johnnymorganz/stylua" = "latest"
 "github:luau-lang/lute" = "1.0.0"
 "github:rojo-rbx/rojo" = "v7.7.0-rc.1"
-node = "26.5.0"
 "npm:@antfu/ni" = "latest"
 "npm:corepack" = "latest"
+node = "26.5.0"
 watchexec = "latest"
 
 [tasks.dev]

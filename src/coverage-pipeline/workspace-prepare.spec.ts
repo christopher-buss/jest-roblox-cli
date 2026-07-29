@@ -72,7 +72,7 @@ function seedPackage(
 	}
 }
 
-async function mockInstrumentRoot(
+async function mockInstrumentRootAsync(
 	implementation?: (options: {
 		luauRoot: string;
 		shadowDir: string;
@@ -109,7 +109,7 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 
 		seedPackage(FOO_DIR);
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const result = prepareWorkspaceCoverage({
 			packages: [
@@ -141,7 +141,7 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 
 		seedPackage(FOO_DIR);
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const result = prepareWorkspaceCoverage({
 			packages: [
@@ -178,7 +178,7 @@ describe(prepareWorkspaceCoverage, () => {
 				ServerScriptService: { Server: { $path: "out/server" } },
 			},
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -208,7 +208,7 @@ describe(prepareWorkspaceCoverage, () => {
 
 		seedPackage(FOO_DIR);
 		seedPackage(BAR_DIR);
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const result = prepareWorkspaceCoverage({
 			packages: [
@@ -245,7 +245,7 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 
 		seedPackage(FOO_DIR);
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const [result] = prepareWorkspaceCoverage({
 			packages: [
@@ -293,7 +293,7 @@ describe(prepareWorkspaceCoverage, () => {
 			// Stale spec from a prior run — source has no matching file.
 			[staleSpecPath]: "return {}",
 		});
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -364,7 +364,7 @@ describe(prepareWorkspaceCoverage, () => {
 				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -427,7 +427,7 @@ describe(prepareWorkspaceCoverage, () => {
 				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -466,7 +466,7 @@ describe(prepareWorkspaceCoverage, () => {
 		);
 		vol.mkdirSync(manifestDirectory, { recursive: true });
 		vol.writeFileSync(path.join(manifestDirectory, "coverage-manifest.json"), body);
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -536,7 +536,7 @@ describe(prepareWorkspaceCoverage, () => {
 				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -608,7 +608,7 @@ describe(prepareWorkspaceCoverage, () => {
 				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -687,7 +687,7 @@ describe(prepareWorkspaceCoverage, () => {
 				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
 			)]: JSON.stringify(previousManifest),
 		});
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -724,7 +724,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "return {}",
 			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: "local x = 1",
 		});
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const [result] = prepareWorkspaceCoverage({
 			packages: [
@@ -759,7 +759,7 @@ describe(prepareWorkspaceCoverage, () => {
 			}),
 			[path.join(BAR_DIR, "init.luau")]: "local x = 1",
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -787,7 +787,7 @@ describe(prepareWorkspaceCoverage, () => {
 				},
 			}),
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -813,7 +813,7 @@ describe(prepareWorkspaceCoverage, () => {
 				ReplicatedStorage: { Vendor: { $path: "node_modules" } },
 			},
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -842,7 +842,7 @@ describe(prepareWorkspaceCoverage, () => {
 			}),
 			[path.join(FOO_DIR, "init.luau")]: "local x = 1",
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -872,7 +872,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "vendor/readme.txt")]: "",
 			[path.join(FOO_DIR, "vendor/sub/data.json")]: "{}",
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -903,7 +903,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "out-test/src/bar.test.luau")]: "",
 			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "",
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		const result = prepareWorkspaceCoverage({
 			packages: [
@@ -947,7 +947,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "out-test/src/foo.spec.luau")]: "return {}",
 			[path.join(FOO_DIR, "out-test/test/fixtures.luau")]: "local x = 1",
 		});
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const result = prepareWorkspaceCoverage({
 			packages: [
@@ -992,7 +992,7 @@ describe(prepareWorkspaceCoverage, () => {
 			[path.join(FOO_DIR, "include/RuntimeLib.lua")]: "local x = 1",
 			[path.join(FOO_DIR, "out/init.luau")]: "local x = 1",
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		const result = prepareWorkspaceCoverage({
 			packages: [
@@ -1029,7 +1029,7 @@ describe(prepareWorkspaceCoverage, () => {
 			}),
 			[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -1049,7 +1049,7 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 
 		seedPackage(FOO_DIR);
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		prepareWorkspaceCoverage({
 			packages: [
@@ -1075,7 +1075,7 @@ describe(prepareWorkspaceCoverage, () => {
 				tree: { $className: "DataModel" },
 			}),
 		});
-		const mocked = await mockInstrumentRoot();
+		const mocked = await mockInstrumentRootAsync();
 
 		const result = prepareWorkspaceCoverage({
 			packages: [
@@ -1122,7 +1122,7 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			seedMultiMount();
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1154,7 +1154,7 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			seedMultiMount();
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1182,7 +1182,7 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			seedMultiMount();
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 			const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			const [result] = prepareWorkspaceCoverage({
@@ -1213,7 +1213,7 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			seedMultiMount();
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			prepareWorkspaceCoverage({
 				packages: [
@@ -1245,7 +1245,7 @@ describe(prepareWorkspaceCoverage, () => {
 			// per-pkg override here, so the workspace-root custom value
 			// below must be ignored and both rojo mounts instrumented.
 			seedMultiMount();
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1273,7 +1273,7 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			seedMultiMount();
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1304,7 +1304,7 @@ describe(prepareWorkspaceCoverage, () => {
 			// instrumented. The empty-patterns branch of `createIgnoreMatcher`
 			// has no other caller after the workspace-root drop.
 			seedMultiMount();
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1345,7 +1345,7 @@ describe(prepareWorkspaceCoverage, () => {
 				}),
 				[path.join(FOO_DIR, "src/client/init.luau")]: "local x = 1",
 			});
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1386,7 +1386,7 @@ describe(prepareWorkspaceCoverage, () => {
 				[path.join(FOO_DIR, "src/client/init.luau")]: "local y = 2",
 				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 			});
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1412,7 +1412,7 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			seedMultiMount();
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1454,7 +1454,7 @@ describe(prepareWorkspaceCoverage, () => {
 				[path.join(FOO_DIR, "empty/README.md")]: "not a luau file",
 				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
 			});
-			const mocked = await mockInstrumentRoot();
+			const mocked = await mockInstrumentRootAsync();
 
 			const [result] = prepareWorkspaceCoverage({
 				packages: [
@@ -1520,7 +1520,7 @@ describe(prepareWorkspaceCoverage, () => {
 				// Stale shadow file from the prior mount that the new run drops.
 				[staleVendoredShadow]: "return {}",
 			});
-			await mockInstrumentRoot();
+			await mockInstrumentRootAsync();
 
 			prepareWorkspaceCoverage({
 				packages: [
@@ -1582,7 +1582,7 @@ describe(prepareWorkspaceCoverage, () => {
 					JSON.stringify(previousManifest),
 				[staleVendoredShadow]: "return {}",
 			});
-			await mockInstrumentRoot();
+			await mockInstrumentRootAsync();
 
 			prepareWorkspaceCoverage({
 				packages: [
@@ -1644,7 +1644,7 @@ describe(prepareWorkspaceCoverage, () => {
 				// survival proves the shadow was preserved, not rebuilt.
 				[path.join(packageShadow, "out/init.cov-map.json")]: "{}",
 			});
-			await mockInstrumentRoot();
+			await mockInstrumentRootAsync();
 
 			prepareWorkspaceCoverage({
 				packages: [
@@ -1682,7 +1682,7 @@ describe(prepareWorkspaceCoverage, () => {
 				}),
 				[path.join(WORKSPACE_ROOT, "sibling/init.luau")]: "local x = 1",
 			});
-			await mockInstrumentRoot();
+			await mockInstrumentRootAsync();
 			const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			const [result] = prepareWorkspaceCoverage({
@@ -1714,7 +1714,7 @@ describe(emitWorkspaceBuildManifests, () => {
 		});
 
 		seedPackage(FOO_DIR);
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const entries = prepareWorkspaceCoverage({
 			packages: [
@@ -1750,7 +1750,7 @@ describe(emitWorkspaceBuildManifests, () => {
 
 		seedPackage(FOO_DIR);
 		seedPackage(BAR_DIR);
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const entries = prepareWorkspaceCoverage({
 			packages: [
@@ -1782,7 +1782,7 @@ describe(emitWorkspaceBuildManifests, () => {
 		});
 
 		seedPackage(FOO_DIR);
-		await mockInstrumentRoot();
+		await mockInstrumentRootAsync();
 
 		const entries = prepareWorkspaceCoverage({
 			packages: [

@@ -14,7 +14,7 @@ import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestra
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { resolveAllSetupFilePaths } from "./discovery.ts";
-import { executeTestPlan, runTypecheckPass } from "./execution.ts";
+import { executeTestPlanAsync, runTypecheckPassAsync } from "./execution.ts";
 import { buildMultiRunResult } from "./multi-result.ts";
 import type { StagedRun } from "./staging.ts";
 import { stageRun } from "./staging.ts";
@@ -53,7 +53,7 @@ export function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
  * identical per-root `jest.config` stub injection, place rebuild, coverage, and
  * result shaping.
  */
-export async function runResolvedProjects(
+export async function runResolvedProjectsAsync(
 	allProjects: Array<ResolvedProjectConfig>,
 	rootConfig: ResolvedConfig,
 	cli: RunOptions["cli"],
@@ -61,7 +61,7 @@ export async function runResolvedProjects(
 ): Promise<MultiRunResult> {
 	const discovery = beginRun(allProjects, rootConfig, cli, timing);
 	if (isTypecheckOnlyRun(discovery)) {
-		return runMultiTypecheckOnly(discovery);
+		return runMultiTypecheckOnlyAsync(discovery);
 	}
 
 	const staged = stageRun(discovery.projects, rootConfig, timing);
@@ -73,11 +73,11 @@ export async function runResolvedProjects(
 		return emptyMultiResult(staged, plan.emptiness);
 	}
 
-	const outcome = await executeTestPlan({ cli, discovery, plan, staged });
+	const outcome = await executeTestPlanAsync({ cli, discovery, plan, staged });
 	return buildMultiRunResult({ cli, discovery, outcome, plan, staged });
 }
 
-export async function runMultiProject(options: MultiRunOptions): Promise<MultiRunResult> {
+export async function runMultiProjectAsync(options: MultiRunOptions): Promise<MultiRunResult> {
 	const { cli, config: rootConfig, rawProjects } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(rootConfig));
@@ -86,7 +86,7 @@ export async function runMultiProject(options: MultiRunOptions): Promise<MultiRu
 		return resolveAllProjects(rawProjects, rootConfig, rojoTree, rootConfig.rootDir);
 	});
 
-	return runResolvedProjects(allProjects, rootConfig, cli, timing);
+	return runResolvedProjectsAsync(allProjects, rootConfig, cli, timing);
 }
 
 function filterProjectsByName(
@@ -183,7 +183,7 @@ function isTypecheckOnlyRun({ cliTypecheck, projects, rootConfig }: RunDiscovery
 // No run header either: a type-only run drives no Roblox jobs, matching
 // workspace mode and the prior behaviour (the header was gated on a non-empty
 // runtime job set).
-async function runMultiTypecheckOnly(discovery: RunDiscovery): Promise<MultiRunResult> {
+async function runMultiTypecheckOnlyAsync(discovery: RunDiscovery): Promise<MultiRunResult> {
 	const plan = buildTestPlan({
 		...discovery,
 		// No place is built on a type-only run; the runtime place file is unused
@@ -200,7 +200,7 @@ async function runMultiTypecheckOnly(discovery: RunDiscovery): Promise<MultiRunR
 		return { ...empty, ...plan.emptiness };
 	}
 
-	const typecheck = await runTypecheckPass(
+	const typecheck = await runTypecheckPassAsync(
 		plan.typeTestEntries,
 		discovery.rootConfig,
 		discovery.cliTypecheck,

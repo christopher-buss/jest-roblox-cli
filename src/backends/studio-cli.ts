@@ -262,7 +262,7 @@ export class StudioCliBackend implements Backend {
 		this.timeout = options.timeout ?? DEFAULT_STUDIO_CLI_TIMEOUT;
 	}
 
-	public async runTests({
+	public async runTestsAsync({
 		jobs,
 		parallel,
 		workStealing,
@@ -283,14 +283,14 @@ export class StudioCliBackend implements Backend {
 		// re-close — the watch owns both from then on.
 		let wasGracefulTeardownStarted = false;
 		try {
-			const port = await serverPort(server);
+			const port = await serverPortAsync(server);
 			const requestId = randomUUID();
 			const args = buildStudioArgs({ ...place, jobs, port, requestId });
 
 			const studioPath = this.discover(this.studioPath);
 			const executionStart = Date.now();
 			child = this.launch({ args, headed: this.headed, placeFile, studioPath });
-			const message = await waitForResult(server, child, requestId, this.timeout);
+			const message = await waitForResultAsync(server, child, requestId, this.timeout);
 			const executionMs = Date.now() - executionStart;
 
 			// The result is in hand. Decouple teardown from it: close the result
@@ -591,7 +591,7 @@ function buildBackendResult(
  * asynchronously, so wait for `listening` and read the assigned port; the test
  * mock reports its port synchronously and is returned without waiting.
  */
-async function serverPort(server: WebSocketServer): Promise<number> {
+async function serverPortAsync(server: WebSocketServer): Promise<number> {
 	const address = server.address();
 	if (address !== null && typeof address === "object") {
 		return address.port;
@@ -695,7 +695,7 @@ function awaitStudioCliResult({
  * `requestId` resolves the run, so a stray frame never settles it with the
  * wrong payload.
  */
-async function waitForResult(
+async function waitForResultAsync(
 	server: WebSocketServer,
 	child: StudioCliProcess,
 	requestId: string,

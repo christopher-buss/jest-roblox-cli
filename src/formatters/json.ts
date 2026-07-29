@@ -11,7 +11,7 @@ export function formatJson(result: JestResult): string {
 // `node:fs/promises`: every spec that exercises an output sink mocks `node:fs`
 // with memfs, and a second module specifier would slip past those mocks and
 // write to the real disk.
-export async function writeJsonFile(result: JestResult, filePath: string): Promise<void> {
+export async function writeJsonFileAsync(result: JestResult, filePath: string): Promise<void> {
 	const absolutePath = path.resolve(filePath);
 
 	await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });

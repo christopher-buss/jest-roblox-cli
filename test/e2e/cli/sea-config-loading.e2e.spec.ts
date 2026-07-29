@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServer } from "./fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -39,7 +39,7 @@ describe("sea config loading", () => {
 		// `@isentinel/jest-roblox` — a runtime value resolved from the sandbox's
 		// `node_modules`, exercising the import caveat end to end.
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-		const server = await startFakeOpenCloudServer([
+		const server = await startFakeOpenCloudServerAsync([
 			{
 				jestOutput: buildMixedOutput(buildPassingPayload()),
 			},

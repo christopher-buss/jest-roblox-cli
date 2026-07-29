@@ -129,9 +129,9 @@ export interface BackendResult {
 }
 
 export interface Backend {
-	close?(): Promise<void> | void;
+	closeAsync?(): Promise<void> | void;
 	readonly kind: BackendKind;
-	runTests(options: BackendOptions): Promise<BackendResult>;
+	runTestsAsync(options: BackendOptions): Promise<BackendResult>;
 }
 
 type BackendKind = "open-cloud" | "studio" | "studio-cli";

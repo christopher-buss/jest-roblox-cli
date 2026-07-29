@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { runTypecheck } from "../../src/typecheck/runner.ts";
+import { runTypecheckAsync } from "../../src/typecheck/runner.ts";
 
 const FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck");
 const SOURCE_FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck-source");
@@ -12,7 +12,7 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 	it("should pass all tests when file has no type errors", async () => {
 		expect.assertions(3);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [path.join(FIXTURE_DIR, "passing.test-d.ts")],
 			ignoreSourceErrors: true,
 			rootDir: FIXTURE_DIR,
@@ -27,7 +27,7 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 	it("should fail the test containing a type error", async () => {
 		expect.assertions(4);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [path.join(FIXTURE_DIR, "failing.test-d.ts")],
 			rootDir: FIXTURE_DIR,
 			tsconfig: "tsconfig.json",
@@ -45,7 +45,7 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 	it("should handle mixed files with passing and failing", async () => {
 		expect.assertions(3);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [
 				path.join(FIXTURE_DIR, "passing.test-d.ts"),
 				path.join(FIXTURE_DIR, "failing.test-d.ts"),
@@ -62,7 +62,7 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 	it("should include TS error code in failure message", async () => {
 		expect.assertions(1);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [path.join(FIXTURE_DIR, "failing.test-d.ts")],
 			rootDir: FIXTURE_DIR,
 			tsconfig: "tsconfig.json",
@@ -76,7 +76,7 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 	it("should report correct test file path", async () => {
 		expect.assertions(1);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [path.join(FIXTURE_DIR, "passing.test-d.ts")],
 			ignoreSourceErrors: true,
 			rootDir: FIXTURE_DIR,
@@ -89,7 +89,7 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 	it("should fail the run when a non-test source file has a type error", async () => {
 		expect.assertions(3);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [path.join(SOURCE_FIXTURE_DIR, "clean.test-d.ts")],
 			rootDir: SOURCE_FIXTURE_DIR,
 			tsconfig: "tsconfig.json",
@@ -107,7 +107,7 @@ describe("typecheck integration", { timeout: 10_000 }, () => {
 	it("should suppress non-test source file errors when ignoreSourceErrors is true", async () => {
 		expect.assertions(2);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [path.join(SOURCE_FIXTURE_DIR, "clean.test-d.ts")],
 			ignoreSourceErrors: true,
 			rootDir: SOURCE_FIXTURE_DIR,

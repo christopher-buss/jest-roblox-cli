@@ -76,7 +76,7 @@ export class OpenCloudBackend implements Backend {
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
 	}
 
-	public async runTests({
+	public async runTestsAsync({
 		jobs,
 		parallel,
 		scriptOverride,
@@ -84,17 +84,8 @@ export class OpenCloudBackend implements Backend {
 		workStealing,
 	}: BackendOptions): Promise<BackendResult> {
 		this.raceWarned = false;
-		if (jobs.length === 0) {
-			throw new Error("OpenCloudBackend requires at least one job");
-		}
-
-		if (workStealing === true && scriptOverride === undefined) {
-			throw new Error("OpenCloudBackend work-stealing mode requires scriptOverride");
-		}
-
+		const primary = resolvePrimaryJob(jobs, scriptOverride, workStealing);
 		// timeout is picked from the first job — it's a per-run knob.
-		// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
-		const primary = jobs[0]!;
 		const placeFilePath = resolvePlaceFilePath(primary.config);
 
 		const upload = await this.runner.uploadPlaceAsync({ placeFilePath });
@@ -102,7 +93,7 @@ export class OpenCloudBackend implements Backend {
 		const executionStart = Date.now();
 		const flattened =
 			workStealing === true
-				? await this.runWorkStealing({
+				? await this.runWorkStealingAsync({
 						jobs,
 						parallel,
 						placeVersion: upload.versionNumber,
@@ -111,7 +102,12 @@ export class OpenCloudBackend implements Backend {
 						scriptOverride: scriptOverride!,
 						streaming,
 					})
-				: await this.runStaticBuckets(jobs, parallel, upload.versionNumber, scriptOverride);
+				: await this.runStaticBucketsAsync(
+						jobs,
+						parallel,
+						upload.versionNumber,
+						scriptOverride,
+					);
 		const executionMs = Date.now() - executionStart;
 
 		return {
@@ -133,7 +129,7 @@ export class OpenCloudBackend implements Backend {
 	 * (the version exists even when it is no longer head), and no unpinned
 	 * retry loop for a concurrent uploader to keep winning against.
 	 */
-	private async executeGuarded({
+	private async executeGuardedAsync({
 		placeVersion,
 		script,
 		timeout,
@@ -158,7 +154,7 @@ export class OpenCloudBackend implements Backend {
 		return this.runner.executeScriptAsync({ placeVersion, script, timeout });
 	}
 
-	private async runBucket(
+	private async runBucketAsync(
 		{ indices, jobs }: JobBucket,
 		placeVersion: number,
 		scriptOverride?: string,
@@ -171,7 +167,7 @@ export class OpenCloudBackend implements Backend {
 		});
 
 		const script = scriptOverride ?? generateTestScript(inputs);
-		const scriptResult = await this.executeGuarded({
+		const scriptResult = await this.executeGuardedAsync({
 			placeVersion,
 			script,
 			timeout: primary.config.timeout,
@@ -199,7 +195,7 @@ export class OpenCloudBackend implements Backend {
 		return { indices, rawResults };
 	}
 
-	private async runStaticBuckets(
+	private async runStaticBucketsAsync(
 		jobs: Array<ProjectJob>,
 		parallel: BackendOptions["parallel"],
 		placeVersion: number,
@@ -207,7 +203,9 @@ export class OpenCloudBackend implements Backend {
 	): Promise<Array<RawBackendEntry>> {
 		const buckets = bucketJobs(jobs, parallel);
 		const bucketResults = await Promise.all(
-			buckets.map(async (bucket) => this.runBucket(bucket, placeVersion, scriptOverride)),
+			buckets.map(async (bucket) => {
+				return this.runBucketAsync(bucket, placeVersion, scriptOverride);
+			}),
 		);
 
 		// Flatten bucket results in original job order via the indices recorded
@@ -224,7 +222,7 @@ export class OpenCloudBackend implements Backend {
 		return flattened;
 	}
 
-	private async runWorkStealing({
+	private async runWorkStealingAsync({
 		jobs,
 		parallel,
 		placeVersion,
@@ -239,10 +237,10 @@ export class OpenCloudBackend implements Backend {
 		scriptOverride: string;
 		streaming: StreamingHooks | undefined;
 	}): Promise<Array<RawBackendEntry>> {
-		const taskResults = await drainStealingPool(
+		const taskResults = await drainStealingPoolAsync(
 			resolveBucketCount(parallel, jobs.length),
 			async () => {
-				return this.executeGuarded({
+				return this.executeGuardedAsync({
 					placeVersion,
 					script: scriptOverride,
 					timeout: primaryConfig.timeout,
@@ -299,7 +297,7 @@ export function resolveOcaleMaxRetries(): number | undefined {
  * transient HTTP failure doesn't take down the test run — the final task
  * envelope still carries authoritative results.
  */
-export async function pollStreamingResults(
+export async function pollStreamingResultsAsync(
 	hooks: StreamingHooks,
 	isDone: () => boolean,
 ): Promise<void> {
@@ -307,17 +305,34 @@ export async function pollStreamingResults(
 	const state: PollState = { warned: false };
 
 	while (!isDone()) {
-		await drainOnce(hooks, state);
-		await sleep(pollMs);
+		await drainOnceAsync(hooks, state);
+		await sleepAsync(pollMs);
 	}
 
 	// Final pass to catch any entries written between the last drain and
 	// tasksDone.
-	await drainOnce(hooks, state);
+	await drainOnceAsync(hooks, state);
 }
 
 export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenCloudBackend {
 	return new OpenCloudBackend(credentials);
+}
+
+function resolvePrimaryJob(
+	jobs: Array<ProjectJob>,
+	scriptOverride: string | undefined,
+	workStealing = false,
+): ProjectJob {
+	const primary = jobs[0];
+	if (primary === undefined) {
+		throw new Error("OpenCloudBackend requires at least one job");
+	}
+
+	if (workStealing && scriptOverride === undefined) {
+		throw new Error("OpenCloudBackend work-stealing mode requires scriptOverride");
+	}
+
+	return primary;
 }
 
 /**
@@ -409,10 +424,10 @@ function warnStreamingDisabled(err: unknown, state: PollState): void {
 	process.stderr.write("  Tests still run; results print as usual once each task finishes.\n");
 }
 
-async function drainOnce(hooks: StreamingHooks, state: PollState): Promise<void> {
+async function drainOnceAsync(hooks: StreamingHooks, state: PollState): Promise<void> {
 	let records;
 	try {
-		records = await hooks.reader.readAll();
+		records = await hooks.reader.readAllAsync();
 	} catch (err) {
 		warnStreamingDisabled(err, state);
 		return;
@@ -429,7 +444,7 @@ async function drainOnce(hooks: StreamingHooks, state: PollState): Promise<void>
 	await Promise.all(
 		records.map(async (record) => {
 			try {
-				await hooks.reader.delete(record.id);
+				await hooks.reader.deleteAsync(record.id);
 			} catch (err) {
 				// Best-effort; if delete fails the entry will reappear on the
 				// next poll and onPackageResult dedupes downstream. Still surface
@@ -441,7 +456,7 @@ async function drainOnce(hooks: StreamingHooks, state: PollState): Promise<void>
 	);
 }
 
-async function sleep(ms: number): Promise<void> {
+async function sleepAsync(ms: number): Promise<void> {
 	await new Promise((resolve) => {
 		setTimeout(resolve, ms);
 	});
@@ -456,7 +471,7 @@ async function sleep(ms: number): Promise<void> {
  * `taskCount` tasks and behaves like the old `Promise.all` wave while reusing
  * one orchestration path.
  */
-async function runStealingTasks(
+async function runStealingTasksAsync(
 	taskCount: number,
 	runTask: () => Promise<ScriptResult>,
 	outcome: StealingPoolOutcome,
@@ -492,7 +507,7 @@ async function runStealingTasks(
  * streaming map alongside it. Returns every task's result once the wave has
  * settled; rethrows the first task failure the pool folded into a freed slot.
  */
-async function drainStealingPool(
+async function drainStealingPoolAsync(
 	taskCount: number,
 	runTask: () => Promise<ScriptResult>,
 	streaming: StreamingHooks | undefined,
@@ -501,13 +516,13 @@ async function drainStealingPool(
 	// live value instead of capturing false forever.
 	const tasksDone = { value: false };
 	const outcome: StealingPoolOutcome = { results: [] };
-	const poolPromise = runStealingTasks(taskCount, runTask, outcome).finally(() => {
+	const poolPromise = runStealingTasksAsync(taskCount, runTask, outcome).finally(() => {
 		tasksDone.value = true;
 	});
 
 	const pollPromise =
 		streaming !== undefined
-			? pollStreamingResults(streaming, () => tasksDone.value)
+			? pollStreamingResultsAsync(streaming, () => tasksDone.value)
 			: Promise.resolve();
 
 	// The pool never rejects (it folds task errors into freed slots) and its

@@ -1,5 +1,5 @@
 packages:
-  - "packages/*"
+  - packages/*
 
 overrides:
   "@typescript-eslint/eslint-plugin": 8.62.1
@@ -11,6 +11,7 @@ overrides:
 
 minimumReleaseAgeExclude:
   - "@isentinel/eslint-config"
+  - eslint-plugin-flawless@1.5.1
 
 publicHoistPattern:
   - "*@rbxts*"

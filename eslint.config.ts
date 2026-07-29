@@ -15,6 +15,7 @@ export default isentinel(
 		],
 		jsdoc: false,
 		namedConfigs: true,
+		naming: true,
 		pnpm: false,
 		roblox: false,
 		rules: {

@@ -48,17 +48,17 @@ export class StudioWithFallback implements Backend {
 		this.credentials = credentials;
 	}
 
-	public async close(): Promise<void> {
-		await this.studio.close?.();
+	public async closeAsync(): Promise<void> {
+		await this.studio.closeAsync?.();
 	}
 
-	public async runTests(options: BackendOptions): Promise<BackendResult> {
+	public async runTestsAsync(options: BackendOptions): Promise<BackendResult> {
 		try {
-			return await this.studio.runTests(options);
+			return await this.studio.runTestsAsync(options);
 		} catch (err) {
 			if (isStudioBusyError(err)) {
 				process.stderr.write("Studio busy, falling back to Open Cloud\n");
-				return createOpenCloudBackend(this.credentials).runTests(options);
+				return createOpenCloudBackend(this.credentials).runTestsAsync(options);
 			}
 
 			throw err;
@@ -79,7 +79,7 @@ export function isStudioBusyError(error: unknown): boolean {
 	);
 }
 
-export async function probeStudioPlugin(
+export async function probeStudioPluginAsync(
 	port: number,
 	timeoutMs: number,
 	createServer: (port: number) => WebSocketServer = (wsPort) => {
@@ -107,20 +107,20 @@ export async function probeStudioPlugin(
 	});
 }
 
-export async function resolveBackend(
+export async function resolveBackendAsync(
 	cli: CliOptions,
 	config: ResolvedConfig,
 	probe: (
 		port: number,
 		timeoutMs: number,
-	) => Promise<ProbeDetected | ProbeResult> = probeStudioPlugin,
+	) => Promise<ProbeDetected | ProbeResult> = probeStudioPluginAsync,
 ): Promise<Backend> {
 	const explicit = createExplicitBackend(cli, config);
 	if (explicit !== undefined) {
 		return explicit;
 	}
 
-	return resolveAutoBackend({ cli, config, probe });
+	return resolveAutoBackendAsync({ cli, config, probe });
 }
 
 // studio-cli drives a single Studio instance, so it cannot shard. Reject a
@@ -188,7 +188,7 @@ function tryBuildCredentials(
  * Cloud when credentials resolve, and otherwise fail with the actionable
  * "no backend" error.
  */
-async function resolveAutoBackend({
+async function resolveAutoBackendAsync({
 	cli,
 	config,
 	probe,

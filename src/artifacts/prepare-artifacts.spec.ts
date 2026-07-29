@@ -13,12 +13,12 @@ import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
 } from "../coverage-pipeline/prepare.ts";
-import { getRawProjects, runSingleOrMulti } from "../run.ts";
+import { getRawProjects, runSingleOrMultiAsync } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { collectStubMounts } from "../run/staging.ts";
 import type { MultiRunResult } from "../run/types.ts";
 import { buildPlace } from "../staging/place-builder.ts";
-import { prepareArtifacts } from "./prepare-artifacts.ts";
+import { prepareArtifactsAsync } from "./prepare-artifacts.ts";
 
 vi.mock(import("../run.ts"));
 vi.mock(import("../run/multi.ts"));
@@ -50,7 +50,7 @@ const mocks = {
 	loadRojoTree: vi.mocked(loadRojoTree),
 	readManifest: vi.mocked(readManifest),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
-	runSingleOrMulti: vi.mocked(runSingleOrMulti),
+	runSingleOrMulti: vi.mocked(runSingleOrMultiAsync),
 	writeManifest: vi.mocked(writeManifest),
 };
 
@@ -119,7 +119,7 @@ function multiResult(overrides: Partial<MultiRunResult> = {}): MultiRunResult {
 	return { merged: {}, mode: "multi", preCoverageMs: 0, projectResults: [], ...overrides };
 }
 
-describe(prepareArtifacts, () => {
+describe(prepareArtifactsAsync, () => {
 	it("should return distinct clean and coverage places sharing one buildId", async () => {
 		expect.assertions(4);
 
@@ -128,7 +128,7 @@ describe(prepareArtifacts, () => {
 		);
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 
-		const bundle = await prepareArtifacts(makeConfig());
+		const bundle = await prepareArtifactsAsync(makeConfig());
 
 		expect(bundle.coveragePlace).toStrictEqual(COVERAGE_PLACE);
 		expect(bundle.cleanPlace).toStrictEqual(CLEAN_PLACE);
@@ -144,7 +144,7 @@ describe(prepareArtifacts, () => {
 		);
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 
-		const bundle = await prepareArtifacts(makeConfig());
+		const bundle = await prepareArtifactsAsync(makeConfig());
 
 		expect(bundle.buildManifestPath).toBe(COVERAGE_BUILD_MANIFEST_PATH);
 		expect(bundle.coverageManifestPath).toBe(COVERAGE_MANIFEST_PATH);
@@ -166,7 +166,7 @@ describe(prepareArtifacts, () => {
 		);
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 
-		const bundle = await prepareArtifacts(makeConfig());
+		const bundle = await prepareArtifactsAsync(makeConfig());
 
 		expect(bundle.projects).toStrictEqual([project]);
 	});
@@ -178,7 +178,7 @@ describe(prepareArtifacts, () => {
 		mocks.runSingleOrMulti.mockResolvedValue(multiResult({ coverageArtifacts: artifacts }));
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 
-		await prepareArtifacts(makeConfig());
+		await prepareArtifactsAsync(makeConfig());
 
 		expect(mocks.emitBuildManifest).toHaveBeenCalledWith(
 			COVERAGE_BUILD_MANIFEST_PATH,
@@ -198,7 +198,7 @@ describe(prepareArtifacts, () => {
 		);
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 
-		const bundle = await prepareArtifacts(makeConfig());
+		const bundle = await prepareArtifactsAsync(makeConfig());
 
 		expect(bundle.coverageData).toStrictEqual({ "a.luau": { s: { "0": 1 } } });
 	});
@@ -211,7 +211,7 @@ describe(prepareArtifacts, () => {
 		);
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 
-		await prepareArtifacts(makeConfig());
+		await prepareArtifactsAsync(makeConfig());
 
 		expect(mocks.resolveAllProjects).not.toHaveBeenCalled();
 		expect(mocks.buildPlace.mock.calls[0]![0].packages[0]!.stubMounts).toBeUndefined();
@@ -242,7 +242,7 @@ describe(prepareArtifacts, () => {
 		]);
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 
-		const bundle = await prepareArtifacts(config);
+		const bundle = await prepareArtifactsAsync(config);
 
 		expect(mocks.buildPlace.mock.calls[0]![0].packages[0]!.stubMounts).toHaveLength(1);
 		expect(bundle.coverageData).toStrictEqual({ "b.luau": { s: { "0": 1 } } });
@@ -260,7 +260,7 @@ describe(prepareArtifacts, () => {
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
-		await prepareArtifacts(makeConfig());
+		await prepareArtifactsAsync(makeConfig());
 
 		const written = mocks.writeManifest.mock.calls[0]![1];
 
@@ -281,7 +281,7 @@ describe(prepareArtifacts, () => {
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 		mocks.readManifest.mockReturnValue({ kind: "missing" });
 
-		await prepareArtifacts(makeConfig());
+		await prepareArtifactsAsync(makeConfig());
 
 		expect(mocks.writeManifest).not.toHaveBeenCalled();
 	});
@@ -294,7 +294,7 @@ describe(prepareArtifacts, () => {
 		);
 		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
 
-		await prepareArtifacts(makeConfig());
+		await prepareArtifactsAsync(makeConfig());
 
 		const merged = mocks.runSingleOrMulti.mock.calls[0]![1];
 
@@ -306,6 +306,6 @@ describe(prepareArtifacts, () => {
 
 		mocks.runSingleOrMulti.mockResolvedValue(multiResult());
 
-		await expect(prepareArtifacts(makeConfig())).rejects.toThrow(/no artifacts/);
+		await expect(prepareArtifactsAsync(makeConfig())).rejects.toThrow(/no artifacts/);
 	});
 });

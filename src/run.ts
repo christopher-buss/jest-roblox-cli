@@ -3,10 +3,10 @@ import { resolveTypecheckConfig } from "./config/resolve-typecheck-config.ts";
 import type { CliOptions, ProjectEntry, ResolvedConfig } from "./config/schema.ts";
 import { emitBuildManifest } from "./coverage-pipeline/build-manifest.ts";
 import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
-import { loadRojoTree, runMultiProject, runResolvedProjects } from "./run/multi.ts";
+import { loadRojoTree, runMultiProjectAsync, runResolvedProjectsAsync } from "./run/multi.ts";
 import { buildImplicitProject } from "./run/single-projects.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
-import { runWorkspaceMode } from "./run/workspace.ts";
+import { runWorkspaceModeAsync } from "./run/workspace.ts";
 import { createTimingCollector, type TimingCollector } from "./timing/orchestration-collector.ts";
 
 export function isWorkspaceInvocation(cli: CliOptions): boolean {
@@ -31,14 +31,14 @@ export function getRawProjects(config: ResolvedConfig): Array<ProjectEntry> | un
  * runs the suite, returning `coverageArtifacts` for the caller to emit a Build
  * Manifest from — the core never writes that manifest itself.
  */
-export async function runSingleOrMulti(
+export async function runSingleOrMultiAsync(
 	cli: CliOptions,
 	merged: ResolvedConfig,
 	timing: TimingCollector,
 ): Promise<MultiRunResult> {
 	const rawProjects = getRawProjects(merged);
 	if (rawProjects !== undefined && rawProjects.length > 0) {
-		return runMultiProject({ cli, config: merged, rawProjects, timing });
+		return runMultiProjectAsync({ cli, config: merged, rawProjects, timing });
 	}
 
 	// No explicit `projects`: synthesize one project from the config's luau
@@ -60,10 +60,10 @@ export async function runSingleOrMulti(
 		? undefined
 		: timing.profile("loadRojoTree", () => loadRojoTree(merged));
 	const project = buildImplicitProject(merged, rojoTree);
-	return runResolvedProjects([project], merged, cli, timing);
+	return runResolvedProjectsAsync([project], merged, cli, timing);
 }
 
-export async function runJestRoblox(
+export async function runJestRobloxAsync(
 	cli: CliOptions,
 	config: ResolvedConfig,
 ): Promise<MultiRunResult | WorkspaceRunResult> {
@@ -80,13 +80,13 @@ export async function runJestRoblox(
 		// absolute at load) and drive package enumeration in repos without a
 		// pnpm-workspace.yaml.
 		if (isWorkspaceInvocation(cli)) {
-			return await runWorkspaceMode(cli, config.workspace, timing);
+			return await runWorkspaceModeAsync(cli, config.workspace, timing);
 		}
 
 		// Single/multi paths keep the CLI > config precedence so programmatic
 		// callers passing a raw config still get CLI overrides folded in.
 		const merged = mergeCliWithConfig(cli, config);
-		const result = await runSingleOrMulti(cli, merged, timing);
+		const result = await runSingleOrMultiAsync(cli, merged, timing);
 
 		// Entry point owns Build Manifest emission. A `runJestRoblox` run never
 		// builds a Clean Place, so it records `coveragePlace` only. The reuse

@@ -4,6 +4,7 @@ export default isentinel({
 	name: "packages/shared/rojo-utils",
 	jsdoc: false,
 	namedConfigs: true,
+	naming: true,
 	roblox: false,
 	rules: {
 		"package-json/restrict-private-properties": "off",

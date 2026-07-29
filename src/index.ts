@@ -1,12 +1,12 @@
 // Offline build-only seam: produce the Coverage-Instrumented Place without
 // running any suite (no backend, no network), for a machine that cannot execute
 // Roblox. Hands back the place file + sibling manifest paths.
-export { buildCoveragePlace } from "./artifacts/build-coverage-place.ts";
+export { buildCoveragePlaceAsync } from "./artifacts/build-coverage-place.ts";
 export type { CoveragePlaceBundle } from "./artifacts/build-coverage-place.ts";
 // Build Artifacts API: the programmatic seam consumers drive to produce a Clean
 // Place + Coverage-Instrumented Place in one pass (the sole producer of a Clean
 // Place — no CLI flag).
-export { prepareArtifacts } from "./artifacts/prepare-artifacts.ts";
+export { prepareArtifactsAsync } from "./artifacts/prepare-artifacts.ts";
 export type { ArtifactBundle } from "./artifacts/prepare-artifacts.ts";
 export type { Backend, BackendOptions } from "./backends/interface.ts";
 export { OpenCloudBackend, createOpenCloudBackend } from "./backends/open-cloud.ts";
@@ -52,7 +52,7 @@ export { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
 export { normalizeRawCoverage, parseCoverageEnvelope } from "./coverage-pipeline/raw-coverage.ts";
 export type { RawCoverageData, RawFileCoverage } from "./coverage-pipeline/types.ts";
 
-export { formatExecuteOutput, runProjects } from "./executor.ts";
+export { formatExecuteOutput, runProjectsAsync } from "./executor.ts";
 export type {
 	ExecuteResult,
 	FormatOutputOptions,
@@ -64,9 +64,9 @@ export type {
 export { formatResult, formatTestSummary, formatFailure } from "./formatters/formatter.ts";
 export { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
 export type { GitHubActionsFormatterOptions } from "./formatters/github-actions.ts";
-export { formatJson, writeJsonFile } from "./formatters/json.ts";
+export { formatJson, writeJsonFileAsync } from "./formatters/json.ts";
 export { parseJestOutput, extractJsonFromOutput } from "./reporter/parser.ts";
-export { runJestRoblox } from "./run.ts";
+export { runJestRobloxAsync } from "./run.ts";
 
 export type {
 	MultiProjectMerged,
@@ -82,7 +82,7 @@ export { buildJestArgv, generateTestScript } from "./test-script.ts";
 
 export type { JestArgv } from "./test-script.ts";
 
-export { runTypecheck } from "./typecheck/runner.ts";
+export { runTypecheckAsync } from "./typecheck/runner.ts";
 export type { TypecheckOptions } from "./typecheck/runner.ts";
 export type { TestDefinition, TscErrorInfo } from "./typecheck/types.ts";
 export type { GameOutputEntry } from "./types/game-output.ts";

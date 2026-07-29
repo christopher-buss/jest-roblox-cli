@@ -57,7 +57,7 @@ export function applyProjectFilter(
 		.filter((ctx) => ctx.projects.length > 0);
 }
 
-export async function resolvePackageContexts({
+export async function resolvePackageContextsAsync({
 	cacheDirectory,
 	loaded,
 }: {
@@ -67,7 +67,7 @@ export async function resolvePackageContexts({
 	const contexts: Array<PackageContext> = [];
 
 	for (const entry of loaded) {
-		const projects = await resolvePackageProjects(entry);
+		const projects = await resolvePackageProjectsAsync(entry);
 		contexts.push({
 			cacheRoot: path.join(cacheDirectory, entry.info.name),
 			descriptor: entry.descriptor,
@@ -201,7 +201,9 @@ function resolvePackageSetupFiles(
 	}
 }
 
-async function resolvePackageProjects(entry: LoadedPackage): Promise<Array<ResolvedProjectConfig>> {
+async function resolvePackageProjectsAsync(
+	entry: LoadedPackage,
+): Promise<Array<ResolvedProjectConfig>> {
 	const { descriptor, info, pkgConfig } = entry;
 	const rojoTree = loadPackageRojoTree(descriptor.rojoProjectPath, descriptor.packageDirectory);
 	const projectEntries = resolveProjectEntries(

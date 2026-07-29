@@ -5,7 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 
-import { type FakeOpenCloudTask, startFakeOpenCloudServer } from "../cli/fake-open-cloud.ts";
+import { type FakeOpenCloudTask, startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
 
 interface HttpResponse {
 	body: unknown;
@@ -68,7 +68,7 @@ const liveCase = resolveLiveCase();
 const fake: ContractCase = {
 	apiKey: "test-api-key",
 	resolve: async (tasks) => {
-		const server = await startFakeOpenCloudServer(tasks);
+		const server = await startFakeOpenCloudServerAsync(tasks);
 		return { baseUrl: server.baseUrl, placeId: "456", universeId: "123" };
 	},
 };
@@ -123,14 +123,19 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 				{ jestOutput: JSON.stringify(buildPassingJestPayload()) },
 			]);
 			const http = createHttpClient(testCase.apiKey);
-			const taskPath = await createTask({
+			const taskPath = await createTaskAsync({
 				baseUrl,
 				http,
 				placeId,
 				script: buildSuccessLuauScript(),
 				universeId,
 			});
-			const status = await pollUntilTerminal(http, baseUrl, taskPath, SUCCESS_TIMEOUT_MS);
+			const status = await pollUntilTerminalAsync(
+				http,
+				baseUrl,
+				taskPath,
+				SUCCESS_TIMEOUT_MS,
+			);
 
 			expect(status.state).toBe("COMPLETE");
 
@@ -159,14 +164,19 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 				{ errorMessage: "contract-failure", jestOutput: "", state: "FAILED" },
 			]);
 			const http = createHttpClient(testCase.apiKey);
-			const taskPath = await createTask({
+			const taskPath = await createTaskAsync({
 				baseUrl,
 				http,
 				placeId,
 				script: 'error("contract-failure")',
 				universeId,
 			});
-			const status = await pollUntilTerminal(http, baseUrl, taskPath, FAILURE_TIMEOUT_MS);
+			const status = await pollUntilTerminalAsync(
+				http,
+				baseUrl,
+				taskPath,
+				FAILURE_TIMEOUT_MS,
+			);
 
 			expect(status.state).toBe("FAILED");
 			expect(status.error!.message).toBeString();
@@ -185,6 +195,7 @@ function isAbsentOrString(value: string | undefined): boolean {
 
 function createHttpClient(apiKey: string): HttpClient {
 	return {
+		// eslint-disable-next-line small-rules/require-async-suffix -- HttpClient contract uses the external method name.
 		async request(method, url, options) {
 			const headers: Record<string, string> = {
 				"x-api-key": apiKey,
@@ -249,7 +260,7 @@ function resolveLiveCase(): ContractCase | undefined {
 	};
 }
 
-async function createTask({
+async function createTaskAsync({
 	baseUrl,
 	http,
 	placeId,
@@ -275,13 +286,13 @@ async function createTask({
 	return parsed.path;
 }
 
-async function sleep(ms: number): Promise<void> {
+async function sleepAsync(ms: number): Promise<void> {
 	return new Promise((resolve) => {
 		setTimeout(resolve, ms);
 	});
 }
 
-async function pollUntilTerminal(
+async function pollUntilTerminalAsync(
 	http: HttpClient,
 	baseUrl: string,
 	taskPath: string,
@@ -301,7 +312,7 @@ async function pollUntilTerminal(
 			return status;
 		}
 
-		await sleep(POLL_INTERVAL_MS);
+		await sleepAsync(POLL_INTERVAL_MS);
 	}
 
 	throw new Error(

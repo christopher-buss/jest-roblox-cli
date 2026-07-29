@@ -16,9 +16,9 @@ import {
 	VALID_BACKENDS,
 	VALID_COVERAGE_REPORTERS,
 } from "./config/schema.ts";
-import { outputMultiResult } from "./output.ts";
+import { outputMultiResultAsync } from "./output.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
-import { runJestRoblox } from "./run.ts";
+import { runJestRobloxAsync } from "./run.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
 import { formatBanner } from "./utils/banner.ts";
 import { type ChainEntry, formatMissingScopes, walkErrorChain } from "./utils/error-chain.ts";
@@ -176,9 +176,9 @@ export function parseArgs(args: Array<string>): CliOptions {
 	};
 }
 
-export async function run(args: Array<string>): Promise<number> {
+export async function runAsync(args: Array<string>): Promise<number> {
 	try {
-		return await runInner(args);
+		return await runInnerAsync(args);
 	} catch (err) {
 		printError(err);
 		return 2;
@@ -186,7 +186,7 @@ export async function run(args: Array<string>): Promise<number> {
 }
 
 export async function main(): Promise<void> {
-	const exitCode = await run(process.argv.slice(2));
+	const exitCode = await runAsync(process.argv.slice(2));
 	process.exitCode = exitCode;
 }
 
@@ -194,6 +194,13 @@ const PARALLEL_FLAG = "--parallel";
 const INTEGER_LIKE_PATTERN = /^-?\d+$/;
 
 type ParallelOption = "auto" | number | undefined;
+
+interface CliParseConfig {
+	allowPositionals: true;
+	args: Array<string>;
+	options: typeof CLI_OPTION_SPEC;
+	strict: true;
+}
 
 type ParsedCliValues = ReturnType<typeof parseWithOptionSpec>["values"];
 
@@ -223,7 +230,9 @@ function normalizeParallelFlag(args: Array<string>): Array<string> {
 	return out;
 }
 
-function parseWithOptionSpec(args: Array<string>) {
+function parseWithOptionSpec(
+	args: Array<string>,
+): ReturnType<typeof nodeParseArgs<CliParseConfig>> {
 	return nodeParseArgs({
 		allowPositionals: true,
 		args: normalizeParallelFlag(args),
@@ -425,7 +434,7 @@ function printError(err: unknown): void {
 	}
 }
 
-async function dispatchResult(
+async function dispatchResultAsync(
 	config: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
 ): Promise<number> {
@@ -441,10 +450,10 @@ async function dispatchResult(
 		return 0;
 	}
 
-	return outputMultiResult(config, result);
+	return outputMultiResultAsync(config, result);
 }
 
-async function runInner(args: Array<string>): Promise<number> {
+async function runInnerAsync(args: Array<string>): Promise<number> {
 	const cli = parseArgs(args);
 
 	if (cli.help === true) {
@@ -466,8 +475,8 @@ async function runInner(args: Array<string>): Promise<number> {
 	const loadedConfig = await loadConfig(cli.config, cli.workspaceRoot);
 	const config = mergeCliWithConfig(cli, loadedConfig);
 
-	const result = await runJestRoblox(cli, config);
-	return dispatchResult(config, result);
+	const result = await runJestRobloxAsync(cli, config);
+	return dispatchResultAsync(config, result);
 }
 
 const LUAU_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [

@@ -5,7 +5,7 @@ import * as path from "node:path";
 import type { WorkspaceRunOptions } from "../config/schema.ts";
 import type { ExecuteResult } from "../executor.ts";
 import { usesAgentFormatter } from "../formatters/utils.ts";
-import { mergeProjectResults, mergeResults, writeResultFile } from "../output.ts";
+import { mergeProjectResults, mergeResults, writeResultFileAsync } from "../output.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import {
 	buildGroupedGameOutput,
@@ -55,7 +55,7 @@ interface WorkspaceSinkInput {
 }
 
 /** Every sink a workspace run with runtime jobs writes. */
-export async function writeWorkspaceSinks(input: WorkspaceSinkInput): Promise<void> {
+export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promise<void> {
 	const { pending, results, runOptions, typeTestProjects, workspaceRoot } = input;
 
 	if (runOptions.workspaceOutputFile) {
@@ -69,7 +69,7 @@ export async function writeWorkspaceSinks(input: WorkspaceSinkInput): Promise<vo
 	// `mergeProjectResults` folds every project's coverage + source mappers, so
 	// computing it for a run without `outputFile` (the common case) is wasted
 	// work. `writeResultFile` still owns the merge-and-write across all modes.
-	await writeResultFile(
+	await writeResultFileAsync(
 		runOptions.outputFile,
 		input.typecheckResult,
 		runOptions.outputFile !== undefined ? mergeProjectResults(results).result : undefined,
@@ -89,7 +89,7 @@ export async function writeWorkspaceSinks(input: WorkspaceSinkInput): Promise<vo
  * file is the package's Type Test result under each of its type-test projects,
  * and no Game Output is produced.
  */
-export async function writeTypecheckOnlySinks(
+export async function writeTypecheckOnlySinksAsync(
 	input: Pick<
 		WorkspaceSinkInput,
 		| "runOptions"
@@ -99,7 +99,7 @@ export async function writeTypecheckOnlySinks(
 		| "workspaceRoot"
 	>,
 ): Promise<void> {
-	await writeResultFile(input.runOptions.outputFile, input.typecheckResult, undefined);
+	await writeResultFileAsync(input.runOptions.outputFile, input.typecheckResult, undefined);
 
 	// Per-package files route through the same writer as the runtime path.
 	if (input.runOptions.workspaceOutputFile) {

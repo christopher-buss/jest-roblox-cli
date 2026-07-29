@@ -18,7 +18,7 @@ import {
 	findRojoProject,
 } from "../coverage-pipeline/prepare.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
-import { getRawProjects, runSingleOrMulti } from "../run.ts";
+import { getRawProjects, runSingleOrMultiAsync } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { collectStubMounts } from "../run/staging.ts";
 import { buildPlace } from "../staging/place-builder.ts";
@@ -53,10 +53,10 @@ export interface ArtifactBundle {
  * and runs the instrumented suite once (via the shared single/multi core),
  * builds an uninstrumented Clean Place through the Place Builder, then emits
  * the Build Manifest with both places in a single atomic write.
- * `runJestRoblox` / the CLI never build a Clean Place — opting in is calling
- * this entry point.
+ * `runJestRobloxAsync` / the CLI never build a Clean Place — opting in is
+ * calling this entry point.
  */
-export async function prepareArtifacts(config: ResolvedConfig): Promise<ArtifactBundle> {
+export async function prepareArtifactsAsync(config: ResolvedConfig): Promise<ArtifactBundle> {
 	const cli: CliOptions = {};
 	const timing = createTimingCollector();
 	try {
@@ -65,9 +65,9 @@ export async function prepareArtifacts(config: ResolvedConfig): Promise<Artifact
 			collectCoverage: true,
 			collectPerTestCoverage: true,
 		});
-		const result = await runSingleOrMulti(cli, merged, timing);
+		const result = await runSingleOrMultiAsync(cli, merged, timing);
 		const coverageArtifacts = requireCoverageArtifacts(result.coverageArtifacts);
-		const cleanPlace = await buildCleanPlace(merged);
+		const cleanPlace = await buildCleanPlaceAsync(merged);
 
 		// One atomic write that knows both places — never write-then-patch.
 		emitBuildManifest(COVERAGE_BUILD_MANIFEST_PATH, coverageArtifacts, cleanPlace);
@@ -133,7 +133,7 @@ function writeManifestAttribution(
  * carries the same `jest.config` stub mounts the coverage run already wrote to
  * the cache, so the Clean Place is runnable.
  */
-async function buildCleanPlace(config: ResolvedConfig): Promise<BuildManifestArtifact> {
+async function buildCleanPlaceAsync(config: ResolvedConfig): Promise<BuildManifestArtifact> {
 	const descriptor: PackageDescriptor = {
 		name: "jest-roblox-clean",
 		packageDirectory: path.resolve(config.rootDir),

@@ -4,7 +4,11 @@ export default isentinel({
 	name: "packages/luau-ast",
 	jsdoc: false,
 	namedConfigs: true,
+	naming: true,
 	roblox: false,
+	rules: {
+		"package-json/restrict-private-properties": "off",
+	},
 	test: {
 		vitest: {
 			extended: false,

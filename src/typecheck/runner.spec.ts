@@ -11,7 +11,7 @@ import {
 	createLocationsIndexMap,
 	isCompositeProject,
 	mapErrorsToTests,
-	runTypecheck,
+	runTypecheckAsync,
 } from "./runner.ts";
 import type { RawErrorsMap, TestDefinition } from "./types.ts";
 
@@ -491,7 +491,7 @@ describe(isCompositeProject, () => {
 	});
 });
 
-describe(runTypecheck, () => {
+describe(runTypecheckAsync, () => {
 	interface TsgoSpawnError extends Error {
 		code?: number | string;
 		killed?: boolean;
@@ -569,7 +569,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 			tsconfig: "tsconfig.test.json",
@@ -597,7 +597,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
@@ -619,7 +619,7 @@ describe(runTypecheck, () => {
 			'it("should pass", () => {});',
 		);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
@@ -642,7 +642,7 @@ describe(runTypecheck, () => {
 			'it("should pass", () => {});',
 		);
 
-		await runTypecheck({
+		await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 			tsconfig: "tsconfig.test.json",
@@ -661,7 +661,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
@@ -679,7 +679,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		await runTypecheck({
+		await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
@@ -695,7 +695,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		await runTypecheck({
+		await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 			timeout: 250,
@@ -717,7 +717,7 @@ describe(runTypecheck, () => {
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
 		await expect(
-			runTypecheck({
+			runTypecheckAsync({
 				files: ["src/test.spec.ts"],
 				rootDir: "/project",
 				timeout: 250,
@@ -738,7 +738,7 @@ describe(runTypecheck, () => {
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
 		await expect(
-			runTypecheck({
+			runTypecheckAsync({
 				files: ["src/test.spec.ts"],
 				rootDir: "/project",
 				spawnTimeout: 1,
@@ -766,7 +766,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const promise = runTypecheck({
+		const promise = runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 			spawnTimeout: 10_000,
@@ -788,7 +788,7 @@ describe(runTypecheck, () => {
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
 		await expect(
-			runTypecheck({
+			runTypecheckAsync({
 				files: ["src/test.spec.ts"],
 				rootDir: "/project",
 			}),
@@ -815,7 +815,7 @@ describe(runTypecheck, () => {
 			'const x: number = "bad";\nit("should fail", () => {});',
 		);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [filePath],
 			rootDir: rootDirectory,
 		});
@@ -843,7 +843,7 @@ describe(runTypecheck, () => {
 			'const x: number = "bad";\nit("should fail", () => {});',
 		);
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [filePath],
 			rootDir: rootDirectory,
 		});
@@ -859,7 +859,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
 			rootDir: "/project",
 		});
@@ -883,7 +883,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = await runTypecheck({ files: [filePath], rootDir: rootDirectory });
+		const result = await runTypecheckAsync({ files: [filePath], rootDir: rootDirectory });
 
 		const sourceResult = result.testResults.find((file) => file.testFilePath === "other.ts");
 
@@ -907,7 +907,7 @@ describe(runTypecheck, () => {
 		});
 		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
 
-		const result = await runTypecheck({
+		const result = await runTypecheckAsync({
 			files: [filePath],
 			ignoreSourceErrors: true,
 			rootDir: rootDirectory,

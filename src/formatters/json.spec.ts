@@ -5,7 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import type { JestResult } from "../types/jest-result.ts";
 import { MINIMAL_RESULT } from "./__fixtures__/results.ts";
-import { formatJson, writeJsonFile } from "./json.ts";
+import { formatJson, writeJsonFileAsync } from "./json.ts";
 
 describe(formatJson, () => {
 	it("should return formatted JSON string", () => {
@@ -31,7 +31,7 @@ function createTemporaryDirectory(): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-test-"));
 }
 
-describe(writeJsonFile, () => {
+describe(writeJsonFileAsync, () => {
 	it("should write JSON to file", async () => {
 		expect.assertions(1);
 
@@ -51,7 +51,7 @@ describe(writeJsonFile, () => {
 		};
 
 		const filePath = path.join(temporaryDirectory, "results.json");
-		await writeJsonFile(result, filePath);
+		await writeJsonFileAsync(result, filePath);
 
 		const content = fs.readFileSync(filePath, "utf8");
 
@@ -77,7 +77,7 @@ describe(writeJsonFile, () => {
 		};
 
 		const filePath = path.join(temporaryDirectory, "nested", "deep", "results.json");
-		await writeJsonFile(result, filePath);
+		await writeJsonFileAsync(result, filePath);
 
 		expect(fs.existsSync(filePath)).toBeTrue();
 	});

@@ -97,6 +97,7 @@ function addCoverageTiming(timing: TimingResult, coverageMs: number): TimingResu
 
 function printOutput(out: string): void {
 	if (out !== "") {
+		// eslint-disable-next-line no-console -- CLI result output belongs on stdout.
 		console.log(out);
 	}
 }

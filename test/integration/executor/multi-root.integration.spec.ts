@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Backend, BackendOptions, BackendResult } from "../../../src/backends/interface.ts";
 import { loadConfig } from "../../../src/config/loader.ts";
 import { resolveAllProjects } from "../../../src/config/projects.ts";
-import { runProjects } from "../../../src/executor.ts";
+import { runProjectsAsync } from "../../../src/executor.ts";
 import { generateTestScript } from "../../../src/test-script.ts";
 import type { JestResult } from "../../../src/types/jest-result.ts";
 import { rojoProjectSchema } from "../../../src/types/rojo.ts";
@@ -60,7 +60,7 @@ function buildMergedJestResult(): JestResult {
 	};
 }
 
-async function resolveSingleMultiRootProject() {
+async function resolveMultiRootProjectAsync() {
 	const config = await loadConfig(undefined, MULTI_ROOT_FIXTURE);
 	const rojoData = readJsonSync(path.join(MULTI_ROOT_FIXTURE, "default.project.json"));
 	const rojo = rojoProjectSchema.assert(rojoData);
@@ -84,7 +84,7 @@ describe("executor multi-root pipeline", () => {
 	it("should drive a single backend invocation that mentions both rojo mounts", async () => {
 		expect.assertions(4);
 
-		const project = await resolveSingleMultiRootProject();
+		const project = await resolveMultiRootProjectAsync();
 
 		const projectConfig = {
 			...project.config,
@@ -97,7 +97,7 @@ describe("executor multi-root pipeline", () => {
 		let captured: BackendOptions | undefined;
 		const fakeBackend: Backend = {
 			kind: "open-cloud",
-			runTests: async (options): Promise<BackendResult> => {
+			runTestsAsync: async (options): Promise<BackendResult> => {
 				captured = options;
 				const jestOutput = JSON.stringify({
 					_setup: 0.05,
@@ -110,7 +110,7 @@ describe("executor multi-root pipeline", () => {
 			},
 		};
 
-		const { results } = await runProjects({
+		const { results } = await runProjectsAsync({
 			backend: fakeBackend,
 			projects: [
 				{

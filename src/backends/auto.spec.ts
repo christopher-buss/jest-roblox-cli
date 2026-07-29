@@ -8,8 +8,8 @@ import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
 import {
 	isStudioBusyError,
-	probeStudioPlugin,
-	resolveBackend,
+	probeStudioPluginAsync,
+	resolveBackendAsync,
 	StudioWithFallback,
 } from "./auto.ts";
 import type { ProbeDetected, ProbeResult } from "./auto.ts";
@@ -32,12 +32,12 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return overrides;
 }
 
-describe(probeStudioPlugin, () => {
+describe(probeStudioPluginAsync, () => {
 	it("should return detected with server and socket when plugin connects", async () => {
 		expect.assertions(2);
 
 		const mockSocket = new MockWebSocket();
-		const promise = probeStudioPlugin(0, 2000);
+		const promise = probeStudioPluginAsync(0, 2000);
 
 		const wss = getLastCreatedServer();
 		assert(wss, "expected server to be created");
@@ -54,7 +54,7 @@ describe(probeStudioPlugin, () => {
 	it("should return not detected when no connection within timeout", async () => {
 		expect.assertions(1);
 
-		const result = await probeStudioPlugin(0, 50);
+		const result = await probeStudioPluginAsync(0, 50);
 
 		expect(result.detected).toBeFalse();
 	});
@@ -62,7 +62,7 @@ describe(probeStudioPlugin, () => {
 	it("should return not detected when WSS emits error", async () => {
 		expect.assertions(1);
 
-		const promise = probeStudioPlugin(0, 5000);
+		const promise = probeStudioPluginAsync(0, 5000);
 
 		const wss = getLastCreatedServer();
 		assert(wss, "expected server to be created");
@@ -76,7 +76,7 @@ describe(probeStudioPlugin, () => {
 	it("should close server when timeout expires", async () => {
 		expect.assertions(1);
 
-		await probeStudioPlugin(0, 50);
+		await probeStudioPluginAsync(0, 50);
 
 		expect(getLastCreatedServer()!.close).toHaveBeenCalledWith();
 	});
@@ -94,7 +94,7 @@ function mockNotDetected(): ProbeResult {
 	return { detected: false };
 }
 
-describe(resolveBackend, () => {
+describe(resolveBackendAsync, () => {
 	it("should select studio backend when plugin available and no OC credentials", async () => {
 		expect.assertions(1);
 
@@ -105,11 +105,15 @@ describe(resolveBackend, () => {
 		vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", undefined);
 		vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
 
-		async function probe(): Promise<ProbeDetected> {
+		async function probeAsync(): Promise<ProbeDetected> {
 			return mockDetected();
 		}
 
-		const backend = await resolveBackend(makeCli(), makeConfig({ backend: "auto" }), probe);
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "auto" }),
+			probeAsync,
+		);
 
 		expect(backend).toBeInstanceOf(StudioBackend);
 	});
@@ -121,11 +125,15 @@ describe(resolveBackend, () => {
 		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
 		vi.stubEnv("ROBLOX_PLACE_ID", "456");
 
-		async function probe(): Promise<ProbeResult> {
+		async function probeAsync(): Promise<ProbeResult> {
 			return mockNotDetected();
 		}
 
-		const backend = await resolveBackend(makeCli(), makeConfig({ backend: "auto" }), probe);
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "auto" }),
+			probeAsync,
+		);
 
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
@@ -140,11 +148,15 @@ describe(resolveBackend, () => {
 		vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", "888");
 		vi.stubEnv("JEST_ROBLOX_PLACE_ID", "999");
 
-		async function probe(): Promise<ProbeResult> {
+		async function probeAsync(): Promise<ProbeResult> {
 			return mockNotDetected();
 		}
 
-		const backend = await resolveBackend(makeCli(), makeConfig({ backend: "auto" }), probe);
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "auto" }),
+			probeAsync,
+		);
 
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
@@ -160,7 +172,7 @@ describe(resolveBackend, () => {
 		vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
 
 		await expect(
-			resolveBackend(makeCli(), makeConfig({ backend: "auto" }), async () => {
+			resolveBackendAsync(makeCli(), makeConfig({ backend: "auto" }), async () => {
 				return mockNotDetected();
 			}),
 		).rejects.toThrowWithMessage(Error, /No backend available/);
@@ -171,7 +183,11 @@ describe(resolveBackend, () => {
 
 		const probe =
 			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
-		const backend = await resolveBackend(makeCli(), makeConfig({ backend: "studio" }), probe);
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "studio" }),
+			probe,
+		);
 
 		expect(backend).toBeInstanceOf(StudioBackend);
 	});
@@ -181,7 +197,7 @@ describe(resolveBackend, () => {
 
 		const probe =
 			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
-		const backend = await resolveBackend(
+		const backend = await resolveBackendAsync(
 			makeCli(),
 			makeConfig({ backend: "studio-cli" }),
 			probe,
@@ -193,11 +209,15 @@ describe(resolveBackend, () => {
 	it("should never select studio-cli from the auto probe chain", async () => {
 		expect.assertions(1);
 
-		async function probe(): Promise<ProbeDetected> {
+		async function probeAsync(): Promise<ProbeDetected> {
 			return mockDetected();
 		}
 
-		const backend = await resolveBackend(makeCli(), makeConfig({ backend: "auto" }), probe);
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "auto" }),
+			probeAsync,
+		);
 
 		expect(backend).not.toBeInstanceOf(StudioCliBackend);
 	});
@@ -209,7 +229,11 @@ describe(resolveBackend, () => {
 			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
 
 		await expect(
-			resolveBackend(makeCli(), makeConfig({ backend: "studio-cli", parallel: 2 }), probe),
+			resolveBackendAsync(
+				makeCli(),
+				makeConfig({ backend: "studio-cli", parallel: 2 }),
+				probe,
+			),
 		).rejects.toThrow(/--parallel > 1 is not supported/);
 	});
 
@@ -220,7 +244,7 @@ describe(resolveBackend, () => {
 			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
 
 		await expect(
-			resolveBackend(
+			resolveBackendAsync(
 				makeCli(),
 				makeConfig({ backend: "studio-cli", parallel: "auto" }),
 				probe,
@@ -237,7 +261,7 @@ describe(resolveBackend, () => {
 
 		const probe =
 			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
-		const backend = await resolveBackend(
+		const backend = await resolveBackendAsync(
 			makeCli(),
 			makeConfig({ backend: "open-cloud" }),
 			probe,
@@ -256,15 +280,23 @@ describe(resolveBackend, () => {
 		vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", undefined);
 		vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
 
-		async function probe(): Promise<ProbeResult> {
+		async function probeAsync(): Promise<ProbeResult> {
 			return mockNotDetected();
 		}
 
 		await expect(
-			resolveBackend(makeCli({ apiKey: "key" }), makeConfig({ backend: "auto" }), probe),
+			resolveBackendAsync(
+				makeCli({ apiKey: "key" }),
+				makeConfig({ backend: "auto" }),
+				probeAsync,
+			),
 		).rejects.toThrowWithMessage(Error, /Missing: universeId, placeId/);
 		await expect(
-			resolveBackend(makeCli({ apiKey: "key" }), makeConfig({ backend: "auto" }), probe),
+			resolveBackendAsync(
+				makeCli({ apiKey: "key" }),
+				makeConfig({ backend: "auto" }),
+				probeAsync,
+			),
 		).rejects.toThrowWithMessage(
 			Error,
 			/Set ROBLOX_UNIVERSE_ID \(or JEST_ROBLOX_UNIVERSE_ID\), ROBLOX_PLACE_ID \(or JEST_ROBLOX_PLACE_ID\)/,
@@ -278,11 +310,15 @@ describe(resolveBackend, () => {
 		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
 		vi.stubEnv("ROBLOX_PLACE_ID", "456");
 
-		async function probe(): Promise<ProbeDetected> {
+		async function probeAsync(): Promise<ProbeDetected> {
 			return mockDetected();
 		}
 
-		const backend = await resolveBackend(makeCli(), makeConfig({ backend: "auto" }), probe);
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "auto" }),
+			probeAsync,
+		);
 
 		expect(backend).toBeInstanceOf(StudioWithFallback);
 	});
@@ -324,8 +360,8 @@ describe(StudioWithFallback, () => {
 
 		const studioBackend: Backend = {
 			kind: "studio",
-			runTests: vi
-				.fn<Backend["runTests"]>()
+			runTestsAsync: vi
+				.fn<Backend["runTestsAsync"]>()
 				.mockRejectedValue(
 					Object.assign(new Error("listen EADDRINUSE"), { code: "EADDRINUSE" }),
 				),
@@ -340,7 +376,7 @@ describe(StudioWithFallback, () => {
 		// Will throw because OC env vars are stubs, but it proves the fallback
 		// path runs
 		await expect(
-			fallback.runTests({
+			fallback.runTestsAsync({
 				jobs: [
 					{
 						config: makeConfig({ backend: "auto" }),
@@ -357,9 +393,9 @@ describe(StudioWithFallback, () => {
 
 		const close = vi.fn<() => void>();
 		const studioBackend: Backend = {
-			close,
+			closeAsync: close,
 			kind: "studio",
-			runTests: vi.fn<Backend["runTests"]>(),
+			runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
 		};
 
 		const fallback = new StudioWithFallback(studioBackend, {
@@ -367,7 +403,7 @@ describe(StudioWithFallback, () => {
 			placeId: "456",
 			universeId: "123",
 		});
-		await fallback.close();
+		await fallback.closeAsync();
 
 		expect(close).toHaveBeenCalledOnce();
 	});
@@ -377,7 +413,9 @@ describe(StudioWithFallback, () => {
 
 		const studioBackend: Backend = {
 			kind: "studio",
-			runTests: vi.fn<Backend["runTests"]>().mockRejectedValue(new Error("some other error")),
+			runTestsAsync: vi
+				.fn<Backend["runTestsAsync"]>()
+				.mockRejectedValue(new Error("some other error")),
 		};
 
 		const fallback = new StudioWithFallback(studioBackend, {
@@ -387,7 +425,7 @@ describe(StudioWithFallback, () => {
 		});
 
 		await expect(
-			fallback.runTests({
+			fallback.runTestsAsync({
 				jobs: [
 					{
 						config: makeConfig({ backend: "auto" }),

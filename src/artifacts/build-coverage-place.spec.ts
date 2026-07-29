@@ -15,7 +15,7 @@ import { getRawProjects } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { buildImplicitProject } from "../run/single-projects.ts";
 import { prepareBakedCoverage } from "../run/staging.ts";
-import { buildCoveragePlace } from "./build-coverage-place.ts";
+import { buildCoveragePlaceAsync } from "./build-coverage-place.ts";
 
 vi.mock(import("../run.ts"));
 vi.mock(import("../run/multi.ts"));
@@ -65,13 +65,13 @@ function primeHappyPath(artifacts = makeArtifacts()): void {
 	mocks.prepareBakedCoverage.mockReturnValue({ artifacts, coverage: fromAny({}) });
 }
 
-describe(buildCoveragePlace, () => {
+describe(buildCoveragePlaceAsync, () => {
 	it("should return the coverage place, build id, and manifest paths", async () => {
 		expect.assertions(4);
 
 		primeHappyPath();
 
-		const bundle = await buildCoveragePlace(makeConfig());
+		const bundle = await buildCoveragePlaceAsync(makeConfig());
 
 		expect(bundle.coveragePlace).toStrictEqual(COVERAGE_PLACE);
 		expect(bundle.buildId).toBe("build-77");
@@ -84,7 +84,7 @@ describe(buildCoveragePlace, () => {
 
 		primeHappyPath();
 
-		await buildCoveragePlace(makeConfig({ collectCoverage: false }));
+		await buildCoveragePlaceAsync(makeConfig({ collectCoverage: false }));
 
 		expect(mocks.prepareBakedCoverage.mock.calls[0]![0].collectCoverage).toBeTrue();
 	});
@@ -95,7 +95,7 @@ describe(buildCoveragePlace, () => {
 		const artifacts = makeArtifacts();
 		primeHappyPath(artifacts);
 
-		await buildCoveragePlace(makeConfig());
+		await buildCoveragePlaceAsync(makeConfig());
 
 		expect(mocks.emitBuildManifest.mock.calls[0]).toStrictEqual([
 			COVERAGE_BUILD_MANIFEST_PATH,
@@ -108,7 +108,7 @@ describe(buildCoveragePlace, () => {
 
 		primeHappyPath();
 
-		await buildCoveragePlace(makeConfig());
+		await buildCoveragePlaceAsync(makeConfig());
 
 		expect(mocks.generateProjectStubs).toHaveBeenCalledOnce();
 		// The 4th arg to prepareBakedCoverage is `bakeStubs` — always true here.
@@ -121,7 +121,7 @@ describe(buildCoveragePlace, () => {
 		primeHappyPath();
 		mocks.getRawProjects.mockReturnValue(undefined);
 
-		await buildCoveragePlace(makeConfig());
+		await buildCoveragePlaceAsync(makeConfig());
 
 		expect(mocks.buildImplicitProject).toHaveBeenCalledOnce();
 		expect(mocks.resolveAllProjects).not.toHaveBeenCalled();
@@ -134,7 +134,7 @@ describe(buildCoveragePlace, () => {
 		mocks.getRawProjects.mockReturnValue(fromAny([{ test: { displayName: "c" } }]));
 		mocks.resolveAllProjects.mockResolvedValue([fromAny({ displayName: "c", rojoMounts: [] })]);
 
-		await buildCoveragePlace(makeConfig());
+		await buildCoveragePlaceAsync(makeConfig());
 
 		expect(mocks.resolveAllProjects).toHaveBeenCalledOnce();
 		expect(mocks.buildImplicitProject).not.toHaveBeenCalled();
@@ -145,7 +145,7 @@ describe(buildCoveragePlace, () => {
 
 		primeHappyPath(makeArtifacts({ rebuilt: false }));
 
-		const bundle = await buildCoveragePlace(makeConfig());
+		const bundle = await buildCoveragePlaceAsync(makeConfig());
 
 		expect(mocks.emitBuildManifest).not.toHaveBeenCalled();
 		expect(bundle.rebuilt).toBeFalse();

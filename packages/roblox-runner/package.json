@@ -35,7 +35,7 @@
 		"ws": "8.21.0"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "6.0.0-beta.30",
+		"@isentinel/eslint-config": "6.0.0-beta.33",
 		"@isentinel/tsconfig": "2.0.0",
 		"@total-typescript/shoehorn": "0.1.2",
 		"@types/node": "24.12.3",

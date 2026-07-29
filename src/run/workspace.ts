@@ -26,7 +26,7 @@ import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregato
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import {
-	runWorkspace,
+	runWorkspaceAsync,
 	type WorkspaceProjectResult,
 	type WorkspaceRunnerOutput,
 } from "../workspace-runner.ts";
@@ -84,7 +84,7 @@ interface ExecuteWorkspaceRunOptions {
 	workspaceRoot: string;
 }
 
-export async function runWorkspaceMode(
+export async function runWorkspaceModeAsync(
 	cli: CliOptions,
 	workspace?: WorkspaceConfig,
 	timing?: TimingCollector,
@@ -109,7 +109,7 @@ export async function runWorkspaceMode(
 	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
 	const workspaceRoot = resolved.workspaceRoot!;
 
-	const optionsResolution = await resolveWorkspaceRunOptions(cli, packageInfos, workspaceRoot);
+	const optionsResolution = await resolveWorkspaceOptionsAsync(cli, packageInfos, workspaceRoot);
 	if (optionsResolution.error !== undefined) {
 		return bail(optionsResolution.error.exitCode, optionsResolution.error.message);
 	}
@@ -117,7 +117,7 @@ export async function runWorkspaceMode(
 	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when there is no error
 	const runOptions = optionsResolution.runOptions!;
 
-	return executeWorkspaceRun({
+	return executeWorkspaceRunAsync({
 		cli,
 		packageInfos,
 		runOptions,
@@ -142,7 +142,7 @@ function bail(validationExitCode: 2, validationMessage?: string): WorkspaceRunRe
 // WorkspaceRunOptions, and check the resolved-value invariants. A config that
 // fails to load and a consensus conflict both surface as the same validation
 // error the caller bails on.
-async function resolveWorkspaceRunOptions(
+async function resolveWorkspaceOptionsAsync(
 	cli: CliOptions,
 	packageInfos: Array<PackageInfo>,
 	workspaceRoot: string,
@@ -399,7 +399,7 @@ function resolveStreamingProgressSink(
 
 // Resolve the backend, emit the run header, and drive the workspace runner,
 // always closing the backend afterwards.
-async function executeWorkspaceRun({
+async function executeWorkspaceRunAsync({
 	cli,
 	packageInfos,
 	runOptions,
@@ -417,7 +417,7 @@ async function executeWorkspaceRun({
 	try {
 		emitWorkspaceRunHeader(cli, runOptions, workspaceRoot);
 		const onStreamingResult = resolveStreamingProgressSink(runOptions, cli);
-		output = await runWorkspace({
+		output = await runWorkspaceAsync({
 			...(backend !== undefined ? { backend } : {}),
 			cli,
 			...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
@@ -429,7 +429,7 @@ async function executeWorkspaceRun({
 			...(workStealingCredentials !== undefined ? { workStealingCredentials } : {}),
 		});
 	} finally {
-		await backend?.close?.();
+		await backend?.closeAsync?.();
 	}
 
 	if (output === undefined) {

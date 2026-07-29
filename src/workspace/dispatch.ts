@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import type { Backend, StreamingHooks } from "../backends/interface.ts";
-import { type ExecuteResult, runProjects, type RunProjectsOptions } from "../executor.ts";
+import { type ExecuteResult, runProjectsAsync, type RunProjectsOptions } from "../executor.ts";
 import { StreamingResultClient } from "../memory-store/sorted-map-client.ts";
-import { prepareWorkStealingQueue } from "../memory-store/work-stealing.ts";
+import { prepareWorkStealingQueueAsync } from "../memory-store/work-stealing.ts";
 import {
 	StreamingAggregator,
 	type StreamingAggregatorOnEntry,
@@ -57,12 +57,12 @@ interface DispatchedProjectsInput {
 }
 
 /** Runs every pending (pkg, project) against the shared place. */
-export async function runDispatchedProjects(
+export async function runDispatchedProjectsAsync(
 	input: DispatchedProjectsInput,
 ): Promise<Array<ExecuteResult>> {
 	const { dispatchSpec, pending, placeFile, startTime, timing, version } = input;
 	const { results } = await timing.profileAsync("runProjects", async () => {
-		return runProjects({
+		return runProjectsAsync({
 			// Defined whenever runtime jobs exist: only `--typecheckOnly`
 			// omits the backend, and that path short-circuits before
 			// reaching any runtime dispatch.
@@ -88,7 +88,7 @@ export async function runDispatchedProjects(
 	return results;
 }
 
-export async function prepareWorkspaceDispatch(
+export async function prepareWorkspaceDispatchAsync(
 	input: WorkspaceDispatchInput,
 ): Promise<WorkspaceDispatchSpec> {
 	const { generateUuid, onStreamingResult, pending, placeFile, workStealingCredentials } = input;
@@ -102,7 +102,7 @@ export async function prepareWorkspaceDispatch(
 		workStealingCredentials !== undefined && parallel !== undefined && parallel > 1;
 
 	if (shouldUseWorkStealing) {
-		return prepareWorkStealingDispatch({
+		return prepareStealingDispatchAsync({
 			credentials: workStealingCredentials,
 			generateUuid: generateUuid ?? randomUUID,
 			inputs,
@@ -162,7 +162,7 @@ function buildStreaming(input: {
 	};
 }
 
-async function prepareWorkStealingDispatch({
+async function prepareStealingDispatchAsync({
 	credentials,
 	generateUuid,
 	inputs,
@@ -170,7 +170,7 @@ async function prepareWorkStealingDispatch({
 	parallel,
 }: WorkStealingDispatchInput): Promise<WorkspaceDispatchSpec> {
 	const { apiKey, baseUrl, universeId } = credentials;
-	const prepared = await prepareWorkStealingQueue({
+	const prepared = await prepareWorkStealingQueueAsync({
 		...(baseUrl !== undefined ? { baseUrl } : {}),
 		credentials: { apiKey, universeId },
 		packages: inputs.map((entry) => ({ pkg: entry.pkg, project: entry.project })),

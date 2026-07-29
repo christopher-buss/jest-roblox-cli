@@ -1,19 +1,19 @@
 import * as path from "node:path";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { resolveBackend } from "../backends/auto.ts";
+import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
-import { runProjects } from "../executor.ts";
+import { type ProjectInput, runProjectsAsync } from "../executor.ts";
 import { buildPlace } from "../staging/place-builder.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
-import { runTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
-import { runTypecheck } from "../typecheck/runner.ts";
+import { runTypecheckPassAsync as runGroupedTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
+import { runTypecheckAsync } from "../typecheck/runner.ts";
 import { emitRunHeader } from "./run-header.ts";
 import type { StagedRun } from "./staging.ts";
 import { collectStubMounts } from "./staging.ts";
@@ -46,14 +46,14 @@ type ParallelOption = "auto" | number | undefined;
  * `test.typecheck` + CLI (the per-project tsconfig drives grouping, not the
  * source-error decision), then applied to every group's pass.
  */
-export async function runTypecheckPass(
+export async function runTypecheckPassAsync(
 	entries: Array<TypecheckGroupEntry>,
 	rootConfig: ResolvedConfig,
 	cliTypecheck: TypecheckCliOptions,
 ): Promise<TypecheckPassOutcome> {
 	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
-	return runTypecheckPassAsync(entries, async (group) => {
-		return runTypecheck({
+	return runGroupedTypecheckPassAsync(entries, async (group) => {
+		return runTypecheckAsync({
 			files: group.files,
 			ignoreSourceErrors: rootTypecheck.ignoreSourceErrors,
 			rootDir: group.cwd,
@@ -72,16 +72,16 @@ export async function runTypecheckPass(
  * the place build, which reads `backend.kind`. Building outside the guard would
  * leak an unclosed backend whenever rojo fails.
  */
-export async function executeTestPlan(input: ExecutionInput): Promise<ExecutionOutcome> {
+export async function executeTestPlanAsync(input: ExecutionInput): Promise<ExecutionOutcome> {
 	const { cli, staged } = input;
 	const backend = await input.discovery.timing.profileAsync("resolveBackend", async () => {
-		return resolveBackend(cli, staged.effectiveConfig);
+		return resolveBackendAsync(cli, staged.effectiveConfig);
 	});
 
 	try {
-		return await runAgainstBackend(backend, input);
+		return await runAgainstBackendAsync(backend, input);
 	} finally {
-		await backend.close?.();
+		await backend.closeAsync?.();
 	}
 }
 
@@ -110,7 +110,7 @@ function buildOpenCloudPlace(
 	});
 }
 
-function toExecutorProject(job: PendingJob) {
+function toExecutorProject(job: PendingJob): ProjectInput {
 	return {
 		config: job.config,
 		displayColor: job.displayColor,
@@ -120,7 +120,7 @@ function toExecutorProject(job: PendingJob) {
 	};
 }
 
-async function runJobs(
+async function runJobsAsync(
 	backend: Backend,
 	jobs: Array<PendingJob>,
 	parallel: ParallelOption,
@@ -131,7 +131,7 @@ async function runJobs(
 	}
 
 	const runResult = await timing.profileAsync("runProjects", async () => {
-		return runProjects({
+		return runProjectsAsync({
 			backend,
 			deferFormatting: true,
 			parallel,
@@ -160,7 +160,7 @@ function effectiveParallelForBackend(
 	return backend.kind === "open-cloud" ? parallel : undefined;
 }
 
-async function runAgainstBackend(
+async function runAgainstBackendAsync(
 	backend: Backend,
 	{ discovery, plan, staged }: ExecutionInput,
 ): Promise<ExecutionOutcome> {
@@ -187,8 +187,8 @@ async function runAgainstBackend(
 	// checking overlaps the network-bound Open Cloud upload/poll.
 	const parallel = effectiveParallelForBackend(staged.effectiveConfig.parallel, backend);
 	const [projectResults, typecheck] = await Promise.all([
-		runJobs(backend, plan.jobs, parallel, timing),
-		runTypecheckPass(plan.typeTestEntries, rootConfig, cliTypecheck),
+		runJobsAsync(backend, plan.jobs, parallel, timing),
+		runTypecheckPassAsync(plan.typeTestEntries, rootConfig, cliTypecheck),
 	]);
 
 	// Record the tsgo span at root once both branches settle — the collector's

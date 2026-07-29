@@ -103,7 +103,7 @@ interface FakeOpenCloudState {
 	taskResults: Map<string, FakeOpenCloudTask>;
 }
 
-export async function startFakeOpenCloudServer(
+export async function startFakeOpenCloudServerAsync(
 	tasks: Array<FakeOpenCloudTask>,
 ): Promise<FakeOpenCloudServer> {
 	const state: FakeOpenCloudState = {
@@ -119,7 +119,7 @@ export async function startFakeOpenCloudServer(
 	};
 
 	const server = createServer(createRequestListener(state));
-	await listenOnEphemeralPort(server);
+	await listenOnEphemeralPortAsync(server);
 	closeServerWhenTestFinishes(server);
 
 	return {
@@ -134,7 +134,7 @@ export async function startFakeOpenCloudServer(
 	};
 }
 
-async function readBody(request: IncomingMessage): Promise<string> {
+async function readBodyAsync(request: IncomingMessage): Promise<string> {
 	const chunks: Array<Uint8Array> = [];
 	for await (const chunk of request) {
 		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -417,7 +417,7 @@ function handleCreateTask({
 	response.end(JSON.stringify(validInProgressTaskBody({ path: taskPath })));
 }
 
-async function handleRequest({
+async function handleRequestAsync({
 	request,
 	response,
 	state,
@@ -435,12 +435,12 @@ async function handleRequest({
 
 	const queuePath = parseQueuePath(url.pathname);
 	if (queuePath !== undefined && request.method === "POST") {
-		handleQueueRequest({ body: await readBody(request), queuePath, response, state });
+		handleQueueRequest({ body: await readBodyAsync(request), queuePath, response, state });
 		return;
 	}
 
 	if (request.method === "POST" && url.pathname.endsWith("/luau-execution-session-tasks")) {
-		handleCreateTask({ body: await readBody(request), response, state });
+		handleCreateTask({ body: await readBodyAsync(request), response, state });
 		return;
 	}
 
@@ -462,11 +462,11 @@ function createRequestListener(state: FakeOpenCloudState): RequestListener {
 			url: request.url ?? "",
 		});
 
-		void handleRequest({ request, response, state });
+		void handleRequestAsync({ request, response, state });
 	};
 }
 
-async function listenOnEphemeralPort(server: Server): Promise<void> {
+async function listenOnEphemeralPortAsync(server: Server): Promise<void> {
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {

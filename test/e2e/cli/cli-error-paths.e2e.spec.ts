@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServer } from "./fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -20,7 +20,7 @@ describe("cli error paths", () => {
 			expect.assertions(2);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-			const server = await startFakeOpenCloudServer([
+			const server = await startFakeOpenCloudServerAsync([
 				{
 					jestOutput: buildMixedOutput(buildFailingPayload()),
 				},
@@ -67,7 +67,7 @@ describe("cli error paths", () => {
 			expect.assertions(2);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-			const server = await startFakeOpenCloudServer([
+			const server = await startFakeOpenCloudServerAsync([
 				{
 					jestOutput: buildMixedOutput(buildPassingPayload()),
 					// Stall on PROCESSING longer than the configured CLI

@@ -19,7 +19,7 @@ import {
 	readTsconfigMapping,
 	resolveAllTsconfigMappings,
 	resolveTsconfigDirectories,
-	runProjects,
+	runProjectsAsync,
 } from "./executor.ts";
 import type { SnapshotWrites } from "./reporter/parser.ts";
 import { parseJestOutput } from "./reporter/parser.ts";
@@ -67,8 +67,8 @@ interface ExecuteOptions {
 	version: string;
 }
 
-async function executeSingle(options: ExecuteOptions): Promise<ExecuteResult> {
-	const { results } = await runProjects({
+async function executeSingleAsync(options: ExecuteOptions): Promise<ExecuteResult> {
+	const { results } = await runProjectsAsync({
 		backend: options.backend,
 		deferFormatting: options.deferFormatting,
 		projects: [{ config: options.config, testFiles: options.testFiles }],
@@ -190,14 +190,18 @@ function multiEntryResult(
 function createMockBackend(result: JestResult, gameOutput?: string): Backend {
 	return {
 		kind: "studio",
-		runTests: async (): Promise<BackendResult> => singleEntryResult({ gameOutput, result }),
+		runTestsAsync: async (): Promise<BackendResult> => {
+			return singleEntryResult({ gameOutput, result });
+		},
 	};
 }
 
 function createMockBackendWithCoverage(result: JestResult, coverageData: RawCoverageData): Backend {
 	return {
 		kind: "studio",
-		runTests: async (): Promise<BackendResult> => singleEntryResult({ coverageData, result }),
+		runTestsAsync: async (): Promise<BackendResult> => {
+			return singleEntryResult({ coverageData, result });
+		},
 	};
 }
 
@@ -324,7 +328,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(0);
 		expect(result.result.success).toBeTrue();
@@ -367,7 +371,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(0);
 	});
@@ -383,7 +387,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(1);
 		expect(result.result.success).toBeFalse();
@@ -395,7 +399,7 @@ describe("execute single-project helper", () => {
 		let capturedOptions: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (runOptions): Promise<BackendResult> => {
+			runTestsAsync: async (runOptions): Promise<BackendResult> => {
 				capturedOptions = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
@@ -409,7 +413,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		await executeSingle(options);
+		await executeSingleAsync(options);
 
 		expect(capturedOptions!.jobs[0]!.config.testNamePattern).toBe("should pass");
 	});
@@ -425,7 +429,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.output).toContain("✓");
 		expect(result.output).toContain("2 passed");
@@ -443,7 +447,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		const parsed = parseJestOutput(result.output);
 
@@ -463,7 +467,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.gameOutput).toBe(rawGameOutput);
 	});
@@ -484,7 +488,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		// verbose cancels agent — uses the default formatter (Test Files
 		// summary). The RUN header is emitted at the start of the run, not by
@@ -509,7 +513,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(0);
 		expect(result.output).not.toBeEmpty();
@@ -527,7 +531,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.output).toBe("");
 	});
@@ -543,7 +547,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.timing.executionMs).toBe(100);
 		expect(result.timing.uploadMs).toBe(50);
@@ -563,7 +567,7 @@ describe("execute single-project helper", () => {
 		});
 
 		const backend = createMockBackend(createPassingResult());
-		await runProjects({
+		await runProjectsAsync({
 			backend,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
@@ -593,12 +597,12 @@ describe("execute single-project helper", () => {
 		// emitting an "undefined ms" line.
 		const studioBackend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return singleEntryResult({ result: createPassingResult() }, { executionMs: 100 });
 			},
 		};
 
-		await runProjects({
+		await runProjectsAsync({
 			backend: studioBackend,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
@@ -625,7 +629,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1, jestRunCLI: 2.5 },
 					result: createPassingResult(),
@@ -633,7 +637,7 @@ describe("execute single-project helper", () => {
 			},
 		};
 
-		await runProjects({
+		await runProjectsAsync({
 			backend,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
@@ -660,7 +664,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1, total: 3 },
 					result: createPassingResult(),
@@ -668,7 +672,7 @@ describe("execute single-project helper", () => {
 			},
 		};
 
-		await runProjects({
+		await runProjectsAsync({
 			backend,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
@@ -695,7 +699,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return multiEntryResult([
 					{ luauTiming: { findJest: 0.10025 }, result: createPassingResult() },
 					{ luauTiming: { findJest: 0.20035 }, result: createPassingResult() },
@@ -703,7 +707,7 @@ describe("execute single-project helper", () => {
 			},
 		};
 
-		await runProjects({
+		await runProjectsAsync({
 			backend,
 			projects: [
 				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
@@ -730,7 +734,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1 },
 					result: createPassingResult(),
@@ -738,7 +742,7 @@ describe("execute single-project helper", () => {
 			},
 		};
 
-		const { results } = await runProjects({
+		const { results } = await runProjectsAsync({
 			backend,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
@@ -762,7 +766,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.output).toBe("");
 		expect(result.timing.totalMs).toBeGreaterThanOrEqual(0);
@@ -774,7 +778,7 @@ describe("execute single-project helper", () => {
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1 },
 					result: createPassingResult(),
@@ -782,7 +786,7 @@ describe("execute single-project helper", () => {
 			},
 		};
 
-		await executeSingle({
+		await executeSingleAsync({
 			backend,
 			config: DEFAULT_CONFIG,
 			testFiles: ["src/test.spec.ts"],
@@ -800,7 +804,7 @@ describe("execute single-project helper", () => {
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1 },
 					result: createPassingResult(),
@@ -808,7 +812,7 @@ describe("execute single-project helper", () => {
 			},
 		};
 
-		await executeSingle({
+		await executeSingleAsync({
 			backend,
 			config: DEFAULT_CONFIG,
 			deferFormatting: true,
@@ -840,7 +844,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.coverageData).toStrictEqual({
 			"shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } },
@@ -863,7 +867,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		// coverageData is still returned (backend always provides it), but
 		// coverage processing is now handled by cli.ts
@@ -884,7 +888,7 @@ describe("execute single-project helper", () => {
 		];
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult({ perTestCoverage, result: createPassingResult() });
 			},
 		};
@@ -895,7 +899,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.attribution!.tests).toStrictEqual([
 			{
@@ -929,7 +933,7 @@ describe("execute single-project helper", () => {
 		};
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult({
 					coverageData,
 					perTestCoverage,
@@ -944,7 +948,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.attribution!.staticStatementIds).toStrictEqual({ "out/m.luau": ["0"] });
 	});
@@ -959,7 +963,7 @@ describe("execute single-project helper", () => {
 		};
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult({ coverageData, result: createPassingResult() });
 			},
 		};
@@ -970,7 +974,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.attribution!.staticStatementIds).toStrictEqual({ "out/m.luau": ["0", "1"] });
 	});
@@ -995,7 +999,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		// exit code is based only on test success, not coverage thresholds
 		expect(result.exitCode).toBe(0);
@@ -1013,7 +1017,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(0);
 	});
@@ -1030,7 +1034,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		// Agent format uses PASS/FAIL prefix per file, no verbose headers
 		expect(result.output).toContain("FAIL");
@@ -1052,7 +1056,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.output).toContain("FAIL");
 	});
@@ -1062,7 +1066,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						luauTiming: { requireJest: 1.5 },
@@ -1081,7 +1085,7 @@ describe("execute single-project helper", () => {
 		};
 
 		// Should not throw when luauTiming is present
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(0);
 	});
@@ -1140,7 +1144,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const executeResult = await executeSingle(options);
+		const executeResult = await executeSingleAsync(options);
 
 		expect(executeResult.output).not.toContain(dataModelPath);
 		expect(executeResult.result.testResults[0]!.testFilePath).toContain(
@@ -1153,7 +1157,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1174,7 +1178,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(1);
 		expect(result.snapshotWriteFailures).toBe(1);
@@ -1196,7 +1200,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1218,7 +1222,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(0);
 
@@ -1246,7 +1250,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1261,7 +1265,7 @@ describe("execute single-project helper", () => {
 		};
 
 		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		await executeSingle({
+		await executeSingleAsync({
 			backend,
 			config,
 			testFiles: ["src/test.spec.ts"],
@@ -1290,7 +1294,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1308,7 +1312,7 @@ describe("execute single-project helper", () => {
 			rootDir: temporaryDirectory,
 			silent: true,
 		};
-		await executeSingle({
+		await executeSingleAsync({
 			backend,
 			config,
 			testFiles: ["src/test.spec.ts"],
@@ -1336,7 +1340,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1357,7 +1361,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(0);
 	});
@@ -1390,7 +1394,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1408,7 +1412,7 @@ describe("execute single-project helper", () => {
 			rojoProject: "test.project.json",
 			rootDir: temporaryDirectory,
 		};
-		await executeSingle({
+		await executeSingleAsync({
 			backend,
 			config,
 			testFiles: ["src/test.spec.ts"],
@@ -1448,7 +1452,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1469,7 +1473,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		await executeSingle(options);
+		await executeSingleAsync(options);
 
 		expect(stderrSpy).toHaveBeenCalledWith(
 			expect.stringContaining("Cannot resolve snapshot path"),
@@ -1490,7 +1494,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1511,7 +1515,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		await executeSingle(options);
+		await executeSingleAsync(options);
 
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("invalid rojo project"));
 	});
@@ -1530,7 +1534,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1544,7 +1548,7 @@ describe("execute single-project helper", () => {
 		};
 
 		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		await executeSingle({
+		await executeSingleAsync({
 			backend,
 			config,
 			testFiles: ["src/test.spec.ts"],
@@ -1578,7 +1582,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1592,7 +1596,7 @@ describe("execute single-project helper", () => {
 		};
 
 		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const result = await executeSingle({
+		const result = await executeSingleAsync({
 			backend,
 			config,
 			testFiles: ["src/test.spec.ts"],
@@ -1620,7 +1624,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1641,7 +1645,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		await executeSingle(options);
+		await executeSingleAsync(options);
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
 
@@ -1674,7 +1678,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1695,7 +1699,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		await executeSingle(options);
+		await executeSingleAsync(options);
 
 		const output = stderrSpy.mock.calls.map(([message]) => String(message)).join("");
 
@@ -1716,7 +1720,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1730,7 +1734,7 @@ describe("execute single-project helper", () => {
 		};
 
 		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		const result = await executeSingle({
+		const result = await executeSingleAsync({
 			backend,
 			config,
 			testFiles: ["src/test.spec.ts"],
@@ -1761,7 +1765,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1780,7 +1784,7 @@ describe("execute single-project helper", () => {
 			silent: true,
 		};
 
-		await executeSingle({ backend, config, testFiles: [], version: "0.0.0-test" });
+		await executeSingleAsync({ backend, config, testFiles: [], version: "0.0.0-test" });
 
 		const sourceSnapshot = path.join(
 			temporaryDirectory,
@@ -1811,7 +1815,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1830,7 +1834,7 @@ describe("execute single-project helper", () => {
 			silent: true,
 		};
 
-		await executeSingle({ backend, config, testFiles: [], version: "0.0.0-test" });
+		await executeSingleAsync({ backend, config, testFiles: [], version: "0.0.0-test" });
 
 		const sourceSnapshot = path.join(
 			temporaryDirectory,
@@ -1873,7 +1877,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1893,7 +1897,7 @@ describe("execute single-project helper", () => {
 			silent: true,
 		};
 
-		await executeSingle({ backend, config, testFiles: [], version: "0.0.0-test" });
+		await executeSingleAsync({ backend, config, testFiles: [], version: "0.0.0-test" });
 
 		const sourceSnapshot = path.join(
 			temporaryDirectory,
@@ -1928,7 +1932,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -1947,7 +1951,7 @@ describe("execute single-project helper", () => {
 			silent: true,
 		};
 
-		await executeSingle({ backend, config, testFiles: [], version: "0.0.0-test" });
+		await executeSingleAsync({ backend, config, testFiles: [], version: "0.0.0-test" });
 
 		// No tsconfig → no outDir/rootDir rewriting → lands at rojo-resolved path
 		const outSnapshot = path.join(
@@ -1990,7 +1994,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		// Source mapper was built (failure messages won't contain rojo paths
 		// though)
@@ -2047,7 +2051,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const executeResult = await executeSingle(options);
+		const executeResult = await executeSingleAsync(options);
 
 		expect(executeResult.result.testResults[0]!.testFilePath).toBe(
 			"packages/uuid-generator/src/init.spec.luau",
@@ -2087,7 +2091,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
 						result: createPassingResult(),
@@ -2102,7 +2106,7 @@ describe("execute single-project helper", () => {
 		};
 
 		const config: ResolvedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
-		await executeSingle({ backend, config, testFiles: [], version: "0.0.0-test" });
+		await executeSingleAsync({ backend, config, testFiles: [], version: "0.0.0-test" });
 
 		const snapshotPath = path.join(
 			temporaryDirectory,
@@ -2135,7 +2139,7 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		};
 
-		const result = await executeSingle(options);
+		const result = await executeSingleAsync(options);
 
 		expect(result.exitCode).toBe(0);
 	});
@@ -2531,13 +2535,13 @@ describe(loadCoverageManifest, () => {
 	});
 });
 
-describe(runProjects, () => {
+describe(runProjectsAsync, () => {
 	it("should return one processed result for a single project", async () => {
 		expect.assertions(3);
 
 		const backend = createMockBackend(createPassingResult());
 
-		const { backendTiming, results } = await runProjects({
+		const { backendTiming, results } = await runProjectsAsync({
 			backend,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
@@ -2554,7 +2558,7 @@ describe(runProjects, () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return multiEntryResult([
 					{ result: createPassingResult() },
 					{ result: createFailingResult() },
@@ -2562,7 +2566,7 @@ describe(runProjects, () => {
 			},
 		};
 
-		const { results } = await runProjects({
+		const { results } = await runProjectsAsync({
 			backend,
 			projects: [
 				{
@@ -2591,13 +2595,13 @@ describe(runProjects, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTests: async (runOptions) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
 		};
 
-		await runProjects({
+		await runProjectsAsync({
 			backend,
 			parallel: 3,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
@@ -2614,7 +2618,7 @@ describe(runProjects, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTests: async (runOptions) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
@@ -2625,7 +2629,7 @@ describe(runProjects, () => {
 			reader: { read: async () => [] },
 		});
 
-		await runProjects({
+		await runProjectsAsync({
 			backend,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
 			scriptOverride: "-- staged materializer",
@@ -2645,7 +2649,7 @@ describe(runProjects, () => {
 
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return multiEntryResult([
 					{ result: createPassingResult() },
 					{ result: createPassingResult() },
@@ -2653,7 +2657,7 @@ describe(runProjects, () => {
 			},
 		};
 
-		const { results } = await runProjects({
+		const { results } = await runProjectsAsync({
 			backend,
 			projects: [
 				{
@@ -2680,7 +2684,7 @@ describe(runProjects, () => {
 
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				return multiEntryResult(
 					[{ result: createPassingResult() }, { result: createPassingResult() }],
 					{ executionMs: 250, uploadMs: 75 },
@@ -2688,7 +2692,7 @@ describe(runProjects, () => {
 			},
 		};
 
-		const { backendTiming, results } = await runProjects({
+		const { backendTiming, results } = await runProjectsAsync({
 			backend,
 			projects: [
 				{ config: DEFAULT_CONFIG, displayName: "first", testFiles: ["src/a.spec.ts"] },
@@ -2709,10 +2713,10 @@ describe(runProjects, () => {
 		const emptyResult: BackendResult = { rawResults: [], timing: DEFAULT_TIMING };
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async () => emptyResult,
+			runTestsAsync: async () => emptyResult,
 		};
 
-		const promise = runProjects({
+		const promise = runProjectsAsync({
 			backend,
 			projects: [
 				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
@@ -2730,12 +2734,12 @@ describe(runProjects, () => {
 
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTests: async () => {
+			runTestsAsync: async () => {
 				throw new Error("backend exploded");
 			},
 		};
 
-		const promise = runProjects({
+		const promise = runProjectsAsync({
 			backend,
 			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
 			startTime: Date.now(),
@@ -2751,13 +2755,13 @@ describe(runProjects, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (runOptions) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
 			},
 		};
 
-		await runProjects({
+		await runProjectsAsync({
 			backend,
 			projects: [
 				{
@@ -2783,7 +2787,7 @@ describe(runProjects, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
-			runTests: async (runOptions) => {
+			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return multiEntryResult([
 					{ result: createPassingResult() },
@@ -2792,7 +2796,7 @@ describe(runProjects, () => {
 			},
 		};
 
-		await runProjects({
+		await runProjectsAsync({
 			backend,
 			projects: [
 				{
@@ -2829,7 +2833,7 @@ describe(runProjects, () => {
 		function backendReturning(result: BackendResult): Backend {
 			return {
 				kind: "open-cloud",
-				runTests: async () => result,
+				runTestsAsync: async () => result,
 			};
 		}
 
@@ -2845,7 +2849,7 @@ describe(runProjects, () => {
 				timing: DEFAULT_TIMING,
 			};
 
-			const { results } = await runProjects({
+			const { results } = await runProjectsAsync({
 				backend: backendReturning(backendResult),
 				deferFormatting: true,
 				projects: [
@@ -2869,7 +2873,7 @@ describe(runProjects, () => {
 				timing: DEFAULT_TIMING,
 			};
 
-			const { results } = await runProjects({
+			const { results } = await runProjectsAsync({
 				backend: backendReturning(backendResult),
 				deferFormatting: true,
 				projects: [
@@ -2897,7 +2901,7 @@ describe(runProjects, () => {
 				timing: DEFAULT_TIMING,
 			};
 
-			const { results } = await runProjects({
+			const { results } = await runProjectsAsync({
 				backend: backendReturning(backendResult),
 				projects: [
 					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
@@ -2937,7 +2941,7 @@ describe(runProjects, () => {
 				timing: DEFAULT_TIMING,
 			};
 
-			const { results } = await runProjects({
+			const { results } = await runProjectsAsync({
 				backend: backendReturning(backendResult),
 				deferFormatting: true,
 				projects: [
@@ -2972,7 +2976,7 @@ describe(runProjects, () => {
 				timing: DEFAULT_TIMING,
 			};
 
-			const { results } = await runProjects({
+			const { results } = await runProjectsAsync({
 				backend: backendReturning(backendResult),
 				deferFormatting: true,
 				projects: [
@@ -3010,7 +3014,7 @@ describe(runProjects, () => {
 				timing: DEFAULT_TIMING,
 			};
 
-			const { results } = await runProjects({
+			const { results } = await runProjectsAsync({
 				backend: backendReturning(backendResult),
 				deferFormatting: true,
 				projects: [
@@ -3044,7 +3048,7 @@ describe(runProjects, () => {
 				timing: DEFAULT_TIMING,
 			};
 
-			const { results } = await runProjects({
+			const { results } = await runProjectsAsync({
 				backend: backendReturning(backendResult),
 				projects: [
 					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
@@ -3068,7 +3072,7 @@ describe(runProjects, () => {
 			};
 
 			await expect(
-				runProjects({
+				runProjectsAsync({
 					backend: backendReturning(backendResult),
 					projects: [
 						{

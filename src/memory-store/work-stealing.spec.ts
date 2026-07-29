@@ -2,7 +2,11 @@ import { WorkQueue } from "@isentinel/roblox-runner";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { decodeQueueItem, encodeQueueItem, prepareWorkStealingQueue } from "./work-stealing.ts";
+import {
+	decodeQueueItem,
+	encodeQueueItem,
+	prepareWorkStealingQueueAsync,
+} from "./work-stealing.ts";
 
 interface EnqueueCall {
 	items: ReadonlyArray<unknown>;
@@ -42,13 +46,13 @@ function createQueueStub(enqueueImpl?: () => Promise<void>): {
 
 const CREDENTIALS = { apiKey: "test-key", universeId: "123" };
 
-describe(prepareWorkStealingQueue, () => {
+describe(prepareWorkStealingQueueAsync, () => {
 	it("should push every package onto a per-run UUID-keyed queue with default TTL", async () => {
 		expect.assertions(3);
 
 		const { enqueueCalls, factory, queueIds } = createQueueStub();
 
-		await prepareWorkStealingQueue({
+		await prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,
 			packages: [
 				{ pkg: "@halcyon/foo", project: "alpha" },
@@ -69,7 +73,7 @@ describe(prepareWorkStealingQueue, () => {
 
 		const { enqueueCalls, factory } = createQueueStub();
 
-		await prepareWorkStealingQueue({
+		await prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,
 			packages: [{ pkg: "@halcyon/foo", project: "alpha" }],
 			perPackageTimeoutSeconds: 60,
@@ -86,7 +90,7 @@ describe(prepareWorkStealingQueue, () => {
 
 		const { factory } = createQueueStub();
 
-		const prepared = await prepareWorkStealingQueue({
+		const prepared = await prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,
 			packages: [],
 			perPackageTimeoutSeconds: 60,
@@ -102,7 +106,7 @@ describe(prepareWorkStealingQueue, () => {
 
 		const { factory } = createQueueStub();
 
-		const prepared = await prepareWorkStealingQueue({
+		const prepared = await prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,
 			packages: [],
 			perPackageTimeoutSeconds: 60,
@@ -118,7 +122,7 @@ describe(prepareWorkStealingQueue, () => {
 
 		const { enqueueCalls, factory } = createQueueStub();
 
-		await prepareWorkStealingQueue({
+		await prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,
 			packages: [{ pkg: "@halcyon/foo", project: "alpha" }],
 			perPackageTimeoutSeconds: 60,
@@ -134,7 +138,7 @@ describe(prepareWorkStealingQueue, () => {
 
 		const { enqueueCalls, factory } = createQueueStub();
 
-		const prepared = await prepareWorkStealingQueue({
+		const prepared = await prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,
 			packages: [],
 			perPackageTimeoutSeconds: 60,
@@ -154,7 +158,7 @@ describe(prepareWorkStealingQueue, () => {
 		});
 
 		await expect(
-			prepareWorkStealingQueue({
+			prepareWorkStealingQueueAsync({
 				credentials: CREDENTIALS,
 				packages: [{ pkg: "alpha", project: "p1" }],
 				perPackageTimeoutSeconds: 60,
@@ -169,7 +173,7 @@ describe(prepareWorkStealingQueue, () => {
 
 		const { factory } = createQueueStub();
 
-		const prepared = await prepareWorkStealingQueue({
+		const prepared = await prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,
 			packages: [],
 			perPackageTimeoutSeconds: 60,
@@ -221,7 +225,7 @@ describe(prepareWorkStealingQueue, () => {
 
 		// Just confirming construction succeeds — actual HTTP would fail without
 		// mocks; this exercises the default factory branch.
-		const promise = prepareWorkStealingQueue({
+		const promise = prepareWorkStealingQueueAsync({
 			credentials: CREDENTIALS,
 			packages: [],
 			perPackageTimeoutSeconds: 60,
@@ -235,7 +239,7 @@ describe(prepareWorkStealingQueue, () => {
 		expect.assertions(1);
 
 		// Exercises the baseUrl-defined branch of the default factory path.
-		const promise = prepareWorkStealingQueue({
+		const promise = prepareWorkStealingQueueAsync({
 			baseUrl: "http://127.0.0.1:4010",
 			credentials: CREDENTIALS,
 			packages: [],

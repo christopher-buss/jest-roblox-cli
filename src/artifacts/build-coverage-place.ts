@@ -59,11 +59,13 @@ export interface CoveragePlaceBundle {
  * (the run path skips baking for studio-cli, which injects configs at
  * runtime), because a place handed to a foreign runner must be self-contained.
  */
-export async function buildCoveragePlace(config: ResolvedConfig): Promise<CoveragePlaceBundle> {
+export async function buildCoveragePlaceAsync(
+	config: ResolvedConfig,
+): Promise<CoveragePlaceBundle> {
 	const cli: CliOptions = {};
 	const merged = mergeCliWithConfig(cli, { ...config, collectCoverage: true });
 
-	const projects = await resolveProjects(merged);
+	const projects = await resolveProjectsAsync(merged);
 
 	const cacheRoot = path.resolve(merged.rootDir, CACHE_DIR);
 	// Mirror the run path's pre-flight: drop marker-bearing leftover stubs, then
@@ -98,7 +100,7 @@ export async function buildCoveragePlace(config: ResolvedConfig): Promise<Covera
  * derived from its luau roots. Type-only configs are irrelevant here — a build
  * always instruments.
  */
-async function resolveProjects(config: ResolvedConfig): Promise<Array<ResolvedProjectConfig>> {
+async function resolveProjectsAsync(config: ResolvedConfig): Promise<Array<ResolvedProjectConfig>> {
 	const rojoTree = loadRojoTree(config);
 	const rawProjects = getRawProjects(config);
 	if (rawProjects !== undefined && rawProjects.length > 0) {

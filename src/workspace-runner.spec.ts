@@ -11,17 +11,17 @@ import type { CliOptions, WorkspaceRunOptions } from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { MANIFEST_VERSION } from "./coverage-pipeline/manifest.ts";
 import type { WorkspacePackageCoverage } from "./coverage-pipeline/workspace-prepare.ts";
-import { prepareWorkStealingQueue } from "./memory-store/work-stealing.ts";
+import { prepareWorkStealingQueueAsync } from "./memory-store/work-stealing.ts";
 import { buildPlace } from "./staging/place-builder.ts";
 import { createTimingCollector } from "./timing/orchestration-collector.ts";
-import { runTypecheck } from "./typecheck/runner.ts";
+import { runTypecheckAsync } from "./typecheck/runner.ts";
 import type { JestResult } from "./types/jest-result.ts";
 import type { WorkspaceProjectResult } from "./workspace-runner.ts";
-import { runWorkspace } from "./workspace-runner.ts";
+import { runWorkspaceAsync } from "./workspace-runner.ts";
 
 vi.mock(import("./memory-store/work-stealing.ts"), () => {
 	return {
-		prepareWorkStealingQueue: vi.fn<typeof prepareWorkStealingQueue>(),
+		prepareWorkStealingQueueAsync: vi.fn<typeof prepareWorkStealingQueueAsync>(),
 	};
 });
 
@@ -101,7 +101,7 @@ function createStubBackend(entries: Array<BackendStubEntry>): {
 	const captured: { options?: BackendOptions } = {};
 	const backend: Backend = {
 		kind: "open-cloud",
-		runTests: async (options: BackendOptions): Promise<BackendResult> => {
+		runTestsAsync: async (options: BackendOptions): Promise<BackendResult> => {
 			captured.options = options;
 			return {
 				rawResults: entries.map((entry) => {
@@ -146,10 +146,10 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 // Most specs assert only on the runtime results array; unwrap it from the
 // runner output so they stay focused on the per-(package, project) entries.
 // Preserves the `undefined` preflight sentinel.
-async function runWorkspaceResults(
-	options: Parameters<typeof runWorkspace>[0],
+async function runWorkspaceResultsAsync(
+	options: Parameters<typeof runWorkspaceAsync>[0],
 ): Promise<Array<WorkspaceProjectResult> | undefined> {
-	const output = await runWorkspace(options);
+	const output = await runWorkspaceAsync(options);
 	return output?.results;
 }
 
@@ -213,7 +213,7 @@ function seedPackage(
 	};
 }
 
-describe(runWorkspace, () => {
+describe(runWorkspaceAsync, () => {
 	it("should load each package's config independently and embed both in the materializer payload", async () => {
 		expect.assertions(2);
 
@@ -240,7 +240,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -273,7 +273,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/foo.spec" }),
 			packageInfos: [FOO_INFO],
@@ -306,7 +306,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/other-package.spec" }),
 			packageInfos: [FOO_INFO],
@@ -343,7 +343,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -388,7 +388,7 @@ describe(runWorkspace, () => {
 		// `runWorkspace` directly must own that lifecycle themselves.
 		const timing = createTimingCollector();
 		try {
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -455,7 +455,7 @@ describe(runWorkspace, () => {
 		const timing = createTimingCollector();
 		try {
 			await expect(
-				runWorkspace({
+				runWorkspaceAsync({
 					backend,
 					cli: makeCli(),
 					packageInfos: [FOO_INFO],
@@ -512,7 +512,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "server" },
 		]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -558,7 +558,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "main" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -595,7 +595,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -638,7 +638,7 @@ describe(runWorkspace, () => {
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -689,7 +689,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -738,7 +738,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -805,7 +805,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "server" },
 		]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -850,7 +850,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 		]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli({ project: ["client"] }),
 			packageInfos: [FOO_INFO],
@@ -882,7 +882,7 @@ describe(runWorkspace, () => {
 		const { backend } = createStubBackend([]);
 
 		await expect(
-			runWorkspace({
+			runWorkspaceAsync({
 				backend,
 				cli: makeCli({ project: ["nonexistent"] }),
 				packageInfos: [FOO_INFO],
@@ -940,7 +940,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -984,7 +984,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1035,7 +1035,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1086,7 +1086,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1148,7 +1148,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "@halcyon/bar" },
 		]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -1205,7 +1205,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1260,7 +1260,7 @@ describe(runWorkspace, () => {
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [BAR_INFO],
@@ -1299,7 +1299,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -1329,7 +1329,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1360,7 +1360,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1391,7 +1391,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -1422,7 +1422,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1469,7 +1469,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/baz", project: "@halcyon/baz" },
 		]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO, BAZ_INFO],
@@ -1506,7 +1506,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -1553,7 +1553,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1593,7 +1593,7 @@ describe(runWorkspace, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1622,7 +1622,7 @@ describe(runWorkspace, () => {
 
 		const { backend } = createStubBackend([]);
 
-		const results = await runWorkspaceResults({
+		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -1676,7 +1676,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -1743,7 +1743,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -1818,7 +1818,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -1876,7 +1876,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -1931,7 +1931,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -1984,7 +1984,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			const results = await runWorkspaceResults({
+			const results = await runWorkspaceResultsAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -2026,7 +2026,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			const results = await runWorkspaceResults({
+			const results = await runWorkspaceResultsAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -2084,7 +2084,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO, BAR_INFO],
@@ -2139,7 +2139,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO, BAR_INFO],
@@ -2175,7 +2175,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2214,7 +2214,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2258,7 +2258,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO, BAR_INFO],
@@ -2299,7 +2299,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				packageInfos: [FOO_INFO],
@@ -2339,7 +2339,7 @@ describe(runWorkspace, () => {
 			]);
 
 			await expect(
-				runWorkspace({
+				runWorkspaceAsync({
 					backend,
 					cli: makeCli({ collectCoverage: true }),
 					packageInfos: [FOO_INFO],
@@ -2375,7 +2375,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2392,7 +2392,7 @@ describe(runWorkspace, () => {
 		const testCredentials = { apiKey: "test-key", universeId: "u-123" };
 
 		function mockPreparedQueue(queueId: string): void {
-			vi.mocked(prepareWorkStealingQueue).mockResolvedValue({
+			vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
 				invisibilityWindowSeconds: 90,
 				queueId,
 			});
@@ -2425,7 +2425,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO, BAR_INFO],
@@ -2438,7 +2438,7 @@ describe(runWorkspace, () => {
 			expect(captured.options!.workStealing).toBeTrue();
 			expect(captured.options!.parallel).toBe(2);
 
-			const prepareCall = vi.mocked(prepareWorkStealingQueue).mock.calls[0]![0];
+			const prepareCall = vi.mocked(prepareWorkStealingQueueAsync).mock.calls[0]![0];
 
 			expect(prepareCall.packages).toIncludeAllMembers([
 				{ pkg: "@halcyon/foo", project: "@halcyon/foo" },
@@ -2466,7 +2466,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2498,7 +2498,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2509,7 +2509,7 @@ describe(runWorkspace, () => {
 			});
 
 			expect(captured.options!.workStealing).toBeUndefined();
-			expect(vi.mocked(prepareWorkStealingQueue)).not.toHaveBeenCalled();
+			expect(vi.mocked(prepareWorkStealingQueueAsync)).not.toHaveBeenCalled();
 		});
 
 		it("should keep the existing path when workStealingCredentials is not provided even with parallel>1", async () => {
@@ -2531,7 +2531,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2564,7 +2564,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				// Exercise the streaming-side baseUrl plumbing on the same call;
@@ -2580,7 +2580,7 @@ describe(runWorkspace, () => {
 				workStealingCredentials: { ...testCredentials, baseUrl: "http://127.0.0.1:4010" },
 			});
 
-			expect(vi.mocked(prepareWorkStealingQueue).mock.calls[0]![0].baseUrl).toBe(
+			expect(vi.mocked(prepareWorkStealingQueueAsync).mock.calls[0]![0].baseUrl).toBe(
 				"http://127.0.0.1:4010",
 			);
 		});
@@ -2603,7 +2603,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				onStreamingResult: () => {
@@ -2638,7 +2638,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				onStreamingResult: () => {
@@ -2672,7 +2672,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2718,13 +2718,13 @@ describe(runWorkspace, () => {
 			// simulating an entry observed mid-task.
 			const wrappedBackend: Backend = {
 				kind: "open-cloud",
-				runTests: async (options) => {
+				runTestsAsync: async (options) => {
 					options.streaming!.onPackageResult(streamedEntry);
-					return backend.runTests(options);
+					return backend.runTestsAsync(options);
 				},
 			};
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend: wrappedBackend,
 				cli: makeCli(),
 				onStreamingResult: (entry) => {
@@ -2759,7 +2759,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2800,7 +2800,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2840,7 +2840,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -2885,7 +2885,7 @@ describe(runWorkspace, () => {
 					typecheck: { enabled: true },
 				},
 			});
-			vi.mocked(runTypecheck).mockResolvedValue(
+			vi.mocked(runTypecheckAsync).mockResolvedValue(
 				makeTypeResult({
 					testResults: [
 						{
@@ -2901,7 +2901,7 @@ describe(runWorkspace, () => {
 
 			const { backend } = createStubBackend([]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ typecheckOnly: true }),
 				packageInfos: [FOO_INFO],
@@ -2946,7 +2946,7 @@ describe(runWorkspace, () => {
 					typecheck: { enabled: true },
 				},
 			});
-			vi.mocked(runTypecheck).mockResolvedValue(
+			vi.mocked(runTypecheckAsync).mockResolvedValue(
 				makeTypeResult({
 					testResults: [
 						{
@@ -2964,7 +2964,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3009,7 +3009,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: gameOutputRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3051,7 +3051,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: gameOutputRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3103,7 +3103,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3139,7 +3139,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: "not-json", jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3195,7 +3195,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO, BAR_INFO],
@@ -3272,7 +3272,7 @@ describe(runWorkspace, () => {
 				},
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3335,7 +3335,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3361,7 +3361,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3387,7 +3387,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3413,7 +3413,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3439,7 +3439,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3460,7 +3460,7 @@ describe(runWorkspace, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3481,7 +3481,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3515,7 +3515,7 @@ describe(runWorkspace, () => {
 			]);
 			const outputFile = path.join(ROOT, "jest-output.log");
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3548,7 +3548,7 @@ describe(runWorkspace, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3582,7 +3582,7 @@ describe(runWorkspace, () => {
 					typecheck: { enabled: true },
 				},
 			});
-			vi.mocked(runTypecheck).mockResolvedValue(
+			vi.mocked(runTypecheckAsync).mockResolvedValue(
 				makeTypeResult({
 					testResults: [
 						{
@@ -3601,7 +3601,7 @@ describe(runWorkspace, () => {
 			]);
 			const outputFile = path.join(ROOT, "jest-output.log");
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ typecheckOnly: true }),
 				packageInfos: [FOO_INFO],
@@ -3638,7 +3638,7 @@ describe(runWorkspace, () => {
 					typecheck: { enabled: true },
 				},
 			});
-			vi.mocked(runTypecheck).mockResolvedValue(
+			vi.mocked(runTypecheckAsync).mockResolvedValue(
 				makeTypeResult({
 					testResults: [
 						{
@@ -3657,7 +3657,7 @@ describe(runWorkspace, () => {
 			]);
 			const outputFile = path.join(ROOT, "jest-output.log");
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO],
@@ -3714,7 +3714,7 @@ describe(runWorkspace, () => {
 				},
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO, BAR_INFO],
@@ -3788,7 +3788,7 @@ describe(runWorkspace, () => {
 				},
 			]);
 
-			await runWorkspace({
+			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				packageInfos: [FOO_INFO, BAR_INFO],
@@ -3871,13 +3871,13 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const result = await runWorkspace({
+		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -3886,7 +3886,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(vi.mocked(runTypecheck)).toHaveBeenCalledWith(
+		expect(vi.mocked(runTypecheckAsync)).toHaveBeenCalledWith(
 			expect.objectContaining({
 				files: expect.arrayContaining([
 					expect.stringMatching(/foo\.spec-d\.ts$/),
@@ -3921,13 +3921,13 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -3936,7 +3936,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		const { files } = vi.mocked(runTypecheck).mock.calls[0]![0];
+		const { files } = vi.mocked(runTypecheckAsync).mock.calls[0]![0];
 
 		expect(files.some((file) => file.endsWith("x.spec-d.ts"))).toBeTrue();
 		expect(files.some((file) => file.endsWith("foo.spec-d.ts"))).toBeFalse();
@@ -3967,13 +3967,13 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -3982,7 +3982,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		const { files } = vi.mocked(runTypecheck).mock.calls[0]![0];
+		const { files } = vi.mocked(runTypecheckAsync).mock.calls[0]![0];
 
 		expect(files.some((file) => file.endsWith("a.spec-d.ts"))).toBeTrue();
 		expect(files.some((file) => file.endsWith("a.gen.spec-d.ts"))).toBeFalse();
@@ -4023,14 +4023,14 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "server" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -4039,9 +4039,9 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(vi.mocked(runTypecheck)).toHaveBeenCalledOnce();
+		expect(vi.mocked(runTypecheckAsync)).toHaveBeenCalledOnce();
 
-		const call = vi.mocked(runTypecheck).mock.calls[0]![0];
+		const call = vi.mocked(runTypecheckAsync).mock.calls[0]![0];
 
 		expect(call.rootDir).toBe(FOO_DIR);
 		expect(call.files).toHaveLength(2);
@@ -4084,14 +4084,14 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "@halcyon/bar" },
 		]);
 
-		await runWorkspace({
+		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -4100,17 +4100,17 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(vi.mocked(runTypecheck)).toHaveBeenCalledTimes(2);
+		expect(vi.mocked(runTypecheckAsync)).toHaveBeenCalledTimes(2);
 
 		const rootDirectories = vi
-			.mocked(runTypecheck)
+			.mocked(runTypecheckAsync)
 			.mock.calls.map((call) => call[0].rootDir)
 			.sort();
 
 		expect(rootDirectories).toStrictEqual([BAR_DIR, FOO_DIR].sort());
 		expect(
 			vi
-				.mocked(runTypecheck)
+				.mocked(runTypecheckAsync)
 				.mock.calls.every((call) => call[0].tsconfig === "tsconfig.types.json"),
 		).toBeTrue();
 	});
@@ -4154,7 +4154,7 @@ describe("workspace type tests", () => {
 
 		// Each group's tsgo returns the SAME package-relative file path; identity
 		// composition must keep the two packages' results distinguishable.
-		vi.mocked(runTypecheck).mockResolvedValue(
+		vi.mocked(runTypecheckAsync).mockResolvedValue(
 			makeTypeResult({
 				testResults: [
 					{
@@ -4173,7 +4173,7 @@ describe("workspace type tests", () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "@halcyon/bar" },
 		]);
 
-		const result = await runWorkspace({
+		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO, BAR_INFO],
@@ -4225,7 +4225,7 @@ describe("workspace type tests", () => {
 		});
 		const backend: Backend = {
 			kind: "open-cloud",
-			runTests: async (): Promise<BackendResult> => {
+			runTestsAsync: async (): Promise<BackendResult> => {
 				signalRuntimeStarted();
 				await typecheckStarted;
 				return {
@@ -4234,13 +4234,13 @@ describe("workspace type tests", () => {
 				};
 			},
 		};
-		vi.mocked(runTypecheck).mockImplementation(async () => {
+		vi.mocked(runTypecheckAsync).mockImplementation(async () => {
 			signalTypecheckStarted();
 			await runtimeStarted;
 			return makeTypeResult();
 		});
 
-		const result = await runWorkspace({
+		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -4271,13 +4271,13 @@ describe("workspace type tests", () => {
 			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.ts"] },
 		});
 
-		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
 
 		const { backend, captured } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const result = await runWorkspace({
+		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ typecheckOnly: true }),
 			packageInfos: [FOO_INFO],
@@ -4316,11 +4316,11 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheck).mockResolvedValue(makeTypeResult());
+		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([]);
 
-		const result = await runWorkspace({
+		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
@@ -4355,7 +4355,7 @@ describe("workspace type tests", () => {
 
 		const { backend } = createStubBackend([]);
 
-		const result = await runWorkspace({
+		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],

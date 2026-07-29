@@ -125,7 +125,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			await client.write(
+			await client.writeAsync(
 				makeEntry({
 					elapsedMs: 1234,
 					numFailedTests: 2,
@@ -166,7 +166,7 @@ describe(StreamingResultClient, () => {
 				ttlSeconds: 120,
 			});
 
-			await client.write(makeEntry());
+			await client.writeAsync(makeEntry());
 
 			expect(stub.createdRequests[0]!.ttl).toBe(120);
 		});
@@ -181,7 +181,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			await expect(client.write(makeEntry())).rejects.toThrow(
+			await expect(client.writeAsync(makeEntry())).rejects.toThrow(
 				"Failed to write streaming result: rate limited",
 			);
 		});
@@ -198,7 +198,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			const results = await client.readAll();
+			const results = await client.readAllAsync();
 
 			expect(results).toStrictEqual([]);
 		});
@@ -213,7 +213,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			await client.readAll();
+			await client.readAllAsync();
 
 			expect(stub.listCalls[0]!.maxPageSize).toBe(100);
 		});
@@ -241,7 +241,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			const results = await client.readAll();
+			const results = await client.readAllAsync();
 
 			expect(results).toStrictEqual([{ id: "a::p", value: decoded }]);
 		});
@@ -277,7 +277,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			const results = await client.readAll();
+			const results = await client.readAllAsync();
 
 			expect(results.map((entry) => entry.id)).toStrictEqual(["a::p", "b::q"]);
 			expect(stub.listCalls[1]!.pageToken).toBe("page-2");
@@ -293,7 +293,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			await expect(client.readAll()).rejects.toThrow(
+			await expect(client.readAllAsync()).rejects.toThrow(
 				"Failed to read streaming results: auth failed",
 			);
 		});
@@ -315,7 +315,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			await expect(client.readAll()).rejects.toThrow("project must be a string");
+			await expect(client.readAllAsync()).rejects.toThrow("project must be a string");
 		});
 	});
 
@@ -330,7 +330,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			await client.delete("a::p");
+			await client.deleteAsync("a::p");
 
 			expect(stub.deletedRequests[0]).toStrictEqual({
 				itemId: "a::p",
@@ -349,7 +349,7 @@ describe(StreamingResultClient, () => {
 				storageFactory: () => stub.storage,
 			});
 
-			await expect(client.delete("a::p")).rejects.toThrow(
+			await expect(client.deleteAsync("a::p")).rejects.toThrow(
 				"Failed to delete streaming result: not found",
 			);
 		});

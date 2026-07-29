@@ -8,19 +8,19 @@ import type { ExecuteResult } from "./executor.ts";
 import type { StreamingAggregatorOnEntry } from "./reporter/streaming-aggregator.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
 import { attachCoverageManifests } from "./workspace/coverage-attach.ts";
-import { prepareWorkspaceDispatch, runDispatchedProjects } from "./workspace/dispatch.ts";
+import { prepareWorkspaceDispatchAsync, runDispatchedProjectsAsync } from "./workspace/dispatch.ts";
 import { ensurePackageDirectories } from "./workspace/ensure-paths.ts";
-import { writeWorkspaceSinks } from "./workspace/output-sinks.ts";
-import { type LoadedPackage, loadWorkspacePackages } from "./workspace/package-loader.ts";
+import { writeWorkspaceSinksAsync } from "./workspace/output-sinks.ts";
+import { type LoadedPackage, loadWorkspacePackagesAsync } from "./workspace/package-loader.ts";
 import type { PackageInfo } from "./workspace/package-resolver.ts";
 import { stageWorkspacePlace } from "./workspace/place-staging.ts";
 import { type PreflightError, validatePackages } from "./workspace/preflight.ts";
-import { resolvePackageContexts } from "./workspace/project-contexts.ts";
+import { resolvePackageContextsAsync } from "./workspace/project-contexts.ts";
 import { selectWorkspaceTests, type WorkspaceTestSelection } from "./workspace/test-selection.ts";
 import {
 	attachTypecheck,
-	runTypecheckOnlyWorkspace,
-	runWorkspaceTypecheckPass,
+	runTypecheckOnlyWorkspaceAsync,
+	runWorkspaceTypecheckPassAsync,
 	type WorkspaceRunnerOutput,
 	type WorkspaceTypecheckPass,
 } from "./workspace/typecheck-pass.ts";
@@ -85,20 +85,13 @@ interface WorkspaceRuntimeInput {
 	timing: TimingCollector;
 }
 
-export async function runWorkspace(
+export async function runWorkspaceAsync(
 	options: RunWorkspaceOptions,
 ): Promise<undefined | WorkspaceRunnerOutput> {
-	return runWorkspaceProfiled(options, options.timing ?? NOOP_TIMING_COLLECTOR);
+	return runWorkspaceProfiledAsync(options, options.timing ?? NOOP_TIMING_COLLECTOR);
 }
 
-function writePreflightErrors(errors: Array<PreflightError>): void {
-	process.stderr.write("Pre-flight validation failed:\n");
-	for (const error of errors) {
-		process.stderr.write(`  ${error.package}: ${error.reason}\n`);
-	}
-}
-
-async function executeWorkspaceRun({
+async function executeWorkspaceRunAsync({
 	options,
 	placeFile,
 	selection,
@@ -111,7 +104,7 @@ async function executeWorkspaceRun({
 	const { pending, typecheckByDirectory, typeTestEntries } = selection;
 
 	const dispatchSpec = await timing.profileAsync("prepareDispatch", async () => {
-		return prepareWorkspaceDispatch({
+		return prepareWorkspaceDispatchAsync({
 			onStreamingResult: options.onStreamingResult,
 			parallel: options.runOptions.parallel,
 			pending,
@@ -126,7 +119,7 @@ async function executeWorkspaceRun({
 	// concurrency-safe, so the pass times itself and the span lands after the
 	// barrier (same caveat as single/multi).
 	const [results, typecheckPass] = await Promise.all([
-		runDispatchedProjects({
+		runDispatchedProjectsAsync({
 			backend: options.backend,
 			dispatchSpec,
 			pending,
@@ -135,13 +128,15 @@ async function executeWorkspaceRun({
 			timing,
 			version: options.version,
 		}),
-		runWorkspaceTypecheckPass(typeTestEntries, typecheckByDirectory),
+		runWorkspaceTypecheckPassAsync(typeTestEntries, typecheckByDirectory),
 	]);
 
 	return { results, typecheckPass };
 }
 
-async function runWorkspaceRuntime(input: WorkspaceRuntimeInput): Promise<WorkspaceRunnerOutput> {
+async function runWorkspaceRuntimeAsync(
+	input: WorkspaceRuntimeInput,
+): Promise<WorkspaceRunnerOutput> {
 	const { options, selection, timing } = input;
 	const { coverageByPackage, placeFile } = stageWorkspacePlace({
 		cacheDirectory: input.cacheDirectory,
@@ -151,9 +146,9 @@ async function runWorkspaceRuntime(input: WorkspaceRuntimeInput): Promise<Worksp
 		workspaceRoot: options.workspaceRoot,
 	});
 
-	const { results, typecheckPass } = await executeWorkspaceRun({ ...input, placeFile });
+	const { results, typecheckPass } = await executeWorkspaceRunAsync({ ...input, placeFile });
 
-	await writeWorkspaceSinks({
+	await writeWorkspaceSinksAsync({
 		pending: selection.pending,
 		results,
 		runOptions: options.runOptions,
@@ -175,7 +170,7 @@ async function runWorkspaceRuntime(input: WorkspaceRuntimeInput): Promise<Worksp
 // packages), skip instrumentation, the synthesized place build, and Open Cloud
 // dispatch entirely — run only the host-side type pass and return it. Without
 // Type Tests, nothing to test.
-async function runWorkspaceWithoutRuntimeJobs(
+async function runWorkspaceNoRuntimeAsync(
 	options: RunWorkspaceOptions,
 	selection: WorkspaceTestSelection,
 	timing: TimingCollector,
@@ -184,7 +179,7 @@ async function runWorkspaceWithoutRuntimeJobs(
 		return { results: [] };
 	}
 
-	return runTypecheckOnlyWorkspace({
+	return runTypecheckOnlyWorkspaceAsync({
 		runOptions: options.runOptions,
 		timing,
 		typecheckByDirectory: selection.typecheckByDirectory,
@@ -194,7 +189,39 @@ async function runWorkspaceWithoutRuntimeJobs(
 	});
 }
 
-async function runWorkspaceProfiled(
+function writePreflightErrors(errors: Array<PreflightError>): void {
+	process.stderr.write("Pre-flight validation failed:\n");
+	for (const error of errors) {
+		process.stderr.write(`  ${error.package}: ${error.reason}\n`);
+	}
+}
+
+function runWorkspacePreflight(loaded: Array<LoadedPackage>): boolean {
+	const descriptors = loaded.map((entry) => entry.descriptor);
+	ensurePackageDirectories(descriptors);
+
+	const errors = validatePackages(descriptors);
+	if (errors.length === 0) {
+		return true;
+	}
+
+	writePreflightErrors(errors);
+	return false;
+}
+
+function reportTestSelectionErrors(selection: WorkspaceTestSelection): void {
+	for (const error of selection.emptyPackageErrors) {
+		process.stderr.write(`${error}\n`);
+	}
+}
+
+function createWorkspaceCacheDirectory(workspaceRoot: string): string {
+	const cacheDirectory = path.join(workspaceRoot, WORKSPACE_CACHE_DIRECTORY);
+	fs.mkdirSync(cacheDirectory, { recursive: true });
+	return cacheDirectory;
+}
+
+async function runWorkspaceProfiledAsync(
 	options: RunWorkspaceOptions,
 	timing: TimingCollector,
 ): Promise<undefined | WorkspaceRunnerOutput> {
@@ -206,36 +233,35 @@ async function runWorkspaceProfiled(
 	// (and the path preflight uses) before loadConfig pinned every package
 	// to the parent's rojo file.
 	const loaded = await timing.profileAsync("loadPackages", async () => {
-		return loadWorkspacePackages({ cli, packageInfos, timing });
+		return loadWorkspacePackagesAsync({ cli, packageInfos, timing });
 	});
 
-	ensurePackageDirectories(loaded.map((entry) => entry.descriptor));
-
-	const errors = validatePackages(loaded.map((entry) => entry.descriptor));
-	if (errors.length > 0) {
-		writePreflightErrors(errors);
+	if (!runWorkspacePreflight(loaded)) {
 		return undefined;
 	}
 
-	const cacheDirectory = path.join(workspaceRoot, WORKSPACE_CACHE_DIRECTORY);
-	fs.mkdirSync(cacheDirectory, { recursive: true });
+	const cacheDirectory = createWorkspaceCacheDirectory(workspaceRoot);
 
 	const contexts = await timing.profileAsync("resolveContexts", async () => {
-		return resolvePackageContexts({ cacheDirectory, loaded });
+		return resolvePackageContextsAsync({ cacheDirectory, loaded });
 	});
 
 	const selection = timing.profile("discoverTests", () => selectWorkspaceTests(contexts, cli));
 	if (selection.emptyPackageErrors.length > 0) {
-		for (const error of selection.emptyPackageErrors) {
-			process.stderr.write(`${error}\n`);
-		}
-
+		reportTestSelectionErrors(selection);
 		return undefined;
 	}
 
 	if (selection.pending.length === 0) {
-		return runWorkspaceWithoutRuntimeJobs(options, selection, timing);
+		return runWorkspaceNoRuntimeAsync(options, selection, timing);
 	}
 
-	return runWorkspaceRuntime({ cacheDirectory, loaded, options, selection, startTime, timing });
+	return runWorkspaceRuntimeAsync({
+		cacheDirectory,
+		loaded,
+		options,
+		selection,
+		startTime,
+		timing,
+	});
 }

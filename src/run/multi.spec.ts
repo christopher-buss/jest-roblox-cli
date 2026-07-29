@@ -5,7 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { resolveBackend } from "../backends/auto.ts";
+import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { collectProjectRoots, filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
@@ -25,13 +25,13 @@ import {
 } from "../config/stubs.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
-import { type ExecuteResult, runProjects } from "../executor.ts";
+import { type ExecuteResult, runProjectsAsync } from "../executor.ts";
 import { synthesize } from "../staging/synthesizer.ts";
-import { runTypecheck } from "../typecheck/runner.ts";
+import { runTypecheckAsync } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
-import { runMultiProject } from "./multi.ts";
+import { runMultiProjectAsync } from "./multi.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -58,9 +58,9 @@ const mocks = {
 	hasUserAuthoredConfig: vi.mocked(hasUserAuthoredConfig),
 	prepareCoverage: vi.mocked(prepareCoverage),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
-	resolveBackend: vi.mocked(resolveBackend),
-	runProjects: vi.mocked(runProjects),
-	runTypecheck: vi.mocked(runTypecheck),
+	resolveBackend: vi.mocked(resolveBackendAsync),
+	runProjects: vi.mocked(runProjectsAsync),
+	runTypecheck: vi.mocked(runTypecheckAsync),
 	syncStubsToShadowDirectory: vi.mocked(syncStubsToShadowDirectory),
 	synthesize: vi.mocked(synthesize),
 	toCoverageArtifacts: vi.mocked(toCoverageArtifacts),
@@ -112,9 +112,9 @@ function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResul
 
 function makeBackend(kind: "open-cloud" | "studio" = "studio"): Backend {
 	return {
-		close: vi.fn<NonNullable<Backend["close"]>>(),
+		closeAsync: vi.fn<NonNullable<Backend["closeAsync"]>>(),
 		kind,
-		runTests: vi.fn<Backend["runTests"]>(),
+		runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
 	};
 }
 
@@ -214,14 +214,14 @@ function seedProjectFiles(): void {
 	vol.writeFileSync("/test/src/server/b.spec.ts", "");
 }
 
-describe(runMultiProject, () => {
+describe(runMultiProjectAsync, () => {
 	it("should run all projects when no --project filter is given", async () => {
 		expect.assertions(2);
 
 		const { config } = setupDefaults();
 		seedProjectFiles();
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -238,7 +238,7 @@ describe(runMultiProject, () => {
 		seedProjectFiles();
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -254,7 +254,7 @@ describe(runMultiProject, () => {
 		// Don't seed any test files — no runtime jobs are produced.
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -269,7 +269,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		seedProjectFiles();
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli({ project: ["client"] }),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -286,7 +286,7 @@ describe(runMultiProject, () => {
 			const { config } = setupDefaults();
 			seedProjectFiles();
 
-			const result = await runMultiProject({
+			const result = await runMultiProjectAsync({
 				cli: makeCli({ files: ["src/client/a.spec.ts"] }),
 				config,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -303,7 +303,7 @@ describe(runMultiProject, () => {
 			const { config } = setupDefaults({ testPathPattern: "a" });
 			seedProjectFiles();
 
-			const result = await runMultiProject({
+			const result = await runMultiProjectAsync({
 				cli: makeCli(),
 				config,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -320,7 +320,7 @@ describe(runMultiProject, () => {
 			const { config } = setupDefaults();
 			seedProjectFiles();
 
-			const result = await runMultiProject({
+			const result = await runMultiProjectAsync({
 				cli: makeCli({ project: ["client"] }),
 				config,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -335,7 +335,7 @@ describe(runMultiProject, () => {
 			const { config } = setupDefaults();
 			seedProjectFiles();
 
-			const result = await runMultiProject({
+			const result = await runMultiProjectAsync({
 				cli: makeCli(),
 				config,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -357,7 +357,7 @@ describe(runMultiProject, () => {
 				vi.mocked(collectProjectRoots).mockReset();
 			});
 
-			const result = await runMultiProject({
+			const result = await runMultiProjectAsync({
 				cli: makeCli({ project: ["client"] }),
 				config,
 				rawProjects: [makeProjectEntry("client")],
@@ -374,7 +374,7 @@ describe(runMultiProject, () => {
 		seedProjectFiles();
 
 		await expect(
-			runMultiProject({
+			runMultiProjectAsync({
 				cli: makeCli({ project: ["nonexistent"] }),
 				config,
 				rawProjects: [makeProjectEntry("client")],
@@ -390,7 +390,7 @@ describe(runMultiProject, () => {
 		vol.writeFileSync("/test/default.project.json", JSON.stringify({ tree: "not-an-object" }));
 
 		await expect(
-			runMultiProject({
+			runMultiProjectAsync({
 				cli: makeCli(),
 				config,
 				rawProjects: [makeProjectEntry("client")],
@@ -404,7 +404,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults({ rojoProject: undefined });
 		seedProjectFiles();
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -420,7 +420,7 @@ describe(runMultiProject, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -443,7 +443,7 @@ describe(runMultiProject, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -461,7 +461,7 @@ describe(runMultiProject, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("studio"));
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -495,7 +495,7 @@ describe(runMultiProject, () => {
 		});
 		seedProjectFiles();
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -530,7 +530,7 @@ describe(runMultiProject, () => {
 		});
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -575,7 +575,7 @@ describe(runMultiProject, () => {
 		});
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -625,7 +625,7 @@ describe(runMultiProject, () => {
 		});
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -640,7 +640,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		// Don't seed any test files
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -657,7 +657,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults({ passWithNoTests: true });
 		// Don't seed any test files
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -690,7 +690,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -743,7 +743,7 @@ describe(runMultiProject, () => {
 			return makeJestResult();
 		});
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -777,7 +777,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -813,7 +813,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -840,7 +840,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -870,7 +870,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -893,7 +893,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -919,7 +919,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -945,7 +945,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -969,7 +969,7 @@ describe(runMultiProject, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -993,7 +993,7 @@ describe(runMultiProject, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1021,7 +1021,7 @@ describe(runMultiProject, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1046,7 +1046,7 @@ describe(runMultiProject, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/client/a.spec-d.ts"] }),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1074,7 +1074,7 @@ describe(runMultiProject, () => {
 			}),
 		]);
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1122,7 +1122,7 @@ describe(runMultiProject, () => {
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1160,7 +1160,7 @@ describe(runMultiProject, () => {
 			};
 		});
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -1199,7 +1199,7 @@ describe(runMultiProject, () => {
 			};
 		});
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -1218,7 +1218,7 @@ describe(runMultiProject, () => {
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1230,7 +1230,7 @@ describe(runMultiProject, () => {
 
 		mocks.runProjects.mockClear();
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("studio"));
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1249,7 +1249,7 @@ describe(runMultiProject, () => {
 
 		// Without coverageData on any project, merged.coverageData stays
 		// undefined.
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1266,7 +1266,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		// No project files seeded — the plan is empty.
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli({ passWithNoTests: true }),
 			config: { ...config, passWithNoTests: true },
 			rawProjects: [makeProjectEntry("client")],
@@ -1284,14 +1284,14 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce({
 			kind: "studio",
-			runTests: vi.fn<Backend["runTests"]>(),
+			runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
 		});
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({ displayName: "client" }),
 		]);
 		seedProjectFiles();
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1306,14 +1306,14 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce({
 			kind: "studio",
-			runTests: vi.fn<Backend["runTests"]>(),
+			runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
 		});
 		const error = new Error("dispatch failed");
 		mocks.runProjects.mockRejectedValueOnce(error);
 		seedProjectFiles();
 
 		await expect(
-			runMultiProject({
+			runMultiProjectAsync({
 				cli: makeCli(),
 				config,
 				rawProjects: [makeProjectEntry("client")],
@@ -1334,7 +1334,7 @@ describe(runMultiProject, () => {
 		]);
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1351,7 +1351,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/client/a.spec.ts"] }),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1375,7 +1375,7 @@ describe(runMultiProject, () => {
 		]);
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli({ testPathPattern: "src/client/a.spec" }),
 			config: { ...config, testPathPattern: "src/client/a.spec" },
 			rawProjects: [makeProjectEntry("client")],
@@ -1397,7 +1397,7 @@ describe(runMultiProject, () => {
 				.map((project) => ({ matchingFiles: [...files], project }));
 		});
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/server/b.spec.ts"] }),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -1417,7 +1417,7 @@ describe(runMultiProject, () => {
 			});
 		});
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/client/a.spec.ts", "src/server/b.spec.ts"] }),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -1438,7 +1438,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/server/b.spec.ts"] }),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -1461,7 +1461,7 @@ describe(runMultiProject, () => {
 		});
 
 		await expect(
-			runMultiProject({
+			runMultiProjectAsync({
 				cli: makeCli({ files: ["src/shared/x.spec.ts"] }),
 				config,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -1475,7 +1475,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		seedProjectFiles();
 
-		const result = await runMultiProject({
+		const result = await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/server/b.spec.ts"], project: ["client"] }),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -1491,7 +1491,7 @@ describe(runMultiProject, () => {
 		const { config } = setupDefaults();
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
@@ -1514,7 +1514,7 @@ describe(runMultiProject, () => {
 		mocks.createSetupResolver.mockReturnValue((input) => `resolved:${input}`);
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1536,13 +1536,13 @@ describe(runMultiProject, () => {
 		mocks.runProjects.mockRejectedValueOnce(error);
 
 		await expect(
-			runMultiProject({
+			runMultiProjectAsync({
 				cli: makeCli(),
 				config,
 				rawProjects: [makeProjectEntry("client")],
 			}),
 		).rejects.toBe(error);
-		expect(backend.close).toHaveBeenCalledOnce();
+		expect(backend.closeAsync).toHaveBeenCalledOnce();
 	});
 
 	it("should emit a stderr notice listing the leftover stubs cleaned", async () => {
@@ -1556,7 +1556,7 @@ describe(runMultiProject, () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
@@ -1579,7 +1579,7 @@ describe(runMultiProject, () => {
 		mocks.hasUserAuthoredConfig.mockReturnValue(true);
 		seedProjectFiles();
 
-		await runMultiProject({
+		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],

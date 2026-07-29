@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServer } from "../cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
 import { createFixtureSandbox, readJsonSync, runCliAsync } from "../cli/helpers.ts";
 
 // Regression: `--workspace --coverage` against a package whose rojo
@@ -61,7 +61,7 @@ describe("workspace coverage — $path mounts specs alongside helpers", () => {
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
 
-			const server = await startFakeOpenCloudServer([
+			const server = await startFakeOpenCloudServerAsync([
 				{
 					jestOutput: passingJestOutput(),
 					pkg: "@e2e/nested",
@@ -139,7 +139,7 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
 
-			const server = await startFakeOpenCloudServer([
+			const server = await startFakeOpenCloudServerAsync([
 				{
 					jestOutput: passingJestOutput(),
 					pkg: "@e2e/vendored-mount",
@@ -223,7 +223,7 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 				].join("\n"),
 			);
 
-			const server = await startFakeOpenCloudServer([
+			const server = await startFakeOpenCloudServerAsync([
 				{
 					jestOutput: passingJestOutput(),
 					pkg: "@e2e/vendored-mount",

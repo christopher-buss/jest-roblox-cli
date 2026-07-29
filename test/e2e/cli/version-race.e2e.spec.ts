@@ -2,7 +2,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { PLACE_VERSION_RACE_SENTINEL } from "../../../src/backends/open-cloud.ts";
-import { startFakeOpenCloudServer } from "./fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -25,7 +25,7 @@ describe("optimistic place-version pinning", () => {
 		// First task boots on the wrong version (a concurrent upload won the
 		// boot race) and returns the guard sentinel; the pinned retry runs the
 		// suite for real.
-		const server = await startFakeOpenCloudServer([
+		const server = await startFakeOpenCloudServerAsync([
 			{ rawOutput: PLACE_VERSION_RACE_SENTINEL },
 			{ jestOutput: buildMixedOutput(buildPassingPayload()) },
 		]);

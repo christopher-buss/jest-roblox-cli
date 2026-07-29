@@ -160,9 +160,9 @@ export function isCompositeProject(rootDirectory: string, tsconfig?: string): bo
 }
 
 // cspell:ignore tsgo
-export async function runTypecheck(options: TypecheckOptions): Promise<JestResult> {
+export async function runTypecheckAsync(options: TypecheckOptions): Promise<JestResult> {
 	const startTime = Date.now();
-	const tsgoOutput = await spawnTsgo(options);
+	const tsgoOutput = await spawnTsgoAsync(options);
 	const errors = parseTscOutput(tsgoOutput);
 
 	const files = new Map<string, FileInfo>();
@@ -479,7 +479,7 @@ function executeTsgo({
 // launch timer (`spawnTimeout`, cleared on the child `spawn` event) bounds
 // startup, and `execFile`'s own `timeout` (`options.timeout`, the run-level
 // deadline) bounds the compile.
-async function spawnTsgo(options: TypecheckOptions): Promise<string> {
+async function spawnTsgoAsync(options: TypecheckOptions): Promise<string> {
 	const isComposite = isCompositeProject(options.rootDir, options.tsconfig);
 	const args = buildTsgoArgs(options, isComposite);
 	const tsgoScript = resolveTsgoScript();

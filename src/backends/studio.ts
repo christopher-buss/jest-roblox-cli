@@ -95,7 +95,7 @@ export class StudioBackend implements Backend {
 		this.preConnected = options.preConnected;
 	}
 
-	public close(): void {
+	public closeAsync(): void {
 		// Fall back to the pre-connected server: the auto probe can detect a
 		// Studio (preConnected) and then close the backend via a zero-jobs flow
 		// that never calls runTests, so `this.wss` is never assigned.
@@ -117,16 +117,16 @@ export class StudioBackend implements Backend {
 		server.close();
 	}
 
-	public async runTests(options: BackendOptions): Promise<BackendResult> {
+	public async runTestsAsync(options: BackendOptions): Promise<BackendResult> {
 		const pre = this.preConnected;
 		this.preConnected = undefined;
 
 		this.wss ??= pre?.server ?? this.createServer(this.port);
 
-		return this.executeViaPlugin(this.wss, options.jobs, pre?.socket);
+		return this.executeViaPluginAsync(this.wss, options.jobs, pre?.socket);
 	}
 
-	private async executeViaPlugin(
+	private async executeViaPluginAsync(
 		wss: WebSocketServer,
 		jobs: Array<ProjectJob>,
 		existingSocket?: WebSocket,
@@ -135,7 +135,12 @@ export class StudioBackend implements Backend {
 		const requestMessage = buildRunTestsMessage(jobs, requestId);
 
 		const executionStart = Date.now();
-		const message = await this.waitForResult(wss, requestMessage, requestId, existingSocket);
+		const message = await this.waitForResultAsync(
+			wss,
+			requestMessage,
+			requestId,
+			existingSocket,
+		);
 
 		if (message.type === "version_mismatch") {
 			throw new Error(
@@ -159,7 +164,7 @@ export class StudioBackend implements Backend {
 		return { rawResults, timing: { executionMs } };
 	}
 
-	private async waitForResult(
+	private async waitForResultAsync(
 		wss: WebSocketServer,
 		requestMessage: object,
 		requestId: string,

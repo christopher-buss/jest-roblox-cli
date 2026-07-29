@@ -13,7 +13,7 @@ import {
 	type GitHubActionsFormatterOptions,
 	resolveGitHubActionsOptions,
 } from "./formatters/github-actions.ts";
-import { writeJsonFile } from "./formatters/json.ts";
+import { writeJsonFileAsync } from "./formatters/json.ts";
 import { findFormatterOptions, usesAgentFormatter } from "./formatters/utils.ts";
 import {
 	extractCoverageDisplayFilter,
@@ -97,7 +97,7 @@ export function mergeResults(
 // sides through `mergeResults` here means a new result dimension lands in the
 // file for every mode by a one-line change to that merge, with no second writer
 // to keep in sync (see `tools/jest-roblox-cli/CLAUDE.md`).
-export async function writeResultFile(
+export async function writeResultFileAsync(
 	outputFile: string | undefined,
 	typecheck: JestResult | undefined,
 	runtime: JestResult | undefined,
@@ -106,10 +106,10 @@ export async function writeResultFile(
 		return;
 	}
 
-	await writeJsonFile(mergeResults(typecheck, runtime), outputFile);
+	await writeJsonFileAsync(mergeResults(typecheck, runtime), outputFile);
 }
 
-export async function outputSingleResult(
+export async function outputSingleResultAsync(
 	config: ResolvedConfig,
 	{
 		coverageDisplayFilter: agentTextFilter,
@@ -135,7 +135,7 @@ export async function outputSingleResult(
 		runCoverage: () => processCoverage({ agentTextFilter, config, coverageData }),
 	});
 
-	await writeResultFile(config.outputFile, typecheckResult, runtimeResult?.result);
+	await writeResultFileAsync(config.outputFile, typecheckResult, runtimeResult?.result);
 
 	if (runtimeResult !== undefined) {
 		writeGameOutputIfConfigured(config, runtimeResult.gameOutput, {
@@ -182,7 +182,7 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 	};
 }
 
-export async function outputMultiResult(
+export async function outputMultiResultAsync(
 	rootConfig: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
 ): Promise<number> {
@@ -190,7 +190,7 @@ export async function outputMultiResult(
 	const config = buildReportConfig(rootConfig, result);
 
 	if (typecheckResult !== undefined && projectResults.length === 0) {
-		return outputSingleResult(config, { mode: "single", preCoverageMs, typecheckResult });
+		return outputSingleResultAsync(config, { mode: "single", preCoverageMs, typecheckResult });
 	}
 
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
@@ -201,7 +201,7 @@ export async function outputMultiResult(
 	// has package identity, the workspace root, and the consensus-resolved
 	// paths); here we only handle the single-config `multi` case.
 	if (mode === "multi") {
-		await writeResultFile(config.outputFile, typecheckResult, merged.result);
+		await writeResultFileAsync(config.outputFile, typecheckResult, merged.result);
 
 		writeAggregatedGameOutput(config, projectResults, {
 			hintsShown: !mergedResult.success,

@@ -5,7 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 
-import { startFakeOpenCloudServer } from "../cli/fake-open-cloud.ts";
+import { startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
 import { createFixtureSandbox, runCliAsync } from "../cli/helpers.ts";
 
 // Live single-project pipeline tests. Both gated on JEST_ROBLOX_LIVE=1 plus
@@ -282,7 +282,7 @@ describe("multi-project per-mount user-authored config respect", () => {
 			const userConfigPath = path.join(sandbox, "src/b/jest.config.luau");
 			const seededUserConfig = fs.readFileSync(userConfigPath);
 
-			const server = await startFakeOpenCloudServer([
+			const server = await startFakeOpenCloudServerAsync([
 				{ jestOutput: passingJestOutput(), pkg: "a", project: "a" },
 				{ jestOutput: passingJestOutput(), pkg: "b", project: "b" },
 			]);
