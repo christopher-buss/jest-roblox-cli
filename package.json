@@ -50,7 +50,7 @@
 		"!dist/**/*.tsbuildinfo"
 	],
 	"scripts": {
-		"bench": "vitest bench --project unit",
+		"bench": "vitest bench --project \"unit (bench)\"",
 		"build": "pnpm build:packages && pnpm build:bundle && tsdown && pnpm build:plugin",
 		"build:bundle": "weld",
 		"build:packages": "pnpm -r --filter !@isentinel/jest-roblox run build",
@@ -102,7 +102,7 @@
 		"@types/picomatch": "4.0.3",
 		"@types/ws": "8.18.1",
 		"@typescript/native-preview": "7.0.0-dev.20260607.1",
-		"@vitest/coverage-v8": "4.1.8",
+		"@vitest/coverage-v8": "5.0.0-beta.7",
 		"@vitest/eslint-plugin": "1.6.19",
 		"better-typescript-lib": "2.12.0",
 		"bumpp": "11.1.0",
@@ -116,7 +116,7 @@
 		"tsdown": "0.22.14",
 		"type-fest": "5.7.0",
 		"typescript": "6.0.3",
-		"vitest": "4.1.8"
+		"vitest": "5.0.0-beta.7"
 	},
 	"packageManager": "pnpm@11.17.0+sha512.cca3cea332ad254bb84145f966d19f4879615210346fc92c79a047f23a0d7b3cca3c3792f0076ba1f1831d277efbcf0a9119b31a9a60eca7fb3d6231f331ef72",
 	"engines": {

@@ -112,18 +112,32 @@ function selfSourceEntry(): string {
 const JITI_SOURCE_ALIAS = JSON.stringify({ "@isentinel/jest-roblox": selfSourceEntry() });
 
 /**
+ * The Vite-level options every project needs: the `.luau` raw loader and the
+ * workspace source aliases. Spread into each project rather than declared once
+ * on the root, because an inline project still inherits nothing from it —
+ * Vitest 5 documents `extends` as defaulting to `true`, but 5.0.0-beta.7 has
+ * yet to flip it, so an absent `extends` resolves to `false`. Once it flips,
+ * the root declaration alone suffices and the spreads can go.
+ */
+const sharedViteOptions = {
+	plugins: [luauPlugin],
+	resolve: { alias: workspaceSourceAliases },
+} satisfies TestProjectInlineConfiguration;
+
+/**
  * The coverage-measured suite. Exported so `vitest.stryker.config.ts` can run
  * exactly this project — and only this one — without restating its settings.
  */
 export const unitProject = {
-	plugins: [luauPlugin],
-	resolve: { alias: workspaceSourceAliases },
+	...sharedViteOptions,
 	test: {
 		name: "unit",
-		// `*.bench.ts` benchmarks (run via `vitest bench`) live
-		// beside the unit specs. Scope them to this project so the
-		// e2e/live projects — the latter has a network globalSetup —
-		// never pick them up.
+		// `*.bench.ts` benchmarks live beside the unit specs. Scope
+		// them to this project so the e2e/live projects — the latter
+		// has a network globalSetup — never pick them up. `vitest
+		// bench` derives a separate project per entry, so this one's
+		// benchmarks run as `unit (bench)`; that is the name the
+		// `bench` package script filters on.
 		benchmark: {
 			include: ["src/**/*.bench.ts"],
 		},
@@ -148,6 +162,13 @@ export const unitProject = {
 		restoreMocks: true,
 		setupFiles,
 		typecheck: {
+			// Resolves `tsconfig.spec.json`'s reference to
+			// `tsconfig.lib.json` by building it. Without this the checker
+			// runs `--noEmit -p`, which reads the reference's emitted
+			// declarations and fails TS6305 until some earlier
+			// `tsgo --build` has produced them — which is what this
+			// target used to inline.
+			build: true,
 			checker: "tsgo",
 			enabled: true,
 			include: ["src/**/*.spec-d.ts"],
@@ -158,7 +179,7 @@ export const unitProject = {
 } satisfies TestProjectInlineConfiguration;
 
 export default defineConfig({
-	plugins: [luauPlugin],
+	...sharedViteOptions,
 	test: {
 		coverage: {
 			exclude: [
@@ -181,8 +202,7 @@ export default defineConfig({
 		projects: [
 			unitProject,
 			{
-				plugins: [luauPlugin],
-				resolve: { alias: workspaceSourceAliases },
+				...sharedViteOptions,
 				test: {
 					name: "integration",
 					// Benchmarks belong to the unit project only.
@@ -208,12 +228,11 @@ export default defineConfig({
 				},
 			},
 			{
-				plugins: [luauPlugin],
-				resolve: { alias: workspaceSourceAliases },
+				...sharedViteOptions,
 				test: {
 					name: "e2e",
-					// Benchmarks belong to the unit project only; opt this one
-					// out so `vitest bench` never runs them here.
+					// Benchmarks belong to the unit project only, so leave
+					// `e2e (bench)` with nothing to collect.
 					benchmark: {
 						include: [],
 					},
@@ -226,13 +245,14 @@ export default defineConfig({
 				},
 			},
 			{
-				plugins: [luauPlugin],
-				resolve: { alias: workspaceSourceAliases },
+				...sharedViteOptions,
 				test: {
 					name: "live",
-					// Benchmarks belong to the unit project only; opt this one
-					// out so `vitest bench` never triggers the network
-					// globalSetup.
+					// Benchmarks belong to the unit project only, so leave
+					// `live (bench)` with nothing to collect. Note this alone
+					// no longer keeps the network globalSetup out of a bare
+					// `vitest bench` — the derived project exists either way —
+					// which is why the `bench` script names `unit (bench)`.
 					benchmark: {
 						include: [],
 					},

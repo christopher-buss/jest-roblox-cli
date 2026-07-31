@@ -1,5 +1,5 @@
-/* eslint-disable vitest/prefer-each, vitest/prefer-expect-assertions -- benchmarks are not tests: `bench` declares no assertions and loops to parametrize input size */
-import { bench, describe } from "vitest";
+/* eslint-disable flawless/prefer-ending-with-an-expect, vitest/consistent-test-it, vitest/expect-expect, vitest/prefer-expect-assertions, vitest/valid-title -- the eslint plugin still models `bench` as a Vitest 4 top-level test. It now registers a measurement inside the host test, so the assertion and title rules aim at the wrong call, and the host itself measures rather than asserts. */
+import { describe, it } from "vitest";
 
 import { mergeRawCoverage } from "./merge-raw-coverage.ts";
 import type { RawCoverageData } from "./types.ts";
@@ -27,12 +27,20 @@ function rawCoverage(fileCount: number, entriesPerFile: number): RawCoverageData
 	return data;
 }
 
+const FILE_COUNTS = [50, 200, 800];
+
+const ENTRIES_PER_FILE = 40;
+
 describe(mergeRawCoverage, () => {
-	for (const count of [50, 200, 800]) {
-		const target = rawCoverage(count, 40);
-		const source = rawCoverage(count, 40);
-		bench(`merge ${String(count)} files`, () => {
-			mergeRawCoverage(target, source);
-		});
-	}
+	it("should benchmark the additive merge", async ({ bench }) => {
+		await bench.compare(
+			...FILE_COUNTS.map((count) => {
+				const target = rawCoverage(count, ENTRIES_PER_FILE);
+				const source = rawCoverage(count, ENTRIES_PER_FILE);
+				return bench(`${String(count)} files`, () => {
+					mergeRawCoverage(target, source);
+				});
+			}),
+		);
+	});
 });

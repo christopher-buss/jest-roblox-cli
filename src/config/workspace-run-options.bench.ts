@@ -1,5 +1,5 @@
-/* eslint-disable vitest/prefer-each, vitest/prefer-expect-assertions -- benchmarks are not tests: `bench` declares no assertions and loops to parametrize input size */
-import { bench, describe } from "vitest";
+/* eslint-disable flawless/prefer-ending-with-an-expect, vitest/consistent-test-it, vitest/expect-expect, vitest/prefer-expect-assertions, vitest/valid-title -- the eslint plugin still models `bench` as a Vitest 4 top-level test. It now registers a measurement inside the host test, so the assertion and title rules aim at the wrong call, and the host itself measures rather than asserts. */
+import { describe, it } from "vitest";
 
 import type { Config } from "./schema.ts";
 import { buildWorkspaceRunOptions } from "./workspace-run-options.ts";
@@ -28,11 +28,21 @@ function agreeingConfigs(count: number): Array<{ config: Config; name: string }>
 
 const WORKSPACE_ROOT = "/repo";
 
+const PACKAGE_COUNTS = [10, 50, 200];
+
 describe(buildWorkspaceRunOptions, () => {
-	for (const count of [10, 50, 200]) {
-		const perPackageConfigs = agreeingConfigs(count);
-		bench(`${String(count)} agreeing packages`, () => {
-			buildWorkspaceRunOptions({ cli: {}, perPackageConfigs, workspaceRoot: WORKSPACE_ROOT });
-		});
-	}
+	it("should benchmark the agreeing-packages consensus path", async ({ bench }) => {
+		await bench.compare(
+			...PACKAGE_COUNTS.map((count) => {
+				const perPackageConfigs = agreeingConfigs(count);
+				return bench(`${String(count)} packages`, () => {
+					buildWorkspaceRunOptions({
+						cli: {},
+						perPackageConfigs,
+						workspaceRoot: WORKSPACE_ROOT,
+					});
+				});
+			}),
+		);
+	});
 });
