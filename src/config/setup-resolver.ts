@@ -17,6 +17,9 @@ export function createSetupResolver({
 	rojoConfigPath,
 }: SetupResolverOptions): (input: string) => string {
 	const resolve = resolveModule ?? createRequire(path.join(configDirectory, "noop.js")).resolve;
+	// mapFsPathToDataModel is not an equivalent substitution for this walk: the
+	// resolver follows the pnpm symlink and any nested rojo config, so it strips
+	// `out` from a package path where the tree mapper keeps it.
 	const rojoResolver = RojoResolver.fromPath(rojoConfigPath);
 
 	return (input: string): string => {

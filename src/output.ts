@@ -96,7 +96,7 @@ export function mergeResults(
 // the caller) and serializes the shared `mergeResults` output. Routing both
 // sides through `mergeResults` here means a new result dimension lands in the
 // file for every mode by a one-line change to that merge, with no second writer
-// to keep in sync (see `tools/jest-roblox-cli/CLAUDE.md`).
+// to keep in sync.
 export async function writeResultFileAsync(
 	outputFile: string | undefined,
 	typecheck: JestResult | undefined,
