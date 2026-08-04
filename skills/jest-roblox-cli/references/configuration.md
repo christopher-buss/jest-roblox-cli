@@ -22,6 +22,7 @@ Root fields control the CLI/runner. Jest passthrough fields live under `test:`.
 | `workspace.gameOutput` | `true` to emit per-package game output under `.jest-roblox/output/` (`--workspace` only)  | —                                |
 | `workspace.outputFile` | `true` to emit per-package result files under `.jest-roblox/output/` (`--workspace` only) | —                                |
 | `coverageCache`        | Reuse incrementally-instrumented coverage shadow dir between runs                         | `true`                           |
+| `uploadCache`          | Skip `places.save` when the place file's bytes already have a version                     | `true`                           |
 | `luauRoots`            | Compiled Luau directories to instrument                                                   | auto from tsconfig `outDir`      |
 
 ## Test Fields

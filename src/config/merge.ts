@@ -3,16 +3,19 @@ import { isAgent } from "std-env";
 
 import type { CliOptions, FormatterEntry, ResolvedConfig } from "./schema.ts";
 
+type CoverageKey =
+	| "collectCoverage"
+	| "collectCoverageFrom"
+	| "coverageCache"
+	| "coverageDirectory"
+	| "coverageReporters";
+
 export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): ResolvedConfig {
 	return {
 		...config,
+		...resolveCoverage(cli, config),
 		backend: cli.backend ?? config.backend,
-		collectCoverage: cli.collectCoverage ?? config.collectCoverage,
-		collectCoverageFrom: cli.collectCoverageFrom ?? config.collectCoverageFrom,
 		color: cli.color ?? config.color,
-		coverageCache: cli.coverageCache ?? config.coverageCache,
-		coverageDirectory: cli.coverageDirectory ?? config.coverageDirectory,
-		coverageReporters: cli.coverageReporters ?? config.coverageReporters,
 		formatters: resolveFormatters(cli, config),
 		gameOutput: cli.gameOutput ?? config.gameOutput,
 		outputFile: cli.outputFile ?? config.outputFile,
@@ -30,7 +33,21 @@ export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): Res
 		testPathPattern: cli.testPathPattern ?? config.testPathPattern,
 		timeout: cli.timeout ?? config.timeout,
 		updateSnapshot: cli.updateSnapshot ?? config.updateSnapshot,
+		uploadCache: cli.uploadCache ?? config.uploadCache,
 		verbose: cli.verbose ?? config.verbose,
+	};
+}
+
+function resolveCoverage(
+	cli: CliOptions,
+	config: ResolvedConfig,
+): Pick<ResolvedConfig, CoverageKey> {
+	return {
+		collectCoverage: cli.collectCoverage ?? config.collectCoverage,
+		collectCoverageFrom: cli.collectCoverageFrom ?? config.collectCoverageFrom,
+		coverageCache: cli.coverageCache ?? config.coverageCache,
+		coverageDirectory: cli.coverageDirectory ?? config.coverageDirectory,
+		coverageReporters: cli.coverageReporters ?? config.coverageReporters,
 	};
 }
 

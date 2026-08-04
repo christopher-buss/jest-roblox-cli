@@ -236,6 +236,18 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--no-coverage-cache"]).coverageCache).toBeFalse();
 	});
 
+	it("should parse --no-upload-cache flag", () => {
+		expect.assertions(1);
+
+		expect(parseArgs(["--no-upload-cache"]).uploadCache).toBeFalse();
+	});
+
+	it("should leave uploadCache unset when the flag is absent", () => {
+		expect.assertions(1);
+
+		expect(parseArgs([]).uploadCache).toBeUndefined();
+	});
+
 	it("should parse --no-color flag", () => {
 		expect.assertions(1);
 

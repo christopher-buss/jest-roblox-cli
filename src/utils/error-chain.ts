@@ -6,6 +6,10 @@ export interface ChainEntry {
 	readonly errno?: string | undefined;
 	readonly message: string;
 	readonly requiredScopes?: ReadonlyArray<string> | undefined;
+	/**
+	 * HTTP status from an Open Cloud `ApiError`, when the entry carries one.
+	 */
+	readonly statusCode?: number | undefined;
 	readonly syscall?: string | undefined;
 }
 
@@ -21,6 +25,7 @@ export function walkErrorChain(err: unknown): Array<ChainEntry> {
 			errno: readStringProperty(current, "errno"),
 			message: current.message,
 			requiredScopes: current instanceof PermissionError ? current.requiredScopes : undefined,
+			statusCode: readNumberProperty(current, "statusCode"),
 			syscall: readStringProperty(current, "syscall"),
 		});
 		current = current.cause;
@@ -36,6 +41,11 @@ export function formatMissingScopes(scopes: ReadonlyArray<string>): string {
 
 	const joined = scopes.join(", ");
 	return `API key missing scope${scopes.length === 1 ? "" : "s"} ${joined}. Add via Creator Dashboard.`;
+}
+
+function readNumberProperty(err: Error, key: string): number | undefined {
+	const value: unknown = Reflect.get(err, key);
+	return typeof value === "number" ? value : undefined;
 }
 
 function readStringProperty(err: Error, key: string): string | undefined {

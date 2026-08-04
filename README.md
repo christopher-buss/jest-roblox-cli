@@ -175,6 +175,7 @@ package's own jest.config or in a shared config that every package extends.
 | `jestPath`      | Where Jest lives in the DataModel                                 | auto                        |
 | `showLuau`      | Show Luau code snippets in failure output                         | `true`                      |
 | `coverageCache` | Reuse incrementally-instrumented coverage shadow dir between runs | `true`                      |
+| `uploadCache`   | Skip the place upload when the place file's bytes are unchanged   | `true`                      |
 | `luauRoots`     | Where Luau files live for coverage instrumentation                | auto from tsconfig `outDir` |
 
 ### Test fields
@@ -536,6 +537,7 @@ project) under `.jest-roblox/output/`.
 | `--silent`                       | Hide all output                                                                                             |
 | `--no-color`                     | Turn off colors                                                                                             |
 | `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                   |
+| `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                  |
 | `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`)                                                |
 | `--project <name...>`            | Filter which named projects to run                                                                          |
 | `--setupFiles <path...>`         | Scripts to run before env                                                                                   |

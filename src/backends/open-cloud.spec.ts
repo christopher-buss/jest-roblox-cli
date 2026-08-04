@@ -6,8 +6,11 @@ import type {
 	UploadPlaceResult,
 } from "@isentinel/roblox-runner";
 
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
@@ -1487,5 +1490,166 @@ describe(resolveOcaleMaxRetries, () => {
 		vi.stubEnv("JEST_ROBLOX_OCALE_MAX_RETRIES", "-1");
 
 		expect(resolveOcaleMaxRetries()).toBeUndefined();
+	});
+});
+
+describe("upload cache", () => {
+	/**
+	 * A temp rootDir holding a real place file — the cache reads bytes off
+	 * disk, and this spec deliberately does not mock `node:fs`.
+	 */
+	function temporaryRoot(): string {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-upload-cache-"));
+		fs.writeFileSync(path.join(directory, "place.rbxl"), "place-bytes");
+		onTestFinished(() => {
+			fs.rmSync(directory, { force: true, recursive: true });
+		});
+
+		return directory;
+	}
+
+	function cacheJob(rootDirectory: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
+		return job("alpha", { placeFile: "place.rbxl", rootDir: rootDirectory, ...overrides });
+	}
+
+	async function runOnceAsync(
+		rootDirectory: string,
+		overrides: Partial<ResolvedConfig> = {},
+	): Promise<number> {
+		const stub = createRunnerStub({ uploadResult: { uploadMs: 12, versionNumber: 42 } });
+		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, overrides)]));
+		return stub.uploadCalls.length;
+	}
+
+	function apiError(statusCode: number): Error {
+		const cause = Object.assign(new Error(`HTTP ${String(statusCode)}`), { statusCode });
+		return new Error("execute failed", { cause });
+	}
+
+	it("should upload on the first run and skip it on the second", async () => {
+		expect.assertions(2);
+
+		const rootDirectory = temporaryRoot();
+		const first = await runOnceAsync(rootDirectory);
+		const second = await runOnceAsync(rootDirectory);
+
+		expect(first).toBe(1);
+		expect(second).toBe(0);
+	});
+
+	it("should guard the reused version so a stale entry can only race", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+
+		const stub = createRunnerStub();
+		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
+
+		expect(stub.executeCalls[0]!.script.startsWith(guardPrefix(42))).toBeTrue();
+	});
+
+	it("should retry pinned to the cached version when the guard races", async () => {
+		expect.assertions(3);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+
+		const capture = captureStderr();
+		const stub = createRunnerStub();
+		stub.setExecute(raceUnpinnedExecute(1));
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
+		capture.restore();
+
+		// The whole safety argument for reusing a version: when another upload
+		// moved the head, the raced task re-runs pinned to the version whose
+		// bytes the cache hashed — never against whatever is live now.
+		expect(stub.uploadCalls).toHaveLength(0);
+		expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
+		expect(stub.executeCalls[1]!.placeVersion).toBe(42);
+	});
+
+	it("should upload again when the place bytes change", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		fs.writeFileSync(path.join(rootDirectory, "place.rbxl"), "different-bytes");
+		const uploads = await runOnceAsync(rootDirectory);
+
+		expect(uploads).toBe(1);
+	});
+
+	it("should always upload when the cache is disabled", async () => {
+		expect.assertions(2);
+
+		const rootDirectory = temporaryRoot();
+		const first = await runOnceAsync(rootDirectory, { uploadCache: false });
+		const second = await runOnceAsync(rootDirectory, { uploadCache: false });
+
+		expect(first).toBe(1);
+		expect(second).toBe(1);
+	});
+
+	it("should not write a cache file when the cache is disabled", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory, { uploadCache: false });
+
+		expect(
+			fs.existsSync(path.join(rootDirectory, ".jest-roblox", "upload-cache.json")),
+		).toBeFalse();
+	});
+
+	it("should re-upload and retry when the cached version is gone", async () => {
+		expect.assertions(3);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+
+		const capture = captureStderr();
+		const stub = createRunnerStub({ uploadResult: { uploadMs: 12, versionNumber: 43 } });
+		stub.setExecute(
+			stepExecute([
+				() => {
+					throw apiError(404);
+				},
+				() => scriptResult(envelope([{ jestOutput: successJest() }])),
+			]),
+		);
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
+		capture.restore();
+
+		expect(stub.uploadCalls).toHaveLength(1);
+		expect(stub.executeCalls[1]!.script.startsWith(guardPrefix(43))).toBeTrue();
+		expect(capture.writes.join("")).toContain("cached place version is gone");
+	});
+
+	it("should not re-upload for a failure that is not a missing version", async () => {
+		expect.assertions(2);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+
+		const stub = createRunnerStub();
+		stub.setExecute(() => {
+			throw apiError(500);
+		});
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toThrow(
+			"execute failed",
+		);
+		expect(stub.uploadCalls).toHaveLength(0);
 	});
 });

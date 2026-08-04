@@ -400,6 +400,13 @@ export interface Config {
 	/** Open Cloud universe id that owns the place. */
 	universeId?: string;
 	/**
+	 * Skip the place upload when the place file's bytes already have a version
+	 * on Roblox, recorded in `.jest-roblox/upload-cache.json`. An upload is the
+	 * only thing measured to precede a cold place boot, so an unchanged build
+	 * keeps the warm path. Default `true`.
+	 */
+	uploadCache?: boolean;
+	/**
 	 * Workspace-mode knobs for multi-package runs. Ignored outside
 	 * `--workspace`.
 	 */
@@ -461,6 +468,7 @@ export interface ResolvedConfig
 	testMatch: Array<string>;
 	testPathIgnorePatterns: Array<string>;
 	timeout: number;
+	uploadCache: boolean;
 	verbose: boolean;
 }
 
@@ -578,6 +586,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 	],
 	testPathIgnorePatterns: ["/node_modules/", "/dist/", "/out/"],
 	timeout: 300_000,
+	uploadCache: true,
 	verbose: false,
 };
 
@@ -625,6 +634,7 @@ export interface CliOptions {
 	typecheckTsconfig?: string | undefined;
 	universeId?: string | undefined;
 	updateSnapshot?: boolean | undefined;
+	uploadCache?: boolean | undefined;
 	verbose?: boolean | undefined;
 	version?: boolean | undefined;
 	workspace?: boolean | undefined;
@@ -786,6 +796,7 @@ export const configSchema: Type<Config> = type({
 	"test?": globalTestConfigSchema,
 	"timeout?": "number",
 	"universeId?": "string",
+	"uploadCache?": "boolean",
 	"workspace?": workspaceConfigSchema,
 }).as<Config>();
 
@@ -853,6 +864,7 @@ export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"studioPath",
 	"timeout",
 	"universeId",
+	"uploadCache",
 	"workspace",
 ];
 

@@ -61,6 +61,7 @@ Options:
                                     (use when running outside any package)
   --affected-since <ref>            Run only packages affected since git ref via turbo/nx
   --no-coverage-cache               Force a clean coverage re-instrumentation (skip incremental cache)
+  --no-upload-cache                 Always upload the place, even when its bytes are unchanged
   --parallel [n]                    Open-Cloud-only: number of concurrent sessions
                                     (or "auto" = min(jobs, 3); default: 1 session)
   --project <name...>               Filter which named projects to run
@@ -120,6 +121,7 @@ const CLI_OPTION_SPEC = {
 	"no-coverage": { type: "boolean" },
 	"no-coverage-cache": { type: "boolean" },
 	"no-show-luau": { type: "boolean" },
+	"no-upload-cache": { type: "boolean" },
 	"outputFile": { type: "string" },
 	"packages": { type: "string" },
 	"parallel": { type: "string" },
@@ -142,6 +144,7 @@ const CLI_OPTION_SPEC = {
 	"typecheckTsconfig": { type: "string" },
 	"universeId": { type: "string" },
 	"updateSnapshot": { short: "u", type: "boolean" },
+	"upload-cache": { type: "boolean" },
 	"verbose": { type: "boolean" },
 	"version": { default: false, type: "boolean" },
 	"workspace": { type: "boolean" },
@@ -170,6 +173,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		setupFiles: values.setupFiles,
 		setupFilesAfterEnv: values.setupFilesAfterEnv,
 		updateSnapshot: values.updateSnapshot,
+		uploadCache: values["no-upload-cache"] === true ? false : values["upload-cache"],
 		version: values.version,
 		workspace: values.workspace,
 		workspaceRoot: values["workspace-root"],

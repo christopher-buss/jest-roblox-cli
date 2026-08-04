@@ -7,7 +7,7 @@ import process from "node:process";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
-import { formatMissingScopes } from "../utils/error-chain.ts";
+import { formatMissingScopes, walkErrorChain } from "../utils/error-chain.ts";
 import { parseEnvelope } from "./envelope.ts";
 import type {
 	Backend,
@@ -18,6 +18,13 @@ import type {
 	RawBackendEntry,
 	StreamingHooks,
 } from "./interface.ts";
+import type { UploadCacheTarget } from "./upload-cache.ts";
+import {
+	hashPlaceFile,
+	invalidateCachedVersion,
+	readCachedVersion,
+	writeCachedVersion,
+} from "./upload-cache.ts";
 
 /**
  * The value the version guard returns when the booted server is not running
@@ -55,6 +62,13 @@ interface PollState {
 	warned: boolean;
 }
 
+interface UploadOutcome {
+	/** True when the version came from the cache instead of a fresh upload. */
+	fromCache: boolean;
+	uploadMs: number;
+	versionNumber: number;
+}
+
 interface StealingPoolOutcome {
 	/**
 	 * A holder rather than a bare `unknown` so "no failure" stays
@@ -65,6 +79,10 @@ interface StealingPoolOutcome {
 }
 
 export class OpenCloudBackend implements Backend {
+	/**
+	 * Kept so the upload cache can key on the universe and place it targets.
+	 */
+	private readonly credentials: OpenCloudCredentials;
 	private readonly runner: RemoteRunner;
 
 	/** One-shot per run so parallel raced tasks don't repeat the warning. */
@@ -73,6 +91,7 @@ export class OpenCloudBackend implements Backend {
 	public readonly kind = "open-cloud" as const;
 
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
+		this.credentials = credentials;
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
 	}
 
@@ -86,33 +105,37 @@ export class OpenCloudBackend implements Backend {
 		this.raceWarned = false;
 		const primary = resolvePrimaryJob(jobs, scriptOverride, workStealing);
 		// timeout is picked from the first job — it's a per-run knob.
-		const placeFilePath = resolvePlaceFilePath(primary.config);
+		const target = toCacheTarget(this.credentials, resolvePlaceFilePath(primary.config));
 
-		const upload = await this.runner.uploadPlaceAsync({ placeFilePath });
-
-		const executionStart = Date.now();
-		const flattened =
-			workStealing === true
-				? await this.runWorkStealingAsync({
+		const upload = await this.uploadOrReuseAsync(primary.config, target);
+		const executeAsync = async (placeVersion: number): Promise<Array<RawBackendEntry>> => {
+			return workStealing === true
+				? this.runWorkStealingAsync({
 						jobs,
 						parallel,
-						placeVersion: upload.versionNumber,
+						placeVersion,
 						primaryConfig: primary.config,
 						// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
 						scriptOverride: scriptOverride!,
 						streaming,
 					})
-				: await this.runStaticBucketsAsync(
-						jobs,
-						parallel,
-						upload.versionNumber,
-						scriptOverride,
-					);
-		const executionMs = Date.now() - executionStart;
+				: this.runStaticBucketsAsync(jobs, parallel, placeVersion, scriptOverride);
+		};
+
+		const executionStart = Date.now();
+		const { extraUploadMs, rawResults } = await this.executeReusingUploadAsync(
+			{ config: primary.config, target, upload },
+			executeAsync,
+		);
 
 		return {
-			rawResults: flattened,
-			timing: { executionMs, uploadMs: upload.uploadMs },
+			rawResults,
+			// A self-heal re-upload runs inside the execution window, so it
+			// belongs to `uploadMs` and comes back out of `executionMs`.
+			timing: {
+				executionMs: Date.now() - executionStart - extraUploadMs,
+				uploadMs: upload.uploadMs + extraUploadMs,
+			},
 		};
 	}
 
@@ -152,6 +175,43 @@ export class OpenCloudBackend implements Backend {
 		}
 
 		return this.runner.executeScriptAsync({ placeVersion, script, timeout });
+	}
+
+	/**
+	 * Run the wave, and give a reused version exactly one second chance: if
+	 * Roblox no longer serves the cached version, drop the entry, upload for
+	 * real, and run again. Without this a bad entry fails every later run the
+	 * same way, since nothing else ever rewrites it.
+	 */
+	private async executeReusingUploadAsync(
+		{
+			config,
+			target,
+			upload,
+		}: {
+			config: ResolvedConfig;
+			target: UploadCacheTarget;
+			upload: UploadOutcome;
+		},
+		executeAsync: (placeVersion: number) => Promise<Array<RawBackendEntry>>,
+	): Promise<{ extraUploadMs: number; rawResults: Array<RawBackendEntry> }> {
+		try {
+			return { extraUploadMs: 0, rawResults: await executeAsync(upload.versionNumber) };
+		} catch (err) {
+			if (!upload.fromCache || !isMissingVersionError(err)) {
+				throw err;
+			}
+
+			process.stderr.write(
+				"Warning: cached place version is gone — re-uploading and retrying.\n",
+			);
+			invalidateCachedVersion(config.rootDir, target);
+			const fresh = await this.uploadOrReuseAsync(config, target);
+			return {
+				extraUploadMs: fresh.uploadMs,
+				rawResults: await executeAsync(fresh.versionNumber),
+			};
+		}
 	}
 
 	private async runBucketAsync(
@@ -255,6 +315,44 @@ export class OpenCloudBackend implements Backend {
 		const taskEnvelopes = taskResults.map(parseStealingEnvelope);
 		return collectStealingResults(jobs, aggregateEntriesByKey(taskEnvelopes));
 	}
+
+	/**
+	 * Skip `places.save` when these exact place bytes already have a version.
+	 * An upload is the only thing measured to precede a cold place boot (~22s
+	 * against ~3s warm), so an unchanged build that reuses its version keeps
+	 * the fast path. Correctness rests on the guard in
+	 * {@link OpenCloudBackend.executeGuardedAsync}, not on the cache: a stale
+	 * entry can only make the sentinel fire and the task retry pinned to the
+	 * recorded version, which holds exactly the bytes that were hashed.
+	 */
+	private async uploadOrReuseAsync(
+		config: ResolvedConfig,
+		target: UploadCacheTarget,
+	): Promise<UploadOutcome> {
+		const start = Date.now();
+		const hash = config.uploadCache ? hashPlaceFile(target.placeFilePath) : undefined;
+		// A hash of undefined means "no cache this run" for both reads and
+		// writes: either the caller disabled it, or the file could not be read.
+		if (hash !== undefined) {
+			const cached = readCachedVersion(config.rootDir, target, hash);
+			if (cached !== undefined) {
+				return { fromCache: true, uploadMs: Date.now() - start, versionNumber: cached };
+			}
+		}
+
+		const upload = await this.runner.uploadPlaceAsync({
+			placeFilePath: target.placeFilePath,
+		});
+		if (hash !== undefined) {
+			writeCachedVersion(config.rootDir, target, hash, upload.versionNumber);
+		}
+
+		return {
+			fromCache: false,
+			uploadMs: Date.now() - start,
+			versionNumber: upload.versionNumber,
+		};
+	}
 }
 
 export function resolveOpenCloudBaseUrl(): string | undefined {
@@ -316,6 +414,27 @@ export async function pollStreamingResultsAsync(
 
 export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenCloudBackend {
 	return new OpenCloudBackend(credentials);
+}
+
+function toCacheTarget(
+	credentials: OpenCloudCredentials,
+	placeFilePath: string,
+): UploadCacheTarget {
+	return {
+		placeFilePath,
+		placeId: credentials.placeId,
+		universeId: credentials.universeId,
+	};
+}
+
+/**
+ * True when the failure reads as "that place version does not exist" — the
+ * shape a cached version number takes once Roblox no longer serves it. Matches
+ * on the API's own 404 rather than on message text, and walks the chain because
+ * the runner wraps the client error.
+ */
+function isMissingVersionError(err: unknown): boolean {
+	return walkErrorChain(err).some((entry) => entry.statusCode === 404);
 }
 
 function resolvePrimaryJob(

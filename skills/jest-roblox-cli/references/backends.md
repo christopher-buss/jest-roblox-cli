@@ -20,13 +20,20 @@ Requires three environment variables. The CLI uploads the place file to Roblox
 via the Open Cloud API, creates a Luau execution task, polls for completion, and
 parses the JSON result.
 
-Every invocation uploads the place file fresh. Execution tasks then run
-_unpinned_ so they can land on a warm server holding the latest saved version;
-an injected guard compares `game.PlaceVersion` against the version this run
-uploaded and bails with a sentinel if a concurrent upload won the boot race.
-Raced tasks are retried once pinned to the uploaded version — correct by
-construction, but a cold place boot. The poll cadence for task completion is
-managed internally by the Open Cloud client and is not user-configurable.
+An invocation uploads the place file only when its bytes changed. The version a
+set of bytes got is recorded in `.jest-roblox/upload-cache.json`, and an
+unchanged build reuses it — an upload is the only thing measured to precede a
+cold place boot (~22s against ~3s), so skipping it keeps the fast path.
+`--no-upload-cache` forces the upload.
+
+Execution tasks then run _unpinned_ so they can land on a warm server holding
+the latest saved version; an injected guard compares `game.PlaceVersion` against
+the version this run uploaded or reused, and bails with a sentinel if another
+upload won the boot race. Raced tasks are retried once pinned to that version —
+correct by construction, but a cold place boot. This guard is also what makes
+the upload cache safe: a stale entry can only cause the sentinel, never a run
+against the wrong source. The poll cadence for task completion is managed
+internally by the Open Cloud client and is not user-configurable.
 
 ## Studio
 
