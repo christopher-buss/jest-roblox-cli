@@ -30,7 +30,7 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@bedrock-rbx/ocale": "0.1.0",
+		"@bedrock-rbx/ocale": "0.1.4",
 		"arktype": "2.2.0",
 		"ws": "8.21.0"
 	},
