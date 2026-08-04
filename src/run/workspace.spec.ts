@@ -16,6 +16,7 @@ import type { JestResult } from "../types/jest-result.ts";
 import type { WorkspaceProjectResult } from "../workspace-runner.ts";
 import { runWorkspaceAsync } from "../workspace-runner.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
+import type { PackageCoverageSettings } from "../workspace/coverage-attach.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import { resolvePackage } from "../workspace/package-resolver.ts";
 import { runWorkspaceModeAsync } from "./workspace.ts";
@@ -58,6 +59,13 @@ function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
 		success: true,
 		testResults: [],
 		...overrides,
+	};
+}
+
+function coverageSettingsStub(): PackageCoverageSettings {
+	return {
+		coverageDirectory: "/ws/packages/foo/coverage",
+		coverageReporters: ["text", "lcov"],
 	};
 }
 
@@ -725,7 +733,7 @@ describe(runWorkspaceModeAsync, () => {
 	});
 
 	describe("coverage aggregation", () => {
-		it("should aggregate per-package coverage into a single MappedCoverageResult on the result", async () => {
+		it("should feed each package's own coverage inputs into the aggregator", async () => {
 			expect.assertions(2);
 
 			setupHappyPath();
@@ -742,6 +750,12 @@ describe(runWorkspaceModeAsync, () => {
 			mockRunWorkspace([
 				{
 					coverageManifest: manifest,
+					coverageSettings: {
+						collectCoverageFrom: ["src/**/*.ts"],
+						coverageDirectory: "/ws/packages/foo/coverage",
+						coveragePathIgnorePatterns: ["**/node_modules/**"],
+						coverageReporters: ["text"],
+					},
 					displayName: "@halcyon/foo",
 					pkg: "@halcyon/foo",
 					result: makeExecuteResult({
@@ -752,40 +766,26 @@ describe(runWorkspaceModeAsync, () => {
 
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
-			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
-				merged: {
-					files: {
-						"foo.ts": {
-							b: {},
-							branchMap: {},
-							f: {},
-							fnMap: {},
-							path: "foo.ts",
-							s: { "0": 3 },
-							statementMap: {
-								"0": {
-									end: { column: 1, line: 1 },
-									start: { column: 0, line: 1 },
-								},
-							},
-						},
-					},
-				},
-				perPackage: [],
-			});
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue([
+				{ pkg: "@halcyon/foo", universe: { files: {} } },
+			]);
 
 			const result = await runWorkspaceModeAsync(
 				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
 			);
 
+			// The package's own globs reach the aggregator, so the universe it
+			// builds is the one both the report and the gate see.
 			expect(aggregateWorkspaceCoverage).toHaveBeenCalledWith([
 				expect.objectContaining({
 					coverageData: { "out/foo.luau": { s: { "1": 3 } } },
+					ignorePatterns: ["**/node_modules/**"],
+					includePatterns: ["src/**/*.ts"],
 					manifest,
 					pkg: "@halcyon/foo",
 				}),
 			]);
-			expect(result.coverageMapped!.files["foo.ts"]).toBeDefined();
+			expect(result.coveragePackages).toHaveLength(1);
 		});
 
 		it("should merge raw coverageData across same-pkg multi-project entries and skip pkgs without a manifest", async () => {
@@ -808,6 +808,7 @@ describe(runWorkspaceModeAsync, () => {
 				// reset, so the maps are disjoint).
 				{
 					coverageManifest: manifest,
+					coverageSettings: coverageSettingsStub(),
 					displayName: "client",
 					pkg: "@halcyon/foo",
 					result: makeExecuteResult({
@@ -816,6 +817,7 @@ describe(runWorkspaceModeAsync, () => {
 				},
 				{
 					coverageManifest: manifest,
+					coverageSettings: coverageSettingsStub(),
 					displayName: "server",
 					pkg: "@halcyon/foo",
 					result: makeExecuteResult({
@@ -832,10 +834,7 @@ describe(runWorkspaceModeAsync, () => {
 
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
-			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
-				merged: { files: {} },
-				perPackage: [],
-			});
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue([]);
 
 			await runWorkspaceModeAsync(
 				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
@@ -849,7 +848,7 @@ describe(runWorkspaceModeAsync, () => {
 			expect(aggregateCall[0]!.coverageData!["out/foo.luau"]!.s["1"]).toBe(7);
 		});
 
-		it("should leave coverageMapped undefined when the aggregator returns an empty files map", async () => {
+		it("should expose an empty gate list when the aggregator returns no universes", async () => {
 			expect.assertions(1);
 
 			setupHappyPath();
@@ -866,28 +865,25 @@ describe(runWorkspaceModeAsync, () => {
 			mockRunWorkspace([
 				{
 					coverageManifest: manifest,
+					coverageSettings: coverageSettingsStub(),
 					displayName: "@halcyon/foo",
 					pkg: "@halcyon/foo",
 					result: makeExecuteResult(),
 				},
 			]);
 
-			// Empty mapper output means there's nothing to report — the
-			// run result should expose `undefined` rather than `{files: {}}`
-			// so the formatter's "coverage was empty" warning stays
-			// reachable.
+			// Coverage ran but no package produced data: `coveragePackages` is
+			// present-but-empty, which is what tells the report layer to emit
+			// nothing rather than an empty table.
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
-			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
-				merged: { files: {} },
-				perPackage: [],
-			});
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue([]);
 
 			const result = await runWorkspaceModeAsync(
 				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
 			);
 
-			expect(result.coverageMapped).toBeUndefined();
+			expect(result.coveragePackages).toStrictEqual([]);
 		});
 
 		it("should not aggregate when no runtime results carry a coverage manifest", async () => {
@@ -910,7 +906,7 @@ describe(runWorkspaceModeAsync, () => {
 			);
 
 			expect(aggregateWorkspaceCoverage).not.toHaveBeenCalled();
-			expect(result.coverageMapped).toBeUndefined();
+			expect(result.coveragePackages).toBeUndefined();
 		});
 
 		it("should aggregate when a runtime result has a coverage manifest even if workspace collectCoverage is false", async () => {
@@ -934,6 +930,7 @@ describe(runWorkspaceModeAsync, () => {
 			mockRunWorkspace([
 				{
 					coverageManifest: manifest,
+					coverageSettings: coverageSettingsStub(),
 					displayName: "@halcyon/foo",
 					pkg: "@halcyon/foo",
 					result: makeExecuteResult({
@@ -944,33 +941,15 @@ describe(runWorkspaceModeAsync, () => {
 
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
-			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
-				merged: {
-					files: {
-						"foo.ts": {
-							b: {},
-							branchMap: {},
-							f: {},
-							fnMap: {},
-							path: "foo.ts",
-							s: { "0": 3 },
-							statementMap: {
-								"0": {
-									end: { column: 1, line: 1 },
-									start: { column: 0, line: 1 },
-								},
-							},
-						},
-					},
-				},
-				perPackage: [],
-			});
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue([
+				{ pkg: "@halcyon/foo", universe: { files: {} } },
+			]);
 
 			const result = await runWorkspaceModeAsync(
 				makeCli({ packages: "@halcyon/foo", workspace: true }),
 			);
 
-			expect(result.coverageMapped!.files["foo.ts"]).toBeDefined();
+			expect(result.coveragePackages).toHaveLength(1);
 		});
 
 		it("should surface per-package coverage gates with each package's own threshold", async () => {
@@ -990,17 +969,25 @@ describe(runWorkspaceModeAsync, () => {
 			mockRunWorkspace([
 				{
 					coverageManifest: manifest,
-					coverageThreshold: { statements: 90 },
+					coverageSettings: {
+						coverageDirectory: "/ws/packages/foo/coverage",
+						coverageReporters: ["text"],
+						coverageThreshold: { statements: 90 },
+					},
 					displayName: "@halcyon/foo",
 					pkg: "@halcyon/foo",
 					result: makeExecuteResult({
 						coverageData: { "out/foo.luau": { s: { "1": 3 } } },
 					}),
 				},
-				// No declared threshold — the gate entry must omit it so the
-				// report layer falls back to the workspace root's value.
+				// No declared threshold — the gate entry must omit it, so
+				// nothing gates the package.
 				{
 					coverageManifest: manifest,
+					coverageSettings: {
+						coverageDirectory: "/ws/packages/bar/coverage",
+						coverageReporters: ["lcov"],
+					},
 					displayName: "@halcyon/bar",
 					pkg: "@halcyon/bar",
 					result: makeExecuteResult({
@@ -1013,13 +1000,10 @@ describe(runWorkspaceModeAsync, () => {
 			const barUniverse = { files: {} };
 			const { aggregateWorkspaceCoverage } =
 				await import("../coverage-pipeline/workspace-aggregate.ts");
-			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue({
-				merged: { files: {} },
-				perPackage: [
-					{ pkg: "@halcyon/foo", universe: fooUniverse },
-					{ pkg: "@halcyon/bar", universe: barUniverse },
-				],
-			});
+			vi.mocked(aggregateWorkspaceCoverage).mockReturnValue([
+				{ pkg: "@halcyon/foo", universe: fooUniverse },
+				{ pkg: "@halcyon/bar", universe: barUniverse },
+			]);
 
 			const result = await runWorkspaceModeAsync(
 				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
@@ -1027,11 +1011,18 @@ describe(runWorkspaceModeAsync, () => {
 
 			expect(result.coveragePackages).toStrictEqual([
 				{
+					coverageDirectory: "/ws/packages/foo/coverage",
+					coverageReporters: ["text"],
 					coverageThreshold: { statements: 90 },
 					pkg: "@halcyon/foo",
 					universe: fooUniverse,
 				},
-				{ pkg: "@halcyon/bar", universe: barUniverse },
+				{
+					coverageDirectory: "/ws/packages/bar/coverage",
+					coverageReporters: ["lcov"],
+					pkg: "@halcyon/bar",
+					universe: barUniverse,
+				},
 			]);
 			expect(result.coveragePackages![0]!.universe).toBe(fooUniverse);
 			expect(result.coveragePackages![1]!.universe).toBe(barUniverse);

@@ -84,14 +84,15 @@ function mixedCoverage(): MappedCoverageResult {
 	};
 }
 
+// Deliberately hostile: a workspace run must ignore every one of these. The
+// values the render actually uses ride on the result below.
 function makeConfig(): ResolvedConfig {
 	return {
 		...DEFAULT_CONFIG,
-		collectCoverage: true,
-		color: false,
-		coverageReporters: ["text"],
-		formatters: ["agent"],
-		rootDir: "/test",
+		color: true,
+		coverageReporters: ["lcov"],
+		formatters: ["json"],
+		rootDir: "/bootstrap",
 		testMatch: ["**/*.spec.ts"],
 		testPathIgnorePatterns: [],
 	};
@@ -99,7 +100,14 @@ function makeConfig(): ResolvedConfig {
 
 function makeWorkspaceResult(): WorkspaceRunResult {
 	return fromAny({
-		coverageMapped: mixedCoverage(),
+		coveragePackages: [
+			{
+				coverageDirectory: "/test/coverage",
+				coverageReporters: ["text"],
+				pkg: "client",
+				universe: mixedCoverage(),
+			},
+		],
 		merged: {},
 		mode: "workspace",
 		preCoverageMs: 0,
@@ -114,6 +122,13 @@ function makeWorkspaceResult(): WorkspaceRunResult {
 				},
 			},
 		],
+		reportOptions: {
+			color: false,
+			formatters: ["agent"],
+			rootDir: "/test",
+			silent: false,
+			verbose: false,
+		},
 	});
 }
 
@@ -137,6 +152,8 @@ describe("agent-mode output ordering", () => {
 		expect(stripVTControlCharacters(chunks.join(""))).toMatchInlineSnapshot(`
 			"
 			 % Coverage report from istanbul
+
+			client
 			--------------|---------|----------|---------|---------|-------------------
 			File          | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
 			--------------|---------|----------|---------|---------|-------------------

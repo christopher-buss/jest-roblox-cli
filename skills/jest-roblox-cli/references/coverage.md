@@ -60,13 +60,13 @@ const config = {
 Available metrics: `statements`, `branches`, `functions`, `lines`.
 
 In `--workspace` mode thresholds are **per-package**: each package that opted
-into coverage (its own `collectCoverage`) is gated against its own files. The
-workspace-root config's `coverageThreshold` is the metric-level base for every
-package; a package's own declaration overrides the metrics it names — even
-downward — and unnamed metrics inherit the root's. There is no pooled
-cross-package check, so one package's high coverage can't mask another's
-shortfall. A package that declares a threshold without `collectCoverage` gets a
-warning: the threshold cannot be enforced without instrumentation.
+into coverage (its own `collectCoverage`) is gated against its own files, by the
+threshold it declared itself. A package that declares none is not gated — a
+workspace run has no config of its own to inherit a base from, so a threshold
+only ever comes from the package. There is no pooled cross-package check either,
+so one package's high coverage can't mask another's shortfall. A package that
+declares a threshold without `collectCoverage` gets a warning: the threshold
+cannot be enforced without instrumentation.
 
 ## Config Fields
 
@@ -87,10 +87,15 @@ excludes barrel files even when they are never required by a test. In workspace
 mode each package's own patterns apply to that package's files, so one package
 can opt out without affecting another.
 
-`collectCoverageFrom` is **not** scoped per-package in workspace mode — it is
-read from the workspace-root config and applied after the cross-package merge,
-unlike `coveragePathIgnorePatterns`. Per-package narrowing there comes from each
-package's instrumented manifest plus its own ignore patterns.
+`collectCoverageFrom` is scoped per-package in workspace mode, the same as
+`coveragePathIgnorePatterns`. Both narrow the package's universe before its
+report renders, so a package's report and its threshold gate always judge the
+same set of files.
+
+In workspace mode every field in the table above is read per-package. Each
+package gets its own report, from its own reporters, written under its own
+`coverageDirectory` — nothing is merged across packages, and nothing is read
+from a config at the directory you invoked the CLI from.
 
 ## Generated Files
 

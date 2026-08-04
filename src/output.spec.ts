@@ -37,6 +37,8 @@ import type {
 	MultiRunResult,
 	ProjectResult,
 	SingleRunResult,
+	WorkspacePackageCoverageGate,
+	WorkspaceReportOptions,
 	WorkspaceRunResult,
 } from "./run/types.ts";
 import type { JestResult } from "./types/jest-result.ts";
@@ -168,12 +170,38 @@ function makeMultiResult(overrides: Partial<MultiRunResult> = {}): MultiRunResul
 	};
 }
 
+function makeReportOptions(
+	overrides: Partial<WorkspaceReportOptions> = {},
+): WorkspaceReportOptions {
+	return {
+		color: true,
+		formatters: ["default"],
+		rootDir: "/workspace",
+		silent: false,
+		verbose: false,
+		...overrides,
+	};
+}
+
+function makeCoverageGate(
+	overrides: Partial<WorkspacePackageCoverageGate> = {},
+): WorkspacePackageCoverageGate {
+	return {
+		coverageDirectory: "/workspace/packages/foo/coverage",
+		coverageReporters: ["text", "lcov"],
+		pkg: "@halcyon/foo",
+		universe: fromAny({ files: { "foo.ts": {} } }),
+		...overrides,
+	};
+}
+
 function makeWorkspaceResult(overrides: Partial<WorkspaceRunResult> = {}): WorkspaceRunResult {
 	return {
 		merged: {},
 		mode: "workspace",
 		preCoverageMs: 0,
 		projectResults: [makeProjectResult("@halcyon/foo")],
+		reportOptions: makeReportOptions(),
 		...overrides,
 	};
 }
@@ -667,13 +695,13 @@ describe(outputMultiResultAsync, () => {
 
 		await outputMultiResultAsync(
 			makeConfig({
-				formatters: ["agent"],
 				gameOutput: "/root/cfg.log",
 				outputFile: "/root/cfg.json",
 			}),
 			makeWorkspaceResult({
 				gameOutput: "/ws/game-output.log",
 				outputFile: "/ws/jest-output.log",
+				reportOptions: makeReportOptions({ formatters: ["agent"] }),
 			}),
 		);
 
@@ -798,6 +826,146 @@ describe(outputMultiResultAsync, () => {
 		expect(mocks.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ agentTextFilter: displayFilter }),
 		);
+	});
+});
+
+// Workspace mode reads the config file at cwd for `workspace.root` /
+// `workspace.packages` only. Every case below hands `outputMultiResultAsync` a
+// hostile bootstrap config whose value differs from the run's resolved one, so
+// a leak shows up as the hostile value reaching the report or print layer.
+describe("workspace output ignores the bootstrap config", () => {
+	it("should render with the runner's formatters, not the bootstrap config's", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		const spies = setupOutputSpies();
+
+		await outputMultiResultAsync(makeConfig({ formatters: ["agent"] }), makeWorkspaceResult());
+
+		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
+		expect(mocks.formatAgentMultiProject).not.toHaveBeenCalled();
+	});
+
+	it("should print when the runner resolved silent false and the bootstrap config says true", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		const spies = setupOutputSpies();
+
+		await outputMultiResultAsync(makeConfig({ silent: true }), makeWorkspaceResult());
+
+		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
+	});
+
+	it("should report agent paths against the workspace root, not the bootstrap rootDir", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ rootDir: "/bootstrap" }),
+			makeWorkspaceResult({ reportOptions: makeReportOptions({ formatters: ["agent"] }) }),
+		);
+
+		expect(mocks.formatAgentMultiProject).toHaveBeenCalledWith(
+			expect.any(Array),
+			expect.objectContaining({ rootDir: "/workspace" }),
+		);
+	});
+
+	it("should not write the bootstrap outputFile on a typecheck-only workspace run", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ outputFile: "/root/cfg.json" }),
+			makeWorkspaceResult({ projectResults: [], typecheckResult: makeJestResult() }),
+		);
+
+		expect(mocks.writeJsonFile).not.toHaveBeenCalled();
+	});
+
+	it("should not run the GitHub Actions formatter the bootstrap config asked for", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		mocks.formatAnnotations.mockReturnValue("::error::boom");
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ formatters: ["default", "github-actions"] }),
+			makeWorkspaceResult(),
+		);
+
+		expect(mocks.formatAnnotations).not.toHaveBeenCalled();
+	});
+
+	it("should keep the bootstrap coverage settings out of the report", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({
+				collectCoverage: true,
+				collectCoverageFrom: ["src/server/**/ecs/**"],
+				coverageDirectory: "bootstrap-coverage",
+				coverageReporters: ["cobertura"],
+				rootDir: "/bootstrap",
+			}),
+			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+		);
+
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({
+				collectCoverageFrom: undefined,
+				coverageDirectory: "/workspace/packages/foo/coverage",
+				reporters: ["text", "lcov"],
+			}),
+		);
+	});
+
+	it("should not gate a workspace package on the bootstrap coverageThreshold", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const code = await outputMultiResultAsync(
+			makeConfig({ collectCoverage: true, coverageThreshold: { lines: 80 } }),
+			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+		);
+
+		expect(mocks.checkThresholds).not.toHaveBeenCalled();
+		expect(code).toBe(0);
+	});
+
+	it("should not map coverage through the bootstrap rootDir manifest", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
+		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ collectCoverage: true }),
+			makeWorkspaceResult({
+				projectResults: [
+					{
+						displayName: "@halcyon/foo",
+						result: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
+					},
+				],
+			}),
+		);
+
+		expect(mocks.loadCoverageManifest).not.toHaveBeenCalled();
+		expect(mocks.generateReports).not.toHaveBeenCalled();
 	});
 });
 
@@ -1097,51 +1265,26 @@ describe("agent-mode summary ordering vs coverage", () => {
 	});
 });
 
-describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
-	it("should use coverageMapped directly without consulting the single-pkg manifest", async () => {
+describe("per-package coverage reports via outputMultiResult", () => {
+	it("should report each package's own universe without consulting the single-pkg manifest", async () => {
 		expect.assertions(3);
 
 		setupDefaults();
 		setupOutputSpies();
 
-		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
-			files: { "foo.ts": {} },
-		});
+		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
 		await outputMultiResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeWorkspaceResult({
-				coverageMapped: preMapped,
+				coveragePackages: [makeCoverageGate({ universe: fooUniverse })],
 			}),
 		);
 
 		expect(mocks.loadCoverageManifest).not.toHaveBeenCalled();
 		expect(mocks.mapCoverageToTypeScript).not.toHaveBeenCalled();
 		expect(mocks.generateReports).toHaveBeenCalledWith(
-			expect.objectContaining({ mapped: preMapped }),
+			expect.objectContaining({ mapped: fooUniverse }),
 		);
-	});
-
-	it("should still fall back to single-pkg path when coverageMapped is undefined", async () => {
-		expect.assertions(1);
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		setupOutputSpies();
-
-		await outputMultiResultAsync(
-			makeConfig({ collectCoverage: true }),
-			makeWorkspaceResult({
-				projectResults: [
-					{
-						displayName: "@halcyon/foo",
-						result: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
-					},
-				],
-			}),
-		);
-
-		expect(mocks.mapCoverageToTypeScript).toHaveBeenCalledOnce();
 	});
 
 	it("should generate reports for per-pkg opt-in even when workspace collectCoverage is false", async () => {
@@ -1150,22 +1293,106 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 		setupDefaults();
 		setupOutputSpies();
 
-		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
-			files: { "foo.ts": {} },
-		});
+		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
 		await outputMultiResultAsync(
 			makeConfig(),
 			makeWorkspaceResult({
-				coverageMapped: preMapped,
+				coveragePackages: [makeCoverageGate({ universe: fooUniverse })],
 			}),
 		);
 
 		expect(mocks.generateReports).toHaveBeenCalledWith(
-			expect.objectContaining({ mapped: preMapped }),
+			expect.objectContaining({ mapped: fooUniverse }),
 		);
 	});
 
-	it("should enforce coverage thresholds for per-pkg opt-in when workspace collectCoverage is false", async () => {
+	it("should emit one report per package, each into its own directory with its own reporters", async () => {
+		expect.assertions(3);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig(),
+			makeWorkspaceResult({
+				coveragePackages: [
+					makeCoverageGate({
+						coverageDirectory: "/ws/packages/foo/coverage",
+						coverageReporters: ["text"],
+					}),
+					makeCoverageGate({
+						coverageDirectory: "/ws/packages/bar/cov",
+						coverageReporters: ["lcov"],
+						pkg: "@halcyon/bar",
+					}),
+				],
+			}),
+		);
+
+		expect(mocks.generateReports).toHaveBeenCalledTimes(2);
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({
+				coverageDirectory: "/ws/packages/foo/coverage",
+				reporters: ["text"],
+			}),
+		);
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({
+				coverageDirectory: "/ws/packages/bar/cov",
+				reporters: ["lcov"],
+			}),
+		);
+	});
+
+	it("should not re-filter a package universe that aggregation already narrowed", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig(),
+			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+		);
+
+		expect(mocks.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({
+				collectCoverageFrom: undefined,
+				coveragePathIgnorePatterns: undefined,
+			}),
+		);
+	});
+
+	it("should head each package report with the package name", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		const spies = setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig(),
+			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
+		);
+
+		expect(spies.stdout).toHaveBeenCalledWith("\n@halcyon/foo\n");
+	});
+
+	it("should emit no report and no header when no package produced coverage", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ collectCoverage: true }),
+			makeWorkspaceResult({ coveragePackages: [] }),
+		);
+
+		expect(mocks.printCoverageHeader).not.toHaveBeenCalled();
+		expect(mocks.generateReports).not.toHaveBeenCalled();
+	});
+
+	it("should enforce a package's own threshold when workspace collectCoverage is false", async () => {
 		expect.assertions(2);
 
 		setupDefaults();
@@ -1175,12 +1402,11 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 		});
 		const spies = setupOutputSpies();
 
-		const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
-			files: { "foo.ts": {} },
-		});
 		const code = await outputMultiResultAsync(
-			makeConfig({ coverageThreshold: { lines: 100 } }),
-			makeWorkspaceResult({ coverageMapped: preMapped }),
+			makeConfig(),
+			makeWorkspaceResult({
+				coveragePackages: [makeCoverageGate({ coverageThreshold: { lines: 100 } })],
+			}),
 		);
 
 		expect(code).toBe(1);
@@ -1191,11 +1417,7 @@ describe("processCoverage via outputMultiResult (workspace pre-mapped)", () => {
 });
 
 describe("per-package threshold gates via outputMultiResult", () => {
-	const preMapped: NonNullable<WorkspaceRunResult["coverageMapped"]> = fromAny({
-		files: { "foo.ts": {} },
-	});
-
-	it("should gate each package against its own universe, package threshold overriding root", async () => {
+	it("should gate each package against its own universe and its own threshold", async () => {
 		expect.assertions(2);
 
 		setupDefaults();
@@ -1203,26 +1425,26 @@ describe("per-package threshold gates via outputMultiResult", () => {
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
 		const code = await outputMultiResultAsync(
-			makeConfig({ coverageThreshold: { lines: 80 } }),
+			makeConfig(),
 			makeWorkspaceResult({
-				coverageMapped: preMapped,
 				coveragePackages: [
-					{
-						coverageThreshold: { lines: 70 },
-						pkg: "@halcyon/foo",
-						universe: fooUniverse,
-					},
+					makeCoverageGate({ coverageThreshold: { lines: 70 }, universe: fooUniverse }),
 				],
 			}),
 		);
 
 		// One call only: the pooled merged-universe check is replaced by the
 		// per-package gates.
-		expect(mocks.checkThresholds).toHaveBeenCalledExactlyOnceWith(fooUniverse, { lines: 70 });
+		expect(mocks.checkThresholds).toHaveBeenCalledExactlyOnceWith(
+			fooUniverse,
+			{ lines: 70 },
+			undefined,
+			undefined,
+		);
 		expect(code).toBe(0);
 	});
 
-	it("should metric-merge the root threshold under a partial package override", async () => {
+	it("should gate only the metrics the package itself declared", async () => {
 		expect.assertions(1);
 
 		setupDefaults();
@@ -1230,41 +1452,38 @@ describe("per-package threshold gates via outputMultiResult", () => {
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
 		await outputMultiResultAsync(
-			makeConfig({ coverageThreshold: { branches: 70, statements: 80 } }),
+			makeConfig(),
 			makeWorkspaceResult({
-				coverageMapped: preMapped,
 				coveragePackages: [
-					{
+					makeCoverageGate({
 						coverageThreshold: { statements: 70 },
-						pkg: "@halcyon/foo",
 						universe: fooUniverse,
-					},
+					}),
 				],
 			}),
 		);
 
-		expect(mocks.checkThresholds).toHaveBeenCalledWith(fooUniverse, {
-			branches: 70,
-			statements: 70,
-		});
+		expect(mocks.checkThresholds).toHaveBeenCalledWith(
+			fooUniverse,
+			{ statements: 70 },
+			undefined,
+			undefined,
+		);
 	});
 
-	it("should fall back to the root threshold for a package that declared none", async () => {
-		expect.assertions(1);
+	it("should not gate a package that declared no threshold", async () => {
+		expect.assertions(2);
 
 		setupDefaults();
 		setupOutputSpies();
 
-		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
-		await outputMultiResultAsync(
-			makeConfig({ coverageThreshold: { lines: 80 } }),
-			makeWorkspaceResult({
-				coverageMapped: preMapped,
-				coveragePackages: [{ pkg: "@halcyon/foo", universe: fooUniverse }],
-			}),
+		const code = await outputMultiResultAsync(
+			makeConfig(),
+			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
 		);
 
-		expect(mocks.checkThresholds).toHaveBeenCalledWith(fooUniverse, { lines: 80 });
+		expect(mocks.checkThresholds).not.toHaveBeenCalled();
+		expect(code).toBe(0);
 	});
 
 	it("should print package-prefixed failures and exit 1 when a package misses its threshold", async () => {
@@ -1279,18 +1498,12 @@ describe("per-package threshold gates via outputMultiResult", () => {
 			});
 		const spies = setupOutputSpies();
 
-		const emptyUniverse: MappedCoverageResult = { files: {} };
 		const code = await outputMultiResultAsync(
-			makeConfig({ coverageThreshold: { lines: 80 } }),
+			makeConfig(),
 			makeWorkspaceResult({
-				coverageMapped: preMapped,
 				coveragePackages: [
-					{
-						coverageThreshold: { lines: 70 },
-						pkg: "@halcyon/foo",
-						universe: emptyUniverse,
-					},
-					{ pkg: "@halcyon/bar", universe: emptyUniverse },
+					makeCoverageGate({ coverageThreshold: { lines: 70 } }),
+					makeCoverageGate({ coverageThreshold: { lines: 80 }, pkg: "@halcyon/bar" }),
 				],
 			}),
 		);
@@ -1299,24 +1512,6 @@ describe("per-package threshold gates via outputMultiResult", () => {
 		expect(spies.stderr).toHaveBeenCalledWith(
 			"Coverage threshold not met for @halcyon/bar lines: 75.00% < 80%\n",
 		);
-	});
-
-	it("should skip the check entirely when neither root nor package declares a threshold", async () => {
-		expect.assertions(2);
-
-		setupDefaults();
-		setupOutputSpies();
-
-		const code = await outputMultiResultAsync(
-			makeConfig(),
-			makeWorkspaceResult({
-				coverageMapped: preMapped,
-				coveragePackages: [{ pkg: "@halcyon/foo", universe: { files: {} } }],
-			}),
-		);
-
-		expect(mocks.checkThresholds).not.toHaveBeenCalled();
-		expect(code).toBe(0);
 	});
 });
 

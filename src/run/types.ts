@@ -1,7 +1,11 @@
-import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
+import type {
+	CliOptions,
+	CoverageReporter,
+	FormatterEntry,
+	ResolvedConfig,
+} from "../config/schema.ts";
 import type { CoverageDisplayPredicate } from "../coverage-pipeline/agent-table-filter.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
-import type { MappedCoverageResult } from "../coverage-pipeline/mapper.ts";
 import type { WorkspacePackageUniverse } from "../coverage-pipeline/workspace-aggregate.ts";
 import type { ExecuteResult } from "../executor.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
@@ -64,27 +68,50 @@ export interface MultiRunResult {
 }
 
 /**
- * One package's coverage gate: its own mapped universe plus its declared
- * threshold. The report layer judges each package against its own universe;
+ * One package's coverage report and gate: its own mapped universe — already
+ * narrowed by that package's `collectCoverageFrom` and
+ * `coveragePathIgnorePatterns` in `aggregateWorkspaceCoverage`, where package
+ * identity was still known — plus where the report is written, which reporters
+ * render it, and the threshold it is judged against.
+ *
  * `coverageThreshold` is undefined when the package never declared one, in
- * which case the workspace root's threshold applies (metric-level merge).
+ * which case nothing gates the package: a workspace run has no config of its
+ * own to take a base threshold from.
  */
 export interface WorkspacePackageCoverageGate extends WorkspacePackageUniverse {
+	/**
+	 * Absolute: the package's `coverageDirectory` against its own `rootDir`.
+	 */
+	coverageDirectory: string;
+	coverageReporters: Array<CoverageReporter>;
 	coverageThreshold?: ResolvedConfig["coverageThreshold"];
+}
+
+/**
+ * What the report and print layers render a workspace run under: the runner's
+ * consensus-resolved render settings plus the workspace root.
+ *
+ * Workspace mode loads the config file at cwd for `workspace.root` /
+ * `workspace.packages` only, so the output layer has no config of its own to
+ * read. These values travel on the result instead — without them the layer
+ * would fall back to whichever config happened to sit at the invocation
+ * directory, and the same run would answer the same question two ways.
+ */
+export interface WorkspaceReportOptions {
+	color: boolean;
+	formatters: Array<FormatterEntry>;
+	rootDir: string;
+	silent: boolean;
+	verbose: boolean;
 }
 
 export interface WorkspaceRunResult {
 	/**
-	 * Pre-aggregated TS-coord coverage merged from every package's
-	 * `coverageData + coverageManifest`. Skips the single-package
-	 * `loadCoverageManifest(rootDir)` path entirely. Undefined when
-	 * `collectCoverage` is off or no package produced coverage data.
-	 */
-	coverageMapped?: MappedCoverageResult | undefined;
-	/**
-	 * Per-package coverage gates, in aggregation order. Undefined when no
-	 * package carries a coverage manifest; present (possibly empty) whenever
-	 * coverage ran, so the report layer enforces thresholds per package.
+	 * Per-package coverage reports and gates, in aggregation order. Undefined
+	 * when no package carries a coverage manifest; present (possibly empty)
+	 * whenever coverage ran. The report layer emits one report per entry and
+	 * gates each package on its own — there is no cross-package merge, so no
+	 * single-package `loadCoverageManifest(rootDir)` lookup either.
 	 */
 	coveragePackages?: Array<WorkspacePackageCoverageGate> | undefined;
 	/**
@@ -100,6 +127,14 @@ export interface WorkspaceRunResult {
 	outputFile?: string | undefined;
 	preCoverageMs: number;
 	projectResults: Array<ProjectResult>;
+	/**
+	 * Render settings for the output layer. Absent on every result that never
+	 * reached the runner — a validation bail, no affected packages, a run that
+	 * tested nothing — each of which dispatch returns before the output layer
+	 * sees it, on `validationExitCode` or on having neither project results nor
+	 * a Type Test result.
+	 */
+	reportOptions?: undefined | WorkspaceReportOptions;
 	typecheckResult?: JestResult | undefined;
 	validationExitCode?: 2 | undefined;
 	validationMessage?: string | undefined;

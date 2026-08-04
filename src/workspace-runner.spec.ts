@@ -1997,7 +1997,7 @@ describe(runWorkspaceAsync, () => {
 			expect(results![0]!.pkg).toBe("@halcyon/foo");
 		});
 
-		it("should carry the package's declared coverageThreshold onto the workspace result", async () => {
+		it("should carry the package's own coverage report settings onto the workspace result", async () => {
 			expect.assertions(1);
 
 			vol.reset();
@@ -2013,6 +2013,9 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: {
 					...DEFAULT_CONFIG,
 					collectCoverage: true,
+					collectCoverageFrom: ["src/**/*.ts"],
+					coverageDirectory: "reports/cov",
+					coverageReporters: ["cobertura"],
 					coverageThreshold: { branches: 70, statements: 90 },
 					rootDir: FOO_DIR,
 				},
@@ -2020,7 +2023,9 @@ describe(runWorkspaceAsync, () => {
 
 			const { prepareWorkspaceCoverage } =
 				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([coverageEntry("@halcyon/foo")]);
+			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+				{ ...coverageEntry("@halcyon/foo"), coveragePathIgnorePatterns: ["**/vendor/**"] },
+			]);
 
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
@@ -2035,9 +2040,15 @@ describe(runWorkspaceAsync, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(results![0]!.coverageThreshold).toStrictEqual({
-				branches: 70,
-				statements: 90,
+			// `coverageDirectory` resolves against the package's own rootDir, so
+			// the report lands beside the package rather than at the directory
+			// the CLI happened to run from.
+			expect(results![0]!.coverageSettings).toStrictEqual({
+				collectCoverageFrom: ["src/**/*.ts"],
+				coverageDirectory: path.resolve(FOO_DIR, "reports/cov"),
+				coveragePathIgnorePatterns: ["**/vendor/**"],
+				coverageReporters: ["cobertura"],
+				coverageThreshold: { branches: 70, statements: 90 },
 			});
 		});
 

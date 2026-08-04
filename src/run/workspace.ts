@@ -7,19 +7,13 @@ import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/ope
 import { createStudioCliBackend } from "../backends/studio-cli.ts";
 import { createStudioBackend } from "../backends/studio.ts";
 import { loadRawConfig } from "../config/loader.ts";
-import type {
-	CliOptions,
-	ResolvedConfig,
-	WorkspaceConfig,
-	WorkspaceRunOptions,
-} from "../config/schema.ts";
+import type { CliOptions, WorkspaceConfig, WorkspaceRunOptions } from "../config/schema.ts";
 import { buildWorkspaceRunOptions } from "../config/workspace-run-options.ts";
-import type { MappedCoverageResult } from "../coverage-pipeline/mapper.ts";
 import { mergeRawCoverage } from "../coverage-pipeline/merge-raw-coverage.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import {
 	aggregateWorkspaceCoverage,
-	type WorkspaceAggregatedCoverage,
+	type WorkspacePackageUniverse,
 } from "../coverage-pipeline/workspace-aggregate.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
@@ -30,10 +24,11 @@ import {
 	type WorkspaceProjectResult,
 	type WorkspaceRunnerOutput,
 } from "../workspace-runner.ts";
+import type { PackageCoverageSettings } from "../workspace/coverage-attach.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
 import { emitRunHeader } from "./run-header.ts";
-import type { ProjectResult, WorkspaceRunResult } from "./types.ts";
+import type { ProjectResult, WorkspaceReportOptions, WorkspaceRunResult } from "./types.ts";
 import {
 	assertWorkspaceRunOptions,
 	buildWorkspaceCredentials,
@@ -72,6 +67,7 @@ interface WorkspaceRunOptionsResolution {
 interface PackageEntry {
 	coverageData: RawCoverageData | undefined;
 	ignorePatterns: Array<string> | undefined;
+	includePatterns: Array<string> | undefined;
 	manifest: NonNullable<WorkspaceProjectResult["coverageManifest"]>;
 	pkg: string;
 }
@@ -250,13 +246,9 @@ function resolveWorkspaceBackend(
 	return resolveOpenCloudBackendFor(cli, runOptions);
 }
 
-function normalizeEmptyCoverage(mapped: MappedCoverageResult): MappedCoverageResult | undefined {
-	return Object.keys(mapped.files).length === 0 ? undefined : mapped;
-}
-
 function aggregatePerPackageCoverage(runtimeResults: Array<WorkspaceProjectResult>): {
-	aggregated: WorkspaceAggregatedCoverage;
-	thresholdByPackage: Map<string, ResolvedConfig["coverageThreshold"]>;
+	settingsByPackage: Map<string, PackageCoverageSettings>;
+	universes: Array<WorkspacePackageUniverse>;
 } {
 	// A package with multiple projects emits one entry per project. Each
 	// project runs Jest with its own `_G.__jest_roblox_cov` reset, so the
@@ -265,10 +257,10 @@ function aggregatePerPackageCoverage(runtimeResults: Array<WorkspaceProjectResul
 	// one entry per pkg into the mapper — otherwise multi-project packages
 	// silently lose coverage from all but the first project.
 	const byPackage = new Map<string, PackageEntry>();
-	const thresholdByPackage = new Map<string, ResolvedConfig["coverageThreshold"]>();
+	const settingsByPackage = new Map<string, PackageCoverageSettings>();
 
 	for (const entry of runtimeResults) {
-		if (entry.coverageManifest === undefined) {
+		if (entry.coverageManifest === undefined || entry.coverageSettings === undefined) {
 			continue;
 		}
 
@@ -276,11 +268,12 @@ function aggregatePerPackageCoverage(runtimeResults: Array<WorkspaceProjectResul
 		if (existing === undefined) {
 			byPackage.set(entry.pkg, {
 				coverageData: entry.result.coverageData,
-				ignorePatterns: entry.coveragePathIgnorePatterns,
+				ignorePatterns: entry.coverageSettings.coveragePathIgnorePatterns,
+				includePatterns: entry.coverageSettings.collectCoverageFrom,
 				manifest: entry.coverageManifest,
 				pkg: entry.pkg,
 			});
-			thresholdByPackage.set(entry.pkg, entry.coverageThreshold);
+			settingsByPackage.set(entry.pkg, entry.coverageSettings);
 			continue;
 		}
 
@@ -288,39 +281,44 @@ function aggregatePerPackageCoverage(runtimeResults: Array<WorkspaceProjectResul
 	}
 
 	return {
-		aggregated: aggregateWorkspaceCoverage([...byPackage.values()]),
-		thresholdByPackage,
+		settingsByPackage,
+		universes: aggregateWorkspaceCoverage([...byPackage.values()]),
 	};
 }
 
 // Drive coverage off per-package manifests, not the workspace-level
 // `collectCoverage`. A package that opted into coverage via its own jest.config
 // carries a `coverageManifest`; aggregating regardless of workspace config keeps
-// that report from being dropped. The per-package gates ride alongside the
-// merge so the report layer can judge each package against its own universe.
+// that report from being dropped. Each gate carries the package's own reporter
+// settings so the report layer emits one report per package, into that
+// package's own directory, from that package's own config.
 function resolveWorkspaceCoverage(
 	runtimeResults: Array<WorkspaceProjectResult>,
-): Pick<WorkspaceRunResult, "coverageMapped" | "coveragePackages"> {
+): Pick<WorkspaceRunResult, "coveragePackages"> {
 	const hasCoverage = runtimeResults.some((entry) => entry.coverageManifest !== undefined);
 	if (!hasCoverage) {
 		return {};
 	}
 
-	const { aggregated, thresholdByPackage } = aggregatePerPackageCoverage(runtimeResults);
-	const coveragePackages = aggregated.perPackage.map(({ pkg, universe }) => {
-		const coverageThreshold = thresholdByPackage.get(pkg);
+	const { settingsByPackage, universes } = aggregatePerPackageCoverage(runtimeResults);
+	const coveragePackages = universes.map(({ pkg, universe }) => {
+		// `universes` is derived from the same map `settingsByPackage` is keyed
+		// by, so every entry has settings.
+		const settings = settingsByPackage.get(pkg);
+		assert(settings !== undefined, `missing coverage settings for ${pkg}`);
+
 		return {
-			...(coverageThreshold !== undefined ? { coverageThreshold } : {}),
+			coverageDirectory: settings.coverageDirectory,
+			coverageReporters: settings.coverageReporters,
+			...(settings.coverageThreshold !== undefined
+				? { coverageThreshold: settings.coverageThreshold }
+				: {}),
 			pkg,
 			universe,
 		};
 	});
 
-	const coverageMapped = normalizeEmptyCoverage(aggregated.merged);
-	return {
-		...(coverageMapped !== undefined ? { coverageMapped } : {}),
-		coveragePackages,
-	};
+	return { coveragePackages };
 }
 
 // Surface the consensus-resolved aggregate sink paths the runner wrote so
@@ -335,16 +333,42 @@ function resolvedSinkPaths(runOptions: WorkspaceRunOptions): {
 	};
 }
 
+// The output layer has no config to read in workspace mode, so hand it the
+// values this run resolved: the consensus knobs for the render, the workspace
+// root the formatters report paths against, and `verbose` straight off the CLI
+// (it is a flag, never a per-package config value — the run header and the
+// streaming sink read it the same way).
+function resolveReportOptions(
+	cli: CliOptions,
+	runOptions: WorkspaceRunOptions,
+	workspaceRoot: string,
+): WorkspaceReportOptions {
+	return {
+		color: runOptions.color,
+		formatters: runOptions.formatters,
+		rootDir: workspaceRoot,
+		silent: runOptions.silent,
+		verbose: cli.verbose === true,
+	};
+}
+
 function composeWorkspaceDisplayName(packageName: string, project: string): string {
 	return packageName === project ? packageName : `${packageName} › ${project}`;
 }
 
 // Builds the final `WorkspaceRunResult` from the runner's output: the runtime
 // project results plus (when present) the merged Type Test result.
-function buildWorkspaceResult(
-	{ results, typecheckResult }: WorkspaceRunnerOutput,
-	runOptions: WorkspaceRunOptions,
-): WorkspaceRunResult {
+function buildWorkspaceResult({
+	cli,
+	output: { results, typecheckResult },
+	runOptions,
+	workspaceRoot,
+}: {
+	cli: CliOptions;
+	output: WorkspaceRunnerOutput;
+	runOptions: WorkspaceRunOptions;
+	workspaceRoot: string;
+}): WorkspaceRunResult {
 	// A run with neither runtime results nor a Type Test result tested nothing
 	// (no pending specs, typecheck off). `--typecheckOnly` lands here with zero
 	// runtime results but a populated `typecheckResult`, so it must not collapse
@@ -366,6 +390,7 @@ function buildWorkspaceResult(
 		mode: "workspace",
 		preCoverageMs: 0,
 		projectResults,
+		reportOptions: resolveReportOptions(cli, runOptions, workspaceRoot),
 		...(typecheckResult !== undefined ? { typecheckResult } : {}),
 		...resolvedSinkPaths(runOptions),
 	};
@@ -436,7 +461,7 @@ async function executeWorkspaceRunAsync({
 		return bail(2);
 	}
 
-	return buildWorkspaceResult(output, runOptions);
+	return buildWorkspaceResult({ cli, output, runOptions, workspaceRoot });
 }
 
 // `workspace.packages` (declared in a shared config, anchored absolute root)

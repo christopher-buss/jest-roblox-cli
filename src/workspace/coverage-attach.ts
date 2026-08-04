@@ -1,6 +1,7 @@
+import * as path from "node:path";
 import process from "node:process";
 
-import type { ResolvedConfig } from "../config/schema.ts";
+import type { CoverageReporter, ResolvedConfig } from "../config/schema.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import {
 	prepareWorkspaceCoverage,
@@ -12,6 +13,29 @@ import type { LoadedPackage } from "./package-loader.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import type { PendingEntry } from "./test-selection.ts";
 
+/**
+ * Everything a package's coverage report and gate are built from, read off that
+ * package's own resolved config. A workspace run has no config of its own — the
+ * file at the invocation directory is bootstrap only — so these values are the
+ * whole story for the package: the universe it reports, where the report lands,
+ * which reporters render it, and the threshold it is judged against.
+ */
+export interface PackageCoverageSettings {
+	collectCoverageFrom?: Array<string> | undefined;
+	/**
+	 * Absolute: the package's `coverageDirectory` against its own `rootDir`.
+	 */
+	coverageDirectory: string;
+	/**
+	 * The package's effective patterns, as instrumentation resolved them.
+	 * Applied to the mapped universe before the report so a per-package opt-out
+	 * scopes to that package's files.
+	 */
+	coveragePathIgnorePatterns?: Array<string> | undefined;
+	coverageReporters: Array<CoverageReporter>;
+	coverageThreshold?: ResolvedConfig["coverageThreshold"] | undefined;
+}
+
 export interface WorkspaceProjectResult {
 	/**
 	 * When coverage is enabled in workspace mode, the per-package manifest
@@ -20,18 +44,8 @@ export interface WorkspaceProjectResult {
 	 * back through this manifest to produce TS-coord Istanbul records.
 	 */
 	coverageManifest?: CoverageManifest | undefined;
-	/**
-	 * This package's effective `coveragePathIgnorePatterns`, carried so
-	 * report- time aggregation applies the same per-package patterns
-	 * instrumentation used. Present whenever `coverageManifest` is.
-	 */
-	coveragePathIgnorePatterns?: Array<string> | undefined;
-	/**
-	 * The package's own declared `coverageThreshold` (undefined when the
-	 * package config never set one). Carried only alongside `coverageManifest`
-	 * so the report layer can gate each package against its own coverage.
-	 */
-	coverageThreshold?: ResolvedConfig["coverageThreshold"] | undefined;
+	/** Present whenever `coverageManifest` is. */
+	coverageSettings?: PackageCoverageSettings | undefined;
 	displayName: string;
 	pkg: string;
 	result: ExecuteResult;
@@ -90,9 +104,8 @@ export function attachCoverageManifests(
 		const coverage = coverageByPackage.get(pendingEntry.pkg);
 		return {
 			coverageManifest: coverage?.manifest,
-			coveragePathIgnorePatterns: coverage?.coveragePathIgnorePatterns,
 			...(coverage !== undefined
-				? { coverageThreshold: pendingEntry.projectConfig.coverageThreshold }
+				? { coverageSettings: readCoverageSettings(pendingEntry, coverage) }
 				: {}),
 			displayName: pendingEntry.project.displayName,
 			pkg: pendingEntry.pkg,
@@ -123,4 +136,20 @@ function buildCoverageMap(
 	}
 
 	return map;
+}
+
+// The ignore patterns come from the prepare pass rather than the config so the
+// report filters on exactly what instrumentation filtered on; everything else is
+// report-time only and reads straight off the package's resolved config.
+function readCoverageSettings(
+	{ projectConfig }: PendingEntry,
+	coverage: WorkspacePackageCoverage,
+): PackageCoverageSettings {
+	return {
+		collectCoverageFrom: projectConfig.collectCoverageFrom,
+		coverageDirectory: path.resolve(projectConfig.rootDir, projectConfig.coverageDirectory),
+		coveragePathIgnorePatterns: coverage.coveragePathIgnorePatterns,
+		coverageReporters: projectConfig.coverageReporters,
+		coverageThreshold: projectConfig.coverageThreshold,
+	};
 }

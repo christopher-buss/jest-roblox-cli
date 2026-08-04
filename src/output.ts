@@ -2,7 +2,7 @@ import assert from "node:assert";
 import * as fs from "node:fs";
 import process from "node:process";
 
-import type { ResolvedConfig } from "./config/schema.ts";
+import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
 import type { RawCoverageData } from "./coverage-pipeline/types.ts";
 import type { ExecuteResult } from "./executor.ts";
@@ -18,7 +18,6 @@ import { findFormatterOptions, usesAgentFormatter } from "./formatters/utils.ts"
 import {
 	extractCoverageDisplayFilter,
 	extractCoveragePackages,
-	extractWorkspaceCoverageMapped,
 	printFinalStatus,
 	processCoverage,
 } from "./reporting/coverage-report.ts";
@@ -364,23 +363,43 @@ function mergeProjectTiming(
 	};
 }
 
-// Derives the config the reporter runs under for multi/workspace. Workspace
-// coverage already applied each package's own `coveragePathIgnorePatterns`
-// per-package in `aggregateWorkspaceCoverage` (where package identity and
-// per-package overrides are still known), so the report-time patterns are
-// blanked — otherwise the reporter would re-apply the workspace-root patterns
-// over a package that opted out via its own override.
+// Derives the config the reporter and print layer run under for
+// multi/workspace.
+//
+// A workspace run has no config of its own: the file at cwd is bootstrap only,
+// read for `workspace.root` / `workspace.packages` and nothing else, so passing
+// it through here made the report universe, the formatters, the sink paths and
+// the exit code depend on whichever config happened to sit at the invocation
+// directory. Workspace therefore renders off the defaults plus the runner's
+// consensus-resolved `reportOptions`, and `collectCoverage` follows whether a
+// package actually produced coverage — the opt-in is per package, so there is
+// no run-level flag to read.
+//
+// `reportOptions` is absent on every result that never reached the runner: a
+// validation bail, no affected packages, and a run that tested nothing. Dispatch
+// returns all three before the output layer sees them — the bail on its
+// `validationExitCode`, the other two on having neither project results nor a
+// Type Test result. The defaults keep those unreachable cases honest instead of
+// reopening the fallback.
 function buildReportConfig(
 	rootConfig: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
 ): ResolvedConfig {
-	const config: ResolvedConfig = { ...rootConfig };
-	if ("collectCoverageFrom" in result && result.collectCoverageFrom !== undefined) {
-		config.collectCoverageFrom = result.collectCoverageFrom;
+	if (result.mode === "workspace") {
+		return {
+			...DEFAULT_CONFIG,
+			// Only drives the PASS/FAIL badge and the agent-mode print ordering:
+			// the reports themselves come off the per-package gates, each with
+			// its own reporters, directory, and universe.
+			collectCoverage: (result.coveragePackages?.length ?? 0) > 0,
+			formatters: ["default"],
+			...result.reportOptions,
+		};
 	}
 
-	if (result.mode === "workspace") {
-		config.coveragePathIgnorePatterns = [];
+	const config: ResolvedConfig = { ...rootConfig };
+	if (result.collectCoverageFrom !== undefined) {
+		config.collectCoverageFrom = result.collectCoverageFrom;
 	}
 
 	return config;
@@ -422,12 +441,11 @@ function emitMultiResults(
 	result: MultiRunResult | WorkspaceRunResult,
 ): boolean {
 	const { config, merged } = context;
-	const workspaceCoverage = extractWorkspaceCoverageMapped(result);
 	const displayFilter = extractCoverageDisplayFilter(result);
 
 	return emitResultsAndCoverage({
 		config,
-		coverageEnabled: config.collectCoverage || workspaceCoverage !== undefined,
+		coverageEnabled: config.collectCoverage,
 		printResults: () => {
 			printMultiResults(context);
 		},
@@ -437,7 +455,6 @@ function emitMultiResults(
 				config,
 				coverageData: merged.coverageData,
 				packageGates: extractCoveragePackages(result),
-				preMapped: workspaceCoverage,
 			});
 		},
 	});
