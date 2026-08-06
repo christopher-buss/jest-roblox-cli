@@ -221,8 +221,8 @@ describe(synthesize, () => {
 		).toBeUndefined();
 	});
 
-	it("should drop service-only $properties from inlined trees", () => {
-		expect.assertions(1);
+	it("should hoist a demoted service's $properties onto the real service", () => {
+		expect.assertions(2);
 
 		vol.reset();
 
@@ -251,6 +251,7 @@ describe(synthesize, () => {
 
 		const parsed = parseFixture(result);
 
+		// Rojo rejects any property on a Folder, so the staged copy keeps none.
 		expect(
 			descend(
 				parsed.tree,
@@ -259,7 +260,849 @@ describe(synthesize, () => {
 				"@halcyon/foo",
 				"ServerScriptService",
 			)!.$properties,
-		).toStrictEqual({ OtherProp: "kept" });
+		).toBeUndefined();
+
+		expect(child(parsed.tree, "ServerScriptService")!.$properties).toStrictEqual({
+			LoadStringEnabled: true,
+			OtherProp: "kept",
+		});
+	});
+
+	it("should hoist properties rojo would reject on a Folder onto the real service", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					Workspace: {
+						$className: "Workspace",
+						$properties: { SignalBehavior: "Deferred", StreamingEnabled: true },
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result);
+		const workspace = child(parsed.tree, "Workspace")!;
+
+		expect(workspace.$className).toBe("Workspace");
+		expect(workspace.$properties).toStrictEqual({
+			SignalBehavior: "Deferred",
+			StreamingEnabled: true,
+		});
+	});
+
+	it("should hoist DataModel root $properties onto the synthesized root", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: { $className: "DataModel", $properties: { Name: "renamed" } },
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(parseFixture(result).tree.$properties).toStrictEqual({ Name: "renamed" });
+	});
+
+	it("should drop root $properties for a project whose root is not a place", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-model",
+				tree: { $className: "Model", $properties: { Name: "nowhere-to-go" } },
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(parseFixture(result).tree.$properties).toBeUndefined();
+	});
+
+	it("should hoist a nested service's $properties onto a nested real service", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					StarterPlayer: {
+						$className: "StarterPlayer",
+						StarterPlayerScripts: {
+							$className: "StarterPlayerScripts",
+							$properties: { LoadCharacterAppearance: false },
+						},
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result);
+		const scripts = descend(parsed.tree, "StarterPlayer", "StarterPlayerScripts")!;
+
+		expect(child(parsed.tree, "StarterPlayer")!.$className).toBe("StarterPlayer");
+		expect(scripts.$properties).toStrictEqual({ LoadCharacterAppearance: false });
+	});
+
+	it("should demote a service outside the name set when it sits at the place root", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					StarterGui: {
+						$className: "StarterGui",
+						$properties: { ShowDevelopmentGui: false },
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result);
+
+		expect(
+			descend(parsed.tree, "ServerStorage", "__pkg_stage", "@halcyon/foo", "StarterGui")!
+				.$className,
+		).toBe("Folder");
+		expect(child(parsed.tree, "StarterGui")!.$properties).toStrictEqual({
+			ShowDevelopmentGui: false,
+		});
+	});
+
+	it("should add $className Folder to a bare node named after a service outside the set", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			// Rojo infers StarterGui from the name at the root; nested under
+			// __pkg_stage it would be rejected as missing required information.
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					StarterGui: { Pkg: { $path: "src" } },
+				},
+			}),
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result);
+
+		expect(
+			descend(parsed.tree, "ServerStorage", "__pkg_stage", "@halcyon/foo", "StarterGui")!
+				.$className,
+		).toBe("Folder");
+	});
+
+	it("should leave $properties in place on a node that was never demoted", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$className: "ReplicatedStorage",
+						Config: {
+							$className: "Configuration",
+							$properties: { AutoRuns: true, Name: "Config" },
+						},
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result);
+		const config = descend(
+			parsed.tree,
+			"ServerStorage",
+			"__pkg_stage",
+			"@halcyon/foo",
+			"ReplicatedStorage",
+			"Config",
+		)!;
+
+		// Not a service, so nothing is filtered out of it and nothing is hoisted.
+		expect(config.$className).toBe("Configuration");
+		expect(config.$properties).toStrictEqual({ AutoRuns: true, Name: "Config" });
+	});
+
+	it("should merge hoisted properties when packages agree on the value", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+		vol.fromJSON({
+			[barProject]: projectJson({
+				name: "bar-test",
+				tree: {
+					$className: "DataModel",
+					Workspace: {
+						$className: "Workspace",
+						$properties: { SignalBehavior: "Deferred", StreamingEnabled: true },
+					},
+				},
+			}),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					Workspace: {
+						$className: "Workspace",
+						$properties: { SignalBehavior: "Deferred" },
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+				{
+					name: "@halcyon/bar",
+					packageDirectory: path.dirname(barProject),
+					rojoProjectPath: barProject,
+				},
+			],
+		});
+
+		expect(child(parseFixture(result).tree, "Workspace")!.$properties).toStrictEqual({
+			SignalBehavior: "Deferred",
+			StreamingEnabled: true,
+		});
+	});
+
+	it("should throw ConfigError when packages disagree on a hoisted property", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+		vol.fromJSON({
+			[barProject]: projectJson({
+				name: "bar-test",
+				tree: {
+					$className: "DataModel",
+					Workspace: {
+						$className: "Workspace",
+						$properties: { StreamingEnabled: false },
+					},
+				},
+			}),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					Workspace: {
+						$className: "Workspace",
+						$properties: { StreamingEnabled: true },
+					},
+				},
+			}),
+		});
+
+		expect(() => {
+			synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+					{
+						name: "@halcyon/bar",
+						packageDirectory: path.dirname(barProject),
+						rojoProjectPath: barProject,
+					},
+				],
+			});
+		}).toThrow(/disagree on `Workspace\.StreamingEnabled`/);
+	});
+
+	it.for([{}, "not-an-object"])("should hoist nothing for $properties %o", (properties) => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					Workspace: { $className: "Workspace", $properties: properties },
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result);
+
+		expect(child(parsed.tree, "Workspace")).toBeUndefined();
+		expect(
+			descend(parsed.tree, "ServerStorage", "__pkg_stage", "@halcyon/foo", "Workspace")!
+				.$properties,
+		).toBeUndefined();
+	});
+
+	it("should mark the stage when a package asks for non-legacy scripts", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				emitLegacyScripts: false,
+				tree: { $className: "DataModel" },
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const parsed = parseFixture(result);
+
+		// The flag itself must not reach the place: a RunContext script would
+		// run from the stage at place load.
+		expect(parsed["emitLegacyScripts"]).toBeUndefined();
+		expect(
+			descend(parsed.tree, "ServerStorage", "__pkg_stage", "@halcyon/foo")!["$attributes"],
+		).toStrictEqual({ JestRunContextScripts: true });
+	});
+
+	it("should leave the stage unmarked when a package asks for legacy scripts", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				emitLegacyScripts: true,
+				tree: { $className: "DataModel" },
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(
+			descend(parseFixture(result).tree, "ServerStorage", "__pkg_stage", "@halcyon/foo")![
+				"$attributes"
+			],
+		).toBeUndefined();
+	});
+
+	it("should leave the stage unmarked when a package declares nothing", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({ name: "foo-test", tree: { $className: "DataModel" } }),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(
+			descend(parseFixture(result).tree, "ServerStorage", "__pkg_stage", "@halcyon/foo")![
+				"$attributes"
+			],
+		).toBeUndefined();
+	});
+
+	it("should keep a package's own $attributes when marking the stage", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				emitLegacyScripts: false,
+				tree: { $attributes: { Existing: "kept" }, $className: "DataModel" },
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(
+			descend(parseFixture(result).tree, "ServerStorage", "__pkg_stage", "@halcyon/foo")![
+				"$attributes"
+			],
+		).toStrictEqual({ Existing: "kept", JestRunContextScripts: true });
+	});
+
+	it("should carry globIgnorePaths when every declaring package agrees", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+		vol.fromJSON({
+			// bar declares nothing, so it has no opinion and does not constrain
+			// foo.
+			[barProject]: projectJson({ name: "bar-test", tree: { $className: "DataModel" } }),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				globIgnorePaths: ["**/tsconfig.json", "**/*.cov-map.*"],
+				tree: { $className: "DataModel" },
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+				{
+					name: "@halcyon/bar",
+					packageDirectory: path.dirname(barProject),
+					rojoProjectPath: barProject,
+				},
+			],
+		});
+
+		expect(parseFixture(result)["globIgnorePaths"]).toStrictEqual([
+			"**/tsconfig.json",
+			"**/*.cov-map.*",
+		]);
+	});
+
+	it("should omit globIgnorePaths when no package declares any", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({ name: "foo-test", tree: { $className: "DataModel" } }),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(parseFixture(result)["globIgnorePaths"]).toBeUndefined();
+	});
+
+	it("should ignore non-string entries in a declared globIgnorePaths", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				globIgnorePaths: ["**/tsconfig.json", 42],
+				tree: { $className: "DataModel" },
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(parseFixture(result)["globIgnorePaths"]).toStrictEqual(["**/tsconfig.json"]);
+	});
+
+	it("should throw ConfigError when packages declare different globIgnorePaths", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+		vol.fromJSON({
+			[barProject]: projectJson({
+				name: "bar-test",
+				globIgnorePaths: ["**/out/**"],
+				tree: { $className: "DataModel" },
+			}),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				globIgnorePaths: ["**/tsconfig.json"],
+				tree: { $className: "DataModel" },
+			}),
+		});
+
+		expect(() => {
+			synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+					{
+						name: "@halcyon/bar",
+						packageDirectory: path.dirname(barProject),
+						rojoProjectPath: barProject,
+					},
+				],
+			});
+		}).toThrow(/disagree on `globIgnorePaths`/);
+	});
+
+	it("should accept the same globIgnorePaths listed in a different order", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+		vol.fromJSON({
+			[barProject]: projectJson({
+				name: "bar-test",
+				globIgnorePaths: ["**/*.cov-map.*", "**/tsconfig.json"],
+				tree: { $className: "DataModel" },
+			}),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				globIgnorePaths: ["**/tsconfig.json", "**/*.cov-map.*"],
+				tree: { $className: "DataModel" },
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+				{
+					name: "@halcyon/bar",
+					packageDirectory: path.dirname(barProject),
+					rojoProjectPath: barProject,
+				},
+			],
+		});
+
+		expect(parseFixture(result)["globIgnorePaths"]).toStrictEqual([
+			"**/tsconfig.json",
+			"**/*.cov-map.*",
+		]);
+	});
+
+	it("should name the hoisted service after the node when it declares no class", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			// Rojo infers Workspace from the node name at the root, so the class
+			// the hoisted service needs has to come from the name too.
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					Workspace: { $properties: { StreamingEnabled: true } },
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const workspace = child(parseFixture(result).tree, "Workspace")!;
+
+		expect(workspace.$className).toBe("Workspace");
+		expect(workspace.$properties).toStrictEqual({ StreamingEnabled: true });
+	});
+
+	it("should label a root property conflict against DataModel", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+		vol.fromJSON({
+			[barProject]: projectJson({
+				name: "bar-test",
+				tree: { $className: "DataModel", $properties: { Name: "bar" } },
+			}),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: { $className: "DataModel", $properties: { Name: "foo" } },
+			}),
+		});
+
+		expect(() => {
+			synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+					{
+						name: "@halcyon/bar",
+						packageDirectory: path.dirname(barProject),
+						rojoProjectPath: barProject,
+					},
+				],
+			});
+		}).toThrow(/disagree on `DataModel\.Name`/);
+	});
+
+	it("should merge hoisted properties into a service the synth root already declares", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ServerStorage: {
+						$className: "ServerStorage",
+						$properties: { Name: "kept" },
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		const serverStorage = child(parseFixture(result).tree, "ServerStorage")!;
+
+		// The stage lives on ServerStorage, so the hoist has to merge rather than
+		// replace the node the synthesizer built.
+		expect(serverStorage.$properties).toStrictEqual({ Name: "kept" });
+		expect(serverStorage["__pkg_stage"]).toBeDefined();
+	});
+
+	it("should recover a node whose $className is not a string", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$className: "ReplicatedStorage",
+						Broken: { $className: 42 },
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(
+			descend(
+				parseFixture(result).tree,
+				"ServerStorage",
+				"__pkg_stage",
+				"@halcyon/foo",
+				"ReplicatedStorage",
+				"Broken",
+			)!.$className,
+		).toBe("Folder");
+	});
+
+	it("should keep LoadStringEnabled on when a package declares it off", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ServerScriptService: {
+						$className: "ServerScriptService",
+						$properties: { LoadStringEnabled: false },
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(child(parseFixture(result).tree, "ServerScriptService")!.$properties).toStrictEqual({
+			LoadStringEnabled: true,
+		});
 	});
 
 	it.for([

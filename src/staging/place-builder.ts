@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import { hashFile } from "../utils/hash.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
+import { relativizeProjectPaths } from "./relativize-paths.ts";
 import type { PackageDescriptor } from "./synthesizer.ts";
 import { synthesize } from "./synthesizer.ts";
 
@@ -34,7 +35,13 @@ export function buildPlace({
 	projectFile,
 	wrap,
 }: BuildPlaceOptions): BuildManifestArtifact {
-	const projectJson = synthesize({ loadStringEnabled, packages, wrap });
+	// Relative `$path`s, written last: rojo matches `globIgnorePaths` against the
+	// path as the project expresses it, so absolute ones would leave the ignore
+	// list inert.
+	const projectJson = relativizeProjectPaths(
+		synthesize({ loadStringEnabled, packages, wrap }),
+		path.dirname(projectFile),
+	);
 	fs.mkdirSync(path.dirname(projectFile), { recursive: true });
 	fs.writeFileSync(projectFile, projectJson);
 	// `rojo build -o` fails if the output directory is missing, so ensure it

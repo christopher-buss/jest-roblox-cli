@@ -105,8 +105,6 @@ const SERVICE_CLASSES = new Set([
 	"Workspace",
 ]);
 
-const SERVICE_PROPERTIES = new Set(["AutoRuns", "ExecuteWithStudioRun", "LoadStringEnabled"]);
-
 interface AbsolutizeOptions {
 	/**
 	 * Base for resolving `coverageRoots[].luauRoot`. Typically
@@ -116,55 +114,87 @@ interface AbsolutizeOptions {
 	coverageRoots: Array<CoverageRoot> | undefined;
 }
 
+/**
+ * A service whose `$properties` were lifted out of a package's staged tree.
+ *
+ * Staging demotes every service to a Folder, and rojo rejects a service
+ * property on one — `Unknown property Folder.StreamingEnabled` fails the whole
+ * build. The properties are re-applied to the matching real service of the
+ * synthesized place instead, which is also the only place they can take
+ * effect: `Workspace.SignalBehavior` and friends are read-only once the place
+ * is running, so no amount of runtime materializing could set them.
+ */
+interface HoistedService {
+	/**
+	 * Path from the place root, e.g. `["StarterPlayer",
+	 * "StarterPlayerScripts"]`.
+	 */
+	path: Array<string>;
+	properties: Record<string, unknown>;
+	/** Declared `$className`, or the node name for a service rojo infers. */
+	serviceClass: string;
+}
+
+interface DeclaredGlobs {
+	packageName: string;
+	patterns: Array<string>;
+}
+
+interface PackageHoist {
+	packageName: string;
+	services: ReadonlyArray<HoistedService>;
+}
+
+interface TransformEntry {
+	key: string;
+	hoisted: Array<HoistedService>;
+	/** True only for a direct child of a place root, which is a service. */
+	isService: boolean;
+	nodePath: Array<string>;
+	value: RojoTreeNode[string];
+}
+
 export function synthesize(input: SynthesizeInput): string {
 	if (input.wrap === false) {
 		return synthesizeNoWrap(input.packages, input.loadStringEnabled);
 	}
 
 	const stage: RojoTreeNode = { $className: "Folder" };
+	const hoists: Array<PackageHoist> = [];
+	const globs: Array<DeclaredGlobs> = [];
 
 	for (const descriptor of input.packages) {
-		const project = loadRojoProject(descriptor.rojoProjectPath);
-		const folder = transformToFolder(project.tree);
-		const root = absolutizePaths(folder, path.dirname(descriptor.rojoProjectPath), {
-			coverageBase: descriptor.packageDirectory,
-			coverageRoots: descriptor.coverageRoots,
-		});
-		injectStubMounts(root, descriptor.stubMounts);
-		stage[descriptor.name] = root;
+		stagePackage(descriptor, stage, hoists, globs);
 	}
 
 	const tree: RojoTreeNode = {
 		$className: "DataModel",
-		ServerScriptService: {
-			$className: "ServerScriptService",
-			$properties: { LoadStringEnabled: true },
-		},
 		ServerStorage: {
 			$className: "ServerStorage",
 			__pkg_stage: stage,
 		},
 	};
 
-	return stableStringify({ name: "jest-roblox-workspace", tree });
+	applyHoistedServices(tree, mergeHoistedServices(hoists));
+
+	// After the hoist, so a package that declares `LoadStringEnabled: false`
+	// cannot switch off the loadstring the Run-mode runner needs.
+	enableLoadString(tree);
+
+	const globIgnorePaths = resolveGlobIgnorePaths(globs);
+
+	return stableStringify({
+		...(globIgnorePaths === undefined ? {} : { globIgnorePaths }),
+		name: "jest-roblox-workspace",
+		tree,
+	});
 }
 
-function sortKeys(value: unknown): unknown {
-	if (value === null || typeof value !== "object" || Array.isArray(value)) {
-		return value;
-	}
-
-	const sorted: Record<string, unknown> = {};
-	for (const key of Object.keys(value).sort()) {
-		const member: unknown = Reflect.get(value, key);
-		sorted[key] = sortKeys(member);
-	}
-
-	return sorted;
-}
-
-function stableStringify(value: unknown): string {
-	return String(JSON.stringify(sortKeys(value), undefined, 2));
+function readGlobIgnorePaths(raw: Record<string, unknown>): Array<string> | undefined {
+	const value = raw["globIgnorePaths"];
+	return Array.isArray(value)
+		? value.filter((entry): entry is string => typeof entry === "string")
+		: undefined;
 }
 
 function isTreeNode(value: RojoTreeNode[string]): value is RojoTreeNode {
@@ -362,6 +392,155 @@ function isProperties(value: RojoTreeNode[string]): value is Record<string, unkn
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function recordHoistedProperties(
+	hoisted: Array<HoistedService>,
+	serviceClass: string,
+	nodePath: Array<string>,
+	value: RojoTreeNode[string],
+): void {
+	if (!isProperties(value) || Object.keys(value).length === 0) {
+		return;
+	}
+
+	hoisted.push({ path: nodePath, properties: value, serviceClass });
+}
+
+function transformToFolder(node: RojoTreeNode, hoisted: Array<HoistedService>): RojoTreeNode {
+	const folder: RojoTreeNode = { $className: "Folder" };
+
+	// Every direct child of a DataModel is a service by position, whatever it is
+	// named — rojo infers the class from the key when `$className` is omitted.
+	// Position beats the name set here, which only nested services (e.g.
+	// `StarterPlayer.StarterPlayerScripts`) still need.
+	const isPlace = node.$className === "DataModel";
+
+	for (const [key, value] of Object.entries(node)) {
+		if (key === "$className") {
+			continue;
+		}
+
+		if (key === "$properties") {
+			// A non-place root (a model project) has no service to hoist onto, so
+			// its properties are dropped as before rather than moved onto a
+			// Folder where rojo would reject them.
+			if (isPlace) {
+				recordHoistedProperties(hoisted, "DataModel", [], value);
+			}
+
+			continue;
+		}
+
+		folder[key] = transformNodeValue({
+			key,
+			hoisted,
+			isService: isPlace,
+			nodePath: [key],
+			value,
+		});
+	}
+
+	return folder;
+}
+
+/**
+ * `emitLegacyScripts` is deliberately not carried onto the synthesized place.
+ * Under `false` a `.server.luau` becomes a `Script` with `RunContext = Server`,
+ * which the engine runs wherever it sits — so the staged copy would run at
+ * place load, before any package is materialized, and again once it is. The
+ * place is built with legacy emission instead, which parks staged scripts inert
+ * under `ServerStorage`, and this attribute tells the materializer to restore
+ * the requested run context on each clone before it enters a live service.
+ */
+function markRunContextScripts(root: RojoTreeNode, raw: Record<string, unknown>): void {
+	if (raw["emitLegacyScripts"] !== false) {
+		return;
+	}
+
+	const attributes = isProperties(root["$attributes"]) ? root["$attributes"] : {};
+	root["$attributes"] = { ...attributes, JestRunContextScripts: true };
+}
+
+function stagePackage(
+	descriptor: PackageDescriptor,
+	stage: RojoTreeNode,
+	hoists: Array<PackageHoist>,
+	globs: Array<DeclaredGlobs>,
+): void {
+	const project = loadRojoProject(descriptor.rojoProjectPath);
+	const services: Array<HoistedService> = [];
+	const folder = transformToFolder(project.tree, services);
+	const root = absolutizePaths(folder, path.dirname(descriptor.rojoProjectPath), {
+		coverageBase: descriptor.packageDirectory,
+		coverageRoots: descriptor.coverageRoots,
+	});
+	injectStubMounts(root, descriptor.stubMounts);
+	markRunContextScripts(root, project.raw);
+	stage[descriptor.name] = root;
+	hoists.push({ packageName: descriptor.name, services });
+
+	const patterns = readGlobIgnorePaths(project.raw);
+	if (patterns !== undefined) {
+		globs.push({ packageName: descriptor.name, patterns });
+	}
+}
+
+function formatGlobConflict(owner: DeclaredGlobs, rival: DeclaredGlobs): string {
+	return [
+		"workspace packages disagree on `globIgnorePaths`.",
+		"",
+		`  - ${JSON.stringify(owner.patterns)} — declared by ${owner.packageName}`,
+		`  - ${JSON.stringify(rival.patterns)} — declared by ${rival.packageName}`,
+		"",
+		"Every package in a workspace run shares one synthesized place, so one",
+		"ignore list covers every mount in it. Either align the list across each",
+		"package's rojo project, or run the odd package on its own.",
+	].join("\n");
+}
+
+function isSameValue(left: unknown, right: unknown): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * One synthesized place means one ignore list, so the packages that declare
+ * `globIgnorePaths` have to declare the same one. A package that declares none
+ * has no opinion and does not constrain the rest; two that declare different
+ * lists cannot both be honored, and picking one silently would drop the other's
+ * files out of the place with no diagnostic.
+ */
+function resolveGlobIgnorePaths(globs: ReadonlyArray<DeclaredGlobs>): Array<string> | undefined {
+	const [first, ...rest] = globs;
+	if (first === undefined) {
+		return undefined;
+	}
+
+	for (const entry of rest) {
+		if (!isSameValue(first.patterns.toSorted(), entry.patterns.toSorted())) {
+			throw new ConfigError(formatGlobConflict(first, entry));
+		}
+	}
+
+	return first.patterns;
+}
+
+function sortKeys(value: unknown): unknown {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return value;
+	}
+
+	const sorted: Record<string, unknown> = {};
+	for (const key of Object.keys(value).sort()) {
+		const member: unknown = Reflect.get(value, key);
+		sorted[key] = sortKeys(member);
+	}
+
+	return sorted;
+}
+
+function stableStringify(value: unknown): string {
+	return String(JSON.stringify(sortKeys(value), undefined, 2));
+}
+
 /**
  * Force `ServerScriptService.LoadStringEnabled = true` on a no-wrap tree,
  * creating the service node if the user's project omits it and merging into
@@ -410,72 +589,174 @@ function synthesizeNoWrap(packages: Array<PackageDescriptor>, loadStringEnabled 
 	return stableStringify({ ...project.raw, tree });
 }
 
-function transformToFolder(node: RojoTreeNode): RojoTreeNode {
-	const folder: RojoTreeNode = { $className: "Folder" };
-	for (const [key, value] of Object.entries(node)) {
-		if (key === "$className" || key === "$properties") {
-			continue;
+/** `Workspace.StreamingEnabled`, or `DataModel.Name` for the place root. */
+function propertyLabel(nodePath: ReadonlyArray<string>, property: string): string {
+	return [...(nodePath.length > 0 ? nodePath : ["DataModel"]), property].join(".");
+}
+
+function formatPropertyConflict(
+	label: string,
+	owner: { packageName: string; value: unknown },
+	rival: { packageName: string; value: unknown },
+): string {
+	return [
+		`workspace packages disagree on \`${label}\`.`,
+		"",
+		`  - ${JSON.stringify(owner.value)} — declared by ${owner.packageName}`,
+		`  - ${JSON.stringify(rival.value)} — declared by ${rival.packageName}`,
+		"",
+		"Every package in a workspace run shares one synthesized place, so a",
+		"service property is a property of the whole run. Either align the value",
+		"across each package's rojo project, or run the odd package on its own.",
+	].join("\n");
+}
+
+function mergeServiceProperties(
+	target: HoistedService,
+	service: HoistedService,
+	packageName: string,
+	owners: Map<string, { packageName: string; value: unknown }>,
+): void {
+	const pathKey = service.path.join("/");
+
+	for (const [property, value] of Object.entries(service.properties)) {
+		const ownerKey = `${pathKey}.${property}`;
+		const owner = owners.get(ownerKey);
+		if (owner !== undefined && !isSameValue(owner.value, value)) {
+			throw new ConfigError(
+				formatPropertyConflict(propertyLabel(service.path, property), owner, {
+					packageName,
+					value,
+				}),
+			);
 		}
 
-		folder[key] = transformValue(key, value);
+		target.properties[property] = value;
+		owners.set(ownerKey, { packageName, value });
 	}
-
-	return folder;
 }
 
-function transformChild(node: RojoTreeNode): RojoTreeNode {
-	const result: RojoTreeNode = {};
-	for (const [key, value] of Object.entries(node)) {
-		const transformed = transformChildEntry(key, value);
-		if (transformed !== undefined) {
-			result[key] = transformed;
+/**
+ * Fold every package's hoisted services into one set, keyed by DataModel path.
+ * Packages that set the same property to the same value agree and merge
+ * silently; a genuine disagreement is unresolvable — one place cannot hold two
+ * values — so it fails the run rather than letting load order pick a winner.
+ */
+function mergeHoistedServices(hoists: ReadonlyArray<PackageHoist>): Array<HoistedService> {
+	const merged = new Map<string, HoistedService>();
+	const owners = new Map<string, { packageName: string; value: unknown }>();
+
+	for (const { packageName, services } of hoists) {
+		for (const service of services) {
+			const pathKey = service.path.join("/");
+			let target = merged.get(pathKey);
+			if (target === undefined) {
+				target = {
+					path: service.path,
+					properties: {},
+					serviceClass: service.serviceClass,
+				};
+				merged.set(pathKey, target);
+			}
+
+			mergeServiceProperties(target, service, packageName, owners);
 		}
 	}
 
-	return result;
+	return [...merged.values()];
 }
 
-function filterServiceProperties(props: Record<string, unknown>): Record<string, unknown> {
-	const filtered: Record<string, unknown> = {};
-	for (const [propertyKey, propertyValue] of Object.entries(props)) {
-		if (!SERVICE_PROPERTIES.has(propertyKey)) {
-			filtered[propertyKey] = propertyValue;
+/**
+ * Write the hoisted properties onto real services of the synthesized place,
+ * creating each service node (and any intermediate one) on the way down. Only
+ * properties travel — children stay staged under `__pkg_stage`, where the
+ * materializer clones them into the live services per package.
+ */
+function applyHoistedServices(tree: RojoTreeNode, hoisted: ReadonlyArray<HoistedService>): void {
+	for (const service of hoisted) {
+		let cursor = tree;
+		for (const [index, segment] of service.path.entries()) {
+			const existing = cursor[segment];
+			const node: RojoTreeNode = isTreeNode(existing) ? existing : {};
+			// An intermediate segment is a service rojo would infer from its own
+			// name; only the leaf carries a class the package declared.
+			node.$className ??= index === service.path.length - 1 ? service.serviceClass : segment;
+			cursor[segment] = node;
+			cursor = node;
 		}
-	}
 
-	return filtered;
+		// One entry per DataModel path — the merge already folded every package's
+		// claim on this service together — so this assigns rather than merges.
+		cursor.$properties = { ...service.properties };
+	}
 }
 
-function transformChildEntry(
-	key: string,
-	value: RojoTreeNode[string],
-): RojoTreeNode[string] | undefined {
-	if (key === "$className" && typeof value === "string" && SERVICE_CLASSES.has(value)) {
-		return "Folder";
-	}
-
-	if (key === "$properties" && isProperties(value)) {
-		const filtered = filterServiceProperties(value);
-		return Object.keys(filtered).length > 0 ? filtered : undefined;
-	}
-
-	return transformValue(key, value);
-}
-
-function transformValue(key: string, value: RojoTreeNode[string]): RojoTreeNode[string] {
+function transformNodeValue({
+	key,
+	hoisted,
+	isService,
+	nodePath,
+	value,
+}: TransformEntry): RojoTreeNode[string] {
 	if (key.startsWith("$") || !isTreeNode(value)) {
 		return value;
 	}
 
-	const child = transformChild(value);
+	return transformChild(value, nodePath, isService, hoisted);
+}
 
-	// A node named after a service relies on Rojo's implicit service inference
-	// at the DataModel root (e.g. a bare `ServerScriptService` with no
-	// `$className`). Once relocated under `__pkg_stage` it is a plain folder, so
-	// it needs an explicit `$className` or Rojo rejects it as missing info.
-	if (SERVICE_CLASSES.has(key) && child.$className === undefined && child.$path === undefined) {
-		child.$className = "Folder";
+/**
+ * A bare node — no `$className`, no `$path` — is only legal at a DataModel
+ * root, where rojo infers a service from the name. Once relocated under
+ * `__pkg_stage` it needs an explicit class, and Folder is what every demoted
+ * node becomes. Unconditional because a bare node rojo could not resolve at the
+ * root is one it would reject here too. This also recovers a malformed
+ * non-string `$className`, which is dropped rather than copied through.
+ */
+function recoverBareNodeClass(node: RojoTreeNode): void {
+	if (node.$className === undefined && node.$path === undefined) {
+		node.$className = "Folder";
+	}
+}
+
+function transformChild(
+	node: RojoTreeNode,
+	nodePath: Array<string>,
+	isService: boolean,
+	hoisted: Array<HoistedService>,
+): RojoTreeNode {
+	const declaredClass = typeof node.$className === "string" ? node.$className : undefined;
+	const isDemoted =
+		isService || (declaredClass !== undefined && SERVICE_CLASSES.has(declaredClass));
+	const result: RojoTreeNode = {};
+
+	for (const [key, value] of Object.entries(node)) {
+		if (key === "$className") {
+			if (isDemoted) {
+				result.$className = "Folder";
+			} else if (declaredClass !== undefined) {
+				result.$className = declaredClass;
+			}
+
+			continue;
+		}
+
+		if (key === "$properties" && isDemoted) {
+			// eslint-disable-next-line ts/no-non-null-assertion -- non-root nodes always have a name
+			recordHoistedProperties(hoisted, declaredClass ?? nodePath.at(-1)!, nodePath, value);
+			continue;
+		}
+
+		result[key] = transformNodeValue({
+			key,
+			hoisted,
+			isService: false,
+			nodePath: [...nodePath, key],
+			value,
+		});
 	}
 
-	return child;
+	recoverBareNodeClass(result);
+
+	return result;
 }

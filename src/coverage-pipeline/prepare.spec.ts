@@ -11,7 +11,6 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
@@ -341,7 +340,7 @@ describe(prepareCoverage, () => {
 	});
 
 	describe("when computing $path entries for the rewritten project", () => {
-		it("should absolutize $path entries so the rewritten project resolves regardless of its disk location", async () => {
+		it("should express $path entries relative to the rewritten project's own directory", async () => {
 			expect.assertions(2);
 
 			const projectWithExternal = {
@@ -369,13 +368,17 @@ describe(prepareCoverage, () => {
 
 			const written = readRojoProjectJson(".jest-roblox/coverage/default.project.json");
 
-			// Matching path: absolute path inside the shadow dir.
+			// Paths are written relative to the project file's own directory —
+			// rojo matches globIgnorePaths against the path as expressed, so an
+			// absolute one would leave every ignore pattern inert.
+			//
+			// Matching path: the shadow dir, a sibling of the project file.
 			expect(readNestedProperty(written, "tree", "ReplicatedStorage", "$path")).toBe(
-				normalizeWindowsPath(path.resolve(".jest-roblox/coverage/out-tsc/test/client")),
+				"out-tsc/test/client",
 			);
-			// Non-matching path: absolute path to the original source dir.
+			// Non-matching path: the original source dir, two levels up.
 			expect(readNestedProperty(written, "tree", "ServerScriptService", "$path")).toBe(
-				normalizeWindowsPath(path.resolve("include")),
+				"../../include",
 			);
 		});
 	});
@@ -413,10 +416,9 @@ describe(prepareCoverage, () => {
 
 			// $path "../out" resolves against "config" → absolute "out";
 			// luauRoot "out" resolves against rootDir "." → absolute "out";
-			// match → redirect to shadow dir.
-			expect(readNestedProperty(parsed, "tree", "ReplicatedStorage", "$path")).toBe(
-				normalizeWindowsPath(path.resolve(".jest-roblox/coverage/out")),
-			);
+			// match → redirect to the shadow dir, written relative to the
+			// project file that now sits beside it.
+			expect(readNestedProperty(parsed, "tree", "ReplicatedStorage", "$path")).toBe("out");
 		});
 	});
 
@@ -463,11 +465,12 @@ describe(prepareCoverage, () => {
 			const written = readRojoProjectJson(".jest-roblox/coverage/development.project.json");
 
 			// The nested $path: "default.project.json" is resolved to $path:
-			// "src", absolutized, then redirected to the instrumented shadow
-			// dir since "src" matches the configured luauRoot.
+			// "src", then redirected to the instrumented shadow dir since "src"
+			// matches the configured luauRoot — and written relative to the
+			// project file that now sits beside that shadow dir.
 			expect(
 				readNestedProperty(written, "tree", "ReplicatedStorage", "uuid-generator", "$path"),
-			).toBe(normalizeWindowsPath(path.resolve(".jest-roblox/coverage/src")));
+			).toBe("src");
 		});
 	});
 

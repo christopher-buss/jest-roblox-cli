@@ -11,7 +11,35 @@ local module = {}
 -- the merged-into folder to this list — only newly-cloned children do.
 local materialized: { Instance } = {}
 
-local function cloneInto(source: Instance, dest: Instance)
+-- Set on a package's stage root by the synthesizer when that package's rojo
+-- project declares `emitLegacyScripts: false`.
+local RUN_CONTEXT_ATTRIBUTE = "JestRunContextScripts"
+
+-- A `RunContext = Server` script runs wherever it sits in the DataModel, so the
+-- staged copy would run at place load — before any package is materialized, and
+-- again once it is. The place is therefore always built with legacy script
+-- emission, which parks the staged copies inert under ServerStorage, and the
+-- run context the package asked for is restored here, on the clone, before it
+-- is parented into a live service.
+--
+-- A LocalScript cannot be restored the same way: `RunContext = Client` needs a
+-- Script, and an Instance's ClassName is fixed. Nothing runs a client script in
+-- a headless session anyway, so the gap costs nothing in practice.
+local function restoreRunContext(instance: Instance)
+	for _, descendant in instance:GetDescendants() do
+		restoreRunContext(descendant)
+	end
+
+	if instance:IsA("Script") and instance.RunContext == Enum.RunContext.Legacy then
+		-- Guarded: a runtime that refuses the write leaves the script legacy,
+		-- which is how it behaved before the run context was restored at all.
+		pcall(function()
+			instance.RunContext = Enum.RunContext.Server
+		end)
+	end
+end
+
+local function cloneInto(source: Instance, dest: Instance, runContextScripts: boolean)
 	for _, child in source:GetChildren() do
 		local existing = dest:FindFirstChild(child.Name)
 		if
@@ -19,9 +47,15 @@ local function cloneInto(source: Instance, dest: Instance)
 			and (existing:IsA("Folder") or existing:IsA("Model"))
 			and (child:IsA("Folder") or child:IsA("Model"))
 		then
-			cloneInto(child, existing)
+			cloneInto(child, existing, runContextScripts)
 		else
 			local cloned = child:Clone()
+			-- Before parenting: a script that enters a live service starts
+			-- running, and it should start under the context it asked for.
+			if runContextScripts then
+				restoreRunContext(cloned)
+			end
+
 			cloned.Parent = dest
 			table.insert(materialized, cloned)
 		end
@@ -52,19 +86,21 @@ function module.materialize(pkgName: string)
 		return
 	end
 
+	local runContextScripts = staged:GetAttribute(RUN_CONTEXT_ATTRIBUTE) == true
+
 	for _, stagedSvc in staged:GetChildren() do
 		local svcName = stagedSvc.Name
 		if svcName == "StarterPlayer" then
 			for _, stagedSub in stagedSvc:GetChildren() do
 				local liveSub = StarterPlayer:FindFirstChild(stagedSub.Name)
 				if liveSub then
-					cloneInto(stagedSub, liveSub)
+					cloneInto(stagedSub, liveSub, runContextScripts)
 				end
 			end
 		else
 			local liveSvc = game:FindFirstChild(svcName)
 			if liveSvc then
-				cloneInto(stagedSvc, liveSvc)
+				cloneInto(stagedSvc, liveSvc, runContextScripts)
 			end
 		end
 	end

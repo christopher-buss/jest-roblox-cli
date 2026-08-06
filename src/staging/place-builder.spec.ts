@@ -2,9 +2,11 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
 import { Buffer } from "node:buffer";
+import * as path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { hashBuffer } from "../utils/hash.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { buildPlace } from "./place-builder.ts";
 import type { PackageDescriptor } from "./synthesizer.ts";
@@ -21,6 +23,8 @@ vi.mock(import("../utils/rojo-builder"));
 const PROJECT_FILE = "/cache/synth.project.json";
 const PLACE_FILE = "/out/game.rbxl";
 const PLACE_BYTES = "RBXL-BYTES";
+const MOUNT_DIR = "/repo/out";
+const PROJECT_JSON = JSON.stringify({ name: "synth", tree: { $path: MOUNT_DIR } });
 
 function makeDescriptor(): PackageDescriptor {
 	return {
@@ -38,7 +42,7 @@ describe(buildPlace, () => {
 			vol.reset();
 		});
 
-		vi.mocked(synthesize).mockReturnValue("PROJECT_JSON");
+		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
 			// No mkdir here: buildPlace creates the output directory before
 			// building.
@@ -65,7 +69,7 @@ describe(buildPlace, () => {
 			vol.reset();
 		});
 
-		vi.mocked(synthesize).mockReturnValue("PROJECT_JSON");
+		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
 			// No mkdir here: buildPlace creates the output directory before
 			// building.
@@ -79,8 +83,36 @@ describe(buildPlace, () => {
 			wrap: false,
 		});
 
-		expect(vol.readFileSync(PROJECT_FILE, "utf8")).toBe("PROJECT_JSON");
+		expect(JSON.parse(String(vol.readFileSync(PROJECT_FILE, "utf8")))).toMatchObject({
+			name: "synth",
+		});
 		expect(buildWithRojo).toHaveBeenCalledWith(PROJECT_FILE, PLACE_FILE);
+	});
+
+	it("should write $path entries relative to the project file", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
+		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
+			vol.writeFileSync(outputPath, PLACE_BYTES);
+		});
+
+		buildPlace({
+			packages: [makeDescriptor()],
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+			wrap: false,
+		});
+
+		// Rojo matches globIgnorePaths against the path as written, so an
+		// absolute mount would leave every ignore pattern inert.
+		expect(JSON.parse(String(vol.readFileSync(PROJECT_FILE, "utf8")))).toMatchObject({
+			tree: { $path: normalizeWindowsPath(path.relative("/cache", MOUNT_DIR)) },
+		});
 	});
 
 	it("should forward wrap and loadStringEnabled to synthesize", () => {
@@ -90,7 +122,7 @@ describe(buildPlace, () => {
 			vol.reset();
 		});
 
-		vi.mocked(synthesize).mockReturnValue("PROJECT_JSON");
+		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
 			vol.writeFileSync(outputPath, PLACE_BYTES);
 		});
@@ -114,7 +146,7 @@ describe(buildPlace, () => {
 			vol.reset();
 		});
 
-		vi.mocked(synthesize).mockReturnValue("PROJECT_JSON");
+		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		// Writes straight to the output path with no mkdir — succeeds only
 		// because buildPlace created the (nested, not-yet-existing) directory.
 		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
