@@ -1,10 +1,8 @@
 import * as path from "node:path";
 
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
 import { extractStaticRoot } from "./projects.ts";
-
-const DRIVE_LETTER_ABSOLUTE = /^[A-Za-z]:\//;
 
 export interface ProjectFileMatch {
 	/**
@@ -94,10 +92,6 @@ export function filterProjectsByFiles(
 	return matches;
 }
 
-function isPosixOrDriveAbsolute(value: string): boolean {
-	return value.startsWith("/") || DRIVE_LETTER_ABSOLUTE.test(value);
-}
-
 /**
  * Join `rootDirectory` and `file` into a posix path. Treats both forward-slash
  * absolutes (`/repo/...`) and drive-letter absolutes (`D:/repo/...`) as
@@ -106,7 +100,7 @@ function isPosixOrDriveAbsolute(value: string): boolean {
  */
 function resolveAgainst(posixRootDirectory: string, file: string): string {
 	const normalizedFile = normalizeWindowsPath(file);
-	if (isPosixOrDriveAbsolute(normalizedFile)) {
+	if (isAbsolutePath(normalizedFile)) {
 		return normalizedFile;
 	}
 

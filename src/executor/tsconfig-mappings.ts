@@ -5,9 +5,9 @@ import * as path from "node:path";
 
 import { type TsconfigCompilerOptions, tsconfigShapeSchema } from "../config/tsconfig-schema.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
+import { isTsSource } from "../utils/extensions.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
-const TS_SOURCE_EXTENSION = /\.tsx?$/;
 const TSCONFIG_FILENAME = /^tsconfig.*\.json$/i;
 
 export interface TsconfigDirectories {
@@ -23,7 +23,7 @@ export function isLuauProject(
 		return false;
 	}
 
-	if (testFiles.some((file) => TS_SOURCE_EXTENSION.test(file))) {
+	if (testFiles.some((file) => isTsSource(file))) {
 		return false;
 	}
 

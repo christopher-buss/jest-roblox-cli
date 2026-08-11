@@ -282,8 +282,53 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain('"testPathPattern":"(foo\\\\.spec)"');
+		expect(captured.options!.scriptOverride).toContain(
+			'"testPathPattern":"(Pkg/foo\\\\.spec)"',
+		);
 		expect(captured.options!.scriptOverride).not.toContain('"testPathPattern":"src/foo.spec"');
+	});
+
+	// Regression: two specs sharing a basename collapse to the same pattern, so
+	// the namesake in `src/b` would run too. The pattern carries the path below
+	// the package's Rojo mount instead.
+	it("should forward the instance sub-path so a namesake spec is left out", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/a/index.spec.luau")]: "",
+					[path.join(FOO_DIR, "src/b/index.spec.luau")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.luau"] },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli({ testPathPattern: "src/a/index.spec" }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.scriptOverride).toContain(
+			'"testPathPattern":"(Pkg/a/index\\\\.spec)"',
+		);
+		expect(captured.options!.scriptOverride).not.toContain(
+			'"testPathPattern":"(index\\\\.spec)"',
+		);
 	});
 
 	it("should pass with no tests in a package the testPathPattern does not match", async () => {

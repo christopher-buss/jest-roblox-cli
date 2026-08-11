@@ -26,6 +26,7 @@ import {
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import { type ExecuteResult, runProjectsAsync } from "../executor.ts";
+import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
 import { synthesize } from "../staging/synthesizer.ts";
 import { runTypecheckAsync } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
@@ -45,6 +46,9 @@ vi.mock(import("../config/stubs"));
 vi.mock(import("../config/filter-projects-by-files"));
 vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("../executor"));
+// `get-tsconfig` reads through its own fs handle, which the memfs mock does not
+// reach — so the mapping this module returns is stubbed rather than seeded.
+vi.mock(import("../executor/tsconfig-mappings"));
 vi.mock(import("../coverage-pipeline/prepare"));
 vi.mock(import("../typecheck/runner"));
 vi.mock(import("../staging/synthesizer"));
@@ -58,6 +62,7 @@ const mocks = {
 	hasUserAuthoredConfig: vi.mocked(hasUserAuthoredConfig),
 	prepareCoverage: vi.mocked(prepareCoverage),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
+	resolveAllTsconfigMappings: vi.mocked(resolveAllTsconfigMappings),
 	resolveBackend: vi.mocked(resolveBackendAsync),
 	runProjects: vi.mocked(runProjectsAsync),
 	runTypecheck: vi.mocked(runTypecheckAsync),
@@ -199,6 +204,7 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	mocks.filterProjectsByFiles.mockImplementation((projectList, files) => {
 		return projectList.map((project) => ({ matchingFiles: [...files], project }));
 	});
+	mocks.resolveAllTsconfigMappings.mockReturnValue([]);
 	writeRojoProject();
 	onTestFinished(() => {
 		vol.reset();
@@ -212,6 +218,17 @@ function seedProjectFiles(): void {
 	vol.writeFileSync("/test/src/client/a.spec.ts", "");
 	vol.mkdirSync("/test/src/server", { recursive: true });
 	vol.writeFileSync("/test/src/server/b.spec.ts", "");
+}
+
+// Two specs that share the `index.spec` basename, plus the tsconfig mapping
+// that lands their `src/` sources on the `out/client` mount the client project
+// declares.
+function seedIndexNamesakes(): void {
+	mocks.resolveAllTsconfigMappings.mockReturnValue([{ outDir: "out", rootDir: "src" }]);
+	vol.mkdirSync("/test/src/client/a", { recursive: true });
+	vol.writeFileSync("/test/src/client/a/index.spec.ts", "");
+	vol.mkdirSync("/test/src/client/b", { recursive: true });
+	vol.writeFileSync("/test/src/client/b/index.spec.ts", "");
 }
 
 describe(runMultiProjectAsync, () => {
@@ -1360,6 +1377,27 @@ describe(runMultiProjectAsync, () => {
 		const { projects } = mocks.runProjects.mock.calls[0]![0];
 
 		expect(projects[0]!.config.testPathPattern).toBe("(a\\.spec)");
+	});
+
+	// Regression: a basename pattern runs every namesake test file, so a repo
+	// naming each test `index.spec.ts` cannot run just one. The forwarded pattern
+	// carries the path below the Rojo mount instead.
+	it("should narrow to the instance sub-path so a namesake file is left out", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+		seedIndexNamesakes();
+
+		await runMultiProjectAsync({
+			cli: makeCli({ files: ["src/client/a/index.spec.ts"] }),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		const { projects } = mocks.runProjects.mock.calls[0]![0];
+
+		expect(projects[0]!.config.testPathPattern).toBe("(client/a/init\\.spec)");
 	});
 
 	it("should forward a basename pattern when --testPathPattern is a filesystem path", async () => {

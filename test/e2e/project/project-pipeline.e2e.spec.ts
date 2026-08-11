@@ -136,6 +136,43 @@ describe("live project pipeline", () => {
 		RUN_TIMEOUT_MS + 5000,
 	);
 
+	// Regression: a positional file is forwarded to Jest-on-Roblox as a pattern,
+	// and a basename-only pattern runs every namesake. The server mount ships
+	// three specs that all compile to an Instance named `init.spec`, one of them
+	// at `nested/namesake` so the named file's path is a bare suffix of it. "1
+	// passed" therefore only holds if the forwarded pattern carries both the
+	// path below the mount and the mount's own name. This is the only check that
+	// the pattern matches what Roblox-side Jest compares against — a wrong
+	// namespace assumption runs 3 here, or 0.
+	it.runIf(IS_LIVE)(
+		"should run only the named file when a namesake shares its basename",
+		async () => {
+			expect.assertions(4);
+
+			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
+			const result = await runCliAsync(
+				[
+					"--backend",
+					"open-cloud",
+					"--config",
+					"jest.config.ts",
+					"src/server/namesake/index.spec.ts",
+				],
+				{
+					cwd: sandbox,
+					env: liveEnvironment(),
+					timeoutMs: RUN_TIMEOUT_MS,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(result.stdout).toContain("1 passed");
+			expect(result.stdout).not.toContain("other/index.spec");
+			expect(result.stdout).not.toContain("nested/namesake/index.spec");
+		},
+		RUN_TIMEOUT_MS + 5000,
+	);
+
 	// No-`projects` regression: a bare `test:` config must run end-to-end. With
 	// no explicit `projects`, the run collapses into the multi pipeline — one
 	// project is synthesized from the config's `luauRoots` via the Rojo tree, so

@@ -1,4 +1,31 @@
 const DRIVE_LETTER_START_REGEX = /^[A-Za-z]:\//;
+const DRIVE_LETTER_PREFIX = /^[A-Za-z]:/;
+
+/**
+ * Drop a leading drive letter, leaving a drive-agnostic absolute path.
+ *
+ * Use when comparing two paths that may disagree about the letter: Node's
+ * `path.resolve` stamps the cwd's drive onto a drive-less absolute path, so a
+ * resolved file and the root it came from can differ by nothing else. One
+ * process cannot span two drives, which makes the letter carry no information
+ * worth comparing.
+ */
+export function dropDriveLetter(input: string): string {
+	return input.replace(DRIVE_LETTER_PREFIX, "");
+}
+
+/**
+ * Whether a normalized path is absolute on *any* host — a posix root (`/repo`)
+ * or a drive-letter root (`D:/repo`).
+ *
+ * Node's `path.isAbsolute` answers for the host it runs on, so a Windows path
+ * reads as relative on Linux and CI diverges from a local run. This asks the
+ * platform-independent question instead. Feed it `normalizeWindowsPath` output;
+ * a backslash path is not recognized.
+ */
+export function isAbsolutePath(input: string): boolean {
+	return input.startsWith("/") || DRIVE_LETTER_START_REGEX.test(input);
+}
 
 export function normalizeWindowsPath(input = ""): string {
 	if (!input) {

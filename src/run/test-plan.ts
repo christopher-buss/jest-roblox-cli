@@ -2,6 +2,8 @@ import * as path from "node:path";
 
 import { applyExcludes } from "../config/apply-excludes.ts";
 import { deriveTypecheckInclude } from "../config/derive-typecheck-include.ts";
+import type { InstancePathResolver } from "../config/instance-path.ts";
+import { createInstancePathResolver } from "../config/instance-path.ts";
 import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type {
@@ -11,8 +13,10 @@ import type {
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { hasUserAuthoredConfig } from "../config/stubs.ts";
+import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
+import type { TsconfigMapping } from "../types/tsconfig.ts";
 import { classifyTestFiles, discoverTestFiles } from "./discovery.ts";
 
 export interface PendingJob {
@@ -97,6 +101,30 @@ interface ProjectSelection {
 	typeTestFiles: Array<string>;
 }
 
+interface PlannedProjectInput {
+	project: ResolvedProjectConfig;
+	rootConfig: ResolvedConfig;
+	selection: ProjectSelection;
+	typecheck: ResolvedTypecheckConfig;
+}
+
+/**
+ * `DiscoveryInput` plus the run's `rootDir`→`outDir` rewrites. Kept local to
+ * the plan: the mappings only place a discovered TS source under the mount that
+ * owns it, so nothing downstream of `buildTestPlan` has any use for them.
+ */
+interface ProjectPlanInput extends DiscoveryInput {
+	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
+}
+
+interface ProjectSelectionInput {
+	effectivePlaceFile: string;
+	project: ResolvedProjectConfig;
+	projectCliFiles: Array<string> | undefined;
+	toInstancePath: InstancePathResolver;
+	typecheck: ResolvedTypecheckConfig;
+}
+
 /**
  * Turn a selected project set into the exact work a run will do: one
  * `PendingJob` per project with runtime files, one `TypecheckGroupEntry` per
@@ -150,12 +178,13 @@ function buildDiscoveryConfig(
 	};
 }
 
-function selectProjectFiles(
-	project: ResolvedProjectConfig,
-	effectivePlaceFile: string,
-	projectCliFiles: Array<string> | undefined,
-	typecheck: ResolvedTypecheckConfig,
-): ProjectSelection {
+function selectProjectFiles({
+	effectivePlaceFile,
+	project,
+	projectCliFiles,
+	toInstancePath,
+	typecheck,
+}: ProjectSelectionInput): ProjectSelection {
 	const discoveryConfig = buildDiscoveryConfig(project, effectivePlaceFile, typecheck);
 	const discovered = discoverTestFiles(discoveryConfig, projectCliFiles);
 	const classified = classifyTestFiles(discovered.files, typecheck);
@@ -171,13 +200,18 @@ function selectProjectFiles(
 		: applyExcludes(classified.runtimeFiles, project.exclude);
 
 	// Narrow by the per-project discovered files (not the raw positional/flag
-	// input) so the Luau runner receives an Instance-namespace basename pattern.
-	// A bare project run (no positionals, no `--testPathPattern`) keeps
+	// input) so the Luau runner receives an Instance-namespace pattern. A bare
+	// project run (no positionals, no `--testPathPattern`) keeps
 	// `testPathPattern` undefined so Jest-on-Roblox runs all testMatch.
 	const isFilterActive = isPositional || discoveryConfig.testPathPattern !== undefined;
 	const narrowed = { ...discoveryConfig, testMatch: project.testMatch };
 	return {
-		config: narrowForLuauRun(narrowed, runtimeFiles, isFilterActive),
+		config: narrowForLuauRun({
+			config: narrowed,
+			filterActive: isFilterActive,
+			runtimeFiles,
+			toInstancePath,
+		}),
 		runtimeFiles,
 		typeTestFiles: isPositional
 			? classified.typeTestFiles
@@ -205,26 +239,20 @@ function collectRuntimeInjectionPaths(
 	return runtimeInjectionPaths;
 }
 
-function planProject(
-	project: ResolvedProjectConfig,
-	{ cliFiles, cliTypecheck, effectivePlaceFile, filesByProject, rootConfig }: DiscoveryInput,
-): PlannedProject {
-	// When auto-pick produced a per-project file subset, only feed those files
-	// into discovery / narrowing for this project. Otherwise (no positional
-	// files, or explicit `--project`), fall back to the full cli.files list.
-	const projectCliFiles = filesByProject?.get(project.displayName) ?? cliFiles;
-	const typecheck = resolveTypecheckConfig({
-		cli: cliTypecheck,
-		project: project.typecheck,
-		root: rootConfig.typecheck,
-	});
-	const selection = selectProjectFiles(project, effectivePlaceFile, projectCliFiles, typecheck);
-
+// Turn one project's selected files into the work it contributes: a type-test
+// entry, a runtime job, either, or neither.
+//
+// Each project carries its own effective `(tsconfig, cwd)` into the type pass;
+// `groupTypecheckByTsconfig` collapses projects sharing one and checks distinct
+// tsconfigs separately. cwd is always the workspace root in projects mode (all
+// projects build from one tree).
+function toPlannedProject({
+	project,
+	rootConfig,
+	selection,
+	typecheck,
+}: PlannedProjectInput): PlannedProject {
 	const planned: PlannedProject = {};
-	// Each project carries its own effective `(tsconfig, cwd)` into the type
-	// pass; `groupTypecheckByTsconfig` collapses projects sharing one and checks
-	// distinct tsconfigs separately. cwd is always the workspace root in
-	// projects mode (all projects build from one tree).
 	if (selection.typeTestFiles.length > 0) {
 		planned.typeTestEntry = {
 			cwd: rootConfig.rootDir,
@@ -246,15 +274,52 @@ function planProject(
 	return planned;
 }
 
+function planProject(project: ResolvedProjectConfig, input: ProjectPlanInput): PlannedProject {
+	// When auto-pick produced a per-project file subset, only feed those files
+	// into discovery / narrowing for this project. Otherwise (no positional
+	// files, or explicit `--project`), fall back to the full cli.files list.
+	const projectCliFiles = input.filesByProject?.get(project.displayName) ?? input.cliFiles;
+	const typecheck = resolveTypecheckConfig({
+		cli: input.cliTypecheck,
+		project: project.typecheck,
+		root: input.rootConfig.typecheck,
+	});
+	const selection = selectProjectFiles({
+		effectivePlaceFile: input.effectivePlaceFile,
+		project,
+		projectCliFiles,
+		// Each project resolves against its OWN mounts, so one shared resolver
+		// would let a mount claim a file that compiles into a different project.
+		// The two bases differ when a project overrides `rootDir` (not a
+		// project-only key): discovery relativizes files against that, while the
+		// mounts and tsconfigs come from the run root.
+		toInstancePath: createInstancePathResolver({
+			mountBase: input.rootConfig.rootDir,
+			mounts: project.rojoMounts,
+			rootDirectory: project.config.rootDir,
+			tsconfigMappings: input.tsconfigMappings,
+		}),
+		typecheck,
+	});
+
+	return toPlannedProject({ project, rootConfig: input.rootConfig, selection, typecheck });
+}
+
 function collectPendingJobs(input: DiscoveryInput): {
 	jobs: Array<PendingJob>;
 	typeTestEntries: Array<TypecheckGroupEntry>;
 } {
 	const jobs: Array<PendingJob> = [];
 	const typeTestEntries: Array<TypecheckGroupEntry> = [];
+	// One read for the whole plan rather than one per project: every project
+	// resolves its tsconfigs from the same run root.
+	const planInput: ProjectPlanInput = {
+		...input,
+		tsconfigMappings: resolveAllTsconfigMappings(input.rootConfig.rootDir),
+	};
 
 	for (const project of input.projects) {
-		const planned = planProject(project, input);
+		const planned = planProject(project, planInput);
 		if (planned.typeTestEntry !== undefined) {
 			typeTestEntries.push(planned.typeTestEntry);
 		}

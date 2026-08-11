@@ -64,7 +64,9 @@ describe("live workspace pipeline", () => {
 			);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
-			expect(result.stdout).toContain("2 passed");
+			// One shared spec plus four server ones (`server-thing` and the three
+			// same-basename `index.spec` files the narrowing regression needs).
+			expect(result.stdout).toContain("5 passed");
 			expect(result.stdout).toContain("live-place-shared");
 			expect(result.stdout).toContain("live-place-server");
 
