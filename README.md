@@ -31,6 +31,15 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 npm install @isentinel/jest-roblox
 ```
 
+Type tests need
+[@typescript/native-preview](https://npmx.dev/package/@typescript/native-preview),
+an optional peer dependency. Install it only if you run `--typecheck` or
+`--typecheckOnly`; runtime tests do not use it.
+
+```bash
+npm install -D @typescript/native-preview
+```
+
 ### Standalone binary (no Node.js required)
 
 Pre-built binaries are attached to each

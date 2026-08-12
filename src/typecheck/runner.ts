@@ -5,7 +5,9 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
 
+import { ConfigError } from "../config/errors.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
+import { isErrnoException } from "../utils/errno.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { collectTestDefinitions } from "./collect.ts";
 import { parseTscOutput } from "./parse.ts";
@@ -25,6 +27,13 @@ const DEFAULT_SPAWN_TIMEOUT = 10_000;
  * as the Roblox run instead of a tight typecheck-only number.
  */
 const DEFAULT_RUN_TIMEOUT = 300_000;
+
+const MISSING_TSGO_MESSAGE =
+	"Type tests need '@typescript/native-preview', an optional peer " +
+	"dependency that is not installed.";
+
+const MISSING_TSGO_HINT =
+	"npm install -D @typescript/native-preview — or run without --typecheck/--typecheckOnly.";
 
 export interface TypecheckOptions {
 	files: Array<string>;
@@ -316,9 +325,25 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// tsgo is an optional peer dependency, so its absence is an ordinary state to
+// report rather than a broken install — `require.resolve` only raises a bare
+// `MODULE_NOT_FOUND`, which reads as a fault inside the CLI. `ConfigError`
+// matches the sibling guard that rejects `--typecheck` under the standalone
+// binary, and puts the install command in the banner's `Hint:` slot.
 function resolveTsgoScript(): string {
 	const require = createRequire(import.meta.url);
-	const packageJsonPath = require.resolve("@typescript/native-preview/package.json");
+
+	let packageJsonPath: string;
+	try {
+		packageJsonPath = require.resolve("@typescript/native-preview/package.json");
+	} catch (err) {
+		if (isErrnoException(err) && err.code === "MODULE_NOT_FOUND") {
+			throw new ConfigError(MISSING_TSGO_MESSAGE, MISSING_TSGO_HINT);
+		}
+
+		throw err;
+	}
+
 	return path.join(path.dirname(packageJsonPath), "bin", "tsgo.js");
 }
 

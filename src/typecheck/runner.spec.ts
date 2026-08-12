@@ -2,10 +2,12 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
+import { ConfigError } from "../config/errors.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import {
 	createLocationsIndexMap,
@@ -17,6 +19,11 @@ import type { RawErrorsMap, TestDefinition } from "./types.ts";
 
 vi.mock(import("node:child_process"));
 vi.mock(import("node:fs"));
+
+// `resolveTsgoScript` locates the tsgo binary through `createRequire`. `spy`
+// keeps every export's real implementation, so only the missing-package test
+// overrides it and every other test resolves the installed package.
+vi.mock(import("node:module"), { spy: true });
 
 describe(createLocationsIndexMap, () => {
 	it("should map line:column pairs to character indices", () => {
@@ -793,6 +800,53 @@ describe(runTypecheckAsync, () => {
 				rootDir: "/project",
 			}),
 		).rejects.toThrow("spawn failed");
+	});
+
+	// The guard throws before `executeTsgo`, so this test needs no spawn stub.
+	it("should name the optional peer dependency when tsgo is not installed", async () => {
+		expect.assertions(2);
+
+		vi.mocked(createRequire).mockReturnValueOnce(
+			fromAny({
+				resolve: () => {
+					throw Object.assign(new Error("Cannot find module"), {
+						code: "MODULE_NOT_FOUND",
+					});
+				},
+			}),
+		);
+
+		const error: unknown = await runTypecheckAsync({
+			files: ["src/test.spec.ts"],
+			rootDir: "/project",
+		}).catch((err: unknown) => err);
+
+		assert(error instanceof ConfigError, "expected a ConfigError");
+
+		expect(error.message).toContain("@typescript/native-preview");
+		expect(error.hint).toContain("npm install -D @typescript/native-preview");
+	});
+
+	// Only a missing module means "not installed". Relabelling every failure
+	// would tell someone whose install is present but unreadable to install it
+	// again.
+	it("should rethrow a resolution failure that is not a missing module", async () => {
+		expect.assertions(1);
+
+		vi.mocked(createRequire).mockReturnValueOnce(
+			fromAny({
+				resolve: () => {
+					throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+				},
+			}),
+		);
+
+		await expect(
+			runTypecheckAsync({
+				files: ["src/test.spec.ts"],
+				rootDir: "/project",
+			}),
+		).rejects.toThrow("permission denied");
 	});
 
 	it("should parse tsgo diagnostics from stdout on a non-zero exit", async () => {
