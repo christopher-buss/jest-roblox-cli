@@ -61,7 +61,7 @@ function instrumentFixture(fixtureName: string, fileKey: string) {
 	const rawAst = astMap[fixtureName];
 	assert(isAstStatBlock(rawAst), `Fixture ${fixtureName} has no parsed AST block`);
 
-	const result = collectCoverage(rawAst);
+	const result = collectCoverage(rawAst, source);
 	const instrumentedSource = insertProbes(source, result, fileKey);
 	const covMap = buildCoverageMap(result);
 
@@ -470,6 +470,47 @@ describe("instrumentation pipeline (integration)", () => {
 			expect(lines[2]).toBe("99");
 			// Both arms of each branch ran exactly once.
 			expect(lines[3]).toBe("1,1,1,1");
+		});
+	});
+
+	// lute reports columns as UTF-8 byte offsets, so every probe on a line
+	// holding a multi-byte character lands further right than its byte column
+	// suggests unless the columns are converted first. A probe inside a string
+	// literal or mid-identifier still yields text, so the guard is a re-parse.
+	describe("when instrumenting a file with multi-byte characters", () => {
+		it("should place probes at character boundaries", () => {
+			expect.assertions(4);
+
+			const { instrumentedSource } = instrumentFixture(
+				"utf8-columns.luau",
+				"utf8-columns.luau",
+			);
+
+			expect(instrumentedSource).toContain(
+				'local heart = if true then __cov_br(1, 1, `❤️ {1}`) else __cov_br(1, 2, "none")',
+			);
+			expect(instrumentedSource).toContain(
+				'local infinity = __cov_br(2, 1, "∞") or __cov_br(2, 2, "fallback")',
+			);
+			// U+E002, the private-use Robux glyph — a three-byte character like
+			// `∞`, and one of the corruptions this fix was reported for.
+			expect(instrumentedSource).toContain(
+				'local price = __cov_br(3, 1, `\u{E002}{100}`) and __cov_br(3, 2, "free")',
+			);
+			expect(instrumentedSource).toContain(
+				'local party = __cov_br(4, 1, "\u{1F389}") and __cov_br(4, 2, "yes")',
+			);
+		});
+
+		it("should produce valid Luau that Lute can parse", () => {
+			expect.assertions(1);
+
+			const { instrumentedSource } = instrumentFixture(
+				"utf8-columns.luau",
+				"utf8-columns.luau",
+			);
+
+			expect(validateLuauSource(instrumentedSource)).toBe("OK");
 		});
 	});
 

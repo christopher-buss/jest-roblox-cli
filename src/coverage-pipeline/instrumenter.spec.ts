@@ -396,7 +396,7 @@ describe(instrument, () => {
 				shadowDir: "/shadow",
 			});
 
-			expect(result.instrumenterVersion).toBe(2);
+			expect(result.instrumenterVersion).toBe(3);
 		});
 
 		it("should emit manifest file records with correct metadata", () => {

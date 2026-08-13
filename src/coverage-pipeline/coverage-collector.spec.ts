@@ -20,6 +20,7 @@ import type {
 
 import { describe, expect, it } from "vitest";
 
+import type { CollectorResult } from "./coverage-collector.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 
 function span(
@@ -29,6 +30,15 @@ function span(
 	endColumn: number,
 ): LuauSpan {
 	return { beginColumn, beginLine, endColumn, endLine };
+}
+
+/**
+ * The ASTs here are synthetic, with no source text behind them. An empty source
+ * carries no multi-byte character, so the byte-column conversion leaves every
+ * column as this file writes it.
+ */
+function collect(root: AstStatBlock): CollectorResult {
+	return collectCoverage(root, "");
 }
 
 function emptyBlock(location?: LuauSpan): AstStatBlock {
@@ -57,7 +67,7 @@ describe("coverage-collector", () => {
 		it("should return empty result for empty block", () => {
 			expect.assertions(5);
 
-			const result = collectCoverage(emptyBlock());
+			const result = collect(emptyBlock());
 
 			expect(result.statements).toBeEmpty();
 			expect(result.functions).toBeEmpty();
@@ -94,7 +104,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.statements).toHaveLength(2);
 			expect(result.statements[0]).toStrictEqual({
@@ -141,7 +151,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.functions).toHaveLength(1);
 			expect(result.functions[0]!.name).toBe("greet");
@@ -183,7 +193,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.functions[0]!.name).toBe("(anonymous)");
 		});
@@ -223,7 +233,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.functions).toHaveLength(1);
 			expect(result.functions[0]!.name).toBe("globalFunc");
@@ -263,7 +273,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.functions).toHaveLength(1);
 			expect(result.functions[0]!.name).toBe("(anonymous)");
@@ -337,7 +347,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.branches).toHaveLength(1);
 			expect(result.branches[0]!.branchType).toBe("if");
@@ -380,7 +390,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.branches).toHaveLength(1);
 			// then arm + implicit else arm
@@ -430,7 +440,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.implicitElseProbes[0]!.endLine).toBe(3);
 			expect(result.implicitElseProbes[0]!.endColumn).toBe(1);
@@ -500,7 +510,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.implicitElseProbes[0]!.endLine).toBe(5);
 			expect(result.implicitElseProbes[0]!.endColumn).toBe(1);
@@ -547,7 +557,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.branches).toHaveLength(1);
 			expect(result.branches[0]!.branchType).toBe("expr-if");
@@ -597,7 +607,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.wrapProbes).toHaveLength(2);
 			expect(result.wrapProbes[0]).toStrictEqual({
@@ -647,7 +657,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.functions).toHaveLength(1);
 			expect(result.functions[0]!.name).toBe("Obj.method");
@@ -688,7 +698,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.functions).toHaveLength(1);
 			expect(result.functions[0]!.name).toBe("Obj:method");
@@ -716,7 +726,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.functions).toHaveLength(1);
 			expect(result.functions[0]!.bodyFirstLine).toBe(1);
@@ -779,7 +789,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.branches).toHaveLength(1);
 			expect(result.branches[0]!.branchType).toBe("expr-if");
@@ -800,7 +810,7 @@ describe("coverage-collector", () => {
 				tag: "block",
 			} satisfies AstStatBlock;
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.statements).toBeEmpty();
 		});
@@ -818,7 +828,7 @@ describe("coverage-collector", () => {
 			} satisfies AstExprBinaryWithOperator;
 			const root = rootOf(localOf(binary, span(1, 1, 1, 18)), span(1, 1, 1, 18));
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.branches).toHaveLength(1);
 			expect(result.branches[0]!.branchType).toBe("binary-expr");
@@ -846,7 +856,7 @@ describe("coverage-collector", () => {
 			} satisfies AstExprBinaryWithOperator;
 			const root = rootOf(localOf(binary, span(1, 1, 1, 17)), span(1, 1, 1, 17));
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.branches[0]!.branchType).toBe("binary-expr");
 			expect(result.wrapProbes).toHaveLength(2);
@@ -865,7 +875,7 @@ describe("coverage-collector", () => {
 			} satisfies AstExprBinaryWithOperator;
 			const root = rootOf(localOf(binary, span(1, 1, 1, 16)), span(1, 1, 1, 16));
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.branches).toBeEmpty();
 			expect(result.wrapProbes).toBeEmpty();
@@ -895,7 +905,7 @@ describe("coverage-collector", () => {
 			} satisfies AstExprBinaryWithOperator;
 			const root = rootOf(localOf(outer, span(1, 1, 1, 25)), span(1, 1, 1, 25));
 
-			const result = collectCoverage(root);
+			const result = collect(root);
 
 			expect(result.branches.map((branch) => branch.index)).toStrictEqual([1, 2]);
 			expect(result.branches[0]!.arms.map((arm) => arm.location)).toStrictEqual([

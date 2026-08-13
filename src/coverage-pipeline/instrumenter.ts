@@ -17,7 +17,7 @@ import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
 import { MANIFEST_VERSION, writeManifest } from "./manifest.ts";
 import { insertProbes } from "./probe-inserter.ts";
 
-export const INSTRUMENTER_VERSION = 2;
+export const INSTRUMENTER_VERSION = 3;
 
 const LUAU_EXTENSION = /\.luau?$/;
 
@@ -260,9 +260,10 @@ function instrumentFile(
 	fs.mkdirSync(path.dirname(shadowFilePath), { recursive: true });
 
 	const sourceBuffer = fs.readFileSync(path.resolve(fileKey));
-	const collectorResult = collectCoverage(ast);
+	const source = sourceBuffer.toString("utf-8");
+	const collectorResult = collectCoverage(ast, source);
 	const instrumentedSource = timing.profile("probe-insert", () => {
-		return insertProbes(sourceBuffer.toString("utf-8"), collectorResult, fileKey);
+		return insertProbes(source, collectorResult, fileKey);
 	});
 	const coverageMap = timing.profile("map-build", () => buildCoverageMap(collectorResult));
 

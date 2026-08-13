@@ -58,6 +58,10 @@ export type {
 export type { LuteSpawnOptions } from "./lute-spawner.ts";
 export { spawnLute, writeTemporaryLuauScript } from "./lute-spawner.ts";
 
+// Byte offsets
+export type { Utf8OffsetMap } from "./utf8-offsets.ts";
+export { createUtf8OffsetMap } from "./utf8-offsets.ts";
+
 // Visitor
 export type { LuauVisitor } from "./visitor.ts";
 export { visitBlock, visitExpression, visitStatement } from "./visitor.ts";

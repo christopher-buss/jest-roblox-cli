@@ -4,6 +4,12 @@
  * Token-level fields (trivia, keywords) are omitted.
  */
 
+/**
+ * Lines and columns are 1-based, and an end is exclusive. A column counts UTF-8
+ * *bytes*, which is Luau's convention across its tooling — convert it before
+ * indexing a JavaScript string, whose offsets are UTF-16 code units, or a span
+ * on a line holding a multi-byte character will resolve inside that character.
+ */
 export interface LuauSpan {
 	beginColumn: number;
 	beginLine: number;

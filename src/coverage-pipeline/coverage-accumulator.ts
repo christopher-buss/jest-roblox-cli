@@ -1,5 +1,11 @@
 import type { LuauSpan } from "@isentinel/luau-ast";
 
+/**
+ * Columns here are UTF-16, not the UTF-8 bytes {@link LuauSpan} arrives in:
+ * `collectCoverage` runs the whole result through `toUtf16Columns` before
+ * returning it. A new column-bearing field needs adding there too — the spread
+ * that copies each record would otherwise carry it through in bytes.
+ */
 export interface CollectorResult {
 	branches: Array<BranchInfo>;
 	functions: Array<FunctionInfo>;
