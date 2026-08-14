@@ -12,7 +12,11 @@ const wholeRunErrorSchema = type({
 });
 
 const envelopeSchema = type({
-	entries: type({
+	// Set by a work-stealing task that stopped with items still queued because
+	// its return envelope was full. Read via `isEnvelopeDeferred`, which the
+	// task pool uses to decide whether to launch another task.
+	"deferred?": "boolean",
+	"entries": type({
 		"bannerOutput?": "string",
 		"elapsedMs?": "number",
 		"gameOutput?": "string",
@@ -43,6 +47,23 @@ export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
 	}
 
 	return envelope.entries;
+}
+
+/**
+ * Whether a task stopped with queued work still outstanding.
+ *
+ * Deliberately lenient — anything malformed reads as "nothing outstanding".
+ * This runs while the task pool is still deciding whether to launch more work,
+ * so throwing here would be swallowed by the pool's per-task error handling;
+ * the strict parse that surfaces a broken task runs once the pool settles.
+ */
+export function isEnvelopeDeferred(jestOutput: string): boolean {
+	try {
+		const envelope = envelopeSchema(JSON.parse(jestOutput));
+		return !(envelope instanceof type.errors) && envelope.deferred === true;
+	} catch {
+		return false;
+	}
 }
 
 export function buildProjectResult(

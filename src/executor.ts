@@ -70,6 +70,7 @@ export interface RunProjectsOptions {
 	deferFormatting?: boolean | undefined;
 	parallel?: "auto" | number | undefined;
 	projects: Array<ProjectInput>;
+	scriptFactory?: ((jobs: ReadonlyArray<ProjectJob>) => string) | undefined;
 	scriptOverride?: string | undefined;
 	startTime: number;
 	streaming?: StreamingHooks | undefined;
@@ -201,6 +202,7 @@ async function dispatchToBackendAsync(
 		const result = await options.backend.runTestsAsync({
 			jobs,
 			parallel: options.parallel,
+			scriptFactory: options.scriptFactory,
 			scriptOverride: options.scriptOverride,
 			streaming: options.streaming,
 			workStealing: options.workStealing,

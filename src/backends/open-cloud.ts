@@ -8,7 +8,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
 import { formatMissingScopes, walkErrorChain } from "../utils/error-chain.ts";
-import { parseEnvelope } from "./envelope.ts";
+import { isEnvelopeDeferred, parseEnvelope } from "./envelope.ts";
 import type {
 	Backend,
 	BackendOptions,
@@ -98,6 +98,7 @@ export class OpenCloudBackend implements Backend {
 	public async runTestsAsync({
 		jobs,
 		parallel,
+		scriptFactory,
 		scriptOverride,
 		streaming,
 		workStealing,
@@ -109,17 +110,11 @@ export class OpenCloudBackend implements Backend {
 
 		const upload = await this.uploadOrReuseAsync(primary.config, target);
 		const executeAsync = async (placeVersion: number): Promise<Array<RawBackendEntry>> => {
-			return workStealing === true
-				? this.runWorkStealingAsync({
-						jobs,
-						parallel,
-						placeVersion,
-						primaryConfig: primary.config,
-						// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
-						scriptOverride: scriptOverride!,
-						streaming,
-					})
-				: this.runStaticBucketsAsync(jobs, parallel, placeVersion, scriptOverride);
+			return this.dispatchAsync(
+				{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing },
+				primary.config,
+				placeVersion,
+			);
 		};
 
 		const executionStart = Date.now();
@@ -137,6 +132,44 @@ export class OpenCloudBackend implements Backend {
 				uploadMs: upload.uploadMs + extraUploadMs,
 			},
 		};
+	}
+
+	/**
+	 * Pick the execution shape for one run.
+	 *
+	 * Work-stealing fans out over a shared queue. A workspace run without it
+	 * shares one script across every job, so it runs one task at a time and
+	 * re-sends what a task defers. Everything else splits jobs into buckets and
+	 * generates a script per bucket.
+	 */
+	private async dispatchAsync(
+		{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing }: BackendOptions,
+		primaryConfig: ResolvedConfig,
+		placeVersion: number,
+	): Promise<Array<RawBackendEntry>> {
+		if (workStealing === true) {
+			return this.runWorkStealingAsync({
+				jobs,
+				parallel,
+				placeVersion,
+				primaryConfig,
+				// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
+				scriptOverride: scriptOverride!,
+				streaming,
+			});
+		}
+
+		if (scriptFactory !== undefined) {
+			return this.runDeferrableAsync({
+				jobs,
+				placeVersion,
+				primaryConfig,
+				scriptFactory,
+				scriptOverride,
+			});
+		}
+
+		return this.runStaticBucketsAsync(jobs, parallel, placeVersion, scriptOverride);
 	}
 
 	/**
@@ -162,7 +195,9 @@ export class OpenCloudBackend implements Backend {
 		timeout: number;
 	}): Promise<ScriptResult> {
 		const guarded = injectVersionGuard(script, placeVersion);
-		const first = await this.runner.executeScriptAsync({ script: guarded, timeout });
+		const first = await this.runner
+			.executeScriptAsync({ script: guarded, timeout })
+			.catch(rethrowOversizedResult);
 		if (first.outputs[0] !== PLACE_VERSION_RACE_SENTINEL) {
 			return first;
 		}
@@ -174,7 +209,9 @@ export class OpenCloudBackend implements Backend {
 			);
 		}
 
-		return this.runner.executeScriptAsync({ placeVersion, script, timeout });
+		return this.runner
+			.executeScriptAsync({ placeVersion, script, timeout })
+			.catch(rethrowOversizedResult);
 	}
 
 	/**
@@ -255,6 +292,69 @@ export class OpenCloudBackend implements Backend {
 		return { indices, rawResults };
 	}
 
+	/**
+	 * Run a workspace script that carries every entry, re-sending whatever a
+	 * task left behind.
+	 *
+	 * There is no queue on this path, so a task that fills its return-envelope
+	 * budget cannot hand the rest to a sibling. It reports `deferred` instead
+	 * and the backend builds a fresh script from the jobs that did not come
+	 * back. One task at a time: every job shares the one script, so running it
+	 * concurrently would repeat the whole run per task rather than divide it.
+	 *
+	 * A task always runs at least one entry, so N jobs need at most N tasks —
+	 * and a round that covers nothing new stops the loop rather than spending
+	 * the rest of that budget on tasks that cannot make progress.
+	 */
+	private async runDeferrableAsync({
+		jobs,
+		placeVersion,
+		primaryConfig,
+		scriptFactory,
+		scriptOverride,
+	}: {
+		jobs: Array<ProjectJob>;
+		placeVersion: number;
+		primaryConfig: ResolvedConfig;
+		scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
+		scriptOverride: string | undefined;
+	}): Promise<Array<RawBackendEntry>> {
+		const collected = new Map<
+			string,
+			{ entry: EnvelopeEntry; gameOutput: string | undefined }
+		>();
+		let remaining: Array<ProjectJob> = jobs;
+		let script = scriptOverride ?? scriptFactory(jobs);
+
+		// One attempt per job is the ceiling: a task always runs at least one
+		// entry, so it cannot take more rounds than there are jobs.
+		for (const _attempt of jobs) {
+			const scriptResult = await this.executeGuardedAsync({
+				placeVersion,
+				script,
+				timeout: primaryConfig.timeout,
+			});
+
+			const jestOutput = requireJestOutput(scriptResult);
+			addEntriesToMap(collected, parseEnvelope(jestOutput), scriptResult.outputs[1]);
+			if (!isEnvelopeDeferred(jestOutput)) {
+				break;
+			}
+
+			const outstanding = remaining.filter((job) => {
+				return !collected.has(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
+			});
+			if (outstanding.length === 0 || outstanding.length === remaining.length) {
+				break;
+			}
+
+			remaining = outstanding;
+			script = scriptFactory(remaining);
+		}
+
+		return collectStealingResults(jobs, collected);
+	}
+
 	private async runStaticBucketsAsync(
 		jobs: Array<ProjectJob>,
 		parallel: BackendOptions["parallel"],
@@ -307,6 +407,7 @@ export class OpenCloudBackend implements Backend {
 				});
 			},
 			streaming,
+			jobs.length,
 		);
 
 		// Parse after the pool settles so a task that returned no usable output
@@ -524,6 +625,44 @@ function bucketJobs(
 	return buckets;
 }
 
+// Open Cloud's wording when a task's return value exceeds its 4 MiB cap. It
+// rejects the whole task, so every package that task ran is lost with it.
+const OVERSIZED_RESULT_PATTERN = /Return results too large/i;
+
+/**
+ * Rethrow an oversized-return failure with the remedy attached.
+ *
+ * Work-stealing already keeps a task under the cap by leaving queue items for
+ * the next task, so reaching here means the split cannot help: either the run
+ * is on the single-task path, or one package's own results exceed the cap.
+ * Both need a decision from the user, and Open Cloud's bare message names
+ * neither the cause nor a way out.
+ */
+function rethrowOversizedResult(err: unknown): never {
+	if (!(err instanceof Error) || !OVERSIZED_RESULT_PATTERN.test(err.message)) {
+		throw err;
+	}
+
+	throw new Error(
+		`${err.message}\n` +
+			"One task returned more Jest output than Open Cloud accepts (4 MiB).\n" +
+			"Coverage is usually the bulk of it — try --no-coverage to confirm.\n" +
+			'Set `parallel: "auto"` (or --parallel 2+) so results come back split ' +
+			"across tasks, or narrow the run with --packages / --project.",
+		{ cause: err },
+	);
+}
+
+/** The Jest envelope a task returned, or a failure naming what came back. */
+function requireJestOutput(result: ScriptResult): string {
+	const jestOutput = result.outputs[0];
+	if (jestOutput === undefined) {
+		throw new Error(`No test results in output. Got: ${JSON.stringify(result.outputs)}`);
+	}
+
+	return jestOutput;
+}
+
 function describeError(err: unknown): string {
 	const cause = err instanceof Error ? err.cause : undefined;
 	if (cause instanceof PermissionError) {
@@ -582,23 +721,34 @@ async function sleepAsync(ms: number): Promise<void> {
 }
 
 /**
- * Drive the fixed task set through the shared roblox-runner pool. jest's work
- * is single-wave — the queue is enqueued upstream and each task drains it
- * until empty — so once `taskCount` tasks have launched the known set is
- * covered. Gating `isDone` on the launch count is the "no-op replenishment":
- * when a task returns its slot is never refilled, so the pool fires exactly
- * `taskCount` tasks and behaves like the old `Promise.all` wave while reusing
- * one orchestration path.
+ * Drive the work-stealing task set through the shared roblox-runner pool.
+ *
+ * A worker normally drains the queue until it is empty, so `taskCount` tasks
+ * cover the known set and no slot ever needs refilling — the wave is exactly
+ * `taskCount` tasks, as it was before deferral existed.
+ *
+ * The exception is a worker that fills its return-envelope budget: Open Cloud
+ * rejects a task returning more than 4 MiB, so the worker stops early, leaves
+ * the rest of the queue behind and says so (`deferred`). Each deferral earns
+ * exactly one replacement launch, which may itself defer, chaining until the
+ * queue drains.
+ *
+ * `maxLaunches` bounds that chain: a worker always takes at least one item, so
+ * covering `jobCount` jobs can never need more than `jobCount` extra tasks.
  */
 async function runStealingTasksAsync(
 	taskCount: number,
 	runTask: () => Promise<ScriptResult>,
 	outcome: StealingPoolOutcome,
+	jobCount: number,
 ): Promise<void> {
 	let launched = 0;
+	let pendingDeferrals = 0;
+	const maxLaunches = taskCount + jobCount;
+
 	await runTaskPool({
 		concurrency: taskCount,
-		isDone: () => launched >= taskCount,
+		isDone: () => launched >= taskCount && (pendingDeferrals === 0 || launched >= maxLaunches),
 		onError: (error) => {
 			// The pool folds a task failure into a freed slot and resolves, so
 			// without this the failure would be masked whenever a sibling task
@@ -609,10 +759,21 @@ async function runStealingTasksAsync(
 		},
 		onResult: (result) => {
 			outcome.results.push(result);
+
+			const jestOutput = result.outputs[0];
+			if (jestOutput !== undefined && isEnvelopeDeferred(jestOutput)) {
+				pendingDeferrals += 1;
+			}
 		},
 		places: [
 			{
 				runTask: async () => {
+					// Claim the deferral this launch answers, so two launches
+					// never settle the same one.
+					if (launched >= taskCount && pendingDeferrals > 0) {
+						pendingDeferrals -= 1;
+					}
+
 					launched += 1;
 					return runTask();
 				},
@@ -630,12 +791,18 @@ async function drainStealingPoolAsync(
 	taskCount: number,
 	runTask: () => Promise<ScriptResult>,
 	streaming: StreamingHooks | undefined,
+	requiredKeyCount: number,
 ): Promise<Array<ScriptResult>> {
 	// A holder, not a plain boolean, so the poll's `isDone` arrow reads the
 	// live value instead of capturing false forever.
 	const tasksDone = { value: false };
 	const outcome: StealingPoolOutcome = { results: [] };
-	const poolPromise = runStealingTasksAsync(taskCount, runTask, outcome).finally(() => {
+	const poolPromise = runStealingTasksAsync(
+		taskCount,
+		runTask,
+		outcome,
+		requiredKeyCount,
+	).finally(() => {
 		tasksDone.value = true;
 	});
 

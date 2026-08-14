@@ -73,6 +73,17 @@ export interface BackendOptions {
 	 */
 	parallel?: "auto" | number | undefined;
 	/**
+	 * Workspace mode, non-work-stealing only: rebuilds `scriptOverride` for a
+	 * subset of jobs. A task that fills its return-envelope budget comes back
+	 * having run only some of its entries; with no queue to leave the rest in,
+	 * the backend sends a fresh task carrying exactly what did not run.
+	 *
+	 * Its presence is also what tells the backend this is a workspace run:
+	 * every job shares one script, so splitting jobs into buckets would run
+	 * the whole script once per bucket rather than dividing the work.
+	 */
+	scriptFactory?: ((jobs: ReadonlyArray<ProjectJob>) => string) | undefined;
+	/**
 	 * Workspace mode: pre-built Luau script that the backend should send
 	 * verbatim instead of generating one from `jobs`. Used by the staged
 	 * materializer pipeline so the CLI layer chooses the script and the

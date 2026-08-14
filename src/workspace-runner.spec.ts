@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { vol } from "memfs";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import type { Backend, BackendOptions, BackendResult } from "./backends/interface.ts";
 import { loadConfig } from "./config/loader.ts";
@@ -251,6 +251,57 @@ describe(runWorkspaceAsync, () => {
 
 		expect(captured.options!.scriptOverride).toContain('"testTimeout":1234');
 		expect(captured.options!.scriptOverride).toContain('"testTimeout":5678');
+	});
+
+	// A task that fills its return envelope comes back having run only some of
+	// its entries. Without a queue to leave the rest in, the backend rebuilds a
+	// script from what did not run — so the factory must select by (pkg,
+	// project) rather than hand back the whole payload again.
+	it("should supply a factory that rebuilds the script for a subset of jobs", async () => {
+		expect.assertions(3);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			...seedPackage(BAR_DIR, {
+				name: "@halcyon/bar",
+				specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR, testTimeout: 5678 },
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testTimeout: 1234 },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		const factory = captured.options!.scriptFactory;
+		assert(factory !== undefined);
+
+		const barOnly = factory(
+			captured.options!.jobs.filter((entry) => entry.pkg === "@halcyon/bar"),
+		);
+
+		expect(barOnly).toContain('"testTimeout":5678');
+		expect(barOnly).not.toContain('"testTimeout":1234');
+		expect(barOnly).not.toContain('"pkg":"@halcyon/foo"');
 	});
 
 	it("should forward a basename testPathPattern when --testPathPattern is a filesystem path", async () => {

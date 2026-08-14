@@ -10,6 +10,16 @@ export interface MaterializerInput {
 }
 
 export interface ScriptOptions {
+	/**
+	 * Caps the encoded size of one task's return envelope, in bytes. A worker
+	 * that reaches the cap stops taking queue items and leaves them for the
+	 * next task, so no task trips Open Cloud's 4 MiB limit on the value it
+	 * returns. Omit to use the materializer's own default.
+	 *
+	 * Exists so a test can force the split with a small run rather than
+	 * needing megabytes of real Jest output.
+	 */
+	resultBudgetBytes?: number;
 	streaming?: StreamingOptions;
 }
 
@@ -42,6 +52,7 @@ interface WorkStealingPayload extends StreamingPayloadFields {
 	entries: Array<EntryPayload>;
 	invisibilityWindowSeconds: number;
 	queueId: string;
+	resultBudgetBytes?: number;
 }
 
 export function generateMaterializerScript(
@@ -77,6 +88,9 @@ export function generateWorkStealingScript(
 		entries: buildEntries(inputs),
 		invisibilityWindowSeconds,
 		queueId,
+		...(options.resultBudgetBytes !== undefined
+			? { resultBudgetBytes: options.resultBudgetBytes }
+			: {}),
 		...streamingFields(options.streaming),
 	};
 	return substitutePayload(payload);

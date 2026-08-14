@@ -14,10 +14,13 @@ type ResultEntry = EmbeddedRunner.ResultEntry
 local payload: Payload = HttpService:JSONDecode([==[__CONFIG_JSON__]==]) :: Payload
 
 local results: { ResultEntry }
+-- True when this task stopped with work still in the queue because its return
+-- envelope was full. The CLI answers it by launching another task.
+local deferred = false
 if payload.queueId ~= nil and payload.queueId ~= "" then
-	results = EmbeddedRunner.runWorkStealing(script, payload)
+	results, deferred = EmbeddedRunner.runWorkStealing(script, payload)
 else
-	results = EmbeddedRunner.runEmbedded(script, payload)
+	results, deferred = EmbeddedRunner.runEmbedded(script, payload)
 end
 
 local gameOutputs = {}
@@ -25,4 +28,5 @@ for _ = 1, #results do
 	table.insert(gameOutputs, "[]")
 end
 
-return HttpService:JSONEncode({ entries = results }), table.concat(gameOutputs, "")
+return HttpService:JSONEncode({ deferred = deferred, entries = results }),
+	table.concat(gameOutputs, "")

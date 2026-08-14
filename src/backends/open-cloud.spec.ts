@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
@@ -126,8 +126,9 @@ function envelope(
 		pkg?: string;
 		project?: string;
 	}>,
+	options: { deferred?: boolean } = {},
 ): string {
-	return JSON.stringify({ entries });
+	return JSON.stringify({ ...options, entries });
 }
 
 function packageEntry(packageName: string): { jestOutput: string; pkg: string } {
@@ -853,6 +854,230 @@ describe(OpenCloudBackend, () => {
 			});
 
 			expect(stub.executeCalls).toHaveLength(2);
+		});
+
+		it("should re-send the entries a deferring task left behind", async () => {
+			expect.assertions(3);
+
+			// Workspace runs without work-stealing share one script across every
+			// job, so a task that fills its envelope has no queue to leave the
+			// rest in. The backend has to rebuild a script from what did not
+			// come back, or those packages are lost.
+			const stub = createRunnerStub();
+			stub.setExecute(
+				stepExecute([
+					() => scriptResult(envelope([packageEntry("alpha")], { deferred: true })),
+					() => scriptResult(envelope([packageEntry("beta"), packageEntry("gamma")])),
+				]),
+			);
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const jobs = [job("alpha"), job("beta"), job("gamma")];
+			const results = await backend.runTestsAsync({
+				jobs,
+				scriptFactory: (remaining) => {
+					return `remaining:${remaining.map((entry) => entry.displayName).join(",")}`;
+				},
+				scriptOverride: "workspace-script",
+			});
+
+			expect(results.rawResults).toHaveLength(3);
+			expect(stub.executeCalls).toHaveLength(2);
+			// Only the two that did not come back the first time.
+			expect(stub.executeCalls[1]!.script).toContain("remaining:beta,gamma");
+		});
+
+		it("should stop re-sending when a task covers nothing new", async () => {
+			expect.assertions(2);
+
+			// A task that defers without running anything cannot be answered by
+			// sending it the same work again. Failing on the missing packages
+			// beats spending one task per job to reach the same place.
+			const stub = createRunnerStub();
+			stub.setExecute(
+				stepExecute([
+					() => scriptResult(envelope([packageEntry("alpha")], { deferred: true })),
+				]),
+			);
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+			await expect(
+				backend.runTestsAsync({
+					jobs: [job("alpha"), job("beta")],
+					scriptFactory: () => "retry-script",
+					scriptOverride: "workspace-script",
+				}),
+			).rejects.toThrow("beta");
+
+			expect(stub.executeCalls).toHaveLength(2);
+		});
+
+		it("should build the first script from the factory when no override is given", async () => {
+			expect.assertions(1);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTestsAsync({
+				jobs: [job("alpha")],
+				scriptFactory: () => "factory-built",
+			});
+
+			expect(stub.executeCalls[0]!.script).toContain("factory-built");
+		});
+
+		it("should fail a workspace task that returns no output at all", async () => {
+			expect.assertions(1);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => ({ durationMs: 1, outputs: [] }));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+			await expect(
+				backend.runTestsAsync({
+					jobs: [job("alpha")],
+					scriptFactory: () => "factory-built",
+				}),
+			).rejects.toThrow("No test results in output");
+		});
+
+		it("should explain an oversized return that splitting cannot fix", async () => {
+			expect.assertions(3);
+
+			// Open Cloud names neither the cause nor a way out, and it rejects
+			// the whole task — every package that task ran is lost with it. A
+			// run reaching here is either single-task or has one package whose
+			// own results exceed the cap, so the remedy has to be spelled out.
+			const stub = createRunnerStub();
+			stub.setExecute(() => {
+				throw new Error(
+					"Return results too large. Please reduce return result length to 4194304. Current size: 5908004",
+				);
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+			const thrown = await backend
+				.runTestsAsync({
+					jobs: [job("alpha")],
+					parallel: 2,
+					scriptOverride: "stealing-script",
+					workStealing: true,
+				})
+				.catch((err: unknown) => err);
+
+			assert(thrown instanceof Error);
+
+			expect(thrown.message).toContain("Current size: 5908004");
+			expect(thrown.message).toContain("--no-coverage");
+			expect(thrown.cause).toBeInstanceOf(Error);
+		});
+
+		it("should leave an unrelated task failure untouched", async () => {
+			expect.assertions(1);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => {
+				throw new Error("open cloud task crashed");
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+			await expect(
+				backend.runTestsAsync({
+					jobs: [job("alpha")],
+					parallel: 2,
+					scriptOverride: "stealing-script",
+					workStealing: true,
+				}),
+			).rejects.toThrow("open cloud task crashed");
+		});
+
+		it("should launch a replacement task when a worker defers queued work", async () => {
+			expect.assertions(2);
+
+			// Open Cloud rejects a task returning over 4 MiB, so a worker whose
+			// envelope fills up stops early and leaves the rest of the queue.
+			// The deferral must earn exactly one replacement launch, or the
+			// packages it left behind never come back.
+			const stub = createRunnerStub();
+			stub.setExecute(
+				stepExecute([
+					() => scriptResult(envelope([packageEntry("alpha")], { deferred: true })),
+					() => scriptResult(envelope([packageEntry("beta")])),
+					() => scriptResult(envelope([packageEntry("gamma")])),
+				]),
+			);
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const results = await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta"), job("gamma")],
+				parallel: 2,
+				scriptOverride: "stealing-script",
+				workStealing: true,
+			});
+
+			expect(stub.executeCalls).toHaveLength(3);
+			expect(results.rawResults).toHaveLength(3);
+		});
+
+		it("should stop relaunching once every deferral has been answered", async () => {
+			expect.assertions(1);
+
+			// A replacement that drains the queue ends the chain. Without the
+			// claim on launch, the same deferral could be answered twice and
+			// the wave would keep firing tasks that have nothing left to do.
+			const stub = createRunnerStub();
+			stub.setExecute(
+				stepExecute([
+					() => scriptResult(envelope([packageEntry("alpha")], { deferred: true })),
+					() => scriptResult(envelope([packageEntry("beta")])),
+					() => scriptResult(envelope([packageEntry("gamma")])),
+					() => scriptResult(envelope([])),
+				]),
+			);
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta"), job("gamma")],
+				parallel: 2,
+				scriptOverride: "stealing-script",
+				workStealing: true,
+			});
+
+			expect(stub.executeCalls).toHaveLength(3);
+		});
+
+		it("should bound the replacement chain when every task keeps deferring", async () => {
+			expect.assertions(2);
+
+			// A worker always takes at least one item, so a run can never need
+			// more than one extra task per job. A producer that defers forever
+			// must hit that bound and fail on the missing package rather than
+			// launching tasks without end.
+			const stub = createRunnerStub();
+			stub.setExecute(
+				stepExecute([
+					() => scriptResult(envelope([packageEntry("alpha")], { deferred: true })),
+				]),
+			);
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+			await expect(
+				backend.runTestsAsync({
+					jobs: [job("alpha"), job("beta")],
+					parallel: 2,
+					scriptOverride: "stealing-script",
+					workStealing: true,
+				}),
+			).rejects.toThrow("beta");
+
+			// parallel (2) + one launch per job (2).
+			expect(stub.executeCalls).toHaveLength(4);
 		});
 
 		it("should fail the run when a task errors even if a sibling covers every package", async () => {

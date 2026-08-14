@@ -191,6 +191,25 @@ describe(generateWorkStealingScript, () => {
 		expect(script).toContain('"pkg":"@halcyon/foo"');
 	});
 
+	// The materializer carries its own default, so a run that says nothing
+	// about the budget must not pin one into the payload.
+	it("should embed a result budget only when one is given", () => {
+		expect.assertions(2);
+
+		const inputs = [
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+		];
+
+		// Matched in its encoded form: the bundled materializer source names
+		// the field too, so a bare substring would always be present.
+		expect(generateWorkStealingScript(inputs, "queue-uuid-3", 90)).not.toContain(
+			'"resultBudgetBytes":',
+		);
+		expect(
+			generateWorkStealingScript(inputs, "queue-uuid-3", 90, { resultBudgetBytes: 2048 }),
+		).toContain('"resultBudgetBytes":2048');
+	});
+
 	it("should preserve entries in input order", () => {
 		expect.assertions(1);
 

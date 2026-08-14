@@ -14,6 +14,7 @@ local InterceptWriteable = require("../intercept-writeable")
 local Materializer = require("./materializer")
 local PhaseTiming = require("../phase-timing")
 local PromiseError = require("../promise-error")
+local ResultBudget = require("./result-budget")
 local SnapshotPatch = require("../snapshot-patch")
 
 type CapturedMessage = InterceptWriteable.CapturedMessage
@@ -38,6 +39,9 @@ export type Payload = {
 	entries: { EntryPayload },
 	queueId: string?,
 	invisibilityWindowSeconds: number?,
+	-- Caps the encoded size of this task's return envelope. Absent means the
+	-- module's own default. See `result-budget.luau`.
+	resultBudgetBytes: number?,
 	sortedMapId: string?,
 	streamingTtlSeconds: number?,
 }
@@ -410,11 +414,29 @@ end
 
 local module = {}
 
-function module.runEmbedded(callingScript: LuaSourceContainer, payload: Payload): { ResultEntry }
+--[=[
+	Walk the payload's entries in order, stopping early if the return envelope
+	fills up.
+
+	Returns the entries it ran and whether it left any behind. There is no
+	queue on this path, so the CLI answers a deferral by sending a new task
+	carrying only the entries that did not run.
+]=]
+function module.runEmbedded(
+	callingScript: LuaSourceContainer,
+	payload: Payload
+): ({ ResultEntry }, boolean)
 	local results: { ResultEntry } = {}
 	local prevPkg: string? = nil
+	local budget = ResultBudget.new(payload.resultBudgetBytes)
+	local deferred = false
 
 	for _, entry in payload.entries do
+		if ResultBudget.shouldStop(budget) then
+			deferred = true
+			break
+		end
+
 		local result, pkg = executeEntry(
 			callingScript,
 			entry,
@@ -423,6 +445,7 @@ function module.runEmbedded(callingScript: LuaSourceContainer, payload: Payload)
 			payload.streamingTtlSeconds
 		)
 		table.insert(results, result)
+		ResultBudget.add(budget, ResultBudget.measure(result))
 		prevPkg = pkg
 	end
 
@@ -430,13 +453,21 @@ function module.runEmbedded(callingScript: LuaSourceContainer, payload: Payload)
 		Materializer.reset()
 	end
 
-	return results
+	return results, deferred
 end
 
+--[=[
+	Drain the shared queue until it is empty or this task's return envelope is
+	full.
+
+	Returns the entries it ran and whether it stopped with work still queued.
+	The caller reports that second value to the CLI, which launches another
+	task to collect what this one left behind.
+]=]
 function module.runWorkStealing(
 	callingScript: LuaSourceContainer,
 	payload: Payload
-): { ResultEntry }
+): ({ ResultEntry }, boolean)
 	local queueId = payload.queueId :: string
 	local invisibility = payload.invisibilityWindowSeconds or 90
 
@@ -448,8 +479,18 @@ function module.runWorkStealing(
 	local queue = MemoryStoreService:GetQueue(queueId, invisibility)
 	local results: { ResultEntry } = {}
 	local prevPkg: string? = nil
+	local budget = ResultBudget.new(payload.resultBudgetBytes)
+	local deferred = false
 
 	while true do
+		-- Stop before reading, not after running: an item this worker never
+		-- reads stays visible in the queue, so a sibling task picks it up
+		-- immediately instead of waiting out the invisibility window.
+		if ResultBudget.shouldStop(budget) then
+			deferred = true
+			break
+		end
+
 		-- waitTimeout=0: poll non-blocking. Invisibility is already set at
 		-- GetQueue time above; using the full window here would stall the
 		-- loop for ~invisibility seconds on the final empty read, adding
@@ -489,6 +530,7 @@ function module.runWorkStealing(
 			payload.streamingTtlSeconds
 		)
 		table.insert(results, result)
+		ResultBudget.add(budget, ResultBudget.measure(result))
 		prevPkg = pkg
 
 		pcall(function()
@@ -500,7 +542,7 @@ function module.runWorkStealing(
 		Materializer.reset()
 	end
 
-	return results
+	return results, deferred
 end
 
 return module

@@ -1,11 +1,12 @@
 /* cspell:words jridgewell */
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import type { CoverageMap } from "./coverage-map.ts";
 import type { CoverageManifest } from "./manifest.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";
+import type { MappedFileCoverage } from "./mapper.ts";
 import { CoverageMapMalformedError, mapCoverageToTypeScript } from "./mapper.ts";
 import type { RawCoverageData } from "./types.ts";
 
@@ -415,6 +416,122 @@ describe(mapCoverageToTypeScript, () => {
 			// First stmt end col 25 > second stmt end col 5, same line →
 			// existing wins
 			expect(file!.statementMap["0"]!.end).toStrictEqual({ column: 25, line: 2 });
+		});
+	});
+
+	describe("with one source statement lowered to several Luau statements", () => {
+		// `const [first, second] = buildPair(\n\tinput,\n);` on TS line 10.
+		// roblox-ts lowers it to a `local _binding = ...` mapped across the
+		// call's three source lines, plus one single-line fragment per bound
+		// name, each mapped to its own column of line 10.
+		const bindingSpan = { end: { column: 33, line: 20 }, start: { column: 1, line: 20 } };
+		const firstSpan = { end: { column: 26, line: 21 }, start: { column: 1, line: 21 } };
+		const secondSpan = { end: { column: 27, line: 22 }, start: { column: 1, line: 22 } };
+
+		function setupLuauFile(statementMap: CoverageMap["statementMap"]): void {
+			setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(
+					createCoverageMap(statementMap),
+				),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+		}
+
+		function setupDestructuringMappings(): void {
+			setupSourceMapMappings({
+				// `local _binding = buildPair(input)`
+				"20:0": { column: 0, line: 10, source: "src/shared/player.ts" },
+				"20:32": { column: 1, line: 12, source: "src/shared/player.ts" },
+				// `local first = _binding[1]`
+				"21:0": { column: 7, line: 10, source: "src/shared/player.ts" },
+				"21:25": { column: 12, line: 10, source: "src/shared/player.ts" },
+				// `local second = _binding[2]`
+				"22:0": { column: 14, line: 10, source: "src/shared/player.ts" },
+				"22:26": { column: 20, line: 10, source: "src/shared/player.ts" },
+			});
+		}
+
+		function runFile(hitCounts: Record<string, number>): MappedFileCoverage {
+			const result = mapCoverageToTypeScript(
+				{ "shared/player.luau": { s: hitCounts } },
+				createManifest({
+					"shared/player.luau": {
+						...createManifestFiles()["shared/player.luau"],
+						statementCount: Object.keys(hitCounts).length,
+					},
+				}),
+			);
+
+			const file = result.files["src/shared/player.ts"];
+			assert(file !== undefined, "fixture statements map to src/shared/player.ts");
+			return file;
+		}
+
+		it("should record one entry per source statement", () => {
+			expect.assertions(2);
+
+			setupLuauFile({ "0": bindingSpan, "1": firstSpan, "2": secondSpan });
+			setupDestructuringMappings();
+
+			const file = runFile({ "0": 3, "1": 3, "2": 3 });
+
+			expect(Object.keys(file.statementMap)).toHaveLength(1);
+			expect(file.statementMap["0"]).toStrictEqual({
+				end: { column: 1, line: 12 },
+				start: { column: 0, line: 10 },
+			});
+		});
+
+		it("should sum the fragment hit counts rather than splitting them", () => {
+			expect.assertions(1);
+
+			setupLuauFile({ "0": bindingSpan, "1": firstSpan, "2": secondSpan });
+			setupDestructuringMappings();
+
+			const file = runFile({ "0": 3, "1": 3, "2": 3 });
+
+			expect(file.s["0"]).toBe(9);
+		});
+
+		it("should widen the entry start when a fragment is recorded first", () => {
+			expect.assertions(2);
+
+			// A fragment lands before the statement start does. The entry takes
+			// the leftmost column, so it still covers the whole source
+			// statement.
+			setupLuauFile({ "0": firstSpan, "1": bindingSpan });
+			setupDestructuringMappings();
+
+			const file = runFile({ "0": 4, "1": 4 });
+
+			expect(Object.keys(file.statementMap)).toHaveLength(1);
+			expect(file.statementMap["0"]).toStrictEqual({
+				end: { column: 1, line: 12 },
+				start: { column: 0, line: 10 },
+			});
+		});
+
+		it("should keep single-line statements that merely share a line apart", () => {
+			expect.assertions(1);
+
+			// `first(); second();` — two source statements, neither spanning
+			// lines. Nothing marks them as fragments of one statement, so they
+			// stay separate.
+			setupLuauFile({
+				"0": { end: { column: 10, line: 20 }, start: { column: 1, line: 20 } },
+				"1": { end: { column: 11, line: 21 }, start: { column: 1, line: 21 } },
+			});
+
+			setupSourceMapMappings({
+				"20:0": { column: 0, line: 10, source: "src/shared/player.ts" },
+				"20:9": { column: 8, line: 10, source: "src/shared/player.ts" },
+				"21:0": { column: 10, line: 10, source: "src/shared/player.ts" },
+				"21:10": { column: 19, line: 10, source: "src/shared/player.ts" },
+			});
+
+			const file = runFile({ "0": 1, "1": 1 });
+
+			expect(Object.keys(file.statementMap)).toHaveLength(2);
 		});
 	});
 

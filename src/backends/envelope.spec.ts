@@ -2,7 +2,7 @@ import { assert, describe, expect, it } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
-import { buildProjectResult, parseEnvelope } from "./envelope.ts";
+import { buildProjectResult, isEnvelopeDeferred, parseEnvelope } from "./envelope.ts";
 import type { EnvelopeEntry, ProjectJob } from "./interface.ts";
 
 function successJest(overrides: Record<string, unknown> = {}): string {
@@ -400,5 +400,50 @@ describe(buildProjectResult, () => {
 
 		expect(thrown).toBeInstanceOf(Error);
 		expect(thrown).not.toBeInstanceOf(LuauScriptError);
+	});
+});
+
+describe(isEnvelopeDeferred, () => {
+	it("should report a task that stopped with queued work outstanding", () => {
+		expect.assertions(1);
+
+		const jestOutput = JSON.stringify({
+			deferred: true,
+			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+		});
+
+		expect(isEnvelopeDeferred(jestOutput)).toBeTrue();
+	});
+
+	it("should report a task that drained the queue", () => {
+		expect.assertions(1);
+
+		const jestOutput = JSON.stringify({
+			deferred: false,
+			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+		});
+
+		expect(isEnvelopeDeferred(jestOutput)).toBeFalse();
+	});
+
+	it("should treat a missing deferred flag as nothing outstanding", () => {
+		expect.assertions(1);
+
+		const jestOutput = JSON.stringify({
+			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+		});
+
+		expect(isEnvelopeDeferred(jestOutput)).toBeFalse();
+	});
+
+	// The pool consults this while it is still deciding whether to launch more
+	// work. Throwing there would be swallowed as a task error, so a broken
+	// payload must read as "nothing outstanding" and leave the strict parse
+	// after the pool settles to surface the real failure.
+	it("should treat malformed output as nothing outstanding", () => {
+		expect.assertions(2);
+
+		expect(isEnvelopeDeferred("not json at all")).toBeFalse();
+		expect(isEnvelopeDeferred(JSON.stringify({ err: "boom", success: false }))).toBeFalse();
 	});
 });

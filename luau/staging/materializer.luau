@@ -25,17 +25,24 @@ local RUN_CONTEXT_ATTRIBUTE = "JestRunContextScripts"
 -- A LocalScript cannot be restored the same way: `RunContext = Client` needs a
 -- Script, and an Instance's ClassName is fixed. Nothing runs a client script in
 -- a headless session anyway, so the gap costs nothing in practice.
-local function restoreRunContext(instance: Instance)
-	for _, descendant in instance:GetDescendants() do
-		restoreRunContext(descendant)
-	end
-
+local function restoreOne(instance: Instance)
 	if instance:IsA("Script") and instance.RunContext == Enum.RunContext.Legacy then
 		-- Guarded: a runtime that refuses the write leaves the script legacy,
 		-- which is how it behaved before the run context was restored at all.
 		pcall(function()
 			instance.RunContext = Enum.RunContext.Server
 		end)
+	end
+end
+
+-- One pass, because `GetDescendants` is already the whole subtree. Recursing
+-- into each descendant as well visits a node once per chain of ancestors above
+-- it — 2^depth times — which a game-sized package pays as the engine's
+-- non-yielding script timeout before a single test runs.
+local function restoreRunContext(root: Instance)
+	restoreOne(root)
+	for _, descendant in root:GetDescendants() do
+		restoreOne(descendant)
 	end
 end
 

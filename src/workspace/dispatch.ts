@@ -20,7 +20,7 @@ const PER_PACKAGE_TIMEOUT_SECONDS = 60;
 
 export type WorkspaceDispatchSpec = Pick<
 	RunProjectsOptions,
-	"parallel" | "scriptOverride" | "streaming" | "workStealing"
+	"parallel" | "scriptFactory" | "scriptOverride" | "streaming" | "workStealing"
 >;
 
 interface WorkStealingCredentials {
@@ -111,7 +111,21 @@ export async function prepareWorkspaceDispatchAsync(
 		});
 	}
 
-	return { scriptOverride: generateMaterializerScript(inputs) };
+	// The factory lets the backend re-send only the entries a task left behind
+	// when its return envelope filled up. Matched on (pkg, project), the same
+	// pair the entries are keyed by.
+	return {
+		scriptFactory: (jobs) => {
+			return generateMaterializerScript(
+				inputs.filter((candidate) => {
+					return jobs.some((job) => {
+						return job.pkg === candidate.pkg && job.displayName === candidate.project;
+					});
+				}),
+			);
+		},
+		scriptOverride: generateMaterializerScript(inputs),
+	};
 }
 
 // The materializer payload: one entry per (pkg, project) runtime job, each
