@@ -71,10 +71,13 @@ function collectStatIfBranch(
 		}),
 	];
 
-	// Treat empty `else end` as no else: roblox-ts never emits empty else
-	// blocks, and an empty else has no observable behavior to cover
-	const hasExplicitElse = elseBlock !== undefined && elseBlock.statements.length > 0;
-	if (hasExplicitElse) {
+	// A block with no statements — empty, or holding only comments — is still
+	// an `else`. Reading it as absent sends this branch down the synthetic path
+	// below, which emits an `else` keyword of its own right before the real one,
+	// and Luau rejects the second. `getBodyFirstStatement` falls back to the
+	// block's own begin position, just past the `else` keyword, so the arm
+	// counter lands inside the block that is already there.
+	if (elseBlock !== undefined) {
 		arms.push({ bodyFirst: getBodyFirstStatement(elseBlock), location: elseBlock.location });
 		accumulator.addStatementBranch(arms);
 
