@@ -1,4 +1,4 @@
-import { OpenCloudError, PollTimeoutError } from "@bedrock-rbx/ocale";
+import { ApiError, NetworkError, OpenCloudError, PollTimeoutError } from "@bedrock-rbx/ocale";
 import {
 	createFakeHttpClient,
 	createFakeSleep,
@@ -166,6 +166,111 @@ describe(OcaleRunner, () => {
 			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
 
 			expect(result.versionNumber).toBe(4);
+			expect(http.requests).toHaveLength(2);
+		});
+
+		it("should name the place file that failed to upload", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockApiError({ message: "Unauthorized", statusCode: 401 });
+
+			const runner = makeRunner(http);
+
+			await expect(
+				runner.uploadPlaceAsync({ placeFilePath: "/work/nested/game.rbxl" }),
+			).rejects.toThrow(/game\.rbxl/);
+		});
+
+		it("should name the failing request and its elapsed time when upload fails", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockError(
+				new ApiError("HTTP 400: Invalid place file", {
+					elapsedMs: 31_200,
+					method: "POST",
+					statusCode: 400,
+					url: "https://apis.roblox.com/universes/v1/123/places/456/versions",
+				}),
+			);
+
+			const runner = makeRunner(http);
+
+			await expect(
+				runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" }),
+			).rejects.toThrow(
+				"HTTP 400: Invalid place file on POST https://apis.roblox.com/universes/v1/123/places/456/versions after 31.2s",
+			);
+		});
+
+		it("should name the failing request when a transport failure survives retries", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockError(
+				new NetworkError("Network request failed", {
+					method: "POST",
+					url: "https://apis.roblox.com/universes/v1/123/places/456/versions",
+				}),
+			);
+
+			const runner = makeRunner(http);
+
+			await expect(
+				runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" }),
+			).rejects.toThrow(
+				"Network request failed on POST https://apis.roblox.com/universes/v1/123/places/456/versions",
+			);
+		});
+
+		it("should surface a rate limit that outlives the retry budget", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			// maxRetries defaults to 3, so a fourth 429 has no attempt left.
+			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
+			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
+			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
+			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
+
+			const runner = makeRunner(http);
+
+			await expect(
+				runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" }),
+			).rejects.toThrow(/Rate limited$/);
+		});
+
+		it("should retry place upload on a transient 502", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockApiError({ message: "Request Context Failure", statusCode: 502 });
+			http.mockResponse({ body: { versionNumber: 5 }, status: 200 });
+
+			const runner = makeRunner(http);
+			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
+
+			expect(result.versionNumber).toBe(5);
+			expect(http.requests).toHaveLength(2);
+		});
+
+		it("should retry place upload on a gateway rejection", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockError(
+				new ApiError("HTTP 400", {
+					gatewaySummary: "The requested URL could not be retrieved",
+					statusCode: 400,
+				}),
+			);
+			http.mockResponse({ body: { versionNumber: 6 }, status: 200 });
+
+			const runner = makeRunner(http);
+			const result = await runner.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" });
+
+			expect(result.versionNumber).toBe(6);
 			expect(http.requests).toHaveLength(2);
 		});
 

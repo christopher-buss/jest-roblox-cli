@@ -1,5 +1,10 @@
 import type { HttpClient, OpenCloudError, Result, SleepFunc } from "@bedrock-rbx/ocale";
-import { PollTimeoutError, TRANSIENT_TRANSPORT_CODES } from "@bedrock-rbx/ocale";
+import {
+	ApiError,
+	NetworkError,
+	PollTimeoutError,
+	TRANSIENT_TRANSPORT_CODES,
+} from "@bedrock-rbx/ocale";
 import type { LuauExecutionTask } from "@bedrock-rbx/ocale/luau-execution";
 import { LuauExecutionClient } from "@bedrock-rbx/ocale/luau-execution";
 import type { PublishParameters } from "@bedrock-rbx/ocale/places";
@@ -19,6 +24,17 @@ import type {
 } from "./types.ts";
 
 const MAX_TASK_TIMEOUT_SECONDS = 300;
+
+/**
+ * Statuses a place upload retries. Wider than ocale's upload default of `[429]`
+ * alone, which guards against a 5xx that describes a write that partly landed.
+ * A duplicate place version is not a hazard here: Roblox dedupes identical
+ * place content, so a retry that races an upload which did land returns that
+ * same version. Roblox's own 502 (`Request Context Failure`) is frequent enough
+ * that surfacing it fails a test run for a fault that clears on the next
+ * attempt.
+ */
+const UPLOAD_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
 
 export interface OcaleRunnerOptions {
 	baseUrl?: string;
@@ -95,15 +111,20 @@ export class OcaleRunner implements RemoteRunner {
 			placeId: this.credentials.placeId,
 			universeId: this.credentials.universeId,
 		};
-		const requestOptions = { retryableTransportCodes: TRANSIENT_TRANSPORT_CODES };
+		// Only the statuses are overridden. ocale's upload defaults already carry
+		// every transient transport code plus `GATEWAY_REJECTED`, and a
+		// per-request list replaces the default rather than extending it, so
+		// naming the codes here would drop gateway-rejection retry.
+		const requestOptions = { retryableStatuses: UPLOAD_RETRYABLE_STATUSES };
 		const result =
 			options.publish === true
 				? await this.places.publish(parameters, requestOptions)
 				: await this.places.save(parameters, requestOptions);
 		if (!result.success) {
-			throw new Error(`Failed to upload place: ${result.err.message}`, {
-				cause: result.err,
-			});
+			throw new Error(
+				`Failed to upload place ${placeFilePath}: ${describeUploadFailure(result.err)}`,
+				{ cause: result.err },
+			);
 		}
 
 		return {
@@ -111,6 +132,29 @@ export class OcaleRunner implements RemoteRunner {
 			versionNumber: result.data.versionNumber,
 		};
 	}
+}
+
+/**
+ * Expands an upload failure into one diagnostic line. An `ApiError` carries
+ * the failing call and how long it was in flight, and a bare `err.message`
+ * throws all of that away: `HTTP 502: Request Context Failure` alone says
+ * nothing about which request died, or whether it died on the wire or after
+ * 30 seconds of upload.
+ *
+ * @param err - The Open Cloud error the upload returned.
+ * @returns The error message, followed by the request context ocale captured.
+ */
+function describeUploadFailure(err: OpenCloudError): string {
+	if (!(err instanceof ApiError) && !(err instanceof NetworkError)) {
+		return err.message;
+	}
+
+	const target = err.url === undefined ? "" : ` on ${err.method} ${err.url}`;
+	const elapsed =
+		err instanceof ApiError && err.elapsedMs !== undefined
+			? ` after ${(err.elapsedMs / 1000).toFixed(1)}s`
+			: "";
+	return `${err.message}${target}${elapsed}`;
 }
 
 function coerceOutputToString(value: unknown): string {
