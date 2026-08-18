@@ -3,7 +3,19 @@ import { RojoResolver } from "@isentinel/rojo-utils";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 
+/**
+ * Resolvers already built, keyed by the rojo project file they were built
+ * from. Packages that share a rojo project then share its tree walk.
+ */
+export type RojoResolverCache = Map<string, RojoResolver>;
+
 export interface SetupResolverOptions {
+	/**
+	 * Reuse resolvers across calls. Caller-owned: `RojoResolver.fromPath`
+	 * snapshots the project tree, so how long that snapshot stays true is the
+	 * caller's question. Omit it and every call builds its own.
+	 */
+	cache?: RojoResolverCache | undefined;
 	configDirectory: string;
 	resolveModule?: (specifier: string) => string;
 	rojoConfigPath: string;
@@ -11,16 +23,18 @@ export interface SetupResolverOptions {
 
 const PROBE_EXTENSIONS = [".ts", ".tsx", ".lua", ".luau"];
 
+export function createRojoResolverCache(): RojoResolverCache {
+	return new Map<string, RojoResolver>();
+}
+
 export function createSetupResolver({
+	cache,
 	configDirectory,
 	resolveModule,
 	rojoConfigPath,
 }: SetupResolverOptions): (input: string) => string {
 	const resolve = resolveModule ?? createRequire(path.join(configDirectory, "noop.js")).resolve;
-	// mapFsPathToDataModel is not an equivalent substitution for this walk: the
-	// resolver follows the pnpm symlink and any nested rojo config, so it strips
-	// `out` from a package path where the tree mapper keeps it.
-	const rojoResolver = RojoResolver.fromPath(rojoConfigPath);
+	const rojoResolver = resolveRojo(rojoConfigPath, cache);
 
 	return (input: string): string => {
 		let absolutePath: string;
@@ -47,6 +61,22 @@ export function createSetupResolver({
 
 		return rbxPath.join("/");
 	};
+}
+
+// mapFsPathToDataModel is not an equivalent substitution for this walk: the
+// resolver follows the pnpm symlink and any nested rojo config, so it strips
+// `out` from a package path where the tree mapper keeps it. That walk dominates
+// the cost of resolving a package's setup files, so a shared cache spares every
+// package after the first that mounts the same project file.
+function resolveRojo(rojoConfigPath: string, cache: RojoResolverCache | undefined): RojoResolver {
+	const cached = cache?.get(rojoConfigPath);
+	if (cached !== undefined) {
+		return cached;
+	}
+
+	const resolver = RojoResolver.fromPath(rojoConfigPath);
+	cache?.set(rojoConfigPath, resolver);
+	return resolver;
 }
 
 function isRelativePath(input: string): boolean {

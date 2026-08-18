@@ -2,7 +2,7 @@ import { parseYAML } from "confbox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { globSync } from "../utils/glob.ts";
+import { createGlobCache, globSync } from "../utils/glob.ts";
 
 const JEST_CONFIG_MARKER = /^jest\.config\.[^.]+$/;
 const TRAILING_SLASH = /\/$/;
@@ -84,9 +84,11 @@ function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
 	const patterns = yaml.packages ?? [];
 
 	const packages: Array<PackageInfo> = [];
+	// One walk of the workspace root serves every pattern.
+	const globCache = createGlobCache();
 	for (const pattern of patterns) {
 		const packageJsonPattern = `${pattern.replace(TRAILING_SLASH, "")}/package.json`;
-		const matches = globSync(packageJsonPattern, { cwd: workspaceRoot });
+		const matches = globSync(packageJsonPattern, { cache: globCache, cwd: workspaceRoot });
 		for (const match of matches) {
 			const packageJsonPath = path.join(workspaceRoot, match);
 			const name = readPackageJsonName(packageJsonPath);
@@ -150,10 +152,12 @@ function collectPackagesFromMatches(
 function enumerateFromGlobs(workspaceRoot: string, patterns: Array<string>): Array<PackageInfo> {
 	const seenDirectories = new Set<string>();
 	const packages: Array<PackageInfo> = [];
+	// One walk of the workspace root serves every pattern.
+	const globCache = createGlobCache();
 
 	for (const pattern of patterns) {
 		const jestConfigPattern = `${pattern.replace(TRAILING_SLASH, "")}/jest.config.*`;
-		const matches = globSync(jestConfigPattern, { cwd: workspaceRoot });
+		const matches = globSync(jestConfigPattern, { cache: globCache, cwd: workspaceRoot });
 		collectPackagesFromMatches(matches, workspaceRoot, seenDirectories, packages);
 	}
 

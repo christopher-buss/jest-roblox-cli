@@ -2,8 +2,8 @@ import * as path from "node:path";
 
 import type { ResolvedTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import { createSetupResolver } from "../config/setup-resolver.ts";
-import { globSync } from "../utils/glob.ts";
+import { createRojoResolverCache, createSetupResolver } from "../config/setup-resolver.ts";
+import { createGlobCache, globSync } from "../utils/glob.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
 
@@ -30,8 +30,11 @@ export function discoverTestFiles(
 	}
 
 	const allFiles: Array<string> = [];
+	// Every pattern walks the same rootDir, so one cache across the loop turns
+	// a walk per testMatch entry into a single walk.
+	const globCache = createGlobCache();
 	for (const pattern of config.testMatch) {
-		const matches = globSync(pattern, { cwd: config.rootDir });
+		const matches = globSync(pattern, { cache: globCache, cwd: config.rootDir });
 		allFiles.push(...matches);
 	}
 
@@ -71,8 +74,14 @@ export function classifyTestFiles(
 // On large repos this dominates host time, so multi-mode shares one resolver
 // across all projects with the same rojo config -- typically every project.
 // Per-project `rojoProject` overrides still get their own resolver.
+//
+// The walk itself is cached one layer down, keyed on the project path alone:
+// two projects with different `rootDir` values still build different resolvers
+// (each resolves relative paths against its own directory) but now share the
+// one tree walk behind them.
 export function resolveAllSetupFilePaths(configs: Array<ResolvedConfig>): void {
 	const resolvers = new Map<string, (input: string) => string>();
+	const rojoCache = createRojoResolverCache();
 
 	for (const config of configs) {
 		if (config.setupFiles === undefined && config.setupFilesAfterEnv === undefined) {
@@ -86,7 +95,11 @@ export function resolveAllSetupFilePaths(configs: Array<ResolvedConfig>): void {
 		const key = JSON.stringify([config.rootDir, rojoConfigPath]);
 		let resolve = resolvers.get(key);
 		if (resolve === undefined) {
-			resolve = createSetupResolver({ configDirectory: config.rootDir, rojoConfigPath });
+			resolve = createSetupResolver({
+				cache: rojoCache,
+				configDirectory: config.rootDir,
+				rojoConfigPath,
+			});
 			resolvers.set(key, resolve);
 		}
 

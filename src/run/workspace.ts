@@ -360,7 +360,7 @@ function composeWorkspaceDisplayName(packageName: string, project: string): stri
 // project results plus (when present) the merged Type Test result.
 function buildWorkspaceResult({
 	cli,
-	output: { results, typecheckResult },
+	output: { preCoverageMs, results, typecheckResult },
 	runOptions,
 	workspaceRoot,
 }: {
@@ -388,7 +388,8 @@ function buildWorkspaceResult({
 		...resolveWorkspaceCoverage(results),
 		merged: {},
 		mode: "workspace",
-		preCoverageMs: 0,
+		// A typecheck-only run stages nothing, so the runner reports none.
+		preCoverageMs: preCoverageMs ?? 0,
 		projectResults,
 		reportOptions: resolveReportOptions(cli, runOptions, workspaceRoot),
 		...(typecheckResult !== undefined ? { typecheckResult } : {}),

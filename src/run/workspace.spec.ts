@@ -1063,4 +1063,25 @@ describe(runWorkspaceModeAsync, () => {
 			expect(result.projectResults).toStrictEqual([]);
 		});
 	});
+
+	it("should carry the runner's staging time out as preCoverageMs", async () => {
+		expect.assertions(1);
+
+		vi.mocked(runWorkspaceAsync).mockResolvedValue({
+			preCoverageMs: 1234,
+			results: [
+				{
+					displayName: "foo",
+					pkg: "@halcyon/foo",
+					result: makeExecuteResult(),
+				},
+			],
+		});
+
+		const result = await runWorkspaceModeAsync(
+			makeCli({ packages: "@halcyon/foo", workspace: true }),
+		);
+
+		expect(result.preCoverageMs).toBe(1234);
+	});
 });

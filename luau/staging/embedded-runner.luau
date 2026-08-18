@@ -15,6 +15,7 @@ local Materializer = require("./materializer")
 local PhaseTiming = require("../phase-timing")
 local PromiseError = require("../promise-error")
 local ResultBudget = require("./result-budget")
+local SetupTiming = require("../setup-timing")
 local SnapshotPatch = require("../snapshot-patch")
 
 type CapturedMessage = InterceptWriteable.CapturedMessage
@@ -76,6 +77,7 @@ type JestResultPayload = {
 	value: any?,
 	err: any?,
 	_coverage: { [string]: any }?,
+	_setup: number?,
 	_timing: { [string]: number }?,
 }
 
@@ -137,6 +139,11 @@ local function runEntry(
 	-- saves the live getDataModelService each call, so re-patching without
 	-- unpatch would freeze the previous mock as the restoration target.
 	local snapshotWrites: SnapshotWrites = {}
+	-- Declared out here for the same reason `patchState` is: SetupTiming swaps a
+	-- method on the SHARED JestRuntime module, so the unpatch has to run on the
+	-- error path too. Left patched, the next entry in the batch would keep timing
+	-- against this entry's setup set.
+	local setupTimingState: SetupTiming.PatchState? = nil
 	local t_patchSnapshot0 = os.clock()
 	local patchState = SnapshotPatch.patch(JestModule, snapshotWrites)
 	local t_patchSnapshot = os.clock()
@@ -186,6 +193,14 @@ local function runEntry(
 		entry.config.setupFilesAfterEnv = resolveSetupPaths(entry.config.setupFilesAfterEnv) :: any
 		local t_resolveSetupFiles = os.clock()
 
+		-- After resolution, not before: the patch keys its set on the resolved
+		-- ModuleScript Instances, which is what Jest requires through.
+		setupTimingState = SetupTiming.patch(
+			JestModule,
+			entry.config.setupFiles :: any,
+			entry.config.setupFilesAfterEnv :: any
+		)
+
 		local coverageEnabled = entry.config._coverage == true
 		if coverageEnabled then
 			-- Per-package isolation: reset the global probe sink
@@ -211,6 +226,13 @@ local function runEntry(
 			payload._coverage = _G.__jest_roblox_cov
 		end
 
+		-- Reported separately so the host subtracts it from the environment
+		-- residual, as it does for a single-package run.
+		local setupSeconds = SetupTiming.getSeconds(setupTimingState)
+		if setupSeconds > 0 then
+			payload._setup = setupSeconds
+		end
+
 		payload._timing = PhaseTiming.build(timingEnabled, {
 			{ name = "findJest", seconds = t_findJest - t_findJest0 },
 			{ name = "patchSnapshot", seconds = t_patchSnapshot - t_patchSnapshot0 },
@@ -231,6 +253,7 @@ local function runEntry(
 		restoreStderr()
 	end
 
+	SetupTiming.unpatch(setupTimingState)
 	SnapshotPatch.unpatch(patchState)
 
 	-- Disconnect MessageOut last so any teardown-time warns still land in

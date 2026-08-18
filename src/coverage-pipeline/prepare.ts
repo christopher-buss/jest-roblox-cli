@@ -29,7 +29,7 @@ import type {
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
 import { MANIFEST_VERSION, readManifest, writeManifest } from "./manifest.ts";
-import { computeRojoInputsHash } from "./rojo-inputs.ts";
+import { tryComputeRojoInputsHash } from "./rojo-inputs.ts";
 import { prepareShadowRoot } from "./shadow-root.ts";
 
 const COVERAGE_DIR = ".jest-roblox/coverage";
@@ -305,17 +305,12 @@ function resolveRojoInputsHash(
 	rojoProjectPath: string,
 	luauRoots: Array<string>,
 ): { hash: string; resolved: boolean } {
-	try {
-		const hash = computeRojoInputsHash({
-			luauRoots,
-			rojoProjectPath,
-			rootDirectory: config.rootDir,
-		});
-		return { hash, resolved: true };
-	} catch (err) {
-		process.stderr.write(`Warning: could not hash rojo build inputs: ${String(err)}\n`);
-		return { hash: "", resolved: false };
-	}
+	const hash = tryComputeRojoInputsHash({
+		luauRoots,
+		rojoProjectPath,
+		rootDirectory: config.rootDir,
+	});
+	return hash === undefined ? { hash: "", resolved: false } : { hash, resolved: true };
 }
 
 function loadCoverageManifest(manifestPath: string): CoverageManifest | undefined {

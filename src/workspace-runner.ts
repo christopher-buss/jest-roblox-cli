@@ -13,7 +13,7 @@ import { ensurePackageDirectories } from "./workspace/ensure-paths.ts";
 import { writeWorkspaceSinksAsync } from "./workspace/output-sinks.ts";
 import { type LoadedPackage, loadWorkspacePackagesAsync } from "./workspace/package-loader.ts";
 import type { PackageInfo } from "./workspace/package-resolver.ts";
-import { stageWorkspacePlace } from "./workspace/place-staging.ts";
+import { type StagedWorkspacePlace, stageWorkspacePlace } from "./workspace/place-staging.ts";
 import { type PreflightError, validatePackages } from "./workspace/preflight.ts";
 import { resolvePackageContextsAsync } from "./workspace/project-contexts.ts";
 import { selectWorkspaceTests, type WorkspaceTestSelection } from "./workspace/test-selection.ts";
@@ -81,7 +81,6 @@ interface WorkspaceRuntimeInput {
 	loaded: Array<LoadedPackage>;
 	options: RunWorkspaceOptions;
 	selection: WorkspaceTestSelection;
-	startTime: number;
 	timing: TimingCollector;
 }
 
@@ -97,7 +96,7 @@ async function executeWorkspaceRunAsync({
 	selection,
 	startTime,
 	timing,
-}: WorkspaceRuntimeInput & { placeFile: string }): Promise<{
+}: WorkspaceRuntimeInput & { placeFile: string; startTime: number }): Promise<{
 	results: Array<ExecuteResult>;
 	typecheckPass: WorkspaceTypecheckPass;
 }> {
@@ -134,19 +133,40 @@ async function executeWorkspaceRunAsync({
 	return { results, typecheckPass };
 }
 
+/**
+ * Stage the place and report how long it took.
+ *
+ * Timed rather than merely elapsed-through: the dispatch window opens after
+ * this returns, exactly as multi opens its window after the coverage bake.
+ * Opening the window first would leave this time inside the `cli` residual, and
+ * the two modes would then report the same run differently.
+ */
+function stageAndMeasure(
+	input: WorkspaceRuntimeInput,
+): StagedWorkspacePlace & { preCoverageMs: number } {
+	const start = Date.now();
+	const staged = stageWorkspacePlace({
+		cacheDirectory: input.cacheDirectory,
+		loaded: input.loaded,
+		selection: input.selection,
+		timing: input.timing,
+		workspaceRoot: input.options.workspaceRoot,
+	});
+
+	return { ...staged, preCoverageMs: Date.now() - start };
+}
+
 async function runWorkspaceRuntimeAsync(
 	input: WorkspaceRuntimeInput,
 ): Promise<WorkspaceRunnerOutput> {
 	const { options, selection, timing } = input;
-	const { coverageByPackage, placeFile } = stageWorkspacePlace({
-		cacheDirectory: input.cacheDirectory,
-		loaded: input.loaded,
-		selection,
-		timing,
-		workspaceRoot: options.workspaceRoot,
-	});
+	const { coverageByPackage, placeFile, preCoverageMs } = stageAndMeasure(input);
 
-	const { results, typecheckPass } = await executeWorkspaceRunAsync({ ...input, placeFile });
+	const { results, typecheckPass } = await executeWorkspaceRunAsync({
+		...input,
+		placeFile,
+		startTime: Date.now(),
+	});
 
 	await writeWorkspaceSinksAsync({
 		pending: selection.pending,
@@ -159,11 +179,14 @@ async function runWorkspaceRuntimeAsync(
 		workspaceRoot: options.workspaceRoot,
 	});
 
-	return attachTypecheck(
-		attachCoverageManifests(results, selection.pending, coverageByPackage),
-		typecheckPass.outcome,
-		timing,
-	);
+	return {
+		...attachTypecheck(
+			attachCoverageManifests(results, selection.pending, coverageByPackage),
+			typecheckPass.outcome,
+			timing,
+		),
+		preCoverageMs,
+	};
 }
 
 // No runtime jobs. With Type Tests present (`--typecheckOnly`, or type-test-only
@@ -226,7 +249,6 @@ async function runWorkspaceProfiledAsync(
 	timing: TimingCollector,
 ): Promise<undefined | WorkspaceRunnerOutput> {
 	const { cli, packageInfos, workspaceRoot } = options;
-	const startTime = Date.now();
 
 	// Load each package's config FIRST so that per-package `rojoProject`
 	// declarations override the workspace default. Building the descriptor
@@ -261,7 +283,6 @@ async function runWorkspaceProfiledAsync(
 		loaded,
 		options,
 		selection,
-		startTime,
 		timing,
 	});
 }

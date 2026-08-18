@@ -324,14 +324,15 @@ Always required:
 | `universe-places:write`                       | Publish the built `.rbxl` as a new place version |
 | `universe.place.luau-execution-session:write` | Start the Luau session that runs the tests       |
 
-`--workspace --parallel >1` additionally requires the queue scopes for
-work-stealing across concurrent sessions:
+A sharding `--workspace` run — `--parallel auto` or an explicit count above 1 —
+additionally requires the queue scopes for work-stealing across concurrent
+sessions. Without them the run warns and falls back to one task at a time:
 
 | Scope                                              | What it's for                                  |
 | -------------------------------------------------- | ---------------------------------------------- |
 | `memory-store.queue:add` / `:dequeue` / `:discard` | Work-stealing queue across concurrent sessions |
 
-`--workspace --parallel >1` with a streaming formatter additionally requires:
+A sharding `--workspace` run with a streaming formatter additionally requires:
 
 | Scope                                     | What it's for                                           |
 | ----------------------------------------- | ------------------------------------------------------- |
@@ -414,8 +415,8 @@ Run tests across multiple packages in a pnpm workspace in a single invocation.
 Works on every backend: Open Cloud (fans packages across parallel tasks),
 `studio-cli` (one self-launched Studio process drives every package, no
 sharding), and the attached `studio` backend (runs the workspace inside an open
-Studio — handy for debugging the flow). `studio-cli` is serial, so
-`--parallel > 1` is rejected with `--workspace`.
+Studio — handy for debugging the flow). `studio-cli` is serial, so a sharding
+`--parallel` is rejected with `--workspace`.
 
 <!-- prettier-ignore -->
 > [!NOTE]

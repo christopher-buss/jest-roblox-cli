@@ -2495,6 +2495,49 @@ describe(runWorkspaceAsync, () => {
 		});
 	});
 
+	it("should measure the place staging as preCoverageMs", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+		});
+
+		// Staging is synchronous, so the only way to give it a measurable
+		// duration is to move the clock from inside the rojo build it ends on.
+		let clock = 1_000;
+		vi.spyOn(Date, "now").mockImplementation(() => clock);
+		vi.mocked(buildPlace).mockImplementationOnce(() => {
+			clock += 250;
+			return { hash: "hash", path: "place.rbxl" };
+		});
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+		]);
+
+		const output = await runWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(output!.preCoverageMs).toBe(250);
+		// The dispatch window must start after staging, or the reported total
+		// would count those 250ms twice.
+		expect(output!.results[0]!.result.timing.startTime).toBe(1250);
+	});
+
 	describe("work-stealing", () => {
 		const testCredentials = { apiKey: "test-key", universeId: "u-123" };
 
@@ -2584,6 +2627,79 @@ describe(runWorkspaceAsync, () => {
 			});
 
 			expect(captured.options!.scriptOverride).toContain('"queueId":"specific-queue-id"');
+		});
+
+		it("should shard on parallel auto rather than falling back to one task", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+			});
+
+			mockPreparedQueue("queue-auto");
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspaceAsync({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: "auto" }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(captured.options!.workStealing).toBeTrue();
+			expect(captured.options!.parallel).toBe("auto");
+		});
+
+		it("should fall back to the single-task path when the queue cannot be prepared", async () => {
+			expect.assertions(4);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+			});
+
+			vi.mocked(prepareWorkStealingQueueAsync).mockRejectedValue(
+				new Error("Failed to enqueue work item: insufficient scope"),
+			);
+			const warn = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			const output = await runWorkspaceAsync({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 3 }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(captured.options!.workStealing).toBeUndefined();
+			expect(captured.options!.scriptFactory).toBeDefined();
+			expect(output!.results).toHaveLength(1);
+			expect(warn.mock.calls.flat().join("")).toContain("insufficient scope");
 		});
 
 		it("should keep the existing single-task path when parallel is unset", async () => {

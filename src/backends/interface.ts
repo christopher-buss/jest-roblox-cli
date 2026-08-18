@@ -166,6 +166,8 @@ export function isWorkspaceRun(jobs: ReadonlyArray<ProjectJob>): boolean {
  * count) or an explicit count > 1. The serial backends (studio, studio-cli)
  * reject this — they drive a single Studio instance.
  */
-export function isShardedParallel(parallel: "auto" | number | undefined): boolean {
+export function isShardedParallel(
+	parallel: "auto" | number | undefined,
+): parallel is "auto" | number {
 	return parallel === "auto" || (typeof parallel === "number" && parallel > 1);
 }

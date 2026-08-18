@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { globSync } from "./glob.ts";
+import { createGlobCache, globSync } from "./glob.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -130,5 +130,61 @@ describe(globSync, () => {
 		vol.fromJSON({ "test.spec.ts": "", "test.ts": "" }, CWD);
 
 		expect(globSync("*.spec.ts", { cwd: CWD })).toStrictEqual(["test.spec.ts"]);
+	});
+});
+
+describe("walk caching", () => {
+	it("should walk once when a cache is shared across patterns", () => {
+		expect.assertions(3);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({ "src/app.spec.ts": "", "src/app.ts": "" }, CWD);
+		const cache = createGlobCache();
+		const readdir = vi.spyOn(fs, "readdirSync");
+
+		expect(globSync("**/*.ts", { cache, cwd: CWD })).toHaveLength(2);
+
+		const afterFirst = readdir.mock.calls.length;
+
+		expect(globSync("**/*.spec.ts", { cache, cwd: CWD })).toStrictEqual(["src/app.spec.ts"]);
+
+		expect(readdir).toHaveBeenCalledTimes(afterFirst);
+	});
+
+	it("should walk again for each call when no cache is given", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({ "src/app.ts": "" }, CWD);
+		const readdir = vi.spyOn(fs, "readdirSync");
+
+		expect(globSync("**/*.ts", { cwd: CWD })).toStrictEqual(["src/app.ts"]);
+
+		const afterFirst = readdir.mock.calls.length;
+
+		globSync("**/*.ts", { cwd: CWD });
+
+		expect(readdir.mock.calls.length).toBeGreaterThan(afterFirst);
+	});
+
+	it("should key a shared cache by cwd", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({ "a.ts": "" }, "/one");
+		vol.fromJSON({ "b.ts": "" }, "/two");
+		const cache = createGlobCache();
+
+		expect(globSync("*.ts", { cache, cwd: "/one" })).toStrictEqual(["a.ts"]);
+		expect(globSync("*.ts", { cache, cwd: "/two" })).toStrictEqual(["b.ts"]);
 	});
 });

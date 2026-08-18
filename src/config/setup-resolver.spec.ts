@@ -4,7 +4,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { createSetupResolver } from "./setup-resolver.ts";
+import { createRojoResolverCache, createSetupResolver } from "./setup-resolver.ts";
 
 // Explicit factory, not automock: rojo-utils' barrel re-exports RojoResolver, and
 // vitest automock can't mock through re-export barrels when resolving source
@@ -231,5 +231,46 @@ describe(createSetupResolver, () => {
 				/no matching path found in rojo project tree/i,
 			);
 		});
+	});
+});
+
+describe("resolver caching", () => {
+	it("should build one resolver per rojo config path when a cache is shared", () => {
+		expect.assertions(3);
+
+		mockRojoResolver({
+			[path.resolve(CONFIG_DIRECTORY, "./setup.luau")]: ["ReplicatedStorage", "setup"],
+		});
+		const cache = createRojoResolverCache();
+
+		const first = makeResolver({ cache });
+		const second = makeResolver({ cache });
+
+		expect(RojoResolver.fromPath).toHaveBeenCalledOnce();
+		expect(first("./setup.luau")).toBe("ReplicatedStorage/setup");
+		expect(second("./setup.luau")).toBe("ReplicatedStorage/setup");
+	});
+
+	it("should build a resolver per call when no cache is given", () => {
+		expect.assertions(1);
+
+		mockRojoResolver({});
+
+		makeResolver();
+		makeResolver();
+
+		expect(RojoResolver.fromPath).toHaveBeenCalledTimes(2);
+	});
+
+	it("should key the cache by rojo config path", () => {
+		expect.assertions(1);
+
+		mockRojoResolver({});
+		const cache = createRojoResolverCache();
+
+		makeResolver({ cache });
+		makeResolver({ cache, rojoConfigPath: "/project/other.project.json" });
+
+		expect(RojoResolver.fromPath).toHaveBeenCalledTimes(2);
 	});
 });

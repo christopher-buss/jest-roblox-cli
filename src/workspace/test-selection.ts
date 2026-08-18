@@ -11,7 +11,7 @@ import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { classifyTestFiles } from "../run/discovery.ts";
 import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
-import { globSync } from "../utils/glob.ts";
+import { createGlobCache, type GlobCache, globSync } from "../utils/glob.ts";
 import { applyProjectFilter, type PackageContext } from "./project-contexts.ts";
 
 export interface PendingEntry {
@@ -67,8 +67,16 @@ interface DiscoveredTests {
 	typeTestProjects: Array<TypeTestProject>;
 }
 
+interface PackageEntriesInput {
+	cliTypecheck: TypecheckCliOptions;
+	ctx: PackageContext;
+	globCache: GlobCache;
+	packageTypecheck: ResolvedTypecheckConfig;
+}
+
 interface ProjectTypeTestInput {
 	ctx: PackageContext;
+	globCache: GlobCache;
 	packageTypecheck: ResolvedTypecheckConfig;
 	project: ResolvedProjectConfig;
 	typecheck: ResolvedTypecheckConfig;
@@ -159,10 +167,11 @@ function buildProjectExecutionConfig(
 function discoverProjectTestFiles(
 	project: ResolvedProjectConfig,
 	packageDirectory: string,
+	globCache: GlobCache,
 ): Array<string> {
 	const found: Array<string> = [];
 	for (const pattern of project.include) {
-		found.push(...globSync(pattern, { cwd: packageDirectory }));
+		found.push(...globSync(pattern, { cache: globCache, cwd: packageDirectory }));
 	}
 
 	// Workspace mode never consumes positional file args (no auto-pick path), so
@@ -183,11 +192,12 @@ function discoverProjectTypeTests(
 	project: ResolvedProjectConfig,
 	typecheck: ResolvedTypecheckConfig,
 	packageDirectory: string,
+	globCache: GlobCache,
 ): Array<string> {
 	const include = typecheck.include ?? deriveTypecheckInclude(project.include);
 	const found: Array<string> = [];
 	for (const pattern of include) {
-		found.push(...globSync(pattern, { cwd: packageDirectory }));
+		found.push(...globSync(pattern, { cache: globCache, cwd: packageDirectory }));
 	}
 
 	const { typeTestFiles } = classifyTestFiles([...new Set(found)], typecheck);
@@ -197,12 +207,12 @@ function discoverProjectTypeTests(
 }
 
 function recordProjectTypeTests(
-	{ ctx, packageTypecheck, project, typecheck }: ProjectTypeTestInput,
+	{ ctx, globCache, packageTypecheck, project, typecheck }: ProjectTypeTestInput,
 	{ typecheckByDirectory, typeTestEntries, typeTestProjects }: DiscoveredTests,
 ): void {
 	const { packageDirectory } = ctx.info;
 
-	const typeTestFiles = discoverProjectTypeTests(project, typecheck, packageDirectory);
+	const typeTestFiles = discoverProjectTypeTests(project, typecheck, packageDirectory, globCache);
 	if (typeTestFiles.length === 0) {
 		return;
 	}
@@ -227,9 +237,7 @@ function recordProjectTypeTests(
 }
 
 function collectPackageProjectEntries(
-	ctx: PackageContext,
-	cliTypecheck: TypecheckCliOptions,
-	packageTypecheck: ResolvedTypecheckConfig,
+	{ cliTypecheck, ctx, globCache, packageTypecheck }: PackageEntriesInput,
 	accumulators: DiscoveredTests,
 ): void {
 	const { packageDirectory } = ctx.info;
@@ -245,11 +253,16 @@ function collectPackageProjectEntries(
 		// tests": zero the runtime file set so the package contributes only
 		// Type Tests (the short-circuit then skips the place build +
 		// dispatch).
-		const testFiles = typecheck.only ? [] : discoverProjectTestFiles(project, packageDirectory);
+		const testFiles = typecheck.only
+			? []
+			: discoverProjectTestFiles(project, packageDirectory, globCache);
 		accumulators.pending.push({ pkg: ctx.info.name, project, projectConfig, testFiles });
 
 		if (typecheck.enabled) {
-			recordProjectTypeTests({ ctx, packageTypecheck, project, typecheck }, accumulators);
+			recordProjectTypeTests(
+				{ ctx, globCache, packageTypecheck, project, typecheck },
+				accumulators,
+			);
 		}
 	}
 }
@@ -264,6 +277,10 @@ function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions)
 	const typeTestEntries: Array<TypecheckGroupEntry> = [];
 	const typeTestProjects: Array<TypeTestProject> = [];
 	const typecheckByDirectory = new Map<string, PackageTypecheck>();
+	// Every project in a package globs the same package directory, for runtime
+	// specs and again for Type Tests. One cache for the whole selection turns
+	// that 2N-walk fan into one walk per package directory.
+	const globCache = createGlobCache();
 
 	for (const ctx of contexts) {
 		// `ignoreSourceErrors`/`spawnTimeout` are package-wide (no project
@@ -274,12 +291,10 @@ function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions)
 			root: ctx.pkgConfig.typecheck,
 		});
 
-		collectPackageProjectEntries(ctx, cliTypecheck, packageTypecheck, {
-			pending,
-			typecheckByDirectory,
-			typeTestEntries,
-			typeTestProjects,
-		});
+		collectPackageProjectEntries(
+			{ cliTypecheck, ctx, globCache, packageTypecheck },
+			{ pending, typecheckByDirectory, typeTestEntries, typeTestProjects },
+		);
 	}
 
 	return { pending, typecheckByDirectory, typeTestEntries, typeTestProjects };

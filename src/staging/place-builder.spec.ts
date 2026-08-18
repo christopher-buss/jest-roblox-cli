@@ -3,6 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { vol } from "memfs";
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
+import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { hashBuffer } from "../utils/hash.ts";
@@ -161,5 +162,131 @@ describe(buildPlace, () => {
 		});
 
 		expect(vol.existsSync("/fresh/nested/game.rbxl")).toBeTrue();
+	});
+});
+
+const CACHE_FILE = "/cache/place-cache.json";
+
+describe("place reuse", () => {
+	function seedBuild(): void {
+		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
+		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
+			vol.writeFileSync(outputPath, PLACE_BYTES);
+		});
+		vol.fromJSON({ [`${MOUNT_DIR}/init.luau`]: "print('hi')" });
+	}
+
+	function build(): ReturnType<typeof buildPlace> {
+		return buildPlace({
+			packages: [makeDescriptor()],
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+			reuse: { cacheFile: CACHE_FILE, manifests: [], shadowRoots: [] },
+		});
+	}
+
+	it("should skip the rojo build when nothing changed", () => {
+		expect.assertions(3);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedBuild();
+		const first = build();
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledOnce();
+
+		const second = build();
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledOnce();
+		expect(second).toStrictEqual(first);
+	});
+
+	it("should rebuild when a mounted input changed", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedBuild();
+		build();
+		vol.writeFileSync(`${MOUNT_DIR}/init.luau`, "print('edited')");
+		build();
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledTimes(2);
+	});
+
+	it("should rebuild when the place file is gone", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedBuild();
+		build();
+		vol.unlinkSync(PLACE_FILE);
+		build();
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledTimes(2);
+	});
+
+	it("should rebuild when the place no longer matches its recorded hash", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedBuild();
+		build();
+		// What an interrupted rojo build leaves: a place on disk that the
+		// still-current record no longer describes.
+		vol.writeFileSync(PLACE_FILE, "TRUNCATED");
+		build();
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledTimes(2);
+	});
+
+	it("should rebuild when the inputs cannot be hashed", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		// Valid JSON, but no `tree` — the shape the inputs hash rejects. The
+		// build itself is mocked, so only the reuse decision is under test.
+		vi.mocked(synthesize).mockReturnValue(String.raw`{"name":"synth"}`);
+		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
+			vol.writeFileSync(outputPath, PLACE_BYTES);
+		});
+
+		build();
+		build();
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledTimes(2);
+	});
+
+	it("should build every time when no reuse cache is configured", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedBuild();
+		const options = {
+			packages: [makeDescriptor()],
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+		};
+		buildPlace(options);
+		buildPlace(options);
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledTimes(2);
 	});
 });

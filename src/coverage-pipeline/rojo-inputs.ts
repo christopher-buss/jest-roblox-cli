@@ -4,7 +4,9 @@ import { collectPaths, resolveNestedProjectSources } from "@isentinel/rojo-utils
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import process from "node:process";
 
+import { errorMessage } from "../utils/error-message.ts";
 import { hashFile } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
@@ -63,6 +65,23 @@ export function computeRojoInputsHash({
 	}
 
 	return digestFiles(files, rootDirectory);
+}
+
+/**
+ * {@link computeRojoInputsHash}, degrading to `undefined` instead of throwing.
+ *
+ * A project too malformed to hash is also too malformed to build, so every
+ * caller wants the same answer — warn, then treat the inputs as changed and let
+ * the build report the real fault. Shared so both callers say the same thing.
+ */
+export function tryComputeRojoInputsHash(options: RojoInputsOptions): string | undefined {
+	try {
+		return computeRojoInputsHash(options);
+	} catch (err) {
+		process.stderr.write(`Warning: could not hash rojo build inputs: ${errorMessage(err)}
+`);
+		return undefined;
+	}
 }
 
 function isTreeNode(value: unknown): value is RojoTreeNode {

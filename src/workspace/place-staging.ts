@@ -14,6 +14,7 @@ import type { WorkspaceTestSelection } from "./test-selection.ts";
 
 const SYNTHESIZED_PROJECT_FILE = "synthesized.project.json";
 const SYNTHESIZED_PLACE_FILE = "synthesized.rbxl";
+const PLACE_REUSE_FILE = "synthesized.place-cache.json";
 
 export interface StagedWorkspacePlace {
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
@@ -67,11 +68,26 @@ function buildWorkspacePlace({
 	timing: TimingCollector;
 }): string {
 	const placeFile = path.join(cacheDirectory, SYNTHESIZED_PLACE_FILE);
+	const coverage = [...coverageByPackage.values()];
 	const coveragePlace = timing.profile("rojoBuild", () => {
 		return buildPlace({
 			packages: descriptors,
 			placeFile,
 			projectFile: path.join(cacheDirectory, SYNTHESIZED_PROJECT_FILE),
+			// Workspace always synthesizes its own place, so unlike multi's
+			// coverage path there is no upstream gate to defer to: a re-run
+			// with nothing edited would otherwise rebuild it from scratch.
+			reuse: {
+				cacheFile: path.join(cacheDirectory, PLACE_REUSE_FILE),
+				manifests: coverage.map((entry) => entry.manifest),
+				// Relative: the hash joins each root onto the project directory,
+				// and `shadowDir` is absolute.
+				shadowRoots: coverage.flatMap((entry) => {
+					return entry.coverageRoots.map((root) => {
+						return path.relative(cacheDirectory, root.shadowDir);
+					});
+				}),
+			},
 		});
 	});
 
@@ -79,8 +95,8 @@ function buildWorkspacePlace({
 	// rojo build, so a per-package Build Manifest never points at a place that
 	// isn't on disk. Every coverage package records the one shared instrumented
 	// place as its coverage place.
-	if (coverageByPackage.size > 0) {
-		emitWorkspaceBuildManifests([...coverageByPackage.values()], coveragePlace);
+	if (coverage.length > 0) {
+		emitWorkspaceBuildManifests(coverage, coveragePlace);
 	}
 
 	return placeFile;

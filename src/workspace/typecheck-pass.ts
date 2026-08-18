@@ -17,6 +17,13 @@ import type { PackageTypecheck, TypeTestProject } from "./test-selection.ts";
  * preflight/empty-package failure.
  */
 export interface WorkspaceRunnerOutput {
+	/**
+	 * Host time spent staging the place before dispatch — instrumentation,
+	 * stubs, and the rojo build. Reported as multi reports its coverage bake:
+	 * measured outside the dispatch window and added onto the total, so the
+	 * `cli` residual is not left absorbing it. Absent when no runtime job ran.
+	 */
+	preCoverageMs?: number | undefined;
 	results: Array<WorkspaceProjectResult>;
 	typecheckResult?: JestResult | undefined;
 }

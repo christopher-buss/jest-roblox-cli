@@ -5,7 +5,11 @@ import * as path from "node:path";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { createFsClassifier, resolveAllProjects } from "../config/projects.ts";
 import type { InlineProjectConfig, ProjectEntry, ResolvedConfig } from "../config/schema.ts";
-import { createSetupResolver } from "../config/setup-resolver.ts";
+import {
+	createRojoResolverCache,
+	createSetupResolver,
+	type RojoResolverCache,
+} from "../config/setup-resolver.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import type { LoadedPackage } from "./package-loader.ts";
@@ -66,9 +70,13 @@ export async function resolvePackageContextsAsync({
 	loaded: Array<LoadedPackage>;
 }): Promise<Array<PackageContext>> {
 	const contexts: Array<PackageContext> = [];
+	// Packages commonly mount the same rojo project (a shared test project at
+	// the workspace root, or one package extending another's). Sharing the
+	// cache across the loop walks each distinct project file once.
+	const rojoCache = createRojoResolverCache();
 
 	for (const entry of loaded) {
-		const projects = await resolvePackageProjectsAsync(entry);
+		const projects = await resolvePackageProjectsAsync(entry, rojoCache);
 		contexts.push({
 			cacheRoot: path.join(cacheDirectory, entry.info.name),
 			descriptor: entry.descriptor,
@@ -170,6 +178,7 @@ function applySetupResolver(
 function resolvePackageSetupFiles(
 	projects: Array<ResolvedProjectConfig>,
 	entry: LoadedPackage,
+	rojoCache: RojoResolverCache,
 ): void {
 	const hasSetupFiles = projects.some((project) => {
 		return (
@@ -182,6 +191,7 @@ function resolvePackageSetupFiles(
 	}
 
 	const resolveSetup = createSetupResolver({
+		cache: rojoCache,
 		configDirectory: entry.info.packageDirectory,
 		rojoConfigPath: entry.descriptor.rojoProjectPath,
 	});
@@ -192,6 +202,7 @@ function resolvePackageSetupFiles(
 
 async function resolvePackageProjectsAsync(
 	entry: LoadedPackage,
+	rojoCache: RojoResolverCache,
 ): Promise<Array<ResolvedProjectConfig>> {
 	const { descriptor, info, pkgConfig } = entry;
 	const rojoTree = loadPackageRojoTree(descriptor.rojoProjectPath, descriptor.packageDirectory);
@@ -208,6 +219,6 @@ async function resolvePackageProjectsAsync(
 		info.packageDirectory,
 	);
 
-	resolvePackageSetupFiles(projects, entry);
+	resolvePackageSetupFiles(projects, entry, rojoCache);
 	return projects;
 }
