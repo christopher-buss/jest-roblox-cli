@@ -3,6 +3,7 @@ import {
 	ApiError,
 	NetworkError,
 	PollTimeoutError,
+	RESPONSE_UNPARSEABLE,
 	TRANSIENT_TRANSPORT_CODES,
 } from "@bedrock-rbx/ocale";
 import type { LuauExecutionTask } from "@bedrock-rbx/ocale/luau-execution";
@@ -35,6 +36,21 @@ const MAX_TASK_TIMEOUT_SECONDS = 300;
  * attempt.
  */
 const UPLOAD_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+
+/**
+ * Transport codes the task poll retries, wider than the submit's list by
+ * `RESPONSE_UNPARSEABLE`. A poll carries the whole result envelope, so it is
+ * the read the edge truncates, and re-reading it costs one GET against an
+ * answer that already exists.
+ *
+ * The submit keeps the narrower list on purpose. Its 200 proves the task was
+ * created, so a body too short to parse has still consumed a task slot: a
+ * retry there would start a second execution nobody reads to recover a
+ * response it lost. ocale leaves the code out of its create defaults for that
+ * reason, and the two calls are issued separately here so each can say what it
+ * means — `runUntilDone` would force one list onto both.
+ */
+const POLL_RETRYABLE_TRANSPORT_CODES = [...TRANSIENT_TRANSPORT_CODES, RESPONSE_UNPARSEABLE];
 
 export interface OcaleRunnerOptions {
 	baseUrl?: string;
@@ -83,7 +99,7 @@ export class OcaleRunner implements RemoteRunner {
 		const startTime = Date.now();
 		const timeoutSeconds = Math.min(Math.floor(timeout / 1000), MAX_TASK_TIMEOUT_SECONDS);
 
-		const result = await this.luau.tasks.runUntilDone(
+		const submitted = await this.luau.tasks.submit(
 			{
 				placeId: this.credentials.placeId,
 				script,
@@ -91,11 +107,18 @@ export class OcaleRunner implements RemoteRunner {
 				universeId: this.credentials.universeId,
 				...(placeVersion !== undefined ? { versionId: String(placeVersion) } : {}),
 			},
-			{
-				retryableTransportCodes: TRANSIENT_TRANSPORT_CODES,
-				timeoutMs: timeout,
-			},
+			{ retryableTransportCodes: TRANSIENT_TRANSPORT_CODES, timeout },
 		);
+		if (!submitted.success) {
+			return toScriptResult(submitted, startTime);
+		}
+
+		// The poll clock starts here either way: `runUntilDone` also begins its
+		// budget once the submit has returned.
+		const result = await this.luau.tasks.pollUntilDone(submitted.data.ref, {
+			retryableTransportCodes: POLL_RETRYABLE_TRANSPORT_CODES,
+			timeoutMs: timeout,
+		});
 
 		return toScriptResult(result, startTime);
 	}

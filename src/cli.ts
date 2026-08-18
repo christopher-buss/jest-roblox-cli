@@ -386,8 +386,19 @@ function formatLuauErrorBanner(err: LuauScriptError): string {
 	return formatBanner({ body, level: "error", title: "Luau Error" });
 }
 
+/**
+ * How much of a captured response body the banner shows. A parse failure hands
+ * over 500 bytes of minified JSON; the opening object keys are what name the
+ * call that returned it, and the rest only buries the cause chain below it.
+ */
+const BODY_PREVIEW_LIMIT = 160;
+
 function formatChainExtras(entry: ChainEntry): string {
 	const pieces: Array<string> = [];
+	if (entry.statusCode !== undefined) {
+		pieces.push(`status=${entry.statusCode.toString()}`);
+	}
+
 	if (entry.code !== undefined) {
 		pieces.push(`code=${entry.code}`);
 	}
@@ -403,6 +414,52 @@ function formatChainExtras(entry: ChainEntry): string {
 	return pieces.length > 0 ? color.dim(` (${pieces.join(" ")})`) : "";
 }
 
+/**
+ * One-line preview of a captured response body. Whitespace is collapsed so a
+ * body that is itself several lines cannot push the rest of the chain off the
+ * screen.
+ */
+function formatBodyPreview(details: string | undefined): string | undefined {
+	if (details === undefined) {
+		return undefined;
+	}
+
+	const collapsed = details.replaceAll(/\s+/gu, " ").trim();
+	if (collapsed === "") {
+		return undefined;
+	}
+
+	return collapsed.length > BODY_PREVIEW_LIMIT
+		? `${collapsed.slice(0, BODY_PREVIEW_LIMIT)}…`
+		: collapsed;
+}
+
+/**
+ * The indented lines that hang under one chain entry. Each appears only when
+ * the error carried it: ocale names the failing request on an error response
+ * but not on a 2xx body it could not parse, where the body head is the only
+ * thing that says which call returned it.
+ */
+function formatChainDetailLines(entry: ChainEntry): Array<string> {
+	const lines: Array<string> = [];
+	if (entry.url !== undefined) {
+		const method = entry.method === undefined ? "" : `${entry.method} `;
+		const request = color.dim(`${method}${entry.url}`);
+		lines.push(`        ${request}`);
+	}
+
+	const preview = formatBodyPreview(entry.details);
+	if (preview !== undefined) {
+		lines.push(`        ${color.dim("Body:")} ${preview}`);
+	}
+
+	if (entry.requiredScopes !== undefined) {
+		lines.push(`        ${color.yellow(formatMissingScopes(entry.requiredScopes))}`);
+	}
+
+	return lines;
+}
+
 function formatBackendErrorBanner(err: Error): string {
 	const body: Array<string> = [color.red(err.message)];
 	const chain = walkErrorChain(err.cause);
@@ -410,10 +467,10 @@ function formatBackendErrorBanner(err: Error): string {
 	for (const [index, entry] of chain.entries()) {
 		const extras = formatChainExtras(entry);
 		const label = color.dim(`[${index.toString()}]`);
-		body.push(`    ${label} ${entry.name}: ${entry.message}${extras}`);
-		if (entry.requiredScopes !== undefined) {
-			body.push(`        ${color.yellow(formatMissingScopes(entry.requiredScopes))}`);
-		}
+		body.push(
+			`    ${label} ${entry.name}: ${entry.message}${extras}`,
+			...formatChainDetailLines(entry),
+		);
 	}
 
 	return formatBanner({ body, level: "error", title: "Backend Error" });

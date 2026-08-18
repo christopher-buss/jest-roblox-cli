@@ -1,4 +1,4 @@
-import { NetworkError, PermissionError } from "@bedrock-rbx/ocale";
+import { ApiError, NetworkError, PermissionError } from "@bedrock-rbx/ocale";
 
 import process from "node:process";
 import type { MockInstance } from "vitest";
@@ -798,6 +798,108 @@ describe(runAsync, () => {
 			expect.stringContaining("NetworkError: Network request failed"),
 		);
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("ECONNRESET"));
+	});
+
+	it("should name the failing request, status, and body head for a parse failure", async () => {
+		expect.assertions(4);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const message = "Failed to parse response body (content-type: application/json)";
+		const wrapped = new Error(message, {
+			cause: new ApiError(message, {
+				cause: new SyntaxError("Unterminated string in JSON at position 1572740"),
+				details: '{"path":"universes/1/places/2/luau-execution-session-tasks/abc","sta',
+				method: "GET",
+				statusCode: 200,
+				url: "https://apis.roblox.com/cloud/v2/universes/1/places/2/luau-execution-session-tasks/abc",
+			}),
+		});
+		mocks.loadConfig.mockRejectedValue(wrapped);
+
+		const code = await runAsync([]);
+
+		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("status=200"));
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining(
+				"GET https://apis.roblox.com/cloud/v2/universes/1/places/2/luau-execution-session-tasks/abc",
+			),
+		);
+		expect(spies.stderr).toHaveBeenCalledWith(
+			expect.stringContaining(
+				'{"path":"universes/1/places/2/luau-execution-session-tasks/abc',
+			),
+		);
+	});
+
+	it("should collapse and truncate the body head to keep the banner readable", async () => {
+		expect.assertions(4);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const wrapped = new Error("Failed to parse response body", {
+			cause: new ApiError("Failed to parse response body", {
+				details: `{"log":"line one\nline two${"x".repeat(400)}"}`,
+				statusCode: 200,
+			}),
+		});
+		mocks.loadConfig.mockRejectedValue(wrapped);
+
+		const code = await runAsync([]);
+
+		expect(code).toBe(2);
+
+		const rendered = spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+
+		expect(rendered).toContain("line one line two");
+		expect(rendered).toContain("…");
+		expect(rendered).not.toContain("x".repeat(200));
+	});
+
+	it("should omit the body line when the captured body is blank", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const wrapped = new Error("Failed to parse response body", {
+			cause: new ApiError("Failed to parse response body", {
+				details: "  \n  ",
+				statusCode: 200,
+			}),
+		});
+		mocks.loadConfig.mockRejectedValue(wrapped);
+
+		const code = await runAsync([]);
+
+		expect(code).toBe(2);
+
+		const rendered = spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+
+		expect(rendered).not.toContain("Body:");
+	});
+
+	it("should render the url alone when the error names no method", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const wrapped = new Error("HTTP 503: Service Unavailable", {
+			cause: new ApiError("HTTP 503: Service Unavailable", {
+				statusCode: 503,
+				url: "https://apis.roblox.com/cloud/v2/universes/1/places/2",
+			}),
+		});
+		mocks.loadConfig.mockRejectedValue(wrapped);
+
+		const code = await runAsync([]);
+
+		expect(code).toBe(2);
+
+		const rendered = spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+
+		expect(rendered).toContain("https://apis.roblox.com/cloud/v2/universes/1/places/2");
+		expect(rendered).not.toContain("undefined");
 	});
 
 	it("should name the missing scope in the Backend Error banner for a PermissionError cause", async () => {

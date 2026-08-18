@@ -1,4 +1,4 @@
-import { PermissionError } from "@bedrock-rbx/ocale";
+import { ApiError, PermissionError } from "@bedrock-rbx/ocale";
 
 import { describe, expect, it } from "vitest";
 
@@ -108,6 +108,58 @@ describe(walkErrorChain, () => {
 		expect(entries).toHaveLength(5);
 		expect(entries[0]).toMatchObject({ message: "level 6" });
 		expect(entries[4]).toMatchObject({ message: "level 2" });
+	});
+
+	it("should capture the failing request and status from an ApiError link", () => {
+		expect.assertions(1);
+
+		const cause = new ApiError("HTTP 500: Internal", {
+			method: "GET",
+			statusCode: 500,
+			url: "https://apis.roblox.com/cloud/v2/universes/1/places/2",
+		});
+
+		const [entry] = walkErrorChain(cause);
+
+		expect(entry).toMatchObject({
+			method: "GET",
+			statusCode: 500,
+			url: "https://apis.roblox.com/cloud/v2/universes/1/places/2",
+		});
+	});
+
+	it("should carry a string details body through verbatim", () => {
+		expect.assertions(1);
+
+		const cause = new ApiError("Failed to parse response body", {
+			details: '{"path":"universes/1/luau-execution-session-tasks/abc","sta',
+			statusCode: 200,
+		});
+
+		const [entry] = walkErrorChain(cause);
+
+		expect(entry!.details).toBe('{"path":"universes/1/luau-execution-session-tasks/abc","sta');
+	});
+
+	it("should encode a structured details body as JSON", () => {
+		expect.assertions(1);
+
+		const cause = new ApiError("HTTP 400: Bad Request", {
+			details: { code: "INVALID_ARGUMENT", message: "place is too large" },
+			statusCode: 400,
+		});
+
+		const [entry] = walkErrorChain(cause);
+
+		expect(entry!.details).toBe('{"code":"INVALID_ARGUMENT","message":"place is too large"}');
+	});
+
+	it("should leave details undefined for a plain Error", () => {
+		expect.assertions(1);
+
+		const [entry] = walkErrorChain(new Error("plain"));
+
+		expect(entry!.details).toBeUndefined();
 	});
 
 	it("should capture requiredScopes from a PermissionError link", () => {

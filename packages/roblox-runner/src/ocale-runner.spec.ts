@@ -337,6 +337,51 @@ describe(OcaleRunner, () => {
 			expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		});
 
+		it("should re-read a poll body the edge cut short", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockError(
+				new ApiError(
+					"Failed to parse response body (application/json, 1572740 chars read)",
+					{
+						statusCode: 200,
+						unparsedBodyLength: 1_572_740,
+					},
+				),
+			);
+			http.mockResponse({
+				body: taskBody({ output: { results: ["late"] }, state: "COMPLETE" }),
+				status: 200,
+			});
+
+			const runner = makeRunner(http);
+			const result = await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
+
+			expect(result.outputs).toStrictEqual(["late"]);
+			expect(http.requests).toHaveLength(3);
+		});
+
+		it("should fail rather than resubmit when the submit body arrives short", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockError(
+				new ApiError("Failed to parse response body (application/json, 412 chars read)", {
+					statusCode: 200,
+					unparsedBodyLength: 412,
+				}),
+			);
+
+			const runner = makeRunner(http);
+
+			await expect(
+				runner.executeScriptAsync({ script: "return 1", timeout: 30_000 }),
+			).rejects.toThrow(/Failed to parse response body/);
+			expect(http.requests).toHaveLength(1);
+		});
+
 		it("should return empty outputs when COMPLETE task has no results", async () => {
 			expect.assertions(1);
 
