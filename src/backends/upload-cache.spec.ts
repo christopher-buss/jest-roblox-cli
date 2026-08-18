@@ -6,6 +6,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import {
 	hashPlaceFile,
 	invalidateCachedVersion,
+	invalidateIfBehindHead,
 	readCachedVersion,
 	type UploadCacheTarget,
 	writeCachedVersion,
@@ -122,6 +123,59 @@ describe("upload cache", () => {
 		invalidateCachedVersion(ROOT, TARGET);
 
 		expect(readCachedVersion(ROOT, TARGET, hash)).toBeUndefined();
+	});
+
+	/**
+	 * The one rule that decides whether a reused version is still valid. Open
+	 * Cloud will not say which version is head, so a task that booted past the
+	 * reused one is the whole of the evidence.
+	 */
+	it("should drop the entry when a task booted past the reused version", () => {
+		expect.assertions(2);
+
+		const hash = seedPlaceFile();
+		writeCachedVersion(ROOT, TARGET, hash, 42);
+
+		expect(
+			invalidateIfBehindHead(ROOT, TARGET, { bootedVersion: 43, reusedVersion: 42 }),
+		).toBeTrue();
+		expect(readCachedVersion(ROOT, TARGET, hash)).toBeUndefined();
+	});
+
+	it("should keep the entry when a task booted the reused version or older", () => {
+		expect.assertions(3);
+
+		const hash = seedPlaceFile();
+		writeCachedVersion(ROOT, TARGET, hash, 42);
+
+		expect(
+			invalidateIfBehindHead(ROOT, TARGET, { bootedVersion: 41, reusedVersion: 42 }),
+		).toBeFalse();
+		expect(
+			invalidateIfBehindHead(ROOT, TARGET, { bootedVersion: 42, reusedVersion: 42 }),
+		).toBeFalse();
+		expect(readCachedVersion(ROOT, TARGET, hash)).toBe(42);
+	});
+
+	/**
+	 * A write that fails leaves the entry in the file, so it is still the one
+	 * the next run reads. The caller says so out loud rather than promising a
+	 * re-upload that will not happen.
+	 */
+	it("should report a stale entry as surviving when the cache cannot be written", async () => {
+		expect.assertions(2);
+
+		const hash = seedPlaceFile();
+		writeCachedVersion(ROOT, TARGET, hash, 42);
+		const fs = await import("node:fs");
+		vi.spyOn(fs, "writeFileSync").mockImplementation(() => {
+			throw new Error("EROFS: read-only file system");
+		});
+
+		expect(
+			invalidateIfBehindHead(ROOT, TARGET, { bootedVersion: 43, reusedVersion: 42 }),
+		).toBeFalse();
+		expect(readCachedVersion(ROOT, TARGET, hash)).toBe(42);
 	});
 
 	it("should tolerate invalidating when no cache file exists", () => {

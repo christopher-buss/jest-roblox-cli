@@ -22,19 +22,27 @@ import type { UploadCacheTarget } from "./upload-cache.ts";
 import {
 	hashPlaceFile,
 	invalidateCachedVersion,
+	invalidateIfBehindHead,
+	isBehindHead,
 	readCachedVersion,
 	writeCachedVersion,
 } from "./upload-cache.ts";
 
 /**
- * The value the version guard returns when the booted server is not running
- * the version this run uploaded — i.e. a concurrent upload won the boot race.
- * The backend retries that task once, pinned to the uploaded version.
+ * What the version guard returns when the booted server is not running the
+ * version this run asked for. The guard appends `:<booted version>`, which is
+ * the only place that number is observable — Open Cloud exposes no way to ask
+ * which version is head. The backend retries that task once, pinned.
  *
  * Embedded verbatim in a Luau double-quoted string literal, so it must not
  * contain backslashes, double quotes, or newlines.
  */
 export const PLACE_VERSION_RACE_SENTINEL = "__JEST_ROBLOX_PLACE_VERSION_RACE__";
+
+/** Matches the sentinel and the version the guard appends to it. */
+const RACE_SENTINEL_PATTERN = new RegExp(`^${PLACE_VERSION_RACE_SENTINEL}:(\\d+)$`);
+
+const PINNED_RETRY_NOTE = "Tasks retried pinned (slower, cold place boot).";
 
 const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
@@ -62,6 +70,24 @@ interface PollState {
 	warned: boolean;
 }
 
+/** What one raced task turned out to mean, once the cache had its say. */
+interface RaceDiagnosis {
+	bootedVersion: number;
+	/** True when this task's evidence dropped the entry the run reused. */
+	isStaleCache: boolean;
+	versionNumber: number;
+}
+
+/**
+ * The version tasks are asked to boot, plus the cache entry that claimed it.
+ * The entry rides along only for a reused version — that is the one case where
+ * the guard firing proves the entry is stale rather than merely unlucky.
+ */
+interface VersionContext {
+	cacheEntry: undefined | { rootDirectory: string; target: UploadCacheTarget };
+	versionNumber: number;
+}
+
 interface UploadOutcome {
 	/** True when the version came from the cache instead of a fresh upload. */
 	fromCache: boolean;
@@ -87,6 +113,8 @@ export class OpenCloudBackend implements Backend {
 
 	/** One-shot per run so parallel raced tasks don't repeat the warning. */
 	private raceWarned = false;
+	/** Tracked apart, so a drop still gets said once a lesser cause warned. */
+	private staleCacheWarned = false;
 
 	public readonly kind = "open-cloud" as const;
 
@@ -104,16 +132,19 @@ export class OpenCloudBackend implements Backend {
 		workStealing,
 	}: BackendOptions): Promise<BackendResult> {
 		this.raceWarned = false;
+		this.staleCacheWarned = false;
 		const primary = resolvePrimaryJob(jobs, scriptOverride, workStealing);
 		// timeout is picked from the first job — it's a per-run knob.
 		const target = toCacheTarget(this.credentials, resolvePlaceFilePath(primary.config));
 
 		const upload = await this.uploadOrReuseAsync(primary.config, target);
-		const executeAsync = async (placeVersion: number): Promise<Array<RawBackendEntry>> => {
+		const executeAsync = async (
+			uploadOutcome: UploadOutcome,
+		): Promise<Array<RawBackendEntry>> => {
 			return this.dispatchAsync(
 				{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing },
 				primary.config,
-				placeVersion,
+				toVersionContext(primary.config.rootDir, target, uploadOutcome),
 			);
 		};
 
@@ -145,31 +176,31 @@ export class OpenCloudBackend implements Backend {
 	private async dispatchAsync(
 		{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing }: BackendOptions,
 		primaryConfig: ResolvedConfig,
-		placeVersion: number,
+		version: VersionContext,
 	): Promise<Array<RawBackendEntry>> {
 		if (workStealing === true) {
 			return this.runWorkStealingAsync({
 				jobs,
 				parallel,
-				placeVersion,
 				primaryConfig,
 				// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
 				scriptOverride: scriptOverride!,
 				streaming,
+				version,
 			});
 		}
 
 		if (scriptFactory !== undefined) {
 			return this.runDeferrableAsync({
 				jobs,
-				placeVersion,
 				primaryConfig,
 				scriptFactory,
 				scriptOverride,
+				version,
 			});
 		}
 
-		return this.runStaticBucketsAsync(jobs, parallel, placeVersion, scriptOverride);
+		return this.runStaticBucketsAsync({ jobs, parallel, scriptOverride, version });
 	}
 
 	/**
@@ -178,39 +209,46 @@ export class OpenCloudBackend implements Backend {
 	 * whenever no server holds the freshly-uploaded version yet, costing a cold
 	 * place boot per task (~10-45s, scaling with place size). Unpinned tasks
 	 * boot the latest saved version from the warm pool, so the first attempt
-	 * runs unpinned with a guard prepended: if the booted server is not on this
-	 * run's version (a concurrent upload won the boot race), the task returns
-	 * {@link PLACE_VERSION_RACE_SENTINEL} instead of running. On the sentinel,
-	 * the task is retried once, pinned — correct by construction, no re-upload
-	 * (the version exists even when it is no longer head), and no unpinned
-	 * retry loop for a concurrent uploader to keep winning against.
+	 * runs unpinned with a guard prepended: if the booted server is not on
+	 * this run's version, the task returns
+	 * {@link PLACE_VERSION_RACE_SENTINEL} — and the version it did boot —
+	 * instead of running. On the sentinel, the task is retried once, pinned —
+	 * correct by construction, no re-upload (the version exists even when it is
+	 * no longer head), and no unpinned retry loop for a concurrent uploader to
+	 * keep winning against.
 	 */
 	private async executeGuardedAsync({
-		placeVersion,
 		script,
 		timeout,
+		version,
 	}: {
-		placeVersion: number;
 		script: string;
 		timeout: number;
+		version: VersionContext;
 	}): Promise<ScriptResult> {
-		const guarded = injectVersionGuard(script, placeVersion);
+		const guarded = injectVersionGuard(script, version.versionNumber);
 		const first = await this.runner
 			.executeScriptAsync({ script: guarded, timeout })
 			.catch(rethrowOversizedResult);
-		if (first.outputs[0] !== PLACE_VERSION_RACE_SENTINEL) {
+		const bootedVersion = parseBootedVersion(first.outputs[0]);
+		if (bootedVersion === undefined) {
 			return first;
 		}
 
-		if (!this.raceWarned) {
-			this.raceWarned = true;
-			process.stderr.write(
-				"Warning: place version raced by a concurrent upload — raced tasks retried pinned (slower, cold place boot).\n",
-			);
-		}
-
+		// Dropping a stale entry is deliberately not one-shot the way a warning
+		// is: parallel tasks can boot different versions, and only the one that
+		// booted past ours carries the proof. Spending that proof on a task
+		// with a lesser complaint would keep the entry for good.
+		const { cacheEntry, versionNumber } = version;
+		const isStaleCache =
+			cacheEntry !== undefined &&
+			invalidateIfBehindHead(cacheEntry.rootDirectory, cacheEntry.target, {
+				bootedVersion,
+				reusedVersion: versionNumber,
+			});
+		this.warnRace({ bootedVersion, isStaleCache, versionNumber });
 		return this.runner
-			.executeScriptAsync({ placeVersion, script, timeout })
+			.executeScriptAsync({ placeVersion: versionNumber, script, timeout })
 			.catch(rethrowOversizedResult);
 	}
 
@@ -230,10 +268,10 @@ export class OpenCloudBackend implements Backend {
 			target: UploadCacheTarget;
 			upload: UploadOutcome;
 		},
-		executeAsync: (placeVersion: number) => Promise<Array<RawBackendEntry>>,
+		executeAsync: (uploadOutcome: UploadOutcome) => Promise<Array<RawBackendEntry>>,
 	): Promise<{ extraUploadMs: number; rawResults: Array<RawBackendEntry> }> {
 		try {
-			return { extraUploadMs: 0, rawResults: await executeAsync(upload.versionNumber) };
+			return { extraUploadMs: 0, rawResults: await executeAsync(upload) };
 		} catch (err) {
 			if (!upload.fromCache || !isMissingVersionError(err)) {
 				throw err;
@@ -244,18 +282,19 @@ export class OpenCloudBackend implements Backend {
 			);
 			invalidateCachedVersion(config.rootDir, target);
 			const fresh = await this.uploadOrReuseAsync(config, target);
-			return {
-				extraUploadMs: fresh.uploadMs,
-				rawResults: await executeAsync(fresh.versionNumber),
-			};
+			return { extraUploadMs: fresh.uploadMs, rawResults: await executeAsync(fresh) };
 		}
 	}
 
-	private async runBucketAsync(
-		{ indices, jobs }: JobBucket,
-		placeVersion: number,
-		scriptOverride?: string,
-	): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
+	private async runBucketAsync({
+		bucket: { indices, jobs },
+		scriptOverride,
+		version,
+	}: {
+		bucket: JobBucket;
+		scriptOverride: string | undefined;
+		version: VersionContext;
+	}): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
 		// A bucket is only created for at least one job, so jobs[0] is defined.
 		// eslint-disable-next-line ts/no-non-null-assertion -- bucket non-empty
 		const primary = jobs[0]!;
@@ -265,9 +304,9 @@ export class OpenCloudBackend implements Backend {
 
 		const script = scriptOverride ?? generateTestScript(inputs);
 		const scriptResult = await this.executeGuardedAsync({
-			placeVersion,
 			script,
 			timeout: primary.config.timeout,
+			version,
 		});
 
 		const jestOutput = scriptResult.outputs[0];
@@ -308,16 +347,16 @@ export class OpenCloudBackend implements Backend {
 	 */
 	private async runDeferrableAsync({
 		jobs,
-		placeVersion,
 		primaryConfig,
 		scriptFactory,
 		scriptOverride,
+		version,
 	}: {
 		jobs: Array<ProjectJob>;
-		placeVersion: number;
 		primaryConfig: ResolvedConfig;
 		scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
 		scriptOverride: string | undefined;
+		version: VersionContext;
 	}): Promise<Array<RawBackendEntry>> {
 		const collected = new Map<
 			string,
@@ -330,9 +369,9 @@ export class OpenCloudBackend implements Backend {
 		// entry, so it cannot take more rounds than there are jobs.
 		for (const _attempt of jobs) {
 			const scriptResult = await this.executeGuardedAsync({
-				placeVersion,
 				script,
 				timeout: primaryConfig.timeout,
+				version,
 			});
 
 			const jestOutput = requireJestOutput(scriptResult);
@@ -355,17 +394,20 @@ export class OpenCloudBackend implements Backend {
 		return collectStealingResults(jobs, collected);
 	}
 
-	private async runStaticBucketsAsync(
-		jobs: Array<ProjectJob>,
-		parallel: BackendOptions["parallel"],
-		placeVersion: number,
-		scriptOverride?: string,
-	): Promise<Array<RawBackendEntry>> {
+	private async runStaticBucketsAsync({
+		jobs,
+		parallel,
+		scriptOverride,
+		version,
+	}: {
+		jobs: Array<ProjectJob>;
+		parallel: BackendOptions["parallel"];
+		scriptOverride: string | undefined;
+		version: VersionContext;
+	}): Promise<Array<RawBackendEntry>> {
 		const buckets = bucketJobs(jobs, parallel);
 		const bucketResults = await Promise.all(
-			buckets.map(async (bucket) => {
-				return this.runBucketAsync(bucket, placeVersion, scriptOverride);
-			}),
+			buckets.map(async (bucket) => this.runBucketAsync({ bucket, scriptOverride, version })),
 		);
 
 		// Flatten bucket results in original job order via the indices recorded
@@ -385,25 +427,25 @@ export class OpenCloudBackend implements Backend {
 	private async runWorkStealingAsync({
 		jobs,
 		parallel,
-		placeVersion,
 		primaryConfig,
 		scriptOverride,
 		streaming,
+		version,
 	}: {
 		jobs: Array<ProjectJob>;
 		parallel: BackendOptions["parallel"];
-		placeVersion: number;
 		primaryConfig: ResolvedConfig;
 		scriptOverride: string;
 		streaming: StreamingHooks | undefined;
+		version: VersionContext;
 	}): Promise<Array<RawBackendEntry>> {
 		const taskResults = await drainStealingPoolAsync(
 			resolveBucketCount(parallel, jobs.length),
 			async () => {
 				return this.executeGuardedAsync({
-					placeVersion,
 					script: scriptOverride,
 					timeout: primaryConfig.timeout,
+					version,
 				});
 			},
 			streaming,
@@ -424,7 +466,9 @@ export class OpenCloudBackend implements Backend {
 	 * the fast path. Correctness rests on the guard in
 	 * {@link OpenCloudBackend.executeGuardedAsync}, not on the cache: a stale
 	 * entry can only make the sentinel fire and the task retry pinned to the
-	 * recorded version, which holds exactly the bytes that were hashed.
+	 * recorded version, which holds exactly the bytes that were hashed. The
+	 * guard also reports the version it did boot, which is what lets
+	 * {@link invalidateIfBehindHead} drop an entry that is behind head.
 	 */
 	private async uploadOrReuseAsync(
 		config: ResolvedConfig,
@@ -453,6 +497,26 @@ export class OpenCloudBackend implements Backend {
 			uploadMs: Date.now() - start,
 			versionNumber: upload.versionNumber,
 		};
+	}
+
+	/**
+	 * Name the cause of a mismatch, at most once per cause.
+	 *
+	 * A dropped cache entry is always said out loud, even when a task with a
+	 * lesser complaint reported first and spent the ordinary warning: it is the
+	 * one cause that changed state on disk, and the only thing that explains
+	 * the upload the next run makes.
+	 */
+	private warnRace(diagnosis: RaceDiagnosis): void {
+		if (diagnosis.isStaleCache ? this.staleCacheWarned : this.raceWarned) {
+			return;
+		}
+
+		this.staleCacheWarned ||= diagnosis.isStaleCache;
+		this.raceWarned = true;
+		process.stderr.write(
+			`Warning: ${describeVersionMismatch(diagnosis)} ${PINNED_RETRY_NOTE}\n`,
+		);
 	}
 }
 
@@ -517,6 +581,56 @@ export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenC
 	return new OpenCloudBackend(credentials);
 }
 
+/**
+ * Read a task's output as a guard verdict: the version it booted instead, or
+ * undefined when the task ran rather than refusing. The guard always names a
+ * version, so anything else is a task result — including the magic string on
+ * its own, which only a user script could produce.
+ */
+function parseBootedVersion(output: string | undefined): number | undefined {
+	const match = output === undefined ? null : RACE_SENTINEL_PATTERN.exec(output);
+	// eslint-disable-next-line ts/no-non-null-assertion -- the group is not optional
+	return match === null ? undefined : Number(match[1]!);
+}
+
+/**
+ * Name what went wrong, rather than blaming the one cause the guard cannot
+ * distinguish on its own. A booted version ahead of ours means someone else's
+ * upload is head — a race against a fresh upload, a stale entry against a
+ * reused one. Behind ours means nothing raced at all: the save has yet to reach
+ * the boot pool.
+ */
+function describeVersionMismatch({
+	bootedVersion,
+	isStaleCache,
+	versionNumber,
+}: RaceDiagnosis): string {
+	const booted = `a task booted ${String(bootedVersion)}`;
+	if (isStaleCache) {
+		return (
+			`cached place version ${String(versionNumber)} is no longer head — ${booted}. ` +
+			"Cache entry dropped, so the next run re-uploads."
+		);
+	}
+
+	if (isBehindHead({ bootedVersion, reusedVersion: versionNumber })) {
+		return `place version ${String(versionNumber)} raced by a concurrent upload — ${booted}.`;
+	}
+
+	return `place version ${String(versionNumber)} is not in the boot pool yet — ${booted}.`;
+}
+
+function toVersionContext(
+	rootDirectory: string,
+	target: UploadCacheTarget,
+	upload: UploadOutcome,
+): VersionContext {
+	return {
+		cacheEntry: upload.fromCache ? { rootDirectory, target } : undefined,
+		versionNumber: upload.versionNumber,
+	};
+}
+
 function toCacheTarget(
 	credentials: OpenCloudCredentials,
 	placeFilePath: string,
@@ -561,7 +675,7 @@ function resolvePrimaryJob(
  * prepend would silently disable a caller's `--!strict`/`--!native`/etc.
  */
 function injectVersionGuard(script: string, placeVersion: number): string {
-	const guard = `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}" end`;
+	const guard = `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}:" .. tostring(game.PlaceVersion) end`;
 	const lines = script.split("\n");
 	let insertAt = 0;
 	for (const line of lines) {

@@ -23,10 +23,10 @@ describe("optimistic place-version pinning", () => {
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 		// First task boots on the wrong version (a concurrent upload won the
-		// boot race) and returns the guard sentinel; the pinned retry runs the
-		// suite for real.
+		// boot race) and returns the guard sentinel naming the version it did
+		// boot; the pinned retry runs the suite for real.
 		const server = await startFakeOpenCloudServerAsync([
-			{ rawOutput: PLACE_VERSION_RACE_SENTINEL },
+			{ rawOutput: `${PLACE_VERSION_RACE_SENTINEL}:2` },
 			{ jestOutput: buildMixedOutput(buildPassingPayload()) },
 		]);
 
@@ -36,7 +36,11 @@ describe("optimistic place-version pinning", () => {
 		});
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr).toContain("place version raced");
+		// The fake's first upload is v1, so booting v2 reads as a concurrent
+		// upload rather than a stale cache entry.
+		expect(result.stderr).toContain(
+			"place version 1 raced by a concurrent upload — a task booted 2",
+		);
 		expect(server.requests[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
 
 		const taskPosts = server.calls.filter(isTaskCreatePost);

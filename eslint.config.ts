@@ -11,6 +11,8 @@ export default isentinel(
 			".standalone/**/*",
 			"plans/**/*",
 			"reference/**/*",
+			"reports/mutation/**/*",
+			"reports/stryker-incremental.json",
 			"spike/**/*",
 		],
 		jsdoc: false,

@@ -152,8 +152,12 @@ function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 	};
 }
 
-function racedOnce(): ScriptResult {
-	return { durationMs: 3, outputs: [PLACE_VERSION_RACE_SENTINEL] };
+/** What the injected guard returns from a task that booted another version. */
+function racedOnce(bootedVersion = 99): ScriptResult {
+	return {
+		durationMs: 3,
+		outputs: [`${PLACE_VERSION_RACE_SENTINEL}:${String(bootedVersion)}`],
+	};
 }
 
 function oneSuccessEntry(): ScriptResult {
@@ -161,24 +165,37 @@ function oneSuccessEntry(): ScriptResult {
 }
 
 /**
- * An execute handler that races the first `raceCount` calls — returning
- * {@link PLACE_VERSION_RACE_SENTINEL} — and succeeds on every other call,
- * including a pinned retry (`placeVersion` set), which never races.
+ * An execute handler that races each unpinned call in turn, booting the named
+ * versions in order — one per raced task, so a run can mix causes. Later
+ * unpinned calls, and every pinned retry, succeed.
  */
-function raceUnpinnedExecute(raceCount: number): ExecuteHandler {
+function raceBootedVersions(bootedVersions: Array<number>): ExecuteHandler {
 	let callIndex = 0;
 	return (options): ScriptResult => {
-		const isRaced = options.placeVersion === undefined && callIndex < raceCount;
+		if (options.placeVersion !== undefined) {
+			return oneSuccessEntry();
+		}
+
+		const booted = bootedVersions[callIndex];
 		callIndex += 1;
-		return isRaced ? racedOnce() : oneSuccessEntry();
+		return booted === undefined ? oneSuccessEntry() : racedOnce(booted);
 	};
+}
+
+/**
+ * An execute handler that races the first `raceCount` unpinned calls — all
+ * booting the same version — and succeeds on every other call, including a
+ * pinned retry (`placeVersion` set), which never races.
+ */
+function raceUnpinnedExecute(raceCount: number, bootedVersion = 99): ExecuteHandler {
+	return raceBootedVersions(Array.from<number>({ length: raceCount }).fill(bootedVersion));
 }
 
 /**
  * The exact guard line `executeGuarded` prepends to unpinned first attempts.
  */
 function guardPrefix(placeVersion: number): string {
-	return `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}" end\n`;
+	return `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}:" .. tostring(game.PlaceVersion) end\n`;
 }
 
 function captureStderr(): StderrCapture {
@@ -757,10 +774,10 @@ describe(OpenCloudBackend, () => {
 			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta")], 2));
 			restore();
 
-			const warnings = writes.filter((line) => line.includes("place version raced"));
+			const warnings = writes.filter((line) => line.includes("Tasks retried pinned"));
 
 			expect(warnings).toHaveLength(1);
-			expect(warnings[0]).toContain("retried pinned");
+			expect(warnings[0]).toContain("raced by a concurrent upload");
 		});
 
 		it("should not warn when no task races", async () => {
@@ -775,7 +792,51 @@ describe(OpenCloudBackend, () => {
 			await backend.runTestsAsync(jobsOptions([job("alpha")]));
 			restore();
 
-			expect(writes.filter((line) => line.includes("place version raced"))).toHaveLength(0);
+			expect(writes.filter((line) => line.includes("Tasks retried pinned"))).toHaveLength(0);
+		});
+
+		/**
+		 * The guard reports which version the task actually booted, so the
+		 * warning can name a cause instead of guessing one. A version ahead of
+		 * this run's fresh upload is the genuine race: someone published
+		 * between the upload and the boot.
+		 */
+		it("should name the version a concurrent upload booted", async () => {
+			expect.assertions(1);
+
+			const { restore, writes } = captureStderr();
+
+			const stub = createRunnerStub({ uploadResult: { uploadMs: 3, versionNumber: 42 } });
+			stub.setExecute(raceUnpinnedExecute(1));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTestsAsync(jobsOptions([job("alpha")]));
+			restore();
+
+			expect(writes.join("")).toContain(
+				"place version 42 raced by a concurrent upload — a task booted 99",
+			);
+		});
+
+		/**
+		 * A booted version *behind* the upload is the opposite problem: nothing
+		 * raced, the save has yet to reach the boot pool.
+		 */
+		it("should report a version the boot pool has not picked up yet", async () => {
+			expect.assertions(1);
+
+			const { restore, writes } = captureStderr();
+
+			const stub = createRunnerStub({ uploadResult: { uploadMs: 3, versionNumber: 42 } });
+			stub.setExecute(raceUnpinnedExecute(1, 41));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTestsAsync(jobsOptions([job("alpha")]));
+			restore();
+
+			expect(writes.join("")).toContain(
+				"place version 42 is not in the boot pool yet — a task booted 41",
+			);
 		});
 	});
 
@@ -1737,6 +1798,28 @@ describe("upload cache", () => {
 		return job("alpha", { placeFile: "place.rbxl", rootDir: rootDirectory, ...overrides });
 	}
 
+	/**
+	 * Run against a seeded cache with one task per entry in `bootedVersions`,
+	 * each booting the version named instead of the reused one. Stderr is
+	 * captured throughout, so a caller asserts on the warning, on the calls the
+	 * runner saw, or on what a later {@link runOnceAsync} has to upload.
+	 */
+	async function raceCachedRunAsync(
+		rootDirectory: string,
+		bootedVersions: Array<number>,
+	): Promise<{ capture: StderrCapture; stub: RunnerStub }> {
+		const capture = captureStderr();
+		const stub = createRunnerStub();
+		stub.setExecute(raceBootedVersions(bootedVersions));
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const jobs = bootedVersions.map(() => cacheJob(rootDirectory));
+		await backend.runTestsAsync(jobsOptions(jobs, jobs.length));
+		capture.restore();
+
+		return { capture, stub };
+	}
+
 	async function runOnceAsync(
 		rootDirectory: string,
 		overrides: Partial<ResolvedConfig> = {},
@@ -1784,13 +1867,7 @@ describe("upload cache", () => {
 
 		const rootDirectory = temporaryRoot();
 		await runOnceAsync(rootDirectory);
-
-		const capture = captureStderr();
-		const stub = createRunnerStub();
-		stub.setExecute(raceUnpinnedExecute(1));
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
-		capture.restore();
+		const { stub } = await raceCachedRunAsync(rootDirectory, [99]);
 
 		// The whole safety argument for reusing a version: when another upload
 		// moved the head, the raced task re-runs pinned to the version whose
@@ -1798,6 +1875,80 @@ describe("upload cache", () => {
 		expect(stub.uploadCalls).toHaveLength(0);
 		expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
 		expect(stub.executeCalls[1]!.placeVersion).toBe(42);
+	});
+
+	/**
+	 * The guard proving the head moved on is the only evidence available that a
+	 * reused version is stale — Open Cloud exposes no way to ask. Dropping the
+	 * entry there is what stops the slow path from becoming permanent: a cache
+	 * hit never uploads, so without this the entry can never become head again
+	 * and every later run pays a pinned cold boot.
+	 */
+	it("should drop a cached version once the guard proves it is behind head", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		await raceCachedRunAsync(rootDirectory, [99]);
+
+		await expect(runOnceAsync(rootDirectory)).resolves.toBe(1);
+	});
+
+	/**
+	 * The ordinary warning is one-shot per run; the drop must not be. The task
+	 * that booted an older version reports first here, and only the second task
+	 * carries the proof that head moved on — discarding that proof along with
+	 * the duplicate warning would leave the stale entry in place for good, and
+	 * leave the next run's upload unexplained.
+	 */
+	it("should drop a stale cached version proved after the first warning", async () => {
+		expect.assertions(3);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		const { capture } = await raceCachedRunAsync(rootDirectory, [41, 99]);
+		const warnings = capture.writes.filter((line) => line.includes("Tasks retried pinned"));
+
+		expect(warnings).toHaveLength(2);
+		expect(warnings[1]).toContain("no longer head");
+		await expect(runOnceAsync(rootDirectory)).resolves.toBe(1);
+	});
+
+	it("should say a cached version is no longer head only once", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		const { capture } = await raceCachedRunAsync(rootDirectory, [99, 99]);
+
+		expect(capture.writes.filter((line) => line.includes("no longer head"))).toHaveLength(1);
+	});
+
+	it("should say the cached version is no longer head", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		const { capture } = await raceCachedRunAsync(rootDirectory, [99]);
+
+		expect(capture.writes.join("")).toContain(
+			"cached place version 42 is no longer head — a task booted 99",
+		);
+	});
+
+	/**
+	 * A booted version behind the cached one says the boot pool lags, not that
+	 * the entry is wrong. Dropping it there would trade a correct fast path for
+	 * an upload on every run.
+	 */
+	it("should keep the cached version when the booted version is older", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		await raceCachedRunAsync(rootDirectory, [41]);
+
+		await expect(runOnceAsync(rootDirectory)).resolves.toBe(0);
 	});
 
 	it("should upload again when the place bytes change", async () => {
