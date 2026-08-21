@@ -393,8 +393,14 @@ export interface Config {
 	 */
 	test?: GlobalTestConfig;
 	/**
-	 * Maximum remote execution time in milliseconds before the run is
-	 * abandoned. Default `300000`.
+	 * Deadline in milliseconds Roblox is given to run the script. Default
+	 * `300000`.
+	 *
+	 * The run is not abandoned the instant this elapses. Roblox starts the
+	 * deadline when the script begins running, which is after the place boots,
+	 * so the poll waits a fixed allowance past it for Roblox's own verdict —
+	 * without that wait the run reports a poll timeout for a failure Roblox
+	 * already described.
 	 */
 	timeout?: number;
 	/** Open Cloud universe id that owns the place. */

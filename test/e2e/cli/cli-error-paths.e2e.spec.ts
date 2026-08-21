@@ -14,6 +14,14 @@ import {
 const LUAU_FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 
+/**
+ * Wall clock for the one case that has to outlast a real poll budget. The
+ * runner keeps polling for the boot-lag grace after the task deadline, so
+ * the CLI cannot report a timeout any sooner than that grace — and the grace
+ * is fixed, not a fraction of `--timeout`.
+ */
+const NEVER_COMPLETES_TIMEOUT_MS = 90_000;
+
 describe("cli error paths", () => {
 	describe("exit codes", () => {
 		it("should exit 1 when the Jest payload reports failed tests", async () => {
@@ -63,28 +71,63 @@ describe("cli error paths", () => {
 			);
 		});
 
-		it("should exit non-zero with a 'timed out' message when the backend never completes", async () => {
-			expect.assertions(2);
+		it(
+			"should exit non-zero naming the task when the backend never completes",
+			async () => {
+				expect.assertions(3);
+
+				const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
+				const server = await startFakeOpenCloudServerAsync([
+					{
+						jestOutput: buildMixedOutput(buildPassingPayload()),
+						// Stall on PROCESSING for good. The backend spends the
+						// task deadline plus the boot-lag grace before it gives
+						// up, and the grace does not scale with the deadline —
+						// so this test costs that grace in real seconds however
+						// short `--timeout` is.
+						pollsBeforeComplete: 999,
+					},
+				]);
+
+				const result = await runCliAsync(["--timeout", "2000"], {
+					cwd: sandbox,
+					env: createOpenCloudEnvironment(server.baseUrl),
+					timeoutMs: NEVER_COMPLETES_TIMEOUT_MS,
+				});
+
+				expect(result.exitCode).toBeGreaterThan(0);
+				expect(result.stderr).toMatch(/timed out/i);
+				expect(result.stderr).toMatch(/last observed state: PROCESSING/);
+			},
+			NEVER_COMPLETES_TIMEOUT_MS + 10_000,
+		);
+
+		it("should surface the Roblox error code and log tail when a task fails", async () => {
+			expect.assertions(3);
 
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 			const server = await startFakeOpenCloudServerAsync([
 				{
-					jestOutput: buildMixedOutput(buildPassingPayload()),
-					// Stall on PROCESSING longer than the configured CLI
-					// timeout. The backend exhausts its timeout budget and
-					// throws "Execution timed out" before this counter drains.
-					pollsBeforeComplete: 999,
+					errorMessage: "TaskScript:1: attempt to index nil",
+					logs: [
+						{ message: "loading test bundle", messageType: "OUTPUT" },
+						{
+							message: "TaskScript:1: attempt to index nil",
+							messageType: "ERROR",
+						},
+					],
+					state: "FAILED",
 				},
 			]);
 
-			const result = await runCliAsync(["--timeout", "2000"], {
+			const result = await runCliAsync([], {
 				cwd: sandbox,
 				env: createOpenCloudEnvironment(server.baseUrl),
-				timeoutMs: 30_000,
 			});
 
 			expect(result.exitCode).toBeGreaterThan(0);
-			expect(result.stderr).toMatch(/timed out/i);
+			expect(result.stderr).toContain("Roblox task failed (SCRIPT_ERROR)");
+			expect(result.stderr).toContain("[ERROR] TaskScript:1: attempt to index nil");
 		});
 	});
 

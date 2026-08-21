@@ -6,7 +6,11 @@ import {
 	RESPONSE_UNPARSEABLE,
 	TRANSIENT_TRANSPORT_CODES,
 } from "@bedrock-rbx/ocale";
-import type { LuauExecutionTask } from "@bedrock-rbx/ocale/luau-execution";
+import type {
+	FailedTask,
+	LuauExecutionTask,
+	LuauExecutionTaskRef,
+} from "@bedrock-rbx/ocale/luau-execution";
 import { LuauExecutionClient } from "@bedrock-rbx/ocale/luau-execution";
 import type { PublishParameters } from "@bedrock-rbx/ocale/places";
 import { PlacesClient } from "@bedrock-rbx/ocale/places";
@@ -25,6 +29,36 @@ import type {
 } from "./types.ts";
 
 const MAX_TASK_TIMEOUT_SECONDS = 300;
+
+/**
+ * Wall clock the poll keeps beyond the server's own task deadline, so the
+ * terminal `FAILED` the server writes is observable rather than raced.
+ *
+ * Roblox starts a task's `timeout` when the script begins running, not when
+ * the task is created — a submit answers immediately and the place boot sits
+ * between the two. Measured against a warm server the gap is 4-7s; a version
+ * nobody has booted yet costs a cold boot, which
+ * `open-cloud.ts` documents at 10-45s. A poll budget equal to the deadline
+ * therefore expires while the task is still `PROCESSING`, every time, and the
+ * authoritative `DEADLINE_EXCEEDED` (or the `SCRIPT_ERROR` the Luau VM writes
+ * when it kills a non-yielding loop) is never read: the run reports
+ * `PollTimeoutError` for a failure Roblox described.
+ *
+ * This is a cap, not a wait. A task that fails on time ends the poll the
+ * moment it turns terminal, so the grace costs nothing on any run that gets
+ * an answer — only a task Roblox never resolves spends it.
+ */
+const TASK_DEADLINE_GRACE_MS = 45_000;
+
+/**
+ * Task log messages carried on a failure, counted from the end. The tail is
+ * what explains the failure; a full Jest run's output is megabytes and the
+ * error banner is not where anyone reads it.
+ */
+const FAILURE_LOG_TAIL = 20;
+
+/** Per-message cap on the failure log tail, in characters. */
+const FAILURE_LOG_MESSAGE_LIMIT = 400;
 
 /**
  * Statuses a place upload retries. Wider than ocale's upload default of `[429]`
@@ -98,6 +132,9 @@ export class OcaleRunner implements RemoteRunner {
 
 		const startTime = Date.now();
 		const timeoutSeconds = Math.min(Math.floor(timeout / 1000), MAX_TASK_TIMEOUT_SECONDS);
+		// Never below the caller's budget: a `timeout` past the server's
+		// 300s ceiling already outlasts the deadline and needs no grace.
+		const pollBudgetMs = Math.max(timeout, timeoutSeconds * 1000 + TASK_DEADLINE_GRACE_MS);
 
 		const submitted = await this.luau.tasks.submit(
 			{
@@ -110,17 +147,21 @@ export class OcaleRunner implements RemoteRunner {
 			{ retryableTransportCodes: TRANSIENT_TRANSPORT_CODES, timeout },
 		);
 		if (!submitted.success) {
-			return toScriptResult(submitted, startTime);
+			throw toSubmitError(submitted.err);
 		}
 
 		// The poll clock starts here either way: `runUntilDone` also begins its
 		// budget once the submit has returned.
 		const result = await this.luau.tasks.pollUntilDone(submitted.data.ref, {
 			retryableTransportCodes: POLL_RETRYABLE_TRANSPORT_CODES,
-			timeoutMs: timeout,
+			timeoutMs: pollBudgetMs,
 		});
 
-		return toScriptResult(result, startTime);
+		return this.toScriptResultAsync(result, {
+			ref: submitted.data.ref,
+			startTime,
+			timeoutSeconds,
+		});
 	}
 
 	public async uploadPlaceAsync(options: UploadPlaceOptions): Promise<UploadPlaceResult> {
@@ -154,6 +195,69 @@ export class OcaleRunner implements RemoteRunner {
 			uploadMs: Date.now() - uploadStart,
 			versionNumber: result.data.versionNumber,
 		};
+	}
+
+	/**
+	 * The tail of what the task printed, or nothing when Roblox will not say.
+	 *
+	 * Best-effort by construction: the logs are a second call made while the
+	 * first one is already failing, so anything it returns is a bonus and
+	 * anything it throws must not replace the failure being reported. The
+	 * endpoint answers only once a task is terminal — polled mid-flight it
+	 * returns an empty page — so this is a post-mortem read, not a stream.
+	 *
+	 * @param ref - Reference to the terminal task.
+	 * @returns Newest-last log lines, already capped, or an empty array.
+	 */
+	private async readFailureLogTailAsync(ref: LuauExecutionTaskRef): Promise<Array<string>> {
+		let page;
+		try {
+			page = await this.luau.tasks.listLogs({ ref });
+		} catch {
+			return [];
+		}
+
+		if (!page.success) {
+			return [];
+		}
+
+		return page.data.messages.slice(-FAILURE_LOG_TAIL).map(formatLogMessage);
+	}
+
+	/**
+	 * Turns a settled poll into outputs, or throws the failure it describes.
+	 *
+	 * Async because a `FAILED` task is worth one more call: Roblox's
+	 * `error.message` names the category (`SCRIPT_ERROR`,
+	 * `DEADLINE_EXCEEDED`) while the task logs carry what the script actually
+	 * printed before it died, which is the part that identifies the fault.
+	 *
+	 * @param result - What `pollUntilDone` settled on.
+	 * @param context - The task polled, run start, and the server's deadline.
+	 * @returns The script's outputs when the task completed.
+	 */
+	private async toScriptResultAsync(
+		result: Result<LuauExecutionTask, OpenCloudError>,
+		context: { ref: LuauExecutionTaskRef; startTime: number; timeoutSeconds: number },
+	): Promise<ScriptResult> {
+		if (!result.success) {
+			throw toPollError(result.err, context);
+		}
+
+		const task = result.data;
+		if (task.state === "COMPLETE") {
+			return {
+				durationMs: Date.now() - context.startTime,
+				outputs: task.output.results.map(coerceOutputToString),
+			};
+		}
+
+		if (task.state === "FAILED") {
+			const logTail = await this.readFailureLogTailAsync(task.ref);
+			throw new Error(describeTaskFailure(task, logTail));
+		}
+
+		throw new Error(`Execution was cancelled (task ${task.ref.taskId})`);
 	}
 }
 
@@ -191,31 +295,146 @@ function coerceOutputToString(value: unknown): string {
 	return String(JSON.stringify(value));
 }
 
-function toScriptResult(
-	result: Result<LuauExecutionTask, OpenCloudError>,
-	startTime: number,
-): ScriptResult {
-	if (!result.success) {
-		if (result.err instanceof PollTimeoutError) {
-			throw new Error("Execution timed out", { cause: result.err });
+/**
+ * One log line, prefixed by the severity Roblox assigned it so an `ERROR`
+ * stands out from the `print` above it, and truncated so one runaway line
+ * cannot push the rest of the tail off the banner.
+ *
+ * @param message - A structured log message from the task's log page.
+ * @returns The formatted, length-capped line.
+ */
+function formatLogMessage({
+	message,
+	messageType,
+}: {
+	message: string;
+	messageType: string;
+}): string {
+	const body =
+		message.length > FAILURE_LOG_MESSAGE_LIMIT
+			? `${message.slice(0, FAILURE_LOG_MESSAGE_LIMIT)}…`
+			: message;
+	return `[${messageType}] ${body}`;
+}
+
+/**
+ * The task's resource path, which is what the Open Cloud API and the Creator
+ * Dashboard both key on. Built from the ref rather than kept as the raw
+ * server string because ocale parses the path away on the way in.
+ *
+ * @param ref - The task reference carried on every task and every submit.
+ * @returns The `universes/…/tasks/…` path, omitting segments Roblox left out.
+ */
+function describeTaskRef(ref: LuauExecutionTaskRef): string {
+	// Both optional segments are present on any ref that got this far: ocale's
+	// GET builder rejects a ref missing either, so a task that was polled at all
+	// carries them — including one submitted against head, which Roblox answers
+	// with the version it resolved.
+	return (
+		`universes/${ref.universeId}/places/${ref.placeId}` +
+		`/versions/${String(ref.versionId)}` +
+		`/luau-execution-sessions/${String(ref.sessionId)}/tasks/${ref.taskId}`
+	);
+}
+
+/**
+ * Names a terminal Roblox failure in full: the category code, Roblox's own
+ * message, the task the run can be looked up by, and what the script printed
+ * before it died.
+ *
+ * The code is not decoration. `DEADLINE_EXCEEDED` means the script outran its
+ * budget and the log tail is where it was stuck; `SCRIPT_ERROR` means it threw
+ * and the tail holds the traceback. Reporting `error.message` alone loses that
+ * split, and loses the task id entirely.
+ *
+ * @param task - The `FAILED` task Roblox returned.
+ * @param logTail - Formatted log lines, newest last; may be empty.
+ * @returns The multi-line failure description.
+ */
+function describeTaskFailure(task: FailedTask, logTail: ReadonlyArray<string>): string {
+	const lines = [
+		`Roblox task failed (${task.error.code}): ${task.error.message}`,
+		`  task: ${describeTaskRef(task.ref)}`,
+	];
+	if (logTail.length > 0) {
+		lines.push("  Roblox output before the failure:");
+		for (const line of logTail) {
+			lines.push(`    ${line}`);
 		}
-
-		throw new Error(result.err.message, { cause: result.err });
 	}
 
-	const task = result.data;
-	if (task.state === "COMPLETE") {
-		return {
-			durationMs: Date.now() - startTime,
-			outputs: task.output.results.map(coerceOutputToString),
-		};
+	return lines.join("\n");
+}
+
+/**
+ * The state the last polled task was in, or `"unknown"`.
+ *
+ * `lastObservedTask` is `unknown` on the error type ocale hands back, and it is
+ * absent entirely when the budget ran out before a single poll answered.
+ * `Object()` flattens both into something readable, so one fallback covers a
+ * missing task and an unrecognised one alike.
+ *
+ * @param task - The task the timeout error carried, if any.
+ * @returns The task's state, or `"unknown"` when there is none to read.
+ */
+function readObservedState(task: unknown): string {
+	const state: unknown = Reflect.get(Object(task), "state");
+	return typeof state === "string" ? state : "unknown";
+}
+
+/**
+ * Expands a poll that never settled into something actionable.
+ *
+ * Reaching here is itself the diagnosis, and the message says so. Roblox fails
+ * a task that merely outran its deadline — `DEADLINE_EXCEEDED` lands a boot lag
+ * after the deadline elapsed, which is what {@link TASK_DEADLINE_GRACE_MS}
+ * waits for. A task still running past both has not overrun; it was never
+ * scheduled, and the usual reason is a place version Roblox cannot load.
+ * Measured against one, the task sat `PROCESSING` for ten minutes on a 30s
+ * deadline and Roblox reported no state, no error, and no logs, ever — so
+ * naming the suspicion here is the only diagnosis available.
+ *
+ * Everything else is passed through: an API response is already specific.
+ *
+ * @param err - The error the poll settled on.
+ * @param context - The task polled and the deadline it was submitted with.
+ * @returns The error to throw, carrying the ocale error as its cause.
+ */
+function toPollError(
+	err: OpenCloudError,
+	context: { ref: LuauExecutionTaskRef; timeoutSeconds: number },
+): Error {
+	if (!(err instanceof PollTimeoutError)) {
+		return new Error(err.message, { cause: err });
 	}
 
-	if (task.state === "FAILED") {
-		throw new Error(task.error.message);
-	}
+	const lines = [
+		"Execution timed out: Roblox never reported a terminal state for the task " +
+			`within ${String(Math.round(err.timeoutMs / 1000))}s ` +
+			`(${String(context.timeoutSeconds)}s task deadline plus a ` +
+			`${String(Math.round(TASK_DEADLINE_GRACE_MS / 1000))}s boot-lag allowance).`,
+		`  task: ${describeTaskRef(context.ref)}`,
+		`  last observed state: ${readObservedState(err.lastObservedTask)}`,
+		"  A script that merely outran its deadline is failed by Roblox, so this " +
+			"is most likely a place version Roblox could not start — such a task " +
+			"is never scheduled and never reports anything. Open the place file " +
+			"in Studio to see why it will not load.",
+		"  The other reading is an unusually slow cold boot, which the next run " +
+			"avoids by reusing the now-warm server.",
+	];
+	return new Error(lines.join("\n"), { cause: err });
+}
 
-	throw new Error("Execution was cancelled");
+/**
+ * Names a submit that never created a task. Kept apart from the poll path
+ * because a submit failure has no task to point at — there is nothing to look
+ * up and nothing to log.
+ *
+ * @param err - The error the submit returned.
+ * @returns The error to throw, carrying the ocale error as its cause.
+ */
+function toSubmitError(err: OpenCloudError): Error {
+	return new Error(err.message, { cause: err });
 }
 
 function toArrayBufferView(data: buffer.Buffer): Uint8Array<ArrayBuffer> {

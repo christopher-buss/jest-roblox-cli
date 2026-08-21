@@ -19,6 +19,7 @@ import { onTestFinished } from "vitest";
 const createTaskRequestSchema = type({ script: "string", timeout: "string" });
 const JSON_CONTENT_TYPE = "application/json";
 const QUEUE_PATH_PATTERN = /\/memory-store\/queues\/([^/]+)(\/items(?::read|:discard)?)?$/;
+const LOGS_SUFFIX_PATTERN = /\/logs$/;
 
 export interface FakeOpenCloudTask {
 	elapsedMs?: number;
@@ -33,6 +34,11 @@ export interface FakeOpenCloudTask {
 	 * `rawOutput` supplies the task's results verbatim instead.
 	 */
 	jestOutput?: string;
+	/**
+	 * Structured log messages the task's `/logs` page returns. Read only on a
+	 * failure — that is the one path the runner fetches logs for.
+	 */
+	logs?: ReadonlyArray<{ message: string; messageType: string }>;
 	/**
 	 * Workspace-mode `pkg` field on the auto-wrapped entry. Required for
 	 * work-stealing aggregation to match entries back to jobs.
@@ -141,6 +147,39 @@ async function readBodyAsync(request: IncomingMessage): Promise<string> {
 	}
 
 	return Buffer.concat(chunks).toString("utf-8");
+}
+
+/**
+ * Serve a task's structured log page. Live Open Cloud writes these only once a
+ * task is terminal, so a task the fake never completes has nothing to return —
+ * the same empty page the live endpoint gives while a task is still running.
+ */
+function handleListLogs({
+	response,
+	state,
+	url,
+}: {
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+	url: URL;
+}): void {
+	const taskPath = url.pathname.replace("/cloud/v2/", "").replace(LOGS_SUFFIX_PATTERN, "");
+	const queuedTask = state.taskResults.get(taskPath);
+	const messages = queuedTask?.logs ?? [];
+
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(
+		JSON.stringify({
+			luauExecutionSessionTaskLogs: [
+				{
+					path: `${taskPath}/logs/1`,
+					structuredMessages: messages.map((entry) => {
+						return { ...entry, createTime: "2026-01-01T00:00:00Z" };
+					}),
+				},
+			],
+		}),
+	);
 }
 
 /** The auto-wrapped envelope entry returned when no `rawOutput` is supplied. */
@@ -441,6 +480,11 @@ async function handleRequestAsync({
 
 	if (request.method === "POST" && url.pathname.endsWith("/luau-execution-session-tasks")) {
 		handleCreateTask({ body: await readBodyAsync(request), response, state });
+		return;
+	}
+
+	if (request.method === "GET" && url.pathname.endsWith("/logs")) {
+		handleListLogs({ response, state, url });
 		return;
 	}
 

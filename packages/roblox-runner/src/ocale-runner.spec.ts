@@ -39,8 +39,64 @@ function taskBody(overrides: TaskBodyOverrides = {}): Record<string, unknown> {
 
 const submitBodySchema = type({ timeout: "string" });
 
+/**
+ * Poll cadence ocale applies below 20s elapsed. The specs below queue poll
+ * responses by count, so they need the loop's own step to know how many.
+ */
+const POLL_STEP_MS = 500;
+
+/** Polls the loop makes before a 10s task deadline elapses. */
+const POLLS_PER_DEADLINE = 10_000 / POLL_STEP_MS;
+
+/**
+ * Polls that outlast the boot-lag grace. Generous on purpose: the cadence
+ * eases off past 20s elapsed, so counting exactly would encode ocale's
+ * schedule into these specs.
+ */
+const POLLS_PER_GRACE = 200;
+
+function logPageBody(
+	messages: ReadonlyArray<{ message: string; messageType: string }>,
+): Record<string, unknown> {
+	return {
+		luauExecutionSessionTaskLogs: [
+			{
+				path: "universes/123/places/456/versions/1/luau-execution-sessions/session-1/tasks/task-1/logs/1",
+				structuredMessages: messages.map((entry) => {
+					return { ...entry, createTime: "2026-01-01T00:00:00Z" };
+				}),
+			},
+		],
+	};
+}
+
+function mockProcessing(http: FakeHttpClient, count: number): void {
+	for (let index = 0; index < count; index += 1) {
+		http.mockResponse({ body: taskBody({ state: "PROCESSING" }), status: 200 });
+	}
+}
+
 function rbxlBuffer(): buffer.Buffer {
 	return buffer.Buffer.from(RBXL_SIGNATURE);
+}
+
+/**
+ * A runner whose sleep advances a fake clock instead of waiting, so a spec can
+ * exhaust a real poll budget without spending it.
+ */
+function makeAdvancingRunner(http: FakeHttpClient): OcaleRunner {
+	let clock = 1_000_000;
+	vi.spyOn(Date, "now").mockImplementation(() => clock);
+	return new OcaleRunner(
+		{ apiKey: "test-key", placeId: "456", universeId: "123" },
+		{
+			httpClient: http,
+			readFile: () => rbxlBuffer(),
+			sleep: fromAny((ms: number) => {
+				clock += ms;
+			}),
+		},
+	);
 }
 
 function makeRunner(httpClient: FakeHttpClient, readData: buffer.Buffer = rbxlBuffer()) {
@@ -428,6 +484,8 @@ describe(OcaleRunner, () => {
 				}),
 				status: 200,
 			});
+			// No log page queued: the fake throws on the follow-up read, which
+			// must not replace the failure being reported.
 
 			const runner = makeRunner(http);
 
@@ -436,33 +494,208 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow("Script blew up");
 		});
 
-		it("should throw 'Execution timed out' with PollTimeoutError as cause when polling exhausts budget", async () => {
+		it("should truncate a log line too long to belong in an error banner", async () => {
 			expect.assertions(2);
-
-			let clock = 1_000_000;
-			vi.spyOn(Date, "now").mockImplementation(() => clock);
-
-			function advancingSleep(ms: number): void {
-				clock += ms;
-			}
 
 			const http = createFakeHttpClient();
 			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
-			http.mockResponse({ body: taskBody({ state: "PROCESSING" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({
+					error: { code: "SCRIPT_ERROR", message: "boom" },
+					state: "FAILED",
+				}),
+				status: 200,
+			});
+			http.mockResponse({
+				body: logPageBody([{ message: "x".repeat(600), messageType: "OUTPUT" }]),
+				status: 200,
+			});
 
-			const runner = new OcaleRunner(
-				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http, readFile: () => rbxlBuffer(), sleep: fromAny(advancingSleep) },
-			);
-
-			const caught: unknown = await runner
-				.executeScriptAsync({ script: "return 1", timeout: 100 })
+			const caught: unknown = await makeRunner(http)
+				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
 				.catch((err: unknown) => err);
 
 			assert(caught instanceof Error);
 
-			expect(caught.message).toBe("Execution timed out");
+			expect(caught.message).toContain("…");
+			expect(caught.message).not.toContain("x".repeat(500));
+		});
+
+		it("should pass through an API error the poll returns", async () => {
+			expect.assertions(1);
+
+			// A 404 mid-poll is authoritative — ocale stops the loop and hands
+			// it back, and there is nothing to add to it.
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockApiError({ message: "Task not found", statusCode: 404 });
+
+			await expect(
+				makeRunner(http).executeScriptAsync({ script: "return 1", timeout: 30_000 }),
+			).rejects.toThrow(/Task not found/);
+		});
+
+		it("should carry the error code, the task, and the log tail when a task FAILS", async () => {
+			expect.assertions(4);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({
+					error: { code: "SCRIPT_ERROR", message: "TaskScript:1: boom" },
+					state: "FAILED",
+				}),
+				status: 200,
+			});
+			http.mockResponse({
+				body: logPageBody([
+					{ message: "starting", messageType: "OUTPUT" },
+					{ message: "TaskScript:1: boom", messageType: "ERROR" },
+				]),
+				status: 200,
+			});
+
+			const caught: unknown = await makeRunner(http)
+				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toContain(
+				"Roblox task failed (SCRIPT_ERROR): TaskScript:1: boom",
+			);
+			expect(caught.message).toContain(
+				"task: universes/123/places/456/versions/1/luau-execution-sessions/session-1/tasks/task-1",
+			);
+			expect(caught.message).toContain("[OUTPUT] starting");
+			expect(caught.message).toContain("[ERROR] TaskScript:1: boom");
+		});
+
+		it("should still report the task failure when the log read fails", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({
+					error: { code: "SCRIPT_ERROR", message: "TaskScript:1: boom" },
+					state: "FAILED",
+				}),
+				status: 200,
+			});
+			http.mockApiError({ message: "Forbidden", statusCode: 403 });
+
+			const caught: unknown = await makeRunner(http)
+				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toContain("Roblox task failed (SCRIPT_ERROR)");
+			expect(caught.message).not.toContain("Roblox output before the failure");
+		});
+
+		it("should keep polling past the task deadline so a late FAILED is surfaced", async () => {
+			expect.assertions(2);
+
+			// Roblox starts the task deadline when the script starts running,
+			// not when the task is created, so a terminal state always lands
+			// after the deadline has elapsed on the host's clock. A poll budget
+			// equal to the deadline reads that as a timeout and loses the error
+			// Roblox wrote.
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			mockProcessing(http, POLLS_PER_DEADLINE + 1);
+			http.mockResponse({
+				body: taskBody({
+					error: {
+						code: "DEADLINE_EXCEEDED",
+						message: "Script execution timed out.",
+					},
+					state: "FAILED",
+				}),
+				status: 200,
+			});
+			http.mockResponse({ body: logPageBody([]), status: 200 });
+
+			const caught: unknown = await makeAdvancingRunner(http)
+				.executeScriptAsync({ script: "return 1", timeout: 10_000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toContain("DEADLINE_EXCEEDED");
+			expect(caught.message).not.toContain("Execution timed out:");
+		});
+
+		it("should name the task and its last state when polling exhausts budget", async () => {
+			expect.assertions(4);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			mockProcessing(http, POLLS_PER_GRACE);
+
+			const caught: unknown = await makeAdvancingRunner(http)
+				.executeScriptAsync({ script: "return 1", timeout: 1000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
 			expect(caught.cause).toBeInstanceOf(PollTimeoutError);
+			expect(caught.message).toContain(
+				"universes/123/places/456/versions/1/luau-execution-sessions/session-1/tasks/task-1",
+			);
+			expect(caught.message).toContain("last observed state: PROCESSING");
+			expect(caught.message).toContain("1s task deadline plus a 45s boot-lag allowance");
+		});
+
+		it("should name a place that will not start as the likely cause", async () => {
+			expect.assertions(1);
+
+			// Roblox fails a task that outran its deadline, so one that never
+			// reports anything was never scheduled — measured against a place
+			// Roblox cannot load, the task sat PROCESSING for ten minutes on a
+			// 30s deadline with no state, error, or logs.
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			mockProcessing(http, POLLS_PER_GRACE);
+
+			const caught: unknown = await makeAdvancingRunner(http)
+				.executeScriptAsync({ script: "return 1", timeout: 1000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toContain("place version Roblox could not start");
+		});
+
+		it("should say the state is unknown when the budget outran the first poll", async () => {
+			expect.assertions(2);
+
+			// A clock that jumps a full budget between reads exhausts the poll
+			// before any task body comes back, so there is no state to report.
+			let clock = 1_000_000;
+			vi.spyOn(Date, "now").mockImplementation(() => {
+				clock += 100_000;
+				return clock;
+			});
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+
+			const runner = new OcaleRunner(
+				{ apiKey: "test-key", placeId: "456", universeId: "123" },
+				{ httpClient: http, readFile: () => rbxlBuffer(), sleep: createFakeSleep() },
+			);
+
+			const caught: unknown = await runner
+				.executeScriptAsync({ script: "return 1", timeout: 1000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.cause).toBeInstanceOf(PollTimeoutError);
+			expect(caught.message).toContain("last observed state: unknown");
 		});
 
 		it("should throw when task is CANCELLED", async () => {

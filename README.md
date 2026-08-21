@@ -187,6 +187,12 @@ package's own jest.config or in a shared config that every package extends.
 | `uploadCache`   | Skip the place upload when the place file's bytes are unchanged   | `true`                      |
 | `luauRoots`     | Where Luau files live for coverage instrumentation                | auto from tsconfig `outDir` |
 
+`timeout` is the deadline Roblox is given for the script, not a hard cap on the
+run. Roblox starts that clock when the script begins running — after the place
+boots — so a run that overruns waits a short fixed allowance past the deadline
+for Roblox's verdict, and reports the error Roblox gives rather than a poll
+timeout.
+
 ### Test fields
 
 Put these under `test: { ... }`.

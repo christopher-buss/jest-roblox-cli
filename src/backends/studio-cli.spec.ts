@@ -6,7 +6,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
+import { assert, describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
 import type { WebSocketServer } from "ws";
 
 import type { MockWebSocketServer as MockWebSocketServerType } from "../../test/mocks/mock-web-socket-server.ts";
@@ -107,6 +107,10 @@ function readRequestId(args: Array<string>): string {
 	const bootstrapPath = args[args.indexOf("--runScriptFile") + 1]!;
 	const bootstrap = fs.readFileSync(bootstrapPath, "utf8");
 	return /REQUEST_ID = \[=*\[(.+?)\]=*\]/.exec(bootstrap)![1]!;
+}
+
+function readOutputFile(args: Array<string>): string {
+	return args[args.indexOf("--outputFile") + 1]!;
 }
 
 function resultFrame(requestId: string, reply: ReplyOptions): string {
@@ -419,6 +423,38 @@ describe(StudioCliBackend, () => {
 		);
 		// The run kills Studio on the way out even on the timeout path.
 		expect(process.kill).toHaveBeenCalledOnce();
+	});
+
+	it("should quote Studio's own log when no result frame arrives", async () => {
+		expect.assertions(4);
+
+		resetVol();
+
+		// Studio's stdio is discarded, so `--outputFile` is the only thing left
+		// to say what the run was doing when it stopped answering.
+		const backend = new StudioCliBackend({
+			buildPlace: fakeBuildPlace(),
+			discover: () => "C:/Studio/RobloxStudioBeta.exe",
+			launch: (request) => {
+				vol.writeFileSync(
+					readOutputFile(request.args),
+					`> bootstrap echo\nUnable to change Terrain's parent.\n${"x".repeat(400)}\n`,
+				);
+				return makeFakeProcess();
+			},
+			timeout: 40,
+		});
+
+		const caught: unknown = await backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toContain("Studio log:");
+		expect(caught.message).toContain("Last lines Studio logged:");
+		expect(caught.message).toContain("Unable to change Terrain's parent.");
+		// A single runaway line is truncated rather than allowed to bury the
+		// lines around it.
+		expect(caught.message).not.toContain("x".repeat(400));
 	});
 
 	it("should reject when the result server errors", async () => {

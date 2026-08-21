@@ -72,6 +72,15 @@ const GRACEFUL_SHUTDOWN_CAP_MS = 15_000;
  */
 const LOCK_POLL_INTERVAL_MS = 50;
 
+/** Splits Studio's log on either line ending — it writes CRLF on Windows. */
+const LOG_LINE_SPLIT_PATTERN = /\r?\n/u;
+
+/** Lines of Studio's engine log quoted when a run times out. */
+const STUDIO_LOG_TAIL = 15;
+
+/** Per-line cap on the quoted Studio log tail, in characters. */
+const STUDIO_LOG_LINE_LIMIT = 300;
+
 const BACKEND_NAME = "studio-cli";
 const WORK_DIR = path.join(".jest-roblox", BACKEND_NAME);
 const PLACE_FILE = "place.rbxl";
@@ -182,6 +191,13 @@ export interface StudioCliOptions {
 	buildPlace?: ((options: BuildPlaceOptions) => BuildManifestArtifact) | undefined;
 	/**
 	 * Result-server factory seam; defaults to an ephemeral-port `ws` server.
+	 *
+	 * This is the run's result channel: a loopback WebSocket the bootstrap
+	 * pushes the envelope back over the instant the run finishes (no file, no
+	 * polling, no ~100k print cap). The default binds 127.0.0.1 so it is never
+	 * exposed to the network, on port 0 so the OS picks a free port and
+	 * concurrent CLI processes never collide; that port is baked into the
+	 * bootstrap each run writes.
 	 */
 	createServer?: (() => WebSocketServer) | undefined;
 	/**
@@ -225,8 +241,18 @@ interface StudioArgsOptions extends RunPlace {
 
 type ResultMessage = typeof resultMessageSchema.infer;
 
+/** How long a run may go unanswered, and where to look when it does. */
+interface ResultDeadline {
+	/** Studio's engine log, quoted back when the run never answers. */
+	outputFile: string;
+	/** Wall clock in milliseconds before the run is killed. */
+	timeout: number;
+}
+
 interface StudioCliResultWait {
 	child: StudioCliProcess;
+	/** Where Studio logs, quoted back when the run never answers. */
+	outputFile: string;
 	reject: (error: Error) => void;
 	requestId: string;
 	resolve: (message: ResultMessage) => void;
@@ -270,50 +296,32 @@ export class StudioCliBackend implements Backend {
 		assertSerialJobs({ jobs, parallel, workStealing });
 		const place = this.prepareRunPlace(jobs);
 		const { placeFile } = place;
-
-		// Result channel: a loopback WebSocket server the bootstrap pushes the
-		// envelope back over the instant the run finishes (no file, no polling,
-		// no ~100k print cap). Bound to 127.0.0.1 so it's never exposed to the
-		// network, on port 0 so the OS picks a free port (concurrent CLI
-		// processes never collide); the port is baked into the bootstrap below.
+		const deadline: ResultDeadline = {
+			outputFile: studioOutputFile(place.workDirectory),
+			timeout: this.timeout,
+		};
 		const server = this.createServer();
 		let child: StudioCliProcess | undefined;
-		// Set once the graceful teardown has been handed off to the background
-		// watch (result in hand), so the `finally` knows not to also hard-kill or
-		// re-close — the watch owns both from then on.
+		// Set once the background watch owns teardown (result in hand), so the
+		// `finally` knows not to also hard-kill or re-close.
 		let wasGracefulTeardownStarted = false;
 		try {
 			const port = await serverPortAsync(server);
 			const requestId = randomUUID();
 			const args = buildStudioArgs({ ...place, jobs, port, requestId });
-
 			const studioPath = this.discover(this.studioPath);
 			const executionStart = Date.now();
 			child = this.launch({ args, headed: this.headed, placeFile, studioPath });
-			const message = await waitForResultAsync(server, child, requestId, this.timeout);
+			const message = await waitForResultAsync(server, child, requestId, deadline);
 			const executionMs = Date.now() - executionStart;
 
-			// The result is in hand. Decouple teardown from it: close the result
-			// server (so the bootstrap returns and `--quitAfterExecution` begins
-			// a graceful `ClosePlace` that runs edit-mode `BindToClose` handlers
-			// and frees the lock), then kill the instant the lock releases —
-			// skipping Studio's ~30s telemetry drain. The watch is non-awaited,
-			// so results return now and the process exits after teardown.
-			closeServer(server);
-			child.killOnLockRelease(this.gracefulShutdownTimeout);
+			startGracefulTeardown(child, server, this.gracefulShutdownTimeout);
 			wasGracefulTeardownStarted = true;
 
 			return buildBackendResult(message, jobs, executionMs);
 		} finally {
-			// Every error path before the graceful teardown began (timeout,
-			// spawn failure, server error — a hung run gets no graceful wait):
-			// hard-kill Studio so node's event loop can drain and the CLI exits,
-			// then release the result server. When the graceful watch already
-			// started (result in hand), it owns the kill and the close — don't
-			// re-kill or re-close.
 			if (!wasGracefulTeardownStarted) {
-				child?.kill();
-				closeServer(server);
+				hardTeardown(child, server);
 			}
 		}
 	}
@@ -424,6 +432,12 @@ function assertSerialJobs({
 	}
 }
 
+/** The rejection for a run Studio never returned a result frame for. */
+/** Where Studio is told to write its engine log for a run. */
+function studioOutputFile(workDirectory: string): string {
+	return path.join(workDirectory, OUTPUT_FILE);
+}
+
 /**
  * Single-/multi-project payload: the run-mode runner reads `config.configs`
  * and drives `Runner.runProjects`.
@@ -521,7 +535,7 @@ function buildStudioArgs({
 	workDirectory,
 }: StudioArgsOptions): Array<string> {
 	const bootstrapFile = path.join(workDirectory, BOOTSTRAP_FILE);
-	const outputFile = path.join(workDirectory, OUTPUT_FILE);
+	const outputFile = studioOutputFile(workDirectory);
 	fs.writeFileSync(
 		bootstrapFile,
 		buildBootstrap(
@@ -612,11 +626,64 @@ async function serverPortAsync(server: WebSocketServer): Promise<number> {
 	return bound.port;
 }
 
-/** The rejection for a run Studio never returned a result frame for. */
-function timedOutError(timeout: number): Error {
-	return new Error(
+/**
+ * The tail of Studio's own engine log, or nothing when it holds nothing worth
+ * printing.
+ *
+ * Studio's stdio is discarded (see {@link spawnStudio}), so `--outputFile` is
+ * the only channel that survives a run the result socket never answered. It is
+ * not a guarantee: a place Studio cannot open stops behind a modal dialog with
+ * only the echoed bootstrap flushed, which is exactly why the timeout names the
+ * file as well as quoting it.
+ *
+ * @param outputFile - Path Studio was told to log to.
+ * @returns Trailing log lines, oldest first, or an empty array.
+ */
+function readStudioLogTail(outputFile: string): Array<string> {
+	let contents;
+	try {
+		contents = fs.readFileSync(outputFile, "utf-8");
+	} catch {
+		return [];
+	}
+
+	return contents
+		.split(LOG_LINE_SPLIT_PATTERN)
+		.map((line) => line.trim())
+		.filter((line) => line !== "")
+		.slice(-STUDIO_LOG_TAIL)
+		.map((line) => {
+			return line.length > STUDIO_LOG_LINE_LIMIT
+				? `${line.slice(0, STUDIO_LOG_LINE_LIMIT)}…`
+				: line;
+		});
+}
+
+/**
+ * Names a run Studio never answered, and hands over whatever Studio did log.
+ *
+ * A bare "timed out" is the least useful thing the backend can say: the run
+ * could have wedged in a test, failed to open the place, or died behind a
+ * dialog, and Studio's engine log is the only place those read differently.
+ *
+ * @param timeout - The budget the run was given, in milliseconds.
+ * @param outputFile - Path Studio was told to log to.
+ * @returns The error to reject the run with.
+ */
+function timedOutError(timeout: number, outputFile: string): Error {
+	const lines = [
 		`studio-cli: Studio run timed out after ${timeout.toString()}ms and was terminated.`,
-	);
+		`  Studio log: ${outputFile}`,
+	];
+	const tail = readStudioLogTail(outputFile);
+	if (tail.length > 0) {
+		lines.push("  Last lines Studio logged:");
+		for (const line of tail) {
+			lines.push(`    ${line}`);
+		}
+	}
+
+	return new Error(lines.join("\n"));
 }
 
 /**
@@ -655,6 +722,7 @@ function listenForResultFrame(
  */
 function awaitStudioCliResult({
 	child,
+	outputFile,
 	reject,
 	requestId,
 	resolve,
@@ -663,7 +731,7 @@ function awaitStudioCliResult({
 }: StudioCliResultWait): void {
 	let isSettled = false;
 	const timer = setTimeout(() => {
-		bail(timedOutError(timeout));
+		bail(timedOutError(timeout, outputFile));
 	}, timeout);
 
 	function settle(action: () => void): void {
@@ -705,10 +773,18 @@ async function waitForResultAsync(
 	server: WebSocketServer,
 	child: StudioCliProcess,
 	requestId: string,
-	timeout: number,
+	deadline: ResultDeadline,
 ): Promise<ResultMessage> {
 	return new Promise<ResultMessage>((resolve, reject) => {
-		awaitStudioCliResult({ child, reject, requestId, resolve, server, timeout });
+		awaitStudioCliResult({
+			child,
+			outputFile: deadline.outputFile,
+			reject,
+			requestId,
+			resolve,
+			server,
+			timeout: deadline.timeout,
+		});
 	});
 }
 
@@ -724,6 +800,42 @@ function closeServer(server: WebSocketServer): void {
 	}
 
 	server.close();
+}
+
+/**
+ * Wind a run down the hard way: every error path before the graceful teardown
+ * began (timeout, spawn failure, server error — a hung run gets no graceful
+ * wait). Kills Studio so node's event loop can drain and the CLI exits, then
+ * releases the result server. Not called once the graceful watch has started:
+ * from then on the watch owns both the kill and the close.
+ *
+ * @param child - The Studio process, absent when the launch never happened.
+ * @param server - The loopback result server for this run.
+ */
+function hardTeardown(child: StudioCliProcess | undefined, server: WebSocketServer): void {
+	child?.kill();
+	closeServer(server);
+}
+
+/**
+ * Wind a run down now that the result is in hand, decoupling teardown from it:
+ * close the result server (so the bootstrap returns and `--quitAfterExecution`
+ * begins a graceful `ClosePlace` that runs edit-mode `BindToClose` handlers and
+ * frees the lock), then kill the instant the lock releases — skipping Studio's
+ * ~30s telemetry drain. The watch is non-awaited, so results return now and the
+ * process exits after teardown.
+ *
+ * @param child - The Studio process that answered.
+ * @param server - The loopback result server for this run.
+ * @param graceCapMs - Backstop before the watch hard-kills anyway.
+ */
+function startGracefulTeardown(
+	child: StudioCliProcess,
+	server: WebSocketServer,
+	graceCapMs: number,
+): void {
+	closeServer(server);
+	child.killOnLockRelease(graceCapMs);
 }
 
 /**
