@@ -1,13 +1,76 @@
 // cspell:ignore SSTR
 import { Buffer } from "node:buffer";
+import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { buildWithRojo } from "../utils/rojo-builder.ts";
 import { isModelFile, readDeclaredClasses } from "./model-classes.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "__fixtures__/pinned");
+
+/**
+ * Modules the built model carries. Enough of them that the writer's LZ4 stream
+ * has to emit back-references rather than one run of literals, which is the
+ * half of the decoder a smaller model would leave untested.
+ */
+const MODULE_COUNT = 120;
+
+function rojoOnPath(): boolean {
+	try {
+		cp.execFileSync("rojo", ["--version"], { stdio: "pipe", windowsHide: true });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function temporaryDirectory(): string {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "model-classes-"));
+	onTestFinished(() => {
+		fs.rmSync(directory, { force: true, recursive: true });
+	});
+
+	return directory;
+}
+
+/**
+ * A binary model built the way rojo really writes one, so its chunks carry LZ4
+ * the way the reader meets them in the wild rather than the way a hand-built
+ * buffer would.
+ *
+ * Built here rather than committed because a `.rbxm` never reaches the public
+ * mirror — sync.sh drops the suffix along with the built plugin — so a fixture
+ * that ships as bytes reads as an empty class table upstream and passes here.
+ * @param rootClass - Class the project pins its root to.
+ * @returns Path to the built model.
+ */
+function buildModel(rootClass: string): string {
+	const directory = temporaryDirectory();
+	const sourceDirectory = path.join(directory, "many");
+	fs.mkdirSync(sourceDirectory);
+	for (let index = 1; index <= MODULE_COUNT; index += 1) {
+		fs.writeFileSync(path.join(sourceDirectory, `mod${index}.luau`), `return ${index}\n`);
+	}
+
+	const projectPath = path.join(directory, "model.project.json");
+	fs.writeFileSync(
+		projectPath,
+		JSON.stringify({
+			name: "pinned",
+			tree: {
+				$className: rootClass,
+				many: { $className: "Folder", $path: "many" },
+			},
+		}),
+	);
+
+	const modelPath = path.join(directory, "model.rbxm");
+	buildWithRojo(projectPath, modelPath);
+	return modelPath;
+}
 
 /**
  * `<roblox!` plus signature, version, class count, instance count, reserved.
@@ -41,12 +104,7 @@ function instancePayload(rootClass: string): Buffer {
 }
 
 function writeTemporary(name: string, contents: Buffer | string): string {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "model-classes-"));
-	onTestFinished(() => {
-		fs.rmSync(directory, { force: true, recursive: true });
-	});
-
-	const filePath = path.join(directory, name);
+	const filePath = path.join(temporaryDirectory(), name);
 	fs.writeFileSync(filePath, contents);
 	return filePath;
 }
@@ -67,15 +125,16 @@ describe(isModelFile, () => {
 });
 
 describe(readDeclaredClasses, () => {
-	it("should read every class out of a binary model, LZ4 chunks included", () => {
-		expect.assertions(1);
+	it.skipIf(!rojoOnPath())(
+		"should read every class out of a binary model, LZ4 chunks included",
+		() => {
+			expect.assertions(1);
 
-		// A rojo-built fixture, so the chunks are compressed the way the writer
-		// really emits them rather than the way a hand-built buffer would.
-		expect(readDeclaredClasses(path.join(FIXTURES, "service-root.rbxm"))).toStrictEqual(
-			expect.arrayContaining(["Folder", "ModuleScript", "StarterPlayerScripts"]),
-		);
-	});
+			expect(readDeclaredClasses(buildModel("StarterPlayerScripts"))).toStrictEqual(
+				expect.arrayContaining(["Folder", "ModuleScript", "StarterPlayerScripts"]),
+			);
+		},
+	);
 
 	it("should read every class out of an XML model", () => {
 		expect.assertions(1);
@@ -85,12 +144,10 @@ describe(readDeclaredClasses, () => {
 		);
 	});
 
-	it("should report no pinned class for a model that declares none", () => {
+	it.skipIf(!rojoOnPath())("should report no pinned class for a model that declares none", () => {
 		expect.assertions(1);
 
-		expect(readDeclaredClasses(path.join(FIXTURES, "plain.rbxm"))).not.toContain(
-			"StarterPlayerScripts",
-		);
+		expect(readDeclaredClasses(buildModel("Folder"))).not.toContain("StarterPlayerScripts");
 	});
 
 	it("should read ClassName out of a .model.json", () => {
