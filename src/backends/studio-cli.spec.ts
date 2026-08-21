@@ -538,7 +538,31 @@ describe(StudioCliBackend, () => {
 
 		await expect(
 			backendReplying().runTestsAsync({ jobs: [job("")], parallel: 2 }),
-		).rejects.toThrow(/--parallel > 1 is not supported/);
+		).rejects.toThrow(/--parallel 2 is not supported/);
+	});
+
+	// Reachable without the CLI and config validators that screen these out.
+	it("should reject a count no serial run can mean", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		await expect(
+			backendReplying().runTestsAsync({ jobs: [job("")], parallel: 0 }),
+		).rejects.toThrow(/--parallel 0 is not supported/);
+	});
+
+	it('should allow --parallel "auto", which asks for the count it needs', async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		const { rawResults } = await backendReplying().runTestsAsync({
+			jobs: [job("")],
+			parallel: "auto",
+		});
+
+		expect(rawResults).toHaveLength(1);
 	});
 
 	it("should allow --parallel of 1", async () => {

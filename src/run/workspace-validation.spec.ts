@@ -161,14 +161,14 @@ describe(assertWorkspaceRunOptions, () => {
 		expect(result.message).toContain("serial");
 	});
 
-	it("should reject studio-cli with --parallel auto", () => {
+	it("should accept studio-cli with --parallel auto", () => {
 		expect.assertions(1);
 
 		const result = assertWorkspaceRunOptions(
 			makeRunOptions({ backend: "studio-cli", parallel: "auto" }),
 		);
 
-		expect(result.ok).toBeFalse();
+		expect(result).toStrictEqual({ ok: true });
 	});
 
 	it("should accept studio-cli with --parallel 1", () => {

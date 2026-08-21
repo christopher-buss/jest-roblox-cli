@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import process from "node:process";
 
-import type { Backend, StreamingHooks } from "../backends/interface.ts";
+import type { Backend, ParallelOption, StreamingHooks } from "../backends/interface.ts";
 import { isShardedParallel } from "../backends/interface.ts";
 import { type ExecuteResult, runProjectsAsync, type RunProjectsOptions } from "../executor.ts";
 import { StreamingResultClient } from "../memory-store/sorted-map-client.ts";
@@ -35,7 +35,7 @@ interface WorkStealingCredentials {
 interface WorkspaceDispatchInput {
 	generateUuid?: (() => string) | undefined;
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
-	parallel?: "auto" | number | undefined;
+	parallel?: ParallelOption;
 	pending: Array<PendingEntry>;
 	placeFile: string;
 	workStealingCredentials: undefined | WorkStealingCredentials;
@@ -102,10 +102,12 @@ export async function prepareWorkspaceDispatchAsync({
 	const inputs = buildMaterializerInputs(pending, placeFile);
 
 	// `runOptions.parallel` already reflects CLI > per-package consensus >
-	// default. `"auto"` counts as sharded here exactly as it does everywhere
-	// else (`isShardedParallel`, which the studio-cli serial check uses) and is
-	// forwarded unresolved — the backend turns it into a task count against the
-	// job total, the same arithmetic multi's static bucketing does.
+	// default. Only Open Cloud reaches this branch (work-stealing credentials
+	// resolve nowhere else), so `"auto"` counts as sharded and is forwarded
+	// unresolved — the backend turns it into a task count against the job
+	// total, the same arithmetic multi's static bucketing does. A serial
+	// backend reads the same `"auto"` as one session; `isExplicitMultiShard`
+	// is the predicate that guards those.
 	if (workStealingCredentials !== undefined && isShardedParallel(parallel)) {
 		const stealing = await tryStealingDispatchAsync({
 			credentials: workStealingCredentials,

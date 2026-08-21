@@ -162,7 +162,7 @@ per-package declarations error loudly.
 | `outputFile`           | Write the Jest result JSON — a path, or `true` for `jest-output.log` under the root. In `--workspace` mode this is the single merged result across every package    | —             |
 | `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                 | —             |
 | `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                      | —             |
-| `parallel`             | Number of concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`)                                                                                            | —             |
+| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). studio-cli is serial: it runs one session for any of unset, `1`, or `"auto"`                        | —             |
 | `placeId`              | Open Cloud place ID                                                                                                                                                 | —             |
 | `port`                 | WebSocket port for Studio backend                                                                                                                                   | `3001`        |
 | `silent`               | Suppress console output                                                                                                                                             | `false`       |
@@ -385,7 +385,8 @@ isolated Studio instance, so any editor you already have open is untouched.
 It is selected only when you ask for it explicitly — `auto` never launches a
 Studio process on its own. Studio is auto-discovered per-OS; override the
 executable with `studioPath` (config key), `--studioPath`, or
-`JEST_ROBLOX_STUDIO_PATH`. The backend is serial: `--parallel > 1` errors.
+`JEST_ROBLOX_STUDIO_PATH`. The backend is serial: `--parallel auto` resolves to
+one session, and an explicit `--parallel > 1` errors.
 
 Pass `--headed` to show the Studio window during the run instead of the default
 hidden one — useful for watching a slow run or a hang (Studio still self-quits
@@ -415,8 +416,9 @@ Run tests across multiple packages in a pnpm workspace in a single invocation.
 Works on every backend: Open Cloud (fans packages across parallel tasks),
 `studio-cli` (one self-launched Studio process drives every package, no
 sharding), and the attached `studio` backend (runs the workspace inside an open
-Studio — handy for debugging the flow). `studio-cli` is serial, so a sharding
-`--parallel` is rejected with `--workspace`.
+Studio — handy for debugging the flow). `studio-cli` is serial, so
+`--parallel auto` runs one session and an explicit count above 1 is rejected
+with `--workspace`.
 
 <!-- prettier-ignore -->
 > [!NOTE]
@@ -548,7 +550,7 @@ project) under `.jest-roblox/output/`.
 | `--no-color`                     | Turn off colors                                                                                             |
 | `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                   |
 | `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                  |
-| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`)                                                |
+| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one session on studio-cli                     |
 | `--project <name...>`            | Filter which named projects to run                                                                          |
 | `--setupFiles <path...>`         | Scripts to run before env                                                                                   |
 | `--setupFilesAfterEnv <path...>` | Scripts to run after env                                                                                    |

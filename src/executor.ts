@@ -10,6 +10,7 @@ import type {
 	Backend,
 	BackendResult,
 	BackendTiming,
+	ParallelOption,
 	ProjectBackendResult,
 	ProjectJob,
 	RawBackendEntry,
@@ -68,7 +69,7 @@ export interface ProjectInput {
 export interface RunProjectsOptions {
 	backend: Backend;
 	deferFormatting?: boolean | undefined;
-	parallel?: "auto" | number | undefined;
+	parallel?: ParallelOption;
 	projects: Array<ProjectInput>;
 	scriptFactory?: ((jobs: ReadonlyArray<ProjectJob>) => string) | undefined;
 	scriptOverride?: string | undefined;

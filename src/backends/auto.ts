@@ -11,7 +11,8 @@ import {
 	type Backend,
 	type BackendOptions,
 	type BackendResult,
-	isShardedParallel,
+	isExplicitMultiShard,
+	type ParallelOption,
 } from "./interface.ts";
 import { createOpenCloudBackend } from "./open-cloud.ts";
 import { createStudioCliBackend } from "./studio-cli.ts";
@@ -123,11 +124,11 @@ export async function resolveBackendAsync(
 	return resolveAutoBackendAsync({ cli, config, probe });
 }
 
-// studio-cli drives a single Studio instance, so it cannot shard. Reject a
-// parallel request up front (the CLI otherwise drops `--parallel` for non-
-// open-cloud backends, which would silently ignore the user's intent).
-function assertStudioCliSerial(parallel: ResolvedConfig["parallel"]): void {
-	if (isShardedParallel(parallel)) {
+// studio-cli drives a single Studio instance, so it cannot shard. Reject the
+// request up front (the CLI otherwise drops `--parallel` for non-open-cloud
+// backends, which would silently ignore the user's intent).
+function assertStudioCliSerial(parallel: ParallelOption): void {
+	if (isExplicitMultiShard(parallel)) {
 		throw new Error(
 			"studio-cli backend is serial (one Studio instance); --parallel > 1 is not supported.",
 		);

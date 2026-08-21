@@ -411,9 +411,15 @@ function assertSerialJobs({
 		throw new Error("studio-cli backend is serial and does not support work-stealing");
 	}
 
-	if (parallel !== undefined && parallel !== 1) {
+	// The backend is reachable without the CLI and config validators (it is
+	// exported), so it states what it can serve rather than which requests to
+	// refuse: one session, which `"auto"` also asks for. That rejects a count
+	// above 1 and equally the counts those validators would never pass on — 0,
+	// a negative, a fraction, NaN.
+	if (parallel !== undefined && parallel !== "auto" && parallel !== 1) {
 		throw new Error(
-			"studio-cli backend is serial (one Studio instance); --parallel > 1 is not supported.",
+			`studio-cli backend is serial (one Studio instance); --parallel ${String(parallel)} ` +
+				'is not supported (use 1 or "auto").',
 		);
 	}
 }

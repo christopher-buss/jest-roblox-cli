@@ -1,6 +1,6 @@
 import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-runner";
 
-import { isShardedParallel } from "../backends/interface.ts";
+import { isExplicitMultiShard } from "../backends/interface.ts";
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
 import { type PackageInfo, resolvePackage } from "../workspace/package-resolver.ts";
@@ -57,18 +57,22 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
  * Every backend now runs workspace (studio-cli launches its own mega-place;
  * the attached `studio` backend runs against an open Studio for debugging),
  * so the only resolved-value invariant left is studio-cli's serial constraint:
- * it drives one Studio instance and cannot shard.
+ * it drives one Studio instance and cannot shard. See {@link
+ * isExplicitMultiShard} for why `"auto"` is not a conflict.
  */
 export function assertWorkspaceRunOptions({
 	backend,
 	parallel,
 }: WorkspaceRunOptions): WorkspaceValidationResult {
-	if (backend === "studio-cli" && isShardedParallel(parallel)) {
+	if (backend === "studio-cli" && isExplicitMultiShard(parallel)) {
 		return {
 			exitCode: 2,
+			// Source-agnostic: the count reaching here may come from a package
+			// config rather than a flag, so "drop --parallel" would name a
+			// remedy the user does not have.
 			message:
 				"Error: studio-cli backend is serial (one Studio instance) and cannot " +
-				"shard; drop --parallel or set it to 1 for a --workspace run.\n",
+				'shard; set parallel to 1 or "auto" for a --workspace run.\n',
 			ok: false,
 		};
 	}

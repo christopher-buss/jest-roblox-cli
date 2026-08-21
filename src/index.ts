@@ -8,7 +8,7 @@ export type { CoveragePlaceBundle } from "./artifacts/build-coverage-place.ts";
 // Place — no CLI flag).
 export { prepareArtifactsAsync } from "./artifacts/prepare-artifacts.ts";
 export type { ArtifactBundle } from "./artifacts/prepare-artifacts.ts";
-export type { Backend, BackendOptions } from "./backends/interface.ts";
+export type { Backend, BackendOptions, ParallelOption } from "./backends/interface.ts";
 export { OpenCloudBackend, createOpenCloudBackend } from "./backends/open-cloud.ts";
 
 export { StudioCliBackend, createStudioCliBackend } from "./backends/studio-cli.ts";

@@ -237,19 +237,19 @@ describe(resolveBackendAsync, () => {
 		).rejects.toThrow(/--parallel > 1 is not supported/);
 	});
 
-	it("should reject --parallel auto for studio-cli with a clear message", async () => {
+	it("should accept --parallel auto for studio-cli, which needs one session", async () => {
 		expect.assertions(1);
 
 		const probe =
 			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
 
-		await expect(
-			resolveBackendAsync(
-				makeCli(),
-				makeConfig({ backend: "studio-cli", parallel: "auto" }),
-				probe,
-			),
-		).rejects.toThrow(/--parallel/);
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "studio-cli", parallel: "auto" }),
+			probe,
+		);
+
+		expect(backend).toBeInstanceOf(StudioCliBackend);
 	});
 
 	it("should return open-cloud backend for explicit open-cloud config", async () => {

@@ -7,6 +7,12 @@ import type {
 import type { SnapshotWrites } from "../reporter/parser.ts";
 import type { JestResult } from "../types/jest-result.ts";
 
+/**
+ * A shard request: an explicit session count, `"auto"` (the backend picks the
+ * count the run needs), or unset for one session.
+ */
+export type ParallelOption = "auto" | number | undefined;
+
 export interface EnvelopeEntry {
 	bannerOutput?: string | undefined;
 	elapsedMs?: number | undefined;
@@ -67,11 +73,11 @@ export interface BackendOptions {
 	/**
 	 * Open-Cloud-only: number of concurrent Open Cloud Luau execution sessions
 	 * to fire. Unset or 1 means one session carrying all jobs. `"auto"`
-	 * resolves to min(jobs.length, 3). Studio backend must error when this is
-	 * set to anything other than undefined/1 (Phase 4 enforces at the CLI
-	 * layer).
+	 * resolves to min(jobs.length, 3). studio-cli takes unset, 1, or `"auto"`
+	 * and rejects an explicit count above 1; the attached `studio` backend
+	 * ignores the field entirely.
 	 */
-	parallel?: "auto" | number | undefined;
+	parallel?: ParallelOption;
 	/**
 	 * Workspace mode, non-work-stealing only: rebuilds `scriptOverride` for a
 	 * subset of jobs. A task that fills its return-envelope budget comes back
@@ -163,11 +169,18 @@ export function isWorkspaceRun(jobs: ReadonlyArray<ProjectJob>): boolean {
 
 /**
  * A request to shard across multiple sessions: `"auto"` (the backend picks a
- * count) or an explicit count > 1. The serial backends (studio, studio-cli)
- * reject this — they drive a single Studio instance.
+ * count) or an explicit count > 1.
  */
-export function isShardedParallel(
-	parallel: "auto" | number | undefined,
-): parallel is "auto" | number {
+export function isShardedParallel(parallel: ParallelOption): parallel is "auto" | number {
 	return parallel === "auto" || (typeof parallel === "number" && parallel > 1);
+}
+
+/**
+ * A demand for more than one session, spelled out by hand. `"auto"` is not
+ * one: it asks the backend for the count the run needs, and a backend driving
+ * a single Studio instance needs 1 — so auto runs serially rather than
+ * conflicting with it. This is the predicate every serial-backend guard reads.
+ */
+export function isExplicitMultiShard(parallel: ParallelOption): parallel is number {
+	return typeof parallel === "number" && parallel > 1;
 }

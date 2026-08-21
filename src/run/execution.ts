@@ -2,7 +2,7 @@ import * as path from "node:path";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackendAsync } from "../backends/auto.ts";
-import type { Backend } from "../backends/interface.ts";
+import type { Backend, ParallelOption } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
@@ -34,8 +34,6 @@ export interface ExecutionOutcome {
 	projectResults: Array<ProjectResult>;
 	typecheck: TypecheckPassOutcome;
 }
-
-type ParallelOption = "auto" | number | undefined;
 
 /**
  * One tsgo pass per distinct `(tsconfig, cwd)` group: projects sharing a

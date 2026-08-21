@@ -165,6 +165,38 @@ describe(runWorkspaceModeAsync, () => {
 			expect(result.validationExitCode).toBe(2);
 			expect(result.validationMessage).toContain("serial");
 		});
+
+		it("should accept studio-cli with --parallel auto", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+			const result = await runWorkspaceModeAsync(
+				makeCli({
+					backend: "studio-cli",
+					packages: "a",
+					parallel: "auto",
+					workspace: true,
+				}),
+			);
+
+			expect(result.validationExitCode).toBeUndefined();
+		});
+
+		// The reported failure: `parallel` comes from the package config, not
+		// from a flag the user can drop for the run.
+		it('should accept studio-cli when a package config declares parallel "auto"', async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(loadRawConfig).mockResolvedValue({ parallel: "auto" });
+			mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+			const result = await runWorkspaceModeAsync(
+				makeCli({ backend: "studio-cli", packages: "a", workspace: true }),
+			);
+
+			expect(result.validationExitCode).toBeUndefined();
+		});
 	});
 
 	describe("backend resolution", () => {

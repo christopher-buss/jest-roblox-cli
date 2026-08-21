@@ -6,6 +6,7 @@ import { parseArgs as nodeParseArgs } from "node:util";
 import color from "tinyrainbow";
 
 import packageJson from "../package.json" with { type: "json" };
+import type { ParallelOption } from "./backends/interface.ts";
 import { ConfigError } from "./config/errors.ts";
 import { loadConfig } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
@@ -196,8 +197,6 @@ export async function main(): Promise<void> {
 
 const PARALLEL_FLAG = "--parallel";
 const INTEGER_LIKE_PATTERN = /^-?\d+$/;
-
-type ParallelOption = "auto" | number | undefined;
 
 interface CliParseConfig {
 	allowPositionals: true;
