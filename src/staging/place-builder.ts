@@ -5,6 +5,7 @@ import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { hashFile } from "../utils/hash.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
+import { demotePinnedMounts } from "./pinned-mounts.ts";
 import {
 	computePlaceInputsKey,
 	readPlaceReuseRecord,
@@ -13,6 +14,9 @@ import {
 import { relativizeProjectPaths } from "./relativize-paths.ts";
 import type { PackageDescriptor } from "./synthesizer.ts";
 import { synthesize } from "./synthesizer.ts";
+
+/** Where {@link demotePinnedMounts} parks its Folder-rooted stand-ins. */
+const PINNED_SHADOW_DIR = "pinned-shadow";
 
 export interface PlaceReuseOptions {
 	/** Where the previous build's key and place hash are recorded. */
@@ -63,14 +67,22 @@ export function buildPlace({
 	reuse,
 	wrap,
 }: BuildPlaceOptions): BuildManifestArtifact {
+	const projectDirectory = path.dirname(projectFile);
 	// Relative `$path`s, written last: rojo matches `globIgnorePaths` against the
 	// path as the project expresses it, so absolute ones would leave the ignore
-	// list inert.
+	// list inert. The pinned-mount pass runs before it for the same reason — the
+	// ignore entries it adds are expressed in that relative frame — and before
+	// the reuse key is planned, so a stand-in rebuilt from edited sources
+	// changes the key rather than reusing a place built from the old ones.
 	const projectJson = relativizeProjectPaths(
-		synthesize({ loadStringEnabled, packages, wrap }),
-		path.dirname(projectFile),
+		demotePinnedMounts({
+			projectDirectory,
+			projectJson: synthesize({ loadStringEnabled, packages, wrap }),
+			shadowDirectory: path.join(projectDirectory, PINNED_SHADOW_DIR),
+		}),
+		projectDirectory,
 	);
-	fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+	fs.mkdirSync(projectDirectory, { recursive: true });
 	fs.writeFileSync(projectFile, projectJson);
 	// `rojo build -o` fails if the output directory is missing, so ensure it
 	// exists for every caller rather than relying on each one to pre-create it.

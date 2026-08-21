@@ -1160,6 +1160,54 @@ describe(synthesize, () => {
 		).toBe("Folder");
 	});
 
+	it.for([
+		["StarterPlayer", "StarterPlayerScripts"],
+		["StarterPlayer", "StarterCharacterScripts"],
+		["Workspace", "Terrain"],
+	] as const)(
+		"should rewrite %s.%s to Folder — the engine pins the class to one parent",
+		([parent, pinned]) => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						[parent]: {
+							$className: parent,
+							[pinned]: { $className: pinned, $path: "src" },
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+			});
+
+			expect(
+				descend(
+					parseFixture(result).tree,
+					"ServerStorage",
+					"__pkg_stage",
+					"@halcyon/foo",
+					parent,
+					pinned,
+				)!.$className,
+			).toBe("Folder");
+		},
+	);
+
 	it("should add $className Folder to an implicit service node (no $className) when nested", () => {
 		expect.assertions(1);
 

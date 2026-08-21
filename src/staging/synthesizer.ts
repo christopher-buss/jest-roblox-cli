@@ -7,6 +7,7 @@ import { ConfigError } from "../config/errors.ts";
 import { redirectPathToShadow } from "../coverage-pipeline/redirect-path.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 
 export interface StubMount {
 	absStubPath: string;
@@ -77,33 +78,6 @@ interface SynthesizeInput {
 const TRAILING_SLASH = /\/$/;
 const STUB_INJECTION_KEY = "jest.config";
 const COLLIDING_SOURCE_FILES = ["jest.config.lua", "jest.config.luau"];
-
-const SERVICE_CLASSES = new Set([
-	"Chat",
-	"CollectionService",
-	"DataModel",
-	"HttpService",
-	"Lighting",
-	"LocalizationService",
-	"MarketplaceService",
-	"MaterialService",
-	"MessagingService",
-	"Players",
-	"ReplicatedFirst",
-	"ReplicatedStorage",
-	"RunService",
-	"ServerScriptService",
-	"ServerStorage",
-	"SoundService",
-	"StarterPlayer",
-	"StarterPlayerScripts",
-	"Teams",
-	"TestService",
-	"TextChatService",
-	"TweenService",
-	"UserInputService",
-	"Workspace",
-]);
 
 interface AbsolutizeOptions {
 	/**
@@ -727,7 +701,7 @@ function transformChild(
 ): RojoTreeNode {
 	const declaredClass = typeof node.$className === "string" ? node.$className : undefined;
 	const isDemoted =
-		isService || (declaredClass !== undefined && SERVICE_CLASSES.has(declaredClass));
+		isService || (declaredClass !== undefined && PINNED_PARENT_CLASSES.has(declaredClass));
 	const result: RojoTreeNode = {};
 
 	for (const [key, value] of Object.entries(node)) {

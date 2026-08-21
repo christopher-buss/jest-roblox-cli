@@ -119,6 +119,19 @@ export function readJsonSync(filePath: string): JSONValue {
 }
 
 /**
+ * Whether rojo can be shelled out to. The specs that build a real place gate on
+ * it, because a machine without rojo should skip them rather than fail them.
+ */
+export function rojoOnPath(): boolean {
+	try {
+		execFileSync("rojo", ["--version"], { stdio: "pipe", windowsHide: true });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * The `testFilePath`s of a merged result sink (`--outputFile`), validated
  * against the one field the type-test e2e specs read rather than asserted onto
  * the parsed JSON.
