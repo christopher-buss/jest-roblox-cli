@@ -17,9 +17,9 @@ type Config = {
 	projects: { string }?,
 	setupFiles: { string }?,
 	setupFilesAfterEnv: { string }?,
-	_coverage: boolean?,
-	_perTestCoverage: boolean?,
-	_timing: boolean?,
+	runnerCoverage: boolean?,
+	runnerPerTestCoverage: boolean?,
+	runnerTiming: boolean?,
 }
 
 local function fail(err: string)
@@ -60,9 +60,9 @@ local module = {}
 
 function module.run(callingScript: LuaSourceContainer, config: Config): (string, string, string)
 	local t0 = os.clock()
-	local timingEnabled = config._timing
-	local coverageEnabled = config._coverage
-	local perTestEnabled = config._perTestCoverage
+	local timingEnabled = config.runnerTiming
+	local coverageEnabled = config.runnerCoverage
+	local perTestEnabled = config.runnerPerTestCoverage
 
 	-- Game Output capture: subscribe to LogService.MessageOut at the top of
 	-- the run so engine warnings during findJest/require(Jest) (broken
@@ -175,10 +175,10 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 			config.setupFilesAfterEnv :: any
 		)
 
-		-- Strip private keys before Jest.runCLI (safe: single-task execution per VM)
-		config._timing = nil :: any
-		config._coverage = nil :: any
-		config._perTestCoverage = nil :: any
+		-- Strip our own keys before Jest.runCLI (safe: single-task execution per VM)
+		config.runnerTiming = nil :: any
+		config.runnerCoverage = nil :: any
+		config.runnerPerTestCoverage = nil :: any
 
 		local perTestRecords: { any }? = nil
 		if coverageEnabled then
@@ -208,11 +208,16 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 			value = jestResult,
 		}
 
+		-- Everything this runner adds to Jest's own result lives under one
+		-- `runner` key, so the TS side tells our fields from Jest's by
+		-- structure instead of by a name prefix.
+		local runner: { [string]: any } = {}
+
 		if setupSeconds > 0 then
-			result._setup = setupSeconds
+			runner.setup = setupSeconds
 		end
 
-		result._timing = PhaseTiming.build(timingEnabled, {
+		runner.timing = PhaseTiming.build(timingEnabled, {
 			{ name = "findJest", seconds = t_findJest - t_findJest0 },
 			{ name = "patchSnapshot", seconds = t_patchSnapshot - t_patchSnapshot0 },
 			{ name = "requireJest", seconds = t_requireJest - t_requireJest0 },
@@ -223,14 +228,20 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		})
 
 		if next(snapshotWrites) then
-			result._snapshotWrites = snapshotWrites
+			runner.snapshotWrites = snapshotWrites
 		end
 
 		if coverageEnabled then
-			result._coverage = _G.__jest_roblox_cov
+			runner.coverage = _G.__jest_roblox_cov
 			if perTestRecords and #perTestRecords > 0 then
-				result._perTestCoverage = perTestRecords
+				runner.perTestCoverage = perTestRecords
 			end
+		end
+
+		-- An empty Luau table encodes as `[]`, so attach only a populated one
+		-- and let the field stay absent otherwise.
+		if next(runner) then
+			result.runner = runner
 		end
 
 		return result

@@ -9,9 +9,9 @@ import * as path from "node:path";
 import { assert, describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
 import type { WebSocketServer } from "ws";
 
-import type { MockWebSocketServer as MockWebSocketServerType } from "../../test/mocks/mock-web-socket-server.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
+import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import type { BuildPlaceOptions } from "../staging/place-builder.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
@@ -66,7 +66,9 @@ function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): Proj
 	};
 }
 
-function successResult(overrides: Record<string, unknown> = {}): string {
+function successResult(
+	overrides: Partial<JestResult> & { runner?: { coverage?: RawCoverageData } } = {},
+): string {
 	return JSON.stringify(
 		fromExact<JestResult>({
 			numFailedTests: 0,
@@ -99,7 +101,7 @@ function makeFakeProcess(): FakeProcess {
 	};
 }
 
-// The bootstrap bakes its `request_id` as a Luau long string
+// The bootstrap bakes its `requestId` as a Luau long string
 // (`local REQUEST_ID = [=[<uuid>]=]`); the reply must echo it for the host's
 // correlation check to accept the frame. Read it back from the written
 // bootstrap the same way real Studio would.
@@ -114,16 +116,18 @@ function readOutputFile(args: Array<string>): string {
 }
 
 function resultFrame(requestId: string, reply: ReplyOptions): string {
-	return JSON.stringify({
+	const frame = {
 		gameOutput: reply.gameOutput ?? "[]",
 		jestOutput:
 			reply.rawJestOutput ?? envelope(reply.entries ?? [{ jestOutput: successResult() }]),
-		request_id: requestId,
+		requestId,
 		type: "results",
-		...(reply.omitProtocolVersion === true
-			? {}
-			: { protocolVersion: reply.protocolVersion ?? 3 }),
-	});
+	};
+	return JSON.stringify(
+		reply.omitProtocolVersion === true
+			? frame
+			: { ...frame, protocolVersion: reply.protocolVersion ?? 4 },
+	);
 }
 
 /**
@@ -135,10 +139,10 @@ function resultFrame(requestId: string, reply: ReplyOptions): string {
 function replyWith(
 	reply: ReplyOptions = {},
 	onLaunch?: (request: Parameters<StudioCliLauncher>[0]) => void,
-): { launch: StudioCliLauncher; process: FakeProcess } {
+) {
 	const process = makeFakeProcess();
 	return {
-		launch: (request) => {
+		launch: (request: Parameters<StudioCliLauncher>[0]) => {
 			onLaunch?.(request);
 			queueMicrotask(() => {
 				const server = getLastCreatedServer();
@@ -376,7 +380,7 @@ describe(StudioCliBackend, () => {
 
 	it("should ignore non-result frames and resolve on the matching result", async () => {
 		// The server can see engine/plugin chatter and stray frames; only a
-		// well-formed `results` frame for THIS request_id resolves the run.
+		// well-formed `results` frame for THIS requestId resolves the run.
 		expect.assertions(1);
 
 		resetVol();
@@ -773,7 +777,7 @@ describe(StudioCliBackend, () => {
 		// assigned port. These drive that path with a fake server (the mock
 		// reports its port up front and is returned without waiting).
 		function pendingServer(boundPort: number | undefined): WebSocketServer {
-			const server: MockWebSocketServerType = new MockWebSocketServer({ port: 0 });
+			const server = new MockWebSocketServer({ port: 0 });
 			// Report "not yet bound" until `listening` fires, then the assigned
 			// port. State on an object so the lazy implementation re-reads it.
 			const state = { listening: false };
@@ -877,7 +881,7 @@ describe(StudioCliBackend, () => {
 			resetVol();
 
 			const coverageData = { "ReplicatedStorage/mod": { f: {}, s: { "1": 1 } } };
-			const jestOutput = successResult({ _coverage: coverageData });
+			const jestOutput = successResult({ runner: { coverage: coverageData } });
 			const backend = backendReplying({ entries: [{ jestOutput }] });
 
 			const { rawResults } = await backend.runTestsAsync({ jobs: [coverageJob()] });
@@ -945,7 +949,7 @@ describe(StudioCliBackend, () => {
 			public readonly kill = vi.fn<ChildProcess["kill"]>();
 		}
 
-		function stubSpawn(): { args: () => Array<string>; child: FakeChild } {
+		function stubSpawn() {
 			const child = new FakeChild();
 			let capturedArgs: Array<string> = [];
 			vi.mocked(spawn).mockImplementation(

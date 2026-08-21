@@ -1,11 +1,22 @@
 import { assert, describe, expect, it } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
-import { LuauScriptError } from "../reporter/parser.ts";
+import type { RawCoverageData } from "../coverage-pipeline/types.ts";
+import { LuauScriptError, type SnapshotWrites } from "../reporter/parser.ts";
+import type { JestResult } from "../types/jest-result.ts";
 import { buildProjectResult, isEnvelopeDeferred, parseEnvelope } from "./envelope.ts";
 import type { EnvelopeEntry, ProjectJob } from "./interface.ts";
 
-function successJest(overrides: Record<string, unknown> = {}): string {
+interface RunnerFieldOverrides {
+	coverage?: RawCoverageData;
+	setup?: number;
+	snapshotWrites?: SnapshotWrites;
+	timing?: Record<string, number>;
+}
+
+type JestPayloadOverrides = Partial<JestResult> & { runner?: RunnerFieldOverrides };
+
+function successJest(overrides: JestPayloadOverrides = {}): string {
 	return JSON.stringify({
 		numFailedTests: 0,
 		numPassedTests: 1,
@@ -32,11 +43,15 @@ function entry(overrides: Partial<EnvelopeEntry> = {}): EnvelopeEntry {
 	return { jestOutput: successJest(), ...overrides };
 }
 
-function captureThrown(action: () => void): unknown {
+function captureThrown(action: () => void): Error {
 	try {
 		action();
 	} catch (err) {
-		return err;
+		if (err instanceof Error) {
+			return err;
+		}
+
+		throw new TypeError(`Expected the action to throw an Error, got ${String(err)}`);
 	}
 
 	throw new Error("Expected the action to throw");
@@ -240,7 +255,7 @@ describe(buildProjectResult, () => {
 		expect.assertions(1);
 
 		const result = buildProjectResult(
-			entry({ jestOutput: successJest({ _setup: 1.2345 }) }),
+			entry({ jestOutput: successJest({ runner: { setup: 1.2345 } }) }),
 			job("alpha"),
 			undefined,
 		);
@@ -262,9 +277,11 @@ describe(buildProjectResult, () => {
 		const result = buildProjectResult(
 			entry({
 				jestOutput: successJest({
-					_coverage: { "src/foo.luau": { s: { 1: 5 } } },
-					_snapshotWrites: { "snapshots/foo.snap": "snapshot-content" },
-					_timing: { setup: 0.5, total: 1.25 },
+					runner: {
+						coverage: { "src/foo.luau": { s: { 1: 5 } } },
+						snapshotWrites: { "snapshots/foo.snap": "snapshot-content" },
+						timing: { setup: 0.5, total: 1.25 },
+					},
 				}),
 			}),
 			job("alpha"),
@@ -286,7 +303,9 @@ describe(buildProjectResult, () => {
 		const result = buildProjectResult(
 			entry({
 				jestOutput: successJest({
-					_snapshotWrites: { "stale/inner.snap": "ignored" },
+					runner: {
+						snapshotWrites: { "stale/inner.snap": "ignored" },
+					},
 				}),
 				snapshotWrites: { "fresh/outer.snap": "wins" },
 			}),
@@ -303,7 +322,9 @@ describe(buildProjectResult, () => {
 		const result = buildProjectResult(
 			entry({
 				jestOutput: successJest({
-					_snapshotWrites: { "legacy.snap": "kept" },
+					runner: {
+						snapshotWrites: { "legacy.snap": "kept" },
+					},
 				}),
 				snapshotWrites: {},
 			}),

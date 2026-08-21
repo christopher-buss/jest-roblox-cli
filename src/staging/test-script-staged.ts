@@ -41,7 +41,7 @@ interface EntryPayload {
 
 interface StreamingPayloadFields {
 	sortedMapId?: string;
-	streamingTtlSeconds?: number;
+	streamingTtlSeconds?: number | undefined;
 }
 
 interface MaterializerPayload extends StreamingPayloadFields {
@@ -103,9 +103,7 @@ function streamingFields(streaming: StreamingOptions | undefined): StreamingPayl
 
 	return {
 		sortedMapId: streaming.sortedMapId,
-		...(streaming.ttlSeconds !== undefined
-			? { streamingTtlSeconds: streaming.ttlSeconds }
-			: {}),
+		streamingTtlSeconds: streaming.ttlSeconds,
 	};
 }
 
@@ -119,8 +117,8 @@ function buildEntries(inputs: ReadonlyArray<MaterializerInput>): Array<EntryPayl
 	});
 }
 
-function substitutePayload(payload: object): string {
-	const serialized = String(JSON.stringify(payload));
+function substitutePayload(payload: MaterializerPayload | WorkStealingPayload): string {
+	const serialized = JSON.stringify(payload);
 	if (serialized.includes("]==]")) {
 		throw new Error("workspace materializer payload contains forbidden sequence ']==]'");
 	}

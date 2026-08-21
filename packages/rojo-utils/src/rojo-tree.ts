@@ -9,6 +9,11 @@ import { isRojoTreeNode } from "./types.ts";
 // tree shapes defensively (same contract as `isValidRojoConfig`).
 const nestedProjectSchema = type({ tree: "object" });
 
+export interface ResolvedNestedProjectSources {
+	projectFiles: Array<string>;
+	tree: RojoTreeNode;
+}
+
 /**
  * Mutable state threaded through {@link resolveTree} during a single
  * resolution.
@@ -29,7 +34,7 @@ interface ResolveContext {
 export function resolveNestedProjectSources(
 	tree: RojoTreeNode,
 	rootDirectory: string,
-): { projectFiles: Array<string>; tree: RojoTreeNode } {
+): ResolvedNestedProjectSources {
 	const context: ResolveContext = { sources: new Set<string>(), visited: new Set<string>() };
 	const resolved = resolveTree(tree, rootDirectory, rootDirectory, context);
 	return { projectFiles: [...context.sources], tree: resolved };

@@ -19,7 +19,7 @@ function luauRawPlugin() {
 const SEA_STUB_MODULES = new Set(["@typescript/native-preview", "giget", "oxc-parser"]);
 
 type ExportsMap = Parameters<
-	Extract<NonNullable<ExportsOptions["customExports"]>, (...args: never) => unknown>
+	Extract<NonNullable<ExportsOptions["customExports"]>, (...args: never) => void>
 >[0];
 
 function seaStubPlugin() {

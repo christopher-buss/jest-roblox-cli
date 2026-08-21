@@ -96,42 +96,42 @@ const COLOR_STYLE_SET: StyleSet = {
 		fast: color.green,
 		slow: color.yellow,
 	},
-	failBadge: (text: string) => color.bgRed(color.white(color.bold(text))),
+	failBadge: (text) => color.bgRed(color.white(color.bold(text))),
 	lineNumber: color.gray,
 	location: color.cyan,
 	path: {
 		dir: color.dim,
 		file: color.bold,
 	},
-	runBadge: (text: string) => color.bgCyan(color.black(color.bold(text))),
+	runBadge: (text) => color.bgCyan(color.black(color.bold(text))),
 	status: {
 		fail: color.red,
 		pass: color.green,
 		pending: color.yellow,
 	},
 	summary: {
-		failed: (text: string) => color.bold(color.red(text)),
-		passed: (text: string) => color.bold(color.green(text)),
-		pending: (text: string) => color.bold(color.yellow(text)),
+		failed: (text) => color.bold(color.red(text)),
+		passed: (text) => color.bold(color.green(text)),
+		pending: (text) => color.bold(color.yellow(text)),
 	},
 };
 
 const PROJECT_BADGE_COLORS: Array<ColorFunc> = [
-	(text: string) => color.bgYellow(color.black(text)),
-	(text: string) => color.bgCyan(color.black(text)),
-	(text: string) => color.bgGreen(color.black(text)),
-	(text: string) => color.bgMagenta(color.black(text)),
+	(text) => color.bgYellow(color.black(text)),
+	(text) => color.bgCyan(color.black(text)),
+	(text) => color.bgGreen(color.black(text)),
+	(text) => color.bgMagenta(color.black(text)),
 ];
 
-const NAMED_BADGE_COLORS: Record<string, ColorFunc> = {
-	blue: (text: string) => color.bgBlue(color.white(text)),
-	cyan: (text: string) => color.bgCyan(color.black(text)),
-	green: (text: string) => color.bgGreen(color.black(text)),
-	magenta: (text: string) => color.bgMagenta(color.black(text)),
-	red: (text: string) => color.bgRed(color.white(text)),
-	white: (text: string) => color.bgWhite(color.black(text)),
-	yellow: (text: string) => color.bgYellow(color.black(text)),
-};
+const NAMED_BADGE_COLORS = new Map<string, ColorFunc>([
+	["blue", (text) => color.bgBlue(color.white(text))],
+	["cyan", (text) => color.bgCyan(color.black(text))],
+	["green", (text) => color.bgGreen(color.black(text))],
+	["magenta", (text) => color.bgMagenta(color.black(text))],
+	["red", (text) => color.bgRed(color.white(text))],
+	["white", (text) => color.bgWhite(color.black(text))],
+	["yellow", (text) => color.bgYellow(color.black(text))],
+]);
 
 function hashProjectName(name: string): number {
 	let hash = 0;
@@ -144,7 +144,7 @@ function hashProjectName(name: string): number {
 
 function resolveBadgeColor(displayName: string, displayColor?: string): ColorFunc {
 	if (displayColor !== undefined) {
-		const named = NAMED_BADGE_COLORS[displayColor];
+		const named = NAMED_BADGE_COLORS.get(displayColor);
 		if (named !== undefined) {
 			return named;
 		}

@@ -7,6 +7,7 @@ import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { getAffectedPackages } from "./affected.ts";
+import type { PackageInfo } from "./package-resolver.ts";
 
 function stubPlatform(platform: NodeJS.Platform): void {
 	const original = process.platform;
@@ -31,8 +32,8 @@ function packagePathFor(name: string): string {
 	return `packages/${name.replace(/^@[^/]+\//, "")}`;
 }
 
-function seedRobloxWorkspace(names: Array<string>): Record<string, string> {
-	const entries: Record<string, string> = {
+function seedRobloxWorkspace(names: Array<string>) {
+	const entries = {
 		[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 	};
 	for (const name of names) {
@@ -44,20 +45,11 @@ function seedRobloxWorkspace(names: Array<string>): Record<string, string> {
 	return entries;
 }
 
-function turboItem(
-	name: string,
-	relativePath: string = packagePathFor(name),
-): {
-	name: string;
-	path: string;
-} {
+function turboItem(name: string, relativePath: string = packagePathFor(name)) {
 	return { name, path: relativePath };
 }
 
-function packageInfoFor(
-	name: string,
-	relativePath: string = packagePathFor(name),
-): { name: string; packageDirectory: string } {
+function packageInfoFor(name: string, relativePath: string = packagePathFor(name)) {
 	return { name, packageDirectory: path.join(ROOT, relativePath) };
 }
 
@@ -343,7 +335,7 @@ describe(getAffectedPackages, () => {
 	});
 
 	it("should invoke cmd.exe directly with verbatim args on Windows (no shell:true to avoid DEP0190)", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		stubPlatform("win32");
 		vol.reset();
@@ -367,12 +359,10 @@ describe(getAffectedPackages, () => {
 			"/c",
 			'"turbo "ls" "--filter=...[main]" "--output=json""',
 		]);
-		expect(options).toMatchObject({
-			cwd: ROOT,
-			shell: false,
-			windowsHide: true,
-			windowsVerbatimArguments: true,
-		});
+		expect(options).toMatchObject({ cwd: ROOT, shell: false, windowsHide: true });
+		// `ExecFileSyncOptions` does not declare the flag, so it cannot go in
+		// the literal above.
+		expect(options).toHaveProperty("windowsVerbatimArguments", true);
 		expect(options!.env!["PATH"]).toStartWith(`${binDirectory}${path.delimiter}`);
 	});
 
@@ -599,7 +589,7 @@ describe(getAffectedPackages, () => {
 		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
 		mockNxResponses(["foo"], { foo: "schema-violation" });
 
-		function act(): unknown {
+		function act(): Array<PackageInfo> {
 			return getAffectedPackages(ROOT, "develop");
 		}
 

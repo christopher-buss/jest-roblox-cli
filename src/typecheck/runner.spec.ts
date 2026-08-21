@@ -519,11 +519,7 @@ describe(runTypecheckAsync, () => {
 	// `spawn` listener, `kill` is the spy `spawnTsgo` calls on a launch timeout)
 	// and lets a test simulate tsgo finishing (exit 0), exiting non-zero with
 	// diagnostics, failing to spawn, or never launching.
-	function stubTsgo(respond: (callback: TsgoCallback) => void): {
-		emitSpawn: () => void;
-		invocations: Array<TsgoInvocation>;
-		kill: ReturnType<typeof vi.fn<() => void>>;
-	} {
+	function stubTsgo(respond: (callback: TsgoCallback) => void) {
 		let spawnListener: (() => void) | undefined;
 		const invocations: Array<TsgoInvocation> = [];
 		const kill = vi.fn<() => void>();

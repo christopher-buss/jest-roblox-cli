@@ -156,14 +156,19 @@ function buildPackageDescriptor(
 	// DEFAULT_CONFIG" inside `prepareWorkspaceCoverage`.
 	const hasExplicitCoverageCache = packageConfig.coverageCache !== DEFAULT_CONFIG.coverageCache;
 
-	return {
-		...(hasExplicitCoverageCache ? { coverageCache: packageConfig.coverageCache } : {}),
-		...(hasExplicitIgnore
-			? { coveragePathIgnorePatterns: packageConfig.coveragePathIgnorePatterns }
-			: {}),
-		...(packageConfig.luauRoots !== undefined ? { luauRoots: packageConfig.luauRoots } : {}),
+	const descriptor: PackageDescriptor = {
 		name: info.name,
+		luauRoots: packageConfig.luauRoots,
 		packageDirectory: info.packageDirectory,
 		rojoProjectPath: resolveRojoProjectPath(info, packageConfig),
 	};
+	if (hasExplicitCoverageCache) {
+		descriptor.coverageCache = packageConfig.coverageCache;
+	}
+
+	if (hasExplicitIgnore) {
+		descriptor.coveragePathIgnorePatterns = packageConfig.coveragePathIgnorePatterns;
+	}
+
+	return descriptor;
 }

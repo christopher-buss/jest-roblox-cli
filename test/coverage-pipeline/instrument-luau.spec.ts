@@ -15,9 +15,20 @@ const PARSE_SCRIPT = path.resolve(import.meta.dirname, "../../src/luau/parse-ast
 const FIXTURES_DIR = path.resolve(import.meta.dirname, "../fixtures/coverage-pipeline");
 
 // Cache the AST map from a single lute call for all fixtures
-let cachedAstMap: Record<string, unknown> | undefined;
+let cachedAstMap: Record<string, AstStatBlock> | undefined;
 
-function getAstMap(): Record<string, unknown> {
+const astStatBlockSchema = type({ tag: "'block'" });
+
+/**
+ * Shallow guard over the AST JSON `parse-ast.luau` emits, mirroring
+ * `instrumenter.ts`: only the root tag is checked, since the file is our own
+ * output.
+ */
+function isAstStatBlock(value: unknown): value is AstStatBlock {
+	return astStatBlockSchema.allows(value);
+}
+
+function getAstMap(): Record<string, AstStatBlock> {
 	if (cachedAstMap !== undefined) {
 		return cachedAstMap;
 	}
@@ -31,10 +42,12 @@ function getAstMap(): Record<string, unknown> {
 	);
 
 	const fileList = type("string[]").assert(JSON.parse(fileListJson));
-	const astMap: Record<string, unknown> = {};
+	const astMap: Record<string, AstStatBlock> = {};
 	for (const relativePath of fileList) {
 		const astJsonPath = path.join(astOutputDirectory, `${relativePath}.json`);
-		astMap[relativePath] = JSON.parse(fs.readFileSync(astJsonPath, "utf-8"));
+		const parsed = JSON.parse(fs.readFileSync(astJsonPath, "utf-8"));
+		assert(isAstStatBlock(parsed), `Fixture ${relativePath} has no parsed AST block`);
+		astMap[relativePath] = parsed;
 	}
 
 	// The parsed AST is now wholly in memory; the scratch dir can go.
@@ -44,22 +57,13 @@ function getAstMap(): Record<string, unknown> {
 	return cachedAstMap;
 }
 
-/**
- * Shallow guard over the AST JSON `parse-ast.luau` emits, mirroring
- * `instrumenter.ts`: only the root tag is checked, since the file is our own
- * output.
- */
-function isAstStatBlock(value: unknown): value is AstStatBlock {
-	return typeof value === "object" && value !== null && Reflect.get(value, "tag") === "block";
-}
-
 function instrumentFixture(fixtureName: string, fileKey: string) {
 	const fixturePath = path.join(FIXTURES_DIR, fixtureName);
 	const source = fs.readFileSync(fixturePath, "utf-8");
 
 	const astMap = getAstMap();
 	const rawAst = astMap[fixtureName];
-	assert(isAstStatBlock(rawAst), `Fixture ${fixtureName} has no parsed AST block`);
+	assert(rawAst !== undefined, `Fixture ${fixtureName} has no parsed AST block`);
 
 	const result = collectCoverage(rawAst, source);
 	const instrumentedSource = insertProbes(source, result, fileKey);

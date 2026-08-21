@@ -107,23 +107,15 @@ function hasJestConfig(packageDirectory: string): boolean {
 	return fs.readdirSync(packageDirectory).some((entry) => JEST_CONFIG_MARKER.test(entry));
 }
 
-function hasStringField<K extends string>(value: unknown, key: K): value is Record<K, string> {
-	return (
-		value !== null &&
-		typeof value === "object" &&
-		key in value &&
-		typeof Reflect.get(value, key) === "string"
-	);
-}
+// runTool passes `encoding: "utf8"` so child_process surfaces these as strings
+// — Buffer would only appear if we dropped that option.
+const toolFailureSchema = type({ "stderr?": "string", "stdout?": "string" });
 
-function readStream(err: unknown, key: "stderr" | "stdout"): string | undefined {
-	// runTool passes `encoding: "utf8"` so child_process surfaces these as
-	// strings — Buffer would only appear if we dropped that option.
-	if (!hasStringField(err, key)) {
-		return undefined;
-	}
+type ToolFailure = typeof toolFailureSchema.infer;
 
-	return err[key].trim();
+function readStream(failure: ToolFailure, key: "stderr" | "stdout"): string | undefined {
+	const stream = failure[key]?.trim();
+	return stream !== undefined && stream.length > 0 ? stream : undefined;
 }
 
 // Reshape a failed tool invocation into a readable error. nx writes its branded
@@ -134,12 +126,10 @@ function toToolError(command: string, err: unknown): Error {
 		return new Error(`${command} was not found on PATH`);
 	}
 
-	const stderr = readStream(err, "stderr");
-	const detail = stderr !== undefined && stderr.length > 0 ? stderr : readStream(err, "stdout");
-	const message =
-		detail !== undefined && detail.length > 0
-			? `${command} failed: ${detail}`
-			: `${command} failed`;
+	const parsed = toolFailureSchema(err);
+	const failure = parsed instanceof type.errors ? {} : parsed;
+	const detail = readStream(failure, "stderr") ?? readStream(failure, "stdout");
+	const message = detail === undefined ? `${command} failed` : `${command} failed: ${detail}`;
 	return new Error(message, { cause: err });
 }
 
@@ -163,16 +153,24 @@ function runTool(command: string, args: Array<string>, cwd: string): string {
 		: process.env;
 	const file = isWindows ? "cmd.exe" : resolvePosixShim(binDirectory, command);
 	const spawnArgs = isWindows ? buildCommandExeArgs(command, args) : args;
+	const options = {
+		cwd,
+		encoding: "utf8",
+		env: childEnvironment,
+		shell: false,
+		stdio: "pipe",
+	} satisfies cp.ExecFileSyncOptionsWithStringEncoding;
+	const windowsOptions = { ...options, windowsVerbatimArguments: true } satisfies cp.SpawnOptions;
 	try {
-		return cp.execFileSync(file, spawnArgs, {
-			cwd,
-			encoding: "utf8",
-			env: childEnvironment,
-			shell: false,
-			stdio: "pipe",
-			windowsHide: true,
-			...(isWindows ? { windowsVerbatimArguments: true } : {}),
-		});
+		return isWindows
+			? cp.execFileSync(file, spawnArgs, {
+					...windowsOptions,
+					windowsHide: true,
+				})
+			: cp.execFileSync(file, spawnArgs, {
+					...options,
+					windowsHide: true,
+				});
 	} catch (err) {
 		throw toToolError(command, err);
 	}

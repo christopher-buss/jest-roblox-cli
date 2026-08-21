@@ -10,7 +10,6 @@ import { mergeSnapshotSummaries } from "./formatters/formatter.ts";
 import {
 	formatAnnotations,
 	formatJobSummary,
-	type GitHubActionsFormatterOptions,
 	resolveGitHubActionsOptions,
 } from "./formatters/github-actions.ts";
 import { writeJsonFileAsync } from "./formatters/json.ts";
@@ -287,17 +286,16 @@ function runGitHubActionsFormatter(
 		return;
 	}
 
-	const typedOptions = userOptions as GitHubActionsFormatterOptions;
-	const options = resolveGitHubActionsOptions(typedOptions, sourceMapper);
+	const options = resolveGitHubActionsOptions(userOptions, sourceMapper);
 
-	if (typedOptions.displayAnnotations !== false) {
+	if (userOptions.displayAnnotations !== false) {
 		const annotations = formatAnnotations(result, options);
 		if (annotations !== "") {
 			process.stderr.write(`${annotations}\n`);
 		}
 	}
 
-	const { jobSummary } = typedOptions;
+	const { jobSummary } = userOptions;
 	if (jobSummary?.enabled !== false) {
 		const outputPath = jobSummary?.outputPath ?? process.env["GITHUB_STEP_SUMMARY"];
 		if (outputPath !== undefined) {
@@ -411,13 +409,13 @@ function buildReportConfig(
 function resolveSinkHints(
 	result: MultiRunResult | WorkspaceRunResult,
 	config: ResolvedConfig,
-): { gameOutputHint?: string; outputFileHint?: string } {
+): Pick<MultiOutputContext, "gameOutputHint" | "outputFileHint"> {
 	const gameOutput = result.mode === "workspace" ? result.gameOutput : config.gameOutput;
 	const outputFile = result.mode === "workspace" ? result.outputFile : config.outputFile;
 
 	return {
-		...(gameOutput !== undefined ? { gameOutputHint: gameOutput } : {}),
-		...(outputFile !== undefined ? { outputFileHint: outputFile } : {}),
+		gameOutputHint: gameOutput,
+		outputFileHint: outputFile,
 	};
 }
 

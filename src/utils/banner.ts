@@ -15,19 +15,19 @@ interface BannerOptions extends BannerBarOptions {
 	body: Array<string>;
 }
 
-const levelStyles: Record<
-	BannerLevel,
-	{ badge: (text: string) => string; separator: (text: string) => string }
-> = {
+const levelStyles = {
 	error: {
-		badge: (text: string) => color.bgRed(color.white(color.bold(text))),
+		badge: (text) => color.bgRed(color.white(color.bold(text))),
 		separator: color.red,
 	},
 	warn: {
-		badge: (text: string) => color.bgYellow(color.black(color.bold(text))),
+		badge: (text) => color.bgYellow(color.black(color.bold(text))),
 		separator: color.yellow,
 	},
-};
+} satisfies Record<
+	BannerLevel,
+	{ badge: (text: string) => string; separator: (text: string) => string }
+>;
 
 export function formatBannerBar({ level, termWidth, title }: BannerBarOptions): string {
 	const width = termWidth ?? getDefaultWidth();

@@ -25,7 +25,7 @@ const pluginRequest = type({
 	action: "string",
 	config: { configs: "unknown[]" },
 	protocolVersion: "number",
-	request_id: "string",
+	requestId: "string",
 });
 
 function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
@@ -51,7 +51,7 @@ interface ReplyOptions {
 	rawJestOutput?: string;
 }
 
-function successResult(overrides: Record<string, unknown> = {}): string {
+function successResult(overrides: Partial<JestResult> = {}): string {
 	return JSON.stringify(
 		fromExact<JestResult>({
 			numFailedTests: 0,
@@ -87,8 +87,8 @@ function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): Moc
 						JSON.stringify({
 							gameOutput: reply.gameOutput ?? JSON.stringify([]),
 							jestOutput,
-							protocolVersion: 3,
-							request_id: message.request_id,
+							protocolVersion: 4,
+							requestId: message.requestId,
 							type: "results",
 						}),
 					),
@@ -121,8 +121,8 @@ describe("protocol version handshake", () => {
 						JSON.stringify({
 							gameOutput: "[]",
 							jestOutput: envelope([{ elapsedMs: 1, jestOutput: successResult() }]),
-							protocolVersion: 3,
-							request_id: captured!.request_id,
+							protocolVersion: 4,
+							requestId: captured!.requestId,
 							type: "results",
 						}),
 					),
@@ -151,7 +151,7 @@ describe("protocol version handshake", () => {
 		const socket = new MockWebSocket();
 
 		socket.send.mockImplementation((data) => {
-			const { request_id } = pluginRequest.assert(JSON.parse(data));
+			const { requestId } = pluginRequest.assert(JSON.parse(data));
 			queueMicrotask(() => {
 				socket.emit(
 					"message",
@@ -159,7 +159,7 @@ describe("protocol version handshake", () => {
 						JSON.stringify({
 							gameOutput: "[]",
 							jestOutput: envelope([{ jestOutput: successResult() }]),
-							request_id,
+							requestId,
 							type: "results",
 							// no protocolVersion — simulating stale plugin
 						}),
@@ -186,7 +186,7 @@ describe("protocol version handshake", () => {
 		const socket = new MockWebSocket();
 
 		socket.send.mockImplementation((data) => {
-			const { request_id } = pluginRequest.assert(JSON.parse(data));
+			const { requestId } = pluginRequest.assert(JSON.parse(data));
 			queueMicrotask(() => {
 				socket.emit(
 					"message",
@@ -195,7 +195,7 @@ describe("protocol version handshake", () => {
 							gameOutput: "[]",
 							jestOutput: envelope([{ jestOutput: successResult() }]),
 							protocolVersion: 2,
-							request_id,
+							requestId,
 							type: "results",
 						}),
 					),
@@ -218,7 +218,7 @@ describe("protocol version handshake", () => {
 		const socket = new MockWebSocket();
 
 		socket.send.mockImplementation((data) => {
-			const { request_id } = pluginRequest.assert(JSON.parse(data));
+			const { requestId } = pluginRequest.assert(JSON.parse(data));
 			queueMicrotask(() => {
 				socket.emit(
 					"message",
@@ -226,7 +226,7 @@ describe("protocol version handshake", () => {
 						JSON.stringify({
 							actualVersion: 1,
 							expectedVersion: 2,
-							request_id,
+							requestId,
 							type: "version_mismatch",
 						}),
 					),
@@ -256,7 +256,7 @@ describe(StudioBackend, () => {
 		// `unknown[]`): this test reads back each job's `testNamePattern`.
 		const configsRequest = type({
 			config: { configs: type({ "testNamePattern?": "string" }).array() },
-			request_id: "string",
+			requestId: "string",
 		});
 
 		const wss = getLastCreatedServer()!;
@@ -276,8 +276,8 @@ describe(StudioBackend, () => {
 								{ elapsedMs: 10, jestOutput: successResult() },
 								{ elapsedMs: 20, jestOutput: successResult() },
 							]),
-							protocolVersion: 3,
-							request_id: message.request_id,
+							protocolVersion: 4,
+							requestId: message.requestId,
 							type: "results",
 						}),
 					),
@@ -308,7 +308,7 @@ describe(StudioBackend, () => {
 		});
 
 		const workspaceRequest = type({
-			request_id: "string",
+			requestId: "string",
 			workspace: { entries: type({ pkg: "string", project: "string" }).array() },
 		});
 
@@ -318,7 +318,7 @@ describe(StudioBackend, () => {
 
 		socket.send.mockImplementation((data) => {
 			captured = workspaceRequest.assert(JSON.parse(data));
-			const { request_id } = captured;
+			const { requestId } = captured;
 			queueMicrotask(() => {
 				socket.emit(
 					"message",
@@ -329,8 +329,8 @@ describe(StudioBackend, () => {
 								{ jestOutput: successResult() },
 								{ jestOutput: successResult() },
 							]),
-							protocolVersion: 3,
-							request_id,
+							protocolVersion: 4,
+							requestId,
 							type: "results",
 						}),
 					),
@@ -494,8 +494,8 @@ describe(StudioBackend, () => {
 									}),
 								},
 							]),
-							protocolVersion: 3,
-							request_id: message.request_id,
+							protocolVersion: 4,
+							requestId: message.requestId,
 							type: "results",
 						}),
 					),
@@ -566,7 +566,7 @@ describe(StudioBackend, () => {
 		await expect(promise).rejects.toThrowWithMessage(Error, "server error");
 	});
 
-	it("should ignore messages whose request_id does not match", async () => {
+	it("should ignore messages whose requestId does not match", async () => {
 		expect.assertions(1);
 
 		const backend = new StudioBackend({ port: 0 });
@@ -583,8 +583,8 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: "wrong",
-							protocolVersion: 3,
-							request_id: "wrong-id",
+							protocolVersion: 4,
+							requestId: "wrong-id",
 							type: "results",
 						}),
 					),
@@ -594,8 +594,8 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: envelope([{ jestOutput: successResult() }]),
-							protocolVersion: 3,
-							request_id: message.request_id,
+							protocolVersion: 4,
+							requestId: message.requestId,
 							type: "results",
 						}),
 					),

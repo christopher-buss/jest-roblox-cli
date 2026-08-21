@@ -7,7 +7,18 @@ import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 vi.mock<typeof import("node:child_process")>(import("node:child_process"));
 vi.mock<typeof import("node:fs")>(import("node:fs"));
 
-function toLiteralNode(value: unknown): Record<string, unknown> {
+type LiteralValue = boolean | null | number | ReadonlyArray<LiteralValue> | string | undefined;
+
+interface LiteralNode {
+	entries?: Array<{ kind: "list"; value: LiteralNode }>;
+	kind: "expr";
+	location: { beginColumn: number; beginLine: number; endColumn: number; endLine: number };
+	tag: "boolean" | "nil" | "number" | "string" | "table";
+	text?: string;
+	value?: boolean | number;
+}
+
+function toLiteralNode(value: LiteralValue): LiteralNode {
 	const location = { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 };
 
 	if (typeof value === "string") {
@@ -34,7 +45,7 @@ function toLiteralNode(value: unknown): Record<string, unknown> {
 	return { kind: "expr", location, tag: "nil" };
 }
 
-function makeAstJson(config: Record<string, unknown>): string {
+function makeAstJson(config: Readonly<Record<string, LiteralValue>>): string {
 	const entries = Object.entries(config).map(([key, value]) => {
 		return { key: { text: key }, kind: "record", value: toLiteralNode(value) };
 	});

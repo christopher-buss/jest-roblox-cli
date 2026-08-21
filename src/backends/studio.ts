@@ -5,15 +5,15 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 
 import { parseEnvelope } from "./envelope.ts";
-import {
-	type Backend,
-	type BackendOptions,
-	type BackendResult,
-	isWorkspaceRun,
-	type ProjectJob,
-	type RawBackendEntry,
+import type {
+	Backend,
+	BackendOptions,
+	BackendResult,
+	ProjectJob,
+	RawBackendEntry,
 } from "./interface.ts";
-import { buildConfigEntries, buildWorkspaceEntries } from "./plugin-payload.ts";
+import { buildRunPayload } from "./plugin-payload.ts";
+import type { RunPayload } from "./plugin-payload.ts";
 
 const DEFAULT_STUDIO_TIMEOUT = 300_000;
 
@@ -32,38 +32,44 @@ interface StudioOptions {
 /**
  * Plugin/CLI protocol version. Must match `PROTOCOL_VERSION` in
  * `plugin/src/init.server.luau`. Increment when the runtime contract
- * changes — v3 added the run-mode workspace dispatch + version echo. Stale
+ * changes — v4 nests the fields the runner adds to Jest's result under
+ * `runner` and renames the frame key `request_id` to `requestId`. Stale
  * plugins return `version_mismatch` explicitly OR (older plugins) return a
  * `results` envelope that fails schema validation because the
  * `protocolVersion` echo is missing or a lower number — either way the CLI
  * surfaces a clean upgrade error instead of running with stale semantics.
  */
-const STUDIO_PROTOCOL_VERSION = 3;
+const STUDIO_PROTOCOL_VERSION = 4;
 
 const pluginResultSchema = type({
 	"gameOutput?": "string",
 	"jestOutput": "string",
-	"protocolVersion": "number == 3",
-	"request_id": "string",
+	"protocolVersion": "number == 4",
+	"requestId": "string",
 	"type": "'results'",
 });
 
 const pluginVersionMismatchSchema = type({
 	actualVersion: "number",
 	expectedVersion: "number",
-	request_id: "string",
+	requestId: "string",
 	type: "'version_mismatch'",
 });
 
 const pluginMessageSchema = pluginResultSchema.or(pluginVersionMismatchSchema);
 
 type PluginMessage = typeof pluginMessageSchema.infer;
+type RunTestsMessage = RunPayload & {
+	action: "run_tests";
+	protocolVersion: typeof STUDIO_PROTOCOL_VERSION;
+	requestId: string;
+};
 
 interface PluginMessageWait {
 	existingSocket: undefined | WebSocket;
 	reject: (err: Error) => void;
 	requestId: string;
-	requestMessage: object;
+	requestMessage: RunTestsMessage;
 	resolve: (message: PluginMessage) => void;
 	timeout: number;
 	wss: WebSocketServer;
@@ -72,7 +78,7 @@ interface PluginMessageWait {
 interface PluginSocketAttachment {
 	reject: (err: Error) => void;
 	requestId: string;
-	requestMessage: object;
+	requestMessage: RunTestsMessage;
 	resolve: (message: PluginMessage) => void;
 	socket: WebSocket;
 	timer: NodeJS.Timeout;
@@ -166,7 +172,7 @@ export class StudioBackend implements Backend {
 
 	private async waitForResultAsync(
 		wss: WebSocketServer,
-		requestMessage: object,
+		requestMessage: RunTestsMessage,
 		requestId: string,
 		existingSocket?: WebSocket,
 	): Promise<PluginMessage> {
@@ -189,6 +195,24 @@ export function createStudioBackend(options: StudioOptions): StudioBackend {
 }
 
 /**
+ * Build the `run_tests` WebSocket message the plugin forwards into
+ * `ExecuteRunModeAsync`. A workspace run (jobs carry `pkg`) sends
+ * `workspace.entries` — the staged-materializer shape the plugin's run-mode
+ * runner dispatches on. A single-/multi-project run sends `config.configs`
+ * plus the filtered `runtimeStubMounts` (parallel to `configs`) so the runner
+ * injects `jest.config` only where Rojo doesn't already sync a user-authored
+ * one.
+ */
+function buildRunTestsMessage(jobs: Array<ProjectJob>, requestId: string): RunTestsMessage {
+	return {
+		action: "run_tests",
+		protocolVersion: STUDIO_PROTOCOL_VERSION,
+		requestId,
+		...buildRunPayload(jobs),
+	};
+}
+
+/**
  * Send the `run_tests` request over `socket` and settle the run on the
  * plugin's reply — resolving the correlated `results`/`version_mismatch`
  * message, or rejecting on a message that fails validation, a disconnect, or a
@@ -202,7 +226,7 @@ function attachPluginSocket({
 	socket,
 	timer,
 }: PluginSocketAttachment): void {
-	socket.send(String(JSON.stringify(requestMessage)));
+	socket.send(JSON.stringify(requestMessage));
 
 	socket.on("message", (data: buffer.Buffer) => {
 		const raw = JSON.parse(data.toString());
@@ -214,7 +238,7 @@ function attachPluginSocket({
 			return;
 		}
 
-		if (message.request_id === requestId) {
+		if (message.requestId === requestId) {
 			clearTimeout(timer);
 			resolve(message);
 		}
@@ -263,28 +287,4 @@ function awaitPluginMessage({
 		clearTimeout(timer);
 		reject(err);
 	});
-}
-
-/**
- * Build the `run_tests` WebSocket message the plugin forwards into
- * `ExecuteRunModeAsync`. A workspace run (jobs carry `pkg`) sends
- * `workspace.entries` — the staged-materializer shape the plugin's run-mode
- * runner dispatches on. A single-/multi-project run sends `config.configs`
- * plus the filtered `runtimeStubMounts` (parallel to `configs`) so the runner
- * injects `jest.config` only where Rojo doesn't already sync a user-authored
- * one.
- */
-function buildRunTestsMessage(jobs: Array<ProjectJob>, requestId: string): object {
-	const base = {
-		action: "run_tests",
-		protocolVersion: STUDIO_PROTOCOL_VERSION,
-		request_id: requestId,
-	};
-
-	if (isWorkspaceRun(jobs)) {
-		return { ...base, workspace: { entries: buildWorkspaceEntries(jobs) } };
-	}
-
-	const { configs, runtimeStubMounts } = buildConfigEntries(jobs);
-	return { ...base, config: { configs }, runtimeStubMounts };
 }

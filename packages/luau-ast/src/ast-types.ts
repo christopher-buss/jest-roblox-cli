@@ -99,11 +99,17 @@ export interface AstExprTable extends AstExprBase {
 
 export interface AstExprUnary extends AstExprBase {
 	operand: AstExpr;
+	/**
+	 * Optional because the coverage parser strips it — only the mutation
+	 * parser keeps unary operators. Lute itself always supplies one.
+	 */
+	operator?: { location: LuauSpan; text: string };
 	tag: "unary";
 }
 
 export interface AstExprBinary extends AstExprBase {
 	lhsOperand: AstExpr;
+	operator: { location: LuauSpan; text: string };
 	rhsOperand: AstExpr;
 	tag: "binary";
 }
@@ -305,16 +311,6 @@ export type AstStat =
 	| AstStatWhile;
 
 // --- Extended types for mutation testing ---
-
-/** Binary expression with operator token info for mutation targeting. */
-export interface AstExprBinaryWithOperator extends AstExprBinary {
-	operator: { location: LuauSpan; text: string };
-}
-
-/** Unary expression with operator token info for mutation targeting. */
-export interface AstExprUnaryWithOperator extends AstExprUnary {
-	operator: { location: LuauSpan; text: string };
-}
 
 /** Compound assignment with operator text for mutation targeting. */
 export interface AstStatCompoundAssignWithOperator extends AstStatCompoundAssign {

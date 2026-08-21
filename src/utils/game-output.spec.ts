@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
@@ -61,7 +62,12 @@ describe(parseGameOutput, () => {
 });
 
 describe(writeGameOutput, () => {
-	const testDirectory = path.join(import.meta.dirname, "__test-output__");
+	// Under `os.tmpdir()`, not `import.meta.dirname`. Builds, typechecks, and
+	// lint runs hold handles on `src/` while the suite runs, and on Windows a
+	// recursive delete of a directory another process has open fails with
+	// EPERM — which flaked the cleanup and stranded the fixture in the source
+	// tree, where it then showed up as an untracked path.
+	const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "game-output-"));
 	const testFile = path.join(testDirectory, "game-output.json");
 
 	it("should write entries to file as JSON", () => {
@@ -168,7 +174,7 @@ describe(countGroupedEntries, () => {
 });
 
 describe(writeGroupedGameOutput, () => {
-	const testDirectory = path.join(import.meta.dirname, "__test-grouped__");
+	const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "game-output-grouped-"));
 	const testFile = path.join(testDirectory, "game-output.log");
 
 	it("should write grouped entries to file as JSON, creating parent dirs", () => {

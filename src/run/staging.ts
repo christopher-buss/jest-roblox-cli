@@ -27,6 +27,11 @@ export interface StagedRun extends StagedCoverage {
 	cacheRoot: string;
 }
 
+export interface BakedCoverage {
+	artifacts: CoverageArtifacts;
+	coverage: PrepareCoverageResult;
+}
+
 /**
  * The `--coverage` half of a staged run; absent fields when coverage is off.
  */
@@ -76,7 +81,7 @@ export function prepareBakedCoverage(
 	projects: Array<ResolvedProjectConfig>,
 	cacheRoot: string,
 	bakeStubs: boolean,
-): { artifacts: CoverageArtifacts; coverage: PrepareCoverageResult } {
+): BakedCoverage {
 	const coverage = prepareCoverage(
 		config,
 		bakeStubs

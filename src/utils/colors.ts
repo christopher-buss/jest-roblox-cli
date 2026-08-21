@@ -53,25 +53,25 @@ function extname(path: string): string {
 }
 
 // Map highlight.js CSS classes to terminal colors
-const HLJS_CLASS_TO_COLOR: Record<string, (text: string) => string> = {
-	"hljs-attr": color.blue,
-	"hljs-built_in": color.blue,
-	"hljs-comment": color.gray,
-	"hljs-function": color.blue,
-	"hljs-keyword": color.magenta,
-	"hljs-literal": color.blue,
-	"hljs-meta": color.gray,
-	"hljs-number": color.blue,
-	"hljs-operator": color.yellow,
-	"hljs-params": color.white,
-	"hljs-punctuation": color.yellow,
-	"hljs-regexp": color.cyan,
-	"hljs-string": color.green,
-	"hljs-subst": color.cyan,
-	"hljs-title": color.blue,
-	"hljs-type": color.yellow,
-	"hljs-variable": color.white,
-};
+const HLJS_CLASS_TO_COLOR = new Map([
+	["hljs-attr", color.blue],
+	["hljs-built_in", color.blue],
+	["hljs-comment", color.gray],
+	["hljs-function", color.blue],
+	["hljs-keyword", color.magenta],
+	["hljs-literal", color.blue],
+	["hljs-meta", color.gray],
+	["hljs-number", color.blue],
+	["hljs-operator", color.yellow],
+	["hljs-params", color.white],
+	["hljs-punctuation", color.yellow],
+	["hljs-regexp", color.cyan],
+	["hljs-string", color.green],
+	["hljs-subst", color.cyan],
+	["hljs-title", color.blue],
+	["hljs-type", color.yellow],
+	["hljs-variable", color.white],
+]);
 
 function convertHljsToAnsi(html: string): string {
 	// Process nested spans from inside out by repeatedly replacing
@@ -88,7 +88,7 @@ function convertHljsToAnsi(html: string): string {
 				const primaryClass = String(cssClasses).split(" ", 1)[0];
 				assert(primaryClass !== undefined, "split always returns ≥1 element");
 				const text = String(content);
-				const colorFunc = HLJS_CLASS_TO_COLOR[primaryClass];
+				const colorFunc = HLJS_CLASS_TO_COLOR.get(primaryClass);
 				return colorFunc?.(text) ?? text;
 			},
 		);

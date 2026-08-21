@@ -720,6 +720,7 @@ describe("luau-visitor", () => {
 				kind: "expr",
 				lhsOperand: numberOne,
 				location: span,
+				operator: { location: span, text: "+" },
 				rhsOperand: rhs,
 				tag: "binary",
 			} satisfies AstExprBinary;
@@ -1119,6 +1120,7 @@ describe("luau-visitor", () => {
 				kind: "expr",
 				lhsOperand: numberOne,
 				location: span,
+				operator: { location: span, text: "+" },
 				rhsOperand: numberOne,
 				tag: "binary",
 			} satisfies AstExprBinary;

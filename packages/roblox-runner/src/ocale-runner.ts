@@ -1,4 +1,10 @@
-import type { HttpClient, OpenCloudError, Result, SleepFunc } from "@bedrock-rbx/ocale";
+import type {
+	HttpClient,
+	OpenCloudClientOptions,
+	OpenCloudError,
+	Result,
+	SleepFunc,
+} from "@bedrock-rbx/ocale";
 import {
 	ApiError,
 	NetworkError,
@@ -10,6 +16,8 @@ import type {
 	FailedTask,
 	LuauExecutionTask,
 	LuauExecutionTaskRef,
+	SubmitAtHeadParameters,
+	SubmitAtVersionParameters,
 } from "@bedrock-rbx/ocale/luau-execution";
 import { LuauExecutionClient } from "@bedrock-rbx/ocale/luau-execution";
 import type { PublishParameters } from "@bedrock-rbx/ocale/places";
@@ -27,6 +35,13 @@ import type {
 	UploadPlaceOptions,
 	UploadPlaceResult,
 } from "./types.ts";
+
+interface TaskParametersInput {
+	readonly credentials: RunnerCredentials;
+	readonly placeVersion: number | undefined;
+	readonly script: string;
+	readonly timeoutSeconds: number;
+}
 
 const MAX_TASK_TIMEOUT_SECONDS = 300;
 
@@ -87,7 +102,7 @@ const UPLOAD_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
 const POLL_RETRYABLE_TRANSPORT_CODES = [...TRANSIENT_TRANSPORT_CODES, RESPONSE_UNPARSEABLE];
 
 export interface OcaleRunnerOptions {
-	baseUrl?: string;
+	baseUrl?: string | undefined;
 	httpClient?: HttpClient;
 	/**
 	 * Max retry attempts the underlying Open Cloud client makes per request.
@@ -96,7 +111,7 @@ export interface OcaleRunnerOptions {
 	 * `retry-after` is honored) instead of surfacing the rate limit — useful
 	 * when many runs share one place's per-minute upload quota.
 	 */
-	maxRetries?: number;
+	maxRetries?: number | undefined;
 	readFile?: (filePath: string) => buffer.Buffer;
 	sleep?: SleepFunc;
 }
@@ -109,13 +124,23 @@ export class OcaleRunner implements RemoteRunner {
 
 	constructor(credentials: RunnerCredentials, options?: OcaleRunnerOptions) {
 		this.credentials = credentials;
-		const clientOptions = {
-			apiKey: credentials.apiKey,
-			...(options?.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-			...(options?.httpClient !== undefined ? { httpClient: options.httpClient } : {}),
-			...(options?.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
-			...(options?.sleep !== undefined ? { sleep: options.sleep } : {}),
-		};
+		let clientOptions: OpenCloudClientOptions = { apiKey: credentials.apiKey };
+		if (options?.baseUrl !== undefined) {
+			clientOptions = { ...clientOptions, baseUrl: options.baseUrl };
+		}
+
+		if (options?.httpClient !== undefined) {
+			clientOptions = { ...clientOptions, httpClient: options.httpClient };
+		}
+
+		if (options?.maxRetries !== undefined) {
+			clientOptions = { ...clientOptions, maxRetries: options.maxRetries };
+		}
+
+		if (options?.sleep !== undefined) {
+			clientOptions = { ...clientOptions, sleep: options.sleep };
+		}
+
 		this.luau = new LuauExecutionClient(clientOptions);
 		this.places = new PlacesClient(clientOptions);
 		this.readFileFn = options?.readFile ?? ((filePath) => fs.readFileSync(filePath));
@@ -136,16 +161,16 @@ export class OcaleRunner implements RemoteRunner {
 		// 300s ceiling already outlasts the deadline and needs no grace.
 		const pollBudgetMs = Math.max(timeout, timeoutSeconds * 1000 + TASK_DEADLINE_GRACE_MS);
 
-		const submitted = await this.luau.tasks.submit(
-			{
-				placeId: this.credentials.placeId,
-				script,
-				timeoutSeconds,
-				universeId: this.credentials.universeId,
-				...(placeVersion !== undefined ? { versionId: String(placeVersion) } : {}),
-			},
-			{ retryableTransportCodes: TRANSIENT_TRANSPORT_CODES, timeout },
-		);
+		const taskParameters = buildTaskParameters({
+			credentials: this.credentials,
+			placeVersion,
+			script,
+			timeoutSeconds,
+		});
+		const submitted = await this.luau.tasks.submit(taskParameters, {
+			retryableTransportCodes: TRANSIENT_TRANSPORT_CODES,
+			timeout,
+		});
 		if (!submitted.success) {
 			throw toSubmitError(submitted.err);
 		}
@@ -433,6 +458,25 @@ function toPollError(
  * @param err - The error the submit returned.
  * @returns The error to throw, carrying the ocale error as its cause.
  */
+/**
+ * The task a submit describes. `versionId` is present or the key is absent —
+ * the parameters never carry it as `undefined`, which the client would send.
+ */
+function buildTaskParameters({
+	credentials,
+	placeVersion,
+	script,
+	timeoutSeconds,
+}: TaskParametersInput): SubmitAtHeadParameters | SubmitAtVersionParameters {
+	const base = {
+		placeId: credentials.placeId,
+		script,
+		timeoutSeconds,
+		universeId: credentials.universeId,
+	};
+	return placeVersion === undefined ? base : { ...base, versionId: String(placeVersion) };
+}
+
 function toSubmitError(err: OpenCloudError): Error {
 	return new Error(err.message, { cause: err });
 }

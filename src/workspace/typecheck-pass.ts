@@ -69,7 +69,7 @@ export async function runWorkspaceTypecheckPassAsync(
 			rootDir: group.cwd,
 			spawnTimeout: policy.spawnTimeout,
 			timeout: policy.timeout,
-			...(group.tsconfig !== undefined ? { tsconfig: group.tsconfig } : {}),
+			tsconfig: group.tsconfig,
 		});
 		const stamped = composePackageIdentity(raw, policy.pkg);
 		// A package with two distinct-tsconfig groups folds into one per-package
@@ -96,7 +96,7 @@ export function attachTypecheck(
 
 	return {
 		results,
-		...(pass.result !== undefined ? { typecheckResult: pass.result } : {}),
+		typecheckResult: pass.result,
 	};
 }
 

@@ -1,9 +1,4 @@
-import type {
-	AstExprBinary,
-	AstExprBinaryWithOperator,
-	AstExprIfElse,
-	AstStatIf,
-} from "@isentinel/luau-ast";
+import type { AstExprBinary, AstExprIfElse, AstStatIf } from "@isentinel/luau-ast";
 
 import type { LuauVisitor } from "../luau/visitor.ts";
 import { getBodyFirstStatement } from "./collect-functions.ts";
@@ -18,18 +13,10 @@ export function createBranchCollector(accumulator: CoverageAccumulator): Partial
 }
 
 function collectBinaryBranch(node: AstExprBinary, accumulator: CoverageAccumulator): boolean {
-	// Lute's binary node carries an operator token; coverage's
-	// parse-ast keeps only its text. Only `and`/`or` short-circuit, so
-	// only they are branches — every other binary operator (arithmetic,
-	// comparison, concat) just keeps traversing into its operands.
-	//
-	// `AstExprBinary` has no `operator` field — `parse-ast.luau`
-	// populates it at runtime via its `KEEP["binary"]` allowlist — so
-	// probe for it through `Partial`. `AstExprBinaryWithOperator` was
-	// introduced for mutation testing, but its operator text is exactly
-	// what coverage needs; the reuse is intentional.
-	const withOperator = node as Partial<AstExprBinaryWithOperator>;
-	const operator = withOperator.operator?.text;
+	// Only `and`/`or` short-circuit, so only they are branches — every other
+	// binary operator (arithmetic, comparison, concat) just keeps traversing
+	// into its operands.
+	const operator = node.operator.text;
 	if (operator !== "and" && operator !== "or") {
 		return true;
 	}

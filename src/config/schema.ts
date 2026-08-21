@@ -11,7 +11,7 @@ export type Backend = "auto" | "open-cloud" | "studio" | "studio-cli";
 
 export type CoverageReporter = keyof ReportOptions;
 
-export type FormatterEntry = [string, Record<string, unknown>] | string;
+export type FormatterEntry = [string, object] | string;
 
 /**
  * pretty-format options controlling how snapshots are serialized.
@@ -98,7 +98,7 @@ export interface SharedTestConfig {
 	/** Test environment used to run the tests. */
 	testEnvironment?: string;
 	/** Options forwarded to the test environment. */
-	testEnvironmentOptions?: Record<string, unknown> | string;
+	testEnvironmentOptions?: object | string;
 	/** Glob patterns Jest uses to detect test files. */
 	testMatch?: Array<string>;
 	/**
@@ -435,7 +435,7 @@ export type UndefinedTolerant<T> = { [K in keyof T]: T[K] | undefined };
  * Resolved config flattens the root CLI keys with the `test:` jest options
  * so downstream code (executor, projects, test-script, formatters) can read
  * options uniformly. Refactoring those consumers to read `config.test.foo`
- * is follow-up work; this shape lets the structural split land first.
+ * is follow-up work; this representation lets the structural split land first.
  *
  * Its optional properties tolerate an explicit `undefined`: every producer
  * (`mergeCliWithConfig`, `narrowForLuauRun`) writes the key unconditionally,
@@ -687,7 +687,7 @@ const typecheckConfigSchema = type({
 	"tsconfig?": "string",
 });
 
-const SHARED_TEST_SCHEMA_SHAPE = {
+const sharedTestDefinition = type.define({
 	"automock?": "boolean",
 	"clearMocks?": "boolean",
 	"injectGlobals?": "boolean",
@@ -707,11 +707,11 @@ const SHARED_TEST_SCHEMA_SHAPE = {
 	"testRegex?": type("string").or(type("string[]")),
 	"testTimeout?": "number",
 	"typecheck?": typecheckConfigSchema,
-} as const satisfies Record<string, unknown>;
+});
 
 const projectTestConfigSchema = type({
 	"+": "reject",
-	...SHARED_TEST_SCHEMA_SHAPE,
+	...sharedTestDefinition,
 	"displayName": type("string").or(displayNameSchema),
 	"exclude?": "string[]",
 	"include": "string[]",
@@ -738,7 +738,7 @@ const projectEntrySchema = type("string").or(inlineProjectSchema);
 
 const globalTestConfigSchema = type({
 	"+": "reject",
-	...SHARED_TEST_SCHEMA_SHAPE,
+	...sharedTestDefinition,
 	"all?": "boolean",
 	"bail?": type("boolean").or(type("number")),
 	"changedSince?": "string",
@@ -965,8 +965,8 @@ export const PROJECT_TEST_KEYS: ReadonlySet<string> = new Set<keyof ProjectTestC
 /**
  * Keys excluded from jest argv when building the test runner script. Includes
  * all CLI/runner-level keys plus the coverage keys, which live under `test:`
- * by config shape but are consumed by the runner's lute-based coverage layer
- * (not jest itself).
+ * by configuration layout but are consumed by the runner's lute-based coverage
+ * layer (not jest itself).
  */
 export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
 	...ROOT_CLI_KEYS_LIST,
@@ -985,11 +985,11 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
  * `assertNoLegacyKeys` emits a migration error naming these so upgraders see
  * the targets, mirroring the "wrap jest options in a `test:` block" directive.
  */
-const MIGRATED_TYPECHECK_KEYS: Readonly<Record<string, string>> = {
-	typecheck: "test.typecheck.enabled",
-	typecheckOnly: "test.typecheck.only",
-	typecheckTsconfig: "test.typecheck.tsconfig",
-};
+const MIGRATED_TYPECHECK_KEYS = new Map([
+	["typecheck", "test.typecheck.enabled"],
+	["typecheckOnly", "test.typecheck.only"],
+	["typecheckTsconfig", "test.typecheck.tsconfig"],
+]);
 
 /**
  * Source of truth for jest-passthrough vs CLI key partitioning.  Used by
@@ -1043,14 +1043,14 @@ function assertNoLegacyKeys(raw: unknown): void {
 	}
 
 	const migrated = Object.keys(raw)
-		.filter((key) => key in MIGRATED_TYPECHECK_KEYS)
+		.flatMap((key) => {
+			const replacement = MIGRATED_TYPECHECK_KEYS.get(key);
+			return replacement === undefined ? [] : [`${key} → ${replacement}`];
+		})
 		.sort();
 	if (migrated.length > 0) {
-		const targets = migrated
-			.map((key) => `${key} → ${MIGRATED_TYPECHECK_KEYS[key]}`)
-			.join(", ");
 		throw new Error(
-			`\`typecheck\` options have moved under \`test.typecheck\`. Replace these keys: ${targets}`,
+			`\`typecheck\` options have moved under \`test.typecheck\`. Replace these keys: ${migrated.join(", ")}`,
 		);
 	}
 
@@ -1067,7 +1067,7 @@ function assertNoLegacyKeys(raw: unknown): void {
 /**
  * Identity helper for authoring a typed `jest.config.*` file. Returns its
  * input unchanged; it exists purely to give editors autocompletion and
- * type-checking for the root config shape (`Config` plus the c12 layer props
+ * type-checking for the root config contract (`Config` plus the c12 layer props
  * on `ConfigInput`).
  *
  * Use it as the default export of a config file discovered by c12 (`.ts`,
@@ -1084,7 +1084,7 @@ export const defineConfig: (input: ConfigInput) => ConfigInput = createDefineCon
  * Identity helper for a single entry inside `test.projects`, mirroring
  * {@link defineConfig} for per-project overrides. Returns its input unchanged
  * and exists only for editor autocompletion and type-checking of the
- * `InlineProjectConfig` shape — a `test:` block carrying the project's
+ * `InlineProjectConfig` contract — a `test:` block carrying the project's
  * `include`/`displayName` plus any shared per-project jest options.
  */
 export const defineProject: (input: InlineProjectConfig) => InlineProjectConfig =

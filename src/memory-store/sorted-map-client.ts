@@ -1,4 +1,8 @@
-import type { CreateSortedMapItemParameters } from "@bedrock-rbx/ocale/storage";
+import type { OpenCloudClientOptions } from "@bedrock-rbx/ocale";
+import type {
+	CreateSortedMapItemParameters,
+	ListSortedMapItemsParameters,
+} from "@bedrock-rbx/ocale/storage";
 import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
 import { type } from "arktype";
@@ -49,7 +53,7 @@ export interface StreamingResultReader {
 
 export interface StreamingResultClientOptions {
 	/** Override the Open Cloud base URL (default: live Roblox endpoint). */
-	baseUrl?: string;
+	baseUrl?: string | undefined;
 	credentials: { apiKey: string; universeId: string };
 	/**
 	 * Per-run UUID-keyed sorted-map identifier shared between materializer and
@@ -79,12 +83,12 @@ export class StreamingResultClient {
 		this.mapId = options.mapId;
 		this.universeId = options.credentials.universeId;
 		this.ttlSeconds = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
-		this.storage =
-			options.storageFactory?.() ??
-			new StorageClient({
-				apiKey: options.credentials.apiKey,
-				...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-			});
+		let clientOptions: OpenCloudClientOptions = { apiKey: options.credentials.apiKey };
+		if (options.baseUrl !== undefined) {
+			clientOptions = { ...clientOptions, baseUrl: options.baseUrl };
+		}
+
+		this.storage = options.storageFactory?.() ?? new StorageClient(clientOptions);
 	}
 
 	public async deleteAsync(itemId: string): Promise<void> {
@@ -105,12 +109,16 @@ export class StreamingResultClient {
 		let pageToken: string | undefined;
 
 		do {
-			const result = await this.storage.sortedMaps.list({
+			let parameters: ListSortedMapItemsParameters = {
 				mapId: this.mapId,
 				maxPageSize: LIST_PAGE_SIZE,
 				universeId: this.universeId,
-				...(pageToken !== undefined ? { pageToken } : {}),
-			});
+			};
+			if (pageToken !== undefined) {
+				parameters = { ...parameters, pageToken };
+			}
+
+			const result = await this.storage.sortedMaps.list(parameters);
 			if (!result.success) {
 				throw new Error(`Failed to read streaming results: ${result.err.message}`, {
 					cause: result.err,
@@ -133,7 +141,7 @@ export class StreamingResultClient {
 			mapId: this.mapId,
 			ttl: this.ttlSeconds,
 			universeId: this.universeId,
-			value: encodeStreamingResult(entry),
+			value: { ...entry },
 		};
 		const result = await this.storage.sortedMaps.create(parameters);
 		if (!result.success) {
@@ -142,19 +150,6 @@ export class StreamingResultClient {
 			});
 		}
 	}
-}
-
-/**
- * Identity-style encoder: streaming entries round-trip as plain JSON
- * objects. Spread (not field-by-field) so future additions to
- * {@link StreamingResultEntry} flow through automatically; widened to
- * `Record<string, ...>` so the SDK's `JSONObject`-shaped wire types
- * accept the value.
- */
-export function encodeStreamingResult(
-	entry: StreamingResultEntry,
-): Record<string, boolean | number | string> {
-	return { ...entry };
 }
 
 /**

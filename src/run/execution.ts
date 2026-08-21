@@ -21,7 +21,7 @@ import type { PendingJob, RunDiscovery, TestPlan } from "./test-plan.ts";
 import type { ProjectResult, RunOptions } from "./types.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
-const VERSION: string = packageJson.version;
+const VERSION = packageJson.version;
 
 export interface ExecutionInput {
 	cli: RunOptions["cli"];

@@ -23,8 +23,18 @@ interface TaskBodyOverrides {
 	state?: "CANCELLED" | "COMPLETE" | "FAILED" | "PROCESSING" | "QUEUED";
 }
 
-function taskBody(overrides: TaskBodyOverrides = {}): Record<string, unknown> {
-	return {
+interface TaskBody {
+	createTime: string;
+	error?: { code: string; message: string };
+	output?: { results: ReadonlyArray<unknown> };
+	path: string;
+	state: "CANCELLED" | "COMPLETE" | "FAILED" | "PROCESSING" | "QUEUED";
+	updateTime: string;
+	user: string;
+}
+
+function taskBody(overrides: TaskBodyOverrides = {}): TaskBody {
+	const body: TaskBody = {
 		createTime: "2026-01-01T00:00:00Z",
 		path:
 			overrides.path ??
@@ -32,9 +42,16 @@ function taskBody(overrides: TaskBodyOverrides = {}): Record<string, unknown> {
 		state: overrides.state ?? "QUEUED",
 		updateTime: "2026-01-01T00:00:30Z",
 		user: "user-1",
-		...(overrides.error !== undefined ? { error: overrides.error } : {}),
-		...(overrides.output !== undefined ? { output: overrides.output } : {}),
 	};
+	if (overrides.error !== undefined) {
+		body.error = overrides.error;
+	}
+
+	if (overrides.output !== undefined) {
+		body.output = overrides.output;
+	}
+
+	return body;
 }
 
 const submitBodySchema = type({ timeout: "string" });
@@ -203,7 +220,7 @@ describe(OcaleRunner, () => {
 
 			const caught: unknown = await runner
 				.uploadPlaceAsync({ placeFilePath: "/work/p.rbxl" })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -637,7 +654,7 @@ describe(OcaleRunner, () => {
 
 			const caught: unknown = await makeAdvancingRunner(http)
 				.executeScriptAsync({ script: "return 1", timeout: 1000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 
@@ -735,7 +752,7 @@ describe(OcaleRunner, () => {
 
 			const caught: unknown = await runner
 				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
-				.catch((err: unknown) => err);
+				.catch((err) => err);
 
 			assert(caught instanceof Error);
 

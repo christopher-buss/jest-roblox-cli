@@ -18,7 +18,7 @@ function reset(): void {
 	});
 }
 
-function writeProject(tree: unknown): void {
+function writeProject(tree: JSONObject): void {
 	vol.mkdirSync("/project", { recursive: true });
 	vol.writeFileSync(PROJECT, JSON.stringify({ name: "test", tree }));
 }

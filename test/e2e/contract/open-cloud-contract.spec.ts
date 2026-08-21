@@ -5,6 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 
+import type { JestResult } from "../../../src/types/jest-result.ts";
 import { type FakeOpenCloudTask, startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
 
 interface HttpResponse {
@@ -72,7 +73,7 @@ const fake: ContractCase = {
 		return { baseUrl: server.baseUrl, placeId: "456", universeId: "123" };
 	},
 };
-const cases: Array<{ name: string; testCase: ContractCase }> =
+const cases =
 	liveCase === undefined
 		? [{ name: "fake", testCase: fake }]
 		: [
@@ -197,7 +198,7 @@ function createHttpClient(apiKey: string): HttpClient {
 	return {
 		// eslint-disable-next-line small-rules/require-async-suffix -- HttpClient contract uses the external method name.
 		async request(method, url, options) {
-			const headers: Record<string, string> = {
+			const headers = {
 				"x-api-key": apiKey,
 				...options?.headers,
 			};
@@ -213,7 +214,7 @@ function createHttpClient(apiKey: string): HttpClient {
 					const serialized = JSON.stringify(options.body);
 					if (serialized !== undefined) {
 						fetchOptions.body = serialized;
-						headers["Content-Type"] = "application/json";
+						fetchOptions.headers = { ...headers, "Content-Type": "application/json" };
 					}
 				}
 			}
@@ -334,7 +335,7 @@ function parseEnvelope(raw: string | undefined): typeof envelopeSchema.infer | u
 	return result;
 }
 
-function buildPassingJestPayload(): Record<string, unknown> {
+function buildPassingJestPayload(): JestResult {
 	return {
 		numFailedTests: 0,
 		numPassedTests: 0,

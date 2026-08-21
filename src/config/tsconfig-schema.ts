@@ -6,20 +6,20 @@ export interface TsconfigCompilerOptions {
 	rootDirs?: Array<string>;
 }
 
-export interface TsconfigShape {
+export interface ExecutorTsconfig {
 	compilerOptions?: TsconfigCompilerOptions;
 }
 
 /**
  * Arktype schema for the subset of `tsconfig.json` the executor cares about.
  * Validating callers (production + tests) brand the parsed JSON as
- * `TsconfigShape` via `.as<...>()` — no manual cast or `JSONValue` erasure
+ * `ExecutorTsconfig` via `.as<...>()` — no manual cast or `JSONValue` erasure
  * needed.
  */
-export const tsconfigShapeSchema: Type<TsconfigShape> = type({
+export const executorTsconfigSchema: Type<ExecutorTsconfig> = type({
 	"compilerOptions?": {
 		"outDir?": "string",
 		"rootDir?": "string | null",
 		"rootDirs?": "string[]",
 	},
-}).as<TsconfigShape>();
+}).as<ExecutorTsconfig>();

@@ -3,7 +3,7 @@ import { getTsconfig } from "get-tsconfig";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { type TsconfigCompilerOptions, tsconfigShapeSchema } from "../config/tsconfig-schema.ts";
+import { executorTsconfigSchema, type TsconfigCompilerOptions } from "../config/tsconfig-schema.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 import { isTsSource } from "../utils/extensions.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
@@ -32,7 +32,7 @@ export function isLuauProject(
 
 export function readTsconfigMapping(tsconfigPath: string): TsconfigDirectories | undefined {
 	try {
-		const raw = tsconfigShapeSchema(JSON.parse(fs.readFileSync(tsconfigPath, "utf-8")));
+		const raw = executorTsconfigSchema(JSON.parse(fs.readFileSync(tsconfigPath, "utf-8")));
 		if (raw instanceof type.errors || raw.compilerOptions === undefined) {
 			return undefined;
 		}
@@ -58,9 +58,7 @@ export function resolveAllTsconfigMappings(projectRoot: string): Array<TsconfigM
 
 	for (const file of files) {
 		const tsconfig = getTsconfig(resolvedRoot, file);
-		const compilerOptions = tsconfig?.config.compilerOptions as
-			| TsconfigCompilerOptions
-			| undefined;
+		const compilerOptions = tsconfig?.config.compilerOptions;
 		if (compilerOptions?.outDir === undefined) {
 			continue;
 		}

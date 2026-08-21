@@ -15,7 +15,7 @@ export interface LuteSpawnOptions {
 	/** Path to the Luau script to run. */
 	scriptPath: string;
 	/** Timeout in ms (default: 30_000). */
-	timeout?: number;
+	timeout?: number | undefined;
 }
 
 /**

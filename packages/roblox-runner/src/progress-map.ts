@@ -1,4 +1,5 @@
-import type { HttpClient, SleepFunc } from "@bedrock-rbx/ocale";
+import type { HttpClient, OpenCloudClientOptions, SleepFunc } from "@bedrock-rbx/ocale";
+import type { ListSortedMapItemsParameters } from "@bedrock-rbx/ocale/storage";
 import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
 export interface ProgressMapOptions<T> {
@@ -32,12 +33,20 @@ export class ProgressMap<T> {
 		this.decode = options.decode;
 		this.mapId = options.mapId;
 		this.universeId = options.universeId;
-		this.storage = new StorageClient({
-			apiKey: options.apiKey,
-			...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-			...(options.httpClient !== undefined ? { httpClient: options.httpClient } : {}),
-			...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
-		});
+		let clientOptions: OpenCloudClientOptions = { apiKey: options.apiKey };
+		if (options.baseUrl !== undefined) {
+			clientOptions = { ...clientOptions, baseUrl: options.baseUrl };
+		}
+
+		if (options.httpClient !== undefined) {
+			clientOptions = { ...clientOptions, httpClient: options.httpClient };
+		}
+
+		if (options.sleep !== undefined) {
+			clientOptions = { ...clientOptions, sleep: options.sleep };
+		}
+
+		this.storage = new StorageClient(clientOptions);
 	}
 
 	/**
@@ -50,12 +59,16 @@ export class ProgressMap<T> {
 		let pageToken: string | undefined;
 
 		do {
-			const result = await this.storage.sortedMaps.list({
+			let parameters: ListSortedMapItemsParameters = {
 				mapId: this.mapId,
 				maxPageSize: PAGE_SIZE,
 				universeId: this.universeId,
-				...(pageToken !== undefined ? { pageToken } : {}),
-			});
+			};
+			if (pageToken !== undefined) {
+				parameters = { ...parameters, pageToken };
+			}
+
+			const result = await this.storage.sortedMaps.list(parameters);
 			if (!result.success) {
 				throw new Error(`Failed to read progress map: ${result.err.message}`);
 			}

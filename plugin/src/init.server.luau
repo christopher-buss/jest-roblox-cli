@@ -12,11 +12,12 @@ local WEBSOCKET_URL = "ws://localhost:3001"
 local RECONNECT_DELAY = 0.1
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
--- `src/backends/studio.ts`. Bumped when the runtime contract changes — v3 added
--- the run-mode workspace dispatch + version echo. The plugin rejects mismatched
--- CLI versions with a `version_mismatch` response so users see a clear upgrade
+-- `src/backends/studio.ts`. Bumped when the runtime contract changes — v4
+-- nests the fields the runner adds to Jest's result under `runner` and renames
+-- the frame key `request_id` to `requestId`. The plugin rejects mismatched CLI
+-- versions with a `version_mismatch` response so users see a clear upgrade
 -- message rather than running with stale behaviour or an opaque timeout.
-local PROTOCOL_VERSION = 3
+local PROTOCOL_VERSION = 4
 
 local IsDebug = ReplicatedStorage:GetAttribute("JEST_ROBLOX_DEBUG") == true
 ReplicatedStorage:GetAttributeChangedSignal("JEST_ROBLOX_DEBUG"):Connect(function(): ()
@@ -120,7 +121,7 @@ local function connect(): ()
 						type = "version_mismatch",
 						actualVersion = PROTOCOL_VERSION,
 						expectedVersion = clientVersion or 0,
-						request_id = message.request_id,
+						requestId = message.requestId,
 					}))
 					return
 				end
@@ -150,7 +151,7 @@ local function connect(): ()
 					ws:Send(HttpService:JSONEncode({
 						type = "results",
 						protocolVersion = PROTOCOL_VERSION,
-						request_id = message.request_id,
+						requestId = message.requestId,
 						jestOutput = HttpService:JSONEncode({
 							success = false,
 							err = tostring(result),
@@ -167,7 +168,7 @@ local function connect(): ()
 					-- the CLI's schema validation rejects it as malformed
 					-- rather than treating it as a valid v1 success.
 					protocolVersion = PROTOCOL_VERSION,
-					request_id = message.request_id,
+					requestId = message.requestId,
 					jestOutput = result.jestOutput or HttpService:JSONEncode({
 						success = false,
 						err = "No jestOutput in run-mode result",

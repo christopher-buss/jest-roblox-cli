@@ -96,7 +96,7 @@ export function buildProjectResult(
 	}
 
 	// Length check, not `??`: an empty {} from a future malformed
-	// producer must not mask a populated parsed._snapshotWrites
+	// producer must not mask a populated runner.snapshotWrites
 	// scraped from jestOutput (single-package runner.luau path).
 	const hasEntryWrites = snapshotWrites !== undefined && Object.keys(snapshotWrites).length > 0;
 

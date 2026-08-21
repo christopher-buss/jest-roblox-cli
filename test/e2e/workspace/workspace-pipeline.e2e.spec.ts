@@ -443,7 +443,7 @@ describe("workspace snapshot writeback lands per-package on disk", () => {
 	);
 });
 
-function liveEnvironment(): Record<string, string | undefined> {
+function liveEnvironment() {
 	return {
 		JEST_ROBLOX_LIVE: process.env["JEST_ROBLOX_LIVE"],
 		ROBLOX_OPEN_CLOUD_API_KEY: process.env["ROBLOX_OPEN_CLOUD_API_KEY"],
@@ -452,7 +452,7 @@ function liveEnvironment(): Record<string, string | undefined> {
 	};
 }
 
-function passingJestOutput(overrides: Record<string, unknown> = {}): string {
+function passingJestOutput(): string {
 	return JSON.stringify({
 		numFailedTests: 0,
 		numPassedTests: 1,
@@ -461,6 +461,5 @@ function passingJestOutput(overrides: Record<string, unknown> = {}): string {
 		startTime: 0,
 		success: true,
 		testResults: [],
-		...overrides,
 	});
 }

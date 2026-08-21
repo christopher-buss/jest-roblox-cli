@@ -1,6 +1,7 @@
 import type { Mount, PathClassifier, PathKind, RojoTreeNode } from "@isentinel/rojo-utils";
 import { collectMounts, collectPaths, findInTree, pruneAncestors } from "@isentinel/rojo-utils";
 
+import { type } from "arktype";
 import { loadConfig as c12LoadConfig } from "c12";
 import fs from "node:fs";
 import * as path from "node:path";
@@ -57,7 +58,12 @@ export interface ResolvedProjectConfig {
 	typecheck?: TypecheckConfig | undefined;
 }
 
-export function extractStaticRoot(pattern: string): { glob: string; root: string } {
+export interface StaticRootPattern {
+	glob: string;
+	root: string;
+}
+
+export function extractStaticRoot(pattern: string): StaticRootPattern {
 	const firstGlobIndex = GLOB_CHARACTER.exec(pattern)?.index ?? -1;
 
 	if (firstGlobIndex === -1) {
@@ -139,7 +145,7 @@ export function applyProjectRoot(
 }
 
 export function createFsClassifier(rootDirectory: string): PathClassifier {
-	return function classify(fsPath: string): PathKind {
+	return function classify(fsPath): PathKind {
 		const absolute = path.isAbsolute(fsPath) ? fsPath : path.resolve(rootDirectory, fsPath);
 		const stat = fs.statSync(absolute, { throwIfNoEntry: false });
 		if (stat === undefined) {
@@ -408,7 +414,7 @@ function isInlineProjectConfig(config: unknown): config is InlineProjectConfig {
 		return false;
 	}
 
-	const { test } = config as { test?: unknown };
+	const { test } = config;
 	return typeof test === "object" && test !== null;
 }
 
@@ -420,31 +426,23 @@ function unwrapProjectConfig(config: InlineProjectConfig | ProjectTestConfig): P
 	return config;
 }
 
-function copyLuauOptionalFields(raw: Record<string, unknown>, config: ProjectTestConfig): void {
-	for (const key of LUAU_BOOLEAN_KEYS) {
-		if (typeof raw[key] === "boolean") {
-			Reflect.set(config, key, raw[key]);
-		}
-	}
-
-	for (const key of LUAU_NUMBER_KEYS) {
-		if (typeof raw[key] === "number") {
-			Reflect.set(config, key, raw[key]);
-		}
-	}
-
-	for (const key of LUAU_STRING_KEYS) {
-		if (typeof raw[key] === "string") {
-			Reflect.set(config, key, raw[key]);
-		}
-	}
-
-	for (const key of LUAU_STRING_ARRAY_KEYS) {
-		if (Array.isArray(raw[key])) {
-			Reflect.set(config, key, raw[key]);
-		}
-	}
-}
+const luauProjectConfigSchema = type({
+	"+": "delete",
+	"automock?": "boolean",
+	"clearMocks?": "boolean",
+	"displayName": "string",
+	"injectGlobals?": "boolean",
+	"mockDataModel?": "boolean",
+	"resetMocks?": "boolean",
+	"resetModules?": "boolean",
+	"restoreMocks?": "boolean",
+	"setupFiles?": "string[]",
+	"setupFilesAfterEnv?": "string[]",
+	"slowTestThreshold?": "number",
+	"testEnvironment?": "string",
+	"testMatch?": "string[]",
+	"testTimeout?": "number",
+});
 
 function buildProjectConfigFromLuau(
 	luauConfigPath: string,
@@ -457,9 +455,12 @@ function buildProjectConfigFromLuau(
 		throw new Error(`Luau config file "${luauConfigPath}" must have a displayName string`);
 	}
 
-	const testMatch = Array.isArray(raw["testMatch"])
-		? raw["testMatch"].filter(isString)
-		: undefined;
+	const validated = luauProjectConfigSchema(raw);
+	if (validated instanceof type.errors) {
+		throw new Error(`Invalid Luau config file "${luauConfigPath}": ${validated.summary}`);
+	}
+
+	const { testMatch } = validated;
 
 	// Derive include from testMatch — append .luau extension and prefix with
 	// directory path
@@ -468,18 +469,7 @@ function buildProjectConfigFromLuau(
 			? testMatch.map((pattern) => path.posix.join(directoryPath, `${pattern}.luau`))
 			: [path.posix.join(directoryPath, "**/*.spec.luau")];
 
-	const config: ProjectTestConfig = {
-		displayName,
-		include,
-	};
-
-	if (testMatch !== undefined) {
-		config.testMatch = testMatch;
-	}
-
-	copyLuauOptionalFields(raw, config);
-
-	return config;
+	return { ...validated, include };
 }
 
 /**
@@ -521,25 +511,3 @@ function deriveIncludeFromTestMatch(
 		}
 	}
 }
-
-const LUAU_BOOLEAN_KEYS: ReadonlyArray<keyof ProjectTestConfig> = [
-	"automock",
-	"clearMocks",
-	"injectGlobals",
-	"mockDataModel",
-	"resetMocks",
-	"resetModules",
-	"restoreMocks",
-];
-
-const LUAU_NUMBER_KEYS: ReadonlyArray<keyof ProjectTestConfig> = [
-	"slowTestThreshold",
-	"testTimeout",
-];
-
-const LUAU_STRING_KEYS: ReadonlyArray<keyof ProjectTestConfig> = ["testEnvironment"];
-
-const LUAU_STRING_ARRAY_KEYS: ReadonlyArray<keyof ProjectTestConfig> = [
-	"setupFiles",
-	"setupFilesAfterEnv",
-];

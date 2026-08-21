@@ -4,7 +4,12 @@ import * as path from "node:path";
 
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { createFsClassifier, resolveAllProjects } from "../config/projects.ts";
-import type { InlineProjectConfig, ProjectEntry, ResolvedConfig } from "../config/schema.ts";
+import type {
+	InlineProjectConfig,
+	ProjectEntry,
+	ProjectTestConfig,
+	ResolvedConfig,
+} from "../config/schema.ts";
 import {
 	createRojoResolverCache,
 	createSetupResolver,
@@ -112,13 +117,12 @@ function synthesizeVirtualProjectEntry(
 	// `discoverProjectTestFiles` subtracts it — the workspace analogue of
 	// single-mode `test.exclude`. Explicit `projects:` carry their own
 	// per-project `exclude` instead and never reach this synthesis.
-	return {
-		test: {
-			displayName: packageName,
-			...(packageConfig.exclude !== undefined ? { exclude: packageConfig.exclude } : {}),
-			include,
-		},
-	};
+	let test: ProjectTestConfig = { displayName: packageName, include };
+	if (packageConfig.exclude !== undefined) {
+		test = { ...test, exclude: packageConfig.exclude };
+	}
+
+	return { test };
 }
 
 // `ResolvedConfig.projects` is structurally typed `Array<string>`

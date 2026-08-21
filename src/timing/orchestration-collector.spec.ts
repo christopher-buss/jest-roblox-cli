@@ -3,17 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createTimingCollector } from "./orchestration-collector.ts";
 
-function createCapturingSink(): { lines: Array<string>; sink: (line: string) => void } {
+function createCapturingSink() {
 	const lines: Array<string> = [];
 	return {
 		lines,
-		sink: (line) => {
+		sink: (line: string) => {
 			lines.push(line);
 		},
 	};
 }
 
-function createScriptedClock(times: Array<number>): { now: () => number } {
+function createScriptedClock(times: Array<number>) {
 	let index = 0;
 	return {
 		now: () => {

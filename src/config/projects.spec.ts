@@ -1387,8 +1387,8 @@ describe(loadProjectConfigFile, () => {
 		expect(result.setupFiles).toStrictEqual(["setup.luau"]);
 	});
 
-	it("should ignore fields with wrong types in Luau config", async () => {
-		expect.assertions(3);
+	it("should reject fields with wrong types in Luau config", async () => {
+		expect.assertions(1);
 
 		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
 		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
@@ -1399,11 +1399,9 @@ describe(loadProjectConfigFile, () => {
 			testTimeout: "fast",
 		});
 
-		const result = await loadProjectConfigFile("shared", "/project");
-
-		expect(result.clearMocks).toBeUndefined();
-		expect(result.testTimeout).toBeUndefined();
-		expect(result.setupFiles).toBeUndefined();
+		await expect(loadProjectConfigFile("shared", "/project")).rejects.toThrow(
+			/clearMocks must be boolean.*setupFiles must be an array.*testTimeout must be a number/s,
+		);
 	});
 });
 

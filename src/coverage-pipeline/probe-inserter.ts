@@ -24,7 +24,7 @@ interface ProbeInfo {
 // the original character. The probe array is applied right-to-left (a later
 // application lands further left), so a lower rank here is applied earlier and
 // ends up further right.
-const KIND_RANK: Record<ProbeKind, number> = { close: 2, open: 0, point: 1 };
+const KIND_RANK = { close: 2, open: 0, point: 1 } satisfies Record<ProbeKind, number>;
 const TRAILING_WHITESPACE = /\s$/;
 const IDENTIFIER_START = /^[a-zA-Z_]/;
 const MODE_DIRECTIVE = /^--![a-z]+/;

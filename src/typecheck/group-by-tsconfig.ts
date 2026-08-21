@@ -45,7 +45,7 @@ export async function groupTypecheckByTsconfig(
 		return run({
 			cwd: group.cwd,
 			files: [...group.files],
-			...(group.tsconfig !== undefined ? { tsconfig: group.tsconfig } : {}),
+			tsconfig: group.tsconfig,
 		});
 	}
 

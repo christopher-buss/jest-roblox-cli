@@ -37,7 +37,7 @@ vi.mock(import("get-tsconfig"), async (importOriginal) => {
 	const actual = await importOriginal();
 	const nodeFs = await import("node:fs");
 	const nodePath = await import("node:path");
-	const { tsconfigShapeSchema } = await import("./config/tsconfig-schema.ts");
+	const { executorTsconfigSchema } = await import("./config/tsconfig-schema.ts");
 	return fromAny({
 		...actual,
 		getTsconfig: (searchPath: string, configName = "tsconfig.json") => {
@@ -45,7 +45,10 @@ vi.mock(import("get-tsconfig"), async (importOriginal) => {
 			const filePath = nodePath.join(resolved, configName);
 			try {
 				const content = nodeFs.readFileSync(filePath, "utf-8");
-				return { config: tsconfigShapeSchema.assert(JSON.parse(content)), path: filePath };
+				return {
+					config: executorTsconfigSchema.assert(JSON.parse(content)),
+					path: filePath,
+				};
 			} catch {
 				return null;
 			}
@@ -133,26 +136,16 @@ interface EntryInput {
 }
 
 function buildJestOutputPayload(entry: EntryInput): string {
-	const payload: Record<string, unknown> = { ...entry.result };
-	if (entry.coverageData !== undefined) {
-		payload["_coverage"] = entry.coverageData;
-	}
-
-	if (entry.perTestCoverage !== undefined) {
-		payload["_perTestCoverage"] = entry.perTestCoverage;
-	}
-
-	if (entry.luauTiming !== undefined) {
-		payload["_timing"] = entry.luauTiming;
-	}
-
-	if (entry.setupSeconds !== undefined) {
-		payload["_setup"] = entry.setupSeconds;
-	}
-
-	if (entry.snapshotWrites !== undefined) {
-		payload["_snapshotWrites"] = entry.snapshotWrites;
-	}
+	const payload = {
+		...entry.result,
+		runner: {
+			coverage: entry.coverageData,
+			perTestCoverage: entry.perTestCoverage,
+			setup: entry.setupSeconds,
+			snapshotWrites: entry.snapshotWrites,
+			timing: entry.luauTiming,
+		},
+	};
 
 	return JSON.stringify(payload);
 }
@@ -2865,7 +2858,7 @@ describe(runProjectsAsync, () => {
 			expect(results[1]!.exitCode).toBe(1);
 		});
 
-		it("should use the exec-error file shape on the synthetic failure (failureMessage + empty testResults, counts stay 0)", async () => {
+		it("should use the exec-error result contract on the synthetic failure (failureMessage + empty testResults, counts stay 0)", async () => {
 			expect.assertions(4);
 
 			const backendResult: BackendResult = {

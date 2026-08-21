@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { deriveCoverageFromIncludes } from "./derive-coverage-from.ts";
 
 describe(deriveCoverageFromIncludes, () => {
@@ -80,7 +81,7 @@ describe(deriveCoverageFromIncludes, () => {
 	it("should return undefined when no roots extractable", () => {
 		expect.assertions(1);
 
-		const projects = [{ include: [] as Array<string> }];
+		const projects: Array<Pick<ResolvedProjectConfig, "include">> = [{ include: [] }];
 
 		expect(deriveCoverageFromIncludes(projects)).toBeUndefined();
 	});

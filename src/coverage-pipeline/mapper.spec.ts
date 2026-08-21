@@ -1,4 +1,5 @@
 /* cspell:words jridgewell */
+import type { originalPositionFor } from "@jridgewell/trace-mapping";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it, vi } from "vitest";
@@ -14,8 +15,7 @@ const { mockOriginalPositionFor, mockReadFileSync, MockTraceMap } = vi.hoisted((
 	class MockTraceMapClass {}
 
 	return {
-		mockOriginalPositionFor:
-			vi.fn<(map: unknown, position: { column: number; line: number }) => unknown>(),
+		mockOriginalPositionFor: vi.fn<typeof originalPositionFor>(),
 		mockReadFileSync: vi.fn<(path: string, encoding: string) => string>(),
 		MockTraceMap: MockTraceMapClass,
 	};
@@ -41,7 +41,10 @@ vi.mock(import("@jridgewell/trace-mapping"), async (importOriginal) => {
  * end to b.ts. Hoisted to module scope — the split would otherwise be a
  * conditional inside a test body.
  */
-function positionSplitByColumn(_map: unknown, position: { column: number }): unknown {
+function positionSplitByColumn(
+	_map: Parameters<typeof originalPositionFor>[0],
+	position: Parameters<typeof originalPositionFor>[1],
+): ReturnType<typeof originalPositionFor> {
 	return position.column === 0
 		? { name: null, column: 0, line: 3, source: "src/a.ts" }
 		: { name: null, column: 25, line: 3, source: "src/b.ts" };
@@ -51,7 +54,10 @@ function positionSplitByColumn(_map: unknown, position: { column: number }): unk
  * As {@linkcode positionSplitByColumn}, but the first branch arm resolves to
  * a.ts.
  */
-function positionSplitByLine(_map: unknown, position: { line: number }): unknown {
+function positionSplitByLine(
+	_map: Parameters<typeof originalPositionFor>[0],
+	position: Parameters<typeof originalPositionFor>[1],
+): ReturnType<typeof originalPositionFor> {
 	return position.line === 3
 		? { name: null, column: 0, line: 2, source: "src/a.ts" }
 		: { name: null, column: 0, line: 4, source: "src/b.ts" };
@@ -75,18 +81,23 @@ function createCoverageMap(
 	functionMap?: CoverageMap["functionMap"],
 	branchMap?: CoverageMap["branchMap"],
 ): CoverageMap {
-	return {
-		statementMap,
-		...(functionMap !== undefined ? { functionMap } : {}),
-		...(branchMap !== undefined ? { branchMap } : {}),
-	};
+	let coverageMap: CoverageMap = { statementMap };
+	if (functionMap !== undefined) {
+		coverageMap = { ...coverageMap, functionMap };
+	}
+
+	if (branchMap !== undefined) {
+		coverageMap = { ...coverageMap, branchMap };
+	}
+
+	return coverageMap;
 }
 
 function setupFs(fileContents: Record<string, string>): void {
 	mockReadFileSync.mockImplementation((filePath: string) => {
 		const contents = fileContents[filePath];
 		if (contents === undefined) {
-			const err = new Error(`ENOENT: no such file: ${filePath}`) as NodeJS.ErrnoException;
+			const err: NodeJS.ErrnoException = new Error(`ENOENT: no such file: ${filePath}`);
 			err.code = "ENOENT";
 			throw err;
 		}
@@ -98,22 +109,20 @@ function setupFs(fileContents: Record<string, string>): void {
 function setupSourceMapMappings(
 	mappings: Record<string, { column: number; line: number; source: string }>,
 ): void {
-	mockOriginalPositionFor.mockImplementation(
-		(_map: unknown, position: { column: number; line: number }) => {
-			const key = `${String(position.line)}:${String(position.column)}`;
-			const mapping = mappings[key];
-			if (mapping === undefined) {
-				return { name: null, column: null, line: null, source: null };
-			}
+	mockOriginalPositionFor.mockImplementation((_map, position) => {
+		const key = `${String(position.line)}:${String(position.column)}`;
+		const mapping = mappings[key];
+		if (mapping === undefined) {
+			return { name: null, column: null, line: null, source: null };
+		}
 
-			return {
-				name: null,
-				column: mapping.column,
-				line: mapping.line,
-				source: mapping.source,
-			};
-		},
-	);
+		return {
+			name: null,
+			column: mapping.column,
+			line: mapping.line,
+			source: mapping.source,
+		};
+	});
 }
 
 function createManifestFiles() {
@@ -619,7 +628,7 @@ describe(mapCoverageToTypeScript, () => {
 			expect.assertions(1);
 
 			mockReadFileSync.mockImplementation(() => {
-				const err = new Error("ENOENT") as NodeJS.ErrnoException;
+				const err: NodeJS.ErrnoException = new Error("ENOENT");
 				err.code = "ENOENT";
 				throw err;
 			});

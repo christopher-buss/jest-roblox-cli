@@ -4,6 +4,6 @@
 // Reset before every project's tests so each starts from a clean require graph.
 for (const [key] of pairs(_G)) {
 	if (typeIs(key, "Instance") && key.IsA("ModuleScript")) {
-		delete (_G as Record<string, unknown>)[key as unknown as string];
+		delete (_G as { [globalKey: string]: defined })[key as unknown as string];
 	}
 }

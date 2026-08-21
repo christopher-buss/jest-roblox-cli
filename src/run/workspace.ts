@@ -28,7 +28,12 @@ import type { PackageCoverageSettings } from "../workspace/coverage-attach.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import type { PackageInfo } from "../workspace/package-resolver.ts";
 import { emitRunHeader } from "./run-header.ts";
-import type { ProjectResult, WorkspaceReportOptions, WorkspaceRunResult } from "./types.ts";
+import type {
+	ProjectResult,
+	WorkspacePackageCoverageGate,
+	WorkspaceReportOptions,
+	WorkspaceRunResult,
+} from "./types.ts";
 import {
 	assertWorkspaceRunOptions,
 	buildWorkspaceCredentials,
@@ -36,7 +41,7 @@ import {
 	validateBasicWorkspaceFlags,
 } from "./workspace-validation.ts";
 
-const VERSION: string = packageJson.version;
+const VERSION = packageJson.version;
 
 const EMPTY_RESULT = {
 	merged: {},
@@ -55,7 +60,11 @@ interface ResolvedPackages {
 interface WorkspaceBackendResolution {
 	backend?: Backend | undefined;
 	error?: { exitCode: 2; message: string };
-	workStealingCredentials?: { apiKey: string; baseUrl?: string; universeId: string };
+	workStealingCredentials?: {
+		apiKey: string;
+		baseUrl?: string | undefined;
+		universeId: string;
+	};
 }
 
 interface WorkspaceRunOptionsResolution {
@@ -77,6 +86,16 @@ interface ExecuteWorkspaceRunOptions {
 	packageInfos: Array<PackageInfo>;
 	runOptions: WorkspaceRunOptions;
 	timing?: TimingCollector | undefined;
+	workspaceRoot: string;
+}
+
+interface AggregatePerPackageCoverageResult {
+	settingsByPackage: Map<string, PackageCoverageSettings>;
+	universes: Array<WorkspacePackageUniverse>;
+}
+
+interface EnumerationRoot {
+	patterns?: Array<string> | undefined;
 	workspaceRoot: string;
 }
 
@@ -124,14 +143,14 @@ export async function runWorkspaceModeAsync(
 
 // Every validation failure reports through the same empty result, so the
 // per-branch difference is only the exit code and (optionally) the message.
-// `validationMessage` is spread conditionally rather than assigned `undefined`
-// so the "no message" case keeps the key absent, as before.
+// Add `validationMessage` only when defined so the "no message" case keeps the
+// key absent, as before.
 function bail(validationExitCode: 2, validationMessage?: string): WorkspaceRunResult {
-	return {
+	const result = {
 		...EMPTY_RESULT,
 		validationExitCode,
-		...(validationMessage !== undefined ? { validationMessage } : {}),
-	};
+	} satisfies WorkspaceRunResult;
+	return validationMessage === undefined ? result : { ...result, validationMessage };
 }
 
 // Load every package's raw config, fold them into the consensus-resolved
@@ -198,7 +217,7 @@ function resolveOpenCloudBackendFor(
 			backend,
 			workStealingCredentials: {
 				apiKey: credentials.apiKey,
-				...(baseUrl !== undefined ? { baseUrl } : {}),
+				baseUrl,
 				universeId: credentials.universeId,
 			},
 		};
@@ -232,9 +251,7 @@ function resolveWorkspaceBackend(
 				// `headed` is CLI-only — read straight from `cli`, not the
 				// consensus-resolved run options.
 				headed: cli.headed,
-				...(runOptions.studioPath !== undefined
-					? { studioPath: runOptions.studioPath }
-					: {}),
+				studioPath: runOptions.studioPath,
 			}),
 		};
 	}
@@ -246,10 +263,9 @@ function resolveWorkspaceBackend(
 	return resolveOpenCloudBackendFor(cli, runOptions);
 }
 
-function aggregatePerPackageCoverage(runtimeResults: Array<WorkspaceProjectResult>): {
-	settingsByPackage: Map<string, PackageCoverageSettings>;
-	universes: Array<WorkspacePackageUniverse>;
-} {
+function aggregatePerPackageCoverage(
+	runtimeResults: Array<WorkspaceProjectResult>,
+): AggregatePerPackageCoverageResult {
 	// A package with multiple projects emits one entry per project. Each
 	// project runs Jest with its own `_G.__jest_roblox_cov` reset, so the
 	// per-entry `coverageData` captures DIFFERENT hits across projects. We
@@ -307,15 +323,20 @@ function resolveWorkspaceCoverage(
 		const settings = settingsByPackage.get(pkg);
 		assert(settings !== undefined, `missing coverage settings for ${pkg}`);
 
-		return {
+		let coveragePackage: WorkspacePackageCoverageGate = {
 			coverageDirectory: settings.coverageDirectory,
 			coverageReporters: settings.coverageReporters,
-			...(settings.coverageThreshold !== undefined
-				? { coverageThreshold: settings.coverageThreshold }
-				: {}),
 			pkg,
 			universe,
 		};
+		if (settings.coverageThreshold !== undefined) {
+			coveragePackage = {
+				...coveragePackage,
+				coverageThreshold: settings.coverageThreshold,
+			};
+		}
+
+		return coveragePackage;
 	});
 
 	return { coveragePackages };
@@ -323,13 +344,12 @@ function resolveWorkspaceCoverage(
 
 // Surface the consensus-resolved aggregate sink paths the runner wrote so
 // formatters point "View …" hints at files that actually exist.
-function resolvedSinkPaths(runOptions: WorkspaceRunOptions): {
-	gameOutput?: string | undefined;
-	outputFile?: string | undefined;
-} {
+function resolvedSinkPaths(
+	runOptions: WorkspaceRunOptions,
+): Pick<WorkspaceRunResult, "gameOutput" | "outputFile"> {
 	return {
-		...(runOptions.gameOutput !== undefined ? { gameOutput: runOptions.gameOutput } : {}),
-		...(runOptions.outputFile !== undefined ? { outputFile: runOptions.outputFile } : {}),
+		gameOutput: runOptions.gameOutput,
+		outputFile: runOptions.outputFile,
 	};
 }
 
@@ -392,7 +412,7 @@ function buildWorkspaceResult({
 		preCoverageMs: preCoverageMs ?? 0,
 		projectResults,
 		reportOptions: resolveReportOptions(cli, runOptions, workspaceRoot),
-		...(typecheckResult !== undefined ? { typecheckResult } : {}),
+		typecheckResult,
 		...resolvedSinkPaths(runOptions),
 	};
 }
@@ -444,15 +464,15 @@ async function executeWorkspaceRunAsync({
 		emitWorkspaceRunHeader(cli, runOptions, workspaceRoot);
 		const onStreamingResult = resolveStreamingProgressSink(runOptions, cli);
 		output = await runWorkspaceAsync({
-			...(backend !== undefined ? { backend } : {}),
+			backend,
 			cli,
-			...(onStreamingResult !== undefined ? { onStreamingResult } : {}),
+			onStreamingResult,
 			packageInfos,
 			runOptions,
 			timing,
 			version: VERSION,
 			workspaceRoot,
-			...(workStealingCredentials !== undefined ? { workStealingCredentials } : {}),
+			workStealingCredentials,
 		});
 	} finally {
 		await backend?.closeAsync?.();
@@ -468,10 +488,7 @@ async function executeWorkspaceRunAsync({
 // `workspace.packages` (declared in a shared config, anchored absolute root)
 // enumerates packages by globbing for jest configs — no package-manager
 // workspace file required. Falls back to discovering a pnpm/turbo/nx root.
-function resolveEnumerationRoot(workspace?: WorkspaceConfig): {
-	patterns?: Array<string> | undefined;
-	workspaceRoot: string;
-} {
+function resolveEnumerationRoot(workspace?: WorkspaceConfig): EnumerationRoot {
 	if (workspace?.packages !== undefined) {
 		// The schema's co-requirement check guarantees `root` is present, and
 		// the loader resolved it to an absolute path at config load.

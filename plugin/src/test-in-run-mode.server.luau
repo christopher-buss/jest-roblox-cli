@@ -9,11 +9,12 @@ end
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `STUDIO_CLI_PROTOCOL_VERSION` in
--- `src/backends/studio-cli.ts`. v3 added the run-mode workspace dispatch + this
--- version echo. The runner validates the version the CLI sent and echoes its own
--- in `EndTest`, so the CLI surfaces a clean "update the plugin" error against a
--- mismatched plugin rather than running with stale runtime semantics.
-local PROTOCOL_VERSION = 3
+-- `src/backends/studio-cli.ts`. v4 nests the fields the runner adds to Jest's
+-- result under `runner` and renames the frame key `request_id` to `requestId`.
+-- The runner validates the version the CLI sent and echoes its own in `EndTest`,
+-- so the CLI surfaces a clean "update the plugin" error against a mismatched
+-- plugin rather than running with stale runtime semantics.
+local PROTOCOL_VERSION = 4
 
 -- Every result (success or failure) echoes `protocolVersion` so the studio-cli
 -- host can detect a stale plugin: one predating this echo omits the field and

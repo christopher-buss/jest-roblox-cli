@@ -43,7 +43,7 @@ function expectOk(result: ReadManifestResult): CoverageManifest {
 	return result.manifest;
 }
 
-function expectInvalid(result: ReadManifestResult): { summary: string } {
+function expectInvalid(result: ReadManifestResult) {
 	if (result.kind !== "invalid") {
 		throw new Error(`expected invalid, got ${result.kind}`);
 	}
@@ -51,10 +51,7 @@ function expectInvalid(result: ReadManifestResult): { summary: string } {
 	return { summary: result.summary };
 }
 
-function expectVersionMismatch(result: ReadManifestResult): {
-	actual: unknown;
-	expected: number;
-} {
+function expectVersionMismatch(result: ReadManifestResult) {
 	if (result.kind !== "version-mismatch") {
 		throw new Error(`expected version-mismatch, got ${result.kind}`);
 	}

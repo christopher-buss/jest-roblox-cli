@@ -1,24 +1,30 @@
+import { type } from "arktype";
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { evalLuauReturnLiterals, isAstStatBlock } from "../luau/eval-literals.ts";
+import {
+	evalLuauReturnLiterals,
+	isAstStatBlock,
+	type LuauLiteralTable,
+} from "../luau/eval-literals.ts";
 import parseAstLuauSource from "../luau/parse-ast.luau";
 
 let cachedTemporaryDirectory: string | undefined;
+const luauConfigTableSchema = type("object").as<LuauLiteralTable>();
 
 /**
  * Parse a .luau config file via Lute and evaluate its return expression.
  */
-export function loadLuauConfig(filePath: string): Record<string, unknown> {
+export function loadLuauConfig(filePath: string): LuauLiteralTable {
 	const ast = parseLuauConfigAst(filePath);
 	if (!isAstStatBlock(ast)) {
 		throw new Error(`Expected AST root with tag "block" from Luau config ${filePath}`);
 	}
 
-	const result = evalLuauReturnLiterals(ast);
-	if (!isPlainObject(result)) {
+	const result = luauConfigTableSchema(evalLuauReturnLiterals(ast));
+	if (result instanceof type.errors || Array.isArray(result)) {
 		throw new Error(`Luau config ${filePath} must return a table`);
 	}
 
@@ -78,8 +84,4 @@ function parseLuauConfigAst(filePath: string): JSONValue {
 	} catch (err) {
 		throw new Error(`Failed to parse AST JSON from Luau config ${filePath}`, { cause: err });
 	}
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -17,7 +17,9 @@ type OmitUndefined<T> = {
  * result type carries the invariant, so call sites need no cast.
  */
 export function omitUndefined<T extends object>(value: T): OmitUndefined<T>;
-export function omitUndefined(value: Record<string, unknown>): Record<string, unknown> {
+// eslint-disable-next-line @cspell/spellchecker -- the next line is a tool directive
+// oxlint-disable-next-line anti-slop/no-object-parameters -- the implementation preserves the public generic object's exact shape
+export function omitUndefined(value: object): object {
 	return Object.fromEntries(
 		Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
 	);

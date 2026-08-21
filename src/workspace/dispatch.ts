@@ -28,7 +28,7 @@ export type WorkspaceDispatchSpec = Pick<
 
 interface WorkStealingCredentials {
 	apiKey: string;
-	baseUrl?: string;
+	baseUrl?: string | undefined;
 	universeId: string;
 }
 
@@ -57,6 +57,11 @@ interface DispatchedProjectsInput {
 	startTime: number;
 	timing: TimingCollector;
 	version: string;
+}
+
+interface BuildStreamingResult {
+	hooks: StreamingHooks;
+	sortedMapId: string;
 }
 
 /** Runs every pending (pkg, project) against the shared place. */
@@ -128,7 +133,7 @@ function buildStreaming(input: {
 	credentials: WorkStealingCredentials;
 	generateUuid: () => string;
 	onStreamingResult: StreamingAggregatorOnEntry;
-}): { hooks: StreamingHooks; sortedMapId: string } {
+}): BuildStreamingResult {
 	const sortedMapId = input.generateUuid();
 	// drain() is intentionally untouched in the current production path —
 	// it's an in-memory buffer kept for future formatter integrations that
@@ -137,7 +142,7 @@ function buildStreaming(input: {
 	// per-arrival dedupe + forwarding to onStreamingResult.
 	const aggregator = new StreamingAggregator({ onEntry: input.onStreamingResult });
 	const reader = new StreamingResultClient({
-		...(input.credentials.baseUrl !== undefined ? { baseUrl: input.credentials.baseUrl } : {}),
+		baseUrl: input.credentials.baseUrl,
 		credentials: {
 			apiKey: input.credentials.apiKey,
 			universeId: input.credentials.universeId,
@@ -179,7 +184,7 @@ async function prepareStealingDispatchAsync({
 	// items: a caller that falls back to the sequential path would otherwise
 	// leave a full queue behind until its ten-minute TTL expires.
 	const prepared = await prepareWorkStealingQueueAsync({
-		...(baseUrl !== undefined ? { baseUrl } : {}),
+		baseUrl,
 		credentials: { apiKey, universeId },
 		packages: inputs.map((entry) => ({ pkg: entry.pkg, project: entry.project })),
 		perPackageTimeoutSeconds: PER_PACKAGE_TIMEOUT_SECONDS,
@@ -192,12 +197,9 @@ async function prepareStealingDispatchAsync({
 		streaming !== undefined ? { streaming: { sortedMapId: streaming.sortedMapId } } : {},
 	);
 
-	return {
-		parallel,
-		scriptOverride: script,
-		...(streaming !== undefined ? { streaming: streaming.hooks } : {}),
-		workStealing: true,
-	};
+	return streaming === undefined
+		? { parallel, scriptOverride: script, workStealing: true }
+		: { parallel, scriptOverride: script, streaming: streaming.hooks, workStealing: true };
 }
 
 /**

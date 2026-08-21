@@ -25,7 +25,7 @@ import { formatBanner } from "./utils/banner.ts";
 import { type ChainEntry, formatMissingScopes, walkErrorChain } from "./utils/error-chain.ts";
 import { parseGameOutput } from "./utils/game-output.ts";
 
-const VERSION: string = packageJson.version;
+const VERSION = packageJson.version;
 
 const HELP_TEXT = `
 Usage: jest-roblox [options] [files...]

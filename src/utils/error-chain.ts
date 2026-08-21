@@ -22,23 +22,42 @@ export interface ChainEntry {
 	readonly url?: string | undefined;
 }
 
+/**
+ * Diagnostic fields error sources hang off an `Error` instance: Node sets
+ * `code`, `errno`, and `syscall` on IO failures, and ocale's `ApiError` sets
+ * `statusCode`. `Error` declares none of them and their runtime types vary by
+ * source — Node reports `errno` as a number, not a string — so each stays
+ * `unknown` until a reader narrows it. Every `Error` satisfies the type, which
+ * is what lets the chain walker read the fields without a cast.
+ */
+interface ErrorDetails extends Error {
+	readonly code?: unknown;
+	readonly details?: unknown;
+	readonly errno?: unknown;
+	readonly method?: unknown;
+	readonly statusCode?: unknown;
+	readonly syscall?: unknown;
+	readonly url?: unknown;
+}
+
 const MAX_DEPTH = 5;
 
 export function walkErrorChain(err: unknown): Array<ChainEntry> {
 	const entries: Array<ChainEntry> = [];
-	let current: unknown = err;
+	let current = err;
 	while (current instanceof Error && entries.length < MAX_DEPTH) {
+		const details: ErrorDetails = current;
 		entries.push({
 			name: current.constructor.name,
-			code: readStringProperty(current, "code"),
-			details: readDetails(current),
-			errno: readStringProperty(current, "errno"),
+			code: readStringDetail(details.code),
+			details: readDetails(details.details),
+			errno: readStringDetail(details.errno),
 			message: current.message,
-			method: readStringProperty(current, "method"),
+			method: readStringDetail(details.method),
 			requiredScopes: current instanceof PermissionError ? current.requiredScopes : undefined,
-			statusCode: readNumberProperty(current, "statusCode"),
-			syscall: readStringProperty(current, "syscall"),
-			url: readStringProperty(current, "url"),
+			statusCode: readNumberDetail(details.statusCode),
+			syscall: readStringDetail(details.syscall),
+			url: readStringDetail(details.url),
 		});
 		current = current.cause;
 	}
@@ -60,8 +79,7 @@ export function formatMissingScopes(scopes: ReadonlyArray<string>): string {
  * sent JSON and the raw text when it did not, so both are rendered as a string
  * and the caller never has to know which one it got.
  */
-function readDetails(err: Error): string | undefined {
-	const value: unknown = Reflect.get(err, "details");
+function readDetails(value: unknown): string | undefined {
 	if (value === undefined) {
 		return undefined;
 	}
@@ -69,14 +87,11 @@ function readDetails(err: Error): string | undefined {
 	return typeof value === "string" ? value : JSON.stringify(value);
 }
 
-function readNumberProperty(err: Error, key: string): number | undefined {
-	const value: unknown = Reflect.get(err, key);
+function readNumberDetail(value: unknown): number | undefined {
 	return typeof value === "number" ? value : undefined;
 }
 
-function readStringProperty(err: Error, key: string): string | undefined {
-	const value: unknown = Reflect.get(err, key);
-
+function readStringDetail(value: unknown): string | undefined {
 	if (typeof value === "string") {
 		return value;
 	}

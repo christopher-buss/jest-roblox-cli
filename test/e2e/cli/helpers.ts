@@ -14,6 +14,14 @@ import path from "node:path";
 import nodeProcess from "node:process";
 import { onTestFinished } from "vitest";
 
+import type { JestResult } from "../../../src/types/jest-result.ts";
+
+export interface JestEnvelopePayload {
+	runner: { setup: number };
+	success: true;
+	value: JestResult;
+}
+
 interface ExecResult {
 	exitCode: number;
 	stderr: string;
@@ -29,6 +37,14 @@ interface RunCliOptions {
 const BIN = path.resolve(__dirname, "../../../bin/jest-roblox.js");
 
 const mergedResultSchema = type({ testResults: type({ testFilePath: "string" }).array() });
+
+// runCli passes `encoding: "utf-8"`, so the thrown failure carries the captured
+// streams as strings — Buffer would only appear if we dropped that option.
+const execFailureSchema = type({
+	"status?": "number | null",
+	"stderr?": "string",
+	"stdout?": "string",
+});
 
 // cspell:ignore LOCALAPPDATA MSYSTEM PATHEXT PROGRAMDATA WINDIR
 const ALLOWED_ENV_VARS = [
@@ -69,11 +85,16 @@ export function runCli(args: Array<string>, cwdOrOptions?: RunCliOptions | strin
 			windowsHide: true,
 		});
 		return { exitCode: 0, stderr: "", stdout };
-	} catch (err: unknown) {
+	} catch (err) {
+		const failure = execFailureSchema(err);
+		if (failure instanceof type.errors) {
+			return { exitCode: 1, stderr: "", stdout: "" };
+		}
+
 		return {
-			exitCode: normalizeExitCode(readProperty(err, "status")),
-			stderr: normalizeOutput(readProperty(err, "stderr")),
-			stdout: normalizeOutput(readProperty(err, "stdout")),
+			exitCode: failure.status ?? 1,
+			stderr: failure.stderr ?? "",
+			stdout: failure.stdout ?? "",
 		};
 	}
 }
@@ -301,7 +322,7 @@ return {
  * Mixed stdout the Luau runner produces around the Jest JSON payload —
  * exercises `extractJsonFromOutput`'s log-noise stripping.
  */
-export function buildMixedOutput(payload: Record<string, unknown>): string {
+export function buildMixedOutput(payload: JestEnvelopePayload): string {
 	return [
 		"Booting fake Roblox runner",
 		JSON.stringify(payload),
@@ -311,9 +332,11 @@ export function buildMixedOutput(payload: Record<string, unknown>): string {
 
 /** A minimal passing single-suite Jest payload in the runner's wire shape. */
 // eslint-disable-next-line flawless/max-lines-per-function -- Returns a cohesive single object; splitting would scatter the fields and make it harder to see the shape.
-export function buildPassingPayload(): Record<string, unknown> {
+export function buildPassingPayload(): JestEnvelopePayload {
 	return {
-		_setup: 0.1,
+		runner: {
+			setup: 0.1,
+		},
 		success: true,
 		value: {
 			numFailedTests: 0,
@@ -345,25 +368,13 @@ export function buildPassingPayload(): Record<string, unknown> {
 }
 
 /** Env vars pointing the CLI's open-cloud backend at a fake server. */
-export function createOpenCloudEnvironment(baseUrl: string): Record<string, string> {
+export function createOpenCloudEnvironment(baseUrl: string): NonNullable<RunCliOptions["env"]> {
 	return {
 		JEST_ROBLOX_OPEN_CLOUD_BASE_URL: baseUrl,
 		ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
 		ROBLOX_PLACE_ID: "456",
 		ROBLOX_UNIVERSE_ID: "123",
 	};
-}
-
-function readProperty(source: unknown, key: string): unknown {
-	if (typeof source === "object" && source !== null && key in source) {
-		return Reflect.get(source, key);
-	}
-
-	return undefined;
-}
-
-function normalizeExitCode(value: unknown): number {
-	return typeof value === "number" ? value : 1;
 }
 
 function buildCliEnvironment(overrides?: Record<string, string | undefined>): NodeJS.ProcessEnv {
@@ -386,16 +397,4 @@ function buildCliEnvironment(overrides?: Record<string, string | undefined>): No
 	}
 
 	return environment;
-}
-
-function normalizeOutput(value: unknown): string {
-	if (typeof value === "string") {
-		return value;
-	}
-
-	if (Buffer.isBuffer(value)) {
-		return value.toString("utf-8");
-	}
-
-	return "";
 }

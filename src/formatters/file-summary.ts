@@ -10,6 +10,14 @@ import {
 import { type FormatOptions, resolveDisplayPath } from "./shared.ts";
 import { formatDuration, type Styles } from "./styles.ts";
 
+export interface ProjectStats {
+	durationMs: number;
+	failedFiles: number;
+	passedFiles: number;
+	skippedFiles: number;
+	totalTests: number;
+}
+
 /** The one-or-more lines that report a single test file's outcome. */
 export function formatFileSummary(
 	file: TestFileResult,
@@ -42,13 +50,7 @@ export function formatFileSummary(
 	}).join("\n");
 }
 
-export function computeProjectStats(result: JestResult): {
-	durationMs: number;
-	failedFiles: number;
-	passedFiles: number;
-	skippedFiles: number;
-	totalTests: number;
-} {
+export function computeProjectStats(result: JestResult): ProjectStats {
 	let durationMs = 0;
 	let failedFiles = 0;
 	let passedFiles = 0;

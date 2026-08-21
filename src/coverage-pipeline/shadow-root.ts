@@ -65,6 +65,12 @@ interface IncrementalPlan {
 	skipFiles: Set<string> | undefined;
 }
 
+interface IncrementalState {
+	allCached: boolean;
+	changed: boolean;
+	skipFiles: Set<string>;
+}
+
 interface InstrumentedFiles {
 	allFiles: Record<string, InstrumentedFileRecord>;
 	changed: boolean;
@@ -358,7 +364,7 @@ function countPreviousFilesForRoot(luauRoot: string, previousManifest: CoverageM
 function computeIncrementalState(
 	luauRoot: string,
 	previousManifest: CoverageManifest,
-): { allCached: boolean; changed: boolean; skipFiles: Set<string> } {
+): IncrementalState {
 	const skipFiles = computeSkipFiles(luauRoot, previousManifest);
 	const previousCount = countPreviousFilesForRoot(luauRoot, previousManifest);
 	const hasChanged = skipFiles.size !== previousCount;
@@ -468,7 +474,7 @@ function instrumentChangedFiles(
 	timing: TimingCollector,
 ): InstrumentedFiles {
 	const files = instrumentRoot({ luauRoot, shadowDir, skipFiles, timing });
-	const allFiles: Record<string, InstrumentedFileRecord> = { ...files };
+	const allFiles = { ...files };
 
 	if (shouldUseIncremental && previousManifest !== undefined && skipFiles !== undefined) {
 		carryForwardRecords(luauRoot, previousManifest, allFiles, skipFiles);

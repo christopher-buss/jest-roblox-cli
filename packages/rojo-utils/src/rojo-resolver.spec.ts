@@ -6,6 +6,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { RbxPathParent } from "./rbx-path.ts";
 import { FileRelation, NetworkType, RbxType, RojoResolver } from "./rojo-resolver.ts";
+import type { RojoTree } from "./rojo-walker.ts";
 
 type FileMap = Record<string, string>;
 
@@ -24,7 +25,7 @@ function setupProjectFiles(files: FileMap): string {
 	return directory;
 }
 
-function project(tree: object, name = "Game"): string {
+function project(tree: RojoTree, name = "Game"): string {
 	return JSON.stringify({ name, tree });
 }
 
@@ -721,17 +722,7 @@ describe("walker syscall behavior", () => {
 });
 
 describe("walker parity snapshot", () => {
-	function snapshot(
-		state: ReturnType<RojoResolver["getState"]>,
-		root: string,
-	): {
-		filePathToRbxPathMap: Array<[string, ReadonlyArray<string>]>;
-		isGame: boolean;
-		partitions: Array<{ fsPath: string; rbxPath: ReadonlyArray<string> }>;
-		walkedConfigFiles: Array<string>;
-		walkedDirs: Array<string>;
-		warnings: Array<string>;
-	} {
+	function snapshot(state: ReturnType<RojoResolver["getState"]>, root: string) {
 		function strip(full: string): string {
 			return full.replaceAll(root, "<root>").replaceAll("\\", "/");
 		}

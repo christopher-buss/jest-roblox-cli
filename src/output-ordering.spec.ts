@@ -137,11 +137,11 @@ describe("agent-mode output ordering", () => {
 		expect.assertions(1);
 
 		const chunks: Array<string> = [];
-		vi.spyOn(console, "log").mockImplementation((message: unknown) => {
+		vi.spyOn(console, "log").mockImplementation((message) => {
 			chunks.push(`${String(message)}\n`);
 		});
 		vi.spyOn(console, "error").mockImplementation(() => {});
-		vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+		vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
 			chunks.push(String(chunk));
 			return true;
 		});

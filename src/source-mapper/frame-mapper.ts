@@ -36,7 +36,7 @@ interface MappedSource {
 export function createFrameMapper(
 	pathResolver: PathResolver,
 ): (frame: StackFrame) => MappedFrame | undefined {
-	return function mapFrame(frame: StackFrame): MappedFrame | undefined {
+	return function mapFrame(frame): MappedFrame | undefined {
 		const resolved = pathResolver.resolve(frame.dataModelPath);
 		if (resolved === undefined) {
 			return undefined;

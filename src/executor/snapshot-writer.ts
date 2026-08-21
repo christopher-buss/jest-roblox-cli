@@ -184,7 +184,7 @@ function writeResolvedSnapshots(
 	snapshotWrites: SnapshotWrites,
 	config: ResolvedConfig,
 	resolver: SnapshotPathResolver,
-): { failed: number; written: number } {
+): Pick<SnapshotWriteCounts, "failed" | "written"> {
 	let written = 0;
 	let failed = 0;
 

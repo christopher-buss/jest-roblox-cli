@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -42,6 +43,17 @@ interface CacheFile {
 }
 
 const CACHE_VERSION = 1;
+
+const cacheEntrySchema = type({
+	"+": "delete",
+	"hash": "string",
+	"versionNumber": "number",
+}).as<CacheEntry>();
+
+const cacheFileInputSchema = type({
+	entries: type({ "[string]": "unknown" }),
+	version: "1",
+});
 
 /**
  * Undefined when the place file cannot be read. The caller then uploads, which
@@ -159,12 +171,6 @@ function cachePath(rootDirectory: string): string {
 	return path.join(rootDirectory, ".jest-roblox", "upload-cache.json");
 }
 
-// Read by key from parsed JSON, so `typeof null === "object"` is the only case
-// that has to be rejected.
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
 /**
  * Every failure mode — missing file, unreadable file, malformed JSON, an
  * unknown `version`, a junk entry — collapses to "no cache". That is how the
@@ -174,19 +180,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function readCacheFile(rootDirectory: string): CacheFile {
 	const entries: Record<string, CacheEntry> = {};
 	try {
-		const parsed = JSON.parse(fs.readFileSync(cachePath(rootDirectory), "utf8"));
-		if (!isRecord(parsed) || parsed["version"] !== CACHE_VERSION) {
+		const parsed = cacheFileInputSchema(
+			JSON.parse(fs.readFileSync(cachePath(rootDirectory), "utf8")),
+		);
+		if (parsed instanceof type.errors) {
 			return { entries, version: CACHE_VERSION };
 		}
 
-		const rawEntries = parsed["entries"];
-		if (isRecord(rawEntries)) {
-			for (const [key, value] of Object.entries(rawEntries)) {
-				const hash = isRecord(value) ? value["hash"] : undefined;
-				const versionNumber = isRecord(value) ? value["versionNumber"] : undefined;
-				if (typeof hash === "string" && typeof versionNumber === "number") {
-					entries[key] = { hash, versionNumber };
-				}
+		for (const [key, value] of Object.entries(parsed.entries)) {
+			const entry = cacheEntrySchema(value);
+			if (!(entry instanceof type.errors)) {
+				entries[key] = entry;
 			}
 		}
 	} catch {

@@ -1,38 +1,28 @@
-import { WorkQueue } from "@isentinel/roblox-runner";
+import { createJsonWorkQueueWriter, type WorkQueueWriter } from "@isentinel/roblox-runner";
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-	decodeQueueItem,
-	encodeQueueItem,
-	prepareWorkStealingQueueAsync,
-} from "./work-stealing.ts";
+import { prepareWorkStealingQueueAsync } from "./work-stealing.ts";
 
 interface EnqueueCall {
 	items: ReadonlyArray<unknown>;
 	options?: { ttlMs?: number };
 }
 
-function createQueueStub(enqueueImpl?: () => Promise<void>): {
-	enqueueCalls: Array<EnqueueCall>;
-	factory: (queueId: string) => WorkQueue<{ pkg: string; project: string }>;
-	queueIds: Array<string>;
-} {
+function createQueueStub(enqueueImpl?: () => Promise<void>) {
 	const enqueueCalls: Array<EnqueueCall> = [];
 	const queueIds: Array<string> = [];
 
-	function factory(queueId: string): WorkQueue<{ pkg: string; project: string }> {
+	function factory(queueId: string): WorkQueueWriter<{ pkg: string; project: string }> {
 		queueIds.push(queueId);
-		const queue = new WorkQueue<{ pkg: string; project: string }>({
+		const queue = createJsonWorkQueueWriter<{ pkg: string; project: string }>({
 			apiKey: "test-key",
-			decode: decodeQueueItem,
-			encode: encodeQueueItem,
 			queueId,
 			universeId: "123",
 		});
 		vi.spyOn(queue, "enqueueAsync").mockImplementation(
 			async (items, options): Promise<void> => {
-				enqueueCalls.push({ items, ...(options ? { options } : {}) });
+				enqueueCalls.push(options === undefined ? { items } : { items, options });
 				if (enqueueImpl) {
 					await enqueueImpl();
 				}
@@ -185,42 +175,7 @@ describe(prepareWorkStealingQueueAsync, () => {
 		);
 	});
 
-	it("should encode a QueueItem as its plain object representation", () => {
-		expect.assertions(1);
-
-		expect(encodeQueueItem({ pkg: "@halcyon/foo", project: "alpha" })).toStrictEqual({
-			pkg: "@halcyon/foo",
-			project: "alpha",
-		});
-	});
-
-	it("should decode a wire payload back into a QueueItem", () => {
-		expect.assertions(1);
-
-		const wire = { pkg: "@halcyon/bar", project: "beta" };
-
-		expect(decodeQueueItem(wire)).toStrictEqual(wire);
-	});
-
-	it("should throw when wire payload is missing required fields", () => {
-		expect.assertions(1);
-
-		expect(() => decodeQueueItem({ pkg: "@halcyon/bar" })).toThrow("project must be a string");
-	});
-
-	it("should throw when wire payload field has wrong type", () => {
-		expect.assertions(1);
-
-		expect(() => decodeQueueItem({ pkg: 42, project: "beta" })).toThrow("pkg must be a string");
-	});
-
-	it("should throw when wire payload is not an object", () => {
-		expect.assertions(1);
-
-		expect(() => decodeQueueItem("not-an-object")).toThrow("must be an object");
-	});
-
-	it("should construct a real WorkQueue when no factory is provided", () => {
+	it("should construct a real queue writer when no factory is provided", () => {
 		expect.assertions(1);
 
 		// Just confirming construction succeeds — actual HTTP would fail without
@@ -235,7 +190,7 @@ describe(prepareWorkStealingQueueAsync, () => {
 		expect(promise).toBeInstanceOf(Promise);
 	});
 
-	it("should construct a real WorkQueue with a custom baseUrl when provided", () => {
+	it("should construct a real queue writer with a custom baseUrl when provided", () => {
 		expect.assertions(1);
 
 		// Exercises the baseUrl-defined branch of the default factory path.

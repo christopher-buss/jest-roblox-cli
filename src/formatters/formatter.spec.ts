@@ -3599,6 +3599,12 @@ describe(formatProjectBadge, () => {
 		expect(output).not.toBe("▶ core");
 	});
 
+	it("should treat Object prototype names as unknown displayColors", () => {
+		expect.assertions(1);
+
+		expect(formatProjectBadge("core", true, "toString")).toBe(formatProjectBadge("core", true));
+	});
+
 	it("should apply all named displayColors", () => {
 		expect.assertions(1);
 

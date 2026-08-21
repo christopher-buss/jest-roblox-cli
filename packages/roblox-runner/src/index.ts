@@ -16,5 +16,11 @@ export type {
 	UploadPlaceOptions,
 	UploadPlaceResult,
 } from "./types.ts";
-export type { ClaimedBatch, WorkQueueOptions } from "./work-queue.ts";
-export { WorkQueue } from "./work-queue.ts";
+export { createWorkQueueReader } from "./work-queue-reader.ts";
+export type { ClaimedBatch, WorkQueueReader, WorkQueueReaderOptions } from "./work-queue-reader.ts";
+export { createJsonWorkQueueWriter, createWorkQueueWriter } from "./work-queue-writer.ts";
+export type {
+	JsonWorkQueueWriterOptions,
+	WorkQueueWriter,
+	WorkQueueWriterOptions,
+} from "./work-queue-writer.ts";

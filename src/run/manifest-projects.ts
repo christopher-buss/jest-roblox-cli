@@ -13,16 +13,21 @@ export function toBuildManifestProjects(
 ): Array<BuildManifestProject> {
 	return projects.flatMap((project) => {
 		return project.projects.map((projectDataModelPath) => {
-			return {
+			let manifestProject: BuildManifestProject = {
 				displayName: project.displayName,
-				...(project.config.jestPath !== undefined
-					? { jestDataModelPath: project.config.jestPath }
-					: {}),
 				projectDataModelPath,
 				setupFiles: project.config.setupFiles ?? [],
 				setupFilesAfterEnv: project.config.setupFilesAfterEnv ?? [],
 				testMatch: project.testMatch,
-			} satisfies BuildManifestProject;
+			};
+			if (project.config.jestPath !== undefined) {
+				manifestProject = {
+					...manifestProject,
+					jestDataModelPath: project.config.jestPath,
+				};
+			}
+
+			return manifestProject;
 		});
 	});
 }

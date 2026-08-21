@@ -73,7 +73,9 @@ export interface RunWorkspaceOptions {
 	 * the same materializer script. Without it (or with parallel=1) the
 	 * runner uses the existing single-task embedded-entries path.
 	 */
-	workStealingCredentials?: { apiKey: string; baseUrl?: string; universeId: string };
+	workStealingCredentials?:
+		| undefined
+		| { apiKey: string; baseUrl?: string | undefined; universeId: string };
 }
 
 interface WorkspaceRuntimeInput {

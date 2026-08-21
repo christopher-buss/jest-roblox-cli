@@ -2,8 +2,6 @@ import type { distill } from "arktype";
 import { type } from "arktype";
 import * as fs from "node:fs";
 
-import { isErrnoException } from "../utils/errno.ts";
-
 /**
  * Shared read result for the sibling manifest readers. `BuildManifest`'s reader
  * extends this with artifact-rehash variants after a successful parse.
@@ -32,7 +30,7 @@ export function parseVersionedManifest<T>(
 	try {
 		contents = fs.readFileSync(filePath, "utf-8");
 	} catch (err) {
-		if (isErrnoException(err) && err.code === "ENOENT") {
+		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
 			return { kind: "missing" };
 		}
 

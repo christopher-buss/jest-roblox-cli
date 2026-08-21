@@ -52,6 +52,23 @@ describe(normalizeRawCoverage, () => {
 		expect(result).toStrictEqual({ "out/b.luau": { s: { "1": 1 } } });
 	});
 
+	it("should skip entries that are arrays rather than counter tables", () => {
+		expect.assertions(1);
+
+		const result = normalizeRawCoverage({ "out/a.luau": [1, 2], "out/b.luau": { s: [1] } });
+
+		expect(result).toStrictEqual({ "out/b.luau": { s: { "1": 1 } } });
+	});
+
+	it("should return undefined for a table that serialized as a JSON array", () => {
+		expect.assertions(2);
+
+		// An empty Luau table encodes as `[]`; anything array-shaped is keyed by
+		// position, so it cannot be the fileKey-keyed coverage table.
+		expect(normalizeRawCoverage([])).toBeUndefined();
+		expect(normalizeRawCoverage([{ s: [1] }])).toBeUndefined();
+	});
+
 	it("should return undefined when no file carries coverage", () => {
 		expect.assertions(1);
 
@@ -81,11 +98,13 @@ describe(normalizeRawCoverage, () => {
 });
 
 describe(parseCoverageEnvelope, () => {
-	it("should extract _coverage from a JSON envelope string", () => {
+	it("should extract runner.coverage from a JSON envelope string", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: { "out/init.luau": { s: [1] } },
+			runner: {
+				coverage: { "out/init.luau": { s: [1] } },
+			},
 			success: true,
 		});
 
@@ -94,10 +113,10 @@ describe(parseCoverageEnvelope, () => {
 		});
 	});
 
-	it("should extract _coverage from an already-parsed envelope object", () => {
+	it("should extract runner.coverage from an already-parsed envelope object", () => {
 		expect.assertions(1);
 
-		const envelope = { _coverage: { "out/init.luau": { s: [2] } }, success: true };
+		const envelope = { runner: { coverage: { "out/init.luau": { s: [2] } } }, success: true };
 
 		expect(parseCoverageEnvelope(envelope)).toStrictEqual({
 			"out/init.luau": { s: { "1": 2 } },
@@ -107,8 +126,8 @@ describe(parseCoverageEnvelope, () => {
 	it("should treat a bare hit table (the _G global) as the coverage itself", () => {
 		expect.assertions(1);
 
-		// Machine B reading `_G.__jest_roblox_cov` directly has no `_coverage`
-		// wrapper — the object IS the table.
+		// Machine B reading `_G.__jest_roblox_cov` directly has no
+		// `runner.coverage` wrapper — the object IS the table.
 		expect(parseCoverageEnvelope({ "out/init.luau": { s: [1] } })).toStrictEqual({
 			"out/init.luau": { s: { "1": 1 } },
 		});
@@ -130,8 +149,8 @@ describe(parseCoverageEnvelope, () => {
 	it("should return undefined for a non-string, non-object input", () => {
 		expect.assertions(1);
 
-		// The signature accepts `unknown` (callers often hold raw run output); a
-		// bare scalar is neither an envelope nor a hit table.
+		// The signature accepts any `JSONValue` (callers often hold raw run
+		// output); a bare scalar is neither an envelope nor a hit table.
 		expect(parseCoverageEnvelope(42)).toBeUndefined();
 	});
 

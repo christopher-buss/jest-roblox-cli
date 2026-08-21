@@ -47,7 +47,7 @@ export function discoverTestFiles(
 	const uniqueBaseFiles = new Set(baseFiles);
 	const totalFiles = uniqueBaseFiles.size;
 
-	let filtered: Array<string> = baseFiles;
+	let filtered = baseFiles;
 	if (config.testPathPattern !== undefined) {
 		const pathPattern = new RegExp(config.testPathPattern);
 		filtered = filtered.filter((file) => pathPattern.test(file));

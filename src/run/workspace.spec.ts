@@ -75,7 +75,7 @@ function mockRunWorkspace(
 ): void {
 	vi.mocked(runWorkspaceAsync).mockResolvedValue({
 		results,
-		...(typecheckResult !== undefined ? { typecheckResult } : {}),
+		typecheckResult,
 	});
 }
 
@@ -110,11 +110,11 @@ function toStdoutText(chunk: Parameters<typeof process.stdout.write>[0]): string
 }
 
 /** Per-package `color`, disagreeing across packages to trip consensus. */
-function colorForPackageDirectory(cwd: string | undefined): { color: boolean } {
+function colorForPackageDirectory(cwd: string | undefined) {
 	return { color: cwd!.endsWith("foo") };
 }
 
-function setupHappyPath(): { backend: Backend } {
+function setupHappyPath() {
 	const backend = makeFakeBackend();
 	vi.mocked(discoverWorkspaceRoot).mockReturnValue("/repo");
 	vi.mocked(resolvePackage).mockImplementation((_, name) => {
@@ -685,7 +685,7 @@ describe(runWorkspaceModeAsync, () => {
 			);
 
 			expect(result.validationExitCode).toBe(2);
-			expect(result.validationMessage).toBeUndefined();
+			expect(result).not.toHaveProperty("validationMessage");
 			expect(result.projectResults).toStrictEqual([]);
 		});
 

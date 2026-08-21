@@ -1,3 +1,5 @@
+/// <reference path="./vitest.d.ts" />
+
 // `JSONValue` is global via better-typescript-lib's es5 lib (loaded by
 // `libReplacement: true`).
 //

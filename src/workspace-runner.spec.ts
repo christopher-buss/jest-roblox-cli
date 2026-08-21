@@ -3,11 +3,22 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { vol } from "memfs";
 import * as path from "node:path";
 import process from "node:process";
+import type { Except } from "type-fest";
 import { assert, describe, expect, it, vi } from "vitest";
 
-import type { Backend, BackendOptions, BackendResult } from "./backends/interface.ts";
+import type {
+	Backend,
+	BackendOptions,
+	BackendResult,
+	EnvelopeEntry,
+} from "./backends/interface.ts";
 import { loadConfig } from "./config/loader.ts";
-import type { CliOptions, WorkspaceRunOptions } from "./config/schema.ts";
+import type {
+	CliOptions,
+	ProjectEntry,
+	ResolvedConfig,
+	WorkspaceRunOptions,
+} from "./config/schema.ts";
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { MANIFEST_VERSION } from "./coverage-pipeline/manifest.ts";
 import type { WorkspacePackageCoverage } from "./coverage-pipeline/workspace-prepare.ts";
@@ -66,8 +77,12 @@ interface BackendStubEntry {
 	snapshotWrites?: Record<string, string>;
 }
 
-function packageJson(json: object): string {
-	return String(JSON.stringify(json));
+type PreResolutionConfig = Except<ResolvedConfig, "projects"> & {
+	projects?: Array<ProjectEntry> | undefined;
+};
+
+function packageJson(json: JSONObject): string {
+	return JSON.stringify(json);
 }
 
 function passingResult(): string {
@@ -94,30 +109,32 @@ function failingResult(): string {
 	});
 }
 
-function createStubBackend(entries: Array<BackendStubEntry>): {
-	backend: Backend;
-	captured: { options?: BackendOptions };
-} {
-	const captured: { options?: BackendOptions } = {};
+function createStubBackend(entries: Array<BackendStubEntry>) {
+	const captured: Partial<Record<"options", BackendOptions>> = {};
 	const backend: Backend = {
 		kind: "open-cloud",
-		runTestsAsync: async (options: BackendOptions): Promise<BackendResult> => {
+		runTestsAsync: async (options): Promise<BackendResult> => {
 			captured.options = options;
 			return {
 				rawResults: entries.map((entry) => {
-					return {
-						entry: {
-							jestOutput: entry.jestOutput,
-							...(entry.gameOutput !== undefined
-								? { gameOutput: entry.gameOutput }
-								: {}),
-							...(entry.pkg !== undefined ? { pkg: entry.pkg } : {}),
-							...(entry.project !== undefined ? { project: entry.project } : {}),
-							...(entry.snapshotWrites !== undefined
-								? { snapshotWrites: entry.snapshotWrites }
-								: {}),
-						},
-					};
+					const envelope: EnvelopeEntry = { jestOutput: entry.jestOutput };
+					if (entry.gameOutput !== undefined) {
+						envelope.gameOutput = entry.gameOutput;
+					}
+
+					if (entry.pkg !== undefined) {
+						envelope.pkg = entry.pkg;
+					}
+
+					if (entry.project !== undefined) {
+						envelope.project = entry.project;
+					}
+
+					if (entry.snapshotWrites !== undefined) {
+						envelope.snapshotWrites = entry.snapshotWrites;
+					}
+
+					return { entry: envelope };
 				}),
 				timing: { executionMs: 0, uploadMs: 0 },
 			};
@@ -171,20 +188,24 @@ function coverageEntry(packageName: string): WorkspacePackageCoverage {
 	};
 }
 
-function emptyJestConfig(directory: string): Record<string, string> {
+function emptyJestConfig(directory: string) {
 	return {
 		[path.join(directory, "jest.config.ts")]: "export default {}",
 	};
 }
 
-function setLoadedConfigPerPackage(map: Record<string, unknown>): void {
+function makeProjectEntries(entries: Array<ProjectEntry>): Array<ProjectEntry> {
+	return entries;
+}
+
+function setLoadedConfigPerPackage(map: Readonly<Record<string, PreResolutionConfig>>): void {
 	vi.mocked(loadConfig).mockImplementation(async (_path, cwd) => {
 		const config = map[cwd ?? ""];
 		if (config === undefined) {
 			throw new Error(`No mocked config for cwd: ${cwd ?? "<undefined>"}`);
 		}
 
-		return fromAny(config);
+		return fromAny<ResolvedConfig, PreResolutionConfig>(config);
 	});
 }
 
@@ -194,9 +215,9 @@ function seedPackage(
 		extras?: Record<string, string>;
 		name: string;
 		specFiles?: Record<string, string>;
-		tree?: object;
+		tree?: JSONObject;
 	},
-): Record<string, string> {
+) {
 	const tree = options.tree ?? {
 		$className: "DataModel",
 		ReplicatedStorage: { Pkg: { $path: "src" } },
@@ -595,7 +616,7 @@ describe(runWorkspaceAsync, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
 			{ test: { displayName: "server", include: ["out/Server/**/*.spec.luau"] } },
 		]);
@@ -637,7 +658,7 @@ describe(runWorkspaceAsync, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{
 				test: {
 					displayName: "main",
@@ -721,7 +742,7 @@ describe(runWorkspaceAsync, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
 		]);
 		setLoadedConfigPerPackage({
@@ -774,7 +795,7 @@ describe(runWorkspaceAsync, () => {
 			[userConfigPath]: "return { displayName = 'user-shared' }\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
 		]);
 		setLoadedConfigPerPackage({
@@ -823,7 +844,7 @@ describe(runWorkspaceAsync, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
 		]);
 		setLoadedConfigPerPackage({
@@ -885,7 +906,7 @@ describe(runWorkspaceAsync, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
 			{ test: { displayName: "server", include: ["out/Server/**/*.spec.luau"] } },
 		]);
@@ -934,7 +955,7 @@ describe(runWorkspaceAsync, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
 			{ test: { displayName: "server", include: ["out/Server/**/*.spec.luau"] } },
 		]);
@@ -1015,14 +1036,14 @@ describe(runWorkspaceAsync, () => {
 
 		// Mock the RojoResolver so the resolver's filesystem walk is skipped and
 		// these tests stay focused on workspace orchestration.
-		const mapping: Record<string, Array<string>> = {
+		const mapping = {
 			[path.resolve(FOO_DIR, "./src/Shared/setup.luau")]: [
 				"ReplicatedStorage",
 				"Pkg",
 				"Shared",
 				"setup",
 			],
-		};
+		} satisfies Record<string, Array<string>>;
 		const { RojoResolver } = await import("@isentinel/rojo-utils");
 		vi.spyOn(RojoResolver, "fromPath").mockReturnValue(
 			fromAny({
@@ -1285,7 +1306,7 @@ describe(runWorkspaceAsync, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "@halcyon/foo", include: ["src/**/*.spec.lua"] } },
 		]);
 		setLoadedConfigPerPackage({
@@ -1640,7 +1661,7 @@ describe(runWorkspaceAsync, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "main", include: ["src/has.dot/**/*.spec.luau"] } },
 		]);
 		setLoadedConfigPerPackage({
@@ -1987,7 +2008,7 @@ describe(runWorkspaceAsync, () => {
 			expect(descriptor.coveragePathIgnorePatterns).toBeUndefined();
 		});
 
-		it("should embed _coverage in the materializer config when collectCoverage is set", async () => {
+		it("should embed runnerCoverage in the materializer config when collectCoverage is set", async () => {
 			expect.assertions(1);
 
 			vol.reset();
@@ -2036,7 +2057,7 @@ describe(runWorkspaceAsync, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(captured.options!.scriptOverride).toContain('"_coverage":true');
+			expect(captured.options!.scriptOverride).toContain('"runnerCoverage":true');
 		});
 
 		it("should expose per-package coverage descriptors on the workspace result", async () => {
@@ -3466,7 +3487,7 @@ describe(runWorkspaceAsync, () => {
 				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 			});
 
-			const projects = fromAny([
+			const projects = makeProjectEntries([
 				{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
 				{ test: { displayName: "server", include: ["out/Server/**/*.spec.luau"] } },
 			]);
@@ -4111,9 +4132,7 @@ describe("workspace type tests", () => {
 
 		expect(vi.mocked(runTypecheckAsync)).toHaveBeenCalledWith(
 			expect.objectContaining({
-				files: expect.arrayContaining([
-					expect.stringMatching(/foo\.spec-d\.ts$/),
-				]) as unknown,
+				files: expect.arrayContaining([expect.stringMatching(/foo\.spec-d\.ts$/)]),
 			}),
 		);
 		expect(result!.typecheckResult).toBeDefined();
@@ -4233,7 +4252,7 @@ describe("workspace type tests", () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		const projects = fromAny([
+		const projects = makeProjectEntries([
 			{ test: { displayName: "client", include: ["out/Client/**/*.spec.ts"] } },
 			{ test: { displayName: "server", include: ["out/Server/**/*.spec.ts"] } },
 		]);

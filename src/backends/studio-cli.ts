@@ -26,7 +26,7 @@ import {
 	type ProjectJob,
 	type RawBackendEntry,
 } from "./interface.ts";
-import { buildConfigEntries, buildWorkspaceEntries } from "./plugin-payload.ts";
+import { buildRunPayload, type RunPayload } from "./plugin-payload.ts";
 import { discoverStudioPath } from "./studio-discovery.ts";
 
 const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
@@ -44,7 +44,12 @@ const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
  * omits the echo (a stale runner predating the handshake) or returns a
  * different number, surfacing a clean "update the plugin" error.
  */
-const STUDIO_CLI_PROTOCOL_VERSION = 3;
+const STUDIO_CLI_PROTOCOL_VERSION = 4;
+
+type StudioCliPayload = RunPayload & {
+	protocolVersion: typeof STUDIO_CLI_PROTOCOL_VERSION;
+	test: true;
+};
 
 /**
  * Seconds the bootstrap keeps its result socket alive after sending, waiting
@@ -124,7 +129,7 @@ const BOOTSTRAP_SEND_LINES = [
 /**
  * The result frame the bootstrap pushes back over the localhost WebSocket.
  * Same shape the plugin's `init.server.luau` sends the WebSocket `studio`
- * backend (`type: "results"` + `request_id` correlation), so the two result
+ * backend (`type: "results"` + `requestId` correlation), so the two result
  * channels stay wire-compatible. `protocolVersion` is optional here — a stale
  * run-mode runner omits it, and {@link assertProtocolMatch} turns that into a
  * clean "update the plugin" error rather than a schema rejection.
@@ -133,7 +138,7 @@ const resultMessageSchema = type({
 	"gameOutput?": "string",
 	"jestOutput": "string",
 	"protocolVersion?": "number",
-	"request_id": "string",
+	"requestId": "string",
 	"type": "'results'",
 });
 
@@ -438,30 +443,11 @@ function studioOutputFile(workDirectory: string): string {
 	return path.join(workDirectory, OUTPUT_FILE);
 }
 
-/**
- * Single-/multi-project payload: the run-mode runner reads `config.configs`
- * and drives `Runner.runProjects`.
- */
-function buildConfigsPayload(jobs: Array<ProjectJob>): object {
-	const { configs, runtimeStubMounts } = buildConfigEntries(jobs);
-	return {
-		config: { configs },
-		protocolVersion: STUDIO_CLI_PROTOCOL_VERSION,
-		runtimeStubMounts,
-		test: true,
-	};
-}
-
-/**
- * Workspace payload: the run-mode runner sees the `workspace` shape and drives
- * the staged materializer (`runEmbedded`) — cloning each package from the
- * mega-place's `__pkg_stage`, running, resetting.
- */
-function buildWorkspacePayload(jobs: Array<ProjectJob>): object {
+function buildStudioCliPayload(jobs: Array<ProjectJob>): StudioCliPayload {
 	return {
 		protocolVersion: STUDIO_CLI_PROTOCOL_VERSION,
 		test: true,
-		workspace: { entries: buildWorkspaceEntries(jobs) },
+		...buildRunPayload(jobs),
 	};
 }
 
@@ -488,11 +474,15 @@ function luauLongString(content: string): string {
  * plugin that threw or returned nothing yields a `{ success = false }`
  * envelope, so the host surfaces a clean error rather than hanging.
  */
-function bootstrapRunLines(payload: object, port: number, requestId: string): Array<string> {
+function bootstrapRunLines(
+	payload: StudioCliPayload,
+	port: number,
+	requestId: string,
+): Array<string> {
 	return [
 		'local HttpService = game:GetService("HttpService")',
 		'local StudioTestService = game:GetService("StudioTestService")',
-		`local payload = HttpService:JSONDecode(${luauLongString(String(JSON.stringify(payload)))})`,
+		`local payload = HttpService:JSONDecode(${luauLongString(JSON.stringify(payload))})`,
 		`local URL = "ws://localhost:${port.toString()}"`,
 		`local REQUEST_ID = ${luauLongString(requestId)}`,
 		"local ok, result = pcall(function()",
@@ -500,11 +490,11 @@ function bootstrapRunLines(payload: object, port: number, requestId: string): Ar
 		"end)",
 		"local message",
 		"if not ok then",
-		'\tmessage = { type = "results", request_id = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = tostring(result), success = false }) }',
+		'\tmessage = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = tostring(result), success = false }) }',
 		'elseif typeof(result) ~= "table" or result.jestOutput == nil then',
-		'\tmessage = { type = "results", request_id = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = "studio-cli: the jest plugin produced no result. Install or update the jest-roblox Studio plugin.", success = false }) }',
+		'\tmessage = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = "studio-cli: the jest plugin produced no result. Install or update the jest-roblox Studio plugin.", success = false }) }',
 		"else",
-		'\tmessage = { type = "results", request_id = REQUEST_ID, protocolVersion = result.protocolVersion, gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput }',
+		'\tmessage = { type = "results", requestId = REQUEST_ID, protocolVersion = result.protocolVersion, gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput }',
 		"end",
 	];
 }
@@ -514,11 +504,11 @@ function bootstrapRunLines(payload: object, port: number, requestId: string): Ar
  * DataModel, drives the installed plugin's Run-mode runner via
  * `ExecuteRunModeAsync`, then pushes the result envelope back to the host over
  * a localhost WebSocket (`HttpService:CreateWebStreamClient`, the same client
- * API the plugin uses). `request_id` correlates the frame with this run. A
+ * API the plugin uses). `requestId` correlates the frame with this run. A
  * plugin that is absent or returns nothing sends a `{ success = false }`
  * envelope, so the host surfaces a clean error rather than hanging.
  */
-function buildBootstrap(payload: object, port: number, requestId: string): string {
+function buildBootstrap(payload: StudioCliPayload, port: number, requestId: string): string {
 	return [...bootstrapRunLines(payload, port, requestId), ...BOOTSTRAP_SEND_LINES, ""].join("\n");
 }
 
@@ -527,7 +517,6 @@ function buildBootstrap(payload: object, port: number, requestId: string): strin
  * Studio CLI argument vector that opens the place and runs it.
  */
 function buildStudioArgs({
-	isWorkspace,
 	jobs,
 	placeFile,
 	port,
@@ -536,14 +525,7 @@ function buildStudioArgs({
 }: StudioArgsOptions): Array<string> {
 	const bootstrapFile = path.join(workDirectory, BOOTSTRAP_FILE);
 	const outputFile = studioOutputFile(workDirectory);
-	fs.writeFileSync(
-		bootstrapFile,
-		buildBootstrap(
-			isWorkspace ? buildWorkspacePayload(jobs) : buildConfigsPayload(jobs),
-			port,
-			requestId,
-		),
-	);
+	fs.writeFileSync(bootstrapFile, buildBootstrap(buildStudioCliPayload(jobs), port, requestId));
 
 	return [
 		"--task",
@@ -706,7 +688,7 @@ function listenForResultFrame(
 			}
 
 			const message = resultMessageSchema(raw);
-			if (message instanceof type.errors || message.request_id !== requestId) {
+			if (message instanceof type.errors || message.requestId !== requestId) {
 				return;
 			}
 

@@ -55,7 +55,7 @@ interface SingleResultsOptions {
 	typecheckResult?: JestResult | undefined;
 }
 
-const VERSION: string = packageJson.version;
+const VERSION = packageJson.version;
 
 // Prints the run results for `single`, honouring `config.silent` and folding
 // the deferred coverage phase into the reported timing. The multi/workspace
@@ -188,8 +188,8 @@ function toProjectEntries(projectResults: Array<ProjectResult>): Array<Formatter
 function getAgentMaxFailures(config: ResolvedConfig): number {
 	assert(config.formatters !== undefined, "formatters is set by resolveFormatters");
 	const options = findFormatterOptions(config.formatters, "agent");
-	if (options !== undefined && typeof options["maxFailures"] === "number") {
-		return options["maxFailures"];
+	if (options !== undefined && typeof options.maxFailures === "number") {
+		return options.maxFailures;
 	}
 
 	return DEFAULT_MAX_FAILURES;

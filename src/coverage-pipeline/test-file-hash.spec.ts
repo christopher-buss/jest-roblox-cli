@@ -11,9 +11,7 @@ vi.mock(import("node:fs"), async () => {
 	return fromAny({ ...memfs.fs, default: memfs.fs });
 });
 
-function mapperResolving(diskPath: string | undefined): {
-	resolveTestFilePath: () => string | undefined;
-} {
+function mapperResolving(diskPath: string | undefined) {
 	return { resolveTestFilePath: () => diskPath };
 }
 

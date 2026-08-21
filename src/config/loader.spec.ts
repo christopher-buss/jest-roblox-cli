@@ -66,7 +66,7 @@ describe(applySnapshotFormatDefaults, () => {
 		const config = { ...DEFAULT_CONFIG };
 		applySnapshotFormatDefaults(config, true);
 
-		expect((config as Record<string, unknown>)["snapshotFormat"]).toBeUndefined();
+		expect(config.snapshotFormat).toBeUndefined();
 	});
 });
 
@@ -690,9 +690,7 @@ describe(loadConfig, () => {
 			const childPath = path.join(temporaryDirectory, "jest.config.mjs");
 			fs.writeFileSync(childPath, 'export default { extends: "./jest.shared.mjs" };');
 
-			const error = await loadConfig(childPath, temporaryDirectory).catch(
-				(err: unknown) => err,
-			);
+			const error = await loadConfig(childPath, temporaryDirectory).catch((err) => err);
 
 			assert(error instanceof Error);
 
@@ -710,9 +708,7 @@ describe(loadConfig, () => {
 			const configPath = path.join(temporaryDirectory, "jest.config.mjs");
 			fs.writeFileSync(configPath, "export default {{{");
 
-			const error = await loadConfig(configPath, temporaryDirectory).catch(
-				(err: unknown) => err,
-			);
+			const error = await loadConfig(configPath, temporaryDirectory).catch((err) => err);
 
 			assert(error instanceof Error);
 

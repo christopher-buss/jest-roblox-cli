@@ -1,4 +1,5 @@
 import EventEmitter from "node:events";
+import type { AddressInfo } from "node:net";
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 
@@ -14,7 +15,7 @@ export class MockWebSocketServer extends EventEmitter {
 		instances.push(this);
 	}
 
-	public address(): { port: number } {
+	public address(): Pick<AddressInfo, "port"> {
 		return { port: this.port };
 	}
 }

@@ -150,7 +150,7 @@ describe(generateMaterializerScript, () => {
 		// rest of the runtime workflow lives in luau/staging/entry.luau but
 		// must survive bundling; assert both halves are present.
 		expect(script).toContain("__jest_roblox_cov");
-		expect(script).toMatch(/_coverage/);
+		expect(script).toMatch(/runnerCoverage/);
 	});
 
 	it("should throw when serialized payload contains the long-string terminator", () => {

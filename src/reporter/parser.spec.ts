@@ -59,15 +59,17 @@ More logs after
 });
 
 describe(extractLuauTimingFromOutput, () => {
-	it("should extract the _timing phases from a raw jestOutput string", () => {
+	it("should extract the runner.timing phases from a raw jestOutput string", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_timing: { findJest: 0.1, jestRunCLI: 2.5 },
 			numFailedTests: 0,
 			numPassedTests: 1,
 			numPendingTests: 0,
 			numTotalTests: 1,
+			runner: {
+				timing: { findJest: 0.1, jestRunCLI: 2.5 },
+			},
 			startTime: 0,
 			success: true,
 			testResults: [],
@@ -85,7 +87,7 @@ describe(extractLuauTimingFromOutput, () => {
 		expect(extractLuauTimingFromOutput("Just plain text output")).toBeUndefined();
 	});
 
-	it("should return undefined when _timing is absent", () => {
+	it("should return undefined when runner.timing is absent", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -193,14 +195,16 @@ describe(parseJestOutput, () => {
 		expect(result.numTotalTests).toBe(1);
 	});
 
-	it("should extract _timing from Ok result wrapper", () => {
+	it("should extract runner.timing from Ok result wrapper", () => {
 		expect.assertions(2);
 
 		const output = JSON.stringify({
-			_timing: {
-				configDecode: 0.001,
-				findJest: 0.05,
-				requireJest: 8.234,
+			runner: {
+				timing: {
+					configDecode: 0.001,
+					findJest: 0.05,
+					requireJest: 8.234,
+				},
 			},
 			success: true,
 			value: {
@@ -224,7 +228,7 @@ describe(parseJestOutput, () => {
 		});
 	});
 
-	it("should return no timing when _timing absent", () => {
+	it("should return no timing when runner.timing absent", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -557,14 +561,16 @@ End of output
 		expect(result.success).toBeTrue();
 	});
 
-	it("should preserve _setup and _coverage when extracting mixed output", () => {
+	it("should preserve runner.setup and runner.coverage when extracting mixed output", () => {
 		expect.assertions(3);
 
 		const payload = JSON.stringify({
-			_coverage: {
-				"shared/player.luau": { s: { 0: 1 } },
+			runner: {
+				coverage: {
+					"shared/player.luau": { s: { 0: 1 } },
+				},
+				setup: 0.25,
 			},
-			_setup: 0.25,
 			success: true,
 			value: {
 				numFailedTests: 0,
@@ -591,17 +597,19 @@ End of output
 		expect(coverageData!["shared/player.luau"]!.s["0"]).toBe(1);
 	});
 
-	it("should extract _perTestCoverage entries from the envelope", () => {
+	it("should extract runner.perTestCoverage entries from the envelope", () => {
 		expect.assertions(1);
 
 		const payload = JSON.stringify({
-			_perTestCoverage: [
-				{
-					delta: { "out/m.luau": { s: [1, 3] } },
-					testCaseId: "math > adds",
-					testFilePath: "out/m.spec.luau",
-				},
-			],
+			runner: {
+				perTestCoverage: [
+					{
+						delta: { "out/m.luau": { s: [1, 3] } },
+						testCaseId: "math > adds",
+						testFilePath: "out/m.spec.luau",
+					},
+				],
+			},
 			success: true,
 			value: {
 				numFailedTests: 0,
@@ -647,11 +655,13 @@ End of output
 		expect.assertions(1);
 
 		const payload = JSON.stringify({
-			_perTestCoverage: [],
 			numFailedTests: 0,
 			numPassedTests: 1,
 			numPendingTests: 0,
 			numTotalTests: 1,
+			runner: {
+				perTestCoverage: [],
+			},
 			startTime: 0,
 			success: true,
 			testResults: [],
@@ -666,11 +676,13 @@ End of output
 		expect.assertions(1);
 
 		const payload = JSON.stringify({
-			_perTestCoverage: [{ delta: { "out/m.luau": { s: ["not-a-number"] } } }],
 			numFailedTests: 0,
 			numPassedTests: 1,
 			numPendingTests: 0,
 			numTotalTests: 1,
+			runner: {
+				perTestCoverage: [{ delta: { "out/m.luau": { s: ["not-a-number"] } } }],
+			},
 			startTime: 0,
 			success: true,
 			testResults: [],
@@ -808,13 +820,15 @@ End of output
 		expect(result.snapshot).toBeUndefined();
 	});
 
-	it("should extract _snapshotWrites from result", () => {
+	it("should extract runner.snapshotWrites from result", () => {
 		expect.assertions(2);
 
 		const output = JSON.stringify({
-			_snapshotWrites: {
-				"ReplicatedStorage/shared/__snapshots__/Button.spec.snap.luau":
-					'-- Jest Snapshot v1\nexports["Button renders"] = "hello";\n',
+			runner: {
+				snapshotWrites: {
+					"ReplicatedStorage/shared/__snapshots__/Button.spec.snap.luau":
+						'-- Jest Snapshot v1\nexports["Button renders"] = "hello";\n',
+				},
 			},
 			success: true,
 			value: {
@@ -858,12 +872,14 @@ End of output
 		expect(snapshotWrites).toBeUndefined();
 	});
 
-	it("should extract _coverage from output", () => {
+	it("should extract runner.coverage from output", () => {
 		expect.assertions(2);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"shared/player.luau": { s: { 0: 1, 1: 3, 2: 0 } },
+			runner: {
+				coverage: {
+					"shared/player.luau": { s: { 0: 1, 1: 3, 2: 0 } },
+				},
 			},
 			success: true,
 			value: {
@@ -906,11 +922,13 @@ End of output
 		expect(coverageData).toBeUndefined();
 	});
 
-	it("should handle empty _coverage", () => {
+	it("should handle empty runner.coverage", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {},
+			runner: {
+				coverage: {},
+			},
 			success: true,
 			value: {
 				numFailedTests: 0,
@@ -932,8 +950,10 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": { s: [1, 0, 3] },
+			runner: {
+				coverage: {
+					"file.luau": { s: [1, 0, 3] },
+				},
 			},
 			success: true,
 			value: {
@@ -956,13 +976,15 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": {
-					b: [
-						[1, 0],
-						[3, 2, 1],
-					],
-					s: { "1": 1 },
+			runner: {
+				coverage: {
+					"file.luau": {
+						b: [
+							[1, 0],
+							[3, 2, 1],
+						],
+						s: { "1": 1 },
+					},
 				},
 			},
 			success: true,
@@ -989,8 +1011,10 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": { b: ["not-array", null], s: { "1": 1 } },
+			runner: {
+				coverage: {
+					"file.luau": { b: ["not-array", null], s: { "1": 1 } },
+				},
 			},
 			success: true,
 			value: {
@@ -1016,8 +1040,10 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": { f: [5, 0, 2], s: { "1": 1 } },
+			runner: {
+				coverage: {
+					"file.luau": { f: [5, 0, 2], s: { "1": 1 } },
+				},
 			},
 			success: true,
 			value: {
@@ -1036,13 +1062,15 @@ End of output
 		expect(coverageData!["file.luau"]!.f).toStrictEqual({ "1": 5, "2": 0, "3": 2 });
 	});
 
-	it("should filter non-number values from _timing", () => {
+	it("should filter non-number values from runner.timing", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_timing: {
-				configDecode: 0.1,
-				invalid: "not a number",
+			runner: {
+				timing: {
+					configDecode: 0.1,
+					invalid: "not a number",
+				},
 			},
 			success: true,
 			value: {
@@ -1065,7 +1093,9 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_timing: { bad: "string" },
+			runner: {
+				timing: { bad: "string" },
+			},
 			success: true,
 			value: {
 				numFailedTests: 0,
@@ -1083,11 +1113,13 @@ End of output
 		expect(luauTiming).toBeUndefined();
 	});
 
-	it("should extract _setup seconds from envelope", () => {
+	it("should extract runner.setup seconds from envelope", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_setup: 0.25,
+			runner: {
+				setup: 0.25,
+			},
 			success: true,
 			value: {
 				numFailedTests: 0,
@@ -1105,7 +1137,7 @@ End of output
 		expect(setupSeconds).toBe(0.25);
 	});
 
-	it("should return undefined setupSeconds when _setup absent", () => {
+	it("should return undefined setupSeconds when runner.setup absent", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
@@ -1126,11 +1158,13 @@ End of output
 		expect(setupSeconds).toBeUndefined();
 	});
 
-	it("should return undefined setupSeconds when _setup is not a number", () => {
+	it("should return undefined setupSeconds when runner.setup is not a number", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_setup: "bad",
+			runner: {
+				setup: "bad",
+			},
 			success: true,
 			value: {
 				numFailedTests: 0,
@@ -1148,13 +1182,15 @@ End of output
 		expect(setupSeconds).toBeUndefined();
 	});
 
-	it("should filter non-string values from _snapshotWrites", () => {
+	it("should filter non-string values from runner.snapshotWrites", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_snapshotWrites: {
-				"file.snap": "content",
-				"invalid": 123,
+			runner: {
+				snapshotWrites: {
+					"file.snap": "content",
+					"invalid": 123,
+				},
 			},
 			success: true,
 			value: {
@@ -1290,8 +1326,10 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": { s: "string" },
+			runner: {
+				coverage: {
+					"file.luau": { s: "string" },
+				},
 			},
 			success: true,
 			value: {
@@ -1314,8 +1352,10 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": { b: 42, s: { "1": 1 } },
+			runner: {
+				coverage: {
+					"file.luau": { b: 42, s: { "1": 1 } },
+				},
 			},
 			success: true,
 			value: {
@@ -1338,10 +1378,12 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": {
-					b: { "1": [1, 0], "2": [3, 2] },
-					s: { "1": 1 },
+			runner: {
+				coverage: {
+					"file.luau": {
+						b: { "1": [1, 0], "2": [3, 2] },
+						s: { "1": 1 },
+					},
 				},
 			},
 			success: true,
@@ -1368,8 +1410,10 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": { s: ["not-a-number", 5] },
+			runner: {
+				coverage: {
+					"file.luau": { s: ["not-a-number", 5] },
+				},
 			},
 			success: true,
 			value: {
@@ -1392,8 +1436,10 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"file.luau": { b: [["not-a-number", 1]], s: { "1": 1 } },
+			runner: {
+				coverage: {
+					"file.luau": { b: [["not-a-number", 1]], s: { "1": 1 } },
+				},
 			},
 			success: true,
 			value: {
@@ -1416,7 +1462,9 @@ End of output
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_snapshotWrites: { key: 123 },
+			runner: {
+				snapshotWrites: { key: 123 },
+			},
 			success: true,
 			value: {
 				numFailedTests: 0,
@@ -1455,13 +1503,15 @@ End of output
 		expect(() => parseJestOutput(output)).toThrowWithMessage(Error, "42");
 	});
 
-	it("should skip _coverage entries without s field", () => {
+	it("should skip runner.coverage entries without s field", () => {
 		expect.assertions(1);
 
 		const output = JSON.stringify({
-			_coverage: {
-				"bad.luau": { noS: true },
-				"good.luau": { s: { "1": 1 } },
+			runner: {
+				coverage: {
+					"bad.luau": { noS: true },
+					"good.luau": { s: { "1": 1 } },
+				},
 			},
 			success: true,
 			value: {

@@ -74,6 +74,11 @@ export interface RojoResolverState {
 	warnings: Array<string>;
 }
 
+export interface RojoConfigFileResult {
+	path: string | undefined;
+	warnings: Array<string>;
+}
+
 export class RojoResolver {
 	private filePathToRbxPathMap = new Map<string, RbxPath>();
 	private isolatedContainers = [...DEFAULT_ISOLATED_CONTAINERS];
@@ -84,10 +89,7 @@ export class RojoResolver {
 
 	public isGame = false;
 
-	public static findRojoConfigFilePath(projectPath: string): {
-		path: string | undefined;
-		warnings: Array<string>;
-	} {
+	public static findRojoConfigFilePath(projectPath: string): RojoConfigFileResult {
 		const warnings = new Array<string>();
 
 		const defaultPath = path.join(projectPath, ROJO_DEFAULT_NAME);

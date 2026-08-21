@@ -178,7 +178,7 @@ describe(resolveAllSetupFilePaths, () => {
 		expect.assertions(2);
 
 		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input: string) => `resolved:${input}`);
+		vi.mocked(createSetupResolver).mockReturnValue((input) => `resolved:${input}`);
 		const config = makeConfig({ setupFiles: ["./a.ts"] });
 		resolveAllSetupFilePaths([config]);
 
@@ -193,7 +193,7 @@ describe(resolveAllSetupFilePaths, () => {
 		expect.assertions(1);
 
 		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input: string) => `r:${input}`);
+		vi.mocked(createSetupResolver).mockReturnValue((input) => `r:${input}`);
 		const config = makeConfig({ setupFilesAfterEnv: ["./post.ts"] });
 		resolveAllSetupFilePaths([config]);
 
@@ -204,7 +204,7 @@ describe(resolveAllSetupFilePaths, () => {
 		expect.assertions(1);
 
 		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input: string) => input);
+		vi.mocked(createSetupResolver).mockReturnValue((input) => input);
 		const config = makeConfig({
 			rojoProject: "custom.project.json",
 			setupFiles: ["./a.ts"],
@@ -232,7 +232,7 @@ describe(resolveAllSetupFilePaths, () => {
 		expect.assertions(2);
 
 		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input: string) => `r:${input}`);
+		vi.mocked(createSetupResolver).mockReturnValue((input) => `r:${input}`);
 		const a = makeConfig({ setupFiles: ["./a.ts"] });
 		const b = makeConfig({ setupFilesAfterEnv: ["./b.ts"] });
 		resolveAllSetupFilePaths([a, b]);
@@ -245,7 +245,7 @@ describe(resolveAllSetupFilePaths, () => {
 		expect.assertions(2);
 
 		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input: string) => input);
+		vi.mocked(createSetupResolver).mockReturnValue((input) => input);
 		const a = makeConfig({ rojoProject: "one.project.json", setupFiles: ["./a.ts"] });
 		const b = makeConfig({ rojoProject: "two.project.json", setupFiles: ["./b.ts"] });
 		resolveAllSetupFilePaths([a, b]);
@@ -263,7 +263,7 @@ describe(resolveAllSetupFilePaths, () => {
 		expect.assertions(2);
 
 		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input: string) => `r:${input}`);
+		vi.mocked(createSetupResolver).mockReturnValue((input) => `r:${input}`);
 		const empty = makeConfig();
 		const withSetup = makeConfig({ setupFiles: ["./a.ts"] });
 		resolveAllSetupFilePaths([empty, withSetup]);

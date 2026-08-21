@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-// Drives the shared `_timing` envelope builder under lute. Pure module, no
+// Drives the shared `runner.timing` envelope builder under lute. Pure module, no
 // dependencies to inline. Requires `lute` on PATH (mise, in dev and CI).
 const CURRENT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../luau");

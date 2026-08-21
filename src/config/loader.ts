@@ -1,4 +1,4 @@
-import { loadConfig as c12LoadConfig } from "c12";
+import { loadConfig as c12LoadConfig, type LoadConfigOptions } from "c12";
 import { defuFn } from "defu";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -9,6 +9,15 @@ import process from "node:process";
 import type { Config, ResolvedConfig } from "./schema.ts";
 import { DEFAULT_CONFIG, validateConfig } from "./schema.ts";
 
+/**
+ * A config module as `require` hands it back. An ESM config arrives with the
+ * config under `default`; c12's `resolveModule` unwraps it, and
+ * `validateConfig` parses the result.
+ */
+interface ConfigModule {
+	readonly default?: unknown;
+}
+
 interface ExtendsLayerRequest {
 	/**
 	 * Absolute path of the config declaring `extends`; entries resolve against
@@ -18,6 +27,25 @@ interface ExtendsLayerRequest {
 	extendList: Array<string>;
 	visited: Set<string>;
 }
+
+type MergerKey =
+	| "collectCoverageFrom"
+	| "coveragePathIgnorePatterns"
+	| "coverageReporters"
+	| "coverageThreshold"
+	| "formatters"
+	| "luauRoots"
+	| "reporters"
+	| "roots"
+	| "selectProjects"
+	| "setupFiles"
+	| "setupFilesAfterEnv"
+	| "snapshotFormat"
+	| "snapshotSerializers"
+	| "testMatch"
+	| "testPathIgnorePatterns";
+
+type MergerDefault = NonNullable<ResolvedConfig[MergerKey]>;
 
 export function applySnapshotFormatDefaults(
 	config: ResolvedConfig,
@@ -129,14 +157,14 @@ function isSea(): boolean {
 // unresolvable import surfaces Node's standard module-resolution error. `.json`
 // keeps its read + parse path (a bare `require` of JSON works too, but reading
 // avoids relying on CJS JSON-module semantics).
-async function seaImport(id: string): Promise<unknown> {
+async function seaImport(id: string): Promise<ConfigModule | JSONValue> {
 	if (id.endsWith(".json")) {
 		const content = await readFile(id, "utf-8");
 		return JSON.parse(content);
 	}
 
-	const required: unknown = createRequire(id)(id);
-	return required;
+	const requireConfig: (moduleId: string) => ConfigModule = createRequire(id);
+	return requireConfig(id);
 }
 
 // defuFn wants a non-empty argument list, which a variadic array can't prove.
@@ -147,23 +175,28 @@ function merger(...sources: Array<Config | null | undefined>): Config {
 }
 
 async function invokeC12(configFile: string | undefined, cwd: string) {
-	return c12LoadConfig<Config>({
+	let options: LoadConfigOptions<Config> = {
 		name: "jest",
-		...(configFile !== undefined ? { configFile } : {}),
 		configFileRequired: configFile !== undefined,
 		cwd,
 		dotenv: false,
 		extend: false,
 		globalRc: false,
-		// In SEA mode, jiti's babel.cjs can't be resolved from the
-		// single-executable archive. Bypass jiti entirely by providing a
-		// custom import function.
-		...(isSea() ? { import: seaImport } : {}),
 		merger,
 		omit$Keys: true,
 		packageJson: false,
 		rcFile: false,
-	});
+	};
+	if (configFile !== undefined) {
+		options = { ...options, configFile };
+	}
+
+	// In SEA mode, jiti's babel.cjs can't be resolved from the
+	// single-executable archive. Bypass jiti entirely by providing a
+	// custom import function.
+	return isSea()
+		? c12LoadConfig<Config>({ ...options, import: seaImport })
+		: c12LoadConfig<Config>(options);
 }
 
 // `workspace.root` is relative in source; anchor it to the directory of the
@@ -198,7 +231,7 @@ async function processExtends(
 	result: Awaited<ReturnType<typeof invokeC12>>,
 	visited: Set<string>,
 ): Promise<Config> {
-	const loadedConfig: Config = result.config;
+	const loadedConfig = result.config;
 	const loadedFile = result.configFile;
 
 	if (loadedFile === undefined || !existsSync(loadedFile)) {
@@ -259,7 +292,7 @@ async function loadExtendsLayers({
 	return layers;
 }
 
-const EMPTY_ARRAY_DEFAULT_KEYS = new Set([
+const EMPTY_ARRAY_DEFAULT_KEYS: ReadonlySet<MergerKey> = new Set<MergerKey>([
 	"collectCoverageFrom",
 	"formatters",
 	"luauRoots",
@@ -271,9 +304,12 @@ const EMPTY_ARRAY_DEFAULT_KEYS = new Set([
 	"snapshotSerializers",
 ]);
 
-const EMPTY_OBJECT_DEFAULT_KEYS = new Set(["coverageThreshold", "snapshotFormat"]);
+const EMPTY_OBJECT_DEFAULT_KEYS: ReadonlySet<MergerKey> = new Set<MergerKey>([
+	"coverageThreshold",
+	"snapshotFormat",
+]);
 
-const MERGEABLE_KEYS = new Set([
+const MERGEABLE_KEYS: ReadonlySet<string> = new Set<MergerKey>([
 	...EMPTY_ARRAY_DEFAULT_KEYS,
 	...EMPTY_OBJECT_DEFAULT_KEYS,
 	"coveragePathIgnorePatterns",
@@ -282,19 +318,16 @@ const MERGEABLE_KEYS = new Set([
 	"testPathIgnorePatterns",
 ]);
 
-function isMergerFunction(value: unknown): value is (defaults: unknown) => unknown {
+function isMergerFunction(value: unknown): value is (defaults: MergerDefault) => MergerDefault {
 	return typeof value === "function";
 }
 
-function shouldResolveMergerFunction(
-	key: string,
-	value: unknown,
-): value is (defaults: unknown) => unknown {
-	return isMergerFunction(value) && MERGEABLE_KEYS.has(key);
+function isMergerKey(key: string): key is MergerKey {
+	return MERGEABLE_KEYS.has(key);
 }
 
-function defaultForMergerKey(key: string): unknown {
-	const defaultValue: unknown = Reflect.get(DEFAULT_CONFIG, key);
+function defaultForMergerKey(key: MergerKey): MergerDefault {
+	const defaultValue = DEFAULT_CONFIG[key];
 	if (Array.isArray(defaultValue)) {
 		return [...defaultValue];
 	}
@@ -306,24 +339,26 @@ function defaultForMergerKey(key: string): unknown {
 	return {};
 }
 
-function resolveFunctionValues({ test, ...rest }: Config): Config {
-	const resolvedRest: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(rest)) {
-		resolvedRest[key] = shouldResolveMergerFunction(key, value)
-			? value(defaultForMergerKey(key))
-			: value;
-	}
+function resolveFunctionValues({ test, ...rest }: Config) {
+	const resolvedRest = Object.fromEntries(
+		Object.entries(rest).map(([key, value]) => [
+			key,
+			isMergerKey(key) && isMergerFunction(value) ? value(defaultForMergerKey(key)) : value,
+		]),
+	);
 
 	if (test === undefined) {
 		return resolvedRest;
 	}
 
-	const resolvedTest: Record<string, unknown> = {};
-	for (const [innerKey, innerValue] of Object.entries(test)) {
-		resolvedTest[innerKey] = shouldResolveMergerFunction(innerKey, innerValue)
-			? innerValue(defaultForMergerKey(innerKey))
-			: innerValue;
-	}
+	const resolvedTest = Object.fromEntries(
+		Object.entries(test).map(([innerKey, innerValue]) => [
+			innerKey,
+			isMergerKey(innerKey) && isMergerFunction(innerValue)
+				? innerValue(defaultForMergerKey(innerKey))
+				: innerValue,
+		]),
+	);
 
 	return { ...resolvedRest, test: resolvedTest };
 }

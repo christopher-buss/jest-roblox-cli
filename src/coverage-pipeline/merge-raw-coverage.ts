@@ -28,7 +28,7 @@ export function mergeRawCoverage(
 	return result;
 }
 
-function sumScalars(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
+function sumScalars(a: RawFileCoverage["s"], b: RawFileCoverage["s"]): RawFileCoverage["s"] {
 	const result = { ...a };
 	for (const [key, value] of Object.entries(b)) {
 		result[key] = (result[key] ?? 0) + value;
@@ -38,10 +38,10 @@ function sumScalars(a: Record<string, number>, b: Record<string, number>): Recor
 }
 
 function sumBranches(
-	a: Record<string, Array<number>>,
-	b: Record<string, Array<number>>,
-): Record<string, Array<number>> {
-	const result: Record<string, Array<number>> = { ...a };
+	a: NonNullable<RawFileCoverage["b"]>,
+	b: NonNullable<RawFileCoverage["b"]>,
+): NonNullable<RawFileCoverage["b"]> {
+	const result = { ...a };
 	for (const [key, bArms] of Object.entries(b)) {
 		const aArms = result[key];
 		if (aArms === undefined) {

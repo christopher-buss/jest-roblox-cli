@@ -11,7 +11,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
 	decodeStreamingResult,
-	encodeStreamingResult,
 	StreamingResultClient,
 	type StreamingResultEntry,
 } from "./sorted-map-client.ts";
@@ -108,7 +107,7 @@ function makeItem(overrides: Partial<SortedMapItem> & { id: string }): SortedMap
 		mapId: "map-1",
 		sortKey: undefined,
 		universeId: "123",
-		value: encodeStreamingResult(makeEntry({ pkg: "x", project: "y" })),
+		value: { ...makeEntry({ pkg: "x", project: "y" }) },
 		...overrides,
 	};
 }
@@ -230,7 +229,7 @@ describe(StreamingResultClient, () => {
 			const stub = createSortedMapStub({
 				listPages: [
 					{
-						items: [makeItem({ id: "a::p", value: encodeStreamingResult(decoded) })],
+						items: [makeItem({ id: "a::p", value: { ...decoded } })],
 						nextPageToken: undefined,
 					},
 				],
@@ -255,7 +254,7 @@ describe(StreamingResultClient, () => {
 						items: [
 							makeItem({
 								id: "a::p",
-								value: encodeStreamingResult(makeEntry({ pkg: "a", project: "p" })),
+								value: { ...makeEntry({ pkg: "a", project: "p" }) },
 							}),
 						],
 						nextPageToken: "page-2",
@@ -264,7 +263,7 @@ describe(StreamingResultClient, () => {
 						items: [
 							makeItem({
 								id: "b::q",
-								value: encodeStreamingResult(makeEntry({ pkg: "b", project: "q" })),
+								value: { ...makeEntry({ pkg: "b", project: "q" }) },
 							}),
 						],
 						nextPageToken: undefined,
@@ -378,24 +377,6 @@ describe(StreamingResultClient, () => {
 
 			expect(client).toBeInstanceOf(StreamingResultClient);
 		});
-	});
-});
-
-describe(encodeStreamingResult, () => {
-	it("should round-trip a streaming entry through encode/decode unchanged", () => {
-		expect.assertions(1);
-
-		const entry = makeEntry({
-			elapsedMs: 42,
-			numFailedTests: 1,
-			numPassedTests: 7,
-			numPendingTests: 0,
-			pkg: "@halcyon/foo",
-			project: "alpha",
-			success: false,
-		});
-
-		expect(decodeStreamingResult(encodeStreamingResult(entry))).toStrictEqual(entry);
 	});
 });
 

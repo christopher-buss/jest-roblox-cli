@@ -82,7 +82,9 @@ describe(buildJestArgv, () => {
 			createOptions({ config: { testPathPattern: "cleanup-destroyed" } }),
 		);
 
-		expect(argv).toHaveProperty("testPathPattern", "cleanup-destroyed");
+		// `Argv` declares `testPathPattern` as an array; the config value is a
+		// string and passes through as one, so the path form asserts what lands.
+		expect(argv).toHaveProperty(["testPathPattern"], "cleanup-destroyed");
 	});
 
 	it("should default reporters to empty array", () => {
@@ -101,21 +103,21 @@ describe(buildJestArgv, () => {
 		expect(argv.reporters).toStrictEqual(["custom-reporter"]);
 	});
 
-	it("should inject _timing when TIMING env var is set", () => {
+	it("should inject runnerTiming when TIMING env var is set", () => {
 		expect.assertions(1);
 
 		vi.stubEnv("TIMING", "1");
 		const argv = buildJestArgv(createOptions());
 
-		expect(argv).toHaveProperty("_timing", true);
+		expect(argv).toHaveProperty("runnerTiming", true);
 	});
 
-	it("should not inject _timing when TIMING env var is absent", () => {
+	it("should not inject runnerTiming when TIMING env var is absent", () => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions());
 
-		expect(argv).not.toHaveProperty("_timing");
+		expect(argv).not.toHaveProperty("runnerTiming");
 	});
 
 	it("should pass through snapshotFormat", () => {
@@ -138,36 +140,36 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("collectCoverage");
 	});
 
-	it("should inject _coverage when collectCoverage is true", () => {
+	it("should inject runnerCoverage when collectCoverage is true", () => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectCoverage: true } }));
 
-		expect(argv).toHaveProperty("_coverage", true);
+		expect(argv).toHaveProperty("runnerCoverage", true);
 	});
 
-	it("should not inject _coverage when collectCoverage is false", () => {
+	it("should not inject runnerCoverage when collectCoverage is false", () => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectCoverage: false } }));
 
-		expect(argv).not.toHaveProperty("_coverage");
+		expect(argv).not.toHaveProperty("runnerCoverage");
 	});
 
-	it("should inject _perTestCoverage when collectPerTestCoverage is true", () => {
+	it("should inject runnerPerTestCoverage when collectPerTestCoverage is true", () => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectPerTestCoverage: true } }));
 
-		expect(argv).toHaveProperty("_perTestCoverage", true);
+		expect(argv).toHaveProperty("runnerPerTestCoverage", true);
 	});
 
-	it("should not inject _perTestCoverage when collectPerTestCoverage is false", () => {
+	it("should not inject runnerPerTestCoverage when collectPerTestCoverage is false", () => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { collectPerTestCoverage: false } }));
 
-		expect(argv).not.toHaveProperty("_perTestCoverage");
+		expect(argv).not.toHaveProperty("runnerPerTestCoverage");
 	});
 
 	it("should not pass collectPerTestCoverage to Jest argv", () => {

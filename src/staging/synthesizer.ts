@@ -79,6 +79,19 @@ const TRAILING_SLASH = /\/$/;
 const STUB_INJECTION_KEY = "jest.config";
 const COLLIDING_SOURCE_FILES = ["jest.config.lua", "jest.config.luau"];
 
+interface JsonStringifyObject {
+	[key: string]: JsonStringifyValue;
+}
+
+type JsonStringifyValue =
+	| Array<JsonStringifyValue>
+	| boolean
+	| JsonStringifyObject
+	| null
+	| number
+	| string
+	| undefined;
+
 interface AbsolutizeOptions {
 	/**
 	 * Base for resolving `coverageRoots[].luauRoot`. Typically
@@ -104,7 +117,7 @@ interface HoistedService {
 	 * "StarterPlayerScripts"]`.
 	 */
 	path: Array<string>;
-	properties: Record<string, unknown>;
+	properties: JSONObject;
 	/** Declared `$className`, or the node name for a service rojo infers. */
 	serviceClass: string;
 }
@@ -158,13 +171,13 @@ export function synthesize(input: SynthesizeInput): string {
 	const globIgnorePaths = resolveGlobIgnorePaths(globs);
 
 	return stableStringify({
-		...(globIgnorePaths === undefined ? {} : { globIgnorePaths }),
 		name: "jest-roblox-workspace",
+		globIgnorePaths,
 		tree,
 	});
 }
 
-function readGlobIgnorePaths(raw: Record<string, unknown>): Array<string> | undefined {
+function readGlobIgnorePaths(raw: JSONObject): Array<string> | undefined {
 	const value = raw["globIgnorePaths"];
 	return Array.isArray(value)
 		? value.filter((entry): entry is string => typeof entry === "string")
@@ -290,7 +303,7 @@ function virtualizePathChild(parent: RojoTreeNode, segment: string): RojoTreeNod
 }
 
 function walkToLeaf(root: RojoTreeNode, dataModelPath: string): RojoTreeNode {
-	let cursor: RojoTreeNode = root;
+	let cursor = root;
 	for (const segment of dataModelPath.split("/")) {
 		let next = cursor[segment];
 		if (!isTreeNode(next)) {
@@ -356,7 +369,7 @@ function injectStubMounts(root: RojoTreeNode, stubMounts: Array<StubMount> | und
 	}
 }
 
-function isProperties(value: RojoTreeNode[string]): value is Record<string, unknown> {
+function isProperties(value: RojoTreeNode[string]): value is JSONObject {
 	// `typeof null === "object"`, so guard it explicitly — a null `$properties`
 	// from a malformed `.project.json` would otherwise reach
 	// `Object.entries(null)` and throw. The static type excludes null (it's a
@@ -425,7 +438,7 @@ function transformToFolder(node: RojoTreeNode, hoisted: Array<HoistedService>): 
  * under `ServerStorage`, and this attribute tells the materializer to restore
  * the requested run context on each clone before it enters a live service.
  */
-function markRunContextScripts(root: RojoTreeNode, raw: Record<string, unknown>): void {
+function markRunContextScripts(root: RojoTreeNode, raw: JSONObject): void {
 	if (raw["emitLegacyScripts"] !== false) {
 		return;
 	}
@@ -471,7 +484,7 @@ function formatGlobConflict(owner: DeclaredGlobs, rival: DeclaredGlobs): string 
 	].join("\n");
 }
 
-function isSameValue(left: unknown, right: unknown): boolean {
+function isSameValue(left: JSONValue, right: JSONValue): boolean {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -497,21 +510,20 @@ function resolveGlobIgnorePaths(globs: ReadonlyArray<DeclaredGlobs>): Array<stri
 	return first.patterns;
 }
 
-function sortKeys(value: unknown): unknown {
+function sortKeys(value: JsonStringifyValue): JsonStringifyValue {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) {
 		return value;
 	}
 
-	const sorted: Record<string, unknown> = {};
+	const sorted: JsonStringifyObject = {};
 	for (const key of Object.keys(value).sort()) {
-		const member: unknown = Reflect.get(value, key);
-		sorted[key] = sortKeys(member);
+		sorted[key] = sortKeys(value[key]);
 	}
 
 	return sorted;
 }
 
-function stableStringify(value: unknown): string {
+function stableStringify(value: JsonStringifyValue): string {
 	return String(JSON.stringify(sortKeys(value), undefined, 2));
 }
 
@@ -524,9 +536,7 @@ function stableStringify(value: unknown): string {
  */
 function enableLoadString(tree: RojoTreeNode): void {
 	const existing = tree["ServerScriptService"];
-	const service: RojoTreeNode = isTreeNode(existing)
-		? existing
-		: { $className: "ServerScriptService" };
+	const service = isTreeNode(existing) ? existing : { $className: "ServerScriptService" };
 	service.$className ??= "ServerScriptService";
 
 	const properties = isProperties(service.$properties) ? service.$properties : {};
@@ -589,7 +599,7 @@ function mergeServiceProperties(
 	target: HoistedService,
 	service: HoistedService,
 	packageName: string,
-	owners: Map<string, { packageName: string; value: unknown }>,
+	owners: Map<string, { packageName: string; value: JSONValue }>,
 ): void {
 	const pathKey = service.path.join("/");
 
@@ -618,7 +628,7 @@ function mergeServiceProperties(
  */
 function mergeHoistedServices(hoists: ReadonlyArray<PackageHoist>): Array<HoistedService> {
 	const merged = new Map<string, HoistedService>();
-	const owners = new Map<string, { packageName: string; value: unknown }>();
+	const owners = new Map<string, { packageName: string; value: JSONValue }>();
 
 	for (const { packageName, services } of hoists) {
 		for (const service of services) {
@@ -651,7 +661,7 @@ function applyHoistedServices(tree: RojoTreeNode, hoisted: ReadonlyArray<Hoisted
 		let cursor = tree;
 		for (const [index, segment] of service.path.entries()) {
 			const existing = cursor[segment];
-			const node: RojoTreeNode = isTreeNode(existing) ? existing : {};
+			const node = isTreeNode(existing) ? existing : {};
 			// An intermediate segment is a service rojo would infer from its own
 			// name; only the leaf carries a class the package declared.
 			node.$className ??= index === service.path.length - 1 ? service.serviceClass : segment;

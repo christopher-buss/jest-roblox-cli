@@ -26,7 +26,7 @@ export function harvestAttribution(
 	resolveSourceHash: (testFilePath: string) => string | undefined,
 ): AttributionResult {
 	const tests: Array<TestRecord> = [];
-	const coveringTestIds: Record<string, Record<string, Array<string>>> = {};
+	const coveringTestIds: AttributionResult["coveringTestIds"] = {};
 
 	for (const entry of entries) {
 		// A test that covered nothing new (e.g. a pure assertion against already-
@@ -100,7 +100,7 @@ export function applyAttribution(
  * multi-project run.
  */
 export function mergeAttribution(a: AttributionResult, b: AttributionResult): AttributionResult {
-	const coveringTestIds: Record<string, Record<string, Array<string>>> = {};
+	const coveringTestIds: AttributionResult["coveringTestIds"] = {};
 	for (const source of [a.coveringTestIds, b.coveringTestIds]) {
 		for (const [fileKey, statementMap] of Object.entries(source)) {
 			const fileAttribution = (coveringTestIds[fileKey] ??= {});
@@ -126,9 +126,9 @@ export function mergeAttribution(a: AttributionResult, b: AttributionResult): At
  */
 function deriveStatic(
 	cumulative: RawCoverageData,
-	coveringTestIds: Record<string, Record<string, Array<string>>>,
-): Record<string, Array<string>> {
-	const staticStatementIds: Record<string, Array<string>> = {};
+	coveringTestIds: AttributionResult["coveringTestIds"],
+): AttributionResult["staticStatementIds"] {
+	const staticStatementIds: AttributionResult["staticStatementIds"] = {};
 	for (const [fileKey, fileCoverage] of Object.entries(cumulative)) {
 		const credited = coveringTestIds[fileKey];
 		const ids = Object.entries(fileCoverage.s)
@@ -146,11 +146,11 @@ function deriveStatic(
 }
 
 function mergeStatic(
-	a: Record<string, Array<string>>,
-	b: Record<string, Array<string>>,
-	coveringTestIds: Record<string, Record<string, Array<string>>>,
-): Record<string, Array<string>> {
-	const merged: Record<string, Array<string>> = {};
+	a: AttributionResult["staticStatementIds"],
+	b: AttributionResult["staticStatementIds"],
+	coveringTestIds: AttributionResult["coveringTestIds"],
+): AttributionResult["staticStatementIds"] {
+	const merged: AttributionResult["staticStatementIds"] = {};
 	const fileKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
 	for (const fileKey of fileKeys) {
 		const credited = coveringTestIds[fileKey];

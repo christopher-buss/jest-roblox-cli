@@ -47,18 +47,14 @@ const ROJO_PROJECT = {
 	},
 };
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isoNow(): string {
 	const now = new Date();
 	return now.toISOString();
 }
 
-function readRojoProjectJson(filePath: string): Record<string, unknown> {
+function readRojoProjectJson(filePath: string): JSONValue {
 	const parsed = JSON.parse(vol.readFileSync(filePath, "utf-8").toString());
-	if (!isPlainObject(parsed)) {
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
 		throw new Error("Expected rojo project to be a JSON object");
 	}
 
@@ -70,10 +66,10 @@ function readRojoProjectJson(filePath: string): Record<string, unknown> {
  * rojo project without asserting a shape onto it. Lives at module scope — the
  * per-key guard would otherwise be a conditional inside a test body.
  */
-function readNestedProperty(source: Record<string, unknown>, ...keys: Array<string>): unknown {
-	let current: unknown = source;
+function readNestedProperty(source: JSONValue, ...keys: Array<string>): JSONValue | undefined {
+	let current: JSONValue | undefined = source;
 	for (const key of keys) {
-		if (!isPlainObject(current)) {
+		if (current === null || typeof current !== "object" || Array.isArray(current)) {
 			throw new Error(`Expected an object while reading "${keys.join(".")}"`);
 		}
 

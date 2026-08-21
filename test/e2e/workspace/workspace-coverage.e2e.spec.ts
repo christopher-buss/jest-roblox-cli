@@ -105,7 +105,7 @@ describe("workspace coverage — $path mounts specs alongside helpers", () => {
 	);
 });
 
-function passingJestOutput(overrides: Record<string, unknown> = {}): string {
+function passingJestOutput(): string {
 	return JSON.stringify({
 		numFailedTests: 0,
 		numPassedTests: 1,
@@ -114,7 +114,6 @@ function passingJestOutput(overrides: Record<string, unknown> = {}): string {
 		startTime: 0,
 		success: true,
 		testResults: [],
-		...overrides,
 	});
 }
 

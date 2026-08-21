@@ -11,7 +11,18 @@ import template from "./test-runner.bundled.luau";
 
 const TS_OR_LUAU_EXTENSION = /\.(tsx?|luau?)$/;
 
+/**
+ * Jest's argv plus the four keys our own runner reads, declared here so the
+ * contract is written down on both sides (`luau/runner.luau` has the matching
+ * `Config` type). None is a Jest option, and the `runner` prefix keeps them
+ * clear of Jest's own keys in the same flat object — Jest has its own
+ * `coverage`. `runner.luau` deletes the three flags before `Jest.runCLI`.
+ */
 export type JestArgv = Argv & {
+	jestPath?: string;
+	runnerCoverage?: boolean;
+	runnerPerTestCoverage?: boolean;
+	runnerTiming?: boolean;
 	snapshotFormat?: SnapshotFormatOptions;
 	testMatch: Array<string>;
 };
@@ -32,19 +43,19 @@ export function buildJestArgv(options: JestArgvInput): JestArgv {
 	}
 
 	if (options.config.jestPath !== undefined) {
-		Reflect.set(argv, "jestPath", options.config.jestPath);
+		argv.jestPath = options.config.jestPath;
 	}
 
 	if (process.env["TIMING"] !== undefined) {
-		Reflect.set(argv, "_timing", true);
+		argv.runnerTiming = true;
 	}
 
 	if (options.config.collectCoverage) {
-		Reflect.set(argv, "_coverage", true);
+		argv.runnerCoverage = true;
 	}
 
 	if (options.config.collectPerTestCoverage === true) {
-		Reflect.set(argv, "_perTestCoverage", true);
+		argv.runnerPerTestCoverage = true;
 	}
 
 	argv.reporters ??= [];

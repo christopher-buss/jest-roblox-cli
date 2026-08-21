@@ -14,8 +14,8 @@ vi.mock(import("node:fs"), async () => {
 const ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(ROOT, "packages/foo");
 
-function projectJson(json: object): string {
-	return String(JSON.stringify(json));
+function projectJson(json: JSONObject): string {
+	return JSON.stringify(json);
 }
 
 describe(validatePackages, () => {

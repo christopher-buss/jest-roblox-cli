@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { type, type Type } from "arktype";
+import { type } from "arktype";
 import { vol } from "memfs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -19,15 +19,15 @@ const ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(ROOT, "packages/foo");
 const FOO_PROJECT = path.join(FOO_DIR, "test.project.json");
 
-function projectJson(json: object): string {
-	return String(JSON.stringify(json));
+function projectJson(json: JSONObject): string {
+	return JSON.stringify(json);
 }
 
 // Rojo tree nodes are keyed by arbitrary instance/service names dictated by
 // the fixture's project.json — not declared properties — so they're read
 // through one owned schema (@isentinel/rojo-utils' RojoTreeNode) rather than
 // ad-hoc inline cast types per test.
-const rojoTreeNodeSchema: Type<RojoTreeNode> = type({
+const rojoTreeNodeSchema = type({
 	"[string]": "unknown",
 }).as<RojoTreeNode>();
 
@@ -35,7 +35,7 @@ interface SynthesizedResult extends Record<string, unknown> {
 	tree: RojoTreeNode;
 }
 
-const synthesizedResultSchema: Type<SynthesizedResult> = type({
+const synthesizedResultSchema = type({
 	"[string]": "unknown",
 	"tree": "object",
 }).as<SynthesizedResult>();

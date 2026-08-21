@@ -98,7 +98,7 @@ describe(walkErrorChain, () => {
 	it("should cap output at five entries when the cause chain runs deeper", () => {
 		expect.assertions(3);
 
-		let chain: Error = new Error("level 0");
+		let chain = new Error("level 0");
 		for (let level = 1; level <= 6; level += 1) {
 			chain = new Error(`level ${level.toString()}`, { cause: chain });
 		}

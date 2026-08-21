@@ -50,8 +50,8 @@ export interface TaskPoolOptions {
 	 * Wall clock in milliseconds; injected for tests. Defaults to `Date.now`.
 	 */
 	now?: () => number;
-	/** Observe a task that threw an error the pool does not back off on. */
-	onError?: (error: unknown) => void;
+	/** Observe a task failure the pool does not back off on. */
+	onError?: (error: Error) => void;
 	/** Fold a settled task's envelope into the consumer's result set. */
 	onResult: (result: ScriptResult) => void;
 	/**
@@ -94,7 +94,7 @@ interface PlaceState {
 interface PoolRuntime {
 	isDone: () => boolean;
 	now: () => number;
-	onError?: ((error: unknown) => void) | undefined;
+	onError?: ((error: Error) => void) | undefined;
 	onResult: (result: ScriptResult) => void;
 	sleep: (ms: number) => Promise<void>;
 }
@@ -186,7 +186,7 @@ async function backoffAsync(
  * `Error`. Any other error is not a backoff signal.
  */
 function classifyBackoff(error: unknown): BackoffSignal | undefined {
-	for (let current: unknown = error; current instanceof Error; current = current.cause) {
+	for (let current = error; current instanceof Error; current = current.cause) {
 		if (current instanceof RateLimitError) {
 			return { retryAfterMs: current.retryAfterSeconds * 1000 };
 		}
@@ -212,7 +212,11 @@ async function workerAsync(runtime: PoolRuntime, state: PlaceState): Promise<voi
 				continue;
 			}
 
-			runtime.onError?.(err);
+			const error =
+				err instanceof Error
+					? err
+					: new Error("Task failed with a non-Error rejection", { cause: err });
+			runtime.onError?.(error);
 			continue;
 		}
 

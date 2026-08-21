@@ -1,6 +1,11 @@
 import { PermissionError } from "@bedrock-rbx/ocale";
 import { OcaleRunner, runTaskPool } from "@isentinel/roblox-runner";
-import type { RemoteRunner, RunnerCredentials, ScriptResult } from "@isentinel/roblox-runner";
+import type {
+	OcaleRunnerOptions,
+	RemoteRunner,
+	RunnerCredentials,
+	ScriptResult,
+} from "@isentinel/roblox-runner";
 
 import process from "node:process";
 
@@ -96,12 +101,13 @@ interface UploadOutcome {
 }
 
 interface StealingPoolOutcome {
-	/**
-	 * A holder rather than a bare `unknown` so "no failure" stays
-	 * distinguishable from "failed with an undefined reason".
-	 */
-	failure?: undefined | { error: unknown };
+	failure?: { error: Error };
 	results: Array<ScriptResult>;
+}
+
+interface StealingEnvelope {
+	entries: Array<EnvelopeEntry>;
+	gameOutput: string | undefined;
 }
 
 export class OpenCloudBackend implements Backend {
@@ -690,12 +696,12 @@ function injectVersionGuard(script: string, placeVersion: number): string {
 	return lines.join("\n");
 }
 
-function resolveRunnerOptions(): { baseUrl?: string; maxRetries?: number } {
+function resolveRunnerOptions(): OcaleRunnerOptions {
 	const baseUrl = resolveOpenCloudBaseUrl();
 	const maxRetries = resolveOcaleMaxRetries();
 	return {
-		...(baseUrl === undefined ? {} : { baseUrl }),
-		...(maxRetries === undefined ? {} : { maxRetries }),
+		baseUrl,
+		maxRetries,
 	};
 }
 
@@ -978,10 +984,7 @@ function collectStealingResults(
  * produced no Jest output so a broken task surfaces as a run failure rather
  * than a silently-missing package.
  */
-function parseStealingEnvelope(result: ScriptResult): {
-	entries: Array<EnvelopeEntry>;
-	gameOutput: string | undefined;
-} {
+function parseStealingEnvelope(result: ScriptResult): StealingEnvelope {
 	const jestOutput = result.outputs[0];
 	if (jestOutput === undefined) {
 		throw new Error(`No test results in output. Got: ${JSON.stringify(result.outputs)}`);

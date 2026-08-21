@@ -153,9 +153,11 @@ describe("cli error paths", () => {
 	});
 });
 
-function buildFailingPayload(): Record<string, unknown> {
+function buildFailingPayload(): ReturnType<typeof buildPassingPayload> {
 	return {
-		_setup: 0.05,
+		runner: {
+			setup: 0.05,
+		},
 		success: true,
 		value: {
 			numFailedTests: 1,

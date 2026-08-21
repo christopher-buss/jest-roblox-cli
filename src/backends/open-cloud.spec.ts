@@ -18,6 +18,7 @@ import type {
 	StreamingResultReader,
 	StreamingResultRecord,
 } from "../memory-store/sorted-map-client.ts";
+import type { JestResult } from "../types/jest-result.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import {
 	createOpenCloudBackend,
@@ -49,7 +50,7 @@ interface RunnerStub {
 
 function createStreamReader(pages: Array<Array<StreamingResultRecord>>): StubStreamReader {
 	const reader: StubStreamReader = {
-		deleteAsync: async (itemId: string): Promise<void> => {
+		deleteAsync: async (itemId): Promise<void> => {
 			reader.deleted.push(itemId);
 		},
 		deleted: [],
@@ -105,7 +106,7 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 	};
 }
 
-function successJest(overrides: Record<string, unknown> = {}): string {
+function successJest(overrides: Partial<JestResult> = {}): string {
 	return JSON.stringify({
 		numFailedTests: 0,
 		numPassedTests: 1,
@@ -131,7 +132,7 @@ function envelope(
 	return JSON.stringify({ ...options, entries });
 }
 
-function packageEntry(packageName: string): { jestOutput: string; pkg: string } {
+function packageEntry(packageName: string) {
 	return { jestOutput: successJest(), pkg: packageName };
 }
 
@@ -1426,7 +1427,7 @@ describe(OpenCloudBackend, () => {
 				deleteAsync: async (): Promise<void> => {
 					/* unused */
 				},
-				deleted: [] as Array<string>,
+				deleted: [],
 				readAllAsync: async (): Promise<never> => {
 					reader.readCalls += 1;
 					throw new Error("Failed to read streaming results: forbidden", {
@@ -1477,7 +1478,7 @@ describe(OpenCloudBackend, () => {
 				deleteAsync: async (): Promise<void> => {
 					/* unused */
 				},
-				deleted: [] as Array<string>,
+				deleted: [],
 				readAllAsync: async (): Promise<never> => {
 					reader.readCalls += 1;
 					throw new Error("forbidden", {
@@ -1522,7 +1523,7 @@ describe(OpenCloudBackend, () => {
 				deleteAsync: async (): Promise<void> => {
 					/* unused */
 				},
-				deleted: [] as Array<string>,
+				deleted: [],
 				readAllAsync: async (): Promise<never> => {
 					reader.readCalls += 1;
 
@@ -1563,7 +1564,7 @@ describe(OpenCloudBackend, () => {
 				deleteAsync: async (): Promise<void> => {
 					/* unused */
 				},
-				deleted: [] as Array<string>,
+				deleted: [],
 				readAllAsync: async (): Promise<never> => {
 					reader.readCalls += 1;
 					throw new Error("network broke");
@@ -1600,7 +1601,7 @@ describe(OpenCloudBackend, () => {
 				deleteAsync: async () => {
 					/* unused */
 				},
-				deleted: [] as Array<string>,
+				deleted: [],
 				readAllAsync: async () => {
 					reader.readCalls += 1;
 					throw new Error("read failed");
@@ -1637,7 +1638,7 @@ describe(OpenCloudBackend, () => {
 				deleteAsync: async () => {
 					throw new Error("delete failed");
 				},
-				deleted: [] as Array<string>,
+				deleted: [],
 				readAllAsync: async () => {
 					reader.readCalls += 1;
 					return [

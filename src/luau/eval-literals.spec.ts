@@ -305,6 +305,28 @@ describe(evalLuauReturnLiterals, () => {
 		expect(evalLuauReturnLiterals(root)).toBeUndefined();
 	});
 
+	it("should return undefined for a cast with a malformed operand", () => {
+		expect.assertions(1);
+
+		const root = makeBlock(
+			makeReturn({ kind: "expr", location: {}, operand: "invalid", tag: "cast" }),
+		);
+
+		expect(evalLuauReturnLiterals(root)).toBeUndefined();
+	});
+
+	it.for([
+		["boolean", "not-a-boolean"],
+		["number", "not-a-number"],
+		["string", 42],
+	])("should return undefined for malformed %s literal payload", ([tag, value]) => {
+		expect.assertions(1);
+
+		const root = makeBlock(makeReturn({ kind: "expr", location: {}, tag, text: value, value }));
+
+		expect(evalLuauReturnLiterals(root)).toBeUndefined();
+	});
+
 	it("should evaluate nested tables", () => {
 		expect.assertions(1);
 

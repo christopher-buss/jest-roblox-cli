@@ -57,7 +57,10 @@ export class StudioWithFallback implements Backend {
 		try {
 			return await this.studio.runTestsAsync(options);
 		} catch (err) {
-			if (isStudioBusyError(err)) {
+			const isStudioBusy =
+				(err instanceof LuauScriptError && STUDIO_BUSY_PATTERN.test(err.message)) ||
+				(err instanceof Error && "code" in err && err.code === "EADDRINUSE");
+			if (isStudioBusy) {
 				process.stderr.write("Studio busy, falling back to Open Cloud\n");
 				return createOpenCloudBackend(this.credentials).runTestsAsync(options);
 			}
@@ -65,19 +68,6 @@ export class StudioWithFallback implements Backend {
 			throw err;
 		}
 	}
-}
-
-export function isStudioBusyError(error: unknown): boolean {
-	if (error instanceof LuauScriptError) {
-		return STUDIO_BUSY_PATTERN.test(error.message);
-	}
-
-	return (
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		error.code === "EADDRINUSE"
-	);
 }
 
 export async function probeStudioPluginAsync(

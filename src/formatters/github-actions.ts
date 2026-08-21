@@ -374,7 +374,7 @@ function createFileLink({
 	sha,
 }: GitHubActionsOptions): (filePath: string) => string | undefined {
 	if (serverUrl === undefined || repository === undefined || sha === undefined) {
-		return (_filePath: string) => {
+		return () => {
 			// No file links when env vars are missing
 		};
 	}

@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import { parseJSONC } from "confbox";
 import { type ChildProcess, execFile, type ExecFileException } from "node:child_process";
 import * as fs from "node:fs";
@@ -7,7 +8,6 @@ import process from "node:process";
 
 import { ConfigError } from "../config/errors.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
-import { isErrnoException } from "../utils/errno.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { collectTestDefinitions } from "./collect.ts";
 import { parseTscOutput } from "./parse.ts";
@@ -34,6 +34,12 @@ const MISSING_TSGO_MESSAGE =
 
 const MISSING_TSGO_HINT =
 	"npm install -D @typescript/native-preview — or run without --typecheck/--typecheckOnly.";
+
+const compositeTsconfigSchema = type({
+	"compilerOptions?": {
+		"composite?": "boolean",
+	},
+});
 
 export interface TypecheckOptions {
 	files: Array<string>;
@@ -153,9 +159,10 @@ export function isCompositeProject(rootDirectory: string, tsconfig?: string): bo
 			: path.join(rootDirectory, "tsconfig.json");
 
 	try {
-		const raw = parseJSONC<Record<string, unknown>>(fs.readFileSync(tsconfigPath, "utf-8"));
-		const { compilerOptions } = raw;
-		return isPlainObject(compilerOptions) && compilerOptions["composite"] === true;
+		const raw = compositeTsconfigSchema.assert(
+			parseJSONC(fs.readFileSync(tsconfigPath, "utf-8")),
+		);
+		return raw.compilerOptions?.composite === true;
 	} catch (err) {
 		if (tsconfig !== undefined) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -319,12 +326,6 @@ function buildFileResult(
 	};
 }
 
-// A tsconfig is arbitrary user JSON, so `compilerOptions` crosses into a
-// readable shape through a runtime guard rather than an assertion.
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 // tsgo is an optional peer dependency, so its absence is an ordinary state to
 // report rather than a broken install — `require.resolve` only raises a bare
 // `MODULE_NOT_FOUND`, which reads as a fault inside the CLI. `ConfigError`
@@ -337,7 +338,7 @@ function resolveTsgoScript(): string {
 	try {
 		packageJsonPath = require.resolve("@typescript/native-preview/package.json");
 	} catch (err) {
-		if (isErrnoException(err) && err.code === "MODULE_NOT_FOUND") {
+		if (err instanceof Error && "code" in err && err.code === "MODULE_NOT_FOUND") {
 			throw new ConfigError(MISSING_TSGO_MESSAGE, MISSING_TSGO_HINT);
 		}
 

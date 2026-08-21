@@ -1,4 +1,4 @@
-import { type, type Type } from "arktype";
+import { type } from "arktype";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -9,11 +9,13 @@ const OUT_DIR = path.resolve("/repo/out/client");
 
 // A rojo project is keyed by instance names the fixture dictates, so it is read
 // through one schema rather than an assertion per test.
-const projectSchema: Type<Record<string, unknown>> = type({
-	"[string]": "unknown",
-}).as<Record<string, unknown>>();
+const projectSchema = type({
+	"globIgnorePaths?": "string[]",
+	"name?": "string",
+	"tree?": "unknown",
+});
 
-function parse(json: string): Record<string, unknown> {
+function parse(json: string): typeof projectSchema.infer {
 	return projectSchema.assert(JSON.parse(json));
 }
 
@@ -25,7 +27,7 @@ describe(relativizeProjectPaths, () => {
 			relativizeProjectPaths(JSON.stringify({ tree: { $path: OUT_DIR } }), PROJECT_DIR),
 		);
 
-		expect(result["tree"]).toStrictEqual({ $path: "../../out/client" });
+		expect(result.tree).toStrictEqual({ $path: "../../out/client" });
 	});
 
 	it("should rewrite $path entries at every depth", () => {
@@ -60,7 +62,7 @@ describe(relativizeProjectPaths, () => {
 			relativizeProjectPaths(JSON.stringify({ tree: { $path: "src" } }), PROJECT_DIR),
 		);
 
-		expect(result["tree"]).toStrictEqual({ $path: "src" });
+		expect(result.tree).toStrictEqual({ $path: "src" });
 	});
 
 	it("should leave a non-string $path alone", () => {
@@ -70,7 +72,7 @@ describe(relativizeProjectPaths, () => {
 			relativizeProjectPaths(JSON.stringify({ tree: { $path: 42 } }), PROJECT_DIR),
 		);
 
-		expect(result["tree"]).toStrictEqual({ $path: 42 });
+		expect(result.tree).toStrictEqual({ $path: 42 });
 	});
 
 	it("should carry non-path fields through untouched", () => {
@@ -101,6 +103,6 @@ describe(relativizeProjectPaths, () => {
 			relativizeProjectPaths(JSON.stringify({ tree: { child: null } }), PROJECT_DIR),
 		);
 
-		expect(result["tree"]).toStrictEqual({ child: null });
+		expect(result.tree).toStrictEqual({ child: null });
 	});
 });

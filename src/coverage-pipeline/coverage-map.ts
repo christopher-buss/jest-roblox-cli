@@ -3,8 +3,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
-import { isErrnoException } from "../utils/errno.ts";
-
 export interface SourceLocation {
 	end: { column: number; line: number };
 	start: { column: number; line: number };
@@ -52,7 +50,7 @@ export function readCoverageMap(filePath: string): ReadCoverageMapResult {
 	try {
 		contents = fs.readFileSync(filePath, "utf-8");
 	} catch (err) {
-		if (isErrnoException(err) && err.code === "ENOENT") {
+		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
 			return { kind: "missing" };
 		}
 

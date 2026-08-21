@@ -257,7 +257,7 @@ function toPlannedProject({
 		planned.typeTestEntry = {
 			cwd: rootConfig.rootDir,
 			files: selection.typeTestFiles,
-			...(typecheck.tsconfig !== undefined ? { tsconfig: typecheck.tsconfig } : {}),
+			tsconfig: typecheck.tsconfig,
 		};
 	}
 
@@ -305,10 +305,7 @@ function planProject(project: ResolvedProjectConfig, input: ProjectPlanInput): P
 	return toPlannedProject({ project, rootConfig: input.rootConfig, selection, typecheck });
 }
 
-function collectPendingJobs(input: DiscoveryInput): {
-	jobs: Array<PendingJob>;
-	typeTestEntries: Array<TypecheckGroupEntry>;
-} {
+function collectPendingJobs(input: DiscoveryInput): Pick<TestPlan, "jobs" | "typeTestEntries"> {
 	const jobs: Array<PendingJob> = [];
 	const typeTestEntries: Array<TypecheckGroupEntry> = [];
 	// One read for the whole plan rather than one per project: every project

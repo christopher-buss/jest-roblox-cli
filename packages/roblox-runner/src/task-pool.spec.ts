@@ -9,6 +9,13 @@ import type { ScriptResult } from "./types.ts";
 /** Envelope a task returns when it finds the shared queue already drained. */
 const EMPTY_MARKER = "EMPTY";
 
+/**
+ * What a pool task rejects with. The pool surfaces an `Error` as-is and
+ * normalizes anything else into one, carrying the original as `cause` — the
+ * plain-object arm is what drives that second path.
+ */
+type TaskRejection = Error | { readonly code: string };
+
 interface AttemptCounter {
 	attempt: number;
 }
@@ -37,10 +44,6 @@ function makeScriptResult(outputs: Array<string> = ["[]"]): ScriptResult {
 async function flushAsync(): Promise<void> {
 	await Promise.resolve();
 	await Promise.resolve();
-}
-
-function describeError(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function hasEvery(seen: ReadonlySet<string>, entries: ReadonlyArray<string>): boolean {
@@ -80,11 +83,13 @@ function makeNonEmptyCollector(processed: Array<string>): (result: ScriptResult)
 function makeThrowingTask(
 	counter: AttemptCounter,
 	throwingAttempt: number,
-	makeError: () => unknown,
+	makeError: () => TaskRejection,
 ): () => Promise<ScriptResult> {
 	return async () => {
 		counter.attempt += 1;
 		if (counter.attempt === throwingAttempt) {
+			// A non-Error rejection is one of the cases the pool normalizes.
+			// eslint-disable-next-line ts/only-throw-error -- see above
 			throw makeError();
 		}
 
@@ -94,7 +99,7 @@ function makeThrowingTask(
 
 function throwOnceThenSucceed(
 	counter: AttemptCounter,
-	error: unknown,
+	error: TaskRejection,
 ): () => Promise<ScriptResult> {
 	return makeThrowingTask(counter, 1, () => error);
 }
@@ -225,7 +230,7 @@ describe(runTaskPoolAsync, () => {
 			concurrency: 1,
 			isDone: () => counter.attempt >= 2,
 			onError: (error) => {
-				errors.push(describeError(error));
+				errors.push(error.message);
 			},
 			onResult: () => {},
 			places: [{ runTask }],
@@ -233,6 +238,32 @@ describe(runTaskPoolAsync, () => {
 
 		expect(runTask).toHaveBeenCalledTimes(2);
 		expect(errors[0]).toBe("transient");
+	});
+
+	it("should normalize a non-Error task rejection before surfacing it", async () => {
+		expect.assertions(3);
+
+		const counter = { attempt: 0 };
+		const rejection = { code: "transient" };
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			throwOnceThenSucceed(counter, rejection),
+		);
+		const onError = vi.fn<(error: Error) => void>();
+
+		await runTaskPoolAsync({
+			concurrency: 1,
+			isDone: () => counter.attempt >= 2,
+			onError,
+			onResult: () => {},
+			places: [{ runTask }],
+		});
+
+		expect(onError).toHaveBeenCalledOnce();
+
+		const error = onError.mock.calls[0]![0];
+
+		expect(error.message).toBe("Task failed with a non-Error rejection");
+		expect(error.cause).toBe(rejection);
 	});
 
 	it("should swallow a task error when no onError handler is provided", async () => {
@@ -389,7 +420,7 @@ describe("runTaskPool backoff", () => {
 			),
 		);
 		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue();
-		const onError = vi.fn<(error: unknown) => void>();
+		const onError = vi.fn<(error: Error) => void>();
 
 		await runTaskPoolAsync({
 			concurrency: 1,
@@ -520,7 +551,7 @@ describe("runTaskPool backoff", () => {
 		const apiError = new ApiError("not found", { code: "NotFound", statusCode: 404 });
 		const runTask = vi.fn<() => Promise<ScriptResult>>(throwOnceThenSucceed(counter, apiError));
 		const sleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue();
-		const onError = vi.fn<(error: unknown) => void>();
+		const onError = vi.fn<(error: Error) => void>();
 
 		await runTaskPoolAsync({
 			concurrency: 1,

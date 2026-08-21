@@ -2,6 +2,7 @@
 import { type } from "arktype";
 import { assert, describe, expect, it } from "vitest";
 
+import type { Config } from "./schema.ts";
 import {
 	configSchema,
 	defineConfig,
@@ -393,7 +394,7 @@ describe(configSchema, () => {
 			expect.assertions(1);
 
 			const result = configSchema({
-				formatters: ["default", ["github-actions", { annotations: true }]],
+				formatters: ["default", ["github-actions", { displayAnnotations: true }]],
 			});
 
 			expect(result).not.toBeInstanceOf(type.errors);
@@ -797,7 +798,7 @@ describe(validateConfig, () => {
 	it("should return the config when valid", () => {
 		expect.assertions(1);
 
-		const input = { backend: "studio", test: { verbose: true } };
+		const input = { backend: "studio", test: { verbose: true } } satisfies Config;
 
 		expect(validateConfig(input)).toStrictEqual(input);
 	});
@@ -878,6 +879,12 @@ describe(validateConfig, () => {
 		}).toThrow(
 			"`typecheck` options have moved under `test.typecheck`. Replace these keys: typecheck → test.typecheck.enabled, typecheckOnly → test.typecheck.only, typecheckTsconfig → test.typecheck.tsconfig",
 		);
+	});
+
+	it("should not treat Object prototype names as migrated typecheck keys", () => {
+		expect.assertions(1);
+
+		expect(() => validateConfig({ constructor: true })).not.toThrow(/typecheck/);
 	});
 
 	it("should accept a typecheck object under test:", () => {

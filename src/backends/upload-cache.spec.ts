@@ -235,4 +235,22 @@ describe("upload cache", () => {
 
 		expect(readCachedVersion(ROOT, TARGET, hash)).toBeUndefined();
 	});
+
+	it("should retain valid entries alongside a junk entry", () => {
+		expect.assertions(1);
+
+		const hash = seedPlaceFile();
+		vol.fromJSON({
+			"/repo/game.rbxl": "place-bytes",
+			[CACHE_PATH]: JSON.stringify({
+				entries: {
+					"111/222//repo/game.rbxl": { hash, versionNumber: 42 },
+					"junk": 7,
+				},
+				version: 1,
+			}),
+		});
+
+		expect(readCachedVersion(ROOT, TARGET, hash)).toBe(42);
+	});
 });

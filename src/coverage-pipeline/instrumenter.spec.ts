@@ -26,7 +26,7 @@ const EMPTY_AST = {
 	tag: "block",
 };
 
-const DEFAULT_FILES: Record<string, unknown> = { "init.luau": EMPTY_AST };
+const DEFAULT_FILES = { "init.luau": EMPTY_AST } satisfies Record<string, JSONValue>;
 
 function callInstrumentWithDefaults() {
 	return instrument({
@@ -55,7 +55,7 @@ function setupFilesystem({
 	luauRoot = "/luau-root",
 }: {
 	astOutputDirectory?: string;
-	files?: Record<string, unknown>;
+	files?: Record<string, JSONValue>;
 	luauRoot?: string;
 } = {}): void {
 	onTestFinished(() => {
@@ -78,7 +78,7 @@ function setupFilesystem({
 		const astPath = `${astOutputDirectory}/${relativePath}.json`;
 		const directory = astPath.substring(0, astPath.lastIndexOf("/"));
 		vol.mkdirSync(directory, { recursive: true });
-		vol.writeFileSync(astPath, JSON.stringify(ast)!);
+		vol.writeFileSync(astPath, JSON.stringify(ast));
 	}
 
 	// Lute returns the file list

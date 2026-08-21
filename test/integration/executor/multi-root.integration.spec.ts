@@ -100,7 +100,9 @@ describe("executor multi-root pipeline", () => {
 			runTestsAsync: async (options): Promise<BackendResult> => {
 				captured = options;
 				const jestOutput = JSON.stringify({
-					_setup: 0.05,
+					runner: {
+						setup: 0.05,
+					},
 					...buildMergedJestResult(),
 				});
 				return {

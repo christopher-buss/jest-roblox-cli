@@ -36,7 +36,7 @@ export function createSetupResolver({
 	const resolve = resolveModule ?? createRequire(path.join(configDirectory, "noop.js")).resolve;
 	const rojoResolver = resolveRojo(rojoConfigPath, cache);
 
-	return (input: string): string => {
+	return (input): string => {
 		let absolutePath: string;
 
 		if (isRelativePath(input)) {

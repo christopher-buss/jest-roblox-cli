@@ -1,6 +1,6 @@
 import type {
 	AstExpr,
-	AstExprBinaryWithOperator,
+	AstExprBinary,
 	AstExprConstantBool,
 	AstExprConstantNumber,
 	AstExprFunction,
@@ -825,7 +825,7 @@ describe("coverage-collector", () => {
 				operator: { location: span(1, 13, 1, 16), text: "and" },
 				rhsOperand: globalExpr("b", span(1, 17, 1, 18)),
 				tag: "binary",
-			} satisfies AstExprBinaryWithOperator;
+			} satisfies AstExprBinary;
 			const root = rootOf(localOf(binary, span(1, 1, 1, 18)), span(1, 1, 1, 18));
 
 			const result = collect(root);
@@ -853,7 +853,7 @@ describe("coverage-collector", () => {
 				operator: { location: span(1, 13, 1, 15), text: "or" },
 				rhsOperand: globalExpr("q", span(1, 16, 1, 17)),
 				tag: "binary",
-			} satisfies AstExprBinaryWithOperator;
+			} satisfies AstExprBinary;
 			const root = rootOf(localOf(binary, span(1, 1, 1, 17)), span(1, 1, 1, 17));
 
 			const result = collect(root);
@@ -872,7 +872,7 @@ describe("coverage-collector", () => {
 				operator: { location: span(1, 13, 1, 14), text: "+" },
 				rhsOperand: globalExpr("b", span(1, 15, 1, 16)),
 				tag: "binary",
-			} satisfies AstExprBinaryWithOperator;
+			} satisfies AstExprBinary;
 			const root = rootOf(localOf(binary, span(1, 1, 1, 16)), span(1, 1, 1, 16));
 
 			const result = collect(root);
@@ -894,7 +894,7 @@ describe("coverage-collector", () => {
 				operator: { location: span(1, 13, 1, 16), text: "and" },
 				rhsOperand: globalExpr("b", span(1, 17, 1, 18)),
 				tag: "binary",
-			} satisfies AstExprBinaryWithOperator;
+			} satisfies AstExprBinary;
 			const outer = {
 				kind: "expr",
 				lhsOperand: inner,
@@ -902,7 +902,7 @@ describe("coverage-collector", () => {
 				operator: { location: span(1, 19, 1, 22), text: "and" },
 				rhsOperand: globalExpr("c", span(1, 24, 1, 25)),
 				tag: "binary",
-			} satisfies AstExprBinaryWithOperator;
+			} satisfies AstExprBinary;
 			const root = rootOf(localOf(outer, span(1, 1, 1, 25)), span(1, 1, 1, 25));
 
 			const result = collect(root);

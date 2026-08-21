@@ -48,7 +48,57 @@ const jestResultSchema = type({
 	testResults: "object[]",
 }).as<JestResult>();
 
-const jestEnvelopeSchema = type("Record<string, unknown>");
+// Every envelope reaching this schema is `JSON.parse` output, so `JSONValue` is
+// the widest honest field type. Arktype has no keyword for the recursive JSON
+// union, hence the brand.
+const jsonValueSchema = type("unknown").as<JSONValue>();
+
+const jestEnvelopeSchema = type({
+	"err?": "unknown",
+	"error?": "unknown",
+	"kind?": "unknown",
+	"parent?": "unknown",
+	"results?": "unknown",
+	// Everything the Luau runner adds beside Jest's own result. Typed
+	// `unknown` here so a malformed block degrades to "no extras" in
+	// `runnerFields` rather than failing the whole envelope assertion.
+	"runner?": "unknown",
+	"snapshot?": "unknown",
+	"success?": "unknown",
+	"value?": "unknown",
+});
+
+type JestEnvelope = typeof jestEnvelopeSchema.infer;
+
+const runnerFieldsSchema = type({
+	"coverage?": jsonValueSchema,
+	"perTestCoverage?": "unknown",
+	"setup?": "unknown",
+	"snapshotWrites?": "unknown",
+	"timing?": "unknown",
+});
+
+type RunnerFields = typeof runnerFieldsSchema.infer;
+
+const NO_RUNNER_FIELDS: RunnerFields = {};
+
+function runnerFields(parsed: JestEnvelope): RunnerFields {
+	const fields = runnerFieldsSchema(parsed.runner);
+	return fields instanceof type.errors ? NO_RUNNER_FIELDS : fields;
+}
+
+const unknownRecordSchema = type({ "[string]": "unknown" });
+
+const snapshotSummaryInputSchema = type({
+	"added?": "unknown",
+	"didUpdate?": "unknown",
+	"filesRemoved?": "unknown",
+	"matched?": "unknown",
+	"total?": "unknown",
+	"unchecked?": "unknown",
+	"unmatched?": "unknown",
+	"updated?": "unknown",
+});
 
 const perTestCoverageSchema = type({
 	delta: type({ "[string]": { s: "number[]" } }),
@@ -137,9 +187,9 @@ const PROMISE_TRACE_HEADER = /^-- Promise\.Error\(/;
 const PROMISE_TRACE_CAUSE_LINE = /:\d+:\s*(\S.*)$/;
 
 /**
- * Standalone extraction of the `_timing` field from a raw envelope entry's
- * `jestOutput`, for callers that want the Luau phase breakdown without
- * running the full `parseJestOutput` pipeline (schema validation,
+ * Standalone extraction of the `runner.timing` field from a raw envelope
+ * entry's `jestOutput`, for callers that want the Luau phase breakdown
+ * without running the full `parseJestOutput` pipeline (schema validation,
  * coverage/snapshot extraction) — namely the orchestrator surfacing it into
  * the host `TimingCollector` span tree while `backend.runTests` is still on
  * the stack. Returns undefined when no JSON candidate is found; mirrors
@@ -154,12 +204,12 @@ export function extractLuauTimingFromOutput(
 		return undefined;
 	}
 
-	return extractLuauTiming(jestEnvelopeSchema.assert(JSON.parse(candidate)));
+	return extractLuauTiming(runnerFields(jestEnvelopeSchema.assert(JSON.parse(candidate))));
 }
 
-function extractLuauTiming(parsed: Record<string, unknown>): Record<string, number> | undefined {
-	const timing = parsed["_timing"];
-	if (timing === undefined || timing === null || typeof timing !== "object") {
+function extractLuauTiming(runner: RunnerFields): Record<string, number> | undefined {
+	const timing = unknownRecordSchema(runner.timing);
+	if (timing instanceof type.errors) {
 		return undefined;
 	}
 
@@ -193,25 +243,19 @@ function extractCauseFromPromiseTrace(trace: string): string | undefined {
 	return undefined;
 }
 
-// Envelope fields are parsed JSON read by key, so `typeof null === "object"` is
-// the only case that has to be rejected.
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function extractExecutionError(object: Record<string, unknown>): string {
+function extractExecutionError(object: JestEnvelope): string {
 	// Traverse nested parent chain to find root error, stopping at the leaf.
 	let current = object;
 	while (true) {
-		const { parent } = current;
-		if (!isRecord(parent)) {
+		const parent = jestEnvelopeSchema(current.parent);
+		if (parent instanceof type.errors) {
 			break;
 		}
 
 		current = parent;
 	}
 
-	const errorValue = current["error"];
+	const errorValue = current.error;
 	if (typeof errorValue !== "string") {
 		return "Unknown error";
 	}
@@ -226,14 +270,12 @@ function extractExecutionError(object: Record<string, unknown>): string {
 	return errorValue;
 }
 
-function extractCoverageData(parsed: Record<string, unknown>): RawCoverageData | undefined {
-	return normalizeRawCoverage(parsed["_coverage"]);
+function extractCoverageData(runner: RunnerFields): RawCoverageData | undefined {
+	return normalizeRawCoverage(runner.coverage);
 }
 
-function extractPerTestCoverage(
-	parsed: Record<string, unknown>,
-): Array<PerTestCoverageEntry> | undefined {
-	const raw = parsed["_perTestCoverage"];
+function extractPerTestCoverage(runner: RunnerFields): Array<PerTestCoverageEntry> | undefined {
+	const raw = runner.perTestCoverage;
 	if (raw === undefined) {
 		return undefined;
 	}
@@ -248,9 +290,9 @@ function extractPerTestCoverage(
 	return validated.length > 0 ? validated : undefined;
 }
 
-function extractSnapshotWrites(parsed: Record<string, unknown>): SnapshotWrites | undefined {
-	const writes = parsed["_snapshotWrites"];
-	if (writes === undefined || writes === null || typeof writes !== "object") {
+function extractSnapshotWrites(runner: RunnerFields): SnapshotWrites | undefined {
+	const writes = unknownRecordSchema(runner.snapshotWrites);
+	if (writes instanceof type.errors) {
 		return undefined;
 	}
 
@@ -304,13 +346,8 @@ function stringifyError(err: unknown): string {
 		return err.message;
 	}
 
-	if (
-		typeof err === "object" &&
-		err !== null &&
-		"kind" in err &&
-		(err as Record<string, unknown>)["kind"] === "ExecutionError"
-	) {
-		return extractExecutionError(err);
+	if (typeof err === "object" && err !== null && "kind" in err && err.kind === "ExecutionError") {
+		return extractExecutionError(jestEnvelopeSchema.assert(err));
 	}
 
 	const serialized = JSON.stringify(err);
@@ -318,13 +355,13 @@ function stringifyError(err: unknown): string {
 	return serialized;
 }
 
-function unwrapResult(parsed: Record<string, unknown>): Record<string, unknown> {
-	if ("err" in parsed && parsed["success"] === false) {
-		throw new LuauScriptError(stringifyError(parsed["err"]));
+function unwrapResult(parsed: JestEnvelope): JestEnvelope {
+	if (parsed.err !== undefined && parsed.success === false) {
+		throw new LuauScriptError(stringifyError(parsed.err));
 	}
 
-	if ("value" in parsed && parsed["success"] === true) {
-		return jestEnvelopeSchema.assert(parsed["value"]);
+	if (parsed.value !== undefined && parsed.success === true) {
+		return jestEnvelopeSchema.assert(parsed.value);
 	}
 
 	return parsed;
@@ -339,8 +376,7 @@ function validateJestResult(value: unknown): JestResult {
 	return result;
 }
 
-function extractSetupSeconds(parsed: Record<string, unknown>): number | undefined {
-	const setup = parsed["_setup"];
+function extractSetupSeconds({ setup }: RunnerFields): number | undefined {
 	if (typeof setup !== "number") {
 		return undefined;
 	}
@@ -348,56 +384,56 @@ function extractSetupSeconds(parsed: Record<string, unknown>): number | undefine
 	return setup;
 }
 
-function numericField(source: Record<string, unknown>, key: string): number {
-	const value = source[key];
+function numericField(value: unknown): number {
 	return typeof value === "number" ? value : 0;
 }
 
-function extractSnapshotSummary({
-	snapshot,
-}: Record<string, unknown>): SnapshotSummary | undefined {
-	if (!isRecord(snapshot)) {
+function extractSnapshotSummary(source: JestResult): SnapshotSummary | undefined {
+	const envelope = jestEnvelopeSchema.assert(source);
+	const snapshot = snapshotSummaryInputSchema(envelope.snapshot);
+	if (snapshot instanceof type.errors) {
 		return undefined;
 	}
 
 	const summary: SnapshotSummary = {
-		added: numericField(snapshot, "added"),
-		matched: numericField(snapshot, "matched"),
-		total: numericField(snapshot, "total"),
-		unmatched: numericField(snapshot, "unmatched"),
-		updated: numericField(snapshot, "updated"),
+		added: numericField(snapshot.added),
+		matched: numericField(snapshot.matched),
+		total: numericField(snapshot.total),
+		unmatched: numericField(snapshot.unmatched),
+		updated: numericField(snapshot.updated),
 	};
 
-	if (typeof snapshot["filesRemoved"] === "number") {
-		summary.filesRemoved = snapshot["filesRemoved"];
+	if (typeof snapshot.filesRemoved === "number") {
+		summary.filesRemoved = snapshot.filesRemoved;
 	}
 
-	if (typeof snapshot["unchecked"] === "number") {
-		summary.unchecked = snapshot["unchecked"];
+	if (typeof snapshot.unchecked === "number") {
+		summary.unchecked = snapshot.unchecked;
 	}
 
-	if (typeof snapshot["didUpdate"] === "boolean") {
-		summary.didUpdate = snapshot["didUpdate"];
+	if (typeof snapshot.didUpdate === "boolean") {
+		summary.didUpdate = snapshot.didUpdate;
 	}
 
 	return summary;
 }
 
-function buildJestResult(source: Record<string, unknown>): JestResult {
+function buildJestResult(source: unknown): JestResult {
 	const validated = validateJestResult(source);
-	const snapshot = extractSnapshotSummary(source);
+	const snapshot = extractSnapshotSummary(validated);
 	return snapshot !== undefined ? { ...validated, snapshot } : validated;
 }
 
-function parseParsedOutput(parsed: Record<string, unknown>): ParseResult {
-	const coverageData = extractCoverageData(parsed);
-	const luauTiming = extractLuauTiming(parsed);
-	const perTestCoverage = extractPerTestCoverage(parsed);
-	const setupSeconds = extractSetupSeconds(parsed);
-	const snapshotWrites = extractSnapshotWrites(parsed);
+function parseParsedOutput(parsed: JestEnvelope): ParseResult {
+	const runner = runnerFields(parsed);
+	const coverageData = extractCoverageData(runner);
+	const luauTiming = extractLuauTiming(runner);
+	const perTestCoverage = extractPerTestCoverage(runner);
+	const setupSeconds = extractSetupSeconds(runner);
+	const snapshotWrites = extractSnapshotWrites(runner);
 	const unwrapped = unwrapResult(parsed);
 
-	if (unwrapped["kind"] === "ExecutionError") {
+	if (unwrapped.kind === "ExecutionError") {
 		const errorMessage = extractExecutionError(unwrapped);
 		throw new LuauScriptError(`Jest execution failed: ${errorMessage}`);
 	}
@@ -409,7 +445,9 @@ function parseParsedOutput(parsed: Record<string, unknown>): ParseResult {
 		coverageData,
 		luauTiming,
 		perTestCoverage,
-		result: buildJestResult(isRecord(results) ? results : unwrapped),
+		result: buildJestResult(
+			results !== null && typeof results === "object" ? results : unwrapped,
+		),
 		setupSeconds,
 		snapshotWrites,
 	};

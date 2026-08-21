@@ -28,9 +28,9 @@ export function recordBackendTimingSpans(
 // doesn't actually double it.
 //
 // Gated on `timing.enabled` (unlike `recordBackendTimingSpans`, whose
-// `record` calls are already free): extracting `_timing` re-parses each
+// `record` calls are already free): extracting `runner.timing` re-parses each
 // project's full jestOutput, which is wasted work on an ordinary run where
-// TIMING isn't set (the Luau side doesn't even emit `_timing` in that case)
+// TIMING isn't set (the Luau side doesn't even emit `runner.timing` then)
 // and would otherwise put a parse/schema-assert failure on the
 // `backend.runTests` frame of every non-debug run.
 export function recordLuauTimingSpans(

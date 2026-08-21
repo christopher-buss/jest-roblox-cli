@@ -2,14 +2,8 @@ export interface RojoTreeNode {
 	$className?: string;
 	$ignoreUnknownInstances?: boolean;
 	$path?: string | { optional: string };
-	$properties?: Record<string, unknown>;
-	[key: string]:
-		| boolean
-		| Record<string, unknown>
-		| RojoTreeNode
-		| string
-		| undefined
-		| { optional: string };
+	$properties?: JSONObject;
+	[key: string]: boolean | JSONObject | RojoTreeNode | string | undefined | { optional: string };
 }
 
 export interface RojoProject {
@@ -25,7 +19,7 @@ export interface RojoProject {
  * re-parsing the project file.
  */
 export interface LoadedRojoProject extends RojoProject {
-	raw: Record<string, unknown>;
+	raw: JSONObject;
 }
 
 /**

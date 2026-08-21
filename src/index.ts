@@ -46,9 +46,9 @@ export {
 export * from "./coverage-pipeline/artifacts.ts";
 export { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
 // Companion harvest seam: turn the raw hit counters a run emits (the
-// `_G.__jest_roblox_cov` global, or a run envelope's `_coverage` field) into
-// typed coverage keyed by the same fileKey the static maps use. For a run this
-// CLI did not launch.
+// `_G.__jest_roblox_cov` global, or a run envelope's `runner.coverage` field)
+// into typed coverage keyed by the same fileKey the static maps use. For a run
+// this CLI did not launch.
 export { normalizeRawCoverage, parseCoverageEnvelope } from "./coverage-pipeline/raw-coverage.ts";
 export type { RawCoverageData, RawFileCoverage } from "./coverage-pipeline/types.ts";
 

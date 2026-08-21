@@ -100,6 +100,11 @@ interface ShadowRootsResult {
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 }
 
+interface RojoInputsHashResult {
+	hash: string;
+	resolved: boolean;
+}
+
 /** Project the coverage result down to the record an entry point emits. */
 export function toCoverageArtifacts(
 	result: PrepareCoverageResult,
@@ -304,7 +309,7 @@ function resolveRojoInputsHash(
 	config: ResolvedConfig,
 	rojoProjectPath: string,
 	luauRoots: Array<string>,
-): { hash: string; resolved: boolean } {
+): RojoInputsHashResult {
 	const hash = tryComputeRojoInputsHash({
 		luauRoots,
 		rojoProjectPath,
@@ -603,7 +608,7 @@ function buildCoveragePlaceAndManifest(
 	inputs: CoverageInputs,
 	shadow: ShadowRootsResult,
 	placeFile: string,
-): { buildId: string; coveragePlace: BuildManifestArtifact; manifest: CoverageManifest } {
+): Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest"> {
 	const coveragePlace = buildRojoProject(
 		inputs.rojoProjectPath,
 		config.rootDir,

@@ -102,15 +102,18 @@ export function attachCoverageManifests(
 		// eslint-disable-next-line ts/no-non-null-assertion -- runProjects preserves order
 		const pendingEntry = pending[index]!;
 		const coverage = coverageByPackage.get(pendingEntry.pkg);
-		return {
+		const projectResult = {
 			coverageManifest: coverage?.manifest,
-			...(coverage !== undefined
-				? { coverageSettings: readCoverageSettings(pendingEntry, coverage) }
-				: {}),
 			displayName: pendingEntry.project.displayName,
 			pkg: pendingEntry.pkg,
 			result,
 		};
+		return coverage === undefined
+			? projectResult
+			: {
+					...projectResult,
+					coverageSettings: readCoverageSettings(pendingEntry, coverage),
+				};
 	});
 }
 

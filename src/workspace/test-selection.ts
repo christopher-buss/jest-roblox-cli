@@ -111,7 +111,7 @@ function applyEmptyPackagePolicy(
 	allEntries: Array<PendingEntry>,
 	contexts: Array<PackageContext>,
 	typeTestPackages: ReadonlySet<string>,
-): { emptyPackageErrors: Array<string>; pending: Array<PendingEntry> } {
+): Pick<WorkspaceTestSelection, "emptyPackageErrors" | "pending"> {
 	const passByPackage = new Map<string, boolean>();
 	for (const ctx of contexts) {
 		passByPackage.set(ctx.info.name, ctx.pkgConfig.passWithNoTests);
@@ -226,7 +226,7 @@ function recordProjectTypeTests(
 	typeTestEntries.push({
 		cwd: packageDirectory,
 		files: typeTestFiles,
-		...(typecheck.tsconfig !== undefined ? { tsconfig: typecheck.tsconfig } : {}),
+		tsconfig: typecheck.tsconfig,
 	});
 	typecheckByDirectory.set(packageDirectory, {
 		ignoreSourceErrors: packageTypecheck.ignoreSourceErrors,

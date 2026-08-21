@@ -715,7 +715,7 @@ describe(runMultiProjectAsync, () => {
 
 		expect(mocks.runTypecheck).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({
-				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]) as unknown,
+				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]),
 			}),
 		);
 		expect(result.typecheckResult).toBeDefined();
@@ -838,7 +838,7 @@ describe(runMultiProjectAsync, () => {
 
 		expect(mocks.runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({
-				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]) as unknown,
+				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]),
 			}),
 		);
 	});
@@ -1018,7 +1018,7 @@ describe(runMultiProjectAsync, () => {
 
 		expect(mocks.runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({
-				files: expect.arrayContaining([expect.stringMatching(/x\.spec-d\.ts$/)]) as unknown,
+				files: expect.arrayContaining([expect.stringMatching(/x\.spec-d\.ts$/)]),
 			}),
 		);
 	});
@@ -1071,7 +1071,7 @@ describe(runMultiProjectAsync, () => {
 
 		expect(mocks.runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({
-				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]) as unknown,
+				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]),
 			}),
 		);
 	});

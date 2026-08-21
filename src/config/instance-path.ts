@@ -108,7 +108,7 @@ export function createInstancePathResolver({
 		};
 	});
 
-	return function toInstancePath(file: string): string | undefined {
+	return function toInstancePath(file): string | undefined {
 		const absoluteFile = toAbsolute(file, fileBase);
 		const candidates = toOutputCandidates(absoluteFile, mappings);
 

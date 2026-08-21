@@ -151,15 +151,19 @@ export function emitBuildManifest(
 	artifacts: CoverageArtifacts,
 	cleanPlace?: BuildManifestArtifact,
 ): void {
-	writeBuildManifest(filePath, {
+	let manifest: BuildManifest = {
 		buildId: artifacts.buildId,
-		...(cleanPlace !== undefined ? { cleanPlace } : {}),
 		coveragePlace: artifacts.coveragePlace,
 		files: artifacts.files,
 		generatedAt: artifacts.generatedAt,
 		projects: artifacts.projects,
 		version: BUILD_MANIFEST_VERSION,
-	});
+	};
+	if (cleanPlace !== undefined) {
+		manifest = { ...manifest, cleanPlace };
+	}
+
+	writeBuildManifest(filePath, manifest);
 }
 
 export function readBuildManifest(

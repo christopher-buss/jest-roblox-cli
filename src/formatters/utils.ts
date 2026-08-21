@@ -1,10 +1,38 @@
+import { type } from "arktype";
+
 import type { FormatterEntry } from "../config/schema.ts";
+import type { GitHubActionsFormatterOptions } from "./github-actions.ts";
 
 export interface AgentFormatterOptions {
 	maxFailures?: number | undefined;
 }
 
+type FormatterNameWithOptions = "agent" | "github-actions";
+
+type FormatterOptions = Exclude<FormatterEntry, string>[1];
+
 export const DEFAULT_MAX_FAILURES = 10;
+
+const agentFormatterOptionsSchema = type({
+	"+": "reject",
+	"maxFailures?": "number",
+}).as<AgentFormatterOptions>();
+
+const ghFormatterOptionsSchema = type({
+	"+": "reject",
+	"displayAnnotations?": "boolean",
+	"jobSummary?": {
+		"+": "reject",
+		"enabled?": "boolean",
+		"fileLinks?": {
+			"+": "reject",
+			"commitHash?": "string",
+			"repository?": "string",
+			"workspacePath?": "string",
+		},
+		"outputPath?": "string",
+	},
+}).as<GitHubActionsFormatterOptions>();
 
 /**
  * Find the options object for a named formatter in a resolved formatter list.
@@ -13,15 +41,23 @@ export const DEFAULT_MAX_FAILURES = 10;
  */
 export function findFormatterOptions(
 	formatters: Array<FormatterEntry>,
-	name: string,
-): Record<string, unknown> | undefined {
+	name: "agent",
+): AgentFormatterOptions | undefined;
+export function findFormatterOptions(
+	formatters: Array<FormatterEntry>,
+	name: "github-actions",
+): GitHubActionsFormatterOptions | undefined;
+export function findFormatterOptions(
+	formatters: Array<FormatterEntry>,
+	name: FormatterNameWithOptions,
+): AgentFormatterOptions | GitHubActionsFormatterOptions | undefined {
 	for (const entry of formatters) {
 		if (entry === name) {
-			return {};
+			return validateFormatterOptions(name, {});
 		}
 
 		if (Array.isArray(entry) && entry[0] === name) {
-			return entry[1];
+			return validateFormatterOptions(name, entry[1]);
 		}
 	}
 
@@ -59,4 +95,15 @@ export function isDefaultHumanFormatter(options: {
 		!usesAgentFormatter(options.formatters, options.verbose) &&
 		!hasFormatter(options.formatters, "json")
 	);
+}
+
+function validateFormatterOptions(
+	name: FormatterNameWithOptions,
+	options: FormatterOptions,
+): AgentFormatterOptions | GitHubActionsFormatterOptions {
+	if (name === "agent") {
+		return agentFormatterOptionsSchema.assert(options);
+	}
+
+	return ghFormatterOptionsSchema.assert(options);
 }

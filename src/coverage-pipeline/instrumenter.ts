@@ -64,9 +64,7 @@ interface InstrumentPaths {
  * Instrument a single luauRoot directory. Returns the files map without
  * writing a manifest — used by `prepareCoverage()` to merge multiple roots.
  */
-export function instrumentRoot(
-	options: InstrumentRootOptions,
-): Record<string, InstrumentedFileRecord> {
+export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest["files"] {
 	const { luauRoot, shadowDir, skipFiles } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 
@@ -74,7 +72,7 @@ export function instrumentRoot(
 	const luteArgs = buildLuteArgs(scriptPath, luauRoot, astOutputDirectory, skipFiles);
 	const fileList = discoverFileList(luteArgs, timing);
 
-	const files: Record<string, InstrumentedFileRecord> = {};
+	const files: CoverageManifest["files"] = {};
 	const context: InstrumentFileContext = {
 		astOutputDirectory,
 		posixLuauRoot: normalizeWindowsPath(luauRoot),
@@ -219,7 +217,12 @@ function discoverFileList(luteArgs: Array<string>, timing: TimingCollector): Arr
  * dominate the instrumentation pass.
  */
 function isAstStatBlock(value: JSONValue): value is AstStatBlock & JSONValue {
-	return typeof value === "object" && value !== null && Reflect.get(value, "tag") === "block";
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		!Array.isArray(value) &&
+		value["tag"] === "block"
+	);
 }
 
 /** Reads one `parse-ast.luau` sidecar, failing loudly on either IO or shape. */

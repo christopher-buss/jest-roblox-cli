@@ -6,11 +6,7 @@ import { toFormatOptions } from "../formatters/format-options.ts";
 import type { FormatOptions } from "../formatters/formatter.ts";
 import { formatResult } from "../formatters/formatter.ts";
 import { formatJson } from "../formatters/json.ts";
-import {
-	type AgentFormatterOptions,
-	DEFAULT_MAX_FAILURES,
-	findFormatterOptions,
-} from "../formatters/utils.ts";
+import { DEFAULT_MAX_FAILURES, findFormatterOptions, hasFormatter } from "../formatters/utils.ts";
 import type { FormatOutputOptions } from "./types.ts";
 
 interface ResolvedOutputPaths {
@@ -26,9 +22,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 
 	const paths = resolveOutputPaths(config);
 
-	const agentOptions = findFormatterOptions(config.formatters ?? [], "agent") as
-		| AgentFormatterOptions
-		| undefined;
+	const agentOptions = findFormatterOptions(config.formatters ?? [], "agent");
 
 	if (agentOptions !== undefined && !config.verbose) {
 		return formatAgent(result, {
@@ -40,8 +34,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 		});
 	}
 
-	const jsonOptions = findFormatterOptions(config.formatters ?? [], "json");
-	if (jsonOptions !== undefined) {
+	if (hasFormatter(config.formatters, "json")) {
 		return formatJson(result);
 	}
 

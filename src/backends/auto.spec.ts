@@ -1,17 +1,13 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it, vi } from "vitest";
+import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
-import {
-	isStudioBusyError,
-	probeStudioPluginAsync,
-	resolveBackendAsync,
-	StudioWithFallback,
-} from "./auto.ts";
+import { probeStudioPluginAsync, resolveBackendAsync, StudioWithFallback } from "./auto.ts";
 import type { ProbeDetected, ProbeResult } from "./auto.ts";
 import type { Backend } from "./interface.ts";
 import { OpenCloudBackend } from "./open-cloud.ts";
@@ -47,8 +43,8 @@ describe(probeStudioPluginAsync, () => {
 
 		assert(result.detected, "expected probe to detect plugin");
 
-		expect(result.server).toBe(wss);
-		expect(result.socket).toBe(mockSocket);
+		expect(result.server).toBe(fromPartial<WebSocketServer>(wss));
+		expect(result.socket).toBe(fromPartial<WebSocket>(mockSocket));
 	});
 
 	it("should return not detected when no connection within timeout", async () => {
@@ -324,32 +320,6 @@ describe(resolveBackendAsync, () => {
 	});
 });
 
-describe(isStudioBusyError, () => {
-	it("should match EADDRINUSE errors", () => {
-		expect.assertions(1);
-
-		const error = Object.assign(new Error("listen EADDRINUSE"), { code: "EADDRINUSE" });
-
-		expect(isStudioBusyError(error)).toBeTrue();
-	});
-
-	it("should match StudioTestService busy errors", () => {
-		expect.assertions(1);
-
-		const error = new LuauScriptError(
-			"StudioTestService: Previous call to start play session has not been completed",
-		);
-
-		expect(isStudioBusyError(error)).toBeTrue();
-	});
-
-	it("should not match unrelated errors", () => {
-		expect.assertions(1);
-
-		expect(isStudioBusyError(new Error("something else"))).toBeFalse();
-	});
-});
-
 describe(StudioWithFallback, () => {
 	it("should fall back to open-cloud on EADDRINUSE", async () => {
 		expect.assertions(1);
@@ -375,6 +345,43 @@ describe(StudioWithFallback, () => {
 
 		// Will throw because OC env vars are stubs, but it proves the fallback
 		// path runs
+		await expect(
+			fallback.runTestsAsync({
+				jobs: [
+					{
+						config: makeConfig({ backend: "auto" }),
+						displayName: "",
+						testFiles: ["test.spec.ts"],
+					},
+				],
+			}),
+		).rejects.toThrow(/game\.rbxl/);
+	});
+
+	it("should fall back to open-cloud when StudioTestService is busy", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "test-key");
+		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
+		vi.stubEnv("ROBLOX_PLACE_ID", "456");
+
+		const studioBackend: Backend = {
+			kind: "studio",
+			runTestsAsync: vi
+				.fn<Backend["runTestsAsync"]>()
+				.mockRejectedValue(
+					new LuauScriptError(
+						"StudioTestService: Previous call to start play session has not been completed",
+					),
+				),
+		};
+
+		const fallback = new StudioWithFallback(studioBackend, {
+			apiKey: "test-key",
+			placeId: "456",
+			universeId: "123",
+		});
+
 		await expect(
 			fallback.runTestsAsync({
 				jobs: [

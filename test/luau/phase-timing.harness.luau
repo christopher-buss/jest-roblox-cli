@@ -1,5 +1,5 @@
 --!nocheck
--- Lute-driven test for the shared `_timing` envelope builder. Pure over a list
+-- Lute-driven test for the shared `runner.timing` envelope builder. Pure over a list
 -- of already-measured (name, seconds) pairs — no Roblox, no jest, no os.clock
 -- dependency of its own. The module under test is inlined into the
 -- placeholder below by phase-timing.spec.ts. Any failed assertion calls

@@ -220,9 +220,8 @@ describe(prepareArtifactsAsync, () => {
 	it("should build the clean place with stub mounts in multi mode", async () => {
 		expect.assertions(2);
 
-		const config = makeConfig();
 		const projects = [{ test: { displayName: "c" } }];
-		Reflect.set(config, "projects", projects);
+		const config = makeConfig({ projects: fromAny(projects) });
 		// run.ts is mocked, so `getRawProjects` (its export) is too — feed the
 		// multi-mode branch its real passthrough.
 		mocks.getRawProjects.mockReturnValue(fromAny(projects));

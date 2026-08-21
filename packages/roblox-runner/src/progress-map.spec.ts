@@ -10,6 +10,14 @@ interface Tally {
 	tested: number;
 }
 
+interface SortedMapItemBody {
+	id: string;
+	etag: string;
+	expireTime: string;
+	path: string;
+	value: unknown;
+}
+
 const tallySchema = type({ tested: "number" });
 
 function makeMap(
@@ -25,7 +33,7 @@ function makeMap(
 	});
 }
 
-function validItemBody(id: string, value: unknown): Record<string, unknown> {
+function validItemBody(id: string, value: Tally): SortedMapItemBody {
 	return {
 		id,
 		etag: "etag-1",

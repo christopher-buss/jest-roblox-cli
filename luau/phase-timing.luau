@@ -1,5 +1,5 @@
 --!strict
--- Shared `_timing` envelope builder for the two Jest-on-Roblox runners:
+-- Shared `runner.timing` envelope builder for the two Jest-on-Roblox runners:
 -- `runner.luau` (single-mode, one run) and `staging/embedded-runner.luau`
 -- (workspace mode, one call per project entry). Both measure the same
 -- named phases (findJest, patchSnapshot, requireJest, resolveProjects,
@@ -20,7 +20,7 @@ export type Phase = {
 }
 
 -- Returns nil when disabled so callers can do
--- `result._timing = PhaseTiming.build(...)` unconditionally instead of an
+-- `runner.timing = PhaseTiming.build(...)` unconditionally instead of an
 -- extra `if enabled then` branch around the assignment.
 function module.build(enabled: boolean?, phases: { Phase }): { [string]: number }?
 	if not enabled then

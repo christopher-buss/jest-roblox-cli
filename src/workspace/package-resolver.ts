@@ -26,7 +26,7 @@ export function readPackageJsonName(packageJsonPath: string): string | undefined
 		return undefined;
 	}
 
-	const nameValue = Reflect.get(raw, "name");
+	const nameValue = raw["name"];
 	return typeof nameValue === "string" ? nameValue : undefined;
 }
 

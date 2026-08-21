@@ -385,7 +385,7 @@ function handleQueueRequest({
 	state: FakeOpenCloudState;
 }): void {
 	const { queue, suffix } = queuePath;
-	const parsed: JSONValue = body === "" ? {} : JSON.parse(body);
+	const parsed = body === "" ? {} : JSON.parse(body);
 
 	switch (suffix) {
 		case "/items": {
