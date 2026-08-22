@@ -480,10 +480,11 @@ resolved to an absolute path relative to the file that declares it (the shared
 config), so it points at the same directory no matter which package you run
 from. Each glob in `packages` selects directories that contain a
 `jest.config.*`; the package name comes from `package.json#name`, falling back
-to the directory name (so Luau-only packages need no `package.json`). Every
-selected package must resolve the same `workspace.packages`/`root` — inheriting
-from one shared config guarantees this, and a package that overrides or omits it
-fails the run.
+to the directory name (so Luau-only packages need no `package.json`). A `.` glob
+selects the workspace root itself, the same as a `packages: - .` entry in
+`pnpm-workspace.yaml`. Every selected package must resolve the same
+`workspace.packages`/`root` — inheriting from one shared config guarantees this,
+and a package that overrides or omits it fails the run.
 
 Run from inside any package as usual. To run from a directory with no resolvable
 jest config (e.g. the repo root), either point at the shared config with

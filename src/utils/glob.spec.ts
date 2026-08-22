@@ -120,6 +120,18 @@ describe(globSync, () => {
 		expect(globSync("*")).toStrictEqual(["index.ts"]);
 	});
 
+	it("should match root files through a leading ./ in the pattern", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({ "package.json": "", "src/package.json": "" }, CWD);
+
+		expect(globSync("./package.json", { cwd: CWD })).toStrictEqual(["package.json"]);
+	});
+
 	it("should match dot-extension patterns correctly", () => {
 		expect.assertions(1);
 

@@ -4,6 +4,8 @@ import process from "node:process";
 
 import { normalizeWindowsPath } from "./normalize-windows-path.ts";
 
+const LEADING_CURRENT_DIRECTORY = /^\.\//;
+
 /**
  * Directory walks already done, keyed by the directory walked. Hand the same
  * cache to a run of `globSync` calls that share a `cwd` and it walks once
@@ -49,6 +51,11 @@ export function globSync(pattern: string, options: GlobOptions = {}): Array<stri
  */
 function compileGlobPattern(pattern: string): RegExp {
 	const regexPattern = pattern
+		// A walk reports `cwd`-relative paths and never prefixes them, so a
+		// leading `./` is redundant and matches nothing while it stands. Raw
+		// user config (`testMatch`, `exclude`) reaches here unjoined and is
+		// free to carry one.
+		.replace(LEADING_CURRENT_DIRECTORY, "")
 		// Escape regex metacharacters (incl. `.`) so they match literally; the
 		// glob wildcards `*`/`**` are translated below and are left untouched.
 		.replace(/[.+^${}()|[\]\\]/g, "\\$&")

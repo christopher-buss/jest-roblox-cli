@@ -3,9 +3,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createGlobCache, globSync } from "../utils/glob.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 const JEST_CONFIG_MARKER = /^jest\.config\.[^.]+$/;
-const TRAILING_SLASH = /\/$/;
 
 export interface PackageInfo {
 	name: string;
@@ -69,6 +69,57 @@ function parsePackageJson(packageJsonPath: string): JSONValue {
 	}
 }
 
+/**
+ * Every path under `workspaceRoot` that `patterns` select with `leaf`
+ * appended.
+ */
+function matchUnderPatterns(
+	workspaceRoot: string,
+	patterns: Array<string>,
+	leaf: string,
+): Array<string> {
+	// One walk of the workspace root serves every pattern.
+	const globCache = createGlobCache();
+	const matches: Array<string> = [];
+	for (const pattern of patterns) {
+		// `path.posix.join` reads a blank entry as the root, which would
+		// select a package nobody asked for.
+		if (pattern.trim() === "") {
+			continue;
+		}
+
+		matches.push(
+			...globSync(path.posix.join(pattern, leaf), { cache: globCache, cwd: workspaceRoot }),
+		);
+	}
+
+	return matches;
+}
+
+function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: string): void {
+	const byName = new Map<string, Array<string>>();
+	for (const packageInfo of packages) {
+		const relative = normalizeWindowsPath(
+			path.relative(workspaceRoot, packageInfo.packageDirectory),
+		);
+		const list = byName.get(packageInfo.name) ?? [];
+		// The workspace root relativizes to the empty string, which reads as a
+		// missing path in the message.
+		list.push(relative === "" ? "." : relative);
+		byName.set(packageInfo.name, list);
+	}
+
+	for (const [name, paths] of byName) {
+		if (paths.length > 1) {
+			const sorted = paths.toSorted();
+			throw new Error(
+				`Duplicate package name "${name}" from ${sorted.join(" and ")}. ` +
+					"Add a package.json with a unique `name`, or rename a directory.",
+			);
+		}
+	}
+}
+
 function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
 	const yamlPath = path.join(workspaceRoot, "pnpm-workspace.yaml");
 	if (!fs.existsSync(yamlPath)) {
@@ -84,43 +135,25 @@ function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
 	const patterns = yaml.packages ?? [];
 
 	const packages: Array<PackageInfo> = [];
-	// One walk of the workspace root serves every pattern.
-	const globCache = createGlobCache();
-	for (const pattern of patterns) {
-		const packageJsonPattern = `${pattern.replace(TRAILING_SLASH, "")}/package.json`;
-		const matches = globSync(packageJsonPattern, { cache: globCache, cwd: workspaceRoot });
-		for (const match of matches) {
-			const packageJsonPath = path.join(workspaceRoot, match);
-			const name = readPackageJsonName(packageJsonPath);
-			if (name !== undefined) {
-				packages.push({ name, packageDirectory: path.dirname(packageJsonPath) });
-			}
+	const seenDirectories = new Set<string>();
+	for (const match of matchUnderPatterns(workspaceRoot, patterns, "package.json")) {
+		const packageJsonPath = path.join(workspaceRoot, match);
+		const packageDirectory = path.dirname(packageJsonPath);
+		// Overlapping patterns — `packages/*` beside `packages/foo` — select
+		// the same package twice.
+		if (seenDirectories.has(packageDirectory)) {
+			continue;
+		}
+
+		seenDirectories.add(packageDirectory);
+		const name = readPackageJsonName(packageJsonPath);
+		if (name !== undefined) {
+			packages.push({ name, packageDirectory });
 		}
 	}
 
+	assertNoDuplicateNames(packages, workspaceRoot);
 	return packages;
-}
-
-function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: string): void {
-	const byName = new Map<string, Array<string>>();
-	for (const packageInfo of packages) {
-		const relative = path
-			.relative(workspaceRoot, packageInfo.packageDirectory)
-			.replaceAll("\\", "/");
-		const list = byName.get(packageInfo.name) ?? [];
-		list.push(relative);
-		byName.set(packageInfo.name, list);
-	}
-
-	for (const [name, paths] of byName) {
-		if (paths.length > 1) {
-			const sorted = paths.toSorted();
-			throw new Error(
-				`Duplicate package name "${name}" from ${sorted.join(" and ")}. ` +
-					"Add a package.json with a unique `name`, or rename a directory.",
-			);
-		}
-	}
 }
 
 function inferPackageName(packageDirectory: string): string {
@@ -152,14 +185,13 @@ function collectPackagesFromMatches(
 function enumerateFromGlobs(workspaceRoot: string, patterns: Array<string>): Array<PackageInfo> {
 	const seenDirectories = new Set<string>();
 	const packages: Array<PackageInfo> = [];
-	// One walk of the workspace root serves every pattern.
-	const globCache = createGlobCache();
 
-	for (const pattern of patterns) {
-		const jestConfigPattern = `${pattern.replace(TRAILING_SLASH, "")}/jest.config.*`;
-		const matches = globSync(jestConfigPattern, { cache: globCache, cwd: workspaceRoot });
-		collectPackagesFromMatches(matches, workspaceRoot, seenDirectories, packages);
-	}
+	collectPackagesFromMatches(
+		matchUnderPatterns(workspaceRoot, patterns, "jest.config.*"),
+		workspaceRoot,
+		seenDirectories,
+		packages,
+	);
 
 	assertNoDuplicateNames(packages, workspaceRoot);
 	return packages;

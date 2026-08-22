@@ -27,6 +27,14 @@ describe(applyExcludes, () => {
 		expect(applyExcludes(files, [])).toBe(files);
 	});
 
+	it("should match an exclude glob written with a leading ./", () => {
+		expect.assertions(1);
+
+		const files = ["src/a.spec.ts", "src/legacy/b.spec.ts"];
+
+		expect(applyExcludes(files, ["./src/legacy/**"])).toStrictEqual(["src/a.spec.ts"]);
+	});
+
 	it("should treat regex metacharacters in a glob as literals", () => {
 		expect.assertions(1);
 

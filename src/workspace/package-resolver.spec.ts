@@ -62,6 +62,69 @@ describe(resolvePackage, () => {
 		);
 	});
 
+	it("should resolve the workspace root when the pattern is a bare dot", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "package.json")]: '{"name":"anime-rush"}',
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - .\n  - packages/*\n",
+		});
+
+		expect(resolvePackage(ROOT, "anime-rush")).toStrictEqual({
+			name: "anime-rush",
+			packageDirectory: ROOT,
+		});
+	});
+
+	it("should resolve a package selected by two overlapping patterns once", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]:
+				"packages:\n  - packages/*\n  - packages/foo\n",
+		});
+
+		expect(resolvePackage(ROOT, "@halcyon/foo").packageDirectory).toBe(
+			path.join(ROOT, "packages/foo"),
+		);
+	});
+
+	it("should throw when two pnpm packages share a name", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "package.json")]: '{"name":"foo"}',
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - .\n  - packages/*\n",
+		});
+
+		expect(() => resolvePackage(ROOT, "foo")).toThrow(
+			/Duplicate package name.*foo.*\. and packages\/foo/s,
+		);
+	});
+
+	it("should ignore a blank pattern rather than let it select the root", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "package.json")]: '{"name":"anime-rush"}',
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: 'packages:\n  - ""\n  - packages/*\n',
+		});
+
+		expect(() => resolvePackage(ROOT, "anime-rush")).toThrow(/not found/);
+	});
+
 	it("should throw when pnpm-workspace.yaml has no packages field", () => {
 		expect.assertions(1);
 
@@ -168,6 +231,22 @@ describe(resolvePackage, () => {
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 		});
 
+		it("should enumerate the workspace root when the pattern is a bare dot", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[path.join(ROOT, "jest.config.ts")]: "",
+				[path.join(ROOT, "package.json")]: '{"name":"anime-rush"}',
+				[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
+			});
+
+			const info = resolvePackage(ROOT, "anime-rush", [".", "packages/*"]);
+
+			expect(info.packageDirectory).toBe(ROOT);
+		});
+
 		it("should infer name from directory basename when no package.json exists (Luau-only)", () => {
 			expect.assertions(1);
 
@@ -258,6 +337,22 @@ describe(resolvePackage, () => {
 
 			expect(() => resolvePackage(ROOT, "foo", ["libs/*", "packages/*"])).toThrow(
 				/Duplicate package name.*foo.*libs\/foo.*packages\/foo/s,
+			);
+		});
+
+		it("should name the workspace root as . when it duplicates a package name", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[path.join(ROOT, "jest.config.ts")]: "",
+				[path.join(ROOT, "package.json")]: '{"name":"foo"}',
+				[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
+			});
+
+			expect(() => resolvePackage(ROOT, "foo", [".", "packages/*"])).toThrow(
+				/Duplicate package name.*foo.*\. and packages\/foo/s,
 			);
 		});
 
