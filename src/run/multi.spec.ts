@@ -9,7 +9,7 @@ import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { collectProjectRoots, filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { resolveAllProjects } from "../config/projects.ts";
+import { extractStaticRoot, resolveAllProjects } from "../config/projects.ts";
 import {
 	type CliOptions,
 	DEFAULT_CONFIG,
@@ -57,6 +57,7 @@ const mocks = {
 	buildWithRojo: vi.mocked(buildWithRojo),
 	cleanLeftoverStubs: vi.mocked(cleanLeftoverStubs),
 	createSetupResolver: vi.mocked(createSetupResolver),
+	extractStaticRoot: vi.mocked(extractStaticRoot),
 	filterProjectsByFiles: vi.mocked(filterProjectsByFiles),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
 	hasUserAuthoredConfig: vi.mocked(hasUserAuthoredConfig),
@@ -569,8 +570,8 @@ describe(runMultiProjectAsync, () => {
 
 		const { config } = setupDefaults({ collectCoverage: true });
 		mocks.syncStubsToShadowDirectory.mockReturnValue(false);
-		mocks.prepareCoverage.mockImplementation((_config, beforeBuild) => {
-			beforeBuild!(".jest-roblox/coverage");
+		mocks.prepareCoverage.mockImplementation((_config, options) => {
+			options!.beforeBuild!(".jest-roblox/coverage");
 			return {
 				buildId: "test-build-id",
 				coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
@@ -607,6 +608,50 @@ describe(runMultiProjectAsync, () => {
 		);
 	});
 
+	it("should instrument against the derived universe when no coverage globs are set", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults({ collectCoverage: true });
+		// `config/projects` is auto-mocked here, so the derivation has no static
+		// root to work from unless this one is given back.
+		mocks.extractStaticRoot.mockReturnValue({ glob: "**/*.spec.ts", root: "src/client" });
+		mocks.prepareCoverage.mockReturnValue({
+			buildId: "test-build-id",
+			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
+			files: {},
+			manifest: {
+				buildId: "test-build-id",
+				files: {},
+				generatedAt: isoNow(),
+				instrumenterVersion: 1,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				placeFilePath: "/coverage/game.rbxl",
+				shadowDir: ".jest-roblox/coverage",
+				version: MANIFEST_VERSION,
+			},
+			placeFile: "/coverage/game.rbxl",
+			rebuilt: true,
+		});
+		seedProjectFiles();
+
+		await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		// The report narrows by the derived set whether or not the user set
+		// `collectCoverageFrom`; instrumentation has to see the same value, or
+		// the default path probes files no report will ever ask about.
+		expect(mocks.prepareCoverage).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				coverageInclude: expect.arrayContaining(["src/client/**/*.ts"]),
+			}),
+		);
+	});
+
 	it("should NOT bake stubs into the coverage place for the studio-cli backend", async () => {
 		// studio-cli drives the plugin's Run-mode runner, which injects
 		// `jest.config` ModuleScripts from the payload at runtime. Baking them
@@ -617,9 +662,9 @@ describe(runMultiProjectAsync, () => {
 		expect.assertions(2);
 
 		const { config } = setupDefaults({ backend: "studio-cli", collectCoverage: true });
-		mocks.prepareCoverage.mockImplementation((_config, beforeBuild) => {
+		mocks.prepareCoverage.mockImplementation((_config, options) => {
 			// The absent hook *is* the contract: no `beforeBuild`, no stub bake.
-			expect(beforeBuild).toBeUndefined();
+			expect(options!.beforeBuild).toBeUndefined();
 
 			return {
 				buildId: "test-build-id",

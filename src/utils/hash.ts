@@ -6,6 +6,11 @@ export function hashBuffer(data: buffer.Buffer): string {
 	return createHash("sha256").update(data).digest("hex");
 }
 
+/** SHA-256 of a string, for digests over config rather than file bytes. */
+export function hashString(text: string): string {
+	return createHash("sha256").update(text).digest("hex");
+}
+
 /**
  * SHA-256 of a file's raw bytes. The canonical helper for recording and
  * re-verifying artifact hashes — reads the file as a buffer so the digest

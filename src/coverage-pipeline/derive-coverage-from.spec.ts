@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { deriveCoverageFromIncludes } from "./derive-coverage-from.ts";
+import { deriveCoverageFromIncludes, resolveCoverageInclude } from "./derive-coverage-from.ts";
+
+const COVERAGE_PROJECTS: Array<Pick<ResolvedProjectConfig, "include">> = [
+	{ include: ["src/**/*.spec.ts"] },
+];
 
 describe(deriveCoverageFromIncludes, () => {
 	it("should derive coverage patterns from project include roots", () => {
@@ -174,5 +178,39 @@ describe(deriveCoverageFromIncludes, () => {
 		expect(() => deriveCoverageFromIncludes(projects)).toThrow(
 			/cannot infer source extension/i,
 		);
+	});
+});
+
+describe(resolveCoverageInclude, () => {
+	it("should prefer an explicit collectCoverageFrom over the derived set", () => {
+		expect.assertions(1);
+
+		const result = resolveCoverageInclude(
+			{ collectCoverage: true, collectCoverageFrom: ["src/ecs/**/*.ts"] },
+			COVERAGE_PROJECTS,
+		);
+
+		expect(result).toStrictEqual(["src/ecs/**/*.ts"]);
+	});
+
+	it("should fall back to the derived set when nothing is configured", () => {
+		expect.assertions(1);
+
+		// The fallback resolves here rather than at report time, so
+		// instrumentation narrows to the same universe the report renders.
+		const result = resolveCoverageInclude({ collectCoverage: true }, COVERAGE_PROJECTS);
+
+		expect(result).toStrictEqual(deriveCoverageFromIncludes(COVERAGE_PROJECTS));
+	});
+
+	it("should not derive anything when coverage is off", () => {
+		expect.assertions(1);
+
+		// Deriving would run `inferSourceExtension` over every include glob,
+		// which throws on a Type-Test pattern — a run without coverage must
+		// not pay that risk for a value nothing reads.
+		expect(
+			resolveCoverageInclude({ collectCoverage: false }, COVERAGE_PROJECTS),
+		).toBeUndefined();
 	});
 });

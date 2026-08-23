@@ -27,6 +27,12 @@ export interface CoverageRoot {
 export interface PackageDescriptor {
 	name: string;
 	/**
+	 * Per-package `collectCoverageFrom`, forwarded to
+	 * `prepareWorkspaceCoverage` so instrumentation narrows to the files the
+	 * package reports on. Not read by synthesis itself.
+	 */
+	collectCoverageFrom?: Array<string> | undefined;
+	/**
 	 * Per-package `coverageCache` opt-out, forwarded to
 	 * `prepareWorkspaceCoverage` so the cache gate honors each package's own
 	 * declaration. Not read by synthesis itself.

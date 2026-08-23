@@ -26,6 +26,12 @@ const RUN_TIMEOUT_MS = 60_000;
 // `src/coverage-pipeline/manifest.ts` and is validated by the CLI itself.
 const manifestFilesSchema = type({ files: "object" });
 
+/** The `test:` knobs a case here varies; everything else is held fixed. */
+interface VendoredMountOverrides {
+	collectCoverageFrom?: Array<string>;
+	coveragePathIgnorePatterns?: Array<string>;
+}
+
 function readManifestFileKeys(manifestPath: string): Array<string> {
 	const manifest = manifestFilesSchema.assert(readJsonSync(manifestPath));
 	return Object.keys(manifest.files);
@@ -51,6 +57,36 @@ function luteOnPath(): boolean {
 
 function hasExecutableOnPath(): boolean {
 	return rojoOnPath() || luteOnPath();
+}
+
+/**
+ * Overwrite the vendored-mount package's config, keeping its rojo project and
+ * its single Luau project and folding in whatever coverage knob the case under
+ * test is about. Written from an object rather than hand-indented lines so the
+ * differing key is the only thing a reader has to find.
+ */
+function writeVendoredMountConfig(sandbox: string, testOverrides: VendoredMountOverrides): void {
+	const config = {
+		luauRoots: ["src"],
+		rojoProject: "test.project.json",
+		test: {
+			passWithNoTests: true,
+			projects: [
+				{
+					test: {
+						displayName: "@e2e/vendored-mount",
+						include: ["src/**/*.spec.luau"],
+					},
+				},
+			],
+			...testOverrides,
+		},
+	};
+	const serialized = JSON.stringify(config, undefined, "\t");
+	fs.writeFileSync(
+		path.join(sandbox, "packages/vendored-mount/jest.config.ts"),
+		`export default ${serialized};\n`,
+	);
 }
 
 describe("workspace coverage — $path mounts specs alongside helpers", () => {
@@ -100,6 +136,79 @@ describe("workspace coverage — $path mounts specs alongside helpers", () => {
 			// so we pin that the place was actually built and dispatched.
 			expect(server.uploadCount).toBe(1);
 			expect(server.requests).toHaveLength(1);
+		},
+		RUN_TIMEOUT_MS + 5000,
+	);
+});
+
+// `collectCoverageFrom` decides what gets probes, not just what the report
+// keeps: the probe counts for everything else still rode home in the task's
+// 4 MiB return envelope. A file outside the globs must reach the shadow
+// verbatim — dropping it instead would break the place, and probing it anyway
+// would put the payload back.
+describe("workspace coverage — collectCoverageFrom scopes instrumentation", () => {
+	it.skipIf(!hasExecutableOnPath())(
+		"should mirror an out-of-universe file verbatim and leave it out of the manifest",
+		async () => {
+			expect.assertions(5);
+
+			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
+			const extraSource = "return 2\n";
+			fs.writeFileSync(
+				path.join(sandbox, "packages/vendored-mount/src/extra.luau"),
+				extraSource,
+			);
+			writeVendoredMountConfig(sandbox, {
+				collectCoverageFrom: ["packages/vendored-mount/src/init.luau"],
+			});
+
+			const server = await startFakeOpenCloudServerAsync([
+				{
+					jestOutput: passingJestOutput(),
+					pkg: "@e2e/vendored-mount",
+					project: "@e2e/vendored-mount",
+				},
+			]);
+
+			const result = await runCliAsync(
+				[
+					"--workspace",
+					"--packages=@e2e/vendored-mount",
+					"--coverage",
+					"--backend",
+					"open-cloud",
+				],
+				{
+					cwd: sandbox,
+					env: {
+						JEST_ROBLOX_OPEN_CLOUD_BASE_URL: server.baseUrl,
+						ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
+						ROBLOX_PLACE_ID: "456",
+						ROBLOX_UNIVERSE_ID: "123",
+					},
+					timeoutMs: RUN_TIMEOUT_MS,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+
+			const shadowRoot = path.join(
+				sandbox,
+				".jest-roblox/workspace/@e2e-vendored-mount/coverage",
+			);
+			const shadowExtra = path.join(shadowRoot, "src/extra.luau");
+
+			expect(fs.existsSync(shadowExtra)).toBeTrue();
+			// Byte-identical is the evidence: an instrumented copy carries a
+			// probe preamble, so equality means no probes were inserted.
+			expect(fs.readFileSync(shadowExtra, "utf-8")).toBe(extraSource);
+
+			const manifestFileKeys = readManifestFileKeys(
+				path.join(shadowRoot, "coverage-manifest.json"),
+			);
+
+			expect(manifestFileKeys.some((key) => key.endsWith("/src/init.luau"))).toBeTrue();
+			expect(manifestFileKeys.some((key) => key.endsWith("/src/extra.luau"))).toBeFalse();
 		},
 		RUN_TIMEOUT_MS + 5000,
 	);

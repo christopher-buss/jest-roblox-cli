@@ -22,6 +22,9 @@ import type {
 	CoverageArtifacts,
 } from "./build-manifest.ts";
 import { BUILD_MANIFEST_FILE, readBuildManifest, toBuildManifestFiles } from "./build-manifest.ts";
+import { canReuseCoverageManifest } from "./incremental-gate.ts";
+import type { InstrumentUniverse } from "./instrument-universe.ts";
+import { createInstrumentUniverse } from "./instrument-universe.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
@@ -56,9 +59,22 @@ export interface PrepareCoverageResult {
 	rebuilt: boolean;
 }
 
+export interface PrepareCoverageOptions {
+	/** Hook run after the shadow tree is populated, before the place build. */
+	beforeBuild?: ((shadowDirectory: string) => boolean) | undefined;
+	/**
+	 * The run's effective coverage include globs, per `resolveCoverageInclude`
+	 * — which is where the `collectCoverageFrom ?? derived` fallback lives. A
+	 * caller that omits it gets the raw config value, so a run that never
+	 * resolves the fallback still narrows by anything explicitly set.
+	 */
+	coverageInclude?: Array<string> | undefined;
+}
+
 interface WriteManifestOptions {
 	allFiles: Record<string, InstrumentedFileRecord>;
 	buildId: string;
+	coverageUniverseHash: string | undefined;
 	luauRoots: Array<string>;
 	manifestPath: string;
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
@@ -90,6 +106,8 @@ interface CoverageInputs {
 	previousManifest: CoverageManifest | undefined;
 	rojoInputsHash: string;
 	rojoProjectPath: string;
+	/** Absent when the config narrows nothing — the whole root is probed. */
+	universe: InstrumentUniverse | undefined;
 }
 
 /** The merged instrumentation output across every luauRoot. */
@@ -177,13 +195,12 @@ export function resolveLuauRoots(config: ResolvedConfig): Array<string> {
 
 export function prepareCoverage(
 	config: ResolvedConfig,
-	beforeBuild?: (shadowDirectory: string) => boolean,
+	{ beforeBuild, coverageInclude }: PrepareCoverageOptions = {},
 ): PrepareCoverageResult {
-	const inputs = resolveCoverageInputs(config);
-	const { luauRoots, previousManifest } = inputs;
+	const inputs = resolveCoverageInputs(config, coverageInclude);
 	const isIncremental = decideIncremental(config, inputs);
 
-	const shadow = prepareShadowRoots(luauRoots, previousManifest, isIncremental);
+	const shadow = prepareShadowRoots(inputs, isIncremental);
 	const hasExtraChanges = beforeBuild?.(COVERAGE_DIR) === true;
 	const hasChanges =
 		!isIncremental ||
@@ -347,7 +364,10 @@ function loadCoverageManifest(manifestPath: string): CoverageManifest | undefine
  * Resolve the rojo project, the luau roots, the non-luauRoot inputs hash and
  * the prior manifest — everything the rest of the run reads but never mutates.
  */
-function resolveCoverageInputs(config: ResolvedConfig): CoverageInputs {
+function resolveCoverageInputs(
+	config: ResolvedConfig,
+	coverageInclude: Array<string> | undefined,
+): CoverageInputs {
 	const rojoProjectPath = findRojoProject(config);
 	const luauRoots = resolveLuauRootsWithRojo(config, rojoProjectPath);
 
@@ -369,26 +389,11 @@ function resolveCoverageInputs(config: ResolvedConfig): CoverageInputs {
 		previousManifest: loadCoverageManifest(manifestPath),
 		rojoInputsHash,
 		rojoProjectPath,
+		universe: createInstrumentUniverse({
+			ignore: config.coveragePathIgnorePatterns,
+			include: coverageInclude ?? config.collectCoverageFrom,
+		}),
 	};
-}
-
-function canUseIncremental(
-	previousManifest: CoverageManifest | undefined,
-	config: ResolvedConfig,
-): boolean {
-	if (!config.coverageCache) {
-		return false;
-	}
-
-	if (previousManifest === undefined) {
-		return false;
-	}
-
-	if (previousManifest.instrumenterVersion !== INSTRUMENTER_VERSION) {
-		return false;
-	}
-
-	return true;
 }
 
 function hasDroppedLuauRoot(previous: Array<string>, current: Array<string>): boolean {
@@ -402,9 +407,12 @@ function hasDroppedLuauRoot(previous: Array<string>, current: Array<string>): bo
  */
 function decideIncremental(
 	config: ResolvedConfig,
-	{ luauRoots, previousManifest }: CoverageInputs,
+	{ luauRoots, previousManifest, universe }: CoverageInputs,
 ): boolean {
-	let isIncremental = canUseIncremental(previousManifest, config);
+	let isIncremental = canReuseCoverageManifest(previousManifest, {
+		coverageCache: config.coverageCache,
+		universe,
+	});
 
 	// A dropped luauRoot is invisible to the per-root reconcile — it only walks
 	// the current roots — so the dropped root's instrumented shadow subtree and
@@ -428,8 +436,7 @@ function decideIncremental(
 
 /** Instrument every luauRoot into its shadow dir and merge the results. */
 function prepareShadowRoots(
-	luauRoots: Array<string>,
-	previousManifest: CoverageManifest | undefined,
+	{ luauRoots, previousManifest, universe }: CoverageInputs,
 	isIncremental: boolean,
 ): ShadowRootsResult {
 	const files: Record<string, InstrumentedFileRecord> = {};
@@ -443,6 +450,7 @@ function prepareShadowRoots(
 			luauRoot,
 			previousManifest,
 			shadowDir: shadowDirectory,
+			universe,
 			useIncremental: isIncremental,
 		});
 
@@ -571,6 +579,7 @@ function buildRojoProject(
 function buildAndWriteManifest({
 	allFiles,
 	buildId,
+	coverageUniverseHash,
 	luauRoots,
 	manifestPath,
 	nonInstrumentedFiles,
@@ -580,6 +589,7 @@ function buildAndWriteManifest({
 	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
 		buildId,
+		coverageUniverseHash,
 		files: allFiles,
 		generatedAt: generatedAtDate.toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
@@ -620,6 +630,7 @@ function buildCoveragePlaceAndManifest(
 	const manifest = buildAndWriteManifest({
 		allFiles: shadow.files,
 		buildId,
+		coverageUniverseHash: inputs.universe?.digest,
 		luauRoots: inputs.luauRoots,
 		manifestPath: inputs.manifestPath,
 		nonInstrumentedFiles: shadow.nonInstrumentedFiles,

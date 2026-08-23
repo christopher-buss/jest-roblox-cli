@@ -12,6 +12,9 @@ import { atomicWrite } from "../utils/atomic-write.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestArtifact } from "./build-manifest.ts";
 import { BUILD_MANIFEST_FILE, emitBuildManifest, toBuildManifestFiles } from "./build-manifest.ts";
+import { canReuseCoverageManifest } from "./incremental-gate.ts";
+import type { InstrumentUniverse } from "./instrument-universe.ts";
+import { createInstrumentUniverse } from "./instrument-universe.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
@@ -25,6 +28,12 @@ const WORKSPACE_COVERAGE_DIR = ".jest-roblox/workspace";
 
 export interface WorkspacePackageDescriptor {
 	name: string;
+	/**
+	 * Per-package `collectCoverageFrom`. Narrows instrumentation to the files
+	 * this package will actually report on, so the run does not ship probe
+	 * counts the report discards. Undefined instruments the whole root.
+	 */
+	collectCoverageFrom?: Array<string> | undefined;
 	/**
 	 * Per-package `coverageCache` opt-out. When undefined, defaults to
 	 * `DEFAULT_CONFIG.coverageCache` (true). Workspace mode reads this knob
@@ -102,12 +111,16 @@ interface PackagePaths {
 	packageShadowRoot: string;
 }
 
-interface InstrumentPackageOptions {
+interface PackageIncrementalOptions {
 	descriptor: WorkspacePackageDescriptor;
-	isIncremental: boolean;
 	luauRoots: Array<string>;
 	packageShadowRoot: string;
 	previousManifest: CoverageManifest | undefined;
+	universe: InstrumentUniverse | undefined;
+}
+
+interface InstrumentPackageOptions extends PackageIncrementalOptions {
+	isIncremental: boolean;
 	timing: TimingCollector;
 }
 
@@ -435,25 +448,6 @@ function resolvePackagePaths(name: string, workspaceRoot: string): PackagePaths 
 	};
 }
 
-function canUseIncremental(
-	previousManifest: CoverageManifest | undefined,
-	coverageCache: boolean,
-): boolean {
-	if (!coverageCache) {
-		return false;
-	}
-
-	if (previousManifest === undefined) {
-		return false;
-	}
-
-	if (previousManifest.instrumenterVersion !== INSTRUMENTER_VERSION) {
-		return false;
-	}
-
-	return true;
-}
-
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
 	if (a.size !== b.size) {
 		return false;
@@ -472,14 +466,18 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
  * Decide whether this package can reuse its cached shadow tree, nuking the
  * shadow root when it can't.
  */
-function decidePackageIncremental(
-	descriptor: WorkspacePackageDescriptor,
-	previousManifest: CoverageManifest | undefined,
-	packageShadowRoot: string,
-	luauRoots: Array<string>,
-): boolean {
+function decidePackageIncremental({
+	descriptor,
+	luauRoots,
+	packageShadowRoot,
+	previousManifest,
+	universe,
+}: PackageIncrementalOptions): boolean {
 	const isCoverageCacheEnabled = descriptor.coverageCache ?? DEFAULT_CONFIG.coverageCache;
-	let isIncremental = canUseIncremental(previousManifest, isCoverageCacheEnabled);
+	let isIncremental = canReuseCoverageManifest(previousManifest, {
+		coverageCache: isCoverageCacheEnabled,
+		universe,
+	});
 
 	// When the user shrinks `luauRoots` (or adds new ignore patterns)
 	// between runs, previously-instrumented mounts disappear from the new set
@@ -518,6 +516,7 @@ function instrumentPackageRoots({
 	packageShadowRoot,
 	previousManifest,
 	timing,
+	universe,
 }: InstrumentPackageOptions): InstrumentedPackage {
 	const coverageRoots: Array<WorkspaceCoverageRoot> = [];
 	const allFiles: Record<string, InstrumentedFileRecord> = {};
@@ -536,6 +535,7 @@ function instrumentPackageRoots({
 			previousManifest,
 			shadowDir: shadowDirectory,
 			timing,
+			universe,
 			useIncremental: isIncremental,
 		});
 
@@ -551,10 +551,12 @@ function writePackageManifest(
 	manifestPath: string,
 	packageShadowRoot: string,
 	instrumented: InstrumentedPackage,
+	universe: InstrumentUniverse | undefined,
 ): CoverageManifest {
 	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
 		buildId: crypto.randomUUID(),
+		coverageUniverseHash: universe?.digest,
 		files: instrumented.files,
 		generatedAt: generatedAtDate.toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
@@ -572,6 +574,26 @@ function writePackageManifest(
 	return manifest;
 }
 
+/**
+ * The package's coverage universe, built from the same patterns its own report
+ * and threshold gate use — so a file earns probes exactly when that package
+ * would report on it. `undefined` when the package names no coverage globs.
+ *
+ * Deliberately no `deriveCoverageFromIncludes` fallback, unlike multi mode:
+ * the workspace report has none either (`workspace-aggregate.ts` filters on the
+ * raw per-package value), and adding one here would probe against a universe
+ * the package's own report never applies.
+ */
+function resolvePackageUniverse(
+	descriptor: WorkspacePackageDescriptor,
+	ignore: PackageIgnore,
+): InstrumentUniverse | undefined {
+	return createInstrumentUniverse({
+		ignore: ignore.patterns,
+		include: descriptor.collectCoverageFrom,
+	});
+}
+
 function prepareForPackage(
 	descriptor: WorkspacePackageDescriptor,
 	workspaceRoot: string,
@@ -582,13 +604,14 @@ function prepareForPackage(
 
 	const previousManifest = loadPackageManifest(manifestPath);
 	const luauRoots = discoverPackageLuauRoots(descriptor, ignore.matcher);
-	const isIncremental = decidePackageIncremental(
+	const universe = resolvePackageUniverse(descriptor, ignore);
+	const isIncremental = decidePackageIncremental({
 		descriptor,
-		previousManifest,
-		packageShadowRoot,
 		luauRoots,
-	);
-
+		packageShadowRoot,
+		previousManifest,
+		universe,
+	});
 	const instrumented = instrumentPackageRoots({
 		descriptor,
 		isIncremental,
@@ -596,8 +619,9 @@ function prepareForPackage(
 		packageShadowRoot,
 		previousManifest,
 		timing,
+		universe,
 	});
-	const manifest = writePackageManifest(manifestPath, packageShadowRoot, instrumented);
+	const manifest = writePackageManifest(manifestPath, packageShadowRoot, instrumented, universe);
 
 	return {
 		coveragePathIgnorePatterns: ignore.patterns,

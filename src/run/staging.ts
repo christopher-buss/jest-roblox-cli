@@ -11,6 +11,7 @@ import {
 	syncStubsToShadowDirectory,
 } from "../config/stubs.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
+import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
 import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
 import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import type { StubMount } from "../staging/synthesizer.ts";
@@ -82,12 +83,14 @@ export function prepareBakedCoverage(
 	cacheRoot: string,
 	bakeStubs: boolean,
 ): BakedCoverage {
-	const coverage = prepareCoverage(
-		config,
-		bakeStubs
+	const coverage = prepareCoverage(config, {
+		beforeBuild: bakeStubs
 			? (shadowDirectory) => syncStubsToShadowDirectory(projects, cacheRoot, shadowDirectory)
 			: undefined,
-	);
+		// The same globs `buildMultiRunResult` reports against, so a file is
+		// probed exactly when this run would render a line for it.
+		coverageInclude: resolveCoverageInclude(config, projects),
+	});
 	return {
 		artifacts: toCoverageArtifacts(coverage, toBuildManifestProjects(projects)),
 		coverage,

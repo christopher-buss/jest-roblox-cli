@@ -1,5 +1,6 @@
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { extractStaticRoot } from "../config/projects.ts";
+import type { ResolvedConfig } from "../config/schema.ts";
 
 const SPEC_OR_TEST_EXTENSION = /\.(?:spec|test)(\.\w+)$/;
 
@@ -21,6 +22,27 @@ export function deriveCoverageFromIncludes(
 	}
 
 	return buildCoveragePatterns(rootsByExtension);
+}
+
+/**
+ * The include globs this run's coverage universe is actually made of: the
+ * user's `collectCoverageFrom` when set, otherwise the set derived from the
+ * projects' own `include`.
+ *
+ * The single authority for that `??`. Instrumentation asks it before the run
+ * (to decide what earns probes) and the report asks it after (to decide what
+ * to render); resolving the fallback in only one of the two would probe files
+ * the report drops, or — worse — drop files the report expects.
+ */
+export function resolveCoverageInclude(
+	config: Pick<ResolvedConfig, "collectCoverage" | "collectCoverageFrom">,
+	projects: ReadonlyArray<Pick<ResolvedProjectConfig, "include">>,
+): Array<string> | undefined {
+	if (!config.collectCoverage) {
+		return config.collectCoverageFrom;
+	}
+
+	return config.collectCoverageFrom ?? deriveCoverageFromIncludes(projects);
 }
 
 /**

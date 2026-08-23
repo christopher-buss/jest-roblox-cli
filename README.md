@@ -236,6 +236,16 @@ Put these under `test: { ... }`.
 > `*.spec`/`*.test` and `*.client`/`*.server` entry-point scripts (which compile
 > to LocalScript/Script and can't be `require`d, so no test can cover them).
 
+<!-- prettier-ignore -->
+> [!TIP]
+> The same universe decides what gets probes. A file outside it is copied into
+> the coverage place unprobed, so the run never carries hit counts the report
+> would discard — which is what keeps a large project under Open Cloud's 4 MiB
+> limit on a task's return value. Narrowing `collectCoverageFrom` is therefore
+> the lever to pull on `OUTPUT_SIZE_LIMIT_EXCEEDED`. Workspace mode has no
+> derived fallback, so a package that sets nothing probes its whole
+> `luauRoots`.
+
 ### Project-level config
 
 `projects` can be strings (DataModel paths) or objects with per-project

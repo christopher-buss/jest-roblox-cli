@@ -67,6 +67,15 @@ export interface NonInstrumentedFileRecord {
 export interface CoverageManifest {
 	/** Shared UUID linking this manifest to its sibling `BuildManifest`. */
 	buildId: string;
+	/**
+	 * Digest of the `collectCoverageFrom` / `coveragePathIgnorePatterns` pair
+	 * that decided which files were instrumented, per
+	 * `createInstrumentUniverse`. Absent when the config narrowed nothing, so
+	 * the whole root was instrumented. The incremental cache rebuilds on a
+	 * mismatch: narrowing the globs leaves already-probed copies in the shadow
+	 * that no source hash would invalidate.
+	 */
+	coverageUniverseHash?: string | undefined;
 	files: Record<string, InstrumentedFileRecord>;
 	generatedAt: string;
 	instrumenterVersion: number;
@@ -122,6 +131,7 @@ const nonInstrumentedRecordSchema = type({
 
 export const manifestSchema: type<CoverageManifest> = type({
 	"buildId": "string",
+	"coverageUniverseHash?": "string",
 	"files": type({ "[string]": instrumentedFileRecordSchema }),
 	"generatedAt": "string",
 	"instrumenterVersion": "number",

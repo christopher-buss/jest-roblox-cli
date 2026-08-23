@@ -32,7 +32,13 @@ export interface InstrumentRootOptions {
 	/** Override the path to parse-ast.luau (for testing). */
 	parseScript?: string | undefined;
 	shadowDir: string;
-	/** Relative paths to skip (already instrumented / unchanged). */
+	/**
+	 * Relative paths lute must not parse — unchanged files whose records the
+	 * caller carries forward, plus files outside the coverage universe. Both
+	 * reach the same skip list because a file lute never parses is a file it
+	 * never pays for, and parsing dominates this pass. Telling them apart is
+	 * the caller's job: only the first kind has a record worth keeping.
+	 */
 	skipFiles?: Set<string> | undefined;
 	/**
 	 * Orchestration profiler; records `parse-ast` / `probe-insert` /

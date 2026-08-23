@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { InstrumentUniverse } from "./instrument-universe.ts";
 import { instrumentRoot } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
@@ -30,7 +31,24 @@ export interface PrepareShadowRootOptions {
 	shadowDir: string;
 	/** Orchestration profiler forwarded to `instrumentRoot`. */
 	timing?: TimingCollector | undefined;
+	/**
+	 * Narrows which prod files get probes. Absent means the whole root, which
+	 * is what a config without `collectCoverageFrom` asks for.
+	 */
+	universe?: InstrumentUniverse | undefined;
 	useIncremental: boolean;
+}
+
+/** One root's prod `.luau`/`.lua`, split by whether it earns probes. */
+export interface RootFiles {
+	/**
+	 * Prod files outside the coverage universe. They are mirrored into the
+	 * shadow verbatim rather than probed, so the place still loads them and
+	 * the report never sees hit counts it would only discard.
+	 */
+	excluded: Set<string>;
+	/** Prod files the instrumenter will probe. */
+	instrumentable: Set<string>;
 }
 
 export interface ShadowRootResult {
@@ -47,6 +65,7 @@ interface SyncResult {
 }
 
 interface FullCacheOptions {
+	excluded: Set<string>;
 	luauRoot: string;
 	previousManifest: CoverageManifest;
 	shadowDirectory: string;
@@ -81,14 +100,27 @@ export function isNonInstrumentedFile(filename: string): boolean {
 }
 
 /**
- * Fast directory walk to discover instrumentable .luau/.lua files.
- * Must match parse-ast.luau's discoverFiles logic (same skip rules).
+ * Fast directory walk over one root's prod .luau/.lua files, split by the
+ * coverage universe. Discovery must match parse-ast.luau's discoverFiles logic
+ * (same skip rules); the split on top of it is this pipeline's own.
  */
-export function discoverInstrumentableFiles(luauRoot: string): Set<string> {
+export function discoverRootFiles(luauRoot: string, universe?: InstrumentUniverse): RootFiles {
 	const posixRoot = normalizeWindowsPath(luauRoot);
-	const results: Array<string> = [];
-	walkLuauDirectory(posixRoot, posixRoot, isInstrumentableFile, results);
-	return new Set(results);
+	const discovered: Array<string> = [];
+	walkLuauDirectory(posixRoot, posixRoot, isInstrumentableFile, discovered);
+
+	if (universe === undefined) {
+		return { excluded: new Set(), instrumentable: new Set(discovered) };
+	}
+
+	const excluded = new Set<string>();
+	const instrumentable = new Set<string>();
+	for (const relativePath of discovered) {
+		const isInUniverse = universe.includes(`${posixRoot}/${relativePath}`);
+		(isInUniverse ? instrumentable : excluded).add(relativePath);
+	}
+
+	return { excluded, instrumentable };
 }
 
 /**
@@ -102,39 +134,71 @@ export function discoverInstrumentableFiles(luauRoot: string): Set<string> {
  * shadow is reconciled against source so files deleted upstream don't linger.
  */
 export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRootResult {
-	const { luauRoot, previousManifest, shadowDir, useIncremental: shouldUseIncremental } = options;
+	const { luauRoot, shadowDir, useIncremental: shouldUseIncremental } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 
 	seedColdShadow(luauRoot, shadowDir, shouldUseIncremental);
 
-	const plan = planIncremental(options);
+	const rootFiles = splitRootFiles(options);
+	const plan = planIncremental(options, rootFiles);
 	if (plan.fullCacheResult !== undefined) {
 		return plan.fullCacheResult;
 	}
 
+	const excluded = rootFiles?.excluded ?? NO_EXCLUSIONS;
 	const { allFiles, changed: hasInstrumented } = instrumentChangedFiles(
 		options,
+		excluded,
 		plan.skipFiles,
 		timing,
 	);
-
-	const syncResult = syncNonInstrumentedFiles(
-		luauRoot,
-		shadowDir,
-		previousManifest?.nonInstrumentedFiles,
-	);
-	// Kept out of the `changed` expression below so its cleanup side effect runs
-	// even when an earlier phase already flagged a change.
-	const hasReconciled = shouldUseIncremental && reconcileShadowToSource(luauRoot, shadowDir);
+	const mirror = mirrorUntouchedFiles(options, excluded);
 
 	return {
-		changed: plan.hasChanged || hasInstrumented || syncResult.changed || hasReconciled,
+		changed: plan.hasChanged || hasInstrumented || mirror.changed,
 		files: allFiles,
 		luauRoot,
-		nonInstrumentedFiles: syncResult.files,
+		nonInstrumentedFiles: mirror.files,
 		shadowDir,
 	};
 }
+
+/**
+ * Bring everything the instrumenter never emits into the shadow — spec/test/
+ * snap files, non-luau rojo files, and the prod files the universe excluded —
+ * then drop shadow entries whose source is gone.
+ *
+ * The reconcile is called outside the `||` so its cleanup side effect runs even
+ * when the sync already flagged a change.
+ */
+function mirrorUntouchedFiles(
+	{ luauRoot, previousManifest, shadowDir, useIncremental }: PrepareShadowRootOptions,
+	excluded: Set<string>,
+): SyncResult {
+	const synced = syncNonInstrumentedFiles(
+		luauRoot,
+		shadowDir,
+		excluded,
+		previousManifest?.nonInstrumentedFiles,
+	);
+	const hasReconciled = useIncremental && reconcileShadowToSource(luauRoot, shadowDir);
+	return { changed: synced.changed || hasReconciled, files: synced.files };
+}
+
+/**
+ * The universe split, walked only when this run has a universe at all.
+ *
+ * Only a run that narrows needs it up front, to know what to mirror. Without
+ * one nothing is excluded, and the instrumentable set is read on a single
+ * branch of the plan — so `rootFiles` stays absent and that branch walks for
+ * itself, rather than every run paying a full readdir for a discarded result.
+ */
+function splitRootFiles({ luauRoot, universe }: PrepareShadowRootOptions): RootFiles | undefined {
+	return universe === undefined ? undefined : discoverRootFiles(luauRoot, universe);
+}
+
+/** Shared empty set for a run that narrows nothing — only ever read. */
+const NO_EXCLUSIONS = new Set<string>();
 
 const COV_MAP_SUFFIX = ".cov-map.json";
 
@@ -237,6 +301,9 @@ function isInstrumentableFile(name: string): boolean {
  * `isInstrumentableFile` — prod `.luau` is excluded because `instrumentRoot`
  * writes its instrumented copy into the shadow. `.cov-map.json` sidecars are
  * instrumenter output, not source, so they are excluded too.
+ *
+ * Prod files the coverage universe rules out are the one case this name-only
+ * test cannot see; `syncNonInstrumentedFiles` folds them in by path.
  */
 function shouldSyncToShadow(name: string): boolean {
 	return !isInstrumentableFile(name) && !name.endsWith(COV_MAP_SUFFIX);
@@ -267,11 +334,17 @@ function discoverShadowSyncFiles(
 function syncNonInstrumentedFiles(
 	luauRoot: string,
 	shadowDirectory: string,
+	excludedFiles: Set<string>,
 	previousNonInstrumented: Record<string, NonInstrumentedFileRecord> | undefined,
 ): SyncResult {
 	const posixRoot = normalizeWindowsPath(luauRoot);
 	const discovered: Array<string> = [];
 	discoverShadowSyncFiles(posixRoot, posixRoot, discovered);
+	// Appended one at a time: spreading a set this size into `push` passes one
+	// argument per element, and a whole-tree universe overflows the limit.
+	for (const relativePath of excludedFiles) {
+		discovered.push(relativePath);
+	}
 
 	const files: Record<string, NonInstrumentedFileRecord> = {};
 	let hasChanged = false;
@@ -364,6 +437,7 @@ function countPreviousFilesForRoot(luauRoot: string, previousManifest: CoverageM
 function computeIncrementalState(
 	luauRoot: string,
 	previousManifest: CoverageManifest,
+	rootFiles: RootFiles | undefined,
 ): IncrementalState {
 	const skipFiles = computeSkipFiles(luauRoot, previousManifest);
 	const previousCount = countPreviousFilesForRoot(luauRoot, previousManifest);
@@ -373,14 +447,16 @@ function computeIncrementalState(
 		return { allCached: false, changed: hasChanged, skipFiles };
 	}
 
-	// All previous files match. Check if any new files appeared on disk.
-	const discovered = discoverInstrumentableFiles(luauRoot);
-	const isFullyCached = discovered.size === previousCount;
+	// All previous files match. Check if any new files appeared on disk. The
+	// walk is deferred to here when no universe forced it earlier.
+	const discovered = rootFiles ?? discoverRootFiles(luauRoot);
+	const isFullyCached = discovered.instrumentable.size === previousCount;
 
 	return { allCached: isFullyCached, changed: hasChanged, skipFiles };
 }
 
 function buildFullCacheResult({
+	excluded,
 	luauRoot,
 	previousManifest,
 	shadowDirectory,
@@ -392,6 +468,7 @@ function buildFullCacheResult({
 	const syncResult = syncNonInstrumentedFiles(
 		luauRoot,
 		shadowDirectory,
+		excluded,
 		previousManifest.nonInstrumentedFiles,
 	);
 	// Call reconcile unconditionally (not inside the `||`) so its cleanup side
@@ -428,12 +505,15 @@ function seedColdShadow(
  * Decide what the instrumenter can skip this run, and short-circuit to the
  * carried-forward result when nothing in the root changed at all.
  */
-function planIncremental({
-	luauRoot,
-	previousManifest,
-	shadowDir,
-	useIncremental: shouldUseIncremental,
-}: PrepareShadowRootOptions): IncrementalPlan {
+function planIncremental(
+	{
+		luauRoot,
+		previousManifest,
+		shadowDir,
+		useIncremental: shouldUseIncremental,
+	}: PrepareShadowRootOptions,
+	rootFiles: RootFiles | undefined,
+): IncrementalPlan {
 	if (!shouldUseIncremental || previousManifest === undefined) {
 		return { hasChanged: false, skipFiles: undefined };
 	}
@@ -442,13 +522,14 @@ function planIncremental({
 		allCached: isFullyCached,
 		changed: hasChanged,
 		skipFiles,
-	} = computeIncrementalState(luauRoot, previousManifest);
+	} = computeIncrementalState(luauRoot, previousManifest, rootFiles);
 	if (!isFullyCached) {
 		return { hasChanged, skipFiles };
 	}
 
 	return {
 		fullCacheResult: buildFullCacheResult({
+			excluded: rootFiles?.excluded ?? NO_EXCLUSIONS,
 			luauRoot,
 			previousManifest,
 			shadowDirectory: shadowDir,
@@ -470,10 +551,18 @@ function instrumentChangedFiles(
 		shadowDir,
 		useIncremental: shouldUseIncremental,
 	}: PrepareShadowRootOptions,
+	excluded: Set<string>,
 	skipFiles: Set<string> | undefined,
 	timing: TimingCollector,
 ): InstrumentedFiles {
-	const files = instrumentRoot({ luauRoot, shadowDir, skipFiles, timing });
+	// One list for lute: a file it never parses is a file it never pays for.
+	// The two halves stay apart up here because only `skipFiles` has a record
+	// worth carrying forward — an excluded file has none and must gain none.
+	const unparsed =
+		skipFiles === undefined && excluded.size === 0
+			? undefined
+			: new Set([...(skipFiles ?? []), ...excluded]);
+	const files = instrumentRoot({ luauRoot, shadowDir, skipFiles: unparsed, timing });
 	const allFiles = { ...files };
 
 	if (shouldUseIncremental && previousManifest !== undefined && skipFiles !== undefined) {

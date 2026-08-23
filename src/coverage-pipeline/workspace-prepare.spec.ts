@@ -101,6 +101,63 @@ async function mockInstrumentRootAsync(
 }
 
 describe(prepareWorkspaceCoverage, () => {
+	it("should narrow instrumentation to the package's collectCoverageFrom", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		// Under the invocation directory on purpose: coverage globs anchor
+		// there, both here and in `filterCoverageUniverse` at report time, so
+		// a package sited elsewhere would match nothing in either place.
+		const packageDirectory = path.join(process.cwd(), "packages/foo");
+		seedPackage(packageDirectory);
+		vol.mkdirSync(path.join(packageDirectory, "out/ui"), { recursive: true });
+		vol.writeFileSync(path.join(packageDirectory, "out/ui/button.luau"), "local y = 2");
+		const mocked = await mockInstrumentRootAsync();
+
+		const result = prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					collectCoverageFrom: ["packages/foo/out/init.luau"],
+					packageDirectory,
+					rojoProjectPath: path.join(packageDirectory, "test.project.json"),
+				},
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked.mock.calls[0]![0].skipFiles).toStrictEqual(new Set(["ui/button.luau"]));
+		expect(result[0]!.manifest.coverageUniverseHash).toMatch(/^[a-f0-9]{64}$/);
+	});
+
+	it("should instrument the whole package when it names no coverage globs", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedPackage(FOO_DIR);
+		const mocked = await mockInstrumentRootAsync();
+
+		const result = prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked.mock.calls[0]![0].skipFiles).toBeUndefined();
+		expect(result[0]!.manifest.coverageUniverseHash).toBeUndefined();
+	});
+
 	it("should return per-package coverage roots whose luauRoot is package-relative and shadowDir is absolute", async () => {
 		expect.assertions(2);
 
@@ -381,6 +438,63 @@ describe(prepareWorkspaceCoverage, () => {
 		// Cache disabled → cold path: instrumenter runs even though the manifest
 		// matched.
 		expect(mocked).toHaveBeenCalledOnce();
+	});
+
+	it("should discard a manifest whose coverage universe no longer matches", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const packageDirectory = path.join(process.cwd(), "packages/foo");
+		const sourceContent = "local x = 1";
+		const fileKey = `${path.join(packageDirectory, "out").replaceAll("\\", "/")}/init.luau`;
+		const previousManifest: CoverageManifest = {
+			buildId: "prev-build-id",
+			coverageUniverseHash: "a-different-universe",
+			files: {
+				[fileKey]: {
+					key: fileKey,
+					coverageMapPath: "x",
+					instrumentedLuauPath: "x",
+					originalLuauPath: fileKey,
+					sourceHash: sha256(sourceContent),
+					sourceMapPath: "x",
+					statementCount: 1,
+				},
+			},
+			generatedAt: "2025-01-01T00:00:00.000Z",
+			instrumenterVersion: INSTRUMENTER_VERSION,
+			luauRoots: [],
+			nonInstrumentedFiles: {},
+			shadowDir: "x",
+			version: MANIFEST_VERSION,
+		};
+
+		seedPackage(packageDirectory);
+		vol.fromJSON({
+			[path.join(
+				WORKSPACE_ROOT,
+				".jest-roblox/workspace/@halcyon-foo/coverage/coverage-manifest.json",
+			)]: JSON.stringify(previousManifest),
+		});
+		const mocked = await mockInstrumentRootAsync();
+
+		prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					collectCoverageFrom: ["packages/foo/out/**"],
+					packageDirectory,
+					rojoProjectPath: path.join(packageDirectory, "test.project.json"),
+				},
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		// A cold run carries nothing forward, so it passes no skip list.
+		expect(mocked.mock.calls[0]![0].skipFiles).toBeUndefined();
 	});
 
 	it("should discard a manifest with a stale instrumenter version", async () => {

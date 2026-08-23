@@ -767,8 +767,11 @@ function rethrowOversizedResult(err: unknown): never {
 		`${err.message}\n` +
 			"One task returned more Jest output than Open Cloud accepts (4 MiB).\n" +
 			"Coverage is usually the bulk of it — try --no-coverage to confirm.\n" +
-			'Set `parallel: "auto"` (or --parallel 2+) so results come back split ' +
-			"across tasks, or narrow the run with --packages / --project.",
+			"Only files in the coverage universe are probed, so narrowing " +
+			"`collectCoverageFrom` to what you actually report on shrinks the " +
+			"payload with it.\n" +
+			'Otherwise set `parallel: "auto"` (or --parallel 2+) so results come ' +
+			"back split across tasks, or narrow the run with --packages / --project.",
 		{ cause: err },
 	);
 }

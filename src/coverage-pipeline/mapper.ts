@@ -4,10 +4,10 @@ import assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { CoverageMap, SourceLocation } from "./coverage-map.ts";
 import { readCoverageMap } from "./coverage-map.ts";
 import type { CoverageManifest } from "./manifest.ts";
+import { resolveSourcePath } from "./source-path.ts";
 import type { RawCoverageData } from "./types.ts";
 
 export interface MappedFileCoverage {
@@ -360,15 +360,6 @@ function passthroughFileBranches(
  * Joining with the map directory normalizes these to cwd-relative paths.
  * Paths that are already cwd-relative (no `..` prefix) pass through unchanged.
  */
-function resolveSourcePath(source: string, sourceMapDirectory: string): string {
-	const normalized = normalizeWindowsPath(source);
-	if (!normalized.startsWith("..")) {
-		return normalized;
-	}
-
-	return path.posix.normalize(path.posix.join(sourceMapDirectory, normalized));
-}
-
 function mapStatement(
 	traceMap: TraceMap,
 	span: { end: { column: number; line: number }; start: { column: number; line: number } },

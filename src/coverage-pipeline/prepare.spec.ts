@@ -12,6 +12,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
+import { createInstrumentUniverse } from "./instrument-universe.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
@@ -27,7 +28,7 @@ import {
 	toCoverageArtifacts,
 } from "./prepare.ts";
 import { computeRojoInputsHash } from "./rojo-inputs.ts";
-import { discoverInstrumentableFiles } from "./shadow-root.ts";
+import { discoverRootFiles } from "./shadow-root.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -36,6 +37,9 @@ vi.mock(import("node:fs"), async () => {
 vi.mock(import("./instrumenter"));
 vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("get-tsconfig"));
+
+const COVERED_FILE = "out-tsc/test/init.luau";
+const UNCOVERED_FILE = "out-tsc/test/ui/button.luau";
 
 const ROJO_PROJECT = {
 	name: "test",
@@ -567,6 +571,98 @@ describe(prepareCoverage, () => {
 
 			expect(() => prepareCoverage(config)).toThrow(/rojo build failed/);
 			expect(vol.existsSync(".jest-roblox/coverage/coverage-manifest.json")).toBeFalse();
+		});
+	});
+
+	describe("when narrowing to the coverage universe", () => {
+		async function seedTwoFilesAsync() {
+			seedFilesystem();
+			vol.mkdirSync("out-tsc/test/ui", { recursive: true });
+			vol.writeFileSync(UNCOVERED_FILE, "local y = 2");
+			return setupMocksAsync();
+		}
+
+		function narrowedConfig(): ResolvedConfig {
+			return makeConfig({
+				collectCoverageFrom: [COVERED_FILE],
+				luauRoots: ["out-tsc/test"],
+			});
+		}
+
+		it("should hold an out-of-universe file back from the instrumenter", async () => {
+			expect.assertions(1);
+
+			const { instrumentRoot } = await seedTwoFilesAsync();
+
+			prepareCoverage(narrowedConfig());
+
+			expect(vi.mocked(instrumentRoot).mock.calls[0]![0].skipFiles).toStrictEqual(
+				new Set(["ui/button.luau"]),
+			);
+		});
+
+		it("should mirror an out-of-universe file into the shadow instead", async () => {
+			expect.assertions(2);
+
+			await seedTwoFilesAsync();
+
+			const result = prepareCoverage(narrowedConfig());
+
+			// Still in the place, just without probes — the runtime has to be
+			// able to require it, the report just never asks about it.
+			expect(result.manifest.nonInstrumentedFiles).toHaveProperty(UNCOVERED_FILE);
+			expect(vol.existsSync(`.jest-roblox/coverage/${UNCOVERED_FILE}`)).toBeTrue();
+		});
+
+		it("should instrument the whole root when nothing narrows it", async () => {
+			expect.assertions(2);
+
+			const { instrumentRoot } = await seedTwoFilesAsync();
+
+			const result = prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+			// Nothing to hold back, and nothing carried forward on a cold run.
+			expect(vi.mocked(instrumentRoot).mock.calls[0]![0].skipFiles).toBeUndefined();
+			expect(result.manifest.coverageUniverseHash).toBeUndefined();
+		});
+
+		it("should record the universe digest in the manifest", async () => {
+			expect.assertions(1);
+
+			await seedTwoFilesAsync();
+
+			const result = prepareCoverage(narrowedConfig());
+
+			expect(result.manifest.coverageUniverseHash).toMatch(/^[a-f0-9]{64}$/);
+		});
+
+		it("should rebuild cold when the coverage globs changed since the last run", async () => {
+			expect.assertions(1);
+
+			const { instrumentRoot } = await seedTwoFilesAsync();
+			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
+			vol.writeFileSync(
+				".jest-roblox/coverage/coverage-manifest.json",
+				JSON.stringify({
+					buildId: "prev-build-id",
+					coverageUniverseHash: "a-different-universe",
+					files: {},
+					generatedAt: isoNow(),
+					instrumenterVersion: INSTRUMENTER_VERSION,
+					luauRoots: ["out-tsc/test"],
+					nonInstrumentedFiles: {},
+					shadowDir: ".jest-roblox/coverage",
+					version: MANIFEST_VERSION,
+				}),
+			);
+
+			prepareCoverage(narrowedConfig());
+
+			// The previous shadow was wiped, so the skip list carries no
+			// previously-instrumented file forward — only the exclusions.
+			expect(vi.mocked(instrumentRoot).mock.calls[0]![0].skipFiles).toStrictEqual(
+				new Set(["ui/button.luau"]),
+			);
 		});
 	});
 
@@ -1238,7 +1334,7 @@ describe(prepareCoverage, () => {
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 			const beforeBuild = vi.fn<(shadowDirectory: string) => boolean>().mockReturnValue(true);
 
-			prepareCoverage(config, beforeBuild);
+			prepareCoverage(config, { beforeBuild });
 
 			expect(buildWithRojo).toHaveBeenCalledWith(expect.any(String), expect.any(String));
 		});
@@ -1256,7 +1352,7 @@ describe(prepareCoverage, () => {
 				.fn<(shadowDirectory: string) => boolean>()
 				.mockReturnValue(false);
 
-			prepareCoverage(config, beforeBuild);
+			prepareCoverage(config, { beforeBuild });
 
 			expect(buildWithRojo).not.toHaveBeenCalled();
 		});
@@ -1873,7 +1969,7 @@ describe(prepareCoverage, () => {
 				.fn<(shadowDirectory: string) => boolean>()
 				.mockReturnValue(false);
 
-			prepareCoverage(config, beforeBuild);
+			prepareCoverage(config, { beforeBuild });
 
 			expect(beforeBuild).toHaveBeenCalledWith(".jest-roblox/coverage");
 			expect(buildWithRojo).toHaveBeenCalledWith(expect.any(String), expect.any(String));
@@ -2302,7 +2398,7 @@ describe(collectLuauRootsFromRojo, () => {
 	});
 });
 
-describe(discoverInstrumentableFiles, () => {
+describe(discoverRootFiles, () => {
 	function setup() {
 		onTestFinished(() => {
 			vol.reset();
@@ -2317,7 +2413,7 @@ describe(discoverInstrumentableFiles, () => {
 		vol.writeFileSync("out/init.luau", "");
 		vol.writeFileSync("out/shared/player.luau", "");
 
-		const result = discoverInstrumentableFiles("out");
+		const result = discoverRootFiles("out").instrumentable;
 
 		expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
 	});
@@ -2335,7 +2431,7 @@ describe(discoverInstrumentableFiles, () => {
 		vol.writeFileSync("out/init.test.lua", "");
 		vol.writeFileSync("out/init.snap.lua", "");
 
-		const result = discoverInstrumentableFiles("out");
+		const result = discoverRootFiles("out").instrumentable;
 
 		expect(result).toStrictEqual(new Set(["init.luau"]));
 	});
@@ -2351,7 +2447,7 @@ describe(discoverInstrumentableFiles, () => {
 		vol.writeFileSync("out/.hidden/secret.luau", "");
 		vol.writeFileSync("out/.jest-roblox/coverage/cached.luau", "");
 
-		const result = discoverInstrumentableFiles("out");
+		const result = discoverRootFiles("out").instrumentable;
 
 		expect(result).toStrictEqual(new Set());
 	});
@@ -2363,7 +2459,7 @@ describe(discoverInstrumentableFiles, () => {
 		vol.mkdirSync("out", { recursive: true });
 		vol.writeFileSync("out/init.lua", "");
 
-		const result = discoverInstrumentableFiles("out");
+		const result = discoverRootFiles("out").instrumentable;
 
 		expect(result).toStrictEqual(new Set(["init.lua"]));
 	});
@@ -2374,9 +2470,35 @@ describe(discoverInstrumentableFiles, () => {
 		setup();
 		vol.mkdirSync("out", { recursive: true });
 
-		const result = discoverInstrumentableFiles("out");
+		const result = discoverRootFiles("out").instrumentable;
 
 		expect(result).toStrictEqual(new Set());
+	});
+
+	it("should treat every prod file as instrumentable without a universe", () => {
+		expect.assertions(1);
+
+		setup();
+		vol.mkdirSync("out", { recursive: true });
+		vol.writeFileSync("out/player.luau", "");
+
+		expect(discoverRootFiles("out").excluded).toStrictEqual(new Set());
+	});
+
+	it("should split prod files by the coverage universe", () => {
+		expect.assertions(2);
+
+		setup();
+		vol.mkdirSync("out/ecs", { recursive: true });
+		vol.mkdirSync("out/ui", { recursive: true });
+		vol.writeFileSync("out/ecs/move.luau", "");
+		vol.writeFileSync("out/ui/button.luau", "");
+
+		const universe = createInstrumentUniverse({ include: ["out/ecs/**/*.luau"] });
+		const result = discoverRootFiles("out", universe);
+
+		expect(result.instrumentable).toStrictEqual(new Set(["ecs/move.luau"]));
+		expect(result.excluded).toStrictEqual(new Set(["ui/button.luau"]));
 	});
 });
 

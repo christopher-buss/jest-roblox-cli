@@ -20,24 +20,15 @@ export interface CoverageUniverseFilter {
 }
 
 /**
- * Decides which mapped source files make up the coverage report universe.
- *
- * This is the single authority for "is this source file in coverage?": every
- * mode (single, multi, workspace) routes its mapped result through here so the
- * include globs and ignore patterns cannot drift across call sites. A file
- * survives when it is included by `collectCoverageFrom` AND not matched by any
- * `coveragePathIgnorePatterns` entry.
+ * The universe decision for one source path, split out so instrumentation can
+ * ask the same question ahead of the run that the report asks after it — see
+ * `instrument-universe.ts`. Accepts absolute or cwd-relative paths.
  */
-export function filterCoverageUniverse(
-	mapped: MappedCoverageResult,
+export function createCoverageUniverseMatcher(
 	filter: CoverageUniverseFilter,
-): MappedCoverageResult {
+): (filePath: string) => boolean {
 	const include = filter.include ?? [];
 	const ignore = filter.ignore ?? [];
-
-	if (include.length === 0 && ignore.length === 0) {
-		return mapped;
-	}
 
 	const includePatterns = include.filter((pattern) => !pattern.startsWith("!"));
 	const excludePatterns = include
@@ -52,15 +43,34 @@ export function filterCoverageUniverse(
 	const isIgnored = ignore.length > 0 ? picomatch(ignore, { contains: true }) : () => false;
 
 	const cwd = process.cwd();
+	return (filePath) => {
+		const relativePath = path.isAbsolute(filePath)
+			? normalizeWindowsPath(path.relative(cwd, filePath))
+			: filePath;
+		return isIncluded(relativePath) && !isExcluded(relativePath) && !isIgnored(relativePath);
+	};
+}
+
+/**
+ * Decides which mapped source files make up the coverage report universe.
+ *
+ * This is the single authority for "is this source file in coverage?": every
+ * mode (single, multi, workspace) routes its mapped result through here so the
+ * include globs and ignore patterns cannot drift across call sites. A file
+ * survives when it is included by `collectCoverageFrom` AND not matched by any
+ * `coveragePathIgnorePatterns` entry.
+ */
+export function filterCoverageUniverse(
+	mapped: MappedCoverageResult,
+	filter: CoverageUniverseFilter,
+): MappedCoverageResult {
+	if ((filter.include ?? []).length === 0 && (filter.ignore ?? []).length === 0) {
+		return mapped;
+	}
+
+	const isInUniverse = createCoverageUniverseMatcher(filter);
 	const filtered = Object.fromEntries(
-		Object.entries(mapped.files).filter(([filePath]) => {
-			const relativePath = path.isAbsolute(filePath)
-				? normalizeWindowsPath(path.relative(cwd, filePath))
-				: filePath;
-			return (
-				isIncluded(relativePath) && !isExcluded(relativePath) && !isIgnored(relativePath)
-			);
-		}),
+		Object.entries(mapped.files).filter(([filePath]) => isInUniverse(filePath)),
 	);
 
 	return { files: filtered };

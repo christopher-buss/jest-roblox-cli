@@ -7,7 +7,7 @@ import {
 } from "../coverage-pipeline/agent-table-filter.ts";
 import type { AttributionResult } from "../coverage-pipeline/attribution.ts";
 import { mergeAttribution } from "../coverage-pipeline/attribution.ts";
-import { deriveCoverageFromIncludes } from "../coverage-pipeline/derive-coverage-from.ts";
+import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
 import { mergeRawCoverage } from "../coverage-pipeline/merge-raw-coverage.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { combineSourceMappers, type SourceMapper } from "../source-mapper/index.ts";
@@ -39,9 +39,7 @@ export function buildMultiRunResult({
 	staged,
 }: MultiRunResultInput): MultiRunResult {
 	const { projects, rootConfig } = discovery;
-	const collectCoverageFrom = rootConfig.collectCoverage
-		? (rootConfig.collectCoverageFrom ?? deriveCoverageFromIncludes(projects))
-		: rootConfig.collectCoverageFrom;
+	const collectCoverageFrom = resolveCoverageInclude(rootConfig, projects);
 
 	return {
 		collectCoverageFrom,

@@ -170,5 +170,12 @@ function buildPackageDescriptor(
 		descriptor.coveragePathIgnorePatterns = packageConfig.coveragePathIgnorePatterns;
 	}
 
+	// No DEFAULT_CONFIG entry to compare against — `collectCoverageFrom` is
+	// absent unless the user set it, so the merged value is already the
+	// package's own answer.
+	if (packageConfig.collectCoverageFrom !== undefined) {
+		descriptor.collectCoverageFrom = packageConfig.collectCoverageFrom;
+	}
+
 	return descriptor;
 }

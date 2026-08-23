@@ -92,6 +92,35 @@ can opt out without affecting another.
 report renders, so a package's report and its threshold gate always judge the
 same set of files.
 
+The universe also decides which files get probes at all. A file outside it is
+mirrored into the shadow directory verbatim instead of instrumented, so the
+place stays loadable but the run never carries hit counts the report would
+discard. That matters on Open Cloud, which rejects a task returning more than 4
+MiB: a place probed across its whole source tree can spend most of that budget
+on files no report asks about. Narrowing `collectCoverageFrom` is the lever —
+`luauRoots` and `coveragePathIgnorePatterns` cut whole roots the same way.
+
+The fallback differs by mode. A multi-project run with no `collectCoverageFrom`
+derives the universe from each project's `include` globs (see the note above),
+and instruments against that derived set. Workspace mode has no such fallback: a
+package that sets nothing reports on, and probes, everything under its
+`luauRoots`.
+
+<!-- prettier-ignore -->
+> [!WARNING]
+> `collectCoverageFrom` globs resolve against the **directory the CLI was
+> invoked from**, not the package directory. In workspace mode that is the
+> workspace root, so a package at `packages/foo` writes
+> `packages/foo/src/**/*.ts`, not `src/**/*.ts`. A package-relative glob
+> matches nothing, and a universe matching nothing yields an empty report —
+> which `coverageThreshold` then passes vacuously, there being no file to fall
+> short. Check the report lists the files you expect before trusting a
+> threshold.
+
+Changing either set of globs invalidates the incremental coverage cache: the
+shadow directory still holds probed copies of files the new universe excludes,
+and no source hash would notice.
+
 In workspace mode every field in the table above is read per-package. Each
 package gets its own report, from its own reporters, written under its own
 `coverageDirectory` — nothing is merged across packages, and nothing is read
@@ -110,7 +139,8 @@ manifests. Add the umbrella to `.gitignore`:
 
 1. Resolves `luauRoots` from tsconfig `outDir` (or explicit config)
 2. Copies compiled Luau to shadow directory (`.jest-roblox/coverage/`)
-3. Instruments Luau files with coverage probes (`__cov_s`, `__cov_f`, `__cov_b`)
+3. Instruments the Luau files inside the coverage universe with coverage probes
+   (`__cov_s`, `__cov_f`, `__cov_b`); the rest stay as copied
 4. Rewrites Rojo project to point at instrumented files
 5. Builds coverage place file via `rojo build`
 6. Runs tests against the instrumented place
