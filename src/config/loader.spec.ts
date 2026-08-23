@@ -6,7 +6,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { applySnapshotFormatDefaults, loadConfig, loadRawConfig, resolveConfig } from "./loader.ts";
+import { loadConfig, loadRawConfig, resolveConfig } from "./loader.ts";
 import type { Config } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
 
@@ -24,51 +24,6 @@ function makeTemporaryDirectory(prefix = "config-test-"): string {
 
 	return temporaryDirectory;
 }
-
-describe(applySnapshotFormatDefaults, () => {
-	it("should default printBasicPrototype to true for luau project", () => {
-		expect.assertions(1);
-
-		const result = applySnapshotFormatDefaults(DEFAULT_CONFIG, true);
-
-		expect(result.snapshotFormat!.printBasicPrototype).toBeTrue();
-	});
-
-	it("should default printBasicPrototype to false for typescript project", () => {
-		expect.assertions(1);
-
-		const result = applySnapshotFormatDefaults(DEFAULT_CONFIG, false);
-
-		expect(result.snapshotFormat!.printBasicPrototype).toBeFalse();
-	});
-
-	it("should preserve explicit printBasicPrototype=true even for typescript project", () => {
-		expect.assertions(1);
-
-		const config = { ...DEFAULT_CONFIG, snapshotFormat: { printBasicPrototype: true } };
-		const result = applySnapshotFormatDefaults(config, false);
-
-		expect(result.snapshotFormat!.printBasicPrototype).toBeTrue();
-	});
-
-	it("should preserve explicit printBasicPrototype=false even for luau project", () => {
-		expect.assertions(1);
-
-		const config = { ...DEFAULT_CONFIG, snapshotFormat: { printBasicPrototype: false } };
-		const result = applySnapshotFormatDefaults(config, true);
-
-		expect(result.snapshotFormat!.printBasicPrototype).toBeFalse();
-	});
-
-	it("should not mutate the original config", () => {
-		expect.assertions(1);
-
-		const config = { ...DEFAULT_CONFIG };
-		applySnapshotFormatDefaults(config, true);
-
-		expect(config.snapshotFormat).toBeUndefined();
-	});
-});
 
 describe(resolveConfig, () => {
 	it("should use defaults when no config provided", () => {

@@ -5,10 +5,15 @@ import process from "node:process";
 import type { Backend } from "./backends/interface.ts";
 import type { CliOptions, WorkspaceRunOptions } from "./config/schema.ts";
 import type { ExecuteResult } from "./executor.ts";
+import { createTsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
 import type { StreamingAggregatorOnEntry } from "./reporter/streaming-aggregator.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
 import { attachCoverageManifests } from "./workspace/coverage-attach.ts";
-import { prepareWorkspaceDispatchAsync, runDispatchedProjectsAsync } from "./workspace/dispatch.ts";
+import {
+	buildWorkspaceJobs,
+	prepareWorkspaceDispatchAsync,
+	runDispatchedProjectsAsync,
+} from "./workspace/dispatch.ts";
 import { ensurePackageDirectories } from "./workspace/ensure-paths.ts";
 import { writeWorkspaceSinksAsync } from "./workspace/output-sinks.ts";
 import { type LoadedPackage, loadWorkspacePackagesAsync } from "./workspace/package-loader.ts";
@@ -104,12 +109,19 @@ async function executeWorkspaceRunAsync({
 }> {
 	const { pending, typecheckByDirectory, typeTestEntries } = selection;
 
+	// Resolved once, for both the script the runtime executes and the run that
+	// post-processes its results. The cache goes with them, so a package's
+	// tsconfigs are read once for the whole run.
+	const tsconfigCache = createTsconfigMappingCache();
+	const jobs = timing.profile("buildJobs", () => {
+		return buildWorkspaceJobs(pending, placeFile, tsconfigCache);
+	});
+
 	const dispatchSpec = await timing.profileAsync("prepareDispatch", async () => {
 		return prepareWorkspaceDispatchAsync({
+			jobs,
 			onStreamingResult: options.onStreamingResult,
 			parallel: options.runOptions.parallel,
-			pending,
-			placeFile,
 			workStealingCredentials: options.workStealingCredentials,
 		});
 	});
@@ -123,10 +135,10 @@ async function executeWorkspaceRunAsync({
 		runDispatchedProjectsAsync({
 			backend: options.backend,
 			dispatchSpec,
-			pending,
-			placeFile,
+			jobs,
 			startTime,
 			timing,
+			tsconfigCache,
 			version: options.version,
 		}),
 		runWorkspaceTypecheckPassAsync(typeTestEntries, typecheckByDirectory),

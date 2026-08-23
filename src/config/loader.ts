@@ -47,23 +47,6 @@ type MergerKey =
 
 type MergerDefault = NonNullable<ResolvedConfig[MergerKey]>;
 
-export function applySnapshotFormatDefaults(
-	config: ResolvedConfig,
-	isLuauProject: boolean,
-): ResolvedConfig {
-	if (config.snapshotFormat?.printBasicPrototype !== undefined) {
-		return config;
-	}
-
-	return {
-		...config,
-		snapshotFormat: {
-			...config.snapshotFormat,
-			printBasicPrototype: isLuauProject,
-		},
-	};
-}
-
 export function resolveConfig(config: Config): ResolvedConfig {
 	validateConfig(config);
 

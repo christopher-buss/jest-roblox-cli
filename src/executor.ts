@@ -16,8 +16,8 @@ import type {
 	RawBackendEntry,
 	StreamingHooks,
 } from "./backends/interface.ts";
-import { applySnapshotFormatDefaults } from "./config/loader.ts";
 import type { ResolvedConfig } from "./config/schema.ts";
+import { resolveSnapshotFormat } from "./config/snapshot-format.ts";
 import type { AttributionResult } from "./coverage-pipeline/attribution.ts";
 import { harvestAttribution } from "./coverage-pipeline/attribution.ts";
 import { resolveTestFileHash } from "./coverage-pipeline/test-file-hash.ts";
@@ -31,7 +31,11 @@ import {
 	recordBackendTimingSpans,
 	recordLuauTimingSpans,
 } from "./executor/timing-spans.ts";
-import { isLuauProject, resolveAllTsconfigMappings } from "./executor/tsconfig-mappings.ts";
+import type { TsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
+import {
+	createTsconfigMappingCache,
+	resolveAllTsconfigMappings,
+} from "./executor/tsconfig-mappings.ts";
 import type { ExecuteResult } from "./executor/types.ts";
 import { LuauScriptError, type SnapshotWrites } from "./reporter/parser.ts";
 import { createSourceMapper, type SourceMapper } from "./source-mapper/index.ts";
@@ -83,6 +87,13 @@ export interface RunProjectsOptions {
 	 * post-processing.
 	 */
 	timing?: TimingCollector | undefined;
+	/**
+	 * Tsconfig mappings the caller has already read. Workspace mode resolves
+	 * its jobs before it freezes the dispatched script and hands that cache on,
+	 * so a package is scanned once for the whole run rather than once here and
+	 * once there. Omit it and the run reads its own.
+	 */
+	tsconfigCache?: TsconfigMappingCache | undefined;
 	version: string;
 	workStealing?: boolean | undefined;
 }
@@ -103,6 +114,11 @@ interface ProcessProjectOptions {
 	 * collector (NOOP when the top-level run didn't enable TIMING).
 	 */
 	timing: TimingCollector;
+	/**
+	 * Shared with the job build, so this run scans a package once, not once
+	 * per project.
+	 */
+	tsconfigCache: TsconfigMappingCache;
 	version: string;
 }
 
@@ -116,6 +132,29 @@ interface ProjectArtifacts {
 	attribution: AttributionResult | undefined;
 	sourceMapper: SourceMapper | undefined;
 	writeCounts: SnapshotWriteCounts;
+}
+
+/**
+ * Resolve one project into the job the runtime runs: `snapshotFormat` per
+ * project, so the Luau runner never re-resolves or shares format state across
+ * projects (fixes the spike's snapshot-diff regression — C1).
+ *
+ * Every runtime script is built from these jobs, in both dispatch modes — multi
+ * through `runProjectsAsync` above, workspace through the materializer payload
+ * (`buildMaterializerInputs`), which resolves its entries here before it
+ * freezes the script. Per-project config resolution belongs in this one
+ * function for that reason: resolve a field anywhere downstream of the payload
+ * and it reaches multi mode only.
+ */
+export function buildProjectJob(project: ProjectInput, cache: TsconfigMappingCache): ProjectJob {
+	return {
+		config: resolveSnapshotFormat(project.config, project.testFiles, cache),
+		displayColor: project.displayColor,
+		displayName: project.displayName ?? "",
+		pkg: project.pkg,
+		runtimeInjectionPaths: project.runtimeInjectionPaths,
+		testFiles: project.testFiles,
+	};
 }
 
 /**
@@ -135,7 +174,10 @@ interface ProjectArtifacts {
  */
 export async function runProjectsAsync(options: RunProjectsOptions): Promise<RunProjectsResult> {
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
-	const jobs = buildJobs(options.projects, timing);
+	const tsconfigCache = options.tsconfigCache ?? createTsconfigMappingCache();
+	const jobs = timing.profile("buildJobs", () => {
+		return options.projects.map((project) => buildProjectJob(project, tsconfigCache));
+	});
 
 	const { rawResults, timing: backendTiming } = await dispatchToBackendAsync(
 		options,
@@ -150,6 +192,7 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 		deferFormatting: options.deferFormatting,
 		startTime: options.startTime,
 		timing,
+		tsconfigCache,
 		version: options.version,
 	};
 
@@ -162,36 +205,6 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 	});
 
 	return { backendTiming, results };
-}
-
-/**
- * Build a `ProjectJob` with `snapshotFormat` resolved per-project. Each job
- * carries its own config so the Luau runner never re-resolves or shares format
- * state across projects (fixes the spike's snapshot-diff regression — C1).
- */
-function buildProjectJob(parameters: ProjectInput, timing: TimingCollector): ProjectJob {
-	const tsconfigMappings = timing.profile("resolveTsconfigMappings", () => {
-		return resolveAllTsconfigMappings(parameters.config.rootDir);
-	});
-	const isLuau = isLuauProject(parameters.testFiles, tsconfigMappings);
-	const config = applySnapshotFormatDefaults(parameters.config, isLuau);
-	return {
-		config,
-		displayColor: parameters.displayColor,
-		displayName: parameters.displayName ?? "",
-		pkg: parameters.pkg,
-		runtimeInjectionPaths: parameters.runtimeInjectionPaths,
-		testFiles: parameters.testFiles,
-	};
-}
-
-function buildJobs(
-	projects: ReadonlyArray<ProjectInput>,
-	timing: TimingCollector,
-): Array<ProjectJob> {
-	return timing.profile("buildJobs", () => {
-		return projects.map((project) => buildProjectJob(project, timing));
-	});
 }
 
 async function dispatchToBackendAsync(
@@ -365,7 +378,7 @@ function processProjectResult(
 	const { luauTiming, result } = backendResult;
 
 	const tsconfigMappings = timing.profile("resolveTsconfigMappings", () => {
-		return resolveAllTsconfigMappings(config.rootDir);
+		return resolveAllTsconfigMappings(config.rootDir, options.tsconfigCache);
 	});
 
 	const artifacts = collectProjectArtifacts(backendResult, options, tsconfigMappings);

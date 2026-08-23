@@ -15,6 +15,20 @@ export interface TsconfigDirectories {
 	rootDir: string | undefined;
 }
 
+/**
+ * Mappings keyed by the `rootDir` they were read from. Reading them is a
+ * directory scan plus a parse per tsconfig, and every project in a package
+ * shares one `rootDir` — a cache collapses a pass over N projects into one
+ * scan per package. Each pass owns its cache (the workspace payload build and
+ * the run each hold one), so a scan per package outlives no pass and no caller
+ * has to reason about staleness across a run.
+ */
+export type TsconfigMappingCache = Map<string, Array<TsconfigMapping>>;
+
+export function createTsconfigMappingCache(): TsconfigMappingCache {
+	return new Map();
+}
+
 export function isLuauProject(
 	testFiles: ReadonlyArray<string>,
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
@@ -44,38 +58,18 @@ export function readTsconfigMapping(tsconfigPath: string): TsconfigDirectories |
 	}
 }
 
-export function resolveAllTsconfigMappings(projectRoot: string): Array<TsconfigMapping> {
+export function resolveAllTsconfigMappings(
+	projectRoot: string,
+	cache?: TsconfigMappingCache,
+): Array<TsconfigMapping> {
 	const resolvedRoot = path.resolve(projectRoot);
-	let files: Array<string>;
-	try {
-		files = fs.readdirSync(resolvedRoot).filter((file) => TSCONFIG_FILENAME.test(file));
-	} catch {
-		return [];
+	const cached = cache?.get(resolvedRoot);
+	if (cached !== undefined) {
+		return cached;
 	}
 
-	const seen = new Set<string>();
-	const mappings: Array<TsconfigMapping> = [];
-
-	for (const file of files) {
-		const tsconfig = getTsconfig(resolvedRoot, file);
-		const compilerOptions = tsconfig?.config.compilerOptions;
-		if (compilerOptions?.outDir === undefined) {
-			continue;
-		}
-
-		const parsed = parseTsconfigMappings(compilerOptions);
-		for (const entry of parsed) {
-			const key = `${entry.outDir}:${entry.rootDir}`;
-			if (!seen.has(key)) {
-				seen.add(key);
-				mappings.push(entry);
-			}
-		}
-	}
-
-	// Longest outDir first for correct prefix matching
-	mappings.sort((a, b) => b.outDir.length - a.outDir.length);
-
+	const mappings = scanTsconfigMappings(resolvedRoot);
+	cache?.set(resolvedRoot, mappings);
 	return mappings;
 }
 
@@ -138,4 +132,38 @@ function parseTsconfigMappings(options: TsconfigCompilerOptions): Array<Tsconfig
 	}
 
 	return [{ outDir: outDirectory, rootDir: normalizeDirectoryPath(options.rootDir ?? "src") }];
+}
+
+function scanTsconfigMappings(resolvedRoot: string): Array<TsconfigMapping> {
+	let files: Array<string>;
+	try {
+		files = fs.readdirSync(resolvedRoot).filter((file) => TSCONFIG_FILENAME.test(file));
+	} catch {
+		return [];
+	}
+
+	const seen = new Set<string>();
+	const mappings: Array<TsconfigMapping> = [];
+
+	for (const file of files) {
+		const tsconfig = getTsconfig(resolvedRoot, file);
+		const compilerOptions = tsconfig?.config.compilerOptions;
+		if (compilerOptions?.outDir === undefined) {
+			continue;
+		}
+
+		const parsed = parseTsconfigMappings(compilerOptions);
+		for (const entry of parsed) {
+			const key = `${entry.outDir}:${entry.rootDir}`;
+			if (!seen.has(key)) {
+				seen.add(key);
+				mappings.push(entry);
+			}
+		}
+	}
+
+	// Longest outDir first for correct prefix matching
+	mappings.sort((a, b) => b.outDir.length - a.outDir.length);
+
+	return mappings;
 }

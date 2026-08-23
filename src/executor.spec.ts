@@ -21,6 +21,7 @@ import {
 	resolveTsconfigDirectories,
 	runProjectsAsync,
 } from "./executor.ts";
+import { createTsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
 import type { SnapshotWrites } from "./reporter/parser.ts";
 import { parseJestOutput } from "./reporter/parser.ts";
 import * as parserModule from "./reporter/parser.ts";
@@ -2303,6 +2304,27 @@ describe(resolveAllTsconfigMappings, () => {
 		const result = resolveAllTsconfigMappings("/nonexistent/path/xyz");
 
 		expect(result).toBeEmpty();
+	});
+
+	// Every project in a package resolves against the one package rootDir, so
+	// the run-level cache is what keeps that a single directory scan.
+	it("should answer a repeated rootDir from the cache", () => {
+		expect.assertions(2);
+
+		const temporaryDirectory = createTemporaryDirectory("tsconfig-cache-");
+		const tsconfigPath = path.join(temporaryDirectory, "tsconfig.json");
+		fs.writeFileSync(
+			tsconfigPath,
+			JSON.stringify({ compilerOptions: { outDir: "out", rootDir: "src" } }),
+		);
+		const cache = createTsconfigMappingCache();
+
+		const first = resolveAllTsconfigMappings(temporaryDirectory, cache);
+		fs.rmSync(tsconfigPath);
+		const second = resolveAllTsconfigMappings(temporaryDirectory, cache);
+
+		expect(first).toStrictEqual([{ outDir: "out", rootDir: "src" }]);
+		expect(second).toStrictEqual(first);
 	});
 
 	it("should deduplicate identical mappings across tsconfig files", () => {

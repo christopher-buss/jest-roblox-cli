@@ -274,6 +274,109 @@ describe(runWorkspaceAsync, () => {
 		expect(captured.options!.scriptOverride).toContain('"testTimeout":5678');
 	});
 
+	// Workspace mode builds the materializer payload from the pending entries
+	// rather than from the executor's jobs, so `printBasicPrototype` has to be
+	// resolved before dispatch. Left unresolved, Jest-Roblox falls back to its
+	// own default and a roblox-ts package's snapshots come back in `Table {`
+	// form while multi mode writes `{`.
+	it("should resolve printBasicPrototype for a typescript package before dispatch", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.ts")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.scriptOverride).toContain('"printBasicPrototype":false');
+		expect(captured.options!.scriptOverride).not.toContain('"printBasicPrototype":true');
+	});
+
+	it("should resolve printBasicPrototype for a luau package before dispatch", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(BAR_DIR, {
+				name: "@halcyon/bar",
+				specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({ [BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR } });
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			packageInfos: [BAR_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.scriptOverride).toContain('"printBasicPrototype":true');
+		expect(captured.options!.scriptOverride).not.toContain('"printBasicPrototype":false');
+	});
+
+	// The re-send path builds its script from the same entries, so the resolved
+	// format has to survive a rebuild: a task that came back with work left over
+	// must re-run it under the format its first attempt used.
+	it("should keep the resolved printBasicPrototype in a rebuilt script", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.ts")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		const factory = captured.options!.scriptFactory;
+		assert(factory !== undefined);
+
+		expect(factory(captured.options!.jobs)).toContain('"printBasicPrototype":false');
+	});
+
 	// A task that fills its return envelope comes back having run only some of
 	// its entries. Without a queue to leave the rest in, the backend rebuilds a
 	// script from what did not run — so the factory must select by (pkg,
@@ -2648,6 +2751,42 @@ describe(runWorkspaceAsync, () => {
 			});
 
 			expect(captured.options!.scriptOverride).toContain('"queueId":"specific-queue-id"');
+		});
+
+		// The queue script is generated from the same entries as the ordinary
+		// one, so a package's format must not depend on which of the two paths
+		// the run took.
+		it("should carry the resolved printBasicPrototype into the queue script", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.ts")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+			});
+
+			mockPreparedQueue("queue-format");
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspaceAsync({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ parallel: 2 }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(captured.options!.scriptOverride).toContain('"printBasicPrototype":false');
 		});
 
 		it("should shard on parallel auto rather than falling back to one task", async () => {

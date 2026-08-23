@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 import process from "node:process";
 
-import type { Backend, ParallelOption, StreamingHooks } from "../backends/interface.ts";
+import type { Backend, ParallelOption, ProjectJob, StreamingHooks } from "../backends/interface.ts";
 import { isShardedParallel } from "../backends/interface.ts";
-import { type ExecuteResult, runProjectsAsync, type RunProjectsOptions } from "../executor.ts";
+import {
+	buildProjectJob,
+	type ExecuteResult,
+	runProjectsAsync,
+	type RunProjectsOptions,
+} from "../executor.ts";
+import type { TsconfigMappingCache } from "../executor/tsconfig-mappings.ts";
 import { StreamingResultClient } from "../memory-store/sorted-map-client.ts";
 import { prepareWorkStealingQueueAsync } from "../memory-store/work-stealing.ts";
 import {
@@ -26,6 +32,15 @@ export type WorkspaceDispatchSpec = Pick<
 	"parallel" | "scriptFactory" | "scriptOverride" | "streaming" | "workStealing"
 >;
 
+/**
+ * A dispatch job carrying the package it belongs to. `ProjectJob.pkg` is
+ * optional because multi mode has no packages; every workspace job has one,
+ * and the materializer payload keys its entries by it.
+ */
+export interface WorkspaceJob extends ProjectJob {
+	pkg: string;
+}
+
 interface WorkStealingCredentials {
 	apiKey: string;
 	baseUrl?: string | undefined;
@@ -34,10 +49,9 @@ interface WorkStealingCredentials {
 
 interface WorkspaceDispatchInput {
 	generateUuid?: (() => string) | undefined;
+	jobs: Array<WorkspaceJob>;
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
 	parallel?: ParallelOption;
-	pending: Array<PendingEntry>;
-	placeFile: string;
 	workStealingCredentials: undefined | WorkStealingCredentials;
 }
 
@@ -52,10 +66,10 @@ interface WorkStealingDispatchInput {
 interface DispatchedProjectsInput {
 	backend: Backend | undefined;
 	dispatchSpec: WorkspaceDispatchSpec;
-	pending: Array<PendingEntry>;
-	placeFile: string;
+	jobs: Array<WorkspaceJob>;
 	startTime: number;
 	timing: TimingCollector;
+	tsconfigCache: TsconfigMappingCache;
 	version: string;
 }
 
@@ -64,11 +78,17 @@ interface BuildStreamingResult {
 	sortedMapId: string;
 }
 
-/** Runs every pending (pkg, project) against the shared place. */
+/**
+ * Runs every dispatch job against the shared place.
+ *
+ * The jobs handed in are the ones the dispatched script was built from, so the
+ * run and the runtime agree on every project's config by identity rather than
+ * by resolving it a second time.
+ */
 export async function runDispatchedProjectsAsync(
 	input: DispatchedProjectsInput,
 ): Promise<Array<ExecuteResult>> {
-	const { dispatchSpec, pending, placeFile, startTime, timing, version } = input;
+	const { dispatchSpec, jobs, startTime, timing, tsconfigCache, version } = input;
 	const { results } = await timing.profileAsync("runProjects", async () => {
 		return runProjectsAsync({
 			// Defined whenever runtime jobs exist: only `--typecheckOnly`
@@ -77,17 +97,10 @@ export async function runDispatchedProjectsAsync(
 			// eslint-disable-next-line ts/no-non-null-assertion -- backend present for runtime jobs
 			backend: input.backend!,
 			deferFormatting: true,
-			projects: pending.map((entry) => {
-				return {
-					config: { ...entry.projectConfig, placeFile },
-					displayColor: entry.project.displayColor,
-					displayName: entry.project.displayName,
-					pkg: entry.pkg,
-					testFiles: entry.testFiles,
-				};
-			}),
+			projects: jobs,
 			startTime,
 			timing,
+			tsconfigCache,
 			version,
 			...dispatchSpec,
 		});
@@ -96,15 +109,44 @@ export async function runDispatchedProjectsAsync(
 	return results;
 }
 
+/**
+ * Resolve every pending (pkg, project) into the job it dispatches as, pinned to
+ * the one synthesized place the whole workspace run shares.
+ *
+ * The run builds these once and hands the same array to both the script build
+ * and the run itself, so the two cannot disagree about a project's config. The
+ * `tsconfigCache` travels with them for the same reason: passed on to
+ * `runProjectsAsync`, it keeps result post-processing on the scan taken here.
+ */
+export function buildWorkspaceJobs(
+	pending: Array<PendingEntry>,
+	placeFile: string,
+	tsconfigCache: TsconfigMappingCache,
+): Array<WorkspaceJob> {
+	return pending.map((entry) => {
+		const job = buildProjectJob(
+			{
+				config: { ...entry.projectConfig, placeFile },
+				displayColor: entry.project.displayColor,
+				displayName: entry.project.displayName,
+				pkg: entry.pkg,
+				testFiles: entry.testFiles,
+			},
+			tsconfigCache,
+		);
+
+		return { ...job, pkg: entry.pkg };
+	});
+}
+
 export async function prepareWorkspaceDispatchAsync({
 	generateUuid,
+	jobs,
 	onStreamingResult,
 	parallel,
-	pending,
-	placeFile,
 	workStealingCredentials,
 }: WorkspaceDispatchInput): Promise<WorkspaceDispatchSpec> {
-	const inputs = buildMaterializerInputs(pending, placeFile);
+	const inputs = buildMaterializerInputs(jobs);
 
 	// `runOptions.parallel` already reflects CLI > per-package consensus >
 	// default. Only Open Cloud reaches this branch (work-stealing credentials
@@ -250,18 +292,16 @@ function deferrableDispatch(inputs: Array<MaterializerInput>): WorkspaceDispatch
 	};
 }
 
-// The materializer payload: one entry per (pkg, project) runtime job, each
-// pinned to the one synthesized place the whole workspace run shares.
-function buildMaterializerInputs(
-	pending: Array<PendingEntry>,
-	placeFile: string,
-): Array<MaterializerInput> {
-	return pending.map((entry) => {
+// The materializer payload: one entry per (pkg, project) runtime job. It
+// carries the job's resolved config, because this script is frozen here —
+// anything resolved after it is built reaches multi mode only.
+function buildMaterializerInputs(jobs: Array<WorkspaceJob>): Array<MaterializerInput> {
+	return jobs.map((job) => {
 		return {
-			config: { ...entry.projectConfig, placeFile },
-			pkg: entry.pkg,
-			project: entry.project.displayName,
-			testFiles: entry.testFiles,
+			config: job.config,
+			pkg: job.pkg,
+			project: job.displayName,
+			testFiles: job.testFiles,
 		};
 	});
 }
