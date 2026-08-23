@@ -6,9 +6,9 @@
 -- (`plugin/src/test-in-run-mode.server.luau`, single-process only). Both pass
 -- their own calling script so `Jest.runCLI` resolves against the live DataModel.
 local HttpService = game:GetService("HttpService")
-local LogService = game:GetService("LogService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
 
+local GameOutputCapture = require("../game-output-capture")
 local InstanceResolver = require("../instance-resolver")
 local InterceptWriteable = require("../intercept-writeable")
 local Materializer = require("./materializer")
@@ -101,44 +101,25 @@ local function resolveSetupPaths(paths: { string }?): { Instance }?
 	return resolved
 end
 
--- Returns: (jestSuccess, jestOutputOrErrorMessage, snapshotWrites, gameOutput, bannerOutput).
+-- Returns: (jestSuccess, jestOutputOrErrorMessage, snapshotWrites, bannerOutput).
 -- `jestSuccess=false` means Jest itself rejected; `jestOutputOrErrorMessage`
 -- carries the normalized cause string in that case, otherwise the encoded
 -- success envelope.
 --
--- `gameOutput` is the JSON-encoded LogService.MessageOut dump for the entry
--- (everything Studio's Output would show — native print/warn, engine
--- warnings, Jest stdout). Surfaced to users via `--gameOutput <path>`.
---
 -- `bannerOutput` is the narrower InterceptWriteable capture of Jest's
 -- own process.stdout/stderr writes, used by the CLI error banner to
 -- surface exit-time messages like "No tests found, exiting with code 1".
+-- The wider Game Output capture lives in `executeEntry`, around this call.
 local function runEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload
-): (boolean, string, SnapshotWrites?, string?, string?)
+): (boolean, string, SnapshotWrites?, string?)
 	local t0 = os.clock()
 	local timingEnabled = entry.config.runnerTiming == true
 
 	local t_findJest0 = os.clock()
 	local JestModule = InstanceResolver.getJest(entry.config)
 	local t_findJest = os.clock()
-
-	-- Per-entry Game Output capture. Connected before SnapshotPatch.patch
-	-- so any patch-time warning (e.g. RobloxShared shape changes) lands in
-	-- the dump. Disconnected last during teardown, after restoreStdout/
-	-- restoreStderr and SnapshotPatch.unpatch, to catch late warns that
-	-- fire as Promise:expect resumes the coroutine.
-	local logMessages: { CapturedMessage } = {}
-	local logConnection = LogService.MessageOut:Connect(
-		function(message: string, messageType: Enum.MessageType)
-			table.insert(logMessages, {
-				message = message,
-				messageType = messageType.Value,
-				timestamp = os.clock(),
-			})
-		end
-	)
 
 	-- Patch BEFORE require(Jest) so the snapshot mock is in place when
 	-- Jest's internal modules capture their FileSystemService reference.
@@ -270,20 +251,6 @@ local function runEntry(
 	SetupTiming.unpatch(setupTimingState)
 	SnapshotPatch.unpatch(patchState)
 
-	-- Disconnect MessageOut last so any teardown-time warns still land in
-	-- gameOutput.
-	logConnection:Disconnect()
-
-	local gameOutput: string?
-	if #logMessages > 0 then
-		local encodeOk, encoded = pcall(function()
-			return HttpService:JSONEncode(logMessages)
-		end)
-		if encodeOk then
-			gameOutput = encoded :: string
-		end
-	end
-
 	local bannerOutput: string?
 	if #capturedMessages > 0 then
 		local encodeOk, encoded = pcall(function()
@@ -297,10 +264,10 @@ local function runEntry(
 	local capturedWrites: SnapshotWrites? = if next(snapshotWrites) then snapshotWrites else nil
 
 	if not ok then
-		return false, PromiseError.normalize(jestResultOrError), nil, gameOutput, bannerOutput
+		return false, PromiseError.normalize(jestResultOrError), nil, bannerOutput
 	end
 
-	return true, jestResultOrError, capturedWrites, gameOutput, bannerOutput
+	return true, jestResultOrError, capturedWrites, bannerOutput
 end
 
 local function buildSummary(result: ResultEntry): StreamingSummary
@@ -367,19 +334,31 @@ local function executeEntry(
 	streamingTtlSeconds: number?
 ): (ResultEntry, string)
 	local t0 = os.clock()
+	local changingPackage = entry.pkg ~= prevPkg
 
 	-- Wrap the staging hand-off so a missing/torn-down `__pkg_stage` (or any
 	-- materialize-side assertion) surfaces as a per-pkg envelope failure
 	-- instead of escaping as `TaskScript:NNN: ...` and aborting the whole
 	-- task script.
-	local stageOk, stageErr = pcall(function()
-		if entry.pkg ~= prevPkg then
-			if prevPkg ~= nil then
-				Materializer.reset()
-			end
-			Materializer.materialize(entry.pkg)
-		end
-	end)
+	--
+	-- The previous package is torn down BEFORE this entry's capture opens, so
+	-- whatever its scripts say on Destroy cannot land on the package that
+	-- happens to run next. Its own capture has already closed by then, so the
+	-- teardown slice reaches no capture at all.
+	local stageOk: boolean, stageErr: any = true, nil
+	if changingPackage and prevPkg ~= nil then
+		stageOk, stageErr = pcall(Materializer.reset)
+	end
+
+	-- Opened before materialize and closed after Jest's teardown, so the
+	-- window covers the whole of this package's time in the live DataModel:
+	-- scripts that start on parenting, patch-time warnings, the run itself,
+	-- and the late warns that fire as Promise:expect resumes the coroutine.
+	local stopCapture = GameOutputCapture.start()
+
+	if stageOk and changingPackage then
+		stageOk, stageErr = pcall(Materializer.materialize, entry.pkg)
+	end
 
 	if not stageOk then
 		local elapsedMs = math.floor((os.clock() - t0) * 1000)
@@ -391,14 +370,16 @@ local function executeEntry(
 				success = false,
 				err = PromiseError.normalize(stageErr),
 			}),
+			gameOutput = stopCapture(),
 		}
 		streamResult(result, sortedMapId, streamingTtlSeconds)
 		return result, entry.pkg
 	end
 
-	local pcallOk, jestSuccess, primary, snapshotWrites, gameOutput, bannerOutput =
+	local pcallOk, jestSuccess, primary, snapshotWrites, bannerOutput =
 		pcall(runEntry, callingScript, entry)
 	local elapsedMs = math.floor((os.clock() - t0) * 1000)
+	local gameOutput = stopCapture()
 
 	local result: ResultEntry
 	if not pcallOk then
@@ -414,6 +395,7 @@ local function executeEntry(
 				success = false,
 				err = PromiseError.normalize(jestSuccess),
 			}),
+			gameOutput = gameOutput,
 		}
 	elseif jestSuccess then
 		result = {

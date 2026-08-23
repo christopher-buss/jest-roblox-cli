@@ -2,6 +2,7 @@
 local HttpService = game:GetService("HttpService")
 local LogService = game:GetService("LogService")
 
+local GameOutputCapture = require("./game-output-capture")
 local InstanceResolver = require("./instance-resolver")
 local InterceptWriteable = require("./intercept-writeable")
 local PerTestCoverage = require("./per-test-coverage")
@@ -64,28 +65,16 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	local coverageEnabled = config.runnerCoverage
 	local perTestEnabled = config.runnerPerTestCoverage
 
-	-- Game Output capture: subscribe to LogService.MessageOut at the top of
-	-- the run so engine warnings during findJest/require(Jest) (broken
-	-- jestPath, missing dep) also land in the user-facing `--gameOutput`
-	-- dump. Disconnected last during teardown so late warns that fire after
-	-- Promise:expect resumes the coroutine still reach us — GetLogHistory
-	-- has a known gap here (plans/SNAPSHOT-SUPPORT.md).
-	local logMessages: { CapturedMessage } = {}
-	local logConnection = LogService.MessageOut:Connect(
-		function(message: string, messageType: Enum.MessageType)
-			table.insert(logMessages, {
-				message = message,
-				messageType = messageType.Value,
-				timestamp = os.clock(),
-			})
-		end
-	)
+	-- Game Output capture opens at the top of the run so engine warnings
+	-- during findJest/require(Jest) (broken jestPath, missing dep) also land
+	-- in the user-facing `--gameOutput` dump, and stops last during teardown
+	-- so late warns that fire after Promise:expect resumes the coroutine still
+	-- reach it — GetLogHistory has a known gap here (plans/SNAPSHOT-SUPPORT.md).
+	-- This runner's envelope carries a string, so an empty capture is "[]".
+	local stopCapture = GameOutputCapture.start()
 
 	local function encodeGameOutput(): string
-		local ok, encoded = pcall(function()
-			return HttpService:JSONEncode(logMessages)
-		end)
-		return if ok then encoded else "[]"
+		return stopCapture() or "[]"
 	end
 
 	local t_findJest0 = os.clock()
@@ -93,7 +82,6 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	local t_findJest = os.clock()
 
 	if not findSuccess then
-		logConnection:Disconnect()
 		return HttpService:JSONEncode(fail(findValue :: any)), encodeGameOutput(), "[]"
 	end
 
@@ -289,11 +277,6 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	end
 
 	SnapshotPatch.unpatch(patchState)
-
-	-- MessageOut listener stays connected through SnapshotPatch.unpatch and
-	-- the encode below, so any disconnect-time warns still land in
-	-- gameOutput.
-	logConnection:Disconnect()
 
 	local jestResult
 	if not runSuccess then

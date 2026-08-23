@@ -532,6 +532,14 @@ Setting `workspace.gameOutput: true` writes a **per-package** file per (package,
 project) under `.jest-roblox/output/`. Either, both, or neither may be set; with
 both, humans see the aggregate announced and agents see the per-package paths.
 
+Each capture opens before its package is materialized and closes after Jest's
+teardown, and holds only that package's output (a package with several projects
+carries the materialize-time slice on its first project's entry; Destroy-time
+output from the reset between packages is attributed to neither side). A package
+that fails also has its Game Output printed under its own section of the
+terminal report, so no file needs opening to tell which package printed which
+warning.
+
 `outputFile` (the Jest result JSON) follows the same two-sink model:
 `outputFile` (a path, or `true`) writes one merged result at the workspace root,
 and `workspace.outputFile: true` writes a per-package result file per (package,

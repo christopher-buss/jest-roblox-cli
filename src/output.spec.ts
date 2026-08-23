@@ -572,6 +572,38 @@ describe(outputMultiResultAsync, () => {
 		);
 	});
 
+	it("should hand each project its own raw game output to the multi formatter", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig(),
+			makeMultiResult({
+				projectResults: [
+					{
+						displayName: "client",
+						result: makeExecuteResult({ gameOutput: "client-raw" }),
+					},
+					{
+						displayName: "server",
+						result: makeExecuteResult({ gameOutput: "server-raw" }),
+					},
+				],
+			}),
+		);
+
+		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+			[
+				expect.objectContaining({ displayName: "client", gameOutput: "client-raw" }),
+				expect.objectContaining({ displayName: "server", gameOutput: "server-raw" }),
+			],
+			expect.anything(),
+			expect.anything(),
+		);
+	});
+
 	it("should suppress output when config.silent is true", async () => {
 		expect.assertions(1);
 

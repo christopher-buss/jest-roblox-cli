@@ -29,6 +29,12 @@ export interface FormatOptions {
 export interface FormatterProjectEntry {
 	displayColor?: string | undefined;
 	displayName: string;
+	/**
+	 * The project's own raw Game Output, rendered under its section when it
+	 * fails so the reader sees which package printed which warning. Raw so a
+	 * passing project never pays to parse it.
+	 */
+	gameOutput?: string | undefined;
 	result: JestResult;
 }
 

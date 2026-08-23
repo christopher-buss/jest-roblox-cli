@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
+import color from "tinyrainbow";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import * as sourceMapperModule from "../source-mapper/index.ts";
@@ -3081,6 +3082,91 @@ describe(formatProjectSection, () => {
 
 		expect(output).toContain("[33m 100[2mms[22m[39m");
 	});
+
+	describe("game output", () => {
+		const gameOutput = JSON.stringify([
+			{ message: "materializing auth", messageType: 0, timestamp: 1 },
+			{ message: "Infinite yield possible on 'Config'", messageType: 2, timestamp: 2 },
+			{ message: "first line\nsecond line", messageType: 3, timestamp: 3 },
+		]);
+
+		it("should render a failing project's game output below its failures", () => {
+			expect.assertions(5);
+
+			const output = formatProjectSection({
+				displayName: "auth",
+				failureCtx: { currentIndex: 1, totalFailures: 2 },
+				gameOutput,
+				options: noColorOptions,
+				result: FAILING_RESULT,
+			});
+
+			expect(output).toContain("  Game output:");
+			expect(output).toContain("    materializing auth");
+			expect(output).toContain("    Infinite yield possible on 'Config'");
+			expect(output).toContain("    first line\n    second line");
+			expect(output.indexOf("Game output:")).toBeGreaterThan(output.lastIndexOf("[2/2]"));
+		});
+
+		it("should colour warnings and errors by message type", () => {
+			expect.assertions(3);
+
+			const output = formatProjectSection({
+				displayName: "auth",
+				failureCtx: { currentIndex: 1, totalFailures: 2 },
+				gameOutput,
+				options: { ...defaultOptions, color: true },
+				result: FAILING_RESULT,
+			});
+
+			expect(output).toContain("    materializing auth");
+			expect(output).toContain(`    ${color.yellow("Infinite yield possible on 'Config'")}`);
+			expect(output).toContain(
+				`    ${color.red("first line")}\n    ${color.red("second line")}`,
+			);
+		});
+
+		it("should render game output for a project whose suite never ran", () => {
+			expect.assertions(1);
+
+			const output = formatProjectSection({
+				displayName: "broken",
+				failureCtx: { currentIndex: 1, totalFailures: 1 },
+				gameOutput,
+				options: noColorOptions,
+				result: EXEC_ERROR_RESULT,
+			});
+
+			expect(output).toContain("  Game output:\n    materializing auth");
+		});
+
+		it("should not render game output for a passing project", () => {
+			expect.assertions(1);
+
+			const output = formatProjectSection({
+				displayName: "core",
+				failureCtx,
+				gameOutput,
+				options: noColorOptions,
+				result: PASSING_RESULT,
+			});
+
+			expect(output).not.toContain("Game output");
+		});
+
+		it("should not render the block when a failing project printed nothing", () => {
+			expect.assertions(1);
+
+			const output = formatProjectSection({
+				displayName: "auth",
+				failureCtx: { currentIndex: 1, totalFailures: 2 },
+				options: noColorOptions,
+				result: FAILING_RESULT,
+			});
+
+			expect(output).not.toContain("Game output");
+		});
+	});
 });
 
 describe(formatMultiProjectResult, () => {
@@ -3281,6 +3367,37 @@ describe(formatMultiProjectResult, () => {
 		expect(snapshotLine).toMatch(/2 obsolete/);
 		expect(snapshotLine).toMatch(/1 written/);
 		expect(snapshotLine).toMatch(/3 passed.*\(4\)/);
+	});
+
+	it("should keep each failing project's game output under its own section", () => {
+		expect.assertions(3);
+
+		const output = formatMultiProjectResult(
+			[
+				{
+					displayName: "auth",
+					gameOutput: JSON.stringify([
+						{ message: "auth says hi", messageType: 0, timestamp: 1 },
+					]),
+					result: FAILING_RESULT,
+				},
+				{
+					displayName: "core",
+					gameOutput: JSON.stringify([
+						{ message: "core says hi", messageType: 0, timestamp: 2 },
+					]),
+					result: PASSING_RESULT,
+				},
+			],
+			TIMING,
+			noColorOptions,
+		);
+
+		const authSection = output.slice(output.indexOf("▶ auth"), output.indexOf("▶ core"));
+
+		expect(authSection).toContain("    auth says hi");
+		expect(authSection).not.toContain("core says hi");
+		expect(output).not.toContain("core says hi");
 	});
 });
 

@@ -180,6 +180,7 @@ function toProjectEntries(projectResults: Array<ProjectResult>): Array<Formatter
 		return {
 			displayColor: entry.displayColor,
 			displayName: entry.displayName,
+			gameOutput: entry.result.gameOutput,
 			result: entry.result.result,
 		};
 	});

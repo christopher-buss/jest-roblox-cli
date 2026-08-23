@@ -69,7 +69,7 @@ export function formatProjectBadge(
 	return `▶ ${label}`;
 }
 
-function identity(text: string): string {
+export function identity(text: string): string {
 	return text;
 }
 

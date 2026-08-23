@@ -11,8 +11,10 @@
 import { mergeJestTotals, mergeSnapshotSummaries } from "../results/merge.ts";
 import { hasExecError, type JestResult } from "../types/jest-result.ts";
 import type { TimingResult } from "../types/timing.ts";
+import { parseGameOutput } from "../utils/game-output.ts";
 import { formatExecErrorDetail, formatFileFailures } from "./failure.ts";
 import { computeProjectStats, formatFileSummary } from "./file-summary.ts";
+import { formatGameOutputBlock } from "./game-output.ts";
 import type { FailureContext, FormatOptions, FormatterProjectEntry } from "./shared.ts";
 import { createStyles, formatProjectBadge, type Styles } from "./styles.ts";
 import { formatFailedTestsHeader, formatLogHints, formatTestSummary } from "./summary.ts";
@@ -45,11 +47,16 @@ interface ProjectSectionOptions {
 	displayColor?: string | undefined;
 	displayName: string;
 	failureCtx: FailureContext;
+	gameOutput?: string | undefined;
 	options: FormatOptions;
 	result: JestResult;
 	styles?: Styles | undefined;
 }
 
+// No Game Output block here, deliberately: this renders a MERGED JestResult
+// with no project identity, and Game Output is per-project. Every runtime
+// project result reaches the block through formatProjectSection; the only
+// production path left on this function is the typecheck-only report.
 export function formatResult(
 	result: JestResult,
 	timing: TimingResult,
@@ -113,6 +120,7 @@ export function formatProjectSection({
 	displayColor,
 	displayName,
 	failureCtx,
+	gameOutput,
 	options,
 	result,
 	styles: sectionStyles,
@@ -133,6 +141,12 @@ export function formatProjectSection({
 		lines.push(...formatDetailedFailures(result, options, resolved, failureCtx));
 	}
 
+	// Only a failing project earns its Game Output inline: on a pass the
+	// reader has nothing to debug, and the file sinks still hold the full dump.
+	if (!result.success) {
+		lines.push(...formatGameOutputBlock(parseGameOutput(gameOutput), resolved));
+	}
+
 	return lines.join("\n");
 }
 
@@ -150,11 +164,12 @@ export function formatMultiProjectResult(
 		totalFailures: projects.reduce((sum, { result }) => sum + countDetailedFailures(result), 0),
 	};
 
-	const sections = projects.map(({ displayColor, displayName, result }) => {
+	const sections = projects.map(({ displayColor, displayName, gameOutput, result }) => {
 		return formatProjectSection({
 			displayColor,
 			displayName,
 			failureCtx,
+			gameOutput,
 			options,
 			result,
 			styles,
