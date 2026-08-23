@@ -90,6 +90,25 @@ interface IncrementalState {
 	skipFiles: Set<string>;
 }
 
+/** A directory the reconcile walks. */
+interface PruneDirectoryOptions {
+	/** Shadow directory being visited, POSIX-normalized. */
+	directory: string;
+	luauRoot: string;
+	/** Shadow root every relative path is keyed from. */
+	shadowRoot: string;
+}
+
+/** One entry inside a walked directory. */
+interface PruneEntryOptions {
+	luauRoot: string;
+	/** Path under the shadow root, which is also the source-relative path. */
+	relativePath: string;
+	/** The entry’s own shadow path, POSIX-normalized. */
+	shadowPath: string;
+	shadowRoot: string;
+}
+
 interface InstrumentedFiles {
 	allFiles: Record<string, InstrumentedFileRecord>;
 	changed: boolean;
@@ -219,9 +238,16 @@ function sourceTwinExists(luauRoot: string, relativePath: string): boolean {
 }
 
 /**
- * Shared directory walker. Skips node_modules and dot-prefixed directories —
- * matching parse-ast.luau:113-147.
- * `predicate` receives the entry name and returns true to collect the file.
+ * Directories no walk in this file descends into — matching
+ * parse-ast.luau:113-147.
+ */
+function isSkippedDirectory(name: string): boolean {
+	return name === "node_modules" || name.startsWith(".");
+}
+
+/**
+ * Shared directory walker. `predicate` receives the entry name and returns true
+ * to collect the file.
  */
 function walkLuauDirectory(
 	directory: string,
@@ -233,11 +259,7 @@ function walkLuauDirectory(
 	for (const entry of entries) {
 		const fullPath = normalizeWindowsPath(path.join(directory, entry.name));
 		if (entry.isDirectory()) {
-			if (entry.name === "node_modules") {
-				continue;
-			}
-
-			if (entry.name.startsWith(".")) {
+			if (isSkippedDirectory(entry.name)) {
 				continue;
 			}
 
@@ -250,19 +272,27 @@ function walkLuauDirectory(
 }
 
 /**
- * Reconcile a warm shadow dir against its source root: unlink every shadow
- * file whose source no longer exists. This is the warm-run deletion mechanism
- * across every file category the pipeline manages — instrumented prod `.luau`,
- * spec/test/snap, and non-luau rojo files (`init.meta.json`, `*.model.json`,
- * …) alike. Diffing against source (rather than a recorded file set) means a
- * file category the sync never tracked still gets cleaned up, so a stale
- * `init.meta.json` can't survive into the rojo build and fail it. It walks
- * with the same scope as the rest of the pipeline (`walkLuauDirectory` skips
- * `node_modules`/dot-dirs); vendored content under those dirs is governed by
- * `rojoInputsHash` instead, which forces a cold rebuild when it changes.
- * `.cov-map.json` sidecars are instrumenter output with no 1:1 source twin;
- * they map back to their base `.luau`/`.lua`. Returns whether anything was
- * removed, so the caller forces a place rebuild.
+ * Reconcile a warm shadow dir against its source root: drop every shadow entry
+ * whose source counterpart no longer exists. One rule covers files and
+ * directories alike, so a warm run converges on what a cold `cpSync` would have
+ * produced.
+ *
+ * Files are the common case, across every category the pipeline manages —
+ * instrumented prod `.luau`, spec/test/snap, and non-luau rojo files
+ * (`init.meta.json`, `*.model.json`, …). Diffing against source (rather than a
+ * recorded file set) means a file category the sync never tracked still gets
+ * cleaned up, so a stale `init.meta.json` cannot survive into the rojo build
+ * and fail it. `.cov-map.json` sidecars are instrumenter output with no 1:1
+ * source twin; they map back to their base `.luau`/`.lua`.
+ *
+ * Directories matter for one shape rojo cannot tolerate: a `foo/index.ts` ->
+ * `foo.ts` rename leaves the shadow holding a stale `foo/` beside the fresh
+ * `foo.luau`, which rojo mounts as a Folder and a ModuleScript both named `foo`
+ * under one parent. An empty *source* directory is legitimate — a cold run
+ * mirrors it and rojo makes a Folder — so a directory is judged on whether its
+ * source counterpart exists, never on whether it still holds anything.
+ *
+ * Returns whether anything was removed, so the caller forces a place rebuild.
  */
 function reconcileShadowToSource(luauRoot: string, shadowDirectory: string): boolean {
 	if (!fs.existsSync(shadowDirectory)) {
@@ -270,24 +300,86 @@ function reconcileShadowToSource(luauRoot: string, shadowDirectory: string): boo
 	}
 
 	const posixShadow = normalizeWindowsPath(shadowDirectory);
-	const shadowFiles: Array<string> = [];
-	walkLuauDirectory(posixShadow, posixShadow, () => true, shadowFiles);
+	return pruneShadowDirectory({
+		directory: posixShadow,
+		luauRoot,
+		shadowRoot: posixShadow,
+	});
+}
 
+function pruneOrphanFile({ luauRoot, relativePath, shadowPath }: PruneEntryOptions): boolean {
+	if (sourceTwinExists(luauRoot, relativePath)) {
+		return false;
+	}
+
+	// Best-effort: a file we cannot remove stays put rather than being
+	// reported as gone.
+	let wasRemoved = false;
+	try {
+		fs.unlinkSync(shadowPath);
+		wasRemoved = true;
+	} catch {}
+
+	return wasRemoved;
+}
+
+function pruneShadowDirectory({ directory, luauRoot, shadowRoot }: PruneDirectoryOptions): boolean {
+	const entries = fs.readdirSync(directory, { withFileTypes: true });
 	let hasDeleted = false;
-	for (const relativePath of shadowFiles) {
-		if (sourceTwinExists(luauRoot, relativePath)) {
+
+	for (const entry of entries) {
+		// Never descend into these — no other walk in this file does either.
+		// Their fate rides on the parent directory’s own source, so passing over
+		// them here cannot strand an orphaned parent.
+		if (entry.isDirectory() && isSkippedDirectory(entry.name)) {
 			continue;
 		}
 
-		try {
-			fs.unlinkSync(path.resolve(shadowDirectory, relativePath));
+		const shadowPath = normalizeWindowsPath(path.join(directory, entry.name));
+		const options: PruneEntryOptions = {
+			luauRoot,
+			relativePath: shadowPath.slice(shadowRoot.length + 1),
+			shadowPath,
+			shadowRoot,
+		};
+		const wasRemoved = entry.isDirectory()
+			? pruneChildDirectory(options)
+			: pruneOrphanFile(options);
+
+		if (wasRemoved) {
 			hasDeleted = true;
-		} catch {
-			// Best-effort cleanup
 		}
 	}
 
 	return hasDeleted;
+}
+
+/**
+ * A directory whose source counterpart is gone takes its whole subtree with it,
+ * `node_modules`/dot-dir children included: nothing under an orphaned parent
+ * can be anything but orphaned, so there is no judgement to withhold. Leaving
+ * such a child behind would strand the stale `foo/` this reconcile exists to
+ * clear from beside a fresh `foo.luau`.
+ */
+function pruneChildDirectory({
+	luauRoot,
+	relativePath,
+	shadowPath,
+	shadowRoot,
+}: PruneEntryOptions): boolean {
+	if (fs.existsSync(path.resolve(luauRoot, relativePath))) {
+		return pruneShadowDirectory({ directory: shadowPath, luauRoot, shadowRoot });
+	}
+
+	// Best-effort: a subtree we cannot remove stays put rather than being
+	// reported as gone.
+	let wasRemoved = false;
+	try {
+		fs.rmSync(shadowPath, { recursive: true });
+		wasRemoved = true;
+	} catch {}
+
+	return wasRemoved;
 }
 
 function isInstrumentableFile(name: string): boolean {

@@ -1660,6 +1660,139 @@ describe(prepareCoverage, () => {
 				).toBeTrue();
 			});
 
+			it("should remove an orphaned shadow directory when its source directory is gone", async () => {
+				expect.assertions(2);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				// The `foo/index.ts` -> `foo.ts` rename, which turns a source
+				// directory into a sibling file. Unlinking the orphaned
+				// `init.luau` alone leaves an empty `dir/`, and rojo still mounts
+				// that as a Folder named `dir` beside the ModuleScript
+				// `dir.luau`.
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/dir.luau": "local x = 1",
+						"out-tsc/test/init.luau": "local x = 1",
+					},
+				});
+				vol.mkdirSync(".jest-roblox/coverage/out-tsc/test/dir", { recursive: true });
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/dir/init.luau", "-- stale");
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(
+					vol.existsSync(".jest-roblox/coverage/out-tsc/test/dir/init.luau"),
+				).toBeFalse();
+				expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/dir")).toBeFalse();
+			});
+
+			it("should collapse a nested orphaned shadow directory tree in one pass", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				// `a` is only empty once `a/b/c` and `a/b` are gone, so the prune
+				// has to run bottom-up to reach it in this run rather than the
+				// third one.
+				vol.mkdirSync(".jest-roblox/coverage/out-tsc/test/a/b/c", { recursive: true });
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/a/b/c/gone.luau", "-- stale");
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/a")).toBeFalse();
+			});
+
+			it("should keep an empty shadow directory whose source directory still exists", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				// A cold run mirrors empty source directories, and rojo mounts
+				// each as a Folder. A warm run must agree, so an empty shadow
+				// directory survives for as long as its source directory does.
+				vol.mkdirSync("out-tsc/test/empty", { recursive: true });
+				vol.mkdirSync(".jest-roblox/coverage/out-tsc/test/empty", { recursive: true });
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/empty")).toBeTrue();
+			});
+
+			it("should keep a skipped directory while its parent source survives", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				// The walk never descends into `node_modules`, so it cannot judge
+				// whether that subtree is orphaned. While the parent source is
+				// there, neither is orphaned.
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/init.luau": "local x = 1",
+						"out-tsc/test/vendor/keep.luau": "local x = 1",
+					},
+				});
+				vol.mkdirSync(".jest-roblox/coverage/out-tsc/test/vendor/node_modules", {
+					recursive: true,
+				});
+				vol.writeFileSync(
+					".jest-roblox/coverage/out-tsc/test/vendor/node_modules/dep.luau",
+					"-- vendored",
+				);
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(
+					vol.existsSync(
+						".jest-roblox/coverage/out-tsc/test/vendor/node_modules/dep.luau",
+					),
+				).toBeTrue();
+			});
+
+			it("should remove a skipped directory once its parent source is gone", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				// Nothing under an orphaned parent can be anything but orphaned,
+				// so the skip must not veto the parent’s removal — otherwise a
+				// stale `vendor/` survives beside a fresh `vendor.luau`.
+				vol.mkdirSync(".jest-roblox/coverage/out-tsc/test/vendor/node_modules", {
+					recursive: true,
+				});
+				vol.writeFileSync(
+					".jest-roblox/coverage/out-tsc/test/vendor/node_modules/dep.luau",
+					"-- vendored",
+				);
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/vendor")).toBeFalse();
+			});
+
+			it("should force a rebuild when an orphaned shadow directory is removed", async () => {
+				expect.assertions(1);
+
+				const { buildWithRojo, instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				vol.mkdirSync(".jest-roblox/coverage/out-tsc/test/gone", { recursive: true });
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(buildWithRojo).toHaveBeenCalledWith(expect.any(String), expect.any(String));
+			});
+
 			it("should force a rebuild when an orphaned non-luau file is removed", async () => {
 				expect.assertions(1);
 
