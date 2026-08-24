@@ -403,6 +403,16 @@ function buildReportConfig(
 	return config;
 }
 
+// Only workspace runs can bail: multi dispatches through static buckets, which
+// have no per-package stop point (see `run/workspace-validation.ts`). The
+// render layer itself is mode-agnostic — `FormatOptions.bail` means the same
+// thing whoever sets it — so only this lookup knows the difference.
+function resolveBailSummary(
+	result: MultiRunResult | WorkspaceRunResult,
+): Pick<MultiOutputContext, "bail"> {
+	return result.mode === "workspace" && result.bail !== undefined ? { bail: result.bail } : {};
+}
+
 // Workspace sinks are consensus-resolved by the runner (not from the
 // workspace-root config), so "View …" hints must point at those resolved
 // paths; single/multi use the resolved config values.
@@ -425,6 +435,7 @@ function toMultiOutputContext(
 	merged: ExecuteResult,
 ): MultiOutputContext {
 	return {
+		...resolveBailSummary(result),
 		config,
 		...resolveSinkHints(result, config),
 		merged,

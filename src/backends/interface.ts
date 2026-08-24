@@ -141,6 +141,13 @@ export interface RawBackendEntry {
 }
 
 export interface BackendResult {
+	/**
+	 * Workspace `--bail` runs only: indices into the `jobs` array of the
+	 * packages a bailing task deliberately never reached. `rawResults` skips
+	 * those, so it is parallel to `jobs` with these indices removed. Absent
+	 * means every job ran.
+	 */
+	bailedJobIndices?: Array<number> | undefined;
 	rawResults: Array<RawBackendEntry>;
 	timing: BackendTiming;
 }

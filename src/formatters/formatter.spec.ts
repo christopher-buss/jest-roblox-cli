@@ -3172,6 +3172,47 @@ describe(formatProjectSection, () => {
 describe(formatMultiProjectResult, () => {
 	const noColorOptions: FormatOptions = { ...defaultOptions, color: false };
 
+	// --bail stops the run partway, so the report has to say the packages it
+	// shows are not the whole selection.
+	it("should report how far a bailed run got", () => {
+		expect.assertions(1);
+
+		const output = formatMultiProjectResult(
+			[
+				{ displayName: "core", result: PASSING_RESULT },
+				{ displayName: "integration", result: PASSING_RESULT },
+			],
+			TIMING,
+			{ ...noColorOptions, bail: { notRun: 3, ran: 2 } },
+		);
+
+		expect(output).toContain("Bailed  after 2 packages, 3 not run");
+	});
+
+	it("should say package, singular, when a bail stopped after one", () => {
+		expect.assertions(1);
+
+		const output = formatMultiProjectResult(
+			[{ displayName: "core", result: PASSING_RESULT }],
+			TIMING,
+			{ ...noColorOptions, bail: { notRun: 1, ran: 1 } },
+		);
+
+		expect(output).toContain("Bailed  after 1 package, 1 not run");
+	});
+
+	it("should leave the bail line out of a run that did not bail", () => {
+		expect.assertions(1);
+
+		const output = formatMultiProjectResult(
+			[{ displayName: "core", result: PASSING_RESULT }],
+			TIMING,
+			noColorOptions,
+		);
+
+		expect(output).not.toContain("Bailed");
+	});
+
 	it("should group files under project headers with combined summary", () => {
 		expect.assertions(5);
 

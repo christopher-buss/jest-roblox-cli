@@ -21,6 +21,7 @@ import type { PackageInfo } from "./workspace/package-resolver.ts";
 import { type StagedWorkspacePlace, stageWorkspacePlace } from "./workspace/place-staging.ts";
 import { type PreflightError, validatePackages } from "./workspace/preflight.ts";
 import { resolvePackageContextsAsync } from "./workspace/project-contexts.ts";
+import type { PendingEntry } from "./workspace/test-selection.ts";
 import { selectWorkspaceTests, type WorkspaceTestSelection } from "./workspace/test-selection.ts";
 import {
 	attachTypecheck,
@@ -104,6 +105,7 @@ async function executeWorkspaceRunAsync({
 	startTime,
 	timing,
 }: WorkspaceRuntimeInput & { placeFile: string; startTime: number }): Promise<{
+	ranProjectIndices: Array<number>;
 	results: Array<ExecuteResult>;
 	typecheckPass: WorkspaceTypecheckPass;
 }> {
@@ -119,6 +121,7 @@ async function executeWorkspaceRunAsync({
 
 	const dispatchSpec = await timing.profileAsync("prepareDispatch", async () => {
 		return prepareWorkspaceDispatchAsync({
+			bail: options.runOptions.bail,
 			jobs,
 			onStreamingResult: options.onStreamingResult,
 			parallel: options.runOptions.parallel,
@@ -131,7 +134,7 @@ async function executeWorkspaceRunAsync({
 	// then record the tsgo span — the collector's LIFO stack is not
 	// concurrency-safe, so the pass times itself and the span lands after the
 	// barrier (same caveat as single/multi).
-	const [results, typecheckPass] = await Promise.all([
+	const [dispatched, typecheckPass] = await Promise.all([
 		runDispatchedProjectsAsync({
 			backend: options.backend,
 			dispatchSpec,
@@ -144,7 +147,7 @@ async function executeWorkspaceRunAsync({
 		runWorkspaceTypecheckPassAsync(typeTestEntries, typecheckByDirectory),
 	]);
 
-	return { results, typecheckPass };
+	return { ...dispatched, typecheckPass };
 }
 
 /**
@@ -170,20 +173,56 @@ function stageAndMeasure(
 	return { ...staged, preCoverageMs: Date.now() - start };
 }
 
+/**
+ * Split the selection by what actually ran.
+ *
+ * The pending entries and the results pair by position, so a bail — which
+ * comes back short — has to drop the entries it never reached before anything
+ * downstream reads them, or a package's name pairs with its neighbor's result.
+ *
+ * The report counts packages, not projects, so a package is "not run" only when
+ * none of its projects ran. One that got part-way through its projects before
+ * the bail landed still ran, and naming it on both sides would count it twice.
+ */
+function splitBailedSelection(
+	pending: Array<PendingEntry>,
+	ranProjectIndices: Array<number>,
+): { bailedPackages: Array<string>; ran: Array<PendingEntry> } {
+	const ranIndices = new Set(ranProjectIndices);
+	const ran: Array<PendingEntry> = [];
+	const ranPackages = new Set<string>();
+	const skippedPackages = new Set<string>();
+	for (const [index, entry] of pending.entries()) {
+		if (ranIndices.has(index)) {
+			ran.push(entry);
+			ranPackages.add(entry.pkg);
+		} else {
+			skippedPackages.add(entry.pkg);
+		}
+	}
+
+	return {
+		bailedPackages: [...skippedPackages].filter((name) => !ranPackages.has(name)),
+		ran,
+	};
+}
+
 async function runWorkspaceRuntimeAsync(
 	input: WorkspaceRuntimeInput,
 ): Promise<WorkspaceRunnerOutput> {
 	const { options, selection, timing } = input;
 	const { coverageByPackage, placeFile, preCoverageMs } = stageAndMeasure(input);
 
-	const { results, typecheckPass } = await executeWorkspaceRunAsync({
+	const { ranProjectIndices, results, typecheckPass } = await executeWorkspaceRunAsync({
 		...input,
 		placeFile,
 		startTime: Date.now(),
 	});
 
+	const { bailedPackages, ran } = splitBailedSelection(selection.pending, ranProjectIndices);
+
 	await writeWorkspaceSinksAsync({
-		pending: selection.pending,
+		pending: ran,
 		results,
 		runOptions: options.runOptions,
 		typecheckByPackage: typecheckPass.byPackage,
@@ -195,10 +234,11 @@ async function runWorkspaceRuntimeAsync(
 
 	return {
 		...attachTypecheck(
-			attachCoverageManifests(results, selection.pending, coverageByPackage),
+			attachCoverageManifests(results, ran, coverageByPackage),
 			typecheckPass.outcome,
 			timing,
 		),
+		...(bailedPackages.length > 0 ? { bailedPackages } : {}),
 		preCoverageMs,
 	};
 }

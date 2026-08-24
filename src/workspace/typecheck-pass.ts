@@ -18,6 +18,11 @@ import type { PackageTypecheck, TypeTestProject } from "./test-selection.ts";
  */
 export interface WorkspaceRunnerOutput {
 	/**
+	 * Packages a `--bail` run stopped before reaching, named once each. Absent
+	 * unless the run bailed, so `results` covers every selected package.
+	 */
+	bailedPackages?: Array<string> | undefined;
+	/**
 	 * Host time spent staging the place before dispatch — instrumentation,
 	 * stubs, and the rojo build. Reported as multi reports its coverage bake:
 	 * measured outside the dispatch window and added onto the total, so the

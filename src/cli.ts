@@ -56,6 +56,7 @@ Options:
   --coverageDirectory <path>        Directory for coverage output (default: coverage)
   --coverageReporters <r...>        Coverage reporters (default: text, lcov)
   --formatters <name...>            Output formatters (default, agent, json, github-actions)
+  --bail                            Workspace mode: stop after the first failing package
   --workspace                       Run tests across all workspace packages
   --packages <names>                Comma-separated package names (workspace mode)
   --workspace-root <path>           Directory to load the workspace config from
@@ -107,6 +108,7 @@ const CLI_OPTION_SPEC = {
 	"affected-since": { type: "string" },
 	"apiKey": { type: "string" },
 	"backend": { type: "string" },
+	"bail": { type: "boolean" },
 	"collectCoverageFrom": { multiple: true, type: "string" },
 	"color": { type: "boolean" },
 	"config": { type: "string" },
@@ -165,6 +167,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		...toOutputOptions(values),
 		...toTypecheckOptions(values),
 		affectedSince: values["affected-since"],
+		bail: values.bail,
 		config: values.config,
 		help: values.help,
 		packages: values.packages,

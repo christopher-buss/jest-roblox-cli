@@ -188,6 +188,18 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--silent"]).silent).toBeTrue();
 	});
 
+	it("should parse --bail flag", () => {
+		expect.assertions(1);
+
+		expect(parseArgs(["--bail"]).bail).toBeTrue();
+	});
+
+	it("should leave bail undefined without the flag", () => {
+		expect.assertions(1);
+
+		expect(parseArgs([]).bail).toBeUndefined();
+	});
+
 	it("should parse positional file arguments", () => {
 		expect.assertions(1);
 

@@ -1430,6 +1430,30 @@ describe(formatAgentMultiProject, () => {
 		`);
 	});
 
+	// A bailed run shows only the packages it reached, so without this the
+	// report reads as a complete run that happened to be short.
+	it("should report how far a bailed run got", () => {
+		expect.assertions(1);
+
+		const output = formatAgentMultiProject([{ displayName: "core", result: PASSING_RESULT }], {
+			...baseOptions,
+			bail: { notRun: 3, ran: 1 },
+		});
+
+		expect(output).toContain("Bailed  after 1 package, 3 not run");
+	});
+
+	it("should leave the bail line out of a run that did not bail", () => {
+		expect.assertions(1);
+
+		const output = formatAgentMultiProject(
+			[{ displayName: "core", result: PASSING_RESULT }],
+			baseOptions,
+		);
+
+		expect(output).not.toContain("Bailed");
+	});
+
 	it("should show failure details across projects", () => {
 		expect.assertions(4);
 

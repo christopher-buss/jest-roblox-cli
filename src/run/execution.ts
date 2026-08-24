@@ -140,9 +140,13 @@ async function runJobsAsync(
 		});
 	});
 
+	// Paired through `ranProjectIndices` rather than positionally: `results`
+	// carries one entry per job that RAN, and a `--bail` run comes back short.
+	// Multi cannot bail today, so this is the identity mapping — reading the
+	// index is what keeps it right if that ever changes.
 	return runResult.results.map((executeResult, index) => {
-		// eslint-disable-next-line ts/no-non-null-assertion -- runProjects preserves order
-		const job = jobs[index]!;
+		// eslint-disable-next-line ts/no-non-null-assertion -- parallel to results
+		const job = jobs[runResult.ranProjectIndices[index]!]!;
 		return {
 			displayColor: job.displayColor,
 			displayName: job.displayName,

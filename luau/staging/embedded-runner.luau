@@ -8,6 +8,7 @@
 local HttpService = game:GetService("HttpService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
 
+local Bail = require("./bail")
 local GameOutputCapture = require("../game-output-capture")
 local InstanceResolver = require("../instance-resolver")
 local InterceptWriteable = require("../intercept-writeable")
@@ -38,6 +39,12 @@ export type EntryPayload = {
 
 export type Payload = {
 	entries: { EntryPayload },
+	-- Fail fast: stop taking packages once one of them fails. See bail.luau.
+	bail: boolean?,
+	-- Per-run SortedMap the parallel wave broadcasts a bail through. Its own
+	-- map, not `sortedMapId`: the CLI never reads it, and a run that bails
+	-- without streaming should not publish results nobody drains.
+	bailMapId: string?,
 	queueId: string?,
 	invisibilityWindowSeconds: number?,
 	-- Caps the encoded size of this task's return envelope. Absent means the
@@ -46,6 +53,21 @@ export type Payload = {
 	sortedMapId: string?,
 	streamingTtlSeconds: number?,
 }
+
+--[=[
+	Why a run stopped, for the CLI to answer.
+
+	`deferred` means work is left and another task should collect it;
+	`bailed` means work is left on purpose and no task should.
+]=]
+export type RunOutcome = {
+	bailed: boolean,
+	deferred: boolean,
+}
+
+-- Why a loop stopped with work left, before it is widened to the wire's pair of
+-- booleans. `nil` means it stopped because there was nothing left to take.
+type StopReason = "bailed" | "deferred"
 
 type QueueItem = {
 	pkg: string,
@@ -309,30 +331,61 @@ local function buildSummary(result: ResultEntry): StreamingSummary
 	return summary
 end
 
-local function streamResult(result: ResultEntry, sortedMapId: string?, ttlSeconds: number?)
+-- Slim payload: SortedMap items cap at 32 KB and a single package's jestOutput
+-- JSON already pushes that limit. Streaming only needs the summary fields to
+-- render a one-line progress message; the CLI keeps the full Jest result via
+-- the task envelope returned at task end.
+local function streamResult(summary: StreamingSummary, sortedMapId: string?, ttlSeconds: number?)
 	if sortedMapId == nil or sortedMapId == "" then
 		return
 	end
 
-	-- Slim payload: SortedMap items cap at 32 KB and a single package's
-	-- jestOutput JSON already pushes that limit. Streaming only needs the
-	-- summary fields to render a one-line progress message; the CLI keeps
-	-- the full Jest result via the task envelope returned at task end.
-	local summary = buildSummary(result)
 	pcall(function()
 		local map = MemoryStoreService:GetSortedMap(sortedMapId)
 		local ttl = ttlSeconds or 600
-		map:SetAsync(result.pkg .. "::" .. result.project, summary, ttl)
+		map:SetAsync(summary.pkg .. "::" .. summary.project, summary, ttl)
 	end)
+end
+
+--[=[
+	Summarize a finished package, but only for someone who will read it.
+
+	`buildSummary` decodes the package's whole Jest output, which is the same
+	string the return-envelope budget exists to cap — so a run with neither a
+	streaming consumer nor `--bail` must not pay for it.
+]=]
+local function summarize(result: ResultEntry, payload: Payload, bail: Bail.State): StreamingSummary?
+	local sortedMapId = payload.sortedMapId
+	local isStreaming = sortedMapId ~= nil and sortedMapId ~= ""
+	if not isStreaming and not Bail.isEnabled(bail) then
+		return nil
+	end
+
+	return buildSummary(result)
+end
+
+-- Publish the entry and record how it went, in that order: streaming is
+-- best-effort, and a package that fails must reach the CLI before the task
+-- that ran it stops. A package whose output will not decode counts as failed —
+-- `buildSummary` defaults that way, and stopping on an unreadable result is
+-- the same call `--bail` makes on a readable failure.
+local function publishEntry(result: ResultEntry, payload: Payload, bail: Bail.State): ResultEntry
+	local summary = summarize(result, payload, bail)
+	if summary ~= nil then
+		streamResult(summary, payload.sortedMapId, payload.streamingTtlSeconds)
+		Bail.observe(bail, summary.success)
+	end
+
+	return result
 end
 
 local function executeEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload,
 	prevPkg: string?,
-	sortedMapId: string?,
-	streamingTtlSeconds: number?
-): (ResultEntry, string)
+	payload: Payload,
+	bail: Bail.State
+): ResultEntry
 	local t0 = os.clock()
 	local changingPackage = entry.pkg ~= prevPkg
 
@@ -372,8 +425,7 @@ local function executeEntry(
 			}),
 			gameOutput = stopCapture(),
 		}
-		streamResult(result, sortedMapId, streamingTtlSeconds)
-		return result, entry.pkg
+		return publishEntry(result, payload, bail)
 	end
 
 	local pcallOk, jestSuccess, primary, snapshotWrites, bannerOutput =
@@ -421,72 +473,102 @@ local function executeEntry(
 		}
 	end
 
-	-- Publish the entry immediately so the CLI can stream this package's
-	-- output without waiting for the whole task to finish. Best-effort
-	-- (pcall): if the SortedMap write fails the entry still lands in the
-	-- envelope returned at task end, so streaming failure degrades to the
-	-- existing batched behavior rather than losing the result.
-	streamResult(result, sortedMapId, streamingTtlSeconds)
+	-- Published immediately so the CLI can stream this package's output without
+	-- waiting for the whole task to finish. Best-effort (pcall): if the
+	-- SortedMap write fails the entry still lands in the envelope returned at
+	-- task end, so streaming failure degrades to the existing batched behavior
+	-- rather than losing the result.
+	return publishEntry(result, payload, bail)
+end
 
-	return result, entry.pkg
+-- Absent on the single-task path, where there are no siblings to tell.
+local function resolveSignalMap(payload: Payload): Bail.SignalMap?
+	local bailMapId = payload.bailMapId
+	if bailMapId == nil or bailMapId == "" then
+		return nil
+	end
+
+	local ok, map = pcall(function()
+		return MemoryStoreService:GetSortedMap(bailMapId)
+	end)
+
+	return if ok then map :: any else nil
+end
+
+--[=[
+	Why this task should take no further package, if it should not.
+
+	Bail is asked first: a task that fills its envelope AND has bailed must
+	report the bail, because a deferral asks the CLI for a replacement task and
+	a bail asks it for none.
+]=]
+local function stopReason(bail: Bail.State, budget: ResultBudget.Tracker): StopReason?
+	if Bail.shouldStop(bail) then
+		return "bailed"
+	end
+
+	if ResultBudget.shouldStop(budget) then
+		return "deferred"
+	end
+
+	return nil
+end
+
+local function toOutcome(stop: StopReason?): RunOutcome
+	return { bailed = stop == "bailed", deferred = stop == "deferred" }
 end
 
 local module = {}
 
 --[=[
 	Walk the payload's entries in order, stopping early if the return envelope
-	fills up.
+	fills up or a package fails under `--bail`.
 
-	Returns the entries it ran and whether it left any behind. There is no
-	queue on this path, so the CLI answers a deferral by sending a new task
-	carrying only the entries that did not run.
+	Returns the entries it ran and why it stopped. There is no queue on this
+	path, so the CLI answers a deferral by sending a new task carrying only the
+	entries that did not run — and answers a bail by sending nothing.
 ]=]
 function module.runEmbedded(
 	callingScript: LuaSourceContainer,
 	payload: Payload
-): ({ ResultEntry }, boolean)
+): ({ ResultEntry }, RunOutcome)
 	local results: { ResultEntry } = {}
 	local prevPkg: string? = nil
 	local budget = ResultBudget.new(payload.resultBudgetBytes)
-	local deferred = false
+	-- No queue on this path, so no siblings to tell: the trip stays local.
+	local bail = Bail.new({ enabled = payload.bail })
+	local stop: StopReason? = nil
 
 	for _, entry in payload.entries do
-		if ResultBudget.shouldStop(budget) then
-			deferred = true
+		stop = stopReason(bail, budget)
+		if stop ~= nil then
 			break
 		end
 
-		local result, pkg = executeEntry(
-			callingScript,
-			entry,
-			prevPkg,
-			payload.sortedMapId,
-			payload.streamingTtlSeconds
-		)
+		local result = executeEntry(callingScript, entry, prevPkg, payload, bail)
 		table.insert(results, result)
 		ResultBudget.add(budget, ResultBudget.measure(result))
-		prevPkg = pkg
+		prevPkg = entry.pkg
 	end
 
 	if prevPkg ~= nil then
 		Materializer.reset()
 	end
 
-	return results, deferred
+	return results, toOutcome(stop)
 end
 
 --[=[
-	Drain the shared queue until it is empty or this task's return envelope is
-	full.
+	Drain the shared queue until it is empty, this task's return envelope is
+	full, or a package fails under `--bail`.
 
-	Returns the entries it ran and whether it stopped with work still queued.
-	The caller reports that second value to the CLI, which launches another
-	task to collect what this one left behind.
+	Returns the entries it ran and why it stopped. A deferral asks the CLI for
+	another task to collect what this one left behind; a bail asks it for none.
 ]=]
 function module.runWorkStealing(
 	callingScript: LuaSourceContainer,
 	payload: Payload
-): ({ ResultEntry }, boolean)
+): ({ ResultEntry }, RunOutcome)
 	local queueId = payload.queueId :: string
 	local invisibility = payload.invisibilityWindowSeconds or 90
 
@@ -499,14 +581,21 @@ function module.runWorkStealing(
 	local results: { ResultEntry } = {}
 	local prevPkg: string? = nil
 	local budget = ResultBudget.new(payload.resultBudgetBytes)
-	local deferred = false
+	-- Siblings drain the same queue, and Open Cloud cannot cancel a running
+	-- task, so the trip travels through the results map they all share.
+	local bail = Bail.new({
+		enabled = payload.bail,
+		map = resolveSignalMap(payload),
+		ttlSeconds = payload.streamingTtlSeconds,
+	})
+	local stop: StopReason? = nil
 
 	while true do
-		-- Stop before reading, not after running: an item this worker never
+		-- Asked before reading, not after running: an item this worker never
 		-- reads stays visible in the queue, so a sibling task picks it up
 		-- immediately instead of waiting out the invisibility window.
-		if ResultBudget.shouldStop(budget) then
-			deferred = true
+		stop = stopReason(bail, budget)
+		if stop ~= nil then
 			break
 		end
 
@@ -541,16 +630,10 @@ function module.runWorkStealing(
 			continue
 		end
 
-		local result, pkg = executeEntry(
-			callingScript,
-			entry,
-			prevPkg,
-			payload.sortedMapId,
-			payload.streamingTtlSeconds
-		)
+		local result = executeEntry(callingScript, entry, prevPkg, payload, bail)
 		table.insert(results, result)
 		ResultBudget.add(budget, ResultBudget.measure(result))
-		prevPkg = pkg
+		prevPkg = entry.pkg
 
 		pcall(function()
 			queue:RemoveAsync(removeId)
@@ -561,7 +644,7 @@ function module.runWorkStealing(
 		Materializer.reset()
 	end
 
-	return results, deferred
+	return results, toOutcome(stop)
 end
 
 return module

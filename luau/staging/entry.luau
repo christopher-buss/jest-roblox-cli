@@ -10,17 +10,19 @@ local EmbeddedRunner = require("./embedded-runner")
 
 type Payload = EmbeddedRunner.Payload
 type ResultEntry = EmbeddedRunner.ResultEntry
+type RunOutcome = EmbeddedRunner.RunOutcome
 
 local payload: Payload = HttpService:JSONDecode([==[__CONFIG_JSON__]==]) :: Payload
 
 local results: { ResultEntry }
--- True when this task stopped with work still in the queue because its return
--- envelope was full. The CLI answers it by launching another task.
-local deferred = false
+-- Why this task stopped with work still outstanding: `deferred` (its return
+-- envelope was full, so the CLI launches another task) or `bailed` (a package
+-- failed under --bail, so the CLI reports the run short and launches none).
+local outcome: RunOutcome
 if payload.queueId ~= nil and payload.queueId ~= "" then
-	results, deferred = EmbeddedRunner.runWorkStealing(script, payload)
+	results, outcome = EmbeddedRunner.runWorkStealing(script, payload)
 else
-	results, deferred = EmbeddedRunner.runEmbedded(script, payload)
+	results, outcome = EmbeddedRunner.runEmbedded(script, payload)
 end
 
 local gameOutputs = {}
@@ -28,5 +30,9 @@ for _ = 1, #results do
 	table.insert(gameOutputs, "[]")
 end
 
-return HttpService:JSONEncode({ deferred = deferred, entries = results }),
+return HttpService:JSONEncode({
+	bailed = outcome.bailed,
+	deferred = outcome.deferred,
+	entries = results,
+}),
 	table.concat(gameOutputs, "")

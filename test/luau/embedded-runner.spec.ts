@@ -19,6 +19,7 @@ const CAPTURE_SOURCE = fs.readFileSync(
 	path.join(LUAU_DIRECTORY, "game-output-capture.luau"),
 	"utf-8",
 );
+const BAIL_SOURCE = fs.readFileSync(path.join(LUAU_DIRECTORY, "staging/bail.luau"), "utf-8");
 const HARNESS = fs.readFileSync(
 	path.join(CURRENT_DIRECTORY, "embedded-runner.harness.luau"),
 	"utf-8",
@@ -31,7 +32,9 @@ describe("embedded workspace runner under lute", () => {
 		const script = HARNESS.replace(
 			"__CAPTURE_MODULE__",
 			() => `(function()\n${CAPTURE_SOURCE}\nend)()`,
-		).replace("__MODULE__", () => `(function()\n${MODULE_SOURCE}\nend)()`);
+		)
+			.replace("__BAIL_MODULE__", () => `(function()\n${BAIL_SOURCE}\nend)()`)
+			.replace("__MODULE__", () => `(function()\n${MODULE_SOURCE}\nend)()`);
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "embedded-runner-"));
 		onTestFinished(() => {
 			fs.rmSync(directory, { force: true, recursive: true });

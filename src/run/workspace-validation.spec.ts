@@ -30,6 +30,7 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): WorkspaceRunOptions {
 	return {
 		backend: DEFAULT_CONFIG.backend,
+		bail: false,
 		color: DEFAULT_CONFIG.color,
 		formatters: [],
 		port: DEFAULT_CONFIG.port,
@@ -75,6 +76,21 @@ describe(validateBasicWorkspaceFlags, () => {
 		expect(result).toStrictEqual({
 			exitCode: 2,
 			message: "Error: --affected-since requires --workspace.\n",
+			ok: false,
+		});
+	});
+
+	// --bail only has a meaning in workspace mode, so silently ignoring it on a
+	// single-package run would leave the user waiting for a stop that never
+	// comes.
+	it("should reject --bail without --workspace", () => {
+		expect.assertions(1);
+
+		const result = validateBasicWorkspaceFlags(makeCli({ bail: true }));
+
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			message: "Error: --bail requires --workspace.\n",
 			ok: false,
 		});
 	});
@@ -177,6 +193,58 @@ describe(assertWorkspaceRunOptions, () => {
 		const result = assertWorkspaceRunOptions(
 			makeRunOptions({ backend: "studio-cli", parallel: 1 }),
 		);
+
+		expect(result).toStrictEqual({ ok: true });
+	});
+
+	// The bail rides the Open Cloud task envelope and a MemoryStore signal map,
+	// neither of which the Studio transports have — better to say so than to run
+	// the whole batch while the user believes it will stop early.
+	it("should reject --bail on a Studio backend", () => {
+		expect.assertions(2);
+
+		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio", bail: true }));
+		assert(!result.ok);
+
+		expect(result.ok).toBeFalse();
+		expect(result.message).toContain("--bail");
+	});
+
+	it("should accept --bail on the open-cloud backend", () => {
+		expect.assertions(1);
+
+		const result = assertWorkspaceRunOptions(
+			makeRunOptions({ backend: "open-cloud", bail: true }),
+		);
+
+		expect(result).toStrictEqual({ ok: true });
+	});
+
+	// "auto" is the default, and workspace mode resolves it to Open Cloud
+	// without probing — so this is the invocation the README documents.
+	it("should accept --bail on the default auto backend", () => {
+		expect.assertions(1);
+
+		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "auto", bail: true }));
+
+		expect(result).toStrictEqual({ ok: true });
+	});
+
+	it("should reject --bail on studio-cli", () => {
+		expect.assertions(1);
+
+		const result = assertWorkspaceRunOptions(
+			makeRunOptions({ backend: "studio-cli", bail: true }),
+		);
+		assert(!result.ok);
+
+		expect(result.message).toContain("--bail");
+	});
+
+	it("should accept a Studio backend without --bail", () => {
+		expect.assertions(1);
+
+		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio-cli" }));
 
 		expect(result).toStrictEqual({ ok: true });
 	});

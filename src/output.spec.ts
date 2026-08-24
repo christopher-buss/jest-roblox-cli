@@ -322,6 +322,67 @@ describe(outputSingleResultAsync, () => {
 		);
 	});
 
+	// A bail is a test failure that ended the run early, not a run-level error,
+	// so it exits the same 1 an ordinary failing package does.
+	it("should return 1 when a bail stopped the run on a failing package", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		const code = await outputMultiResultAsync(
+			makeConfig(),
+			makeWorkspaceResult({
+				bail: { notRun: 2, ran: 1 },
+				projectResults: [
+					makeProjectResult("@halcyon/foo", {
+						result: makeJestResult({ numFailedTests: 1, success: false }),
+					}),
+				],
+			}),
+		);
+
+		expect(code).toBe(1);
+	});
+
+	it("should propagate a workspace bail summary to the agent formatter", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ formatters: ["agent"] }),
+			makeWorkspaceResult({
+				bail: { notRun: 2, ran: 1 },
+				reportOptions: { ...makeReportOptions(), formatters: ["agent"] },
+			}),
+		);
+
+		expect(mocks.formatAgentMultiProject).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ bail: { notRun: 2, ran: 1 } }),
+		);
+	});
+
+	it("should propagate a workspace bail summary to the multi formatter", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig(),
+			makeWorkspaceResult({ bail: { notRun: 2, ran: 1 } }),
+		);
+
+		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ bail: { notRun: 2, ran: 1 } }),
+		);
+	});
+
 	it("should suppress output when config.silent is true", async () => {
 		expect.assertions(1);
 

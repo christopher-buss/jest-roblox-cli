@@ -48,6 +48,8 @@ interface WorkStealingCredentials {
 }
 
 interface WorkspaceDispatchInput {
+	/** Stop the run on the first failing package (`--bail`). */
+	bail?: boolean | undefined;
 	generateUuid?: (() => string) | undefined;
 	jobs: Array<WorkspaceJob>;
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
@@ -56,6 +58,7 @@ interface WorkspaceDispatchInput {
 }
 
 interface WorkStealingDispatchInput {
+	bail: boolean;
 	credentials: WorkStealingCredentials;
 	generateUuid: () => string;
 	inputs: Array<MaterializerInput>;
@@ -87,9 +90,9 @@ interface BuildStreamingResult {
  */
 export async function runDispatchedProjectsAsync(
 	input: DispatchedProjectsInput,
-): Promise<Array<ExecuteResult>> {
+): Promise<{ ranProjectIndices: Array<number>; results: Array<ExecuteResult> }> {
 	const { dispatchSpec, jobs, startTime, timing, tsconfigCache, version } = input;
-	const { results } = await timing.profileAsync("runProjects", async () => {
+	const { ranProjectIndices, results } = await timing.profileAsync("runProjects", async () => {
 		return runProjectsAsync({
 			// Defined whenever runtime jobs exist: only `--typecheckOnly`
 			// omits the backend, and that path short-circuits before
@@ -106,7 +109,7 @@ export async function runDispatchedProjectsAsync(
 		});
 	});
 
-	return results;
+	return { ranProjectIndices, results };
 }
 
 /**
@@ -140,6 +143,7 @@ export function buildWorkspaceJobs(
 }
 
 export async function prepareWorkspaceDispatchAsync({
+	bail = false,
 	generateUuid,
 	jobs,
 	onStreamingResult,
@@ -157,6 +161,7 @@ export async function prepareWorkspaceDispatchAsync({
 	// is the predicate that guards those.
 	if (workStealingCredentials !== undefined && isShardedParallel(parallel)) {
 		const stealing = await tryStealingDispatchAsync({
+			bail,
 			credentials: workStealingCredentials,
 			generateUuid: generateUuid ?? randomUUID,
 			inputs,
@@ -168,7 +173,7 @@ export async function prepareWorkspaceDispatchAsync({
 		}
 	}
 
-	return deferrableDispatch(inputs);
+	return deferrableDispatch(inputs, bail);
 }
 
 function buildStreaming(input: {
@@ -204,6 +209,7 @@ function buildStreaming(input: {
 }
 
 async function prepareStealingDispatchAsync({
+	bail,
 	credentials,
 	generateUuid,
 	inputs,
@@ -222,6 +228,12 @@ async function prepareStealingDispatchAsync({
 			? buildStreaming({ credentials, generateUuid, onStreamingResult })
 			: undefined;
 
+	// Its own map rather than a reserved key in the results map: the CLI polls
+	// that one and would have to decode past the signal, and a bail without a
+	// streaming consumer would publish per-package summaries nobody drains just
+	// to keep the channel open.
+	const bailMapId = bail ? generateUuid() : undefined;
+
 	// Enqueued last, so nothing after this point can throw and strand the
 	// items: a caller that falls back to the sequential path would otherwise
 	// leave a full queue behind until its ten-minute TTL expires.
@@ -236,7 +248,13 @@ async function prepareStealingDispatchAsync({
 		inputs,
 		prepared.queueId,
 		prepared.invisibilityWindowSeconds,
-		streaming !== undefined ? { streaming: { sortedMapId: streaming.sortedMapId } } : {},
+		{
+			bail,
+			bailMapId,
+			...(streaming !== undefined
+				? { streaming: { sortedMapId: streaming.sortedMapId } }
+				: {}),
+		},
 	);
 
 	return streaming === undefined
@@ -277,7 +295,10 @@ async function tryStealingDispatchAsync(
  * only the entries a task left behind when its return envelope filled up.
  * Matched on (pkg, project), the same pair the entries are keyed by.
  */
-function deferrableDispatch(inputs: Array<MaterializerInput>): WorkspaceDispatchSpec {
+function deferrableDispatch(
+	inputs: Array<MaterializerInput>,
+	bail: boolean,
+): WorkspaceDispatchSpec {
 	return {
 		scriptFactory: (jobs) => {
 			return generateMaterializerScript(
@@ -286,9 +307,10 @@ function deferrableDispatch(inputs: Array<MaterializerInput>): WorkspaceDispatch
 						return job.pkg === candidate.pkg && job.displayName === candidate.project;
 					});
 				}),
+				{ bail },
 			);
 		},
-		scriptOverride: generateMaterializerScript(inputs),
+		scriptOverride: generateMaterializerScript(inputs, { bail }),
 	};
 }
 

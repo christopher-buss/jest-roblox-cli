@@ -476,6 +476,50 @@ describe(runWorkspaceModeAsync, () => {
 			expect(result.projectResults[1]!.displayName).toBe("@halcyon/foo › server");
 		});
 
+		// One package can own several projects, so the bail summary counts
+		// packages on both sides rather than the project rows on show.
+		it("should report how far a bailed run got, by package", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(runWorkspaceAsync).mockResolvedValue({
+				bailedPackages: ["@halcyon/bar", "@halcyon/baz"],
+				results: [
+					{
+						displayName: "client",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+					{
+						displayName: "server",
+						pkg: "@halcyon/foo",
+						result: makeExecuteResult(),
+					},
+				],
+			});
+
+			const result = await runWorkspaceModeAsync(
+				makeCli({ bail: true, packages: "@halcyon/foo", workspace: true }),
+			);
+
+			expect(result.bail).toStrictEqual({ notRun: 2, ran: 1 });
+		});
+
+		it("should leave the bail summary off a run that reached every package", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			mockRunWorkspace([
+				{ displayName: "@halcyon/foo", pkg: "@halcyon/foo", result: makeExecuteResult() },
+			]);
+
+			const result = await runWorkspaceModeAsync(
+				makeCli({ packages: "@halcyon/foo", workspace: true }),
+			);
+
+			expect(result.bail).toBeUndefined();
+		});
+
 		it("should forward the type test result alongside runtime project results", async () => {
 			expect.assertions(2);
 

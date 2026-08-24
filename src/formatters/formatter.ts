@@ -270,6 +270,7 @@ function formatSummaryAndHints(
 	const lines: Array<string> = [
 		"",
 		formatTestSummary(result, timing, styles, {
+			bail: options.bail,
 			snapshotWriteFailures: options.snapshotWriteFailures,
 			typeErrors: options.typeErrors,
 		}),

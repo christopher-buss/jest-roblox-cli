@@ -12,9 +12,13 @@ const wholeRunErrorSchema = type({
 });
 
 const envelopeSchema = type({
+	// Set by a task that stopped on a failing package under `--bail`: the
+	// packages it never reached have no entry, and that gap is expected rather
+	// than a broken task.
+	"bailed?": "boolean",
 	// Set by a work-stealing task that stopped with items still queued because
-	// its return envelope was full. Read via `isEnvelopeDeferred`, which the
-	// task pool uses to decide whether to launch another task.
+	// its return envelope was full. The task pool reads it to decide whether to
+	// launch another task.
 	"deferred?": "boolean",
 	"entries": type({
 		"bannerOutput?": "string",
@@ -27,7 +31,26 @@ const envelopeSchema = type({
 	}).array(),
 });
 
-export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
+/** One task's return envelope: what it ran, and why it stopped. */
+export interface DecodedEnvelope {
+	/** A package failed under `--bail`, so the rest were never started. */
+	bailed: boolean;
+	/**
+	 * The return envelope filled up, so another task should collect the rest.
+	 */
+	deferred: boolean;
+	entries: Array<EnvelopeEntry>;
+}
+
+/**
+ * Decode a task's return envelope in one pass.
+ *
+ * Both stop flags come back alongside the entries because the envelope carries
+ * the whole Jest output of every package the task ran — up to Open Cloud's
+ * 4 MiB cap — and reading a flag through its own `JSON.parse` would walk all
+ * of it a second time.
+ */
+export function decodeEnvelope(jestOutput: string): DecodedEnvelope {
 	const raw = JSON.parse(jestOutput);
 	const envelope = envelopeSchema(raw);
 	if (envelope instanceof type.errors) {
@@ -43,10 +66,18 @@ export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
 			parseJestOutput(jestOutput);
 		}
 
-		return [{ jestOutput }];
+		return { bailed: false, deferred: false, entries: [{ jestOutput }] };
 	}
 
-	return envelope.entries;
+	return {
+		bailed: envelope.bailed === true,
+		deferred: envelope.deferred === true,
+		entries: envelope.entries,
+	};
+}
+
+export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
+	return decodeEnvelope(jestOutput).entries;
 }
 
 /**
@@ -59,8 +90,7 @@ export function parseEnvelope(jestOutput: string): Array<EnvelopeEntry> {
  */
 export function isEnvelopeDeferred(jestOutput: string): boolean {
 	try {
-		const envelope = envelopeSchema(JSON.parse(jestOutput));
-		return !(envelope instanceof type.errors) && envelope.deferred === true;
+		return decodeEnvelope(jestOutput).deferred;
 	} catch {
 		return false;
 	}

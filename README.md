@@ -462,6 +462,42 @@ jest-roblox --workspace --affected-since main
 `--workspace` must be combined with `--packages` or `--affected-since` — the two
 are mutually exclusive, and either flag requires `--workspace`.
 
+### Failing fast
+
+`--bail` stops the run at the first failing package instead of testing the rest:
+
+```bash
+jest-roblox --workspace --packages @scope/pkg-a,@scope/pkg-b --bail
+```
+
+The packages that never ran are left out of the report, which ends with how far
+the run got:
+
+```text
+     Bailed  after 2 packages, 5 not run
+```
+
+A package counts as run once any of its projects ran, so a package the bail
+caught part-way through is not reported as skipped.
+
+The exit code is the usual `1` — a bail is a test failure that ended the run
+early, not an error in its own right.
+
+Under `--parallel`, the task that fails announces it through a MemoryStore
+signal map the wave shares, and its siblings stop before taking their next
+package. Open Cloud cannot cancel a task from outside, so a package already
+running finishes and reports; the bail stops the ones after it.
+
+That map is written and read inside the Roblox session, so it needs no extra
+API-key scopes — the `memory-store.sorted-map` scopes below are for the CLI's
+own streaming reads, which `--bail` does not require.
+
+Workspace mode and Open Cloud only. `--bail` without `--workspace`, or with a
+Studio backend, is rejected rather than quietly running the whole batch.
+
+This is not Jest's `bail`. `test.bail` in your config still counts failing test
+suites inside a single package and is passed through to Jest untouched.
+
 ### Workspaces without pnpm
 
 `pnpm-workspace.yaml` isn't required. Declare a `workspace` block in a shared
@@ -583,6 +619,7 @@ project) under `.jest-roblox/output/`.
 | `--typecheckOnly`                | Run only type tests                                                                                         |
 | `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                     |
 | `--workspace`                    | Enable workspace mode (pair with `--packages` or `--affected-since`; see [Workspace mode](#workspace-mode)) |
+| `--bail`                         | Workspace mode: stop at the first failing package (see [Failing fast](#failing-fast))                       |
 | `--packages <names>`             | Comma-separated package names (workspace mode)                                                              |
 | `--affected-since <ref>`         | Run only packages affected since a git ref (workspace mode)                                                 |
 | `--apiKey <key>`                 | Open Cloud API key (prefer env vars in CI — visible in process listings)                                    |

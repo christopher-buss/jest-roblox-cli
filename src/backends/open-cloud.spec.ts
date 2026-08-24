@@ -127,7 +127,7 @@ function envelope(
 		pkg?: string;
 		project?: string;
 	}>,
-	options: { deferred?: boolean } = {},
+	options: { bailed?: boolean; deferred?: boolean } = {},
 ): string {
 	return JSON.stringify({ ...options, entries });
 }
@@ -1225,6 +1225,59 @@ describe(OpenCloudBackend, () => {
 					workStealing: true,
 				}),
 			).rejects.toThrow(/no entries for 1 package\(s\): beta/);
+		});
+
+		// --bail stops the run on the first failing package, so the packages
+		// after it have no entry by design. Reporting them as bailed is what
+		// separates that from a task that broke and lost its results.
+		it("should report the jobs a bailed task never reached", async () => {
+			expect.assertions(2);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => {
+				return scriptResult(
+					envelope([{ jestOutput: successJest(), pkg: "alpha" }], { bailed: true }),
+				);
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const { bailedJobIndices, rawResults } = await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta"), job("gamma")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				workStealing: true,
+			});
+
+			expect(rawResults).toHaveLength(1);
+			expect(bailedJobIndices).toStrictEqual([1, 2]);
+		});
+
+		it("should report no bailed jobs when a bailed task still covered them all", async () => {
+			expect.assertions(2);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => {
+				return scriptResult(
+					envelope(
+						[
+							{ jestOutput: successJest(), pkg: "alpha" },
+							{ jestOutput: successJest(), pkg: "beta" },
+						],
+						{ bailed: true },
+					),
+				);
+			});
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const { bailedJobIndices, rawResults } = await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta")],
+				parallel: 1,
+				scriptOverride: "stealing-script",
+				workStealing: true,
+			});
+
+			expect(rawResults).toHaveLength(2);
+			expect(bailedJobIndices).toStrictEqual([]);
 		});
 
 		it("should aggregate entries from all task envelopes in input order", async () => {

@@ -109,13 +109,17 @@ function failingResult(): string {
 	});
 }
 
-function createStubBackend(entries: Array<BackendStubEntry>) {
+function createStubBackend(
+	entries: Array<BackendStubEntry>,
+	backendOverrides: Partial<BackendResult> = {},
+) {
 	const captured: Partial<Record<"options", BackendOptions>> = {};
 	const backend: Backend = {
 		kind: "open-cloud",
 		runTestsAsync: async (options): Promise<BackendResult> => {
 			captured.options = options;
 			return {
+				...backendOverrides,
 				rawResults: entries.map((entry) => {
 					const envelope: EnvelopeEntry = { jestOutput: entry.jestOutput };
 					if (entry.gameOutput !== undefined) {
@@ -146,6 +150,7 @@ function createStubBackend(entries: Array<BackendStubEntry>) {
 function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): WorkspaceRunOptions {
 	return {
 		backend: DEFAULT_CONFIG.backend,
+		bail: false,
 		color: DEFAULT_CONFIG.color,
 		formatters: [],
 		port: DEFAULT_CONFIG.port,
@@ -3035,6 +3040,162 @@ describe(runWorkspaceAsync, () => {
 			});
 
 			expect(captured.options!.scriptOverride).toContain('"sortedMapId":');
+		});
+
+		// A bailed run comes back short by design. The packages it never reached
+		// must drop out of the results rather than pair with a sibling's entry,
+		// and they must be named so the report can say the run stopped early.
+		it("should drop the packages a bailed run never reached", async () => {
+			expect.assertions(3);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				...seedPackage(BAR_DIR, {
+					name: "@halcyon/bar",
+					specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR },
+				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+			});
+
+			mockPreparedQueue("queue-bailed");
+			const { backend } = createStubBackend(
+				[{ jestOutput: passingResult(), pkg: "@halcyon/bar" }],
+				{ bailedJobIndices: [0] },
+			);
+
+			const output = await runWorkspaceAsync({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO, BAR_INFO],
+				runOptions: makeRunOptions({ bail: true, parallel: 2 }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(output!.results).toHaveLength(1);
+			expect(output!.results[0]!.pkg).toBe("@halcyon/bar");
+			expect(output!.bailedPackages).toStrictEqual(["@halcyon/foo"]);
+		});
+
+		// A package with several projects is one package. When a bail stops it
+		// part-way, the package RAN — naming it as not-run too would report the
+		// same package on both sides of the count.
+		it("should not report a partly-run package as one the bail skipped", async () => {
+			expect.assertions(2);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: {
+						[path.join(FOO_DIR, "src/a.spec.luau")]: "",
+						[path.join(FOO_DIR, "src/b.spec.luau")]: "",
+					},
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({
+				[FOO_DIR]: {
+					...DEFAULT_CONFIG,
+					projects: [
+						{ test: { displayName: "client", include: ["src/a.spec.luau"] } },
+						{ test: { displayName: "server", include: ["src/b.spec.luau"] } },
+					],
+					rootDir: FOO_DIR,
+				},
+			});
+
+			mockPreparedQueue("queue-partial");
+			const { backend } = createStubBackend(
+				[{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" }],
+				{ bailedJobIndices: [1] },
+			);
+
+			const output = await runWorkspaceAsync({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ bail: true, parallel: 2 }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(output!.results).toHaveLength(1);
+			expect(output!.bailedPackages).toBeUndefined();
+		});
+
+		it("should embed bail in the work-stealing script when --bail is set", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			mockPreparedQueue("queue-bail");
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspaceAsync({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ bail: true, parallel: 2 }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(captured.options!.scriptOverride).toContain('"bail":true');
+		});
+
+		// Parallel tasks broadcast the trip through a map of their own, so --bail
+		// needs one even on a run whose formatter never asked to stream.
+		it("should create a signal map for the bail without a streaming consumer", async () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				...seedPackage(FOO_DIR, {
+					name: "@halcyon/foo",
+					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+				}),
+				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			});
+			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+			mockPreparedQueue("queue-bail-map");
+			const { backend, captured } = createStubBackend([
+				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+			]);
+
+			await runWorkspaceAsync({
+				backend,
+				cli: makeCli(),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions({ bail: true, parallel: 2 }),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+				workStealingCredentials: testCredentials,
+			});
+
+			expect(captured.options!.scriptOverride).toContain('"bailMapId":');
 		});
 
 		it("should skip streaming setup when onStreamingResult is omitted (no SortedMap polling overhead)", async () => {

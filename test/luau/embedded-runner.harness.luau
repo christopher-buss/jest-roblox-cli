@@ -57,10 +57,50 @@ function HttpService:JSONDecode(token)
 	return encoded[token]
 end
 
+-- MemoryStore stand-in. `queueItems` is what the work-stealing loop pops;
+-- `sortedMaps` is keyed by id so a test can plant a sibling's bail signal.
+local queueItems = {}
+local sortedMaps = {}
+
+local function sortedMapFor(id: string)
+	local existing = sortedMaps[id]
+	if existing ~= nil then
+		return existing
+	end
+
+	local map = { items = {} }
+	function map:GetAsync(key: string)
+		return self.items[key]
+	end
+	function map:SetAsync(key: string, value, _ttl: number)
+		self.items[key] = value
+		return true
+	end
+
+	sortedMaps[id] = map
+	return map
+end
+
+local MemoryStoreService = {}
+
+function MemoryStoreService:GetQueue()
+	return {
+		ReadAsync = function()
+			local item = table.remove(queueItems, 1)
+			return if item == nil then {} else { item }, item
+		end,
+		RemoveAsync = function() end,
+	}
+end
+
+function MemoryStoreService:GetSortedMap(id: string)
+	return sortedMapFor(id)
+end
+
 local services = {
 	HttpService = HttpService,
 	LogService = { MessageOut = MessageOut },
-	MemoryStoreService = {},
+	MemoryStoreService = MemoryStoreService,
 }
 
 local game = {}
@@ -77,6 +117,7 @@ local function warn() end
 -- whether the package prints nothing at all.
 local materializeFails = {}
 local jestFails = {}
+local jestRedTests = {}
 local jestMissing = {}
 local silent = {}
 
@@ -98,7 +139,7 @@ local Jest = {
 					error("jest exploded in " .. pkg, 0)
 				end
 
-				return { results = { success = true } }
+				return { results = { success = not jestRedTests[pkg] } }
 			end,
 		}
 	end,
@@ -187,6 +228,9 @@ end
 -- runs. Its own `require("./intercept-writeable")` only wants the type.
 stubs["./intercept-writeable"] = stubs["../intercept-writeable"]
 stubs["../game-output-capture"] = __CAPTURE_MODULE__
+-- The real bail module too: it decides when a loop stops taking packages,
+-- which is what the bail assertions below are about.
+stubs["./bail"] = __BAIL_MODULE__
 
 local EmbeddedRunner = __MODULE__
 
@@ -222,6 +266,31 @@ local function run(pkgs)
 	end
 
 	return EmbeddedRunner.runEmbedded({}, { entries = entries })
+end
+
+local function runBailing(pkgs)
+	local entries = {}
+	for _, pkg in pkgs do
+		table.insert(entries, entryFor(pkg))
+	end
+
+	return EmbeddedRunner.runEmbedded({}, { bail = true, entries = entries })
+end
+
+local function runStealing(pkgs, payload)
+	local entries = {}
+	queueItems = {}
+	for _, pkg in pkgs do
+		table.insert(entries, entryFor(pkg))
+		table.insert(queueItems, { pkg = pkg, project = "unit" })
+	end
+
+	local full = { entries = entries, invisibilityWindowSeconds = 90, queueId = "q" }
+	for key, value in payload do
+		full[key] = value
+	end
+
+	return EmbeddedRunner.runWorkStealing({}, full)
 end
 
 -- T1: the capture opens before the package is materialized and spans its run,
@@ -288,9 +357,75 @@ local function testSilentPackageHasNoOutput()
 	check(results[1].gameOutput == nil, "T4: silent package has no gameOutput")
 end
 
+-- T5: --bail stops the sequential walk at the first package whose TESTS
+-- failed — Jest itself returned, so nothing errored; only the result did.
+local function testBailStopsTheWalk()
+	jestRedTests.a = true
+	local results, outcome = runBailing({ "a", "b", "c" })
+	jestRedTests.a = nil
+
+	check(#results == 1, "T5: the walk stops after the failing package")
+	check(results[1].pkg == "a", "T5: the failing package is still reported")
+	check(outcome.bailed, "T5: the outcome says it bailed")
+	check(not outcome.deferred, "T5: a bail is not a deferral — no replacement task")
+end
+
+-- T6: without --bail the same failure changes nothing; every package runs.
+local function testFailureWithoutBailRunsOn()
+	jestRedTests.a = true
+	local results, outcome = run({ "a", "b", "c" })
+	jestRedTests.a = nil
+
+	check(#results == 3, "T6: no --bail runs every package")
+	check(not outcome.bailed, "T6: no --bail never reports a bail")
+end
+
+-- T7: the same stop applies to the work-stealing loop, and the trip is
+-- broadcast so siblings draining the same queue see it.
+local function testBailStopsThePopLoop()
+	jestRedTests.a = true
+	local results, outcome = runStealing({ "a", "b", "c" }, { bail = true, bailMapId = "bail-map" })
+	jestRedTests.a = nil
+
+	check(#results == 1, "T7: the pop loop stops after the failing package")
+	check(outcome.bailed, "T7: the outcome says it bailed")
+	check(sortedMaps["bail-map"] ~= nil, "T7: the trip is broadcast to the signal map")
+	check(next(sortedMaps["bail-map"].items) ~= nil, "T7: the signal map holds a signal")
+	check(#queueItems == 2, "T7: the packages it never reached stay in the queue")
+end
+
+-- T8: a sibling's signal stops this task before it pops anything at all —
+-- the check runs ahead of the read, not after the run.
+local function testSiblingSignalStopsBeforeFirstPop()
+	sortedMaps["sibling-map"] = nil
+	local planted = sortedMapFor("sibling-map")
+	planted:SetAsync("signal", { bailed = true }, 600)
+
+	local results, outcome = runStealing({ "a", "b" }, { bail = true, bailMapId = "sibling-map" })
+
+	check(#results == 0, "T8: a task that sees a sibling's signal takes nothing")
+	check(outcome.bailed, "T8: the outcome says it bailed")
+	check(#queueItems == 2, "T8: it leaves the queue untouched")
+end
+
+-- T9: the pop loop without --bail drains the queue even when a package fails.
+local function testPopLoopWithoutBailDrains()
+	jestRedTests.a = true
+	local results, outcome = runStealing({ "a", "b" }, {})
+	jestRedTests.a = nil
+
+	check(#results == 2, "T9: no --bail drains the queue")
+	check(not outcome.bailed, "T9: no --bail never reports a bail")
+end
+
 testWindowAndNoBleedAcrossPackages()
 testRecordShape()
 testFailuresKeepOutput()
 testSilentPackageHasNoOutput()
+testBailStopsTheWalk()
+testFailureWithoutBailRunsOn()
+testBailStopsThePopLoop()
+testSiblingSignalStopsBeforeFirstPop()
+testPopLoopWithoutBailDrains()
 
 print("ALL OK")

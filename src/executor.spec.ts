@@ -2744,6 +2744,75 @@ describe(runProjectsAsync, () => {
 		await expect(promise).rejects.toThrow(/rawResults must be parallel to jobs/);
 	});
 
+	// A bailing backend returns fewer entries than jobs on purpose. The parity
+	// guard has to measure against the jobs that ran, and the caller has to
+	// learn which those were so it can line the results up with its own
+	// per-package state.
+	it("should process only the jobs a bailing backend ran", async () => {
+		expect.assertions(3);
+
+		const temporaryDirectory = createTemporaryDirectory("exec-bail-");
+		fs.writeFileSync(
+			path.join(temporaryDirectory, "default.project.json"),
+			JSON.stringify({ name: "test", tree: { ReplicatedStorage: { $path: "src/shared" } } }),
+		);
+		const mappedConfig = { ...DEFAULT_CONFIG, rootDir: temporaryDirectory };
+
+		const backend: Backend = {
+			kind: "open-cloud",
+			runTestsAsync: async () => {
+				return {
+					...singleEntryResult({ result: createPassingResult() }),
+					bailedJobIndices: [0, 1],
+				};
+			},
+		};
+
+		const { ranProjectIndices, results } = await runProjectsAsync({
+			backend,
+			projects: [
+				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
+				{ config: DEFAULT_CONFIG, testFiles: ["src/b.spec.ts"] },
+				{ config: mappedConfig, testFiles: ["src/c.spec.ts"] },
+			],
+			startTime: Date.now(),
+			version: "0.0.0-test",
+		});
+
+		expect(results).toHaveLength(1);
+		expect(ranProjectIndices).toStrictEqual([2]);
+		// Only the last project's rootDir holds a rojo project, so a source
+		// mapper here proves the one entry was paired with that project's
+		// config rather than with the job sitting at the entry's own index.
+		expect(results[0]!.sourceMapper).toBeDefined();
+	});
+
+	it("should report every project index when nothing bailed", async () => {
+		expect.assertions(1);
+
+		const backend: Backend = {
+			kind: "studio",
+			runTestsAsync: async () => {
+				return multiEntryResult([
+					{ result: createPassingResult() },
+					{ result: createPassingResult() },
+				]);
+			},
+		};
+
+		const { ranProjectIndices } = await runProjectsAsync({
+			backend,
+			projects: [
+				{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] },
+				{ config: DEFAULT_CONFIG, testFiles: ["src/b.spec.ts"] },
+			],
+			startTime: Date.now(),
+			version: "0.0.0-test",
+		});
+
+		expect(ranProjectIndices).toStrictEqual([0, 1]);
+	});
+
 	it("should surface backend errors", async () => {
 		expect.assertions(1);
 

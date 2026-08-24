@@ -8,6 +8,7 @@ import type { CoverageDisplayPredicate } from "../coverage-pipeline/agent-table-
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import type { WorkspacePackageUniverse } from "../coverage-pipeline/workspace-aggregate.ts";
 import type { ExecuteResult } from "../executor.ts";
+import type { BailSummary } from "../formatters/shared.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { JestResult } from "../types/jest-result.ts";
@@ -106,6 +107,11 @@ export interface WorkspaceReportOptions {
 }
 
 export interface WorkspaceRunResult {
+	/**
+	 * How far a `--bail` run got before a failing package stopped it. Absent
+	 * unless the run bailed, so `projectResults` covers every selected package.
+	 */
+	bail?: BailSummary | undefined;
 	/**
 	 * Per-package coverage reports and gates, in aggregation order. Undefined
 	 * when no package carries a coverage manifest; present (possibly empty)

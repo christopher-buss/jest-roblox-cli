@@ -8,12 +8,14 @@ import type {
 } from "@isentinel/roblox-runner";
 
 import process from "node:process";
+import type { Except } from "type-fest";
 
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
 import { formatMissingScopes, walkErrorChain } from "../utils/error-chain.ts";
-import { isEnvelopeDeferred, parseEnvelope } from "./envelope.ts";
+import type { DecodedEnvelope } from "./envelope.ts";
+import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
 import type {
 	Backend,
 	BackendOptions,
@@ -105,10 +107,18 @@ interface StealingPoolOutcome {
 	results: Array<ScriptResult>;
 }
 
-interface StealingEnvelope {
-	entries: Array<EnvelopeEntry>;
+/** One package's entry plus the task-level game output it arrived with. */
+interface CollectedEntry {
+	entry: EnvelopeEntry;
 	gameOutput: string | undefined;
 }
+
+interface StealingEnvelope extends DecodedEnvelope {
+	gameOutput: string | undefined;
+}
+
+/** What one dispatch produced, minus the timing the caller measures itself. */
+type DispatchOutcome = Except<BackendResult, "timing">;
 
 export class OpenCloudBackend implements Backend {
 	/**
@@ -144,9 +154,7 @@ export class OpenCloudBackend implements Backend {
 		const target = toCacheTarget(this.credentials, resolvePlaceFilePath(primary.config));
 
 		const upload = await this.uploadOrReuseAsync(primary.config, target);
-		const executeAsync = async (
-			uploadOutcome: UploadOutcome,
-		): Promise<Array<RawBackendEntry>> => {
+		const executeAsync = async (uploadOutcome: UploadOutcome): Promise<DispatchOutcome> => {
 			return this.dispatchAsync(
 				{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing },
 				primary.config,
@@ -155,13 +163,13 @@ export class OpenCloudBackend implements Backend {
 		};
 
 		const executionStart = Date.now();
-		const { extraUploadMs, rawResults } = await this.executeReusingUploadAsync(
+		const { extraUploadMs, outcome } = await this.executeReusingUploadAsync(
 			{ config: primary.config, target, upload },
 			executeAsync,
 		);
 
 		return {
-			rawResults,
+			...outcome,
 			// A self-heal re-upload runs inside the execution window, so it
 			// belongs to `uploadMs` and comes back out of `executionMs`.
 			timing: {
@@ -183,7 +191,7 @@ export class OpenCloudBackend implements Backend {
 		{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing }: BackendOptions,
 		primaryConfig: ResolvedConfig,
 		version: VersionContext,
-	): Promise<Array<RawBackendEntry>> {
+	): Promise<DispatchOutcome> {
 		if (workStealing === true) {
 			return this.runWorkStealingAsync({
 				jobs,
@@ -274,10 +282,10 @@ export class OpenCloudBackend implements Backend {
 			target: UploadCacheTarget;
 			upload: UploadOutcome;
 		},
-		executeAsync: (uploadOutcome: UploadOutcome) => Promise<Array<RawBackendEntry>>,
-	): Promise<{ extraUploadMs: number; rawResults: Array<RawBackendEntry> }> {
+		executeAsync: (uploadOutcome: UploadOutcome) => Promise<DispatchOutcome>,
+	): Promise<{ extraUploadMs: number; outcome: DispatchOutcome }> {
 		try {
-			return { extraUploadMs: 0, rawResults: await executeAsync(upload) };
+			return { extraUploadMs: 0, outcome: await executeAsync(upload) };
 		} catch (err) {
 			if (!upload.fromCache || !isMissingVersionError(err)) {
 				throw err;
@@ -288,7 +296,7 @@ export class OpenCloudBackend implements Backend {
 			);
 			invalidateCachedVersion(config.rootDir, target);
 			const fresh = await this.uploadOrReuseAsync(config, target);
-			return { extraUploadMs: fresh.uploadMs, rawResults: await executeAsync(fresh) };
+			return { extraUploadMs: fresh.uploadMs, outcome: await executeAsync(fresh) };
 		}
 	}
 
@@ -323,7 +331,7 @@ export class OpenCloudBackend implements Backend {
 		}
 
 		const fallbackGameOutput = scriptResult.outputs[1];
-		const entries = parseEnvelope(jestOutput);
+		const { entries } = decodeEnvelope(jestOutput);
 		if (entries.length !== jobs.length) {
 			throw new Error(
 				`Open Cloud backend returned ${entries.length.toString()} entries but bucket had ${jobs.length.toString()} jobs`,
@@ -363,13 +371,11 @@ export class OpenCloudBackend implements Backend {
 		scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
 		scriptOverride: string | undefined;
 		version: VersionContext;
-	}): Promise<Array<RawBackendEntry>> {
-		const collected = new Map<
-			string,
-			{ entry: EnvelopeEntry; gameOutput: string | undefined }
-		>();
+	}): Promise<DispatchOutcome> {
+		const collected = new Map<string, CollectedEntry>();
 		let remaining: Array<ProjectJob> = jobs;
 		let script = scriptOverride ?? scriptFactory(jobs);
+		let hasBailed = false;
 
 		// One attempt per job is the ceiling: a task always runs at least one
 		// entry, so it cannot take more rounds than there are jobs.
@@ -380,9 +386,10 @@ export class OpenCloudBackend implements Backend {
 				version,
 			});
 
-			const jestOutput = requireJestOutput(scriptResult);
-			addEntriesToMap(collected, parseEnvelope(jestOutput), scriptResult.outputs[1]);
-			if (!isEnvelopeDeferred(jestOutput)) {
+			const envelope = decodeEnvelope(requireJestOutput(scriptResult));
+			addEntriesToMap(collected, envelope.entries, scriptResult.outputs[1]);
+			hasBailed ||= envelope.bailed;
+			if (!envelope.deferred) {
 				break;
 			}
 
@@ -397,7 +404,7 @@ export class OpenCloudBackend implements Backend {
 			script = scriptFactory(remaining);
 		}
 
-		return collectStealingResults(jobs, collected);
+		return collectStealingResults({ bailed: hasBailed, entryByKey: collected, jobs });
 	}
 
 	private async runStaticBucketsAsync({
@@ -410,7 +417,7 @@ export class OpenCloudBackend implements Backend {
 		parallel: BackendOptions["parallel"];
 		scriptOverride: string | undefined;
 		version: VersionContext;
-	}): Promise<Array<RawBackendEntry>> {
+	}): Promise<DispatchOutcome> {
 		const buckets = bucketJobs(jobs, parallel);
 		const bucketResults = await Promise.all(
 			buckets.map(async (bucket) => this.runBucketAsync({ bucket, scriptOverride, version })),
@@ -427,7 +434,7 @@ export class OpenCloudBackend implements Backend {
 			}
 		}
 
-		return flattened;
+		return { rawResults: flattened };
 	}
 
 	private async runWorkStealingAsync({
@@ -444,7 +451,7 @@ export class OpenCloudBackend implements Backend {
 		scriptOverride: string;
 		streaming: StreamingHooks | undefined;
 		version: VersionContext;
-	}): Promise<Array<RawBackendEntry>> {
+	}): Promise<DispatchOutcome> {
 		const taskResults = await drainStealingPoolAsync(
 			resolveBucketCount(parallel, jobs.length),
 			async () => {
@@ -462,7 +469,11 @@ export class OpenCloudBackend implements Backend {
 		// throws here, in the normal flow, rather than being swallowed by the
 		// pool's per-task error handling.
 		const taskEnvelopes = taskResults.map(parseStealingEnvelope);
-		return collectStealingResults(jobs, aggregateEntriesByKey(taskEnvelopes));
+		return collectStealingResults({
+			bailed: taskEnvelopes.some((envelope) => envelope.bailed),
+			entryByKey: aggregateEntriesByKey(taskEnvelopes),
+			jobs,
+		});
 	}
 
 	/**
@@ -953,33 +964,54 @@ function entryLookupKey(packageName: string, project: string | undefined): strin
 }
 
 /**
- * Pair every job with its aggregated entry, in request order. Jobs whose
- * package never came back are collected so one failure message names them all
- * rather than failing on the first gap.
+ * Pair every job with its aggregated entry, in request order.
+ *
+ * A gap normally means a task broke and lost its results, so they are collected
+ * and one failure message names them all rather than failing on the first.
+ * Under `--bail` the gaps are the point: the run stopped on a failing package
+ * and the ones after it were never meant to run, so they come back reported as
+ * bailed instead.
+ *
+ * That trade is real — once any task reports a bail, a sibling that lost
+ * results some other way is reported as deliberately skipped too. Nothing here
+ * can tell the two apart: the queue is drained in no particular order, so
+ * "after the failing package" names no set. A task that dies outright still
+ * fails the run through the pool's captured error; what this gives up is the
+ * narrower case of a task that returns successfully having lost entries.
  */
-function collectStealingResults(
-	jobs: Array<ProjectJob>,
-	entryByKey: Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }>,
-): Array<RawBackendEntry> {
-	const missing: Array<string> = [];
+function collectStealingResults({
+	bailed,
+	entryByKey,
+	jobs,
+}: {
+	bailed: boolean;
+	entryByKey: Map<string, CollectedEntry>;
+	jobs: Array<ProjectJob>;
+}): DispatchOutcome {
+	const bailedJobIndices: Array<number> = [];
 	const rawResults: Array<RawBackendEntry> = [];
-	for (const job of jobs) {
+	for (const [index, job] of jobs.entries()) {
 		const found = entryByKey.get(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
 		if (found === undefined) {
-			missing.push(job.displayName);
+			bailedJobIndices.push(index);
 			continue;
 		}
 
 		rawResults.push({ entry: found.entry, fallbackGameOutput: found.gameOutput });
 	}
 
-	if (missing.length > 0) {
+	if (bailed) {
+		return { bailedJobIndices, rawResults };
+	}
+
+	if (bailedJobIndices.length > 0) {
+		const names = bailedJobIndices.map((index) => jobs[index]?.displayName).join(", ");
 		throw new Error(
-			`Open Cloud work-stealing returned no entries for ${missing.length.toString()} package(s): ${missing.join(", ")}`,
+			`Open Cloud work-stealing returned no entries for ${bailedJobIndices.length.toString()} package(s): ${names}`,
 		);
 	}
 
-	return rawResults;
+	return { rawResults };
 }
 
 /**
@@ -993,11 +1025,11 @@ function parseStealingEnvelope(result: ScriptResult): StealingEnvelope {
 		throw new Error(`No test results in output. Got: ${JSON.stringify(result.outputs)}`);
 	}
 
-	return { entries: parseEnvelope(jestOutput), gameOutput: result.outputs[1] };
+	return { ...decodeEnvelope(jestOutput), gameOutput: result.outputs[1] };
 }
 
 function addEntriesToMap(
-	entryByKey: Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }>,
+	entryByKey: Map<string, CollectedEntry>,
 	entries: Array<EnvelopeEntry>,
 	gameOutput: string | undefined,
 ): void {
@@ -1019,8 +1051,8 @@ function addEntriesToMap(
 // recovery re-runs after invisibility timeout) are dropped.
 function aggregateEntriesByKey(
 	taskEnvelopes: ReadonlyArray<{ entries: Array<EnvelopeEntry>; gameOutput: string | undefined }>,
-): Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }> {
-	const entryByKey = new Map<string, { entry: EnvelopeEntry; gameOutput: string | undefined }>();
+): Map<string, CollectedEntry> {
+	const entryByKey = new Map<string, CollectedEntry>();
 	for (const { entries, gameOutput } of taskEnvelopes) {
 		addEntriesToMap(entryByKey, entries, gameOutput);
 	}

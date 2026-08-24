@@ -100,6 +100,13 @@ export interface RunProjectsOptions {
 
 export interface RunProjectsResult {
 	backendTiming: BackendTiming;
+	/**
+	 * Which entries of `projects` the `results` are for, in the same order.
+	 * Every index unless a `--bail` run stopped early, in which case the
+	 * packages it never reached are absent — the caller lines its own
+	 * per-project state up against this rather than against `projects`.
+	 */
+	ranProjectIndices: Array<number>;
 	results: Array<ExecuteResult>;
 }
 
@@ -165,12 +172,12 @@ export function buildProjectJob(project: ProjectInput, cache: TsconfigMappingCac
  * through here so the build→execute→shape→process sequence lives in
  * exactly one place.
  *
- * Ordering contract: the returned `results` array is in the same order as
- * `options.projects`. Backends MUST return `rawResults` in the same order
- * as the submitted `jobs` envelope — `runProjects` indexes into `jobs[i]`
- * to recover each project's resolved config and pair it with the matching
- * raw entry, so out-of-order results would post-process with the wrong
- * config.
+ * Ordering contract: `results` is in `options.projects` order, and parallel to
+ * the returned `ranProjectIndices` — which is every project unless a `--bail`
+ * run stopped short of some. Callers pair through that array, not by position
+ * in `projects`. Backends MUST return `rawResults` in the order of the jobs
+ * that ran, because `runProjects` walks the two together to recover each
+ * project's resolved config, and a mismatch post-processes with the wrong one.
  */
 export async function runProjectsAsync(options: RunProjectsOptions): Promise<RunProjectsResult> {
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
@@ -179,13 +186,14 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 		return options.projects.map((project) => buildProjectJob(project, tsconfigCache));
 	});
 
-	const { rawResults, timing: backendTiming } = await dispatchToBackendAsync(
-		options,
-		jobs,
-		timing,
-	);
+	const {
+		bailedJobIndices,
+		rawResults,
+		timing: backendTiming,
+	} = await dispatchToBackendAsync(options, jobs, timing);
 
-	assertResultParity(rawResults.length, jobs.length);
+	const ranProjectIndices = selectRanIndices(jobs.length, bailedJobIndices);
+	assertResultParity(rawResults.length, ranProjectIndices.length);
 
 	const context: EntryContext = {
 		backendTiming,
@@ -199,12 +207,25 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 	const results = timing.profile("processResults", () => {
 		return rawResults.map((raw, index) => {
 			// eslint-disable-next-line ts/no-non-null-assertion -- length equality asserted above
-			const job = jobs[index]!;
+			const job = jobs[ranProjectIndices[index]!]!;
 			return processOrRecoverEntry(raw, job, context);
 		});
 	});
 
-	return { backendTiming, results };
+	return { backendTiming, ranProjectIndices, results };
+}
+
+/**
+ * The job indices a dispatch produced results for, in job order.
+ */
+function selectRanIndices(
+	jobCount: number,
+	bailedJobIndices: Array<number> | undefined,
+): Array<number> {
+	const bailed = new Set(bailedJobIndices);
+	return Array.from({ length: jobCount }, (_unused, index) => index).filter(
+		(index) => !bailed.has(index),
+	);
 }
 
 async function dispatchToBackendAsync(

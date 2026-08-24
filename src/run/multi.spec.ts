@@ -100,6 +100,13 @@ function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
 	};
 }
 
+// `runProjects` reports which projects its results are for, so a run that
+// bailed can come back short. No mock here bails, so every index is present —
+// stated once rather than in each mock body.
+function allProjectIndices(input: { projects: ReadonlyArray<unknown> }): Array<number> {
+	return input.projects.map((_project, index) => index);
+}
+
 function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResult {
 	return {
 		exitCode: 0,
@@ -199,6 +206,7 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	mocks.runProjects.mockImplementation(async (input) => {
 		return {
 			backendTiming: { executionMs: 100, uploadMs: 50 },
+			ranProjectIndices: allProjectIndices(input),
 			results: input.projects.map(() => makeExecuteResult()),
 		};
 	});
@@ -796,6 +804,7 @@ describe(runMultiProjectAsync, () => {
 			await typecheckStarted;
 			return {
 				backendTiming: { executionMs: 100, uploadMs: 50 },
+				ranProjectIndices: allProjectIndices(input),
 				results: input.projects.map(() => makeExecuteResult()),
 			};
 		});
@@ -1203,6 +1212,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.runProjects.mockImplementation(async (input) => {
 			return {
 				backendTiming: { executionMs: 100, uploadMs: 50 },
+				ranProjectIndices: allProjectIndices(input),
 				results: input.projects.map((project) => {
 					const tag = project.displayName!;
 					return makeExecuteResult({
@@ -1241,6 +1251,7 @@ describe(runMultiProjectAsync, () => {
 		mocks.runProjects.mockImplementation(async (input) => {
 			return {
 				backendTiming: { executionMs: 100, uploadMs: 50 },
+				ranProjectIndices: allProjectIndices(input),
 				results: input.projects.map((project) => {
 					const tag = project.displayName!;
 					return makeExecuteResult({

@@ -15,6 +15,7 @@ import {
 	aggregateWorkspaceCoverage,
 	type WorkspacePackageUniverse,
 } from "../coverage-pipeline/workspace-aggregate.ts";
+import type { BailSummary } from "../formatters/shared.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
@@ -376,11 +377,26 @@ function composeWorkspaceDisplayName(packageName: string, project: string): stri
 	return packageName === project ? packageName : `${packageName} › ${project}`;
 }
 
+// Counted in packages, not project rows: one package can own several projects,
+// and "after 3 packages" reading as 3 when only one package ran would misreport
+// how far the run got.
+function bailSummary(
+	bailedPackages: Array<string> | undefined,
+	results: Array<WorkspaceProjectResult>,
+): { bail?: BailSummary } {
+	if (bailedPackages === undefined || bailedPackages.length === 0) {
+		return {};
+	}
+
+	const ranPackages = new Set(results.map((entry) => entry.pkg));
+	return { bail: { notRun: bailedPackages.length, ran: ranPackages.size } };
+}
+
 // Builds the final `WorkspaceRunResult` from the runner's output: the runtime
 // project results plus (when present) the merged Type Test result.
 function buildWorkspaceResult({
 	cli,
-	output: { preCoverageMs, results, typecheckResult },
+	output: { bailedPackages, preCoverageMs, results, typecheckResult },
 	runOptions,
 	workspaceRoot,
 }: {
@@ -406,6 +422,7 @@ function buildWorkspaceResult({
 
 	return {
 		...resolveWorkspaceCoverage(results),
+		...bailSummary(bailedPackages, results),
 		merged: {},
 		mode: "workspace",
 		// A typecheck-only run stages nothing, so the runner reports none.

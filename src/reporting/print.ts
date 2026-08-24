@@ -12,6 +12,7 @@ import {
 	type FormatterProjectEntry,
 	formatTypecheckSummary,
 } from "../formatters/formatter.ts";
+import type { BailSummary } from "../formatters/shared.ts";
 import {
 	DEFAULT_MAX_FAILURES,
 	findFormatterOptions,
@@ -23,6 +24,8 @@ import type { JestResult } from "../types/jest-result.ts";
 import type { TimingResult } from "../types/timing.ts";
 
 export interface MultiOutputContext {
+	/** Workspace `--bail` only: how far the run got before it stopped. */
+	bail?: BailSummary | undefined;
 	config: ResolvedConfig;
 	/**
 	 * Resolved Game Output path for "View …" hints (workspace consensus or
@@ -197,6 +200,7 @@ function getAgentMaxFailures(config: ResolvedConfig): number {
 }
 
 function formatAgentMultiOutput({
+	bail,
 	config,
 	gameOutputHint,
 	merged,
@@ -205,6 +209,7 @@ function formatAgentMultiOutput({
 	typecheckResult,
 }: MultiOutputContext): string {
 	return formatAgentMultiProject(toProjectEntries(projectResults), {
+		bail,
 		gameOutput: gameOutputHint,
 		maxFailures: getAgentMaxFailures(config),
 		outputFile: outputFileHint,
@@ -231,6 +236,7 @@ function printMultiProjectOutput(context: MultiOutputContext): void {
 	printOutput(
 		formatMultiProjectResult(toProjectEntries(projectResults), timing, {
 			...toFormatOptions(config, VERSION),
+			bail: context.bail,
 			snapshotWriteFailures: merged.snapshotWriteFailures,
 			sourceMapper: merged.sourceMapper,
 			typeErrors: typecheckResult?.numFailedTests,

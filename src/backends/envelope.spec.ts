@@ -4,7 +4,12 @@ import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { LuauScriptError, type SnapshotWrites } from "../reporter/parser.ts";
 import type { JestResult } from "../types/jest-result.ts";
-import { buildProjectResult, isEnvelopeDeferred, parseEnvelope } from "./envelope.ts";
+import {
+	buildProjectResult,
+	decodeEnvelope,
+	isEnvelopeDeferred,
+	parseEnvelope,
+} from "./envelope.ts";
 import type { EnvelopeEntry, ProjectJob } from "./interface.ts";
 
 interface RunnerFieldOverrides {
@@ -421,6 +426,51 @@ describe(buildProjectResult, () => {
 
 		expect(thrown).toBeInstanceOf(Error);
 		expect(thrown).not.toBeInstanceOf(LuauScriptError);
+	});
+});
+
+describe(decodeEnvelope, () => {
+	it("should report a task that stopped on a failing package", () => {
+		expect.assertions(1);
+
+		const jestOutput = JSON.stringify({
+			bailed: true,
+			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+		});
+
+		expect(decodeEnvelope(jestOutput).bailed).toBeTrue();
+	});
+
+	it("should report a task that ran to the end", () => {
+		expect.assertions(1);
+
+		const jestOutput = JSON.stringify({
+			bailed: false,
+			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+		});
+
+		expect(decodeEnvelope(jestOutput).bailed).toBeFalse();
+	});
+
+	it("should treat a missing bailed flag as no bail", () => {
+		expect.assertions(1);
+
+		const jestOutput = JSON.stringify({
+			entries: [{ jestOutput: successJest(), pkg: "alpha" }],
+		});
+
+		expect(decodeEnvelope(jestOutput).bailed).toBeFalse();
+	});
+
+	// A legacy bare Jest result decodes as one entry with neither stop flag —
+	// the shape predates both, so it can only mean "ran everything".
+	it("should report no stop flags for a non-envelope payload", () => {
+		expect.assertions(2);
+
+		const decoded = decodeEnvelope(successJest());
+
+		expect(decoded.bailed).toBeFalse();
+		expect(decoded.deferred).toBeFalse();
 	});
 });
 

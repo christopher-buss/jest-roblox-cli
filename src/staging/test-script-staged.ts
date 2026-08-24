@@ -11,6 +11,17 @@ export interface MaterializerInput {
 
 export interface ScriptOptions {
 	/**
+	 * Stop the task as soon as a package fails, leaving the rest of the batch
+	 * not run. Omit (or pass false) to run every package regardless.
+	 */
+	bail?: boolean;
+	/**
+	 * Per-run SortedMap id the parallel wave broadcasts a bail through. Only
+	 * meaningful alongside `bail`; omit on the single-task path, which has no
+	 * siblings to tell.
+	 */
+	bailMapId?: string | undefined;
+	/**
 	 * Caps the encoded size of one task's return envelope, in bytes. A worker
 	 * that reaches the cap stops taking queue items and leaves them for the
 	 * next task, so no task trips Open Cloud's 4 MiB limit on the value it
@@ -44,11 +55,16 @@ interface StreamingPayloadFields {
 	streamingTtlSeconds?: number | undefined;
 }
 
-interface MaterializerPayload extends StreamingPayloadFields {
+interface BailPayloadFields {
+	bail?: boolean;
+	bailMapId?: string;
+}
+
+interface MaterializerPayload extends BailPayloadFields, StreamingPayloadFields {
 	entries: Array<EntryPayload>;
 }
 
-interface WorkStealingPayload extends StreamingPayloadFields {
+interface WorkStealingPayload extends BailPayloadFields, StreamingPayloadFields {
 	entries: Array<EntryPayload>;
 	invisibilityWindowSeconds: number;
 	queueId: string;
@@ -60,6 +76,7 @@ export function generateMaterializerScript(
 	options: ScriptOptions = {},
 ): string {
 	const payload: MaterializerPayload = {
+		...bailFields(options),
 		entries: buildEntries(inputs),
 		...streamingFields(options.streaming),
 	};
@@ -85,6 +102,7 @@ export function generateWorkStealingScript(
 	options: ScriptOptions = {},
 ): string {
 	const payload: WorkStealingPayload = {
+		...bailFields(options),
 		entries: buildEntries(inputs),
 		invisibilityWindowSeconds,
 		queueId,
@@ -94,6 +112,20 @@ export function generateWorkStealingScript(
 		...streamingFields(options.streaming),
 	};
 	return substitutePayload(payload);
+}
+
+// Emitted only when set, so a run without --bail leaves the payload
+// byte-for-byte what it was — the synthesized place and its script stay
+// cache-comparable.
+function bailFields(options: ScriptOptions): BailPayloadFields {
+	if (options.bail !== true) {
+		return {};
+	}
+
+	return {
+		bail: true,
+		...(options.bailMapId !== undefined ? { bailMapId: options.bailMapId } : {}),
+	};
 }
 
 function streamingFields(streaming: StreamingOptions | undefined): StreamingPayloadFields {

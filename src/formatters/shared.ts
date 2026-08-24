@@ -10,7 +10,18 @@ import process from "node:process";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult } from "../types/jest-result.ts";
 
+/** Packages a bailed run reached, and packages it never started. */
+export interface BailSummary {
+	notRun: number;
+	ran: number;
+}
+
 export interface FormatOptions {
+	/**
+	 * Workspace `--bail` only: how far the run got before a failing package
+	 * stopped it. Absent on a run that reached every package.
+	 */
+	bail?: BailSummary | undefined;
 	collectCoverage?: boolean | undefined;
 	color: boolean;
 	failuresOnly?: boolean | undefined;
@@ -45,6 +56,22 @@ export interface FormatterProjectEntry {
 export interface FailureContext {
 	currentIndex: number;
 	totalFailures: number;
+}
+
+/**
+ * The bail line's text, without styling.
+ *
+ * Shared by the human and agent formatters: both have to say the report is a
+ * prefix of the selection, and two wordings for one fact is how they drift.
+ */
+export function formatBailText({ notRun, ran }: BailSummary): {
+	reached: string;
+	skipped: string;
+} {
+	return {
+		reached: `after ${ran} ${ran === 1 ? "package" : "packages"}`,
+		skipped: `, ${notRun} not run`,
+	};
 }
 
 export function resolveDisplayPath(testFilePath: string, sourceMapper?: SourceMapper): string {

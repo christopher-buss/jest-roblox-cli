@@ -15,8 +15,11 @@ import {
 	parseSourceLocation,
 	resolveDisplayPath,
 } from "./formatter.ts";
+import { type BailSummary, formatBailText } from "./shared.ts";
 
 export interface AgentOptions {
+	/** Set when `--bail` cut the run short; see {@link BailSummary}. */
+	bail?: BailSummary | undefined;
 	gameOutput?: string | undefined;
 	gameOutputSize?: number | undefined;
 	maxFailures: number;
@@ -637,42 +640,37 @@ function formatMultiProjectFailures(
 	return lines;
 }
 
+// Each bucket is omitted when zero, so a clean run reads "2 passed (2)" rather
+// than carrying two empty counts.
+function countParts(buckets: Array<[count: number, label: string]>): Array<string> {
+	return buckets.filter(([count]) => count > 0).map(([count, label]) => `${count} ${label}`);
+}
+
 function formatMultiProjectSummary(stats: AgentProjectStats, options: AgentOptions): Array<string> {
 	const lines: Array<string> = [];
 
-	const fileParts: Array<string> = [];
-	if (stats.totalFailedFiles > 0) {
-		fileParts.push(`${stats.totalFailedFiles} failed`);
-	}
-
-	if (stats.totalPassedFiles > 0) {
-		fileParts.push(`${stats.totalPassedFiles} passed`);
-	}
-
-	if (stats.totalSkippedFiles > 0) {
-		fileParts.push(`${stats.totalSkippedFiles} skipped`);
-	}
-
+	const fileParts = countParts([
+		[stats.totalFailedFiles, "failed"],
+		[stats.totalPassedFiles, "passed"],
+		[stats.totalSkippedFiles, "skipped"],
+	]);
 	const totalFiles = stats.totalFailedFiles + stats.totalPassedFiles + stats.totalSkippedFiles;
 	lines.push(` Test Files  ${fileParts.join(" | ")} (${totalFiles})`);
 
-	const testParts: Array<string> = [];
-	if (stats.totalFailed > 0) {
-		testParts.push(`${stats.totalFailed} failed`);
-	}
-
-	if (stats.totalPassed > 0) {
-		testParts.push(`${stats.totalPassed} passed`);
-	}
-
-	if (stats.totalPending > 0) {
-		testParts.push(`${stats.totalPending} skipped`);
-	}
-
+	const testParts = countParts([
+		[stats.totalFailed, "failed"],
+		[stats.totalPassed, "passed"],
+		[stats.totalPending, "skipped"],
+	]);
 	lines.push(`      Tests  ${testParts.join(" | ")} (${stats.totalTests})`);
 
 	if (options.typeErrorCount !== undefined) {
 		lines.push(`Type Errors  ${formatTypeErrorLabel(options.typeErrorCount)}`);
+	}
+
+	if (options.bail !== undefined) {
+		const { reached, skipped } = formatBailText(options.bail);
+		lines.push(`     Bailed  ${reached}${skipped}`);
 	}
 
 	return lines;

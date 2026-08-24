@@ -501,6 +501,11 @@ export interface ResolvedConfig
  */
 export interface WorkspaceRunOptions {
 	backend: Backend;
+	/**
+	 * Stop the run at the first failing package. CLI-only — there is no config
+	 * counterpart, so a package cannot opt its workspace into failing fast.
+	 */
+	bail: boolean;
 	color: boolean;
 	formatters: Array<FormatterEntry>;
 	/** Absolute path for the Aggregated Game Output file; undefined = off. */
@@ -616,6 +621,12 @@ export interface CliOptions {
 	affectedSince?: string | undefined;
 	apiKey?: string | undefined;
 	backend?: Backend | undefined;
+	/**
+	 * Workspace mode: stop the run as soon as a package fails (`--bail`).
+	 * CLI-only, and distinct from Jest's own `test.bail`, which counts
+	 * failing test suites inside a single package.
+	 */
+	bail?: boolean | undefined;
 	collectCoverage?: boolean | undefined;
 	collectCoverageFrom?: Array<string> | undefined;
 	color?: boolean | undefined;

@@ -6,12 +6,9 @@ import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
 import { loadRojoTree, runMultiProjectAsync, runResolvedProjectsAsync } from "./run/multi.ts";
 import { buildImplicitProject } from "./run/single-projects.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
+import { isWorkspaceInvocation } from "./run/workspace-validation.ts";
 import { runWorkspaceModeAsync } from "./run/workspace.ts";
 import { createTimingCollector, type TimingCollector } from "./timing/orchestration-collector.ts";
-
-export function isWorkspaceInvocation(cli: CliOptions): boolean {
-	return cli.workspace === true || cli.packages !== undefined || cli.affectedSince !== undefined;
-}
 
 /**
  * Single/multi dispatch shared by `runJestRoblox` and `prepareArtifacts`. Both

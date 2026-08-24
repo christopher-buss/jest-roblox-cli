@@ -1,7 +1,12 @@
 import { hasExecError, type JestResult, type SnapshotSummary } from "../types/jest-result.ts";
 import type { TimingResult } from "../types/timing.ts";
 import { formatBannerBar } from "../utils/banner.ts";
-import { type FormatOptions, getTerminalWidth } from "./shared.ts";
+import {
+	type BailSummary,
+	formatBailText,
+	type FormatOptions,
+	getTerminalWidth,
+} from "./shared.ts";
 import { type ColorFunc, createStyles, type Styles } from "./styles.ts";
 
 export function formatRunHeader(options: FormatOptions, styles?: Styles): string {
@@ -32,7 +37,11 @@ export function formatTestSummary(
 	result: JestResult,
 	timing: TimingResult,
 	styles?: Styles,
-	options?: { snapshotWriteFailures?: number | undefined; typeErrors?: number | undefined },
+	options?: {
+		bail?: BailSummary | undefined;
+		snapshotWriteFailures?: number | undefined;
+		typeErrors?: number | undefined;
+	},
 ): string {
 	const st = styles ?? createStyles(true);
 	const lines: Array<string> = [
@@ -44,6 +53,12 @@ export function formatTestSummary(
 	// Type Errors line (only shown when typecheck was enabled)
 	if (options?.typeErrors !== undefined) {
 		lines.push(formatTypeErrorsLine(options.typeErrors, st));
+	}
+
+	// Bail line (only shown when --bail cut the run short). Without it the
+	// totals read as the whole selection when they are a prefix of it.
+	if (options?.bail !== undefined) {
+		lines.push(formatBailLine(options.bail, st));
 	}
 
 	lines.push(formatStartAtLine(timing.startTime, st), formatDurationLine(timing, st));
@@ -225,6 +240,11 @@ function formatTypeErrorsLine(typeErrors: number, styles: Styles): string {
 	const typeErrorValue =
 		typeErrors > 0 ? styles.summary.failed(`${typeErrors} failed`) : styles.dim("no errors");
 	return `${typeErrorLabel}  ${typeErrorValue}`;
+}
+
+function formatBailLine(bail: BailSummary, styles: Styles): string {
+	const { reached, skipped } = formatBailText(bail);
+	return `${styles.dim("     Bailed")}  ${styles.summary.failed(reached)}${styles.dim(skipped)}`;
 }
 
 function formatStartAtLine(startTime: number, styles: Styles): string {

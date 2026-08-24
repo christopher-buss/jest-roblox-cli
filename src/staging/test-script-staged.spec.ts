@@ -281,3 +281,65 @@ describe("generateMaterializerScript with streaming", () => {
 		expect(script).toContain('"sortedMapId":"stream-uuid"');
 	});
 });
+
+describe("bail payload", () => {
+	it("should embed bail in the single-task payload when requested", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			{ bail: true },
+		);
+
+		expect(script).toContain('"bail":true');
+	});
+
+	it("should embed bail in the work-stealing payload when requested", () => {
+		expect.assertions(1);
+
+		const script = generateWorkStealingScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			"queue-uuid-1",
+			90,
+			{ bail: true },
+		);
+
+		expect(script).toContain('"bail":true');
+	});
+
+	it("should embed the bail signal map when one is given", () => {
+		expect.assertions(1);
+
+		const script = generateWorkStealingScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			"queue-uuid-1",
+			90,
+			{ bail: true, bailMapId: "bail-uuid" },
+		);
+
+		expect(script).toContain('"bailMapId":"bail-uuid"');
+	});
+
+	// The single-task path has no siblings to broadcast to, so it bails
+	// locally and the payload carries no map.
+	it("should omit the bail signal map when none is given", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			{ bail: true },
+		);
+
+		expect(script).not.toContain('"bailMapId":');
+	});
+
+	it("should omit bail from the payload when not requested", () => {
+		expect.assertions(1);
+
+		const script = generateMaterializerScript([
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+		]);
+
+		expect(script).not.toContain('"bail":');
+	});
+});

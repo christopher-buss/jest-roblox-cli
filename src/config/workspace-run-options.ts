@@ -148,9 +148,13 @@ export function buildWorkspaceRunOptions({
 function resolveDefaultedFields(
 	cli: CliOptions,
 	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
-): Pick<WorkspaceRunOptions, "backend" | "color" | "port" | "silent"> {
+): Pick<WorkspaceRunOptions, "backend" | "bail" | "color" | "port" | "silent"> {
 	return {
 		backend: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.backend),
+		// Straight off the CLI rather than through the consensus table: there
+		// is no config key to reach consensus on. `test.bail` is already Jest's
+		// suite-level bail, so reading it here would give one word two jobs.
+		bail: cli.bail === true,
 		color: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.color),
 		port: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.port),
 		silent: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.silent),
