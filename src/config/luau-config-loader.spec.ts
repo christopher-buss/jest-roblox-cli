@@ -1,230 +1,75 @@
-import * as cp from "node:child_process";
-import * as fs from "node:fs";
-import { describe, expect, it, vi } from "vitest";
+import { fromAny } from "@total-typescript/shoehorn";
+
+import { vol } from "memfs";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 
-vi.mock<typeof import("node:child_process")>(import("node:child_process"));
-vi.mock<typeof import("node:fs")>(import("node:fs"));
+vi.mock(import("node:fs"), async () => {
+	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
+	return fromAny({ ...memfs.fs, default: memfs.fs });
+});
 
-type LiteralValue = boolean | null | number | ReadonlyArray<LiteralValue> | string | undefined;
-
-interface LiteralNode {
-	entries?: Array<{ kind: "list"; value: LiteralNode }>;
-	kind: "expr";
-	location: { beginColumn: number; beginLine: number; endColumn: number; endLine: number };
-	tag: "boolean" | "nil" | "number" | "string" | "table";
-	text?: string;
-	value?: boolean | number;
-}
-
-function toLiteralNode(value: LiteralValue): LiteralNode {
-	const location = { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 };
-
-	if (typeof value === "string") {
-		return { kind: "expr", location, tag: "string", text: value };
-	}
-
-	if (typeof value === "boolean") {
-		return { kind: "expr", location, tag: "boolean", value };
-	}
-
-	if (typeof value === "number") {
-		return { kind: "expr", location, tag: "number", value };
-	}
-
-	if (Array.isArray(value)) {
-		return {
-			entries: value.map((item) => ({ kind: "list", value: toLiteralNode(item) })),
-			kind: "expr",
-			location,
-			tag: "table",
-		};
-	}
-
-	return { kind: "expr", location, tag: "nil" };
-}
-
-function makeAstJson(config: Readonly<Record<string, LiteralValue>>): string {
-	const entries = Object.entries(config).map(([key, value]) => {
-		return { key: { text: key }, kind: "record", value: toLiteralNode(value) };
+function seedConfig(source: string, filePath = "/project/jest.config.luau"): string {
+	onTestFinished(() => {
+		vol.reset();
 	});
-
-	return JSON.stringify({
-		kind: "stat",
-		location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
-		statements: [
-			{
-				expressions: [
-					{
-						node: {
-							entries,
-							kind: "expr",
-							location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
-							tag: "table",
-						},
-					},
-				],
-				kind: "stat",
-				location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
-				tag: "return",
-			},
-		],
-		tag: "block",
-	});
+	const directory = filePath.slice(0, filePath.lastIndexOf("/"));
+	vol.mkdirSync(directory, { recursive: true });
+	vol.writeFileSync(filePath, source);
+	return filePath;
 }
 
 describe(loadLuauConfig, () => {
-	it("should return parsed config from Lute stdout", () => {
+	it("should evaluate the config's return table", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
-		vi.mocked(fs.existsSync).mockReturnValue(false);
-		vi.mocked(cp.execFileSync).mockReturnValue(makeAstJson({ displayName: "test" }));
-
-		const result = loadLuauConfig("project/jest.config.luau");
-
-		expect(result).toStrictEqual({ displayName: "test" });
-	});
-
-	it("should throw when Lute is not found on PATH (ENOENT)", () => {
-		expect.assertions(1);
-
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-
-		const enoentError = Object.assign(new Error("spawn lute ENOENT"), { code: "ENOENT" });
-		vi.mocked(cp.execFileSync).mockImplementation(() => {
-			throw enoentError;
-		});
-
-		expect(() => loadLuauConfig("jest.config.luau")).toThrowWithMessage(
-			Error,
-			"lute is required to load .luau config files but was not found on PATH",
+		const filePath = seedConfig(
+			['return {\n\ttestMatch = { "**/*.spec.luau" },', "\tverbose = true,\n}"].join("\n"),
 		);
-	});
 
-	it("should throw with generic message when Lute fails with non-ENOENT error", () => {
-		expect.assertions(1);
-
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(cp.execFileSync).mockImplementation(() => {
-			throw new Error("exit code 1");
+		expect(loadLuauConfig(filePath)).toStrictEqual({
+			testMatch: ["**/*.spec.luau"],
+			verbose: true,
 		});
-
-		expect(() => loadLuauConfig("bad.luau")).toThrowWithMessage(
-			Error,
-			"Failed to evaluate Luau config bad.luau",
-		);
 	});
 
-	it("should throw when non-Error value is thrown by Lute", () => {
+	it("should throw a contextual error when the config does not parse", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(cp.execFileSync).mockImplementation(() => {
-			// eslint-disable-next-line ts/only-throw-error -- testing non-Error throw path
-			throw "string error";
-		});
+		const filePath = seedConfig("return { = }");
 
-		expect(() => loadLuauConfig("bad.luau")).toThrowWithMessage(
+		expect(() => loadLuauConfig(filePath)).toThrowWithMessage(
 			Error,
-			"Failed to evaluate Luau config bad.luau",
-		);
-	});
-
-	it("should throw when Lute stdout is not valid JSON", () => {
-		expect.assertions(1);
-
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(cp.execFileSync).mockReturnValue("not json");
-
-		expect(() => loadLuauConfig("jest.config.luau")).toThrowWithMessage(
-			Error,
-			"Failed to parse AST JSON from Luau config jest.config.luau",
+			/Failed to evaluate Luau config/,
 		);
 	});
 
 	it("should throw when config returns a non-table value", () => {
 		expect.assertions(1);
 
-		const ast = JSON.stringify({
-			kind: "stat",
-			location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
-			statements: [
-				{
-					expressions: [
-						{
-							node: {
-								kind: "expr",
-								location: {},
-								tag: "string",
-								text: "not a table",
-							},
-						},
-					],
-					kind: "stat",
-					location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
-					tag: "return",
-				},
-			],
-			tag: "block",
+		const filePath = seedConfig("return 42");
+
+		expect(() => loadLuauConfig(filePath)).toThrowWithMessage(Error, /must return a table/);
+	});
+
+	it("should throw when config returns a list rather than a record", () => {
+		expect.assertions(1);
+
+		const filePath = seedConfig('return { "a", "b" }');
+
+		expect(() => loadLuauConfig(filePath)).toThrowWithMessage(Error, /must return a table/);
+	});
+
+	it("should throw when the config file does not exist", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
 		});
+		vol.mkdirSync("/project", { recursive: true });
 
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
-		vi.mocked(fs.existsSync).mockReturnValue(false);
-		vi.mocked(cp.execFileSync).mockReturnValue(ast);
-
-		expect(() => loadLuauConfig("jest.config.luau")).toThrowWithMessage(
-			Error,
-			"Luau config jest.config.luau must return a table",
-		);
-	});
-
-	it("should throw when Lute returns an AST without the block tag", () => {
-		expect.assertions(1);
-
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
-		vi.mocked(fs.existsSync).mockReturnValue(false);
-		vi.mocked(cp.execFileSync).mockReturnValue(JSON.stringify({ tag: "expr" }));
-
-		expect(() => loadLuauConfig("jest.config.luau")).toThrowWithMessage(
-			Error,
-			'Expected AST root with tag "block" from Luau config jest.config.luau',
-		);
-	});
-
-	it("should reuse cached temp directory on subsequent calls", () => {
-		expect.assertions(1);
-
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-abc");
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(cp.execFileSync).mockReturnValue(makeAstJson({ a: 1 }));
-
-		loadLuauConfig("a.luau");
-		const callsAfterFirst = vi.mocked(fs.mkdtempSync).mock.calls.length;
-		loadLuauConfig("b.luau");
-		const callsAfterSecond = vi.mocked(fs.mkdtempSync).mock.calls.length;
-
-		expect(callsAfterSecond - callsAfterFirst).toBe(0);
-	});
-
-	it("should recreate temp directory when cached path no longer exists", () => {
-		expect.assertions(1);
-
-		vi.mocked(fs.mkdtempSync).mockReturnValue("/tmp/jest-roblox-luau-config-new");
-		vi.mocked(fs.existsSync).mockReturnValue(false);
-		vi.mocked(cp.execFileSync).mockReturnValue(makeAstJson({}));
-
-		const callsBefore = vi.mocked(fs.mkdtempSync).mock.calls.length;
-		loadLuauConfig("a.luau");
-		loadLuauConfig("b.luau");
-		const callsAfter = vi.mocked(fs.mkdtempSync).mock.calls.length;
-
-		expect(callsAfter - callsBefore).toBe(2);
+		expect(() => loadLuauConfig("/project/jest.config.luau")).toThrow(/ENOENT/);
 	});
 });
 
@@ -232,30 +77,21 @@ describe(findLuauConfigFile, () => {
 	it("should return resolved path when jest.config.luau exists", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.existsSync).mockReturnValue(true);
+		seedConfig("return {}", "/cwd/project/jest.config.luau");
 
-		const result = findLuauConfigFile("packages/client", "/project");
+		const result = findLuauConfigFile("project", "/cwd");
 
-		expect(result).toBeString();
+		expect(result).toMatch(/jest\.config\.luau$/);
 	});
 
 	it("should return undefined when jest.config.luau does not exist", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.existsSync).mockReturnValue(false);
+		onTestFinished(() => {
+			vol.reset();
+		});
+		vol.mkdirSync("/cwd/project", { recursive: true });
 
-		const result = findLuauConfigFile("packages/client", "/project");
-
-		expect(result).toBeUndefined();
-	});
-
-	it("should resolve path relative to cwd", () => {
-		expect.assertions(1);
-
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-
-		const result = findLuauConfigFile("lib", "/my/project");
-
-		expect(result).toInclude("jest.config.luau");
+		expect(findLuauConfigFile("project", "/cwd")).toBeUndefined();
 	});
 });

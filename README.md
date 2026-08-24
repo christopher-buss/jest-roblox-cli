@@ -14,7 +14,7 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 
 - roblox-ts and pure Luau
 - Source-mapped errors (Luau line numbers back to `.ts` files)
-- Code coverage (via [Lute](https://github.com/luau-lang/lute) instrumentation)
+- Code coverage (in-process Luau AST instrumentation)
 - Three backends: Open Cloud (remote), Studio (attached, local), and Studio CLI
   (self-launched headless Studio, local)
 - Multiple output formatters (human, agent, JSON, GitHub Actions)
@@ -56,7 +56,7 @@ Limitations vs the npm package:
 
 - `--typecheck` and `--typecheckOnly` are not available
 - `.ts` config files are not supported (use `.json`, `.js`, or `.mjs`)
-- External tools (rojo, lute for coverage) must still be on your `PATH`
+- External tools (rojo) must still be on your `PATH`
 
 ## Quick start
 
@@ -210,12 +210,6 @@ Put these under `test: { ... }`.
 ### Coverage fields
 
 Put these under `test: { ... }`.
-
-<!-- prettier-ignore -->
-> [!IMPORTANT]
-> Coverage requires [Lute](https://github.com/luau-lang/lute) to be
-> installed and on your `PATH`. Lute parses Luau ASTs so the CLI can insert
-> coverage probes.
 
 | Field                        | What it does                           | Default                                     |
 | ---------------------------- | -------------------------------------- | ------------------------------------------- |

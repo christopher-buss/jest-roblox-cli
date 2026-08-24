@@ -1,4 +1,4 @@
-import type { LuauSpan } from "@isentinel/luau-ast";
+import type { LuauSpan } from "@isentinel/luau-ast/ast";
 
 /**
  * Columns here are UTF-16, not the UTF-8 bytes {@link LuauSpan} arrives in:

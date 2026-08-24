@@ -1,6 +1,3 @@
-import type { AstStatBlock } from "@isentinel/luau-ast";
-
-import { type } from "arktype";
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -10,98 +7,32 @@ import { assert, describe, expect, it } from "vitest";
 import { collectCoverage } from "../../src/coverage-pipeline/coverage-collector.ts";
 import { buildCoverageMap } from "../../src/coverage-pipeline/coverage-map-builder.ts";
 import { insertProbes } from "../../src/coverage-pipeline/probe-inserter.ts";
+import { luauParser } from "../../src/luau/parser.ts";
 
-const PARSE_SCRIPT = path.resolve(import.meta.dirname, "../../src/luau/parse-ast.luau");
 const FIXTURES_DIR = path.resolve(import.meta.dirname, "../fixtures/coverage-pipeline");
-
-// Cache the AST map from a single lute call for all fixtures
-let cachedAstMap: Record<string, AstStatBlock> | undefined;
-
-const astStatBlockSchema = type({ tag: "'block'" });
-
-/**
- * Shallow guard over the AST JSON `parse-ast.luau` emits, mirroring
- * `instrumenter.ts`: only the root tag is checked, since the file is our own
- * output.
- */
-function isAstStatBlock(value: unknown): value is AstStatBlock {
-	return astStatBlockSchema.allows(value);
-}
-
-function getAstMap(): Record<string, AstStatBlock> {
-	if (cachedAstMap !== undefined) {
-		return cachedAstMap;
-	}
-
-	const astOutputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-ast-"));
-
-	const fileListJson = cp.execFileSync(
-		"lute",
-		["run", PARSE_SCRIPT, "--", FIXTURES_DIR, astOutputDirectory],
-		{ encoding: "utf-8", timeout: 10_000, windowsHide: true },
-	);
-
-	const fileList = type("string[]").assert(JSON.parse(fileListJson));
-	const astMap: Record<string, AstStatBlock> = {};
-	for (const relativePath of fileList) {
-		const astJsonPath = path.join(astOutputDirectory, `${relativePath}.json`);
-		const parsed = JSON.parse(fs.readFileSync(astJsonPath, "utf-8"));
-		assert(isAstStatBlock(parsed), `Fixture ${relativePath} has no parsed AST block`);
-		astMap[relativePath] = parsed;
-	}
-
-	// The parsed AST is now wholly in memory; the scratch dir can go.
-	fs.rmSync(astOutputDirectory, { force: true, recursive: true });
-
-	cachedAstMap = astMap;
-	return cachedAstMap;
-}
 
 function instrumentFixture(fixtureName: string, fileKey: string) {
 	const fixturePath = path.join(FIXTURES_DIR, fixtureName);
 	const source = fs.readFileSync(fixturePath, "utf-8");
 
-	const astMap = getAstMap();
-	const rawAst = astMap[fixtureName];
-	assert(rawAst !== undefined, `Fixture ${fixtureName} has no parsed AST block`);
+	const parsed = luauParser.parse(source);
+	assert(parsed.ok, `Fixture ${fixtureName} has no parsed AST block`);
 
-	const result = collectCoverage(rawAst, source);
+	const result = collectCoverage(parsed.root, source);
 	const instrumentedSource = insertProbes(source, result, fileKey);
 	const covMap = buildCoverageMap(result);
 
 	return { covMap, instrumentedSource, result };
 }
 
+/** Parse-checks instrumented output; "OK" when it is non-empty valid Luau. */
 function validateLuauSource(source: string): string {
-	const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cov-validate-"));
-	const luauFile = path.join(temporaryDirectory, "check.luau");
-	fs.writeFileSync(luauFile, source);
+	const parsed = luauParser.parse(source);
+	if (!parsed.ok) {
+		return parsed.errors.join("; ");
+	}
 
-	const normalizedPath = luauFile.replaceAll("\\", "/");
-	/* cspell:disable */
-	const checkScript = [
-		'local syntax = require("@std/syntax")',
-		'local fs = require("@std/fs")',
-		`local source = fs.readFileToString("${normalizedPath}")`,
-		"local result = syntax.parse(source)",
-		"if result.root and #result.root.statements > 0 then",
-		'  print("OK")',
-		"else",
-		'  print("EMPTY")',
-		"end",
-	].join("\n");
-	const checkFile = path.join(temporaryDirectory, "validate.luau");
-	fs.writeFileSync(checkFile, checkScript);
-
-	const output = cp.execFileSync("lute", ["run", checkFile], {
-		encoding: "utf-8",
-		timeout: 10_000,
-		windowsHide: true,
-	});
-
-	fs.rmSync(temporaryDirectory, { force: true, recursive: true });
-
-	return output.trim();
+	return parsed.root.body.length > 0 ? "OK" : "EMPTY";
 }
 
 // Executes instrumented Luau through Lute and returns its stdout. Used to prove

@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -6,8 +5,7 @@ import { assert, describe, expect, it, onTestFinished } from "vitest";
 
 import { readCoverageMap } from "../../../src/coverage-pipeline/coverage-map.ts";
 import { instrumentRoot } from "../../../src/coverage-pipeline/instrumenter.ts";
-
-const PARSE_AST_SCRIPT = path.resolve(__dirname, "../../../src/luau/parse-ast.luau");
+import { luauParser } from "../../../src/luau/parser.ts";
 
 interface InstrumentedSource {
 	/** Arm count per branch, in the order the collector recorded them. */
@@ -32,25 +30,11 @@ function createTemporaryDirectory(prefix: string): string {
  * not parse here cannot be loaded there.
  */
 function parseFile(filePath: string): string | undefined {
-	try {
-		execFileSync("lute", ["run", PARSE_AST_SCRIPT, "--", filePath], {
-			encoding: "utf-8",
-			// The AST print is large and unread; only stderr matters here.
-			stdio: ["ignore", "ignore", "pipe"],
-			windowsHide: true,
-		});
-
-		return undefined;
-	} catch (err) {
-		if (err instanceof Error && "stderr" in err && typeof err.stderr === "string") {
-			return err.stderr;
-		}
-
-		return err instanceof Error ? err.message : "lute failed";
-	}
+	const parsed = luauParser.parse(readFileSync(filePath, "utf-8"));
+	return parsed.ok ? undefined : parsed.errors.join("; ");
 }
 
-/** Instruments one source file through the real lute-backed pipeline. */
+/** Instruments one source file through the real pipeline. */
 function instrumentSource(source: string): InstrumentedSource {
 	const luauRoot = createTemporaryDirectory("jest-roblox-emitted-src-");
 	const shadowDirectory = createTemporaryDirectory("jest-roblox-emitted-shadow-");

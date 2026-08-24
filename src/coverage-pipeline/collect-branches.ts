@@ -1,14 +1,46 @@
-import type { AstExprBinary, AstExprIfElse, AstStatIf } from "@isentinel/luau-ast";
+import type {
+	AstExprBinary,
+	AstExprIfElse,
+	AstStatBlock,
+	AstStatIf,
+} from "@isentinel/luau-ast/ast";
+import type { LuauVisitor } from "@isentinel/luau-ast/visit";
 
-import type { LuauVisitor } from "../luau/visitor.ts";
+import assert from "node:assert";
+
 import { getBodyFirstStatement } from "./collect-functions.ts";
 import type { CoverageAccumulator, StatementBranchArm } from "./coverage-accumulator.ts";
 
+/** One statement-if chain flattened: every then-block plus the final else. */
+interface StatIfChain {
+	blocks: Array<AstStatBlock>;
+	elseBlock: AstStatBlock | undefined;
+}
+
 export function createBranchCollector(accumulator: CoverageAccumulator): Partial<LuauVisitor> {
+	// The parser nests `elseif` chains — the else side of an if node is
+	// another if node. Each chain is one multi-arm branch (Istanbul's model),
+	// so members folded into their head's arms must not also count alone when
+	// the visitor reaches them.
+	const chainedExprIfs = new Set<AstExprIfElse>();
+	const chainedStatIfs = new Set<AstStatIf>();
+
 	return {
 		visitExprBinary: (node) => collectBinaryBranch(node, accumulator),
-		visitExprIfElse: (node) => collectExprIfBranch(node, accumulator),
-		visitStatIf: (node) => collectStatIfBranch(node, accumulator),
+		visitExprIfElse: (node) => {
+			if (!chainedExprIfs.has(node)) {
+				collectExprIfBranch(node, { accumulator, chainedExprIfs });
+			}
+
+			return true;
+		},
+		visitStatIf: (node) => {
+			if (!chainedStatIfs.has(node)) {
+				collectStatIfBranch(node, { accumulator, chainedStatIfs });
+			}
+
+			return true;
+		},
 	};
 }
 
@@ -16,8 +48,7 @@ function collectBinaryBranch(node: AstExprBinary, accumulator: CoverageAccumulat
 	// Only `and`/`or` short-circuit, so only they are branches — every other
 	// binary operator (arithmetic, comparison, concat) just keeps traversing
 	// into its operands.
-	const operator = node.operator.text;
-	if (operator !== "and" && operator !== "or") {
+	if (node.op !== "And" && node.op !== "Or") {
 		return true;
 	}
 
@@ -26,37 +57,47 @@ function collectBinaryBranch(node: AstExprBinary, accumulator: CoverageAccumulat
 	// only runs when the lhs does not short-circuit — the counter
 	// records that without altering evaluation. Two arms: lhs, rhs
 	// (Istanbul's binary-expr model).
-	accumulator.addExpressionBranch("binary-expr", [
-		node.lhsOperand.location,
-		node.rhsOperand.location,
-	]);
+	accumulator.addExpressionBranch("binary-expr", [node.left.location, node.right.location]);
 
 	return true;
 }
 
-function collectExprIfBranch(node: AstExprIfElse, accumulator: CoverageAccumulator): boolean {
-	accumulator.addExpressionBranch("expr-if", [
-		node.thenExpr.location,
-		...node.elseifs.map((elseif) => elseif.thenExpr.location),
-		node.elseExpr.location,
-	]);
+function collectExprIfBranch(
+	node: AstExprIfElse,
+	context: { accumulator: CoverageAccumulator; chainedExprIfs: Set<AstExprIfElse> },
+): void {
+	const armLocations = [node.trueExpr.location];
+	let current = node;
+	while (current.falseExpr.type === "AstExprIfElse") {
+		current = current.falseExpr;
+		context.chainedExprIfs.add(current);
+		armLocations.push(current.trueExpr.location);
+	}
 
-	return true;
+	armLocations.push(current.falseExpr.location);
+	context.accumulator.addExpressionBranch("expr-if", armLocations);
+}
+
+function flattenStatIfChain(node: AstStatIf, chainedStatIfs: Set<AstStatIf>): StatIfChain {
+	const blocks = [node.thenbody];
+	let current = node;
+	while (current.elsebody?.type === "AstStatIf") {
+		current = current.elsebody;
+		chainedStatIfs.add(current);
+		blocks.push(current.thenbody);
+	}
+
+	return { blocks, elseBlock: current.elsebody };
 }
 
 function collectStatIfBranch(
-	{ elseBlock, elseifs, location: ifLocation, thenBlock }: AstStatIf,
-	accumulator: CoverageAccumulator,
-): boolean {
-	const arms: Array<StatementBranchArm> = [
-		{ bodyFirst: getBodyFirstStatement(thenBlock), location: thenBlock.location },
-		...elseifs.map((elseif) => {
-			return {
-				bodyFirst: getBodyFirstStatement(elseif.thenBlock),
-				location: elseif.thenBlock.location,
-			};
-		}),
-	];
+	node: AstStatIf,
+	context: { accumulator: CoverageAccumulator; chainedStatIfs: Set<AstStatIf> },
+): void {
+	const { blocks, elseBlock } = flattenStatIfChain(node, context.chainedStatIfs);
+	const arms: Array<StatementBranchArm> = blocks.map((block) => {
+		return { bodyFirst: getBodyFirstStatement(block), location: block.location };
+	});
 
 	// A block with no statements — empty, or holding only comments — is still
 	// an `else`. Reading it as absent sends this branch down the synthetic path
@@ -66,21 +107,17 @@ function collectStatIfBranch(
 	// counter lands inside the block that is already there.
 	if (elseBlock !== undefined) {
 		arms.push({ bodyFirst: getBodyFirstStatement(elseBlock), location: elseBlock.location });
-		accumulator.addStatementBranch(arms);
+		context.accumulator.addStatementBranch(arms);
 
-		return true;
+		return;
 	}
 
-	// Locate `end` via the last block's end position. The if statement's own
-	// location is unreliable here: Lute extends it past a trailing `;` if
-	// present.
-	const lastElseif = elseifs.at(-1);
-	const lastBlock = lastElseif ? lastElseif.thenBlock : thenBlock;
-
-	accumulator.addStatementBranch(arms, {
-		ifStart: { column: ifLocation.beginColumn, line: ifLocation.beginLine },
+	// Locate `end` via the last then-block's end position rather than the if
+	// statement's own location, which can extend past a trailing `;`.
+	const lastBlock = blocks.at(-1);
+	assert(lastBlock !== undefined, "a chain always holds its own then-block");
+	context.accumulator.addStatementBranch(arms, {
+		ifStart: { column: node.location.beginColumn, line: node.location.beginLine },
 		probeEnd: { column: lastBlock.location.endColumn, line: lastBlock.location.endLine },
 	});
-
-	return true;
 }

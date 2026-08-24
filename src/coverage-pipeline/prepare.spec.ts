@@ -12,6 +12,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
+import { discoverRootFiles } from "./discover-files.ts";
 import { createInstrumentUniverse } from "./instrument-universe.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
@@ -28,7 +29,6 @@ import {
 	toCoverageArtifacts,
 } from "./prepare.ts";
 import { computeRojoInputsHash } from "./rojo-inputs.ts";
-import { discoverRootFiles } from "./shadow-root.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");

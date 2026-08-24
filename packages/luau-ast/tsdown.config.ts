@@ -7,7 +7,7 @@ export default defineConfig({
 		oxc: true,
 		tsconfig: "tsconfig.lib.json",
 	},
-	entry: ["src/index.ts", "!src/**/*.spec.ts"],
+	entry: ["src/index.ts", "src/ast.ts", "src/parser.ts", "src/visit.ts", "!src/**/*.spec.ts"],
 	fixedExtension: true,
 	format: ["esm"],
 	publint: true,

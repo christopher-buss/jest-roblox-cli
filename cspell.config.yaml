@@ -13,20 +13,27 @@ words:
   - covmap
   - defu
   - difftime
+  - dndebug
   - doublestar
   - elseBlock
   - elseExpr
+  - elsebody
   - elseifs
+  - emcc
+  - emscripten
+  - emxx
   - endcolumn
   - fmod
   - foreachi
   - frexp
+  - fwasm
   - getmetatable
   - getn
   - gmatch
   - gsub
   - highlightjs
   - indexexpr
+  - instrumentability
   - instrumentable
   - instrumenter
   - interp
@@ -61,11 +68,13 @@ words:
   - statlocalfunction
   - thenBlock
   - thenExpr
+  - thenbody
   - typealias
   - typeassertion
   - typefunction
   - uncompiled
   - unmappable
+  - unparseable
   - unstub
   - upgraders
   - vararg

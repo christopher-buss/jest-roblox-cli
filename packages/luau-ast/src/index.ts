@@ -1,7 +1,5 @@
-// AST types
+// AST types (official parser shape; see ast.ts)
 export type {
-	AstElseIfExpr,
-	AstElseIfStat,
 	AstExpr,
 	AstExprBinary,
 	AstExprCall,
@@ -15,10 +13,10 @@ export type {
 	AstExprIfElse,
 	AstExprIndexExpr,
 	AstExprIndexName,
-	AstExprInstantiate,
 	AstExprInterpString,
 	AstExprLocal,
 	AstExprTable,
+	AstExprTableItem,
 	AstExprTypeAssertion,
 	AstExprUnary,
 	AstExprVarargs,
@@ -28,9 +26,7 @@ export type {
 	AstStatBlock,
 	AstStatBreak,
 	AstStatCompoundAssign,
-	AstStatCompoundAssignWithOperator,
 	AstStatContinue,
-	AstStatDo,
 	AstStatExpr,
 	AstStatFor,
 	AstStatForIn,
@@ -41,25 +37,25 @@ export type {
 	AstStatRepeat,
 	AstStatReturn,
 	AstStatTypeAlias,
-	AstStatTypeFunction,
 	AstStatWhile,
-	AstTableExprGeneralItem,
-	AstTableExprItem,
-	AstTableExprListItem,
-	AstTableExprRecordItem,
+	BinaryOp,
+	CompoundOp,
 	LuauSpan,
-	Pair,
-	Punctuated,
-} from "./ast-types.ts";
+	UnaryOp,
+} from "./ast.ts";
 
-// Lute spawner
+// Lute spawner (for running Luau scripts; parsing is in-process via ./parser.ts)
 export type { LuteSpawnOptions } from "./lute-spawner.ts";
 export { spawnLute, writeTemporaryLuauScript } from "./lute-spawner.ts";
+
+// Parser
+export type { CommentSpan, LuauParser, ParseFailure, ParseResult, ParseSuccess } from "./parser.ts";
+export { loadLuauParser } from "./parser.ts";
 
 // Byte offsets
 export type { Utf8OffsetMap } from "./utf8-offsets.ts";
 export { createUtf8OffsetMap } from "./utf8-offsets.ts";
 
 // Visitor
-export type { LuauVisitor } from "./visitor.ts";
-export { visitBlock, visitExpression, visitStatement } from "./visitor.ts";
+export type { LuauVisitor } from "./visit.ts";
+export { visitBlock, visitExpression, visitStatement } from "./visit.ts";

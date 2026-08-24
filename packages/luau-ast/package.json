@@ -19,7 +19,22 @@
 			"types": "./dist/index.d.mts",
 			"default": "./dist/index.mjs"
 		},
-		"./package.json": "./package.json"
+		"./ast": {
+			"source": "./src/ast.ts",
+			"types": "./dist/ast.d.mts",
+			"default": "./dist/ast.mjs"
+		},
+		"./package.json": "./package.json",
+		"./parser": {
+			"source": "./src/parser.ts",
+			"types": "./dist/parser.d.mts",
+			"default": "./dist/parser.mjs"
+		},
+		"./visit": {
+			"source": "./src/visit.ts",
+			"types": "./dist/visit.d.mts",
+			"default": "./dist/visit.mjs"
+		}
 	},
 	"types": "./dist/index.d.mts",
 	"files": [

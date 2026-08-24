@@ -4,13 +4,13 @@ import type {
 	AstStatBlock,
 	AstStatFunction,
 	AstStatLocalFunction,
-} from "@isentinel/luau-ast";
+} from "@isentinel/luau-ast/ast";
+import type { LuauVisitor } from "@isentinel/luau-ast/visit";
 
-import type { LuauVisitor } from "../luau/visitor.ts";
 import type { CoverageAccumulator, SourcePosition } from "./coverage-accumulator.ts";
 
 export function getBodyFirstStatement(block: AstStatBlock): SourcePosition {
-	const first = block.statements[0];
+	const first = block.body[0];
 	if (first !== undefined) {
 		return { column: first.location.beginColumn, line: first.location.beginLine };
 	}
@@ -48,7 +48,7 @@ export function createFunctionCollector(accumulator: CoverageAccumulator): Parti
 		visitStatLocalFunction(node: AstStatLocalFunction): boolean {
 			const first = getBodyFirstStatement(node.func.body);
 			namedFunctions.add(node.func);
-			accumulator.addFunction(node.name.name.text, node.location, first);
+			accumulator.addFunction(node.name.name, node.location, first);
 
 			return true;
 		},
@@ -56,14 +56,13 @@ export function createFunctionCollector(accumulator: CoverageAccumulator): Parti
 }
 
 function extractExprName(expr: AstExpr): string {
-	if (expr.tag === "global") {
-		return expr.name.text;
+	if (expr.type === "AstExprGlobal") {
+		return expr.global;
 	}
 
-	if (expr.tag === "indexname") {
-		const object = extractExprName(expr.expression);
-		const separator = expr.accessor.text;
-		return `${object}${separator}${expr.index.text}`;
+	if (expr.type === "AstExprIndexName") {
+		const object = extractExprName(expr.expr);
+		return `${object}${expr.op}${expr.index}`;
 	}
 
 	return "(anonymous)";

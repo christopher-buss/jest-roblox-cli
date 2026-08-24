@@ -4,6 +4,13 @@ import * as path from "node:path";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { RootFiles } from "./discover-files.ts";
+import {
+	discoverRootFiles,
+	isInstrumentableFile,
+	isSkippedDirectory,
+	walkLuauDirectory,
+} from "./discover-files.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
 import { instrumentRoot } from "./instrumenter.ts";
 import type {
@@ -12,18 +19,7 @@ import type {
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
 
-/**
- * Suffixes for files that are not instrumented for coverage but still need
- * syncing to the shadow directory. Matches parse-ast.luau:131-139.
- */
-const NON_INSTRUMENTED_SUFFIXES = [
-	".spec.luau",
-	".test.luau",
-	".spec.lua",
-	".test.lua",
-	".snap.luau",
-	".snap.lua",
-] as const;
+export { isNonInstrumentedFile } from "./discover-files.ts";
 
 export interface PrepareShadowRootOptions {
 	luauRoot: string;
@@ -37,18 +33,6 @@ export interface PrepareShadowRootOptions {
 	 */
 	universe?: InstrumentUniverse | undefined;
 	useIncremental: boolean;
-}
-
-/** One root's prod `.luau`/`.lua`, split by whether it earns probes. */
-export interface RootFiles {
-	/**
-	 * Prod files outside the coverage universe. They are mirrored into the
-	 * shadow verbatim rather than probed, so the place still loads them and
-	 * the report never sees hit counts it would only discard.
-	 */
-	excluded: Set<string>;
-	/** Prod files the instrumenter will probe. */
-	instrumentable: Set<string>;
 }
 
 export interface ShadowRootResult {
@@ -112,34 +96,6 @@ interface PruneEntryOptions {
 interface InstrumentedFiles {
 	allFiles: Record<string, InstrumentedFileRecord>;
 	changed: boolean;
-}
-
-export function isNonInstrumentedFile(filename: string): boolean {
-	return NON_INSTRUMENTED_SUFFIXES.some((suffix) => filename.endsWith(suffix));
-}
-
-/**
- * Fast directory walk over one root's prod .luau/.lua files, split by the
- * coverage universe. Discovery must match parse-ast.luau's discoverFiles logic
- * (same skip rules); the split on top of it is this pipeline's own.
- */
-export function discoverRootFiles(luauRoot: string, universe?: InstrumentUniverse): RootFiles {
-	const posixRoot = normalizeWindowsPath(luauRoot);
-	const discovered: Array<string> = [];
-	walkLuauDirectory(posixRoot, posixRoot, isInstrumentableFile, discovered);
-
-	if (universe === undefined) {
-		return { excluded: new Set(), instrumentable: new Set(discovered) };
-	}
-
-	const excluded = new Set<string>();
-	const instrumentable = new Set<string>();
-	for (const relativePath of discovered) {
-		const isInUniverse = universe.includes(`${posixRoot}/${relativePath}`);
-		(isInUniverse ? instrumentable : excluded).add(relativePath);
-	}
-
-	return { excluded, instrumentable };
 }
 
 /**
@@ -237,63 +193,30 @@ function sourceTwinExists(luauRoot: string, relativePath: string): boolean {
 	return fs.existsSync(path.resolve(luauRoot, relativePath));
 }
 
-/**
- * Directories no walk in this file descends into — matching
- * parse-ast.luau:113-147.
- */
-function isSkippedDirectory(name: string): boolean {
-	return name === "node_modules" || name.startsWith(".");
-}
-
-/**
- * Shared directory walker. `predicate` receives the entry name and returns true
- * to collect the file.
- */
-function walkLuauDirectory(
-	directory: string,
-	relativeTo: string,
-	predicate: (name: string) => boolean,
-	results: Array<string>,
-): void {
-	const entries = fs.readdirSync(directory, { withFileTypes: true });
-	for (const entry of entries) {
-		const fullPath = normalizeWindowsPath(path.join(directory, entry.name));
-		if (entry.isDirectory()) {
-			if (isSkippedDirectory(entry.name)) {
-				continue;
-			}
-
-			walkLuauDirectory(fullPath, relativeTo, predicate, results);
-		} else if (predicate(entry.name)) {
-			const relative = fullPath.slice(relativeTo.length + 1);
-			results.push(relative);
-		}
-	}
-}
-
-/**
- * Reconcile a warm shadow dir against its source root: drop every shadow entry
- * whose source counterpart no longer exists. One rule covers files and
- * directories alike, so a warm run converges on what a cold `cpSync` would have
- * produced.
- *
- * Files are the common case, across every category the pipeline manages —
- * instrumented prod `.luau`, spec/test/snap, and non-luau rojo files
- * (`init.meta.json`, `*.model.json`, …). Diffing against source (rather than a
- * recorded file set) means a file category the sync never tracked still gets
- * cleaned up, so a stale `init.meta.json` cannot survive into the rojo build
- * and fail it. `.cov-map.json` sidecars are instrumenter output with no 1:1
- * source twin; they map back to their base `.luau`/`.lua`.
- *
- * Directories matter for one shape rojo cannot tolerate: a `foo/index.ts` ->
- * `foo.ts` rename leaves the shadow holding a stale `foo/` beside the fresh
- * `foo.luau`, which rojo mounts as a Folder and a ModuleScript both named `foo`
- * under one parent. An empty *source* directory is legitimate — a cold run
- * mirrors it and rojo makes a Folder — so a directory is judged on whether its
- * source counterpart exists, never on whether it still holds anything.
- *
- * Returns whether anything was removed, so the caller forces a place rebuild.
- */
+//
+// Reconcile a warm shadow dir against its source root: drop every shadow entry
+// whose source counterpart no longer exists. One rule covers files and
+// directories alike, so a warm run converges on what a cold `cpSync` would have
+// produced.
+//
+// Files are the common case, across every category the pipeline manages —
+// instrumented prod `.luau`, spec/test/snap, and non-luau rojo files
+// (`init.meta.json`, `*.model.json`, …). Diffing against source (rather than a
+// recorded file set) means a file category the sync never tracked still gets
+// cleaned up, so a stale `init.meta.json` cannot survive into the rojo build
+// and fail it. `.cov-map.json` sidecars are instrumenter output with no 1:1
+// source twin; they map back to their base `.luau`/`.lua`.
+//
+// Directories matter for one shape rojo cannot tolerate: a `foo/index.ts` ->
+// `foo.ts` rename leaves the shadow holding a stale `foo/` beside the fresh
+// `foo.luau`, which rojo mounts as a Folder and a ModuleScript both named `foo`
+// under one parent. An empty *source* directory is legitimate — a cold run
+// mirrors it and rojo makes a Folder — so a directory is judged on whether its
+// source counterpart exists, never on whether it still holds anything.
+//
+// Returns whether anything was removed, so the caller forces a place rebuild.
+//
+//
 function reconcileShadowToSource(luauRoot: string, shadowDirectory: string): boolean {
 	if (!fs.existsSync(shadowDirectory)) {
 		return false;
@@ -380,10 +303,6 @@ function pruneChildDirectory({
 	} catch {}
 
 	return wasRemoved;
-}
-
-function isInstrumentableFile(name: string): boolean {
-	return (name.endsWith(".luau") || name.endsWith(".lua")) && !isNonInstrumentedFile(name);
 }
 
 /**

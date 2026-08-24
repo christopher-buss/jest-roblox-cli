@@ -195,13 +195,13 @@ function isInstrumentableLuauFile(filename: string): boolean {
 		return false;
 	}
 
-	// Mirror `parse-ast.luau`'s discovery filter: instrumentation skips spec,
+	// Mirror the pipeline's discovery filter: instrumentation skips spec,
 	// test, and snapshot files. A directory containing only those would feed
 	// `instrumentRoot` zero files and produce an empty shadow dir, which the
 	// synthesizer would then swap a parent `$path` into and the demote pass
 	// inside `walkToLeaf` would fail to walk. Defer the suffix set to
-	// `shadow-root.ts`'s `NON_INSTRUMENTED_SUFFIXES` so this filter cannot
-	// drift from the instrumenter's view.
+	// `discover-files.ts` so this filter cannot drift from the
+	// instrumenter's view.
 	return !isNonInstrumentedFile(filename);
 }
 

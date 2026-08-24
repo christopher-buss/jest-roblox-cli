@@ -16,8 +16,8 @@ export interface CoverageRoot {
  *
  * Lives in its own module so callers that only need the redirect (e.g. the
  * synthesizer, which runs on every workspace invocation regardless of
- * `--coverage`) don't transitively load the instrumenter and its inlined
- * `parse-ast.luau` source via `shadow-root.ts`.
+ * `--coverage`) don't transitively load the instrumenter and its embedded
+ * wasm parser via `shadow-root.ts`.
  */
 export function redirectPathToShadow(
 	target: string,

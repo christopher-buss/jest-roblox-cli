@@ -45,41 +45,83 @@ const setupFiles = ["./test/setup/enable-colors.ts", "./test/setup/jest-extended
 // casting it back to a shape is what `ts/no-unsafe-type-assertion` forbids.
 const requireFromConfig = createRequire(import.meta.url);
 
-/** Digs `exports["."].source` out of a package.json, narrowing as it goes. */
-function readSourceEntry(packageJsonPath: string): string | undefined {
+/**
+ * Digs `exports[<subpath>].source` out of a package.json, narrowing as it
+ * goes.
+ */
+function readSourceEntry(packageJsonPath: string, subpath: string): string | undefined {
 	const parsed = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 	if (typeof parsed !== "object" || parsed === null || !("exports" in parsed)) {
 		return undefined;
 	}
 
 	const exportsField = parsed["exports"];
-	if (typeof exportsField !== "object" || exportsField === null || !("." in exportsField)) {
+	if (
+		typeof exportsField !== "object" ||
+		exportsField === null ||
+		Array.isArray(exportsField) ||
+		!(subpath in exportsField)
+	) {
 		return undefined;
 	}
 
-	const dotExport = exportsField["."];
-	if (typeof dotExport !== "object" || dotExport === null || !("source" in dotExport)) {
+	const subpathExport = exportsField[subpath];
+	if (
+		typeof subpathExport !== "object" ||
+		subpathExport === null ||
+		!("source" in subpathExport)
+	) {
 		return undefined;
 	}
 
-	return typeof dotExport["source"] === "string" ? dotExport["source"] : undefined;
+	return typeof subpathExport["source"] === "string" ? subpathExport["source"] : undefined;
 }
 
-function sourceAlias(packageName: string) {
-	const packageJsonPath = requireFromConfig.resolve(`${packageName}/package.json`);
-	const sourceEntry = readSourceEntry(packageJsonPath);
+/** Reads the export subpaths a package.json declares. */
+function readExportSubpaths(packageJsonPath: string): Array<string> {
+	const parsed = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+	if (typeof parsed !== "object" || parsed === null || !("exports" in parsed)) {
+		return [];
+	}
 
-	if (sourceEntry === undefined) {
+	const exportsField = parsed["exports"];
+	if (typeof exportsField !== "object" || exportsField === null) {
+		return [];
+	}
+
+	return Object.keys(exportsField);
+}
+
+/**
+ * One alias per source-conditioned export subpath, longest specifier first so
+ * `<pkg>/parser` wins over the bare `<pkg>` prefix.
+ */
+function sourceAliases(packageName: string) {
+	const packageJsonPath = requireFromConfig.resolve(`${packageName}/package.json`);
+	const aliases: Array<{ find: string; replacement: string }> = [];
+	for (const subpath of readExportSubpaths(packageJsonPath)) {
+		const sourceEntry = readSourceEntry(packageJsonPath, subpath);
+		if (sourceEntry === undefined) {
+			continue;
+		}
+
+		aliases.push({
+			find: packageName + subpath.slice(1),
+			replacement: resolve(dirname(packageJsonPath), sourceEntry),
+		});
+	}
+
+	if (aliases.length === 0) {
 		throw new Error(`${packageName} must expose exports["."].source for Vitest tests`);
 	}
 
-	return { find: packageName, replacement: resolve(dirname(packageJsonPath), sourceEntry) };
+	return aliases.toSorted((left, right) => right.find.length - left.find.length);
 }
 
 const workspaceSourceAliases = [
-	sourceAlias("@isentinel/luau-ast"),
-	sourceAlias("@isentinel/rojo-utils"),
-	sourceAlias("@isentinel/roblox-runner"),
+	...sourceAliases("@isentinel/luau-ast"),
+	...sourceAliases("@isentinel/rojo-utils"),
+	...sourceAliases("@isentinel/roblox-runner"),
 ];
 
 // The `config`/`executor` integration tests load a `jest.config.ts` fixture
@@ -98,7 +140,7 @@ const workspaceSourceAliases = [
 // files, shadowing the genuine `unit` coverage down from 100%. A separate
 // no-coverage run sidesteps the collision entirely.
 function selfSourceEntry(): string {
-	const sourceEntry = readSourceEntry(resolve(import.meta.dirname, "package.json"));
+	const sourceEntry = readSourceEntry(resolve(import.meta.dirname, "package.json"), ".");
 	if (sourceEntry === undefined) {
 		throw new Error('package.json must expose exports["."].source for integration tests');
 	}

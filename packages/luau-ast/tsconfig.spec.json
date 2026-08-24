@@ -15,6 +15,7 @@
 		"eslint.config.ts",
 		"vitest.config.ts",
 		"tsdown.config.ts",
+		"wasm/build-wasm.ts",
 		"package.json"
 	]
 }

@@ -1,361 +1,125 @@
-import type { AstStatBlock } from "@isentinel/luau-ast";
-import { fromAny } from "@total-typescript/shoehorn";
+import type { AstStatBlock } from "@isentinel/luau-ast/ast";
 
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
-import { evalLuauReturnLiterals, isAstStatBlock } from "./eval-literals.ts";
+import { evalLuauReturnLiterals } from "./eval-literals.ts";
+import { luauParser } from "./parser.ts";
 
-function makeBlock(...statements: Array<unknown>): AstStatBlock {
-	const block: AstStatBlock = fromAny({
-		kind: "stat",
-		location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
-		statements,
-		tag: "block",
-	});
-	return block;
+function parseBlock(source: string): AstStatBlock {
+	const parsed = luauParser.parse(source);
+	assert(parsed.ok);
+	return parsed.root;
 }
 
-function makeReturn(...expressions: Array<unknown>) {
-	return {
-		expressions: expressions.map((node) => ({ node })),
-		kind: "stat",
-		location: { beginColumn: 1, beginLine: 1, endColumn: 1, endLine: 1 },
-		tag: "return",
-	};
+function evalSource(source: string) {
+	return evalLuauReturnLiterals(parseBlock(source));
 }
 
 describe(evalLuauReturnLiterals, () => {
 	it("should return string literal", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({ kind: "expr", location: {}, tag: "string", text: "hello" }),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toBe("hello");
+		expect(evalSource('return "hello"')).toBe("hello");
 	});
 
 	it("should return boolean literal", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({ kind: "expr", location: {}, tag: "boolean", value: true }),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toBeTrue();
+		expect(evalSource("return true")).toBeTrue();
 	});
 
 	it("should return number literal", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({ kind: "expr", location: {}, tag: "number", value: 42 }),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toBe(42);
+		expect(evalSource("return 42")).toBe(42);
 	});
 
 	it("should return nil as undefined", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(makeReturn({ kind: "expr", location: {}, tag: "nil" }));
-
-		expect(evalLuauReturnLiterals(root)).toBeUndefined();
+		expect(evalSource("return nil")).toBeUndefined();
 	});
 
 	it("should evaluate record table to object", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({
-				entries: [
-					{
-						key: { text: "name" },
-						kind: "record",
-						value: { kind: "expr", location: {}, tag: "string", text: "test" },
-					},
-					{
-						key: { text: "enabled" },
-						kind: "record",
-						value: { kind: "expr", location: {}, tag: "boolean", value: true },
-					},
-				],
-				kind: "expr",
-				location: {},
-				tag: "table",
-			}),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toStrictEqual({
-			name: "test",
-			enabled: true,
+		expect(evalSource('return {\n\ttimeout = 5,\n\tname = "suite",\n}')).toStrictEqual({
+			name: "suite",
+			timeout: 5,
 		});
 	});
 
 	it("should evaluate list table to array", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({
-				entries: [
-					{
-						kind: "list",
-						value: { kind: "expr", location: {}, tag: "string", text: "a" },
-					},
-					{
-						kind: "list",
-						value: { kind: "expr", location: {}, tag: "string", text: "b" },
-					},
-				],
-				kind: "expr",
-				location: {},
-				tag: "table",
-			}),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toStrictEqual(["a", "b"]);
+		expect(evalSource('return { "a", "b", 3 }')).toStrictEqual(["a", "b", 3]);
 	});
 
 	it("should evaluate empty table to empty object", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({
-				entries: [],
-				kind: "expr",
-				location: {},
-				tag: "table",
-			}),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toStrictEqual({});
+		expect(evalSource("return {}")).toStrictEqual({});
 	});
 
 	it("should unwrap cast expressions", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({
-				kind: "expr",
-				location: {},
-				operand: {
-					entries: [
-						{
-							key: { text: "x" },
-							kind: "record",
-							value: { kind: "expr", location: {}, tag: "number", value: 1 },
-						},
-					],
-					kind: "expr",
-					location: {},
-					tag: "table",
-				},
-				tag: "cast",
-			}),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toStrictEqual({ x: 1 });
+		expect(evalSource("return 5 :: number")).toBe(5);
 	});
 
-	it("should throw when root has no statements array", () => {
+	it("should unwrap nested cast expressions", () => {
 		expect.assertions(1);
 
-		const root: AstStatBlock = fromAny({ tag: "block" });
-
-		expect(() => {
-			return evalLuauReturnLiterals(root);
-		}).toThrowWithMessage(Error, "Config file has no return statement");
+		expect(evalSource("return (5 :: any) :: number")).toBeUndefined();
 	});
 
-	describe(isAstStatBlock, () => {
-		it("should reject null", () => {
-			expect.assertions(1);
-
-			expect(isAstStatBlock(null)).toBeFalse();
-		});
-
-		it("should reject arrays", () => {
-			expect.assertions(1);
-
-			expect(isAstStatBlock([])).toBeFalse();
-		});
-
-		it("should reject non-block tag", () => {
-			expect.assertions(1);
-
-			expect(isAstStatBlock({ tag: "expr" })).toBeFalse();
-		});
-
-		it("should accept block-tagged objects", () => {
-			expect.assertions(1);
-
-			expect(isAstStatBlock({ tag: "block" })).toBeTrue();
-		});
-	});
-
-	it("should return undefined when return expression node is not an object", () => {
+	it("should skip record entries with a computed key", () => {
 		expect.assertions(1);
 
-		const root = makeBlock({
-			expressions: [{ node: 42 }],
-			kind: "stat",
-			location: {},
-			tag: "return",
+		expect(evalSource('return {\n\t[key] = 1,\n\tname = "kept",\n}')).toStrictEqual({
+			name: "kept",
 		});
-
-		expect(evalLuauReturnLiterals(root)).toBeUndefined();
-	});
-
-	it("should return undefined for non-object entries in list table", () => {
-		expect.assertions(1);
-
-		const root = makeBlock(
-			makeReturn({
-				entries: [
-					{
-						kind: "list",
-						value: { kind: "expr", location: {}, tag: "string", text: "a" },
-					},
-					"not-an-object",
-				],
-				kind: "expr",
-				location: {},
-				tag: "table",
-			}),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toStrictEqual(["a", undefined]);
-	});
-
-	it("should skip record entries with non-string key", () => {
-		expect.assertions(1);
-
-		const root = makeBlock(
-			makeReturn({
-				entries: [
-					{
-						key: 42,
-						kind: "record",
-						value: { kind: "expr", location: {}, tag: "number", value: 1 },
-					},
-				],
-				kind: "expr",
-				location: {},
-				tag: "table",
-			}),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toStrictEqual({});
-	});
-
-	it("should skip non-record entries in record table", () => {
-		expect.assertions(1);
-
-		const root = makeBlock(
-			makeReturn({
-				entries: [
-					{
-						key: { text: "kept" },
-						kind: "record",
-						value: { kind: "expr", location: {}, tag: "number", value: 1 },
-					},
-					"not-an-object",
-				],
-				kind: "expr",
-				location: {},
-				tag: "table",
-			}),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toStrictEqual({ kept: 1 });
 	});
 
 	it("should throw when no return statement exists", () => {
 		expect.assertions(1);
 
-		const root = makeBlock();
-
-		expect(() => evalLuauReturnLiterals(root)).toThrowWithMessage(
-			Error,
-			"Config file has no return statement",
-		);
+		expect(() => evalSource("local x = 1")).toThrow("Config file has no return statement");
 	});
 
 	it("should throw when return has no expressions", () => {
 		expect.assertions(1);
 
-		const root = makeBlock({
-			expressions: [],
-			kind: "stat",
-			location: {},
-			tag: "return",
-		});
-
-		expect(() => evalLuauReturnLiterals(root)).toThrowWithMessage(
-			Error,
-			"Return statement has no expressions",
-		);
+		expect(() => evalSource("return")).toThrow("Return statement has no expressions");
 	});
 
 	it("should return undefined for unsupported expression types", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(makeReturn({ kind: "expr", location: {}, tag: "call" }));
-
-		expect(evalLuauReturnLiterals(root)).toBeUndefined();
+		expect(evalSource("return someFunction()")).toBeUndefined();
 	});
 
-	it("should return undefined for a cast with a malformed operand", () => {
+	it("should return undefined for unsupported entries in a list table", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({ kind: "expr", location: {}, operand: "invalid", tag: "cast" }),
-		);
-
-		expect(evalLuauReturnLiterals(root)).toBeUndefined();
-	});
-
-	it.for([
-		["boolean", "not-a-boolean"],
-		["number", "not-a-number"],
-		["string", 42],
-	])("should return undefined for malformed %s literal payload", ([tag, value]) => {
-		expect.assertions(1);
-
-		const root = makeBlock(makeReturn({ kind: "expr", location: {}, tag, text: value, value }));
-
-		expect(evalLuauReturnLiterals(root)).toBeUndefined();
+		expect(evalSource("return { someFunction(), 2 }")).toStrictEqual([undefined, 2]);
 	});
 
 	it("should evaluate nested tables", () => {
 		expect.assertions(1);
 
-		const root = makeBlock(
-			makeReturn({
-				entries: [
-					{
-						key: { text: "nested" },
-						kind: "record",
-						value: {
-							entries: [
-								{
-									key: { text: "deep" },
-									kind: "record",
-									value: { kind: "expr", location: {}, tag: "number", value: 99 },
-								},
-							],
-							kind: "expr",
-							location: {},
-							tag: "table",
-						},
-					},
-				],
-				kind: "expr",
-				location: {},
-				tag: "table",
-			}),
-		);
+		const source = [
+			"return {",
+			'\treporters = { "default", "json" },',
+			"\toptions = {",
+			"\t\tverbose = true,",
+			"\t},",
+			"}",
+		].join("\n");
 
-		expect(evalLuauReturnLiterals(root)).toStrictEqual({ nested: { deep: 99 } });
+		expect(evalSource(source)).toStrictEqual({
+			options: { verbose: true },
+			reporters: ["default", "json"],
+		});
 	});
 });

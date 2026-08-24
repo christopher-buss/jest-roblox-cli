@@ -1,5 +1,6 @@
-import type { LuauSpan, Utf8OffsetMap } from "@isentinel/luau-ast";
+import type { Utf8OffsetMap } from "@isentinel/luau-ast";
 import { createUtf8OffsetMap } from "@isentinel/luau-ast";
+import type { LuauSpan } from "@isentinel/luau-ast/ast";
 
 import { Buffer } from "node:buffer";
 
@@ -16,12 +17,8 @@ type ColumnConverter = (line: number, column: number) => number;
  * slices each line at a column, and the columns that reach a roblox-ts source
  * map are UTF-16 code units on both sides of the lookup. On a line holding a
  * multi-byte character the two units drift apart and a probe lands inside the
- * character, so the units are reconciled once, here, where lute's numbers enter
- * the pipeline.
- *
- * Converting further upstream, in `parse-ast.luau`, would be cheaper still, but
- * Luau counts code points rather than UTF-16 units and the AST sidecars it
- * caches would then carry a convention no other Luau tool uses.
+ * character, so the units are reconciled once, here, where the parser's
+ * numbers enter the pipeline.
  */
 export function toUtf16Columns(result: CollectorResult, source: string): CollectorResult {
 	// An all-ASCII file — the overwhelming majority — has byte columns that are
