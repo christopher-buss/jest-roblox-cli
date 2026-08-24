@@ -3,13 +3,14 @@ import buffer from "node:buffer";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { JestResult } from "../../../src/types/jest-result.ts";
 import { type FakeOpenCloudTask, startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
 
 interface HttpResponse {
 	body: unknown;
+	headers: Headers;
 	ok: boolean;
 	status: number;
 }
@@ -32,6 +33,9 @@ interface HttpClient {
 const POLL_INTERVAL_MS = 1000;
 const FAILURE_TIMEOUT_MS = 60_000;
 const SUCCESS_TIMEOUT_MS = 60_000;
+const RATE_LIMIT_RETRY_COUNT = 8;
+const RATE_LIMIT_BASE_DELAY_MS = 1000;
+const RATE_LIMIT_MAX_DELAY_MS = 10_000;
 
 const PLACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place/game.rbxl");
 
@@ -94,6 +98,7 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 			body: placeData,
 			headers: { "Content-Type": "application/octet-stream" },
 		});
+		assertResponseOk(response, "Place upload");
 
 		expect(versionResponseSchema(response.body)).not.toBeInstanceOf(type.errors);
 	});
@@ -108,6 +113,7 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 		const response = await http.request("POST", url, {
 			body: { script: "return nil", timeout: "30s" },
 		});
+		assertResponseOk(response, "Task creation");
 
 		expect(taskCreateResponseSchema(response.body)).not.toBeInstanceOf(type.errors);
 	});
@@ -186,12 +192,115 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 	);
 });
 
+describe("rate-limited contract HTTP", () => {
+	it("should wait for retry-after before retrying rate-limited task creation", async () => {
+		expect.assertions(3);
+
+		vi.useFakeTimers();
+		const fetchMock = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ errors: [{ code: 0, message: "" }] }), {
+					headers: { "Content-Type": "application/json", "Retry-After": "2" },
+					status: 429,
+				}),
+			)
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ path: "universes/123/tasks/456" }), {
+					headers: { "Content-Type": "application/json" },
+					status: 200,
+				}),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		onTestFinished(() => {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		});
+
+		const request = createHttpClient("test-api-key").request(
+			"POST",
+			"https://apis.roblox.com/cloud/v2/universes/123/places/456/luau-execution-session-tasks",
+			{ body: { script: "return nil", timeout: "30s" } },
+		);
+
+		await vi.advanceTimersByTimeAsync(1999);
+
+		expect(fetchMock).toHaveBeenCalledOnce();
+
+		await vi.advanceTimersByTimeAsync(1);
+		const response = await request;
+
+		expect(response).toMatchObject({
+			body: { path: "universes/123/tasks/456" },
+			ok: true,
+			status: 200,
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("should report rate-limit diagnostics after exhausting retries", async () => {
+		expect.assertions(2);
+
+		vi.useFakeTimers();
+		const fetchMock = vi.fn<typeof fetch>(async () => {
+			return new Response(JSON.stringify({ errors: [{ code: 0, message: "" }] }), {
+				headers: {
+					"Content-Type": "application/json",
+					"Retry-After": "1",
+					"X-Envoy-Ratelimited": "true",
+					"X-Ratelimit-Remaining": "0",
+					"X-Ratelimit-Reset": "5",
+				},
+				status: 429,
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		onTestFinished(() => {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		});
+
+		const task = createTaskAsync({
+			baseUrl: "https://apis.roblox.com",
+			http: createHttpClient("test-api-key"),
+			placeId: "456",
+			script: "return nil",
+			universeId: "123",
+		});
+		const taskError = task.catch((err: unknown) => err);
+
+		await vi.runAllTimersAsync();
+		const error = await taskError;
+		assert(error instanceof Error, "expected task creation to reject");
+
+		expect(error.message).toMatch(
+			/status=429.*retry-after=1.*x-envoy-ratelimited=true.*x-ratelimit-remaining=0.*x-ratelimit-reset=5.*"errors"/,
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(9);
+	});
+});
+
 /**
  * A `results` slot past the envelope is optional on the wire, but when present
  * the backend reads it as a string.
  */
 function isAbsentOrString(value: string | undefined): boolean {
 	return value === undefined || typeof value === "string";
+}
+
+function resolveRateLimitRetryDelayMs(headers: Headers, retryCount: number): number {
+	const retryAfterSeconds = Number(headers.get("retry-after"));
+	if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+		return retryAfterSeconds * 1000;
+	}
+
+	return Math.min(RATE_LIMIT_BASE_DELAY_MS * 2 ** retryCount, RATE_LIMIT_MAX_DELAY_MS);
+}
+
+async function sleepAsync(ms: number): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(resolve, ms);
+	});
 }
 
 function createHttpClient(apiKey: string): HttpClient {
@@ -219,15 +328,50 @@ function createHttpClient(apiKey: string): HttpClient {
 				}
 			}
 
-			const response = await fetch(url, fetchOptions);
-			const contentType = response.headers.get("content-type") ?? "";
-			const body = contentType.includes("application/json")
-				? await response.json()
-				: await response.text();
+			for (let retryCount = 0; ; retryCount += 1) {
+				const response = await fetch(url, fetchOptions);
+				const contentType = response.headers.get("content-type") ?? "";
+				const body = contentType.includes("application/json")
+					? await response.json()
+					: await response.text();
+				const result: HttpResponse = {
+					body,
+					headers: response.headers,
+					ok: response.ok,
+					status: response.status,
+				};
 
-			return { body, ok: response.ok, status: response.status };
+				if (response.status !== 429 || retryCount >= RATE_LIMIT_RETRY_COUNT) {
+					return result;
+				}
+
+				await sleepAsync(resolveRateLimitRetryDelayMs(response.headers, retryCount));
+			}
 		},
 	};
+}
+
+function formatHttpFailure(response: HttpResponse): string {
+	const headerNames = [
+		"retry-after",
+		"x-envoy-ratelimited",
+		"x-ratelimit-remaining",
+		"x-ratelimit-reset",
+		"x-roblox-system-reason",
+		"x-retry-after-coverage",
+	];
+	const headers = headerNames
+		.map((name) => `${name}=${response.headers.get(name) ?? "<absent>"}`)
+		.join("; ");
+	const serializedBody = JSON.stringify(response.body) ?? String(response.body);
+
+	return `status=${response.status.toString()}; ${headers}; body=${serializedBody}`;
+}
+
+function assertResponseOk(response: HttpResponse, operation: string): void {
+	if (!response.ok) {
+		throw new Error(`${operation} failed: ${formatHttpFailure(response)}`);
+	}
 }
 
 function resolveLiveCase(): ContractCase | undefined {
@@ -278,19 +422,10 @@ async function createTaskAsync({
 	const response = await http.request("POST", url, {
 		body: { script, timeout: "60s" },
 	});
-
-	if (!response.ok) {
-		throw new Error(`Task creation failed: status=${response.status.toString()}`);
-	}
+	assertResponseOk(response, "Task creation");
 
 	const parsed = taskCreateResponseSchema.assert(response.body);
 	return parsed.path;
-}
-
-async function sleepAsync(ms: number): Promise<void> {
-	return new Promise((resolve) => {
-		setTimeout(resolve, ms);
-	});
 }
 
 async function pollUntilTerminalAsync(
@@ -304,9 +439,7 @@ async function pollUntilTerminalAsync(
 
 	while (Date.now() - startTime < timeoutMs) {
 		const response = await http.request("GET", url);
-		if (!response.ok) {
-			throw new Error(`Task poll failed: status=${response.status.toString()}`);
-		}
+		assertResponseOk(response, "Task poll");
 
 		const status = taskStatusResponseSchema.assert(response.body);
 		if (status.state !== "PROCESSING") {
