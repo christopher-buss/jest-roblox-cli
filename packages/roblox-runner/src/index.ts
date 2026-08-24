@@ -1,5 +1,9 @@
 export { resolveCredentials } from "./credentials.ts";
 export type { ResolveCredentialsInput } from "./credentials.ts";
+export { flushMemoryStoreAsync } from "./memory-store-flush.ts";
+export type { FlushMemoryStoreOptions } from "./memory-store-flush.ts";
+export { createMemoryStoreJanitor } from "./memory-store-janitor.ts";
+export type { MemoryStoreJanitor, MemoryStoreJanitorOptions } from "./memory-store-janitor.ts";
 export { OcaleRunner } from "./ocale-runner.ts";
 export type { OcaleRunnerOptions } from "./ocale-runner.ts";
 export { ProgressMap } from "./progress-map.ts";
