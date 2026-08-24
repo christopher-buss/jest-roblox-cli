@@ -1840,7 +1840,9 @@ describe(resolveOcaleMaxRetries, () => {
 	});
 });
 
-describe("upload cache", () => {
+// Real tmpdir I/O per test (the cache reads place bytes off disk), so the
+// suite-wide per-test budget cannot hold this describe under parallel load.
+describe("upload cache", { timeout: 1000 }, () => {
 	/**
 	 * A temp rootDir holding a real place file — the cache reads bytes off
 	 * disk, and this spec deliberately does not mock `node:fs`.

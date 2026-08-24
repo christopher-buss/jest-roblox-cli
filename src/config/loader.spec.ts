@@ -174,7 +174,9 @@ describe(resolveConfig, () => {
 	});
 });
 
-describe(loadConfig, () => {
+// The first c12 load pays jiti's cold start (~140ms), and it lands on
+// whichever test runs first, so the whole describe carries the budget.
+describe(loadConfig, { timeout: 1000 }, () => {
 	it("should return defaults when no config file found", async () => {
 		expect.assertions(2);
 
@@ -217,9 +219,7 @@ describe(loadConfig, () => {
 		);
 	});
 
-	// Jiti's parse of the broken config measured ~140ms under full-suite load,
-	// so the suite-wide per-test budget cannot hold it.
-	it("should surface parse errors without masking as not found", { timeout: 1000 }, async () => {
+	it("should surface parse errors without masking as not found", async () => {
 		expect.assertions(1);
 
 		const temporaryDirectory = makeTemporaryDirectory();

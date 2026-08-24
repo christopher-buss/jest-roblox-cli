@@ -131,7 +131,7 @@ describe(readDeclaredClasses, () => {
 	it.skipIf(!rojoOnPath())(
 		"should read every class out of a binary model, LZ4 chunks included",
 		// A real rojo spawn, so the suite-wide per-test budget cannot hold it.
-		{ timeout: 2000 },
+		{ timeout: 5000 },
 		() => {
 			expect.assertions(1);
 
@@ -152,7 +152,7 @@ describe(readDeclaredClasses, () => {
 	it.skipIf(!rojoOnPath())(
 		"should report no pinned class for a model that declares none",
 		// A real rojo spawn, so the suite-wide per-test budget cannot hold it.
-		{ timeout: 2000 },
+		{ timeout: 5000 },
 		() => {
 			expect.assertions(1);
 
