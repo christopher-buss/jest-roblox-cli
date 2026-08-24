@@ -1,8 +1,9 @@
+import { isRojoTreeNode } from "@isentinel/rojo-utils";
+
 import { existsSync } from "node:fs";
 
 import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
-import { isRojoTreeNode } from "../utils/rojo-tree-node.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
 const INIT_SEGMENT = /(^|\/)(init)(\.|\/)/;

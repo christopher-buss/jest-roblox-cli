@@ -13,7 +13,7 @@ import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
 } from "../coverage-pipeline/prepare.ts";
-import { getRawProjects, runSingleOrMultiAsync } from "../run.ts";
+import { runSingleOrMultiAsync } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { collectStubMounts } from "../run/staging.ts";
 import type { MultiRunResult } from "../run/types.ts";
@@ -46,7 +46,6 @@ const mocks = {
 	buildPlace: vi.mocked(buildPlace),
 	collectStubMounts: vi.mocked(collectStubMounts),
 	emitBuildManifest: vi.mocked(emitBuildManifest),
-	getRawProjects: vi.mocked(getRawProjects),
 	loadRojoTree: vi.mocked(loadRojoTree),
 	readManifest: vi.mocked(readManifest),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
@@ -222,9 +221,6 @@ describe(prepareArtifactsAsync, () => {
 
 		const projects = [{ test: { displayName: "c" } }];
 		const config = makeConfig({ projects: fromAny(projects) });
-		// run.ts is mocked, so `getRawProjects` (its export) is too — feed the
-		// multi-mode branch its real passthrough.
-		mocks.getRawProjects.mockReturnValue(fromAny(projects));
 		mocks.runSingleOrMulti.mockResolvedValue(
 			multiResult({
 				coverageArtifacts: makeArtifacts(),

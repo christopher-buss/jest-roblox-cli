@@ -113,6 +113,41 @@ describe(loadRojoProject, () => {
 		expect(project.servePort).toBeUndefined();
 	});
 
+	it("should keep undeclared top-level keys on raw only", () => {
+		expect.assertions(2);
+
+		const temporaryDirectory = createTemporaryDirectory();
+
+		const projectPath = path.join(temporaryDirectory, "default.project.json");
+		fs.writeFileSync(
+			projectPath,
+			JSON.stringify({
+				name: "TestProject",
+				gameId: 12345,
+				tree: { $className: "DataModel" },
+			}),
+		);
+
+		const project = loadRojoProject(projectPath);
+
+		expect(Object.keys(project)).not.toContain("gameId");
+		expect(project.raw["gameId"]).toBe(12345);
+	});
+
+	it("should throw when servePort is not a number", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory();
+
+		const projectPath = path.join(temporaryDirectory, "bad.project.json");
+		fs.writeFileSync(
+			projectPath,
+			JSON.stringify({ name: "Bad", servePort: "34872", tree: { $className: "DataModel" } }),
+		);
+
+		expect(() => loadRojoProject(projectPath)).toThrow(/servePort must be a number/);
+	});
+
 	it("should throw with file path when project has malformed JSON", () => {
 		expect.assertions(1);
 
@@ -132,7 +167,9 @@ describe(loadRojoProject, () => {
 		const projectPath = path.join(temporaryDirectory, "array.project.json");
 		fs.writeFileSync(projectPath, JSON.stringify([1, 2, 3]));
 
-		expect(() => loadRojoProject(projectPath)).toThrow("Rojo project must be a JSON object");
+		expect(() => loadRojoProject(projectPath)).toThrow(
+			/Invalid Rojo project .*: must be an object .was an array./,
+		);
 	});
 
 	it("should throw when file does not exist", () => {
@@ -151,9 +188,7 @@ describe(loadRojoProject, () => {
 		const projectPath = path.join(temporaryDirectory, "bad.project.json");
 		fs.writeFileSync(projectPath, JSON.stringify({ tree: { $className: "DataModel" } }));
 
-		expect(() => loadRojoProject(projectPath)).toThrow(
-			'Rojo project must have a non-empty "name" field',
-		);
+		expect(() => loadRojoProject(projectPath)).toThrow(/Invalid Rojo project .*: name must be/);
 	});
 
 	it("should throw when name is empty string", () => {
@@ -167,9 +202,7 @@ describe(loadRojoProject, () => {
 			JSON.stringify({ name: "", tree: { $className: "DataModel" } }),
 		);
 
-		expect(() => loadRojoProject(projectPath)).toThrow(
-			'Rojo project must have a non-empty "name" field',
-		);
+		expect(() => loadRojoProject(projectPath)).toThrow(/Invalid Rojo project .*: name must be/);
 	});
 
 	it("should throw when tree is missing", () => {
@@ -181,7 +214,7 @@ describe(loadRojoProject, () => {
 		fs.writeFileSync(projectPath, JSON.stringify({ name: "Bad" })!);
 
 		expect(() => loadRojoProject(projectPath)).toThrow(
-			'Rojo project must have a "tree" object',
+			/Invalid Rojo project .*: tree must be an object/,
 		);
 	});
 
@@ -194,7 +227,7 @@ describe(loadRojoProject, () => {
 		fs.writeFileSync(projectPath, JSON.stringify({ name: "Bad", tree: [] }));
 
 		expect(() => loadRojoProject(projectPath)).toThrow(
-			'Rojo project must have a "tree" object',
+			/Invalid Rojo project .*: tree must be an object/,
 		);
 	});
 
@@ -207,7 +240,7 @@ describe(loadRojoProject, () => {
 		fs.writeFileSync(projectPath, JSON.stringify({ name: "Bad", tree: null }));
 
 		expect(() => loadRojoProject(projectPath)).toThrow(
-			'Rojo project must have a "tree" object',
+			/Invalid Rojo project .*: tree must be an object/,
 		);
 	});
 });

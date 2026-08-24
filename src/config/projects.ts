@@ -14,12 +14,12 @@ import { ConfigError } from "./errors.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
 import type {
-	InlineProjectConfig,
+	ProjectConfigFile,
 	ProjectEntry,
 	ProjectTestConfig,
 	ResolvedConfig,
-	UndefinedTolerant,
 } from "./schema.ts";
+import { projectConfigFileSchema } from "./schema.ts";
 
 const TRAILING_SLASH = /\/$/;
 const TS_OR_LUAU_EXTENSION = /\.(tsx?|luau?)$/;
@@ -156,8 +156,17 @@ export function createFsClassifier(rootDirectory: string): PathClassifier {
 	};
 }
 
-export function validateProjects(projects: Array<ProjectTestConfig>): void {
+/**
+ * Check the cross-project invariants a schema cannot: names present and
+ * unique, and an `include` that survived derivation.
+ *
+ * @param projects - The project configs as loaded, before include is known.
+ * @returns The same projects, now carrying an `include`.
+ * @throws When a name is missing or duplicated, or a project selects no files.
+ */
+export function validateProjects(projects: Array<ProjectConfigFile>): Array<ProjectTestConfig> {
 	const names = new Set<string>();
+	const validated: Array<ProjectTestConfig> = [];
 
 	for (const project of projects) {
 		const name = displayNameOf(project);
@@ -172,10 +181,15 @@ export function validateProjects(projects: Array<ProjectTestConfig>): void {
 
 		names.add(name);
 
-		if (project.include.length === 0) {
+		const { include } = project;
+		if (include === undefined || include.length === 0) {
 			throw new Error(`Project "${name}" must have at least one include pattern`);
 		}
+
+		validated.push({ ...project, include });
 	}
+
+	return validated;
 }
 
 const PROJECT_ONLY_KEYS: ReadonlySet<string> = new Set([
@@ -240,13 +254,13 @@ export function resolveProjectConfig(
 export async function loadProjectConfigFile(
 	filePath: string,
 	cwd: string,
-): Promise<ProjectTestConfig> {
+): Promise<ProjectConfigFile> {
 	const luauConfigPath = findLuauConfigFile(filePath, cwd);
 	if (luauConfigPath !== undefined) {
 		return buildProjectConfigFromLuau(luauConfigPath, filePath);
 	}
 
-	const config = unwrapProjectConfig(await loadProjectConfigViaC12(filePath, cwd));
+	const config = parseProjectConfigFile(await loadProjectConfigViaC12(filePath, cwd), filePath);
 
 	const name =
 		typeof config.displayName === "string" ? config.displayName : config.displayName.name;
@@ -268,23 +282,23 @@ export async function resolveAllProjects(
 	rojoTree: RojoTreeNode,
 	cwd: string,
 ): Promise<Array<ResolvedProjectConfig>> {
-	const projects: Array<ProjectTestConfig> = [];
+	const loaded: Array<ProjectConfigFile> = [];
 
 	for (const entry of entries) {
 		if (typeof entry === "string") {
-			projects.push(await loadProjectConfigFile(entry, cwd));
+			loaded.push(await loadProjectConfigFile(entry, cwd));
 		} else {
-			projects.push(entry.test);
+			loaded.push(entry.test);
 		}
 	}
 
-	validateProjects(projects);
+	const projects = validateProjects(loaded);
 
 	const classify = createFsClassifier(cwd);
 	return projects.map((project) => resolveProjectConfig(project, rootConfig, rojoTree, classify));
 }
 
-function displayNameOf(project: ProjectTestConfig): string {
+function displayNameOf(project: ProjectConfigFile): string {
 	return typeof project.displayName === "string" ? project.displayName : project.displayName.name;
 }
 
@@ -384,12 +398,9 @@ function resolveMounts(
 
 // c12 surfaces a resolution failure as a bare loader error; re-throw it naming
 // the config file so the user knows which project entry to fix.
-async function loadProjectConfigViaC12(
-	filePath: string,
-	cwd: string,
-): Promise<InlineProjectConfig | ProjectTestConfig> {
+async function loadProjectConfigViaC12(filePath: string, cwd: string): Promise<unknown> {
 	try {
-		const result = await c12LoadConfig<InlineProjectConfig | ProjectTestConfig>({
+		const result = await c12LoadConfig({
 			name: "jest-project",
 			configFile: filePath,
 			configFileRequired: true,
@@ -409,21 +420,13 @@ async function loadProjectConfigViaC12(
 	}
 }
 
-function isInlineProjectConfig(config: unknown): config is InlineProjectConfig {
-	if (typeof config !== "object" || config === null || !("test" in config)) {
-		return false;
+function parseProjectConfigFile(raw: unknown, filePath: string): ProjectConfigFile {
+	const result = projectConfigFileSchema(raw);
+	if (result instanceof type.errors) {
+		throw new Error(`Invalid project config file "${filePath}": ${result.summary}`);
 	}
 
-	const { test } = config;
-	return typeof test === "object" && test !== null;
-}
-
-function unwrapProjectConfig(config: InlineProjectConfig | ProjectTestConfig): ProjectTestConfig {
-	if (isInlineProjectConfig(config)) {
-		return config.test;
-	}
-
-	return config;
+	return result;
 }
 
 const luauProjectConfigSchema = type({
@@ -479,10 +482,7 @@ function buildProjectConfigFromLuau(
  * needing the CLI-specific `include`.
  */
 function deriveIncludeFromTestMatch(
-	// `include` is declared required, but this runs on a freshly loaded user
-	// config whose only test selector may be `testMatch` — which is the case it
-	// exists to fill in.
-	config: UndefinedTolerant<ProjectTestConfig>,
+	config: ProjectConfigFile,
 	configDirectory: string,
 	{ outDir, rootDir }: TsconfigDirectories,
 ): void {

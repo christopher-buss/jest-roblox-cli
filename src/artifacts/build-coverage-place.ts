@@ -14,7 +14,6 @@ import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
 } from "../coverage-pipeline/prepare.ts";
-import { getRawProjects } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { buildImplicitProject } from "../run/single-projects.ts";
 import { prepareBakedCoverage } from "../run/staging.ts";
@@ -102,7 +101,7 @@ export async function buildCoveragePlaceAsync(
  */
 async function resolveProjectsAsync(config: ResolvedConfig): Promise<Array<ResolvedProjectConfig>> {
 	const rojoTree = loadRojoTree(config);
-	const rawProjects = getRawProjects(config);
+	const rawProjects = config.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		return resolveAllProjects(rawProjects, config, rojoTree, config.rootDir);
 	}

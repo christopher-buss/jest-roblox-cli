@@ -1,3 +1,5 @@
+import { isRojoTreeNode } from "@isentinel/rojo-utils";
+
 import { Buffer } from "node:buffer";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -8,7 +10,6 @@ import type { RojoTreeNode } from "../types/rojo.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
-import { isRojoTreeNode } from "../utils/rojo-tree-node.ts";
 import {
 	isModelFile,
 	META_JSON_FILE,

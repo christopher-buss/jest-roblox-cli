@@ -797,6 +797,60 @@ End of output
 		});
 	});
 
+	it("should default every absent snapshot count to 0", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			success: true,
+			value: {
+				results: {
+					numFailedTests: 0,
+					numPassedTests: 1,
+					numPendingTests: 0,
+					numTotalTests: 1,
+					snapshot: { added: 2 },
+					startTime: 0,
+					success: true,
+					testResults: [],
+				},
+			},
+		});
+
+		const { result } = parseJestOutput(output);
+
+		expect(result.snapshot).toStrictEqual({
+			added: 2,
+			matched: 0,
+			total: 0,
+			unmatched: 0,
+			updated: 0,
+		});
+	});
+
+	it("should return undefined snapshot when a numeric field is not a number", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			success: true,
+			value: {
+				results: {
+					numFailedTests: 0,
+					numPassedTests: 1,
+					numPendingTests: 0,
+					numTotalTests: 1,
+					snapshot: { unmatched: "1" },
+					startTime: 0,
+					success: false,
+					testResults: [],
+				},
+			},
+		});
+
+		const { result } = parseJestOutput(output);
+
+		expect(result.snapshot).toBeUndefined();
+	});
+
 	it("should return undefined snapshot when summary absent", () => {
 		expect.assertions(1);
 

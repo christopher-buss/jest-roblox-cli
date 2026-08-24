@@ -11,7 +11,6 @@ import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
 } from "../coverage-pipeline/prepare.ts";
-import { getRawProjects } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { buildImplicitProject } from "../run/single-projects.ts";
 import { prepareBakedCoverage } from "../run/staging.ts";
@@ -29,7 +28,6 @@ const mocks = {
 	buildImplicitProject: vi.mocked(buildImplicitProject),
 	emitBuildManifest: vi.mocked(emitBuildManifest),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
-	getRawProjects: vi.mocked(getRawProjects),
 	loadRojoTree: vi.mocked(loadRojoTree),
 	prepareBakedCoverage: vi.mocked(prepareBakedCoverage),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
@@ -119,7 +117,6 @@ describe(buildCoveragePlaceAsync, () => {
 		expect.assertions(2);
 
 		primeHappyPath();
-		mocks.getRawProjects.mockReturnValue(undefined);
 
 		await buildCoveragePlaceAsync(makeConfig());
 
@@ -131,10 +128,11 @@ describe(buildCoveragePlaceAsync, () => {
 		expect.assertions(2);
 
 		primeHappyPath();
-		mocks.getRawProjects.mockReturnValue(fromAny([{ test: { displayName: "c" } }]));
 		mocks.resolveAllProjects.mockResolvedValue([fromAny({ displayName: "c", rojoMounts: [] })]);
 
-		await buildCoveragePlaceAsync(makeConfig());
+		await buildCoveragePlaceAsync(
+			makeConfig({ projects: [fromAny({ test: { displayName: "c" } })] }),
+		);
 
 		expect(mocks.resolveAllProjects).toHaveBeenCalledOnce();
 		expect(mocks.buildImplicitProject).not.toHaveBeenCalled();

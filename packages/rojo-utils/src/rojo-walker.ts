@@ -1,4 +1,4 @@
-import { type } from "arktype";
+import { type, type Type } from "arktype";
 import type { Dirent } from "node:fs";
 import * as fs from "node:fs";
 import path from "node:path";
@@ -62,7 +62,7 @@ interface RojoFile {
 	tree: RojoTree;
 }
 
-let rojoFileSchema: type.Any | undefined;
+let rojoFileSchema: Type<RojoFile> | undefined;
 
 /**
  * Mutable state for a single walk. Kept private to this module: callers go
@@ -98,16 +98,13 @@ class RojoWalker {
 			// caller.
 		}
 
-		if (isValidRojoConfig(configJson)) {
-			this.parseTree(
-				path.dirname(rojoConfigFilePath),
-				configJson.name,
-				configJson.tree,
-				doNotPush,
-			);
-		} else {
+		const config = parseRojoConfig(configJson);
+		if (config === undefined) {
 			this.warn("RojoResolver: Invalid configuration!");
+			return;
 		}
+
+		this.parseTree(path.dirname(rojoConfigFilePath), config.name, config.tree, doNotPush);
 	}
 
 	public parseTree(basePath: string, name: string, tree: RojoTree, doNotPush = false): void {
@@ -314,18 +311,40 @@ export function walkRojoTree(basePath: string, tree: RojoTree): RojoWalk {
 	return walker.result();
 }
 
-function isValidRojoConfig(value: unknown): value is RojoFile {
-	// Built lazily on first use (not at module top level) so consumers can
-	// auto-mock this module without a hoisting TDZ on the arktype import, then
-	// memoized so repeated tree-walk validations don't re-allocate the schema. We
-	// validate only the fields the resolver reads; parseTree handles arbitrary
-	// tree shapes defensively.
+/**
+ * Parse a project file's JSON into the fields the resolver reads.
+ *
+ * The schema is built lazily on first use (not at module top level) so
+ * consumers can auto-mock this module without a hoisting TDZ on the arktype
+ * import, then memoized so repeated tree-walk validations don't re-allocate
+ * it. Only the fields the resolver reads are checked; `parseTree` handles
+ * arbitrary tree shapes defensively.
+ *
+ * @param value - The parsed JSON of a `*.project.json` file, or undefined
+ *   when the file could not be parsed.
+ * @returns The project's fields, or undefined when the file is not a project.
+ */
+function parseRojoConfig(value: JSONValue | undefined): RojoFile | undefined {
 	rojoFileSchema ??= type({
 		"name": "string",
 		"servePort?": "number",
-		"tree": "object",
-	});
-	return !(rojoFileSchema(value) instanceof type.errors);
+		// `parseTree` dereferences `$path` and `$className` straight off the
+		// value this returns, so the schema has to earn the `RojoFile` claim for
+		// them — a `$path` of `42` otherwise types as `string | {optional}` and
+		// reaches `path.resolve` as undefined. Members are left to `isRojoTree`;
+		// a tree's key space mixes `$`-metadata with child nodes, so arktype
+		// cannot recurse through it without rejecting the `$` keys Rojo adds
+		// that this fork does not model.
+		"tree": type({
+			"$className?": "string",
+			"$ignoreUnknownInstances?": "boolean",
+			"$path?": ["string", "|", { optional: "string" }],
+			"$properties?": "object",
+		}).narrow((tree) => !Array.isArray(tree)),
+	}).as<RojoFile>();
+
+	const result = rojoFileSchema(value);
+	return result instanceof type.errors ? undefined : result;
 }
 
 function isRojoTree(value: unknown): value is RojoTree {

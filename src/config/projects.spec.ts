@@ -1,3 +1,4 @@
+// cspell:words includ
 import type { PathClassifier, PathKind } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
@@ -404,6 +405,14 @@ describe(validateProjects, () => {
 
 		expect(() => {
 			validateProjects([makeProject({ displayName: "client", include: [] })]);
+		}).toThrow('Project "client" must have at least one include pattern');
+	});
+
+	it("should throw when include was never derived", () => {
+		expect.assertions(1);
+
+		expect(() => {
+			validateProjects([{ displayName: "client" }]);
 		}).toThrow('Project "client" must have at least one include pattern');
 	});
 });
@@ -1098,6 +1107,40 @@ describe(loadProjectConfigFile, () => {
 
 		await expect(loadProjectConfigFile("./no-name.config.ts", "/project")).rejects.toThrow(
 			'Project config file "./no-name.config.ts" must have a displayName',
+		);
+	});
+
+	it("should throw when config omits displayName entirely", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: { include: ["src/**/*.spec.ts"] },
+			configFile: "jest-project.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		await expect(loadProjectConfigFile("./no-name.config.ts", "/project")).rejects.toThrow(
+			/Invalid project config file "\.\/no-name\.config\.ts"/,
+		);
+	});
+
+	it("should reject an unknown key in a project config file", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: { displayName: "client", includ: ["src/**/*.spec.ts"] },
+			configFile: "jest-project.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		await expect(loadProjectConfigFile("./typo.config.ts", "/project")).rejects.toThrow(
+			/Invalid project config file "\.\/typo\.config\.ts".*includ/,
 		);
 	});
 

@@ -125,31 +125,13 @@ function synthesizeVirtualProjectEntry(
 	return { test };
 }
 
-// `ResolvedConfig.projects` is structurally typed `Array<string>`
-// post-resolution, but workspace mode reads the field BEFORE per-package
-// resolution runs, when entries are still raw `ProjectEntry` (string paths or
-// `{ test }` inline configs). The crossing is bounded by this guard and by
-// consumers that fail on malformed entries.
-function isProjectEntryArray(value: unknown): value is Array<ProjectEntry> {
-	return Array.isArray(value);
-}
-
-function readRawProjects(config: ResolvedConfig): Array<ProjectEntry> | undefined {
-	const projects: unknown = config.projects;
-	if (!isProjectEntryArray(projects)) {
-		return undefined;
-	}
-
-	return projects;
-}
-
 function resolveProjectEntries(
 	packageName: string,
 	packageConfig: ResolvedConfig,
 	rojoTree: RojoTreeNode,
 	packageDirectory: string,
 ): Array<ProjectEntry> {
-	const rawProjects = readRawProjects(packageConfig);
+	const rawProjects = packageConfig.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		return rawProjects;
 	}

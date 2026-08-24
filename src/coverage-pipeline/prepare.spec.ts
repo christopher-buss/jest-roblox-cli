@@ -300,7 +300,7 @@ describe(prepareCoverage, () => {
 			await setupMocksAsync();
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
-			expect(() => prepareCoverage(config)).toThrow(/Rojo project must have/);
+			expect(() => prepareCoverage(config)).toThrow(/Invalid Rojo project/);
 		});
 
 		it("should throw when no Rojo project is found", async () => {

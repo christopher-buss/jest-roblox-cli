@@ -1,11 +1,13 @@
 import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { collectPaths, resolveNestedProjectSources } from "@isentinel/rojo-utils";
 
+import { type } from "arktype";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
+import { rojoProjectSchema } from "../types/rojo.ts";
 import { errorMessage } from "../utils/error-message.ts";
 import { hashFile } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
@@ -84,22 +86,19 @@ export function tryComputeRojoInputsHash(options: RojoInputsOptions): string | u
 	}
 }
 
-function isTreeNode(value: unknown): value is RojoTreeNode {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * Reads the project's tree as written on disk. `loadRojoProject` hands back a
  * nested-resolved tree, which has already erased the inlined project files this
  * hash has to cover, so the file is parsed here instead.
  */
 function readRawTree(rojoProjectPath: string): RojoTreeNode {
-	const parsed = JSON.parse(fs.readFileSync(rojoProjectPath, "utf-8"));
-	if (!isTreeNode(parsed) || !isTreeNode(parsed["tree"])) {
-		throw new Error(`Rojo project must have a "tree" object: ${rojoProjectPath}`);
+	const parsed: JSONValue = JSON.parse(fs.readFileSync(rojoProjectPath, "utf-8"));
+	const result = rojoProjectSchema(parsed);
+	if (result instanceof type.errors) {
+		throw new Error(`Invalid Rojo project ${rojoProjectPath}: ${result.summary}`);
 	}
 
-	return parsed["tree"];
+	return result.tree;
 }
 
 function toKey(filePath: string): string {

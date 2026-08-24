@@ -1,5 +1,3 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
 import { describe, expect, it, vi } from "vitest";
 
 import { type CliOptions, DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
@@ -99,9 +97,9 @@ describe(runJestRobloxAsync, () => {
 
 		mocks.runMultiProject.mockResolvedValue(MULTI);
 
-		// `projects` still holds raw `ProjectEntry` objects at dispatch time,
-		// which `ResolvedConfig` types as `Array<string>` post-resolution.
-		const config = makeConfig({ projects: fromAny([{ projects: ["client"] }]) });
+		const config = makeConfig({
+			projects: [{ test: { displayName: "client", include: ["a.spec.ts"] } }],
+		});
 
 		const result = await runJestRobloxAsync(makeCli(), config);
 

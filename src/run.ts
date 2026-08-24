@@ -1,6 +1,6 @@
 import { mergeCliWithConfig } from "./config/merge.ts";
 import { resolveTypecheckConfig } from "./config/resolve-typecheck-config.ts";
-import type { CliOptions, ProjectEntry, ResolvedConfig } from "./config/schema.ts";
+import type { CliOptions, ResolvedConfig } from "./config/schema.ts";
 import { emitBuildManifest } from "./coverage-pipeline/build-manifest.ts";
 import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
 import { loadRojoTree, runMultiProjectAsync, runResolvedProjectsAsync } from "./run/multi.ts";
@@ -14,18 +14,6 @@ export function isWorkspaceInvocation(cli: CliOptions): boolean {
 }
 
 /**
- * The raw `projects` entries off a resolved config. `ResolvedConfig.projects`
- * is structurally typed `Array<string>` post-resolution, but single/multi
- * dispatch reads it before resolution when entries are still raw
- * `ProjectEntry` — so the field is read off the config as unknown and branded
- * by the array check every call site already relies on.
- */
-export function getRawProjects(config: ResolvedConfig): Array<ProjectEntry> | undefined {
-	const projects: unknown = config.projects;
-	return isProjectEntryArray(projects) ? projects : undefined;
-}
-
-/**
  * Single/multi dispatch shared by `runJestRoblox` and `prepareArtifacts`. Both
  * are siblings over this core: it builds the Coverage-Instrumented Place and
  * runs the suite, returning `coverageArtifacts` for the caller to emit a Build
@@ -36,7 +24,7 @@ export async function runSingleOrMultiAsync(
 	merged: ResolvedConfig,
 	timing: TimingCollector,
 ): Promise<MultiRunResult> {
-	const rawProjects = getRawProjects(merged);
+	const rawProjects = merged.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		return runMultiProjectAsync({ cli, config: merged, rawProjects, timing });
 	}
@@ -99,8 +87,4 @@ export async function runJestRobloxAsync(
 	} finally {
 		timing.flushTimingReport();
 	}
-}
-
-function isProjectEntryArray(value: unknown): value is Array<ProjectEntry> {
-	return Array.isArray(value);
 }

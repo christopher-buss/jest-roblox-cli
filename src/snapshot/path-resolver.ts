@@ -1,7 +1,8 @@
+import { isRojoTreeNode } from "@isentinel/rojo-utils";
+
 import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { isRojoTreeNode } from "../utils/rojo-tree-node.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
 interface ResolvedSnapshotPath {

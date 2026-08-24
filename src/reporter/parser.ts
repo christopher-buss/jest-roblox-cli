@@ -1,5 +1,4 @@
 import { type } from "arktype";
-import assert from "node:assert";
 
 import { normalizeRawCoverage } from "../coverage-pipeline/raw-coverage.ts";
 import type { PerTestCoverageEntry, RawCoverageData } from "../coverage-pipeline/types.ts";
@@ -54,7 +53,7 @@ const jestResultSchema = type({
 const jsonValueSchema = type("unknown").as<JSONValue>();
 
 const jestEnvelopeSchema = type({
-	"err?": "unknown",
+	"err?": jsonValueSchema,
 	"error?": "unknown",
 	"kind?": "unknown",
 	"parent?": "unknown",
@@ -89,15 +88,18 @@ function runnerFields(parsed: JestEnvelope): RunnerFields {
 
 const unknownRecordSchema = type({ "[string]": "unknown" });
 
+// A field the runner omits means zero; a field it emits with the wrong type
+// means the block is malformed, and `extractSnapshotSummary` reports no summary
+// rather than one whose counts are inventions.
 const snapshotSummaryInputSchema = type({
-	"added?": "unknown",
-	"didUpdate?": "unknown",
-	"filesRemoved?": "unknown",
-	"matched?": "unknown",
-	"total?": "unknown",
-	"unchecked?": "unknown",
-	"unmatched?": "unknown",
-	"updated?": "unknown",
+	"added?": "number",
+	"didUpdate?": "boolean",
+	"filesRemoved?": "number",
+	"matched?": "number",
+	"total?": "number",
+	"unchecked?": "number",
+	"unmatched?": "number",
+	"updated?": "number",
 });
 
 const perTestCoverageSchema = type({
@@ -320,7 +322,7 @@ function stripPathLinePrefix(message: string): string {
 	return message.replace(PATH_LINE_PREFIX, "");
 }
 
-function stringifyError(err: unknown): string {
+function stringifyError(err: JSONValue): string {
 	if (typeof err === "string") {
 		// Defense in depth: when the Luau side encodes a Promise.Error via
 		// tostring() (e.g. luau/staging/entry.luau's per-pkg failure path) the
@@ -341,18 +343,21 @@ function stringifyError(err: unknown): string {
 		typeof err === "object" &&
 		err !== null &&
 		"message" in err &&
-		typeof err.message === "string"
+		typeof err["message"] === "string"
 	) {
-		return err.message;
+		return err["message"];
 	}
 
-	if (typeof err === "object" && err !== null && "kind" in err && err.kind === "ExecutionError") {
+	if (
+		typeof err === "object" &&
+		err !== null &&
+		"kind" in err &&
+		err["kind"] === "ExecutionError"
+	) {
 		return extractExecutionError(jestEnvelopeSchema.assert(err));
 	}
 
-	const serialized = JSON.stringify(err);
-	assert(serialized !== undefined, "JSON-parsed values are always serializable");
-	return serialized;
+	return JSON.stringify(err);
 }
 
 function unwrapResult(parsed: JestEnvelope): JestEnvelope {
@@ -384,10 +389,6 @@ function extractSetupSeconds({ setup }: RunnerFields): number | undefined {
 	return setup;
 }
 
-function numericField(value: unknown): number {
-	return typeof value === "number" ? value : 0;
-}
-
 function extractSnapshotSummary(source: JestResult): SnapshotSummary | undefined {
 	const envelope = jestEnvelopeSchema.assert(source);
 	const snapshot = snapshotSummaryInputSchema(envelope.snapshot);
@@ -396,22 +397,22 @@ function extractSnapshotSummary(source: JestResult): SnapshotSummary | undefined
 	}
 
 	const summary: SnapshotSummary = {
-		added: numericField(snapshot.added),
-		matched: numericField(snapshot.matched),
-		total: numericField(snapshot.total),
-		unmatched: numericField(snapshot.unmatched),
-		updated: numericField(snapshot.updated),
+		added: snapshot.added ?? 0,
+		matched: snapshot.matched ?? 0,
+		total: snapshot.total ?? 0,
+		unmatched: snapshot.unmatched ?? 0,
+		updated: snapshot.updated ?? 0,
 	};
 
-	if (typeof snapshot.filesRemoved === "number") {
+	if (snapshot.filesRemoved !== undefined) {
 		summary.filesRemoved = snapshot.filesRemoved;
 	}
 
-	if (typeof snapshot.unchecked === "number") {
+	if (snapshot.unchecked !== undefined) {
 		summary.unchecked = snapshot.unchecked;
 	}
 
-	if (typeof snapshot.didUpdate === "boolean") {
+	if (snapshot.didUpdate !== undefined) {
 		summary.didUpdate = snapshot.didUpdate;
 	}
 
@@ -421,7 +422,15 @@ function extractSnapshotSummary(source: JestResult): SnapshotSummary | undefined
 function buildJestResult(source: unknown): JestResult {
 	const validated = validateJestResult(source);
 	const snapshot = extractSnapshotSummary(validated);
-	return snapshot !== undefined ? { ...validated, snapshot } : validated;
+	if (snapshot !== undefined) {
+		return { ...validated, snapshot };
+	}
+
+	// `jestResultSchema` does not declare `snapshot`, so a block that failed to
+	// parse would otherwise ride through undeclared and reach consumers under a
+	// key typed `SnapshotSummary`. Drop it instead.
+	const { snapshot: unparsed, ...rest } = validated;
+	return unparsed === undefined ? validated : rest;
 }
 
 function parseParsedOutput(parsed: JestEnvelope): ParseResult {

@@ -153,6 +153,16 @@ export interface InlineProjectConfig {
 	test: ProjectTestConfig;
 }
 
+/**
+ * A project config file as authored. `include` is optional here because
+ * `deriveIncludeFromTestMatch` fills it in from `testMatch` after the file is
+ * read; {@link ProjectTestConfig} is the shape the rest of the CLI consumes.
+ */
+export interface ProjectConfigFile extends Except<ProjectTestConfig, "include"> {
+	/** See {@link ProjectTestConfig.include}. */
+	include?: Array<string>;
+}
+
 /** Workspace-only knobs. Ignored outside `--workspace` mode. */
 export interface WorkspaceConfig {
 	/**
@@ -466,7 +476,13 @@ export interface ResolvedConfig
 	passWithNoTests: boolean;
 	placeFile: string;
 	port: number;
-	projects?: Array<string> | undefined;
+	/**
+	 * The `projects` entries as authored. Resolution turns each into a
+	 * {@link ResolvedProjectConfig}; this field keeps the raw form, because
+	 * single/multi dispatch and workspace mode both read it before resolution
+	 * runs.
+	 */
+	projects?: Array<ProjectEntry> | undefined;
 	rootDir: string;
 	showLuau: boolean;
 	silent: boolean;
@@ -709,20 +725,46 @@ const sharedTestDefinition = type.define({
 	"typecheck?": typecheckConfigSchema,
 });
 
-const projectTestConfigSchema = type({
-	"+": "reject",
+// Everything a project's `test` block carries except `include`, which is
+// required once resolved but optional as authored — see ProjectConfigFile.
+const projectTestDefinition = type.define({
 	...sharedTestDefinition,
 	"displayName": type("string").or(displayNameSchema),
 	"exclude?": "string[]",
-	"include": "string[]",
 	"outDir?": "string",
 	"root?": "string",
+});
+
+const projectTestConfigSchema = type({
+	"+": "reject",
+	...projectTestDefinition,
+	"include": "string[]",
 });
 
 const inlineProjectSchema = type({
 	"+": "reject",
 	"test": projectTestConfigSchema,
 });
+
+const projectConfigFileTestSchema = type({
+	"+": "reject",
+	...projectTestDefinition,
+	"include?": "string[]",
+});
+
+/**
+ * Both shapes a project config file may export — a bare `test` block, or the
+ * `defineProject` wrapper around one — parsed into the block either way. A
+ * config file is loaded by c12, which merges layers but validates nothing, so
+ * this is where it becomes a domain type.
+ */
+export const projectConfigFileSchema: Type<ProjectConfigFile> = type({
+	"+": "reject",
+	"test": projectConfigFileTestSchema,
+})
+	.pipe(({ test }) => test)
+	.or(projectConfigFileTestSchema)
+	.as<ProjectConfigFile>();
 
 const workspaceConfigSchema = type({
 	"+": "reject",

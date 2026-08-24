@@ -123,6 +123,26 @@ describe("fromPath", () => {
 		expect(fromProject(directory).getWarnings()[0]).toInclude("Invalid configuration");
 	});
 
+	it("should warn when the tree is an array rather than an object", () => {
+		expect.assertions(1);
+
+		const directory = setupProjectFiles({
+			"default.project.json": JSON.stringify({ name: "Game", tree: [] }),
+		});
+
+		expect(fromProject(directory).getWarnings()[0]).toInclude("Invalid configuration");
+	});
+
+	it("should warn when $path is neither a string nor an optional mount", () => {
+		expect.assertions(1);
+
+		const directory = setupProjectFiles({
+			"default.project.json": JSON.stringify({ name: "Game", tree: { $path: 42 } }),
+		});
+
+		expect(fromProject(directory).getWarnings()[0]).toInclude("Invalid configuration");
+	});
+
 	it("should warn on malformed JSON instead of throwing", () => {
 		expect.assertions(1);
 

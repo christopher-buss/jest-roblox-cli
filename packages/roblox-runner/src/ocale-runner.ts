@@ -309,15 +309,14 @@ function describeUploadFailure(err: OpenCloudError): string {
 	return `${err.message}${target}${elapsed}`;
 }
 
-function coerceOutputToString(value: unknown): string {
+function coerceOutputToString(value: JSONValue): string {
 	if (typeof value === "string") {
 		return value;
 	}
 
 	// Bedrock's wire-parsed output.results is JSONValue (no undefined, function,
-	// or symbol entries), so JSON.stringify always returns a string here. The
-	// outer `String()` satisfies the union return type without adding a branch.
-	return String(JSON.stringify(value));
+	// or symbol entries), so JSON.stringify always returns a string here.
+	return JSON.stringify(value);
 }
 
 /**

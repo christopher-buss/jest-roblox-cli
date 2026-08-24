@@ -204,7 +204,7 @@ describe(computeRojoInputsHash, () => {
 			reset();
 			writeRawProject('"just a string"');
 
-			expect(hashOf).toThrowWithMessage(Error, /must have a "tree" object/);
+			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 
 		it("should throw when the project is JSON null", () => {
@@ -213,7 +213,7 @@ describe(computeRojoInputsHash, () => {
 			reset();
 			writeRawProject("null");
 
-			expect(hashOf).toThrowWithMessage(Error, /must have a "tree" object/);
+			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 
 		it("should throw when the project is a JSON array", () => {
@@ -222,7 +222,7 @@ describe(computeRojoInputsHash, () => {
 			reset();
 			writeRawProject("[]");
 
-			expect(hashOf).toThrowWithMessage(Error, /must have a "tree" object/);
+			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 
 		it("should throw when tree is missing", () => {
@@ -231,7 +231,16 @@ describe(computeRojoInputsHash, () => {
 			reset();
 			writeRawProject('{ "name": "test" }');
 
-			expect(hashOf).toThrowWithMessage(Error, /must have a "tree" object/);
+			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
+		});
+
+		it("should throw when tree is an array", () => {
+			expect.assertions(1);
+
+			reset();
+			writeRawProject('{ "name": "test", "tree": [] }');
+
+			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 	});
 });

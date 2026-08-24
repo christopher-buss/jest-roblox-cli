@@ -18,7 +18,7 @@ import {
 	findRojoProject,
 } from "../coverage-pipeline/prepare.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
-import { getRawProjects, runSingleOrMultiAsync } from "../run.ts";
+import { runSingleOrMultiAsync } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { collectStubMounts } from "../run/staging.ts";
 import { buildPlace } from "../staging/place-builder.ts";
@@ -140,7 +140,7 @@ async function buildCleanPlaceAsync(config: ResolvedConfig): Promise<BuildManife
 		rojoProjectPath: path.resolve(findRojoProject(config)),
 	};
 
-	const rawProjects = getRawProjects(config);
+	const rawProjects = config.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		const cacheRoot = path.resolve(config.rootDir, CACHE_DIR);
 		const rojoTree = loadRojoTree(config);

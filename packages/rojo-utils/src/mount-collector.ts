@@ -1,4 +1,5 @@
 import type { RojoTreeNode } from "./types.ts";
+import { isRojoTreeNode } from "./types.ts";
 
 export type PathKind = "directory" | "file" | "missing";
 
@@ -48,10 +49,6 @@ function addDirectoryMount(
 	}
 }
 
-function isTreeChild(value: unknown): value is RojoTreeNode {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function walk(
 	node: RojoTreeNode,
 	currentDataModelPath: string,
@@ -59,7 +56,7 @@ function walk(
 	result: Array<Mount>,
 ): void {
 	for (const [key, value] of Object.entries(node)) {
-		if (key.startsWith("$") || !isTreeChild(value)) {
+		if (key.startsWith("$") || !isRojoTreeNode(value)) {
 			continue;
 		}
 

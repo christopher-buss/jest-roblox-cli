@@ -1,10 +1,9 @@
-import { loadRojoProject } from "@isentinel/rojo-utils";
+import { isRojoTreeNode, loadRojoProject } from "@isentinel/rojo-utils";
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
-import { isRojoTreeNode } from "../utils/rojo-tree-node.ts";
 import type { PackageDescriptor } from "./preflight.ts";
 
 export function ensurePackageDirectories(descriptors: Array<PackageDescriptor>): void {
