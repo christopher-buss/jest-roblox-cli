@@ -217,7 +217,9 @@ describe(loadConfig, () => {
 		);
 	});
 
-	it("should surface parse errors without masking as not found", async () => {
+	// Jiti's parse of the broken config measured ~140ms under full-suite load,
+	// so the suite-wide per-test budget cannot hold it.
+	it("should surface parse errors without masking as not found", { timeout: 1000 }, async () => {
 		expect.assertions(1);
 
 		const temporaryDirectory = makeTemporaryDirectory();

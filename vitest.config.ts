@@ -191,11 +191,10 @@ export const unitProject = {
 			"src/**/__fixtures__/**",
 			"test/fixtures/**",
 			"test/e2e/**",
-			// Config-loading integration tests run in the
-			// `integration` project (no coverage) — see the
-			// JITI_ALIAS note above.
-			"test/integration/config/**",
-			"test/integration/executor/**",
+			// Integration tests run in the `integration` project
+			// (no coverage) — see the JITI_ALIAS note above.
+			"test/integration/**",
+			"test/**/*.integration.spec.ts",
 			"**/src/types/**",
 			"./src/cli.ts",
 			"**/*.luau",
@@ -260,12 +259,12 @@ export default defineConfig({
 						GITHUB_ACTIONS: "",
 						JITI_ALIAS: JITI_SOURCE_ALIAS,
 					},
-					include: [
-						"test/integration/config/**/*.spec.ts",
-						"test/integration/executor/**/*.spec.ts",
-					],
+					include: ["test/integration/**/*.spec.ts", "test/**/*.integration.spec.ts"],
 					restoreMocks: true,
 					setupFiles,
+					// Fixture-sandbox pipelines and specs that spawn a real
+					// tsgo cross the 5s default under parallel hook load.
+					testTimeout: 15_000,
 					unstubEnvs: true,
 				},
 			},

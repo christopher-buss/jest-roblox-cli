@@ -96,4 +96,45 @@ describe(getSourceContent, () => {
 
 		expect(result).toBeUndefined();
 	});
+
+	it("should return the embedded source content for a mapped source", () => {
+		expect.assertions(1);
+
+		onTestFinished(clearMapCache);
+
+		const sourceMap = JSON.stringify({
+			file: "output.luau",
+			mappings: "AAAA",
+			sources: ["../src/input.ts"],
+			sourcesContent: ["const value = 1;"],
+			version: 3,
+		});
+
+		vi.mocked(fs.existsSync).mockReturnValue(true);
+		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
+
+		const result = getSourceContent("output.luau", "../src/input.ts");
+
+		expect(result).toBe("const value = 1;");
+	});
+
+	it("should return null when the map embeds no content for the source", () => {
+		expect.assertions(1);
+
+		onTestFinished(clearMapCache);
+
+		const sourceMap = JSON.stringify({
+			file: "output.luau",
+			mappings: "AAAA",
+			sources: ["../src/input.ts"],
+			version: 3,
+		});
+
+		vi.mocked(fs.existsSync).mockReturnValue(true);
+		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
+
+		const result = getSourceContent("output.luau", "../src/input.ts");
+
+		expect(result).toBeNull();
+	});
 });

@@ -87,6 +87,15 @@ function envelope(entries: Array<{ elapsedMs?: number; jestOutput: string }>): s
 	return JSON.stringify({ entries });
 }
 
+// The lock-poll interval never arms on the timeout path — a hung run gets no
+// graceful wait — so setTimeout is the only timer worth faking here.
+function useResultDeadlineTimers(): void {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
+}
+
 function makeFakeProcess(): FakeProcess {
 	const errors = new EventEmitter();
 	return {
@@ -412,6 +421,7 @@ describe(StudioCliBackend, () => {
 		expect.assertions(2);
 
 		resetVol();
+		useResultDeadlineTimers();
 
 		// A Studio that never sends a result drives the timeout path.
 		const process = makeFakeProcess();
@@ -422,9 +432,13 @@ describe(StudioCliBackend, () => {
 			timeout: 40,
 		});
 
-		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(
-			/timed out after 40ms and was terminated/,
-		);
+		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+		await vi.runAllTimersAsync();
+		const caught: unknown = await settled;
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toMatch(/timed out after 40ms and was terminated/);
 		// The run kills Studio on the way out even on the timeout path.
 		expect(process.kill).toHaveBeenCalledOnce();
 	});
@@ -433,6 +447,7 @@ describe(StudioCliBackend, () => {
 		expect.assertions(4);
 
 		resetVol();
+		useResultDeadlineTimers();
 
 		// Studio's stdio is discarded, so `--outputFile` is the only thing left
 		// to say what the run was doing when it stopped answering.
@@ -449,7 +464,9 @@ describe(StudioCliBackend, () => {
 			timeout: 40,
 		});
 
-		const caught: unknown = await backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+		await vi.runAllTimersAsync();
+		const caught: unknown = await settled;
 
 		assert(caught instanceof Error);
 
@@ -1046,12 +1063,19 @@ describe(StudioCliBackend, () => {
 			expect.assertions(2);
 
 			resetVol();
+			useResultDeadlineTimers();
 
 			const { child } = stubSpawn();
 
-			await expect(
-				backendWithDefaultLaunch({ timeout: 40 }).runTestsAsync(singleJob),
-			).rejects.toThrow(/timed out after 40ms and was terminated/);
+			const settled = backendWithDefaultLaunch({ timeout: 40 })
+				.runTestsAsync(singleJob)
+				.catch((err: unknown) => err);
+			await vi.runAllTimersAsync();
+			const caught: unknown = await settled;
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toMatch(/timed out after 40ms and was terminated/);
 			expect(child.kill).toHaveBeenCalledOnce();
 		});
 

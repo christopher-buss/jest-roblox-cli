@@ -1430,6 +1430,11 @@ describe(OpenCloudBackend, () => {
 		it("should default pollMs when streaming hooks omit it", async () => {
 			expect.assertions(2);
 
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+
 			const reader = createStreamReader([
 				[
 					{
@@ -1453,7 +1458,7 @@ describe(OpenCloudBackend, () => {
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-			await backend.runTestsAsync({
+			const promise = backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
 				scriptOverride: "stealing-script",
@@ -1465,6 +1470,8 @@ describe(OpenCloudBackend, () => {
 				},
 				workStealing: true,
 			});
+			await vi.runAllTimersAsync();
+			await promise;
 
 			expect(seen).toContain("alpha");
 			expect(reader.deleted).toContain("alpha::alpha");

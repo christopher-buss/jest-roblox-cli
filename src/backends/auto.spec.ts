@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
@@ -28,6 +28,13 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return overrides;
 }
 
+function useProbeTimers(): void {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
+}
+
 describe(probeStudioPluginAsync, () => {
 	it("should return detected with server and socket when plugin connects", async () => {
 		expect.assertions(2);
@@ -50,7 +57,11 @@ describe(probeStudioPluginAsync, () => {
 	it("should return not detected when no connection within timeout", async () => {
 		expect.assertions(1);
 
-		const result = await probeStudioPluginAsync(0, 50);
+		useProbeTimers();
+
+		const promise = probeStudioPluginAsync(0, 50);
+		await vi.runAllTimersAsync();
+		const result = await promise;
 
 		expect(result.detected).toBeFalse();
 	});
@@ -72,7 +83,11 @@ describe(probeStudioPluginAsync, () => {
 	it("should close server when timeout expires", async () => {
 		expect.assertions(1);
 
-		await probeStudioPluginAsync(0, 50);
+		useProbeTimers();
+
+		const promise = probeStudioPluginAsync(0, 50);
+		await vi.runAllTimersAsync();
+		await promise;
 
 		expect(getLastCreatedServer()!.close).toHaveBeenCalledWith();
 	});

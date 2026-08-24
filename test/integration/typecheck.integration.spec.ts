@@ -6,9 +6,7 @@ import { runTypecheckAsync } from "../../src/typecheck/runner.ts";
 const FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck");
 const SOURCE_FIXTURE_DIR = path.resolve(__dirname, "..", "fixtures", "typecheck-source");
 
-// Each test spawns a real tsgo typecheck, which can exceed the 5s default under
-// parallel pre-push load; 10s keeps it from flaking without masking a hang.
-describe("typecheck integration", { timeout: 10_000 }, () => {
+describe("typecheck integration", () => {
 	it("should pass all tests when file has no type errors", async () => {
 		expect.assertions(3);
 

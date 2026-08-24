@@ -13,10 +13,13 @@ const FIXTURES = path.join(import.meta.dirname, "__fixtures__/pinned");
 
 /**
  * Modules the built model carries. Enough of them that the writer's LZ4 stream
- * has to emit back-references rather than one run of literals, which is the
- * half of the decoder a smaller model would leave untested.
+ * for the `INST` chunk — the one the class reader decodes — has to emit
+ * back-references rather than one run of literals, which is the half of the
+ * decoder a smaller model would leave untested. Eight is the measured floor:
+ * at two modules rojo's `INST` chunks compress larger than they store, meaning
+ * literal-only streams.
  */
-const MODULE_COUNT = 120;
+const MODULE_COUNT = 8;
 
 function rojoOnPath(): boolean {
 	try {
@@ -127,6 +130,8 @@ describe(isModelFile, () => {
 describe(readDeclaredClasses, () => {
 	it.skipIf(!rojoOnPath())(
 		"should read every class out of a binary model, LZ4 chunks included",
+		// A real rojo spawn, so the suite-wide per-test budget cannot hold it.
+		{ timeout: 2000 },
 		() => {
 			expect.assertions(1);
 
@@ -144,11 +149,16 @@ describe(readDeclaredClasses, () => {
 		);
 	});
 
-	it.skipIf(!rojoOnPath())("should report no pinned class for a model that declares none", () => {
-		expect.assertions(1);
+	it.skipIf(!rojoOnPath())(
+		"should report no pinned class for a model that declares none",
+		// A real rojo spawn, so the suite-wide per-test budget cannot hold it.
+		{ timeout: 2000 },
+		() => {
+			expect.assertions(1);
 
-		expect(readDeclaredClasses(buildModel("Folder"))).not.toContain("StarterPlayerScripts");
-	});
+			expect(readDeclaredClasses(buildModel("Folder"))).not.toContain("StarterPlayerScripts");
+		},
+	);
 
 	it("should read ClassName out of a .model.json", () => {
 		expect.assertions(1);

@@ -2,7 +2,7 @@ import { fromExact, fromPartial } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { MockWebSocketServer as MockWebSocketServerType } from "../../test/mocks/mock-web-socket-server.ts";
 import type { MockWebSocket as MockWebSocketType } from "../../test/mocks/mock-web-socket.ts";
@@ -445,11 +445,20 @@ describe(StudioBackend, () => {
 	it("should throw on connection timeout", async () => {
 		expect.assertions(1);
 
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+
 		const backend = new StudioBackend({ port: 0, timeout: 100 });
 
-		await expect(backend.runTestsAsync(singleJobOptions)).rejects.toThrow(
-			"Timed out waiting for Studio plugin connection",
-		);
+		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+		await vi.runAllTimersAsync();
+		const caught: unknown = await settled;
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toContain("Timed out waiting for Studio plugin connection");
 	});
 
 	it("should throw when the plugin disconnects before sending results", async () => {

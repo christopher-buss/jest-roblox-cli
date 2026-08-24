@@ -2449,38 +2449,44 @@ describe("showLuau mapped location snippets", () => {
 });
 
 describe("formatFallbackSnippet via formatFailure", () => {
-	it("should show fallback snippet when message contains a parseable source location", () => {
-		expect.assertions(2);
+	// Reads and renders a real source file; measured ~130ms under full-suite
+	// load, so the suite-wide per-test budget cannot hold it.
+	it(
+		"should show fallback snippet when message contains a parseable source location",
+		{ timeout: 1000 },
+		() => {
+			expect.assertions(2);
 
-		const fileContent = [
-			"import { describe, it, expect } from 'vitest';",
-			"",
-			"describe('math', () => {",
-			"  it('should add', () => {",
-			"    expect(1 + 1).toBe(3);",
-			"  });",
-			"});",
-		].join("\n");
-		const temporaryFile = path.join("src", "formatters", `__tmp-fallback-${Date.now()}.ts`);
-		onTestFinished(() => {
-			fs.unlinkSync(temporaryFile);
-		});
-		fs.writeFileSync(temporaryFile, fileContent, "utf-8");
+			const fileContent = [
+				"import { describe, it, expect } from 'vitest';",
+				"",
+				"describe('math', () => {",
+				"  it('should add', () => {",
+				"    expect(1 + 1).toBe(3);",
+				"  });",
+				"});",
+			].join("\n");
+			const temporaryFile = path.join("src", "formatters", `__tmp-fallback-${Date.now()}.ts`);
+			onTestFinished(() => {
+				fs.unlinkSync(temporaryFile);
+			});
+			fs.writeFileSync(temporaryFile, fileContent, "utf-8");
 
-		const test: TestCaseResult = {
-			ancestorTitles: [],
-			duration: 1,
-			failureMessages: [`LoadModule error: ${temporaryFile}:5:10`],
-			fullName: "test",
-			status: "failed",
-			title: "test",
-		};
+			const test: TestCaseResult = {
+				ancestorTitles: [],
+				duration: 1,
+				failureMessages: [`LoadModule error: ${temporaryFile}:5:10`],
+				fullName: "test",
+				status: "failed",
+				title: "test",
+			};
 
-		const formatted = formatFailure({ test, useColor: false });
+			const formatted = formatFailure({ test, useColor: false });
 
-		expect(formatted).toContain(`❯ ${temporaryFile}:5:10`);
-		expect(formatted).toContain("expect(1 + 1).toBe(3)");
-	});
+			expect(formatted).toContain(`❯ ${temporaryFile}:5:10`);
+			expect(formatted).toContain("expect(1 + 1).toBe(3)");
+		},
+	);
 });
 
 describe("expandTabs via formatSourceSnippet", () => {
