@@ -41,7 +41,7 @@ import {
 	formatRunHeader,
 	formatSourceSnippet,
 	formatTestSummary,
-	formatTypecheckSummary,
+	formatTypecheckReport,
 	getExecErrorHint,
 	mergeSnapshotSummaries,
 	parseErrorMessage,
@@ -1781,15 +1781,16 @@ describe("formatTestSummary type errors line", () => {
 	});
 });
 
-describe("formatTypecheckSummary snapshots", () => {
+describe("formatTypecheckReport snapshots", () => {
 	it("should format passing typecheck summary", () => {
 		expect.assertions(1);
 
-		const output = formatTypecheckSummary(TYPECHECK_PASSING_RESULT, false);
+		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, { useColor: false });
 
 		expect(output).toMatchInlineSnapshot(`
 			"
-			Type Tests: 2 passed, 2 total
+			      Tests  2 passed (2)
+			Type Errors  no errors
 			"
 		`);
 	});
@@ -1797,13 +1798,14 @@ describe("formatTypecheckSummary snapshots", () => {
 	it("should format failing typecheck summary with failures", () => {
 		expect.assertions(1);
 
-		const output = formatTypecheckSummary(TYPECHECK_FAILING_RESULT, false);
+		const output = formatTypecheckReport(TYPECHECK_FAILING_RESULT, { useColor: false });
 
 		expect(output).toMatchInlineSnapshot(`
 			"   FAIL  type checks > should reject string as number
 			    TS2322: Type 'string' is not assignable to type 'number'.
 
-			Type Tests: 1 failed, 1 passed, 2 total
+			      Tests  1 passed | 1 failed (2)
+			Type Errors  1 failed
 			"
 		`);
 	});
@@ -1811,15 +1813,44 @@ describe("formatTypecheckSummary snapshots", () => {
 	it("should format mixed typecheck summary with failure from one file", () => {
 		expect.assertions(1);
 
-		const output = formatTypecheckSummary(TYPECHECK_MIXED_RESULT, false);
+		const output = formatTypecheckReport(TYPECHECK_MIXED_RESULT, { useColor: false });
 
 		expect(output).toMatchInlineSnapshot(`
 			"   FAIL  failing types > should reject string as number
 			    TS2322: Type 'string' is not assignable to type 'number'.
 
-			Type Tests: 1 failed, 3 passed, 4 total
+			      Tests  3 passed | 1 failed (4)
+			Type Errors  1 failed
 			"
 		`);
+	});
+});
+
+describe("formatTypecheckReport without summary rows", () => {
+	it("should return the failure detail alone, newline-terminated", () => {
+		expect.assertions(1);
+
+		const output = formatTypecheckReport(TYPECHECK_FAILING_RESULT, {
+			includeSummaryRows: false,
+			useColor: false,
+		});
+
+		expect(output).toMatchInlineSnapshot(`
+			"   FAIL  type checks > should reject string as number
+			    TS2322: Type 'string' is not assignable to type 'number'.
+			"
+		`);
+	});
+
+	it("should return nothing when a clean pass leaves no detail", () => {
+		expect.assertions(1);
+
+		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT, {
+			includeSummaryRows: false,
+			useColor: false,
+		});
+
+		expect(output).toBe("");
 	});
 });
 

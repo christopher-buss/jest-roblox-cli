@@ -31,6 +31,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 			outputFile: paths.outputFile,
 			rootDir: config.rootDir,
 			sourceMapper,
+			typeErrorCount: options.typeErrorCount,
 		});
 	}
 

@@ -16,6 +16,8 @@ import {
 	resolveDisplayPath,
 } from "./formatter.ts";
 import { type BailSummary, formatBailText } from "./shared.ts";
+import { createStyles } from "./styles.ts";
+import { formatTypeErrorsLine } from "./summary.ts";
 
 export interface AgentOptions {
 	/** Set when `--bail` cut the run short; see {@link BailSummary}. */
@@ -55,6 +57,10 @@ interface AgentProjectStats {
 	totalSkippedFiles: number;
 	totalTests: number;
 }
+
+// This formatter emits plain text only, so the shared summary rows render
+// through the no-op palette rather than growing a plain-text twin.
+const PLAIN_STYLES = createStyles(false);
 
 export function formatAgent(result: JestResult, options: AgentOptions): string {
 	const lines: Array<string> = [];
@@ -109,14 +115,6 @@ export function formatAgentMultiProject(
 	return lines.join("\n");
 }
 
-function formatTypeErrorLabel(count: number): string {
-	if (count === 0) {
-		return "no errors";
-	}
-
-	return `${count} error${count === 1 ? "" : "s"}`;
-}
-
 // The " Test Files  …" row: file-level pass/fail counts, each bucket omitted
 // when zero. A file with an exec error counts as failed even when it reported
 // no failing tests.
@@ -162,8 +160,7 @@ function formatSummarySection(result: JestResult, options: AgentOptions): Array<
 	lines.push(`      Tests  ${testParts.join(" | ")} (${totalTests})`);
 
 	if (options.typeErrorCount !== undefined) {
-		const typeLabel = formatTypeErrorLabel(options.typeErrorCount);
-		lines.push(`Type Errors  ${typeLabel}`);
+		lines.push(formatTypeErrorsLine(options.typeErrorCount, PLAIN_STYLES));
 	}
 
 	return lines;
@@ -665,7 +662,7 @@ function formatMultiProjectSummary(stats: AgentProjectStats, options: AgentOptio
 	lines.push(`      Tests  ${testParts.join(" | ")} (${stats.totalTests})`);
 
 	if (options.typeErrorCount !== undefined) {
-		lines.push(`Type Errors  ${formatTypeErrorLabel(options.typeErrorCount)}`);
+		lines.push(formatTypeErrorsLine(options.typeErrorCount, PLAIN_STYLES));
 	}
 
 	if (options.bail !== undefined) {

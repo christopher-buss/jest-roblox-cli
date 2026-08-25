@@ -21,7 +21,7 @@ import { formatAgentMultiProject } from "./formatters/agent.ts";
 import {
 	formatMultiProjectResult,
 	formatResult,
-	formatTypecheckSummary,
+	formatTypecheckReport,
 	mergeSnapshotSummaries,
 } from "./formatters/formatter.ts";
 import { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
@@ -84,7 +84,7 @@ const mocks = {
 	formatJobSummary: vi.mocked(formatJobSummary),
 	formatMultiProjectResult: vi.mocked(formatMultiProjectResult),
 	formatResult: vi.mocked(formatResult),
-	formatTypecheckSummary: vi.mocked(formatTypecheckSummary),
+	formatTypecheckReport: vi.mocked(formatTypecheckReport),
 	generateReports: vi.mocked(generateReports),
 	loadCoverageManifest: vi.mocked(loadCoverageManifest),
 	mapCoverageToTypeScript: vi.mocked(mapCoverageToTypeScript),
@@ -221,7 +221,7 @@ function setupDefaults(): void {
 	mocks.formatMultiProjectResult.mockReturnValue("formatted-multi");
 	mocks.formatAgentMultiProject.mockReturnValue("formatted-agent");
 	mocks.formatExecuteOutput.mockReturnValue("formatted-execute");
-	mocks.formatTypecheckSummary.mockReturnValue("typecheck-summary");
+	mocks.formatTypecheckReport.mockReturnValue("typecheck-summary");
 	mocks.formatAnnotations.mockReturnValue("");
 	mocks.formatJobSummary.mockReturnValue("job-summary");
 	mocks.formatGameOutputNotice.mockReturnValue("");
@@ -471,6 +471,29 @@ describe(outputSingleResultAsync, () => {
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
+	});
+
+	it("should route the type error count through the agent formatter", async () => {
+		expect.assertions(3);
+
+		setupDefaults();
+		const spies = setupOutputSpies();
+
+		await outputSingleResultAsync(
+			makeConfig({ formatters: ["agent"] }),
+			makeSingleResult({
+				typecheckResult: makeJestResult({ numFailedTests: 2, success: false }),
+			}),
+		);
+
+		expect(mocks.formatExecuteOutput).toHaveBeenCalledWith(
+			expect.objectContaining({ typeErrorCount: 2 }),
+		);
+		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
+		expect(mocks.formatTypecheckReport).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ includeSummaryRows: false }),
+		);
 	});
 
 	it("should print final PASS status when coverage enabled and passed", async () => {
@@ -851,6 +874,41 @@ describe(outputMultiResultAsync, () => {
 		);
 
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
+	});
+
+	it("should print type failures without repeating the row for the agent formatter", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		const spies = setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ formatters: ["agent"] }),
+			makeMultiResult({
+				typecheckResult: makeJestResult({ numFailedTests: 2, success: false }),
+			}),
+		);
+
+		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
+		expect(mocks.formatTypecheckReport).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ includeSummaryRows: false }),
+		);
+	});
+
+	it("should write nothing when a clean type pass leaves the agent report empty", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		mocks.formatTypecheckReport.mockReturnValue("");
+		const spies = setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ formatters: ["agent"] }),
+			makeMultiResult({ typecheckResult: makeJestResult() }),
+		);
+
+		expect(spies.stderr).not.toHaveBeenCalled();
 	});
 
 	it("should apply collectCoverageFrom override from result onto config", async () => {

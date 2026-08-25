@@ -23,5 +23,7 @@ export interface FormatOutputOptions {
 	snapshotWriteFailures?: number | undefined;
 	sourceMapper?: SourceMapper | undefined;
 	timing: TimingResult;
+	/** Type errors from the parallel type pass, when one ran. */
+	typeErrorCount?: number | undefined;
 	version: string;
 }

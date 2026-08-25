@@ -102,7 +102,7 @@ describe("formatAgent summary", () => {
 		expect(output).toContain("Type Errors  no errors");
 	});
 
-	it("should show singular error when typeErrorCount is 1", () => {
+	it("should show failed count when typeErrorCount is 1", () => {
 		expect.assertions(1);
 
 		const result = createResult({ numPassedTests: 3, numTotalTests: 3 });
@@ -112,7 +112,7 @@ describe("formatAgent summary", () => {
 			typeErrorCount: 1,
 		});
 
-		expect(output).toContain("Type Errors  1 error");
+		expect(output).toContain("Type Errors  1 failed");
 	});
 
 	it("should show type error count when typeErrorCount > 1", () => {
@@ -125,7 +125,7 @@ describe("formatAgent summary", () => {
 			typeErrorCount: 2,
 		});
 
-		expect(output).toContain("Type Errors  2 errors");
+		expect(output).toContain("Type Errors  2 failed");
 	});
 
 	it("should omit type errors line when typeErrorCount is undefined", () => {
@@ -1541,6 +1541,6 @@ describe(formatAgentMultiProject, () => {
 			typeErrorCount: 3,
 		});
 
-		expect(output).toContain("Type Errors");
+		expect(output).toContain("Type Errors  3 failed");
 	});
 });

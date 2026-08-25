@@ -17,7 +17,13 @@ import { computeProjectStats, formatFileSummary } from "./file-summary.ts";
 import { formatGameOutputBlock } from "./game-output.ts";
 import type { FailureContext, FormatOptions, FormatterProjectEntry } from "./shared.ts";
 import { createStyles, formatProjectBadge, type Styles } from "./styles.ts";
-import { formatFailedTestsHeader, formatLogHints, formatTestSummary } from "./summary.ts";
+import {
+	formatFailedTestsHeader,
+	formatLogHints,
+	formatTestsLine,
+	formatTestSummary,
+	formatTypeErrorsLine,
+} from "./summary.ts";
 
 // Re-exported from its home in `results/merge.ts` so the formatter stays the
 // import site every consumer already knows (and `output.spec.ts`'s whole-module
@@ -40,6 +46,12 @@ interface ProjectHeaderOptions {
 	displayName: string;
 	result: JestResult;
 	styles?: Styles | undefined;
+	useColor?: boolean | undefined;
+}
+
+interface TypecheckReportOptions {
+	/** Clear when the run report beside this one already carried the rows. */
+	includeSummaryRows?: boolean | undefined;
 	useColor?: boolean | undefined;
 }
 
@@ -186,25 +198,35 @@ export function formatMultiProjectResult(
 	return lines.join("\n");
 }
 
-export function formatTypecheckSummary(result: JestResult, useColor = true): string {
+/**
+ * The typecheck report for the formatters that render the runtime run
+ * themselves and leave the type results to this: the failing type assertions,
+ * then the same `Tests` and `Type Errors` rows the default formatter emits, so
+ * the wording does not shift with the chosen formatter.
+ *
+ * Clear `includeSummaryRows` when the run report beside this one already
+ * carried those rows — the agent formatter builds them into its own summary
+ * block — leaving the failure detail as the only thing missing. A report with
+ * no run report beside it owns every row, so the counts travel with it.
+ */
+export function formatTypecheckReport(
+	result: JestResult,
+	{ includeSummaryRows = true, useColor = true }: TypecheckReportOptions = {},
+): string {
 	const styles = createStyles(useColor);
-	const passed = result.numPassedTests;
 	const failed = result.numFailedTests;
-	const total = result.numTotalTests;
 
-	const parts: Array<string> = [];
+	// Every non-empty report ends on a newline. It is written straight to a
+	// stream, so an unterminated last line runs into whatever prints next.
+	const detail = failed > 0 ? `${formatTypecheckFailures(result, styles)}\n` : "";
 
-	if (failed > 0) {
-		parts.push(formatTypecheckFailures(result, useColor));
+	if (!includeSummaryRows) {
+		return detail;
 	}
 
-	const failedLabel = styles.summary.failed(`${String(failed)} failed`);
-	const failedPart = failed > 0 ? `${failedLabel}, ` : "";
-	const passedPart = styles.summary.passed(`${String(passed)} passed`);
-	const label = styles.dim("Type Tests:");
-	parts.push(`\n${label} ${failedPart}${passedPart}, ${String(total)} total\n`);
+	const rows = [formatTestsLine(result, styles), formatTypeErrorsLine(failed, styles)];
 
-	return parts.join("\n");
+	return `${detail}\n${rows.join("\n")}\n`;
 }
 
 /**
@@ -314,8 +336,8 @@ function formatTypecheckFileFailures(
 	return lines;
 }
 
-function formatTypecheckFailures(result: JestResult, useColor = true): string {
-	const styles = createStyles(useColor);
+/** The expanded type-failure blocks, without the closing summary rows. */
+function formatTypecheckFailures(result: JestResult, styles: Styles): string {
 	const lines: Array<string> = [];
 
 	for (const file of result.testResults) {

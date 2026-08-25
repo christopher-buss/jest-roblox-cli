@@ -10,7 +10,7 @@ import {
 	formatMultiProjectResult,
 	formatResult,
 	type FormatterProjectEntry,
-	formatTypecheckSummary,
+	formatTypecheckReport,
 } from "../formatters/formatter.ts";
 import type { BailSummary } from "../formatters/shared.ts";
 import {
@@ -49,6 +49,13 @@ interface FormattedOutputOptions {
 	runtimeResult?: ExecuteResult | undefined;
 	timing?: TimingResult | undefined;
 	typecheckResult?: JestResult | undefined;
+}
+
+interface RuntimeOutputOptions {
+	runtimeResult: ExecuteResult;
+	timing: TimingResult;
+	/** Type errors from the parallel type pass, when one ran. */
+	typeErrorCount?: number | undefined;
 }
 
 interface SingleResultsOptions {
@@ -90,7 +97,7 @@ export function printMultiResults(context: MultiOutputContext): void {
 	printMultiProjectOutput(context);
 
 	if (typecheckResult !== undefined && !usesDefaultFormatter(config)) {
-		process.stderr.write(formatTypecheckSummary(typecheckResult));
+		writeTypecheckReport(config, typecheckResult);
 	}
 }
 
@@ -107,8 +114,7 @@ function printOutput(out: string): void {
 
 function formatRuntimeOutput(
 	config: ResolvedConfig,
-	runtimeResult: ExecuteResult,
-	timing: TimingResult,
+	{ runtimeResult, timing, typeErrorCount }: RuntimeOutputOptions,
 ): string {
 	return formatExecuteOutput({
 		config,
@@ -116,8 +122,29 @@ function formatRuntimeOutput(
 		snapshotWriteFailures: runtimeResult.snapshotWriteFailures,
 		sourceMapper: runtimeResult.sourceMapper,
 		timing,
+		typeErrorCount,
 		version: VERSION,
 	});
+}
+
+// The agent formatter is plain text throughout, so the type report beside it
+// drops colour too rather than being the one block that carries escapes.
+function typecheckReportColor(config: ResolvedConfig): boolean {
+	return config.color && !usesAgentFormatter(config.formatters, config.verbose);
+}
+
+function writeTypecheckReport(config: ResolvedConfig, typecheckResult: JestResult): void {
+	const report = formatTypecheckReport(typecheckResult, {
+		// The agent formatter builds the summary rows into its own block, so
+		// only the failure detail is still missing here.
+		includeSummaryRows: !usesAgentFormatter(config.formatters, config.verbose),
+		useColor: typecheckReportColor(config),
+	});
+	// A clean type pass leaves the detail-only report empty; writing it would
+	// put a stray blank line on the green path.
+	if (report !== "") {
+		process.stderr.write(report);
+	}
 }
 
 function usesDefaultFormatter(config: ResolvedConfig): boolean {
@@ -142,8 +169,14 @@ function printCombinedOutput(
 	},
 ): void {
 	if (!usesDefaultFormatter(config)) {
-		printOutput(formatRuntimeOutput(config, runtimeResult, timing));
-		process.stderr.write(formatTypecheckSummary(typecheckResult));
+		printOutput(
+			formatRuntimeOutput(config, {
+				runtimeResult,
+				timing,
+				typeErrorCount: typecheckResult.numFailedTests,
+			}),
+		);
+		writeTypecheckReport(config, typecheckResult);
 		return;
 	}
 
@@ -169,13 +202,17 @@ function printFormattedOutput({
 		return;
 	}
 
+	// A typecheck-only run has no run report beside it, so this is the whole
+	// thing: rows included, whatever the formatter.
 	if (typecheckResult !== undefined) {
-		process.stdout.write(formatTypecheckSummary(typecheckResult));
+		process.stdout.write(
+			formatTypecheckReport(typecheckResult, { useColor: typecheckReportColor(config) }),
+		);
 		return;
 	}
 
 	assert(runtimeResult !== undefined && timing !== undefined, "runtime result required");
-	printOutput(formatRuntimeOutput(config, runtimeResult, timing));
+	printOutput(formatRuntimeOutput(config, { runtimeResult, timing }));
 }
 
 function toProjectEntries(projectResults: Array<ProjectResult>): Array<FormatterProjectEntry> {
@@ -229,7 +266,7 @@ function printMultiProjectOutput(context: MultiOutputContext): void {
 
 	const timing = addCoverageTiming(merged.timing, preCoverageMs);
 	if (hasFormatter(config.formatters, "json")) {
-		printOutput(formatRuntimeOutput(config, merged, timing));
+		printOutput(formatRuntimeOutput(config, { runtimeResult: merged, timing }));
 		return;
 	}
 

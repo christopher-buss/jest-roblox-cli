@@ -32,6 +32,18 @@ export function formatFailedTestsHeader(failCount: number, _styles?: Styles): st
 	});
 }
 
+/**
+ * The `Type Errors  …` row, byte-for-byte vitest's typecheck summary line:
+ * an 11-column right-aligned label, two spaces, then a bold-red `N failed` or a
+ * dim `no errors`. Shared with the agent formatter so both reporters agree.
+ */
+export function formatTypeErrorsLine(typeErrors: number, styles: Styles): string {
+	const typeErrorLabel = styles.dim("Type Errors");
+	const typeErrorValue =
+		typeErrors > 0 ? styles.summary.failed(`${typeErrors} failed`) : styles.dim("no errors");
+	return `${typeErrorLabel}  ${typeErrorValue}`;
+}
+
 /** The trailing block of totals: snapshots, files, tests, timings. */
 export function formatTestSummary(
 	result: JestResult,
@@ -155,6 +167,44 @@ const SNAPSHOT_COUNTS: Array<{
 	},
 ];
 
+/**
+ * The `      Tests  …` row: the counts vitest reports for every run, type
+ * pass included.
+ */
+export function formatTestsLine(result: JestResult, styles: Styles): string {
+	const testParts = formatSummaryParts(
+		{
+			failed: result.numFailedTests,
+			passed: result.numPassedTests,
+			skipped: result.numPendingTests,
+		},
+		styles,
+	);
+	const testTotalLabel = styles.dim(`(${result.numTotalTests})`);
+
+	return `${styles.dim("      Tests")}  ${testParts.join(" | ")} ${testTotalLabel}`;
+}
+
+function formatSummaryParts(
+	counts: { failed: number; passed: number; skipped: number },
+	styles: Styles,
+): Array<string> {
+	const parts: Array<string> = [];
+	if (counts.passed > 0) {
+		parts.push(styles.summary.passed(`${counts.passed} passed`));
+	}
+
+	if (counts.failed > 0) {
+		parts.push(styles.summary.failed(`${counts.failed} failed`));
+	}
+
+	if (counts.skipped > 0) {
+		parts.push(styles.summary.pending(`${counts.skipped} skipped`));
+	}
+
+	return parts;
+}
+
 function formatSnapshotLine(
 	snapshot: SnapshotSummary | undefined,
 	styles: Styles,
@@ -182,26 +232,6 @@ function formatSnapshotLine(
 	return `${label}  ${parts.join(" | ")} ${totalLabel}`;
 }
 
-function formatSummaryParts(
-	counts: { failed: number; passed: number; skipped: number },
-	styles: Styles,
-): Array<string> {
-	const parts: Array<string> = [];
-	if (counts.passed > 0) {
-		parts.push(styles.summary.passed(`${counts.passed} passed`));
-	}
-
-	if (counts.failed > 0) {
-		parts.push(styles.summary.failed(`${counts.failed} failed`));
-	}
-
-	if (counts.skipped > 0) {
-		parts.push(styles.summary.pending(`${counts.skipped} skipped`));
-	}
-
-	return parts;
-}
-
 function formatTestFilesLine(result: JestResult, styles: Styles): string {
 	const execErrorFiles = result.testResults.filter(hasExecError).length;
 	const totalFiles = result.testResults.length;
@@ -219,27 +249,6 @@ function formatTestFilesLine(result: JestResult, styles: Styles): string {
 	const fileTotalLabel = styles.dim(`(${totalFiles})`);
 
 	return `${styles.dim(" Test Files")}  ${fileParts.join(" | ")} ${fileTotalLabel}`;
-}
-
-function formatTestsLine(result: JestResult, styles: Styles): string {
-	const testParts = formatSummaryParts(
-		{
-			failed: result.numFailedTests,
-			passed: result.numPassedTests,
-			skipped: result.numPendingTests,
-		},
-		styles,
-	);
-	const testTotalLabel = styles.dim(`(${result.numTotalTests})`);
-
-	return `${styles.dim("      Tests")}  ${testParts.join(" | ")} ${testTotalLabel}`;
-}
-
-function formatTypeErrorsLine(typeErrors: number, styles: Styles): string {
-	const typeErrorLabel = styles.dim("Type Errors");
-	const typeErrorValue =
-		typeErrors > 0 ? styles.summary.failed(`${typeErrors} failed`) : styles.dim("no errors");
-	return `${typeErrorLabel}  ${typeErrorValue}`;
 }
 
 function formatBailLine(bail: BailSummary, styles: Styles): string {
