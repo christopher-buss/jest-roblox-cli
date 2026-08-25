@@ -218,9 +218,6 @@ importers:
       arktype:
         specifier: 2.2.3
         version: 2.2.3
-      ws:
-        specifier: 8.21.3
-        version: 8.21.3
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 6.0.0-beta.42
@@ -234,9 +231,6 @@ importers:
       '@types/node':
         specifier: 24.12.3
         version: 24.12.3
-      '@types/ws':
-        specifier: 8.18.1
-        version: 8.18.1
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260607.1
         version: 7.0.0-dev.20260607.1

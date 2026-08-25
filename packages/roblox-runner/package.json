@@ -2,7 +2,7 @@
 	"name": "@isentinel/roblox-runner",
 	"version": "0.1.0",
 	"private": true,
-	"description": "OCALE and Studio transport for Roblox remote execution",
+	"description": "OCALE transport for Roblox remote execution",
 	"keywords": [
 		"roblox",
 		"open-cloud",
@@ -31,15 +31,13 @@
 	},
 	"dependencies": {
 		"@bedrock-rbx/ocale": "0.1.5",
-		"arktype": "2.2.3",
-		"ws": "8.21.3"
+		"arktype": "2.2.3"
 	},
 	"devDependencies": {
 		"@isentinel/eslint-config": "6.0.0-beta.42",
 		"@isentinel/tsconfig": "2.0.0",
 		"@total-typescript/shoehorn": "0.1.2",
 		"@types/node": "24.12.3",
-		"@types/ws": "8.18.1",
 		"@typescript/native-preview": "7.0.0-dev.20260607.1",
 		"@vitest/coverage-v8": "5.0.0-rc.2",
 		"@vitest/eslint-plugin": "1.6.19",
