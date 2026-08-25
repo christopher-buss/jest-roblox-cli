@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { hashString } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { CoverageUniverseFilter } from "./coverage-universe.ts";
-import { createCoverageUniverseMatcher } from "./coverage-universe.ts";
+import { createCoverageUniverseMatcher, resolveUniverseAnchor } from "./coverage-universe.ts";
 import { resolveSourcePath } from "./source-path.ts";
 
 /**
@@ -53,14 +53,17 @@ export function createInstrumentUniverse(
 	}
 
 	const ignore = filter.ignore ?? [];
-	const isInUniverse = createCoverageUniverseMatcher({ ignore, include });
+	const anchor = resolveUniverseAnchor(filter.rootDir);
+	const isInUniverse = createCoverageUniverseMatcher(filter);
 
 	return {
 		// Sorted before hashing: the matcher ORs each list, so reordering the
 		// globs cannot change which files are probed — and a digest that moved
-		// anyway would spend a cold rebuild on a no-op config edit.
+		// anyway would spend a cold rebuild on a no-op config edit. The anchor
+		// is hashed alongside them because it is half of what a glob means:
+		// re-anchoring the same globs selects a different set of files.
 		digest: hashString(
-			JSON.stringify({ ignore: ignore.toSorted(), include: include.toSorted() }),
+			JSON.stringify({ anchor, ignore: ignore.toSorted(), include: include.toSorted() }),
 		),
 		includes: (luauPath) => {
 			const sources = readSourcePaths(luauPath);

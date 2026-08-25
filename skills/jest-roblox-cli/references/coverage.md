@@ -106,20 +106,30 @@ and instruments against that derived set. Workspace mode has no such fallback: a
 package that sets nothing reports on, and probes, everything under its
 `luauRoots`.
 
+In workspace mode a package's `collectCoverageFrom` globs resolve against that
+package's own `rootDir`, which defaults to the package directory. A package at
+`packages/foo` writes `src/**/*.ts` for its own sources, whatever directory the
+CLI was invoked from. Single and multi mode anchor on the invocation directory
+instead — every coverage path they produce is relative to it, `rootDir` included
+by default.
+
+`coveragePathIgnorePatterns` matches by substring, so `**/index.ts` reaches a
+file at any depth under the anchor regardless of where the anchor sits. A
+pattern naming a directory _above_ the package, though, is anchor-relative like
+any other.
+
 <!-- prettier-ignore -->
 > [!WARNING]
-> `collectCoverageFrom` globs resolve against the **directory the CLI was
-> invoked from**, not the package directory. In workspace mode that is the
-> workspace root, so a package at `packages/foo` writes
-> `packages/foo/src/**/*.ts`, not `src/**/*.ts`. A package-relative glob
-> matches nothing, and a universe matching nothing yields an empty report —
-> which `coverageThreshold` then passes vacuously, there being no file to fall
-> short. Check the report lists the files you expect before trusting a
-> threshold.
+> A universe that matches no file yields an empty report, and an empty report
+> passes `coverageThreshold` vacuously — there is no file to fall short. Nothing
+> detects that for you, so check the report lists the files you expect before
+> trusting a threshold. A workspace package that used to write its globs from
+> the workspace root (`packages/foo/src/**/*.ts`) is exactly this case: drop the
+> package prefix and write `src/**/*.ts`.
 
-Changing either set of globs invalidates the incremental coverage cache: the
-shadow directory still holds probed copies of files the new universe excludes,
-and no source hash would notice.
+Changing either set of globs — or the `rootDir` they anchor to — invalidates the
+incremental coverage cache: the shadow directory still holds probed copies of
+files the new universe excludes, and no source hash would notice.
 
 In workspace mode every field in the table above is read per-package. Each
 package gets its own report, from its own reporters, written under its own

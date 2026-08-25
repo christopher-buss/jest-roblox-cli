@@ -58,6 +58,13 @@ export interface WorkspacePackageDescriptor {
 	luauRoots?: Array<string> | undefined;
 	packageDirectory: string;
 	rojoProjectPath: string;
+	/**
+	 * The package's own `rootDir` — what its coverage globs are written
+	 * relative to. Defaults to `packageDirectory`, which is what `rootDir`
+	 * itself defaults to; a package that points `rootDir` at a subdirectory
+	 * writes its globs from there instead.
+	 */
+	rootDir?: string | undefined;
 }
 
 export interface WorkspaceCoverageRoot {
@@ -82,6 +89,13 @@ export interface WorkspacePackageCoverage {
 	manifest: CoverageManifest;
 	manifestPath: string;
 	pkg: string;
+	/**
+	 * The anchor this package's coverage globs were resolved against. Carried
+	 * for the same reason as `coveragePathIgnorePatterns`: the report has to
+	 * judge on exactly what instrumentation judged on, and re-deriving the
+	 * anchor from a config downstream is how the two would drift apart.
+	 */
+	rootDir: string;
 }
 
 export interface PrepareWorkspaceCoverageOptions {
@@ -575,6 +589,16 @@ function writePackageManifest(
 }
 
 /**
+ * The anchor this package's coverage globs resolve against. `rootDir` defaults
+ * to the package directory the same way the config loader defaults it, so a
+ * descriptor built by a caller with no coverage stake — the staging and
+ * preflight paths — need not state one.
+ */
+function resolvePackageAnchor(descriptor: WorkspacePackageDescriptor): string {
+	return descriptor.rootDir ?? descriptor.packageDirectory;
+}
+
+/**
  * The package's coverage universe, built from the same patterns its own report
  * and threshold gate use — so a file earns probes exactly when that package
  * would report on it. `undefined` when the package names no coverage globs.
@@ -591,6 +615,7 @@ function resolvePackageUniverse(
 	return createInstrumentUniverse({
 		ignore: ignore.patterns,
 		include: descriptor.collectCoverageFrom,
+		rootDir: resolvePackageAnchor(descriptor),
 	});
 }
 
@@ -605,22 +630,11 @@ function prepareForPackage(
 	const previousManifest = loadPackageManifest(manifestPath);
 	const luauRoots = discoverPackageLuauRoots(descriptor, ignore.matcher);
 	const universe = resolvePackageUniverse(descriptor, ignore);
-	const isIncremental = decidePackageIncremental({
-		descriptor,
-		luauRoots,
-		packageShadowRoot,
-		previousManifest,
-		universe,
-	});
-	const instrumented = instrumentPackageRoots({
-		descriptor,
-		isIncremental,
-		luauRoots,
-		packageShadowRoot,
-		previousManifest,
-		timing,
-		universe,
-	});
+	// `InstrumentPackageOptions extends PackageIncrementalOptions`, so the
+	// second call is the first plus what only it needs.
+	const options = { descriptor, luauRoots, packageShadowRoot, previousManifest, universe };
+	const isIncremental = decidePackageIncremental(options);
+	const instrumented = instrumentPackageRoots({ ...options, isIncremental, timing });
 	const manifest = writePackageManifest(manifestPath, packageShadowRoot, instrumented, universe);
 
 	return {
@@ -629,6 +643,7 @@ function prepareForPackage(
 		manifest,
 		manifestPath,
 		pkg: descriptor.name,
+		rootDir: resolvePackageAnchor(descriptor),
 	};
 }
 

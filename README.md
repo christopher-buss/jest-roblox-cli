@@ -229,6 +229,10 @@ Put these under `test: { ... }`.
 > include universe is derived from each project's `include` globs, excluding
 > `*.spec`/`*.test` and `*.client`/`*.server` entry-point scripts (which compile
 > to LocalScript/Script and can't be `require`d, so no test can cover them).
+> In workspace mode `collectCoverageFrom` globs resolve against the package's
+> own `rootDir`, so a package at `packages/foo` writes `src/**/*.ts` for its own
+> sources no matter which directory the CLI was invoked from. Single and multi
+> runs anchor on the invocation directory.
 
 <!-- prettier-ignore -->
 > [!TIP]

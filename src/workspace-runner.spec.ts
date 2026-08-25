@@ -190,6 +190,7 @@ function coverageEntry(packageName: string): WorkspacePackageCoverage {
 		},
 		manifestPath: "/shadow/coverage-manifest.json",
 		pkg: packageName,
+		rootDir: FOO_DIR,
 	};
 }
 
@@ -1983,6 +1984,7 @@ describe(runWorkspaceAsync, () => {
 					},
 					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
+					rootDir: FOO_DIR,
 				},
 			]);
 
@@ -2050,6 +2052,7 @@ describe(runWorkspaceAsync, () => {
 					},
 					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
+					rootDir: FOO_DIR,
 				},
 			]);
 
@@ -2125,6 +2128,7 @@ describe(runWorkspaceAsync, () => {
 					},
 					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
+					rootDir: FOO_DIR,
 				},
 			]);
 
@@ -2183,6 +2187,7 @@ describe(runWorkspaceAsync, () => {
 					},
 					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
+					rootDir: FOO_DIR,
 				},
 			]);
 
@@ -2238,6 +2243,7 @@ describe(runWorkspaceAsync, () => {
 					},
 					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
+					rootDir: FOO_DIR,
 				},
 			]);
 
@@ -2291,6 +2297,7 @@ describe(runWorkspaceAsync, () => {
 					manifest,
 					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
+					rootDir: FOO_DIR,
 				},
 			]);
 
@@ -2363,6 +2370,7 @@ describe(runWorkspaceAsync, () => {
 				coveragePathIgnorePatterns: ["**/vendor/**"],
 				coverageReporters: ["cobertura"],
 				coverageThreshold: { branches: 70, statements: 90 },
+				rootDir: FOO_DIR,
 			});
 		});
 

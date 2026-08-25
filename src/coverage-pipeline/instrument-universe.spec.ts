@@ -15,6 +15,8 @@ vi.mock(import("node:fs"), async () => {
 });
 
 const CWD = normalizeWindowsPath(process.cwd());
+/** A package sited away from the invocation directory. */
+const PACKAGE_ROOT = normalizeWindowsPath(path.resolve("/repo/packages/foo"));
 
 /** Empties the in-memory volume after the calling test, not right now. */
 function resetVolumeAfterTest(): void {
@@ -207,6 +209,28 @@ describe(createInstrumentUniverse, () => {
 		expect(universeFor({ include: ["src/ecs/**/*.ts"] }).includes(luauPath)).toBeTrue();
 	});
 
+	it("should match include globs against the given rootDir", () => {
+		expect.assertions(2);
+
+		resetVolumeAfterTest();
+		const luauPath = path.posix.join(PACKAGE_ROOT, "out/ecs/move.luau");
+		writeSourceMap(
+			luauPath,
+			JSON.stringify({
+				mappings: "",
+				sources: [path.posix.join(PACKAGE_ROOT, "src/ecs/move.ts")],
+				version: 3,
+			}),
+		);
+
+		// The package's config writes `src/**/*.ts` for its own sources, and
+		// the package sits nowhere near the invocation directory.
+		expect(
+			universeFor({ include: ["src/**/*.ts"], rootDir: PACKAGE_ROOT }).includes(luauPath),
+		).toBeTrue();
+		expect(universeFor({ include: ["src/**/*.ts"] }).includes(luauPath)).toBeFalse();
+	});
+
 	it("should digest the same universe however the globs are ordered", () => {
 		expect.assertions(1);
 
@@ -234,5 +258,16 @@ describe(createInstrumentUniverse, () => {
 		const without = universeFor({ include: ["src/**/*.ts"] });
 
 		expect(withIgnore.digest).not.toBe(without.digest);
+	});
+
+	it("should digest the rootDir the globs are anchored to", () => {
+		expect.assertions(1);
+
+		// Re-anchoring the same globs selects a different set of files, and
+		// nothing else would invalidate the shadow copies left by the old one.
+		const here = universeFor({ include: ["src/**/*.ts"], rootDir: PACKAGE_ROOT });
+		const elsewhere = universeFor({ include: ["src/**/*.ts"], rootDir: `${PACKAGE_ROOT}-two` });
+
+		expect(here.digest).not.toBe(elsewhere.digest);
 	});
 });

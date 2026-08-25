@@ -389,6 +389,13 @@ function resolveCoverageInputs(
 		previousManifest: loadCoverageManifest(manifestPath),
 		rojoInputsHash,
 		rojoProjectPath,
+		// No `rootDir`: the candidate paths these globs are matched against are
+		// cwd-relative here. `luauRoots` are walked from the invocation
+		// directory and `COVERAGE_DIR` hangs off it, so the manifest keys — and
+		// through them the mapped TS paths — are cwd-relative too. Anchoring
+		// the globs anywhere else would match none of them. Only workspace
+		// mode, whose candidates are absolute under a package, has an anchor
+		// worth preferring.
 		universe: createInstrumentUniverse({
 			ignore: config.coveragePathIgnorePatterns,
 			include: coverageInclude ?? config.collectCoverageFrom,

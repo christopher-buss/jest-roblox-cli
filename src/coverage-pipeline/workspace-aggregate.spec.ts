@@ -1,6 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
+import * as path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { CoverageManifest } from "./manifest.ts";
@@ -14,6 +15,11 @@ vi.mock(import("node:fs"), async () => {
 	return fromAny({ ...memfs.fs, default: memfs.fs });
 });
 vi.mock(import("./mapper.ts"));
+
+/**
+ * A package sited away from the invocation directory, as a workspace one is.
+ */
+const PACKAGE_ROOT = path.resolve("/repo/packages/foo");
 
 function fileStub(tsPath: string): MappedFileCoverage {
 	return {
@@ -58,8 +64,18 @@ describe(aggregateWorkspaceCoverage, () => {
 		mapped.mockReturnValue({ files: {} });
 
 		aggregateWorkspaceCoverage([
-			{ coverageData: fooCoverage, manifest: fooManifest, pkg: "@halcyon/foo" },
-			{ coverageData: barCoverage, manifest: barManifest, pkg: "@halcyon/bar" },
+			{
+				coverageData: fooCoverage,
+				manifest: fooManifest,
+				pkg: "@halcyon/foo",
+				rootDir: PACKAGE_ROOT,
+			},
+			{
+				coverageData: barCoverage,
+				manifest: barManifest,
+				pkg: "@halcyon/bar",
+				rootDir: PACKAGE_ROOT,
+			},
 		]);
 
 		expect(mapped).toHaveBeenCalledTimes(2);
@@ -104,11 +120,13 @@ describe(aggregateWorkspaceCoverage, () => {
 				coverageData: { "foo.luau": { s: { "1": 1 } } },
 				manifest: manifestStub(),
 				pkg: "@halcyon/foo",
+				rootDir: PACKAGE_ROOT,
 			},
 			{
 				coverageData: { "bar.luau": { s: { "1": 1 } } },
 				manifest: manifestStub(),
 				pkg: "@halcyon/bar",
+				rootDir: PACKAGE_ROOT,
 			},
 		]);
 
@@ -131,7 +149,12 @@ describe(aggregateWorkspaceCoverage, () => {
 		mapped.mockReturnValue({ files: {} });
 
 		aggregateWorkspaceCoverage([
-			{ coverageData: undefined, manifest: manifestStub(), pkg: "@halcyon/foo" },
+			{
+				coverageData: undefined,
+				manifest: manifestStub(),
+				pkg: "@halcyon/foo",
+				rootDir: PACKAGE_ROOT,
+			},
 		]);
 
 		expect(mapped).not.toHaveBeenCalled();
@@ -184,12 +207,14 @@ describe(aggregateWorkspaceCoverage, () => {
 				ignorePatterns: ["**/index.ts"],
 				manifest: manifestStub(),
 				pkg: "@halcyon/foo",
+				rootDir: PACKAGE_ROOT,
 			},
 			{
 				coverageData: { "bar.luau": { s: {} } },
 				ignorePatterns: [],
 				manifest: manifestStub(),
 				pkg: "@halcyon/bar",
+				rootDir: PACKAGE_ROOT,
 			},
 		]);
 
@@ -206,13 +231,15 @@ describe(aggregateWorkspaceCoverage, () => {
 			vol.reset();
 		});
 
+		// The mapper keys a workspace package's files on absolute paths under
+		// the package, and `src/**/*.ts` in that package's config names its own
+		// sources — so the package's own rootDir is what makes the glob land.
+		const keep = path.join(PACKAGE_ROOT, "src/keep.ts");
+		const drop = path.join(PACKAGE_ROOT, "tools/drop.ts");
+
 		const { mapCoverageToTypeScript } = await import("./mapper.ts");
-		const mapped = vi.mocked(mapCoverageToTypeScript);
-		mapped.mockReturnValue({
-			files: {
-				"src/keep.ts": fileStub("src/keep.ts"),
-				"tools/drop.ts": fileStub("tools/drop.ts"),
-			},
+		vi.mocked(mapCoverageToTypeScript).mockReturnValue({
+			files: { [drop]: fileStub(drop), [keep]: fileStub(keep) },
 		});
 
 		// The include globs belong to the package, so a package that narrows its
@@ -224,10 +251,11 @@ describe(aggregateWorkspaceCoverage, () => {
 				includePatterns: ["src/**/*.ts"],
 				manifest: manifestStub(),
 				pkg: "@halcyon/foo",
+				rootDir: PACKAGE_ROOT,
 			},
 		]);
 
-		expect(Object.keys(result[0]!.universe.files)).toStrictEqual(["src/keep.ts"]);
+		expect(Object.keys(result[0]!.universe.files)).toStrictEqual([keep]);
 	});
 
 	it("should skip a package with no coverageData when listing universes", async () => {
@@ -267,13 +295,20 @@ describe(aggregateWorkspaceCoverage, () => {
 				ignorePatterns: ["**/index.ts"],
 				manifest: manifestStub(),
 				pkg: "@halcyon/foo",
+				rootDir: PACKAGE_ROOT,
 			},
 			{
 				coverageData: { "bar.luau": { s: {} } },
 				manifest: manifestStub(),
 				pkg: "@halcyon/bar",
+				rootDir: PACKAGE_ROOT,
 			},
-			{ coverageData: undefined, manifest: manifestStub(), pkg: "@halcyon/baz" },
+			{
+				coverageData: undefined,
+				manifest: manifestStub(),
+				pkg: "@halcyon/baz",
+				rootDir: PACKAGE_ROOT,
+			},
 		]);
 
 		expect(result.map((entry) => entry.pkg)).toStrictEqual(["@halcyon/foo", "@halcyon/bar"]);
@@ -330,11 +365,13 @@ describe(aggregateWorkspaceCoverage, () => {
 				coverageData: { "a.luau": { s: { "1": 1 } } },
 				manifest: manifestStub(),
 				pkg: "@halcyon/foo",
+				rootDir: PACKAGE_ROOT,
 			},
 			{
 				coverageData: { "b.luau": { s: { "1": 1 } } },
 				manifest: manifestStub(),
 				pkg: "@halcyon/bar",
+				rootDir: PACKAGE_ROOT,
 			},
 		]);
 

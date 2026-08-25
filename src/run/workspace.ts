@@ -80,6 +80,7 @@ interface PackageEntry {
 	includePatterns: Array<string> | undefined;
 	manifest: NonNullable<WorkspaceProjectResult["coverageManifest"]>;
 	pkg: string;
+	rootDir: string;
 }
 
 interface ExecuteWorkspaceRunOptions {
@@ -289,6 +290,7 @@ function aggregatePerPackageCoverage(
 				includePatterns: entry.coverageSettings.collectCoverageFrom,
 				manifest: entry.coverageManifest,
 				pkg: entry.pkg,
+				rootDir: entry.coverageSettings.rootDir,
 			});
 			settingsByPackage.set(entry.pkg, entry.coverageSettings);
 			continue;

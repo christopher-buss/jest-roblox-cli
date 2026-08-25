@@ -31,7 +31,9 @@ interface CoverageReportUnit {
 	 * Still to be applied at report time. Undefined for a workspace package:
 	 * its universe was narrowed in `aggregateWorkspaceCoverage`, where package
 	 * identity was still known, and re-applying anything here would override a
-	 * package's own opt-out.
+	 * package's own opt-out. It must stay undefined there — a package's globs
+	 * anchor on its own `rootDir`, and this layer only knows the invocation
+	 * directory, so re-filtering here would empty the universe silently.
 	 */
 	collectCoverageFrom?: Array<string> | undefined;
 	/** Absolute output directory for the file reporters. */

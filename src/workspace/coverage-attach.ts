@@ -34,6 +34,13 @@ export interface PackageCoverageSettings {
 	coveragePathIgnorePatterns?: Array<string> | undefined;
 	coverageReporters: Array<CoverageReporter>;
 	coverageThreshold?: ResolvedConfig["coverageThreshold"] | undefined;
+	/**
+	 * The package's own `rootDir`: what `collectCoverageFrom` is written
+	 * relative to. Carried because the invocation directory is the workspace
+	 * root, which belongs to no package — anchoring there would make
+	 * `src/**` name the workspace's sources rather than the package's.
+	 */
+	rootDir: string;
 }
 
 export interface WorkspaceProjectResult {
@@ -141,9 +148,10 @@ function buildCoverageMap(
 	return map;
 }
 
-// The ignore patterns come from the prepare pass rather than the config so the
-// report filters on exactly what instrumentation filtered on; everything else is
-// report-time only and reads straight off the package's resolved config.
+// The ignore patterns and the glob anchor come from the prepare pass rather
+// than the config so the report filters on exactly what instrumentation
+// filtered on; everything else is report-time only and reads straight off the
+// package's resolved config.
 function readCoverageSettings(
 	{ projectConfig }: PendingEntry,
 	coverage: WorkspacePackageCoverage,
@@ -154,5 +162,6 @@ function readCoverageSettings(
 		coveragePathIgnorePatterns: coverage.coveragePathIgnorePatterns,
 		coverageReporters: projectConfig.coverageReporters,
 		coverageThreshold: projectConfig.coverageThreshold,
+		rootDir: coverage.rootDir,
 	};
 }

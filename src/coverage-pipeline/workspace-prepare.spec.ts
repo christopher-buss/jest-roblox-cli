@@ -101,37 +101,49 @@ async function mockInstrumentRootAsync(
 }
 
 describe(prepareWorkspaceCoverage, () => {
-	it("should narrow instrumentation to the package's collectCoverageFrom", async () => {
-		expect.assertions(2);
+	// Both cases site the package away from the invocation directory: the
+	// package's globs are written relative to its own `rootDir`, so nothing
+	// about where the CLI was run may decide what they name. The implicit case
+	// is the common one; the explicit case is a package that points `rootDir`
+	// elsewhere, and the report reads back the same anchor.
+	it.for([
+		{ anchor: "its own directory", glob: "out/init.luau", rootDir: undefined },
+		{
+			anchor: "an explicit rootDir",
+			glob: "packages/foo/out/init.luau",
+			rootDir: WORKSPACE_ROOT,
+		},
+	])(
+		"should narrow instrumentation to collectCoverageFrom anchored at $anchor",
+		async ({ glob, rootDir }) => {
+			expect.assertions(2);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+			onTestFinished(() => {
+				vol.reset();
+			});
 
-		// Under the invocation directory on purpose: coverage globs anchor
-		// there, both here and in `filterCoverageUniverse` at report time, so
-		// a package sited elsewhere would match nothing in either place.
-		const packageDirectory = path.join(process.cwd(), "packages/foo");
-		seedPackage(packageDirectory);
-		vol.mkdirSync(path.join(packageDirectory, "out/ui"), { recursive: true });
-		vol.writeFileSync(path.join(packageDirectory, "out/ui/button.luau"), "local y = 2");
-		const mocked = await mockInstrumentRootAsync();
+			seedPackage(FOO_DIR);
+			vol.mkdirSync(path.join(FOO_DIR, "out/ui"), { recursive: true });
+			vol.writeFileSync(path.join(FOO_DIR, "out/ui/button.luau"), "local y = 2");
+			const mocked = await mockInstrumentRootAsync();
 
-		const result = prepareWorkspaceCoverage({
-			packages: [
-				{
-					name: "@halcyon/foo",
-					collectCoverageFrom: ["packages/foo/out/init.luau"],
-					packageDirectory,
-					rojoProjectPath: path.join(packageDirectory, "test.project.json"),
-				},
-			],
-			workspaceRoot: WORKSPACE_ROOT,
-		});
+			const result = prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						collectCoverageFrom: [glob],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+						rootDir,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
 
-		expect(mocked.mock.calls[0]![0].skipFiles).toStrictEqual(new Set(["ui/button.luau"]));
-		expect(result[0]!.manifest.coverageUniverseHash).toMatch(/^[a-f0-9]{64}$/);
-	});
+			expect(mocked.mock.calls[0]![0].skipFiles).toStrictEqual(new Set(["ui/button.luau"]));
+			expect(result[0]!.manifest.coverageUniverseHash).toMatch(/^[a-f0-9]{64}$/);
+		},
+	);
 
 	it("should instrument the whole package when it names no coverage globs", async () => {
 		expect.assertions(2);
@@ -447,9 +459,8 @@ describe(prepareWorkspaceCoverage, () => {
 			vol.reset();
 		});
 
-		const packageDirectory = path.join(process.cwd(), "packages/foo");
 		const sourceContent = "local x = 1";
-		const fileKey = `${path.join(packageDirectory, "out").replaceAll("\\", "/")}/init.luau`;
+		const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 		const previousManifest: CoverageManifest = {
 			buildId: "prev-build-id",
 			coverageUniverseHash: "a-different-universe",
@@ -472,7 +483,7 @@ describe(prepareWorkspaceCoverage, () => {
 			version: MANIFEST_VERSION,
 		};
 
-		seedPackage(packageDirectory);
+		seedPackage(FOO_DIR);
 		vol.fromJSON({
 			[path.join(
 				WORKSPACE_ROOT,
@@ -485,9 +496,9 @@ describe(prepareWorkspaceCoverage, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					collectCoverageFrom: ["packages/foo/out/**"],
-					packageDirectory,
-					rojoProjectPath: path.join(packageDirectory, "test.project.json"),
+					collectCoverageFrom: ["out/**"],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
 				},
 			],
 			workspaceRoot: WORKSPACE_ROOT,

@@ -85,6 +85,10 @@ function buildPackageDescriptor(
 		luauRoots: packageConfig.luauRoots,
 		packageDirectory: info.packageDirectory,
 		rojoProjectPath: resolveRojoProjectPath(info, packageConfig),
+		// The same field the report anchors this package's coverage globs on
+		// (`readCoverageSettings`), so a file earns probes exactly when the
+		// report asks about it.
+		rootDir: packageConfig.rootDir,
 	};
 	if (hasExplicitCoverageCache) {
 		descriptor.coverageCache = packageConfig.coverageCache;

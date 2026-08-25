@@ -18,6 +18,14 @@ export interface WorkspacePackageCoverageEntry {
 	includePatterns?: Array<string> | undefined;
 	manifest: CoverageManifest;
 	pkg: string;
+	/**
+	 * The package's own `rootDir` — what `includePatterns` is written relative
+	 * to, and the same anchor instrumentation resolved. Required rather than
+	 * defaulted: an entry that omits it would fall back to the invocation
+	 * directory, which is the exact misconfiguration this anchor exists to
+	 * prevent, and it would do so silently.
+	 */
+	rootDir: string;
 }
 
 export interface WorkspacePackageUniverse {
@@ -54,6 +62,7 @@ export function aggregateWorkspaceCoverage(
 			universe: filterCoverageUniverse(mapped, {
 				ignore: entry.ignorePatterns,
 				include: entry.includePatterns,
+				rootDir: entry.rootDir,
 			}),
 		});
 	}

@@ -66,6 +66,7 @@ function coverageSettingsStub(): PackageCoverageSettings {
 	return {
 		coverageDirectory: "/ws/packages/foo/coverage",
 		coverageReporters: ["text", "lcov"],
+		rootDir: "/ws/packages/foo",
 	};
 }
 
@@ -831,6 +832,7 @@ describe(runWorkspaceModeAsync, () => {
 						coverageDirectory: "/ws/packages/foo/coverage",
 						coveragePathIgnorePatterns: ["**/node_modules/**"],
 						coverageReporters: ["text"],
+						rootDir: "/ws/packages/foo",
 					},
 					displayName: "@halcyon/foo",
 					pkg: "@halcyon/foo",
@@ -850,8 +852,9 @@ describe(runWorkspaceModeAsync, () => {
 				makeCli({ collectCoverage: true, packages: "@halcyon/foo", workspace: true }),
 			);
 
-			// The package's own globs reach the aggregator, so the universe it
-			// builds is the one both the report and the gate see.
+			// The package's own globs reach the aggregator, along with the
+			// rootDir they are written relative to, so the universe it builds
+			// is the one both the report and the gate see.
 			expect(aggregateWorkspaceCoverage).toHaveBeenCalledWith([
 				expect.objectContaining({
 					coverageData: { "out/foo.luau": { s: { "1": 3 } } },
@@ -859,6 +862,7 @@ describe(runWorkspaceModeAsync, () => {
 					includePatterns: ["src/**/*.ts"],
 					manifest,
 					pkg: "@halcyon/foo",
+					rootDir: "/ws/packages/foo",
 				}),
 			]);
 			expect(result.coveragePackages).toHaveLength(1);
@@ -1049,6 +1053,7 @@ describe(runWorkspaceModeAsync, () => {
 						coverageDirectory: "/ws/packages/foo/coverage",
 						coverageReporters: ["text"],
 						coverageThreshold: { statements: 90 },
+						rootDir: "/ws/packages/foo",
 					},
 					displayName: "@halcyon/foo",
 					pkg: "@halcyon/foo",
@@ -1063,6 +1068,7 @@ describe(runWorkspaceModeAsync, () => {
 					coverageSettings: {
 						coverageDirectory: "/ws/packages/bar/coverage",
 						coverageReporters: ["lcov"],
+						rootDir: "/ws/packages/bar",
 					},
 					displayName: "@halcyon/bar",
 					pkg: "@halcyon/bar",

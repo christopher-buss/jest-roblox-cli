@@ -149,7 +149,7 @@ describe("workspace coverage — collectCoverageFrom scopes instrumentation", ()
 			);
 			writeVendoredMountConfig(sandbox, {
 				luauRoots: ["src"],
-				test: { collectCoverageFrom: ["packages/vendored-mount/src/init.luau"] },
+				test: { collectCoverageFrom: ["src/init.luau"] },
 			});
 
 			const server = await startFakeOpenCloudServerAsync([

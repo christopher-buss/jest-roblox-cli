@@ -2,7 +2,7 @@ import * as path from "node:path";
 import process from "node:process";
 import picomatch from "picomatch";
 
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { MappedCoverageResult } from "./mapper.ts";
 
 export interface CoverageUniverseFilter {
@@ -17,6 +17,38 @@ export interface CoverageUniverseFilter {
 	 * or empty, every file is included (subject to `ignore`).
 	 */
 	include?: Array<string> | undefined;
+	/**
+	 * The directory `include` is written relative to — the config's own
+	 * `rootDir`, which in workspace mode is the package directory. Defaults to
+	 * `process.cwd()`, which is what single mode's `rootDir` already is.
+	 */
+	rootDir?: string | undefined;
+}
+
+/**
+ * The directory a universe's globs are anchored to.
+ *
+ * A glob means what the config that wrote it meant: `src/**` in a package at
+ * `packages/foo` names that package's sources, not the workspace root's.
+ * Anchoring on the config's own `rootDir` is what makes that true — cwd is the
+ * invocation directory, which in workspace mode belongs to no package. A caller
+ * that states no anchor gets cwd, which is what single mode's `rootDir` is.
+ *
+ * Exported so the instrument-time digest hashes the same answer the matcher
+ * decides by: a second copy of this default could drift, and the cache would
+ * stay warm across a universe it no longer describes.
+ *
+ * Resolved the cross-host way rather than through `path.resolve`, which reads
+ * `D:/repo/packages/foo` as a relative filename off Linux and would hang the
+ * whole universe under `<cwd>/D:/...` — an anchor no candidate path starts
+ * with, so nothing matches and the digest names a directory that never existed.
+ */
+export function resolveUniverseAnchor(rootDirectory?: string): string {
+	const cwd = normalizeWindowsPath(process.cwd());
+	const anchor = toAnchorNamespace(rootDirectory ?? cwd, cwd);
+	// A trailing slash would double up in `anchorPrefix`; `path.resolve` used to
+	// eat it. Roots keep theirs by way of the prefix the caller rebuilds.
+	return anchor.endsWith("/") ? anchor.slice(0, -1) : anchor;
 }
 
 /**
@@ -42,11 +74,20 @@ export function createCoverageUniverseMatcher(
 	// way the instrument-time root matcher treats `coveragePathIgnorePatterns`.
 	const isIgnored = ignore.length > 0 ? picomatch(ignore, { contains: true }) : () => false;
 
-	const cwd = process.cwd();
+	const anchor = resolveUniverseAnchor(filter.rootDir);
+	// Both sides are canonical POSIX by here, so a file under the anchor — the
+	// case for every file a config means to name — is a prefix strip.
+	// `path.relative` stays as the fallback for one outside it, where the answer
+	// begins `..` and no glob matches anyway. Worth the split because this runs
+	// once per compiled file across the whole place, and `path.relative`
+	// re-resolves the anchor on every call.
+	const anchorPrefix = `${anchor}/`;
+	const cwd = normalizeWindowsPath(process.cwd());
 	return (filePath) => {
-		const relativePath = path.isAbsolute(filePath)
-			? normalizeWindowsPath(path.relative(cwd, filePath))
-			: filePath;
+		const absolute = toAnchorNamespace(filePath, cwd);
+		const relativePath = absolute.startsWith(anchorPrefix)
+			? absolute.slice(anchorPrefix.length)
+			: normalizeWindowsPath(path.relative(anchor, absolute));
 		return isIncluded(relativePath) && !isExcluded(relativePath) && !isIgnored(relativePath);
 	};
 }
@@ -74,6 +115,18 @@ export function filterCoverageUniverse(
 	);
 
 	return { files: filtered };
+}
+
+/**
+ * A candidate path in the anchor's namespace. A relative one is still
+ * cwd-relative — single mode's manifest keys its files that way — so it is
+ * joined onto cwd rather than read as if it were already anchored.
+ */
+function toAnchorNamespace(filePath: string, cwd: string): string {
+	const normalized = normalizeWindowsPath(filePath);
+	return path.posix.normalize(
+		isAbsolutePath(normalized) ? normalized : path.posix.join(cwd, normalized),
+	);
 }
 
 function createGlobMatcher(patterns: Array<string>): (filePath: string) => boolean {

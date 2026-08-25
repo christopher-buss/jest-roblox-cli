@@ -59,6 +59,12 @@ export interface PackageDescriptor {
 	luauRoots?: Array<string> | undefined;
 	packageDirectory: string;
 	rojoProjectPath: string;
+	/**
+	 * The package's own `rootDir`, forwarded to `prepareWorkspaceCoverage` so
+	 * its coverage globs anchor where they were written. Not read by synthesis
+	 * itself.
+	 */
+	rootDir?: string | undefined;
 	stubMounts?: Array<StubMount> | undefined;
 }
 
