@@ -323,6 +323,19 @@ export interface Config {
 	 * `"studio-cli"` is never selected by `"auto"` — request it explicitly.
 	 */
 	backend?: Backend;
+	/**
+	 * How long the Open Cloud backend gives its boot probe — one trivial
+	 * pinned task run against a freshly uploaded place version — to complete,
+	 * in milliseconds. Default `90000`.
+	 *
+	 * Roblox reports nothing at all for a place version it cannot start: the
+	 * task stays `PROCESSING` past every deadline, with no error and no log.
+	 * The probe is how that is caught, so this must comfortably exceed the
+	 * worst cold place boot (10-45s) or a healthy run fails for being slow.
+	 * Zero turns the probe off, and with it the upload cache: an entry means
+	 * "these bytes boot", which nothing has proved.
+	 */
+	bootProbeTimeout?: number;
 	/** Force ANSI colour in output. Default `true`. */
 	color?: boolean;
 	/**
@@ -456,6 +469,7 @@ export interface ResolvedConfig
 		UndefinedTolerant<Except<Config, "test">>,
 		UndefinedTolerant<Except<GlobalTestConfig, "projects">> {
 	backend: Backend;
+	bootProbeTimeout: number;
 	collectCoverage: boolean;
 	collectPerTestCoverage?: boolean | undefined;
 	color: boolean;
@@ -579,6 +593,7 @@ export function resolvePlaceFilePath(config: ResolvedConfig): string {
 
 export const DEFAULT_CONFIG: ResolvedConfig = {
 	backend: "auto",
+	bootProbeTimeout: 90_000,
 	collectCoverage: false,
 	color: true,
 	coverageCache: true,
@@ -834,6 +849,7 @@ const globalTestConfigSchema = type({
 export const configSchema: Type<Config> = type({
 	"+": "reject",
 	"backend?": type("'auto'|'open-cloud'|'studio'|'studio-cli'"),
+	"bootProbeTimeout?": "number",
 	"color?": "boolean",
 	"config?": "string",
 	"coverageCache?": "boolean",
@@ -904,6 +920,7 @@ type SharedKey = keyof SharedTestConfig;
 
 export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"backend",
+	"bootProbeTimeout",
 	"color",
 	"coverageCache",
 	"extends",

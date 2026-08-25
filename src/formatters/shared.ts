@@ -58,22 +58,6 @@ export interface FailureContext {
 	totalFailures: number;
 }
 
-/**
- * The bail line's text, without styling.
- *
- * Shared by the human and agent formatters: both have to say the report is a
- * prefix of the selection, and two wordings for one fact is how they drift.
- */
-export function formatBailText({ notRun, ran }: BailSummary): {
-	reached: string;
-	skipped: string;
-} {
-	return {
-		reached: `after ${ran} ${ran === 1 ? "package" : "packages"}`,
-		skipped: `, ${notRun} not run`,
-	};
-}
-
 export function resolveDisplayPath(testFilePath: string, sourceMapper?: SourceMapper): string {
 	return sourceMapper?.resolveDisplayPath(testFilePath) ?? testFilePath;
 }

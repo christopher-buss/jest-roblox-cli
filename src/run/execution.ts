@@ -31,6 +31,12 @@ export interface ExecutionInput {
 }
 
 export interface ExecutionOutcome {
+	/**
+	 * Host time spent building the place this run dispatches against, 0 when
+	 * the run built none here. Staging's own measurement covers everything
+	 * before the backend resolved, so the two sum to the run's staging cost.
+	 */
+	placeBuildMs: number;
 	projectResults: Array<ProjectResult>;
 	typecheck: TypecheckPassOutcome;
 }
@@ -81,31 +87,6 @@ export async function executeTestPlanAsync(input: ExecutionInput): Promise<Execu
 	} finally {
 		await backend.closeAsync?.();
 	}
-}
-
-function buildOpenCloudPlace(
-	rootConfig: ResolvedConfig,
-	projects: Array<ResolvedProjectConfig>,
-	cacheRoot: string,
-): void {
-	const userRojoProjectPath = path.resolve(
-		rootConfig.rootDir,
-		rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
-	);
-
-	buildPlace({
-		packages: [
-			{
-				name: "multi-project",
-				packageDirectory: rootConfig.rootDir,
-				rojoProjectPath: userRojoProjectPath,
-				stubMounts: collectStubMounts(projects, rootConfig.rootDir, cacheRoot),
-			},
-		],
-		placeFile: resolvePlaceFilePath(rootConfig),
-		projectFile: path.resolve(cacheRoot, "synth.project.json"),
-		wrap: false,
-	});
 }
 
 function toExecutorProject(job: PendingJob): ProjectInput {
@@ -162,16 +143,61 @@ function effectiveParallelForBackend(
 	return backend.kind === "open-cloud" ? parallel : undefined;
 }
 
+function buildOpenCloudPlace(
+	rootConfig: ResolvedConfig,
+	projects: Array<ResolvedProjectConfig>,
+	cacheRoot: string,
+): void {
+	const userRojoProjectPath = path.resolve(
+		rootConfig.rootDir,
+		rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
+	);
+
+	buildPlace({
+		packages: [
+			{
+				name: "multi-project",
+				packageDirectory: rootConfig.rootDir,
+				rojoProjectPath: userRojoProjectPath,
+				stubMounts: collectStubMounts(projects, rootConfig.rootDir, cacheRoot),
+			},
+		],
+		placeFile: resolvePlaceFilePath(rootConfig),
+		projectFile: path.resolve(cacheRoot, "synth.project.json"),
+		wrap: false,
+	});
+}
+
+/**
+ * Build the place a non-coverage open-cloud run dispatches against, and report
+ * how long it took.
+ *
+ * Timed rather than merely elapsed-through: the build lands before the dispatch
+ * window opens, so its cost falls outside every phase the backend measures. A
+ * coverage run builds nothing here — `prepareCoverage` already built the
+ * instrumented place, and `stageRun` charged that build to staging too, so the
+ * two paths report the same phase under the same name.
+ */
+function buildPlaceForBackend(backend: Backend, { discovery, staged }: ExecutionInput): number {
+	const { projects, rootConfig, timing } = discovery;
+	if (rootConfig.collectCoverage || backend.kind !== "open-cloud") {
+		return 0;
+	}
+
+	const start = Date.now();
+	timing.profile("buildOpenCloudPlace", () => {
+		buildOpenCloudPlace(rootConfig, projects, staged.cacheRoot);
+	});
+	return Date.now() - start;
+}
+
 async function runAgainstBackendAsync(
 	backend: Backend,
-	{ discovery, plan, staged }: ExecutionInput,
+	input: ExecutionInput,
 ): Promise<ExecutionOutcome> {
-	const { cliTypecheck, projects, rootConfig, timing } = discovery;
-	if (!rootConfig.collectCoverage && backend.kind === "open-cloud") {
-		timing.profile("buildOpenCloudPlace", () => {
-			buildOpenCloudPlace(rootConfig, projects, staged.cacheRoot);
-		});
-	}
+	const { discovery, plan, staged } = input;
+	const { cliTypecheck, rootConfig, timing } = discovery;
+	const placeBuildMs = buildPlaceForBackend(backend, input);
 
 	if (plan.jobs.length > 0) {
 		emitRunHeader({
@@ -202,5 +228,5 @@ async function runAgainstBackendAsync(
 		timing.record("runTypecheck", typecheck.elapsedMs);
 	}
 
-	return { projectResults, typecheck };
+	return { placeBuildMs, projectResults, typecheck };
 }

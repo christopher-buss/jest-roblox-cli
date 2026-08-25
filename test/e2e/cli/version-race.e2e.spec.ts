@@ -19,7 +19,7 @@ function isTaskCreatePost(call: { method: string; url: string }): boolean {
 
 describe("optimistic place-version pinning", () => {
 	it("should retry a raced task pinned to the uploaded version and still pass", async () => {
-		expect.assertions(7);
+		expect.assertions(8);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 		// First task boots on the wrong version (a concurrent upload won the
@@ -45,11 +45,13 @@ describe("optimistic place-version pinning", () => {
 
 		const taskPosts = server.calls.filter(isTaskCreatePost);
 
-		expect(taskPosts).toHaveLength(2);
-		// First attempt is unpinned (warm-pool route), the retry is pinned to
-		// the version the upload returned (the fake's first upload is v1).
-		expect(taskPosts[0]!.url).not.toContain("/versions/");
-		expect(taskPosts[1]!.url).toContain("/versions/1/");
+		// Three submits: the boot probe, pinned, then the run's first attempt
+		// unpinned (warm-pool route) and its retry pinned to the version the
+		// upload returned (the fake's first upload is v1).
+		expect(taskPosts).toHaveLength(3);
+		expect(taskPosts[0]!.url).toContain("/versions/1/");
+		expect(taskPosts[1]!.url).not.toContain("/versions/");
+		expect(taskPosts[2]!.url).toContain("/versions/1/");
 		// The retry re-sends the original script with the guard stripped.
 		expect(server.requests[1]!.script).not.toContain(PLACE_VERSION_RACE_SENTINEL);
 	});

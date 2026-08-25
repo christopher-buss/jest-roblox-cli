@@ -37,7 +37,7 @@ describe(formatStreamingProgressLine, () => {
 				}),
 				{ color: false },
 			),
-		).toBe("▶ @halcyon/foo  1 passed | 2 failed (1234ms)");
+		).toBe("▶ @halcyon/foo  2 failed | 1 passed (1234ms)");
 	});
 
 	it("should append the project name when it differs from the package", () => {

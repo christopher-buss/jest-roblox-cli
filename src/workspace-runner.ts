@@ -151,29 +151,6 @@ async function executeWorkspaceRunAsync({
 }
 
 /**
- * Stage the place and report how long it took.
- *
- * Timed rather than merely elapsed-through: the dispatch window opens after
- * this returns, exactly as multi opens its window after the coverage bake.
- * Opening the window first would leave this time inside the `cli` residual, and
- * the two modes would then report the same run differently.
- */
-function stageAndMeasure(
-	input: WorkspaceRuntimeInput,
-): StagedWorkspacePlace & { preCoverageMs: number } {
-	const start = Date.now();
-	const staged = stageWorkspacePlace({
-		cacheDirectory: input.cacheDirectory,
-		loaded: input.loaded,
-		selection: input.selection,
-		timing: input.timing,
-		workspaceRoot: input.options.workspaceRoot,
-	});
-
-	return { ...staged, preCoverageMs: Date.now() - start };
-}
-
-/**
  * Split the selection by what actually ran.
  *
  * The pending entries and the results pair by position, so a bail — which
@@ -207,15 +184,36 @@ function splitBailedSelection(
 	};
 }
 
+// Argument shuffle only: `stageWorkspacePlace` owns the phase measurements
+// this run reports.
+function stagePlaceForRun({
+	cacheDirectory,
+	loaded,
+	options,
+	selection,
+	timing,
+}: WorkspaceRuntimeInput): StagedWorkspacePlace {
+	return stageWorkspacePlace({
+		cacheDirectory,
+		loaded,
+		selection,
+		timing,
+		workspaceRoot: options.workspaceRoot,
+	});
+}
+
 async function runWorkspaceRuntimeAsync(
 	input: WorkspaceRuntimeInput,
 ): Promise<WorkspaceRunnerOutput> {
 	const { options, selection, timing } = input;
-	const { coverageByPackage, placeFile, preCoverageMs } = stageAndMeasure(input);
+	const { coverageByPackage, coverageMs, placeFile, stagingMs } = stagePlaceForRun(input);
 
 	const { ranProjectIndices, results, typecheckPass } = await executeWorkspaceRunAsync({
 		...input,
 		placeFile,
+		// The window opens only now, after staging: staging measured itself and
+		// the print layer adds that onto the total, so opening it any earlier
+		// would count the same milliseconds twice.
 		startTime: Date.now(),
 	});
 
@@ -239,7 +237,8 @@ async function runWorkspaceRuntimeAsync(
 			timing,
 		),
 		...(bailedPackages.length > 0 ? { bailedPackages } : {}),
-		preCoverageMs,
+		coverageMs,
+		stagingMs,
 	};
 }
 

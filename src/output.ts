@@ -111,8 +111,9 @@ export async function outputSingleResultAsync(
 	config: ResolvedConfig,
 	{
 		coverageDisplayFilter: agentTextFilter,
-		preCoverageMs,
+		coverageMs,
 		runtimeResult,
+		stagingMs,
 		typecheckResult,
 	}: SingleRunResult,
 ): Promise<number> {
@@ -124,9 +125,10 @@ export async function outputSingleResultAsync(
 		coverageEnabled: config.collectCoverage,
 		printResults: () => {
 			printSingleResults(config, {
+				coverageMs,
 				mergedResult,
-				preCoverageMs,
 				runtimeResult,
+				stagingMs,
 				typecheckResult,
 			});
 		},
@@ -184,11 +186,16 @@ export async function outputMultiResultAsync(
 	rootConfig: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
 ): Promise<number> {
-	const { mode, preCoverageMs, projectResults, typecheckResult } = result;
+	const { coverageMs, mode, projectResults, stagingMs, typecheckResult } = result;
 	const config = buildReportConfig(rootConfig, result);
 
 	if (typecheckResult !== undefined && projectResults.length === 0) {
-		return outputSingleResultAsync(config, { mode: "single", preCoverageMs, typecheckResult });
+		return outputSingleResultAsync(config, {
+			coverageMs,
+			mode: "single",
+			stagingMs,
+			typecheckResult,
+		});
 	}
 
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
@@ -438,9 +445,10 @@ function toMultiOutputContext(
 		...resolveBailSummary(result),
 		config,
 		...resolveSinkHints(result, config),
+		coverageMs: result.coverageMs,
 		merged,
-		preCoverageMs: result.preCoverageMs,
 		projectResults: result.projectResults,
+		stagingMs: result.stagingMs,
 		typecheckResult: result.typecheckResult,
 	};
 }

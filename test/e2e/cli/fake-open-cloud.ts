@@ -16,6 +16,8 @@ import {
 } from "node:http";
 import { onTestFinished } from "vitest";
 
+import { BOOT_PROBE_SCRIPT } from "../../../src/backends/open-cloud.ts";
+
 const createTaskRequestSchema = type({ script: "string", timeout: "string" });
 const JSON_CONTENT_TYPE = "application/json";
 const QUEUE_PATH_PATTERN = /\/memory-store\/queues\/([^/]+)(\/items(?::read|:discard)?)?$/;
@@ -72,6 +74,22 @@ export interface FakeOpenCloudTask {
 	state?: "COMPLETE" | "FAILED";
 }
 
+/**
+ * How the fake answers the CLI's boot probe. The probe is infrastructure, not
+ * one of the run's tasks: it takes nothing off the queued task list and is
+ * left out of `requests`, so a spec queues and asserts exactly the tasks it
+ * cares about. Its HTTP traffic does appear in `calls`, which is the raw
+ * request log and stays that way.
+ */
+export interface FakeOpenCloudOptions {
+	/**
+	 * `"complete"` (the default) says the place version boots. `"stall"`
+	 * leaves the task PROCESSING for good, which is everything Roblox reports
+	 * for a place version it cannot start.
+	 */
+	bootProbe?: "complete" | "stall";
+}
+
 interface FakeOpenCloudCall {
 	apiKey: string | undefined;
 	method: string;
@@ -98,6 +116,7 @@ interface FakeOpenCloudServer {
  * they must stay one shared object rather than copied numbers.
  */
 interface FakeOpenCloudState {
+	bootProbe: NonNullable<FakeOpenCloudOptions["bootProbe"]>;
 	calls: FakeOpenCloudServer["calls"];
 	counters: { itemSeq: number; taskIndex: number; uploadCount: number };
 	pollCounts: Map<string, number>;
@@ -111,8 +130,10 @@ interface FakeOpenCloudState {
 
 export async function startFakeOpenCloudServerAsync(
 	tasks: Array<FakeOpenCloudTask>,
+	options: FakeOpenCloudOptions = {},
 ): Promise<FakeOpenCloudServer> {
 	const state: FakeOpenCloudState = {
+		bootProbe: options.bootProbe ?? "complete",
 		calls: [],
 		counters: { itemSeq: 0, taskIndex: 0, uploadCount: 0 },
 		pollCounts: new Map(),
@@ -420,6 +441,25 @@ function handlePublishVersion({
 	);
 }
 
+/** Register a task under a fresh path and answer the submit with it. */
+function acceptTask({
+	queuedTask,
+	response,
+	state,
+}: {
+	queuedTask: FakeOpenCloudTask;
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+}): void {
+	state.counters.taskIndex += 1;
+	const taskIndex = String(state.counters.taskIndex);
+	const taskPath = `universes/123/places/456/versions/1/luau-execution-sessions/session-${taskIndex}/tasks/task-${taskIndex}`;
+	state.taskResults.set(taskPath, queuedTask);
+	state.pollCounts.set(taskPath, queuedTask.pollsBeforeComplete ?? 0);
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(JSON.stringify(validInProgressTaskBody({ path: taskPath })));
+}
+
 function handleCreateTask({
 	body,
 	response,
@@ -438,6 +478,20 @@ function handleCreateTask({
 		return;
 	}
 
+	if (parsed.script === BOOT_PROBE_SCRIPT) {
+		acceptTask({
+			queuedTask: {
+				// A place version that will not start leaves its task
+				// PROCESSING for good, so the stall never runs out of polls.
+				pollsBeforeComplete: state.bootProbe === "stall" ? Number.MAX_SAFE_INTEGER : 0,
+				rawOutput: "1",
+			},
+			response,
+			state,
+		});
+		return;
+	}
+
 	state.requests.push(parsed);
 
 	const nextTask = state.taskQueue.shift();
@@ -447,13 +501,7 @@ function handleCreateTask({
 		return;
 	}
 
-	state.counters.taskIndex += 1;
-	const taskIndex = String(state.counters.taskIndex);
-	const taskPath = `universes/123/places/456/versions/1/luau-execution-sessions/session-${taskIndex}/tasks/task-${taskIndex}`;
-	state.taskResults.set(taskPath, nextTask);
-	state.pollCounts.set(taskPath, nextTask.pollsBeforeComplete ?? 0);
-	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-	response.end(JSON.stringify(validInProgressTaskBody({ path: taskPath })));
+	acceptTask({ queuedTask: nextTask, response, state });
 }
 
 async function handleRequestAsync({

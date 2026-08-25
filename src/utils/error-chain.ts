@@ -42,10 +42,26 @@ interface ErrorDetails extends Error {
 
 const MAX_DEPTH = 5;
 
+/**
+ * The error and everything it was caused by, nearest first. Kept apart from
+ * {@link walkErrorChain}, which renders each link for a human: a caller asking
+ * "is there a `FooError` under this?" wants the instances, and `instanceof`
+ * answers that where a class-name string only stands in for it.
+ */
+export function errorChain(err: unknown): Array<Error> {
+	const chain: Array<Error> = [];
+	let current = err;
+	while (current instanceof Error && chain.length < MAX_DEPTH) {
+		chain.push(current);
+		current = current.cause;
+	}
+
+	return chain;
+}
+
 export function walkErrorChain(err: unknown): Array<ChainEntry> {
 	const entries: Array<ChainEntry> = [];
-	let current = err;
-	while (current instanceof Error && entries.length < MAX_DEPTH) {
+	for (const current of errorChain(err)) {
 		const details: ErrorDetails = current;
 		entries.push({
 			name: current.constructor.name,
@@ -59,7 +75,6 @@ export function walkErrorChain(err: unknown): Array<ChainEntry> {
 			syscall: readStringDetail(details.syscall),
 			url: readStringDetail(details.url),
 		});
-		current = current.cause;
 	}
 
 	return entries;

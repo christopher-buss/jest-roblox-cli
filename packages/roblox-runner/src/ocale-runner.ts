@@ -8,7 +8,6 @@ import type {
 import {
 	ApiError,
 	NetworkError,
-	PollTimeoutError,
 	RESPONSE_UNPARSEABLE,
 	TRANSIENT_TRANSPORT_CODES,
 } from "@bedrock-rbx/ocale";
@@ -27,6 +26,8 @@ import type buffer from "node:buffer";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import type { PollContext } from "./poll-diagnosis.ts";
+import { describeTaskRef, TASK_DEADLINE_GRACE_MS, toPollError } from "./poll-diagnosis.ts";
 import type {
 	ExecuteScriptOptions,
 	RemoteRunner,
@@ -44,26 +45,6 @@ interface TaskParametersInput {
 }
 
 const MAX_TASK_TIMEOUT_SECONDS = 300;
-
-/**
- * Wall clock the poll keeps beyond the server's own task deadline, so the
- * terminal `FAILED` the server writes is observable rather than raced.
- *
- * Roblox starts a task's `timeout` when the script begins running, not when
- * the task is created — a submit answers immediately and the place boot sits
- * between the two. Measured against a warm server the gap is 4-7s; a version
- * nobody has booted yet costs a cold boot, which
- * `open-cloud.ts` documents at 10-45s. A poll budget equal to the deadline
- * therefore expires while the task is still `PROCESSING`, every time, and the
- * authoritative `DEADLINE_EXCEEDED` (or the `SCRIPT_ERROR` the Luau VM writes
- * when it kills a non-yielding loop) is never read: the run reports
- * `PollTimeoutError` for a failure Roblox described.
- *
- * This is a cap, not a wait. A task that fails on time ends the poll the
- * moment it turns terminal, so the grace costs nothing on any run that gets
- * an answer — only a task Roblox never resolves spends it.
- */
-const TASK_DEADLINE_GRACE_MS = 45_000;
 
 /**
  * Task log messages carried on a failure, counted from the end. The tail is
@@ -147,7 +128,9 @@ export class OcaleRunner implements RemoteRunner {
 	}
 
 	public async executeScriptAsync({
+		bootProven = false,
 		placeVersion,
+		pollBudget,
 		script,
 		timeout,
 	}: ExecuteScriptOptions): Promise<ScriptResult> {
@@ -156,10 +139,8 @@ export class OcaleRunner implements RemoteRunner {
 		}
 
 		const startTime = Date.now();
-		const timeoutSeconds = Math.min(Math.floor(timeout / 1000), MAX_TASK_TIMEOUT_SECONDS);
-		// Never below the caller's budget: a `timeout` past the server's
-		// 300s ceiling already outlasts the deadline and needs no grace.
-		const pollBudgetMs = Math.max(timeout, timeoutSeconds * 1000 + TASK_DEADLINE_GRACE_MS);
+		const budgets = resolveBudgets(timeout, pollBudget);
+		const { pollBudgetMs, timeoutSeconds } = budgets;
 
 		const taskParameters = buildTaskParameters({
 			credentials: this.credentials,
@@ -175,18 +156,15 @@ export class OcaleRunner implements RemoteRunner {
 			throw toSubmitError(submitted.err);
 		}
 
+		const { ref } = submitted.data;
 		// The poll clock starts here either way: `runUntilDone` also begins its
 		// budget once the submit has returned.
-		const result = await this.luau.tasks.pollUntilDone(submitted.data.ref, {
+		const result = await this.luau.tasks.pollUntilDone(ref, {
 			retryableTransportCodes: POLL_RETRYABLE_TRANSPORT_CODES,
 			timeoutMs: pollBudgetMs,
 		});
 
-		return this.toScriptResultAsync(result, {
-			ref: submitted.data.ref,
-			startTime,
-			timeoutSeconds,
-		});
+		return this.toScriptResultAsync(result, { ...budgets, bootProven, ref, startTime });
 	}
 
 	public async uploadPlaceAsync(options: UploadPlaceOptions): Promise<UploadPlaceResult> {
@@ -263,7 +241,7 @@ export class OcaleRunner implements RemoteRunner {
 	 */
 	private async toScriptResultAsync(
 		result: Result<LuauExecutionTask, OpenCloudError>,
-		context: { ref: LuauExecutionTaskRef; startTime: number; timeoutSeconds: number },
+		context: PollContext & { startTime: number },
 	): Promise<ScriptResult> {
 		if (!result.success) {
 			throw toPollError(result.err, context);
@@ -342,26 +320,6 @@ function formatLogMessage({
 }
 
 /**
- * The task's resource path, which is what the Open Cloud API and the Creator
- * Dashboard both key on. Built from the ref rather than kept as the raw
- * server string because ocale parses the path away on the way in.
- *
- * @param ref - The task reference carried on every task and every submit.
- * @returns The `universes/…/tasks/…` path, omitting segments Roblox left out.
- */
-function describeTaskRef(ref: LuauExecutionTaskRef): string {
-	// Both optional segments are present on any ref that got this far: ocale's
-	// GET builder rejects a ref missing either, so a task that was polled at all
-	// carries them — including one submitted against head, which Roblox answers
-	// with the version it resolved.
-	return (
-		`universes/${ref.universeId}/places/${ref.placeId}` +
-		`/versions/${String(ref.versionId)}` +
-		`/luau-execution-sessions/${String(ref.sessionId)}/tasks/${ref.taskId}`
-	);
-}
-
-/**
  * Names a terminal Roblox failure in full: the category code, Roblox's own
  * message, the task the run can be looked up by, and what the script printed
  * before it died.
@@ -391,72 +349,24 @@ function describeTaskFailure(task: FailedTask, logTail: ReadonlyArray<string>): 
 }
 
 /**
- * The state the last polled task was in, or `"unknown"`.
+ * The server-side deadline and the wall clock the poll is given.
  *
- * `lastObservedTask` is `unknown` on the error type ocale hands back, and it is
- * absent entirely when the budget ran out before a single poll answered.
- * `Object()` flattens both into something readable, so one fallback covers a
- * missing task and an unrecognised one alike.
- *
- * @param task - The task the timeout error carried, if any.
- * @returns The task's state, or `"unknown"` when there is none to read.
+ * The default budget is never below the caller's `timeout`: one past the
+ * server's 300s ceiling already outlasts the deadline and needs no grace.
  */
-function readObservedState(task: unknown): string {
-	const state: unknown = Reflect.get(Object(task), "state");
-	return typeof state === "string" ? state : "unknown";
+function resolveBudgets(
+	timeout: number,
+	pollBudget: number | undefined,
+): { hasDefaultBudget: boolean; pollBudgetMs: number; timeoutSeconds: number } {
+	const timeoutSeconds = Math.min(Math.floor(timeout / 1000), MAX_TASK_TIMEOUT_SECONDS);
+	return {
+		hasDefaultBudget: pollBudget === undefined,
+		pollBudgetMs:
+			pollBudget ?? Math.max(timeout, timeoutSeconds * 1000 + TASK_DEADLINE_GRACE_MS),
+		timeoutSeconds,
+	};
 }
 
-/**
- * Expands a poll that never settled into something actionable.
- *
- * Reaching here is itself the diagnosis, and the message says so. Roblox fails
- * a task that merely outran its deadline — `DEADLINE_EXCEEDED` lands a boot lag
- * after the deadline elapsed, which is what {@link TASK_DEADLINE_GRACE_MS}
- * waits for. A task still running past both has not overrun; it was never
- * scheduled, and the usual reason is a place version Roblox cannot load.
- * Measured against one, the task sat `PROCESSING` for ten minutes on a 30s
- * deadline and Roblox reported no state, no error, and no logs, ever — so
- * naming the suspicion here is the only diagnosis available.
- *
- * Everything else is passed through: an API response is already specific.
- *
- * @param err - The error the poll settled on.
- * @param context - The task polled and the deadline it was submitted with.
- * @returns The error to throw, carrying the ocale error as its cause.
- */
-function toPollError(
-	err: OpenCloudError,
-	context: { ref: LuauExecutionTaskRef; timeoutSeconds: number },
-): Error {
-	if (!(err instanceof PollTimeoutError)) {
-		return new Error(err.message, { cause: err });
-	}
-
-	const lines = [
-		"Execution timed out: Roblox never reported a terminal state for the task " +
-			`within ${String(Math.round(err.timeoutMs / 1000))}s ` +
-			`(${String(context.timeoutSeconds)}s task deadline plus a ` +
-			`${String(Math.round(TASK_DEADLINE_GRACE_MS / 1000))}s boot-lag allowance).`,
-		`  task: ${describeTaskRef(context.ref)}`,
-		`  last observed state: ${readObservedState(err.lastObservedTask)}`,
-		"  A script that merely outran its deadline is failed by Roblox, so this " +
-			"is most likely a place version Roblox could not start — such a task " +
-			"is never scheduled and never reports anything. Open the place file " +
-			"in Studio to see why it will not load.",
-		"  The other reading is an unusually slow cold boot, which the next run " +
-			"avoids by reusing the now-warm server.",
-	];
-	return new Error(lines.join("\n"), { cause: err });
-}
-
-/**
- * Names a submit that never created a task. Kept apart from the poll path
- * because a submit failure has no task to point at — there is nothing to look
- * up and nothing to log.
- *
- * @param err - The error the submit returned.
- * @returns The error to throw, carrying the ocale error as its cause.
- */
 /**
  * The task a submit describes. `versionId` is present or the key is absent —
  * the parameters never carry it as `undefined`, which the client would send.
@@ -476,6 +386,14 @@ function buildTaskParameters({
 	return placeVersion === undefined ? base : { ...base, versionId: String(placeVersion) };
 }
 
+/**
+ * Names a submit that never created a task. Kept apart from the poll path
+ * because a submit failure has no task to point at — there is nothing to look
+ * up and nothing to log.
+ *
+ * @param err - The error the submit returned.
+ * @returns The error to throw, carrying the ocale error as its cause.
+ */
 function toSubmitError(err: OpenCloudError): Error {
 	return new Error(err.message, { cause: err });
 }

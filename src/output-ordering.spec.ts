@@ -100,6 +100,7 @@ function makeConfig(): ResolvedConfig {
 
 function makeWorkspaceResult(): WorkspaceRunResult {
 	return fromAny({
+		coverageMs: 0,
 		coveragePackages: [
 			{
 				coverageDirectory: "/test/coverage",
@@ -110,7 +111,6 @@ function makeWorkspaceResult(): WorkspaceRunResult {
 		],
 		merged: {},
 		mode: "workspace",
-		preCoverageMs: 0,
 		projectResults: [
 			{
 				displayName: "client",
@@ -129,6 +129,7 @@ function makeWorkspaceResult(): WorkspaceRunResult {
 			silent: false,
 			verbose: false,
 		},
+		stagingMs: 0,
 	});
 }
 

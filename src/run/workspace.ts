@@ -45,10 +45,11 @@ import {
 const VERSION = packageJson.version;
 
 const EMPTY_RESULT = {
+	coverageMs: 0,
 	merged: {},
 	mode: "workspace",
-	preCoverageMs: 0,
 	projectResults: [],
+	stagingMs: 0,
 } as const satisfies WorkspaceRunResult;
 
 interface ResolvedPackages {
@@ -398,7 +399,7 @@ function bailSummary(
 // project results plus (when present) the merged Type Test result.
 function buildWorkspaceResult({
 	cli,
-	output: { bailedPackages, preCoverageMs, results, typecheckResult },
+	output: { bailedPackages, coverageMs, results, stagingMs, typecheckResult },
 	runOptions,
 	workspaceRoot,
 }: {
@@ -425,12 +426,13 @@ function buildWorkspaceResult({
 	return {
 		...resolveWorkspaceCoverage(results),
 		...bailSummary(bailedPackages, results),
+		// A typecheck-only run stages nothing, so the runner reports neither.
+		coverageMs: coverageMs ?? 0,
 		merged: {},
 		mode: "workspace",
-		// A typecheck-only run stages nothing, so the runner reports none.
-		preCoverageMs: preCoverageMs ?? 0,
 		projectResults,
 		reportOptions: resolveReportOptions(cli, runOptions, workspaceRoot),
+		stagingMs: stagingMs ?? 0,
 		typecheckResult,
 		...resolvedSinkPaths(runOptions),
 	};

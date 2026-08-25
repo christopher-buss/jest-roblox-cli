@@ -18,8 +18,10 @@ import { formatGameOutputBlock } from "./game-output.ts";
 import type { FailureContext, FormatOptions, FormatterProjectEntry } from "./shared.ts";
 import { createStyles, formatProjectBadge, type Styles } from "./styles.ts";
 import {
+	countTestBuckets,
 	formatFailedTestsHeader,
 	formatLogHints,
+	formatSummaryParts,
 	formatTestsLine,
 	formatTestSummary,
 	formatTypeErrorsLine,
@@ -107,18 +109,14 @@ export function formatProjectHeader({
 	const resolved = headerStyles ?? createStyles(useColor);
 	const stats = computeProjectStats(result);
 
-	const parts: Array<string> = [];
-	if (stats.passedFiles > 0) {
-		parts.push(resolved.summary.passed(`${stats.passedFiles} passed`));
-	}
-
-	if (stats.failedFiles > 0) {
-		parts.push(resolved.summary.failed(`${stats.failedFiles} failed`));
-	}
-
-	if (stats.skippedFiles > 0) {
-		parts.push(resolved.summary.pending(`${stats.skippedFiles} skipped`));
-	}
+	const parts = formatSummaryParts(
+		{
+			failed: stats.failedFiles,
+			passed: stats.passedFiles,
+			skipped: stats.skippedFiles,
+		},
+		resolved,
+	);
 
 	const duration = stats.durationMs > 0 ? ` - ${stats.durationMs}ms` : "";
 	const meta = resolved.dim(`(${stats.totalTests} tests${duration})`);
@@ -224,7 +222,10 @@ export function formatTypecheckReport(
 		return detail;
 	}
 
-	const rows = [formatTestsLine(result, styles), formatTypeErrorsLine(failed, styles)];
+	const rows = [
+		formatTestsLine(countTestBuckets(result), styles),
+		formatTypeErrorsLine(failed, styles),
+	];
 
 	return `${detail}\n${rows.join("\n")}\n`;
 }

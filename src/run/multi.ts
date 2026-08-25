@@ -191,10 +191,11 @@ async function runMultiTypecheckOnlyAsync(discovery: RunDiscovery): Promise<Mult
 		effectivePlaceFile: discovery.rootConfig.placeFile,
 	});
 	const empty: MultiRunResult = {
+		coverageMs: 0,
 		merged: {},
 		mode: "multi",
-		preCoverageMs: 0,
 		projectResults: [],
+		stagingMs: 0,
 	};
 	if (plan.emptiness !== undefined) {
 		return { ...empty, ...plan.emptiness };
@@ -212,10 +213,11 @@ async function runMultiTypecheckOnlyAsync(discovery: RunDiscovery): Promise<Mult
 function emptyMultiResult(staged: StagedRun, emptiness: EmptyRunPolicy): MultiRunResult {
 	return {
 		coverageArtifacts: staged.coverageArtifacts,
+		coverageMs: staged.coverageMs,
 		merged: {},
 		mode: "multi",
-		preCoverageMs: staged.preCoverageMs,
 		projectResults: [],
+		stagingMs: staged.stagingMs,
 		...emptiness,
 	};
 }

@@ -2721,8 +2721,8 @@ describe(runWorkspaceAsync, () => {
 		});
 	});
 
-	it("should measure the place staging as preCoverageMs", async () => {
-		expect.assertions(2);
+	it("should measure the place staging as stagingMs", async () => {
+		expect.assertions(3);
 
 		vol.reset();
 		vol.fromJSON({
@@ -2758,10 +2758,58 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(output!.preCoverageMs).toBe(250);
+		expect(output!.stagingMs).toBe(250);
+		// No package collected coverage, so nothing is reported under it.
+		expect(output!.coverageMs).toBe(0);
 		// The dispatch window must start after staging, or the reported total
 		// would count those 250ms twice.
 		expect(output!.results[0]!.result.timing.startTime).toBe(1250);
+	});
+
+	it("should report the coverage bake apart from the staging around it", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
+		});
+
+		let clock = 1_000;
+		vi.spyOn(Date, "now").mockImplementation(() => clock);
+
+		const { prepareWorkspaceCoverage } =
+			await import("./coverage-pipeline/workspace-prepare.ts");
+		vi.mocked(prepareWorkspaceCoverage).mockImplementation(() => {
+			clock += 120;
+			return [coverageEntry("@halcyon/foo")];
+		});
+		vi.mocked(buildPlace).mockImplementationOnce(() => {
+			clock += 250;
+			return { hash: "hash", path: "place.rbxl" };
+		});
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+		]);
+
+		const output = await runWorkspaceAsync({
+			backend,
+			cli: makeCli({ collectCoverage: true }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(output!.coverageMs).toBe(120);
+		expect(output!.stagingMs).toBe(250);
 	});
 
 	describe("work-stealing", () => {

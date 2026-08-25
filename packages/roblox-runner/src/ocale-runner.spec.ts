@@ -666,6 +666,48 @@ describe(OcaleRunner, () => {
 			expect(caught.message).toContain("1s task deadline plus a 45s boot-lag allowance");
 		});
 
+		it("should cap the poll at an explicit budget, not the deadline plus grace", async () => {
+			expect.assertions(3);
+
+			// A caller that wants a wall-clock answer — "did this boot at all?" —
+			// has no use for the grace, which exists so Roblox’s own verdict on a
+			// running script is observable.
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			mockProcessing(http, POLLS_PER_GRACE);
+
+			const caught: unknown = await makeAdvancingRunner(http)
+				.executeScriptAsync({ pollBudget: 5000, script: "return 1", timeout: 300_000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.cause).toBeInstanceOf(PollTimeoutError);
+			expect(caught.message).toContain("within 5s");
+			expect(caught.message).not.toContain("boot-lag allowance");
+		});
+
+		it("should not blame the place when the caller has proven it boots", async () => {
+			expect.assertions(3);
+
+			// A caller that ran a script against this version seconds ago has
+			// ruled the place out already. Repeating the guess would send the
+			// reader to Studio to look at a place that demonstrably loads.
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			mockProcessing(http, POLLS_PER_GRACE);
+
+			const caught: unknown = await makeAdvancingRunner(http)
+				.executeScriptAsync({ bootProven: true, script: "return 1", timeout: 1000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).not.toContain("place version Roblox could not start");
+			expect(caught.message).toContain("known to boot");
+			expect(caught.message).toContain("last observed state: PROCESSING");
+		});
+
 		it("should name a place that will not start as the likely cause", async () => {
 			expect.assertions(1);
 

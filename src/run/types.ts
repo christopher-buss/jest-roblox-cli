@@ -27,7 +27,24 @@ export interface MultiProjectMerged {
 	sourceMapper?: SourceMapper | undefined;
 }
 
-export interface SingleRunResult {
+/**
+ * The two phases every mode measures outside the dispatch window: the coverage
+ * instrumentation bake, and the staging around it — stubs and the place build.
+ *
+ * The window opens after both, so the print layer adds them onto the reported
+ * total rather than finding them inside it, and each prints under its own name
+ * — leave either unmeasured and the `cli` residual silently absorbs it, which
+ * is what hid workspace staging before. Every mode fills both the same way, so
+ * multi and workspace report equivalent work as the same phases.
+ */
+export interface PreDispatchTiming {
+	/** The instrumentation bake, and nothing else. 0 without `--coverage`. */
+	coverageMs: number;
+	/** The stubs and the place build, which a run pays either way. */
+	stagingMs: number;
+}
+
+export interface SingleRunResult extends PreDispatchTiming {
 	/**
 	 * Producer record for the entry point to emit a Build Manifest from. Set
 	 * only on a coverage run; an entry point reads it to write the manifest
@@ -42,13 +59,12 @@ export interface SingleRunResult {
 	 */
 	coverageDisplayFilter?: CoverageDisplayPredicate | undefined;
 	mode: "single";
-	preCoverageMs: number;
 	runtimeResult?: ExecuteResult | undefined;
 	typecheckResult?: JestResult | undefined;
 	validationExitCode?: 2 | undefined;
 }
 
-export interface MultiRunResult {
+export interface MultiRunResult extends PreDispatchTiming {
 	collectCoverageFrom?: Array<string> | undefined;
 	/** Producer record for the entry point to emit a Build Manifest from. */
 	coverageArtifacts?: CoverageArtifacts | undefined;
@@ -61,7 +77,6 @@ export interface MultiRunResult {
 	coverageDisplayFilter?: CoverageDisplayPredicate | undefined;
 	merged: MultiProjectMerged;
 	mode: "multi";
-	preCoverageMs: number;
 	projectResults: Array<ProjectResult>;
 	typecheckResult?: JestResult | undefined;
 	validationExitCode?: 2 | undefined;
@@ -106,7 +121,7 @@ export interface WorkspaceReportOptions {
 	verbose: boolean;
 }
 
-export interface WorkspaceRunResult {
+export interface WorkspaceRunResult extends PreDispatchTiming {
 	/**
 	 * How far a `--bail` run got before a failing package stopped it. Absent
 	 * unless the run bailed, so `projectResults` covers every selected package.
@@ -131,7 +146,6 @@ export interface WorkspaceRunResult {
 	mode: "workspace";
 	/** Consensus-resolved aggregated result path the runner wrote (if any). */
 	outputFile?: string | undefined;
-	preCoverageMs: number;
 	projectResults: Array<ProjectResult>;
 	/**
 	 * Render settings for the output layer. Absent on every result that never

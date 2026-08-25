@@ -48,16 +48,18 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 }
 
 const MULTI: MultiRunResult = {
+	coverageMs: 0,
 	merged: {},
 	mode: "multi",
-	preCoverageMs: 0,
 	projectResults: [],
+	stagingMs: 0,
 };
 const WORKSPACE: WorkspaceRunResult = {
+	coverageMs: 0,
 	merged: {},
 	mode: "workspace",
-	preCoverageMs: 0,
 	projectResults: [],
+	stagingMs: 0,
 };
 
 describe(runJestRobloxAsync, () => {

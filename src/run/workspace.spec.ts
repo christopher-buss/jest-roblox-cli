@@ -1146,11 +1146,11 @@ describe(runWorkspaceModeAsync, () => {
 		});
 	});
 
-	it("should carry the runner's staging time out as preCoverageMs", async () => {
-		expect.assertions(1);
+	it("should carry the runner's staging and coverage times out apart", async () => {
+		expect.assertions(2);
 
 		vi.mocked(runWorkspaceAsync).mockResolvedValue({
-			preCoverageMs: 1234,
+			coverageMs: 1234,
 			results: [
 				{
 					displayName: "foo",
@@ -1158,12 +1158,14 @@ describe(runWorkspaceModeAsync, () => {
 					result: makeExecuteResult(),
 				},
 			],
+			stagingMs: 567,
 		});
 
 		const result = await runWorkspaceModeAsync(
 			makeCli({ packages: "@halcyon/foo", workspace: true }),
 		);
 
-		expect(result.preCoverageMs).toBe(1234);
+		expect(result.coverageMs).toBe(1234);
+		expect(result.stagingMs).toBe(567);
 	});
 });

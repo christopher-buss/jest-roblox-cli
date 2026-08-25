@@ -148,6 +148,14 @@ describe("formatAgent summary", () => {
 		expect(output).toContain(" Test Files  1 failed (1)");
 	});
 
+	it("should count a wholly skipped file in the skipped bucket", () => {
+		expect.assertions(1);
+
+		const output = formatAgent(SKIPPED_RESULT, { maxFailures: 10, rootDir: "/project" });
+
+		expect(output).toContain(" Test Files  1 passed | 2 skipped (3)");
+	});
+
 	it("should show failed, passed, and skipped test counts", () => {
 		expect.assertions(1);
 

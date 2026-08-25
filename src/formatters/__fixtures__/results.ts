@@ -159,6 +159,15 @@ export const TIMING_COVERAGE: TimingResult = {
 	uploadMs: 50,
 };
 
+export const TIMING_STAGING: TimingResult = {
+	executionMs: 150,
+	stagingMs: 400,
+	startTime: 1700000000000,
+	testsMs: 100,
+	totalMs: 650,
+	uploadMs: 50,
+};
+
 export const SNAPSHOT_FAILING_RESULT: JestResult = {
 	numFailedTests: 1,
 	numPassedTests: 1,

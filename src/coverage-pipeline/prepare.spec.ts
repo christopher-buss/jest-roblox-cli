@@ -504,6 +504,28 @@ describe(prepareCoverage, () => {
 			expect(result.rebuilt).toBeTrue();
 		});
 
+		it("should report the place build apart from the instrumentation", async () => {
+			expect.assertions(2);
+
+			seedFilesystem();
+			const { buildWithRojo } = await setupMocksAsync();
+			// Synchronous work, so the clock has to move from inside the build
+			// for the two phases to be told apart at all.
+			let clock = 1_000;
+			vi.spyOn(Date, "now").mockImplementation(() => clock);
+			vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
+				clock += 250;
+				vol.writeFileSync(outputPath, "RBXL");
+			});
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			const result = prepareCoverage(config);
+
+			expect(result.stagingMs).toBe(250);
+			// Only the instrumentation: the run reports it as coverage.
+			expect(result.instrumentMs).toBe(0);
+		});
+
 		it("should share the buildId with the coverage manifest it wrote", async () => {
 			expect.assertions(1);
 
@@ -1043,6 +1065,43 @@ describe(prepareCoverage, () => {
 			prepareCoverage(config);
 
 			expect(buildWithRojo).not.toHaveBeenCalled();
+		});
+
+		it("should report the reuse gate as staging when nothing is rebuilt", async () => {
+			expect.assertions(2);
+
+			const { buildWithRojo } = await setupMocksAsync();
+
+			seedIncrementalScenario();
+			vol.writeFileSync(
+				".jest-roblox/coverage/build-manifest.json",
+				JSON.stringify({
+					buildId: "prev-build-id",
+					coveragePlace: {
+						hash: sha256("RBXL"),
+						path: ".jest-roblox/coverage/game.rbxl",
+					},
+					files: {},
+					generatedAt: isoNow(),
+					projects: [],
+					version: 1,
+				}),
+			);
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+			// The gate re-hashes the cached place to decide, so a reused place
+			// still costs host time. Moving the clock per reading is what makes
+			// that cost visible in a synchronous call.
+			let clock = 1_000;
+			vi.spyOn(Date, "now").mockImplementation(() => {
+				clock += 5;
+				return clock;
+			});
+
+			const result = prepareCoverage(config);
+
+			expect(buildWithRojo).not.toHaveBeenCalled();
+			expect(result.stagingMs).toBeGreaterThan(0);
 		});
 
 		it("should call instrumentRoot when a new file appears on disk", async () => {
@@ -2108,6 +2167,28 @@ describe(prepareCoverage, () => {
 			expect(buildWithRojo).toHaveBeenCalledWith(expect.any(String), expect.any(String));
 		});
 
+		it("should report the callback as staging rather than as coverage", async () => {
+			expect.assertions(2);
+
+			seedFilesystem();
+			await setupMocksAsync();
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+			// The hook is the stub bake, which a non-coverage run pays too.
+			// Frozen clock apart from the hook, so whatever it costs is the whole
+			// difference between the two phases.
+			let clock = 1_000;
+			vi.spyOn(Date, "now").mockImplementation(() => clock);
+			const beforeBuild = vi.fn<(shadowDirectory: string) => boolean>(() => {
+				clock += 90;
+				return false;
+			});
+
+			const result = prepareCoverage(config, { beforeBuild });
+
+			expect(result.instrumentMs).toBe(0);
+			expect(result.stagingMs).toBe(90);
+		});
+
 		it("should skip callback when not provided", async () => {
 			expect.assertions(1);
 
@@ -2643,9 +2724,11 @@ describe(toCoverageArtifacts, () => {
 			buildId: "build-7",
 			coveragePlace: { hash: "cov-hash", path: ".jest-roblox/coverage/game.rbxl" },
 			files: { "out/init.luau": { sourceHash: "h" } },
+			instrumentMs: 0,
 			manifest: fromAny({ generatedAt: "2026-07-25T00:00:00.000Z" }),
 			placeFile: ".jest-roblox/coverage/game.rbxl",
 			rebuilt: true,
+			stagingMs: 0,
 		};
 		const projects: Array<BuildManifestProject> = [
 			{

@@ -49,6 +49,11 @@ export interface PrepareCoverageResult {
 	coveragePlace: BuildManifestArtifact;
 	/** SHA-256 of each compiled `.luau`, for the caller's Build Manifest. */
 	files: Record<string, BuildManifestFileRecord>;
+	/**
+	 * Host time spent instrumenting into the shadow tree — the only part of
+	 * this call a run reports as coverage.
+	 */
+	instrumentMs: number;
 	manifest: CoverageManifest;
 	placeFile: string;
 	/**
@@ -57,6 +62,15 @@ export interface PrepareCoverageResult {
 	 * identical Build Manifest.
 	 */
 	rebuilt: boolean;
+	/**
+	 * Host time spent on the part of this call a run reports as staging
+	 * rather than as coverage: the `beforeBuild` stub bake, the reuse gate
+	 * that decides whether the place has to be rebuilt, and the build itself.
+	 * A non-coverage run pays the same work over uninstrumented sources, so
+	 * charging it to coverage would put a coverage segment on a run that
+	 * collected none.
+	 */
+	stagingMs: number;
 }
 
 export interface PrepareCoverageOptions {
@@ -122,6 +136,12 @@ interface RojoInputsHashResult {
 	hash: string;
 	resolved: boolean;
 }
+
+/** A prior place this run can reuse: everything but the phase timings. */
+type ReusedCoverage = Pick<
+	PrepareCoverageResult,
+	"buildId" | "coveragePlace" | "files" | "manifest" | "placeFile" | "rebuilt"
+>;
 
 /** Project the coverage result down to the record an entry point emits. */
 export function toCoverageArtifacts(
@@ -197,26 +217,28 @@ export function prepareCoverage(
 	config: ResolvedConfig,
 	{ beforeBuild, coverageInclude }: PrepareCoverageOptions = {},
 ): PrepareCoverageResult {
+	const instrumentStart = Date.now();
 	const inputs = resolveCoverageInputs(config, coverageInclude);
 	const isIncremental = decideIncremental(config, inputs);
 
 	const shadow = prepareShadowRoots(inputs, isIncremental);
-	const hasExtraChanges = beforeBuild?.(COVERAGE_DIR) === true;
-	const hasChanges =
-		!isIncremental ||
-		shadow.changed ||
-		hasExtraChanges ||
-		hasRojoInputDrift(inputs, isIncremental);
+	// Coverage pays for the instrumentation and nothing else. Everything below
+	// is the place build and the gate deciding whether to do it — `beforeBuild`
+	// bakes stubs into the shadow tree, and the reuse gate re-hashes the cached
+	// place. Both are staging: a non-coverage run pays the same work.
+	const instrumentMs = Date.now() - instrumentStart;
 
+	const stagingStart = Date.now();
+	const hasChanges = hasCoverageChanges(inputs, {
+		hasExtraChanges: beforeBuild?.(COVERAGE_DIR) === true,
+		isIncremental,
+		shadow,
+	});
 	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
 	const files = toBuildManifestFiles(shadow.files);
-
 	const reused = reuseCoverageResult(inputs, files, hasChanges);
 	if (reused !== undefined) {
-		process.stderr.write(
-			`Reusing cached coverage place (built ${reused.manifest.generatedAt})\n`,
-		);
-		return reused;
+		return toReusedResult(reused, instrumentMs, Date.now() - stagingStart);
 	}
 
 	const built = buildCoveragePlaceAndManifest(config, inputs, shadow, placeFile);
@@ -225,9 +247,11 @@ export function prepareCoverage(
 		buildId: built.buildId,
 		coveragePlace: built.coveragePlace,
 		files,
+		instrumentMs,
 		manifest: built.manifest,
 		placeFile,
 		rebuilt: true,
+		stagingMs: Date.now() - stagingStart,
 	};
 }
 
@@ -301,6 +325,18 @@ function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: stri
 	throw new Error(
 		"Could not determine luauRoots. Set luauRoots in config or ensure tsconfig has outDir.",
 	);
+}
+
+// Announce the reuse and hand the prior place back. Nothing was built, but the
+// gate that decided so re-hashed the cached place, so staging still carries
+// what the decision cost.
+function toReusedResult(
+	reused: ReusedCoverage,
+	instrumentMs: number,
+	stagingMs: number,
+): PrepareCoverageResult {
+	process.stderr.write(`Reusing cached coverage place (built ${reused.manifest.generatedAt})\n`);
+	return { ...reused, instrumentMs, stagingMs };
 }
 
 function validateRelativeRoots(luauRoots: Array<string>): void {
@@ -493,6 +529,25 @@ function hasRojoInputDrift(
 	);
 }
 
+// Rebuild unless every input is unchanged: a non-incremental run always
+// rebuilds, and so does any drift in the shadow tree, the caller's bake hook, or
+// a rojo input.
+function hasCoverageChanges(
+	inputs: CoverageInputs,
+	{
+		hasExtraChanges,
+		isIncremental,
+		shadow,
+	}: { hasExtraChanges: boolean; isIncremental: boolean; shadow: ShadowRootsResult },
+): boolean {
+	return (
+		!isIncremental ||
+		shadow.changed ||
+		hasExtraChanges ||
+		hasRojoInputDrift(inputs, isIncremental)
+	);
+}
+
 function priorPlaceIsReusable(placeFilePath: string, buildManifestPath: string): PriorPlaceReuse {
 	if (!fs.existsSync(placeFilePath)) {
 		return { reusable: false };
@@ -530,7 +585,7 @@ function reuseCoverageResult(
 	{ buildManifestPath, previousManifest }: CoverageInputs,
 	files: Record<string, BuildManifestFileRecord>,
 	hasChanges: boolean,
-): PrepareCoverageResult | undefined {
+): ReusedCoverage | undefined {
 	if (hasChanges || previousManifest?.placeFilePath === undefined) {
 		return undefined;
 	}

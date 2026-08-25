@@ -18,7 +18,18 @@ const PLACE_REUSE_FILE = "synthesized.place-cache.json";
 
 export interface StagedWorkspacePlace {
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
+	/**
+	 * Host time spent instrumenting the packages that opted into coverage — the
+	 * phase multi reports as its coverage bake. 0 when no package opted in, so
+	 * a run that collected no coverage reports no coverage time.
+	 */
+	coverageMs: number;
 	placeFile: string;
+	/**
+	 * Host time spent on the rest of the staging: the stubs and the rojo build,
+	 * which a run pays whether or not it collects coverage.
+	 */
+	stagingMs: number;
 }
 
 /**
@@ -26,6 +37,11 @@ export interface StagedWorkspacePlace {
  * project's `jest.config` stub, and builds the one synthesized place the whole
  * workspace run dispatches against. The coverage map rides back out because the
  * report layer needs each package's manifest once the results land.
+ *
+ * Each phase times itself, and the caller opens the dispatch window only after
+ * this returns — exactly as multi opens its window after its own staging. See
+ * `PreDispatchTiming` for what the two halves mean and why they are measured
+ * here rather than left to the residual.
  */
 export function stageWorkspacePlace({
 	cacheDirectory,
@@ -41,6 +57,7 @@ export function stageWorkspacePlace({
 	workspaceRoot: string;
 }): StagedWorkspacePlace {
 	const { filteredContexts: contexts, pending } = selection;
+	const coverageStart = Date.now();
 	const coverageByPackage = prepareWorkspaceCoverageMap({
 		contexts,
 		loaded,
@@ -48,12 +65,23 @@ export function stageWorkspacePlace({
 		timing,
 		workspaceRoot,
 	});
-	const descriptors = stageWorkspaceStubs({ contexts, coverageByPackage, pending, timing });
+	// Claimed as coverage only when a package actually opted in: the empty
+	// prepare still costs a millisecond or two, and reporting that as coverage
+	// would put a coverage segment on a run that collected none. It stays
+	// inside the staging window instead, rather than going unreported.
+	const isCoverage = coverageByPackage.size > 0;
+	const coverageMs = isCoverage ? Date.now() - coverageStart : 0;
 
-	return {
+	const stagingStart = isCoverage ? Date.now() : coverageStart;
+	const descriptors = stageWorkspaceStubs({ contexts, coverageByPackage, pending, timing });
+	const placeFile = buildWorkspacePlace({
+		cacheDirectory,
 		coverageByPackage,
-		placeFile: buildWorkspacePlace({ cacheDirectory, coverageByPackage, descriptors, timing }),
-	};
+		descriptors,
+		timing,
+	});
+
+	return { coverageByPackage, coverageMs, placeFile, stagingMs: Date.now() - stagingStart };
 }
 
 function buildWorkspacePlace({

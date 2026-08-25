@@ -175,23 +175,38 @@ Loaded per package (directly or via `extends: "../jest.shared.ts"`). The
 workspace-root config is NOT a source of truth for these — declare them in each
 package's own jest.config or in a shared config that every package extends.
 
-| Field           | What it does                                                      | Default                     |
-| --------------- | ----------------------------------------------------------------- | --------------------------- |
-| `placeFile`     | Path to your `.rbxl` file                                         | `"./game.rbxl"`             |
-| `timeout`       | Max time for tests to run (ms)                                    | `300000` (5 min)            |
-| `sourceMap`     | Map Luau errors back to TypeScript (roblox-ts only)               | `true`                      |
-| `rojoProject`   | Path to your Rojo project file                                    | auto                        |
-| `jestPath`      | Where Jest lives in the DataModel                                 | auto                        |
-| `showLuau`      | Show Luau code snippets in failure output                         | `true`                      |
-| `coverageCache` | Reuse incrementally-instrumented coverage shadow dir between runs | `true`                      |
-| `uploadCache`   | Skip the place upload when the place file's bytes are unchanged   | `true`                      |
-| `luauRoots`     | Where Luau files live for coverage instrumentation                | auto from tsconfig `outDir` |
+| Field              | What it does                                                      | Default                     |
+| ------------------ | ----------------------------------------------------------------- | --------------------------- |
+| `placeFile`        | Path to your `.rbxl` file                                         | `"./game.rbxl"`             |
+| `timeout`          | Max time for tests to run (ms)                                    | `300000` (5 min)            |
+| `sourceMap`        | Map Luau errors back to TypeScript (roblox-ts only)               | `true`                      |
+| `rojoProject`      | Path to your Rojo project file                                    | auto                        |
+| `jestPath`         | Where Jest lives in the DataModel                                 | auto                        |
+| `showLuau`         | Show Luau code snippets in failure output                         | `true`                      |
+| `coverageCache`    | Reuse incrementally-instrumented coverage shadow dir between runs | `true`                      |
+| `uploadCache`      | Skip the place upload when the place file's bytes are unchanged   | `true`                      |
+| `luauRoots`        | Where Luau files live for coverage instrumentation                | auto from tsconfig `outDir` |
+| `bootProbeTimeout` | How long the boot probe is given to prove a place version starts  | `90000` (90 s)              |
 
 `timeout` is the deadline Roblox is given for the script, not a hard cap on the
 run. Roblox starts that clock when the script begins running — after the place
 boots — so a run that overruns waits a short fixed allowance past the deadline
 for Roblox's verdict, and reports the error Roblox gives rather than a poll
 timeout.
+
+`bootProbeTimeout` covers the Open Cloud backend's boot probe: after uploading a
+place, it runs one trivial script against that version before dispatching any
+tests. Roblox reports no state, no error and no log for a place version it
+cannot start, so without the probe such a run only ends when its budget does. A
+probe that does not finish in time fails the run at once, naming the place file
+and the version. This is wall clock, so it must comfortably exceed a cold place
+boot (10-45 s); the probe script gets its own short deadline on top, so a place
+that boots late still gets to run. A version that passes is recorded in
+`.jest-roblox/upload-cache.json`, so re-running the same place bytes skips the
+probe (see `uploadCache`). Set it to `0` to turn the probe off — a suite that
+proves the boot elsewhere, say once per CI job, need not pay for it on every
+run. Nothing is then cached either: an entry means "these bytes boot", and with
+no probe nothing has proved that.
 
 ### Test fields
 

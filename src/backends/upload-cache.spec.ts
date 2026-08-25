@@ -212,13 +212,33 @@ describe("upload cache", () => {
 		expect(readCachedVersion(ROOT, TARGET, hash)).toBeUndefined();
 	});
 
+	/**
+	 * An entry now claims the bytes boot, which only a boot probe can say. A
+	 * file written before the probe existed makes no such claim, so serving it
+	 * would skip the probe on a version nothing ever started.
+	 */
+	it("should degrade to a miss when the cache file predates boot verification", () => {
+		expect.assertions(1);
+
+		const hash = seedPlaceFile();
+		vol.fromJSON({
+			"/repo/game.rbxl": "place-bytes",
+			[CACHE_PATH]: JSON.stringify({
+				entries: { "111/222//repo/game.rbxl": { hash, versionNumber: 42 } },
+				version: 1,
+			}),
+		});
+
+		expect(readCachedVersion(ROOT, TARGET, hash)).toBeUndefined();
+	});
+
 	it("should degrade to a miss when entries is not an object", () => {
 		expect.assertions(1);
 
 		const hash = seedPlaceFile();
 		vol.fromJSON({
 			"/repo/game.rbxl": "place-bytes",
-			[CACHE_PATH]: JSON.stringify({ entries: 7, version: 1 }),
+			[CACHE_PATH]: JSON.stringify({ entries: 7, version: 2 }),
 		});
 
 		expect(readCachedVersion(ROOT, TARGET, hash)).toBeUndefined();
@@ -230,7 +250,7 @@ describe("upload cache", () => {
 		const hash = seedPlaceFile();
 		vol.fromJSON({
 			"/repo/game.rbxl": "place-bytes",
-			[CACHE_PATH]: JSON.stringify({ entries: { junk: 7 }, version: 1 }),
+			[CACHE_PATH]: JSON.stringify({ entries: { junk: 7 }, version: 2 }),
 		});
 
 		expect(readCachedVersion(ROOT, TARGET, hash)).toBeUndefined();
@@ -247,7 +267,7 @@ describe("upload cache", () => {
 					"111/222//repo/game.rbxl": { hash, versionNumber: 42 },
 					"junk": 7,
 				},
-				version: 1,
+				version: 2,
 			}),
 		});
 

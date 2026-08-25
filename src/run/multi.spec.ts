@@ -505,6 +505,7 @@ describe(runMultiProjectAsync, () => {
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},
+			instrumentMs: 0,
 			manifest: {
 				buildId: "test-build-id",
 				files: {},
@@ -518,6 +519,7 @@ describe(runMultiProjectAsync, () => {
 			},
 			placeFile: "/coverage/game.rbxl",
 			rebuilt: true,
+			stagingMs: 0,
 		});
 		seedProjectFiles();
 
@@ -529,17 +531,21 @@ describe(runMultiProjectAsync, () => {
 
 		expect(mocks.buildWithRojo).not.toHaveBeenCalled();
 		expect(mocks.prepareCoverage).toHaveBeenCalledOnce();
-		expect(result.preCoverageMs).toBeGreaterThanOrEqual(0);
+		expect(result.coverageMs).toBeGreaterThanOrEqual(0);
 	});
 
-	it("should record the resolved projects in the coverage artifacts", async () => {
-		expect.assertions(1);
+	it("should report the coverage place build as staging, not as coverage", async () => {
+		expect.assertions(2);
 
 		const { config } = setupDefaults({ collectCoverage: true });
+		// Frozen: the stub sweep must contribute nothing, so the only staging
+		// left is the place build the coverage bake reports.
+		vi.spyOn(Date, "now").mockReturnValue(1_000);
 		mocks.prepareCoverage.mockReturnValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},
+			instrumentMs: 120,
 			manifest: {
 				buildId: "test-build-id",
 				files: {},
@@ -553,6 +559,94 @@ describe(runMultiProjectAsync, () => {
 			},
 			placeFile: "/coverage/game.rbxl",
 			rebuilt: true,
+			stagingMs: 250,
+		});
+		seedProjectFiles();
+
+		const result = await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(result.coverageMs).toBe(120);
+		expect(result.stagingMs).toBe(250);
+	});
+
+	it("should measure the stub staging as stagingMs", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		seedProjectFiles();
+
+		// Studio backend: no place build, so the stub sweep is the whole of
+		// staging.
+		let clock = 1_000;
+		vi.spyOn(Date, "now").mockImplementation(() => clock);
+		mocks.generateProjectStubs.mockImplementation(() => {
+			clock += 40;
+		});
+
+		const result = await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(result.stagingMs).toBe(40);
+	});
+
+	it("should measure the open-cloud place build as stagingMs", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults();
+		mocks.resolveBackend.mockResolvedValue(makeBackend("open-cloud"));
+		seedProjectFiles();
+
+		// The build is synchronous, so the only way to give it a measurable
+		// duration is to move the clock from inside it.
+		let clock = 1_000;
+		vi.spyOn(Date, "now").mockImplementation(() => clock);
+		mocks.buildWithRojo.mockImplementation((_projectPath, outputPath) => {
+			clock += 250;
+			vol.mkdirSync(path.dirname(outputPath), { recursive: true });
+			vol.writeFileSync(outputPath, "RBXL");
+		});
+		const result = await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(result.stagingMs).toBe(250);
+		// The dispatch window must open after the build, or the reported total
+		// would count those 250ms twice.
+		expect(mocks.runProjects.mock.calls[0]![0].startTime).toBe(1250);
+	});
+
+	it("should record the resolved projects in the coverage artifacts", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults({ collectCoverage: true });
+		mocks.prepareCoverage.mockReturnValue({
+			buildId: "test-build-id",
+			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
+			files: {},
+			instrumentMs: 0,
+			manifest: {
+				buildId: "test-build-id",
+				files: {},
+				generatedAt: isoNow(),
+				instrumenterVersion: 1,
+				luauRoots: [],
+				nonInstrumentedFiles: {},
+				placeFilePath: "/coverage/game.rbxl",
+				shadowDir: ".jest-roblox/coverage",
+				version: MANIFEST_VERSION,
+			},
+			placeFile: "/coverage/game.rbxl",
+			rebuilt: true,
+			stagingMs: 0,
 		});
 		seedProjectFiles();
 
@@ -584,6 +678,7 @@ describe(runMultiProjectAsync, () => {
 				buildId: "test-build-id",
 				coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 				files: {},
+				instrumentMs: 0,
 				manifest: {
 					buildId: "test-build-id",
 					files: {},
@@ -597,6 +692,7 @@ describe(runMultiProjectAsync, () => {
 				},
 				placeFile: "/coverage/game.rbxl",
 				rebuilt: true,
+				stagingMs: 0,
 			};
 		});
 		seedProjectFiles();
@@ -627,6 +723,7 @@ describe(runMultiProjectAsync, () => {
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},
+			instrumentMs: 0,
 			manifest: {
 				buildId: "test-build-id",
 				files: {},
@@ -640,6 +737,7 @@ describe(runMultiProjectAsync, () => {
 			},
 			placeFile: "/coverage/game.rbxl",
 			rebuilt: true,
+			stagingMs: 0,
 		});
 		seedProjectFiles();
 
@@ -678,6 +776,7 @@ describe(runMultiProjectAsync, () => {
 				buildId: "test-build-id",
 				coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 				files: {},
+				instrumentMs: 0,
 				manifest: {
 					buildId: "test-build-id",
 					files: {},
@@ -691,6 +790,7 @@ describe(runMultiProjectAsync, () => {
 				},
 				placeFile: "/coverage/game.rbxl",
 				rebuilt: true,
+				stagingMs: 0,
 			};
 		});
 		seedProjectFiles();
@@ -1171,6 +1271,7 @@ describe(runMultiProjectAsync, () => {
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},
+			instrumentMs: 0,
 			manifest: {
 				buildId: "test-build-id",
 				files: {},
@@ -1184,6 +1285,7 @@ describe(runMultiProjectAsync, () => {
 			},
 			placeFile: "/coverage/game.rbxl",
 			rebuilt: true,
+			stagingMs: 0,
 		});
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });

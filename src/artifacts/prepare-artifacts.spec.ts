@@ -115,7 +115,14 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 }
 
 function multiResult(overrides: Partial<MultiRunResult> = {}): MultiRunResult {
-	return { merged: {}, mode: "multi", preCoverageMs: 0, projectResults: [], ...overrides };
+	return {
+		coverageMs: 0,
+		merged: {},
+		mode: "multi",
+		projectResults: [],
+		stagingMs: 0,
+		...overrides,
+	};
 }
 
 describe(prepareArtifactsAsync, () => {

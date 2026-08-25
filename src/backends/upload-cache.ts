@@ -9,6 +9,9 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
  * Records which place version a set of place-file bytes already has on Roblox,
  * so an unchanged build can skip `places.save` entirely.
  *
+ * An entry also means those bytes boot: the caller writes it only once its boot
+ * probe has come back, so a hit is what lets a later run skip the probe too.
+ *
  * Why it is worth skipping: an upload is the only thing measured to precede a
  * cold place boot. Across 60 tasks, every upload-free task ran warm (~3s) while
  * tasks following an upload ran cold (~22s) in most windows. The mechanism is
@@ -42,7 +45,12 @@ interface CacheFile {
 	version: number;
 }
 
-const CACHE_VERSION = 1;
+/**
+ * Bumped when an entry's meaning changes, which discards every file written
+ * under the old one. Version 2 added the claim that the bytes boot — only a
+ * boot probe can make it, and a version-1 file never did.
+ */
+const CACHE_VERSION = 2;
 
 const cacheEntrySchema = type({
 	"+": "delete",
@@ -52,7 +60,7 @@ const cacheEntrySchema = type({
 
 const cacheFileInputSchema = type({
 	entries: type({ "[string]": "unknown" }),
-	version: "1",
+	version: "2",
 });
 
 /**

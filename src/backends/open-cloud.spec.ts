@@ -1,3 +1,4 @@
+import { PollTimeoutError } from "@bedrock-rbx/ocale";
 import type {
 	ExecuteScriptOptions,
 	RemoteRunner,
@@ -19,8 +20,10 @@ import type {
 	StreamingResultRecord,
 } from "../memory-store/sorted-map-client.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import { errorMessage } from "../utils/error-message.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import {
+	BOOT_PROBE_SCRIPT,
 	createOpenCloudBackend,
 	OpenCloudBackend,
 	PLACE_VERSION_RACE_SENTINEL,
@@ -43,8 +46,11 @@ type ExecuteStep = () => Promise<ScriptResult> | ScriptResult;
 
 interface RunnerStub {
 	executeCalls: Array<ExecuteScriptOptions>;
+	/** Boot-probe submits, kept apart so a test counts only its own tasks. */
+	probeCalls: Array<ExecuteScriptOptions>;
 	runner: RemoteRunner;
 	setExecute: (handler: ExecuteHandler) => void;
+	setProbe: (handler: ExecuteHandler) => void;
 	uploadCalls: Array<UploadPlaceOptions>;
 }
 
@@ -73,14 +79,28 @@ interface StderrCapture {
 
 function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 	const executeCalls: Array<ExecuteScriptOptions> = [];
+	const probeCalls: Array<ExecuteScriptOptions> = [];
 	const uploadCalls: Array<UploadPlaceOptions> = [];
 	async function defaultHandlerAsync(): Promise<ScriptResult> {
 		return { durationMs: 0, outputs: ["{}"] };
 	}
 
-	let executeHandler: ExecuteHandler = defaultHandlerAsync;
+	async function defaultProbeAsync(): Promise<ScriptResult> {
+		return { durationMs: 0, outputs: ["1"] };
+	}
 
+	let executeHandler: ExecuteHandler = defaultHandlerAsync;
+	let probeHandler: ExecuteHandler = defaultProbeAsync;
+
+	// The probe is infrastructure, not one of the run's tasks: routing it to
+	// its own list and its own handler keeps every other test written as
+	// though it did not exist.
 	async function executeScriptAsync(executeOptions: ExecuteScriptOptions): Promise<ScriptResult> {
+		if (executeOptions.script === BOOT_PROBE_SCRIPT) {
+			probeCalls.push(executeOptions);
+			return probeHandler(executeOptions);
+		}
+
 		executeCalls.push(executeOptions);
 		return executeHandler(executeOptions);
 	}
@@ -98,10 +118,16 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 		executeHandler = handler;
 	}
 
+	function setProbe(handler: ExecuteHandler): void {
+		probeHandler = handler;
+	}
+
 	return {
 		executeCalls,
+		probeCalls,
 		runner: { executeScriptAsync, uploadPlaceAsync },
 		setExecute,
+		setProbe,
 		uploadCalls,
 	};
 }
@@ -239,6 +265,49 @@ function jobsOptions(
 	parallel?: BackendOptions["parallel"],
 ): BackendOptions {
 	return parallel === undefined ? { jobs } : { jobs, parallel };
+}
+
+/**
+ * A temp rootDir holding a real place file — the upload cache reads bytes off
+ * disk, and this spec deliberately does not mock `node:fs`.
+ */
+function temporaryRoot(): string {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-upload-cache-"));
+	fs.writeFileSync(path.join(directory, "place.rbxl"), "place-bytes");
+	onTestFinished(() => {
+		fs.rmSync(directory, { force: true, recursive: true });
+	});
+
+	return directory;
+}
+
+function cacheJob(rootDirectory: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
+	return job("alpha", { placeFile: "place.rbxl", rootDir: rootDirectory, ...overrides });
+}
+
+/** The version an upload lands on wherever a spec drives {@link probeStub}. */
+const PROBED_VERSION = 42;
+
+/**
+ * A runner whose upload lands on {@link PROBED_VERSION} and whose tasks pass.
+ */
+function probeStub(): RunnerStub {
+	const stub = createRunnerStub({
+		uploadResult: { uploadMs: 12, versionNumber: PROBED_VERSION },
+	});
+	stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+	return stub;
+}
+
+/** One passing run against `rootDirectory`, returning the stub it drove. */
+async function runProbedRunAsync(
+	rootDirectory: string,
+	overrides: Partial<ResolvedConfig> = {},
+): Promise<RunnerStub> {
+	const stub = probeStub();
+	const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+	await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, overrides)]));
+	return stub;
 }
 
 const credentials = {
@@ -1844,24 +1913,6 @@ describe(resolveOcaleMaxRetries, () => {
 // suite-wide per-test budget cannot hold this describe under parallel load.
 describe("upload cache", { timeout: 1000 }, () => {
 	/**
-	 * A temp rootDir holding a real place file — the cache reads bytes off
-	 * disk, and this spec deliberately does not mock `node:fs`.
-	 */
-	function temporaryRoot(): string {
-		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-upload-cache-"));
-		fs.writeFileSync(path.join(directory, "place.rbxl"), "place-bytes");
-		onTestFinished(() => {
-			fs.rmSync(directory, { force: true, recursive: true });
-		});
-
-		return directory;
-	}
-
-	function cacheJob(rootDirectory: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
-		return job("alpha", { placeFile: "place.rbxl", rootDir: rootDirectory, ...overrides });
-	}
-
-	/**
 	 * Run against a seeded cache with one task per entry in `bootedVersions`,
 	 * each booting the version named instead of the reused one. Stderr is
 	 * captured throughout, so a caller asserts on the warning, on the calls the
@@ -1883,16 +1934,13 @@ describe("upload cache", { timeout: 1000 }, () => {
 		return { capture, stub };
 	}
 
+	/** How many uploads one passing run made. */
 	async function runOnceAsync(
 		rootDirectory: string,
 		overrides: Partial<ResolvedConfig> = {},
 	): Promise<number> {
-		const stub = createRunnerStub({ uploadResult: { uploadMs: 12, versionNumber: 42 } });
-		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, overrides)]));
-		return stub.uploadCalls.length;
+		const { uploadCalls } = await runProbedRunAsync(rootDirectory, overrides);
+		return uploadCalls.length;
 	}
 
 	function apiError(statusCode: number): Error {
@@ -2090,5 +2138,215 @@ describe("upload cache", { timeout: 1000 }, () => {
 			"execute failed",
 		);
 		expect(stub.uploadCalls).toHaveLength(0);
+	});
+});
+
+describe("boot probe", { timeout: 1000 }, () => {
+	/** What the runner throws when a task never reaches a terminal state. */
+	function probeTimeout(): Error {
+		return new Error("Execution timed out: Roblox never reported a terminal state", {
+			cause: new PollTimeoutError("poll budget exhausted", { timeoutMs: 135_000 }),
+		});
+	}
+
+	it("should probe a freshly uploaded version with a trivial pinned task", async () => {
+		expect.assertions(3);
+
+		const stub = probeStub();
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.probeCalls).toHaveLength(1);
+		expect(stub.probeCalls[0]!.script).toBe(BOOT_PROBE_SCRIPT);
+		expect(stub.probeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
+	});
+
+	/**
+	 * The cache entry is written only once the probe passes, so a hit already
+	 * carries the proof. Re-probing would spend a boot on a question already
+	 * answered, on every run that reuses a version.
+	 */
+	it("should skip the probe when the version came from the upload cache", async () => {
+		expect.assertions(2);
+
+		const rootDirectory = temporaryRoot();
+		const first = await runProbedRunAsync(rootDirectory);
+		const second = await runProbedRunAsync(rootDirectory);
+
+		expect(first.probeCalls).toHaveLength(1);
+		expect(second.probeCalls).toHaveLength(0);
+	});
+
+	/**
+	 * Zero is the off switch, for a suite that has proved the probe elsewhere
+	 * and would rather spend the boot on tests. The version then earns no cache
+	 * entry: an entry means "these bytes boot", and nothing proved it.
+	 */
+	it("should skip the probe, and cache nothing, when the budget is zero", async () => {
+		expect.assertions(3);
+
+		const rootDirectory = temporaryRoot();
+		const first = await runProbedRunAsync(rootDirectory, { bootProbeTimeout: 0 });
+		const second = await runProbedRunAsync(rootDirectory, { bootProbeTimeout: 0 });
+
+		expect(first.probeCalls).toHaveLength(0);
+		expect(second.probeCalls).toHaveLength(0);
+		expect(second.uploadCalls).toHaveLength(1);
+	});
+
+	/**
+	 * The runner falls back to naming a place Roblox cannot load when a task
+	 * never settles. The probe has just disproved that for these bytes, so a
+	 * later timeout must not send the reader to Studio over it.
+	 */
+	it("should tell the runner the place boots once the probe has passed", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.executeCalls).toHaveLength(1);
+		expect(stub.executeCalls[0]!.bootProven).toBeTrue();
+	});
+
+	/**
+	 * A cache entry says the bytes booted when it was written, which is not the
+	 * same claim, so a reused version leaves the runner its own reading.
+	 */
+	it("should leave the runner to guess when the version came from the cache", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runProbedRunAsync(rootDirectory);
+		const second = await runProbedRunAsync(rootDirectory);
+
+		expect(second.executeCalls[0]!.bootProven).not.toBeTrue();
+	});
+
+	it("should fail the run at once when the probe never completes", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setProbe(() => {
+			throw probeTimeout();
+		});
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const caught = await backend
+			.runTestsAsync(jobsOptions([job("alpha")]))
+			.catch((err: unknown) => err);
+
+		expect(errorMessage(caught)).toBe(
+			[
+				`Place version ${String(PROBED_VERSION)} cannot be started by Open Cloud.`,
+				"A trivial script against it also never ran (90s).",
+				"Roblox reports no state, no error, and no log for a place it cannot load.",
+				`Open ${path.resolve(DEFAULT_CONFIG.rootDir, "./test.rbxl")} in Studio, or run with`,
+				"--backend=studio-cli, to see why it will not load.",
+			].join("\n"),
+		);
+		expect(stub.executeCalls).toHaveLength(0);
+	});
+
+	/**
+	 * A version that failed its probe must never be recorded as verified —
+	 * a hit skips the probe, so caching it would hand every later run of the
+	 * same bytes the full-budget hang the probe exists to prevent.
+	 */
+	it("should not cache a version whose probe never completed", async () => {
+		expect.assertions(3);
+
+		const rootDirectory = temporaryRoot();
+		const failing = probeStub();
+		failing.setProbe(() => {
+			throw probeTimeout();
+		});
+
+		const backend = new OpenCloudBackend(credentials, { runner: failing.runner });
+
+		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toThrow(
+			"cannot be started by Open Cloud",
+		);
+
+		const next = await runProbedRunAsync(rootDirectory);
+
+		expect(next.uploadCalls).toHaveLength(1);
+		expect(next.probeCalls).toHaveLength(1);
+	});
+
+	/**
+	 * The probe body cannot fail on its own, but the call still rides the same
+	 * API as everything else. A throttle or a bad key says something about the
+	 * request, not about the place, and must not be reported as one.
+	 */
+	it("should pass a probe failure that is not a timeout through untouched", async () => {
+		expect.assertions(1);
+
+		const stub = probeStub();
+		stub.setProbe(() => {
+			throw new Error("HTTP 429: Too Many Requests");
+		});
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
+			"HTTP 429: Too Many Requests",
+		);
+	});
+
+	/**
+	 * The budget is wall clock, not a task deadline: the poll must stop asking
+	 * at the budget, or a 90s probe waits out the runner's boot-lag allowance
+	 * on top and the failure arrives 45s after it was known.
+	 *
+	 * The deadline stays short and separate. Set to the whole budget the two
+	 * would expire together, so a place that booted just inside the budget
+	 * would be reported as one Roblox cannot start while its script ran — the
+	 * one verdict that has to be trustworthy.
+	 */
+	it("should give the probe its own budget, 90s by default", async () => {
+		expect.assertions(3);
+
+		const stub = createRunnerStub();
+		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.probeCalls[0]!.pollBudget).toBe(90_000);
+		expect(stub.probeCalls[0]!.timeout).toBeLessThan(90_000);
+		expect(stub.executeCalls[0]!.timeout).toBe(DEFAULT_CONFIG.timeout);
+	});
+
+	it("should honour a bootProbeTimeout override", async () => {
+		expect.assertions(1);
+
+		const stub = createRunnerStub();
+		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha", { bootProbeTimeout: 30_000 })]));
+
+		expect(stub.probeCalls[0]!.pollBudget).toBe(30_000);
+	});
+
+	/**
+	 * A budget under the probe's own deadline is still the whole answer: the
+	 * task may not be given longer to run than the caller will wait for it.
+	 */
+	it("should never give the probe a deadline past its budget", async () => {
+		expect.assertions(2);
+
+		const stub = createRunnerStub();
+		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha", { bootProbeTimeout: 1000 })]));
+
+		expect(stub.probeCalls[0]!.pollBudget).toBe(1000);
+		expect(stub.probeCalls[0]!.timeout).toBe(1000);
 	});
 });

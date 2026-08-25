@@ -23,13 +23,13 @@ export interface WorkspaceRunnerOutput {
 	 */
 	bailedPackages?: Array<string> | undefined;
 	/**
-	 * Host time spent staging the place before dispatch — instrumentation,
-	 * stubs, and the rojo build. Reported as multi reports its coverage bake:
-	 * measured outside the dispatch window and added onto the total, so the
-	 * `cli` residual is not left absorbing it. Absent when no runtime job ran.
+	 * This run's {@link PreDispatchTiming} halves. Absent when no runtime job
+	 * ran — a typecheck-only run stages nothing.
 	 */
-	preCoverageMs?: number | undefined;
+	coverageMs?: number | undefined;
 	results: Array<WorkspaceProjectResult>;
+	/** @see {@link WorkspaceRunnerOutput.coverageMs} */
+	stagingMs?: number | undefined;
 	typecheckResult?: JestResult | undefined;
 }
 

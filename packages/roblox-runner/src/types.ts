@@ -25,6 +25,17 @@ export interface UploadPlaceResult {
 
 export interface ExecuteScriptOptions {
 	/**
+	 * Tell the poll that this place version is already known to boot, so a
+	 * task that never settles is not read as a place Roblox cannot load.
+	 *
+	 * That reading is the runner's fallback diagnosis, and it is the right one
+	 * only while nothing better is known. A caller that has just run a script
+	 * against this same version knows better, and leaving the guess in place
+	 * would send the reader to Studio to inspect a place that demonstrably
+	 * loads.
+	 */
+	bootProven?: boolean;
+	/**
 	 * Pin execution to a specific place version (the `versionNumber` returned
 	 * by {@link RemoteRunner.uploadPlaceAsync}). Open Cloud Luau Execution
 	 * otherwise boots whatever version is currently live, so a concurrent
@@ -33,6 +44,17 @@ export interface ExecuteScriptOptions {
 	 * version.
 	 */
 	placeVersion?: number;
+	/**
+	 * Wall-clock cap on the poll, in milliseconds, replacing the default of
+	 * the task deadline plus a boot-lag allowance.
+	 *
+	 * The default budget is built to outlast the deadline so Roblox's own
+	 * verdict on a script that overran is observable. A caller asking a
+	 * wall-clock question instead — "did this place boot at all?" — wants no
+	 * such allowance: past the budget there is nothing left to wait for, and
+	 * the grace only delays the answer.
+	 */
+	pollBudget?: number;
 	script: string;
 	timeout: number;
 }

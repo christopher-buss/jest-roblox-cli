@@ -52,10 +52,11 @@ export function buildMultiRunResult({
 			rootDir: rootConfig.rootDir,
 			testPathPattern: rootConfig.testPathPattern,
 		}),
+		coverageMs: staged.coverageMs,
 		merged: mergeForMultiResult(outcome.projectResults),
 		mode: "multi",
-		preCoverageMs: staged.preCoverageMs,
 		projectResults: outcome.projectResults,
+		stagingMs: staged.stagingMs + outcome.placeBuildMs,
 		typecheckResult: outcome.typecheck.result,
 	};
 }

@@ -146,9 +146,10 @@ function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResul
 
 function makeSingleResult(overrides: Partial<SingleRunResult> = {}): SingleRunResult {
 	return {
+		coverageMs: 0,
 		mode: "single",
-		preCoverageMs: 0,
 		runtimeResult: makeExecuteResult(),
+		stagingMs: 0,
 		...overrides,
 	};
 }
@@ -162,10 +163,11 @@ function makeProjectResult(displayName = "client", executeOverrides = {}): Proje
 
 function makeMultiResult(overrides: Partial<MultiRunResult> = {}): MultiRunResult {
 	return {
+		coverageMs: 0,
 		merged: {},
 		mode: "multi",
-		preCoverageMs: 0,
 		projectResults: [makeProjectResult()],
+		stagingMs: 0,
 		...overrides,
 	};
 }
@@ -197,11 +199,12 @@ function makeCoverageGate(
 
 function makeWorkspaceResult(overrides: Partial<WorkspaceRunResult> = {}): WorkspaceRunResult {
 	return {
+		coverageMs: 0,
 		merged: {},
 		mode: "workspace",
-		preCoverageMs: 0,
 		projectResults: [makeProjectResult("@halcyon/foo")],
 		reportOptions: makeReportOptions(),
+		stagingMs: 0,
 		...overrides,
 	};
 }
@@ -362,6 +365,39 @@ describe(outputSingleResultAsync, () => {
 		expect(mocks.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ bail: { notRun: 2, ran: 1 } }),
+		);
+	});
+
+	it("should fold workspace staging time into the reported timing", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(makeConfig(), makeWorkspaceResult({ stagingMs: 400 }));
+
+		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ coverageMs: 0, stagingMs: 400, totalMs: 600 }),
+			expect.anything(),
+		);
+	});
+
+	it("should report staging and coverage as separate phases", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig(),
+			makeMultiResult({ coverageMs: 120, stagingMs: 300 }),
+		);
+
+		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ coverageMs: 120, stagingMs: 300, totalMs: 620 }),
+			expect.anything(),
 		);
 	});
 

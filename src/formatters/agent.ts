@@ -15,9 +15,19 @@ import {
 	parseSourceLocation,
 	resolveDisplayPath,
 } from "./formatter.ts";
-import { type BailSummary, formatBailText } from "./shared.ts";
+import type { BailSummary } from "./shared.ts";
 import { createStyles } from "./styles.ts";
-import { formatTypeErrorsLine } from "./summary.ts";
+import {
+	countFileBuckets,
+	countTestBuckets,
+	formatBailLine,
+	formatSummaryParts,
+	formatTestFilesLine,
+	formatTestsLine,
+	formatTypeErrorsLine,
+	type SummaryCounts,
+	type TestRowCounts,
+} from "./summary.ts";
 
 export interface AgentOptions {
 	/** Set when `--bail` cut the run short; see {@link BailSummary}. */
@@ -49,13 +59,8 @@ interface FormatFailureMessageOptions {
 
 interface AgentProjectStats {
 	allExecErrors: Array<JestResult["testResults"][number]>;
-	totalFailed: number;
-	totalFailedFiles: number;
-	totalPassed: number;
-	totalPassedFiles: number;
-	totalPending: number;
-	totalSkippedFiles: number;
-	totalTests: number;
+	files: SummaryCounts;
+	tests: TestRowCounts;
 }
 
 // This formatter emits plain text only, so the shared summary rows render
@@ -104,7 +109,7 @@ export function formatAgentMultiProject(
 	}
 
 	const stats = collectMultiProjectStats(projects);
-	const totalFailures = stats.totalFailed + stats.allExecErrors.length;
+	const totalFailures = stats.tests.counts.failed + stats.allExecErrors.length;
 
 	if (totalFailures > 0) {
 		lines.push(...formatMultiProjectFailures(projects, stats, options));
@@ -115,49 +120,11 @@ export function formatAgentMultiProject(
 	return lines.join("\n");
 }
 
-// The " Test Files  …" row: file-level pass/fail counts, each bucket omitted
-// when zero. A file with an exec error counts as failed even when it reported
-// no failing tests.
-function formatTestFilesLine(result: JestResult): string {
-	const failedFiles = result.testResults.filter(
-		(file) => file.numFailingTests > 0 || hasExecError(file),
-	).length;
-	const passedFiles = result.testResults.filter(
-		(file) => file.numFailingTests === 0 && !hasExecError(file),
-	).length;
-	const totalFiles = failedFiles + passedFiles;
-
-	const fileParts: Array<string> = [];
-	if (failedFiles > 0) {
-		fileParts.push(`${failedFiles} failed`);
-	}
-
-	if (passedFiles > 0) {
-		fileParts.push(`${passedFiles} passed`);
-	}
-
-	return ` Test Files  ${fileParts.join(" | ")} (${totalFiles})`;
-}
-
 function formatSummarySection(result: JestResult, options: AgentOptions): Array<string> {
-	const lines: Array<string> = [formatTestFilesLine(result)];
-
-	const testParts: Array<string> = [];
-
-	if (result.numFailedTests > 0) {
-		testParts.push(`${result.numFailedTests} failed`);
-	}
-
-	if (result.numPassedTests > 0) {
-		testParts.push(`${result.numPassedTests} passed`);
-	}
-
-	if (result.numPendingTests > 0) {
-		testParts.push(`${result.numPendingTests} skipped`);
-	}
-
-	const totalTests = result.numTotalTests;
-	lines.push(`      Tests  ${testParts.join(" | ")} (${totalTests})`);
+	const lines: Array<string> = [
+		formatTestFilesLine(countFileBuckets(result), PLAIN_STYLES),
+		formatTestsLine(countTestBuckets(result), PLAIN_STYLES),
+	];
 
 	if (options.typeErrorCount !== undefined) {
 		lines.push(formatTypeErrorsLine(options.typeErrorCount, PLAIN_STYLES));
@@ -544,27 +511,7 @@ function formatAgentProjectHeader(
 	const execErrors = result.testResults.filter(hasExecError);
 	const hasFailures = result.numFailedTests > 0 || execErrors.length > 0;
 
-	const failedFiles = result.testResults.filter(
-		(file) => file.numFailingTests > 0 || hasExecError(file),
-	).length;
-	const skippedFiles = result.testResults.filter(
-		(file) => file.numFailingTests === 0 && file.numPassingTests === 0 && !hasExecError(file),
-	).length;
-	const passedFiles = result.testResults.length - failedFiles - skippedFiles;
-
-	const fileParts: Array<string> = [];
-	if (passedFiles > 0) {
-		fileParts.push(`${passedFiles} passed`);
-	}
-
-	if (failedFiles > 0) {
-		fileParts.push(`${failedFiles} failed`);
-	}
-
-	if (skippedFiles > 0) {
-		fileParts.push(`${skippedFiles} skipped`);
-	}
-
+	const fileParts = formatSummaryParts(countFileBuckets(result), PLAIN_STYLES);
 	const lines = [`▶ ${displayName}  ${fileParts.join(" | ")} (${result.numTotalTests} tests)`];
 
 	if (hasFailures) {
@@ -574,33 +521,24 @@ function formatAgentProjectHeader(
 	return lines;
 }
 
+function addCounts(running: SummaryCounts, next: SummaryCounts): void {
+	running.failed += next.failed;
+	running.passed += next.passed;
+	running.skipped += next.skipped;
+}
+
 function collectMultiProjectStats(projects: Array<AgentProjectEntry>): AgentProjectStats {
 	const stats: AgentProjectStats = {
 		allExecErrors: [],
-		totalFailed: 0,
-		totalFailedFiles: 0,
-		totalPassed: 0,
-		totalPassedFiles: 0,
-		totalPending: 0,
-		totalSkippedFiles: 0,
-		totalTests: 0,
+		files: { failed: 0, passed: 0, skipped: 0 },
+		tests: { counts: { failed: 0, passed: 0, skipped: 0 }, total: 0 },
 	};
 
 	for (const { result } of projects) {
-		const failedFiles = result.testResults.filter(
-			(file) => file.numFailingTests > 0 || hasExecError(file),
-		).length;
-		const skippedFiles = result.testResults.filter((file) => {
-			return file.numFailingTests === 0 && file.numPassingTests === 0 && !hasExecError(file);
-		}).length;
-
-		stats.totalFailed += result.numFailedTests;
-		stats.totalPassed += result.numPassedTests;
-		stats.totalPending += result.numPendingTests;
-		stats.totalTests += result.numTotalTests;
-		stats.totalFailedFiles += failedFiles;
-		stats.totalSkippedFiles += skippedFiles;
-		stats.totalPassedFiles += result.testResults.length - failedFiles - skippedFiles;
+		const tests = countTestBuckets(result);
+		addCounts(stats.files, countFileBuckets(result));
+		addCounts(stats.tests.counts, tests.counts);
+		stats.tests.total += tests.total;
 		stats.allExecErrors.push(...result.testResults.filter(hasExecError));
 	}
 
@@ -612,7 +550,7 @@ function formatMultiProjectFailures(
 	stats: AgentProjectStats,
 	options: AgentOptions,
 ): Array<string> {
-	const totalFailures = stats.totalFailed + stats.allExecErrors.length;
+	const totalFailures = stats.tests.counts.failed + stats.allExecErrors.length;
 	const lines: Array<string> = [
 		"",
 		`${"⎯".repeat(3)} Failed Tests ${totalFailures} ${"⎯".repeat(3)}`,
@@ -637,37 +575,18 @@ function formatMultiProjectFailures(
 	return lines;
 }
 
-// Each bucket is omitted when zero, so a clean run reads "2 passed (2)" rather
-// than carrying two empty counts.
-function countParts(buckets: Array<[count: number, label: string]>): Array<string> {
-	return buckets.filter(([count]) => count > 0).map(([count, label]) => `${count} ${label}`);
-}
-
 function formatMultiProjectSummary(stats: AgentProjectStats, options: AgentOptions): Array<string> {
-	const lines: Array<string> = [];
-
-	const fileParts = countParts([
-		[stats.totalFailedFiles, "failed"],
-		[stats.totalPassedFiles, "passed"],
-		[stats.totalSkippedFiles, "skipped"],
-	]);
-	const totalFiles = stats.totalFailedFiles + stats.totalPassedFiles + stats.totalSkippedFiles;
-	lines.push(` Test Files  ${fileParts.join(" | ")} (${totalFiles})`);
-
-	const testParts = countParts([
-		[stats.totalFailed, "failed"],
-		[stats.totalPassed, "passed"],
-		[stats.totalPending, "skipped"],
-	]);
-	lines.push(`      Tests  ${testParts.join(" | ")} (${stats.totalTests})`);
+	const lines: Array<string> = [
+		formatTestFilesLine(stats.files, PLAIN_STYLES),
+		formatTestsLine(stats.tests, PLAIN_STYLES),
+	];
 
 	if (options.typeErrorCount !== undefined) {
 		lines.push(formatTypeErrorsLine(options.typeErrorCount, PLAIN_STYLES));
 	}
 
 	if (options.bail !== undefined) {
-		const { reached, skipped } = formatBailText(options.bail);
-		lines.push(`     Bailed  ${reached}${skipped}`);
+		lines.push(formatBailLine(options.bail, PLAIN_STYLES));
 	}
 
 	return lines;

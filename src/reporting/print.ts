@@ -19,11 +19,11 @@ import {
 	hasFormatter,
 	usesAgentFormatter,
 } from "../formatters/utils.ts";
-import type { ProjectResult } from "../run/types.ts";
+import type { PreDispatchTiming, ProjectResult } from "../run/types.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { TimingResult } from "../types/timing.ts";
 
-export interface MultiOutputContext {
+export interface MultiOutputContext extends PreDispatchTiming {
 	/** Workspace `--bail` only: how far the run got before it stopped. */
 	bail?: BailSummary | undefined;
 	config: ResolvedConfig;
@@ -38,7 +38,6 @@ export interface MultiOutputContext {
 	 * config).
 	 */
 	outputFileHint?: string | undefined;
-	preCoverageMs: number;
 	projectResults: Array<ProjectResult>;
 	typecheckResult?: JestResult | undefined;
 }
@@ -58,9 +57,8 @@ interface RuntimeOutputOptions {
 	typeErrorCount?: number | undefined;
 }
 
-interface SingleResultsOptions {
+interface SingleResultsOptions extends PreDispatchTiming {
 	mergedResult: JestResult;
-	preCoverageMs: number;
 	runtimeResult?: ExecuteResult | undefined;
 	typecheckResult?: JestResult | undefined;
 }
@@ -68,19 +66,17 @@ interface SingleResultsOptions {
 const VERSION = packageJson.version;
 
 // Prints the run results for `single`, honouring `config.silent` and folding
-// the deferred coverage phase into the reported timing. The multi/workspace
+// the two pre-dispatch phases into the reported timing. The multi/workspace
 // twin is `printMultiResults`.
-export function printSingleResults(
-	config: ResolvedConfig,
-	{ mergedResult, preCoverageMs, runtimeResult, typecheckResult }: SingleResultsOptions,
-): void {
+export function printSingleResults(config: ResolvedConfig, options: SingleResultsOptions): void {
+	const { mergedResult, runtimeResult, typecheckResult } = options;
 	if (config.silent) {
 		return;
 	}
 
 	const timing =
 		runtimeResult !== undefined
-			? addCoverageTiming(runtimeResult.timing, preCoverageMs)
+			? addPreDispatchTiming(runtimeResult.timing, options)
 			: undefined;
 	printFormattedOutput({ config, mergedResult, runtimeResult, timing, typecheckResult });
 }
@@ -101,8 +97,19 @@ export function printMultiResults(context: MultiOutputContext): void {
 	}
 }
 
-function addCoverageTiming(timing: TimingResult, coverageMs: number): TimingResult {
-	return { ...timing, coverageMs, totalMs: timing.totalMs + coverageMs };
+// Folds a run's {@link PreDispatchTiming} into the timing the formatters
+// render: both phases sit outside the window `totalMs` measures, so each is
+// added onto it rather than found inside it.
+function addPreDispatchTiming(
+	timing: TimingResult,
+	{ coverageMs, stagingMs }: PreDispatchTiming,
+): TimingResult {
+	return {
+		...timing,
+		coverageMs,
+		stagingMs,
+		totalMs: timing.totalMs + coverageMs + stagingMs,
+	};
 }
 
 function printOutput(out: string): void {
@@ -257,14 +264,14 @@ function formatAgentMultiOutput({
 }
 
 function printMultiProjectOutput(context: MultiOutputContext): void {
-	const { config, merged, preCoverageMs, projectResults, typecheckResult } = context;
+	const { config, merged, projectResults, typecheckResult } = context;
 
 	if (usesAgentFormatter(config.formatters, config.verbose)) {
 		printOutput(formatAgentMultiOutput(context));
 		return;
 	}
 
-	const timing = addCoverageTiming(merged.timing, preCoverageMs);
+	const timing = addPreDispatchTiming(merged.timing, context);
 	if (hasFormatter(config.formatters, "json")) {
 		printOutput(formatRuntimeOutput(config, { runtimeResult: merged, timing }));
 		return;

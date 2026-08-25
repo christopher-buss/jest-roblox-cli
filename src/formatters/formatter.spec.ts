@@ -24,6 +24,7 @@ import {
 	TIMING,
 	TIMING_COVERAGE,
 	TIMING_NO_UPLOAD,
+	TIMING_STAGING,
 	TYPECHECK_FAILING_RESULT,
 	TYPECHECK_MIXED_RESULT,
 	TYPECHECK_PASSING_RESULT,
@@ -130,6 +131,17 @@ describe(formatTestSummary, () => {
 		expect(summary).toContain("2 failed");
 		expect(summary).toContain("1 skipped");
 		expect(summary).toContain("(10)");
+	});
+
+	it("should order buckets failed-first like vitest", () => {
+		expect.assertions(2);
+
+		const summary = stripVTControlCharacters(
+			formatTestSummary(MIXED_RESULT, createTiming(1000)),
+		);
+
+		expect(summary).toContain(" Test Files  1 failed | 1 passed (2)");
+		expect(summary).toContain("      Tests  1 failed | 4 passed | 1 skipped (6)");
 	});
 
 	it("should hide snapshots line when no snapshot data", () => {
@@ -503,7 +515,7 @@ describe(formatTestSummary, () => {
 		const summary = formatTestSummary(result, createTiming(1000));
 
 		expect(summary).toContain("Test Files");
-		expect(summary).toMatch(/1 passed.*\|.*1 failed/);
+		expect(summary).toMatch(/1 failed.*\|.*1 passed/);
 		expect(summary).toContain("Tests");
 	});
 });
@@ -1351,7 +1363,7 @@ describe("formatResult snapshots", () => {
 			  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
 
 			 Test Files  1 failed (1)
-			      Tests  1 passed | 2 failed (3)
+			      Tests  2 failed | 1 passed (3)
 			   Start at  22:13:20
 			   Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)"
 		`);
@@ -1385,8 +1397,8 @@ describe("formatResult snapshots", () => {
 			  
 			  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 
-			 Test Files  1 passed | 1 failed (2)
-			      Tests  4 passed | 1 failed | 1 skipped (6)
+			 Test Files  1 failed | 1 passed (2)
+			      Tests  1 failed | 4 passed | 1 skipped (6)
 			   Start at  22:13:20
 			   Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)"
 		`);
@@ -1662,7 +1674,7 @@ describe("formatResult exec error snapshots", () => {
 
 			  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 
-			 Test Files  1 passed | 1 failed (2)
+			 Test Files  1 failed | 1 passed (2)
 			      Tests  3 passed (3)
 			   Start at  22:13:20
 			   Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)"
@@ -1714,7 +1726,7 @@ describe("formatResult with typecheck data", () => {
 			  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 
 			 Test Files  1 failed (1)
-			      Tests  1 passed | 1 failed (2)
+			      Tests  1 failed | 1 passed (2)
 			   Start at  22:13:20
 			   Duration  200ms (environment 50ms, tests 100ms, cli 50ms)"
 		`);
@@ -1740,8 +1752,8 @@ describe("formatResult with typecheck data", () => {
 			  
 			  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 
-			 Test Files  1 passed | 1 failed (2)
-			      Tests  3 passed | 1 failed (4)
+			 Test Files  1 failed | 1 passed (2)
+			      Tests  1 failed | 3 passed (4)
 			   Start at  22:13:20
 			   Duration  200ms (environment 50ms, tests 100ms, cli 50ms)"
 		`);
@@ -1804,7 +1816,7 @@ describe("formatTypecheckReport snapshots", () => {
 			"   FAIL  type checks > should reject string as number
 			    TS2322: Type 'string' is not assignable to type 'number'.
 
-			      Tests  1 passed | 1 failed (2)
+			      Tests  1 failed | 1 passed (2)
 			Type Errors  1 failed
 			"
 		`);
@@ -1819,7 +1831,7 @@ describe("formatTypecheckReport snapshots", () => {
 			"   FAIL  failing types > should reject string as number
 			    TS2322: Type 'string' is not assignable to type 'number'.
 
-			      Tests  3 passed | 1 failed (4)
+			      Tests  1 failed | 3 passed (4)
 			Type Errors  1 failed
 			"
 		`);
@@ -2274,6 +2286,37 @@ describe("formatTestSummary coverage timing", () => {
 		const plain = stripVTControlCharacters(summary);
 
 		expect(plain).not.toContain("coverage");
+	});
+});
+
+describe("formatTestSummary staging timing", () => {
+	it("should show staging bucket when stagingMs is provided", () => {
+		expect.assertions(2);
+
+		const summary = formatTestSummary(PASSING_RESULT, TIMING_STAGING);
+		const plain = stripVTControlCharacters(summary);
+
+		expect(plain).toContain("staging 400ms");
+		expect(plain).toContain("Duration  650ms");
+	});
+
+	it("should subtract stagingMs from the cli residual", () => {
+		expect.assertions(1);
+
+		// totalMs=650, uploadMs=50, executionMs=150, stagingMs=400 -> cli=50
+		const summary = formatTestSummary(PASSING_RESULT, TIMING_STAGING);
+		const plain = stripVTControlCharacters(summary);
+
+		expect(plain).toContain("cli 50ms");
+	});
+
+	it("should omit staging bucket when stagingMs is zero", () => {
+		expect.assertions(1);
+
+		const summary = formatTestSummary(PASSING_RESULT, { ...TIMING, stagingMs: 0 });
+		const plain = stripVTControlCharacters(summary);
+
+		expect(plain).not.toContain("staging");
 	});
 });
 
@@ -3567,6 +3610,15 @@ describe("multi-project output snapshots", () => {
 		expect(plain).toMatchInlineSnapshot('"▶  utils   1 passed | 2 skipped (12 tests - 50ms)"');
 	});
 
+	it("should order project header buckets failed-first", () => {
+		expect.assertions(1);
+
+		const output = formatProjectHeader({ displayName: "game", result: MIXED_RESULT });
+		const plain = stripVTControlCharacters(output);
+
+		expect(plain).toContain("1 failed | 1 passed");
+	});
+
 	it("should format project section for passing result", () => {
 		expect.assertions(1);
 
@@ -3700,8 +3752,8 @@ describe("multi-project output snapshots", () => {
 			  
 			  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
 
-			 Test Files  1 passed | 1 failed (2)
-			      Tests  4 passed | 2 failed (6)
+			 Test Files  1 failed | 1 passed (2)
+			      Tests  2 failed | 4 passed (6)
 			   Start at  22:13:20
 			   Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)"
 		`);

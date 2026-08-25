@@ -21,6 +21,11 @@ import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
  * The fixture (`test/e2e/fixtures/live-place`) ships a pre-built `.rbxl` and
  * two configured `projects` in its `jest.config.ts` — `live-place-shared`
  * (one spec) and `live-place-server` (four).
+ *
+ * Only the first run below carries the boot probe. One live proof that a fresh
+ * version starts is the whole of what the wire can tell us; every later run
+ * would spend a task and a cold boot re-proving it, so they point at
+ * `jest.no-probe.config.ts` instead.
  */
 
 const LIVE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place");
@@ -162,7 +167,7 @@ describe("live pipeline", () => {
 					"--backend",
 					"open-cloud",
 					"--config",
-					"jest.config.ts",
+					"jest.no-probe.config.ts",
 					"src/server/namesake/index.spec.ts",
 				],
 				{

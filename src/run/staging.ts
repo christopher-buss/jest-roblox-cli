@@ -26,6 +26,13 @@ import { toBuildManifestProjects } from "./manifest-projects.ts";
  */
 export interface StagedRun extends StagedCoverage {
 	cacheRoot: string;
+	/**
+	 * Host time spent putting this run's inputs on disk: the stub sweep and
+	 * generation, plus — on a coverage run — the stub bake and the instrumented
+	 * place build. The instrumentation is timed apart as `coverageMs`, and the
+	 * place build a non-coverage run does later adds onto this.
+	 */
+	stagingMs: number;
 }
 
 export interface BakedCoverage {
@@ -38,8 +45,17 @@ export interface BakedCoverage {
  */
 interface StagedCoverage {
 	coverageArtifacts?: CoverageArtifacts | undefined;
+	coverageMs: number;
 	effectiveConfig: ResolvedConfig;
-	preCoverageMs: number;
+}
+
+/**
+ * {@link StagedCoverage} plus the part of the bake the run reports as staging
+ * rather than as coverage — the stub sync and the place build. `stageRun` folds
+ * it into `stagingMs`, so the field travels no further.
+ */
+interface StagedCoverageRun extends StagedCoverage {
+	coverageStagingMs: number;
 }
 
 /**
@@ -115,6 +131,11 @@ export function stageRun(
 	// `jest.config` ModuleScripts in DataModel from the JSON configs.
 	const cacheRoot = path.resolve(rootConfig.rootDir, ".jest-roblox", "cache");
 
+	// Timed rather than merely elapsed-through: every backend does this work
+	// before the dispatch window opens, so without a measurement it lands
+	// outside every reported phase.
+	const stagingStart = Date.now();
+
 	// Pre-flight cleanup mirrors workspace behaviour: upgraders coming from a
 	// pre-refactor version may have marker-bearing leftover stubs in their
 	// source tree. The synthesizer's `assertNoSourceCollision` and the plugin's
@@ -134,10 +155,12 @@ export function stageRun(
 		generateProjectStubs(projects, rootConfig.rootDir, cacheRoot);
 	});
 
-	const coverage = timing.profile("prepareCoverage", () => {
+	const stubStagingMs = Date.now() - stagingStart;
+
+	const { coverageStagingMs, ...coverage } = timing.profile("prepareCoverage", () => {
 		return prepareMultiProjectCoverage(rootConfig, projects, cacheRoot);
 	});
-	return { cacheRoot, ...coverage };
+	return { cacheRoot, ...coverage, stagingMs: stubStagingMs + coverageStagingMs };
 }
 
 function collectStubMountsForProject(
@@ -165,9 +188,9 @@ function prepareMultiProjectCoverage(
 	rootConfig: ResolvedConfig,
 	projects: Array<ResolvedProjectConfig>,
 	cacheRoot: string,
-): StagedCoverage {
+): StagedCoverageRun {
 	if (!rootConfig.collectCoverage) {
-		return { effectiveConfig: rootConfig, preCoverageMs: 0 };
+		return { coverageMs: 0, coverageStagingMs: 0, effectiveConfig: rootConfig };
 	}
 
 	// studio-cli drives the plugin's Run-mode runner, which materializes
@@ -176,7 +199,6 @@ function prepareMultiProjectCoverage(
 	// stubs baked in. `auto` never resolves to studio-cli, so the config flag is
 	// the exact, probe-free signal.
 	const isBakeStubs = rootConfig.backend !== "studio-cli";
-	const start = Date.now();
 	const { artifacts, coverage } = prepareBakedCoverage(
 		rootConfig,
 		projects,
@@ -185,7 +207,8 @@ function prepareMultiProjectCoverage(
 	);
 	return {
 		coverageArtifacts: artifacts,
+		coverageMs: coverage.instrumentMs,
+		coverageStagingMs: coverage.stagingMs,
 		effectiveConfig: { ...rootConfig, placeFile: coverage.placeFile },
-		preCoverageMs: Date.now() - start,
 	};
 }

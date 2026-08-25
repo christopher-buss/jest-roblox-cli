@@ -8,7 +8,7 @@ export interface ProgressLineOptions {
 
 /**
  * Build a single-line per-package status string for the streaming
- * progress sink. Format: `▶ <pkg> N passed | M failed | K skipped (Xms)`.
+ * progress sink. Format: `▶ <pkg> N failed | M passed | K skipped (Xms)`.
  *
  * The line is intentionally narrow — it lands mid-task while siblings are
  * still running; the full project section (failures, snippets, summary)
@@ -45,8 +45,8 @@ function pushPart(
 
 function formatBreakdown(entry: StreamingResultEntry, isColorEnabled: boolean): string {
 	const parts: Array<string> = [];
-	pushPart(parts, entry.numPassedTests, "passed", isColorEnabled ? color.green : identity);
 	pushPart(parts, entry.numFailedTests, "failed", isColorEnabled ? color.red : identity);
+	pushPart(parts, entry.numPassedTests, "passed", isColorEnabled ? color.green : identity);
 	pushPart(parts, entry.numPendingTests, "skipped", isColorEnabled ? color.yellow : identity);
 	return parts.length > 0 ? parts.join(" | ") : "0 tests";
 }

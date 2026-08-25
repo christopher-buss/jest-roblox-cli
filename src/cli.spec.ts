@@ -95,20 +95,22 @@ function makeProjectResult(displayName = "client"): ProjectResult {
 
 function makeMultiResult(overrides: Partial<MultiRunResult> = {}): MultiRunResult {
 	return {
+		coverageMs: 0,
 		merged: {},
 		mode: "multi",
-		preCoverageMs: 0,
 		projectResults: [makeProjectResult()],
+		stagingMs: 0,
 		...overrides,
 	};
 }
 
 function makeWorkspaceResult(overrides: Partial<WorkspaceRunResult> = {}): WorkspaceRunResult {
 	return {
+		coverageMs: 0,
 		merged: {},
 		mode: "workspace",
-		preCoverageMs: 0,
 		projectResults: [makeProjectResult("@halcyon/foo")],
+		stagingMs: 0,
 		...overrides,
 	};
 }

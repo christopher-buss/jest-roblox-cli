@@ -1,4 +1,4 @@
-import { PermissionError } from "@bedrock-rbx/ocale";
+import { PermissionError, PollTimeoutError } from "@bedrock-rbx/ocale";
 import { OcaleRunner, runTaskPool } from "@isentinel/roblox-runner";
 import type {
 	OcaleRunnerOptions,
@@ -13,7 +13,7 @@ import type { Except } from "type-fest";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
-import { formatMissingScopes, walkErrorChain } from "../utils/error-chain.ts";
+import { errorChain, formatMissingScopes, walkErrorChain } from "../utils/error-chain.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
 import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
 import type {
@@ -50,6 +50,24 @@ export const PLACE_VERSION_RACE_SENTINEL = "__JEST_ROBLOX_PLACE_VERSION_RACE__";
 const RACE_SENTINEL_PATTERN = new RegExp(`^${PLACE_VERSION_RACE_SENTINEL}:(\\d+)$`);
 
 const PINNED_RETRY_NOTE = "Tasks retried pinned (slower, cold place boot).";
+
+/**
+ * The whole body of the boot probe — the smallest script that proves a place
+ * version starts a session. Nothing about the run may leak into it: it must
+ * fail for one reason only, which is that Roblox could not boot the place.
+ */
+export const BOOT_PROBE_SCRIPT = "return 1";
+
+/**
+ * Deadline Roblox is given to run the boot probe, once the place has booted.
+ *
+ * Kept short and independent of the probe's wall-clock budget. Were the two
+ * the same number they would expire together, and a place that booted just
+ * inside the budget would be reported as one Roblox cannot start while its
+ * script ran. `return 1` needs none of this — anything it cannot finish in ten
+ * seconds is a fault Roblox will name for itself.
+ */
+const BOOT_PROBE_TASK_TIMEOUT_MS = 10_000;
 
 const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
@@ -91,6 +109,13 @@ interface RaceDiagnosis {
  * the guard firing proves the entry is stale rather than merely unlucky.
  */
 interface VersionContext {
+	/**
+	 * True when the boot probe passed against this version in this run, which
+	 * rules out the place Roblox cannot load that the runner otherwise falls
+	 * back to naming. A cache hit carries no such proof: its entry says the
+	 * bytes booted when it was written.
+	 */
+	bootProven: boolean;
 	cacheEntry: undefined | { rootDirectory: string; target: UploadCacheTarget };
 	versionNumber: number;
 }
@@ -98,6 +123,12 @@ interface VersionContext {
 interface UploadOutcome {
 	/** True when the version came from the cache instead of a fresh upload. */
 	fromCache: boolean;
+	/**
+	 * Hash of the uploaded place bytes, or undefined when this run keeps no
+	 * cache. Carried out of the upload so the entry is written only once the
+	 * boot probe has proved the version starts.
+	 */
+	hash: string | undefined;
 	uploadMs: number;
 	versionNumber: number;
 }
@@ -150,11 +181,13 @@ export class OpenCloudBackend implements Backend {
 		this.raceWarned = false;
 		this.staleCacheWarned = false;
 		const primary = resolvePrimaryJob(jobs, scriptOverride, workStealing);
-		// timeout is picked from the first job — it's a per-run knob.
+		// timeout and bootProbeTimeout are picked from the first job — both are
+		// per-run knobs, and one run boots one version of one place.
 		const target = toCacheTarget(this.credentials, resolvePlaceFilePath(primary.config));
 
 		const upload = await this.uploadOrReuseAsync(primary.config, target);
 		const executeAsync = async (uploadOutcome: UploadOutcome): Promise<DispatchOutcome> => {
+			await this.verifyBootAsync({ config: primary.config, target, upload: uploadOutcome });
 			return this.dispatchAsync(
 				{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing },
 				primary.config,
@@ -242,7 +275,7 @@ export class OpenCloudBackend implements Backend {
 	}): Promise<ScriptResult> {
 		const guarded = injectVersionGuard(script, version.versionNumber);
 		const first = await this.runner
-			.executeScriptAsync({ script: guarded, timeout })
+			.executeScriptAsync({ bootProven: version.bootProven, script: guarded, timeout })
 			.catch(rethrowOversizedResult);
 		const bootedVersion = parseBootedVersion(first.outputs[0]);
 		if (bootedVersion === undefined) {
@@ -262,7 +295,12 @@ export class OpenCloudBackend implements Backend {
 			});
 		this.warnRace({ bootedVersion, isStaleCache, versionNumber });
 		return this.runner
-			.executeScriptAsync({ placeVersion: versionNumber, script, timeout })
+			.executeScriptAsync({
+				bootProven: version.bootProven,
+				placeVersion: versionNumber,
+				script,
+				timeout,
+			})
 			.catch(rethrowOversizedResult);
 	}
 
@@ -486,6 +524,10 @@ export class OpenCloudBackend implements Backend {
 	 * recorded version, which holds exactly the bytes that were hashed. The
 	 * guard also reports the version it did boot, which is what lets
 	 * {@link invalidateIfBehindHead} drop an entry that is behind head.
+	 *
+	 * Reads the cache but never writes it: an entry means "these bytes boot",
+	 * so only {@link OpenCloudBackend.verifyBootAsync} may record one. The
+	 * hash rides out on the outcome for it to write with.
 	 */
 	private async uploadOrReuseAsync(
 		config: ResolvedConfig,
@@ -498,22 +540,78 @@ export class OpenCloudBackend implements Backend {
 		if (hash !== undefined) {
 			const cached = readCachedVersion(config.rootDir, target, hash);
 			if (cached !== undefined) {
-				return { fromCache: true, uploadMs: Date.now() - start, versionNumber: cached };
+				return {
+					fromCache: true,
+					hash,
+					uploadMs: Date.now() - start,
+					versionNumber: cached,
+				};
 			}
 		}
 
 		const upload = await this.runner.uploadPlaceAsync({
 			placeFilePath: target.placeFilePath,
 		});
-		if (hash !== undefined) {
-			writeCachedVersion(config.rootDir, target, hash, upload.versionNumber);
-		}
 
 		return {
 			fromCache: false,
+			hash,
 			uploadMs: Date.now() - start,
 			versionNumber: upload.versionNumber,
 		};
+	}
+
+	/**
+	 * Prove a freshly uploaded version boots, before any test task rides on it.
+	 *
+	 * Roblox says nothing at all about a place version it cannot start: the
+	 * task is accepted, stays `PROCESSING` past every deadline, and carries no
+	 * error and no log. Left alone that costs the whole run budget and ends in
+	 * a guess. One trivial pinned task answers it in the time a cold boot takes
+	 * — time the first real task would have paid anyway — and with
+	 * `parallel > 1` it leaves a warm server behind instead of starting N cold
+	 * boots at once.
+	 *
+	 * The version is recorded in the upload cache only once it has passed, so
+	 * the entry means "these bytes boot" and a later run may skip the probe on
+	 * the strength of it. A budget of zero turns the probe off, and takes the
+	 * cache entry with it: there is nothing left to record.
+	 */
+	private async verifyBootAsync({
+		config,
+		target,
+		upload,
+	}: {
+		config: ResolvedConfig;
+		target: UploadCacheTarget;
+		upload: UploadOutcome;
+	}): Promise<void> {
+		const budget = config.bootProbeTimeout;
+		if (budget === 0 || upload.fromCache) {
+			return;
+		}
+
+		try {
+			await this.runner.executeScriptAsync({
+				placeVersion: upload.versionNumber,
+				// A wall-clock cap, not a deadline: the question is whether the
+				// place booted, and the runner's boot-lag allowance answers a
+				// different one — it would only delay the verdict.
+				pollBudget: budget,
+				script: BOOT_PROBE_SCRIPT,
+				timeout: Math.min(BOOT_PROBE_TASK_TIMEOUT_MS, budget),
+			});
+		} catch (err) {
+			rethrowBootProbeFailure(err, {
+				budget,
+				placeFilePath: target.placeFilePath,
+				versionNumber: upload.versionNumber,
+			});
+		}
+
+		if (upload.hash !== undefined) {
+			writeCachedVersion(config.rootDir, target, upload.hash, upload.versionNumber);
+		}
 	}
 
 	/**
@@ -637,12 +735,44 @@ function describeVersionMismatch({
 	return `place version ${String(versionNumber)} is not in the boot pool yet — ${booted}.`;
 }
 
+/**
+ * Turn a boot probe that never came back into the one verdict Roblox will not
+ * give: this place version does not start.
+ *
+ * Only a poll timeout earns that reading. The probe is `return 1`, so nothing
+ * about it can fail on its own — but the call still travels over the same API
+ * as everything else, and a 401 or a 429 says something about the request, not
+ * about the place. Those pass through untouched.
+ *
+ * The remedy names Studio because Studio is the only thing that says *why*:
+ * Open Cloud reports no state, no error and no log for a place it could not
+ * load, and there is no other endpoint to read.
+ */
+function rethrowBootProbeFailure(
+	err: unknown,
+	context: { budget: number; placeFilePath: string; versionNumber: number },
+): never {
+	if (errorChain(err).every((entry) => !(entry instanceof PollTimeoutError))) {
+		throw err;
+	}
+
+	const lines = [
+		`Place version ${String(context.versionNumber)} cannot be started by Open Cloud.`,
+		`A trivial script against it also never ran (${String(Math.round(context.budget / 1000))}s).`,
+		"Roblox reports no state, no error, and no log for a place it cannot load.",
+		`Open ${context.placeFilePath} in Studio, or run with`,
+		"--backend=studio-cli, to see why it will not load.",
+	];
+	throw new Error(lines.join("\n"), { cause: err });
+}
+
 function toVersionContext(
 	rootDirectory: string,
 	target: UploadCacheTarget,
 	upload: UploadOutcome,
 ): VersionContext {
 	return {
+		bootProven: !upload.fromCache,
 		cacheEntry: upload.fromCache ? { rootDirectory, target } : undefined,
 		versionNumber: upload.versionNumber,
 	};
