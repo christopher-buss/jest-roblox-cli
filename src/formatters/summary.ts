@@ -230,20 +230,29 @@ export function formatTestFilesLine(counts: SummaryCounts, styles: Styles): stri
 }
 
 /**
- * The file-level counts of one run. A file with an exec error is failed even
- * though it reported no failing tests; one that reported neither a failure nor
- * a pass ran nothing, so it is skipped rather than passed.
+ * The file-level counts of one run, and the one rule for which bucket a file
+ * falls in — the `▶ <project>  …` header counts through here too, so a single
+ * report cannot call the same file two different things.
+ *
+ * A file with an exec error is failed even though it reported no failing tests.
+ * Past that it follows vitest, which buckets a file on its own mode rather than
+ * on a tally of what ran inside it: `skipped` is vitest's `mode: "skip"`, which
+ * it sets only when a file has tasks and every one of them is skipped. A file
+ * that collected nothing keeps `mode: "run"` and passes, so it does here too.
  */
 export function countFileBuckets(result: JestResult): SummaryCounts {
-	const execErrorFiles = result.testResults.filter(hasExecError).length;
-	const totalFiles = result.testResults.length;
-	const failed =
-		result.testResults.filter((file) => file.numFailingTests > 0).length + execErrorFiles;
-	const skipped = result.testResults.filter(
-		(file) => file.numFailingTests === 0 && file.numPassingTests === 0 && !hasExecError(file),
-	).length;
+	let failed = 0;
+	let skipped = 0;
 
-	return { failed, passed: totalFiles - failed - skipped, skipped };
+	for (const file of result.testResults) {
+		if (file.numFailingTests > 0 || hasExecError(file)) {
+			failed++;
+		} else if (file.numPassingTests === 0 && file.numPendingTests > 0) {
+			skipped++;
+		}
+	}
+
+	return { failed, passed: result.testResults.length - failed - skipped, skipped };
 }
 
 /**

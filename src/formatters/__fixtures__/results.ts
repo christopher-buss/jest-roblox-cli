@@ -486,3 +486,36 @@ export const MINIMAL_RESULT: JestResult = {
 		},
 	],
 };
+
+/**
+ * A run where one file collected nothing at all — no tests, no exec error.
+ * Vitest calls such a file passed, so both reports must agree on that.
+ */
+export const EMPTY_FILE_RESULT: JestResult = {
+	numFailedTests: 0,
+	numPassedTests: 3,
+	numPendingTests: 0,
+	numTotalTests: 3,
+	startTime: 1700000000000,
+	success: true,
+	testResults: [
+		{
+			numFailingTests: 0,
+			numPassingTests: 3,
+			numPendingTests: 0,
+			testFilePath: "src/utils.spec.ts",
+			testResults: [
+				createTestCase({ fullName: "Utils add works", title: "add works" }),
+				createTestCase({ fullName: "Utils sub works", title: "sub works" }),
+				createTestCase({ fullName: "Utils mul works", title: "mul works" }),
+			],
+		},
+		{
+			numFailingTests: 0,
+			numPassingTests: 0,
+			numPendingTests: 0,
+			testFilePath: "src/empty.spec.ts",
+			testResults: [],
+		},
+	],
+};

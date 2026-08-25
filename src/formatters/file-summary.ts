@@ -9,6 +9,7 @@ import {
 } from "../types/jest-result.ts";
 import { type FormatOptions, resolveDisplayPath } from "./shared.ts";
 import { formatDuration, type Styles } from "./styles.ts";
+import { countFileBuckets } from "./summary.ts";
 
 export interface ProjectStats {
 	durationMs: number;
@@ -51,28 +52,21 @@ export function formatFileSummary(
 }
 
 export function computeProjectStats(result: JestResult): ProjectStats {
+	// The file counts come from countFileBuckets rather than a second walk of
+	// the same list: the header and the trailing `Test Files` row report the
+	// same files, so they answer to one predicate.
+	const buckets = countFileBuckets(result);
+
 	let durationMs = 0;
-	let failedFiles = 0;
-	let passedFiles = 0;
-	let skippedFiles = 0;
-
 	for (const file of result.testResults) {
-		if (file.numFailingTests > 0 || hasExecError(file)) {
-			failedFiles++;
-		} else if (file.numPassingTests === 0 && file.numPendingTests > 0) {
-			skippedFiles++;
-		} else {
-			passedFiles++;
-		}
-
 		durationMs += sumFileDuration(file);
 	}
 
 	return {
 		durationMs,
-		failedFiles,
-		passedFiles,
-		skippedFiles,
+		failedFiles: buckets.failed,
+		passedFiles: buckets.passed,
+		skippedFiles: buckets.skipped,
 		totalTests: result.numTotalTests,
 	};
 }

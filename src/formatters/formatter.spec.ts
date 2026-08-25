@@ -13,6 +13,7 @@ import type { SourceMapper, SourceSnippet } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
 import type { TimingResult } from "../types/timing.ts";
 import {
+	EMPTY_FILE_RESULT,
 	EXEC_ERROR_RESULT,
 	FAILING_RESULT,
 	LOADSTRING_ERROR_RESULT,
@@ -142,6 +143,17 @@ describe(formatTestSummary, () => {
 
 		expect(summary).toContain(" Test Files  1 failed | 1 passed (2)");
 		expect(summary).toContain("      Tests  1 failed | 4 passed | 1 skipped (6)");
+	});
+
+	it("should count a file that collected no tests as passed", () => {
+		expect.assertions(2);
+
+		const summary = stripVTControlCharacters(
+			formatTestSummary(EMPTY_FILE_RESULT, createTiming(1000)),
+		);
+
+		expect(summary).toContain(" Test Files  2 passed (2)");
+		expect(summary).not.toContain("skipped");
 	});
 
 	it("should hide snapshots line when no snapshot data", () => {
@@ -3072,6 +3084,18 @@ describe(formatProjectHeader, () => {
 		const plain = stripVTControlCharacters(output);
 
 		expect(plain).toMatch(/\d+ms/);
+	});
+
+	// The header and the trailing `Test Files` row bucket the same files, so
+	// this pins the empty-file case on both sides of the report.
+	it("should count a file that collected no tests as passed", () => {
+		expect.assertions(2);
+
+		const output = formatProjectHeader({ displayName: "core", result: EMPTY_FILE_RESULT });
+		const plain = stripVTControlCharacters(output);
+
+		expect(plain).toContain("2 passed");
+		expect(plain).not.toContain("skipped");
 	});
 });
 
