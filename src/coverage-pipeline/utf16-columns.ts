@@ -1,8 +1,5 @@
-import type { Utf8OffsetMap } from "@isentinel/luau-ast";
-import { createUtf8OffsetMap } from "@isentinel/luau-ast";
+import { indexSourceBytes } from "@isentinel/luau-ast";
 import type { LuauSpan } from "@isentinel/luau-ast/ast";
-
-import { Buffer } from "node:buffer";
 
 import type { CollectorResult } from "./coverage-accumulator.ts";
 
@@ -21,13 +18,14 @@ type ColumnConverter = (line: number, column: number) => number;
  * numbers enter the pipeline.
  */
 export function toUtf16Columns(result: CollectorResult, source: string): CollectorResult {
-	// An all-ASCII file — the overwhelming majority — has byte columns that are
-	// already UTF-16 columns.
-	if (!hasMultiByte(source)) {
+	const bytes = indexSourceBytes(source);
+	// An all-ASCII file — the overwhelming majority — encodes to one byte per
+	// UTF-16 unit, so every column already is a UTF-16 column.
+	if (bytes.byteLength === source.length) {
 		return result;
 	}
 
-	const convert = createColumnConverter(source);
+	const convert = bytes.toUtf16Column;
 
 	return {
 		branches: result.branches.map((branch) => {
@@ -43,40 +41,6 @@ export function toUtf16Columns(result: CollectorResult, source: string): Collect
 		wrapProbes: result.wrapProbes.map((probe) => {
 			return { ...probe, exprLocation: convertSpan(probe.exprLocation, convert) };
 		}),
-	};
-}
-
-/**
- * Does `text` encode to more UTF-8 bytes than it has UTF-16 units? Every code
- * point outside ASCII does, so the two lengths agree exactly when nothing in
- * `text` needs converting.
- */
-function hasMultiByte(text: string): boolean {
-	return Buffer.byteLength(text, "utf-8") !== text.length;
-}
-
-function createColumnConverter(source: string): ColumnConverter {
-	// Map only the lines that hold a multi-byte character; the rest already
-	// agree. Split on "\n" alone, keeping any carriage return: lute counts
-	// bytes from the start of the line, so dropping one would shift every
-	// column past it.
-	const multiByteLines = new Map<number, Utf8OffsetMap>();
-	for (const [index, line] of source.split("\n").entries()) {
-		if (hasMultiByte(line)) {
-			multiByteLines.set(index + 1, createUtf8OffsetMap(line));
-		}
-	}
-
-	return (line, column) => {
-		const offsets = multiByteLines.get(line);
-		if (offsets === undefined) {
-			return column;
-		}
-
-		// Both units count from 1 here, and the map from 0. An end column sits
-		// one past the last byte, which the map answers with one past the last
-		// UTF-16 unit.
-		return offsets.toUtf16(column - 1) + 1;
 	};
 }
 
@@ -96,9 +60,15 @@ function convertSpan(span: LuauSpan, convert: ColumnConverter): LuauSpan {
 function convertBody<
 	T extends { bodyFirstColumn: number; bodyFirstLine: number; location: LuauSpan },
 >(node: T, convert: ColumnConverter): T {
+	// A `bodyFirstLine` of 0 is the "wrap probe, not point probe" sentinel: it
+	// names no line, so there is nothing to convert it against.
+	const isPointProbe = node.bodyFirstLine !== 0;
+
 	return {
 		...node,
-		bodyFirstColumn: convert(node.bodyFirstLine, node.bodyFirstColumn),
+		bodyFirstColumn: isPointProbe
+			? convert(node.bodyFirstLine, node.bodyFirstColumn)
+			: node.bodyFirstColumn,
 		location: convertSpan(node.location, convert),
 	};
 }

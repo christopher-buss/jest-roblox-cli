@@ -52,7 +52,13 @@ export { spawnLute, writeTemporaryLuauScript } from "./lute-spawner.ts";
 export type { CommentSpan, LuauParser, ParseFailure, ParseResult, ParseSuccess } from "./parser.ts";
 export { loadLuauParser } from "./parser.ts";
 
-// Byte offsets
+// Byte offsets and span math
+export type { ByteRange, SourceBytes } from "./source-bytes.ts";
+export { indexSourceBytes } from "./source-bytes.ts";
+
+// Span identity
+export { bindingKey } from "./span-identity.ts";
+
 export type { Utf8OffsetMap } from "./utf8-offsets.ts";
 export { createUtf8OffsetMap } from "./utf8-offsets.ts";
 
