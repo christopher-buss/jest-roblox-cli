@@ -1,10 +1,15 @@
-import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
-import { createFixtureSandbox, createOpenCloudEnvironment, runCliAsync } from "../cli/helpers.ts";
+import {
+	buildPassingJestOutput,
+	createFixtureSandbox,
+	createOpenCloudEnvironment,
+	rojoOnPath,
+	runCliAsync,
+} from "../cli/helpers.ts";
 
 // A workspace run resolves per-package configs; the file at the invocation
 // directory is bootstrap only, read for `workspace.root` / `workspace.packages`
@@ -56,40 +61,6 @@ interface RunSnapshot {
 	stdout: string;
 }
 
-function rojoOnPath(): boolean {
-	try {
-		cp.execFileSync("rojo", ["--version"], { stdio: "pipe", windowsHide: true });
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function luteOnPath(): boolean {
-	try {
-		cp.execFileSync("lute", ["--version"], { stdio: "pipe", windowsHide: true });
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function hasExecutableOnPath(): boolean {
-	return rojoOnPath() || luteOnPath();
-}
-
-function passingJestOutput(): string {
-	return JSON.stringify({
-		numFailedTests: 0,
-		numPassedTests: 1,
-		numPendingTests: 0,
-		numTotalTests: 1,
-		startTime: 0,
-		success: true,
-		testResults: [],
-	});
-}
-
 /**
  * Every file under the sandbox, sandbox-relative and sorted. The root config
  * itself is dropped so the two listings differ only by what the RUN wrote.
@@ -126,7 +97,7 @@ function normalizeOutput(text: string): string {
 
 async function runWorkspaceAsync(sandbox: string): Promise<RunSnapshot> {
 	const server = await startFakeOpenCloudServerAsync([
-		{ jestOutput: passingJestOutput(), pkg: "@e2e/nested", project: "@e2e/nested" },
+		{ jestOutput: buildPassingJestOutput(), pkg: "@e2e/nested", project: "@e2e/nested" },
 	]);
 
 	const result = await runCliAsync(CLI_ARGUMENTS, {
@@ -144,7 +115,7 @@ async function runWorkspaceAsync(sandbox: string): Promise<RunSnapshot> {
 }
 
 describe("workspace run vs a config at the invocation directory", () => {
-	it.skipIf(!hasExecutableOnPath())(
+	it.skipIf(!rojoOnPath())(
 		"should produce the same output, files, and exit code with a hostile root config",
 		async () => {
 			expect.assertions(5);

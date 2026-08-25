@@ -13,20 +13,20 @@ import * as path from "node:path";
 // To force a clean rebuild, delete `out/` before invoking vitest.
 //
 // Under Nx the compile is normally done upstream by the cacheable
-// `e2e-live-fixture` target (every live shard `dependsOn` it), so this hook
-// just hits the sentinel and returns — which is what lets the shards run in
-// parallel without racing on `out/`. It stays as the on-demand fallback for
-// direct `vitest run --project live` invocations.
+// `e2e-live-fixture` target, which `e2e-live` `dependsOn`, so this hook just
+// hits the sentinel and returns — which is what keeps the spec files from
+// racing on `out/`. It stays as the on-demand fallback for direct
+// `vitest run --project live` invocations.
 
 const FIXTURE_DIR = path.resolve(import.meta.dirname);
 const SENTINEL = path.join(FIXTURE_DIR, "out", "shared", "example.luau");
 
 export default function setup(): void {
-	// Live tests themselves are gated on JEST_ROBLOX_LIVE=1 (see specs in
-	// test/e2e/{contract,project,workspace}). Skip the rbxtsc rebuild when
-	// live tests won't run — avoids requiring fixture deps in environments
-	// (e.g. the standalone repo's CI) where the fixture's package.json isn't
-	// part of the pnpm workspace.
+	// Live tests themselves are gated on JEST_ROBLOX_LIVE=1 (see the specs in
+	// test/e2e/live/). Skip the rbxtsc rebuild when live tests won't run —
+	// avoids requiring fixture deps in environments (e.g. the standalone
+	// repo's CI) where the fixture's package.json isn't part of the pnpm
+	// workspace.
 	if (process.env["JEST_ROBLOX_LIVE"] !== "1") {
 		return;
 	}

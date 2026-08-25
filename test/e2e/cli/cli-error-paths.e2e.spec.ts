@@ -2,9 +2,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
+import type { JestEnvelopePayload } from "./helpers.ts";
 import {
 	buildMixedOutput,
-	buildPassingPayload,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	createRbxtsFixtureSandbox,
@@ -13,14 +13,6 @@ import {
 
 const LUAU_FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
-
-/**
- * Wall clock for the one case that has to outlast a real poll budget. The
- * runner keeps polling for the boot-lag grace after the task deadline, so
- * the CLI cannot report a timeout any sooner than that grace — and the grace
- * is fixed, not a fraction of `--timeout`.
- */
-const NEVER_COMPLETES_TIMEOUT_MS = 90_000;
 
 describe("cli error paths", () => {
 	describe("exit codes", () => {
@@ -71,37 +63,16 @@ describe("cli error paths", () => {
 			);
 		});
 
-		it(
-			"should exit non-zero naming the task when the backend never completes",
-			async () => {
-				expect.assertions(3);
-
-				const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-				const server = await startFakeOpenCloudServerAsync([
-					{
-						jestOutput: buildMixedOutput(buildPassingPayload()),
-						// Stall on PROCESSING for good. The backend spends the
-						// task deadline plus the boot-lag grace before it gives
-						// up, and the grace does not scale with the deadline —
-						// so this test costs that grace in real seconds however
-						// short `--timeout` is.
-						pollsBeforeComplete: 999,
-					},
-				]);
-
-				const result = await runCliAsync(["--timeout", "2000"], {
-					cwd: sandbox,
-					env: createOpenCloudEnvironment(server.baseUrl),
-					timeoutMs: NEVER_COMPLETES_TIMEOUT_MS,
-				});
-
-				expect(result.exitCode).toBeGreaterThan(0);
-				expect(result.stderr).toMatch(/timed out/i);
-				expect(result.stderr).toMatch(/last observed state: PROCESSING/);
-			},
-			NEVER_COMPLETES_TIMEOUT_MS + 10_000,
-		);
-
+		// A poll that never settles used to be tested here too, at 48s of real
+		// wall-clock: the runner keeps polling for a fixed 45s boot-lag grace
+		// after the task deadline, and the grace does not scale with
+		// `--timeout`. It bought nothing that was not already covered twice
+		// over. `libs/roblox-runner/src/ocale-runner.spec.ts` asserts the whole
+		// message — task path, `last observed state: PROCESSING`, the
+		// deadline-plus-allowance phrasing — under fake timers, instantly. And
+		// every backend error reaches the same `printError` + exit 2 boundary in
+		// `cli.ts`, which the task-failure case below already drives in about a
+		// second.
 		it("should surface the Roblox error code and log tail when a task fails", async () => {
 			expect.assertions(3);
 
@@ -153,7 +124,7 @@ describe("cli error paths", () => {
 	});
 });
 
-function buildFailingPayload(): ReturnType<typeof buildPassingPayload> {
+function buildFailingPayload(): JestEnvelopePayload {
 	return {
 		runner: {
 			setup: 0.05,

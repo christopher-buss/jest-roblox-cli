@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import type { TestProjectInlineConfiguration } from "vitest/config";
-import { defineConfig } from "vitest/config";
+import { defaultExclude, defineConfig } from "vitest/config";
 
 const DRIVE_LETTER_START_REGEX = /^[A-Za-z]:\//;
 
@@ -33,6 +33,14 @@ const luauPlugin = {
 };
 
 const setupFiles = ["./test/setup/enable-colors.ts", "./test/setup/jest-extended.ts"];
+
+/**
+ * The one boundary that decides which project an e2e spec joins. Specs under
+ * here reach real Open Cloud and run in `live`; every other spec under
+ * `test/e2e/` is deterministic and runs in `e2e`. Declared once and used by
+ * both projects so the two globs cannot drift apart.
+ */
+const LIVE_DIRECTORY = "test/e2e/live";
 
 // This package has fixture configs that import `@isentinel/jest-roblox`.
 // Avoid the broad `source` condition here so those self-imports keep exercising
@@ -272,10 +280,44 @@ export default defineConfig({
 						include: [],
 					},
 					clearMocks: true,
-					include: ["test/e2e/cli/**/*.e2e.spec.ts"],
+					// A live-gated spec misfiled outside `LIVE_DIRECTORY` would
+					// otherwise reach the real wire from here, because CI
+					// exports the flag and the credentials for the whole `nx
+					// affected` command. Blanking it makes that spec skip
+					// instead. Nothing else reads it — `runCliAsync`'s allow-list
+					// never forwards it to a child.
+					env: {
+						JEST_ROBLOX_LIVE: "",
+					},
+					// `*.spec.ts`, not `*.e2e.spec.ts`, so no file under
+					// `test/e2e/` can miss both projects. The price is two
+					// excludes: `fixtures/**` holds Jest-on-Roblox specs, which
+					// are inputs rather than tests, and `defaultExclude` must be
+					// spread back in rather than replaced — the live fixture's
+					// `node_modules` symlinks this package onto itself, so
+					// without `**/node_modules/**` the glob collects every spec
+					// a second time through the loop.
+					exclude: [...defaultExclude, `${LIVE_DIRECTORY}/**`, "test/e2e/fixtures/**"],
+					// `createFixtureSandbox` tears its temp tree down in an
+					// `onTestFinished` hook, and a `--coverage` run leaves a
+					// whole instrumented shadow tree behind. Deleting that many
+					// small files outruns the 10s default `hookTimeout` on
+					// Windows once the workspace specs are competing for I/O —
+					// which reads as a failure in a test that already passed.
+					hookTimeout: 30_000,
+					include: ["test/e2e/**/*.spec.ts"],
 					restoreMocks: true,
 					setupFiles,
-					testTimeout: 30_000,
+					// The `--typecheckOnly` specs spawn a real tsgo build, which
+					// is the slowest thing in this project by a wide margin and
+					// scales with how many other files are running. Measured at
+					// 14s idle and 38s with the rest of the project competing,
+					// so 30s was a coin flip once the workspace specs moved in
+					// here — and a timeout in one `it` corrupts the assertion
+					// count of the next, so it surfaces as two unrelated-looking
+					// failures. Same reason the integration project sits above
+					// the default.
+					testTimeout: 60_000,
 					unstubEnvs: true,
 				},
 			},
@@ -291,13 +333,13 @@ export default defineConfig({
 						include: [],
 					},
 					clearMocks: true,
-					// Files in a shard run in parallel: execution is
-					// pinned to each run's uploaded version (no clobber),
-					// streaming keys are per-run UUIDs, and each test uses
-					// its own temp sandbox, so concurrent live runs do not
-					// collide. Shards run in parallel too (nx); the fixture
-					// compile is hoisted to the e2e-live-fixture target so
-					// parallel shards never race on out/.
+					// Files here run in parallel, and so do other checkouts
+					// running against the same place: execution is pinned to
+					// each run's uploaded version (no clobber), streaming keys
+					// are per-run UUIDs, and each test builds its own temp
+					// sandbox, so concurrent live runs do not collide. The
+					// fixture compile is hoisted to the e2e-live-fixture target
+					// so nothing races on out/.
 					env: {
 						// Concurrent runs across processes share one place's
 						// per-minute upload quota, so a burst can 429. The
@@ -307,16 +349,16 @@ export default defineConfig({
 						JEST_ROBLOX_OCALE_MAX_RETRIES: "8",
 					},
 					globalSetup: ["./test/e2e/fixtures/live-place/global-setup.ts"],
-					include: [
-						"test/e2e/contract/**/*.spec.ts",
-						"test/e2e/project/**/*.e2e.spec.ts",
-						"test/e2e/workspace/**/*.e2e.spec.ts",
-					],
+					// Every spec that reaches real Open Cloud lives here and
+					// nowhere else. Both projects glob on `LIVE_DIRECTORY` and
+					// on the same `*.spec.ts` suffix, so the two halves cannot
+					// drift into a gap where a file belongs to neither.
+					include: [`${LIVE_DIRECTORY}/**/*.spec.ts`],
 					pool: "forks",
 					restoreMocks: true,
 					// Live tests hit the real Open Cloud API; transient network
 					// blips (latency, 5xx, OCALE rate limits) self-heal on a
-					// retry instead of forcing a manual shard re-run. Scoped to
+					// retry instead of forcing a manual re-run. Scoped to
 					// `live` only — `unit`/`integration`/`e2e` stay at 0 so real
 					// failures surface immediately.
 					retry: 2,

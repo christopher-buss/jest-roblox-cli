@@ -25,6 +25,9 @@ describe("cli binary", () => {
 		expect(result.stdout).toMatch(/^\d+\.\d+\.\d+/);
 	});
 
+	// Discovery runs before backend resolution, so reaching "No backend
+	// available" is itself the proof that discovery found the spec files — a
+	// discovery failure prints "No test files found" and stops earlier.
 	it("should load luau config and find test files", () => {
 		expect.assertions(3);
 
@@ -59,55 +62,19 @@ describe("cli binary", () => {
 		expect(result.stderr).not.toContain("No backend available");
 	});
 
-	describe("--parallel", () => {
-		it("should reject --parallel 0 with a clear error", () => {
-			expect.assertions(2);
+	// Which argv `parseArgs` accepts and rejects is settled in `cli.spec.ts`
+	// (`auto`, the equals form, bare, `0`, `-1`, `xyz`) under a 100% branch
+	// threshold. One case survives here, for the only thing a subprocess adds:
+	// a parse throw reaching the exit code and stderr rather than a stack trace.
+	it("should reject --parallel 0 with a clear error", () => {
+		expect.assertions(2);
 
-			const result = runCli(
-				["--parallel", "0", "--typecheckOnly", "--passWithNoTests"],
-				RBXTS_FIXTURE,
-			);
+		const result = runCli(
+			["--parallel", "0", "--typecheckOnly", "--passWithNoTests"],
+			RBXTS_FIXTURE,
+		);
 
-			expect(result.exitCode).toBeGreaterThan(0);
-			expect(result.stderr).toContain("Invalid --parallel value");
-		});
-
-		it("should reject --parallel=xyz with a clear error", () => {
-			expect.assertions(2);
-
-			const result = runCli(
-				["--parallel=xyz", "--typecheckOnly", "--passWithNoTests"],
-				RBXTS_FIXTURE,
-			);
-
-			expect(result.exitCode).toBeGreaterThan(0);
-			expect(result.stderr).toContain("Invalid --parallel value");
-		});
-
-		it("should accept --parallel auto", () => {
-			expect.assertions(2);
-
-			// A valid `--parallel` is accepted at parse time; the type-only
-			// short-circuit then exits 0 (no Type Tests + `--passWithNoTests`).
-			const result = runCli(
-				["--parallel", "auto", "--typecheckOnly", "--passWithNoTests"],
-				RBXTS_FIXTURE,
-			);
-
-			expect(result.exitCode).toBe(0);
-			expect(result.stderr).not.toContain("Invalid --parallel");
-		});
-
-		it("should accept --parallel=4 equals form", () => {
-			expect.assertions(2);
-
-			const result = runCli(
-				["--parallel=4", "--typecheckOnly", "--passWithNoTests"],
-				RBXTS_FIXTURE,
-			);
-
-			expect(result.exitCode).toBe(0);
-			expect(result.stderr).not.toContain("Invalid --parallel");
-		});
+		expect(result.exitCode).toBeGreaterThan(0);
+		expect(result.stderr).toContain("Invalid --parallel value");
 	});
 });

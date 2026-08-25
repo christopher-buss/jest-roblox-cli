@@ -1,17 +1,17 @@
 # live-place fixture
 
 Pre-built Roblox place file for the live OCALE e2e tests in
-`tools/jest-roblox-cli/test/e2e/{contract,project,workspace}`.
+`tools/jest-roblox-cli/test/e2e/live/`.
 
 ## What's pre-built vs. rebuilt at test time
 
 The committed `game.rbxl` is consumed **only** by the contract test
-(`test/e2e/contract/open-cloud-contract.spec.ts`), which uploads it directly
+(`test/e2e/live/contract.e2e.spec.ts`), which uploads it directly
 as a sealed binary to verify Open Cloud's response shape. No CLI subprocess,
 no Rojo at test time.
 
-The project (`test/e2e/project/`) and workspace (`test/e2e/workspace/`)
-tests run the full CLI pipeline against the fixture. The CLI's
+The pipeline tests (`test/e2e/live/pipeline.e2e.spec.ts`) run the full CLI
+pipeline against the fixture. The CLI's
 `runMultiProject` path writes per-project stubs into the rojo source tree
 and rebuilds the rbxl — that rebuild needs `out/` (compiled Luau) and
 `include/` (rbxts runtime) to exist. Both are gitignored regenerated
@@ -30,9 +30,11 @@ out-of-band when the contract test's pre-built copy needs refreshing
   to merge:
   - `ReplicatedStorage.PkgShared` <- `out/shared/`
   - `ServerScriptService.PkgServer` <- `out/server/`
-- One passing `.spec.ts` per mount, so:
-  - Contract/project tests assert "1 passed" against either mount.
-  - Workspace tests assert "2 passed" across both mounts.
+- One passing `.spec.ts` on the shared mount and four on the server mount
+  (`server-thing` plus three same-basename `index.spec` files), so:
+  - The both-mounts run asserts "5 passed".
+  - The namesake run narrows to "1 passed" out of the three that share a
+    basename.
 
 ## Versions baked into the committed `game.rbxl`
 

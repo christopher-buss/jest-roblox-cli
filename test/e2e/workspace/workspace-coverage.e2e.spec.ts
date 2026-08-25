@@ -1,11 +1,17 @@
 import { type } from "arktype";
-import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
-import { createFixtureSandbox, readJsonSync, runCliAsync } from "../cli/helpers.ts";
+import {
+	buildPassingJestOutput,
+	createFixtureSandbox,
+	createOpenCloudEnvironment,
+	readJsonSync,
+	rojoOnPath,
+	runCliAsync,
+} from "../cli/helpers.ts";
 
 // Regression: `--workspace --coverage` against a package whose rojo
 // `$path` mounts a directory holding BOTH `*.spec.luau` and non-spec helpers
@@ -15,9 +21,10 @@ import { createFixtureSandbox, readJsonSync, runCliAsync } from "../cli/helpers.
 // filtered specs out — the shadow held only the instrumented helper and
 // testMatch returned zero matches.
 //
-// All prior workspace e2e tests run without `--coverage`, and the only
-// coverage e2e (`project-pipeline.e2e.spec.ts`) is `JEST_ROBLOX_LIVE`-gated.
-// The bug lived squarely in the intersection of those missing axes.
+// All other workspace e2e tests run without `--coverage`, and the only other
+// coverage e2e (`test/e2e/live/pipeline.e2e.spec.ts`) is
+// `JEST_ROBLOX_LIVE`-gated. The bug lived squarely in the intersection of those
+// missing axes.
 
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 const RUN_TIMEOUT_MS = 60_000;
@@ -26,37 +33,24 @@ const RUN_TIMEOUT_MS = 60_000;
 // `src/coverage-pipeline/manifest.ts` and is validated by the CLI itself.
 const manifestFilesSchema = type({ files: "object" });
 
-/** The `test:` knobs a case here varies; everything else is held fixed. */
+/** What a case here varies; everything else is held fixed. */
 interface VendoredMountOverrides {
-	collectCoverageFrom?: Array<string>;
-	coveragePathIgnorePatterns?: Array<string>;
+	/**
+	 * Dropped from the emitted config when omitted. One case needs it absent,
+	 * to prove `coveragePathIgnorePatterns` narrows the universe on its own
+	 * rather than riding on the `luauRoots` short-circuit.
+	 */
+	luauRoots?: Array<string>;
+	/** Folded into `test:`. */
+	test?: {
+		collectCoverageFrom?: Array<string>;
+		coveragePathIgnorePatterns?: Array<string>;
+	};
 }
 
 function readManifestFileKeys(manifestPath: string): Array<string> {
 	const manifest = manifestFilesSchema.assert(readJsonSync(manifestPath));
 	return Object.keys(manifest.files);
-}
-
-function rojoOnPath(): boolean {
-	try {
-		cp.execFileSync("rojo", ["--version"], { stdio: "pipe", windowsHide: true });
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function luteOnPath(): boolean {
-	try {
-		cp.execFileSync("lute", ["--version"], { stdio: "pipe", windowsHide: true });
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function hasExecutableOnPath(): boolean {
-	return rojoOnPath() || luteOnPath();
 }
 
 /**
@@ -65,9 +59,9 @@ function hasExecutableOnPath(): boolean {
  * test is about. Written from an object rather than hand-indented lines so the
  * differing key is the only thing a reader has to find.
  */
-function writeVendoredMountConfig(sandbox: string, testOverrides: VendoredMountOverrides): void {
+function writeVendoredMountConfig(sandbox: string, overrides: VendoredMountOverrides): void {
 	const config = {
-		luauRoots: ["src"],
+		...(overrides.luauRoots === undefined ? {} : { luauRoots: overrides.luauRoots }),
 		rojoProject: "test.project.json",
 		test: {
 			passWithNoTests: true,
@@ -79,7 +73,7 @@ function writeVendoredMountConfig(sandbox: string, testOverrides: VendoredMountO
 					},
 				},
 			],
-			...testOverrides,
+			...overrides.test,
 		},
 	};
 	const serialized = JSON.stringify(config, undefined, "\t");
@@ -90,7 +84,7 @@ function writeVendoredMountConfig(sandbox: string, testOverrides: VendoredMountO
 }
 
 describe("workspace coverage — $path mounts specs alongside helpers", () => {
-	it.skipIf(!hasExecutableOnPath())(
+	it.skipIf(!rojoOnPath())(
 		"should preserve spec files in the shadow and reach backend dispatch",
 		async () => {
 			expect.assertions(4);
@@ -99,7 +93,7 @@ describe("workspace coverage — $path mounts specs alongside helpers", () => {
 
 			const server = await startFakeOpenCloudServerAsync([
 				{
-					jestOutput: passingJestOutput(),
+					jestOutput: buildPassingJestOutput(),
 					pkg: "@e2e/nested",
 					project: "@e2e/nested",
 				},
@@ -109,12 +103,7 @@ describe("workspace coverage — $path mounts specs alongside helpers", () => {
 				["--workspace", "--packages=@e2e/nested", "--coverage", "--backend", "open-cloud"],
 				{
 					cwd: sandbox,
-					env: {
-						JEST_ROBLOX_OPEN_CLOUD_BASE_URL: server.baseUrl,
-						ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
-						ROBLOX_PLACE_ID: "456",
-						ROBLOX_UNIVERSE_ID: "123",
-					},
+					env: createOpenCloudEnvironment(server.baseUrl),
 					timeoutMs: RUN_TIMEOUT_MS,
 				},
 			);
@@ -147,7 +136,7 @@ describe("workspace coverage — $path mounts specs alongside helpers", () => {
 // verbatim — dropping it instead would break the place, and probing it anyway
 // would put the payload back.
 describe("workspace coverage — collectCoverageFrom scopes instrumentation", () => {
-	it.skipIf(!hasExecutableOnPath())(
+	it.skipIf(!rojoOnPath())(
 		"should mirror an out-of-universe file verbatim and leave it out of the manifest",
 		async () => {
 			expect.assertions(5);
@@ -159,12 +148,13 @@ describe("workspace coverage — collectCoverageFrom scopes instrumentation", ()
 				extraSource,
 			);
 			writeVendoredMountConfig(sandbox, {
-				collectCoverageFrom: ["packages/vendored-mount/src/init.luau"],
+				luauRoots: ["src"],
+				test: { collectCoverageFrom: ["packages/vendored-mount/src/init.luau"] },
 			});
 
 			const server = await startFakeOpenCloudServerAsync([
 				{
-					jestOutput: passingJestOutput(),
+					jestOutput: buildPassingJestOutput(),
 					pkg: "@e2e/vendored-mount",
 					project: "@e2e/vendored-mount",
 				},
@@ -180,12 +170,7 @@ describe("workspace coverage — collectCoverageFrom scopes instrumentation", ()
 				],
 				{
 					cwd: sandbox,
-					env: {
-						JEST_ROBLOX_OPEN_CLOUD_BASE_URL: server.baseUrl,
-						ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
-						ROBLOX_PLACE_ID: "456",
-						ROBLOX_UNIVERSE_ID: "123",
-					},
+					env: createOpenCloudEnvironment(server.baseUrl),
 					timeoutMs: RUN_TIMEOUT_MS,
 				},
 			);
@@ -214,18 +199,6 @@ describe("workspace coverage — collectCoverageFrom scopes instrumentation", ()
 	);
 });
 
-function passingJestOutput(): string {
-	return JSON.stringify({
-		numFailedTests: 0,
-		numPassedTests: 1,
-		numPendingTests: 0,
-		numTotalTests: 1,
-		startTime: 0,
-		success: true,
-		testResults: [],
-	});
-}
-
 // Regression: `--workspace --coverage` against a package whose rojo
 // `test.project.json` mounts multiple `$path` entries (e.g. `src/` PLUS a
 // vendored `Packages/` dir). Pre-fix, `discoverPackageLuauRoots` walked every
@@ -240,7 +213,7 @@ function passingJestOutput(): string {
 // vendored mount must not appear under the shadow.
 
 describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots", () => {
-	it.skipIf(!hasExecutableOnPath())(
+	it.skipIf(!rojoOnPath())(
 		"should instrument only the luauRoot-listed mounts, skipping vendored $path dirs",
 		async () => {
 			expect.assertions(5);
@@ -249,7 +222,7 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 
 			const server = await startFakeOpenCloudServerAsync([
 				{
-					jestOutput: passingJestOutput(),
+					jestOutput: buildPassingJestOutput(),
 					pkg: "@e2e/vendored-mount",
 					project: "@e2e/vendored-mount",
 				},
@@ -265,12 +238,7 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 				],
 				{
 					cwd: sandbox,
-					env: {
-						JEST_ROBLOX_OPEN_CLOUD_BASE_URL: server.baseUrl,
-						ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
-						ROBLOX_PLACE_ID: "456",
-						ROBLOX_UNIVERSE_ID: "123",
-					},
+					env: createOpenCloudEnvironment(server.baseUrl),
 					timeoutMs: RUN_TIMEOUT_MS,
 				},
 			);
@@ -295,7 +263,7 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 		RUN_TIMEOUT_MS + 5000,
 	);
 
-	it.skipIf(!hasExecutableOnPath())(
+	it.skipIf(!rojoOnPath())(
 		"should respect per-package coveragePathIgnorePatterns over workspace defaults",
 		async () => {
 			expect.assertions(5);
@@ -308,32 +276,13 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 			// short-circuit vs. the matchesIgnored filter) flow through
 			// `prepareWorkspaceCoverage` independently; a regression in either is
 			// silent without coverage on both axes.
-			const packageJestConfig = path.join(sandbox, "packages/vendored-mount/jest.config.ts");
-			fs.writeFileSync(
-				packageJestConfig,
-				[
-					"export default {",
-					'\trojoProject: "test.project.json",',
-					"\ttest: {",
-					"\t\tpassWithNoTests: true,",
-					'\t\tcoveragePathIgnorePatterns: ["**/vendored-packages/**"],',
-					"\t\tprojects: [",
-					"\t\t\t{",
-					"\t\t\t\ttest: {",
-					'\t\t\t\t\tdisplayName: "@e2e/vendored-mount",',
-					'\t\t\t\t\tinclude: ["src/**/*.spec.luau"],',
-					"\t\t\t\t},",
-					"\t\t\t},",
-					"\t\t],",
-					"\t},",
-					"};",
-					"",
-				].join("\n"),
-			);
+			writeVendoredMountConfig(sandbox, {
+				test: { coveragePathIgnorePatterns: ["**/vendored-packages/**"] },
+			});
 
 			const server = await startFakeOpenCloudServerAsync([
 				{
-					jestOutput: passingJestOutput(),
+					jestOutput: buildPassingJestOutput(),
 					pkg: "@e2e/vendored-mount",
 					project: "@e2e/vendored-mount",
 				},
@@ -349,12 +298,7 @@ describe("workspace coverage — multi-$path rojo tree honors per-pkg luauRoots"
 				],
 				{
 					cwd: sandbox,
-					env: {
-						JEST_ROBLOX_OPEN_CLOUD_BASE_URL: server.baseUrl,
-						ROBLOX_OPEN_CLOUD_API_KEY: "test-api-key",
-						ROBLOX_PLACE_ID: "456",
-						ROBLOX_UNIVERSE_ID: "123",
-					},
+					env: createOpenCloudEnvironment(server.baseUrl),
 					timeoutMs: RUN_TIMEOUT_MS,
 				},
 			);

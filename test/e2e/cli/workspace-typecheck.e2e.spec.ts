@@ -33,25 +33,12 @@ describe("workspace --typecheckOnly e2e", () => {
 		expect(hasTypedResult).toBeTrue();
 	});
 
-	it("should exit 1 and name the failing type test with its TS code", async () => {
-		expect.assertions(3);
-
-		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);
-
-		const result = await runCliAsync(
-			["--workspace", "--packages=@e2e/typed-broken", "--typecheckOnly"],
-			{ cwd: sandbox },
-		);
-
-		const output = result.stdout + result.stderr;
-
-		expect(result.exitCode).toBe(1);
-		expect(output).toContain("should reject a string assigned to number");
-		expect(output).toMatch(/TS\d+/);
-	});
-
-	it("should group type tests per package with package-composed identity", async () => {
-		expect.assertions(3);
+	// The mixed run carries the failure reporting too. A broken package on its
+	// own used to have a test of its own, but it drives the same tsgo spawn and
+	// prints the same diagnostics — nothing about the failure path is specific
+	// to running the broken package alone.
+	it("should group type tests per package and name the failing one with its TS code", async () => {
+		expect.assertions(5);
 
 		const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE);
 		const outputFile = path.join(sandbox, "grouped-result.json");
@@ -67,9 +54,13 @@ describe("workspace --typecheckOnly e2e", () => {
 			{ cwd: sandbox },
 		);
 
+		const output = result.stdout + result.stderr;
+
 		// typed passes, typed-broken fails — the run fails overall, but BOTH
 		// packages' type tests are reported under their own package identity.
 		expect(result.exitCode).toBe(1);
+		expect(output).toContain("should reject a string assigned to number");
+		expect(output).toMatch(/TS\d+/);
 
 		const paths = readMergedTestFilePaths(outputFile);
 

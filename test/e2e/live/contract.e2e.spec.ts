@@ -7,6 +7,7 @@ import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { JestResult } from "../../../src/types/jest-result.ts";
 import { type FakeOpenCloudTask, startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
+import { IS_LIVE } from "./live-gate.ts";
 
 interface HttpResponse {
 	body: unknown;
@@ -101,21 +102,6 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 		assertResponseOk(response, "Place upload");
 
 		expect(versionResponseSchema(response.body)).not.toBeInstanceOf(type.errors);
-	});
-
-	it("should return a string path from task creation", async () => {
-		expect.assertions(1);
-
-		const { baseUrl, placeId, universeId } = await testCase.resolve([{ jestOutput: "" }]);
-		const http = createHttpClient(testCase.apiKey);
-		const url = `${baseUrl}/cloud/v2/universes/${universeId}/places/${placeId}/luau-execution-session-tasks`;
-
-		const response = await http.request("POST", url, {
-			body: { script: "return nil", timeout: "30s" },
-		});
-		assertResponseOk(response, "Task creation");
-
-		expect(taskCreateResponseSchema(response.body)).not.toBeInstanceOf(type.errors);
 	});
 
 	it(
@@ -375,7 +361,7 @@ function assertResponseOk(response: HttpResponse, operation: string): void {
 }
 
 function resolveLiveCase(): ContractCase | undefined {
-	if (process.env["JEST_ROBLOX_LIVE"] !== "1") {
+	if (!IS_LIVE) {
 		return undefined;
 	}
 
