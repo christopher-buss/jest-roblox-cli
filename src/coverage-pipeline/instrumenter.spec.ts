@@ -195,6 +195,11 @@ describe(instrumentRoot, () => {
 			timing.flushTimingReport();
 
 			expect(lines).toStrictEqual([
+				// Each sub-phase streams as it closes, then the flush repeats
+				// the accumulated tree.
+				"[TIMING] parse-ast: 0ms",
+				"[TIMING] probe-insert: 0ms",
+				"[TIMING] map-build: 0ms",
 				"[TIMING] parse-ast: 0ms",
 				"[TIMING] probe-insert: 0ms",
 				"[TIMING] map-build: 0ms",

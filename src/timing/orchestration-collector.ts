@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import process from "node:process";
 
-import { createSpanTree, emitSpanTree, type SpanTree } from "./span-tree.ts";
+import { createSpanTree, emitSpanTree, formatStreamedSpan, type SpanTree } from "./span-tree.ts";
 
 export interface CreateTimingCollectorOptions {
 	clock?: { now: () => number };
@@ -40,19 +40,29 @@ export interface TimingCollector {
 }
 
 /**
- * A buffered span-tree profiler for a single, sequential host run. Nesting is
- * tracked with one shared stack, so spans must open and close in LIFO order:
- * profile a phase, and any spans it opens nest under it. It is NOT safe to run
- * two `profile` / `profileAsync` calls concurrently on the same collector (e.g.
- * `Promise.all`) — interleaved opens/closes would corrupt the stack. Create one
- * collector per run; `flushTimingReport` empties it so a second flush is a
- * no-op.
+ * A span-tree profiler for a single, sequential host run. Each span streams to
+ * the sink as it completes, and the accumulated tree flushes once at the end.
+ * Nesting is tracked with one shared stack, so spans must open and close in
+ * LIFO order: profile a phase, and any spans it opens nest under it. It is NOT
+ * safe to run two `profile` / `profileAsync` calls concurrently on the same
+ * collector (e.g. `Promise.all`) — interleaved opens/closes would corrupt the
+ * stack. Create one collector per run; `flushTimingReport` empties it so a
+ * second flush is a no-op.
  */
 export function createTimingCollector(options: CreateTimingCollectorOptions = {}): TimingCollector {
 	const clock = options.clock ?? { now: () => performance.now() };
 	const sink = options.sink ?? ((line: string) => void process.stderr.write(`${line}\n`));
 	const isEnabled = options.enabled ?? process.env["TIMING"] !== undefined;
-	const spans = createSpanTree(clock);
+	// Every span is written twice: once as it finishes, so a long run
+	// reports progress rather than going quiet until the end, and once in
+	// the flushed tree, which is where repeated names are summed. No
+	// enabled check here — a disabled collector never opens or records a
+	// span, so nothing ever reaches this callback.
+	const spans = createSpanTree(clock, {
+		onSpanComplete: (path, elapsedMs) => {
+			sink(formatStreamedSpan(path, elapsedMs));
+		},
+	});
 	const { profile, profileAsync } = createProfilers(isEnabled, spans);
 
 	function record(name: string, elapsedMs: number): void {

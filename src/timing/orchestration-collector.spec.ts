@@ -38,7 +38,11 @@ describe(createTimingCollector, () => {
 		collector.profile("synthesize", () => {});
 		collector.flushTimingReport();
 
-		expect(lines).toStrictEqual(["[TIMING] synthesize: 5ms", "[TIMING] TOTAL (host): 5ms"]);
+		expect(lines).toStrictEqual([
+			"[TIMING] synthesize: 5ms",
+			"[TIMING] synthesize: 5ms",
+			"[TIMING] TOTAL (host): 5ms",
+		]);
 	});
 
 	it("should indent nested spans and total only the top level", () => {
@@ -57,6 +61,8 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
+			"[TIMING] prepareCoverage > parse-ast: 6ms",
+			"[TIMING] prepareCoverage: 10ms",
 			"[TIMING] prepareCoverage: 10ms",
 			"[TIMING]   parse-ast: 6ms",
 			"[TIMING] TOTAL (host): 10ms",
@@ -77,7 +83,12 @@ describe(createTimingCollector, () => {
 		collector.profile("probe-insert", () => {});
 		collector.flushTimingReport();
 
-		expect(lines).toStrictEqual(["[TIMING] probe-insert: 7ms", "[TIMING] TOTAL (host): 7ms"]);
+		expect(lines).toStrictEqual([
+			"[TIMING] probe-insert: 3ms",
+			"[TIMING] probe-insert: 4ms",
+			"[TIMING] probe-insert: 7ms",
+			"[TIMING] TOTAL (host): 7ms",
+		]);
 	});
 
 	it("should profile async phases and record resolution time", async () => {
@@ -93,7 +104,11 @@ describe(createTimingCollector, () => {
 		await collector.profileAsync("loadPackages", async () => {});
 		collector.flushTimingReport();
 
-		expect(lines).toStrictEqual(["[TIMING] loadPackages: 12ms", "[TIMING] TOTAL (host): 12ms"]);
+		expect(lines).toStrictEqual([
+			"[TIMING] loadPackages: 12ms",
+			"[TIMING] loadPackages: 12ms",
+			"[TIMING] TOTAL (host): 12ms",
+		]);
 	});
 
 	it("should record the elapsed time of a rejecting async phase and rethrow", async () => {
@@ -114,7 +129,11 @@ describe(createTimingCollector, () => {
 
 		collector.flushTimingReport();
 
-		expect(lines).toStrictEqual(["[TIMING] runProjects: 9ms", "[TIMING] TOTAL (host): 9ms"]);
+		expect(lines).toStrictEqual([
+			"[TIMING] runProjects: 9ms",
+			"[TIMING] runProjects: 9ms",
+			"[TIMING] TOTAL (host): 9ms",
+		]);
 	});
 
 	it("should run wrapped functions unchanged but write nothing when disabled", async () => {
@@ -156,7 +175,11 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 		collector.flushTimingReport();
 
-		expect(lines).toStrictEqual(["[TIMING] synthesize: 5ms", "[TIMING] TOTAL (host): 5ms"]);
+		expect(lines).toStrictEqual([
+			"[TIMING] synthesize: 5ms",
+			"[TIMING] synthesize: 5ms",
+			"[TIMING] TOTAL (host): 5ms",
+		]);
 	});
 
 	it("should enable itself when the TIMING env var is present", () => {
@@ -170,7 +193,11 @@ describe(createTimingCollector, () => {
 		collector.profile("synthesize", () => {});
 		collector.flushTimingReport();
 
-		expect(lines).toStrictEqual(["[TIMING] synthesize: 4ms", "[TIMING] TOTAL (host): 4ms"]);
+		expect(lines).toStrictEqual([
+			"[TIMING] synthesize: 4ms",
+			"[TIMING] synthesize: 4ms",
+			"[TIMING] TOTAL (host): 4ms",
+		]);
 	});
 
 	it("should disable itself when the TIMING env var is absent", () => {
@@ -200,7 +227,7 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(write.mock.calls.map((call) => call[0]).join("")).toBe(
-			"[TIMING] synthesize: 4ms\n[TIMING] TOTAL (host): 4ms\n",
+			"[TIMING] synthesize: 4ms\n[TIMING] synthesize: 4ms\n[TIMING] TOTAL (host): 4ms\n",
 		);
 	});
 
@@ -214,6 +241,7 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
+			"[TIMING] backend.uploadMs: 1234ms",
 			"[TIMING] backend.uploadMs: 1234ms",
 			"[TIMING] TOTAL (host): 1234ms",
 		]);
@@ -236,6 +264,9 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
+			"[TIMING] backend.runTests > backend.uploadMs: 4ms",
+			"[TIMING] backend.runTests > backend.executionMs: 6ms",
+			"[TIMING] backend.runTests: 10ms",
 			"[TIMING] backend.runTests: 10ms",
 			"[TIMING]   backend.uploadMs: 4ms",
 			"[TIMING]   backend.executionMs: 6ms",
@@ -254,6 +285,8 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
+			"[TIMING] backend.uploadMs: 3ms",
+			"[TIMING] backend.uploadMs: 4ms",
 			"[TIMING] backend.uploadMs: 7ms",
 			"[TIMING] TOTAL (host): 7ms",
 		]);
@@ -318,7 +351,142 @@ describe(createTimingCollector, () => {
 
 		expect(lines).toStrictEqual([
 			expect.stringMatching(/^\[TIMING] synthesize: \d+ms$/),
+			expect.stringMatching(/^\[TIMING] synthesize: \d+ms$/),
 			expect.stringMatching(/^\[TIMING] TOTAL \(host\): \d+ms$/),
 		]);
+	});
+
+	it("should stream a phase line the moment the phase completes", () => {
+		expect.assertions(2);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 5]),
+			enabled: true,
+			sink,
+		});
+
+		collector.profile("synthesize", () => {});
+
+		expect(lines).toStrictEqual(["[TIMING] synthesize: 5ms"]);
+
+		collector.flushTimingReport();
+
+		expect(lines).toStrictEqual([
+			"[TIMING] synthesize: 5ms",
+			"[TIMING] synthesize: 5ms",
+			"[TIMING] TOTAL (host): 5ms",
+		]);
+	});
+
+	it("should stream a nested span under its ancestor path", () => {
+		expect.assertions(1);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 2, 8, 10]),
+			enabled: true,
+			sink,
+		});
+
+		collector.profile("prepareCoverage", () => {
+			collector.profile("parse-ast", () => {});
+		});
+
+		expect(lines).toStrictEqual([
+			"[TIMING] prepareCoverage > parse-ast: 6ms",
+			"[TIMING] prepareCoverage: 10ms",
+		]);
+	});
+
+	it("should stream each run of a repeated span separately", () => {
+		expect.assertions(1);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 3, 3, 7]),
+			enabled: true,
+			sink,
+		});
+
+		collector.profile("probe-insert", () => {});
+		collector.profile("probe-insert", () => {});
+
+		expect(lines).toStrictEqual(["[TIMING] probe-insert: 3ms", "[TIMING] probe-insert: 4ms"]);
+	});
+
+	it("should stream an async phase when it settles", async () => {
+		expect.assertions(1);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 12]),
+			enabled: true,
+			sink,
+		});
+
+		await collector.profileAsync("loadPackages", async () => {});
+
+		expect(lines).toStrictEqual(["[TIMING] loadPackages: 12ms"]);
+	});
+
+	it("should stream a recorded span under the open frame", () => {
+		expect.assertions(1);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 10]),
+			enabled: true,
+			sink,
+		});
+
+		collector.profile("backend.runTests", () => {
+			collector.record("backend.uploadMs", 4);
+		});
+
+		expect(lines).toStrictEqual([
+			"[TIMING] backend.runTests > backend.uploadMs: 4ms",
+			"[TIMING] backend.runTests: 10ms",
+		]);
+	});
+
+	it("should keep the span stack intact when the stream sink throws", () => {
+		expect.assertions(2);
+
+		const sink = vi.fn<(line: string) => void>();
+		sink.mockImplementationOnce(() => {
+			throw new Error("sink boom");
+		});
+
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 1, 2, 3]),
+			enabled: true,
+			sink,
+		});
+
+		expect(() => {
+			collector.profile("boom-phase", () => {});
+		}).toThrow("sink boom");
+
+		collector.profile("next-phase", () => {});
+
+		// A stranded frame would stream "boom-phase > next-phase", so the
+		// second line is what proves the stack unwound.
+		expect(sink.mock.calls.map((call) => call[0])).toStrictEqual([
+			"[TIMING] boom-phase: 1ms",
+			"[TIMING] next-phase: 1ms",
+		]);
+	});
+
+	it("should stream nothing while disabled", () => {
+		expect.assertions(1);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({ enabled: false, sink });
+
+		collector.profile("synthesize", () => {});
+		collector.record("backend.uploadMs", 4);
+
+		expect(lines).toStrictEqual([]);
 	});
 });

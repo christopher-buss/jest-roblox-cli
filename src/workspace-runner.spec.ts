@@ -643,6 +643,55 @@ describe(runWorkspaceAsync, () => {
 		);
 	});
 
+	it("should stream host phase lines before the report is flushed", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("TIMING", "1");
+		const writes: Array<string> = [];
+		vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+			writes.push(String(chunk));
+			return true;
+		});
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
+		});
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		// Deliberately no flush: every line asserted here must have been
+		// written while the run was still in progress.
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			timing: createTimingCollector(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		const timingLines = writes
+			.join("")
+			.split("\n")
+			.filter((line) => line.startsWith("[TIMING]"));
+
+		expect(timingLines).toContainEqual(
+			expect.stringMatching(/^\[TIMING] loadPackages > load-config:@halcyon\/foo: \d+ms$/),
+		);
+	});
+
 	it("should still flush the [TIMING] report when a phase throws", async () => {
 		expect.assertions(2);
 
