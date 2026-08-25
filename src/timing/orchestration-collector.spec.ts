@@ -25,26 +25,6 @@ function createScriptedClock(times: Array<number>) {
 }
 
 describe(createTimingCollector, () => {
-	it("should emit a phase line and a host total for a recorded span", () => {
-		expect.assertions(1);
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 5]),
-			enabled: true,
-			sink,
-		});
-
-		collector.profile("synthesize", () => {});
-		collector.flushTimingReport();
-
-		expect(lines).toStrictEqual([
-			"[TIMING] synthesize: 5ms",
-			"[TIMING] synthesize: 5ms",
-			"[TIMING] TOTAL (host): 5ms",
-		]);
-	});
-
 	it("should indent nested spans and total only the top level", () => {
 		expect.assertions(1);
 
@@ -61,10 +41,10 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
-			"[TIMING] prepareCoverage > parse-ast: 6ms",
-			"[TIMING] prepareCoverage: 10ms",
+			"[TIMING] prepareCoverage: start",
 			"[TIMING] prepareCoverage: 10ms",
 			"[TIMING]   parse-ast: 6ms",
+			"[TIMING]   (unmeasured): 4ms",
 			"[TIMING] TOTAL (host): 10ms",
 		]);
 	});
@@ -84,15 +64,16 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
+			"[TIMING] probe-insert: start",
 			"[TIMING] probe-insert: 3ms",
-			"[TIMING] probe-insert: 4ms",
-			"[TIMING] probe-insert: 7ms",
+			"[TIMING] probe-insert: start",
+			"[TIMING] probe-insert: 7ms (×2)",
 			"[TIMING] TOTAL (host): 7ms",
 		]);
 	});
 
-	it("should profile async phases and record resolution time", async () => {
-		expect.assertions(1);
+	it("should report an async phase when it settles, before any flush", async () => {
+		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
 		const collector = createTimingCollector({
@@ -102,10 +83,16 @@ describe(createTimingCollector, () => {
 		});
 
 		await collector.profileAsync("loadPackages", async () => {});
+
+		expect(lines).toStrictEqual([
+			"[TIMING] loadPackages: start",
+			"[TIMING] loadPackages: 12ms",
+		]);
+
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
-			"[TIMING] loadPackages: 12ms",
+			"[TIMING] loadPackages: start",
 			"[TIMING] loadPackages: 12ms",
 			"[TIMING] TOTAL (host): 12ms",
 		]);
@@ -130,7 +117,7 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
-			"[TIMING] runProjects: 9ms",
+			"[TIMING] runProjects: start",
 			"[TIMING] runProjects: 9ms",
 			"[TIMING] TOTAL (host): 9ms",
 		]);
@@ -176,7 +163,7 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
-			"[TIMING] synthesize: 5ms",
+			"[TIMING] synthesize: start",
 			"[TIMING] synthesize: 5ms",
 			"[TIMING] TOTAL (host): 5ms",
 		]);
@@ -194,7 +181,7 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
-			"[TIMING] synthesize: 4ms",
+			"[TIMING] synthesize: start",
 			"[TIMING] synthesize: 4ms",
 			"[TIMING] TOTAL (host): 4ms",
 		]);
@@ -227,24 +214,8 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(write.mock.calls.map((call) => call[0]).join("")).toBe(
-			"[TIMING] synthesize: 4ms\n[TIMING] synthesize: 4ms\n[TIMING] TOTAL (host): 4ms\n",
+			"[TIMING] synthesize: start\n[TIMING] synthesize: 4ms\n[TIMING] TOTAL (host): 4ms\n",
 		);
-	});
-
-	it("should record a leaf span with a supplied elapsedMs", () => {
-		expect.assertions(1);
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({ enabled: true, sink });
-
-		collector.record("backend.uploadMs", 1234);
-		collector.flushTimingReport();
-
-		expect(lines).toStrictEqual([
-			"[TIMING] backend.uploadMs: 1234ms",
-			"[TIMING] backend.uploadMs: 1234ms",
-			"[TIMING] TOTAL (host): 1234ms",
-		]);
 	});
 
 	it("should nest recorded spans under the currently-open profile frame", () => {
@@ -264,9 +235,7 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
-			"[TIMING] backend.runTests > backend.uploadMs: 4ms",
-			"[TIMING] backend.runTests > backend.executionMs: 6ms",
-			"[TIMING] backend.runTests: 10ms",
+			"[TIMING] backend.runTests: start",
 			"[TIMING] backend.runTests: 10ms",
 			"[TIMING]   backend.uploadMs: 4ms",
 			"[TIMING]   backend.executionMs: 6ms",
@@ -285,9 +254,7 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
-			"[TIMING] backend.uploadMs: 3ms",
-			"[TIMING] backend.uploadMs: 4ms",
-			"[TIMING] backend.uploadMs: 7ms",
+			"[TIMING] backend.uploadMs: 7ms (×2)",
 			"[TIMING] TOTAL (host): 7ms",
 		]);
 	});
@@ -350,13 +317,13 @@ describe(createTimingCollector, () => {
 		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([
-			expect.stringMatching(/^\[TIMING] synthesize: \d+ms$/),
+			"[TIMING] synthesize: start",
 			expect.stringMatching(/^\[TIMING] synthesize: \d+ms$/),
 			expect.stringMatching(/^\[TIMING] TOTAL \(host\): \d+ms$/),
 		]);
 	});
 
-	it("should stream a phase line the moment the phase completes", () => {
+	it("should announce a top-level phase before it runs", () => {
 		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
@@ -366,21 +333,37 @@ describe(createTimingCollector, () => {
 			sink,
 		});
 
-		collector.profile("synthesize", () => {});
+		collector.profile("synthesize", () => {
+			// The announcement is the only thing a run that hangs here writes.
+			expect(lines).toStrictEqual(["[TIMING] synthesize: start"]);
+		});
 
-		expect(lines).toStrictEqual(["[TIMING] synthesize: 5ms"]);
+		expect(lines).toStrictEqual(["[TIMING] synthesize: start", "[TIMING] synthesize: 5ms"]);
+	});
 
-		collector.flushTimingReport();
+	it("should announce a top-level phase once per run of it", () => {
+		expect.assertions(1);
 
-		expect(lines).toStrictEqual([
-			"[TIMING] synthesize: 5ms",
-			"[TIMING] synthesize: 5ms",
-			"[TIMING] TOTAL (host): 5ms",
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 1, 2, 3, 4, 5]),
+			enabled: true,
+			sink,
+		});
+
+		collector.profile("prepareCoverage", () => {
+			collector.profile("parse-ast", () => {});
+			collector.profile("parse-ast", () => {});
+		});
+
+		// Nested spans never announce — one line per phase, not per file.
+		expect(lines.filter((line) => line.endsWith(": start"))).toStrictEqual([
+			"[TIMING] prepareCoverage: start",
 		]);
 	});
 
-	it("should stream a nested span under its ancestor path", () => {
-		expect.assertions(1);
+	it("should hold a nested span until its top-level phase closes", () => {
+		expect.assertions(2);
 
 		const { lines, sink } = createCapturingSink();
 		const collector = createTimingCollector({
@@ -391,69 +374,138 @@ describe(createTimingCollector, () => {
 
 		collector.profile("prepareCoverage", () => {
 			collector.profile("parse-ast", () => {});
+
+			expect(lines).toStrictEqual(["[TIMING] prepareCoverage: start"]);
 		});
 
 		expect(lines).toStrictEqual([
-			"[TIMING] prepareCoverage > parse-ast: 6ms",
+			"[TIMING] prepareCoverage: start",
 			"[TIMING] prepareCoverage: 10ms",
+			"[TIMING]   parse-ast: 6ms",
+			"[TIMING]   (unmeasured): 4ms",
 		]);
 	});
 
-	it("should stream each run of a repeated span separately", () => {
+	it("should aggregate repeated nested spans into one counted line", () => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();
 		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 3, 3, 7]),
+			clock: createScriptedClock([0, 1, 3, 3, 4, 10]),
 			enabled: true,
 			sink,
 		});
 
-		collector.profile("probe-insert", () => {});
-		collector.profile("probe-insert", () => {});
-
-		expect(lines).toStrictEqual(["[TIMING] probe-insert: 3ms", "[TIMING] probe-insert: 4ms"]);
-	});
-
-	it("should stream an async phase when it settles", async () => {
-		expect.assertions(1);
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 12]),
-			enabled: true,
-			sink,
-		});
-
-		await collector.profileAsync("loadPackages", async () => {});
-
-		expect(lines).toStrictEqual(["[TIMING] loadPackages: 12ms"]);
-	});
-
-	it("should stream a recorded span under the open frame", () => {
-		expect.assertions(1);
-
-		const { lines, sink } = createCapturingSink();
-		const collector = createTimingCollector({
-			clock: createScriptedClock([0, 10]),
-			enabled: true,
-			sink,
-		});
-
-		collector.profile("backend.runTests", () => {
-			collector.record("backend.uploadMs", 4);
+		collector.profile("prepareCoverage", () => {
+			collector.profile("parse-ast", () => {});
+			collector.profile("parse-ast", () => {});
 		});
 
 		expect(lines).toStrictEqual([
-			"[TIMING] backend.runTests > backend.uploadMs: 4ms",
-			"[TIMING] backend.runTests: 10ms",
+			"[TIMING] prepareCoverage: start",
+			"[TIMING] prepareCoverage: 10ms",
+			"[TIMING]   parse-ast: 3ms (×2)",
+			"[TIMING]   (unmeasured): 7ms",
 		]);
 	});
 
-	it("should keep the span stack intact when the stream sink throws", () => {
+	it("should report unmeasured time at every depth that has children", () => {
+		expect.assertions(1);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 1, 2, 3, 6, 20]),
+			enabled: true,
+			sink,
+		});
+
+		collector.profile("runProjects", () => {
+			collector.profile("processResults", () => {
+				collector.profile("buildSourceMapper", () => {});
+			});
+		});
+
+		expect(lines).toStrictEqual([
+			"[TIMING] runProjects: start",
+			"[TIMING] runProjects: 20ms",
+			"[TIMING]   processResults: 5ms",
+			"[TIMING]     buildSourceMapper: 1ms",
+			"[TIMING]     (unmeasured): 4ms",
+			"[TIMING]   (unmeasured): 15ms",
+		]);
+	});
+
+	it("should omit the unmeasured line when the children account for the phase", () => {
+		expect.assertions(1);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 0, 10, 10]),
+			enabled: true,
+			sink,
+		});
+
+		collector.profile("prepareCoverage", () => {
+			collector.profile("parse-ast", () => {});
+		});
+
+		expect(lines).toStrictEqual([
+			"[TIMING] prepareCoverage: start",
+			"[TIMING] prepareCoverage: 10ms",
+			"[TIMING]   parse-ast: 10ms",
+		]);
+	});
+
+	it("should hold a root-level record until the flush", () => {
+		expect.assertions(2);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({ enabled: true, sink });
+
+		collector.record("runTypecheck", 4);
+
+		expect(lines).toStrictEqual([]);
+
+		collector.flushTimingReport();
+
+		expect(lines).toStrictEqual(["[TIMING] runTypecheck: 4ms", "[TIMING] TOTAL (host): 4ms"]);
+	});
+
+	it("should keep the span stack intact when the announcing sink throws", () => {
 		expect.assertions(2);
 
 		const sink = vi.fn<(line: string) => void>();
+		sink.mockImplementationOnce(() => {
+			throw new Error("sink boom");
+		});
+
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 1]),
+			enabled: true,
+			sink,
+		});
+
+		expect(() => {
+			collector.profile("boom-phase", () => {});
+		}).toThrow("sink boom");
+
+		collector.profile("next-phase", () => {});
+
+		// A stranded frame would swallow the second phase's own announcement
+		// and its report, so those two lines are what prove the stack unwound.
+		expect(sink.mock.calls.map((call) => call[0])).toStrictEqual([
+			"[TIMING] boom-phase: start",
+			"[TIMING] next-phase: start",
+			"[TIMING] next-phase: 1ms",
+		]);
+	});
+
+	it("should keep the span stack intact when the reporting sink throws", () => {
+		expect.assertions(2);
+
+		const sink = vi.fn<(line: string) => void>();
+		// First call is the announcement; the phase's own report is second.
+		sink.mockImplementationOnce(() => {});
 		sink.mockImplementationOnce(() => {
 			throw new Error("sink boom");
 		});
@@ -470,15 +522,15 @@ describe(createTimingCollector, () => {
 
 		collector.profile("next-phase", () => {});
 
-		// A stranded frame would stream "boom-phase > next-phase", so the
-		// second line is what proves the stack unwound.
 		expect(sink.mock.calls.map((call) => call[0])).toStrictEqual([
+			"[TIMING] boom-phase: start",
 			"[TIMING] boom-phase: 1ms",
+			"[TIMING] next-phase: start",
 			"[TIMING] next-phase: 1ms",
 		]);
 	});
 
-	it("should stream nothing while disabled", () => {
+	it("should write nothing while disabled", () => {
 		expect.assertions(1);
 
 		const { lines, sink } = createCapturingSink();

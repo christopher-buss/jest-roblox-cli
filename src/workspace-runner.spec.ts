@@ -684,8 +684,8 @@ describe(runWorkspaceAsync, () => {
 		);
 	});
 
-	it("should stream host phase lines before the report is flushed", async () => {
-		expect.assertions(1);
+	it("should report a host phase and its subtree before the report is flushed", async () => {
+		expect.assertions(2);
 
 		vi.stubEnv("TIMING", "1");
 		const writes: Array<string> = [];
@@ -729,7 +729,10 @@ describe(runWorkspaceAsync, () => {
 			.filter((line) => line.startsWith("[TIMING]"));
 
 		expect(timingLines).toContainEqual(
-			expect.stringMatching(/^\[TIMING] loadPackages > load-config:@halcyon\/foo: \d+ms$/),
+			expect.stringMatching(/^\[TIMING] loadPackages: \d+ms$/),
+		);
+		expect(timingLines).toContainEqual(
+			expect.stringMatching(/^\[TIMING] {3}load-config:@halcyon\/foo: \d+ms$/),
 		);
 	});
 

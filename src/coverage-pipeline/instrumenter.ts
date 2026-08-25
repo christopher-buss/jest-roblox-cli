@@ -6,6 +6,7 @@ import { luauParser } from "../luau/parser.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { CollectorResult } from "./coverage-collector.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
 import { writeCoverageMap } from "./coverage-map.ts";
@@ -30,8 +31,10 @@ export interface InstrumentRootOptions {
 	 */
 	skipFiles?: Set<string> | undefined;
 	/**
-	 * Orchestration profiler; records `parse-ast` / `probe-insert` /
-	 * `map-build`.
+	 * Orchestration profiler. Every step of the per-file pass gets a span, not
+	 * just the interesting ones: the enclosing phase reports what its children
+	 * left unaccounted for, so a step left unnamed here shows up only as an
+	 * `(unmeasured)` remainder with nothing to point at.
 	 */
 	timing?: TimingCollector | undefined;
 }
@@ -56,7 +59,9 @@ export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest
 	const { luauRoot, shadowDir, skipFiles } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 
-	const fileList = [...discoverRootFiles(luauRoot).instrumentable];
+	const fileList = timing.profile("discover-files", () => {
+		return [...discoverRootFiles(luauRoot).instrumentable];
+	});
 
 	const files: CoverageManifest["files"] = {};
 	const context: InstrumentFileContext = {
@@ -104,6 +109,24 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 	return manifest;
 }
 
+/** Parse one file and collect its coverage sites, or fail naming the file. */
+function collectFileCoverage({
+	relativePath,
+	source,
+	timing,
+}: {
+	relativePath: string;
+	source: string;
+	timing: TimingCollector;
+}): CollectorResult {
+	const parsed = timing.profile("parse-ast", () => luauParser.parse(source));
+	if (!parsed.ok) {
+		throw new Error(`Failed to parse ${relativePath}: ${parsed.errors.join("; ")}`);
+	}
+
+	return timing.profile("collect-coverage", () => collectCoverage(parsed.root, source));
+}
+
 /**
  * Instrument one discovered file: write its instrumented twin and `.cov-map`
  * sidecar into the shadow dir, and return the manifest record for it.
@@ -121,23 +144,21 @@ function instrumentFile(
 	// is the same as joining the swapped relative path.
 	const coverageMapOutputPath = shadowFilePath.replace(LUAU_EXTENSION, ".cov-map.json");
 
-	const sourceBuffer = fs.readFileSync(path.resolve(fileKey));
+	const sourceBuffer = timing.profile("read-source", () => {
+		return fs.readFileSync(path.resolve(fileKey));
+	});
 	const source = sourceBuffer.toString("utf-8");
-	const parsed = timing.profile("parse-ast", () => luauParser.parse(source));
-	if (!parsed.ok) {
-		throw new Error(`Failed to parse ${relativePath}: ${parsed.errors.join("; ")}`);
-	}
-
-	fs.mkdirSync(path.dirname(shadowFilePath), { recursive: true });
-
-	const collectorResult = collectCoverage(parsed.root, source);
+	const collectorResult = collectFileCoverage({ relativePath, source, timing });
 	const instrumentedSource = timing.profile("probe-insert", () => {
 		return insertProbes(source, collectorResult, fileKey);
 	});
 	const coverageMap = timing.profile("map-build", () => buildCoverageMap(collectorResult));
 
-	fs.writeFileSync(shadowFilePath, instrumentedSource);
-	writeCoverageMap(coverageMapOutputPath, coverageMap);
+	timing.profile("write-shadow", () => {
+		fs.mkdirSync(path.dirname(shadowFilePath), { recursive: true });
+		fs.writeFileSync(shadowFilePath, instrumentedSource);
+		writeCoverageMap(coverageMapOutputPath, coverageMap);
+	});
 
 	return {
 		key: fileKey,

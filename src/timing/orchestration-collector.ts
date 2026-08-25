@@ -1,7 +1,13 @@
 import { performance } from "node:perf_hooks";
 import process from "node:process";
 
-import { createSpanTree, emitSpanTree, formatStreamedSpan, type SpanTree } from "./span-tree.ts";
+import {
+	createSpanTree,
+	emitFinalReport,
+	emitSpanNode,
+	formatPhaseStart,
+	type SpanTree,
+} from "./span-tree.ts";
 
 export interface CreateTimingCollectorOptions {
 	clock?: { now: () => number };
@@ -40,8 +46,12 @@ export interface TimingCollector {
 }
 
 /**
- * A span-tree profiler for a single, sequential host run. Each span streams to
- * the sink as it completes, and the accumulated tree flushes once at the end.
+ * A span-tree profiler for a single, sequential host run. Each top-level phase
+ * announces itself as it opens and reports its whole subtree the moment it
+ * closes, so a long run says where it is and where it has been without
+ * narrating every span inside it; anything still unreported by the end
+ * (root-level `record` calls, whose "no more can land" moment never arrives)
+ * comes out at `flushTimingReport`, followed by the host total.
  * Nesting is tracked with one shared stack, so spans must open and close in
  * LIFO order: profile a phase, and any spans it opens nest under it. It is NOT
  * safe to run two `profile` / `profileAsync` calls concurrently on the same
@@ -53,14 +63,14 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 	const clock = options.clock ?? { now: () => performance.now() };
 	const sink = options.sink ?? ((line: string) => void process.stderr.write(`${line}\n`));
 	const isEnabled = options.enabled ?? process.env["TIMING"] !== undefined;
-	// Every span is written twice: once as it finishes, so a long run
-	// reports progress rather than going quiet until the end, and once in
-	// the flushed tree, which is where repeated names are summed. No
-	// enabled check here — a disabled collector never opens or records a
-	// span, so nothing ever reaches this callback.
+	// No enabled check here — a disabled collector never opens or records a
+	// span, so nothing ever reaches these callbacks.
 	const spans = createSpanTree(clock, {
-		onSpanComplete: (path, elapsedMs) => {
-			sink(formatStreamedSpan(path, elapsedMs));
+		onRootComplete: (root) => {
+			emitSpanNode(root, sink);
+		},
+		onRootOpen: (root) => {
+			sink(formatPhaseStart(root.name));
 		},
 	});
 	const { profile, profileAsync } = createProfilers(isEnabled, spans);
@@ -78,8 +88,7 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 			return;
 		}
 
-		const total = emitSpanTree(spans.roots, sink);
-		sink(`[TIMING] TOTAL (host): ${String(total)}ms`);
+		emitFinalReport(spans.roots, sink);
 		// Clear so a second flush (the run wraps this in a `finally`) is a no-op
 		// rather than re-emitting every recorded span.
 		spans.roots.clear();

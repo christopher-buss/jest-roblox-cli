@@ -173,7 +173,7 @@ describe(instrumentRoot, () => {
 	});
 
 	describe("when a timing profiler is supplied", () => {
-		it("should record the parse-ast, probe-insert, and map-build sub-phases", () => {
+		it("should record every step of the per-file pass", () => {
 			expect.assertions(1);
 
 			setupFilesystem();
@@ -195,14 +195,22 @@ describe(instrumentRoot, () => {
 			timing.flushTimingReport();
 
 			expect(lines).toStrictEqual([
-				// Each sub-phase streams as it closes, then the flush repeats
-				// the accumulated tree.
+				// No enclosing phase here, so each sub-phase is its own root:
+				// it announces itself and reports as it closes.
+				"[TIMING] discover-files: start",
+				"[TIMING] discover-files: 0ms",
+				"[TIMING] read-source: start",
+				"[TIMING] read-source: 0ms",
+				"[TIMING] parse-ast: start",
 				"[TIMING] parse-ast: 0ms",
+				"[TIMING] collect-coverage: start",
+				"[TIMING] collect-coverage: 0ms",
+				"[TIMING] probe-insert: start",
 				"[TIMING] probe-insert: 0ms",
+				"[TIMING] map-build: start",
 				"[TIMING] map-build: 0ms",
-				"[TIMING] parse-ast: 0ms",
-				"[TIMING] probe-insert: 0ms",
-				"[TIMING] map-build: 0ms",
+				"[TIMING] write-shadow: start",
+				"[TIMING] write-shadow: 0ms",
 				"[TIMING] TOTAL (host): 0ms",
 			]);
 		});

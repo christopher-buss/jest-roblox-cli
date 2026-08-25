@@ -716,7 +716,7 @@ describe("execute single-project helper", () => {
 
 		// 100.25ms + 200.35ms = 300.6ms — sub-ms fractions must survive until
 		// the emit-time round, not be rounded away per project.
-		expect(lines).toContain("[TIMING]   luau.findJest: 301ms");
+		expect(lines).toContain("[TIMING]   luau.findJest: 301ms (×2)");
 	});
 
 	it("should skip luau timing extraction entirely when the collector is disabled", async () => {
