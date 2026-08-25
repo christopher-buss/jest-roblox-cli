@@ -73,6 +73,17 @@ const HLJS_CLASS_TO_COLOR = new Map([
 	["hljs-variable", color.white],
 ]);
 
+// Every entity highlight.js escapes, from its escapeHTML
+const HTML_ENTITY_TO_CHAR = new Map([
+	["&#x27;", "'"],
+	["&amp;", "&"],
+	["&gt;", ">"],
+	["&lt;", "<"],
+	["&quot;", '"'],
+]);
+
+const HTML_ENTITY_REGEX = /&(?:#x27|amp|gt|lt|quot);/g;
+
 function convertHljsToAnsi(html: string): string {
 	// Process nested spans from inside out by repeatedly replacing
 	let result = html;
@@ -94,12 +105,13 @@ function convertHljsToAnsi(html: string): string {
 		);
 	}
 
-	// Decode HTML entities
-	return result
-		.replace(/&quot;/g, '"')
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">");
+	// One pass, so an entity the source itself wrote cannot be decoded a
+	// second time: '&amp;lt;' has to come back out as '&lt;', not '<'.
+	return result.replace(HTML_ENTITY_REGEX, (entity) => {
+		const char = HTML_ENTITY_TO_CHAR.get(entity);
+		assert(char !== undefined, "regex only matches mapped entities");
+		return char;
+	});
 }
 
 function highlightLuau(source: string): string {

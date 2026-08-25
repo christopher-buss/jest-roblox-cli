@@ -1,6 +1,7 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import hljs from "highlight.js/lib/core";
+import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
 import { highlightCode } from "./colors.ts";
@@ -105,6 +106,26 @@ describe(highlightCode, () => {
 			expect(result).not.toContain("&gt;");
 			expect(result).not.toContain("&amp;");
 			expect(result).not.toContain("&quot;");
+		});
+
+		it("should decode single quotes", () => {
+			expect.assertions(1);
+
+			const source = "local s = 'hello'";
+			const result = highlightCode("file.luau", source);
+
+			expect(stripVTControlCharacters(result)).toBe(source);
+		});
+
+		it("should keep entities that the source itself contains", () => {
+			expect.assertions(1);
+
+			// highlight.js escapes the ampersand of each entity, so a second
+			// round of decoding would turn these back into '<' and '>'.
+			const source = 'local s = "&lt;tag&gt;"';
+			const result = highlightCode("file.luau", source);
+
+			expect(stripVTControlCharacters(result)).toBe(source);
 		});
 	});
 
