@@ -137,9 +137,28 @@ end
 local liveRecords: any = nil
 local jestSawConfig: any = nil
 
-local JestModule = {}
-local CircusModule = {}
-local ExpectModule = {}
+local function makeInstance(name: string, children: any?): any
+	local instance = { Name = name, children = children or {} }
+
+	function instance:FindFirstChild(childName: string)
+		return self.children[childName]
+	end
+
+	function instance:IsA(className: string)
+		return className == "ModuleScript"
+	end
+
+	return instance
+end
+
+local JestModule = makeInstance("Jest")
+-- Shaped like the real package: `addEventHandler` lives on `circus/state`, not
+-- on the root the runner resolves first.
+local CircusStateModule = makeInstance("state")
+local CircusModule =
+	makeInstance("JestCircus", { circus = makeInstance("circus", { state = CircusStateModule }) })
+local ExpectModule = makeInstance("Expect")
+local RuntimeModule = makeInstance("JestRuntime")
 local Jest = {
 	runCLI = function(_, config)
 		return {
@@ -184,7 +203,11 @@ local stubs = {
 			return path
 		end,
 		findSiblingPackage = function(_module, name)
-			return if name == "JestCircus" then CircusModule else ExpectModule
+			if name == "JestCircus" then
+				return CircusModule
+			end
+
+			return if name == "JestRuntime" then RuntimeModule else ExpectModule
 		end,
 	},
 	["../intercept-writeable"] = {
@@ -241,12 +264,13 @@ local stubs = {
 		unpatch = function() end,
 	},
 	-- Reached through the shared runner-result module, which resolves the
-	-- run's own jest-circus / Expect packages before installing the hook.
+	-- run's own jest-circus / Expect / jest-runtime packages before arming.
 	["./per-test-coverage"] = {
-		install = function()
+		arm = function()
 			liveRecords = {}
-			return liveRecords
+			return { failure = nil, records = liveRecords }
 		end,
+		disarm = function() end,
 	},
 }
 
@@ -256,6 +280,10 @@ local function require(target)
 	end
 
 	if target == CircusModule then
+		return { getState = function() end, run = function() end }
+	end
+
+	if target == CircusStateModule then
 		return { addEventHandler = function() end }
 	end
 
@@ -265,6 +293,10 @@ local function require(target)
 				return {}
 			end,
 		}
+	end
+
+	if target == RuntimeModule then
+		return { setGlobalsForRuntime = function() end }
 	end
 
 	local stub = stubs[target]

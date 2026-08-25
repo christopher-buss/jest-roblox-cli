@@ -21,15 +21,34 @@ local function check(condition: boolean, message: string)
 	end
 end
 
--- Jest-side stand-ins. `installedWith` records what the per-test hook was
--- handed, so the tests can tell an install from a skip.
-local JestModule = {}
-local CircusModule = {}
-local ExpectModule = {}
+-- Jest-side stand-ins. `armedWith` records what the per-test hook was handed,
+-- so the tests can tell an arm from a skip.
+local function makeInstance(name: string, children: any?): any
+	local instance = { Name = name, children = children or {} }
+
+	function instance:FindFirstChild(childName: string)
+		return self.children[childName]
+	end
+
+	function instance:IsA(className: string)
+		return className == "ModuleScript"
+	end
+
+	return instance
+end
+
+local JestModule = makeInstance("Jest")
+-- Shaped like the real package: `circus/state` under a `circus` folder.
+local CircusStateModule = makeInstance("state")
+local CircusModule =
+	makeInstance("JestCircus", { circus = makeInstance("circus", { state = CircusStateModule }) })
+local ExpectModule = makeInstance("Expect")
+local RuntimeModule = makeInstance("JestRuntime")
 
 local siblingsResolve = true
-local installedWith: any = nil
-local nextRecords: { any } = {}
+local armedWith: any = nil
+local disarms = 0
+local nextInstallation: any = nil
 
 local stubs = {
 	["./instance-resolver"] = {
@@ -38,23 +57,34 @@ local stubs = {
 				return nil
 			end
 
-			return if name == "JestCircus" then CircusModule else ExpectModule
+			if name == "JestCircus" then
+				return CircusModule
+			end
+
+			return if name == "JestRuntime" then RuntimeModule else ExpectModule
 		end,
 	},
 	["./per-test-coverage"] = {
-		install = function(addEventHandler: any, getState: any, getCoverage: any)
-			installedWith = {
-				addEventHandler = addEventHandler,
-				getCoverage = getCoverage,
-				getState = getState,
-			}
-			return nextRecords
+		arm = function(options: any)
+			armedWith = options
+			nextInstallation = nextInstallation or { failure = nil, records = {} }
+			return nextInstallation
+		end,
+		disarm = function()
+			disarms += 1
 		end,
 	},
 }
 
+-- The vendored package's own export shape: the root re-exports `circus/init`,
+-- which forwards the run entry points and the test globals but NOT
+-- `addEventHandler`. That symbol only exists on `circus/state`.
 local function require(target: any)
 	if target == CircusModule then
+		return { getState = function() end, resetState = function() end, run = function() end }
+	end
+
+	if target == CircusStateModule then
 		return { addEventHandler = function() end }
 	end
 
@@ -66,14 +96,17 @@ local function require(target: any)
 		}
 	end
 
+	if target == RuntimeModule then
+		return { setGlobalsForRuntime = function() end }
+	end
+
 	local stub = stubs[target]
 	check(stub ~= nil, "unstubbed require: " .. tostring(target))
 	return stub
 end
 
-local warnings = 0
 local function warn()
-	warnings += 1
+	fail("the result builder must not degrade attribution to a warning")
 end
 
 local RunnerResult = __MODULE__
@@ -82,8 +115,9 @@ local JEST_RESULT = { numPassedTests = 3, success = true }
 
 local function reset()
 	_G.__jest_roblox_cov = nil
-	installedWith = nil
-	nextRecords = {}
+	armedWith = nil
+	disarms = 0
+	nextInstallation = nil
 	siblingsResolve = true
 end
 
@@ -137,47 +171,85 @@ local function testBeginCoverageResetsTheSink()
 	check(next(_G.__jest_roblox_cov) == nil, "T4: the sink starts empty")
 end
 
--- T5: per-test attribution installs the hook against this run's jest instance
--- and its records ride out on the payload.
+-- T5: per-test attribution arms against this run's jest instance and the
+-- records its test files collect ride out on the payload.
 local function testPerTestCoverageAttaches()
 	reset()
-	nextRecords = { { delta = {}, testCaseId = "adds", testFilePath = "Foo/bar.spec" } }
+	nextInstallation = {
+		failure = nil,
+		records = { { delta = {}, testCaseId = "adds", testFilePath = "Foo/bar.spec" } },
+	}
 	local state = RunnerResult.beginCoverage(JestModule, { coverage = true, perTest = true })
 	local payload = RunnerResult.build(JEST_RESULT, { coverage = state })
 
-	check(installedWith ~= nil, "T5: the hook is installed")
-	check(installedWith.getCoverage() == _G.__jest_roblox_cov, "T5: the hook reads the sink")
-	check(payload.runner.perTestCoverage == nextRecords, "T5: the records are attached")
+	check(armedWith ~= nil, "T5: the hook is armed")
+	check(armedWith.getCoverage() == _G.__jest_roblox_cov, "T5: the hook reads the sink")
+	check(armedWith.runtimeClass ~= nil, "T5: the runtime class to patch is handed over")
+	check(
+		payload.runner.perTestCoverage == nextInstallation.records,
+		"T5: the records are attached"
+	)
 end
 
--- T6: no per-test flag means no hook, and an installed hook that recorded
--- nothing leaves the field absent rather than encoding an empty list.
+-- T5b: the hook is armed against `circus/state`, not the JestCircus package
+-- root. Regression: the root re-exports `circus/init`, whose exports carry no
+-- `addEventHandler`, so arming there registers nothing and throws mid-run.
+local function testPerTestCoverageResolvesCircusState()
+	reset()
+	RunnerResult.beginCoverage(JestModule, { coverage = true, perTest = true })
+
+	check(armedWith ~= nil, "T5b: the hook is armed")
+	check(armedWith.circusState == CircusStateModule, "T5b: circus/state is the target module")
+	check(
+		require(CircusModule).addEventHandler == nil,
+		"T5b: the fixture mirrors the package root, which has no addEventHandler"
+	)
+	check(
+		typeof(require(armedWith.circusState).addEventHandler) == "function",
+		"T5b: the resolved module is the one that has it"
+	)
+end
+
+-- T6: no per-test flag means no hook, and a run that recorded nothing leaves
+-- the field absent rather than encoding an empty list.
 local function testPerTestCoverageAbsentCases()
 	reset()
 	RunnerResult.beginCoverage(JestModule, { coverage = true })
-	check(installedWith == nil, "T6: coverage alone does not install the hook")
+	check(armedWith == nil, "T6: coverage alone does not arm the hook")
+	check(disarms == 1, "T6: a run without attribution disarms the standing patch")
 
 	reset()
 	local state = RunnerResult.beginCoverage(JestModule, { coverage = true, perTest = true })
 	local payload = RunnerResult.build(JEST_RESULT, { coverage = state })
 
-	check(installedWith ~= nil, "T6: the hook is installed")
+	check(armedWith ~= nil, "T6: the hook is armed")
 	check(payload.runner.perTestCoverage == nil, "T6: no records means no field")
 end
 
--- T7: a jest whose circus/expect packages cannot be resolved degrades to no
--- attribution — a warning, not a failed run.
-local function testUnresolvableJestDegrades()
+-- T7: a jest whose circus/expect/runtime packages cannot be resolved fails the
+-- run. Attribution that quietly produces nothing reads downstream as "no test
+-- covered anything", which is a green, wrong answer.
+local function testUnresolvableJestFailsTheRun()
 	reset()
 	siblingsResolve = false
-	local before = warnings
-	local state = RunnerResult.beginCoverage(JestModule, { coverage = true, perTest = true })
-	local payload = RunnerResult.build(JEST_RESULT, { coverage = state })
+	local ok = pcall(RunnerResult.beginCoverage, JestModule, { coverage = true, perTest = true })
 
-	check(state.hits ~= nil, "T7: coverage itself still runs")
-	check(warnings == before + 1, "T7: the unavailable attribution is warned about")
-	check(payload.runner.coverage ~= nil, "T7: coverage is still reported")
-	check(payload.runner.perTestCoverage == nil, "T7: attribution is absent")
+	check(not ok, "T7: unresolvable attribution fails the run")
+end
+
+-- T7b: an install that failed inside a test file's registry surfaces when the
+-- run assembles its envelope, rather than reporting partial attribution.
+local function testFailedInstallFailsTheRun()
+	reset()
+	nextInstallation = { failure = "attempt to call a nil value", records = {} }
+	local state = RunnerResult.beginCoverage(JestModule, { coverage = true, perTest = true })
+	local ok, err = pcall(RunnerResult.build, JEST_RESULT, { coverage = state })
+
+	check(not ok, "T7b: a failed install fails the run")
+	check(
+		string.find(tostring(err), "attempt to call a nil value") ~= nil,
+		"T7b: the cause travels with the failure"
+	)
 end
 
 -- T8: setup time is reported only when the patch actually measured some.
@@ -218,8 +290,10 @@ testCoverageAttachesTheSink()
 testCoverageOffAttachesNothing()
 testBeginCoverageResetsTheSink()
 testPerTestCoverageAttaches()
+testPerTestCoverageResolvesCircusState()
 testPerTestCoverageAbsentCases()
-testUnresolvableJestDegrades()
+testUnresolvableJestFailsTheRun()
+testFailedInstallFailsTheRun()
 testSetupSeconds()
 testSnapshotWrites()
 testTiming()

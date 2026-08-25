@@ -19,12 +19,12 @@ local PerTestCoverage = require("./per-test-coverage")
 
 	`hits` is the probe sink this run armed, so a run reports what it collected
 	rather than whatever the global holds later; it is nil when the run collects
-	no coverage at all. `records` is nil when per-test attribution is off or
-	unavailable, and fills as tests run.
+	no coverage at all. `perTest` is nil when attribution is off, and otherwise
+	fills as the run's test files install the hook and their tests run.
 ]=]
 export type CoverageState = {
 	hits: { [string]: any }?,
-	records: { PerTestCoverage.Record }?,
+	perTest: PerTestCoverage.Installation?,
 }
 
 -- What a run collects beyond Jest's own result. Attribution rides on coverage
@@ -61,35 +61,58 @@ export type Payload = {
 
 local module = {}
 
--- Install the per-test coverage hook against the same jest-circus and Expect
--- instances Jest itself uses. All resolution is pcall-guarded so a missing or
--- renamed package degrades to no attribution rather than failing the run; the
--- returned accumulator fills as tests run. The matcher state carries the current
--- file (`testPath`) and full test name (`currentTestName`).
-local function installPerTestCoverage(
+-- Where circus keeps its dispatch registry. The JestCircus package root
+-- re-exports `circus/init`, which forwards `setState`, `getState`,
+-- `resetState`, `run` and the test globals but NOT `addEventHandler` — that
+-- lives one module down, on `circus/state`. Reading the symbol off the root
+-- yields nil, and calling it throws from inside the run.
+local function findCircusState(circusModule: Instance): ModuleScript
+	local circus = circusModule:FindFirstChild("circus")
+	local state = if circus then circus:FindFirstChild("state") else nil
+	assert(
+		state and state:IsA("ModuleScript"),
+		"jest-circus exposes no circus/state module to register the coverage hook on"
+	)
+
+	return state :: ModuleScript
+end
+
+--[=[
+	Arm per-test attribution against the jest instance this run uses.
+
+	Nothing here is pcall-guarded. A coverage run whose attribution silently
+	fails reads downstream as "no test covered anything", which credits every
+	statement to no test at all and lands every covered mutant on Ignored —
+	indistinguishable from a real answer, and green. Failing the run is the
+	only outcome a consumer can tell apart.
+]=]
+local function armPerTestCoverage(
 	jestModule: ModuleScript,
 	hits: { [string]: any }
-): { PerTestCoverage.Record }?
-	local ok, recordsOrErr = pcall(function()
-		local circusModule =
-			InstanceResolver.findSiblingPackage(jestModule, "JestCircus", "jest-circus")
-		local expectModule = InstanceResolver.findSiblingPackage(jestModule, "Expect", "expect")
-		assert(circusModule and expectModule, "could not resolve jest-circus / Expect packages")
+): PerTestCoverage.Installation
+	local circusModule =
+		InstanceResolver.findSiblingPackage(jestModule, "JestCircus", "jest-circus")
+	local expectModule = InstanceResolver.findSiblingPackage(jestModule, "Expect", "expect")
+	local runtimeModule =
+		InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
+	assert(
+		circusModule and expectModule and runtimeModule,
+		"could not resolve the jest-circus / Expect / jest-runtime packages"
+	)
 
-		local Circus = (require :: any)(circusModule)
-		local Expect = (require :: any)(expectModule)
+	-- Expect's matcher state lives under a globally-registered symbol in `_G`,
+	-- so this copy reads the same state the per-file copies write. Circus's
+	-- handler list does not, which is why that one is resolved per test file.
+	local Expect = (require :: any)(expectModule)
 
-		return PerTestCoverage.install(Circus.addEventHandler, Expect.getState, function()
+	return PerTestCoverage.arm({
+		circusState = findCircusState(circusModule),
+		getCoverage = function()
 			return hits
-		end)
-	end)
-
-	if ok then
-		return recordsOrErr
-	end
-
-	warn("Per-test coverage attribution unavailable: " .. tostring(recordsOrErr))
-	return nil
+		end,
+		getMatcherState = Expect.getState,
+		runtimeClass = (require :: any)(runtimeModule),
+	})
 end
 
 --[=[
@@ -102,15 +125,15 @@ end
 
 	Per run rather than once per VM, because workspace mode materializes a
 	fresh Jest clone per package and the hook has to reach the circus that
-	package requires. The projects of one package do share a clone, so each
-	installs another handler that circus never drops: from then on every test
-	pays one snapshot and one diff of the hit table per stale handler, into an
-	accumulator nobody reads. Reusing the first install instead would cost
-	nothing — but only if circus keeps its handlers across `runCLI` calls, and
-	a wrong guess there loses attribution silently, which is the fault this
-	seam exists to prevent. Measure that before trading it (HAL-449).
+	package requires. Arming is cheap: the handler itself goes in per test
+	file, from inside the registry that file dispatches through.
 ]=]
 function module.beginCoverage(jestModule: ModuleScript, options: CoverageOptions): CoverageState
+	-- Unconditionally, and before the early return: the per-file hook rides on
+	-- a patch that outlives the run that installed it, so a run wanting no
+	-- attribution has to say so or it keeps filling the last run's sink.
+	PerTestCoverage.disarm()
+
 	if not options.coverage then
 		return {}
 	end
@@ -120,7 +143,7 @@ function module.beginCoverage(jestModule: ModuleScript, options: CoverageOptions
 
 	return {
 		hits = hits,
-		records = if options.perTest then installPerTestCoverage(jestModule, hits) else nil,
+		perTest = if options.perTest then armPerTestCoverage(jestModule, hits) else nil,
 	}
 end
 
@@ -141,9 +164,20 @@ function module.build(value: any, dimensions: Dimensions): Payload
 		-- and hit nothing is a different answer from a run that collected none.
 		runner.coverage = hits
 
-		local records = (coverage :: CoverageState).records
-		if records and #records > 0 then
-			runner.perTestCoverage = records
+		-- Raised here rather than where it happened: the install runs inside
+		-- jest's own per-file setup, where a throw would fail one test file and
+		-- read as a test failure. This is the first point at which the run as a
+		-- whole can refuse to report — see `armPerTestCoverage` for why it must.
+		local perTest = (coverage :: CoverageState).perTest
+		if perTest then
+			local failure = perTest.failure
+			if failure ~= nil then
+				error("Per-test coverage attribution failed: " .. failure, 0)
+			end
+
+			if #perTest.records > 0 then
+				runner.perTestCoverage = perTest.records
+			end
 		end
 	end
 
