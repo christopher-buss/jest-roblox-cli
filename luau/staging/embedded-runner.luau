@@ -16,6 +16,7 @@ local Materializer = require("./materializer")
 local PhaseTiming = require("../phase-timing")
 local PromiseError = require("../promise-error")
 local ResultBudget = require("./result-budget")
+local RunnerResult = require("../runner-result")
 local SetupTiming = require("../setup-timing")
 local SnapshotPatch = require("../snapshot-patch")
 
@@ -32,6 +33,7 @@ export type EntryPayload = {
 		setupFiles: { string }?,
 		setupFilesAfterEnv: { string }?,
 		runnerCoverage: boolean?,
+		runnerPerTestCoverage: boolean?,
 		runnerTiming: boolean?,
 		[string]: any,
 	},
@@ -92,22 +94,6 @@ type StreamingSummary = {
 	numPassedTests: number,
 	numPendingTests: number,
 	success: boolean,
-}
-
--- Fields this runner adds alongside Jest's own result. They sit under one
--- `runner` key so the TS side tells them from Jest's by structure — see
--- `runner.luau`, which nests the same way with more fields.
-type RunnerFields = {
-	coverage: { [string]: any }?,
-	setup: number?,
-	timing: { [string]: number }?,
-}
-
-type JestResultPayload = {
-	success: boolean,
-	value: any?,
-	err: any?,
-	runner: RunnerFields?,
 }
 
 local function resolveSetupPaths(paths: { string }?): { Instance }?
@@ -211,54 +197,49 @@ local function runEntry(
 			entry.config.setupFilesAfterEnv :: any
 		)
 
-		local coverageEnabled = entry.config.runnerCoverage == true
-		if coverageEnabled then
-			-- Per-package isolation: reset the global probe sink
-			-- immediately before Jest.runCLI so the captured map only
-			-- contains hits from this package's instrumented sources.
-			_G.__jest_roblox_cov = {}
-			entry.config.runnerCoverage = nil :: any
-		end
+		-- Per-package isolation: the shared helper resets the global probe
+		-- sink here, immediately before Jest.runCLI, so the captured map only
+		-- contains hits from this package's instrumented sources — and installs
+		-- the per-test hook against this package's own jest instance.
+		local coverage = RunnerResult.beginCoverage(JestModule, {
+			coverage = entry.config.runnerCoverage,
+			perTest = entry.config.runnerPerTestCoverage,
+		})
 
 		-- Strip before Jest.runCLI, mirroring runner.luau — per-entry config
 		-- table, so this only affects this entry, not siblings in the batch.
+		entry.config.runnerCoverage = nil :: any
+		entry.config.runnerPerTestCoverage = nil :: any
 		entry.config.runnerTiming = nil :: any
 
 		local t_jestRunCLI0 = os.clock()
 		local result = Jest.runCLI(callingScript, entry.config, projectInstances):expect()
 		local t_jestRunCLI = os.clock()
 
-		local payload: JestResultPayload = {
-			success = true,
-			value = result.results or result,
-		}
-
-		local runner: RunnerFields = {}
-		if coverageEnabled then
-			runner.coverage = _G.__jest_roblox_cov
-		end
-
-		-- Reported separately so the host subtracts it from the environment
-		-- residual, as it does for a single-package run.
-		local setupSeconds = SetupTiming.getSeconds(setupTimingState)
-		if setupSeconds > 0 then
-			runner.setup = setupSeconds
-		end
-
-		runner.timing = PhaseTiming.build(timingEnabled, {
-			{ name = "findJest", seconds = t_findJest - t_findJest0 },
-			{ name = "patchSnapshot", seconds = t_patchSnapshot - t_patchSnapshot0 },
-			{ name = "requireJest", seconds = t_requireJest - t_requireJest0 },
-			{ name = "resolveProjects", seconds = t_resolveProjects - t_resolveProjects0 },
-			{ name = "resolveSetupFiles", seconds = t_resolveSetupFiles - t_resolveSetupFiles0 },
-			{ name = "jestRunCLI", seconds = t_jestRunCLI - t_jestRunCLI0 },
-			{ name = "total", seconds = os.clock() - t0 },
+		-- Through the seam runner.luau assembles through too. Setup time is
+		-- reported apart from the timing phases so the host subtracts it from
+		-- the environment residual, as it does for a single-package run.
+		--
+		-- No `snapshotWrites` here, unlike runner.luau: this mode returns one
+		-- envelope per package, so the writes ride on the entry itself
+		-- (`ResultEntry.snapshotWrites`) and the host prefers that over the
+		-- payload field. Every other dimension belongs in the call below.
+		local payload = RunnerResult.build(result.results or result, {
+			coverage = coverage,
+			setupSeconds = SetupTiming.getSeconds(setupTimingState),
+			timing = PhaseTiming.build(timingEnabled, {
+				{ name = "findJest", seconds = t_findJest - t_findJest0 },
+				{ name = "patchSnapshot", seconds = t_patchSnapshot - t_patchSnapshot0 },
+				{ name = "requireJest", seconds = t_requireJest - t_requireJest0 },
+				{ name = "resolveProjects", seconds = t_resolveProjects - t_resolveProjects0 },
+				{
+					name = "resolveSetupFiles",
+					seconds = t_resolveSetupFiles - t_resolveSetupFiles0,
+				},
+				{ name = "jestRunCLI", seconds = t_jestRunCLI - t_jestRunCLI0 },
+				{ name = "total", seconds = os.clock() - t0 },
+			}),
 		})
-
-		-- An empty Luau table encodes as `[]`, so attach only a populated one.
-		if next(runner :: any) then
-			payload.runner = runner
-		end
 
 		return HttpService:JSONEncode(payload)
 	end)

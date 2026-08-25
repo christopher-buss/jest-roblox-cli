@@ -113,6 +113,10 @@ end
 
 local function warn() end
 
+-- Shadows the real (readonly, under lute) global the coverage probes write
+-- into, so the runner's own sink reset lands in a table this file can read.
+local _G = {}
+
 -- Per-package scripted behaviour: whether the materializer or Jest fails, or
 -- whether the package prints nothing at all.
 local materializeFails = {}
@@ -127,16 +131,37 @@ local function say(pkg: string, message: string, messageType)
 	end
 end
 
+-- The accumulator the per-test coverage hook hands back on install, and the
+-- config Jest was last handed — both written by the stubs below and read by
+-- the coverage tests.
+local liveRecords: any = nil
+local jestSawConfig: any = nil
+
 local JestModule = {}
+local CircusModule = {}
+local ExpectModule = {}
 local Jest = {
 	runCLI = function(_, config)
 		return {
 			expect = function()
 				local pkg = config.pkg
+				jestSawConfig = config
 				say(pkg, "jest:" .. pkg, OUTPUT)
 				say(pkg, "warn:" .. pkg, WARNING)
 				if jestFails[pkg] then
 					error("jest exploded in " .. pkg, 0)
+				end
+
+				-- Stands in for circus firing test_done: real attribution
+				-- lands in the accumulator while Jest runs, one record per
+				-- test, and a probe hit lands in the sink.
+				_G.__jest_roblox_cov["Packages/" .. pkg] = { 1 }
+				if liveRecords ~= nil then
+					table.insert(liveRecords, {
+						delta = { ["Packages/" .. pkg] = { 1 } },
+						testCaseId = "covers " .. pkg,
+						testFilePath = "Packages/" .. pkg .. "/init.spec",
+					})
 				end
 
 				return { results = { success = not jestRedTests[pkg] } }
@@ -157,6 +182,9 @@ local stubs = {
 		end,
 		findInstance = function(path)
 			return path
+		end,
+		findSiblingPackage = function(_module, name)
+			return if name == "JestCircus" then CircusModule else ExpectModule
 		end,
 	},
 	["../intercept-writeable"] = {
@@ -212,11 +240,31 @@ local stubs = {
 		end,
 		unpatch = function() end,
 	},
+	-- Reached through the shared runner-result module, which resolves the
+	-- run's own jest-circus / Expect packages before installing the hook.
+	["./per-test-coverage"] = {
+		install = function()
+			liveRecords = {}
+			return liveRecords
+		end,
+	},
 }
 
 local function require(target)
 	if target == JestModule then
 		return Jest
+	end
+
+	if target == CircusModule then
+		return { addEventHandler = function() end }
+	end
+
+	if target == ExpectModule then
+		return {
+			getState = function()
+				return {}
+			end,
+		}
 	end
 
 	local stub = stubs[target]
@@ -231,6 +279,12 @@ stubs["../game-output-capture"] = __CAPTURE_MODULE__
 -- The real bail module too: it decides when a loop stops taking packages,
 -- which is what the bail assertions below are about.
 stubs["./bail"] = __BAIL_MODULE__
+-- The real result builder as well: it is the seam both runners assemble their
+-- `runner` envelope through, so a workspace run must reach the same fields a
+-- multi run does. Its instance-resolver sits at the luau root, not beside the
+-- staging runner, so it asks under a different path than the runner does.
+stubs["./instance-resolver"] = stubs["../instance-resolver"]
+stubs["../runner-result"] = __RUNNER_RESULT_MODULE__
 
 local EmbeddedRunner = __MODULE__
 
@@ -418,6 +472,83 @@ local function testPopLoopWithoutBailDrains()
 	check(not outcome.bailed, "T9: no --bail never reports a bail")
 end
 
+-- The workspace shape of a coverage run: the host sets both flags on every
+-- entry's config when `collectPerTestCoverage` is on.
+local function coveredEntryFor(pkg: string)
+	return {
+		pkg = pkg,
+		project = "unit",
+		config = { pkg = pkg, runnerCoverage = true, runnerPerTestCoverage = true },
+	}
+end
+
+local function runCovered(pkgs)
+	local entries = {}
+	for _, pkg in pkgs do
+		table.insert(entries, coveredEntryFor(pkg))
+	end
+
+	return EmbeddedRunner.runEmbedded({}, { entries = entries })
+end
+
+local function runnerFieldsOf(result)
+	return HttpService:JSONDecode(result.jestOutput).runner
+end
+
+-- T10: a workspace run with per-test attribution on reports the records the
+-- hook collected, not just the cumulative sink — the same dimensions a multi
+-- run reports, so covering-test narrowing works on both.
+local function testPerTestCoverageReachesTheWire()
+	liveRecords = nil
+	local results = runCovered({ "a" })
+	local runner = runnerFieldsOf(results[1])
+
+	check(runner ~= nil, "T10: a coverage run carries runner fields")
+	check(runner.coverage["Packages/a"] ~= nil, "T10: the cumulative sink is reported")
+	check(runner.perTestCoverage ~= nil, "T10: per-test attribution is reported")
+	check(#runner.perTestCoverage == 1, "T10: one record per test that covered something")
+	check(runner.perTestCoverage[1].testCaseId == "covers a", "T10: the record names its test")
+end
+
+-- T11: attribution is per-package, like the sink it diffs — package b's
+-- records carry none of a's.
+local function testPerTestCoverageIsPerPackage()
+	liveRecords = nil
+	local results = runCovered({ "a", "b" })
+
+	local first = runnerFieldsOf(results[1]).perTestCoverage
+	local second = runnerFieldsOf(results[2]).perTestCoverage
+
+	check(#first == 1 and first[1].testCaseId == "covers a", "T11: a records only its own test")
+	check(#second == 1 and second[1].testCaseId == "covers b", "T11: b records only its own test")
+end
+
+-- T12: both runner-only flags are stripped before Jest.runCLI, so neither
+-- reaches Jest's own argv.
+local function testRunnerFlagsAreStripped()
+	liveRecords = nil
+	jestSawConfig = nil
+	runCovered({ "a" })
+
+	check(jestSawConfig ~= nil, "T12: Jest ran")
+	check(jestSawConfig.runnerCoverage == nil, "T12: the coverage flag is stripped")
+	check(jestSawConfig.runnerPerTestCoverage == nil, "T12: the attribution flag is stripped")
+end
+
+-- T13: a coverage run without attribution installs no hook and reports no
+-- records, so the field stays absent rather than encoding an empty list.
+local function testCoverageWithoutAttribution()
+	liveRecords = nil
+	local entry = coveredEntryFor("a")
+	entry.config.runnerPerTestCoverage = nil
+	local results = EmbeddedRunner.runEmbedded({}, { entries = { entry } })
+	local runner = runnerFieldsOf(results[1])
+
+	check(liveRecords == nil, "T13: no attribution flag installs no hook")
+	check(runner.coverage ~= nil, "T13: coverage is still reported")
+	check(runner.perTestCoverage == nil, "T13: no attribution means no field")
+end
+
 testWindowAndNoBleedAcrossPackages()
 testRecordShape()
 testFailuresKeepOutput()
@@ -427,5 +558,9 @@ testFailureWithoutBailRunsOn()
 testBailStopsThePopLoop()
 testSiblingSignalStopsBeforeFirstPop()
 testPopLoopWithoutBailDrains()
+testPerTestCoverageReachesTheWire()
+testPerTestCoverageIsPerPackage()
+testRunnerFlagsAreStripped()
+testCoverageWithoutAttribution()
 
 print("ALL OK")

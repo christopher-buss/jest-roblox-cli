@@ -5,9 +5,9 @@ local LogService = game:GetService("LogService")
 local GameOutputCapture = require("./game-output-capture")
 local InstanceResolver = require("./instance-resolver")
 local InterceptWriteable = require("./intercept-writeable")
-local PerTestCoverage = require("./per-test-coverage")
 local PhaseTiming = require("./phase-timing")
 local PromiseError = require("./promise-error")
+local RunnerResult = require("./runner-result")
 local SetupTiming = require("./setup-timing")
 local SnapshotPatch = require("./snapshot-patch")
 
@@ -28,33 +28,6 @@ local function fail(err: string)
 		success = false,
 		err = err,
 	}
-end
-
--- Install the per-test coverage hook against the same jest-circus and Expect
--- instances Jest itself uses. All resolution is pcall-guarded so a missing or
--- renamed package degrades to no attribution rather than failing the run; the
--- returned accumulator fills as tests run. The matcher state carries the current
--- file (`testPath`) and full test name (`currentTestName`).
-local function installPerTestCoverage(jestModule: ModuleScript): { any }?
-	local ok, recordsOrErr = pcall(function()
-		local circusModule = InstanceResolver.findSiblingPackage(jestModule, "JestCircus", "jest-circus")
-		local expectModule = InstanceResolver.findSiblingPackage(jestModule, "Expect", "expect")
-		assert(circusModule and expectModule, "could not resolve jest-circus / Expect packages")
-
-		local Circus = (require :: any)(circusModule)
-		local Expect = (require :: any)(expectModule)
-
-		return PerTestCoverage.install(Circus.addEventHandler, Expect.getState, function()
-			return _G.__jest_roblox_cov or {}
-		end)
-	end)
-
-	if ok then
-		return recordsOrErr
-	end
-
-	warn("Per-test coverage attribution unavailable: " .. tostring(recordsOrErr))
-	return nil
 end
 
 local module = {}
@@ -168,13 +141,10 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		config.runnerCoverage = nil :: any
 		config.runnerPerTestCoverage = nil :: any
 
-		local perTestRecords: { any }? = nil
-		if coverageEnabled then
-			_G.__jest_roblox_cov = {}
-			if perTestEnabled then
-				perTestRecords = installPerTestCoverage(findValue)
-			end
-		end
+		local coverage = RunnerResult.beginCoverage(findValue, {
+			coverage = coverageEnabled,
+			perTest = perTestEnabled,
+		})
 
 		local t_jestRunCLI0 = os.clock()
 		local runCLIOk, runCLIValue = pcall(function()
@@ -189,50 +159,24 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 			error(PromiseError.normalize(runCLIValue), 0)
 		end
 
-		local jestResult = runCLIValue
-
-		local result: { [string]: any } = {
-			success = true,
-			value = jestResult,
-		}
-
-		-- Everything this runner adds to Jest's own result lives under one
-		-- `runner` key, so the TS side tells our fields from Jest's by
-		-- structure instead of by a name prefix.
-		local runner: { [string]: any } = {}
-
-		if setupSeconds > 0 then
-			runner.setup = setupSeconds
-		end
-
-		runner.timing = PhaseTiming.build(timingEnabled, {
-			{ name = "findJest", seconds = t_findJest - t_findJest0 },
-			{ name = "patchSnapshot", seconds = t_patchSnapshot - t_patchSnapshot0 },
-			{ name = "requireJest", seconds = t_requireJest - t_requireJest0 },
-			{ name = "resolveProjects", seconds = t_resolveProjects - t_resolveProjects0 },
-			{ name = "resolveSetupFiles", seconds = t_resolveSetupFiles - t_resolveSetupFiles0 },
-			{ name = "jestRunCLI", seconds = t_jestRunCLI - t_jestRunCLI0 },
-			{ name = "total", seconds = os.clock() - t0 },
+		-- Through the seam the workspace runner assembles through too.
+		return RunnerResult.build(runCLIValue, {
+			coverage = coverage,
+			setupSeconds = setupSeconds,
+			snapshotWrites = snapshotWrites,
+			timing = PhaseTiming.build(timingEnabled, {
+				{ name = "findJest", seconds = t_findJest - t_findJest0 },
+				{ name = "patchSnapshot", seconds = t_patchSnapshot - t_patchSnapshot0 },
+				{ name = "requireJest", seconds = t_requireJest - t_requireJest0 },
+				{ name = "resolveProjects", seconds = t_resolveProjects - t_resolveProjects0 },
+				{
+					name = "resolveSetupFiles",
+					seconds = t_resolveSetupFiles - t_resolveSetupFiles0,
+				},
+				{ name = "jestRunCLI", seconds = t_jestRunCLI - t_jestRunCLI0 },
+				{ name = "total", seconds = os.clock() - t0 },
+			}),
 		})
-
-		if next(snapshotWrites) then
-			runner.snapshotWrites = snapshotWrites
-		end
-
-		if coverageEnabled then
-			runner.coverage = _G.__jest_roblox_cov
-			if perTestRecords and #perTestRecords > 0 then
-				runner.perTestCoverage = perTestRecords
-			end
-		end
-
-		-- An empty Luau table encodes as `[]`, so attach only a populated one
-		-- and let the field stay absent otherwise.
-		if next(runner) then
-			result.runner = runner
-		end
-
-		return result
 	end
 
 	local jestDone = false

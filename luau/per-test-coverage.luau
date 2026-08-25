@@ -12,7 +12,7 @@
 local Attribution = require("./coverage-attribution")
 
 type MatcherState = { currentTestName: string?, testPath: Instance? }
-type Record = { delta: any, testCaseId: string, testFilePath: string }
+export type Record = { delta: any, testCaseId: string, testFilePath: string }
 
 local module = {}
 
