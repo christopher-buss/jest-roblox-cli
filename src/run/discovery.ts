@@ -20,6 +20,28 @@ interface ClassifiedTestFiles {
 	typeTestFiles: Array<string>;
 }
 
+/**
+ * Drop the files a `testPathPattern` regex does not select; `undefined` selects
+ * everything.
+ *
+ * Shared rather than inlined at each call site: the two discovery paths glob
+ * different things — this one walks `testMatch`, while workspace mode walks a
+ * project's `include` (`discoverProjectTestFiles`) — but both have to read the
+ * same pattern the same way, or a change to the matching rule lands in one
+ * dispatch mode only.
+ */
+export function filterByTestPathPattern(
+	files: Array<string>,
+	testPathPattern: string | undefined,
+): Array<string> {
+	if (testPathPattern === undefined) {
+		return files;
+	}
+
+	const pathPattern = new RegExp(testPathPattern);
+	return files.filter((file) => pathPattern.test(file));
+}
+
 export function discoverTestFiles(
 	config: ResolvedConfig,
 	cliFiles?: Array<string>,
@@ -47,12 +69,7 @@ export function discoverTestFiles(
 	const uniqueBaseFiles = new Set(baseFiles);
 	const totalFiles = uniqueBaseFiles.size;
 
-	let filtered = baseFiles;
-	if (config.testPathPattern !== undefined) {
-		const pathPattern = new RegExp(config.testPathPattern);
-		filtered = filtered.filter((file) => pathPattern.test(file));
-	}
-
+	const filtered = filterByTestPathPattern(baseFiles, config.testPathPattern);
 	return { files: [...new Set(filtered)], totalFiles };
 }
 

@@ -1,22 +1,12 @@
-import { collectMounts } from "@isentinel/rojo-utils";
-
 import * as path from "node:path";
 
-import type { InstancePathResolver } from "../config/instance-path.ts";
-import { createInstancePathResolver } from "../config/instance-path.ts";
 import { loadConfig } from "../config/loader.ts";
 import { mergeCliWithConfig } from "../config/merge.ts";
-import { narrowForLuauRun } from "../config/narrow-by-files.ts";
-import { createFsClassifier } from "../config/projects.ts";
-import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
-import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
-import { classifyTestFiles, discoverTestFiles } from "../run/discovery.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { PackageInfo } from "./package-resolver.ts";
-import { loadPackageRojoTree } from "./package-rojo-tree.ts";
 
 const ROJO_PROJECT_DEFAULT = "test.project.json";
 
@@ -41,11 +31,10 @@ export async function loadWorkspacePackagesAsync({
 		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
 			return loadConfig(undefined, info.packageDirectory);
 		});
-		const packageConfig = narrowPackageTestPathPattern(
-			mergeCliWithConfig(cli, fileConfig),
-			cli,
-			info,
-		);
+		// The `--testPathPattern` narrow happens per project in
+		// `selectWorkspaceTests`, where the project's resolved Rojo mounts are
+		// in hand; the package config carries the raw FS pattern until then.
+		const packageConfig = mergeCliWithConfig(cli, fileConfig);
 
 		loaded.push({
 			descriptor: buildPackageDescriptor(info, packageConfig),
@@ -61,71 +50,6 @@ export async function loadWorkspacePackagesAsync({
 // config is intentionally not consulted (see `buildPackageDescriptor`).
 function resolveRojoProjectPath(info: PackageInfo, packageConfig: ResolvedConfig): string {
 	return path.resolve(info.packageDirectory, packageConfig.rojoProject ?? ROJO_PROJECT_DEFAULT);
-}
-
-// The package's own Rojo tree is the authority on where its sources land, so
-// each package narrows against its own mounts. Built here rather than reused
-// from `resolvePackageContextsAsync` because the narrow runs before contexts
-// resolve — and only for a package carrying a pattern, so a bare workspace run
-// never loads a tree for it.
-function packageInstancePathResolver(
-	info: PackageInfo,
-	packageConfig: ResolvedConfig,
-): InstancePathResolver {
-	const rojoTree = loadPackageRojoTree(
-		resolveRojoProjectPath(info, packageConfig),
-		info.packageDirectory,
-	);
-	// The two bases differ whenever a package points `rootDir` at a
-	// subdirectory: discovery relativizes files against `rootDir`, while
-	// `loadPackageRojoTree` rebases mounts onto the package directory and the
-	// tsconfigs are read from there too.
-	return createInstancePathResolver({
-		mountBase: info.packageDirectory,
-		mounts: collectMounts(rojoTree, "", createFsClassifier(info.packageDirectory)),
-		rootDirectory: packageConfig.rootDir,
-		tsconfigMappings: resolveAllTsconfigMappings(info.packageDirectory),
-	});
-}
-
-/**
- * Resolve a `--testPathPattern` against this package's files Node-side, then
- * forward an Instance-namespace pattern (see {@link narrowForLuauRun}).
- *
- * A pattern that matches no file in this package simply targets a different
- * package: keep the (zero-matching) raw pattern so Jest-on-Roblox runs
- * nothing, and set `passWithNoTests` so it doesn't `exit(1)`. The raw pattern
- * is load-bearing here — clearing it would drop the filter entirely and make
- * the Luau side fall back to `testMatch`, running the whole package.
- */
-function narrowPackageTestPathPattern(
-	packageConfig: ResolvedConfig,
-	cli: CliOptions,
-	info: PackageInfo,
-): ResolvedConfig {
-	if (packageConfig.testPathPattern === undefined) {
-		return packageConfig;
-	}
-
-	const { files } = discoverTestFiles(packageConfig);
-	// `mergeCliWithConfig` no longer folds the typecheck flags into the resolved
-	// config, so resolve the CLI layer here to keep `--typecheckOnly` honored
-	// when classifying runtime files for the narrow.
-	const typecheck = resolveTypecheckConfig({
-		cli: { enabled: cli.typecheck, only: cli.typecheckOnly, tsconfig: cli.typecheckTsconfig },
-		root: packageConfig.typecheck,
-	});
-	const { runtimeFiles } = classifyTestFiles(files, typecheck);
-	if (runtimeFiles.length === 0) {
-		return { ...packageConfig, passWithNoTests: true };
-	}
-
-	return narrowForLuauRun({
-		config: packageConfig,
-		filterActive: true,
-		runtimeFiles,
-		toInstancePath: packageInstancePathResolver(info, packageConfig),
-	});
 }
 
 function buildPackageDescriptor(

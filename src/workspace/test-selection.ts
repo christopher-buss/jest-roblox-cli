@@ -2,6 +2,8 @@ import * as path from "node:path";
 
 import { applyExcludes } from "../config/apply-excludes.ts";
 import { deriveTypecheckInclude } from "../config/derive-typecheck-include.ts";
+import { createInstancePathResolver } from "../config/instance-path.ts";
+import { narrowForLuauRun } from "../config/narrow-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type {
 	ResolvedTypecheckConfig,
@@ -9,7 +11,12 @@ import type {
 } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
-import { classifyTestFiles } from "../run/discovery.ts";
+import type { TsconfigMappingCache } from "../executor/tsconfig-mappings.ts";
+import {
+	createTsconfigMappingCache,
+	resolveAllTsconfigMappings,
+} from "../executor/tsconfig-mappings.ts";
+import { classifyTestFiles, filterByTestPathPattern } from "../run/discovery.ts";
 import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
 import { createGlobCache, type GlobCache, globSync } from "../utils/glob.ts";
 import { applyProjectFilter, type PackageContext } from "./project-contexts.ts";
@@ -72,6 +79,24 @@ interface PackageEntriesInput {
 	ctx: PackageContext;
 	globCache: GlobCache;
 	packageTypecheck: ResolvedTypecheckConfig;
+	tsconfigCache: TsconfigMappingCache;
+}
+
+interface PendingEntryInput {
+	ctx: PackageContext;
+	globCache: GlobCache;
+	project: ResolvedProjectConfig;
+	tsconfigCache: TsconfigMappingCache;
+	typecheck: ResolvedTypecheckConfig;
+}
+
+interface ProjectNarrowInput {
+	packageDirectory: string;
+	project: ResolvedProjectConfig;
+	projectConfig: ResolvedConfig;
+	testFiles: Array<string>;
+	tsconfigCache: TsconfigMappingCache;
+	typecheck: ResolvedTypecheckConfig;
 }
 
 interface ProjectTypeTestInput {
@@ -151,36 +176,6 @@ function applyEmptyPackagePolicy(
 	return { emptyPackageErrors, pending };
 }
 
-function buildProjectExecutionConfig(
-	packageConfig: ResolvedConfig,
-	project: ResolvedProjectConfig,
-): ResolvedConfig {
-	return {
-		...project.config,
-		passWithNoTests: packageConfig.passWithNoTests,
-		projects: project.projects,
-		rootDir: packageConfig.rootDir,
-		testMatch: project.testMatch,
-	};
-}
-
-function discoverProjectTestFiles(
-	project: ResolvedProjectConfig,
-	packageDirectory: string,
-	globCache: GlobCache,
-): Array<string> {
-	const found: Array<string> = [];
-	for (const pattern of project.include) {
-		found.push(...globSync(pattern, { cache: globCache, cwd: packageDirectory }));
-	}
-
-	// Workspace mode never consumes positional file args (no auto-pick path), so
-	// the exclude gate is unconditional — there is no user-chosen file set to
-	// bypass. Runtime discovery globs the Runtime `include` only; Type Tests are
-	// discovered separately by `discoverProjectTypeTests` from the `-d` include.
-	return applyExcludes([...new Set(found)], project.exclude);
-}
-
 // Per-(package, project) Type Test discovery, mirroring multi's
 // `collectPendingJobs`: derive the `-d` include from the project's Runtime
 // `include` (unless an explicit `test.typecheck.include` is set), glob it
@@ -236,27 +231,131 @@ function recordProjectTypeTests(
 	});
 }
 
+function buildProjectExecutionConfig(
+	packageConfig: ResolvedConfig,
+	project: ResolvedProjectConfig,
+): ResolvedConfig {
+	return {
+		...project.config,
+		passWithNoTests: packageConfig.passWithNoTests,
+		projects: project.projects,
+		rootDir: packageConfig.rootDir,
+		testMatch: project.testMatch,
+	};
+}
+
+function discoverProjectTestFiles(
+	project: ResolvedProjectConfig,
+	packageDirectory: string,
+	globCache: GlobCache,
+): Array<string> {
+	const found: Array<string> = [];
+	for (const pattern of project.include) {
+		found.push(...globSync(pattern, { cache: globCache, cwd: packageDirectory }));
+	}
+
+	// Workspace mode never consumes positional file args (no auto-pick path), so
+	// the exclude gate is unconditional — there is no user-chosen file set to
+	// bypass. Runtime discovery globs the Runtime `include` only; Type Tests are
+	// discovered separately by `discoverProjectTypeTests` from the `-d` include.
+	return applyExcludes([...new Set(found)], project.exclude);
+}
+
+/**
+ * Resolve a `--testPathPattern` against this project's discovered files
+ * Node-side, then forward an Instance-namespace pattern (see
+ * {@link narrowForLuauRun}).
+ *
+ * Narrowed per project rather than per package so the mounts come from
+ * `project.rojoMounts` — the same include-filtered, ancestor-pruned,
+ * `outDir`-pinned set multi narrows against. A raw walk of the package's Rojo
+ * tree would answer with whichever mount sits deepest on disk instead, so the
+ * two modes would translate one file to two different sub-paths.
+ *
+ * A pattern that matches nothing in this project simply targets another one:
+ * keep the (zero-matching) raw pattern so Jest-on-Roblox runs nothing, and set
+ * `passWithNoTests` so it doesn't `exit(1)`. The raw pattern is load-bearing
+ * here — clearing it would drop the filter entirely and make the Luau side fall
+ * back to `testMatch`, running the whole project.
+ */
+function narrowProjectTestPathPattern({
+	packageDirectory,
+	project,
+	projectConfig,
+	testFiles,
+	tsconfigCache,
+	typecheck,
+}: ProjectNarrowInput): ResolvedConfig {
+	if (projectConfig.testPathPattern === undefined) {
+		return projectConfig;
+	}
+
+	const matched = filterByTestPathPattern(testFiles, projectConfig.testPathPattern);
+	const { runtimeFiles } = classifyTestFiles(matched, typecheck);
+	if (runtimeFiles.length === 0) {
+		return { ...projectConfig, passWithNoTests: true };
+	}
+
+	return narrowForLuauRun({
+		config: projectConfig,
+		filterActive: true,
+		runtimeFiles,
+		// One base, not two: `discoverProjectTestFiles` globs the package
+		// directory, and `resolveAllProjects` reads the mounts and the tsconfigs
+		// from there too, so the project's `rootDir` never enters this
+		// translation.
+		toInstancePath: createInstancePathResolver({
+			mountBase: packageDirectory,
+			mounts: project.rojoMounts,
+			rootDirectory: packageDirectory,
+			tsconfigMappings: resolveAllTsconfigMappings(packageDirectory, tsconfigCache),
+		}),
+	});
+}
+
+function buildPendingEntry({
+	ctx,
+	globCache,
+	project,
+	tsconfigCache,
+	typecheck,
+}: PendingEntryInput): PendingEntry {
+	const { packageDirectory } = ctx.info;
+	// `--typecheckOnly` / per-project `only` means "don't run runtime tests":
+	// zero the runtime file set so the package contributes only Type Tests (the
+	// short-circuit then skips the place build + dispatch).
+	const testFiles = typecheck.only
+		? []
+		: discoverProjectTestFiles(project, packageDirectory, globCache);
+
+	return {
+		pkg: ctx.info.name,
+		project,
+		projectConfig: narrowProjectTestPathPattern({
+			packageDirectory,
+			project,
+			projectConfig: buildProjectExecutionConfig(ctx.pkgConfig, project),
+			testFiles,
+			tsconfigCache,
+			typecheck,
+		}),
+		testFiles,
+	};
+}
+
 function collectPackageProjectEntries(
-	{ cliTypecheck, ctx, globCache, packageTypecheck }: PackageEntriesInput,
+	{ cliTypecheck, ctx, globCache, packageTypecheck, tsconfigCache }: PackageEntriesInput,
 	accumulators: DiscoveredTests,
 ): void {
-	const { packageDirectory } = ctx.info;
-
 	for (const project of ctx.projects) {
 		const typecheck = resolveTypecheckConfig({
 			cli: cliTypecheck,
 			project: project.typecheck,
 			root: ctx.pkgConfig.typecheck,
 		});
-		const projectConfig = buildProjectExecutionConfig(ctx.pkgConfig, project);
-		// `--typecheckOnly` / per-project `only` means "don't run runtime
-		// tests": zero the runtime file set so the package contributes only
-		// Type Tests (the short-circuit then skips the place build +
-		// dispatch).
-		const testFiles = typecheck.only
-			? []
-			: discoverProjectTestFiles(project, packageDirectory, globCache);
-		accumulators.pending.push({ pkg: ctx.info.name, project, projectConfig, testFiles });
+		accumulators.pending.push(
+			buildPendingEntry({ ctx, globCache, project, tsconfigCache, typecheck }),
+		);
 
 		if (typecheck.enabled) {
 			recordProjectTypeTests(
@@ -281,6 +380,13 @@ function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions)
 	// specs and again for Type Tests. One cache for the whole selection turns
 	// that 2N-walk fan into one walk per package directory.
 	const globCache = createGlobCache();
+	// Same shape one layer over: every project in a package rebases its files
+	// through that package's tsconfigs, so the directory scan behind them
+	// happens once per package rather than once per narrowed project. Threaded
+	// as a cache rather than hoisted to a per-package `const` so the scan stays
+	// lazy — a run with no `testPathPattern` narrows nothing and reads no
+	// tsconfig at all.
+	const tsconfigCache = createTsconfigMappingCache();
 
 	for (const ctx of contexts) {
 		// `ignoreSourceErrors`/`spawnTimeout` are package-wide (no project
@@ -292,7 +398,7 @@ function collectPendingEntries(contexts: Array<PackageContext>, cli: CliOptions)
 		});
 
 		collectPackageProjectEntries(
-			{ cliTypecheck, ctx, globCache, packageTypecheck },
+			{ cliTypecheck, ctx, globCache, packageTypecheck, tsconfigCache },
 			{ pending, typecheckByDirectory, typeTestEntries, typeTestProjects },
 		);
 	}

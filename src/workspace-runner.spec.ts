@@ -511,6 +511,46 @@ describe(runWorkspaceAsync, () => {
 		);
 	});
 
+	// Parity with multi: both modes narrow against `project.rojoMounts`, so an
+	// `outDir`-pinned project resolves the file under its pinned mount rather
+	// than under the widest mount the package's Rojo tree declares.
+	it("should narrow against the project's pinned mount, not the package tree", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/deep/thing.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		const projects = makeProjectEntries([
+			{ test: { displayName: "main", include: ["src/**/*.spec.luau"], outDir: "src/deep" } },
+		]);
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, projects, rootDir: FOO_DIR },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "main" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli({ testPathPattern: "src/deep/thing.spec" }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.scriptOverride).toContain(
+			'"testPathPattern":"(deep/thing\\\\.spec)"',
+		);
+	});
+
 	it("should pass with no tests in a package the testPathPattern does not match", async () => {
 		expect.assertions(2);
 
