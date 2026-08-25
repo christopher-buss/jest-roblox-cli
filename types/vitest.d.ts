@@ -1,4 +1,4 @@
-// Narrows vitest's own matchers, which ship as `<E>(expected: E) => void` and
+// Narrows vitest's own matchers, which accept unconstrained expected values,
 // therefore accept any argument, and its asymmetric matcher factories, which
 // return `any`. Unlike `jest-extended.d.ts` this needs no `paths` swap: the
 // members live on `JestAssertion`, `CustomMatcher` and
@@ -29,8 +29,8 @@ import type { DeeplyAllowMatchers, MockInstance } from "vitest";
  * Two subjects carry no information to check an expectation against, so both
  * widen to `unknown` and every matcher below stays permissive for them:
  *
- * - A promise. `.resolves` / `.rejects` keep `T` as the promise rather than
- *   its settled value, and neither of those two members can be replaced.
+ * - A direct assertion on a promise. `.resolves` supplies the awaited value as
+ *   `T`; `.rejects` deliberately supplies `unknown`.
  * - `JSONValue`, what `JSON.parse` returns. It says only "some JSON", and a
  *   plain record is never assignable to `JSONObject` for want of an index
  *   signature, so every expectation against one would be a false positive.
@@ -125,30 +125,30 @@ declare module "vitest" {
 	// base's `<E>(expected: E)`, so the merge reports TS2430 here. The
 	// replacement still wins at every call site.
 	// @ts-expect-error -- deliberate narrowing of inherited matchers
-	interface Assertion<T = any> {
-		toBe: <E extends Identical<T>>(expected: E) => void;
-		toBeInstanceOf: (expected: abstract new (...args: Array<any>) => any) => void;
+	interface Assertion<R, T> {
+		toBe: <E extends Identical<T>>(expected: E) => R;
+		toBeInstanceOf: (expected: abstract new (...args: Array<any>) => any) => R;
 		toBeOneOf: <E extends ReadonlyArray<Expected<T>> | ReadonlySet<Expected<T>>>(
 			sample: E,
-		) => void;
-		toContain: <E extends Contained<T>>(item: E) => void;
-		toContainEqual: <E extends Deep<ArrayElement<T>>>(item: E) => void;
-		toEqual: <E extends Expected<T>>(expected: E) => void;
-		toHaveBeenCalledWith: <E extends CallArgs<T>>(...args: E) => void;
-		toHaveBeenLastCalledWith: <E extends CallArgs<T>>(...args: E) => void;
-		toHaveBeenNthCalledWith: <E extends CallArgs<T>>(n: number, ...args: E) => void;
-		toHaveLastReturnedWith: <E extends Deep<CallReturn<T>>>(value: E) => void;
-		toHaveNthReturnedWith: <E extends Deep<CallReturn<T>>>(nthCall: number, value: E) => void;
+		) => R;
+		toContain: <E extends Contained<T>>(item: E) => R;
+		toContainEqual: <E extends Deep<ArrayElement<T>>>(item: E) => R;
+		toEqual: <E extends Expected<T>>(expected: E) => R;
+		toHaveBeenCalledWith: <E extends CallArgs<T>>(...args: E) => R;
+		toHaveBeenLastCalledWith: <E extends CallArgs<T>>(...args: E) => R;
+		toHaveBeenNthCalledWith: <E extends CallArgs<T>>(n: number, ...args: E) => R;
+		toHaveLastReturnedWith: <E extends Deep<CallReturn<T>>>(value: E) => R;
+		toHaveNthReturnedWith: <E extends Deep<CallReturn<T>>>(nthCall: number, value: E) => R;
 		toHaveProperty<K extends number | string, E extends Deep<PropertyValue<T, K>>>(
 			property: K,
 			value?: E,
-		): void;
-		toHaveProperty(property: Array<number | string>, value?: unknown): void;
-		toHaveReturnedWith: <E extends Deep<CallReturn<T>>>(value: E) => void;
-		toMatchObject: <E extends Deep<DeepPartial<Subject<T>>>>(expected: E) => void;
-		toSatisfy: (matcher: (value: Subject<T>) => boolean, message?: string) => void;
-		toStrictEqual: <E extends Expected<T>>(expected: E) => void;
-		toThrow: <E extends Thrown>(expected?: E) => void;
+		): R;
+		toHaveProperty(property: Array<number | string>, value?: unknown): R;
+		toHaveReturnedWith: <E extends Deep<CallReturn<T>>>(value: E) => R;
+		toMatchObject: <E extends Deep<DeepPartial<Subject<T>>>>(expected: E) => R;
+		toSatisfy: (matcher: (value: Subject<T>) => boolean, message?: string) => R;
+		toStrictEqual: <E extends Expected<T>>(expected: E) => R;
+		toThrow: <E extends Thrown>(expected?: E) => R;
 	}
 
 	// @ts-expect-error -- deliberate narrowing of inherited matcher factories

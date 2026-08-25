@@ -154,14 +154,11 @@ function selfSourceEntry(): string {
 const JITI_SOURCE_ALIAS = JSON.stringify({ "@isentinel/jest-roblox": selfSourceEntry() });
 
 /**
- * The Vite-level options every project needs: the `.luau` raw loader and the
- * workspace source aliases. Spread into each project rather than declared once
- * on the root, because an inline project still inherits nothing from it —
- * Vitest 5 documents `extends` as defaulting to `true`, but 5.0.0-beta.7 has
- * yet to flip it, so an absent `extends` resolves to `false`. Once it flips,
- * the root declaration alone suffices and the spreads can go.
+ * The Vite-level options shared by the workspace and Stryker configs: the
+ * `.luau` raw loader and the workspace source aliases. Inline projects inherit
+ * these options from the workspace root.
  */
-const sharedViteOptions = {
+export const sharedViteOptions = {
 	plugins: [luauPlugin],
 	resolve: { alias: workspaceSourceAliases },
 } satisfies TestProjectInlineConfiguration;
@@ -171,7 +168,6 @@ const sharedViteOptions = {
  * exactly this project — and only this one — without restating its settings.
  */
 export const unitProject = {
-	...sharedViteOptions,
 	test: {
 		name: "unit",
 		// `*.bench.ts` benchmarks live beside the unit specs. Scope
@@ -243,7 +239,6 @@ export default defineConfig({
 		projects: [
 			unitProject,
 			{
-				...sharedViteOptions,
 				test: {
 					name: "integration",
 					// Benchmarks belong to the unit project only.
@@ -269,7 +264,6 @@ export default defineConfig({
 				},
 			},
 			{
-				...sharedViteOptions,
 				test: {
 					name: "e2e",
 					// Benchmarks belong to the unit project only, so leave
@@ -286,7 +280,6 @@ export default defineConfig({
 				},
 			},
 			{
-				...sharedViteOptions,
 				test: {
 					name: "live",
 					// Benchmarks belong to the unit project only, so leave

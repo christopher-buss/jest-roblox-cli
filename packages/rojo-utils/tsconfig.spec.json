@@ -4,6 +4,15 @@
 		"composite": true,
 		"lib": ["esnext"],
 		"libReplacement": true,
+		// The monorepo swaps jest-extended's own types for the repo-root
+		// replacement in tsconfig.node.json, which every package spec project
+		// inherits. This one extends the shared base directly, so it restates
+		// the swap; without it the `declare module "vitest"` augmentation never
+		// loads and every jest-extended matcher error-types.
+		"paths": {
+			"*": ["${configDir}/*"],
+			"jest-extended": ["../../types/jest-extended.d.ts"]
+		},
 		"emitDeclarationOnly": true,
 		"noEmit": false,
 		"outDir": "./out-tsc/vitest"

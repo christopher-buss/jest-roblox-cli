@@ -67,7 +67,7 @@ importers:
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 6.0.0-beta.42
-        version: 6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)
+        version: 6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)
       '@isentinel/luau-ast':
         specifier: workspace:*
         version: link:packages/luau-ast
@@ -123,11 +123,11 @@ importers:
         specifier: 7.0.0-dev.20260607.1
         version: 7.0.0-dev.20260607.1
       '@vitest/coverage-v8':
-        specifier: 5.0.0-beta.7
-        version: 5.0.0-beta.7(vitest@5.0.0-beta.7)
+        specifier: 5.0.0-rc.2
+        version: 5.0.0-rc.2(vitest@5.0.0-rc.2)
       '@vitest/eslint-plugin':
         specifier: 1.6.19
-        version: 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7)
+        version: 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2)
       better-typescript-lib:
         specifier: 2.12.0
         version: 2.12.0(typescript@6.0.3)
@@ -165,14 +165,14 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
       vitest:
-        specifier: 5.0.0-beta.7
-        version: 5.0.0-beta.7(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-beta.7)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
+        specifier: 5.0.0-rc.2
+        version: 5.0.0-rc.2(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-rc.2)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/luau-ast:
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 6.0.0-beta.42
-        version: 6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)
+        version: 6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)
       '@isentinel/tsconfig':
         specifier: 2.0.0
         version: 2.0.0(typescript@6.0.3)
@@ -186,11 +186,11 @@ importers:
         specifier: 7.0.0-dev.20260607.1
         version: 7.0.0-dev.20260607.1
       '@vitest/coverage-v8':
-        specifier: 5.0.0-beta.7
-        version: 5.0.0-beta.7(vitest@5.0.0-beta.7)
+        specifier: 5.0.0-rc.2
+        version: 5.0.0-rc.2(vitest@5.0.0-rc.2)
       '@vitest/eslint-plugin':
         specifier: 1.6.19
-        version: 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7)
+        version: 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2)
       eslint:
         specifier: 10.9.0
         version: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
@@ -207,8 +207,8 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
       vitest:
-        specifier: 5.0.0-beta.7
-        version: 5.0.0-beta.7(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-beta.7)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
+        specifier: 5.0.0-rc.2
+        version: 5.0.0-rc.2(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-rc.2)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/roblox-runner:
     dependencies:
@@ -224,7 +224,7 @@ importers:
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 6.0.0-beta.42
-        version: 6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)
+        version: 6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)
       '@isentinel/tsconfig':
         specifier: 2.0.0
         version: 2.0.0(typescript@6.0.3)
@@ -241,11 +241,11 @@ importers:
         specifier: 7.0.0-dev.20260607.1
         version: 7.0.0-dev.20260607.1
       '@vitest/coverage-v8':
-        specifier: 5.0.0-beta.7
-        version: 5.0.0-beta.7(vitest@5.0.0-beta.7)
+        specifier: 5.0.0-rc.2
+        version: 5.0.0-rc.2(vitest@5.0.0-rc.2)
       '@vitest/eslint-plugin':
         specifier: 1.6.19
-        version: 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7)
+        version: 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2)
       eslint:
         specifier: 10.9.0
         version: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
@@ -268,8 +268,8 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
       vitest:
-        specifier: 5.0.0-beta.7
-        version: 5.0.0-beta.7(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-beta.7)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
+        specifier: 5.0.0-rc.2
+        version: 5.0.0-rc.2(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-rc.2)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/rojo-utils:
     dependencies:
@@ -279,7 +279,7 @@ importers:
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 6.0.0-beta.42
-        version: 6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)
+        version: 6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)
       '@isentinel/tsconfig':
         specifier: 2.0.0
         version: 2.0.0(typescript@6.0.3)
@@ -290,11 +290,11 @@ importers:
         specifier: 7.0.0-dev.20260607.1
         version: 7.0.0-dev.20260607.1
       '@vitest/coverage-v8':
-        specifier: 5.0.0-beta.7
-        version: 5.0.0-beta.7(vitest@5.0.0-beta.7)
+        specifier: 5.0.0-rc.2
+        version: 5.0.0-rc.2(vitest@5.0.0-rc.2)
       '@vitest/eslint-plugin':
         specifier: 1.6.19
-        version: 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7)
+        version: 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2)
       eslint:
         specifier: 10.9.0
         version: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
@@ -317,8 +317,8 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
       vitest:
-        specifier: 5.0.0-beta.7
-        version: 5.0.0-beta.7(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-beta.7)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
+        specifier: 5.0.0-rc.2
+        version: 5.0.0-rc.2(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-rc.2)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
 
 packages:
 
@@ -2069,11 +2069,11 @@ packages:
     engines: {node: '>=16.20.0'}
     hasBin: true
 
-  '@vitest/coverage-v8@5.0.0-beta.7':
-    resolution: {integrity: sha512-1EiXmCq9KiqB8xAueEZ/hbnVnAl6TuMQyYlQwU4trb+QoGoxAOKQeVWKtho59t4mk2ziEtnJphy/cVFGgkuzTA==}
+  '@vitest/coverage-v8@5.0.0-rc.2':
+    resolution: {integrity: sha512-ZwYwczFui6PCGwxUmT9kUSmquuF1YUB9QMnARqjdVYOegE5+wqEL1NgoEu3jmjyoplHuC6gwktMTp8Bif27f/w==}
     peerDependencies:
-      '@vitest/browser': 5.0.0-beta.7
-      vitest: 5.0.0-beta.7
+      '@vitest/browser': 5.0.0-rc.2
+      vitest: 5.0.0-rc.2
     peerDependenciesMeta:
       '@vitest/browser':
         optional: true
@@ -2094,8 +2094,8 @@ packages:
       vitest:
         optional: true
 
-  '@vitest/mocker@5.0.0-beta.7':
-    resolution: {integrity: sha512-SczTGMNh6ksM5r8ogUwAf8zVbQPgbc6yvdZO9xBsTKT2rLUwpHn95Upod0s0Cpm3/bH898iqRBLXovRZSUbJBg==}
+  '@vitest/mocker@5.0.0-rc.2':
+    resolution: {integrity: sha512-nbUdBsadb3otfazI0v99+PQuSWiBzz5obMM5Pb1mpLzdPSEG6gVHYiVLuj0PC2dcoqPjd6dgsB5o0t70RXbs2A==}
     peerDependencies:
       msw: ^2.4.9
       vite: ^6.0.0 || ^7.0.0 || ^8.0.0
@@ -2105,14 +2105,8 @@ packages:
       vite:
         optional: true
 
-  '@vitest/pretty-format@5.0.0-beta.7':
-    resolution: {integrity: sha512-mYUiYNj9BcF4BawuqncdUlR+zNNbWOWBNsp57jJon2Gq5R2fMqTYQJWHpfvkNqkAAgt/lC6bH5+JISjLIhHa4w==}
-
-  '@vitest/spy@5.0.0-beta.7':
-    resolution: {integrity: sha512-NiE4frPDnDjFaMvaZaj4ASyxc/c2fvSQU8Fpo7D0YNj9AetE4hcA7ewRxhlrg6dHEOt1JhhCgy67e8SCXDh5VQ==}
-
-  '@vitest/utils@5.0.0-beta.7':
-    resolution: {integrity: sha512-DFjgVac0frIqGUZnQCd8lTGYfWnPJfzUNhOubZuvUMgzb+v0mdJjeMEcpmesujZIPasFOR+SzsQ4dS/BCEWGvg==}
+  '@vitest/spy@5.0.0-rc.2':
+    resolution: {integrity: sha512-6/p30efajxGxC3KzLae67vRazEKB8Z8s4l0DwbVJLobXyCHDAQPoVMXeS7nKP8aWHOi8Ec9XBUxFvFPF/NRnYA==}
 
   '@yuku-codegen/binding-android-arm64@0.8.7':
     resolution: {integrity: sha512-C/0zV5IhgVdYhGJTwrY0v8dknxlhiKwtVJkMUaexu9/QvRmzlV4vfU3hZlUSgqc2BxQHntL1mCVbDq8j0FRFDw==}
@@ -2548,9 +2542,6 @@ packages:
   convert-hrtime@5.0.0:
     resolution: {integrity: sha512-lOETlkIeYSJWcbbcvjRKGxVMXJR+8+OQb/mTPbA4ObPMytYIsUbuOE0Jzy60hjARYszq1id0j8KgVhC+WGZVTg==}
     engines: {node: '>=12'}
-
-  convert-source-map@2.0.0:
-    resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
 
   core-js-compat@3.50.0:
     resolution: {integrity: sha512-XGpFGbMLHwSt74YLTKho7Ib242qi6O8MSX+sRokV4oz7iKXvQWGYZthjIhjRGMxjzVkAubBO512dKGYcefmX3Q==}
@@ -3938,6 +3929,9 @@ packages:
   std-env@4.1.0:
     resolution: {integrity: sha512-Rq7ybcX2RuC55r9oaPVEW7/xu3tj8u4GeBYHBWCychFtzMIr86A7e3PPEBPT37sHStKX3+TiX/Fr/ACmJLVlLQ==}
 
+  std-env@4.2.0:
+    resolution: {integrity: sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw==}
+
   string-ts@2.3.1:
     resolution: {integrity: sha512-xSJq+BS52SaFFAVxuStmx6n5aYZU571uYUnUrPXkPFCfdHyZMMlbP2v2Wx5sNBnAVzq/2+0+mcBLBa3Xa5ubYw==}
 
@@ -4202,20 +4196,20 @@ packages:
       yaml:
         optional: true
 
-  vitest@5.0.0-beta.7:
-    resolution: {integrity: sha512-YT/AWBSxJW/GHyNVQzVA7lIj39oRcEPEj1AYMi1Oko7l5GwCh8MO0ufavjVZI0oEYXcAoNmthegJhzGA2pkU2A==}
+  vitest@5.0.0-rc.2:
+    resolution: {integrity: sha512-tSdrRylWxqWHYhyHWUdFd3ASHGXxqGmRcPfjRvir+bcFzJ5se9DLzhvzMPS7F4yLWOPsaaILSMPBbWzMzgC1VA==}
     engines: {node: ^22.12.0 || ^24.0.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
       '@edge-runtime/vm': '*'
       '@opentelemetry/api': ^1.9.0
       '@types/node': ^22.0.0 || >=24.0.0
-      '@vitest/browser-playwright': 5.0.0-beta.7
-      '@vitest/browser-preview': 5.0.0-beta.7
+      '@vitest/browser-playwright': 5.0.0-rc.2
+      '@vitest/browser-preview': 5.0.0-rc.2
       '@vitest/browser-webdriverio': ^5.0.0-beta.5 || >=5.0.0
-      '@vitest/coverage-istanbul': 5.0.0-beta.7
-      '@vitest/coverage-v8': 5.0.0-beta.7
-      '@vitest/ui': 5.0.0-beta.7
+      '@vitest/coverage-istanbul': 5.0.0-rc.2
+      '@vitest/coverage-v8': 5.0.0-rc.2
+      '@vitest/ui': 5.0.0-rc.2
       happy-dom: '*'
       jsdom: '*'
       vite: ^6.4.0 || ^7.0.0 || ^8.0.0
@@ -4888,7 +4882,7 @@ snapshots:
 
   '@isentinel/dict-roblox@1.0.13': {}
 
-  '@isentinel/eslint-config@6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)':
+  '@isentinel/eslint-config@6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.79.0)(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
       '@antfu/install-pkg': 2.0.1
       '@clack/prompts': 1.7.0
@@ -4946,7 +4940,7 @@ snapshots:
       yaml-eslint-parser: 2.1.0
       yargs: 18.0.0
     optionalDependencies:
-      '@vitest/eslint-plugin': 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7)
+      '@vitest/eslint-plugin': 1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2)
       eslint-plugin-jest-extended: 3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       eslint-plugin-n: 18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3)
       oxlint: 1.79.0
@@ -6091,21 +6085,20 @@ snapshots:
       '@typescript/native-preview-win32-arm64': 7.0.0-dev.20260607.1
       '@typescript/native-preview-win32-x64': 7.0.0-dev.20260607.1
 
-  '@vitest/coverage-v8@5.0.0-beta.7(vitest@5.0.0-beta.7)':
+  '@vitest/coverage-v8@5.0.0-rc.2(vitest@5.0.0-rc.2)':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
-      '@vitest/utils': 5.0.0-beta.7
       ast-v8-to-istanbul: 1.0.5
       istanbul-lib-coverage: 3.2.2
       istanbul-lib-report: 3.0.1
       istanbul-reports: 3.2.0
       magicast: 0.5.4
       obug: 2.1.4
-      std-env: 4.1.0
+      std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 5.0.0-beta.7(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-beta.7)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
+      vitest: 5.0.0-rc.2(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-rc.2)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
 
-  '@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7)':
+  '@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2)':
     dependencies:
       '@typescript-eslint/scope-manager': 8.67.0
       '@typescript-eslint/utils': 8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
@@ -6113,30 +6106,20 @@ snapshots:
     optionalDependencies:
       '@typescript-eslint/eslint-plugin': 8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       typescript: 6.0.3
-      vitest: 5.0.0-beta.7(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-beta.7)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
+      vitest: 5.0.0-rc.2(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-rc.2)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/mocker@5.0.0-beta.7(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))':
+  '@vitest/mocker@5.0.0-rc.2(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
-      '@vitest/spy': 5.0.0-beta.7
+      '@vitest/spy': 5.0.0-rc.2
       estree-walker: 3.0.3
       magic-string: 1.2.2
     optionalDependencies:
       vite: 8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0)
 
-  '@vitest/pretty-format@5.0.0-beta.7':
-    dependencies:
-      tinyrainbow: 3.1.1
-
-  '@vitest/spy@5.0.0-beta.7': {}
-
-  '@vitest/utils@5.0.0-beta.7':
-    dependencies:
-      '@vitest/pretty-format': 5.0.0-beta.7
-      convert-source-map: 2.0.0
-      tinyrainbow: 3.1.1
+  '@vitest/spy@5.0.0-rc.2': {}
 
   '@yuku-codegen/binding-android-arm64@0.8.7':
     optional: true
@@ -6471,8 +6454,6 @@ snapshots:
   confbox@0.2.4: {}
 
   convert-hrtime@5.0.0: {}
-
-  convert-source-map@2.0.0: {}
 
   core-js-compat@3.50.0:
     dependencies:
@@ -8136,6 +8117,8 @@ snapshots:
 
   std-env@4.1.0: {}
 
+  std-env@4.2.0: {}
+
   string-ts@2.3.1: {}
 
   string-width@4.2.3:
@@ -8346,17 +8329,17 @@ snapshots:
       jiti: 2.7.0
       yaml: 2.9.0
 
-  vitest@5.0.0-beta.7(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-beta.7)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0)):
+  vitest@5.0.0-rc.2(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-rc.2)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.0-beta.7(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
+      '@vitest/mocker': 5.0.0-rc.2(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
       chai: 6.2.2
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
       magic-string: 1.2.2
       obug: 2.1.4
       picomatch: 4.0.5
-      std-env: 4.1.0
+      std-env: 4.2.0
       tinybench: 6.1.3
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
@@ -8364,7 +8347,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 24.12.3
-      '@vitest/coverage-v8': 5.0.0-beta.7(vitest@5.0.0-beta.7)
+      '@vitest/coverage-v8': 5.0.0-rc.2(vitest@5.0.0-rc.2)
     transitivePeerDependencies:
       - msw
 
