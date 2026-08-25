@@ -23,8 +23,8 @@ importers:
         specifier: 0.3.31
         version: 0.3.31
       arktype:
-        specifier: 2.2.0
-        version: 2.2.0
+        specifier: 2.2.3
+        version: 2.2.3
       c12:
         specifier: 4.0.0-beta.5
         version: 4.0.0-beta.5(jiti@2.7.0)(magicast@0.5.4)
@@ -35,8 +35,8 @@ importers:
         specifier: 6.1.7
         version: 6.1.7
       get-tsconfig:
-        specifier: 4.14.0
-        version: 4.14.0
+        specifier: 4.14.3
+        version: 4.14.3
       highlight.js:
         specifier: 11.11.1
         version: 11.11.1
@@ -59,11 +59,11 @@ importers:
         specifier: 4.1.0
         version: 4.1.0
       tinyrainbow:
-        specifier: 3.1.0
-        version: 3.1.0
+        specifier: 3.1.1
+        version: 3.1.1
       ws:
-        specifier: 8.21.0
-        version: 8.21.0
+        specifier: 8.21.3
+        version: 8.21.3
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 6.0.0-beta.42
@@ -216,11 +216,11 @@ importers:
         specifier: 0.1.5
         version: 0.1.5
       arktype:
-        specifier: 2.2.0
-        version: 2.2.0
+        specifier: 2.2.3
+        version: 2.2.3
       ws:
-        specifier: 8.21.0
-        version: 8.21.0
+        specifier: 8.21.3
+        version: 8.21.3
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 6.0.0-beta.42
@@ -274,8 +274,8 @@ importers:
   packages/rojo-utils:
     dependencies:
       arktype:
-        specifier: 2.2.0
-        version: 2.2.0
+        specifier: 2.2.3
+        version: 2.2.3
     devDependencies:
       '@isentinel/eslint-config':
         specifier: 6.0.0-beta.42
@@ -3095,8 +3095,8 @@ packages:
     resolution: {integrity: sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA==}
     engines: {node: '>=18'}
 
-  get-tsconfig@4.14.0:
-    resolution: {integrity: sha512-yTb+8DXzDREzgvYmh6s9vHsSVCHeC0G3PI5bEXNBHtmshPnO+S5O7qgLEOn0I5QvMy6kpZN8K1NKGyilLb93wA==}
+  get-tsconfig@4.14.3:
+    resolution: {integrity: sha512-++QEw4DIY7WGoukz+/+A/8dGYPT9l9yIadnmSgZ8Rjr3YVSVDipQSO9CdnJo9ePqFqUUqh+wk9uIaoiAwsiPkA==}
 
   get-tsconfig@5.0.0-beta.5:
     resolution: {integrity: sha512-/6gFNr0N04nob252sTQxyFLi3eKFRqIg1I87YcqAMT1i6SQrSF6KujUEQrtrjMV0H/eejTCltLdDSTEMzHbnsQ==}
@@ -4019,6 +4019,10 @@ packages:
     resolution: {integrity: sha512-Bf+ILmBgretUrdJxzXM0SgXLZ3XfiaUuOj/IKQHuTXip+05Xn+uyEYdVg0kYDipTBcLrCVyUzAPz7QmArb0mmw==}
     engines: {node: '>=14.0.0'}
 
+  tinyrainbow@3.1.1:
+    resolution: {integrity: sha512-yau8yJdTt989Mm0Bd/236QnzEiPf2xLLTqUZRUJOo/3CB078LSwzei343DgtJVmfJKJE3TMINY1u42SQsP6mXw==}
+    engines: {node: '>=14.0.0'}
+
   to-valid-identifier@1.0.0:
     resolution: {integrity: sha512-41wJyvKep3yT2tyPqX/4blcfybknGB4D+oETKLs7Q76UiPqRpUJK3hr1nxelyYO0PHKVzJwlu0aCeEAsGI6rpw==}
     engines: {node: '>=20'}
@@ -4270,8 +4274,8 @@ packages:
     resolution: {integrity: sha512-42AtmgqjV+X1VpdOfyTGOYRi0/zsoLqtXQckTmqTeybT+BDIbM/Guxo7x3pE2vtpr1ok6xRqM9OpBe+Jyoqyww==}
     engines: {node: '>=18'}
 
-  ws@8.21.0:
-    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -6098,7 +6102,7 @@ snapshots:
       magicast: 0.5.4
       obug: 2.1.4
       std-env: 4.1.0
-      tinyrainbow: 3.1.0
+      tinyrainbow: 3.1.1
       vitest: 5.0.0-beta.7(@types/node@24.12.3)(@vitest/coverage-v8@5.0.0-beta.7)(vite@8.2.2(@types/node@24.12.3)(jiti@2.7.0)(yaml@2.9.0))
 
   '@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-beta.7)':
@@ -6124,7 +6128,7 @@ snapshots:
 
   '@vitest/pretty-format@5.0.0-beta.7':
     dependencies:
-      tinyrainbow: 3.1.0
+      tinyrainbow: 3.1.1
 
   '@vitest/spy@5.0.0-beta.7': {}
 
@@ -6132,7 +6136,7 @@ snapshots:
     dependencies:
       '@vitest/pretty-format': 5.0.0-beta.7
       convert-source-map: 2.0.0
-      tinyrainbow: 3.1.0
+      tinyrainbow: 3.1.1
 
   '@yuku-codegen/binding-android-arm64@0.8.7':
     optional: true
@@ -6767,7 +6771,7 @@ snapshots:
       enhanced-resolve: 5.24.5
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
       eslint-plugin-es-x: 7.8.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))
-      get-tsconfig: 4.14.0
+      get-tsconfig: 4.14.3
       globals: 15.15.0
       globrex: 0.1.2
       ignore: 5.3.2
@@ -7092,7 +7096,7 @@ snapshots:
 
   get-east-asian-width@1.6.0: {}
 
-  get-tsconfig@4.14.0:
+  get-tsconfig@4.14.3:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
@@ -8199,6 +8203,8 @@ snapshots:
 
   tinyrainbow@3.1.0: {}
 
+  tinyrainbow@3.1.1: {}
+
   to-valid-identifier@1.0.0:
     dependencies:
       '@sindresorhus/base62': 1.0.0
@@ -8391,7 +8397,7 @@ snapshots:
       string-width: 7.2.0
       strip-ansi: 7.2.0
 
-  ws@8.21.0: {}
+  ws@8.21.3: {}
 
   xdg-basedir@5.1.0: {}
 

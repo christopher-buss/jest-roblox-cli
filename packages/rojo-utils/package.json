@@ -30,7 +30,7 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"arktype": "2.2.0"
+		"arktype": "2.2.3"
 	},
 	"devDependencies": {
 		"@isentinel/eslint-config": "6.0.0-beta.42",
