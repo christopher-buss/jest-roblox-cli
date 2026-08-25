@@ -95,6 +95,11 @@ export interface RunProjectsOptions {
 	 */
 	tsconfigCache?: TsconfigMappingCache | undefined;
 	version: string;
+	/**
+	 * Studio-only, experimental: how many Luau VMs the plugin splits the jobs
+	 * across inside one Studio session. Every other backend ignores it.
+	 */
+	vmParallel?: ParallelOption;
 	workStealing?: boolean | undefined;
 }
 
@@ -240,6 +245,7 @@ async function dispatchToBackendAsync(
 			scriptFactory: options.scriptFactory,
 			scriptOverride: options.scriptOverride,
 			streaming: options.streaming,
+			vmParallel: options.vmParallel,
 			workStealing: options.workStealing,
 		});
 		// Surface backend-measured upload/execute as nested spans of the
@@ -420,6 +426,7 @@ function processProjectResult(
 		coverageData: backendResult.coverageData,
 		exitCode: failed === 0 && result.success ? 0 : 1,
 		gameOutput: backendResult.gameOutput,
+		gameOutputScope: backendResult.gameOutputScope,
 		output,
 		result,
 		snapshotWriteFailures: failed > 0 ? failed : undefined,
@@ -444,7 +451,12 @@ function processOrRecoverEntry(
 	// synthetic failed ExecuteResult so the other entries' snapshot
 	// writes and per-package output files still land.
 	try {
-		const projectResult = buildProjectResult(raw.entry, job, raw.fallbackGameOutput);
+		const projectResult = buildProjectResult(
+			raw.entry,
+			job,
+			raw.fallbackGameOutput,
+			raw.gameOutputScope,
+		);
 		return processProjectResult(projectResult, { ...context, config: job.config });
 	} catch (err) {
 		if (!(err instanceof LuauScriptError)) {

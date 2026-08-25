@@ -66,6 +66,10 @@ Options:
   --no-upload-cache                 Always upload the place, even when its bytes are unchanged
   --parallel [n]                    Open-Cloud-only: number of concurrent sessions
                                     (or "auto" = min(jobs, 3); default: 1 session)
+  --experimental-vm-parallel [n]    Studio-only, experimental: run the configs across
+                                    n Luau VMs in one Studio session (default: one
+                                    VM per config; max 4, the hosts the plugin
+                                    ships). Game output becomes batch-scoped
   --project <name...>               Filter which named projects to run
   --setupFiles <path...>            Setup scripts (package specifiers or relative paths)
   --setupFilesAfterEnv <path...>    Post-env setup scripts (package specifiers or relative paths)
@@ -116,6 +120,7 @@ const CLI_OPTION_SPEC = {
 	"coverage-cache": { type: "boolean" },
 	"coverageDirectory": { type: "string" },
 	"coverageReporters": { multiple: true, type: "string" },
+	"experimental-vm-parallel": { type: "string" },
 	"formatters": { multiple: true, type: "string" },
 	"gameOutput": { type: "string" },
 	"headed": { type: "boolean" },
@@ -169,6 +174,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		affectedSince: values["affected-since"],
 		bail: values.bail,
 		config: values.config,
+		experimentalVmParallel: parseVmParallelValue(values["experimental-vm-parallel"]),
 		help: values.help,
 		packages: values.packages,
 		parallel: parseParallelValue(values.parallel),
@@ -199,7 +205,34 @@ export async function main(): Promise<void> {
 }
 
 const PARALLEL_FLAG = "--parallel";
+const VM_PARALLEL_FLAG = "--experimental-vm-parallel";
 const INTEGER_LIKE_PATTERN = /^-?\d+$/;
+
+/**
+ * The flags whose value is optional: `--parallel` and
+ * `--experimental-vm-parallel` both mean "pick the count for me" when written
+ * bare. `parseArgs` has no optional-value mode, so the bare form is rewritten
+ * to an explicit `auto` before it gets there.
+ *
+ * `isValueLike` decides what counts as this flag's value rather than the next
+ * argument: anything else (a following flag, a positional test path) leaves
+ * the flag bare.
+ */
+const OPTIONAL_VALUE_FLAGS: ReadonlyArray<{
+	isValueLike: (next: string) => boolean;
+	name: string;
+}> = [
+	{
+		name: PARALLEL_FLAG,
+		isValueLike: (next) => next === "auto" || INTEGER_LIKE_PATTERN.test(next),
+	},
+	{
+		name: VM_PARALLEL_FLAG,
+		isValueLike: (next) => next === BARE_FLAG_VALUE || INTEGER_LIKE_PATTERN.test(next),
+	},
+];
+
+const BARE_FLAG_VALUE = "auto";
 
 interface CliParseConfig {
 	allowPositionals: true;
@@ -210,26 +243,23 @@ interface CliParseConfig {
 
 type ParsedCliValues = ReturnType<typeof parseWithOptionSpec>["values"];
 
-function normalizeParallelFlag(args: Array<string>): Array<string> {
+function normalizeOptionalValueFlags(args: Array<string>): Array<string> {
 	const out: Array<string> = [];
 	for (let index = 0; index < args.length; index++) {
 		// eslint-disable-next-line ts/no-non-null-assertion -- index bounded by args.length
 		const current = args[index]!;
-		if (current !== PARALLEL_FLAG) {
+		const flag = OPTIONAL_VALUE_FLAGS.find((entry) => entry.name === current);
+		if (flag === undefined) {
 			out.push(current);
 			continue;
 		}
 
 		const next = args[index + 1];
-		const isValueLike =
-			next !== undefined &&
-			!next.startsWith("-") &&
-			(next === "auto" || INTEGER_LIKE_PATTERN.test(next));
-		if (isValueLike) {
-			out.push(PARALLEL_FLAG, next);
+		if (next !== undefined && !next.startsWith("-") && flag.isValueLike(next)) {
+			out.push(flag.name, next);
 			index += 1;
 		} else {
-			out.push(PARALLEL_FLAG, "auto");
+			out.push(flag.name, BARE_FLAG_VALUE);
 		}
 	}
 
@@ -241,7 +271,7 @@ function parseWithOptionSpec(
 ): ReturnType<typeof nodeParseArgs<CliParseConfig>> {
 	return nodeParseArgs({
 		allowPositionals: true,
-		args: normalizeParallelFlag(args),
+		args: normalizeOptionalValueFlags(args),
 		options: CLI_OPTION_SPEC,
 		strict: true,
 	});
@@ -343,6 +373,30 @@ function parseParallelValue(raw: string | undefined): ParallelOption {
 	const parsed = Number.parseInt(raw, 10);
 	if (Number.isNaN(parsed) || parsed < 1) {
 		throw new Error(`Invalid --parallel value "${raw}". Must be a positive integer or "auto".`);
+	}
+
+	return parsed;
+}
+
+/**
+ * `--experimental-vm-parallel [n]`: how many Luau VMs the Studio plugin splits
+ * the run's configs across. Bare — or the `auto` the bare form is rewritten to,
+ * which a user may also type — means one VM per config; an explicit count must
+ * be a positive integer, and the plugin clamps it to the configs it was given
+ * and the hosts it ships.
+ */
+function parseVmParallelValue(raw: string | undefined): ParallelOption {
+	if (raw === undefined) {
+		return undefined;
+	}
+
+	if (raw === BARE_FLAG_VALUE) {
+		return "auto";
+	}
+
+	const parsed = Number.parseInt(raw, 10);
+	if (Number.isNaN(parsed) || parsed < 1) {
+		throw new Error(`Invalid ${VM_PARALLEL_FLAG} value "${raw}". Must be a positive integer.`);
 	}
 
 	return parsed;

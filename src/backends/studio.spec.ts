@@ -12,6 +12,10 @@ import type { JestResult } from "../types/jest-result.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import { StudioBackend } from "./studio.ts";
 
+// The backend's own default run timeout, which is what a run that does not
+// override it must tell the plugin to finish inside.
+const DEFAULT_STUDIO_TIMEOUT = 300_000;
+
 const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.hoisted(
 	async () => import("../../test/mocks/mock-ws"),
 );
@@ -72,6 +76,52 @@ function envelope(
 	return JSON.stringify({ entries });
 }
 
+const vmRequestSchema = type({
+	"requestId": "string",
+	"runBudgetMs?": "number",
+	"vmParallel?": "number",
+});
+
+/**
+ * Run `jobCount` jobs through the backend with the given VM request and hand
+ * back the payload the plugin saw.
+ */
+async function captureVmRequestAsync(
+	jobCount: number,
+	vmParallel: "auto" | number | undefined,
+): Promise<typeof vmRequestSchema.infer> {
+	const backend = new StudioBackend({ port: 0 });
+	const jobs = Array.from({ length: jobCount }, (_unused, index) => job(`job-${String(index)}`));
+	const promise = backend.runTestsAsync({ jobs, vmParallel });
+
+	const wss = getLastCreatedServer()!;
+	const socket = new MockWebSocket();
+	let captured: typeof vmRequestSchema.infer | undefined;
+
+	socket.send.mockImplementation((data) => {
+		captured = vmRequestSchema.assert(JSON.parse(data));
+		queueMicrotask(() => {
+			socket.emit(
+				"message",
+				Buffer.from(
+					JSON.stringify({
+						gameOutput: "[]",
+						jestOutput: envelope(jobs.map(() => ({ jestOutput: successResult() }))),
+						protocolVersion: 5,
+						requestId: captured!.requestId,
+						type: "results",
+					}),
+				),
+			);
+		});
+	});
+
+	wss.emit("connection", socket);
+	await promise;
+
+	return captured!;
+}
+
 function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): MockWebSocketType {
 	const socket = new MockWebSocket();
 
@@ -87,7 +137,7 @@ function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): Moc
 						JSON.stringify({
 							gameOutput: reply.gameOutput ?? JSON.stringify([]),
 							jestOutput,
-							protocolVersion: 4,
+							protocolVersion: 5,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -121,7 +171,7 @@ describe("protocol version handshake", () => {
 						JSON.stringify({
 							gameOutput: "[]",
 							jestOutput: envelope([{ elapsedMs: 1, jestOutput: successResult() }]),
-							protocolVersion: 4,
+							protocolVersion: 5,
 							requestId: captured!.requestId,
 							type: "results",
 						}),
@@ -276,7 +326,7 @@ describe(StudioBackend, () => {
 								{ elapsedMs: 10, jestOutput: successResult() },
 								{ elapsedMs: 20, jestOutput: successResult() },
 							]),
-							protocolVersion: 4,
+							protocolVersion: 5,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -293,6 +343,47 @@ describe(StudioBackend, () => {
 		expect(capturedConfig!.configs).toHaveLength(2);
 		expect(capturedConfig!.configs[0]!.testNamePattern).toBe("alpha-pattern");
 		expect(capturedConfig!.configs[1]!.testNamePattern).toBe("beta-pattern");
+	});
+
+	describe("experimental vm-parallel", () => {
+		// The VM count the plugin receives is a request the CLI has already
+		// resolved: `"auto"` becomes one VM per config (up to the hosts the
+		// plugin ships), an oversized count is clamped to the configs there
+		// are, and anything that lands on a single VM leaves the field off —
+		// that is the sequential path.
+		it("should send the run budget the coordinator must finish inside", async () => {
+			expect.assertions(1);
+
+			const captured = await captureVmRequestAsync(2, 2);
+
+			expect(captured.runBudgetMs).toBe(DEFAULT_STUDIO_TIMEOUT);
+		});
+
+		it("should leave the run budget off a sequential run", async () => {
+			expect.assertions(1);
+
+			const captured = await captureVmRequestAsync(2, undefined);
+
+			expect(captured.runBudgetMs).toBeUndefined();
+		});
+
+		it.for([
+			{ expected: 2, jobCount: 2, requested: 2 },
+			{ expected: 3, jobCount: 3, requested: "auto" as const },
+			{ expected: 2, jobCount: 2, requested: 5 },
+			{ expected: undefined, jobCount: 2, requested: 1 },
+			{ expected: undefined, jobCount: 2, requested: undefined },
+			{ expected: 4, jobCount: 6, requested: "auto" as const },
+		])(
+			"should send vmParallel $expected for $requested over $jobCount jobs",
+			async ({ expected, jobCount, requested }) => {
+				expect.assertions(1);
+
+				const captured = await captureVmRequestAsync(jobCount, requested);
+
+				expect(captured.vmParallel).toBe(expected);
+			},
+		);
 	});
 
 	it("should send a workspace entries payload when jobs carry pkg", async () => {
@@ -329,7 +420,7 @@ describe(StudioBackend, () => {
 								{ jestOutput: successResult() },
 								{ jestOutput: successResult() },
 							]),
-							protocolVersion: 4,
+							protocolVersion: 5,
 							requestId,
 							type: "results",
 						}),
@@ -503,7 +594,7 @@ describe(StudioBackend, () => {
 									}),
 								},
 							]),
-							protocolVersion: 4,
+							protocolVersion: 5,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -592,7 +683,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: "wrong",
-							protocolVersion: 4,
+							protocolVersion: 5,
 							requestId: "wrong-id",
 							type: "results",
 						}),
@@ -603,7 +694,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: envelope([{ jestOutput: successResult() }]),
-							protocolVersion: 4,
+							protocolVersion: 5,
 							requestId: message.requestId,
 							type: "results",
 						}),

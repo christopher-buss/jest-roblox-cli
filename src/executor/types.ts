@@ -10,6 +10,12 @@ export interface ExecuteResult {
 	coverageData?: RawCoverageData | undefined;
 	exitCode: number;
 	gameOutput?: string | undefined;
+	/**
+	 * `"batch"` when `gameOutput` holds the whole run's capture rather than
+	 * this project's own. Set by an in-session parallel Studio run, where
+	 * `LogService` messages carry no project identity.
+	 */
+	gameOutputScope?: "batch" | undefined;
 	output: string;
 	result: JestResult;
 	snapshotWriteFailures?: number | undefined;

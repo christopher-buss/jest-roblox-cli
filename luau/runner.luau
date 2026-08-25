@@ -18,6 +18,14 @@ type Config = {
 	projects: { string }?,
 	setupFiles: { string }?,
 	setupFilesAfterEnv: { string }?,
+	--[[
+		Whether this config's run owns a Game Output capture. Defaults to true.
+		Set false by an in-session parallel VM host, whose capture would be a
+		duplicate: `LogService.MessageOut` broadcasts to every listener in the
+		DataModel, so under parallel the coordinator's single batch capture
+		already holds every message this one would.
+	]]
+	runnerCaptureGameOutput: boolean?,
 	runnerCoverage: boolean?,
 	runnerPerTestCoverage: boolean?,
 	runnerTiming: boolean?,
@@ -44,10 +52,16 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	-- so late warns that fire after Promise:expect resumes the coroutine still
 	-- reach it — GetLogHistory has a known gap here (plans/SNAPSHOT-SUPPORT.md).
 	-- This runner's envelope carries a string, so an empty capture is "[]".
-	local stopCapture = GameOutputCapture.start()
+	--
+	-- Skipped entirely when the caller owns a capture of its own: every
+	-- listener sees every message, so a second capture is the same log
+	-- collected, held, and JSON-encoded twice.
+	local stopCapture = if config.runnerCaptureGameOutput == false
+		then nil
+		else GameOutputCapture.start()
 
 	local function encodeGameOutput(): string
-		return stopCapture() or "[]"
+		return (if stopCapture then stopCapture() else nil) or "[]"
 	end
 
 	local t_findJest0 = os.clock()
@@ -130,16 +144,14 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		end
 		local t_resolveSetupFiles = os.clock()
 
-		local setupTimingState = SetupTiming.patch(
-			findValue,
-			config.setupFiles :: any,
-			config.setupFilesAfterEnv :: any
-		)
+		local setupTimingState =
+			SetupTiming.patch(findValue, config.setupFiles :: any, config.setupFilesAfterEnv :: any)
 
 		-- Strip our own keys before Jest.runCLI (safe: single-task execution per VM)
 		config.runnerTiming = nil :: any
 		config.runnerCoverage = nil :: any
 		config.runnerPerTestCoverage = nil :: any
+		config.runnerCaptureGameOutput = nil :: any
 
 		local coverage = RunnerResult.beginCoverage(findValue, {
 			coverage = coverageEnabled,
@@ -191,15 +203,17 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	end)
 
 	local infiniteYieldMessage: string? = nil
-	local watchdogConnection = LogService.MessageOut:Connect(function(message: string, messageType: Enum.MessageType)
-		if
-			messageType == Enum.MessageType.MessageWarning
-			and string.find(message, "Infinite yield possible")
-			and not infiniteYieldMessage
-		then
-			infiniteYieldMessage = message
+	local watchdogConnection = LogService.MessageOut:Connect(
+		function(message: string, messageType: Enum.MessageType)
+			if
+				messageType == Enum.MessageType.MessageWarning
+				and string.find(message, "Infinite yield possible")
+				and not infiniteYieldMessage
+			then
+				infiniteYieldMessage = message
+			end
 		end
-	end)
+	)
 
 	while not jestDone and not infiniteYieldMessage do
 		task.wait(0.1)

@@ -455,6 +455,12 @@ export interface Config {
 export type UndefinedTolerant<T> = { [K in keyof T]: T[K] | undefined };
 
 /**
+ * A concurrency count as the CLI and config accept it: an explicit number, or
+ * `"auto"` to let the layer that runs the work pick.
+ */
+export type ParallelCount = "auto" | number;
+
+/**
  * Resolved config flattens the root CLI keys with the `test:` jest options
  * so downstream code (executor, projects, test-script, formatters) can read
  * options uniformly. Refactoring those consumers to read `config.test.foo`
@@ -477,6 +483,13 @@ export interface ResolvedConfig
 	coverageDirectory: string;
 	coveragePathIgnorePatterns: Array<string>;
 	coverageReporters: Array<CoverageReporter>;
+	/**
+	 * Studio-only, experimental: the VM count `--experimental-vm-parallel`
+	 * asked for. Sourced from the CLI alone — {@link Config} has no such key,
+	 * so a config file cannot turn in-session parallelism on for everyone who
+	 * runs the suite.
+	 */
+	experimentalVmParallel?: ParallelCount | undefined;
 	/**
 	 * `true` is expanded to `<rootDir>/game-output.log` at resolve time; an
 	 * explicit path is kept as-is.
@@ -650,6 +663,14 @@ export interface CliOptions {
 	coverageCache?: boolean | undefined;
 	coverageDirectory?: string | undefined;
 	coverageReporters?: Array<CoverageReporter> | undefined;
+	/**
+	 * Studio-only, experimental (`--experimental-vm-parallel [n]`): run the
+	 * multi-project configs across `n` Luau VMs inside one Studio session
+	 * (`"auto"` = one VM per config). CLI-only — there is no config
+	 * counterpart, because the DataModel contention it exposes is a property
+	 * of the machine running it, not of the suite.
+	 */
+	experimentalVmParallel?: ParallelCount | undefined;
 	files?: Array<string> | undefined;
 	formatters?: Array<string> | undefined;
 	gameOutput?: string | undefined;
@@ -1047,6 +1068,9 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
 	"coveragePathIgnorePatterns",
 	"coverageReporters",
 	"coverageThreshold",
+	// CLI-only, and not in `Config`, so `ROOT_CLI_KEYS_LIST` cannot carry it:
+	// it tells the plugin how many VMs to run, and means nothing to Jest.
+	"experimentalVmParallel",
 	"typecheck",
 ]);
 

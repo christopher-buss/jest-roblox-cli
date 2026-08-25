@@ -508,6 +508,58 @@ describe(parseArgs, () => {
 		expect(() => parseArgs(["--parallel=xyz"])).toThrow("Invalid --parallel value");
 	});
 
+	it("should parse --experimental-vm-parallel with integer value", () => {
+		expect.assertions(1);
+
+		expect(parseArgs(["--experimental-vm-parallel", "3"]).experimentalVmParallel).toBe(3);
+	});
+
+	it('should treat bare --experimental-vm-parallel as "auto"', () => {
+		expect.assertions(1);
+
+		expect(parseArgs(["--experimental-vm-parallel"]).experimentalVmParallel).toBe("auto");
+	});
+
+	it('should consume "auto" as the --experimental-vm-parallel value, not a test path', () => {
+		expect.assertions(2);
+
+		const result = parseArgs(["--experimental-vm-parallel", "auto"]);
+
+		expect(result.experimentalVmParallel).toBe("auto");
+		expect(result.files).toBeUndefined();
+	});
+
+	it("should treat --experimental-vm-parallel followed by another flag as auto", () => {
+		expect.assertions(2);
+
+		const result = parseArgs(["--experimental-vm-parallel", "--verbose"]);
+
+		expect(result.experimentalVmParallel).toBe("auto");
+		expect(result.verbose).toBeTrue();
+	});
+
+	it("should leave experimentalVmParallel undefined when flag not present", () => {
+		expect.assertions(1);
+
+		expect(parseArgs([]).experimentalVmParallel).toBeUndefined();
+	});
+
+	it("should throw on --experimental-vm-parallel 0", () => {
+		expect.assertions(1);
+
+		expect(() => parseArgs(["--experimental-vm-parallel", "0"])).toThrow(
+			"Invalid --experimental-vm-parallel value",
+		);
+	});
+
+	it("should throw on --experimental-vm-parallel non-numeric", () => {
+		expect.assertions(1);
+
+		expect(() => parseArgs(["--experimental-vm-parallel=xyz"])).toThrow(
+			"Invalid --experimental-vm-parallel value",
+		);
+	});
+
 	it("should parse --apiKey option", () => {
 		expect.assertions(1);
 

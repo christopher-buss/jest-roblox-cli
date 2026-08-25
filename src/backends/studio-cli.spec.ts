@@ -135,7 +135,7 @@ function resultFrame(requestId: string, reply: ReplyOptions): string {
 	return JSON.stringify(
 		reply.omitProtocolVersion === true
 			? frame
-			: { ...frame, protocolVersion: reply.protocolVersion ?? 4 },
+			: { ...frame, protocolVersion: reply.protocolVersion ?? 5 },
 	);
 }
 
@@ -262,6 +262,72 @@ describe(StudioCliBackend, () => {
 		const { rawResults } = await backend.runTestsAsync(singleJob);
 
 		expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
+	});
+
+	it("should carry the requested VM count in the bootstrap payload", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		let bootstrap = "";
+		const { launch } = replyWith(
+			{ entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }] },
+			(request) => {
+				bootstrap = fs.readFileSync(
+					request.args[request.args.indexOf("--runScriptFile") + 1]!,
+					"utf8",
+				);
+			},
+		);
+
+		await makeBackend(launch).runTestsAsync({
+			jobs: [job("alpha"), job("beta")],
+			vmParallel: 2,
+		});
+
+		expect(bootstrap).toContain('"vmParallel":2');
+	});
+
+	it("should tell the plugin the run budget it must finish inside", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		let bootstrap = "";
+		const { launch } = replyWith(
+			{ entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }] },
+			(request) => {
+				bootstrap = fs.readFileSync(
+					request.args[request.args.indexOf("--runScriptFile") + 1]!,
+					"utf8",
+				);
+			},
+		);
+
+		await makeBackend(launch, { timeout: 120_000 }).runTestsAsync({
+			jobs: [job("alpha"), job("beta")],
+			vmParallel: 2,
+		});
+
+		expect(bootstrap).toContain('"runBudgetMs":120000');
+	});
+
+	it("should omit the VM count from the bootstrap payload when not vm-parallel", async () => {
+		expect.assertions(1);
+
+		resetVol();
+
+		let bootstrap = "";
+		const { launch } = replyWith({ entries: [{ jestOutput: successResult() }] }, (request) => {
+			bootstrap = fs.readFileSync(
+				request.args[request.args.indexOf("--runScriptFile") + 1]!,
+				"utf8",
+			);
+		});
+
+		await makeBackend(launch).runTestsAsync(singleJob);
+
+		expect(bootstrap).not.toContain("vmParallel");
 	});
 
 	it("should build a Clean Place with LoadStringEnabled from the rojo project", async () => {

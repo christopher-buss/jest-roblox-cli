@@ -106,6 +106,14 @@ export interface BackendOptions {
 	 */
 	streaming?: StreamingHooks | undefined;
 	/**
+	 * Studio-only, experimental: how many Luau VMs (actor hosts in the plugin
+	 * tree) the run-mode runner splits the configs across. `"auto"` means one
+	 * VM per config. Unset — and any request that resolves to a single VM —
+	 * runs the plain sequential path. The Open Cloud backend ignores it; the
+	 * CLI rejects the combination before a run gets here.
+	 */
+	vmParallel?: ParallelOption;
+	/**
 	 * Open-Cloud-only: when true, fire `parallel` tasks all running the SAME
 	 * `scriptOverride` (no static job-bucket split). Each task pulls work from
 	 * a MemoryStore queue (set up upstream) and returns whatever subset of
@@ -128,6 +136,12 @@ export interface ProjectBackendResult {
 	displayName: string;
 	elapsedMs: number;
 	gameOutput?: string | undefined;
+	/**
+	 * `"batch"` when this project's game output is the whole run's capture
+	 * rather than its own — what an in-session parallel run reports, because
+	 * `LogService` messages carry no project identity.
+	 */
+	gameOutputScope?: "batch" | undefined;
 	luauTiming?: Record<string, number> | undefined;
 	perTestCoverage?: Array<PerTestCoverageEntry> | undefined;
 	result: JestResult;
@@ -138,6 +152,8 @@ export interface ProjectBackendResult {
 export interface RawBackendEntry {
 	entry: EnvelopeEntry;
 	fallbackGameOutput?: string | undefined;
+	/** Carried from the envelope; see {@link ProjectBackendResult}. */
+	gameOutputScope?: "batch" | undefined;
 }
 
 export interface BackendResult {

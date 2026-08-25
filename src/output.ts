@@ -33,9 +33,11 @@ import type {
 	WorkspaceRunResult,
 } from "./run/types.ts";
 import { combineSourceMappers, type SourceMapper } from "./source-mapper/index.ts";
+import type { PackageGameOutput } from "./types/game-output.ts";
 import type { JestResult } from "./types/jest-result.ts";
 import type { TimingResult } from "./types/timing.ts";
 import {
+	buildBatchGameOutput,
 	buildGroupedGameOutput,
 	countGroupedEntries,
 	formatGameOutputNotice,
@@ -477,6 +479,29 @@ function emitMultiResults(
 	});
 }
 
+/**
+ * One group per project normally; one batch-scoped group when the runner
+ * reports that it captured game output for the batch, which an in-session
+ * parallel run does (a `LogService` line cannot be attributed to a project
+ * once projects overlap).
+ */
+function buildAggregatedGroups(projectResults: Array<ProjectResult>): Array<PackageGameOutput> {
+	// The runner's own report of what it did, not the flag the run asked for:
+	// a parallel request that found no VM host ready runs the sequential path,
+	// and one batch group would then throw away every project's log but the
+	// first.
+	const batched = projectResults.find((entry) => entry.result.gameOutputScope === "batch");
+	if (batched !== undefined) {
+		return buildBatchGameOutput(batched.result.gameOutput);
+	}
+
+	return buildGroupedGameOutput(
+		projectResults.map((entry) => {
+			return { project: entry.displayName, raw: entry.result.gameOutput };
+		}),
+	);
+}
+
 function writeAggregatedGameOutput(
 	config: ResolvedConfig,
 	projectResults: Array<ProjectResult>,
@@ -486,11 +511,7 @@ function writeAggregatedGameOutput(
 		return;
 	}
 
-	const groups = buildGroupedGameOutput(
-		projectResults.map((entry) => {
-			return { project: entry.displayName, raw: entry.result.gameOutput };
-		}),
-	);
+	const groups = buildAggregatedGroups(projectResults);
 	writeGroupedGameOutput(config.gameOutput, groups);
 
 	if (!config.silent && options.hintsShown !== true) {

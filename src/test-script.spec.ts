@@ -180,6 +180,14 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("collectPerTestCoverage");
 	});
 
+	it("should not pass experimentalVmParallel to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { experimentalVmParallel: 2 } }));
+
+		expect(argv).not.toHaveProperty("experimentalVmParallel");
+	});
+
 	it("should not pass coverageDirectory to Jest argv", () => {
 		expect.assertions(1);
 

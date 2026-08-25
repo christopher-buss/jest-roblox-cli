@@ -1,11 +1,36 @@
 import { buildJestArgv, type JestArgv } from "../test-script.ts";
-import { isWorkspaceRun, type ProjectJob } from "./interface.ts";
+import { isWorkspaceRun, type ParallelOption, type ProjectJob } from "./interface.ts";
+import { resolveVmHostCount } from "./vm-parallel.ts";
 
 export type RunPayload = ConfigRunPayload | WorkspaceRunPayload;
 
+export interface RunPayloadRequest {
+	jobs: Array<ProjectJob>;
+	/** The transport's own run timeout, in milliseconds. */
+	runBudgetMs: number;
+	/**
+	 * Experimental in-session parallelism: the VM count the user asked for, or
+	 * `"auto"` for one per config. Undefined on every ordinary run.
+	 */
+	vmParallel?: ParallelOption;
+}
+
 interface ConfigRunPayload {
 	config: { configs: Array<JestArgv> };
+	/**
+	 * How long the caller will wait for the whole run, in milliseconds. Sent
+	 * only alongside `vmParallel`: the coordinator's wait for its hosts has to
+	 * end inside this, or the ExecutionError entries it produces for a dead
+	 * host reach a CLI that stopped listening.
+	 */
+	runBudgetMs?: number;
 	runtimeStubMounts: Array<Array<string>>;
+	/**
+	 * Experimental: how many Luau VMs the run-mode runner splits `configs`
+	 * across. Absent means the sequential path — which is also where a request
+	 * for a single VM lands, since one VM is what sequential already is.
+	 */
+	vmParallel?: number;
 }
 
 interface WorkspaceEntry {
@@ -28,13 +53,18 @@ interface ConfigEntries {
  * add their own protocol envelope, while this seam owns the config/workspace
  * dispatch shape consumed by the Run-mode runner.
  */
-export function buildRunPayload(jobs: Array<ProjectJob>): RunPayload {
+export function buildRunPayload({ jobs, runBudgetMs, vmParallel }: RunPayloadRequest): RunPayload {
 	if (isWorkspaceRun(jobs)) {
 		return { workspace: { entries: buildWorkspaceEntries(jobs) } };
 	}
 
 	const { configs, runtimeStubMounts } = buildConfigEntries(jobs);
-	return { config: { configs }, runtimeStubMounts };
+	const hostCount = resolveVmHostCount(vmParallel, configs.length);
+	if (hostCount === undefined) {
+		return { config: { configs }, runtimeStubMounts };
+	}
+
+	return { config: { configs }, runBudgetMs, runtimeStubMounts, vmParallel: hostCount };
 }
 
 /**

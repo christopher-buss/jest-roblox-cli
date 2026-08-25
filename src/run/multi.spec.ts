@@ -1416,6 +1416,21 @@ describe(runMultiProjectAsync, () => {
 		expect(studioCall![0].parallel).toBeUndefined();
 	});
 
+	it("should pass the experimental VM count through to the backend", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults({ experimentalVmParallel: 2 });
+		seedProjectFiles();
+
+		await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
+
+		expect(mocks.runProjects.mock.calls[0]![0].vmParallel).toBe(2);
+	});
+
 	it("should derive coverage paths via collectCoverageFrom passthrough when computing merged data", async () => {
 		expect.assertions(1);
 

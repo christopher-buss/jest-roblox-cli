@@ -439,6 +439,50 @@ file reports **0%** and fails `coverageThreshold`).
 > studio-cli is a local-developer convenience backend (it needs a logged-in
 > Studio and the installed plugin), not a CI path.
 
+### Experimental: in-session VM parallelism
+
+`--experimental-vm-parallel [n]` runs a multi-project suite across `n` Luau VMs
+inside the one Studio session instead of one project after another. Bare, it
+asks for one VM per project, capped at the four `Actor` hosts the plugin ships
+(they are declared in its rojo project, so the pool is fixed when the plugin is
+built); an explicit `n` above that cap is rejected rather than quietly reduced.
+Both Studio backends drive it (`studio` and `studio-cli`) — Open Cloud rejects
+it, because an Open Cloud session runs no scripts to host a second VM (use
+`--parallel` there to shard across sessions), and workspace mode rejects it too.
+
+Each host is an `Actor` in the plugin's own tree, so each project gets its own
+`_G`, its own module cache, and its own copy of Jest. That is what makes the
+overlap safe where running the projects concurrently in one VM is not: Jest
+keeps its run state (the circus describe tree, expect's matcher state) in
+VM-globals.
+
+Two caveats come with it, both inherent rather than temporary:
+
+- **Game output becomes batch-scoped.** `LogService.MessageOut` reports every
+  message to every listener with no source identity, so once projects overlap
+  nothing can say which project printed a line. The `--gameOutput` file writes
+  one group labelled `"project": "(all projects)"`, `"scope": "batch"` instead
+  of one group per project. The label follows what the run did rather than what
+  it asked for: a run that collapses to a single VM (one project, or
+  `--experimental-vm-parallel 1`), or one where no VM host was ready and the
+  plugin fell back to running the projects in turn, keeps per-project groups.
+- **The DataModel is still shared.** Projects that mutate `Workspace`,
+  `ReplicatedStorage`, `Players`, or a DataStore mock conflict when they
+  overlap, however the runner behaves. Turn this on for suites you know are
+  DataModel-disjoint.
+
+Projects whose runtime `jest.config` mounts nest — `ReplicatedStorage` and
+`ReplicatedStorage/Foo` — are always assigned to the same host, and so still run
+one after another. Their config stubs must never sit in the DataModel at the
+same time, or Jest's parent-traversal config lookup resolves the wrong project's
+config.
+
+A host that fails or stops answering yields ExecutionError entries for its own
+projects only; the other hosts' results come back normally. The plugin stops
+waiting inside the run timeout it was given (`--timeout`, 300s by default), so
+those partial results still reach you rather than arriving after the CLI has
+given up.
+
 ## Workspace mode
 
 Run tests across multiple packages in a pnpm workspace in a single invocation.
@@ -596,48 +640,49 @@ project) under `.jest-roblox/output/`.
 
 ## CLI flags
 
-| Flag                             | What it does                                                                                                |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `--backend <type>`               | Choose `auto`, `open-cloud`, `studio`, or `studio-cli`                                                      |
-| `--port <n>`                     | WebSocket port for Studio                                                                                   |
-| `--studioPath <path>`            | Roblox Studio executable for `studio-cli` (auto-detected if unset)                                          |
-| `--headed`                       | Show the Studio window during the run (`studio-cli` only; default: hidden)                                  |
-| `--config <path>`                | Path to config file                                                                                         |
-| `--testPathPattern <regex>`      | Filter test files by path                                                                                   |
-| `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                        |
-| `--formatters <name...>`         | Output formatters (`default`, `agent`, `json`, `github-actions`)                                            |
-| `--outputFile <path>`            | Write results to a file                                                                                     |
-| `--gameOutput <path>`            | Write game print/warn/error to a file                                                                       |
-| `--coverage`                     | Collect coverage                                                                                            |
-| `--no-coverage`                  | Disable coverage for this run, even when enabled in config                                                  |
-| `--coverageDirectory <path>`     | Where to put coverage reports                                                                               |
-| `--coverageReporters <r...>`     | Which report formats to use                                                                                 |
-| `--collectCoverageFrom <glob>`   | Globs for files to include in coverage (repeatable)                                                         |
-| `--no-show-luau`                 | Hide Luau code in failure output                                                                            |
-| `-u, --updateSnapshot`           | Update snapshot files                                                                                       |
-| `--sourceMap`                    | Map Luau errors to TypeScript (roblox-ts only)                                                              |
-| `--rojoProject <path>`           | Path to Rojo project file                                                                                   |
-| `--timeout <ms>`                 | Max time for tests to run                                                                                   |
-| `--passWithNoTests`              | Exit `0` when no test files are found                                                                       |
-| `--verbose`                      | Show each test result                                                                                       |
-| `--silent`                       | Hide all output                                                                                             |
-| `--no-color`                     | Turn off colors                                                                                             |
-| `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                   |
-| `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                  |
-| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one session on studio-cli                     |
-| `--project <name...>`            | Filter which named projects to run                                                                          |
-| `--setupFiles <path...>`         | Scripts to run before env                                                                                   |
-| `--setupFilesAfterEnv <path...>` | Scripts to run after env                                                                                    |
-| `--typecheck`                    | Run type tests too                                                                                          |
-| `--typecheckOnly`                | Run only type tests                                                                                         |
-| `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                     |
-| `--workspace`                    | Enable workspace mode (pair with `--packages` or `--affected-since`; see [Workspace mode](#workspace-mode)) |
-| `--bail`                         | Workspace mode: stop at the first failing package (see [Failing fast](#failing-fast))                       |
-| `--packages <names>`             | Comma-separated package names (workspace mode)                                                              |
-| `--affected-since <ref>`         | Run only packages affected since a git ref (workspace mode)                                                 |
-| `--apiKey <key>`                 | Open Cloud API key (prefer env vars in CI — visible in process listings)                                    |
-| `--universeId <id>`              | Target universe ID (Open Cloud)                                                                             |
-| `--placeId <id>`                 | Target place ID (Open Cloud)                                                                                |
+| Flag                             | What it does                                                                                                                                              |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--backend <type>`               | Choose `auto`, `open-cloud`, `studio`, or `studio-cli`                                                                                                    |
+| `--port <n>`                     | WebSocket port for Studio                                                                                                                                 |
+| `--studioPath <path>`            | Roblox Studio executable for `studio-cli` (auto-detected if unset)                                                                                        |
+| `--headed`                       | Show the Studio window during the run (`studio-cli` only; default: hidden)                                                                                |
+| `--config <path>`                | Path to config file                                                                                                                                       |
+| `--testPathPattern <regex>`      | Filter test files by path                                                                                                                                 |
+| `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                                                                      |
+| `--formatters <name...>`         | Output formatters (`default`, `agent`, `json`, `github-actions`)                                                                                          |
+| `--outputFile <path>`            | Write results to a file                                                                                                                                   |
+| `--gameOutput <path>`            | Write game print/warn/error to a file                                                                                                                     |
+| `--coverage`                     | Collect coverage                                                                                                                                          |
+| `--no-coverage`                  | Disable coverage for this run, even when enabled in config                                                                                                |
+| `--coverageDirectory <path>`     | Where to put coverage reports                                                                                                                             |
+| `--coverageReporters <r...>`     | Which report formats to use                                                                                                                               |
+| `--collectCoverageFrom <glob>`   | Globs for files to include in coverage (repeatable)                                                                                                       |
+| `--no-show-luau`                 | Hide Luau code in failure output                                                                                                                          |
+| `-u, --updateSnapshot`           | Update snapshot files                                                                                                                                     |
+| `--sourceMap`                    | Map Luau errors to TypeScript (roblox-ts only)                                                                                                            |
+| `--rojoProject <path>`           | Path to Rojo project file                                                                                                                                 |
+| `--timeout <ms>`                 | Max time for tests to run                                                                                                                                 |
+| `--passWithNoTests`              | Exit `0` when no test files are found                                                                                                                     |
+| `--verbose`                      | Show each test result                                                                                                                                     |
+| `--silent`                       | Hide all output                                                                                                                                           |
+| `--no-color`                     | Turn off colors                                                                                                                                           |
+| `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                                                                 |
+| `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                |
+| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one session on studio-cli                                                                   |
+| `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism)) |
+| `--project <name...>`            | Filter which named projects to run                                                                                                                        |
+| `--setupFiles <path...>`         | Scripts to run before env                                                                                                                                 |
+| `--setupFilesAfterEnv <path...>` | Scripts to run after env                                                                                                                                  |
+| `--typecheck`                    | Run type tests too                                                                                                                                        |
+| `--typecheckOnly`                | Run only type tests                                                                                                                                       |
+| `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                                                                   |
+| `--workspace`                    | Enable workspace mode (pair with `--packages` or `--affected-since`; see [Workspace mode](#workspace-mode))                                               |
+| `--bail`                         | Workspace mode: stop at the first failing package (see [Failing fast](#failing-fast))                                                                     |
+| `--packages <names>`             | Comma-separated package names (workspace mode)                                                                                                            |
+| `--affected-since <ref>`         | Run only packages affected since a git ref (workspace mode)                                                                                               |
+| `--apiKey <key>`                 | Open Cloud API key (prefer env vars in CI — visible in process listings)                                                                                  |
+| `--universeId <id>`              | Target universe ID (Open Cloud)                                                                                                                           |
+| `--placeId <id>`                 | Target place ID (Open Cloud)                                                                                                                              |
 
 ## How it works
 

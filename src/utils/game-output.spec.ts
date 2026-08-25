@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import type { GameOutputEntry } from "../types/game-output.ts";
 import {
+	buildBatchGameOutput,
 	buildGroupedGameOutput,
 	countGroupedEntries,
 	formatGameOutputNotice,
@@ -150,6 +151,32 @@ describe(buildGroupedGameOutput, () => {
 		const groups = buildGroupedGameOutput([{ project: "client", raw: undefined }]);
 
 		expect(groups).toStrictEqual([{ entries: [], project: "client" }]);
+	});
+});
+
+describe(buildBatchGameOutput, () => {
+	it("should build one batch-scoped group holding the whole run's output", () => {
+		expect.assertions(1);
+
+		const raw = JSON.stringify([{ message: "hi", messageType: 0, timestamp: 1 }]);
+
+		const groups = buildBatchGameOutput(raw);
+
+		expect(groups).toStrictEqual([
+			{
+				entries: [{ message: "hi", messageType: 0, timestamp: 1 }],
+				project: "(all projects)",
+				scope: "batch",
+			},
+		]);
+	});
+
+	it("should still name the scope when the run captured nothing", () => {
+		expect.assertions(1);
+
+		const groups = buildBatchGameOutput(undefined);
+
+		expect(groups).toStrictEqual([{ entries: [], project: "(all projects)", scope: "batch" }]);
 	});
 });
 

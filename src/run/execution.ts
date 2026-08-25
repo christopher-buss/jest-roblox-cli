@@ -99,12 +99,19 @@ function toExecutorProject(job: PendingJob): ProjectInput {
 	};
 }
 
-async function runJobsAsync(
-	backend: Backend,
-	jobs: Array<PendingJob>,
-	parallel: ParallelOption,
-	timing: TimingCollector,
-): Promise<Array<ProjectResult>> {
+async function runJobsAsync({
+	backend,
+	jobs,
+	parallel,
+	timing,
+	vmParallel,
+}: {
+	backend: Backend;
+	jobs: Array<PendingJob>;
+	parallel: ParallelOption;
+	timing: TimingCollector;
+	vmParallel: ParallelOption;
+}): Promise<Array<ProjectResult>> {
 	if (jobs.length === 0) {
 		return [];
 	}
@@ -118,6 +125,7 @@ async function runJobsAsync(
 			startTime: Date.now(),
 			timing,
 			version: VERSION,
+			vmParallel,
 		});
 	});
 
@@ -134,13 +142,6 @@ async function runJobsAsync(
 			result: executeResult,
 		};
 	});
-}
-
-function effectiveParallelForBackend(
-	parallel: ParallelOption,
-	backend: { kind: string },
-): ParallelOption {
-	return backend.kind === "open-cloud" ? parallel : undefined;
 }
 
 function buildOpenCloudPlace(
@@ -191,6 +192,28 @@ function buildPlaceForBackend(backend: Backend, { discovery, staged }: Execution
 	return Date.now() - start;
 }
 
+function effectiveParallelForBackend(
+	parallel: ParallelOption,
+	backend: { kind: string },
+): ParallelOption {
+	return backend.kind === "open-cloud" ? parallel : undefined;
+}
+
+/**
+ * The two concurrency knobs a run carries, each already narrowed to the
+ * backend that can serve it: `parallel` shards Open Cloud sessions, while
+ * `vmParallel` splits one Studio session across Luau VMs.
+ */
+function resolveConcurrency(
+	config: ResolvedConfig,
+	backend: Backend,
+): { parallel: ParallelOption; vmParallel: ParallelOption } {
+	return {
+		parallel: effectiveParallelForBackend(config.parallel, backend),
+		vmParallel: config.experimentalVmParallel,
+	};
+}
+
 async function runAgainstBackendAsync(
 	backend: Backend,
 	input: ExecutionInput,
@@ -213,9 +236,9 @@ async function runAgainstBackendAsync(
 
 	// The tsgo pass runs concurrently with the jobs so the local CPU-bound type
 	// checking overlaps the network-bound Open Cloud upload/poll.
-	const parallel = effectiveParallelForBackend(staged.effectiveConfig.parallel, backend);
+	const concurrency = resolveConcurrency(staged.effectiveConfig, backend);
 	const [projectResults, typecheck] = await Promise.all([
-		runJobsAsync(backend, plan.jobs, parallel, timing),
+		runJobsAsync({ backend, jobs: plan.jobs, timing, ...concurrency }),
 		runTypecheckPassAsync(plan.typeTestEntries, rootConfig, cliTypecheck),
 	]);
 

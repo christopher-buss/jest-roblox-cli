@@ -16,6 +16,7 @@ export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): Res
 		...resolveCoverage(cli, config),
 		backend: cli.backend ?? config.backend,
 		color: cli.color ?? config.color,
+		experimentalVmParallel: cli.experimentalVmParallel,
 		formatters: resolveFormatters(cli, config),
 		gameOutput: cli.gameOutput ?? config.gameOutput,
 		outputFile: cli.outputFile ?? config.outputFile,

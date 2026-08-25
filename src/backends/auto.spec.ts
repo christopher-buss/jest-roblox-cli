@@ -263,6 +263,70 @@ describe(resolveBackendAsync, () => {
 		expect(backend).toBeInstanceOf(StudioCliBackend);
 	});
 
+	it("should reject --experimental-vm-parallel on the open-cloud backend", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "test-key");
+		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
+		vi.stubEnv("ROBLOX_PLACE_ID", "456");
+
+		const probe =
+			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
+
+		await expect(
+			resolveBackendAsync(
+				makeCli(),
+				makeConfig({ backend: "open-cloud", experimentalVmParallel: 2 }),
+				probe,
+			),
+		).rejects.toThrow(/--experimental-vm-parallel is Studio-only/);
+	});
+
+	it("should accept --experimental-vm-parallel on the studio backend", async () => {
+		expect.assertions(1);
+
+		const probe =
+			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
+
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "studio", experimentalVmParallel: "auto" }),
+			probe,
+		);
+
+		expect(backend.kind).toBe("studio");
+	});
+
+	it("should reject an explicit VM count above the hosts the plugin ships", async () => {
+		expect.assertions(1);
+
+		const probe =
+			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
+
+		await expect(
+			resolveBackendAsync(
+				makeCli(),
+				makeConfig({ backend: "studio", experimentalVmParallel: 8 }),
+				probe,
+			),
+		).rejects.toThrow(/ships 4 VM hosts/);
+	});
+
+	it("should accept a VM count equal to the host pool", async () => {
+		expect.assertions(1);
+
+		const probe =
+			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
+
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "studio", experimentalVmParallel: 4 }),
+			probe,
+		);
+
+		expect(backend.kind).toBe("studio");
+	});
+
 	it("should return open-cloud backend for explicit open-cloud config", async () => {
 		expect.assertions(1);
 

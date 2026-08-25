@@ -11,6 +11,9 @@ export interface GameOutputSource {
 	raw: string | undefined;
 }
 
+/** What a batch-scoped group names instead of a project. */
+const BATCH_PROJECT_LABEL = "(all projects)";
+
 const gameOutputEntriesSchema = type({
 	message: "string",
 	messageType: "number",
@@ -67,6 +70,18 @@ export function buildGroupedGameOutput(
 
 		return group;
 	});
+}
+
+/**
+ * The single batch-scoped group an experimental vm-parallel run writes.
+ *
+ * Under parallel the capture belongs to the batch, not to a project, so one
+ * labelled group is the whole truth: splitting the same lines across
+ * per-project groups would duplicate them and attribute each copy to a project
+ * that may not have printed any of it.
+ */
+export function buildBatchGameOutput(raw: string | undefined): Array<PackageGameOutput> {
+	return [{ entries: parseGameOutput(raw), project: BATCH_PROJECT_LABEL, scope: "batch" }];
 }
 
 export function writeGroupedGameOutput(filePath: string, groups: Array<PackageGameOutput>): void {

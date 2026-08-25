@@ -17,7 +17,7 @@ import {
 	buildPlace as defaultBuildPlace,
 } from "../staging/place-builder.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { parseEnvelope } from "./envelope.ts";
+import { decodeEnvelope } from "./envelope.ts";
 import {
 	type Backend,
 	type BackendOptions,
@@ -26,7 +26,7 @@ import {
 	type ProjectJob,
 	type RawBackendEntry,
 } from "./interface.ts";
-import { buildRunPayload, type RunPayload } from "./plugin-payload.ts";
+import { buildRunPayload, type RunPayload, type RunPayloadRequest } from "./plugin-payload.ts";
 import { discoverStudioPath } from "./studio-discovery.ts";
 
 const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
@@ -44,7 +44,7 @@ const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
  * omits the echo (a stale runner predating the handshake) or returns a
  * different number, surfacing a clean "update the plugin" error.
  */
-const STUDIO_CLI_PROTOCOL_VERSION = 4;
+const STUDIO_CLI_PROTOCOL_VERSION = 5;
 
 type StudioCliPayload = RunPayload & {
 	protocolVersion: typeof STUDIO_CLI_PROTOCOL_VERSION;
@@ -238,8 +238,7 @@ interface RunPlace {
 	workDirectory: string;
 }
 
-interface StudioArgsOptions extends RunPlace {
-	jobs: Array<ProjectJob>;
+interface StudioArgsOptions extends RunPayloadRequest, RunPlace {
 	port: number;
 	requestId: string;
 }
@@ -296,10 +295,12 @@ export class StudioCliBackend implements Backend {
 	public async runTestsAsync({
 		jobs,
 		parallel,
+		vmParallel,
 		workStealing,
 	}: BackendOptions): Promise<BackendResult> {
 		assertSerialJobs({ jobs, parallel, workStealing });
 		const place = this.prepareRunPlace(jobs);
+		const runRequest = { runBudgetMs: this.timeout, vmParallel };
 		const { placeFile } = place;
 		const deadline: ResultDeadline = {
 			outputFile: studioOutputFile(place.workDirectory),
@@ -313,7 +314,7 @@ export class StudioCliBackend implements Backend {
 		try {
 			const port = await serverPortAsync(server);
 			const requestId = randomUUID();
-			const args = buildStudioArgs({ ...place, jobs, port, requestId });
+			const args = buildStudioArgs({ ...place, ...runRequest, jobs, port, requestId });
 			const studioPath = this.discover(this.studioPath);
 			const executionStart = Date.now();
 			child = this.launch({ args, headed: this.headed, placeFile, studioPath });
@@ -443,11 +444,11 @@ function studioOutputFile(workDirectory: string): string {
 	return path.join(workDirectory, OUTPUT_FILE);
 }
 
-function buildStudioCliPayload(jobs: Array<ProjectJob>): StudioCliPayload {
+function buildStudioCliPayload(request: RunPayloadRequest): StudioCliPayload {
 	return {
 		protocolVersion: STUDIO_CLI_PROTOCOL_VERSION,
 		test: true,
-		...buildRunPayload(jobs),
+		...buildRunPayload(request),
 	};
 }
 
@@ -521,11 +522,16 @@ function buildStudioArgs({
 	placeFile,
 	port,
 	requestId,
+	runBudgetMs,
+	vmParallel,
 	workDirectory,
 }: StudioArgsOptions): Array<string> {
 	const bootstrapFile = path.join(workDirectory, BOOTSTRAP_FILE);
 	const outputFile = studioOutputFile(workDirectory);
-	fs.writeFileSync(bootstrapFile, buildBootstrap(buildStudioCliPayload(jobs), port, requestId));
+	fs.writeFileSync(
+		bootstrapFile,
+		buildBootstrap(buildStudioCliPayload({ jobs, runBudgetMs, vmParallel }), port, requestId),
+	);
 
 	return [
 		"--task",
@@ -561,11 +567,11 @@ function assertProtocolMatch(actual: number | undefined): void {
 }
 
 /**
- * Decode the run-mode result frame into the backend result. parseEnvelope
- * before the version check: when the bootstrap reached the plugin but got
- * nothing back (ExecuteRunModeAsync threw, or returned no result) it sends a
- * `{success:false, err}` envelope with no protocolVersion, and that error must
- * win over assertProtocolMatch so the real cause surfaces instead of a
+ * Decode the run-mode result frame into the backend result. Decode the
+ * envelope before the version check: when the bootstrap reached the plugin but
+ * got nothing back (ExecuteRunModeAsync threw, or returned no result) it sends
+ * a `{success:false, err}` envelope with no protocolVersion, and that error
+ * must win over assertProtocolMatch so the real cause surfaces instead of a
  * misleading version mismatch.
  */
 function buildBackendResult(
@@ -573,7 +579,7 @@ function buildBackendResult(
 	jobs: Array<ProjectJob>,
 	executionMs: number,
 ): BackendResult {
-	const entries = parseEnvelope(message.jestOutput);
+	const { entries, gameOutputScope } = decodeEnvelope(message.jestOutput);
 	assertProtocolMatch(message.protocolVersion);
 	if (entries.length !== jobs.length) {
 		throw new Error(
@@ -582,7 +588,7 @@ function buildBackendResult(
 	}
 
 	const rawResults: Array<RawBackendEntry> = entries.map((entry) => {
-		return { entry, fallbackGameOutput: message.gameOutput };
+		return { entry, fallbackGameOutput: message.gameOutput, gameOutputScope };
 	});
 
 	return { rawResults, timing: { executionMs } };

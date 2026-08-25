@@ -12,12 +12,15 @@ local WEBSOCKET_URL = "ws://localhost:3001"
 local RECONNECT_DELAY = 0.1
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
--- `src/backends/studio.ts`. Bumped when the runtime contract changes — v4
--- nests the fields the runner adds to Jest's result under `runner` and renames
--- the frame key `request_id` to `requestId`. The plugin rejects mismatched CLI
--- versions with a `version_mismatch` response so users see a clear upgrade
--- message rather than running with stale behaviour or an opaque timeout.
-local PROTOCOL_VERSION = 4
+-- `src/backends/studio.ts` and `PROTOCOL_VERSION` in the run-mode runner
+-- beside this file. Bumped when the runtime contract changes — v5 adds the
+-- optional `vmParallel` count, which a plugin predating it would ignore and
+-- run sequentially without saying so; v4 nested the fields the runner adds to
+-- Jest's result under `runner` and renamed the frame key `request_id` to
+-- `requestId`. The plugin rejects mismatched CLI versions with a
+-- `version_mismatch` response so users see a clear upgrade message rather than
+-- running with stale behaviour or an opaque timeout.
+local PROTOCOL_VERSION = 5
 
 local IsDebug = ReplicatedStorage:GetAttribute("JEST_ROBLOX_DEBUG") == true
 ReplicatedStorage:GetAttributeChangedSignal("JEST_ROBLOX_DEBUG"):Connect(function(): ()
@@ -140,6 +143,13 @@ local function connect(): ()
 						-- so the Run Mode runner skips mounts that already
 						-- have a user-authored jest.config on disk.
 						runtimeStubMounts = message.runtimeStubMounts,
+						-- Experimental in-session parallelism: how many Luau
+						-- VMs the run-mode runner should split the configs
+						-- across. Absent on an ordinary run.
+						vmParallel = message.vmParallel,
+						-- How long the CLI will wait for this run, so the
+						-- run-mode coordinator's own wait ends inside it.
+						runBudgetMs = message.runBudgetMs,
 						-- Present only for workspace runs: the staged entries the
 						-- run-mode runner dispatches to the embedded materializer.
 						workspace = message.workspace,

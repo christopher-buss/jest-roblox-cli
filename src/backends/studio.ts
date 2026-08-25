@@ -4,15 +4,9 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 
-import { parseEnvelope } from "./envelope.ts";
-import type {
-	Backend,
-	BackendOptions,
-	BackendResult,
-	ProjectJob,
-	RawBackendEntry,
-} from "./interface.ts";
-import { buildRunPayload } from "./plugin-payload.ts";
+import { decodeEnvelope } from "./envelope.ts";
+import type { Backend, BackendOptions, BackendResult, RawBackendEntry } from "./interface.ts";
+import { buildRunPayload, type RunPayloadRequest } from "./plugin-payload.ts";
 import type { RunPayload } from "./plugin-payload.ts";
 
 const DEFAULT_STUDIO_TIMEOUT = 300_000;
@@ -39,12 +33,12 @@ interface StudioOptions {
  * `protocolVersion` echo is missing or a lower number — either way the CLI
  * surfaces a clean upgrade error instead of running with stale semantics.
  */
-const STUDIO_PROTOCOL_VERSION = 4;
+const STUDIO_PROTOCOL_VERSION = 5;
 
 const pluginResultSchema = type({
 	"gameOutput?": "string",
 	"jestOutput": "string",
-	"protocolVersion": "number == 4",
+	"protocolVersion": "number == 5",
 	"requestId": "string",
 	"type": "'results'",
 });
@@ -129,16 +123,21 @@ export class StudioBackend implements Backend {
 
 		this.wss ??= pre?.server ?? this.createServer(this.port);
 
-		return this.executeViaPluginAsync(this.wss, options.jobs, pre?.socket);
+		return this.executeViaPluginAsync(this.wss, options, pre?.socket);
 	}
 
 	private async executeViaPluginAsync(
 		wss: WebSocketServer,
-		jobs: Array<ProjectJob>,
+		{ jobs, vmParallel }: BackendOptions,
 		existingSocket?: WebSocket,
 	): Promise<BackendResult> {
 		const requestId = randomUUID();
-		const requestMessage = buildRunTestsMessage(jobs, requestId);
+		const requestMessage = buildRunTestsMessage({
+			jobs,
+			requestId,
+			runBudgetMs: this.timeout,
+			vmParallel,
+		});
 
 		const executionStart = Date.now();
 		const message = await this.waitForResultAsync(
@@ -155,19 +154,10 @@ export class StudioBackend implements Backend {
 			);
 		}
 
-		const executionMs = Date.now() - executionStart;
-		const entries = parseEnvelope(message.jestOutput);
-		if (entries.length !== jobs.length) {
-			throw new Error(
-				`Studio backend returned ${entries.length.toString()} entries but request had ${jobs.length.toString()} jobs`,
-			);
-		}
-
-		const rawResults: Array<RawBackendEntry> = entries.map((entry) => {
-			return { entry, fallbackGameOutput: message.gameOutput };
-		});
-
-		return { rawResults, timing: { executionMs } };
+		return {
+			rawResults: buildRawResults(message, jobs.length),
+			timing: { executionMs: Date.now() - executionStart },
+		};
 	}
 
 	private async waitForResultAsync(
@@ -203,13 +193,41 @@ export function createStudioBackend(options: StudioOptions): StudioBackend {
  * injects `jest.config` only where Rojo doesn't already sync a user-authored
  * one.
  */
-function buildRunTestsMessage(jobs: Array<ProjectJob>, requestId: string): RunTestsMessage {
+function buildRunTestsMessage({
+	jobs,
+	requestId,
+	runBudgetMs,
+	vmParallel,
+}: RunPayloadRequest & { requestId: string }): RunTestsMessage {
 	return {
 		action: "run_tests",
 		protocolVersion: STUDIO_PROTOCOL_VERSION,
 		requestId,
-		...buildRunPayload(jobs),
+		...buildRunPayload({ jobs, runBudgetMs, vmParallel }),
 	};
+}
+
+/**
+ * The per-job raw entries a `results` frame carries, in request order.
+ *
+ * `gameOutputScope` rides along from the envelope: it is the runner's report of
+ * whether the run's game output was captured once for the batch (an in-session
+ * parallel run) or per project.
+ */
+function buildRawResults(
+	message: Extract<PluginMessage, { type: "results" }>,
+	jobCount: number,
+): Array<RawBackendEntry> {
+	const { entries, gameOutputScope } = decodeEnvelope(message.jestOutput);
+	if (entries.length !== jobCount) {
+		throw new Error(
+			`Studio backend returned ${entries.length.toString()} entries but request had ${jobCount.toString()} jobs`,
+		);
+	}
+
+	return entries.map((entry) => {
+		return { entry, fallbackGameOutput: message.gameOutput, gameOutputScope };
+	});
 }
 
 /**

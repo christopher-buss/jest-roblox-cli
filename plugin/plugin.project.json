@@ -4,6 +4,32 @@
 		"$path": "src",
 		"shared": {
 			"$path": "../luau"
+		},
+		"vmHosts": {
+			"$className": "Folder",
+			"results": {
+				"$className": "BindableEvent"
+			},
+			"host1": {
+				"$className": "Actor",
+				"runner": { "$path": "host/vm-host.server.luau" },
+				"shared": { "$path": "../luau" }
+			},
+			"host2": {
+				"$className": "Actor",
+				"runner": { "$path": "host/vm-host.server.luau" },
+				"shared": { "$path": "../luau" }
+			},
+			"host3": {
+				"$className": "Actor",
+				"runner": { "$path": "host/vm-host.server.luau" },
+				"shared": { "$path": "../luau" }
+			},
+			"host4": {
+				"$className": "Actor",
+				"runner": { "$path": "host/vm-host.server.luau" },
+				"shared": { "$path": "../luau" }
+			}
 		}
 	}
 }

@@ -9,12 +9,25 @@ end
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `STUDIO_CLI_PROTOCOL_VERSION` in
--- `src/backends/studio-cli.ts`. v4 nests the fields the runner adds to Jest's
--- result under `runner` and renames the frame key `request_id` to `requestId`.
--- The runner validates the version the CLI sent and echoes its own in `EndTest`,
--- so the CLI surfaces a clean "update the plugin" error against a mismatched
--- plugin rather than running with stale runtime semantics.
-local PROTOCOL_VERSION = 4
+-- `src/backends/studio-cli.ts`. v5 adds the optional `vmParallel` count: a
+-- plugin predating it would run a parallel request sequentially and say
+-- nothing, so the handshake is what turns that into an "update the plugin"
+-- error. v4 nested the fields the runner adds to Jest's result under `runner`
+-- and renamed the frame key `request_id` to `requestId`. The runner validates
+-- the version the CLI sent and echoes its own in `EndTest`, so the CLI
+-- surfaces a clean error against a mismatched plugin rather than running with
+-- stale runtime semantics.
+local PROTOCOL_VERSION = 5
+
+-- How long to wait for the actor hosts to bind their message handler. They
+-- bind as the run-mode session starts, so this only absorbs the gap between
+-- plugin scripts starting; a host still un-ready is one that failed to load,
+-- and the run goes ahead without it.
+local HOST_READY_TIMEOUT_SECONDS = 10
+
+-- Set by each host once its `BindToMessage` is live. Mirrors
+-- `plugin/host/vm-host.server.luau`.
+local HOST_READY_ATTRIBUTE = "JestRobloxVmHostReady"
 
 -- Every result (success or failure) echoes `protocolVersion` so the studio-cli
 -- host can detect a stale plugin: one predating this echo omits the field and
@@ -119,115 +132,177 @@ if not requireOk then
 	return
 end
 
--- Runtime injection of jest.config ModuleScripts per config. Studio +
--- multi-project does NOT write jest.config.luau into the user's source
--- tree — the configs travel via the WebSocket payload and we materialize
--- them into DataModel ModuleScripts just before Jest discovery runs. The
--- session-UUID `_G` key keeps each Run Mode invocation isolated against
--- re-entrancy (the assert below fails loud if state from a prior run
--- somehow persisted).
-local SESSION_KEY = "__JEST_ROBLOX_RT_" .. HttpService:GenerateGUID(false):gsub("-", "")
-assert(_G[SESSION_KEY] == nil, "Session key collision — re-entrant run detected")
-_G[SESSION_KEY] = { configs = {} }
-
-local function findInstance(path: string): Instance
-	local parts = string.split(path, "/")
-	local current: any = game:FindService(parts[1])
-	assert(current, "service not found: " .. parts[1])
-	for i = 2, #parts do
-		current = current:FindFirstChild(parts[i])
-		assert(current, "missing segment '" .. parts[i] .. "' in " .. path)
-	end
-	return current
+local stubHooksOk, StubHooks = pcall(require, script.Parent.shared["runtime-stub-hooks"])
+if not stubHooksOk then
+	endWithError("Failed to require shared.runtime-stub-hooks: " .. tostring(StubHooks))
+	return
 end
 
--- Per-config record of injected ModuleScripts so cleanup after each
--- config's Jest invocation can destroy exactly the stubs that config
--- created. Per-config (rather than upfront-all) avoids the nested-project
--- contamination path where configs at e.g. `ReplicatedStorage` and
--- `ReplicatedStorage/Foo` would both have stubs in DataModel
--- simultaneously and Jest's parent-traversal could resolve the wrong one.
-local injectedPerConfig: { [number]: { Instance } } = {}
+local GameOutputCapture = require(script.Parent.shared["game-output-capture"])
+local VmParallel = require(script.Parent.shared["vm-parallel"])
 
--- The CLI sends a filtered `runtimeStubMounts[i]` list per config,
--- excluding mounts that already have a user-authored `jest.config.luau`
--- on disk (synced naturally by Rojo). We must iterate this filtered list,
--- not `cfg.projects`, or we'd inject over the user's canonical config.
--- Defaults to empty when the field is missing (defensive against
--- malformed payload from a divergent plugin).
-local function injectStubsForConfig(cfg, configIndex: number, injectionPaths: { string })
-	local sessionTable = _G[SESSION_KEY]
-	sessionTable.configs[configIndex] = cfg
-	-- Register the slot BEFORE parenting any stub. If a later mount
-	-- throws (findInstance miss, structural collision), the partially-
-	-- parented stubs are already tracked so cleanupStubsForConfig /
-	-- cleanupAllStubs can find and destroy them. Without this, an early
-	-- stub would linger in DataModel after cleanup.
-	local injected: { Instance } = {}
-	injectedPerConfig[configIndex] = injected
-
-	for _, projectPath in injectionPaths do
-		local leaf = findInstance(projectPath)
-		assert(
-			leaf:FindFirstChild("jest.config") == nil,
-			"Structural collision: jest.config already exists under "
-				.. projectPath
-				.. ". This may be a user-authored config not declared as a string entry, "
-				.. "a rojo tree mapping, or a model-file mount."
-		)
-		local stub = Instance.new("ModuleScript")
-		stub.Name = "jest.config"
-		stub.Source = string.format('return _G["%s"].configs[%d]', SESSION_KEY, configIndex)
-		stub.Parent = leaf
-		-- Record immediately after parenting so a subsequent mount's
-		-- failure does not strand this one.
-		table.insert(injected, stub)
-	end
-end
-
-local function cleanupStubsForConfig(configIndex: number)
-	local injected = injectedPerConfig[configIndex]
-	if injected ~= nil then
-		for _, inst in injected do
-			pcall(function()
-				inst:Destroy()
-			end)
-		end
-		injectedPerConfig[configIndex] = nil
-	end
-
-	local sessionTable = _G[SESSION_KEY]
-	if sessionTable ~= nil then
-		sessionTable.configs[configIndex] = nil
-	end
-end
-
-local function cleanupAllStubs()
-	for index in injectedPerConfig do
-		cleanupStubsForConfig(index)
-	end
-	_G[SESSION_KEY] = nil
+local function encode(value: any): string
+	return HttpService:JSONEncode(value)
 end
 
 -- Per-config injection target lists, parallel to `configs`. The CLI sends a
 -- pre-filtered list excluding mount paths whose source tree already has a
 -- user-authored `jest.config.luau` synced by Rojo. Empty entry (or missing
--- field) means: skip injection for this config. The hooks below let
--- `Runner.runProjects` call our inject/cleanup just-in-time per config, so
+-- field) means: skip injection for this config.
+local runtimeStubMounts: { { string } } = testArgs.runtimeStubMounts or table.create(#configs, {})
+
+--[[
+	The actor hosts that have bound their message handler, up to `limit`.
+
+	Level-triggered on purpose: a host signals readiness by setting an
+	attribute, not by firing an event, so a host that bound before this runs is
+	still seen. Sorted by name so slice 1 always lands on host1 — the dispatch
+	is deterministic even though the DataModel child order need not be.
+]]
+local function collectReadyHosts(limit: number): { Actor }
+	local folder = script.Parent:FindFirstChild("vmHosts")
+	if folder == nil then
+		return {}
+	end
+
+	local ready: { Actor } = {}
+	local deadline = os.clock() + HOST_READY_TIMEOUT_SECONDS
+	repeat
+		table.clear(ready)
+		local children = folder:GetChildren()
+		table.sort(children, function(left: Instance, right: Instance): boolean
+			return left.Name < right.Name
+		end)
+
+		for _, child in children do
+			local hostScript = child:FindFirstChild("runner")
+			if
+				child:IsA("Actor")
+				and hostScript ~= nil
+				and hostScript:GetAttribute(HOST_READY_ATTRIBUTE) == true
+			then
+				table.insert(ready, child)
+			end
+		end
+
+		if #ready >= limit then
+			break
+		end
+
+		task.wait(0.05)
+	until os.clock() >= deadline
+
+	return ready
+end
+
+--[[
+	Run the configs across `requested` Luau VMs and return the entries in
+	request order plus the run's batch-scoped game output.
+
+	Returns nil when no host was available, which leaves the caller on the
+	plain sequential path rather than failing a run the session can still
+	serve.
+]]
+local function runInVmHosts(requested: number): ({ any }?, string?)
+	local hosts = collectReadyHosts(math.min(requested, #configs))
+	if #hosts == 0 then
+		warn("[jest-roblox] no parallel VM hosts became ready; running projects sequentially")
+		return nil, nil
+	end
+
+	local results = script.Parent.vmHosts.results :: BindableEvent
+	local received: { [number]: any } = {}
+	local receivedCount = 0
+
+	local connection = results.Event:Connect(
+		function(configIndex: number, jestOutput: string, bannerOutput: string, elapsedMs: number)
+			if received[configIndex] ~= nil then
+				return
+			end
+
+			received[configIndex] = {
+				bannerOutput = bannerOutput,
+				elapsedMs = elapsedMs,
+				jestOutput = jestOutput,
+			}
+			receivedCount += 1
+		end
+	)
+
+	-- One capture for the whole batch, owned here. `LogService.MessageOut`
+	-- reports every message to every listener with no source identity, so
+	-- under parallel "which project printed this" is unanswerable; the hosts
+	-- capture nothing and the CLI labels this as batch-scoped.
+	local stopCapture = GameOutputCapture.start()
+
+	local slices = VmParallel.planSlices({
+		configCount = #configs,
+		hostCount = math.min(requested, #hosts),
+		mounts = runtimeStubMounts,
+	})
+
+	for hostIndex, slice in slices do
+		local payload = { configs = {}, indices = slice, runtimeStubMounts = {} }
+		for _, configIndex in slice do
+			table.insert(payload.configs, configs[configIndex])
+			table.insert(payload.runtimeStubMounts, runtimeStubMounts[configIndex] or {})
+		end
+
+		hosts[hostIndex]:SendMessage("run", encode(payload))
+	end
+
+	-- The main thread does the waiting because `StudioTestService:EndTest`
+	-- must be called from the run-mode runner's own thread: called from inside
+	-- the BindableEvent handler it fails with "can only be called from the
+	-- server DataModel of a running Studio play session".
+	-- Bounded by the budget the CLI sent rather than a constant of our own:
+	-- the wait exists to turn a dead host into ExecutionError entries the CLI
+	-- can render, and a wait outlasting the CLI's timeout delivers none of them
+	-- (studio-cli has killed Studio by then).
+	local waitSeconds = VmParallel.resolveHostDeadlineSeconds(testArgs.runBudgetMs)
+	local deadline = os.clock() + waitSeconds
+	while receivedCount < #configs and os.clock() < deadline do
+		task.wait(0.05)
+	end
+
+	connection:Disconnect()
+
+	return VmParallel.finalizeEntries({
+		configCount = #configs,
+		encode = encode,
+		missingError = "The VM host running this project stopped answering (timed out after "
+			.. string.format("%.0f", waitSeconds)
+			.. "s)",
+		received = received,
+	}),
+		stopCapture()
+end
+
+-- Experimental in-session parallelism, off unless the CLI asked for it. A
+-- count of one is the sequential path by definition, so only a real split
+-- takes the branch.
+local vmParallel = if typeof(testArgs.vmParallel) == "number" then testArgs.vmParallel else 0
+if vmParallel > 1 and #configs > 1 then
+	local entries, gameOutput = runInVmHosts(vmParallel)
+	if entries ~= nil then
+		-- `gameOutputScope` reports what this run did rather than what it was
+		-- asked to do: the fallback below runs the sequential path, where each
+		-- project owns its capture again, and the CLI groups the output by
+		-- this field rather than by the flag it sent.
+		endTest(
+			HttpService:JSONEncode({ entries = entries, gameOutputScope = "batch" }),
+			gameOutput or "[]"
+		)
+		return
+	end
+end
+
+-- The hooks let `Runner.runProjects` inject each config's `jest.config`
+-- ModuleScripts just-in-time and destroy them before the next config runs, so
 -- nested-project mounts (e.g. `ReplicatedStorage` and `ReplicatedStorage/Foo`)
 -- never have stubs in DataModel simultaneously — which would let Jest's
 -- parent-traversal config lookup resolve the wrong project's config.
-local runtimeStubMounts: { { string } } = testArgs.runtimeStubMounts or table.create(#configs, {})
-
-local hooks = {
-	beforeConfig = function(cfg, index)
-		local paths = runtimeStubMounts[index] or {}
-		injectStubsForConfig(cfg, index, paths)
-	end,
-	afterConfig = function(_cfg, index)
-		cleanupStubsForConfig(index)
-	end,
-}
+local hooks, cleanupAllStubs = StubHooks.create(runtimeStubMounts)
 
 local runOk, entriesOrErr = pcall(Runner.runProjects, script, configs, hooks)
 -- Defensive: also clear `_G` even if every afterConfig hook already cleaned

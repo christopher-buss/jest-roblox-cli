@@ -43,6 +43,7 @@ import type {
 } from "./run/types.ts";
 import type { JestResult } from "./types/jest-result.ts";
 import {
+	buildBatchGameOutput,
 	buildGroupedGameOutput,
 	formatGameOutputNotice,
 	parseGameOutput,
@@ -75,6 +76,7 @@ interface OutputSpies {
 }
 
 const mocks = {
+	buildBatchGameOutput: vi.mocked(buildBatchGameOutput),
 	buildGroupedGameOutput: vi.mocked(buildGroupedGameOutput),
 	checkThresholds: vi.mocked(checkThresholds),
 	formatAgentMultiProject: vi.mocked(formatAgentMultiProject),
@@ -778,6 +780,73 @@ describe(outputMultiResultAsync, () => {
 		);
 
 		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledOnce();
+	});
+
+	it("should keep per-project groups when a vm-parallel request fell back to sequential", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		// The plugin runs the sequential path when no VM host is ready, and
+		// says so by not marking the capture batch-scoped. Each result then
+		// carries its own log, which one batch group would throw away.
+		await outputMultiResultAsync(
+			makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
+			makeMultiResult({
+				projectResults: [makeProjectResult("client"), makeProjectResult("server")],
+			}),
+		);
+
+		expect(mocks.buildBatchGameOutput).not.toHaveBeenCalled();
+		expect(mocks.buildGroupedGameOutput).toHaveBeenCalledOnce();
+	});
+
+	it("should write one batch-scoped game output group for a vm-parallel run", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		const batchGroups = [
+			{
+				entries: [{ message: "hi", messageType: 0, timestamp: 0 }],
+				project: "(all projects)",
+				scope: "batch" as const,
+			},
+		];
+		mocks.buildBatchGameOutput.mockReturnValue(batchGroups);
+		setupOutputSpies();
+
+		// `gameOutputScope` is the runner's own report of what it did: the
+		// coordinator sets it only on the path where the hosts actually ran.
+		await outputMultiResultAsync(
+			makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
+			makeMultiResult({
+				projectResults: [
+					makeProjectResult("client", { gameOutputScope: "batch" }),
+					makeProjectResult("server", { gameOutputScope: "batch" }),
+				],
+			}),
+		);
+
+		expect(mocks.buildGroupedGameOutput).not.toHaveBeenCalled();
+		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledWith("/tmp/game.json", batchGroups);
+	});
+
+	it("should keep per-project game output groups when the VM request collapses to one", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ experimentalVmParallel: 1, gameOutput: "/tmp/game.json" }),
+			makeMultiResult({
+				projectResults: [makeProjectResult("client"), makeProjectResult("server")],
+			}),
+		);
+
+		expect(mocks.buildBatchGameOutput).not.toHaveBeenCalled();
+		expect(mocks.buildGroupedGameOutput).toHaveBeenCalledOnce();
 	});
 
 	it("should NOT write aggregated game output for workspace results (the runner handles it)", async () => {

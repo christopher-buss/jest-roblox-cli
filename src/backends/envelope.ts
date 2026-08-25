@@ -29,6 +29,11 @@ const envelopeSchema = type({
 		"project?": "string",
 		"snapshotWrites?": { "[string]": "string" },
 	}).array(),
+	// Set by the run-mode coordinator when the projects ran across VM hosts:
+	// the run's game output was captured once, for the batch, so it belongs to
+	// no single project. Absent on every sequential run, including a parallel
+	// request that found no host to run on.
+	"gameOutputScope?": "'batch'",
 });
 
 /** One task's return envelope: what it ran, and why it stopped. */
@@ -40,6 +45,11 @@ export interface DecodedEnvelope {
 	 */
 	deferred: boolean;
 	entries: Array<EnvelopeEntry>;
+	/**
+	 * `"batch"` when the runner captured game output once for the whole run
+	 * rather than per project. Undefined when each entry owns its own capture.
+	 */
+	gameOutputScope?: "batch" | undefined;
 }
 
 /**
@@ -73,6 +83,7 @@ export function decodeEnvelope(jestOutput: string): DecodedEnvelope {
 		bailed: envelope.bailed === true,
 		deferred: envelope.deferred === true,
 		entries: envelope.entries,
+		gameOutputScope: envelope.gameOutputScope,
 	};
 }
 
@@ -106,6 +117,7 @@ export function buildProjectResult(
 	}: EnvelopeEntry,
 	job: ProjectJob,
 	fallbackGameOutput: string | undefined,
+	gameOutputScope?: "batch",
 ): ProjectBackendResult {
 	const gameOutput = entryGameOutput ?? fallbackGameOutput;
 
@@ -137,6 +149,7 @@ export function buildProjectResult(
 		displayName: job.displayName,
 		elapsedMs: elapsedMs ?? 0,
 		gameOutput,
+		gameOutputScope,
 		luauTiming: parsed.luauTiming,
 		perTestCoverage: parsed.perTestCoverage,
 		result: parsed.result,
