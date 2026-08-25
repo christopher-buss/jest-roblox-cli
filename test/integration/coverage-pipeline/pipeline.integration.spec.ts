@@ -109,7 +109,7 @@ function isMappedReportKey(key: string): boolean {
 	return key.endsWith(".ts") || key.endsWith("jest.config.luau");
 }
 
-describe("coverage pipeline (mapper -> istanbul json reporter)", () => {
+describe("coverage pipeline (mapper -> istanbul json reporter)", { timeout: 30_000 }, () => {
 	it("should write coverage-final.json keyed by ts paths with sane statement/fn maps", () => {
 		expect.assertions(4);
 

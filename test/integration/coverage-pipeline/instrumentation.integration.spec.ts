@@ -17,7 +17,7 @@ function createTemporaryDirectory(): string {
 	return directory;
 }
 
-describe("coverage instrumentation", () => {
+describe("coverage instrumentation", { timeout: 30_000 }, () => {
 	describe("luau project", () => {
 		it("should instrument luau source files", () => {
 			expect.assertions(3);

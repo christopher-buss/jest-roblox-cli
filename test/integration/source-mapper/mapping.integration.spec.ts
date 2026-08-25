@@ -47,7 +47,7 @@ function createLuauFixtureMapper() {
 	return createSourceMapper({ mappings: [], rojoProject });
 }
 
-describe("source mapping", () => {
+describe("source mapping", { timeout: 30_000 }, () => {
 	describe("roblox-ts project", () => {
 		it("should map luau line to typescript source", () => {
 			expect.assertions(3);

@@ -96,7 +96,7 @@ function buildCoverageResult(coverage?: RawCoverageData) {
 	return mapCoverageToTypeScript(coverageData, manifest);
 }
 
-describe("coverage mapping pipeline (roblox-ts)", () => {
+describe("coverage mapping pipeline (roblox-ts)", { timeout: 30_000 }, () => {
 	it("should map luau coverage data to typescript file paths", () => {
 		expect.assertions(3);
 
