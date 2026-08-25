@@ -370,5 +370,6 @@ export default defineConfig({
 				},
 			},
 		],
+		watch: false,
 	},
 });
