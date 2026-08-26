@@ -35,6 +35,20 @@ vitest run src/cli.spec.ts    # One file
 Specs that don't touch `test-script.ts` (e.g. `src/config/`, `src/staging/`) run
 without the bundle.
 
+## Mutation testing
+
+Stryker mutates `src/` and enforces a mutation-score floor alongside the
+coverage gate. The run is incremental — `reports/stryker-incremental.json`
+carries results forward, so pass `--force` after changing the config. The script
+builds the Luau bundle first, so it works on a fresh checkout.
+
+```bash
+pnpm mutation
+```
+
+That script exists in this repo only. Inside the monorepo the same run goes
+through `nx run jest-roblox-cli:stryker`, which takes a machine-wide lock.
+
 ## Lint
 
 ```bash

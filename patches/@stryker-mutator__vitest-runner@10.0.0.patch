@@ -1,0 +1,124 @@
+diff --git a/dist/src/stryker-setup.js b/dist/src/stryker-setup.js
+index aecfacbe47b285c272c47e54b3d66a716adfdc41..bbb824c27ced801655581014b11744276df50897 100644
+--- a/dist/src/stryker-setup.js
++++ b/dist/src/stryker-setup.js
+@@ -63,7 +63,7 @@ function collectTestName({ name, suite, }) {
+         nameParts.unshift(currentSuite.name);
+         currentSuite = currentSuite.suite;
+     }
+-    return nameParts.join(' ').trim();
++    return nameParts.join(' > ').trim();
+ }
+ function toRawTestId(test) {
+     return `${test.file?.filepath ?? 'unknown.js'}#${collectTestName(test)}`;
+diff --git a/dist/src/test-helpers.js b/dist/src/test-helpers.js
+index 56cc786f30c524ae18ce87eef1a67fdf26b703c5..2cd9786a153a6b3090b84e30e02750d1c20b5a0b 100644
+--- a/dist/src/test-helpers.js
++++ b/dist/src/test-helpers.js
+@@ -8,7 +8,7 @@ export function collectTestName({ name, suite, }) {
+         nameParts.unshift(currentSuite.name);
+         currentSuite = currentSuite.suite;
+     }
+-    return nameParts.join(' ').trim();
++    return nameParts.join(' > ').trim();
+ }
+ export function toRawTestId(test) {
+     return `${test.file?.filepath ?? 'unknown.js'}#${collectTestName(test)}`;
+diff --git a/dist/src/vitest-helpers.js b/dist/src/vitest-helpers.js
+index fa4f8138ab3b2aba64f4e715be2d8126da6ccf8b..ab1e6952aa8fed69eb5c5f7db1f4dddb8ef21780 100644
+--- a/dist/src/vitest-helpers.js
++++ b/dist/src/vitest-helpers.js
+@@ -24,6 +24,9 @@ export function convertTestToTestResult(test) {
+         name: collectTestName(test),
+         timeSpentMs: test.result?.duration ?? 0,
+         fileName: test.file?.filepath && path.resolve(test.file.filepath),
++        startPosition: test.location
++            ? { line: test.location.line - 1, column: test.location.column - 1 }
++            : undefined,
+     };
+     if (status === TestStatus.Failed) {
+         return {
+diff --git a/dist/src/vitest-test-runner.js b/dist/src/vitest-test-runner.js
+index 84f1ca026503b8e92b7adc952ec6c6a401943656..1f4f7c979592d9292999f9f4f8454377cfa4a00f 100644
+--- a/dist/src/vitest-test-runner.js
++++ b/dist/src/vitest-test-runner.js
+@@ -75,6 +75,7 @@ export class VitestTestRunner {
+             config: this.options.vitest?.configFile,
+             ...this.#getVitestPoolConfig(vitestWrapper.version),
+             coverage: { enabled: false },
++            includeTaskLocation: true,
+             maxConcurrency: 1,
+             watch: false,
+             dir: this.options.vitest.dir,
+@@ -82,7 +83,7 @@ export class VitestTestRunner {
+             onConsoleLog: () => false,
+         });
+         this.ctx.provide('globalNamespace', this.globalNamespace);
+-        this.ctx.provide('isGreaterThanVitest4Point1', semver.satisfies(vitestWrapper.version, '>=4.1.0'));
++        this.ctx.provide('isGreaterThanVitest4Point1', semver.satisfies(vitestWrapper.version, '>=4.1.0', { includePrerelease: true }));
+         this.ctx.config.browser.screenshotFailures = false;
+         this.ctx.projects.forEach((project) => {
+             project.config.setupFiles = [
+diff --git a/src/stryker-setup.ts b/src/stryker-setup.ts
+index ff31bed1ea6cdd23d3b9e195d53303dde43526e4..6211381454ea9609c631f095cd8881b181fa3e3a 100644
+--- a/src/stryker-setup.ts
++++ b/src/stryker-setup.ts
+@@ -85,7 +85,7 @@ function collectTestName({
+     nameParts.unshift(currentSuite.name);
+     currentSuite = currentSuite.suite;
+   }
+-  return nameParts.join(' ').trim();
++  return nameParts.join(' > ').trim();
+ }
+ 
+ function toRawTestId(test: RunnerTestCase): string {
+diff --git a/src/test-helpers.ts b/src/test-helpers.ts
+index 1cf9538c2dd926d608282b40e848833585e1ea39..14a21d974334487a40c11ff4bdaaf10fdab2aab7 100644
+--- a/src/test-helpers.ts
++++ b/src/test-helpers.ts
+@@ -17,7 +17,7 @@ export function collectTestName({
+     nameParts.unshift(currentSuite.name);
+     currentSuite = currentSuite.suite;
+   }
+-  return nameParts.join(' ').trim();
++  return nameParts.join(' > ').trim();
+ }
+ 
+ export function toRawTestId(test: RunnerTestCase): string {
+diff --git a/src/vitest-helpers.ts b/src/vitest-helpers.ts
+index 691f04d9f0f84d3a68a687300418ada21ea17e0a..13bb7c9f922ec7014aa2b6ca5b38fd7593f9c3c7 100644
+--- a/src/vitest-helpers.ts
++++ b/src/vitest-helpers.ts
+@@ -37,6 +37,9 @@ export function convertTestToTestResult(test: RunnerTestCase): TestResult {
+     name: collectTestName(test),
+     timeSpentMs: test.result?.duration ?? 0,
+     fileName: test.file?.filepath && path.resolve(test.file.filepath),
++    startPosition: test.location
++      ? { line: test.location.line - 1, column: test.location.column - 1 }
++      : undefined,
+   };
+   if (status === TestStatus.Failed) {
+     return {
+diff --git a/src/vitest-test-runner.ts b/src/vitest-test-runner.ts
+index b54e16ae236118113d78931dab44a2252825cde4..0105ba7cb487dfe318903d576a6f04aa335fb61e 100644
+--- a/src/vitest-test-runner.ts
++++ b/src/vitest-test-runner.ts
+@@ -144,6 +144,7 @@ export class VitestTestRunner implements TestRunner {
+       config: this.options.vitest?.configFile,
+       ...this.#getVitestPoolConfig(vitestWrapper.version),
+       coverage: { enabled: false },
++      includeTaskLocation: true,
+       maxConcurrency: 1,
+       watch: false,
+       dir: this.options.vitest.dir,
+@@ -153,7 +154,9 @@ export class VitestTestRunner implements TestRunner {
+     this.ctx.provide('globalNamespace', this.globalNamespace);
+     this.ctx.provide(
+       'isGreaterThanVitest4Point1',
+-      semver.satisfies(vitestWrapper.version, '>=4.1.0'),
++      semver.satisfies(vitestWrapper.version, '>=4.1.0', {
++        includePrerelease: true,
++      }),
+     );
+     this.ctx.config.browser.screenshotFailures = false;
+     this.ctx.projects.forEach((project) => {

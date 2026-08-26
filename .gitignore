@@ -11,6 +11,8 @@ out-tsc/
 .eslintcache
 dist/
 *.rbxm
+reports/mutation/
+reports/stryker-incremental.json
 src/test-runner.bundled.luau
 src/test-runner.bundled.luau.map
 src/materializer.bundled.luau
