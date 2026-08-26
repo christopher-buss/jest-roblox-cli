@@ -1,9 +1,11 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
+import * as fs from "node:fs";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createTimingCollector } from "../timing/orchestration-collector.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { instrument, instrumentRoot } from "./instrumenter.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";
 
@@ -153,6 +155,61 @@ describe(instrumentRoot, () => {
 			});
 
 			expect(Object.keys(files)).toStrictEqual(["/luau-root/init.luau"]);
+		});
+	});
+
+	// A root holds far more files than directories, so creating the output
+	// directory per file spends a recursive stat/mkdir chain to make something
+	// the previous sibling already made — thousands of them over a real root.
+	describe("when several files share a shadow directory", () => {
+		it("should create each directory once for the twin, not once per file", () => {
+			expect.assertions(2);
+
+			setupFilesystem({
+				files: {
+					"init.luau": "local x = 1\n",
+					"shared/a.luau": "local a = 1\n",
+					"shared/b.luau": "local b = 2\n",
+					"shared/deep/c.luau": "local c = 3\n",
+				},
+			});
+
+			const mkdirSpy = vi.spyOn(fs, "mkdirSync");
+
+			instrumentRoot({
+				luauRoot: "/luau-root",
+				shadowDir: "/shadow",
+			});
+
+			// Two sources land here, and only the first is this cache's to
+			// elide: one call per directory for the twin, plus one call per
+			// file from the `atomicWrite` under `writeCoverageMap`, which
+			// makes its own parent for every sidecar. So `/shadow/shared`
+			// holds two files and appears three times, not four.
+			//
+			// Sorted, not walk-ordered: the counts are the claim, and pinning
+			// the order would tie this to the directory walk instead.
+			// Normalized because the target is a host `path.join`, so it
+			// carries backslashes on Windows and forward slashes elsewhere.
+			const directories = mkdirSpy.mock.calls.map(([directory]) => {
+				return normalizeWindowsPath(String(directory));
+			});
+
+			expect(directories.toSorted()).toStrictEqual([
+				"/shadow",
+				"/shadow",
+				"/shadow/shared",
+				"/shadow/shared",
+				"/shadow/shared",
+				"/shadow/shared/deep",
+				"/shadow/shared/deep",
+			]);
+			// Every file still landed, so the skipped calls really were repeats.
+			expect(
+				["init", "shared/a", "shared/b", "shared/deep/c"].map((name) => {
+					return vol.existsSync(`/shadow/${name}.luau`);
+				}),
+			).toStrictEqual([true, true, true, true]);
 		});
 	});
 

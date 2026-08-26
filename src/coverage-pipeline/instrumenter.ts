@@ -45,6 +45,12 @@ export interface InstrumentOptions extends InstrumentRootOptions {
 
 /** Everything the per-file instrumentation pass captures from its root. */
 interface InstrumentFileContext {
+	/**
+	 * Shadow directories this pass has already made, so only the first file in
+	 * a directory pays the `mkdirSync`. Scoped to one `instrumentRoot` call —
+	 * one `shadowDir` — so it cannot outlive the tree it describes.
+	 */
+	createdDirectories: Set<string>;
 	/** POSIX-normalized luauRoot — the first half of every file key. */
 	posixLuauRoot: string;
 	shadowDir: string;
@@ -65,6 +71,7 @@ export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest
 
 	const files: CoverageManifest["files"] = {};
 	const context: InstrumentFileContext = {
+		createdDirectories: new Set<string>(),
 		posixLuauRoot: normalizeWindowsPath(luauRoot),
 		shadowDir,
 		timing,
@@ -128,12 +135,26 @@ function collectFileCoverage({
 }
 
 /**
+ * `mkdirSync` the directory unless this pass already made it. `recursive: true`
+ * stays on: the cache elides repeats only, so the first file at any depth must
+ * still be able to create the whole chain above it.
+ */
+function ensureDirectory(directory: string, createdDirectories: Set<string>): void {
+	if (createdDirectories.has(directory)) {
+		return;
+	}
+
+	fs.mkdirSync(directory, { recursive: true });
+	createdDirectories.add(directory);
+}
+
+/**
  * Instrument one discovered file: write its instrumented twin and `.cov-map`
  * sidecar into the shadow dir, and return the manifest record for it.
  */
 function instrumentFile(
 	relativePath: string,
-	{ posixLuauRoot, shadowDir, timing }: InstrumentFileContext,
+	{ createdDirectories, posixLuauRoot, shadowDir, timing }: InstrumentFileContext,
 ): InstrumentedFileRecord {
 	// The cross-machine join key: the same string is written to the manifest
 	// record below and baked into the instrumented preamble by `insertProbes`,
@@ -159,8 +180,11 @@ function instrumentFile(
 		// rename it adds per covered file roughly triples the cost of the write
 		// it protects. The atomic cov-map below covers the kill window that
 		// leaves. Re-measure the `write-shadow` span under `TIMING` first.
-		fs.mkdirSync(path.dirname(shadowFilePath), { recursive: true });
+		ensureDirectory(path.dirname(shadowFilePath), createdDirectories);
 		fs.writeFileSync(shadowFilePath, instrumentedSource);
+		// Same directory as the twin, already made above — but `atomicWrite`
+		// under here remakes it per file. Deduping that too would mean an
+		// opt-out on a helper six publishers share, for microseconds.
 		writeCoverageMap(coverageMapOutputPath, coverageMap);
 	});
 

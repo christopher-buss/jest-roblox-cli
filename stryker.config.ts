@@ -37,9 +37,16 @@ export default {
 	// A floor, not a target. It exists so a refactor that quietly weakens the
 	// suite fails loudly; ratchet it up as survivors get killed, and delete it
 	// once the repo's 100% policy is met.
+	//
+	// This one went DOWN once, from 93.5, and that is not a coverage
+	// regression: 93.5 was measured while the vitest runner was reporting
+	// mutants it had never tested (see the patch note for #776). The suite it
+	// described did not exist. 92.5 is what the fixed runner measures — 92.53
+	// on the commit that landed the patch, 92.54 with this package's own
+	// change on top. Ratchet from here.
 	thresholds: {
 		...sharedConfig.thresholds,
-		break: 93.5,
+		break: 92.5,
 	},
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",
