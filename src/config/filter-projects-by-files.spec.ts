@@ -283,7 +283,13 @@ describe(filterProjectsByFiles, () => {
 		});
 
 		expect(() => filterProjectsByFiles([wildcard], ["src/foo.spec.ts"], "/repo")).toThrow(
-			/no project/i,
+			[
+				"No project contains the requested file(s):",
+				"  - src/foo.spec.ts",
+				"",
+				"Project roots searched:",
+				"  (none — projects use include patterns with no static directory prefix; pass --project explicitly)",
+			].join("\n"),
 		);
 	});
 });

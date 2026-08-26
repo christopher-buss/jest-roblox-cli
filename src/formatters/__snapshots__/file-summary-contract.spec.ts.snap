@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatFileSummary > should render failed groups and individual statuses on separate lines 1`] = `
+"<fail> ❯ src/example.spec.ts</fail> <dim>(2 tests | </dim><summaryFailed>1 failed</summaryFailed><dim>)</dim>
+<fail>   ❯ suite</fail> <dim>(3 tests | </dim><summaryFailed>1 failed</summaryFailed><dim>)</dim><slow> 410<dim>ms</dim></slow>
+<pass>     ✓</pass><fail> passes</fail><fast> 10<dim>ms</dim></fast>
+<fail>     × fails</fail><slow> 400<dim>ms</dim></slow>
+<pending>     □ waits</pending>"
+`;
+
+exports[`formatFileSummary > should render only passing tests in verbose passed-file output 1`] = `
+" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(2 tests</dim><dim> -</dim><fast> 25<dim>ms</dim></fast><dim>)</dim>
+<pass>  ✓ suite test</pass><fast> 25<dim>ms</dim></fast>"
+`;

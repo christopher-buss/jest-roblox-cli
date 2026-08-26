@@ -21,7 +21,10 @@ export interface TestRowCounts {
 	total: number;
 }
 
-export function formatRunHeader(options: FormatOptions, styles?: Styles): string {
+export function formatRunHeader(
+	options: Pick<FormatOptions, "collectCoverage" | "color" | "rootDir" | "version">,
+	styles?: Styles,
+): string {
 	const st = styles ?? createStyles(options.color);
 	const runBadge = st.runBadge(" RUN ");
 	const version = st.location(`v${options.version}`);

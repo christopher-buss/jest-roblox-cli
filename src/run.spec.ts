@@ -1,3 +1,5 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { type CliOptions, DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
@@ -8,6 +10,7 @@ import { runJestRobloxAsync } from "./run.ts";
 import { loadRojoTree, runMultiProjectAsync, runResolvedProjectsAsync } from "./run/multi.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
 import { runWorkspaceModeAsync } from "./run/workspace.ts";
+import { createTimingCollector } from "./timing/orchestration-collector.ts";
 
 vi.mock(import("./run/multi"));
 // `loadRojoTree` + `buildImplicitProject` are auto-mocked here so the collapse
@@ -15,6 +18,7 @@ vi.mock(import("./run/multi"));
 vi.mock(import("./run/single-projects"));
 vi.mock(import("./run/workspace"));
 vi.mock(import("./coverage-pipeline/build-manifest"));
+vi.mock(import("./timing/orchestration-collector"));
 
 const mocks = {
 	emitBuildManifest: vi.mocked(emitBuildManifest),
@@ -23,6 +27,11 @@ const mocks = {
 	runResolvedProjects: vi.mocked(runResolvedProjectsAsync),
 	runWorkspaceMode: vi.mocked(runWorkspaceModeAsync),
 };
+
+const flushTimingReport = vi.fn<() => void>();
+const profile = vi.fn<(label: string, callback: () => unknown) => unknown>((_, callback) => {
+	return callback();
+});
 
 const COVERAGE_ARTIFACTS: CoverageArtifacts = {
 	buildId: "build-1",
@@ -34,6 +43,14 @@ const COVERAGE_ARTIFACTS: CoverageArtifacts = {
 };
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
+	vi.mocked(createTimingCollector).mockReturnValue(
+		fromAny({
+			flushTimingReport,
+			profile,
+			profileAsync:
+				vi.fn<(label: string, callback: () => Promise<unknown>) => Promise<unknown>>(),
+		}),
+	);
 	return {
 		...DEFAULT_CONFIG,
 		rootDir: "/test",
@@ -110,15 +127,34 @@ describe(runJestRobloxAsync, () => {
 	});
 
 	it("should collapse a no-projects runtime run into runResolvedProjects", async () => {
-		expect.assertions(3);
+		expect.assertions(5);
 
 		mocks.runResolvedProjects.mockResolvedValue(MULTI);
 
-		const result = await runJestRobloxAsync(makeCli(), makeConfig());
+		await runJestRobloxAsync(makeCli(), makeConfig());
 
-		expect(result).toBe(MULTI);
-		expect(mocks.runResolvedProjects).toHaveBeenCalledOnce();
+		expect(mocks.runResolvedProjects).toHaveBeenCalledExactlyOnceWith(
+			[undefined],
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+		);
 		expect(mocks.loadRojoTree).toHaveBeenCalledOnce();
+		expect(profile).toHaveBeenCalledWith("loadRojoTree", expect.any(Function));
+		expect(flushTimingReport).toHaveBeenCalledOnce();
+		expect(mocks.runResolvedProjects.mock.calls[0]![0]).toHaveLength(1);
+	});
+
+	it("should flush timing when workspace execution rejects", async () => {
+		expect.assertions(2);
+
+		const error = new Error("workspace failed");
+		mocks.runWorkspaceMode.mockRejectedValue(error);
+
+		await expect(runJestRobloxAsync(makeCli({ workspace: true }), makeConfig())).rejects.toBe(
+			error,
+		);
+		expect(flushTimingReport).toHaveBeenCalledOnce();
 	});
 
 	it("should collapse to runResolvedProjects when config.projects is an empty array", async () => {

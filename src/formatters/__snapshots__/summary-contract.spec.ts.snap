@@ -1,0 +1,12 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatTestSummary > should render exact snapshot, file, test, bail, and timing semantics 1`] = `
+"<dim>  Snapshot Write</dim>  <summaryFailed>2 failed</summaryFailed>
+<dim>  Snapshots</dim>  <summaryFailed>1 failed</summaryFailed> | <summaryPending>1 obsolete</summaryPending> | <summaryPassed>1 updated</summaryPassed> | <summaryPassed>1 written</summaryPassed> | <summaryPassed>2 passed</summaryPassed> <dim>(6)</dim>
+<dim> Test Files</dim>  <summaryFailed>2 failed</summaryFailed> | <summaryPassed>1 passed</summaryPassed> | <summaryPending>1 skipped</summaryPending> <dim>(4)</dim>
+<dim>      Tests</dim>  <summaryFailed>1 failed</summaryFailed> | <summaryPassed>2 passed</summaryPassed> | <summaryPending>3 skipped</summaryPending> <dim>(6)</dim>
+<dim>Type Errors</dim>  <summaryFailed>1 failed</summaryFailed>
+<dim>     Bailed</dim>  <summaryFailed>after 1 package</summaryFailed><dim>, 2 not run</dim>
+<dim>   Start at</dim>  13:04:05
+<dim>   Duration</dim>  1000ms <dim>(upload 200ms, environment 100ms, setup 100ms, tests 300ms, cli 250ms, coverage 50ms)</dim>"
+`;

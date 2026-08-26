@@ -8,6 +8,7 @@ import { stripVTControlCharacters } from "node:util";
 import color from "tinyrainbow";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { mergeJestTotals } from "../results/merge.ts";
 import * as sourceMapperModule from "../source-mapper/index.ts";
 import type { SourceMapper, SourceSnippet } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
@@ -659,7 +660,7 @@ Received: {"name": "other"}`;
 	});
 
 	it("should extract values from toThrow with labeled expected/received", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const message = `expect(received).toThrow(expected)
 
@@ -668,8 +669,11 @@ Received value:     "some error message"`;
 
 		const parsed = parseErrorMessage(message);
 
-		expect(parsed.expected).toBe('".pass"');
-		expect(parsed.received).toBe('"some error message"');
+		expect(parsed).toStrictEqual({
+			expected: '".pass"',
+			message: "expect(received).toThrow(expected)",
+			received: '"some error message"',
+		});
 	});
 });
 
@@ -3086,6 +3090,23 @@ describe(formatProjectHeader, () => {
 		expect(plain).toMatch(/\d+ms/);
 	});
 
+	it("should omit the duration suffix when every test has zero duration", () => {
+		expect.assertions(1);
+
+		const result: JestResult = {
+			...PASSING_RESULT,
+			testResults: PASSING_RESULT.testResults.map((file) => {
+				return {
+					...file,
+					testResults: file.testResults.map((test) => ({ ...test, duration: 0 })),
+				};
+			}),
+		};
+		const output = formatProjectHeader({ displayName: "core", result, useColor: false });
+
+		expect(output).toBe("▶ core  1 passed (3 tests)");
+	});
+
 	// The header and the trailing `Test Files` row bucket the same files, so
 	// this pins the empty-file case on both sides of the report.
 	it("should count a file that collected no tests as passed", () => {
@@ -3555,7 +3576,14 @@ describe(mergeSnapshotSummaries, () => {
 			{ added: 0, didUpdate: false, matched: 1, total: 1, unmatched: 0, updated: 0 },
 		]);
 
-		expect(merged).toMatchObject({ didUpdate: true });
+		expect(merged).toStrictEqual({
+			added: 0,
+			didUpdate: true,
+			matched: 2,
+			total: 2,
+			unmatched: 0,
+			updated: 0,
+		});
 	});
 
 	it("should aggregate didUpdate as false when no project ran in update mode", () => {
@@ -3566,7 +3594,14 @@ describe(mergeSnapshotSummaries, () => {
 			{ added: 0, didUpdate: false, matched: 1, total: 1, unmatched: 0, updated: 0 },
 		]);
 
-		expect(merged).toMatchObject({ didUpdate: false });
+		expect(merged).toStrictEqual({
+			added: 0,
+			didUpdate: false,
+			matched: 2,
+			total: 2,
+			unmatched: 0,
+			updated: 0,
+		});
 	});
 
 	it("should sum unchecked across all projects", () => {
@@ -3578,7 +3613,14 @@ describe(mergeSnapshotSummaries, () => {
 			{ added: 0, matched: 0, total: 0, unmatched: 0, updated: 0 },
 		]);
 
-		expect(merged).toMatchObject({ unchecked: 5 });
+		expect(merged).toStrictEqual({
+			added: 0,
+			matched: 0,
+			total: 0,
+			unchecked: 5,
+			unmatched: 0,
+			updated: 0,
+		});
 	});
 
 	it("should sum filesRemoved across projects so JSON consumers see it", () => {
@@ -3589,13 +3631,61 @@ describe(mergeSnapshotSummaries, () => {
 			{ added: 0, filesRemoved: 2, matched: 0, total: 0, unmatched: 0, updated: 0 },
 		]);
 
-		expect(merged).toMatchObject({ filesRemoved: 3 });
+		expect(merged).toStrictEqual({
+			added: 0,
+			filesRemoved: 3,
+			matched: 0,
+			total: 0,
+			unmatched: 0,
+			updated: 0,
+		});
 	});
 
 	it("should return undefined when no snapshots provided", () => {
 		expect.assertions(1);
 
 		expect(mergeSnapshotSummaries([])).toBeUndefined();
+	});
+});
+
+describe(mergeJestTotals, () => {
+	it("should merge the complete Jest result contract exactly", () => {
+		expect.assertions(1);
+
+		const firstFile = fromPartial<TestFileResult>({ testFilePath: "first.spec.ts" });
+		const secondFile = fromPartial<TestFileResult>({ testFilePath: "second.spec.ts" });
+		const merged = mergeJestTotals([
+			fromPartial<JestResult>({
+				numFailedTests: 0,
+				numPassedTests: 2,
+				numPendingTests: 1,
+				numTodoTests: 3,
+				numTotalTests: 6,
+				startTime: 20,
+				success: true,
+				testResults: [firstFile],
+			}),
+			fromPartial<JestResult>({
+				numFailedTests: 1,
+				numPassedTests: 4,
+				numPendingTests: 2,
+				numTotalTests: 7,
+				startTime: 10,
+				success: false,
+				testResults: [secondFile],
+			}),
+		]);
+
+		expect(merged).toStrictEqual({
+			numFailedTests: 1,
+			numPassedTests: 6,
+			numPendingTests: 3,
+			numTodoTests: 3,
+			numTotalTests: 13,
+			startTime: 10,
+			success: false,
+			testResults: [firstFile, secondFile],
+		});
 	});
 });
 
@@ -4226,5 +4316,91 @@ describe("test duration coloring", () => {
 		});
 
 		expect(formatted).toContain("[32m 400[2mms[22m[39m");
+	});
+});
+
+describe("complete formatter contracts", () => {
+	it("should render an expected/received failure exactly", () => {
+		expect.assertions(1);
+
+		const test: TestCaseResult = {
+			ancestorTitles: ["inventory", "stacking"],
+			duration: 12,
+			failureMessages: [
+				"expect(received).toStrictEqual(expected)\n\nExpected: { count: 2 }\nReceived: { count: 1 }",
+			],
+			fullName: "inventory stacking should merge items",
+			status: "failed",
+			title: "should merge items",
+		};
+
+		expect(
+			formatFailure({
+				failureIndex: 2,
+				filePath: "src/inventory.spec.ts",
+				test,
+				totalFailures: 3,
+				useColor: false,
+			}),
+		).toMatchSnapshot();
+	});
+
+	it("should render a snapshot diff exactly", () => {
+		expect.assertions(1);
+
+		const test: TestCaseResult = {
+			ancestorTitles: ["inventory"],
+			duration: 12,
+			failureMessages: [
+				[
+					"expect(received).toMatchSnapshot()",
+					"",
+					"- Snapshot  - 1",
+					"+ Received  + 1",
+					"",
+					'-   "count": 2,',
+					'+   "count": 1,',
+					"",
+					'[string "ReplicatedStorage.inventory.spec"]:41',
+				].join("\n"),
+			],
+			fullName: "inventory matches snapshot",
+			status: "failed",
+			title: "matches snapshot",
+		};
+
+		expect(
+			formatFailure({ filePath: "src/inventory.spec.ts", test, useColor: false }),
+		).toMatchSnapshot();
+	});
+
+	it("should render complete pass, skip, failure, and exec-error reports exactly", () => {
+		expect.assertions(1);
+
+		const reports = [PASSING_RESULT, SKIPPED_RESULT, FAILING_RESULT, EXEC_ERROR_RESULT].map(
+			(result) => formatResult(result, TIMING, { ...defaultOptions, color: false }),
+		);
+
+		expect(reports).toMatchSnapshot();
+	});
+
+	it("should render line padding, tabs, a caret, and language exactly", () => {
+		expect.assertions(1);
+
+		const snippet: SourceSnippet = {
+			column: 6,
+			failureLine: 10,
+			lines: [
+				{ content: "\tconst count = 1;", num: 9 },
+				{ content: "\t expect(count).toBe(2);", num: 10 },
+			],
+		};
+
+		expect(
+			formatSourceSnippet(snippet, "src/inventory.spec.ts", {
+				language: "TypeScript",
+				useColor: false,
+			}),
+		).toMatchSnapshot();
 	});
 });

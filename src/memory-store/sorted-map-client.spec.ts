@@ -73,7 +73,11 @@ function createSortedMapStub(behavior: StubBehavior = {}): SortedMapStub {
 
 		const pages = behavior.listPages ?? [{ items: [], nextPageToken: undefined }];
 		const callIndex = listCalls.length - 1;
-		const page = pages[callIndex] ?? { items: [], nextPageToken: undefined };
+		const page = pages[callIndex];
+		if (page === undefined) {
+			throw new Error(`Unexpected sortedMaps.list call ${String(listCalls.length)}`);
+		}
+
 		return { data: page, success: true };
 	});
 

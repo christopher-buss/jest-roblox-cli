@@ -648,9 +648,5 @@ function prepareForPackage(
 }
 
 function createIgnoreMatcher(patterns: Array<string>): (filePath: string) => boolean {
-	if (patterns.length === 0) {
-		return () => false;
-	}
-
 	return picomatch(patterns, { contains: true });
 }

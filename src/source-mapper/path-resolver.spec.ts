@@ -23,6 +23,31 @@ describe(createPathResolver, () => {
 		expect(resolver.resolve("ReplicatedStorage.foo")!.filePath).toBe("out/shared/foo.luau");
 	});
 
+	it("should reject unrelated and prefix-colliding DataModel paths", () => {
+		expect.assertions(2);
+
+		const resolver = createPathResolver({
+			name: "test",
+			tree: { ReplicatedStorage: { $path: "out/shared" } },
+		});
+
+		expect(resolver.resolve("ServerStorage.foo")).toBeUndefined();
+		expect(resolver.resolve("ReplicatedStorageExtra.foo")).toBeUndefined();
+	});
+
+	it("should only combine a test suffix at the end of an instance path", () => {
+		expect.assertions(1);
+
+		const resolver = createPathResolver({
+			name: "test",
+			tree: { ReplicatedStorage: { $path: "out/shared" } },
+		});
+
+		expect(resolver.resolve("ReplicatedStorage.foo.spec.helper")!.filePath).toBe(
+			"out/shared/foo/spec/helper.luau",
+		);
+	});
+
 	it("should parse nested rojo tree", () => {
 		expect.assertions(2);
 

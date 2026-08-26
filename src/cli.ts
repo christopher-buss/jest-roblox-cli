@@ -370,8 +370,12 @@ function parseParallelValue(raw: string | undefined): ParallelOption {
 		return "auto";
 	}
 
-	const parsed = Number.parseInt(raw, 10);
-	if (Number.isNaN(parsed) || parsed < 1) {
+	if (!INTEGER_LIKE_PATTERN.test(raw)) {
+		throw new Error(`Invalid --parallel value "${raw}". Must be a positive integer or "auto".`);
+	}
+
+	const parsed = Number(raw);
+	if (parsed < 1) {
 		throw new Error(`Invalid --parallel value "${raw}". Must be a positive integer or "auto".`);
 	}
 
@@ -403,10 +407,6 @@ function parseVmParallelValue(raw: string | undefined): ParallelOption {
 }
 
 function formatGameOutputLines(raw: string | undefined): string | undefined {
-	if (raw === undefined) {
-		return undefined;
-	}
-
 	const entries = parseGameOutput(raw);
 	if (entries.length === 0) {
 		return undefined;

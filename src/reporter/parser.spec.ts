@@ -8,6 +8,25 @@ import {
 	parseJestOutput,
 } from "./parser.ts";
 
+describe(LuauScriptError, () => {
+	it.for([
+		["TaskScript:7: failed", "failed"],
+		["TaskScript:123:failed", "failed"],
+		[" TaskScript:7: failed", " TaskScript:7: failed"],
+		["TaskScript:x: failed", "TaskScript:x: failed"],
+		["TaskScript:7 failed", "TaskScript:7 failed"],
+	] as const)(
+		"should normalize only a leading numeric TaskScript frame in %j",
+		([raw, expected]) => {
+			expect.assertions(1);
+
+			const error = new LuauScriptError(raw);
+
+			expect(error.message).toBe(expected);
+		},
+	);
+});
+
 describe(extractJsonFromOutput, () => {
 	it("should extract JSON from output with surrounding text", () => {
 		expect.assertions(1);
@@ -56,6 +75,34 @@ More logs after
 
 		expect(json).toBeUndefined();
 	});
+
+	it("should reset after an invalid candidate and return the next valid object", () => {
+		expect.assertions(1);
+
+		const output = ["prefix", "  {notJson}", "between", '  {"success":true}', "suffix"].join(
+			"\n",
+		);
+
+		expect(extractJsonFromOutput(output)).toBe('{"success":true}');
+	});
+
+	it("should collect every line until a nested object is balanced", () => {
+		expect.assertions(1);
+
+		const output = [
+			"prefix",
+			"  {",
+			'    "nested": {',
+			'      "value": true',
+			"    }",
+			"  }",
+			"suffix",
+		].join("\n");
+
+		expect(extractJsonFromOutput(output)).toBe(
+			["{", '    "nested": {', '      "value": true', "    }", "  }"].join("\n"),
+		);
+	});
 });
 
 describe(extractLuauTimingFromOutput, () => {
@@ -102,6 +149,19 @@ describe(extractLuauTimingFromOutput, () => {
 
 		expect(extractLuauTimingFromOutput(output)).toBeUndefined();
 	});
+
+	it("should extract timing from complete JSON containing an unmatched brace in a string", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			runner: {
+				note: "setup {",
+				timing: { findJest: 0.1 },
+			},
+		});
+
+		expect(extractLuauTimingFromOutput(output)).toStrictEqual({ findJest: 0.1 });
+	});
 });
 
 describe(parseJestOutput, () => {
@@ -124,6 +184,25 @@ describe(parseJestOutput, () => {
 		expect(result.numTotalTests).toBe(3);
 		expect(result.numPassedTests).toBe(3);
 	});
+
+	it.for(["{", "}"])(
+		"should parse complete Jest JSON containing an unmatched %j in a failure message",
+		(brace) => {
+			expect.assertions(1);
+
+			const output = JSON.stringify({
+				numFailedTests: 1,
+				numPassedTests: 0,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				startTime: 1000,
+				success: false,
+				testResults: [{ failureMessages: [`expected ${brace}`] }],
+			});
+
+			expect(parseJestOutput(output).result.numFailedTests).toBe(1);
+		},
+	);
 
 	it("should parse Jest result with test file results", () => {
 		expect.assertions(3);
@@ -193,6 +272,57 @@ describe(parseJestOutput, () => {
 
 		expect(result.success).toBeTrue();
 		expect(result.numTotalTests).toBe(1);
+	});
+
+	it("should require failure success when unwrapping an err field", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			err: "ignored metadata",
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 1000,
+			success: true,
+			testResults: [],
+		});
+
+		expect(parseJestOutput(output).result.numTotalTests).toBe(1);
+	});
+
+	it("should require successful status when unwrapping a value field", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			numFailedTests: 1,
+			numPassedTests: 0,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			startTime: 1000,
+			success: false,
+			testResults: [],
+			value: "ignored metadata",
+		});
+
+		expect(parseJestOutput(output).result.numFailedTests).toBe(1);
+	});
+
+	it("should ignore a primitive results field on an otherwise valid result", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			results: "ignored metadata",
+			startTime: 1000,
+			success: true,
+			testResults: [],
+		});
+
+		expect(parseJestOutput(output).result.numTotalTests).toBe(1);
 	});
 
 	it("should extract runner.timing from Ok result wrapper", () => {
@@ -326,6 +456,31 @@ describe(parseJestOutput, () => {
 		expect(() => parseJestOutput(output)).toThrowWithMessage(
 			LuauScriptError,
 			"Something broke",
+		);
+	});
+
+	it("should not treat a non-Promise execution error frame as a Promise cause", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			err: { error: "Module.Path:2: Something broke", kind: "ExecutionError" },
+			success: false,
+		});
+
+		expect(() => parseJestOutput(output)).toThrowWithMessage(
+			LuauScriptError,
+			"Module.Path:2: Something broke",
+		);
+	});
+
+	it("should not treat an unrelated kind as an execution-error envelope", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({ err: { detail: 42, kind: "OtherError" }, success: false });
+
+		expect(() => parseJestOutput(output)).toThrowWithMessage(
+			LuauScriptError,
+			'{"detail":42,"kind":"OtherError"}',
 		);
 	});
 
@@ -488,6 +643,20 @@ describe(parseJestOutput, () => {
 
 		const output = JSON.stringify({
 			err: "ReplicatedStorage.rbxts_include.node_modules.@rbxts-js.RobloxShared.nodeUtils:25: Exited with code: 1",
+			success: false,
+		});
+
+		expect(() => parseJestOutput(output)).toThrowWithMessage(
+			LuauScriptError,
+			"Exited with code: 1",
+		);
+	});
+
+	it("should strip a path:line prefix without a separating space", () => {
+		expect.assertions(1);
+
+		const output = JSON.stringify({
+			err: "Module.Path:25:Exited with code: 1",
 			success: false,
 		});
 
@@ -693,6 +862,26 @@ End of output
 		expect(perTestCoverage).toBeUndefined();
 	});
 
+	it("should reject array-shaped runner records", () => {
+		expect.assertions(2);
+
+		const payload = JSON.stringify({
+			numFailedTests: 0,
+			numPassedTests: 1,
+			numPendingTests: 0,
+			numTotalTests: 1,
+			runner: { snapshotWrites: [], timing: [] },
+			startTime: 0,
+			success: true,
+			testResults: [],
+		});
+
+		const { luauTiming, snapshotWrites } = parseJestOutput(payload);
+
+		expect(luauTiming).toBeUndefined();
+		expect(snapshotWrites).toBeUndefined();
+	});
+
 	it("should extract snapshot summary from wrapped results", () => {
 		expect.assertions(1);
 
@@ -852,7 +1041,7 @@ End of output
 	});
 
 	it("should return undefined snapshot when summary absent", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const output = JSON.stringify({
 			success: true,
@@ -872,6 +1061,7 @@ End of output
 		const { result } = parseJestOutput(output);
 
 		expect(result.snapshot).toBeUndefined();
+		expect(result).not.toHaveProperty("snapshot");
 	});
 
 	it("should extract runner.snapshotWrites from result", () => {
@@ -1584,5 +1774,32 @@ End of output
 		expect(coverageData).toStrictEqual({
 			"good.luau": { s: { "1": 1 } },
 		});
+	});
+});
+
+describe("promise trace boundaries", () => {
+	it("should select the final cause and trim its surrounding whitespace", () => {
+		expect.assertions(1);
+
+		const trace = [
+			"-- Promise.Error(RuntimeError) --",
+			"Module.first:10: earlier cause",
+			"",
+			"   Module.final:20: final cause   ",
+		].join("\n");
+
+		expect(() => {
+			return parseJestOutput(JSON.stringify({ err: trace, success: false }));
+		}).toThrowWithMessage(Error, "final cause");
+	});
+
+	it("should not treat an embedded Promise trace header as a trace", () => {
+		expect.assertions(1);
+
+		const message = "prefix -- Promise.Error(RuntimeError) --\nModule.path:10: cause";
+
+		expect(() => {
+			return parseJestOutput(JSON.stringify({ err: message, success: false }));
+		}).toThrowWithMessage(Error, message);
 	});
 });

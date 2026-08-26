@@ -34,7 +34,6 @@ export function emitRunHeader(input: RunHeaderInput): void {
 			collectCoverage: input.collectCoverage,
 			color: input.color,
 			rootDir: input.rootDir,
-			verbose: input.verbose ?? false,
 			version: input.version,
 		}),
 	);

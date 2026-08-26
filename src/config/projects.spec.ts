@@ -143,6 +143,15 @@ describe(extractStaticRoot, () => {
 		expect(result.root).toBe("src/client");
 		expect(result.glob).toBe("foo.spec.ts");
 	});
+
+	it("should handle a filename-only pattern with no glob characters", () => {
+		expect.assertions(1);
+
+		expect(extractStaticRoot("foo.spec.ts")).toStrictEqual({
+			glob: "foo.spec.ts",
+			root: ".",
+		});
+	});
 });
 
 describe(stripTsExtension, () => {
@@ -567,6 +576,37 @@ describe(resolveProjectConfig, () => {
 		expect(result.config.testTimeout).toBe(5000);
 	});
 
+	it("should keep every project-structural field out of the runtime config", () => {
+		expect.assertions(1);
+
+		const project = makeProject({
+			displayName: "client",
+			exclude: ["src/client/generated/**"],
+			include: ["src/client/**/*.spec.ts"],
+			outDir: "out/client",
+			root: ".",
+			typecheck: { enabled: true },
+		});
+
+		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+
+		expect({
+			displayName: Reflect.get(result.config, "displayName"),
+			exclude: Reflect.get(result.config, "exclude"),
+			include: Reflect.get(result.config, "include"),
+			outDir: Reflect.get(result.config, "outDir"),
+			root: Reflect.get(result.config, "root"),
+			typecheck: Reflect.get(result.config, "typecheck"),
+		}).toStrictEqual({
+			displayName: undefined,
+			exclude: undefined,
+			include: undefined,
+			outDir: undefined,
+			root: undefined,
+			typecheck: undefined,
+		});
+	});
+
 	it("should skip undefined project override values", () => {
 		expect.assertions(1);
 
@@ -578,9 +618,14 @@ describe(resolveProjectConfig, () => {
 			testTimeout: undefined,
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig(
+			project,
+			{ ...rootConfig, testTimeout: 12_345 },
+			simpleRojoTree,
+			allDirectories,
+		);
 
-		expect(result.config.testTimeout).toBeUndefined();
+		expect(result.config.testTimeout).toBe(12_345);
 	});
 
 	it("should extract displayName string from DisplayName object", () => {
@@ -672,7 +717,7 @@ describe(resolveProjectConfig, () => {
 	});
 
 	it("should auto-expand multi-root includes via tree walk", () => {
-		expect.assertions(2);
+		expect.assertions(4);
 
 		const tree = {
 			$className: "DataModel",
@@ -702,6 +747,8 @@ describe(resolveProjectConfig, () => {
 			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "src/Shared" },
 			{ dataModelPath: "ServerScriptService/Server", fsPath: "src/Server" },
 		]);
+		expect(result.outDir).toBeUndefined();
+		expect(result.exclude).toStrictEqual([]);
 	});
 
 	it("should respect segment boundaries during auto-expand", () => {
@@ -971,7 +1018,9 @@ describe(resolveProjectConfig, () => {
 
 		assert(caught instanceof ConfigError);
 
-		expect(caught.hint).toMatch(/set "outDir"/);
+		expect(caught.hint).toBe(
+			'Path starts with "src/" — if using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")',
+		);
 	});
 
 	it("should resolve includes from cwd when root is not set", () => {
@@ -991,7 +1040,7 @@ describe(resolveProjectConfig, () => {
 
 describe(loadProjectConfigFile, () => {
 	it("should load and return project config via c12", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const { loadConfig } = await import("c12");
 		const mockLoadConfig = vi.mocked(loadConfig);
@@ -1009,6 +1058,17 @@ describe(loadProjectConfigFile, () => {
 
 		expect(result.displayName).toBe("client");
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
+		expect(mockLoadConfig).toHaveBeenCalledExactlyOnceWith({
+			name: "jest-project",
+			configFile: "./client.config.ts",
+			configFileRequired: true,
+			cwd: "/project",
+			dotenv: false,
+			globalRc: false,
+			omit$Keys: true,
+			packageJson: false,
+			rcFile: false,
+		});
 	});
 
 	it("should unwrap project configs exported with defineProject shape", async () => {
@@ -1059,15 +1119,20 @@ describe(loadProjectConfigFile, () => {
 	});
 
 	it("should preserve original error message for non-ENOENT errors", async () => {
-		expect.assertions(1);
+		expect.assertions(3);
 
 		const { loadConfig } = await import("c12");
 		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockRejectedValueOnce(new Error("Syntax error in config"));
+		const cause = new Error("Syntax error in config");
+		mockLoadConfig.mockRejectedValueOnce(cause);
 
-		await expect(loadProjectConfigFile("./broken.config.ts", "/project")).rejects.toThrow(
+		const promise = loadProjectConfigFile("./broken.config.ts", "/project");
+
+		await expect(promise).rejects.toThrow(
 			"Failed to load project config file ./broken.config.ts: Syntax error in config",
 		);
+		await expect(promise).rejects.toHaveProperty("cause", cause);
+		expect(mockLoadConfig).toHaveBeenCalledOnce();
 	});
 
 	it("should extract displayName from object-style displayName", async () => {
@@ -1232,6 +1297,47 @@ describe(loadProjectConfigFile, () => {
 		expect(result.outDir).toBeUndefined();
 	});
 
+	it.for([
+		{ outDir: "out", rootDir: undefined },
+		{ outDir: undefined, rootDir: "src" },
+	])(
+		"should not derive outDir when only one tsconfig directory is available",
+		async (directories) => {
+			expect.assertions(1);
+
+			const { resolveTsconfigDirectories } = await import("../executor.ts");
+			vi.mocked(resolveTsconfigDirectories).mockReturnValueOnce(directories);
+
+			const { loadConfig } = await import("c12");
+			vi.mocked(loadConfig).mockResolvedValueOnce({
+				config: { displayName: "partial", testMatch: ["**/*.spec"] },
+				configFile: "jest.config.ts",
+				cwd: "/project",
+				layers: [],
+			});
+
+			const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project");
+
+			expect(result).not.toHaveProperty("outDir");
+		},
+	);
+
+	it("should preserve an explicit outDir when tsconfig directories are available", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		vi.mocked(loadConfig).mockResolvedValueOnce({
+			config: { displayName: "custom", outDir: "custom-output", testMatch: ["**/*.spec"] },
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project");
+
+		expect(result.outDir).toBe("custom-output");
+	});
+
 	it("should not derive outDir when config path is not under src/", async () => {
 		expect.assertions(1);
 
@@ -1273,6 +1379,49 @@ describe(loadProjectConfigFile, () => {
 			"shared/**/*.spec.ts",
 			"shared/**/*.test.ts",
 			"shared/**/*.test.tsx",
+		]);
+	});
+
+	it("should keep Lua and Luau testMatch extensions without adding TypeScript variants", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "luau",
+				testMatch: ["**/*.spec.lua", "**/*.test.luau"],
+			},
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("./shared/luau.config.ts", "/project");
+
+		expect(result.include).toStrictEqual(["shared/**/*.spec.lua", "shared/**/*.test.luau"]);
+	});
+
+	it("should only recognize source extensions at the end of a testMatch pattern", async () => {
+		expect.assertions(1);
+
+		const { loadConfig } = await import("c12");
+		const mockLoadConfig = vi.mocked(loadConfig);
+		mockLoadConfig.mockResolvedValueOnce({
+			config: {
+				displayName: "suffix",
+				testMatch: ["**/*.spec.ts.fixture"],
+			},
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile("./shared/suffix.config.ts", "/project");
+
+		expect(result.include).toStrictEqual([
+			"shared/**/*.spec.ts.fixture.ts",
+			"shared/**/*.spec.ts.fixture.tsx",
 		]);
 	});
 

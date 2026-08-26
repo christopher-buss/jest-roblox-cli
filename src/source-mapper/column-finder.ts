@@ -5,10 +5,6 @@ const EXPECT_CALL = /\bexpect\s*[.(]/;
  * 1-indexed column position, or undefined if no expect is found.
  */
 export function findExpectationColumn(lineText: string): number | undefined {
-	if (!lineText) {
-		return undefined;
-	}
-
 	// Match expect(...) or expect.method(...) (e.g. expect.assertions)
 	const expectIndex = lineText.search(EXPECT_CALL);
 	if (expectIndex === -1) {

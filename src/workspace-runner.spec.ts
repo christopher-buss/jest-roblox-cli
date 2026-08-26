@@ -623,7 +623,7 @@ describe(runWorkspaceAsync, () => {
 	});
 
 	it("should print a nested host [TIMING] report when TIMING is set", async () => {
-		expect.assertions(4);
+		expect.assertions(1);
 
 		vi.stubEnv("TIMING", "1");
 		const writes: Array<string> = [];
@@ -672,15 +672,18 @@ describe(runWorkspaceAsync, () => {
 			.split("\n")
 			.filter((line) => line.startsWith("[TIMING]"));
 
-		expect(timingLines).toContainEqual(
-			expect.stringMatching(/^\[TIMING] loadPackages: \d+ms$/),
-		);
-		expect(timingLines).toContainEqual(
-			expect.stringMatching(/^\[TIMING] {3}load-config:@halcyon\/foo: \d+ms$/),
-		);
-		expect(timingLines).toContainEqual(expect.stringMatching(/^\[TIMING] runProjects: \d+ms$/));
-		expect(timingLines).toContainEqual(
-			expect.stringMatching(/^\[TIMING] TOTAL \(host\): \d+ms$/),
+		expect(timingLines).toStrictEqual(
+			expect.arrayContaining([
+				expect.stringMatching(/^\[TIMING] loadPackages: \d+ms$/),
+				expect.stringMatching(/^\[TIMING] {3}load-config:@halcyon\/foo: \d+ms$/),
+				expect.stringMatching(/^\[TIMING] resolveContexts: \d+ms$/),
+				expect.stringMatching(/^\[TIMING] discoverTests: \d+ms$/),
+				expect.stringMatching(/^\[TIMING] buildStubs: \d+ms$/),
+				expect.stringMatching(/^\[TIMING] buildJobs: \d+ms$/),
+				expect.stringMatching(/^\[TIMING] prepareDispatch: \d+ms$/),
+				expect.stringMatching(/^\[TIMING] runProjects: \d+ms$/),
+				expect.stringMatching(/^\[TIMING] TOTAL \(host\): \d+ms$/),
+			]),
 		);
 	});
 
@@ -926,7 +929,7 @@ describe(runWorkspaceAsync, () => {
 	});
 
 	it("should pre-flight clean marker-bearing leftover stubs from package source and emit a stderr notice", async () => {
-		expect.assertions(3);
+		expect.assertions(2);
 
 		vol.reset();
 		const leftoverStub = path.join(FOO_DIR, "out/Client/jest.config.luau");
@@ -967,12 +970,8 @@ describe(runWorkspaceAsync, () => {
 
 		expect(vol.existsSync(leftoverStub)).toBeFalse();
 		expect(stderr).toHaveBeenCalledWith(
-			expect.stringContaining("cleaned 1 leftover stub(s) from @halcyon/foo"),
+			`jest-roblox: cleaned 1 leftover stub(s) from @halcyon/foo:\n  ${leftoverStub}\n`,
 		);
-
-		const writes = stderr.mock.calls.map((call) => String(call[0])).join("");
-
-		expect(writes).toContain(leftoverStub);
 	});
 
 	it("should skip stubMounts construction for mounts that already have a user-authored config on disk", async () => {
@@ -1807,7 +1806,7 @@ describe(runWorkspaceAsync, () => {
 	});
 
 	it("should surface preflight errors and skip the backend", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		vol.reset();
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -1834,6 +1833,7 @@ describe(runWorkspaceAsync, () => {
 		});
 
 		expect(results).toBeUndefined();
+		expect(stderr).toHaveBeenCalledWith("Pre-flight validation failed:\n");
 		expect(stderr).toHaveBeenCalledWith(expect.stringMatching(/@halcyon\/bar/));
 	});
 
@@ -3672,10 +3672,23 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-foo--@halcyon-foo.jest-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toMatchObject({
+			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toStrictEqual({
+				numFailedTests: 0,
 				numPassedTests: 2,
+				numPendingTests: 0,
+				numTodoTests: 0,
+				numTotalTests: 2,
+				startTime: 0,
 				success: true,
-				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
+				testResults: [
+					{
+						numFailingTests: 0,
+						numPassingTests: 1,
+						numPendingTests: 0,
+						testFilePath: "@halcyon/foo/src/foo.spec-d.ts",
+						testResults: [],
+					},
+				],
 			});
 		});
 	});

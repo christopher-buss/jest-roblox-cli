@@ -126,7 +126,14 @@ describe("second", () => { it("should b", () => {}); });`;
 		const source = "const x = 'y'; it(`should handle ${x}`, () => {});";
 		const definitions = collectTestDefinitions(source);
 
-		expect(definitions[0]!.name).toContain("should handle");
+		// eslint-disable-next-line no-template-curly-in-string -- expected source text
+		expect(definitions[0]!.name).toBe("should handle ${x}");
+	});
+
+	it("should preserve an empty string literal name", () => {
+		expect.assertions(1);
+
+		expect(collectTestDefinitions('it("", () => {});')[0]!.name).toBe("");
 	});
 
 	it("should handle variable reference as test name", () => {
@@ -188,5 +195,45 @@ describe("suite", () => {
 		expect(tests).toHaveLength(2);
 		expect(tests[0]!.ancestorNames).toStrictEqual(["suite"]);
 		expect(tests[1]!.ancestorNames).toStrictEqual(["suite"]);
+	});
+
+	it("should not treat a top-level test as an ancestor suite", () => {
+		expect.assertions(1);
+
+		const definitions = collectTestDefinitions('it("first", () => {});it("second", () => {});');
+
+		expect(
+			definitions.map(({ name, ancestorNames, type }) => {
+				return { name, ancestorNames, type };
+			}),
+		).toStrictEqual([
+			{ name: "first", ancestorNames: [], type: "test" },
+			{ name: "second", ancestorNames: [], type: "test" },
+		]);
+	});
+
+	it("should preserve expression source for non-literal names", () => {
+		expect.assertions(1);
+
+		const definitions = collectTestDefinitions("it(names[current + 1], () => {});");
+
+		expect(definitions[0]!.name).toBe("names[current + 1]");
+	});
+
+	it("should recognize suite and test modifiers but ignore computed members", () => {
+		expect.assertions(1);
+
+		const definitions = collectTestDefinitions(
+			'describe.only("suite", () => { test.todo("pending"); }); test["skip"]("ignored", () => {});',
+		);
+
+		expect(
+			definitions.map(({ name, ancestorNames, type }) => {
+				return { name, ancestorNames, type };
+			}),
+		).toStrictEqual([
+			{ name: "suite", ancestorNames: [], type: "suite" },
+			{ name: "pending", ancestorNames: ["suite"], type: "test" },
+		]);
 	});
 });

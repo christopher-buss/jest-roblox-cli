@@ -33,12 +33,30 @@ describe(buildJestArgv, () => {
 		expect(argv.testMatch).toStrictEqual(["**/*.spec", "**/*.test", "**/*.spec", "**/*.test"]);
 	});
 
+	it("should strip only a source extension at the end of a testMatch pattern", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { testMatch: ["**/*.spec.ts.backup", "**/*.spec.ts"] } }),
+		);
+
+		expect(argv.testMatch).toStrictEqual(["**/*.spec.ts.backup", "**/*.spec"]);
+	});
+
 	it("should pass through bail when set", () => {
 		expect.assertions(1);
 
 		const argv = buildJestArgv(createOptions({ config: { bail: 3 } }));
 
 		expect(argv.bail).toBe(3);
+	});
+
+	it("should omit undefined passthrough values", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { bail: undefined } }));
+
+		expect(Object.hasOwn(argv, "bail")).toBeFalse();
 	});
 
 	it("should pass through clearMocks/resetMocks/restoreMocks", () => {
@@ -93,6 +111,17 @@ describe(buildJestArgv, () => {
 		const argv = buildJestArgv(createOptions());
 
 		expect(argv.reporters).toBeEmpty();
+	});
+
+	it("should allocate the default reporters array independently", () => {
+		expect.assertions(2);
+
+		const first = buildJestArgv(createOptions({ config: { reporters: undefined } }));
+		const second = buildJestArgv(createOptions({ config: { reporters: undefined } }));
+		first.reporters!.push("default");
+
+		expect(first.reporters).toStrictEqual(["default"]);
+		expect(second.reporters).toStrictEqual([]);
 	});
 
 	it("should preserve user-supplied reporters", () => {
@@ -281,11 +310,13 @@ describe(generateTestScript, () => {
 	});
 
 	it("should embed config as JSON", () => {
-		expect.assertions(2);
+		expect.assertions(4);
 
 		const script = generateTestScript(createOptions({ config: { verbose: true } }));
 
 		expect(script).toContain("JSONDecode");
 		expect(script).toContain('"verbose":true');
+		expect(script).toStartWith("local __WELD_MODULES = {");
+		expect(script).not.toContain("__CONFIG_JSON__");
 	});
 });

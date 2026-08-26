@@ -188,12 +188,9 @@ function cachePath(rootDirectory: string): string {
 function readCacheFile(rootDirectory: string): CacheFile {
 	const entries: Record<string, CacheEntry> = {};
 	try {
-		const parsed = cacheFileInputSchema(
+		const parsed = cacheFileInputSchema.assert(
 			JSON.parse(fs.readFileSync(cachePath(rootDirectory), "utf8")),
 		);
-		if (parsed instanceof type.errors) {
-			return { entries, version: CACHE_VERSION };
-		}
 
 		for (const [key, value] of Object.entries(parsed.entries)) {
 			const entry = cacheEntrySchema(value);

@@ -1,5 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import istanbulReports from "istanbul-reports";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -328,6 +329,58 @@ describe(generateReports, () => {
 			expect(stdoutOutput()).toBe("Coverage: 100% (2 files)\n");
 		});
 
+		it.for([
+			[
+				"branches",
+				{
+					b: { "0": [1, 0] },
+					branchMap: {
+						"0": {
+							loc: {
+								end: { column: 1, line: 5 },
+								start: { column: 0, line: 2 },
+							},
+							locations: [
+								{
+									end: { column: 10, line: 3 },
+									start: { column: 0, line: 2 },
+								},
+								{
+									end: { column: 1, line: 5 },
+									start: { column: 0, line: 4 },
+								},
+							],
+							type: "if",
+						},
+					},
+				},
+			],
+			["functions", { f: { "0": 0 } }],
+		] satisfies Array<readonly [string, Partial<MappedFileCoverage>]>)(
+			"should not collapse a file with partial %s coverage",
+			([, overrides]) => {
+				expect.assertions(1);
+
+				vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+				const result = createResult({
+					"src/shared/player.ts": createMappedFile({
+						...overrides,
+						s: { "0": 3, "1": 2, "2": 5 },
+					}),
+				});
+
+				generateReports({
+					agentMode: true,
+					coverageDirectory: "/tmp/unused",
+					mapped: result,
+					reporters: ["text"],
+				});
+
+				expect(stdoutOutput()).toContain("player.ts");
+			},
+		);
+
 		it("should show table when coverage map is empty in agent mode", () => {
 			expect.assertions(2);
 
@@ -430,14 +483,34 @@ describe(generateReports, () => {
 
 			expect(stdoutOutput()).toBe("Coverage: 100% (1 file)\n");
 		});
+
+		it("should print the compact summary when text is mixed with a file reporter", () => {
+			expect.assertions(2);
+
+			const temporaryDirectory = createTemporaryDirectory();
+			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+			generateReports({
+				agentMode: true,
+				coverageDirectory: temporaryDirectory,
+				mapped: createResult({
+					"src/shared/player.ts": createMappedFile({ s: { "0": 3, "1": 2, "2": 5 } }),
+				}),
+				reporters: ["text", "lcov"],
+			});
+
+			expect(stdoutOutput()).toBe("Coverage: 100% (1 file)\n");
+			expect(fs.existsSync(path.join(temporaryDirectory, "lcov.info"))).toBeTrue();
+		});
 	});
 
 	describe("terminal columns", () => {
 		it("should use stdout.columns when available", () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			Object.defineProperty(process.stdout, "columns", { configurable: true, value: 200 });
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+			const createReporter = vi.spyOn(istanbulReports, "create");
 
 			const result = createResult({
 				"src/deeply/nested/path/to/module/index.ts": createMappedFile({
@@ -461,13 +534,18 @@ describe(generateReports, () => {
 			});
 
 			expect(stdoutOutput()).toContain("deeply/nested/path/to/module/index.ts");
+			expect(createReporter).toHaveBeenCalledExactlyOnceWith("text", {
+				maxCols: 200,
+				skipFull: true,
+			});
 		});
 
 		it("should use COLUMNS env var to prevent path truncation", () => {
-			expect.assertions(2);
+			expect.assertions(3);
 
 			vi.stubEnv("COLUMNS", "200");
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+			const createReporter = vi.spyOn(istanbulReports, "create");
 
 			const result = createResult({
 				"src/deeply/nested/path/to/module/index.ts": createMappedFile({
@@ -489,27 +567,49 @@ describe(generateReports, () => {
 
 			expect(output).toContain("deeply/nested/path/to/module/index.ts");
 			expect(output).toContain("other/location/index.ts");
+			expect(createReporter).toHaveBeenCalledExactlyOnceWith("text", {
+				maxCols: 200,
+				skipFull: true,
+			});
 		});
 
-		it("should ignore invalid COLUMNS env var", () => {
-			expect.assertions(1);
+		it.for(["auto", "0", "-1", "Infinity"])(
+			"should ignore invalid COLUMNS value %j",
+			(columns) => {
+				expect.assertions(2);
 
-			vi.stubEnv("COLUMNS", "auto");
-			vi.spyOn(process.stdout, "write").mockReturnValue(true);
+				vi.spyOn(process.stdout, "write").mockReturnValue(true);
+				const createReporter = vi.spyOn(istanbulReports, "create");
 
-			const result = createResult({
-				"src/shared/player.ts": createMappedFile(),
-			});
+				const result = createResult({
+					"src/a/very/long/nested/directory/whose/name/exceeds/the/default/terminal/width/player.ts":
+						createMappedFile({
+							path: "src/a/very/long/nested/directory/whose/name/exceeds/the/default/terminal/width/player.ts",
+						}),
+				});
 
-			generateReports({
-				coverageDirectory: "/tmp/unused",
-				mapped: result,
-				reporters: ["text"],
-			});
+				generateReports({
+					coverageDirectory: "/tmp/unused",
+					mapped: result,
+					reporters: ["text"],
+				});
+				const defaultOutput = stdoutOutput();
+				vi.mocked(process.stdout.write).mockClear();
+				vi.stubEnv("COLUMNS", columns);
 
-			// should not throw — falls back to Istanbul default (80)
-			expect(stdoutOutput()).toContain("player.ts");
-		});
+				generateReports({
+					coverageDirectory: "/tmp/unused",
+					mapped: result,
+					reporters: ["text"],
+				});
+
+				expect(stdoutOutput()).toBe(defaultOutput);
+
+				const lastCall: unknown = createReporter.mock.calls.at(-1);
+
+				expect(lastCall).toStrictEqual(["text", { maxCols: undefined, skipFull: false }]);
+			},
+		);
 	});
 
 	describe("with branch data", () => {

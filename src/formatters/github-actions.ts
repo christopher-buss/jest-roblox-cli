@@ -1,7 +1,7 @@
 import process from "node:process";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
-import type { JestResult } from "../types/jest-result.ts";
+import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result.ts";
 import { hasExecError } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
@@ -136,11 +136,6 @@ export function collectAnnotations(
 
 export function formatAnnotations(result: JestResult, options: GitHubActionsOptions): string {
 	const annotations = collectAnnotations(result, options);
-
-	if (annotations.length === 0) {
-		return "";
-	}
-
 	return annotations.map(formatAnnotation).join("\n");
 }
 
@@ -211,14 +206,12 @@ function makeRelative(filePath: string, workspace: string | undefined): string {
 
 function collectExecErrorAnnotation(
 	annotations: Array<GitHubAnnotation>,
-	file: JestResult["testResults"][number],
+	file: ExecErrorTestFileResult,
 	options: GitHubActionsOptions,
 ): void {
 	annotations.push({
 		file: makeRelative(file.testFilePath, options.workspace),
-		// hasExecError guarantees failureMessage is defined
-		// eslint-disable-next-line ts/no-non-null-assertion -- hasExecError checked by caller
-		message: file.failureMessage!,
+		message: file.failureMessage,
 		title: "Test suite failed to run",
 	});
 }

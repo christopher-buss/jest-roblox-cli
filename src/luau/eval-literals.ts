@@ -55,10 +55,6 @@ function evalExpr(node: AstExpr): LuauLiteral {
 }
 
 function evalTable(items: Array<AstExprTableItem>): LuauLiteral {
-	if (items.length === 0) {
-		return {};
-	}
-
 	const [first] = items;
 	if (first?.kind === "item") {
 		return items.map((item) => evalExpr(item.value));

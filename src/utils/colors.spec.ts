@@ -2,6 +2,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import hljs from "highlight.js/lib/core";
 import { stripVTControlCharacters } from "node:util";
+import color from "tinyrainbow";
 import { describe, expect, it, vi } from "vitest";
 
 import { highlightCode } from "./colors.ts";
@@ -30,6 +31,31 @@ describe(highlightCode, () => {
 			const source = "hello world";
 
 			expect(highlightCode("..", source)).toBe(source);
+		});
+
+		it("should not invoke a highlighter for an unknown extension", () => {
+			expect.assertions(2);
+
+			const highlight = vi.spyOn(hljs, "highlight");
+			const source = "local value = 1";
+
+			expect(highlightCode("file.txt", source)).toBe(source);
+			expect(highlight).not.toHaveBeenCalled();
+		});
+
+		it.for([
+			["file.lua", "luau"],
+			["file.ts", "typescript"],
+		] as const)("should select the exact grammar for %s", ([fileName, language]) => {
+			expect.assertions(1);
+
+			const highlight = vi
+				.spyOn(hljs, "highlight")
+				.mockReturnValueOnce(fromPartial({ value: "source" }));
+
+			highlightCode(fileName, "source");
+
+			expect(highlight).toHaveBeenCalledExactlyOnceWith("source", { language });
 		});
 	});
 
@@ -71,6 +97,48 @@ describe(highlightCode, () => {
 			// Result should have ANSI escape sequences around =>
 			expect(result).not.toBe(source);
 		});
+
+		it.for<[string, (text: string) => string]>([
+			["hljs-attr", color.blue],
+			["hljs-built_in", color.blue],
+			["hljs-comment", color.gray],
+			["hljs-function", color.blue],
+			["hljs-keyword", color.magenta],
+			["hljs-literal", color.blue],
+			["hljs-meta", color.gray],
+			["hljs-number", color.blue],
+			["hljs-operator", color.yellow],
+			["hljs-params", color.white],
+			["hljs-punctuation", color.yellow],
+			["hljs-regexp", color.cyan],
+			["hljs-string", color.green],
+			["hljs-subst", color.cyan],
+			["hljs-title", color.blue],
+			["hljs-type", color.yellow],
+			["hljs-variable", color.white],
+		])("should map the %s token class to its terminal color", ([cssClass, style]) => {
+			expect.assertions(1);
+
+			vi.spyOn(hljs, "highlight").mockReturnValueOnce(
+				fromPartial({
+					value: `<span class="${cssClass}">token</span>`,
+				}),
+			);
+
+			expect(highlightCode("file.ts", "token")).toBe(style("token"));
+		});
+
+		it("should preserve nested token styles", () => {
+			expect.assertions(1);
+
+			vi.spyOn(hljs, "highlight").mockReturnValueOnce(
+				fromPartial({
+					value: '<span class="hljs-keyword"><span class="hljs-string">token</span></span>',
+				}),
+			);
+
+			expect(highlightCode("file.ts", "token")).toBe(color.magenta(color.green("token")));
+		});
 	});
 
 	describe("luau highlighting", () => {
@@ -106,6 +174,16 @@ describe(highlightCode, () => {
 			expect(result).not.toContain("&gt;");
 			expect(result).not.toContain("&amp;");
 			expect(result).not.toContain("&quot;");
+		});
+
+		it("should decode each entity to its exact source character", () => {
+			expect.assertions(1);
+
+			vi.spyOn(hljs, "highlight").mockReturnValueOnce(
+				fromPartial({ value: "&#x27;&amp;&gt;&lt;&quot;" }),
+			);
+
+			expect(highlightCode("file.ts", "ignored")).toBe("'&><\"");
 		});
 
 		it("should decode single quotes", () => {

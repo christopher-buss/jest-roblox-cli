@@ -1,0 +1,129 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`luauGrammar > should describe the complete Luau grammar 1`] = `
+{
+  "contains": [
+    {
+      "begin": "--(?!\\[=*\\[)",
+      "end": "$",
+      "scope": "comment",
+    },
+    {
+      "begin": "--\\[=*\\[",
+      "contains": [
+        {
+          "begin": "\\[=*\\[",
+          "contains": [
+            "self",
+          ],
+          "end": "\\]=*\\]",
+        },
+      ],
+      "end": "\\]=*\\]",
+      "relevance": 10,
+      "scope": "comment",
+    },
+    {
+      "beginKeywords": "function",
+      "contains": [
+        {
+          "begin": "([_a-zA-Z]\\w*\\.)*([_a-zA-Z]\\w*:)?[_a-zA-Z]\\w*",
+          "scope": "title",
+        },
+        {
+          "begin": "\\(",
+          "contains": [
+            {
+              "begin": "--(?!\\[=*\\[)",
+              "end": "$",
+              "scope": "comment",
+            },
+            {
+              "begin": "--\\[=*\\[",
+              "contains": [
+                {
+                  "begin": "\\[=*\\[",
+                  "contains": [
+                    "self",
+                  ],
+                  "end": "\\]=*\\]",
+                },
+              ],
+              "end": "\\]=*\\]",
+              "relevance": 10,
+              "scope": "comment",
+            },
+          ],
+          "endsWithParent": true,
+          "scope": "params",
+        },
+        {
+          "begin": "--(?!\\[=*\\[)",
+          "end": "$",
+          "scope": "comment",
+        },
+        {
+          "begin": "--\\[=*\\[",
+          "contains": [
+            {
+              "begin": "\\[=*\\[",
+              "contains": [
+                "self",
+              ],
+              "end": "\\]=*\\]",
+            },
+          ],
+          "end": "\\]=*\\]",
+          "relevance": 10,
+          "scope": "comment",
+        },
+      ],
+      "end": "\\)",
+      "scope": "function",
+    },
+    {
+      "scope": "number",
+    },
+    {
+      "scope": "apostrophe-string",
+    },
+    {
+      "scope": "quote-string",
+    },
+    {
+      "begin": "\\[=*\\[",
+      "contains": [
+        {
+          "begin": "\\[=*\\[",
+          "contains": [
+            "self",
+          ],
+          "end": "\\]=*\\]",
+        },
+      ],
+      "end": "\\]=*\\]",
+      "relevance": 5,
+      "scope": "string",
+    },
+    {
+      "begin": "\`",
+      "contains": [
+        {
+          "begin": "\\{",
+          "end": "\\}",
+          "scope": "subst",
+        },
+      ],
+      "end": "\`",
+      "scope": "string",
+    },
+  ],
+  "keywords": {
+    "$pattern": "identifier-pattern",
+    "built_in": "_G _VERSION __index __newindex __mode __call __metatable __tostring __len __gc __add __sub __mul __div __mod __pow __concat __unm __eq __lt __le assert __idiv __iter newproxy rawlen collectgarbage error getfenv getmetatable ipairs loadstring next pairs pcall print rawequal rawget rawset require select setfenv setmetatable tonumber tostring type unpack xpcall self coroutine resume yield status wrap create running debug traceback math log max acos huge ldexp pi cos tanh pow deg tan cosh sinh random randomseed frexp ceil floor rad abs sqrt modf asin min mod fmod log10 atan2 exp sin atan os date difftime time clock string sub upper len rep find match char gmatch reverse byte format gsub lower table insert getn foreachi maxn foreach concat sort remove game workspace script plugin Instance Enum describe it expect test beforeAll afterAll beforeEach afterEach jest toBe toEqual toContain toThrow toHaveBeenCalled",
+    "keyword": "and break continue do else elseif end for function if in local not or repeat return then until while type export",
+    "literal": "true false nil",
+  },
+  "name": "Luau",
+}
+`;

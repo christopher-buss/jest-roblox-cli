@@ -298,12 +298,7 @@ function getTerminalColumns(): number | undefined {
 		return process.stdout.columns;
 	}
 
-	const columnsEnvironment = process.env["COLUMNS"];
-	if (columnsEnvironment === undefined) {
-		return undefined;
-	}
-
-	const parsed = Number(columnsEnvironment);
+	const parsed = Number(process.env["COLUMNS"]);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
@@ -315,11 +310,12 @@ function isAllFilesFull(coverageMap: CoverageMap): boolean {
 
 	return files.every((file) => {
 		const summary = coverageMap.fileCoverageFor(file).toSummary();
+		// Istanbul derives line coverage from statement hits, so full statement
+		// coverage already guarantees full line coverage.
 		return (
 			summary.statements.pct === 100 &&
 			summary.branches.pct === 100 &&
-			summary.functions.pct === 100 &&
-			summary.lines.pct === 100
+			summary.functions.pct === 100
 		);
 	});
 }

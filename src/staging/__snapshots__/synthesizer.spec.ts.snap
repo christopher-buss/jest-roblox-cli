@@ -1,0 +1,58 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`synthesize > no-wrap mode validation > should produce a place-ready synthesized project for multi-project + open-cloud shape 1`] = `
+"{
+  "gameId": 4242,
+  "name": "user-game",
+  "placeId": 9999,
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "/repo/packages/foo/out/Shared",
+        "jest.config": {
+          "$path": "/repo/packages/foo/.jest-roblox/cache/shared/jest.config.luau"
+        }
+      }
+    },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "Server": {
+        "$path": "/repo/packages/foo/out/Server",
+        "jest.config": {
+          "$path": "/repo/packages/foo/.jest-roblox/cache/server/jest.config.luau"
+        }
+      }
+    }
+  }
+}"
+`;
+
+exports[`synthesize > should nest a single package under ServerStorage.__pkg_stage.<name> 1`] = `
+"{
+  "name": "jest-roblox-workspace",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$properties": {
+        "LoadStringEnabled": true
+      }
+    },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "__pkg_stage": {
+        "$className": "Folder",
+        "@halcyon/foo": {
+          "$className": "Folder",
+          "ReplicatedStorage": {
+            "$className": "Folder",
+            "$path": "/repo/packages/foo/src"
+          }
+        }
+      }
+    }
+  }
+}"
+`;

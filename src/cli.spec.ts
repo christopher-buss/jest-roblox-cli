@@ -1,6 +1,7 @@
 import { ApiError, NetworkError, PermissionError } from "@bedrock-rbx/ocale";
 
 import process from "node:process";
+import { stripVTControlCharacters } from "node:util";
 import type { MockInstance } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
@@ -124,6 +125,12 @@ function setupOutputSpies(): OutputSpies {
 	};
 }
 
+function renderedStderr(spies: OutputSpies): string {
+	return stripVTControlCharacters(
+		spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join(""),
+	);
+}
+
 function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	const config = makeConfig(configOverrides);
 	mocks.loadConfig.mockResolvedValue(config);
@@ -245,9 +252,16 @@ describe(parseArgs, () => {
 	});
 
 	it("should parse --no-coverage-cache flag", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		expect(parseArgs(["--no-coverage-cache"]).coverageCache).toBeFalse();
+		expect(parseArgs(["--coverage-cache"]).coverageCache).toBeTrue();
+	});
+
+	it("should let --no-coverage-cache take precedence over --coverage-cache", () => {
+		expect.assertions(1);
+
+		expect(parseArgs(["--coverage-cache", "--no-coverage-cache"]).coverageCache).toBeFalse();
 	});
 
 	it("should parse --no-upload-cache flag", () => {
@@ -262,10 +276,12 @@ describe(parseArgs, () => {
 		expect(parseArgs([]).uploadCache).toBeUndefined();
 	});
 
-	it("should parse --no-color flag", () => {
-		expect.assertions(1);
+	it("should parse color flags and prefer --no-color", () => {
+		expect.assertions(3);
 
 		expect(parseArgs(["--no-color"]).color).toBeFalse();
+		expect(parseArgs(["--color"]).color).toBeTrue();
+		expect(parseArgs(["--color", "--no-color"]).color).toBeFalse();
 	});
 
 	it("should parse --gameOutput option", () => {
@@ -274,10 +290,12 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--gameOutput", "/tmp/game.json"]).gameOutput).toBe("/tmp/game.json");
 	});
 
-	it("should parse --no-show-luau flag", () => {
-		expect.assertions(1);
+	it("should parse Luau display flags and prefer --no-show-luau", () => {
+		expect.assertions(3);
 
 		expect(parseArgs(["--no-show-luau"]).showLuau).toBeFalse();
+		expect(parseArgs(["--showLuau"]).showLuau).toBeTrue();
+		expect(parseArgs(["--showLuau", "--no-show-luau"]).showLuau).toBeFalse();
 	});
 
 	it("should parse -u / --updateSnapshot flag", () => {
@@ -393,15 +411,21 @@ describe(parseArgs, () => {
 		expect(result.coverageReporters).toStrictEqual(["text", "lcov", "html"]);
 	});
 
-	it("should throw on an invalid --coverageReporters value", () => {
-		expect.assertions(2);
+	it("should report every invalid --coverageReporters value", () => {
+		expect.assertions(1);
 
-		expect(() => parseArgs(["--coverageReporters", "not-a-reporter"])).toThrow(
-			'Invalid coverage reporter "not-a-reporter"',
-		);
 		expect(() => {
-			return parseArgs(["--coverageReporters", "text", "--coverageReporters", "nope"]);
-		}).toThrow("Must be one of: clover, cobertura");
+			return parseArgs([
+				"--coverageReporters",
+				"bad-one",
+				"--coverageReporters",
+				"text",
+				"--coverageReporters",
+				"bad-two",
+			]);
+		}).toThrow(
+			'Invalid coverage reporter "bad-one", "bad-two". Must be one of: clover, cobertura, html, html-spa, json, json-summary, lcov, lcovonly, none, teamcity, text, text-lcov, text-summary',
+		);
 	});
 
 	it("should parse --collectCoverageFrom with multiple values", () => {
@@ -458,15 +482,19 @@ describe(parseArgs, () => {
 	});
 
 	it("should parse --parallel with integer value", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		expect(parseArgs(["--parallel", "3"]).parallel).toBe(3);
+		expect(parseArgs(["--parallel", "12"]).parallel).toBe(12);
 	});
 
 	it('should parse --parallel with "auto"', () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
-		expect(parseArgs(["--parallel", "auto"]).parallel).toBe("auto");
+		const result = parseArgs(["--parallel", "auto"]);
+
+		expect(result.parallel).toBe("auto");
+		expect(result.files).toBeUndefined();
 	});
 
 	it('should treat bare --parallel (no value) as "auto"', () => {
@@ -484,6 +512,12 @@ describe(parseArgs, () => {
 		expect(result.verbose).toBeTrue();
 	});
 
+	it("should leave a negative positional for the argument parser", () => {
+		expect.assertions(1);
+
+		expect(() => parseArgs(["--parallel", "-1"])).toThrow("Unknown option '-1'");
+	});
+
 	it("should leave parallel undefined when flag not present", () => {
 		expect.assertions(1);
 
@@ -494,6 +528,12 @@ describe(parseArgs, () => {
 		expect.assertions(1);
 
 		expect(() => parseArgs(["--parallel", "0"])).toThrow("Invalid --parallel value");
+	});
+
+	it("should accept the minimum --parallel value", () => {
+		expect.assertions(1);
+
+		expect(parseArgs(["--parallel", "1"]).parallel).toBe(1);
 	});
 
 	it("should throw on --parallel -1", () => {
@@ -507,6 +547,15 @@ describe(parseArgs, () => {
 
 		expect(() => parseArgs(["--parallel=xyz"])).toThrow("Invalid --parallel value");
 	});
+
+	it.for(["3x", "x3"])(
+		"should reject attached partially numeric --parallel value %j",
+		(value) => {
+			expect.assertions(1);
+
+			expect(() => parseArgs([`--parallel=${value}`])).toThrow("Invalid --parallel value");
+		},
+	);
 
 	it("should parse --experimental-vm-parallel with integer value", () => {
 		expect.assertions(1);
@@ -657,7 +706,7 @@ describe(parseArgs, () => {
 
 describe(runAsync, () => {
 	it("should return 2 and print banner for ConfigError with hint", async () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const spies = setupOutputSpies();
 		setupDefaults();
@@ -666,8 +715,9 @@ describe(runAsync, () => {
 		const code = await runAsync([]);
 
 		expect(code).toBe(2);
+		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Config Error"));
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("bad value"));
-		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Hint:"));
+		expect(renderedStderr(spies)).toContain("\n  Hint: try this instead\n");
 	});
 
 	it("should return 2 and print banner for ConfigError without hint", async () => {
@@ -739,12 +789,54 @@ describe(runAsync, () => {
 
 		expect(code).toBe(2);
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Test Run Failed"));
-		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("No tests found"));
+		expect(renderedStderr(spies)).toContain(
+			"\n  No tests found, exiting with code 1\n  Run with `--passWithNoTests` to exit with code 0\n\n  Exited with code: 1\n",
+		);
 		// Game output is the primary content now, not a sub-section.
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Game output:"));
 		// "Luau Error" title is reserved for actual Luau crashes.
 		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Luau Error"));
 	});
+
+	it("should recognize a multi-digit exit code only when it is the complete message", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+
+		const error = new LuauScriptError("Exited with code: 12");
+		error.bannerOutput = JSON.stringify([
+			{ message: "captured failure", messageType: 0, timestamp: 0 },
+		]);
+		mocks.loadConfig.mockRejectedValue(error);
+
+		const code = await runAsync([]);
+
+		expect(code).toBe(2);
+		expect(renderedStderr(spies)).toContain("captured failure\n\n  Exited with code: 12");
+		expect(renderedStderr(spies)).not.toContain("Game output:");
+	});
+
+	it.for(["prefix Exited with code: 1", "Exited with code: 1 trailing"] as const)(
+		"should keep captured output as context for non-exact exit message %j",
+		async (message) => {
+			expect.assertions(2);
+
+			const spies = setupOutputSpies();
+			setupDefaults();
+
+			const error = new LuauScriptError(message);
+			error.bannerOutput = JSON.stringify([
+				{ message: "captured context", messageType: 0, timestamp: 0 },
+			]);
+			mocks.loadConfig.mockRejectedValue(error);
+
+			const code = await runAsync([]);
+
+			expect(code).toBe(2);
+			expect(renderedStderr(spies)).toContain("Game output:\n  captured context");
+		},
+	);
 
 	it("should print banner output context for LuauScriptError with parseable bannerOutput", async () => {
 		// Non-exit-code LuauScriptError (e.g. config / Jest-resolution failure)
@@ -842,7 +934,7 @@ describe(runAsync, () => {
 	});
 
 	it("should include the cause chain entries inside the Backend Error banner", async () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const spies = setupOutputSpies();
 		setupDefaults();
@@ -859,15 +951,18 @@ describe(runAsync, () => {
 		const code = await runAsync([]);
 
 		expect(code).toBe(2);
-		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("Caused by:"));
 		expect(spies.stderr).toHaveBeenCalledWith(
 			expect.stringContaining("NetworkError: Network request failed"),
 		);
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("ECONNRESET"));
+		expect(renderedStderr(spies)).toContain(
+			"    [1] TypeError: fetch failed (code=ECONNRESET errno=-54 syscall=connect)",
+		);
+		expect(renderedStderr(spies)).not.toContain(" ()");
 	});
 
 	it("should name the failing request, status, and body head for a parse failure", async () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const spies = setupOutputSpies();
 		setupDefaults();
@@ -891,6 +986,9 @@ describe(runAsync, () => {
 			expect.stringContaining(
 				"GET https://apis.roblox.com/cloud/v2/universes/1/places/2/luau-execution-session-tasks/abc",
 			),
+		);
+		expect(renderedStderr(spies)).toContain(
+			"    [0] ApiError: Failed to parse response body (content-type: application/json) (status=200)",
 		);
 		expect(spies.stderr).toHaveBeenCalledWith(
 			expect.stringContaining(
@@ -916,11 +1014,61 @@ describe(runAsync, () => {
 
 		expect(code).toBe(2);
 
-		const rendered = spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+		const rendered = renderedStderr(spies);
 
 		expect(rendered).toContain("line one line two");
 		expect(rendered).toContain("…");
 		expect(rendered).not.toContain("x".repeat(200));
+	});
+
+	it("should truncate response bodies only after the preview limit", async () => {
+		expect.assertions(4);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		const exactLimit = "x".repeat(160);
+		mocks.loadConfig.mockRejectedValue(
+			new Error("Failed to parse response body", {
+				cause: new ApiError("Failed to parse response body", {
+					details: exactLimit,
+					statusCode: 200,
+				}),
+			}),
+		);
+
+		await expect(runAsync([])).resolves.toBe(2);
+		expect(renderedStderr(spies)).toContain(`Body: ${exactLimit}\n`);
+
+		spies.stderr.mockClear();
+		mocks.loadConfig.mockRejectedValue(
+			new Error("Failed to parse response body", {
+				cause: new ApiError("Failed to parse response body", {
+					details: `${exactLimit}y`,
+					statusCode: 200,
+				}),
+			}),
+		);
+
+		await expect(runAsync([])).resolves.toBe(2);
+		expect(renderedStderr(spies)).toContain(`Body: ${exactLimit}…\n`);
+	});
+
+	it("should collapse a run of mixed whitespace in a response body", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		mocks.loadConfig.mockRejectedValue(
+			new Error("Failed to parse response body", {
+				cause: new ApiError("Failed to parse response body", {
+					details: "first\n \tsecond",
+					statusCode: 200,
+				}),
+			}),
+		);
+
+		await expect(runAsync([])).resolves.toBe(2);
+		expect(renderedStderr(spies)).toContain("Body: first second\n");
 	});
 
 	it("should omit the body line when the captured body is blank", async () => {
@@ -940,7 +1088,7 @@ describe(runAsync, () => {
 
 		expect(code).toBe(2);
 
-		const rendered = spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+		const rendered = renderedStderr(spies);
 
 		expect(rendered).not.toContain("Body:");
 	});
@@ -962,7 +1110,7 @@ describe(runAsync, () => {
 
 		expect(code).toBe(2);
 
-		const rendered = spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+		const rendered = renderedStderr(spies);
 
 		expect(rendered).toContain("https://apis.roblox.com/cloud/v2/universes/1/places/2");
 		expect(rendered).not.toContain("undefined");
@@ -1013,14 +1161,32 @@ describe(runAsync, () => {
 });
 
 describe("lUAU_ERROR_HINTS", () => {
-	it.for<[message: string, hintFragment: string]>([
-		["Failed to find Jest instance in ReplicatedStorage", "jestPath"],
-		["Failed to find Jest instance at path", "configured jestPath"],
-		["Failed to find service ReplicatedStorage.foo", "valid Roblox service"],
-		["No projects configured", "projects"],
-		["Infinite yield detected", "WaitForChild"],
-		["loadstring() is not available", "loadstring"],
-	])("should hint for: %s", async ([message, fragment]) => {
+	it.for<[message: string, hint: string]>([
+		[
+			"Failed to find Jest instance in ReplicatedStorage",
+			'Set "jestPath" in your config to specify the Jest module location, e.g. "ReplicatedStorage/rbxts_include/node_modules/@rbxts/jest/src"',
+		],
+		[
+			"Failed to find Jest instance at path",
+			"The configured jestPath does not resolve to a valid instance. Verify the path matches your Rojo project tree.",
+		],
+		[
+			"Failed to find service ReplicatedStorage.foo",
+			"The first segment of jestPath must be a valid Roblox service name (e.g. ReplicatedStorage, ServerScriptService).",
+		],
+		[
+			"No projects configured",
+			'Set "projects" in jest.config.ts (e.g. ["ReplicatedStorage/client", "ServerScriptService/server"]).',
+		],
+		[
+			"Infinite yield detected",
+			"A :WaitForChild() call is waiting for an instance that doesn't exist. Check your DataModel paths and Rojo project configuration.",
+		],
+		[
+			"loadstring() is not available",
+			'loadstring() must be enabled for Jest to run. Add "LoadStringEnabled": true to ServerScriptService.$properties in your project.json.',
+		],
+	])("should hint for: %s", async ([message, hint]) => {
 		expect.assertions(2);
 
 		const spies = setupOutputSpies();
@@ -1030,7 +1196,7 @@ describe("lUAU_ERROR_HINTS", () => {
 		const code = await runAsync([]);
 
 		expect(code).toBe(2);
-		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(fragment));
+		expect(renderedStderr(spies)).toContain(`Hint: ${hint}`);
 	});
 
 	it("should not reference removed --projects flag in projects hint", async () => {
@@ -1049,15 +1215,15 @@ describe("lUAU_ERROR_HINTS", () => {
 });
 
 describe(main, () => {
-	it("should set process.exitCode from the run result", async () => {
-		expect.assertions(1);
+	it("should pass only user arguments and set process.exitCode from the run result", async () => {
+		expect.assertions(2);
 
 		setupDefaults();
 		setupOutputSpies();
 
 		const originalArgv = process.argv;
 		const originalExitCode = process.exitCode;
-		process.argv = ["node", "jest-roblox"];
+		process.argv = ["node", "jest-roblox", "--parallel", "2"];
 
 		onTestFinished(() => {
 			process.argv = originalArgv;
@@ -1067,6 +1233,10 @@ describe(main, () => {
 		await main();
 
 		expect(process.exitCode).toBe(0);
+		expect(mocks.runJestRoblox).toHaveBeenCalledWith(
+			expect.objectContaining({ files: undefined, parallel: 2 }),
+			expect.any(Object),
+		);
 	});
 });
 
@@ -1111,6 +1281,32 @@ describe("runInner orchestration", () => {
 
 		expect(code).toBe(2);
 		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("standalone binary"));
+	});
+
+	it("should allow typechecking outside SEA mode", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		vi.stubEnv("JEST_ROBLOX_SEA", "false");
+
+		const code = await runAsync(["--typecheck"]);
+
+		expect(code).toBe(0);
+		expect(spies.stderr).not.toHaveBeenCalled();
+	});
+
+	it("should allow runtime tests in SEA mode", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		setupDefaults();
+		vi.stubEnv("JEST_ROBLOX_SEA", "true");
+
+		const code = await runAsync([]);
+
+		expect(code).toBe(0);
+		expect(spies.stderr).not.toHaveBeenCalled();
 	});
 
 	it("should call loadConfig with --config path", async () => {

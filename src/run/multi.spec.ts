@@ -28,6 +28,7 @@ import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepa
 import { type ExecuteResult, runProjectsAsync } from "../executor.ts";
 import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
 import { synthesize } from "../staging/synthesizer.ts";
+import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { runTypecheckAsync } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
@@ -165,6 +166,30 @@ function clientOnlyMatches(displayName: string): Array<string> {
 function isoNow(): string {
 	const now = new Date();
 	return now.toISOString();
+}
+
+function recordingTimingCollector() {
+	const asyncNames: Array<string> = [];
+	const names: Array<string> = [];
+	const records: Array<{ elapsedMs: number; name: string }> = [];
+	const timing: TimingCollector = {
+		enabled: true,
+		flushTimingReport: () => {
+			/* unused */
+		},
+		profile: (name, func) => {
+			names.push(name);
+			return func();
+		},
+		profileAsync: async (name, func) => {
+			asyncNames.push(name);
+			return func();
+		},
+		record: (name, elapsedMs) => {
+			records.push({ name, elapsedMs });
+		},
+	};
+	return { asyncNames, names, records, timing };
 }
 
 function writeRojoProject(): void {
@@ -405,7 +430,7 @@ describe(runMultiProjectAsync, () => {
 				config,
 				rawProjects: [makeProjectEntry("client")],
 			}),
-		).rejects.toThrow(/Unknown project name/);
+		).rejects.toThrow("Unknown project name(s): nonexistent. Available: client, server");
 	});
 
 	it("should throw when Rojo project schema is invalid", async () => {
@@ -461,22 +486,88 @@ describe(runMultiProjectAsync, () => {
 	});
 
 	it("should call buildWithRojo when coverage is disabled and backend is open-cloud", async () => {
-		expect.assertions(2);
+		expect.assertions(5);
 
 		const { config } = setupDefaults();
+		const recorded = recordingTimingCollector();
+		const backend = makeBackend("open-cloud");
 		// Studio skips the place build (it uses the runtime injector).
 		// Place build only runs for open-cloud + no-coverage.
-		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
+		mocks.resolveBackend.mockResolvedValueOnce(backend);
 		seedProjectFiles();
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
+			timing: recorded.timing,
 		});
 
-		expect(mocks.buildWithRojo).toHaveBeenCalledOnce();
-		expect(mocks.synthesize).toHaveBeenCalledOnce();
+		expect({
+			buildCalls: mocks.buildWithRojo.mock.calls.length,
+			synthesizeCalls: mocks.synthesize.mock.calls.length,
+		}).toStrictEqual({ buildCalls: 1, synthesizeCalls: 1 });
+
+		const synth = mocks.synthesize.mock.calls[0]![0];
+
+		expect({
+			name: synth.packages[0]!.name,
+			projectPath: mocks.buildWithRojo.mock.calls[0]![0],
+			wrap: synth.wrap,
+		}).toStrictEqual({
+			name: "multi-project",
+			projectPath: expect.stringContaining("synth.project.json"),
+			wrap: false,
+		});
+		expect({
+			asyncNames: recorded.asyncNames,
+			names: recorded.names,
+			records: recorded.records,
+		}).toStrictEqual({
+			asyncNames: ["resolveAllProjects", "resolveBackend", "runProjects"],
+			names: [
+				"loadRojoTree",
+				"resolveSetupFilePaths",
+				"selectProjects",
+				"cleanLeftoverStubs",
+				"generateProjectStubs",
+				"prepareCoverage",
+				"collectPendingJobs",
+				"buildOpenCloudPlace",
+			],
+			records: [],
+		});
+		expect(mocks.generateProjectStubs).toHaveBeenCalledExactlyOnceWith(
+			expect.arrayContaining([expect.objectContaining({ displayName: "client" })]),
+			"/test",
+			expect.any(String),
+		);
+
+		const runInput = mocks.runProjects.mock.calls[0]![0];
+
+		expect({
+			backend: runInput.backend,
+			deferFormatting: runInput.deferFormatting,
+			parallel: runInput.parallel,
+			project: {
+				displayColor: runInput.projects[0]!.displayColor,
+				displayName: runInput.projects[0]!.displayName,
+				testFiles: runInput.projects[0]!.testFiles,
+			},
+			timing: runInput.timing,
+			version: runInput.version,
+		}).toStrictEqual({
+			backend,
+			deferFormatting: true,
+			parallel: undefined,
+			project: {
+				displayColor: undefined,
+				displayName: "client",
+				testFiles: ["src/client/a.spec.ts"],
+			},
+			timing: recorded.timing,
+			version: "0.3.8",
+		});
 	});
 
 	it("should skip buildWithRojo entirely when backend is studio", async () => {
@@ -838,9 +929,18 @@ describe(runMultiProjectAsync, () => {
 	});
 
 	it("should run typecheck across all projects with deduplicated files", async () => {
-		expect.assertions(2);
+		expect.assertions(5);
 
-		const { config } = setupDefaults({ typecheck: { enabled: true } });
+		const { config } = setupDefaults({
+			timeout: 654_321,
+			typecheck: {
+				enabled: true,
+				ignoreSourceErrors: true,
+				spawnTimeout: 4321,
+				tsconfig: "tsconfig.root.json",
+			},
+		});
+		const recorded = recordingTimingCollector();
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		vol.mkdirSync("/test/src/client", { recursive: true });
 		vol.writeFileSync("/test/src/client/a.spec.ts", "");
@@ -864,14 +964,21 @@ describe(runMultiProjectAsync, () => {
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+			timing: recorded.timing,
 		});
 
-		expect(mocks.runTypecheck).toHaveBeenCalledExactlyOnceWith(
-			expect.objectContaining({
-				files: expect.arrayContaining([expect.stringMatching(/a\.spec-d\.ts$/)]),
-			}),
-		);
+		expect(mocks.runTypecheck).toHaveBeenCalledExactlyOnceWith({
+			files: ["src/client/a.spec-d.ts"],
+			ignoreSourceErrors: true,
+			rootDir: "/test",
+			spawnTimeout: 4321,
+			timeout: 654_321,
+			tsconfig: "tsconfig.root.json",
+		});
 		expect(result.typecheckResult).toBeDefined();
+		expect(recorded.records).toHaveLength(1);
+		expect(recorded.records[0]!.name).toBe("runTypecheck");
+		expect(recorded.records[0]!.elapsedMs).toBeGreaterThan(0);
 	});
 
 	it("should run the typecheck pass concurrently with the runtime run", async () => {
@@ -1022,6 +1129,33 @@ describe(runMultiProjectAsync, () => {
 		expect(mocks.resolveBackend).not.toHaveBeenCalled();
 		expect(mocks.runProjects).not.toHaveBeenCalled();
 		expect(result.typecheckResult).toBeDefined();
+	});
+
+	it("should keep the runtime path when only one selected project is typecheck-only", async () => {
+		expect.assertions(2);
+
+		const { config } = setupDefaults({ typecheck: { enabled: true } });
+		seedProjectFiles();
+		mocks.resolveAllProjects.mockResolvedValue([
+			makeResolvedProject({
+				displayName: "client",
+				typecheck: { enabled: true, only: true },
+			}),
+			makeResolvedProject({
+				displayName: "server",
+				include: ["src/server/**/*.spec.ts"],
+				typecheck: { enabled: true, only: false },
+			}),
+		]);
+
+		await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
+
+		expect(mocks.resolveBackend).toHaveBeenCalledOnce();
+		expect(mocks.runProjects).toHaveBeenCalledOnce();
 	});
 
 	it("should carry the configured timeout into the typecheck-only pass", async () => {
@@ -1707,6 +1841,11 @@ describe(runMultiProjectAsync, () => {
 			config,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
+		await runMultiProjectAsync({
+			cli: makeCli({ files: [] }),
+			config,
+			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
+		});
 
 		expect(mocks.filterProjectsByFiles).not.toHaveBeenCalled();
 	});
@@ -1778,11 +1917,32 @@ describe(runMultiProjectAsync, () => {
 		const written = stderr.mock.calls[0]![0];
 		assert(typeof written === "string", "stderr.write called with non-string");
 
-		expect(written).toContain("cleaned 2 leftover stub(s)");
+		expect(written).toBe(
+			"jest-roblox: cleaned 2 leftover stub(s):\n" +
+				"  /test/src/client/jest.config.luau\n" +
+				"  /test/src/server/jest.config.luau\n",
+		);
+	});
+
+	it("should not emit a leftover-stub notice when cleanup finds nothing", async () => {
+		expect.assertions(1);
+
+		const { config } = setupDefaults();
+		mocks.cleanLeftoverStubs.mockReturnValueOnce([]);
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		seedProjectFiles();
+
+		await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(stderr).not.toHaveBeenCalled();
 	});
 
 	it("should skip stubMounts and runtimeInjectionPaths for mounts with user-authored configs", async () => {
-		expect.assertions(2);
+		expect.assertions(4);
 
 		const { config } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
@@ -1807,5 +1967,11 @@ describe(runMultiProjectAsync, () => {
 		const jobs = mocks.runProjects.mock.calls[0]![0].projects;
 
 		expect(jobs[0]!.runtimeInjectionPaths).toStrictEqual([]);
+		expect(mocks.hasUserAuthoredConfig).toHaveBeenCalledWith(expect.any(String));
+		expect(mocks.generateProjectStubs).toHaveBeenCalledExactlyOnceWith(
+			expect.any(Array),
+			"/test",
+			expect.any(String),
+		);
 	});
 });

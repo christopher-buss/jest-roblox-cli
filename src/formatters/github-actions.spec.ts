@@ -271,6 +271,42 @@ describe(collectAnnotations, () => {
 
 		expect(annotations[0]!.file).toBe("src/test.spec.ts");
 	});
+
+	it("should normalize a trailing slash in GITHUB_WORKSPACE", () => {
+		expect.assertions(1);
+
+		const result: JestResult = {
+			...FAILING_RESULT,
+			testResults: [
+				{
+					...FAILING_RESULT.testResults[0]!,
+					testFilePath: "/home/runner/work/project/src/test.spec.ts",
+				},
+			],
+		};
+
+		expect(
+			collectAnnotations(result, { workspace: "/home/runner/work/project/" })[0]!.file,
+		).toBe("src/test.spec.ts");
+	});
+
+	it("should preserve an absolute path when GITHUB_WORKSPACE is unavailable", () => {
+		expect.assertions(1);
+
+		const result: JestResult = {
+			...FAILING_RESULT,
+			testResults: [
+				{
+					...FAILING_RESULT.testResults[0]!,
+					testFilePath: "/home/runner/work/project/src/test.spec.ts",
+				},
+			],
+		};
+
+		expect(collectAnnotations(result, {})[0]!.file).toBe(
+			"/home/runner/work/project/src/test.spec.ts",
+		);
+	});
 });
 
 describe(formatAnnotations, () => {
@@ -332,6 +368,16 @@ describe(formatJobSummary, () => {
 		expect(summary).not.toContain("https://");
 	});
 
+	it.for([
+		{ repository: "owner/repo", serverUrl: "https://github.com" },
+		{ repository: "owner/repo", sha: "abc123" },
+		{ serverUrl: "https://github.com", sha: "abc123" },
+	])("should omit file links when any permalink field is missing", (options) => {
+		expect.assertions(1);
+
+		expect(formatJobSummary(FAILING_RESULT, options)).not.toContain("](https://");
+	});
+
 	it("should include exec-error files in failure list", () => {
 		expect.assertions(1);
 
@@ -373,6 +419,14 @@ describe(formatJobSummary, () => {
 		const summary = formatJobSummary(result, {});
 
 		expect(summary).toContain("1 skip · 3 todos · 4 total");
+	});
+
+	it("should omit an explicit zero todo count", () => {
+		expect.assertions(1);
+
+		expect(formatJobSummary({ ...PASSING_RESULT, numTodoTests: 0 }, {})).toBe(
+			formatJobSummary(PASSING_RESULT, {}),
+		);
 	});
 });
 

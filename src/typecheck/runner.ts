@@ -470,9 +470,7 @@ function executeTsgo({
 		}
 
 		state.settled = true;
-		if (launchTimer !== undefined) {
-			clearTimeout(launchTimer);
-		}
+		clearTimeout(launchTimer);
 
 		action();
 	}

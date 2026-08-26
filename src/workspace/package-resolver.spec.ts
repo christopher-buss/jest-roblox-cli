@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import { resolvePackage } from "./package-resolver.ts";
 
@@ -41,8 +41,9 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		expect(() => resolvePackage(ROOT, "@halcyon/baz")).toThrow(
-			/not found.*@halcyon\/bar.*@halcyon\/foo/s,
+		expect(() => resolvePackage(ROOT, "@halcyon/baz")).toThrowWithMessage(
+			Error,
+			'Package "@halcyon/baz" not found in workspace. Available: @halcyon/bar, @halcyon/foo',
 		);
 	});
 
@@ -119,10 +120,13 @@ describe(resolvePackage, () => {
 		vol.fromJSON({
 			[path.join(ROOT, "package.json")]: '{"name":"anime-rush"}',
 			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
-			[path.join(ROOT, "pnpm-workspace.yaml")]: 'packages:\n  - ""\n  - packages/*\n',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: 'packages:\n  - "   "\n  - packages/*\n',
 		});
 
-		expect(() => resolvePackage(ROOT, "anime-rush")).toThrow(/not found/);
+		expect(() => resolvePackage(ROOT, "anime-rush")).toThrowWithMessage(
+			Error,
+			'Package "anime-rush" not found in workspace. Available: @halcyon/foo',
+		);
 	});
 
 	it("should throw when pnpm-workspace.yaml has no packages field", () => {
@@ -134,7 +138,10 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "autoInstallPeers: true\n",
 		});
 
-		expect(() => resolvePackage(ROOT, "@halcyon/foo")).toThrow(/not found/);
+		expect(() => resolvePackage(ROOT, "@halcyon/foo")).toThrowWithMessage(
+			Error,
+			'Package "@halcyon/foo" not found in workspace. Available: ',
+		);
 	});
 
 	it("should ignore a package.json that is not a JSON object (e.g. an array)", () => {
@@ -154,7 +161,7 @@ describe(resolvePackage, () => {
 	});
 
 	it("should surface the file path when a package.json is malformed JSON", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		vol.reset();
 
@@ -163,9 +170,19 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		expect(() => resolvePackage(ROOT, "@halcyon/foo")).toThrow(
-			/Failed to parse.*foo[/\\]package\.json/s,
+		let caught: unknown;
+		try {
+			resolvePackage(ROOT, "@halcyon/foo");
+		} catch (err) {
+			caught = err;
+		}
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toBe(
+			`Failed to parse ${path.join(ROOT, "packages/foo/package.json")}.`,
 		);
+		expect(caught.cause).toBeInstanceOf(SyntaxError);
 	});
 
 	it("should ignore package.json files that lack a string name field", () => {
@@ -210,8 +227,12 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "turbo.json")]: "{}",
 		});
 
-		expect(() => resolvePackage(ROOT, "@halcyon/foo")).toThrow(
-			/workspace\.packages.*pnpm-workspace\.yaml/s,
+		expect(() => resolvePackage(ROOT, "@halcyon/foo")).toThrowWithMessage(
+			Error,
+			"Workspace mode requires either a `workspace.packages` glob list in your " +
+				"jest config or a pnpm-workspace.yaml at the workspace root. " +
+				"Use `workspace.packages` (with `--workspace-root` to run from outside " +
+				"a package) for Luau-only, npm, or yarn repos.",
 		);
 	});
 
@@ -291,7 +312,7 @@ describe(resolvePackage, () => {
 		});
 
 		it("should skip jest.config.spec.ts and similar non-config jest files", () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			vol.reset();
 
@@ -303,6 +324,27 @@ describe(resolvePackage, () => {
 			const info = resolvePackage(ROOT, "foo", ["packages/*"]);
 
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
+
+			vol.unlinkSync(path.join(ROOT, "packages/foo/jest.config.ts"));
+
+			expect(() => resolvePackage(ROOT, "foo", ["packages/*"])).toThrowWithMessage(
+				Error,
+				'Package "foo" not found in workspace. Available: ',
+			);
+		});
+
+		it("should skip filenames that only end with jest.config.<ext>", () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				[path.join(ROOT, "packages/foo/not-jest.config.ts")]: "",
+			});
+
+			expect(() => resolvePackage(ROOT, "foo", ["packages/*"])).toThrowWithMessage(
+				Error,
+				'Package "foo" not found in workspace. Available: ',
+			);
 		});
 
 		it("should expand multiple patterns", () => {

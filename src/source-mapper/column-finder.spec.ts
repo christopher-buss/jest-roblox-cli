@@ -15,6 +15,12 @@ describe(findExpectationColumn, () => {
 		expect(findExpectationColumn("const x = 5;")).toBeUndefined();
 	});
 
+	it("should not mistake a trailing method call for an expectation matcher", () => {
+		expect.assertions(1);
+
+		expect(findExpectationColumn("const value = service.resolve();")).toBeUndefined();
+	});
+
 	it("should find column of .toBe matcher", () => {
 		expect.assertions(1);
 

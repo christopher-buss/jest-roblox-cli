@@ -36,6 +36,15 @@ describe(resolveConfig, () => {
 		expect(result.silent).toBeFalse();
 	});
 
+	it("should omit artifact paths that the user did not configure", () => {
+		expect.assertions(2);
+
+		const result = resolveConfig({});
+
+		expect(result).not.toHaveProperty("gameOutput");
+		expect(result).not.toHaveProperty("outputFile");
+	});
+
 	it("should override defaults with provided config", () => {
 		expect.assertions(2);
 
@@ -209,14 +218,17 @@ describe(loadConfig, { timeout: 1000 }, () => {
 	});
 
 	it("should throw when explicit config path not found", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const temporaryDirectory = makeTemporaryDirectory();
 		const missingPath = path.join(temporaryDirectory, "nonexistent.config.ts");
 
-		await expect(loadConfig(missingPath, temporaryDirectory)).rejects.toThrow(
-			"Config file not found",
-		);
+		const error = await loadConfig(missingPath, temporaryDirectory).catch((err) => err);
+
+		assert(error instanceof Error);
+
+		expect(error.message).toBe(`Config file not found: ${missingPath}`);
+		expect(error.cause).toBeInstanceOf(Error);
 	});
 
 	it("should surface parse errors without masking as not found", async () => {
@@ -446,6 +458,21 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			expect(result.snapshotFormat).toStrictEqual({ min: true });
 		});
 
+		it("should pass an object rather than an array to object merger functions", async () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = makeTemporaryDirectory();
+			const configPath = path.join(temporaryDirectory, "jest.config.mjs");
+			fs.writeFileSync(
+				configPath,
+				"export default { test: { snapshotFormat: defaults => ({ indent: Array.isArray(defaults) ? 99 : 2 }) } };",
+			);
+
+			const result = await loadConfig(configPath, temporaryDirectory);
+
+			expect(result.snapshotFormat).toStrictEqual({ indent: 2 });
+		});
+
 		it("should reject function values for non-mergeable keys", async () => {
 			expect.assertions(1);
 
@@ -603,18 +630,15 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			expect.assertions(1);
 
 			const temporaryDirectory = makeTemporaryDirectory();
-			fs.writeFileSync(
-				path.join(temporaryDirectory, "a.mjs"),
-				'export default { extends: "./b.mjs" };',
-			);
-			fs.writeFileSync(
-				path.join(temporaryDirectory, "b.mjs"),
-				'export default { extends: "./a.mjs" };',
-			);
+			const firstPath = path.join(temporaryDirectory, "a.mjs");
+			const secondPath = path.join(temporaryDirectory, "b.mjs");
+			fs.writeFileSync(firstPath, 'export default { extends: "./b.mjs" };');
+			fs.writeFileSync(secondPath, 'export default { extends: "./a.mjs" };');
 
-			await expect(
-				loadConfig(path.join(temporaryDirectory, "a.mjs"), temporaryDirectory),
-			).rejects.toThrowWithMessage(Error, /Circular extends detected/);
+			await expect(loadConfig(firstPath, temporaryDirectory)).rejects.toThrowWithMessage(
+				Error,
+				`Circular extends detected: ${firstPath} -> ${secondPath} -> ${firstPath}.`,
+			);
 		});
 
 		// cspell:disable-next-line

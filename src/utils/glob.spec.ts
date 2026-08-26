@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { createGlobCache, globSync } from "./glob.ts";
+import { createGlobCache, globSync, matchesGlobPattern } from "./glob.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -142,6 +142,15 @@ describe(globSync, () => {
 		vol.fromJSON({ "test.spec.ts": "", "test.ts": "" }, CWD);
 
 		expect(globSync("*.spec.ts", { cwd: CWD })).toStrictEqual(["test.spec.ts"]);
+	});
+});
+
+describe(matchesGlobPattern, () => {
+	it("should only remove a current-directory prefix at the start", () => {
+		expect.assertions(2);
+
+		expect(matchesGlobPattern("file.ts", "./file.ts")).toBeTrue();
+		expect(matchesGlobPattern("dir/./file.ts", "dir/./file.ts")).toBeTrue();
 	});
 });
 

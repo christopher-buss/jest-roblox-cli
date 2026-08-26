@@ -1,4 +1,3 @@
-import assert from "node:assert";
 import path from "node:path";
 
 import {
@@ -189,12 +188,11 @@ function formatFailedFileSummary(
 }
 
 function formatExecErrorFileSummary(
-	file: TestFileResult,
+	_file: TestFileResult,
 	formattedPath: string,
 	styles: Styles,
 ): Array<string> {
 	const symbol = styles.status.fail("✗");
-	assert(file.failureMessage !== undefined, "exec error files have failureMessage");
 	return [` ${symbol} ${formattedPath}`];
 }
 

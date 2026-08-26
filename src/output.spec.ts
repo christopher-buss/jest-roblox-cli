@@ -41,7 +41,7 @@ import type {
 	WorkspaceReportOptions,
 	WorkspaceRunResult,
 } from "./run/types.ts";
-import type { JestResult } from "./types/jest-result.ts";
+import type { JestResult, TestFileResult } from "./types/jest-result.ts";
 import {
 	buildBatchGameOutput,
 	buildGroupedGameOutput,
@@ -432,6 +432,20 @@ describe(outputSingleResultAsync, () => {
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
 
+	it("should suppress the final coverage status when silent", async () => {
+		expect.assertions(1);
+
+		setupDefaults();
+		const spies = setupOutputSpies();
+
+		await outputSingleResultAsync(
+			makeConfig({ collectCoverage: true, silent: true }),
+			makeSingleResult(),
+		);
+
+		expect(spies.stdout).not.toHaveBeenCalled();
+	});
+
 	it("should write JSON output when config.outputFile is set", async () => {
 		expect.assertions(1);
 
@@ -447,10 +461,11 @@ describe(outputSingleResultAsync, () => {
 	});
 
 	it("should write game output when config.gameOutput is set and runtime present", async () => {
-		expect.assertions(1);
+		expect.assertions(3);
 
 		setupDefaults();
-		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
+		const entries = [{ message: "hi", messageType: 0, timestamp: 0 }];
+		mocks.parseGameOutput.mockReturnValue(entries);
 		setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -460,7 +475,9 @@ describe(outputSingleResultAsync, () => {
 			}),
 		);
 
-		expect(mocks.writeGameOutput).toHaveBeenCalledOnce();
+		expect(mocks.parseGameOutput).toHaveBeenCalledExactlyOnceWith("raw");
+		expect(mocks.writeGameOutput).toHaveBeenCalledExactlyOnceWith("/tmp/game.json", entries);
+		expect(mocks.formatGameOutputNotice).toHaveBeenCalledExactlyOnceWith("/tmp/game.json", 1);
 	});
 
 	it("should print typecheck-only when typecheckResult is present and runtime is undefined", async () => {
@@ -564,7 +581,7 @@ describe(outputSingleResultAsync, () => {
 
 describe(outputMultiResultAsync, () => {
 	it("should print formatted multi-project output and return 0 when all succeed", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		setupDefaults();
 		const spies = setupOutputSpies();
@@ -573,6 +590,7 @@ describe(outputMultiResultAsync, () => {
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
+		expect(mocks.formatMultiProjectResult).toHaveBeenCalledOnce();
 	});
 
 	it("should return 1 when any project result fails", async () => {
@@ -766,12 +784,13 @@ describe(outputMultiResultAsync, () => {
 	});
 
 	it("should write a grouped aggregated game output file for multi results when config.gameOutput is set", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		setupDefaults();
-		mocks.buildGroupedGameOutput.mockReturnValue([
+		const groups = [
 			{ entries: [{ message: "hi", messageType: 0, timestamp: 0 }], project: "client" },
-		]);
+		];
+		mocks.buildGroupedGameOutput.mockReturnValue(groups);
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -779,7 +798,13 @@ describe(outputMultiResultAsync, () => {
 			makeMultiResult(),
 		);
 
-		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledOnce();
+		expect(mocks.buildGroupedGameOutput).toHaveBeenCalledExactlyOnceWith([
+			{ project: "client", raw: undefined },
+		]);
+		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledExactlyOnceWith(
+			"/tmp/game.json",
+			groups,
+		);
 	});
 
 	it("should keep per-project groups when a vm-parallel request fell back to sequential", async () => {
@@ -1430,7 +1455,7 @@ describe("agent-mode summary ordering vs coverage", () => {
 			}),
 		);
 
-		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
+		expect(spies.consoleLog).toHaveBeenCalledExactlyOnceWith("formatted-execute");
 
 		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
 		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
@@ -1788,7 +1813,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 		expect.assertions(1);
 
 		setupDefaults();
-		mocks.formatAnnotations.mockReturnValue("::error::oops");
+		mocks.formatAnnotations.mockReturnValue("Stryker was here!");
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -1796,7 +1821,23 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 			makeSingleResult(),
 		);
 
-		expect(spies.stderr).toHaveBeenCalledWith("::error::oops\n");
+		expect(spies.stderr).toHaveBeenCalledWith("Stryker was here!\n");
+	});
+
+	it("should run the GitHub Actions formatter for multi-project results", async () => {
+		expect.assertions(2);
+
+		setupDefaults();
+		mocks.formatAnnotations.mockReturnValue("::error::multi");
+		const spies = setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ formatters: ["default", "github-actions"] }),
+			makeMultiResult(),
+		);
+
+		expect(mocks.formatAnnotations).toHaveBeenCalledOnce();
+		expect(spies.stderr).toHaveBeenCalledWith("::error::multi\n");
 	});
 
 	it("should skip annotations when displayAnnotations is false", async () => {
@@ -1827,7 +1868,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 			makeSingleResult(),
 		);
 
-		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("::error::"));
+		expect(spies.stderr).not.toHaveBeenCalled();
 	});
 
 	it("should write job summary to GITHUB_STEP_SUMMARY env path", async () => {
@@ -1902,7 +1943,7 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 
 describe("writeGameOutput integration", () => {
 	it("should print notice when game output written and not under silent", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		setupDefaults();
 		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
@@ -1914,11 +1955,12 @@ describe("writeGameOutput integration", () => {
 			makeSingleResult(),
 		);
 
-		expect(spies.consoleError).toHaveBeenCalledWith("Game output written to ...");
+		expect(mocks.formatGameOutputNotice).toHaveBeenCalledExactlyOnceWith("/tmp/game.json", 1);
+		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith("Game output written to ...");
 	});
 
 	it("should suppress notice when run failed (hintsShown true)", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		setupDefaults();
 		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
@@ -1934,11 +1976,12 @@ describe("writeGameOutput integration", () => {
 			}),
 		);
 
+		expect(mocks.formatGameOutputNotice).not.toHaveBeenCalled();
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
 	it("should suppress notice when notice string is empty", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		setupDefaults();
 		mocks.parseGameOutput.mockReturnValue([]);
@@ -1950,11 +1993,12 @@ describe("writeGameOutput integration", () => {
 			makeSingleResult(),
 		);
 
+		expect(mocks.formatGameOutputNotice).toHaveBeenCalledExactlyOnceWith("/tmp/game.json", 0);
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
 	it("should print aggregated notice for multi-project mode", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		setupDefaults();
 		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
@@ -1966,11 +2010,12 @@ describe("writeGameOutput integration", () => {
 			makeMultiResult(),
 		);
 
-		expect(spies.consoleError).toHaveBeenCalledWith("Game output written to ...");
+		expect(mocks.formatGameOutputNotice).toHaveBeenCalledOnce();
+		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith("Game output written to ...");
 	});
 
 	it("should suppress aggregated notice on failure", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		setupDefaults();
 		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
@@ -1989,11 +2034,12 @@ describe("writeGameOutput integration", () => {
 			}),
 		);
 
+		expect(mocks.formatGameOutputNotice).not.toHaveBeenCalled();
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
 	it("should suppress aggregated notice when empty", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		setupDefaults();
 		mocks.formatGameOutputNotice.mockReturnValue("");
@@ -2004,7 +2050,68 @@ describe("writeGameOutput integration", () => {
 			makeMultiResult(),
 		);
 
+		expect(mocks.formatGameOutputNotice).toHaveBeenCalledOnce();
 		expect(spies.consoleError).not.toHaveBeenCalled();
+	});
+});
+
+describe(mergeResults, () => {
+	it("should reject when neither result dimension is present", () => {
+		expect.assertions(1);
+
+		expect(() => mergeResults(undefined, undefined)).toThrow(
+			"mergeResults requires at least one result",
+		);
+	});
+
+	it("should combine every aggregate field and preserve runtime snapshots", () => {
+		expect.assertions(1);
+
+		const typecheckFile = fromAny<TestFileResult, { testFilePath: string }>({
+			testFilePath: "typecheck",
+		});
+		const runtimeFile = fromAny<TestFileResult, { testFilePath: string }>({
+			testFilePath: "runtime",
+		});
+		const runtimeSnapshot = {
+			added: 1,
+			matched: 2,
+			total: 4,
+			unmatched: 1,
+			updated: 0,
+		};
+		const typecheck = makeJestResult({
+			numFailedTests: 1,
+			numPassedTests: 2,
+			numPendingTests: 3,
+			numTodoTests: undefined,
+			numTotalTests: 6,
+			startTime: 1000,
+			testResults: [typecheckFile],
+		});
+		const runtime = makeJestResult({
+			numFailedTests: 4,
+			numPassedTests: 5,
+			numPendingTests: 6,
+			numTodoTests: 7,
+			numTotalTests: 22,
+			snapshot: runtimeSnapshot,
+			startTime: 2000,
+			success: false,
+			testResults: [runtimeFile],
+		});
+
+		expect(mergeResults(typecheck, runtime)).toStrictEqual({
+			numFailedTests: 5,
+			numPassedTests: 7,
+			numPendingTests: 9,
+			numTodoTests: 7,
+			numTotalTests: 28,
+			snapshot: runtimeSnapshot,
+			startTime: 1000,
+			success: false,
+			testResults: [typecheckFile, runtimeFile],
+		});
 	});
 });
 
@@ -2103,6 +2210,114 @@ describe(writeResultFileAsync, () => {
 });
 
 describe(mergeProjectResults, () => {
+	it("should reject an empty project result set", () => {
+		expect.assertions(1);
+
+		expect(() => mergeProjectResults([])).toThrow(
+			"mergeProjectResults requires at least one result",
+		);
+	});
+
+	it("should fail otherwise successful projects when snapshot writes failed", () => {
+		expect.assertions(2);
+
+		const merged = mergeProjectResults([
+			makeExecuteResult(),
+			makeExecuteResult({ snapshotWriteFailures: 2 }),
+		]);
+
+		expect(merged.exitCode).toBe(1);
+		expect(merged.snapshotWriteFailures).toBe(2);
+	});
+
+	it("should omit a zero snapshot-write count from successful projects", () => {
+		expect.assertions(2);
+
+		const merged = mergeProjectResults([
+			makeExecuteResult({ snapshotWriteFailures: 0 }),
+			makeExecuteResult({ snapshotWriteFailures: 0 }),
+		]);
+
+		expect(merged.exitCode).toBe(0);
+		expect(merged.snapshotWriteFailures).toBeUndefined();
+	});
+
+	it("should preserve every merged result and timing dimension", () => {
+		expect.assertions(1);
+
+		const snapshot = { added: 1, matched: 2, total: 4, unmatched: 1, updated: 0 };
+		mocks.mergeSnapshotSummaries.mockReturnValue(snapshot);
+		const first = makeExecuteResult({
+			result: makeJestResult({
+				numFailedTests: 1,
+				numPassedTests: 2,
+				numPendingTests: 3,
+				numTodoTests: 4,
+				numTotalTests: 10,
+				startTime: 3000,
+				success: true,
+			}),
+			timing: {
+				coverageMs: 11,
+				executionMs: 22,
+				setupMs: 5,
+				startTime: 3000,
+				testsMs: 33,
+				totalMs: 44,
+				uploadMs: 55,
+			},
+		});
+		const second = makeExecuteResult({
+			result: makeJestResult({
+				numFailedTests: 5,
+				numPassedTests: 6,
+				numPendingTests: 7,
+				numTodoTests: 8,
+				numTotalTests: 26,
+				startTime: 1000,
+				success: false,
+			}),
+			snapshotWriteFailures: 2,
+			timing: {
+				coverageMs: 66,
+				executionMs: 77,
+				setupMs: 7,
+				startTime: 1000,
+				testsMs: 88,
+				totalMs: 99,
+				uploadMs: 111,
+			},
+		});
+
+		expect(mergeProjectResults([first, second])).toStrictEqual({
+			coverageData: undefined,
+			exitCode: 1,
+			output: "",
+			result: {
+				numFailedTests: 6,
+				numPassedTests: 8,
+				numPendingTests: 10,
+				numTodoTests: 12,
+				numTotalTests: 36,
+				snapshot,
+				startTime: 1000,
+				success: false,
+				testResults: [],
+			},
+			snapshotWriteFailures: 2,
+			sourceMapper: undefined,
+			timing: {
+				coverageMs: 11,
+				executionMs: 22,
+				setupMs: 12,
+				startTime: 1000,
+				testsMs: 121,
+				totalMs: 99,
+				uploadMs: 55,
+			},
+		});
+	});
+
 	it("should return the single result unchanged", () => {
 		expect.assertions(1);
 

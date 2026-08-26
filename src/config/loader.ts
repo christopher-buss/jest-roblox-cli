@@ -50,29 +50,24 @@ type MergerDefault = NonNullable<ResolvedConfig[MergerKey]>;
 export function resolveConfig(config: Config): ResolvedConfig {
 	validateConfig(config);
 
-	const { test, ...rest } = config;
-	const definedRest = Object.fromEntries(
-		Object.entries(rest).filter(([, value]) => value !== undefined),
-	);
-	const definedTest =
-		test === undefined
-			? {}
-			: Object.fromEntries(Object.entries(test).filter(([, value]) => value !== undefined));
+	const { gameOutput, outputFile, test, ...rest } = config;
 
 	// Flatten test: block onto resolved config so downstream consumers
 	// (executor, projects, test-script, formatters) see jest options at the
 	// top level. TODO: refactor consumers to read `config.test.*` directly.
-	const resolved: ResolvedConfig = { ...DEFAULT_CONFIG, ...definedTest, ...definedRest };
+	const resolved: ResolvedConfig = { ...DEFAULT_CONFIG, ...test, ...rest };
 
 	// `gameOutput: true` / `outputFile: true` are shorthand for the
 	// conventional `game-output.log` / `jest-output.log` under the root.
 	// Expand here so downstream consumers only ever see a path string.
-	if (config.gameOutput === true) {
-		resolved.gameOutput = path.join(resolved.rootDir, "game-output.log");
+	if (gameOutput !== undefined) {
+		resolved.gameOutput =
+			gameOutput === true ? path.join(resolved.rootDir, "game-output.log") : gameOutput;
 	}
 
-	if (config.outputFile === true) {
-		resolved.outputFile = path.join(resolved.rootDir, "jest-output.log");
+	if (outputFile !== undefined) {
+		resolved.outputFile =
+			outputFile === true ? path.join(resolved.rootDir, "jest-output.log") : outputFile;
 	}
 
 	return resolved;
@@ -154,7 +149,7 @@ async function seaImport(id: string): Promise<ConfigModule | JSONValue> {
 // The leading `{}` supplies it and contributes nothing: defu gives the first
 // source the highest priority, so an empty one leaves the merge order intact.
 function merger(...sources: Array<Config | null | undefined>): Config {
-	return defuFn({}, ...sources.filter(Boolean));
+	return defuFn({}, ...sources);
 }
 
 async function invokeC12(configFile: string | undefined, cwd: string) {

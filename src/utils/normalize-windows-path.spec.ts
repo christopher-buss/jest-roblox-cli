@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeWindowsPath } from "./normalize-windows-path.ts";
+import { dropDriveLetter, isAbsolutePath, normalizeWindowsPath } from "./normalize-windows-path.ts";
+
+describe(dropDriveLetter, () => {
+	it("should only drop a drive letter at the start", () => {
+		expect.assertions(2);
+
+		expect(dropDriveLetter("D:/repo/file.ts")).toBe("/repo/file.ts");
+		expect(dropDriveLetter("prefix/D:/repo/file.ts")).toBe("prefix/D:/repo/file.ts");
+	});
+});
+
+describe(isAbsolutePath, () => {
+	it("should only recognize drive roots at the start", () => {
+		expect.assertions(3);
+
+		expect(isAbsolutePath("D:/repo/file.ts")).toBeTrue();
+		expect(isAbsolutePath("/repo/file.ts")).toBeTrue();
+		expect(isAbsolutePath("prefix/D:/repo/file.ts")).toBeFalse();
+	});
+});
 
 describe(normalizeWindowsPath, () => {
 	it("should return empty string when called with no arguments", () => {

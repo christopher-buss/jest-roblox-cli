@@ -136,8 +136,16 @@ describe(prepareArtifactsAsync, () => {
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
-		expect(bundle.coveragePlace).toStrictEqual(COVERAGE_PLACE);
-		expect(bundle.cleanPlace).toStrictEqual(CLEAN_PLACE);
+		expect(bundle).toStrictEqual({
+			buildId: "build-42",
+			buildManifestPath: COVERAGE_BUILD_MANIFEST_PATH,
+			cleanPlace: CLEAN_PLACE,
+			coverageData: undefined,
+			coverageManifestPath: COVERAGE_MANIFEST_PATH,
+			coveragePlace: COVERAGE_PLACE,
+			projects: [],
+		});
+		expect(bundle.coveragePlace).not.toBe(bundle.cleanPlace);
 		expect(bundle.cleanPlace.hash).not.toBe(bundle.coveragePlace.hash);
 		expect(bundle.buildId).toBe("build-42");
 	});

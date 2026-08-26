@@ -1,5 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
+import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
@@ -37,10 +38,11 @@ function useProbeTimers(): void {
 
 describe(probeStudioPluginAsync, () => {
 	it("should return detected with server and socket when plugin connects", async () => {
-		expect.assertions(2);
+		expect.assertions(5);
 
+		useProbeTimers();
 		const mockSocket = new MockWebSocket();
-		const promise = probeStudioPluginAsync(0, 2000);
+		const promise = probeStudioPluginAsync(4321, 2000);
 
 		const wss = getLastCreatedServer();
 		assert(wss, "expected server to be created");
@@ -52,6 +54,9 @@ describe(probeStudioPluginAsync, () => {
 
 		expect(result.server).toBe(fromPartial<WebSocketServer>(wss));
 		expect(result.socket).toBe(fromPartial<WebSocket>(mockSocket));
+		expect(wss.port).toBe(4321);
+		expect(wss.close).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("should return not detected when no connection within timeout", async () => {
@@ -67,8 +72,9 @@ describe(probeStudioPluginAsync, () => {
 	});
 
 	it("should return not detected when WSS emits error", async () => {
-		expect.assertions(1);
+		expect.assertions(3);
 
+		useProbeTimers();
 		const promise = probeStudioPluginAsync(0, 5000);
 
 		const wss = getLastCreatedServer();
@@ -78,6 +84,8 @@ describe(probeStudioPluginAsync, () => {
 		const result = await promise;
 
 		expect(result.detected).toBeFalse();
+		expect(wss.close).toHaveBeenCalledExactlyOnceWith();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("should close server when timeout expires", async () => {
@@ -107,7 +115,7 @@ function mockNotDetected(): ProbeResult {
 
 describe(resolveBackendAsync, () => {
 	it("should select studio backend when plugin available and no OC credentials", async () => {
-		expect.assertions(1);
+		expect.assertions(3);
 
 		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", undefined);
 		vi.stubEnv("ROBLOX_UNIVERSE_ID", undefined);
@@ -116,9 +124,8 @@ describe(resolveBackendAsync, () => {
 		vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", undefined);
 		vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
 
-		async function probeAsync(): Promise<ProbeDetected> {
-			return mockDetected();
-		}
+		const probeAsync = vi.fn<() => Promise<ProbeDetected>>(async () => mockDetected());
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		const backend = await resolveBackendAsync(
 			makeCli(),
@@ -127,10 +134,12 @@ describe(resolveBackendAsync, () => {
 		);
 
 		expect(backend).toBeInstanceOf(StudioBackend);
+		expect(probeAsync).toHaveBeenCalledExactlyOnceWith(DEFAULT_CONFIG.port, 500);
+		expect(stderr).toHaveBeenCalledExactlyOnceWith("Backend: studio (plugin detected)\n");
 	});
 
 	it("should fall back to open-cloud when plugin unavailable", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "test-key");
 		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
@@ -140,6 +149,8 @@ describe(resolveBackendAsync, () => {
 			return mockNotDetected();
 		}
 
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
 		const backend = await resolveBackendAsync(
 			makeCli(),
 			makeConfig({ backend: "auto" }),
@@ -147,6 +158,9 @@ describe(resolveBackendAsync, () => {
 		);
 
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
+		expect(stderr).toHaveBeenCalledExactlyOnceWith(
+			"Backend: open-cloud (no plugin, using Open Cloud)\n",
+		);
 	});
 
 	it("should select open-cloud when only JEST_ROBLOX_* env vars are set", async () => {
@@ -186,7 +200,13 @@ describe(resolveBackendAsync, () => {
 			resolveBackendAsync(makeCli(), makeConfig({ backend: "auto" }), async () => {
 				return mockNotDetected();
 			}),
-		).rejects.toThrowWithMessage(Error, /No backend available/);
+		).rejects.toThrowWithMessage(
+			Error,
+			"No backend available: Studio plugin not detected and no Open Cloud " +
+				"credentials found. Set ROBLOX_OPEN_CLOUD_API_KEY, ROBLOX_UNIVERSE_ID, " +
+				"and ROBLOX_PLACE_ID (or pass --apiKey, --universeId, --placeId; " +
+				"or set universeId/placeId in jest.config.ts).",
+		);
 	});
 
 	it("should return studio backend for explicit studio config", async () => {
@@ -245,7 +265,10 @@ describe(resolveBackendAsync, () => {
 				makeConfig({ backend: "studio-cli", parallel: 2 }),
 				probe,
 			),
-		).rejects.toThrow(/--parallel > 1 is not supported/);
+		).rejects.toThrowWithMessage(
+			Error,
+			"studio-cli backend is serial (one Studio instance); --parallel > 1 is not supported.",
+		);
 	});
 
 	it("should accept --parallel auto for studio-cli, which needs one session", async () => {
@@ -377,6 +400,26 @@ describe(resolveBackendAsync, () => {
 			/Set ROBLOX_UNIVERSE_ID \(or JEST_ROBLOX_UNIVERSE_ID\), ROBLOX_PLACE_ID \(or JEST_ROBLOX_PLACE_ID\)/,
 		);
 	});
+
+	it.for([makeCli({ universeId: "123" }), makeCli({ placeId: "456" })])(
+		"should surface credential errors for every kind of partial CLI override",
+		async (cli) => {
+			expect.assertions(1);
+
+			vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", undefined);
+			vi.stubEnv("ROBLOX_UNIVERSE_ID", undefined);
+			vi.stubEnv("ROBLOX_PLACE_ID", undefined);
+			vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_API_KEY", undefined);
+			vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", undefined);
+			vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
+
+			await expect(
+				resolveBackendAsync(cli, makeConfig({ backend: "auto" }), async () => {
+					return mockNotDetected();
+				}),
+			).rejects.toThrow(/Missing:/);
+		},
+	);
 
 	it("should wrap studio with fallback when OC credentials available", async () => {
 		expect.assertions(1);

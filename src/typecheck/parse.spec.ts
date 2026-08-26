@@ -4,6 +4,76 @@ import { parseTscOutput } from "./parse.ts";
 import type { TscErrorInfo } from "./types.ts";
 
 describe(parseTscOutput, () => {
+	it("should preserve exact paths, positions, codes, messages, and continuations", () => {
+		expect.assertions(1);
+
+		const output = [
+			"src/(feature)/a.ts(3,4): error TS1234: First message.",
+			"  Continuation detail.",
+			"",
+			"src/b.ts(10,20): error TS5678: Second message.",
+		].join("\r\n");
+
+		expect([...parseTscOutput(output)]).toStrictEqual([
+			[
+				"src/(feature)/a.ts",
+				[
+					{
+						column: 4,
+						errorCode: 1234,
+						errorMessage: "First message.\n  Continuation detail.",
+						filePath: "src/(feature)/a.ts",
+						line: 3,
+					},
+				],
+			],
+			[
+				"src/b.ts",
+				[
+					{
+						column: 20,
+						errorCode: 5678,
+						errorMessage: "Second message.",
+						filePath: "src/b.ts",
+						line: 10,
+					},
+				],
+			],
+		]);
+	});
+
+	it("should attach a continuation across an empty output line", () => {
+		expect.assertions(1);
+
+		const output = ["src/a.ts(1,2): error TS1000: First.", "", "  Continued."].join("\n");
+
+		expect([...parseTscOutput(output)]).toStrictEqual([
+			[
+				"src/a.ts",
+				[
+					{
+						column: 2,
+						errorCode: 1000,
+						errorMessage: "First.\n  Continued.",
+						filePath: "src/a.ts",
+						line: 1,
+					},
+				],
+			],
+		]);
+	});
+
+	it.for([
+		"src/a.ts(,2): error TS1000: Missing line.",
+		"src/a.ts(1,): error TS1000: Missing column.",
+		"src/a.ts(): error TS1000: Missing position.",
+		"src/a.ts: error TS1000: Missing parentheses.",
+	])("should reject malformed position in %s", (output) => {
+		expect.assertions(1);
+
+		expect([...parseTscOutput(output)]).toStrictEqual([]);
+	});
+
 	it("should parse a single error line", () => {
 		expect.assertions(3);
 
@@ -99,6 +169,44 @@ describe(parseTscOutput, () => {
 
 		expect(errors).toHaveLength(1);
 		expect(errors![0]!.line).toBe(10);
+	});
+
+	it("should parse a diagnostic for a one-character path", () => {
+		expect.assertions(1);
+
+		expect([...parseTscOutput("a(1,2): error TS1000: Message.")]).toStrictEqual([
+			[
+				"a",
+				[
+					{
+						column: 2,
+						errorCode: 1000,
+						errorMessage: "Message.",
+						filePath: "a",
+						line: 1,
+					},
+				],
+			],
+		]);
+	});
+
+	it("should trim whitespace around the diagnostic message", () => {
+		expect.assertions(1);
+
+		expect([...parseTscOutput("src/a.ts(1,2): error TS1000:   Message.   ")]).toStrictEqual([
+			[
+				"src/a.ts",
+				[
+					{
+						column: 2,
+						errorCode: 1000,
+						errorMessage: "Message.",
+						filePath: "src/a.ts",
+						line: 1,
+					},
+				],
+			],
+		]);
 	});
 
 	it("should skip line with open paren but no close paren", () => {

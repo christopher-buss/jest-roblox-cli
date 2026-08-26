@@ -25,16 +25,12 @@ export const STUB_FILENAME = "jest.config.luau";
  * orphan-sweep to ensure neither ever removes a user's canonical config.
  */
 export function isGeneratedStub(filePath: string): boolean {
-	if (!fs.existsSync(filePath)) {
-		return false;
-	}
-
 	try {
 		const fd = fs.openSync(filePath, "r");
 		try {
 			const buffer = Buffer.alloc(HEADER.length);
-			const bytesRead = fs.readSync(fd, buffer, 0, HEADER.length, 0);
-			return bytesRead === HEADER.length && buffer.toString("utf8") === HEADER;
+			fs.readSync(fd, buffer, 0, HEADER.length, 0);
+			return buffer.toString("utf8") === HEADER;
 		} finally {
 			fs.closeSync(fd);
 		}
@@ -64,9 +60,9 @@ export function serializeToLuau(config: UndefinedTolerant<ProjectTestConfig>): s
 		let serialized: string;
 		if (key === "testMatch" && Array.isArray(value)) {
 			const stripped = value.filter(isString).map((pattern) => stripTsExtension(pattern));
-			serialized = serializeLuauValue(stripped, "\t");
+			serialized = serializeLuauValue(stripped);
 		} else {
-			serialized = serializeLuauValue(value, "\t");
+			serialized = serializeLuauValue(value);
 		}
 
 		output += `\t${key} = ${serialized},\n`;
@@ -95,21 +91,12 @@ export function generateProjectConfigs(
 	}
 }
 
-// All five are valid `ProjectTestConfig` members but the project-level
-// values are unwanted in the stub: `outDir`/`root` are reconstructed
-// per-mount by `generateProjectStubs`, and `displayName`/`include`/`exclude`
-// are overwritten by the spread in `generateProjectStubs` (with
-// `include`/`exclude` further dropped by `serializeToLuau`'s `SKIP_FIELDS`).
-// Strip them upstream to keep `buildStubConfig`'s output tight.
-const STUB_SKIP_KEYS: ReadonlySet<string> = new Set([
-	"displayName",
-	"exclude",
-	"include",
-	"outDir",
-	"root",
-	// Host-only: Type Tests run on the host, never inside the Roblox runtime.
-	"typecheck",
-]);
+// These project-level values are unwanted in the runtime stub:
+// `outDir`/`root` are reconstructed per mount and Type Tests only run on the
+// host. `displayName` and `include` are overwritten downstream, while
+// `include`/`exclude` are dropped by `serializeToLuau`, so filtering those here
+// would be redundant.
+const STUB_SKIP_KEYS: ReadonlySet<string> = new Set(["outDir", "root", "typecheck"]);
 
 /**
  * Refuse to let any downstream write land outside `rootDirectory`. Mount
@@ -313,9 +300,7 @@ function cleanLeftoverStubsForProject(
 		const realStubPath = fs.realpathSync(stubPath);
 		const root = realRootResolved();
 		const relativePath = path.relative(root, realStubPath);
-		const isInRoot =
-			relativePath === "" ||
-			(!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+		const isInRoot = !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
 		if (!isInRoot) {
 			throw new Error(
 				`Project "${project.displayName}" mount fsPath resolves outside root via symlink: ${mount.fsPath} → ${realStubPath}`,
@@ -337,7 +322,6 @@ function buildStubEntriesForProject(
 ): Array<{ config: ProjectTestConfig; outputPath: string }> {
 	const entries: Array<{ config: ProjectTestConfig; outputPath: string }> = [];
 	for (const mount of project.rojoMounts) {
-		assertMountContained(project, mount.fsPath, writeRoot);
 		// Per-mount FS check — skip generation when a non-marker
 		// `jest.config.luau` already exists at the mount on disk.
 		// A schema-level "is this a user-authored project" hint is
@@ -452,31 +436,20 @@ function escapeString(value: string): string {
 		.replace(/\t/g, "\\t");
 }
 
-function serializeLuauValue(value: unknown, indent: string): string {
+function serializeLuauValue(value: unknown): string {
 	if (typeof value === "string") {
 		return `"${escapeString(value)}"`;
 	}
 
-	if (typeof value === "boolean") {
-		return value ? "true" : "false";
-	}
-
-	if (typeof value === "number") {
-		return String(value);
-	}
-
 	if (Array.isArray(value)) {
-		const items = value.map((item: unknown) => serializeLuauValue(item, indent));
+		const items = value.map((item: unknown) => serializeLuauValue(item));
 		return `{ ${items.join(", ")} }`;
 	}
 
 	if (typeof value === "object" && value !== null) {
-		const nextIndent = `${indent}\t`;
 		const entries = Object.entries(value)
 			.filter(([, propertyValue]) => propertyValue !== undefined)
-			.map(([key, propertyValue]) => {
-				return `${key} = ${serializeLuauValue(propertyValue, nextIndent)}`;
-			});
+			.map(([key, propertyValue]) => `${key} = ${serializeLuauValue(propertyValue)}`);
 		return `{ ${entries.join(", ")} }`;
 	}
 

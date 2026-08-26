@@ -156,13 +156,25 @@ describe(getAffectedPackages, () => {
 	});
 
 	it("should throw with a descriptive error when turbo output is not valid JSON", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		vol.reset();
 		vol.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
 		vi.mocked(cp.execFileSync).mockReturnValue("warn: cache miss\nnot-json-at-all");
 
-		expect(() => getAffectedPackages(ROOT, "main")).toThrow(/turbo returned non-JSON output/);
+		let caught: unknown;
+		try {
+			getAffectedPackages(ROOT, "main");
+		} catch (err) {
+			caught = err;
+		}
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toBe(
+			"turbo returned non-JSON output: warn: cache miss\nnot-json-at-all",
+		);
+		expect(caught.cause).toBeInstanceOf(SyntaxError);
 	});
 
 	it("should throw with a descriptive error when nx output does not match the expected schema", () => {
@@ -178,13 +190,23 @@ describe(getAffectedPackages, () => {
 	});
 
 	it("should throw with a descriptive error when nx output is not valid JSON", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		vol.reset();
 		vol.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
 		vi.mocked(cp.execFileSync).mockReturnValue("not-json");
 
-		expect(() => getAffectedPackages(ROOT, "main")).toThrow(/nx returned non-JSON output/);
+		let caught: unknown;
+		try {
+			getAffectedPackages(ROOT, "main");
+		} catch (err) {
+			caught = err;
+		}
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toBe("nx returned non-JSON output: not-json");
+		expect(caught.cause).toBeInstanceOf(SyntaxError);
 	});
 
 	it("should tolerate unknown top-level fields in turbo output (e.g. packageManager)", () => {
@@ -224,14 +246,16 @@ describe(getAffectedPackages, () => {
 		vol.reset();
 		vol.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
 		const stderrError = Object.assign(new Error("turbo exited with code 1"), {
-			stderr: "invalid filter syntax",
+			code: "EPERM",
+			stderr: "  invalid filter syntax\n",
 		});
 		vi.mocked(cp.execFileSync).mockImplementation(() => {
 			throw stderrError;
 		});
 
-		expect(() => getAffectedPackages(ROOT, "main")).toThrow(
-			/turbo failed: invalid filter syntax/,
+		expect(() => getAffectedPackages(ROOT, "main")).toThrowWithMessage(
+			Error,
+			"turbo failed: invalid filter syntax",
 		);
 	});
 
@@ -306,7 +330,10 @@ describe(getAffectedPackages, () => {
 		vol.reset();
 		vol.fromJSON({ [path.join(ROOT, "turbo.json")]: "{}" });
 
-		expect(() => getAffectedPackages(ROOT, ref)).toThrow(/Invalid --affected-since ref/);
+		expect(() => getAffectedPackages(ROOT, ref)).toThrowWithMessage(
+			Error,
+			`Invalid --affected-since ref ${JSON.stringify(ref)}. Allowed: letters, digits, _ . / ~ ^ -.`,
+		);
 		expect(vi.mocked(cp.execFileSync)).not.toHaveBeenCalled();
 	});
 
@@ -698,6 +725,24 @@ describe(getAffectedPackages, () => {
 		);
 
 		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([packageInfoFor("@org/foo")]);
+	});
+
+	it("should require the whole filename to be jest.config.<ext>", () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			[path.join(ROOT, "packages/foo/jest.config.ts.backup")]: "export default {};",
+			[path.join(ROOT, "packages/foo/not-jest.config.ts")]: "export default {};",
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@org/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+			[path.join(ROOT, "turbo.json")]: "{}",
+		});
+		vi.mocked(cp.execFileSync).mockReturnValue(
+			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
+		);
+
+		expect(getAffectedPackages(ROOT, "main")).toStrictEqual([]);
 	});
 
 	it("should drop affected packages that lack a jest.config.* marker", () => {

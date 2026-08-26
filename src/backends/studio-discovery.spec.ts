@@ -84,18 +84,37 @@ describe(discoverStudioPath, () => {
 		);
 	});
 
-	it("should skip version entries that are files and those missing the executable", () => {
+	it("should keep the first Studio executable when mtimes are equal", () => {
 		expect.assertions(1);
+
+		seed({
+			[versionExe("version-1")]: "first",
+			[versionExe("version-2")]: "second",
+		});
+		fs.utimesSync(versionExe("version-1"), new Date(5000), new Date(5000));
+		fs.utimesSync(versionExe("version-2"), new Date(5000), new Date(5000));
+
+		expect(discoverStudioPath({ environment: WIN_ENV, platform: "win32" })).toBe(
+			versionExe("version-1"),
+		);
+	});
+
+	it("should skip version entries that are files and those missing the executable", () => {
+		expect.assertions(2);
 
 		seed({
 			"C:/Users/dev/AppData/Local/Roblox/Versions/loose-file": "not-a-dir",
 			"C:/Users/dev/AppData/Local/Roblox/Versions/version-empty/other.dll": "x",
 			[versionExe("version-real")]: "binary",
 		});
+		const stat = vi.spyOn(fs, "statSync");
 
 		expect(discoverStudioPath({ environment: WIN_ENV, platform: "win32" })).toBe(
 			versionExe("version-real"),
 		);
+		expect(stat).not.toHaveBeenCalledWith(expect.stringContaining("loose-file"), {
+			throwIfNoEntry: false,
+		});
 	});
 
 	it("should throw a not-found error when no Studio executable exists on Windows", () => {
@@ -114,7 +133,10 @@ describe(discoverStudioPath, () => {
 		seed();
 
 		expect(() => discoverStudioPath({ environment: WIN_ENV, platform: "win32" })).toThrow(
-			/Roblox Studio not found/,
+			new Error(
+				"Roblox Studio not found. Install Roblox Studio, or set studioPath " +
+					"(config key, --studioPath, or JEST_ROBLOX_STUDIO_PATH).",
+			),
 		);
 	});
 
@@ -126,6 +148,16 @@ describe(discoverStudioPath, () => {
 		expect(() => discoverStudioPath({ environment: {}, platform: "win32" })).toThrow(
 			/LOCALAPPDATA is not set/,
 		);
+	});
+
+	it("should throw when LOCALAPPDATA is empty on Windows", () => {
+		expect.assertions(1);
+
+		seed();
+
+		expect(() => {
+			discoverStudioPath({ environment: { LOCALAPPDATA: "" }, platform: "win32" });
+		}).toThrow(/LOCALAPPDATA is not set/);
 	});
 
 	it("should return the macOS app-bundle executable when present", () => {
@@ -150,7 +182,10 @@ describe(discoverStudioPath, () => {
 		expect.assertions(1);
 
 		expect(() => discoverStudioPath({ platform: "linux" })).toThrow(
-			/no Studio auto-discovery for platform "linux"/,
+			new Error(
+				'studio-cli backend has no Studio auto-discovery for platform "linux". ' +
+					"Set studioPath to point at your Roblox Studio executable.",
+			),
 		);
 	});
 });

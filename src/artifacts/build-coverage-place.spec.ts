@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { resolveAllProjects } from "../config/projects.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
-import { generateProjectStubs } from "../config/stubs.ts";
+import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import { emitBuildManifest } from "../coverage-pipeline/build-manifest.ts";
 import {
@@ -26,6 +26,7 @@ vi.mock(import("../coverage-pipeline/build-manifest.ts"));
 
 const mocks = {
 	buildImplicitProject: vi.mocked(buildImplicitProject),
+	cleanLeftoverStubs: vi.mocked(cleanLeftoverStubs),
 	emitBuildManifest: vi.mocked(emitBuildManifest),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
 	loadRojoTree: vi.mocked(loadRojoTree),
@@ -65,16 +66,20 @@ function primeHappyPath(artifacts = makeArtifacts()): void {
 
 describe(buildCoveragePlaceAsync, () => {
 	it("should return the coverage place, build id, and manifest paths", async () => {
-		expect.assertions(4);
+		expect.assertions(1);
 
 		primeHappyPath();
 
 		const bundle = await buildCoveragePlaceAsync(makeConfig());
 
-		expect(bundle.coveragePlace).toStrictEqual(COVERAGE_PLACE);
-		expect(bundle.buildId).toBe("build-77");
-		expect(bundle.buildManifestPath).toBe(COVERAGE_BUILD_MANIFEST_PATH);
-		expect(bundle.coverageManifestPath).toBe(COVERAGE_MANIFEST_PATH);
+		expect(bundle).toStrictEqual({
+			buildId: "build-77",
+			buildManifestPath: COVERAGE_BUILD_MANIFEST_PATH,
+			coverageManifestPath: COVERAGE_MANIFEST_PATH,
+			coveragePlace: COVERAGE_PLACE,
+			projects: [],
+			rebuilt: true,
+		});
 	});
 
 	it("should force coverage collection on regardless of the input config", async () => {
@@ -102,12 +107,13 @@ describe(buildCoveragePlaceAsync, () => {
 	});
 
 	it("should always bake jest.config stubs so the place is self-contained", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		primeHappyPath();
 
 		await buildCoveragePlaceAsync(makeConfig());
 
+		expect(mocks.cleanLeftoverStubs).toHaveBeenCalledOnce();
 		expect(mocks.generateProjectStubs).toHaveBeenCalledOnce();
 		// The 4th arg to prepareBakedCoverage is `bakeStubs` — always true here.
 		expect(mocks.prepareBakedCoverage.mock.calls[0]![3]).toBeTrue();

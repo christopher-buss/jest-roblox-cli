@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatSourceSnippet > should render padding, tabs, syntax, language, and the caret exactly > colored 1`] = `
+"[36m ❯ src/example.luau:10:6[39m[2m  (Luau)[22m
+	[90m 9|[39m     [35mlocal[39m value = [34mtrue[39m
+	[90m10|[39m     [35mreturn[39m value
+	[90m  |[39m         [31m^[39m
+	[90m11|[39m [35mend[39m"
+`;
+
+exports[`formatSourceSnippet > should render padding, tabs, syntax, language, and the caret exactly > plain 1`] = `
+" ❯ src/example.luau:10:6  (Luau)
+	 9|     local value = true
+	10|     return value
+	  |         ^
+	11| end"
+`;

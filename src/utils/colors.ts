@@ -5,6 +5,7 @@
 import hljs from "highlight.js/lib/core";
 import typescript from "highlight.js/lib/languages/typescript";
 import assert from "node:assert";
+import * as path from "node:path";
 import color from "tinyrainbow";
 
 import { luauGrammar } from "../highlighter/luau-grammar.ts";
@@ -13,8 +14,6 @@ import { normalizeWindowsPath } from "./normalize-windows-path.ts";
 // Register languages with highlight.js
 hljs.registerLanguage("luau", luauGrammar);
 hljs.registerLanguage("typescript", typescript);
-
-const EXTENSION_NAME_REGEX = /.(\.[^./]+|\.)$/;
 
 const TS_SUPPORTED_EXTS = new Set(
 	["js", "ts"].flatMap((lang) => [
@@ -43,13 +42,8 @@ export function highlightCode(id: string, source: string): string {
 	return source;
 }
 
-function extname(path: string): string {
-	if (path === "..") {
-		return "";
-	}
-
-	const match = EXTENSION_NAME_REGEX.exec(normalizeWindowsPath(path));
-	return match?.[1] ?? "";
+function extname(filePath: string): string {
+	return path.posix.extname(normalizeWindowsPath(filePath));
 }
 
 // Map highlight.js CSS classes to terminal colors
@@ -87,23 +81,21 @@ const HTML_ENTITY_REGEX = /&(?:#x27|amp|gt|lt|quot);/g;
 function convertHljsToAnsi(html: string): string {
 	// Process nested spans from inside out by repeatedly replacing
 	let result = html;
-	let previous = "";
-
-	while (result !== previous) {
+	let previous: string;
+	do {
 		previous = result;
 		result = result.replace(
 			/<span class="([^"]+)">([^<]*)<\/span>/g,
 			(_, cssClasses, content) => {
 				// Multi-class spans (e.g., "hljs-title function_") use first
 				// class
-				const primaryClass = String(cssClasses).split(" ", 1)[0];
-				assert(primaryClass !== undefined, "split always returns ≥1 element");
+				const primaryClass = String(cssClasses).split(" ", 1).join();
 				const text = String(content);
 				const colorFunc = HLJS_CLASS_TO_COLOR.get(primaryClass);
 				return colorFunc?.(text) ?? text;
 			},
 		);
-	}
+	} while (result !== previous);
 
 	// One pass, so an entity the source itself wrote cannot be decoded a
 	// second time: '&amp;lt;' has to come back out as '&lt;', not '<'.

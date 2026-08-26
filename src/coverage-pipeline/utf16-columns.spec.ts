@@ -35,9 +35,10 @@ describe("utf16-columns", () => {
 		it("should leave the columns of an ASCII source alone", () => {
 			expect.assertions(1);
 
-			const converted = toUtf16Columns(statementResult(span(1, 1, 12)), "local x = 1\n");
+			const result = statementResult(span(1, 1, 12));
+			const converted = toUtf16Columns(result, "local x = 1\n");
 
-			expect(converted.statements[0]!.location).toStrictEqual(span(1, 1, 12));
+			expect(converted).toBe(result);
 		});
 
 		// `local a = "∞" 1` — the closing quote is byte column 15 and UTF-16

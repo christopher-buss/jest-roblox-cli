@@ -1,0 +1,34 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`OpenCloudBackend > work-stealing > should aggregate entries from all task envelopes in input order 1`] = `
+[
+  {
+    "entry": {
+      "jestOutput": "{"numFailedTests":0,"numPassedTests":1,"numPendingTests":0,"numTotalTests":1,"startTime":0,"success":true,"testResults":[]}",
+      "pkg": "alpha",
+    },
+    "fallbackGameOutput": "[]",
+  },
+  {
+    "entry": {
+      "jestOutput": "{"numFailedTests":0,"numPassedTests":1,"numPendingTests":0,"numTotalTests":1,"startTime":0,"success":true,"testResults":[]}",
+      "pkg": "beta",
+    },
+    "fallbackGameOutput": "[]",
+  },
+  {
+    "entry": {
+      "jestOutput": "{"numFailedTests":0,"numPassedTests":1,"numPendingTests":0,"numTotalTests":1,"startTime":0,"success":true,"testResults":[]}",
+      "pkg": "gamma",
+    },
+    "fallbackGameOutput": "[]",
+  },
+  {
+    "entry": {
+      "jestOutput": "{"numFailedTests":0,"numPassedTests":1,"numPendingTests":0,"numTotalTests":1,"startTime":0,"success":true,"testResults":[]}",
+      "pkg": "delta",
+    },
+    "fallbackGameOutput": "[]",
+  },
+]
+`;

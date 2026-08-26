@@ -25,7 +25,7 @@ import { createTsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
 import type { SnapshotWrites } from "./reporter/parser.ts";
 import { parseJestOutput } from "./reporter/parser.ts";
 import * as parserModule from "./reporter/parser.ts";
-import { createTimingCollector } from "./timing/orchestration-collector.ts";
+import { createTimingCollector, type TimingCollector } from "./timing/orchestration-collector.ts";
 import type { JestResult } from "./types/jest-result.ts";
 
 vi.mock(import("node:fs"), async () => {
@@ -549,6 +549,62 @@ describe("execute single-project helper", () => {
 		expect(result.timing.testsMs).toBeGreaterThanOrEqual(0);
 	});
 
+	it("should calculate total timing from the supplied start time", async () => {
+		expect.assertions(1);
+
+		vi.spyOn(Date, "now").mockReturnValue(1_750);
+		const { results } = await runProjectsAsync({
+			backend: createMockBackend(createPassingResult()),
+			projects: [
+				{
+					config: { ...DEFAULT_CONFIG, sourceMap: false },
+					testFiles: ["src/test.spec.ts"],
+				},
+			],
+			startTime: 1_250,
+			version: "0.0.0-test",
+		});
+
+		expect(results[0]!.timing.totalMs).toBe(500);
+	});
+
+	it("should profile each orchestration boundary by its stable name", async () => {
+		expect.assertions(4);
+
+		const profileNames: Array<string> = [];
+		const timing: TimingCollector = fromAny({
+			enabled: false,
+			flushTimingReport: () => {},
+			profile: (name: string, operation: () => unknown) => {
+				profileNames.push(name);
+				return operation();
+			},
+			profileAsync: async (name: string, operation: () => Promise<unknown>) => {
+				profileNames.push(name);
+				return operation();
+			},
+			record: () => {},
+		});
+
+		await runProjectsAsync({
+			backend: createMockBackend(createPassingResult()),
+			projects: [
+				{
+					config: { ...DEFAULT_CONFIG, sourceMap: false },
+					testFiles: ["src/test.spec.ts"],
+				},
+			],
+			startTime: Date.now(),
+			timing,
+			version: "0.0.0-test",
+		});
+
+		expect(profileNames).toContain("buildJobs");
+		expect(profileNames).toContain("backend.runTests");
+		expect(profileNames).toContain("processResults");
+		expect(profileNames).toContain("resolveTsconfigMappings");
+	});
+
 	it("should record uploadMs / executionMs spans under backend.runTests when timing is provided", async () => {
 		expect.assertions(2);
 
@@ -846,7 +902,7 @@ describe("execute single-project helper", () => {
 	});
 
 	it("should pass through coverageData regardless of collectCoverage", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const coverageData: RawCoverageData = {
 			"shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } },
@@ -868,6 +924,20 @@ describe("execute single-project helper", () => {
 		expect(result.coverageData).toStrictEqual({
 			"shared/player.luau": { s: { "0": 3, "1": 0, "2": 1 } },
 		});
+		expect(result.attribution).toBeUndefined();
+	});
+
+	it("should not create attribution without coverage or per-test deltas", async () => {
+		expect.assertions(1);
+
+		const result = await executeSingleAsync({
+			backend: createMockBackend(createPassingResult()),
+			config: { ...DEFAULT_CONFIG, collectPerTestCoverage: true },
+			testFiles: ["src/test.spec.ts"],
+			version: "0.0.0-test",
+		});
+
+		expect(result.attribution).toBeUndefined();
 	});
 
 	it("should harvest per-test attribution when the backend provides it", async () => {
@@ -2863,6 +2933,29 @@ describe(runProjectsAsync, () => {
 		expect(captured!.jobs[0]!.displayColor).toBe("green");
 		expect(captured!.jobs[0]!.displayName).toBe("client");
 		expect(captured!.jobs[0]!.pkg).toBe("@halcyon/client");
+	});
+
+	it("should normalize a missing display name to an empty runtime label", async () => {
+		expect.assertions(2);
+
+		let captured: BackendOptions | undefined;
+		const backend: Backend = {
+			kind: "studio",
+			runTestsAsync: async (runOptions) => {
+				captured = runOptions;
+				return singleEntryResult({ result: createPassingResult() });
+			},
+		};
+
+		const { results } = await runProjectsAsync({
+			backend,
+			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/a.spec.ts"] }],
+			startTime: Date.now(),
+			version: "0.0.0-test",
+		});
+
+		expect(captured!.jobs[0]!.displayName).toBe("");
+		expect(results[0]!.snapshotWriteFailures).toBeUndefined();
 	});
 
 	it("should apply per-project snapshotFormat defaults before backend dispatch", async () => {

@@ -289,7 +289,7 @@ function runGitHubActionsFormatter(
 	result: JestResult,
 	sourceMapper: SourceMapper | undefined,
 ): void {
-	assert(config.formatters !== undefined, "formatters is set by resolveFormatters");
+	assert(config.formatters !== undefined);
 	const userOptions = findFormatterOptions(config.formatters, "github-actions");
 	if (userOptions === undefined) {
 		return;

@@ -222,12 +222,16 @@ describe(StudioCliBackend, () => {
 		expect.assertions(3);
 
 		resetVol();
+		const now = vi.spyOn(Date, "now").mockReturnValueOnce(100).mockReturnValueOnce(145);
+		onTestFinished(() => {
+			now.mockRestore();
+		});
 
 		const { rawResults, timing } = await backendReplying().runTestsAsync(singleJob);
 
 		expect(rawResults).toHaveLength(1);
 		expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":2');
-		expect(timing.executionMs).toBeGreaterThanOrEqual(0);
+		expect(timing).toStrictEqual({ executionMs: 45 });
 	});
 
 	it("should return one rawResult per job, in submitted order, for a multi-project run", async () => {
@@ -354,7 +358,7 @@ describe(StudioCliBackend, () => {
 	});
 
 	it("should write a bootstrap that drives ExecuteRunModeAsync over a result socket", async () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		resetVol();
 
@@ -373,6 +377,17 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap).toContain("alpha-pattern");
 		expect(bootstrap).toContain("CreateWebStreamClient");
 		expect(bootstrap).toContain("ws://localhost:");
+		// The bootstrap is an executable wire-protocol artifact. Its digest
+		// complements the readable assertions without duplicating the script.
+
+		const stableBootstrap = bootstrap
+			.replaceAll(
+				/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gu,
+				"<request-id>",
+			)
+			.replaceAll(/ws:\/\/localhost:\d+/gu, "ws://localhost:<port>");
+
+		expect(stableBootstrap).toMatchSnapshot();
 	});
 
 	it("should escape a config value containing the Luau long-string terminator", async () => {
@@ -491,10 +506,14 @@ describe(StudioCliBackend, () => {
 
 		// A Studio that never sends a result drives the timeout path.
 		const process = makeFakeProcess();
+		let outputFile = "";
 		const backend = new StudioCliBackend({
 			buildPlace: fakeBuildPlace(),
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			launch: () => process,
+			launch: (request) => {
+				outputFile = readOutputFile(request.args);
+				return process;
+			},
 			timeout: 40,
 		});
 
@@ -504,26 +523,40 @@ describe(StudioCliBackend, () => {
 
 		assert(caught instanceof Error);
 
-		expect(caught.message).toMatch(/timed out after 40ms and was terminated/);
+		expect(caught.message).toBe(
+			[
+				"studio-cli: Studio run timed out after 40ms and was terminated.",
+				`  Studio log: ${path.normalize(outputFile)}`,
+			].join("\n"),
+		);
 		// The run kills Studio on the way out even on the timeout path.
 		expect(process.kill).toHaveBeenCalledOnce();
 	});
 
 	it("should quote Studio's own log when no result frame arrives", async () => {
-		expect.assertions(4);
+		expect.assertions(1);
 
 		resetVol();
 		useResultDeadlineTimers();
 
 		// Studio's stdio is discarded, so `--outputFile` is the only thing left
 		// to say what the run was doing when it stopped answering.
+		let outputFile = "";
 		const backend = new StudioCliBackend({
 			buildPlace: fakeBuildPlace(),
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			launch: (request) => {
+				outputFile = readOutputFile(request.args);
 				vol.writeFileSync(
-					readOutputFile(request.args),
-					`> bootstrap echo\nUnable to change Terrain's parent.\n${"x".repeat(400)}\n`,
+					outputFile,
+					[
+						"discarded oldest line",
+						"  ",
+						...Array.from({ length: 12 }, (_, index) => `line ${String(index + 1)}`),
+						"x".repeat(300),
+						"x".repeat(301),
+						"final line",
+					].join("\r\n"),
 				);
 				return makeFakeProcess();
 			},
@@ -536,12 +569,17 @@ describe(StudioCliBackend, () => {
 
 		assert(caught instanceof Error);
 
-		expect(caught.message).toContain("Studio log:");
-		expect(caught.message).toContain("Last lines Studio logged:");
-		expect(caught.message).toContain("Unable to change Terrain's parent.");
-		// A single runaway line is truncated rather than allowed to bury the
-		// lines around it.
-		expect(caught.message).not.toContain("x".repeat(400));
+		expect(caught.message).toBe(
+			[
+				"studio-cli: Studio run timed out after 40ms and was terminated.",
+				`  Studio log: ${path.normalize(outputFile)}`,
+				"  Last lines Studio logged:",
+				...Array.from({ length: 12 }, (_, index) => `    line ${String(index + 1)}`),
+				`    ${"x".repeat(300)}`,
+				`    ${"x".repeat(300)}…`,
+				"    final line",
+			].join("\n"),
+		);
 	});
 
 	it("should reject when the result server errors", async () => {
@@ -1035,13 +1073,27 @@ describe(StudioCliBackend, () => {
 		function stubSpawn() {
 			const child = new FakeChild();
 			let capturedArgs: Array<string> = [];
+			let capturedFile = "";
+			let capturedOptions: { stdio?: string; windowsHide?: boolean } = {};
 			vi.mocked(spawn).mockImplementation(
-				fromAny((_file: string, args: Array<string>) => {
-					capturedArgs = args;
-					return child;
-				}),
+				fromAny(
+					(
+						file: string,
+						args: Array<string>,
+						options: { stdio?: string; windowsHide?: boolean },
+					) => {
+						capturedFile = file;
+						capturedOptions = options;
+						capturedArgs = args;
+						return child;
+					},
+				),
 			);
-			return { args: () => capturedArgs, child };
+			return {
+				args: () => capturedArgs,
+				child,
+				request: () => ({ file: capturedFile, options: capturedOptions }),
+			};
 		}
 
 		function backendWithDefaultLaunch(
@@ -1079,18 +1131,36 @@ describe(StudioCliBackend, () => {
 		}
 
 		it("should spawn Studio and return its result", async () => {
-			expect.assertions(2);
+			expect.assertions(3);
 
 			resetVol();
 			useLockPollTimers();
 
-			const { args } = stubSpawn();
+			const { args, request } = stubSpawn();
 			const promise = backendWithDefaultLaunch().runTestsAsync(singleJob);
 			await replyOverServerAsync(args);
 			const { rawResults } = await promise;
 
 			expect(rawResults).toHaveLength(1);
 			expect(args()).toContain("RunScript");
+			expect(request()).toStrictEqual({
+				file: "C:/Studio/RobloxStudioBeta.exe",
+				options: { stdio: "ignore", windowsHide: true },
+			});
+		});
+
+		it("should leave the Studio window visible in headed mode", async () => {
+			expect.assertions(1);
+
+			resetVol();
+			useLockPollTimers();
+
+			const { args, request } = stubSpawn();
+			const promise = backendWithDefaultLaunch({ headed: true }).runTestsAsync(singleJob);
+			await replyOverServerAsync(args);
+			await promise;
+
+			expect(request().options.windowsHide).toBeFalse();
 		});
 
 		it("should clear a stale place lock a killed Studio left behind before launching", async () => {

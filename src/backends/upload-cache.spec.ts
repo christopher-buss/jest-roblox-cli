@@ -63,12 +63,24 @@ describe("upload cache", () => {
 	});
 
 	it("should return the recorded version for the same bytes", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const hash = seedPlaceFile();
 		writeCachedVersion(ROOT, TARGET, hash, 42);
 
 		expect(readCachedVersion(ROOT, TARGET, hash)).toBe(42);
+		expect(vol.readFileSync(CACHE_PATH, "utf8")).toBe(
+			JSON.stringify(
+				{
+					entries: {
+						"111/222//repo/game.rbxl": { hash, versionNumber: 42 },
+					},
+					version: 2,
+				},
+				undefined,
+				"\t",
+			),
+		);
 	});
 
 	it("should miss when the bytes changed", () => {
@@ -116,13 +128,16 @@ describe("upload cache", () => {
 	});
 
 	it("should drop the entry on invalidate", () => {
-		expect.assertions(1);
+		expect.assertions(3);
 
 		const hash = seedPlaceFile();
 		writeCachedVersion(ROOT, TARGET, hash, 42);
-		invalidateCachedVersion(ROOT, TARGET);
 
+		expect(invalidateCachedVersion(ROOT, TARGET)).toBeTrue();
 		expect(readCachedVersion(ROOT, TARGET, hash)).toBeUndefined();
+		expect(vol.readFileSync(CACHE_PATH, "utf8")).toBe(
+			JSON.stringify({ entries: {}, version: 2 }, undefined, "\t"),
+		);
 	});
 
 	/**
@@ -179,13 +194,12 @@ describe("upload cache", () => {
 	});
 
 	it("should tolerate invalidating when no cache file exists", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		seedPlaceFile();
 
-		expect(() => {
-			invalidateCachedVersion(ROOT, TARGET);
-		}).not.toThrow();
+		expect(invalidateCachedVersion(ROOT, TARGET)).toBeTrue();
+		expect(vol.existsSync(CACHE_PATH)).toBeFalse();
 	});
 
 	it("should degrade to a miss when the cache file is malformed", () => {

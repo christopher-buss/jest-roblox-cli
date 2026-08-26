@@ -26,8 +26,7 @@ interface ProbeInfo {
 // ends up further right.
 const KIND_RANK = { close: 2, open: 0, point: 1 } satisfies Record<ProbeKind, number>;
 const TRAILING_WHITESPACE = /\s$/;
-const IDENTIFIER_START = /^[a-zA-Z_]/;
-const MODE_DIRECTIVE = /^--![a-z]+/;
+const MODE_DIRECTIVE = /^--![a-z]/;
 
 export function insertProbes(source: string, result: CollectorResult, fileKey: string): string {
 	const lines = splitLines(source);
@@ -115,9 +114,8 @@ function branchPointProbes(result: CollectorResult): Array<ProbeInfo> {
 	const probes: Array<ProbeInfo> = [];
 
 	for (const branch of result.branches) {
-		for (let armIndex = 0; armIndex < branch.arms.length; armIndex++) {
-			const arm = branch.arms[armIndex];
-			if (arm !== undefined && arm.bodyFirstLine > 0) {
+		for (const [armIndex, arm] of branch.arms.entries()) {
+			if (arm.bodyFirstLine > 0) {
 				probes.push({
 					column: arm.bodyFirstColumn,
 					kind: "point",
@@ -193,21 +191,22 @@ function collectProbes(result: CollectorResult): Array<ProbeInfo> {
  * position.
  */
 function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): void {
-	for (const { column, line: probeLine, text } of probes) {
+	for (const { column, kind, line: probeLine, text } of probes) {
 		const lineIndex = probeLine - 1;
 		const line = mutableLines[lineIndex];
 		assert(line !== undefined, `Invalid probe line number: ${probeLine}`);
 		const before = line.slice(0, column - 1);
 		const after = line.slice(column - 1);
 		const shouldInsertSeparator =
-			before.length > 0 && !TRAILING_WHITESPACE.test(before) && IDENTIFIER_START.test(text);
+			before.length > 0 && !TRAILING_WHITESPACE.test(before) && kind !== "close";
 		mutableLines[lineIndex] = before + (shouldInsertSeparator ? " " : "") + text + after;
 	}
 }
 
 function extractModeDirective(lines: Array<string>): string {
-	if (lines.length > 0 && lines[0] !== undefined && MODE_DIRECTIVE.test(lines[0])) {
-		const directive = `${lines[0]}\n`;
+	const [firstLine] = lines;
+	if (firstLine !== undefined && MODE_DIRECTIVE.test(firstLine)) {
+		const directive = `${firstLine}\n`;
 		lines.splice(0, 1);
 		return directive;
 	}
@@ -235,10 +234,6 @@ function splitLines(source: string): Array<string> {
 			lines.push(source.slice(position));
 			position = source.length;
 		}
-	}
-
-	if (lines.length === 0) {
-		lines.push("");
 	}
 
 	return lines;

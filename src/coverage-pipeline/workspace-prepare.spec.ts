@@ -7,6 +7,7 @@ import process from "node:process";
 import type { MockedFunction } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BuildManifest, BuildManifestArtifact } from "./build-manifest.ts";
 import { buildManifestSchema } from "./build-manifest.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
@@ -203,7 +204,7 @@ describe(prepareWorkspaceCoverage, () => {
 	});
 
 	it("should write a per-package manifest at workspace-root-scoped path", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		onTestFinished(() => {
 			vol.reset();
@@ -230,6 +231,7 @@ describe(prepareWorkspaceCoverage, () => {
 
 		expect(result[0]!.manifestPath).toBe(expectedPath.replaceAll("\\", "/"));
 		expect(vol.existsSync(expectedPath)).toBeTrue();
+		expect(vol.readFileSync(expectedPath, "utf8")).toContain('\n\t"buildId":');
 	});
 
 	it("should call instrumentRoot once per discovered luau root in each package", async () => {
@@ -1009,6 +1011,44 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(mocked).not.toHaveBeenCalled();
 	});
 
+	it("should discover ordinary .lua files without treating unrelated files as Luau", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Code: { $path: "lua-code" },
+						Docs: { $path: "docs" },
+					},
+				},
+			}),
+			[path.join(FOO_DIR, "docs/module.txt")]: "not luau",
+			[path.join(FOO_DIR, "lua-code/module.lua")]: "return {}",
+		});
+		const mocked = await mockInstrumentRootAsync();
+
+		const [result] = prepareWorkspaceCoverage({
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "lua-code")),
+			}),
+		);
+		expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["lua-code"]);
+	});
+
 	it("should skip directories that only contain spec / test / snap luau files", async () => {
 		expect.assertions(2);
 
@@ -1184,6 +1224,144 @@ describe(prepareWorkspaceCoverage, () => {
 		});
 
 		expect(mocked).toHaveBeenCalledOnce();
+	});
+
+	it("should require explicit luauRoots to correspond to collected rojo mounts", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedPackage(FOO_DIR, { luauRoots: ["Stryker was here"] });
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const mocked = await mockInstrumentRootAsync();
+
+		prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					luauRoots: ["Stryker was here"],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).not.toHaveBeenCalled();
+		expect(stderr).toHaveBeenCalledExactlyOnceWith(
+			'Warning: luauRoot "Stryker was here" in @halcyon/foo does not correspond to any rojo $path mount; coverage will be skipped for this root.\n',
+		);
+	});
+
+	it("should reject package-root, parent, and unrelated paths as explicit rojo mounts", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const outsideDirectory = path.join(WORKSPACE_ROOT, "outside");
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Outside: { $path: outsideDirectory },
+						Parent: { $path: "../bar" },
+						Root: { $path: "." },
+					},
+				},
+			}),
+			[path.join(BAR_DIR, "init.luau")]: "return {}",
+			[path.join(FOO_DIR, "init.luau")]: "return {}",
+			[path.join(outsideDirectory, "init.luau")]: "return {}",
+		});
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const mocked = await mockInstrumentRootAsync();
+
+		prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					luauRoots: [".", "../bar", outsideDirectory],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).not.toHaveBeenCalled();
+		expect(stderr).toHaveBeenCalledTimes(3);
+	});
+
+	it("should not treat the package-root rojo path as a coverage root", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Out: { $path: "out" },
+						Root: { $path: "." },
+					},
+				},
+			}),
+			[path.join(FOO_DIR, "init.luau")]: "return {}",
+			[path.join(FOO_DIR, "out/init.luau")]: "return {}",
+		});
+		const mocked = await mockInstrumentRootAsync();
+
+		prepareWorkspaceCoverage({
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")) }),
+		);
+	});
+
+	it("should apply ignore patterns within a mounted path", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedPackage(FOO_DIR, {
+			luauRoots: ["out/generated"],
+			rojoTree: {
+				$className: "DataModel",
+				ReplicatedStorage: { Generated: { $path: "out/generated" } },
+			},
+		});
+		const mocked = await mockInstrumentRootAsync();
+
+		prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					coveragePathIgnorePatterns: ["generated"],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(mocked).not.toHaveBeenCalled();
 	});
 
 	it("should skip packages whose rojo tree has no instrumentable luau roots", async () => {

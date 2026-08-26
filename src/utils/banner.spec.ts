@@ -55,7 +55,7 @@ describe(formatBannerBar, () => {
 
 		const result = formatBannerBar({ level: "warn", title: "Test" });
 
-		expect(result).toContain("Test");
+		expect(stripVTControlCharacters(result)).toHaveLength(80);
 	});
 });
 
@@ -105,7 +105,7 @@ describe(formatBanner, () => {
 	});
 
 	it("should handle empty body", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const result = formatBanner({
 			body: [],
@@ -114,14 +114,9 @@ describe(formatBanner, () => {
 			title: "Empty",
 		});
 
-		expect(result).toContain("Empty");
-
-		// Should still have header + closing separator
-		const separatorLines = result
-			.split("\n")
-			.filter((line) => stripVTControlCharacters(line).includes("⎯"));
-
-		expect(separatorLines.length).toBeGreaterThanOrEqual(2);
+		expect(stripVTControlCharacters(result)).toBe(
+			`\n${"⎯".repeat(36)} Empty ${"⎯".repeat(37)}\n\n${"⎯".repeat(80)}\n\n`,
+		);
 	});
 
 	it("should default termWidth when not provided", () => {

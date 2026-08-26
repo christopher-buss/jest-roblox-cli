@@ -232,10 +232,6 @@ function looksLikePromiseTrace(text: string): boolean {
 function extractCauseFromPromiseTrace(trace: string): string | undefined {
 	for (const rawLine of trace.split("\n").reverse()) {
 		const line = rawLine.trim();
-		if (line === "") {
-			continue;
-		}
-
 		const match = PROMISE_TRACE_CAUSE_LINE.exec(line);
 		if (match !== null) {
 			return match[1];
@@ -277,14 +273,9 @@ function extractCoverageData(runner: RunnerFields): RawCoverageData | undefined 
 }
 
 function extractPerTestCoverage(runner: RunnerFields): Array<PerTestCoverageEntry> | undefined {
-	const raw = runner.perTestCoverage;
-	if (raw === undefined) {
-		return undefined;
-	}
-
 	// A malformed envelope (our own producer drifting) drops attribution rather
 	// than throwing — the coverage report and manifest still publish without it.
-	const validated = perTestCoverageSchema(raw);
+	const validated = perTestCoverageSchema(runner.perTestCoverage);
 	if (validated instanceof type.errors) {
 		return undefined;
 	}
@@ -429,8 +420,8 @@ function buildJestResult(source: unknown): JestResult {
 	// `jestResultSchema` does not declare `snapshot`, so a block that failed to
 	// parse would otherwise ride through undeclared and reach consumers under a
 	// key typed `SnapshotSummary`. Drop it instead.
-	const { snapshot: unparsed, ...rest } = validated;
-	return unparsed === undefined ? validated : rest;
+	const { snapshot: _unparsed, ...rest } = validated;
+	return rest;
 }
 
 function parseParsedOutput(parsed: JestEnvelope): ParseResult {

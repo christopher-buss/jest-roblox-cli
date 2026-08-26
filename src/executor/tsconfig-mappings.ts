@@ -83,7 +83,14 @@ export function resolveTsconfigDirectories(projectRoot: string): TsconfigDirecto
 	const tsconfigDirectory =
 		tsconfig !== null ? path.dirname(path.resolve(tsconfig.path)) : undefined;
 	const resolvedRoot = path.resolve(projectRoot);
-	const isLocal = tsconfigDirectory?.startsWith(resolvedRoot) === true;
+	const relativeTsconfigDirectory =
+		tsconfigDirectory === undefined
+			? undefined
+			: path.relative(resolvedRoot, tsconfigDirectory);
+	const isLocal =
+		relativeTsconfigDirectory !== undefined &&
+		!relativeTsconfigDirectory.startsWith("..") &&
+		!path.isAbsolute(relativeTsconfigDirectory);
 
 	if (!isLocal || tsconfig?.config.compilerOptions === undefined) {
 		return { outDir: undefined, rootDir: undefined };

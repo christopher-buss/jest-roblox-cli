@@ -1,4 +1,3 @@
-import assert from "node:assert";
 import path from "node:path";
 
 import {
@@ -6,7 +5,12 @@ import {
 	type MappedLocation,
 	type SourceMapper,
 } from "../source-mapper/index.ts";
-import { hasExecError, type JestResult, type TestCaseResult } from "../types/jest-result.ts";
+import {
+	type ExecErrorTestFileResult,
+	hasExecError,
+	type JestResult,
+	type TestCaseResult,
+} from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import {
 	cleanExecErrorMessage,
@@ -58,7 +62,7 @@ interface FormatFailureMessageOptions {
 }
 
 interface AgentProjectStats {
-	allExecErrors: Array<JestResult["testResults"][number]>;
+	allExecErrors: Array<ExecErrorTestFileResult>;
 	files: SummaryCounts;
 	tests: TestRowCounts;
 }
@@ -73,15 +77,14 @@ export function formatAgent(result: JestResult, options: AgentOptions): string {
 	const hasFailures = result.numFailedTests > 0 || execErrors.length > 0;
 
 	if (hasFailures) {
-		lines.push(...formatFileHeaders(result, options), "");
-
 		const totalFailures = result.numFailedTests + execErrors.length;
-		lines.push(`${"⎯".repeat(3)} Failed Tests ${totalFailures} ${"⎯".repeat(3)}`, "");
-
-		if (result.numFailedTests > 0) {
-			const failureLines = formatFailures(result, result.numFailedTests, options);
-			lines.push(...failureLines);
-		}
+		lines.push(
+			...formatFileHeaders(result, options),
+			"",
+			`${"⎯".repeat(3)} Failed Tests ${totalFailures} ${"⎯".repeat(3)}`,
+			"",
+			...formatFailures(result, result.numFailedTests, options),
+		);
 
 		for (const file of execErrors) {
 			lines.push(...formatExecError(file, options));
@@ -197,15 +200,11 @@ function formatFileHeaders(result: JestResult, options: AgentOptions): Array<str
 	return lines;
 }
 
-function formatExecError(
-	file: JestResult["testResults"][number],
-	options: AgentOptions,
-): Array<string> {
+function formatExecError(file: ExecErrorTestFileResult, options: AgentOptions): Array<string> {
 	const lines: Array<string> = [];
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
 	const relativePath = makeRelative(displayPath, options.rootDir);
 
-	assert(file.failureMessage !== undefined, "exec error files have failureMessage");
 	const errorMessage = cleanExecErrorMessage(file.failureMessage);
 
 	lines.push(` FAIL ${relativePath}`, errorMessage);
@@ -280,10 +279,8 @@ function findFailureLocation(
 	mappedLocations: Array<MappedLocation>,
 	message: string,
 ): undefined | { line: number; path: string } {
-	if (mappedLocations.length > 0) {
-		const loc = mappedLocations[0];
-		assert(loc !== undefined, "array with length > 0 has element 0");
-
+	const [loc] = mappedLocations;
+	if (loc !== undefined) {
 		if (loc.tsPath !== undefined && loc.tsLine !== undefined) {
 			return { line: loc.tsLine, path: loc.tsPath };
 		}
@@ -311,11 +308,10 @@ function formatSnippetBlock(
 }
 
 function getTsSnippets(
-	loc: MappedLocation,
+	loc: MappedLocation & { tsLine: number; tsPath: string },
 	snippetLevel: SnippetLevel,
 	rootDirectory: string,
 ): Array<string> {
-	assert(loc.tsPath !== undefined && loc.tsLine !== undefined, "caller checked ts fields");
 	const result: Array<string> = [];
 
 	const tsSnippet = formatSnippetBlock(
@@ -362,7 +358,11 @@ function getMappedSnippets(
 	rootDirectory: string,
 ): Array<string> {
 	if (loc.tsPath !== undefined && loc.tsLine !== undefined) {
-		return getTsSnippets(loc, snippetLevel, rootDirectory);
+		return getTsSnippets(
+			{ ...loc, tsLine: loc.tsLine, tsPath: loc.tsPath },
+			snippetLevel,
+			rootDirectory,
+		);
 	}
 
 	return getLuauOnlySnippet(loc);
@@ -386,10 +386,8 @@ function getFailureSnippets(
 		return [];
 	}
 
-	if (mappedLocations.length > 0) {
-		const loc = mappedLocations[0];
-		assert(loc !== undefined, "array with length > 0 has element 0");
-
+	const [loc] = mappedLocations;
+	if (loc !== undefined) {
 		return getMappedSnippets(loc, snippetLevel, rootDirectory);
 	}
 

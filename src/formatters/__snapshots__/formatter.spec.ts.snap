@@ -1,0 +1,105 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`complete formatter contracts > should render a snapshot diff exactly 1`] = `
+"  
+   FAIL  src/inventory.spec.ts > inventory > matches snapshot
+  expect(received).toMatchSnapshot()
+  
+  - Snapshot  - 1
+  + Received  + 1
+  
+  -   "count": 2,
+  +   "count": 1,"
+`;
+
+exports[`complete formatter contracts > should render an expected/received failure exactly 1`] = `
+"  
+   FAIL  src/inventory.spec.ts > inventory > stacking > should merge items
+  expect(received).toStrictEqual(expected)
+  
+  - Expected
+  + Received
+  
+  - { count: 2 }
+  + { count: 1 }
+  
+  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯"
+`;
+
+exports[`complete formatter contracts > should render complete pass, skip, failure, and exec-error reports exactly 1`] = `
+[
+  "
+ ✓ src/utils.spec.ts (3 tests - 30ms)
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  22:13:20
+   Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)",
+  "
+ ✓ src/codes.spec.ts (5 tests - 50ms)
+ ↓ src/utils.spec.ts (4 tests)
+ ↓ src/player.spec.ts (3 tests)
+
+ Test Files  1 passed | 2 skipped (3)
+      Tests  5 passed | 7 skipped (12)
+   Start at  22:13:20
+   Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)",
+  "
+ ❯ src/player.spec.ts (3 tests | 2 failed)
+   ❯ Player (3 tests | 2 failed) 18ms
+     ✓ should spawn 10ms
+     × should have health 5ms
+     × should be alive 3ms
+
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 2 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+  
+   FAIL  src/player.spec.ts > Player > should have health
+  expect(received).toBe(expected)
+  
+  - Expected
+  + Received
+  
+  - 100
+  + 0
+  
+  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+  
+   FAIL  src/player.spec.ts > Player > should be alive
+  expect(received).toBe(expected)
+  
+  - Expected
+  + Received
+  
+  - true
+  + false
+  
+  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  22:13:20
+   Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)",
+  "
+ ✗ shared/react/features/windows/__tests__/unit-menu-app.test
+
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m[41m[37m[1m Failed Tests 1 [22m[39m[49m[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+   FAIL  shared/react/features/windows/__tests__/unit-menu-app.test
+  Test suite failed to run
+
+  Require-by-string is not enabled for use inside Jest at this time.
+
+  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests   (0)
+   Start at  22:13:20
+   Duration  250ms (upload 50ms, environment 50ms, tests 100ms, cli 50ms)",
+]
+`;
+
+exports[`complete formatter contracts > should render line padding, tabs, a caret, and language exactly 1`] = `
+" ❯ src/inventory.spec.ts:10:6  (TypeScript)
+	 9|     const count = 1;
+	10|      expect(count).toBe(2);
+	  |         ^"
+`;

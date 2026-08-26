@@ -28,10 +28,6 @@ export function isAbsolutePath(input: string): boolean {
 }
 
 export function normalizeWindowsPath(input = ""): string {
-	if (!input) {
-		return input;
-	}
-
 	return input
 		.replace(/\\/g, "/")
 		.replace(DRIVE_LETTER_START_REGEX, (driveLetterMatch) => driveLetterMatch.toUpperCase());

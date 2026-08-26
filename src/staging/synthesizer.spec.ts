@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { dropDriveLetter, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { synthesize } from "./synthesizer.ts";
 
 vi.mock(import("node:fs"), async () => {
@@ -44,6 +44,11 @@ function parseFixture(json: string): SynthesizedResult {
 	return synthesizedResultSchema.assert(JSON.parse(json));
 }
 
+function normalizeSnapshotFixturePaths(json: string): string {
+	const fixtureRoot = normalizeWindowsPath(ROOT);
+	return json.replaceAll(fixtureRoot, () => dropDriveLetter(fixtureRoot));
+}
+
 /** Reads a foreign tree-node key, validating the child is itself a node. */
 function child(node: RojoTreeNode, key: string): RojoTreeNode | undefined {
 	const value = node[key];
@@ -60,7 +65,7 @@ function descend(node: RojoTreeNode | undefined, ...keys: Array<string>): RojoTr
 
 describe(synthesize, () => {
 	it("should nest a single package under ServerStorage.__pkg_stage.<name>", () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		vol.reset();
 
@@ -84,6 +89,10 @@ describe(synthesize, () => {
 				},
 			],
 		});
+
+		// The synthesized project is consumed as an exact Rojo artifact. Keep a
+		// readable structural contract below and pin the complete representation.
+		expect(normalizeSnapshotFixturePaths(result)).toMatchSnapshot();
 
 		const parsed = JSON.parse(result);
 
@@ -609,7 +618,15 @@ describe(synthesize, () => {
 					},
 				],
 			});
-		}).toThrow(/disagree on `Workspace\.StreamingEnabled`/);
+		}).toThrowWithMessage(
+			ConfigError,
+			"workspace packages disagree on `Workspace.StreamingEnabled`.\n\n" +
+				"  - true — declared by @halcyon/foo\n" +
+				"  - false — declared by @halcyon/bar\n\n" +
+				"Every package in a workspace run shares one synthesized place, so a\n" +
+				"service property is a property of the whole run. Either align the value\n" +
+				"across each package's rojo project, or run the odd package on its own.",
+		);
 	});
 
 	it.for([{}, "not-an-object"])("should hoist nothing for $properties %o", (properties) => {
@@ -885,7 +902,15 @@ describe(synthesize, () => {
 					},
 				],
 			});
-		}).toThrow(/disagree on `globIgnorePaths`/);
+		}).toThrowWithMessage(
+			ConfigError,
+			"workspace packages disagree on `globIgnorePaths`.\n\n" +
+				'  - ["**/tsconfig.json"] — declared by @halcyon/foo\n' +
+				'  - ["**/out/**"] — declared by @halcyon/bar\n\n' +
+				"Every package in a workspace run shares one synthesized place, so one\n" +
+				"ignore list covers every mount in it. Either align the list across each\n" +
+				"package's rojo project, or run the odd package on its own.",
+		);
 	});
 
 	it("should accept the same globIgnorePaths listed in a different order", () => {
@@ -1107,7 +1132,11 @@ describe(synthesize, () => {
 
 	it.for([
 		"Players",
+		"DataModel",
 		"ReplicatedFirst",
+		"ReplicatedStorage",
+		"ServerScriptService",
+		"ServerStorage",
 		"Teams",
 		"TextChatService",
 		"LocalizationService",
@@ -1123,10 +1152,14 @@ describe(synthesize, () => {
 		"TestService",
 		"Lighting",
 		"SoundService",
+		"StarterCharacterScripts",
+		"StarterGui",
+		"StarterPack",
 		"StarterPlayer",
 		"StarterPlayerScripts",
+		"Terrain",
 		"Workspace",
-	])("should rewrite service class %s to Folder when nested", (serviceClass) => {
+	])("should rewrite pinned class %s to Folder when nested", (serviceClass) => {
 		expect.assertions(1);
 
 		vol.reset();
@@ -1647,7 +1680,10 @@ describe(synthesize, () => {
 					},
 				],
 			});
-		}).toThrow(ConfigError);
+		}).toThrowWithMessage(
+			ConfigError,
+			'stubMount dataModelPath "ReplicatedStorage/Missing" does not resolve in synthesized tree (missing segment "Missing")',
+		);
 	});
 
 	it("should skip collision check when stubMount leaf has no $path", () => {
@@ -2706,6 +2742,37 @@ describe(synthesize, () => {
 			expect(serverScriptService!.$path).toContain("server");
 		});
 
+		it("should give an implicit existing ServerScriptService its canonical class", () => {
+			expect.assertions(1);
+
+			vol.reset();
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ServerScriptService: { Existing: { $className: "Folder" } },
+					},
+				}),
+			});
+
+			const result = synthesize({
+				loadStringEnabled: true,
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			expect(child(parseFixture(result).tree, "ServerScriptService")!.$className).toBe(
+				"ServerScriptService",
+			);
+		});
+
 		it("should tolerate a malformed null $properties on ServerScriptService", () => {
 			// `typeof null === "object"`, so an unguarded property check would
 			// treat null as a record and `Object.entries(null)` would throw.
@@ -2971,7 +3038,10 @@ describe(synthesize, () => {
 		it("should throw ConfigError when wrap=false with zero packages", () => {
 			expect.assertions(1);
 
-			expect(() => synthesize({ packages: [], wrap: false })).toThrow(ConfigError);
+			expect(() => synthesize({ packages: [], wrap: false })).toThrowWithMessage(
+				ConfigError,
+				"synthesize wrap:false requires exactly one package, got 0",
+			);
 		});
 
 		it("should resolve nested .project.json mounts in no-wrap mode", () => {
@@ -3119,13 +3189,13 @@ describe(synthesize, () => {
 
 			// Top-level user fields preserved.
 			expect(parsed).toMatchObject({ name: "user-game", gameId: 4242, placeId: 9999 });
+			expect(normalizeSnapshotFixturePaths(result)).toMatchSnapshot();
 
 			// Both project mounts retained with stubs injected as named children.
 			expect(descend(parsed.tree, "ReplicatedStorage", "Shared")!.$path).toContain("out");
 			expect(
 				descend(parsed.tree, "ReplicatedStorage", "Shared", "jest.config")!.$path,
 			).toContain("shared");
-			expect(descend(parsed.tree, "ServerStorage", "Server")!.$path).toContain("out");
 			expect(descend(parsed.tree, "ServerStorage", "Server", "jest.config")!.$path).toContain(
 				"server",
 			);
@@ -3177,7 +3247,11 @@ describe(synthesize, () => {
 					],
 					wrap: false,
 				});
-			}).toThrow(/would overwrite an existing/);
+			}).toThrowWithMessage(
+				ConfigError,
+				'stubMount at "ReplicatedStorage" would overwrite an existing "jest.config" child already declared in the project tree. ' +
+					"Either remove the explicit declaration from your .project.json, or declare the project via a string entry in `projects: [...]` so jest-roblox treats your config as canonical.",
+			);
 		});
 
 		// Preservation contract: arbitrary unknown top-level keys (future

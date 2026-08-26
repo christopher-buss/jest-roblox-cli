@@ -1,0 +1,188 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`mapErrorsToTests > should attribute error outside test blocks to file-level failure 1`] = `
+{
+  "numFailedTests": 1,
+  "numPassedTests": 1,
+  "numPendingTests": 0,
+  "numTotalTests": 2,
+  "startTime": 123,
+  "success": false,
+  "testResults": [
+    {
+      "numFailingTests": 1,
+      "numPassingTests": 1,
+      "numPendingTests": 0,
+      "testFilePath": "/test.ts",
+      "testResults": [
+        {
+          "ancestorTitles": [],
+          "failureMessages": [
+            "TS2322: Type mismatch",
+          ],
+          "fullName": "<file-level type error>",
+          "status": "failed",
+          "title": "<file-level type error>",
+        },
+        {
+          "ancestorTitles": [],
+          "failureMessages": [],
+          "fullName": "should pass",
+          "status": "passed",
+          "title": "should pass",
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`mapErrorsToTests > should fail the test containing the error 1`] = `
+{
+  "numFailedTests": 1,
+  "numPassedTests": 0,
+  "numPendingTests": 0,
+  "numTotalTests": 1,
+  "startTime": 123,
+  "success": false,
+  "testResults": [
+    {
+      "numFailingTests": 1,
+      "numPassingTests": 0,
+      "numPendingTests": 0,
+      "testFilePath": "/test.ts",
+      "testResults": [
+        {
+          "ancestorTitles": [
+            "suite",
+          ],
+          "failureMessages": [
+            "TS2322: Type mismatch",
+          ],
+          "fullName": "suite > should fail",
+          "status": "failed",
+          "title": "should fail",
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`mapErrorsToTests > should handle mixed files with and without errors 1`] = `
+{
+  "numFailedTests": 1,
+  "numPassedTests": 1,
+  "numPendingTests": 0,
+  "numTotalTests": 2,
+  "startTime": 123,
+  "success": false,
+  "testResults": [
+    {
+      "numFailingTests": 1,
+      "numPassingTests": 0,
+      "numPendingTests": 0,
+      "testFilePath": "/fail.ts",
+      "testResults": [
+        {
+          "ancestorTitles": [],
+          "failureMessages": [
+            "TS2322: Error",
+          ],
+          "fullName": "should fail",
+          "status": "failed",
+          "title": "should fail",
+        },
+      ],
+    },
+    {
+      "numFailingTests": 0,
+      "numPassingTests": 1,
+      "numPendingTests": 0,
+      "testFilePath": "/pass.ts",
+      "testResults": [
+        {
+          "ancestorTitles": [],
+          "failureMessages": [],
+          "fullName": "should pass",
+          "status": "passed",
+          "title": "should pass",
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`mapErrorsToTests > should suppress non-test source file errors when ignoreSourceErrors is true 1`] = `
+{
+  "numFailedTests": 0,
+  "numPassedTests": 1,
+  "numPendingTests": 0,
+  "numTotalTests": 1,
+  "startTime": 123,
+  "success": true,
+  "testResults": [
+    {
+      "numFailingTests": 0,
+      "numPassingTests": 1,
+      "numPendingTests": 0,
+      "testFilePath": "src/test.test-d.ts",
+      "testResults": [
+        {
+          "ancestorTitles": [],
+          "failureMessages": [],
+          "fullName": "should pass",
+          "status": "passed",
+          "title": "should pass",
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`mapErrorsToTests > should surface errors for non-test source files as source-level failures 1`] = `
+{
+  "numFailedTests": 1,
+  "numPassedTests": 1,
+  "numPendingTests": 0,
+  "numTotalTests": 2,
+  "startTime": 123,
+  "success": false,
+  "testResults": [
+    {
+      "numFailingTests": 0,
+      "numPassingTests": 1,
+      "numPendingTests": 0,
+      "testFilePath": "src/test.test-d.ts",
+      "testResults": [
+        {
+          "ancestorTitles": [],
+          "failureMessages": [],
+          "fullName": "should pass",
+          "status": "passed",
+          "title": "should pass",
+        },
+      ],
+    },
+    {
+      "numFailingTests": 1,
+      "numPassingTests": 0,
+      "numPendingTests": 0,
+      "testFilePath": "src/source.ts",
+      "testResults": [
+        {
+          "ancestorTitles": [],
+          "failureMessages": [
+            "TS2322: Type 'string' is not assignable to type 'number'.",
+          ],
+          "fullName": "<source type error>",
+          "status": "failed",
+          "title": "<source type error>",
+        },
+      ],
+    },
+  ],
+}
+`;

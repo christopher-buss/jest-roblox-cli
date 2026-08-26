@@ -1,0 +1,56 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatExecErrorDetail > should render the cleaned failure, hint, separator, and counter update 1`] = `
+"   FAIL  src/init.spec.ts
+  Test suite failed to run
+
+  ReplicatedStorage.pkg:init.spec:12: loadstring() is not available
+
+  Hint: loadstring() must be enabled for Jest to run. Add to your project.json:
+
+  "ServerScriptService": {
+    "$properties": {
+      "LoadStringEnabled": true
+    }
+  }
+
+  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯"
+`;
+
+exports[`formatFailure > should render expected/received and snapshot failures completely > colored 1`] = `
+"  
+  <badge> FAIL </badge> <fail>src/example.spec.ts > suite > case</fail>
+  <fail>[1mError:[22m mismatch</fail>
+  
+  <expected>- Expected</expected>
+  <received>+ Received</received>
+  
+  <expected>- one</expected>
+  <received>+ two</received>
+  <fail>Snapshot mismatch</fail>
+  
+  <expected>- Snapshot - 1</expected>
+  <expected>- old</expected>
+  <received>+ new</received>
+  
+  <dim><fail>⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯</fail></dim>"
+`;
+
+exports[`formatFailure > should render expected/received and snapshot failures completely > plain 1`] = `
+"  
+  <badge> FAIL </badge> <fail>src/example.spec.ts > suite > case</fail>
+  <fail>Error: mismatch</fail>
+  
+  <expected>- Expected</expected>
+  <received>+ Received</received>
+  
+  <expected>- one</expected>
+  <received>+ two</received>
+  <fail>Snapshot mismatch</fail>
+  
+  <expected>- Snapshot - 1</expected>
+  <expected>- old</expected>
+  <received>+ new</received>
+  
+  <dim><fail>⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯</fail></dim>"
+`;

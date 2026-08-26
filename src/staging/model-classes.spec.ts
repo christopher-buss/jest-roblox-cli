@@ -96,6 +96,23 @@ function chunk(name: string, payload: Buffer): Buffer {
 	return Buffer.concat([header, payload]);
 }
 
+/** One compressed chunk with separate stored and decompressed lengths. */
+function compressedChunk({
+	name,
+	compressed,
+	decompressedBytes,
+}: {
+	compressed: Buffer;
+	decompressedBytes: number;
+	name: string;
+}): Buffer {
+	const header = Buffer.alloc(16);
+	header.write(name, 0, "ascii");
+	header.writeUInt32LE(compressed.length, 4);
+	header.writeUInt32LE(decompressedBytes, 8);
+	return Buffer.concat([header, compressed]);
+}
+
 /** An `INST` payload: class id, then the length-prefixed class name. */
 function instancePayload(rootClass: string): Buffer {
 	const name = Buffer.from(rootClass, "utf-8");
@@ -104,6 +121,32 @@ function instancePayload(rootClass: string): Buffer {
 	payload.writeUInt32LE(name.length, 4);
 	name.copy(payload, 8);
 	return payload;
+}
+
+/**
+ * LZ4 for a class name made only of `A`, using an overlapping back-reference.
+ */
+function repeatedClassLz4(length: number): Buffer {
+	const payload = instancePayload("A".repeat(length));
+	const literals = payload.subarray(0, 9);
+	const matchLength = length - 1;
+	const shortLength = Math.min(matchLength - 4, 15);
+	const extension: Array<number> = [];
+	let remaining = matchLength - 19;
+	while (remaining >= 255) {
+		extension.push(255);
+		remaining -= 255;
+	}
+
+	if (shortLength === 15) {
+		extension.push(remaining);
+	}
+
+	return Buffer.concat([
+		Buffer.from([(literals.length << 4) | shortLength]),
+		literals,
+		Buffer.from([1, 0, ...extension]),
+	]);
 }
 
 function writeTemporary(name: string, contents: Buffer | string): string {
@@ -149,16 +192,23 @@ describe(readDeclaredClasses, () => {
 		);
 	});
 
-	it.skipIf(!rojoOnPath())(
-		"should report no pinned class for a model that declares none",
-		// A real rojo spawn, so the suite-wide per-test budget cannot hold it.
-		{ timeout: 5000 },
-		() => {
-			expect.assertions(1);
+	it("should accept repeated whitespace before an XML class attribute", () => {
+		expect.assertions(1);
 
-			expect(readDeclaredClasses(buildModel("Folder"))).not.toContain("StarterPlayerScripts");
-		},
-	);
+		expect(
+			readDeclaredClasses(
+				writeTemporary("a.rbxmx", '<roblox><Item   class="Folder" /></roblox>'),
+			),
+		).toStrictEqual(["Folder"]);
+	});
+
+	it("should report no pinned class for a model that declares none", () => {
+		expect.assertions(1);
+
+		const model = Buffer.concat([binaryHeader(), chunk("INST", instancePayload("Folder"))]);
+
+		expect(readDeclaredClasses(writeTemporary("a.rbxm", model))).toStrictEqual(["Folder"]);
+	});
 
 	it("should read ClassName out of a .model.json", () => {
 		expect.assertions(1);
@@ -216,7 +266,12 @@ describe(readDeclaredClasses, () => {
 	it("should report nothing for a file whose magic is not the binary format", () => {
 		expect.assertions(1);
 
-		expect(readDeclaredClasses(writeTemporary("a.rbxm", Buffer.alloc(64)))).toStrictEqual([]);
+		const model = Buffer.concat([
+			Buffer.alloc(32),
+			chunk("INST", instancePayload("MustNotBeRead")),
+		]);
+
+		expect(readDeclaredClasses(writeTemporary("a.rbxm", model))).toStrictEqual([]);
 	});
 
 	it("should skip the chunks that precede the class table", () => {
@@ -231,6 +286,38 @@ describe(readDeclaredClasses, () => {
 
 		expect(readDeclaredClasses(writeTemporary("a.rbxm", model))).toStrictEqual(["Terrain"]);
 	});
+
+	it("should decode a compressed chunk whose literal length uses an extension", () => {
+		expect.assertions(1);
+
+		const payload = instancePayload("Workspace");
+		const compressed = Buffer.concat([Buffer.from([0xf0, payload.length - 15]), payload]);
+		const model = Buffer.concat([
+			binaryHeader(),
+			compressedChunk({ name: "INST", compressed, decompressedBytes: payload.length }),
+		]);
+
+		expect(readDeclaredClasses(writeTemporary("a.rbxm", model))).toStrictEqual(["Workspace"]);
+	});
+
+	it.for([8, 20, 275] as const)(
+		"should decode an overlapping LZ4 match for a %i-byte class name",
+		(length) => {
+			expect.assertions(1);
+
+			const declared = "A".repeat(length);
+			const model = Buffer.concat([
+				binaryHeader(),
+				compressedChunk({
+					name: "INST",
+					compressed: repeatedClassLz4(length),
+					decompressedBytes: 8 + length,
+				}),
+			]);
+
+			expect(readDeclaredClasses(writeTemporary("a.rbxm", model))).toStrictEqual([declared]);
+		},
+	);
 
 	it("should stop at the first chunk after the class table", () => {
 		expect.assertions(1);

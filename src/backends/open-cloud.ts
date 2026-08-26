@@ -159,9 +159,9 @@ export class OpenCloudBackend implements Backend {
 	private readonly runner: RemoteRunner;
 
 	/** One-shot per run so parallel raced tasks don't repeat the warning. */
-	private raceWarned = false;
+	private raceWarned!: boolean;
 	/** Tracked apart, so a drop still gets said once a lesser cause warned. */
-	private staleCacheWarned = false;
+	private staleCacheWarned!: boolean;
 
 	public readonly kind = "open-cloud" as const;
 
@@ -867,10 +867,12 @@ function bucketJobs(
 	parallel: BackendOptions["parallel"],
 ): Array<JobBucket> {
 	const bucketCount = resolveBucketCount(parallel, jobs.length);
-	const buckets: Array<JobBucket> = [];
-	for (let index = 0; index < bucketCount; index++) {
-		buckets.push({ indices: [], jobs: [] });
-	}
+	const buckets = Array.from({ length: bucketCount }, (): JobBucket => {
+		return {
+			indices: [],
+			jobs: [],
+		};
+	});
 
 	// Round-robin assignment: job[i] goes to bucket i % bucketCount. Preserves
 	// input order within each bucket so per-bucket results flatten back in the

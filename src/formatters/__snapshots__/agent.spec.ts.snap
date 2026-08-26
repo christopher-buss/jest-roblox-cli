@@ -1,0 +1,297 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatAgent complete report contracts > should preserve representative failure reports exactly 1`] = `
+[
+  " ❯ src/player.spec.ts (3 tests | 2 failed)
+   × should have health 5ms
+   × should be alive 3ms
+
+⎯⎯⎯ Failed Tests 2 ⎯⎯⎯
+
+ FAIL src/player.spec.ts > Player > should have health
+Expected: 100
+Received: 0
+
+ FAIL src/player.spec.ts > Player > should be alive
+Expected: true
+Received: false
+
+View results.json for full Jest output (1kb)
+View game.log for Roblox game logs (1kb)
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+Type Errors  2 failed",
+  " ❯ src/traits.spec.ts (2 tests | 1 failed)
+   × Apex matches snapshot 12ms
+
+⎯⎯⎯ Failed Tests 1 ⎯⎯⎯
+
+ FAIL src/traits.spec.ts > trait data > Apex matches snapshot
+- Snapshot  - 2
++ Received  + 2
+
+  Object {
+    "name": "Apex",
+-   "health": 100,
+-   "speed": 50,
++   "health": 150,
++   "speed": 75,
+  }
+
+View results.json for full Jest output (1kb)
+View game.log for Roblox game logs (1kb)
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+Type Errors  2 failed",
+  " ❯ src/broken.spec.ts (suite failed to run)
+
+⎯⎯⎯ Failed Tests 1 ⎯⎯⎯
+
+ FAIL src/broken.spec.ts
+Require-by-string is not enabled for use inside Jest at this time.
+
+View results.json for full Jest output (1kb)
+View game.log for Roblox game logs (1kb)
+ Test Files  1 failed | 1 passed (2)
+      Tests  3 passed (3)
+Type Errors  2 failed",
+  " ❯ ReplicatedStorage/Client/lib/test.spec (suite failed to run)
+
+⎯⎯⎯ Failed Tests 1 ⎯⎯⎯
+
+ FAIL ReplicatedStorage/Client/lib/test.spec
+loadstring() is not available
+Hint: loadstring() must be enabled for Jest to run. Add to your project.json:
+
+  "ServerScriptService": {
+    "$properties": {
+      "LoadStringEnabled": true
+    }
+  }
+
+View results.json for full Jest output (1kb)
+View game.log for Roblox game logs (1kb)
+ Test Files  1 failed (1)
+      Tests   (0)
+Type Errors  2 failed",
+]
+`;
+
+exports[`formatAgent snippets > should show TS and Luau snippets when 1-2 failures 1`] = `
+" ❯ src/player.spec.ts (2 tests | 2 failed)
+   × should have health 10ms
+   × should stay healthy 10ms
+
+⎯⎯⎯ Failed Tests 2 ⎯⎯⎯
+
+ FAIL src/player.spec.ts:10 > TestSuite > should have health
+Expected: 100
+Received: 0
+TS  src/player.spec.ts:10
+  9| const health = getHealth();
+> 10| expect(health).toBe(100);
+  11| });
+Luau  out/player.spec.luau:15
+  14| local health = getHealth()
+> 15| expect(health).toBe(100)
+  16| end)
+
+ FAIL src/player.spec.ts:10 > TestSuite > should stay healthy
+Expected: 100
+Received: 0
+TS  src/player.spec.ts:10
+  9| const health = getHealth();
+> 10| expect(health).toBe(100);
+  11| });
+Luau  out/player.spec.luau:15
+  14| local health = getHealth()
+> 15| expect(health).toBe(100)
+  16| end)
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)"
+`;
+
+exports[`formatAgent snippets > should show TS snippet only when 3-5 failures 1`] = `
+" ❯ src/test.spec.ts (5 tests | 5 failed)
+   × test 0 10ms
+   × test 1 10ms
+   × test 2 10ms
+   × test 3 10ms
+   × test 4 10ms
+
+⎯⎯⎯ Failed Tests 5 ⎯⎯⎯
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 0
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 1
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 2
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 3
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 4
+Expected: 1
+Received: 2
+  9| const x = 1;
+> 10| expect(x).toBe(2);
+  11| });
+
+ Test Files  1 failed (1)
+      Tests  5 failed (5)"
+`;
+
+exports[`formatAgent snippets > should show no snippets when 6+ failures 1`] = `
+" ❯ src/test.spec.ts (6 tests | 6 failed)
+   × test 0 10ms
+   × test 1 10ms
+   × test 2 10ms
+   × test 3 10ms
+   × test 4 10ms
+   × test 5 10ms
+
+⎯⎯⎯ Failed Tests 6 ⎯⎯⎯
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 0
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 1
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 2
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 3
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 4
+Expected: 1
+Received: 2
+
+ FAIL src/test.spec.ts:10 > TestSuite > test 5
+Expected: 1
+Received: 2
+
+ Test Files  1 failed (1)
+      Tests  6 failed (6)"
+`;
+
+exports[`formatAgentMultiProject > should format the complete multi-project report contract exactly 1`] = `
+"▶ core  1 passed (3 tests)
+▶ auth  1 failed (3 tests)
+ ❯ src/player.spec.ts (3 tests | 2 failed)
+   × should have health 5ms
+   × should be alive 3ms
+▶ broken  1 failed (0 tests)
+ ❯ shared/react/features/windows/__tests__/unit-menu-app.test (suite failed to run)
+▶ utils  1 passed | 2 skipped (12 tests)
+
+⎯⎯⎯ Failed Tests 3 ⎯⎯⎯
+
+ FAIL src/player.spec.ts > Player > should have health
+Expected: 100
+Received: 0
+
+ FAIL src/player.spec.ts > Player > should be alive
+Expected: true
+Received: false
+
+ FAIL shared/react/features/windows/__tests__/unit-menu-app.test
+Require-by-string is not enabled for use inside Jest at this time.
+
+View results.json for full Jest output (1kb)
+View game.log for Roblox game logs (1kb)
+ Test Files  2 failed | 2 passed | 2 skipped (6)
+      Tests  2 failed | 9 passed | 7 skipped (18)
+Type Errors  1 failed
+     Bailed  after 4 packages, 2 not run"
+`;
+
+exports[`formatAgentMultiProject > should show exec errors from multiple projects 1`] = `
+"▶ core  1 passed (3 tests)
+▶ broken  1 failed (0 tests)
+ ❯ shared/react/features/windows/__tests__/unit-menu-app.test (suite failed to run)
+
+⎯⎯⎯ Failed Tests 1 ⎯⎯⎯
+
+ FAIL shared/react/features/windows/__tests__/unit-menu-app.test
+Require-by-string is not enabled for use inside Jest at this time.
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  3 passed (3)"
+`;
+
+exports[`formatAgentMultiProject > should show failure details across projects 1`] = `
+"▶ core  1 passed (3 tests)
+▶ auth  1 failed (3 tests)
+ ❯ src/player.spec.ts (3 tests | 2 failed)
+   × should have health 5ms
+   × should be alive 3ms
+
+⎯⎯⎯ Failed Tests 2 ⎯⎯⎯
+
+ FAIL src/player.spec.ts > Player > should have health
+Expected: 100
+Received: 0
+
+ FAIL src/player.spec.ts > Player > should be alive
+Expected: true
+Received: false
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 4 passed (6)"
+`;
+
+exports[`formatAgentMultiProject > should show hints in multi-project output 1`] = `
+"▶ core  1 passed (3 tests)
+▶ auth  1 failed (3 tests)
+ ❯ src/player.spec.ts (3 tests | 2 failed)
+   × should have health 5ms
+   × should be alive 3ms
+
+⎯⎯⎯ Failed Tests 2 ⎯⎯⎯
+
+ FAIL src/player.spec.ts > Player > should have health
+Expected: 100
+Received: 0
+
+ FAIL src/player.spec.ts > Player > should be alive
+Expected: true
+Received: false
+
+View results.json for full Jest output
+View game.log for Roblox game logs
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 4 passed (6)"
+`;
+
+exports[`formatAgentMultiProject > should show skipped files in project header and summary 1`] = `
+"▶ core  1 passed (3 tests)
+▶ utils  1 passed | 2 skipped (12 tests)
+ Test Files  2 passed | 2 skipped (4)
+      Tests  8 passed | 7 skipped (15)"
+`;

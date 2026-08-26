@@ -21,10 +21,23 @@ describe(findMapping, () => {
 	it("should match longest outDir prefix", () => {
 		expect.assertions(1);
 
-		expect(findMapping("out-test/src/actions/define.spec", mappings)).toStrictEqual({
-			outDir: "out-test",
-			rootDir: ".",
-		});
+		expect(
+			findMapping("out/shared/actions/define.spec", [
+				{ outDir: "out/shared", rootDir: "shared" },
+				{ outDir: "out", rootDir: "src" },
+			]),
+		).toStrictEqual({ outDir: "out/shared", rootDir: "shared" });
+	});
+
+	it("should keep the first mapping when matching prefixes have equal length", () => {
+		expect.assertions(1);
+
+		expect(
+			findMapping("out/shared/foo", [
+				{ outDir: "out", rootDir: "first" },
+				{ outDir: "out", rootDir: "second" },
+			]),
+		).toStrictEqual({ outDir: "out", rootDir: "first" });
 	});
 
 	it("should not match partial prefix without boundary", () => {

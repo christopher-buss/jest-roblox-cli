@@ -1,8 +1,9 @@
+import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 
 import type { JestResult } from "../types/jest-result.ts";
 import type { RunTypecheckGroup } from "./group-by-tsconfig.ts";
-import { groupTypecheckByTsconfig } from "./group-by-tsconfig.ts";
+import { groupTypecheckByTsconfig, runTypecheckPassAsync } from "./group-by-tsconfig.ts";
 
 interface Deferred {
 	promise: Promise<JestResult>;
@@ -27,7 +28,8 @@ function resultForTsconfig(tsconfig?: string): JestResult {
 	const isFailing = tsconfig === "b.json";
 	return makeResult({
 		numFailedTests: isFailing ? 1 : 0,
-		numTotalTests: 1,
+		numPendingTests: isFailing ? 2 : 1,
+		numTotalTests: isFailing ? 3 : 2,
 		success: !isFailing,
 	});
 }
@@ -82,7 +84,12 @@ describe(groupTypecheckByTsconfig, () => {
 		expect(run).toHaveBeenCalledWith({ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "a.json" });
 		expect(run).toHaveBeenCalledWith({ cwd: "/r", files: ["b.spec-d.ts"], tsconfig: "b.json" });
 		expect(result).toStrictEqual(
-			makeResult({ numFailedTests: 1, numTotalTests: 2, success: false }),
+			makeResult({
+				numFailedTests: 1,
+				numPendingTests: 3,
+				numTotalTests: 5,
+				success: false,
+			}),
 		);
 	});
 
@@ -216,5 +223,33 @@ describe(groupTypecheckByTsconfig, () => {
 		const result = await pending;
 
 		expect(result).toStrictEqual(makeResult({ numPassedTests: 2, numTotalTests: 2 }));
+	});
+});
+
+describe(runTypecheckPassAsync, () => {
+	it("should skip the clock and runner when no entries exist", async () => {
+		expect.assertions(3);
+
+		const run = vi.fn<RunTypecheckGroup>();
+		const now = vi.spyOn(performance, "now");
+
+		await expect(runTypecheckPassAsync([], run)).resolves.toStrictEqual({ elapsedMs: 0 });
+		expect(run).not.toHaveBeenCalled();
+		expect(now).not.toHaveBeenCalled();
+	});
+
+	it("should return the exact elapsed time and merged result", async () => {
+		expect.assertions(2);
+
+		vi.spyOn(performance, "now").mockReturnValueOnce(10).mockReturnValueOnce(25);
+		const result = makeResult({ numPassedTests: 1, numTotalTests: 1 });
+		const run = vi.fn<RunTypecheckGroup>().mockResolvedValue(result);
+		const entry = { cwd: "/root", files: ["a.spec-d.ts"], tsconfig: "tsconfig.json" };
+
+		await expect(runTypecheckPassAsync([entry], run)).resolves.toStrictEqual({
+			elapsedMs: 15,
+			result,
+		});
+		expect(run).toHaveBeenCalledExactlyOnceWith(entry);
 	});
 });

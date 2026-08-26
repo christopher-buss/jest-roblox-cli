@@ -148,7 +148,7 @@ describe(validateBasicWorkspaceFlags, () => {
 	it("should accept --workspace with --packages", () => {
 		expect.assertions(1);
 
-		const result = validateBasicWorkspaceFlags(makeCli({ packages: "a,b", workspace: true }));
+		const result = validateBasicWorkspaceFlags(makeCli({ packages: "a, ", workspace: true }));
 
 		expect(result).toStrictEqual({ ok: true });
 	});
@@ -182,15 +182,20 @@ describe(assertWorkspaceRunOptions, () => {
 	});
 
 	it("should reject studio-cli with --parallel > 1 (it is serial)", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const result = assertWorkspaceRunOptions(
 			makeRunOptions({ backend: "studio-cli", parallel: 2 }),
 		);
 		assert(!result.ok);
 
-		expect(result.ok).toBeFalse();
-		expect(result.message).toContain("serial");
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			message:
+				"Error: studio-cli backend is serial (one Studio instance) and cannot " +
+				'shard; set parallel to 1 or "auto" for a --workspace run.\n',
+			ok: false,
+		});
 	});
 
 	it("should accept studio-cli with --parallel auto", () => {
@@ -217,13 +222,18 @@ describe(assertWorkspaceRunOptions, () => {
 	// neither of which the Studio transports have — better to say so than to run
 	// the whole batch while the user believes it will stop early.
 	it("should reject --bail on a Studio backend", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio", bail: true }));
 		assert(!result.ok);
 
-		expect(result.ok).toBeFalse();
-		expect(result.message).toContain("--bail");
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			message:
+				"Error: --bail is Open Cloud only; a Studio backend runs every " +
+				"package in the workspace regardless.\n",
+			ok: false,
+		});
 	});
 
 	it("should accept --bail on the open-cloud backend", () => {
@@ -254,7 +264,13 @@ describe(assertWorkspaceRunOptions, () => {
 		);
 		assert(!result.ok);
 
-		expect(result.message).toContain("--bail");
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			message:
+				"Error: --bail is Open Cloud only; a Studio backend runs every " +
+				"package in the workspace regardless.\n",
+			ok: false,
+		});
 	});
 
 	it("should accept a Studio backend without --bail", () => {

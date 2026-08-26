@@ -1,3 +1,5 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import * as path from "node:path";
 import { assert, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +16,48 @@ function emptyCli(): CliOptions {
 }
 
 describe(buildWorkspaceRunOptions, () => {
+	it.for([
+		["backend", { backend: "open-cloud" }, { backend: "studio" }],
+		["color", { color: true }, { color: false }],
+		["port", { port: 1 }, { port: 2 }],
+		["silent", { test: { silent: true } }, { test: { silent: false } }],
+		["gameOutput", { gameOutput: "a.log" }, { gameOutput: "b.log" }],
+		["outputFile", { outputFile: "a.json" }, { outputFile: "b.json" }],
+		["parallel", { parallel: 1 }, { parallel: 2 }],
+		["placeId", { placeId: "1" }, { placeId: "2" }],
+		["studioPath", { studioPath: "a.exe" }, { studioPath: "b.exe" }],
+		["universeId", { universeId: "1" }, { universeId: "2" }],
+		[
+			"workspace.gameOutput",
+			{ workspace: { gameOutput: true } },
+			{ workspace: { gameOutput: false } },
+		],
+		[
+			"workspace.outputFile",
+			{ workspace: { outputFile: true } },
+			{ workspace: { outputFile: false } },
+		],
+	] as const)("should identify a %s consensus conflict exactly", ([field, first, second]) => {
+		expect.assertions(1);
+
+		let captured: unknown;
+		try {
+			buildWorkspaceRunOptions({
+				cli: {},
+				perPackageConfigs: fromAny([
+					{ name: "alpha", config: first },
+					{ name: "beta", config: second },
+				]),
+			});
+		} catch (err) {
+			captured = err;
+		}
+
+		assert(captured instanceof WorkspaceConsensusError);
+
+		expect(captured.field).toBe(field);
+	});
+
 	describe("happy path: per-package consensus", () => {
 		it("should use the agreed value when every package declares the same value", () => {
 			expect.assertions(1);
@@ -191,7 +235,7 @@ describe(buildWorkspaceRunOptions, () => {
 		});
 
 		it("should list each declared value with the packages declaring it", () => {
-			expect.assertions(3);
+			expect.assertions(5);
 
 			let captured: unknown;
 			try {
@@ -209,9 +253,27 @@ describe(buildWorkspaceRunOptions, () => {
 
 			assert(captured instanceof WorkspaceConsensusError);
 
-			expect(captured.message).toContain("backend");
-			expect(captured.message).toContain("alpha");
-			expect(captured.message).toContain("beta");
+			expect(captured.name).toBe("WorkspaceConsensusError");
+			expect(captured.field).toBe("backend");
+			expect(captured.groups).toStrictEqual([
+				{ packages: ["alpha", "gamma"], value: "open-cloud" },
+				{ packages: ["beta"], value: "studio" },
+			]);
+			expect(captured.omittedBy).toStrictEqual([]);
+			expect(captured.message).toBe(
+				[
+					"workspace packages disagree on `backend`.",
+					"",
+					'  - "open-cloud" — declared by alpha, gamma',
+					'  - "studio" — declared by beta',
+					"",
+					"In workspace mode this field must be uniform across all selected",
+					"packages — the entire run uses one backend. Either:",
+					"  - Declare it consistently across packages (typically by inheriting",
+					"    from a shared config), OR",
+					"  - Pass the CLI override to set a single value for the run.",
+				].join("\n"),
+			);
 		});
 
 		it("should reject mixed values for deep-compared arrays", () => {
@@ -245,7 +307,7 @@ describe(buildWorkspaceRunOptions, () => {
 		});
 
 		it("should use the partial-variant wording in the error message", () => {
-			expect.assertions(2);
+			expect.assertions(3);
 
 			let captured: unknown;
 			try {
@@ -253,7 +315,9 @@ describe(buildWorkspaceRunOptions, () => {
 					cli: emptyCli(),
 					perPackageConfigs: [
 						{ name: "alpha", config: { backend: "open-cloud" } },
+						{ name: "gamma", config: { backend: "open-cloud" } },
 						{ name: "beta", config: {} },
+						{ name: "delta", config: {} },
 					],
 				});
 			} catch (err) {
@@ -262,8 +326,24 @@ describe(buildWorkspaceRunOptions, () => {
 
 			assert(captured instanceof WorkspaceConsensusError);
 
-			expect(captured.message).toContain("not declared by");
-			expect(captured.message).toContain("beta");
+			expect(captured.groups).toStrictEqual([
+				{ packages: ["alpha", "gamma"], value: "open-cloud" },
+			]);
+			expect(captured.omittedBy).toStrictEqual(["beta", "delta"]);
+			expect(captured.message).toBe(
+				[
+					"workspace packages disagree on `backend`.",
+					"",
+					'  - declared as "open-cloud" by: alpha, gamma',
+					"  - not declared by: beta, delta",
+					"",
+					"In workspace mode this field must be uniform across all selected",
+					"packages — the entire run uses one backend. Either:",
+					"  - Declare it consistently across packages (typically by inheriting",
+					"    from a shared config), OR",
+					"  - Pass the CLI override to set a single value for the run.",
+				].join("\n"),
+			);
 		});
 	});
 
@@ -666,8 +746,8 @@ describe(buildWorkspaceRunOptions, () => {
 });
 
 describe(WorkspaceConsensusError, () => {
-	it("should be an instance of Error", () => {
-		expect.assertions(1);
+	it("should default omittedBy to an empty list", () => {
+		expect.assertions(2);
 
 		const error = new WorkspaceConsensusError("backend", [
 			{ packages: ["alpha"], value: "open-cloud" },
@@ -675,5 +755,6 @@ describe(WorkspaceConsensusError, () => {
 		]);
 
 		expect(error).toBeInstanceOf(Error);
+		expect(error.omittedBy).toStrictEqual([]);
 	});
 });

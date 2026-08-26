@@ -5,6 +5,8 @@ import picomatch from "picomatch";
 import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { MappedCoverageResult } from "./mapper.ts";
 
+// cspell:ignore nonegate
+
 export interface CoverageUniverseFilter {
 	/**
 	 * `coveragePathIgnorePatterns` — matched against the TS source path with
@@ -67,12 +69,11 @@ export function createCoverageUniverseMatcher(
 		.filter((pattern) => pattern.startsWith("!"))
 		.map((pattern) => pattern.slice(1));
 
-	const isIncluded = includePatterns.length > 0 ? createGlobMatcher(includePatterns) : () => true;
-	const isExcluded =
-		excludePatterns.length > 0 ? createGlobMatcher(excludePatterns) : () => false;
+	const isIncluded = includePatterns.length > 0 ? createGlobMatcher(includePatterns) : undefined;
+	const isExcluded = createGlobMatcher(excludePatterns);
 	// `contains: true` so a bare `index.ts` matches `src/foo/index.ts`, the same
 	// way the instrument-time root matcher treats `coveragePathIgnorePatterns`.
-	const isIgnored = ignore.length > 0 ? picomatch(ignore, { contains: true }) : () => false;
+	const isIgnored = picomatch(ignore, { contains: true, nonegate: true });
 
 	const anchor = resolveUniverseAnchor(filter.rootDir);
 	// Both sides are canonical POSIX by here, so a file under the anchor — the
@@ -88,7 +89,11 @@ export function createCoverageUniverseMatcher(
 		const relativePath = absolute.startsWith(anchorPrefix)
 			? absolute.slice(anchorPrefix.length)
 			: normalizeWindowsPath(path.relative(anchor, absolute));
-		return isIncluded(relativePath) && !isExcluded(relativePath) && !isIgnored(relativePath);
+		return (
+			(isIncluded === undefined || isIncluded(relativePath)) &&
+			!isExcluded(relativePath) &&
+			!isIgnored(relativePath)
+		);
 	};
 }
 
@@ -138,14 +143,7 @@ function createGlobMatcher(patterns: Array<string>): (filePath: string) => boole
 	const withPath = patterns.filter((pattern) => pattern.includes("/"));
 	const withoutPath = patterns.filter((pattern) => !pattern.includes("/"));
 
-	const matchers: Array<(filePath: string) => boolean> = [];
-	if (withPath.length > 0) {
-		matchers.push(picomatch(withPath));
-	}
-
-	if (withoutPath.length > 0) {
-		matchers.push(picomatch(withoutPath, { matchBase: true }));
-	}
+	const matchers = [picomatch(withPath), picomatch(withoutPath, { matchBase: true })];
 
 	return (filePath) => matchers.some((matcher) => matcher(filePath));
 }

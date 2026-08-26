@@ -293,10 +293,6 @@ function readGlobIgnorePaths({ globIgnorePaths: value }: RojoTreeNode): Array<st
  * in, and a leading globstar has to reach either one.
  */
 function isIgnored(patterns: ReadonlyArray<string>): (absolutePath: string) => boolean {
-	if (patterns.length === 0) {
-		return () => false;
-	}
-
 	const match = picomatch([...patterns], { dot: true });
 	return (absolutePath: string) => {
 		const normalized = normalizeWindowsPath(absolutePath);

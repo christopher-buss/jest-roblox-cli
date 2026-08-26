@@ -95,10 +95,6 @@ export function formatMissingScopes(scopes: ReadonlyArray<string>): string {
  * and the caller never has to know which one it got.
  */
 function readDetails(value: unknown): string | undefined {
-	if (value === undefined) {
-		return undefined;
-	}
-
 	return typeof value === "string" ? value : JSON.stringify(value);
 }
 

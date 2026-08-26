@@ -116,6 +116,5 @@ function escapeRegex(value: string): string {
 
 function toBasenamePattern(file: string): string {
 	const stem = toInstanceStem(file.replaceAll("\\", "/"));
-	const lastSlash = stem.lastIndexOf("/");
-	return escapeRegex(lastSlash >= 0 ? stem.substring(lastSlash + 1) : stem);
+	return escapeRegex(stem.substring(stem.lastIndexOf("/") + 1));
 }

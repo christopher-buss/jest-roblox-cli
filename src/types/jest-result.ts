@@ -21,6 +21,8 @@ export interface TestFileResult {
 	testResults: Array<TestCaseResult>;
 }
 
+export type ExecErrorTestFileResult = TestFileResult & { failureMessage: string };
+
 export interface SnapshotSummary {
 	added: number;
 	didUpdate?: boolean | undefined;
@@ -44,7 +46,7 @@ export interface JestResult {
 	testResults: Array<TestFileResult>;
 }
 
-export function hasExecError(file: TestFileResult): boolean {
+export function hasExecError(file: TestFileResult): file is ExecErrorTestFileResult {
 	return (
 		file.failureMessage !== undefined &&
 		file.failureMessage !== "" &&

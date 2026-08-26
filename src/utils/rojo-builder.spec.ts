@@ -17,7 +17,7 @@ describe(buildWithRojo, () => {
 		expect(vi.mocked(cp.execFileSync)).toHaveBeenCalledWith(
 			"rojo",
 			["build", "my.project.json", "-o", "output/game.rbxl"],
-			expect.objectContaining({ stdio: "pipe" }),
+			{ stdio: "pipe", windowsHide: true },
 		);
 	});
 
@@ -40,7 +40,8 @@ describe(buildWithRojo, () => {
 		expect.assertions(1);
 
 		const stderrError = Object.assign(new Error("rojo exited with code 1"), {
-			stderr: Buffer.from("Found an error in project at path node.project.json"),
+			code: "EPERM",
+			stderr: Buffer.from("  Found an error in project at path node.project.json\n"),
 		});
 		vi.mocked(cp.execFileSync).mockImplementation(() => {
 			throw stderrError;
@@ -48,7 +49,25 @@ describe(buildWithRojo, () => {
 
 		expect(() => {
 			buildWithRojo("my.project.json", "output/game.rbxl");
-		}).toThrow(/Found an error in project at path node\.project\.json/);
+		}).toThrowWithMessage(
+			Error,
+			"rojo build failed: Found an error in project at path node.project.json",
+		);
+	});
+
+	it("should use the generic message for empty stderr", () => {
+		expect.assertions(1);
+
+		const stderrError = Object.assign(new Error("rojo exited with code 1"), {
+			stderr: Buffer.from(""),
+		});
+		vi.mocked(cp.execFileSync).mockImplementation(() => {
+			throw stderrError;
+		});
+
+		expect(() => {
+			buildWithRojo("my.project.json", "output/game.rbxl");
+		}).toThrowWithMessage(Error, "rojo build failed");
 	});
 
 	it("should propagate other rojo errors with context", () => {

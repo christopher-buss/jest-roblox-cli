@@ -347,6 +347,67 @@ describe("formatAgent failure details", () => {
 		expect(output).toContain("Received: 0");
 	});
 
+	it("should use singular labels and preserve the full ancestor chain", () => {
+		expect.assertions(2);
+
+		const result = createResult({
+			numFailedTests: 1,
+			numPassedTests: 0,
+			numTotalTests: 1,
+			success: false,
+			testResults: [
+				{
+					numFailingTests: 1,
+					numPassingTests: 0,
+					numPendingTests: 0,
+					testFilePath: "/project/src/player.spec.ts",
+					testResults: [
+						createTestCase({
+							ancestorTitles: ["Player", "health"],
+							failureMessages: ["Expected: 100\nReceived: 0"],
+							status: "failed",
+						}),
+					],
+				},
+			],
+		});
+
+		const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
+
+		expect(output).toContain("(1 test | 1 failed)");
+		expect(output).toContain("Player > health > should pass");
+	});
+
+	it.for(["Expected: 100", "Received: 0"])(
+		"should preserve an incomplete expectation as raw output: %s",
+		(message) => {
+			expect.assertions(2);
+
+			const result = createResult({
+				numFailedTests: 1,
+				numPassedTests: 0,
+				numTotalTests: 1,
+				success: false,
+				testResults: [
+					{
+						numFailingTests: 1,
+						numPassingTests: 0,
+						numPendingTests: 0,
+						testFilePath: "/project/src/player.spec.ts",
+						testResults: [
+							createTestCase({ failureMessages: [message], status: "failed" }),
+						],
+					},
+				],
+			});
+
+			const output = formatAgent(result, { maxFailures: 10, rootDir: "/project" });
+
+			expect(output).toContain(message);
+			expect(output).not.toContain("undefined");
+		},
+	);
+
 	it("should render snapshot diff", () => {
 		expect.assertions(2);
 
@@ -528,7 +589,7 @@ describe("formatAgent failure details", () => {
 
 describe("formatAgent snippets", () => {
 	it("should show TS and Luau snippets when 1-2 failures", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const tsSnippet: SourceSnippet = {
 			failureLine: 10,
@@ -558,17 +619,24 @@ describe("formatAgent snippets", () => {
 		});
 
 		const result = createResult({
-			numFailedTests: 1,
+			numFailedTests: 2,
 			numPassedTests: 0,
-			numTotalTests: 1,
+			numTotalTests: 2,
 			success: false,
 			testResults: [
 				{
-					numFailingTests: 1,
+					numFailingTests: 2,
 					numPassingTests: 0,
 					numPendingTests: 0,
 					testFilePath: "/project/src/player.spec.ts",
-					testResults: [failedTest],
+					testResults: [
+						failedTest,
+						{
+							...failedTest,
+							fullName: "Player should stay healthy",
+							title: "should stay healthy",
+						},
+					],
 				},
 			],
 		});
@@ -587,7 +655,7 @@ describe("formatAgent snippets", () => {
 								tsPath: "src/player.spec.ts",
 							},
 						],
-						message: "src/player.spec.ts:10",
+						message: "fallback.spec.ts:999",
 					};
 				},
 				resolveDisplayPath: (testFilePath: string) => testFilePath,
@@ -599,6 +667,7 @@ describe("formatAgent snippets", () => {
 		expect(output).toContain("> 10| expect(health).toBe(100);");
 		expect(output).toContain("Luau  out/player.spec.luau:15");
 		expect(output).toContain("> 15| expect(health).toBe(100)");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should use relative paths in snippet labels when source mapper returns absolute paths", () => {
@@ -674,7 +743,7 @@ describe("formatAgent snippets", () => {
 	});
 
 	it("should show TS snippet only when 3-5 failures", () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const tsSnippet: SourceSnippet = {
 			failureLine: 10,
@@ -684,12 +753,16 @@ describe("formatAgent snippets", () => {
 				{ content: "});", num: 11 },
 			],
 		};
+		const luauSnippet: SourceSnippet = {
+			failureLine: 15,
+			lines: [{ content: "expect(x).toBe(2)", num: 15 }],
+		};
 
 		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
-			return snippetByExtension(options.filePath, { ts: tsSnippet });
+			return snippetByExtension(options.filePath, { luau: luauSnippet, ts: tsSnippet });
 		});
 
-		const failures = Array.from({ length: 3 }, (_, index) => {
+		const failures = Array.from({ length: 5 }, (_, index) => {
 			return createTestCase({
 				failureMessages: ["Expected: 1\nReceived: 2"],
 				status: "failed",
@@ -698,13 +771,13 @@ describe("formatAgent snippets", () => {
 		});
 
 		const result = createResult({
-			numFailedTests: 3,
+			numFailedTests: 5,
 			numPassedTests: 0,
-			numTotalTests: 3,
+			numTotalTests: 5,
 			success: false,
 			testResults: [
 				{
-					numFailingTests: 3,
+					numFailingTests: 5,
 					numPassingTests: 0,
 					numPendingTests: 0,
 					testFilePath: "/project/src/test.spec.ts",
@@ -737,10 +810,11 @@ describe("formatAgent snippets", () => {
 
 		expect(output).toContain("> 10| expect(x).toBe(2);");
 		expect(output).not.toContain("Luau");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should show no snippets when 6+ failures", () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const tsSnippet: SourceSnippet = {
 			failureLine: 10,
@@ -801,6 +875,7 @@ describe("formatAgent snippets", () => {
 
 		expect(output).not.toContain("expect(x).toBe(2)");
 		expect(output).not.toContain("Luau");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should show luau snippet when mapped location has no tsPath", () => {
@@ -862,7 +937,7 @@ describe("formatAgent snippets", () => {
 	});
 
 	it("should show no snippet when luau-only source file is unreadable", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		mockedGetSourceSnippet.mockReturnValue(undefined);
 
@@ -908,10 +983,11 @@ describe("formatAgent snippets", () => {
 		});
 
 		expect(output).not.toMatch(/> \d+\|/);
+		expect(output).not.toContain("Stryker");
 	});
 
 	it("should show no snippet when fallback source file is unreadable", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		mockedGetSourceSnippet.mockReturnValue(undefined);
 
@@ -947,6 +1023,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		expect(output).not.toMatch(/> \d+\|/);
+		expect(output).not.toContain("Stryker");
 	});
 
 	it("should show snippet from parsed location when no sourceMapper", () => {
@@ -1416,6 +1493,30 @@ describe("formatAgent snapshots", () => {
 	});
 });
 
+describe("formatAgent complete report contracts", () => {
+	it("should preserve representative failure reports exactly", () => {
+		expect.assertions(1);
+
+		const options: AgentOptions = {
+			gameOutput: "game.log",
+			gameOutputSize: 1025,
+			maxFailures: 10,
+			outputFile: "results.json",
+			outputFileSize: 1024,
+			rootDir: "/project",
+			typeErrorCount: 2,
+		};
+		const outputs = [
+			formatAgent(FAILING_RESULT, options),
+			formatAgent(SNAPSHOT_FAILING_RESULT, options),
+			formatAgent(MIXED_WITH_EXEC_ERROR_RESULT, options),
+			formatAgent(LOADSTRING_ERROR_RESULT, options),
+		];
+
+		expect(outputs).toMatchSnapshot();
+	});
+});
+
 describe(formatAgentMultiProject, () => {
 	const baseOptions: AgentOptions = { maxFailures: 10, rootDir: "/project" };
 
@@ -1463,7 +1564,7 @@ describe(formatAgentMultiProject, () => {
 	});
 
 	it("should show failure details across projects", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const output = formatAgentMultiProject(
 			[
@@ -1477,10 +1578,11 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toContain("▶ auth  1 failed (3 tests)");
 		expect(output).toContain("Failed Tests 2");
 		expect(output).toContain("1 failed | 1 passed (2)");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should show exec errors from multiple projects", () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const output = formatAgentMultiProject(
 			[
@@ -1493,10 +1595,11 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toContain("▶ broken  1 failed (0 tests)");
 		expect(output).toContain("Failed Tests 1");
 		expect(output).toContain("suite failed to run");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should show skipped files in project header and summary", () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const output = formatAgentMultiProject(
 			[
@@ -1509,10 +1612,11 @@ describe(formatAgentMultiProject, () => {
 		expect(output).toContain("▶ utils  1 passed | 2 skipped (12 tests)");
 		expect(output).toContain("2 passed | 2 skipped (4)");
 		expect(output).toContain("8 passed | 7 skipped (15)");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should show hints in multi-project output", () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const output = formatAgentMultiProject(
 			[
@@ -1524,6 +1628,7 @@ describe(formatAgentMultiProject, () => {
 
 		expect(output).toContain("View results.json for full Jest output");
 		expect(output).toContain("View game.log for Roblox game logs");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should omit passed count when no tests pass", () => {
@@ -1550,5 +1655,33 @@ describe(formatAgentMultiProject, () => {
 		});
 
 		expect(output).toContain("Type Errors  3 failed");
+	});
+
+	it("should format the complete multi-project report contract exactly", () => {
+		expect.assertions(2);
+
+		const output = formatAgentMultiProject(
+			[
+				{ displayName: "core", result: PASSING_RESULT },
+				{ displayName: "auth", result: FAILING_RESULT },
+				{ displayName: "broken", result: EXEC_ERROR_RESULT },
+				{ displayName: "utils", result: SKIPPED_RESULT },
+			],
+			{
+				bail: { notRun: 2, ran: 4 },
+				gameOutput: "game.log",
+				gameOutputSize: 1025,
+				maxFailures: 10,
+				outputFile: "results.json",
+				outputFileSize: 1024,
+				rootDir: "/project",
+				typeErrorCount: 1,
+			},
+		);
+
+		expect(output).toContain("Failed Tests 3");
+		// Preserve the exact machine-facing report while keeping the semantic
+		// assertion above useful when this contract changes intentionally.
+		expect(output).toMatchSnapshot();
 	});
 });

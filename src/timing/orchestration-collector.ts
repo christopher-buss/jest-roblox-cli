@@ -60,9 +60,13 @@ export interface TimingCollector {
  * second flush is a no-op.
  */
 export function createTimingCollector(options: CreateTimingCollectorOptions = {}): TimingCollector {
+	const isEnabled = options.enabled ?? process.env["TIMING"] !== undefined;
+	if (!isEnabled) {
+		return createNoopTimingCollector();
+	}
+
 	const clock = options.clock ?? { now: () => performance.now() };
 	const sink = options.sink ?? ((line: string) => void process.stderr.write(`${line}\n`));
-	const isEnabled = options.enabled ?? process.env["TIMING"] !== undefined;
 	// No enabled check here — a disabled collector never opens or records a
 	// span, so nothing ever reaches these callbacks.
 	const spans = createSpanTree(clock, {
@@ -73,18 +77,14 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 			sink(formatPhaseStart(root.name));
 		},
 	});
-	const { profile, profileAsync } = createProfilers(isEnabled, spans);
+	const { profile, profileAsync } = createProfilers(spans);
 
 	function record(name: string, elapsedMs: number): void {
-		if (!isEnabled) {
-			return;
-		}
-
 		spans.record(name, elapsedMs);
 	}
 
 	function flushTimingReport(): void {
-		if (!isEnabled || spans.roots.size === 0) {
+		if (spans.roots.size === 0) {
 			return;
 		}
 
@@ -94,22 +94,40 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 		spans.roots.clear();
 	}
 
-	return { enabled: isEnabled, flushTimingReport, profile, profileAsync, record };
+	return { enabled: true, flushTimingReport, profile, profileAsync, record };
+}
+
+function noOp(): void {
+	// Deliberately empty.
+}
+
+function passthroughProfile<T>(
+	_name: string,
+	func: () => T extends Promise<unknown> ? never : T,
+): T {
+	return func();
+}
+
+async function passthroughProfileAsync<T>(_name: string, func: () => Promise<T>): Promise<T> {
+	return func();
+}
+
+function createNoopTimingCollector(): TimingCollector {
+	return {
+		enabled: false,
+		flushTimingReport: noOp,
+		profile: passthroughProfile,
+		profileAsync: passthroughProfileAsync,
+		record: noOp,
+	};
 }
 
 /**
- * The two span-opening entry points. Both call `func` directly when the
- * collector is disabled, so a disabled run pays nothing beyond the extra call.
+ * The two span-opening entry points for an enabled collector. Disabled runs
+ * receive the direct-call implementations from `createNoopTimingCollector`.
  */
-function createProfilers(
-	isEnabled: boolean,
-	spans: SpanTree,
-): Pick<TimingCollector, "profile" | "profileAsync"> {
+function createProfilers(spans: SpanTree): Pick<TimingCollector, "profile" | "profileAsync"> {
 	function profile<T>(name: string, func: () => T extends Promise<unknown> ? never : T): T {
-		if (!isEnabled) {
-			return func();
-		}
-
 		const close = spans.open(name);
 		try {
 			return func();
@@ -119,10 +137,6 @@ function createProfilers(
 	}
 
 	async function profileAsync<T>(name: string, func: () => Promise<T>): Promise<T> {
-		if (!isEnabled) {
-			return func();
-		}
-
 		const close = spans.open(name);
 		try {
 			return await func();

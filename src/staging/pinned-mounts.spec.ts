@@ -2,6 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { type, type Type } from "arktype";
 import { vol } from "memfs";
+import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -203,6 +204,42 @@ describe(demotePinnedMounts, () => {
 		expect(project.globIgnorePaths).toStrictEqual([]);
 	});
 
+	it("should build an own-mount stand-in from the exact stable shadow contract", () => {
+		expect.assertions(2);
+
+		const model = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
+		seed({ [model]: serviceModelXml("StarterPlayerScripts") });
+		const project = demote(
+			stagedProject({ pkg: { $className: "Folder", Scripts: { $path: model } } }),
+		);
+		const normalizedSource = model.replaceAll("\\", "/");
+		const digest = crypto
+			.createHash("sha256")
+			.update(normalizedSource)
+			.digest("hex")
+			.slice(0, 8);
+		const expectedShadow = path.posix.join(
+			SHADOW_DIR.replaceAll("\\", "/"),
+			`StarterPlayerScripts-${digest}.rbxmx`,
+		);
+
+		expect(mountOf(project, "pkg", "Scripts")).toBe(expectedShadow);
+
+		const [projectFile, shadowFile] = vi.mocked(buildWithRojo).mock.calls[0]!;
+
+		expect({
+			project: JSON.parse(String(vol.readFileSync(projectFile, "utf-8"))),
+			shadowFile,
+		}).toStrictEqual({
+			project: {
+				name: "StarterPlayerScripts",
+				globIgnorePaths: [],
+				tree: { $path: normalizedSource },
+			},
+			shadowFile: expectedShadow,
+		});
+	});
+
 	it("should declare a stand-in child and ignore the original it replaces", () => {
 		expect.assertions(3);
 
@@ -268,7 +305,7 @@ describe(demotePinnedMounts, () => {
 	});
 
 	it("should fold the pinned class to Folder and drop the properties it carried", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const model = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
 		seed({ [model]: serviceModelXml("StarterPlayerScripts") });
@@ -279,6 +316,10 @@ describe(demotePinnedMounts, () => {
 		const shadow = String(
 			vol.readFileSync(String(mountOf(project, "pkg", "Scripts")), "utf-8"),
 		);
+
+		// This XML is the stand-in Rojo consumes. The digest guards its complete
+		// rewrite while the assertions below explain the semantics.
+		expect(shadow).toMatchSnapshot();
 
 		expect(shadow).toContain('<Item class="Folder" referent="0">');
 		expect(shadow).toContain('<string name="Name">StarterPlayerScripts</string>');
@@ -318,6 +359,33 @@ describe(demotePinnedMounts, () => {
 
 		// A consumer who worked around this bug by ignoring the file must not
 		// have an empty stand-in put back in its place.
+		expect(run(projectJson)).toBe(projectJson);
+	});
+
+	it("should match an absolute ignore path after removing the Windows drive letter", () => {
+		expect.assertions(1);
+
+		const model = path.join(ASSETS, "Workspace/Terrain.rbxmx");
+		seed({ [model]: serviceModelXml("Terrain") });
+		const normalizedWithoutDrive = model.replaceAll("\\", "/").replace(/^[A-Za-z]:/, "");
+		const projectJson = stagedProject(
+			{ pkg: { $className: "Folder", Terrain: { $path: model } } },
+			[normalizedWithoutDrive],
+		);
+
+		expect(run(projectJson)).toBe(projectJson);
+	});
+
+	it("should discard non-string globIgnorePaths entries", () => {
+		expect.assertions(1);
+
+		const model = path.join(ASSETS, "Workspace/Terrain.rbxmx");
+		seed({ [model]: serviceModelXml("Terrain") });
+		const projectJson = stagedProject(
+			{ pkg: { $className: "Folder", Terrain: { $path: model } } },
+			fromAny([false, 42, "**/Workspace/Terrain.rbxmx"]),
+		);
+
 		expect(run(projectJson)).toBe(projectJson);
 	});
 
@@ -382,6 +450,17 @@ describe(demotePinnedMounts, () => {
 		expect(mountOf(project, "pkg", "Workspace", "Terrain")).toContain("pinned-shadow");
 	});
 
+	it("should apply ignore globs to dot-directories", () => {
+		expect.assertions(1);
+
+		seed({
+			[path.join(ASSETS, "Workspace/.generated/Terrain.rbxmx")]: serviceModelXml("Terrain"),
+		});
+		const projectJson = directoryMount("Workspace", path.join(ASSETS, "Workspace"), ["**/*"]);
+
+		expect(run(projectJson)).toBe(projectJson);
+	});
+
 	it("should report a pinned class buried below the mount rather than rebuilding it", () => {
 		expect.assertions(1);
 
@@ -391,9 +470,17 @@ describe(demotePinnedMounts, () => {
 
 		// Such a file is in the wrong parent in the consumer's own place too, so
 		// no stand-in this module writes would make it load.
-		expect(() => {
-			return run(directoryMount("Workspace", path.join(ASSETS, "Workspace")));
-		}).toThrow(ConfigError);
+		const mountRoot = path.join(ASSETS, "Workspace");
+		const buried = path
+			.join(ASSETS, "Workspace/maps/lobby/Terrain.rbxmx")
+			.replaceAll("\\", "/");
+
+		expect(() => run(directoryMount("Workspace", path.join(ASSETS, "Workspace")))).toThrow(
+			new ConfigError(
+				`"${buried}" declares Terrain, which the engine parents only under one service, but it is nested inside the mount at "${mountRoot}" rather than sitting directly in it. ` +
+					"Roblox rejects it wherever that mount lands, so move the file up to the directory mounted at its own service, or drop it from the project with `globIgnorePaths`.",
+			),
+		);
 	});
 
 	it("should walk past a nested directory that holds no pinned class", () => {
@@ -407,6 +494,60 @@ describe(demotePinnedMounts, () => {
 		const project = demote(directoryMount("Workspace", path.join(ASSETS, "Workspace")));
 
 		expect(mountOf(project, "pkg", "Workspace", "Terrain")).toContain("pinned-shadow");
+	});
+
+	it("should leave an auto-mounted directory of ordinary files unchanged", () => {
+		expect.assertions(1);
+
+		seed({
+			[path.join(ASSETS, "Workspace/maps/config.model.json")]: '{"ClassName":"Model"}',
+			[path.join(ASSETS, "Workspace/maps/init.luau")]: "return {}",
+		});
+		const projectJson = directoryMount("Workspace", path.join(ASSETS, "Workspace"));
+
+		expect(run(projectJson)).toBe(projectJson);
+	});
+
+	it("should not treat an init.meta.json directory as a class descriptor", () => {
+		expect.assertions(1);
+
+		seed({ [path.join(ASSETS, "src/Child/init.meta.json/value.luau")]: "return 1" });
+		const projectJson = directoryMount("Workspace", path.join(ASSETS, "src"));
+
+		expect(run(projectJson)).toBe(projectJson);
+	});
+
+	it("should scan a shared mount path once", () => {
+		expect.assertions(1);
+
+		const shared = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
+		seed({ [shared]: serviceModelXml("StarterPlayerScripts") });
+		demote(
+			stagedProject({
+				pkg: {
+					$className: "Folder",
+					First: { $path: shared },
+					Second: { $path: shared },
+				},
+			}),
+		);
+
+		expect(buildWithRojo).toHaveBeenCalledOnce();
+	});
+
+	it("should not recurse into reserved dollar-prefixed metadata nodes", () => {
+		expect.assertions(1);
+
+		const model = path.join(ASSETS, "Terrain.rbxmx");
+		seed({ [model]: serviceModelXml("Terrain") });
+		const projectJson = stagedProject({
+			pkg: {
+				$className: "Folder",
+				$metadata: { $path: model },
+			},
+		});
+
+		expect(run(projectJson)).toBe(projectJson);
 	});
 
 	it.for([
