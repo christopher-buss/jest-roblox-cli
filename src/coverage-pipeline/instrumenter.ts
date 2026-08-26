@@ -155,24 +155,10 @@ function instrumentFile(
 	const coverageMap = timing.profile("map-build", () => buildCoverageMap(collectorResult));
 
 	timing.profile("write-shadow", () => {
-		// Deliberately not `atomicWrite`, which every other publisher in this
-		// package uses. The twin is written once per covered file, and on
-		// Windows the `renameSync` it adds costs more than the write it
-		// protects: ~4ms against ~1.6ms over a 381-file luau corpus, 12/12
-		// paired rounds, +253% on the write. Re-measure before changing this —
-		// `TIMING` reports the aggregate as `write-shadow`, and a filesystem
-		// that renames cheaply (any Linux CI runner) may well flip the answer.
-		//
-		// What that buys back is narrow rather than free. A run killed mid-
-		// write leaves a truncated twin, and the incremental gate tests both
-		// outputs for existence, not content (`computeSkipFiles` in
-		// shadow-root.ts). The cov-map that follows is the guard: it is
-		// atomic, so the kill window leaves no sidecar and the gate
-		// re-instruments. The gap is a source reverted to the hash the
-		// manifest already records — a branch switch after an interrupted run
-		// — where the stale sidecar survives and the twin is carried forward
-		// truncated. Closing it belongs in the gate, which would also catch
-		// corruption no write ordering here can.
+		// Not `atomicWrite` like the package's other publishers: on Windows the
+		// rename it adds per covered file roughly triples the cost of the write
+		// it protects. The atomic cov-map below covers the kill window that
+		// leaves. Re-measure the `write-shadow` span under `TIMING` first.
 		fs.mkdirSync(path.dirname(shadowFilePath), { recursive: true });
 		fs.writeFileSync(shadowFilePath, instrumentedSource);
 		writeCoverageMap(coverageMapOutputPath, coverageMap);
