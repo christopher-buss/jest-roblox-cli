@@ -5,6 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { collectProjectRoots, filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
@@ -566,7 +567,7 @@ describe(runMultiProjectAsync, () => {
 				testFiles: ["src/client/a.spec.ts"],
 			},
 			timing: recorded.timing,
-			version: "0.3.8",
+			version: packageJson.version,
 		});
 	});
 
