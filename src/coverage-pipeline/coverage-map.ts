@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import * as fs from "node:fs";
-import * as path from "node:path";
-import process from "node:process";
+
+import { atomicWrite } from "../utils/atomic-write.ts";
 
 export interface SourceLocation {
 	end: { column: number; line: number };
@@ -31,11 +31,7 @@ const coverageMapSchema = type({
 }).as<CoverageMap>();
 
 export function writeCoverageMap(filePath: string, map: CoverageMap): void {
-	const directory = path.dirname(filePath);
-	fs.mkdirSync(directory, { recursive: true });
-	const temporaryPath = path.join(directory, `${path.basename(filePath)}.tmp.${process.pid}`);
-	fs.writeFileSync(temporaryPath, JSON.stringify(map, undefined, "\t"));
-	fs.renameSync(temporaryPath, filePath);
+	atomicWrite(filePath, JSON.stringify(map, undefined, "\t"));
 }
 
 /**
