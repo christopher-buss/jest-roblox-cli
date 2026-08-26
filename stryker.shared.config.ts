@@ -5,10 +5,8 @@ import type { PartialStrykerOptions } from "@stryker-mutator/api/core";
 
 export const sharedConfig: PartialStrykerOptions = {
 	checkers: ["typescript"],
-	// Headroom, so a run holding the lock leaves the machine usable. Stryker
-	// resolves this against `os.availableParallelism()` in its own process and
-	// coordinates with nothing, so it caps a single run and nothing more — the
-	// `stryker-lock` shim is what stops two runs claiming 75% each.
+	// The adaptive launcher owns the machine-wide 75% budget and overrides this
+	// per run. This remains the safe standalone default for direct Stryker use.
 	concurrency: "75%",
 	coverageAnalysis: "perTest",
 	htmlReporter: { fileName: "reports/mutation/index.html" },
