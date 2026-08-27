@@ -53,6 +53,8 @@ words:
   - newproxy
   - ocale
   - pcall
+  - pnpmfile
+  - pnpmfiles
   - randomseed
   - rawequal
   - rawget

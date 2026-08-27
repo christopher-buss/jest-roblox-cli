@@ -365,54 +365,40 @@ describe(resolveWorkspacePackages, () => {
 	it("should enumerate once for every comma-separated --packages name", async () => {
 		expect.assertions(2);
 
-		const { listPackages } = await import("../workspace/package-resolver");
-		vi.mocked(listPackages).mockReturnValue([
-			{ name: "a", packageDirectory: "/workspace/packages/a" },
-			{ name: "b", packageDirectory: "/workspace/packages/b" },
-			{ name: "c", packageDirectory: "/workspace/packages/c" },
-		]);
+		const { resolvePackages } = await import("../workspace/package-resolver");
+		vi.mocked(resolvePackages).mockImplementation((root, names) => {
+			return names.map((name) => ({ name, packageDirectory: `${root}/packages/${name}` }));
+		});
 
 		const result = resolveWorkspacePackages(makeCli({ packages: "a,b,c" }), "/workspace", {
 			patterns: ["packages/*"],
 		});
 
 		expect(result.map((info) => info.name)).toStrictEqual(["a", "b", "c"]);
-		// One walk of the workspace root for the flag, not one per name.
-		expect(listPackages).toHaveBeenCalledExactlyOnceWith("/workspace", ["packages/*"]);
+		// One enumeration of the workspace for the flag, not one per name.
+		expect(resolvePackages).toHaveBeenCalledExactlyOnceWith("/workspace", ["a", "b", "c"], {
+			patterns: ["packages/*"],
+		});
 	});
 
 	it("should trim whitespace and drop empty entries before resolving", async () => {
 		expect.assertions(1);
 
-		const { listPackages } = await import("../workspace/package-resolver");
-		vi.mocked(listPackages).mockReturnValue([
-			{ name: "a", packageDirectory: "/workspace/packages/a" },
-			{ name: "b", packageDirectory: "/workspace/packages/b" },
-		]);
+		const { resolvePackages } = await import("../workspace/package-resolver");
+		vi.mocked(resolvePackages).mockImplementation((root, names) => {
+			return names.map((name) => ({ name, packageDirectory: `${root}/packages/${name}` }));
+		});
 
 		const result = resolveWorkspacePackages(makeCli({ packages: " a , , b " }), "/workspace");
 
 		expect(result.map((info) => info.name)).toStrictEqual(["a", "b"]);
 	});
 
-	it("should name the available packages when --packages misses", async () => {
-		expect.assertions(1);
-
-		const { listPackages } = await import("../workspace/package-resolver");
-		vi.mocked(listPackages).mockReturnValue([
-			{ name: "a", packageDirectory: "/workspace/packages/a" },
-		]);
-
-		expect(() => {
-			return resolveWorkspacePackages(makeCli({ packages: "z" }), "/workspace");
-		}).toThrowWithMessage(Error, 'Package "z" not found in workspace. Available: a');
-	});
-
 	it("should keep a named package an exclude glob would have dropped", async () => {
 		expect.assertions(2);
 
-		const { excludePackages, listPackages } = await import("../workspace/package-resolver");
-		vi.mocked(listPackages).mockReturnValue([
+		const { excludePackages, resolvePackages } = await import("../workspace/package-resolver");
+		vi.mocked(resolvePackages).mockReturnValue([
 			{ name: "a", packageDirectory: "/workspace/fixtures/a" },
 		]);
 

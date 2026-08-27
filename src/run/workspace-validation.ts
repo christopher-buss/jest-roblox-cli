@@ -9,8 +9,8 @@ import {
 	enumerateWorkspacePackages,
 	type EnumerationOptions,
 	excludePackages,
-	listPackages,
 	type PackageInfo,
+	resolvePackages,
 } from "../workspace/package-resolver.ts";
 
 interface WorkspaceValidationOk {
@@ -162,13 +162,12 @@ export function resolveWorkspacePackages(
 		return enumerateWorkspacePackages(workspaceRoot, { exclude, patterns });
 	}
 
-	// One enumeration for the whole flag rather than one per name: a
-	// `resolvePackage` per name walks the workspace root once per name.
+	// One enumeration for the whole flag rather than one per name, which is what
+	// `resolvePackages` being plural buys.
 	//
 	// No exclude here. Naming a package is asking for it, whatever a
 	// workspace-wide default says.
-	const candidates = listPackages(workspaceRoot, patterns);
-	return splitPackageNames(cli.packages).map((name) => pickPackage(candidates, name));
+	return resolvePackages(workspaceRoot, splitPackageNames(cli.packages), { patterns });
 }
 
 export function buildWorkspaceCredentials(
@@ -242,14 +241,4 @@ function hasNonEmptyPackages(packages: string): boolean {
  */
 function isStudioBackend(backend: Backend): boolean {
 	return backend === "studio" || backend === "studio-cli";
-}
-
-function pickPackage(candidates: Array<PackageInfo>, name: string): PackageInfo {
-	const found = candidates.find((candidate) => candidate.name === name);
-	if (found !== undefined) {
-		return found;
-	}
-
-	const names = candidates.map((candidate) => candidate.name).join(", ");
-	throw new Error(`Package "${name}" not found in workspace. Available: ${names}`);
 }

@@ -496,8 +496,12 @@ with `--workspace`.
 
 <!-- prettier-ignore -->
 > [!NOTE]
-> Package discovery uses one of two sources. By default it reads
-> `pnpm-workspace.yaml` at the workspace root. Alternatively, declare a
+> Package discovery uses one of two sources. By default it takes the pnpm
+> workspace: the project list pnpm records at install time, falling back to
+> `pnpm-workspace.yaml` when that record is missing or older than the file. Both
+> count the root `package.json` as a package whether or not `packages:` lists
+> `.`, matching pnpm. A package in a dot-directory resolves only from the
+> recorded list, so run `pnpm install` after adding one. Alternatively, declare a
 > `workspace` block in your jest config (see
 > [Workspaces without pnpm](#workspaces-without-pnpm)) to enumerate packages by
 > glob — this works in Luau-only, npm, and yarn repos. Either source honours `!`

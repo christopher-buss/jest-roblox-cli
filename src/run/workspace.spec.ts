@@ -21,7 +21,7 @@ import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
 import {
 	enumerateWorkspacePackages,
 	excludePackages,
-	listPackages,
+	resolvePackages,
 } from "../workspace/package-resolver.ts";
 import { runWorkspaceModeAsync } from "./workspace.ts";
 
@@ -120,7 +120,7 @@ function colorForPackageDirectory(cwd: string | undefined) {
 }
 
 /**
- * Every package name the specs below select, as `listPackages` would report.
+ * Every package name the specs below select, as the resolver would report.
  */
 const WORKSPACE_PACKAGES = ["@halcyon/bar", "@halcyon/foo", "a", "foo"];
 
@@ -130,7 +130,14 @@ function setupHappyPath() {
 	const enumerated = WORKSPACE_PACKAGES.map((name) => {
 		return { name, packageDirectory: path.posix.join("/repo/packages", name) };
 	});
-	vi.mocked(listPackages).mockReturnValue(enumerated);
+	vi.mocked(resolvePackages).mockImplementation((_, names) => {
+		return names.map((name) => {
+			return {
+				name,
+				packageDirectory: path.posix.join("/repo/packages", name),
+			};
+		});
+	});
 	vi.mocked(enumerateWorkspacePackages).mockReturnValue(enumerated);
 	vi.mocked(excludePackages).mockImplementation((packages) => packages);
 	vi.mocked(createOpenCloudBackend).mockReturnValue(fromAny(backend));
@@ -632,7 +639,9 @@ describe(runWorkspaceModeAsync, () => {
 
 			expect(result.validationExitCode).toBeUndefined();
 			expect(discoverWorkspaceRoot).not.toHaveBeenCalled();
-			expect(listPackages).toHaveBeenCalledWith("/ws", ["packages/*"]);
+			expect(resolvePackages).toHaveBeenCalledWith("/ws", ["foo"], {
+				patterns: ["packages/*"],
+			});
 		});
 
 		it("should drive the aggregate sink root off workspace.root", async () => {
@@ -719,7 +728,7 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			setupHappyPath();
-			vi.mocked(listPackages).mockImplementation(() => {
+			vi.mocked(resolvePackages).mockImplementation(() => {
 				throw new Error("Package missing");
 			});
 

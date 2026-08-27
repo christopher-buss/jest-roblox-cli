@@ -5,11 +5,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import type { PackageInfo } from "./package-resolver.ts";
 import {
 	enumerateWorkspacePackages,
 	excludePackages,
 	listPackages,
-	resolvePackage,
+	resolvePackages,
 } from "./package-resolver.ts";
 
 vi.mock(import("node:fs"), async () => {
@@ -18,8 +19,33 @@ vi.mock(import("node:fs"), async () => {
 });
 
 const ROOT = path.resolve("/repo");
+const STATE_PATH = path.join(ROOT, "node_modules/.pnpm-workspace-state-v1.json");
+const YAML_PATH = path.join(ROOT, "pnpm-workspace.yaml");
+const INSTALLED_AT = Date.UTC(2026, 0, 2);
+const BEFORE_INSTALL = new Date(Date.UTC(2026, 0, 1));
 
-describe(resolvePackage, () => {
+/** Seed a workspace whose snapshot postdates its `pnpm-workspace.yaml`. */
+function writeInstalledWorkspace(
+	files: Record<string, string>,
+	projects: Record<string, { name: string }>,
+): void {
+	vol.reset();
+	vol.fromJSON({
+		...files,
+		[STATE_PATH]: JSON.stringify({ lastValidatedTimestamp: INSTALLED_AT, projects }),
+		[YAML_PATH]: "packages:\n  - packages/*\n",
+	});
+	vol.utimesSync(YAML_PATH, BEFORE_INSTALL, BEFORE_INSTALL);
+}
+
+/** Resolve one name, for the cases that only ask about one. */
+function resolveOne(workspaceRoot: string, name: string, patterns?: Array<string>): PackageInfo {
+	const [info] = resolvePackages(workspaceRoot, [name], { patterns });
+	assert(info !== undefined);
+	return info;
+}
+
+describe(resolvePackages, () => {
 	it("should resolve a package by exact package.json.name match", () => {
 		expect.assertions(1);
 
@@ -30,7 +56,7 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		expect(resolvePackage(ROOT, "@halcyon/foo")).toStrictEqual({
+		expect(resolveOne(ROOT, "@halcyon/foo")).toStrictEqual({
 			name: "@halcyon/foo",
 			packageDirectory: path.join(ROOT, "packages/foo"),
 		});
@@ -47,7 +73,7 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		expect(() => resolvePackage(ROOT, "@halcyon/baz")).toThrowWithMessage(
+		expect(() => resolveOne(ROOT, "@halcyon/baz")).toThrowWithMessage(
 			Error,
 			'Package "@halcyon/baz" not found in workspace. Available: @halcyon/bar, @halcyon/foo',
 		);
@@ -64,7 +90,7 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - apps/*\n  - libs/*\n",
 		});
 
-		expect(resolvePackage(ROOT, "@halcyon/core").packageDirectory).toBe(
+		expect(resolveOne(ROOT, "@halcyon/core").packageDirectory).toBe(
 			path.join(ROOT, "libs/core"),
 		);
 	});
@@ -80,7 +106,7 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - .\n  - packages/*\n",
 		});
 
-		expect(resolvePackage(ROOT, "anime-rush")).toStrictEqual({
+		expect(resolveOne(ROOT, "anime-rush")).toStrictEqual({
 			name: "anime-rush",
 			packageDirectory: ROOT,
 		});
@@ -97,7 +123,7 @@ describe(resolvePackage, () => {
 				"packages:\n  - packages/*\n  - packages/foo\n",
 		});
 
-		expect(resolvePackage(ROOT, "@halcyon/foo").packageDirectory).toBe(
+		expect(resolveOne(ROOT, "@halcyon/foo").packageDirectory).toBe(
 			path.join(ROOT, "packages/foo"),
 		);
 	});
@@ -113,26 +139,130 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - .\n  - packages/*\n",
 		});
 
-		expect(() => resolvePackage(ROOT, "foo")).toThrow(
+		expect(() => resolveOne(ROOT, "foo")).toThrow(
 			/Duplicate package name.*foo.*\. and packages\/foo/s,
 		);
 	});
 
-	it("should ignore a blank pattern rather than let it select the root", () => {
+	it("should ignore a blank pattern rather than let it select a package nobody listed", () => {
 		expect.assertions(1);
 
 		vol.reset();
 
 		vol.fromJSON({
-			[path.join(ROOT, "package.json")]: '{"name":"anime-rush"}',
+			[path.join(ROOT, "libs/bar/package.json")]: '{"name":"@halcyon/bar"}',
 			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
 			[path.join(ROOT, "pnpm-workspace.yaml")]: 'packages:\n  - "   "\n  - packages/*\n',
 		});
 
-		expect(() => resolvePackage(ROOT, "anime-rush")).toThrowWithMessage(
+		expect(() => resolveOne(ROOT, "@halcyon/bar")).toThrowWithMessage(
 			Error,
-			'Package "anime-rush" not found in workspace. Available: @halcyon/foo',
+			'Package "@halcyon/bar" not found in workspace. Available: @halcyon/foo',
 		);
+	});
+
+	// pnpm reads the root manifest as a workspace project whether or not
+	// `packages:` lists `.`, so a repo that omits it still runs its root tests.
+	it("should resolve the workspace root even when packages: does not list it", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "package.json")]: '{"name":"halcyon"}',
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		expect(resolveOne(ROOT, "halcyon")).toStrictEqual({
+			name: "halcyon",
+			packageDirectory: ROOT,
+		});
+	});
+
+	it("should drop packages an exclusion pattern removes", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "pnpm-workspace.yaml")]:
+				"packages:\n  - tools/**/*\n  - '!tools/*/tests/*'\n",
+			[path.join(ROOT, "tools/cli/package.json")]: '{"name":"@halcyon/cli"}',
+			[path.join(ROOT, "tools/cli/tests/fixture/package.json")]: '{"name":"@test/fixture"}',
+		});
+
+		expect(() => resolveOne(ROOT, "@test/fixture")).toThrowWithMessage(
+			Error,
+			'Package "@test/fixture" not found in workspace. Available: @halcyon/cli',
+		);
+	});
+
+	it("should apply an exclusion that reaches through a deep wildcard", () => {
+		expect.assertions(2);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "packages/foo/out-tsc/vendored/package.json")]:
+				'{"name":"@halcyon/vendored"}',
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]:
+				"packages:\n  - packages/**/*\n  - '!**/out-tsc/**'\n",
+		});
+
+		expect(resolveOne(ROOT, "@halcyon/foo").packageDirectory).toBe(
+			path.join(ROOT, "packages/foo"),
+		);
+		expect(() => resolveOne(ROOT, "@halcyon/vendored")).toThrow(/not found/);
+	});
+
+	// Verified against pnpm 11.17 (`pnpm ls -r --depth -1`): pnpm does not trim
+	// its `packages:` entries, so neither of these is an exclusion — each is a
+	// positive pattern that matches nothing, and the package survives.
+	it("should read a padded exclusion as a pattern that matches nothing", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]:
+				'packages:\n  - packages/*\n  - " !packages/foo "\n',
+		});
+
+		expect(resolveOne(ROOT, "@halcyon/foo").packageDirectory).toBe(
+			path.join(ROOT, "packages/foo"),
+		);
+	});
+
+	it("should read an exclamation mark followed by a space as no exclusion", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]:
+				'packages:\n  - packages/*\n  - "! packages/foo"\n',
+		});
+
+		expect(resolveOne(ROOT, "@halcyon/foo").packageDirectory).toBe(
+			path.join(ROOT, "packages/foo"),
+		);
+	});
+
+	it("should ignore a bare exclamation mark rather than let it drop the root", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "package.json")]: '{"name":"halcyon"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: 'packages:\n  - "!"\n',
+		});
+
+		expect(resolveOne(ROOT, "halcyon").packageDirectory).toBe(ROOT);
 	});
 
 	it("should throw when pnpm-workspace.yaml has no packages field", () => {
@@ -144,7 +274,7 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "autoInstallPeers: true\n",
 		});
 
-		expect(() => resolvePackage(ROOT, "@halcyon/foo")).toThrowWithMessage(
+		expect(() => resolveOne(ROOT, "@halcyon/foo")).toThrowWithMessage(
 			Error,
 			'Package "@halcyon/foo" not found in workspace. Available: ',
 		);
@@ -161,7 +291,7 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		expect(resolvePackage(ROOT, "@halcyon/bar").packageDirectory).toBe(
+		expect(resolveOne(ROOT, "@halcyon/bar").packageDirectory).toBe(
 			path.join(ROOT, "packages/bar"),
 		);
 	});
@@ -178,7 +308,7 @@ describe(resolvePackage, () => {
 
 		let caught: unknown;
 		try {
-			resolvePackage(ROOT, "@halcyon/foo");
+			resolveOne(ROOT, "@halcyon/foo");
 		} catch (err) {
 			caught = err;
 		}
@@ -202,7 +332,7 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		expect(resolvePackage(ROOT, "@halcyon/bar").packageDirectory).toBe(
+		expect(resolveOne(ROOT, "@halcyon/bar").packageDirectory).toBe(
 			path.join(ROOT, "packages/bar"),
 		);
 	});
@@ -218,7 +348,7 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
 
-		expect(resolvePackage(ROOT, "@halcyon/foo").packageDirectory).toBe(
+		expect(resolveOne(ROOT, "@halcyon/foo").packageDirectory).toBe(
 			path.join(ROOT, "packages/foo"),
 		);
 	});
@@ -233,13 +363,169 @@ describe(resolvePackage, () => {
 			[path.join(ROOT, "turbo.json")]: "{}",
 		});
 
-		expect(() => resolvePackage(ROOT, "@halcyon/foo")).toThrowWithMessage(
+		expect(() => resolveOne(ROOT, "@halcyon/foo")).toThrowWithMessage(
 			Error,
 			"Workspace mode requires either a `workspace.packages` glob list in your " +
 				"jest config or a pnpm-workspace.yaml at the workspace root. " +
 				"Use `workspace.packages` (with `--workspace-root` to run from outside " +
 				"a package) for Luau-only, npm, or yarn repos.",
 		);
+	});
+
+	it("should resolve several names in the order they were asked for", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "packages/bar/package.json")]: '{"name":"@halcyon/bar"}',
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		expect(resolvePackages(ROOT, ["@halcyon/foo", "@halcyon/bar"])).toStrictEqual([
+			{ name: "@halcyon/foo", packageDirectory: path.join(ROOT, "packages/foo") },
+			{ name: "@halcyon/bar", packageDirectory: path.join(ROOT, "packages/bar") },
+		]);
+	});
+
+	it("should name the missing package when one of several does not resolve", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		expect(() => resolvePackages(ROOT, ["@halcyon/foo", "@halcyon/baz"])).toThrowWithMessage(
+			Error,
+			'Package "@halcyon/baz" not found in workspace. Available: @halcyon/foo',
+		);
+	});
+
+	describe("pnpm workspace state", () => {
+		// The snapshot names a directory that holds no package.json, so a
+		// walk could not produce this answer -- only the snapshot can.
+		it("should answer from the snapshot rather than the filesystem", () => {
+			expect.assertions(1);
+
+			writeInstalledWorkspace(
+				{ [path.join(ROOT, "packages/ghost/README.md")]: "no manifest here" },
+				{ [path.join(ROOT, "packages/ghost")]: { name: "@halcyon/ghost" } },
+			);
+
+			expect(resolveOne(ROOT, "@halcyon/ghost")).toStrictEqual({
+				name: "@halcyon/ghost",
+				packageDirectory: path.join(ROOT, "packages/ghost"),
+			});
+		});
+
+		it("should list from the walk when no snapshot exists", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+				[YAML_PATH]: "packages:\n  - packages/*\n",
+			});
+
+			expect(listPackages(ROOT)).toStrictEqual([
+				{ name: "@halcyon/foo", packageDirectory: path.join(ROOT, "packages/foo") },
+			]);
+		});
+
+		it("should list the dot-directory packages a walk cannot see", () => {
+			expect.assertions(1);
+
+			writeInstalledWorkspace({}, { [path.join(ROOT, ".codex")]: { name: "halcyon-codex" } });
+
+			expect(listPackages(ROOT)).toStrictEqual([
+				{ name: "halcyon-codex", packageDirectory: path.join(ROOT, ".codex") },
+			]);
+		});
+
+		// A package added since the last install is real but unrecorded, so a
+		// miss must reach the filesystem before it becomes an error.
+		it("should walk the filesystem when a name misses the snapshot", () => {
+			expect.assertions(1);
+
+			writeInstalledWorkspace(
+				{
+					[path.join(ROOT, "packages/bar/package.json")]: '{"name":"@halcyon/bar"}',
+					[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+				},
+				{ [path.join(ROOT, "packages/foo")]: { name: "@halcyon/foo" } },
+			);
+
+			expect(resolveOne(ROOT, "@halcyon/bar").packageDirectory).toBe(
+				path.join(ROOT, "packages/bar"),
+			);
+		});
+
+		it("should resolve a batch where only some names reach the snapshot", () => {
+			expect.assertions(1);
+
+			writeInstalledWorkspace(
+				{
+					[path.join(ROOT, "packages/bar/package.json")]: '{"name":"@halcyon/bar"}',
+					[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
+				},
+				{ [path.join(ROOT, "packages/foo")]: { name: "@halcyon/foo" } },
+			);
+
+			expect(resolvePackages(ROOT, ["@halcyon/foo", "@halcyon/bar"])).toStrictEqual([
+				{ name: "@halcyon/foo", packageDirectory: path.join(ROOT, "packages/foo") },
+				{ name: "@halcyon/bar", packageDirectory: path.join(ROOT, "packages/bar") },
+			]);
+		});
+
+		it("should report the walked names when a miss survives the fallback", () => {
+			expect.assertions(1);
+
+			writeInstalledWorkspace(
+				{ [path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}' },
+				{ [path.join(ROOT, "packages/foo")]: { name: "@halcyon/foo" } },
+			);
+
+			expect(() => resolveOne(ROOT, "@halcyon/baz")).toThrowWithMessage(
+				Error,
+				'Package "@halcyon/baz" not found in workspace. Available: @halcyon/foo',
+			);
+		});
+
+		// The snapshot is machine-written, but two packages can still share a
+		// name in it, and the resolver has no way to pick between them.
+		it("should reject two snapshot projects that share a name", () => {
+			expect.assertions(1);
+
+			writeInstalledWorkspace(
+				{},
+				{
+					[path.join(ROOT, "libs/foo")]: { name: "@halcyon/foo" },
+					[path.join(ROOT, "packages/foo")]: { name: "@halcyon/foo" },
+				},
+			);
+
+			expect(() => resolveOne(ROOT, "@halcyon/foo")).toThrowWithMessage(
+				Error,
+				'Duplicate package name "@halcyon/foo" from libs/foo and packages/foo. ' +
+					"Add a package.json with a unique `name`, or rename a directory.",
+			);
+		});
+
+		it("should ignore the snapshot when workspace.packages patterns are given", () => {
+			expect.assertions(1);
+
+			writeInstalledWorkspace(
+				{ [path.join(ROOT, "libs/bar/jest.config.ts")]: "" },
+				{ [path.join(ROOT, "packages/ghost")]: { name: "@halcyon/ghost" } },
+			);
+
+			expect(() => resolveOne(ROOT, "@halcyon/ghost", ["libs/*"])).toThrow(/not found/);
+		});
 	});
 
 	describe("workspace.packages globs", () => {
@@ -253,7 +539,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
 			});
 
-			const info = resolvePackage(ROOT, "@halcyon/foo", ["packages/*"]);
+			const info = resolveOne(ROOT, "@halcyon/foo", ["packages/*"]);
 
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 		});
@@ -269,7 +555,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
 			});
 
-			const info = resolvePackage(ROOT, "anime-rush", [".", "packages/*"]);
+			const info = resolveOne(ROOT, "anime-rush", [".", "packages/*"]);
 
 			expect(info.packageDirectory).toBe(ROOT);
 		});
@@ -284,7 +570,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
 			});
 
-			const info = resolvePackage(ROOT, "foo", ["packages/*"]);
+			const info = resolveOne(ROOT, "foo", ["packages/*"]);
 
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 		});
@@ -299,7 +585,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
 			});
 
-			expect(() => resolvePackage(ROOT, "foo", ["packages/*"])).toThrow(/not found/);
+			expect(() => resolveOne(ROOT, "foo", ["packages/*"])).toThrow(/not found/);
 		});
 
 		it("should skip directories without a jest.config", () => {
@@ -312,7 +598,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/junk/README.md")]: "scratch",
 			});
 
-			const info = resolvePackage(ROOT, "foo", ["packages/*"]);
+			const info = resolveOne(ROOT, "foo", ["packages/*"]);
 
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 		});
@@ -327,13 +613,13 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
 			});
 
-			const info = resolvePackage(ROOT, "foo", ["packages/*"]);
+			const info = resolveOne(ROOT, "foo", ["packages/*"]);
 
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 
 			vol.unlinkSync(path.join(ROOT, "packages/foo/jest.config.ts"));
 
-			expect(() => resolvePackage(ROOT, "foo", ["packages/*"])).toThrowWithMessage(
+			expect(() => resolveOne(ROOT, "foo", ["packages/*"])).toThrowWithMessage(
 				Error,
 				'Package "foo" not found in workspace. Available: ',
 			);
@@ -347,7 +633,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/not-jest.config.ts")]: "",
 			});
 
-			expect(() => resolvePackage(ROOT, "foo", ["packages/*"])).toThrowWithMessage(
+			expect(() => resolveOne(ROOT, "foo", ["packages/*"])).toThrowWithMessage(
 				Error,
 				'Package "foo" not found in workspace. Available: ',
 			);
@@ -365,10 +651,10 @@ describe(resolvePackage, () => {
 
 			const patterns = ["apps/*", "libs/*"];
 
-			expect(resolvePackage(ROOT, "web", patterns).packageDirectory).toBe(
+			expect(resolveOne(ROOT, "web", patterns).packageDirectory).toBe(
 				path.join(ROOT, "apps/web"),
 			);
-			expect(resolvePackage(ROOT, "core", patterns).packageDirectory).toBe(
+			expect(resolveOne(ROOT, "core", patterns).packageDirectory).toBe(
 				path.join(ROOT, "libs/core"),
 			);
 		});
@@ -383,7 +669,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
 			});
 
-			expect(() => resolvePackage(ROOT, "foo", ["libs/*", "packages/*"])).toThrow(
+			expect(() => resolveOne(ROOT, "foo", ["libs/*", "packages/*"])).toThrow(
 				/Duplicate package name.*foo.*libs\/foo.*packages\/foo/s,
 			);
 		});
@@ -399,7 +685,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
 			});
 
-			expect(() => resolvePackage(ROOT, "foo", [".", "packages/*"])).toThrow(
+			expect(() => resolveOne(ROOT, "foo", [".", "packages/*"])).toThrow(
 				/Duplicate package name.*foo.*\. and packages\/foo/s,
 			);
 		});
@@ -416,7 +702,48 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 			});
 
-			expect(() => resolvePackage(ROOT, "@halcyon/foo", ["libs/*"])).toThrow(/not found/);
+			expect(() => resolveOne(ROOT, "@halcyon/foo", ["libs/*"])).toThrow(/not found/);
+		});
+
+		// `matchUnderPatterns` serves both sources, so an exclusion means the
+		// same thing in `workspace.packages` as it does in `packages:`.
+		it("should drop packages an exclusion pattern removes", () => {
+			expect.assertions(2);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[path.join(ROOT, "tools/cli/jest.config.ts")]: "",
+				[path.join(ROOT, "tools/cli/tests/fixture/jest.config.ts")]: "",
+			});
+
+			const patterns = ["tools/**/*", "!tools/*/tests/*"];
+
+			expect(resolveOne(ROOT, "cli", patterns).packageDirectory).toBe(
+				path.join(ROOT, "tools/cli"),
+			);
+			expect(() => resolveOne(ROOT, "fixture", patterns)).toThrow(/not found/);
+		});
+
+		// The pnpm path adds the root whatever the patterns say, so a blank entry
+		// selecting it there is invisible. Here it is not: nothing else puts the
+		// root in the list, so an unguarded blank entry hands back a package the
+		// config never named.
+		it("should ignore a blank pattern rather than let it select the root", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[path.join(ROOT, "jest.config.ts")]: "",
+				[path.join(ROOT, "package.json")]: '{"name":"halcyon"}',
+				[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
+			});
+
+			expect(() => resolveOne(ROOT, "halcyon", ["", "packages/*"])).toThrowWithMessage(
+				Error,
+				'Package "halcyon" not found in workspace. Available: foo',
+			);
 		});
 
 		it("should dedupe a directory with multiple jest.config files", () => {
@@ -429,7 +756,7 @@ describe(resolvePackage, () => {
 				[path.join(ROOT, "packages/foo/jest.config.yaml")]: "",
 			});
 
-			const info = resolvePackage(ROOT, "foo", ["packages/*"]);
+			const info = resolveOne(ROOT, "foo", ["packages/*"]);
 
 			expect(info.packageDirectory).toBe(path.join(ROOT, "packages/foo"));
 		});
@@ -524,7 +851,7 @@ describe(enumerateWorkspacePackages, () => {
 
 		// Enumeration skips it; naming it keeps failing downstream on the
 		// missing config rather than reading as a package that does not exist.
-		expect(resolvePackage(ROOT, "@halcyon/bar").packageDirectory).toBe(
+		expect(resolveOne(ROOT, "@halcyon/bar").packageDirectory).toBe(
 			path.join(ROOT, "packages/bar"),
 		);
 	});
@@ -660,7 +987,10 @@ describe("workspace enumeration edge cases", () => {
 		}).toThrow(/Duplicate package name.*core/s);
 	});
 
-	it("should skip a blank pnpm pattern rather than selecting the root", () => {
+	// Asserted through the config-glob source, which has no floor. The pnpm
+	// source seats the workspace root whatever the patterns say, so the root
+	// comes back there whether the guard ran or not.
+	it("should skip a blank pattern rather than selecting the root", () => {
 		expect.assertions(1);
 
 		vol.reset();
@@ -670,12 +1000,13 @@ describe("workspace enumeration edge cases", () => {
 			[path.join(ROOT, "package.json")]: '{"name":"repo-root"}',
 			[path.join(ROOT, "packages/foo/jest.config.ts")]: "",
 			[path.join(ROOT, "packages/foo/package.json")]: '{"name":"@halcyon/foo"}',
-			[path.join(ROOT, "pnpm-workspace.yaml")]: 'packages:\n  - "  "\n  - packages/*\n',
 		});
 
-		expect(enumerateWorkspacePackages(ROOT).map((info) => info.name)).toStrictEqual([
-			"@halcyon/foo",
-		]);
+		expect(
+			enumerateWorkspacePackages(ROOT, { patterns: ["  ", "packages/*"] }).map(
+				(info) => info.name,
+			),
+		).toStrictEqual(["@halcyon/foo"]);
 	});
 
 	it("should find a jest.config beside a manifest at any depth", () => {
