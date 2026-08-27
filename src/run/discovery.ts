@@ -53,8 +53,10 @@ export function discoverTestFiles(
 
 	const allFiles: Array<string> = [];
 	// Every pattern walks the same rootDir, so one cache across the loop turns
-	// a walk per testMatch entry into a single walk.
-	const globCache = createGlobCache();
+	// a walk per testMatch entry into a single walk. Declaring the patterns up
+	// front lets that walk keep only the files a `testMatch` can name, rather
+	// than every file under `rootDir` — build output included.
+	const globCache = createGlobCache(config.testMatch);
 	for (const pattern of config.testMatch) {
 		const matches = globSync(pattern, { cache: globCache, cwd: config.rootDir });
 		allFiles.push(...matches);

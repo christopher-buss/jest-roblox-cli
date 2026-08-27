@@ -2,14 +2,28 @@ import { parseYAML } from "confbox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { createGlobCache, globSync } from "../utils/glob.ts";
+import { createGlobCache, type GlobCache, globSync, matchesGlobPattern } from "../utils/glob.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 const JEST_CONFIG_MARKER = /^jest\.config\.[^.]+$/;
 
+const PACKAGE_JSON_LEAF = "package.json";
+const JEST_CONFIG_LEAF = "jest.config.*";
+
 export interface PackageInfo {
 	name: string;
 	packageDirectory: string;
+}
+
+/** See {@link enumerateWorkspacePackages}. */
+export interface EnumerationOptions {
+	/**
+	 * Globs, relative to the workspace root, naming package directories
+	 * workspace mode must never select on its own.
+	 */
+	exclude?: Array<string> | undefined;
+	/** `workspace.packages`; omit to read `pnpm-workspace.yaml` instead. */
+	patterns?: Array<string> | undefined;
 }
 
 interface PnpmWorkspace {
@@ -37,11 +51,67 @@ export function readPackageJsonName(packageJsonPath: string): string | undefined
  * Without `patterns`, fall back to reading `pnpm-workspace.yaml`.
  */
 export function listPackages(workspaceRoot: string, patterns?: Array<string>): Array<PackageInfo> {
-	if (patterns !== undefined) {
-		return enumerateFromGlobs(workspaceRoot, patterns);
+	const packages =
+		patterns !== undefined
+			? enumerateFromGlobs(workspaceRoot, patterns)
+			: listPnpmPackages(workspaceRoot);
+	assertNoDuplicateNames(packages, workspaceRoot);
+	return packages;
+}
+
+/**
+ * Drop the packages an `exclude` glob names, matching each glob against the
+ * package directory relative to the workspace root.
+ *
+ * Exported for the `--affected-since` source, which never reaches
+ * {@link enumerateWorkspacePackages}: turbo and nx hand back directories
+ * directly, and an excluded package that changed is still excluded.
+ */
+export function excludePackages(
+	packages: Array<PackageInfo>,
+	workspaceRoot: string,
+	exclude: Array<string> | undefined,
+): Array<PackageInfo> {
+	if (exclude === undefined || exclude.length === 0) {
+		return packages;
 	}
 
-	return listPnpmPackages(workspaceRoot);
+	return packages.filter((info) => {
+		const relative = normalizeWindowsPath(path.relative(workspaceRoot, info.packageDirectory));
+		return exclude.every((pattern) => !matchesGlobPattern(relative, pattern));
+	});
+}
+
+/**
+ * Every package a workspace run can select on its own: it carries a
+ * `jest.config.*` and no `exclude` glob names it.
+ *
+ * Distinct from {@link listPackages}, which answers "which packages exist" for
+ * a name lookup. A package with no jest config is not a candidate here — a bare
+ * `--workspace` would otherwise pick up every library in the repo — but naming
+ * it through `--packages` still resolves, so the run fails on the missing
+ * config rather than on a package that reads as absent.
+ */
+export function enumerateWorkspacePackages(
+	workspaceRoot: string,
+	{ exclude, patterns }: EnumerationOptions = {},
+): Array<PackageInfo> {
+	// Both filters sit here, downstream of the fork, so a source answers
+	// only "which packages exist" and never gets a say in which of them a run
+	// may select. A source that applied its own gate would make the exclude
+	// depend on which one answered — and adding a third (a package manager's
+	// install-time snapshot, say) would silently skip both.
+	const cache = createGlobCache([PACKAGE_JSON_LEAF, JEST_CONFIG_LEAF]);
+	const candidates =
+		patterns !== undefined
+			? enumerateFromGlobs(workspaceRoot, patterns, cache)
+			: listPnpmPackages(workspaceRoot, cache);
+	const testable = withJestConfig(candidates, workspaceRoot, cache);
+	// After the exclude, not before: an excluded fixture sharing a name with a
+	// real package would otherwise fail the run it was excluded from.
+	const selected = excludePackages(testable, workspaceRoot, exclude);
+	assertNoDuplicateNames(selected, workspaceRoot);
+	return selected;
 }
 
 export function resolvePackage(
@@ -69,33 +139,6 @@ function parsePackageJson(packageJsonPath: string): JSONValue {
 	}
 }
 
-/**
- * Every path under `workspaceRoot` that `patterns` select with `leaf`
- * appended.
- */
-function matchUnderPatterns(
-	workspaceRoot: string,
-	patterns: Array<string>,
-	leaf: string,
-): Array<string> {
-	// One walk of the workspace root serves every pattern.
-	const globCache = createGlobCache();
-	const matches: Array<string> = [];
-	for (const pattern of patterns) {
-		// `path.posix.join` reads a blank entry as the root, which would
-		// select a package nobody asked for.
-		if (pattern.trim() === "") {
-			continue;
-		}
-
-		matches.push(
-			...globSync(path.posix.join(pattern, leaf), { cache: globCache, cwd: workspaceRoot }),
-		);
-	}
-
-	return matches;
-}
-
 function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: string): void {
 	const byName = new Map<string, Array<string>>();
 	for (const packageInfo of packages) {
@@ -120,7 +163,63 @@ function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: str
 	}
 }
 
-function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
+/**
+ * Every path under `workspaceRoot` that `patterns` select with `leaf`
+ * appended, minus the ones a `!` pattern excludes.
+ *
+ * `!` carries pnpm's meaning, because `pnpm-workspace.yaml` is one of the two
+ * sources read here and its entries are the user's, not ours: a repo that keeps
+ * its fixtures out of the package manager's workspace has said so already, and
+ * enumerating them anyway would contradict a file we claim to read.
+ */
+function matchUnderPatterns(
+	workspaceRoot: string,
+	patterns: Array<string>,
+	leaf: string,
+	cache?: GlobCache,
+): Array<string> {
+	// One walk of the workspace root serves every pattern, and the leaves it was
+	// declared for are the only files it keeps — one per package rather than
+	// every file in the checkout.
+	const globCache = cache ?? createGlobCache([leaf]);
+	// `path.posix.join` reads a blank entry as the root, which would select a
+	// package nobody asked for.
+	const named = patterns.filter((pattern) => pattern.trim() !== "");
+
+	// The leaf goes onto a negation exactly as it goes onto a positive pattern,
+	// so a `!` glob filters manifest paths rather than directories. That is
+	// pnpm's own rule (`normalizePatterns` appends the manifest name to every
+	// entry) and it is not equivalent: `**` collapses to zero segments before
+	// the leaf, so `!**/out-tsc/**` drops a package whose directory *is*
+	// `out-tsc`, and `!packages/*/**` drops `packages/a` — neither of which a
+	// directory match catches.
+	//
+	// Order-independent, unlike pnpm's sequential application: a negation that
+	// precedes the pattern it narrows still applies, which is how every
+	// pnpm-workspace.yaml in the wild is written anyway.
+	const excluded = named
+		.filter((pattern) => pattern.startsWith("!"))
+		.map((pattern) => pattern.slice(1))
+		// A bare `!` leaves nothing to exclude, and joining the leaf onto an
+		// empty body yields the leaf itself — which is the workspace root's own
+		// manifest, so the entry would delete the root rather than no-op.
+		.filter((body) => body !== "")
+		.map((body) => path.posix.join(body, leaf));
+	const matches = named
+		.filter((pattern) => !pattern.startsWith("!"))
+		.flatMap((pattern) => {
+			return globSync(path.posix.join(pattern, leaf), {
+				cache: globCache,
+				cwd: workspaceRoot,
+			});
+		});
+
+	return matches.filter((match) => {
+		return excluded.every((pattern) => !matchesGlobPattern(match, pattern));
+	});
+}
+
+function listPnpmPackages(workspaceRoot: string, cache?: GlobCache): Array<PackageInfo> {
 	const yamlPath = path.join(workspaceRoot, "pnpm-workspace.yaml");
 	if (!fs.existsSync(yamlPath)) {
 		throw new Error(
@@ -136,7 +235,7 @@ function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
 
 	const packages: Array<PackageInfo> = [];
 	const seenDirectories = new Set<string>();
-	for (const match of matchUnderPatterns(workspaceRoot, patterns, "package.json")) {
+	for (const match of matchUnderPatterns(workspaceRoot, patterns, PACKAGE_JSON_LEAF, cache)) {
 		const packageJsonPath = path.join(workspaceRoot, match);
 		const packageDirectory = path.dirname(packageJsonPath);
 		// Overlapping patterns — `packages/*` beside `packages/foo` — select
@@ -152,7 +251,6 @@ function listPnpmPackages(workspaceRoot: string): Array<PackageInfo> {
 		}
 	}
 
-	assertNoDuplicateNames(packages, workspaceRoot);
 	return packages;
 }
 
@@ -182,17 +280,46 @@ function collectPackagesFromMatches(
 	}
 }
 
-function enumerateFromGlobs(workspaceRoot: string, patterns: Array<string>): Array<PackageInfo> {
+function enumerateFromGlobs(
+	workspaceRoot: string,
+	patterns: Array<string>,
+	cache?: GlobCache,
+): Array<PackageInfo> {
 	const seenDirectories = new Set<string>();
 	const packages: Array<PackageInfo> = [];
 
 	collectPackagesFromMatches(
-		matchUnderPatterns(workspaceRoot, patterns, "jest.config.*"),
+		matchUnderPatterns(workspaceRoot, patterns, JEST_CONFIG_LEAF, cache),
 		workspaceRoot,
 		seenDirectories,
 		packages,
 	);
 
-	assertNoDuplicateNames(packages, workspaceRoot);
 	return packages;
+}
+
+/**
+ * The packages carrying a `jest.config.*`, whichever source found them.
+ *
+ * A package manager's list answers "what does it install", which in a repo with
+ * libraries and fixtures is a much wider set than "what has tests" — a bare
+ * `--workspace` would otherwise select every library in the repo.
+ *
+ * One sweep of the whole root rather than a `readdir` per package, riding the
+ * walk that found the manifests: `cache` is declared for both leaves, so the
+ * configs cost no filesystem access of their own.
+ */
+function withJestConfig(
+	packages: Array<PackageInfo>,
+	workspaceRoot: string,
+	cache: GlobCache,
+): Array<PackageInfo> {
+	const configDirectories = new Set(
+		matchUnderPatterns(workspaceRoot, ["**"], JEST_CONFIG_LEAF, cache)
+			// The glob accepts the dots a `jest.config.spec.ts` carries; the
+			// marker is what holds the leaf to a single suffix.
+			.filter((match) => JEST_CONFIG_MARKER.test(path.basename(match)))
+			.map((match) => path.dirname(path.join(workspaceRoot, match))),
+	);
+	return packages.filter((info) => configDirectories.has(info.packageDirectory));
 }

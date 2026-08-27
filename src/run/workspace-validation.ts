@@ -5,7 +5,13 @@ import assert from "node:assert";
 import { isExplicitMultiShard } from "../backends/interface.ts";
 import type { Backend, CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
-import { type PackageInfo, resolvePackage } from "../workspace/package-resolver.ts";
+import {
+	enumerateWorkspacePackages,
+	type EnumerationOptions,
+	excludePackages,
+	listPackages,
+	type PackageInfo,
+} from "../workspace/package-resolver.ts";
 
 interface WorkspaceValidationOk {
 	ok: true;
@@ -74,12 +80,11 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
 		return vmParallelError;
 	}
 
-	if (cli.affectedSince === undefined && !hasNonEmptyPackages(cli.packages)) {
-		return {
-			exitCode: 2,
-			message: "Error: --workspace requires --packages or --affected-since.\n",
-			ok: false,
-		};
+	// A bare `--workspace` means every package, so an empty `--packages` cannot
+	// fall through to it: the user narrowed the run and then named nothing, and
+	// running the whole workspace is the one answer they did not ask for.
+	if (cli.packages !== undefined && !hasNonEmptyPackages(cli.packages)) {
+		return { exitCode: 2, message: "Error: --packages names no packages.\n", ok: false };
 	}
 
 	return { ok: true };
@@ -133,28 +138,37 @@ export function assertWorkspaceRunOptions({
 }
 
 /**
- * Resolve the affected/requested packages to full `PackageInfo`. The
- * `--affected-since` branch already carries directory + `package.json#name`
- * from turbo/nx, so it skips the `resolvePackage` round-trip; the `--packages`
- * branch resolves each comma-separated name against the workspace.
+ * Resolve the selected packages to full `PackageInfo`, in the order the three
+ * selection sources shadow each other: `--affected-since` replaces the set,
+ * `--packages` narrows it, and a bare `--workspace` takes all of it.
+ *
+ * The `--affected-since` branch already carries directory +
+ * `package.json#name` from turbo/nx, so it skips enumeration entirely.
  */
 export function resolveWorkspacePackages(
 	cli: CliOptions,
 	workspaceRoot: string,
-	patterns?: Array<string>,
+	{ exclude, patterns }: EnumerationOptions = {},
 ): Array<PackageInfo> {
 	if (cli.affectedSince !== undefined) {
-		return getAffectedPackages(workspaceRoot, cli.affectedSince);
+		return excludePackages(
+			getAffectedPackages(workspaceRoot, cli.affectedSince),
+			workspaceRoot,
+			exclude,
+		);
 	}
 
-	// validateBasicWorkspaceFlags guarantees cli.packages is defined when
-	// affectedSince is undefined.
-	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed by validation
-	const names = cli
-		.packages!.split(",")
-		.map((name) => name.trim())
-		.filter((name) => name.length > 0);
-	return names.map((name) => resolvePackage(workspaceRoot, name, patterns));
+	if (cli.packages === undefined) {
+		return enumerateWorkspacePackages(workspaceRoot, { exclude, patterns });
+	}
+
+	// One enumeration for the whole flag rather than one per name: a
+	// `resolvePackage` per name walks the workspace root once per name.
+	//
+	// No exclude here. Naming a package is asking for it, whatever a
+	// workspace-wide default says.
+	const candidates = listPackages(workspaceRoot, patterns);
+	return splitPackageNames(cli.packages).map((name) => pickPackage(candidates, name));
 }
 
 export function buildWorkspaceCredentials(
@@ -208,12 +222,15 @@ function namePresentWorkspaceFlag(cli: CliOptions): string {
 	return present.name;
 }
 
-function hasNonEmptyPackages(packages: string | undefined): boolean {
-	if (packages === undefined) {
-		return false;
-	}
+function splitPackageNames(packages: string): Array<string> {
+	return packages
+		.split(",")
+		.map((name) => name.trim())
+		.filter((name) => name.length > 0);
+}
 
-	return packages.split(",").some((name) => name.trim().length > 0);
+function hasNonEmptyPackages(packages: string): boolean {
+	return splitPackageNames(packages).length > 0;
 }
 
 /**
@@ -225,4 +242,14 @@ function hasNonEmptyPackages(packages: string | undefined): boolean {
  */
 function isStudioBackend(backend: Backend): boolean {
 	return backend === "studio" || backend === "studio-cli";
+}
+
+function pickPackage(candidates: Array<PackageInfo>, name: string): PackageInfo {
+	const found = candidates.find((candidate) => candidate.name === name);
+	if (found !== undefined) {
+		return found;
+	}
+
+	const names = candidates.map((candidate) => candidate.name).join(", ");
+	throw new Error(`Package "${name}" not found in workspace. Available: ${names}`);
 }

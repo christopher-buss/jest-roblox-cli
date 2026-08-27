@@ -19,6 +19,7 @@ Root fields control the CLI/runner. Jest passthrough fields live under `test:`.
 | `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                  | `["default"]`                    |
 | `gameOutput`           | Write game print/warn/error to a file: a path, or `true` for `game-output.log`.           | —                                |
 | `outputFile`           | Write the Jest result JSON: a path, or `true` for `jest-output.log`.                      | —                                |
+| `workspace.exclude`    | Globs naming package directories an enumerated `--workspace` run must skip                | —                                |
 | `workspace.gameOutput` | `true` to emit per-package game output under `.jest-roblox/output/` (`--workspace` only)  | —                                |
 | `workspace.outputFile` | `true` to emit per-package result files under `.jest-roblox/output/` (`--workspace` only) | —                                |
 | `coverageCache`        | Reuse incrementally-instrumented coverage shadow dir between runs                         | `true`                           |

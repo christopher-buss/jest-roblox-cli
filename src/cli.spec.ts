@@ -1395,14 +1395,14 @@ describe("runInner orchestration", () => {
 			makeWorkspaceResult({
 				projectResults: [],
 				validationExitCode: 2,
-				validationMessage: "Error: --workspace requires --packages.\n",
+				validationMessage: "Error: --packages names no packages.\n",
 			}),
 		);
 
 		const code = await runAsync(["--workspace"]);
 
 		expect(code).toBe(2);
-		expect(spies.stderr).toHaveBeenCalledWith("Error: --workspace requires --packages.\n");
+		expect(spies.stderr).toHaveBeenCalledWith("Error: --packages names no packages.\n");
 		expect(mocks.outputMultiResult).not.toHaveBeenCalled();
 	});
 

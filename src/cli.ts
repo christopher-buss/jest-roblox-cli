@@ -58,7 +58,7 @@ Options:
   --formatters <name...>            Output formatters (default, agent, json, github-actions)
   --bail                            Workspace mode: stop after the first failing package
   --workspace                       Run tests across all workspace packages
-  --packages <names>                Comma-separated package names (workspace mode)
+  --packages <names>                Comma-separated package names (narrows a workspace run)
   --workspace-root <path>           Directory to load the workspace config from
                                     (use when running outside any package)
   --affected-since <ref>            Run only packages affected since git ref via turbo/nx

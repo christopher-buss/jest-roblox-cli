@@ -166,6 +166,16 @@ export interface ProjectConfigFile extends Except<ProjectTestConfig, "include"> 
 /** Workspace-only knobs. Ignored outside `--workspace` mode. */
 export interface WorkspaceConfig {
 	/**
+	 * Globs, relative to the workspace root, naming package directories a
+	 * workspace run must never select on its own — test fixtures the package
+	 * manager installs as real members, most often. `--packages` overrides
+	 * this: naming a package is asking for it.
+	 *
+	 * Independent of `packages`/`root`, so it narrows the `pnpm-workspace.yaml`
+	 * source too.
+	 */
+	exclude?: Array<string>;
+	/**
 	 * When `true`, emit one Per-package Game Output file per selected
 	 * (package, project) under `<workspaceRoot>/.jest-roblox/output/`.
 	 * Consensus-resolved across packages; only `true` is accepted.
@@ -815,6 +825,7 @@ export const projectConfigFileSchema: Type<ProjectConfigFile> = type({
 
 const workspaceConfigSchema = type({
 	"+": "reject",
+	"exclude?": "string[]",
 	"gameOutput?": "true",
 	"outputFile?": "true",
 	"packages?": "string[]",

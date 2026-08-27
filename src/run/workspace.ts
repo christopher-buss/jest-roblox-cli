@@ -98,6 +98,7 @@ interface AggregatePerPackageCoverageResult {
 }
 
 interface EnumerationRoot {
+	exclude?: Array<string> | undefined;
 	patterns?: Array<string> | undefined;
 	workspaceRoot: string;
 }
@@ -514,21 +515,47 @@ function resolveEnumerationRoot(workspace?: WorkspaceConfig): EnumerationRoot {
 		// The schema's co-requirement check guarantees `root` is present, and
 		// the loader resolved it to an absolute path at config load.
 		assert(workspace.root !== undefined, "workspace.root is required with workspace.packages");
-		return { patterns: workspace.packages, workspaceRoot: workspace.root };
+		return {
+			exclude: workspace.exclude,
+			patterns: workspace.packages,
+			workspaceRoot: workspace.root,
+		};
 	}
 
-	return { workspaceRoot: discoverWorkspaceRoot(process.cwd()) };
+	// `exclude` stands alone: it narrows the pnpm source too, where the root
+	// comes from discovery rather than from config.
+	return { exclude: workspace?.exclude, workspaceRoot: discoverWorkspaceRoot(process.cwd()) };
+}
+
+/**
+ * Name the source that came up empty, since the remedy differs: a
+ * `workspace.packages` list is the user's own glob to widen, while the pnpm
+ * source points back at `pnpm-workspace.yaml`.
+ */
+function emptyWorkspaceMessage(patterns: Array<string> | undefined): string {
+	const source =
+		patterns === undefined
+			? "Widen pnpm-workspace.yaml, or declare `workspace.packages` in your jest config"
+			: "Widen `workspace.packages`";
+	return (
+		"Error: no packages with a jest.config.* to run in this workspace.\n" +
+		`${source}, and check workspace.exclude.\n`
+	);
 }
 
 function resolvePackages(cli: CliOptions, workspace?: WorkspaceConfig): ResolvedPackages {
 	try {
-		const { patterns, workspaceRoot } = resolveEnumerationRoot(workspace);
-		const packageInfos = resolveWorkspacePackages(cli, workspaceRoot, patterns);
+		const { exclude, patterns, workspaceRoot } = resolveEnumerationRoot(workspace);
+		const packageInfos = resolveWorkspacePackages(cli, workspaceRoot, { exclude, patterns });
 
 		if (packageInfos.length === 0) {
-			// validateWorkspaceFlags requires --affected-since when --packages
-			// produces zero entries, so we can only land here via that branch.
-			return { noAffected: true };
+			// Two ways to select nothing, and they mean opposite things. A
+			// change-detected set can legitimately be empty; a workspace with
+			// no testable package in it is a misconfiguration, and reporting it
+			// as a clean run would hide that behind a green exit.
+			return cli.affectedSince !== undefined
+				? { noAffected: true }
+				: { error: { exitCode: 2, message: emptyWorkspaceMessage(patterns) } };
 		}
 
 		return { packageInfos, workspaceRoot };

@@ -249,3 +249,63 @@ describe("workspace pre-flight cleanup of leftover own-stubs", () => {
 		60_000,
 	);
 });
+
+// A bare `--workspace` enumerates the workspace itself, so the two things that
+// decide its package set are unreachable from the `--packages` invocations
+// above: the pnpm source's `jest.config.*` gate, and `workspace.exclude`.
+//
+// One invocation covers both. The exclude narrows the seven fixture packages
+// down to `@e2e/nested` — which keeps this to a single dispatch — and the
+// fixture's `packages/no-tests` carries a package.json with no jest config, so
+// a run that reached it at all would dispatch a second time.
+describe("workspace bare enumeration", () => {
+	it.skipIf(!rojoOnPath())(
+		"should select every package the exclude leaves and skip one with no jest.config",
+		async () => {
+			expect.assertions(4);
+
+			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
+			fs.writeFileSync(
+				path.join(sandbox, "jest.config.ts"),
+				[
+					"export default {",
+					"\tworkspace: {",
+					"\t\texclude: [",
+					'\t\t\t"packages/bar",',
+					'\t\t\t"packages/empty-tests",',
+					'\t\t\t"packages/foo",',
+					'\t\t\t"packages/typed",',
+					'\t\t\t"packages/typed-broken",',
+					'\t\t\t"packages/vendored-mount",',
+					"\t\t],",
+					"\t},",
+					"};",
+					"",
+				].join("\n"),
+			);
+
+			const server = await startFakeOpenCloudServerAsync([
+				{
+					jestOutput: buildPassingJestOutput(),
+					pkg: "@e2e/nested",
+					project: "@e2e/nested",
+				},
+			]);
+
+			const result = await runCliAsync(["--workspace", "--backend", "open-cloud"], {
+				cwd: sandbox,
+				env: createOpenCloudEnvironment(server.baseUrl),
+				timeoutMs: 60_000,
+			});
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(server.requests).toHaveLength(1);
+			// The dispatched script carries the selected package set, so a
+			// package the exclude or the jest.config gate should have dropped
+			// shows up here rather than as a silent extra elsewhere.
+			expect(server.requests[0]!.script).toContain('"pkg":"@e2e/nested"');
+			expect(server.requests[0]!.script).not.toContain("@e2e/foo");
+		},
+		60_000,
+	);
+});

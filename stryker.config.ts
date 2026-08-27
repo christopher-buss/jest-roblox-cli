@@ -46,7 +46,7 @@ export default {
 	// change on top. Ratchet from here.
 	thresholds: {
 		...sharedConfig.thresholds,
-		break: 92.5,
+		break: 92.6,
 	},
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",

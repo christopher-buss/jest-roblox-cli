@@ -160,6 +160,7 @@ per-package declarations error loudly.
 | `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                            | `["default"]` |
 | `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package | —             |
 | `outputFile`           | Write the Jest result JSON — a path, or `true` for `jest-output.log` under the root. In `--workspace` mode this is the single merged result across every package    | —             |
+| `workspace.exclude`    | Globs (workspace-root-relative) naming package directories an enumerated run must skip; `--packages` overrides it                                                   | —             |
 | `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                 | —             |
 | `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                      | —             |
 | `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). studio-cli is serial: it runs one session for any of unset, `1`, or `"auto"`                        | —             |
@@ -499,16 +500,23 @@ with `--workspace`.
 > `pnpm-workspace.yaml` at the workspace root. Alternatively, declare a
 > `workspace` block in your jest config (see
 > [Workspaces without pnpm](#workspaces-without-pnpm)) to enumerate packages by
-> glob — this works in Luau-only, npm, and yarn repos. `--affected-since` always
-> delegates change detection to `turbo` or `nx` and is not yet wired for the
-> `workspace.packages` source. When using Nx, each project's Nx name must match
-> the `package.json` `name` field — `--affected-since` returns Nx project names
-> and looks them up against the package list, so a mismatch surfaces as
+> glob — this works in Luau-only, npm, and yarn repos. Either source honours `!`
+> exclusion entries, and either way a package joins the run by carrying a
+> `jest.config.*`; a library with no tests is not selected.
+> `--affected-since` always delegates change detection to `turbo` or
+> `nx` and is not yet wired for the `workspace.packages` source. When using Nx,
+> each project's Nx name must match the `package.json` `name` field —
+> `--affected-since` returns Nx project names and looks them up against the
+> package list, so a mismatch surfaces as
 > `Package "<name>" not found in workspace`.
 
-Pick packages explicitly or by what changed:
+A bare `--workspace` runs every package in the workspace. The two selection
+flags narrow that set rather than enabling it:
 
 ```bash
+# Every package
+jest-roblox --workspace
+
 # Specific packages
 jest-roblox --workspace --packages @scope/pkg-a,@scope/pkg-b
 
@@ -516,8 +524,32 @@ jest-roblox --workspace --packages @scope/pkg-a,@scope/pkg-b
 jest-roblox --workspace --affected-since main
 ```
 
-`--workspace` must be combined with `--packages` or `--affected-since` — the two
-are mutually exclusive, and either flag requires `--workspace`.
+`--packages` and `--affected-since` are mutually exclusive, and either flag
+requires `--workspace`. A `--workspace` that selects nothing exits 2 — an empty
+workspace is a configuration problem, while `--affected-since` finding nothing
+is a clean run and exits 0.
+
+### Excluding packages
+
+`workspace.exclude` keeps a package out of a run that did not name it. Globs are
+relative to the workspace root and match package directories:
+
+```ts
+export default defineConfig({
+	workspace: {
+		exclude: ["test/fixtures/**"],
+	},
+});
+```
+
+This is for packages the package manager has to install but the test run must
+never pick up — a test fixture with real `workspace:*` dependencies has to stay
+a workspace member, and dropping it from `pnpm-workspace.yaml` would break its
+dependency links.
+
+The exclude applies to enumeration only: a bare `--workspace` and
+`--affected-since` both honour it, while `--packages @scope/fixture` still runs
+it, because naming a package is asking for it.
 
 ### Failing fast
 
@@ -676,9 +708,9 @@ project) under `.jest-roblox/output/`.
 | `--typecheck`                    | Run type tests too                                                                                                                                        |
 | `--typecheckOnly`                | Run only type tests                                                                                                                                       |
 | `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                                                                   |
-| `--workspace`                    | Enable workspace mode (pair with `--packages` or `--affected-since`; see [Workspace mode](#workspace-mode))                                               |
+| `--workspace`                    | Run every package in the workspace; narrow it with `--packages` or `--affected-since` (see [Workspace mode](#workspace-mode))                             |
 | `--bail`                         | Workspace mode: stop at the first failing package (see [Failing fast](#failing-fast))                                                                     |
-| `--packages <names>`             | Comma-separated package names (workspace mode)                                                                                                            |
+| `--packages <names>`             | Comma-separated package names; narrows a workspace run                                                                                                    |
 | `--affected-since <ref>`         | Run only packages affected since a git ref (workspace mode)                                                                                               |
 | `--apiKey <key>`                 | Open Cloud API key (prefer env vars in CI — visible in process listings)                                                                                  |
 | `--universeId <id>`              | Target universe ID (Open Cloud)                                                                                                                           |

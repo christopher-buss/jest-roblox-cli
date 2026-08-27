@@ -18,7 +18,11 @@ import { runWorkspaceAsync } from "../workspace-runner.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
 import type { PackageCoverageSettings } from "../workspace/coverage-attach.ts";
 import { discoverWorkspaceRoot } from "../workspace/discovery.ts";
-import { resolvePackage } from "../workspace/package-resolver.ts";
+import {
+	enumerateWorkspacePackages,
+	excludePackages,
+	listPackages,
+} from "../workspace/package-resolver.ts";
 import { runWorkspaceModeAsync } from "./workspace.ts";
 
 const stdEnvironmentMock = vi.hoisted(() => ({ isAgent: false }));
@@ -115,12 +119,20 @@ function colorForPackageDirectory(cwd: string | undefined) {
 	return { color: cwd!.endsWith("foo") };
 }
 
+/**
+ * Every package name the specs below select, as `listPackages` would report.
+ */
+const WORKSPACE_PACKAGES = ["@halcyon/bar", "@halcyon/foo", "a", "foo"];
+
 function setupHappyPath() {
 	const backend = makeFakeBackend();
 	vi.mocked(discoverWorkspaceRoot).mockReturnValue("/repo");
-	vi.mocked(resolvePackage).mockImplementation((_, name) => {
+	const enumerated = WORKSPACE_PACKAGES.map((name) => {
 		return { name, packageDirectory: path.posix.join("/repo/packages", name) };
 	});
+	vi.mocked(listPackages).mockReturnValue(enumerated);
+	vi.mocked(enumerateWorkspacePackages).mockReturnValue(enumerated);
+	vi.mocked(excludePackages).mockImplementation((packages) => packages);
 	vi.mocked(createOpenCloudBackend).mockReturnValue(fromAny(backend));
 	mockRunWorkspace([]);
 	vi.mocked(loadRawConfig).mockResolvedValue({});
@@ -143,16 +155,47 @@ describe(runWorkspaceModeAsync, () => {
 			);
 		});
 
-		it("should surface missing --packages/--affected-since failure", async () => {
+		it("should run every enumerated package for a bare --workspace", async () => {
 			expect.assertions(2);
 
 			setupHappyPath();
+			mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+
 			const result = await runWorkspaceModeAsync(makeCli({ workspace: true }));
 
+			expect(result.validationExitCode).toBeUndefined();
+			expect(enumerateWorkspacePackages).toHaveBeenCalledOnce();
+		});
+
+		it("should reject a bare --workspace that enumerates nothing", async () => {
+			expect.assertions(3);
+
+			setupHappyPath();
+			vi.mocked(enumerateWorkspacePackages).mockReturnValue([]);
+
+			const result = await runWorkspaceModeAsync(makeCli({ workspace: true }));
+
+			// Distinct from --affected-since finding nothing: a workspace with
+			// no testable package in it is a misconfiguration, not a clean run.
 			expect(result.validationExitCode).toBe(2);
-			expect(result.validationMessage).toContain(
-				"--workspace requires --packages or --affected-since",
-			);
+			expect(result.validationMessage).toContain("no packages with a jest.config.*");
+			expect(result.validationMessage).toContain("Widen pnpm-workspace.yaml");
+		});
+
+		// The remedy differs by source: a `workspace.packages` list is the
+		// user's own glob, so pointing at pnpm-workspace.yaml would misdirect.
+		it("should name workspace.packages when the config glob enumerates nothing", async () => {
+			expect.assertions(1);
+
+			setupHappyPath();
+			vi.mocked(enumerateWorkspacePackages).mockReturnValue([]);
+
+			const result = await runWorkspaceModeAsync(makeCli({ workspace: true }), {
+				packages: ["packages/*"],
+				root: "/ws",
+			});
+
+			expect(result.validationMessage).toContain("Widen `workspace.packages`");
 		});
 
 		it("should reject studio-cli with --parallel > 1", async () => {
@@ -589,7 +632,7 @@ describe(runWorkspaceModeAsync, () => {
 
 			expect(result.validationExitCode).toBeUndefined();
 			expect(discoverWorkspaceRoot).not.toHaveBeenCalled();
-			expect(resolvePackage).toHaveBeenCalledWith("/ws", "foo", ["packages/*"]);
+			expect(listPackages).toHaveBeenCalledWith("/ws", ["packages/*"]);
 		});
 
 		it("should drive the aggregate sink root off workspace.root", async () => {
@@ -672,11 +715,11 @@ describe(runWorkspaceModeAsync, () => {
 			expect(result.validationMessage).toContain("No workspace root");
 		});
 
-		it("should surface resolvePackage errors as validation message", async () => {
+		it("should surface enumeration errors as validation message", async () => {
 			expect.assertions(2);
 
 			setupHappyPath();
-			vi.mocked(resolvePackage).mockImplementation(() => {
+			vi.mocked(listPackages).mockImplementation(() => {
 				throw new Error("Package missing");
 			});
 
@@ -714,9 +757,7 @@ describe(runWorkspaceModeAsync, () => {
 			);
 
 			expect(result.validationExitCode).toBe(2);
-			expect(result.validationMessage).toContain(
-				"--workspace requires --packages or --affected-since",
-			);
+			expect(result.validationMessage).toContain("--packages names no packages");
 		});
 
 		it("should return validationExitCode 2 with no message when runWorkspace returns undefined", async () => {
@@ -1167,5 +1208,39 @@ describe(runWorkspaceModeAsync, () => {
 
 		expect(result.coverageMs).toBe(1234);
 		expect(result.stagingMs).toBe(567);
+	});
+});
+
+describe("workspace report options", () => {
+	it("should carry the resolved presentation settings onto the result", async () => {
+		expect.assertions(1);
+
+		setupHappyPath();
+		mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+
+		const result = await runWorkspaceModeAsync(
+			makeCli({ packages: "a", verbose: true, workspace: true }),
+		);
+
+		expect(result.reportOptions).toStrictEqual({
+			color: true,
+			formatters: ["default"],
+			rootDir: "/repo",
+			silent: false,
+			verbose: true,
+		});
+	});
+
+	it("should report verbose false when the flag is absent", async () => {
+		expect.assertions(1);
+
+		setupHappyPath();
+		mockRunWorkspace([{ displayName: "a", pkg: "a", result: makeExecuteResult() }]);
+
+		const result = await runWorkspaceModeAsync(makeCli({ packages: "a", workspace: true }));
+
+		// `cli.verbose` is optional, so the report carries a real boolean
+		// rather than the undefined the flag parser leaves behind.
+		expect(result.reportOptions!.verbose).toBeFalse();
 	});
 });
