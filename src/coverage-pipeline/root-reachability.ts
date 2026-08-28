@@ -30,8 +30,10 @@ export function collectRojoMounts(tree: RojoTreeNode, rojoDirectory: string): Se
 	const collected: Array<string> = [];
 	collectPaths(tree, collected);
 
-	// path.resolve passes an absolute rawPath through and resolves a relative
-	// one against the rojo dir, so no isAbsolute branch is needed.
+	// path.resolve passes a host-absolute rawPath through and resolves a
+	// relative one against the rojo dir, so no isAbsolute branch is needed. It
+	// stamps this host's drive onto a drive-less absolute path, which changes
+	// nothing here: every root it is weighed against is resolved the same way.
 	return new Set(
 		collected.map((rawPath) => normalizeWindowsPath(path.resolve(rojoDirectory, rawPath))),
 	);

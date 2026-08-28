@@ -9,6 +9,8 @@ import { isRojoTreeNode } from "./types.ts";
 // tree shapes defensively (same contract as `isValidRojoConfig`).
 const nestedProjectSchema = type({ tree: "object" });
 
+const ABSOLUTE_MOUNT = /^(?:[/\\]|[A-Za-z]:[/\\])/;
+
 export interface ResolvedNestedProjectSources {
 	projectFiles: Array<string>;
 	tree: RojoTreeNode;
@@ -44,6 +46,12 @@ export function resolveNestedProjects(tree: RojoTreeNode, rootDirectory: string)
 	return resolveNestedProjectSources(tree, rootDirectory).tree;
 }
 
+/**
+ * Every `$path` in the tree, with backslashes normalized.
+ *
+ * A mount is relative to the project file's directory unless the project wrote
+ * it absolute, which is preserved as written.
+ */
 export function collectPaths(node: RojoTreeNode, result: Array<string>): void {
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
@@ -79,17 +87,35 @@ export function rebaseTreePaths(
 	return result;
 }
 
+/**
+ * Whether a `$path` names a location on its own, rather than one relative to
+ * the project file.
+ *
+ * Not `path.isAbsolute`, which answers for the host it runs on: `D:/out` and
+ * `\out` both read as relative on Linux, so the same project file would resolve
+ * to two different trees depending on which machine read it. Every root a
+ * project can write is here — posix, drive, and the backslash forms Windows
+ * uses for a drive-relative root and a UNC share.
+ */
+function isAbsoluteMount(value: string): boolean {
+	return ABSOLUTE_MOUNT.test(value);
+}
+
 function nestedProjectPath(currentDirectory: string, value: string): string | undefined {
 	// Resolve a `$path` string to the nested project file it should inline, or
 	// undefined when the path is a plain source mount. Rojo treats a `$path`
 	// pointing at a directory containing `default.project.json` as a nested
 	// project (e.g. `$path: ".."` into a package root), so honor that alongside
 	// explicit `*.project.json` references.
+	// join rather than resolve: resolve reads a POSIX-absolute path as
+	// drive-relative on Windows and stamps `currentDirectory`'s drive onto it.
+	// An absolute `$path` is already the location, so it is joined onto nothing.
+	const mountPath = isAbsoluteMount(value) ? value : join(currentDirectory, value);
 	if (value.endsWith(".project.json")) {
-		return join(currentDirectory, value);
+		return mountPath;
 	}
 
-	const directoryDefault = join(currentDirectory, value, "default.project.json");
+	const directoryDefault = join(mountPath, "default.project.json");
 	return existsSync(directoryDefault) ? directoryDefault : undefined;
 }
 
@@ -143,6 +169,14 @@ function resolveRootRelativePath(
 	value: string,
 	originalRoot: string,
 ): string {
+	// An absolute `$path` already names the location Rojo mounts, at any depth of
+	// nesting. Rebasing it onto `originalRoot` would name a directory that does
+	// not exist, and every caller that walks the mounts would then miss the
+	// files under it.
+	if (isAbsoluteMount(value)) {
+		return value.replaceAll("\\", "/");
+	}
+
 	const absolutePath = join(currentDirectory, value);
 	return relative(originalRoot, absolutePath).replaceAll("\\", "/");
 }

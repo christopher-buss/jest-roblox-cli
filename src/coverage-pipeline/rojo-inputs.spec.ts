@@ -140,6 +140,22 @@ describe(computeRojoInputsHash, () => {
 		expect(hashOf()).not.toBe(before);
 	});
 
+	it("should change when a file under an absolute mount changes", () => {
+		expect.assertions(1);
+
+		reset();
+		// Rojo mounts an absolute `$path` as written, so the walk reaches it
+		// there rather than under the project directory.
+		writeProject({ $className: "DataModel", Ext: { $path: "/external/out" } });
+		vol.mkdirSync("/external/out", { recursive: true });
+		vol.writeFileSync("/external/out/a.luau", "local a = 1");
+		const before = hashOf();
+
+		vol.writeFileSync("/external/out/a.luau", "local a = 2");
+
+		expect(hashOf()).not.toBe(before);
+	});
+
 	it("should exclude mounts that are or are nested under a luauRoot", () => {
 		expect.assertions(2);
 

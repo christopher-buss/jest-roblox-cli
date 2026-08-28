@@ -448,6 +448,147 @@ describe(resolveNestedProjects, () => {
 			},
 		});
 	});
+
+	it("should leave an absolute $path as written", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory();
+		const projectDirectory = path.join(temporaryDirectory, "project");
+		const externalDirectory = path.join(temporaryDirectory, "external", "out");
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				External: { $path: externalDirectory },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, projectDirectory);
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: {
+				External: { $path: externalDirectory.replaceAll("\\", "/") },
+			},
+		});
+	});
+
+	it("should leave a drive-letter $path as written on a host without drives", () => {
+		expect.assertions(1);
+
+		// `path.isAbsolute` reads this as relative on Linux, which would rebase
+		// the mount and resolve the same project file into two different trees
+		// depending on which machine read it.
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				External: { $path: "Z:/external/out" },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, path.join(os.tmpdir(), "project"));
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: {
+				External: { $path: "Z:/external/out" },
+			},
+		});
+	});
+
+	it("should leave a backslash-rooted $path as written on a host without drives", () => {
+		expect.assertions(1);
+
+		// A drive-relative root and a UNC share, the two roots a Windows project
+		// writes with backslashes. `path.isAbsolute` reads both as relative on
+		// Linux, which would rebase them onto the project directory.
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Drive: { $path: "\\external\\out" },
+				Share: { $path: "\\\\build-server\\share\\out" },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, path.join(os.tmpdir(), "project"));
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: {
+				Drive: { $path: "/external/out" },
+				Share: { $path: "//build-server/share/out" },
+			},
+		});
+	});
+
+	it("should leave an absolute $path inside a nested project as written", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory();
+		const packageDirectory = path.join(temporaryDirectory, "packages", "my-pkg");
+		const externalDirectory = path.join(temporaryDirectory, "external", "out");
+		fs.mkdirSync(packageDirectory, { recursive: true });
+		fs.writeFileSync(
+			path.join(packageDirectory, "default.project.json"),
+			JSON.stringify({
+				name: "my-pkg",
+				tree: {
+					$className: "Folder",
+					Generated: { $path: externalDirectory },
+					Src: { $path: "src" },
+				},
+			}),
+		);
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				"my-pkg": { $path: "packages/my-pkg/default.project.json" },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, temporaryDirectory);
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ReplicatedStorage: {
+				"my-pkg": {
+					$className: "Folder",
+					Generated: { $path: externalDirectory.replaceAll("\\", "/") },
+					Src: { $path: "packages/my-pkg/src" },
+				},
+			},
+		});
+	});
+
+	it("should inline a nested project named by an absolute $path", () => {
+		expect.assertions(1);
+
+		const temporaryDirectory = createTemporaryDirectory();
+		const projectDirectory = path.join(temporaryDirectory, "project");
+		const packageDirectory = path.join(temporaryDirectory, "pkg");
+		fs.mkdirSync(packageDirectory, { recursive: true });
+		fs.writeFileSync(
+			path.join(packageDirectory, "default.project.json"),
+			JSON.stringify({ name: "pkg", tree: { $path: "src" } }),
+		);
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ServerScriptService: {
+				pkg: { $path: packageDirectory },
+			},
+		};
+
+		const result = resolveNestedProjects(tree, projectDirectory);
+
+		expect(result).toStrictEqual({
+			$className: "DataModel",
+			ServerScriptService: {
+				pkg: { $path: "../pkg/src" },
+			},
+		});
+	});
 });
 
 describe(resolveNestedProjectSources, () => {

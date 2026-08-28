@@ -14,7 +14,7 @@ import type { CoverageRoot } from "../staging/synthesizer.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashFile } from "../utils/hash.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type {
 	BuildManifestArtifact,
 	BuildManifestFileRecord,
@@ -221,6 +221,17 @@ export function collectLuauRootsFromRojo(
 	const isIgnored = picomatch(ignorePatterns, { contains: true });
 
 	return paths.filter((directoryPath) => {
+		// An absolute mount cannot be a luauRoot: a root names where the shadow
+		// mirrors a tree under `rootDir`, and `validateRelativeRoots` rejects
+		// anything else. Rojo still builds the mount; it just reports no
+		// coverage. Workspace mode asks the wider question in
+		// `discoverFromRojoWalk` — does the mount land inside the package —
+		// which also keeps an absolute mount that does; the two answers differ
+		// until this one resolves against `rootDir` rather than the cwd.
+		if (isAbsolutePath(directoryPath)) {
+			return false;
+		}
+
 		if (!fs.existsSync(directoryPath)) {
 			return false;
 		}

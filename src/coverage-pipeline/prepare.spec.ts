@@ -3100,6 +3100,35 @@ describe(collectLuauRootsFromRojo, () => {
 			expect(collectLuauRootsFromRojo(project, config)).toStrictEqual(["packages/core/out"]);
 		});
 	});
+
+	describe("when a $path is absolute", () => {
+		it("should exclude it from the auto-detected roots", async () => {
+			expect.assertions(1);
+
+			const project: RojoProject = {
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					External: {
+						$path: "/external/out",
+					},
+					ReplicatedStorage: {
+						$path: "packages/core/out",
+					},
+				},
+			};
+
+			vol.mkdirSync("packages/core/out", { recursive: true });
+			vol.mkdirSync("/external/out", { recursive: true });
+			vol.writeFileSync("packages/core/out/init.luau", "");
+			vol.writeFileSync("/external/out/init.luau", "");
+
+			await setupMocksAsync();
+			const config = makeConfig();
+
+			expect(collectLuauRootsFromRojo(project, config)).toStrictEqual(["packages/core/out"]);
+		});
+	});
 });
 
 describe(discoverRootFiles, () => {

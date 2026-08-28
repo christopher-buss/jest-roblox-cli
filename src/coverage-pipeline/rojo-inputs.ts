@@ -9,7 +9,7 @@ import process from "node:process";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { errorMessage } from "../utils/error-message.ts";
 import { hashFile, hashString } from "../utils/hash.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { isWithinRoot } from "./redirect-path.ts";
 
 export interface RojoInputsOptions {
@@ -92,11 +92,16 @@ export function computeRojoInputsHash({
 	// mention would otherwise be entered — and stat'd — on its own.
 	const distinctMounts = new Set(mounts);
 	for (const mount of distinctMounts) {
-		// Project-relative, because that is the only frame a mount arrives in:
-		// `resolveNestedProjectSources` rebases every `$path` against the
-		// project directory. Normalized here and nowhere below, so a child path
-		// is the parent's plus a name.
-		collectInputFiles(toKey(path.join(projectDirectory, mount)), walk);
+		// Project-relative unless the project wrote the `$path` absolute, which
+		// rojo mounts as written — joining that one onto the project directory
+		// would walk a location that does not exist and hash none of its files.
+		// Normalized here and nowhere below, so a child path is the parent's
+		// plus a name.
+		const mountKey = toKey(mount);
+		const target = isAbsolutePath(mountKey)
+			? mountKey
+			: toKey(path.join(projectDirectory, mountKey));
+		collectInputFiles(target, walk);
 	}
 
 	return digestFiles({ files, project, rootDirectory });

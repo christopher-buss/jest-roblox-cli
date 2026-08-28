@@ -533,9 +533,11 @@ function discoverFromRojoWalk({
 	const seen = new Set<string>();
 	const result: Array<string> = [];
 	for (const rawPath of collected) {
-		// path.resolve treats absolute rawPaths as already-resolved (passes them
-		// through verbatim) and resolves relative ones against the rojo dir, so
-		// no separate isAbsolute branch is needed.
+		// path.resolve treats host-absolute rawPaths as already-resolved (passes
+		// them through verbatim) and resolves relative ones against the rojo
+		// dir, so no separate isAbsolute branch is needed. The relativize below
+		// is what decides an absolute mount's fate: one inside the package is
+		// kept, one outside escapes and is dropped.
 		const absolute = path.resolve(rojoDirectory, rawPath);
 		const relative = normalizeWindowsPath(path.relative(descriptor.packageDirectory, absolute));
 		if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {

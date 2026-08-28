@@ -41,12 +41,10 @@ export default {
 	// This one went DOWN once, from 93.5, and that is not a coverage
 	// regression: 93.5 was measured while the vitest runner was reporting
 	// mutants it had never tested (see the patch note for #776). The suite it
-	// described did not exist. 92.5 is what the fixed runner measures — 92.53
-	// on the commit that landed the patch, 92.54 with this package's own
-	// change on top, and 92.63 once the stage reporter arrived covered. The
-	// floor sits a hundredth under the measurement: the gate compares against
-	// the unrounded score, so a floor set to the number Stryker prints fails
-	// on the very run that produced it.
+	// described did not exist, and the fixed runner measures the low nineties.
+	// The floor sits a hundredth under the latest clean measurement: the gate
+	// compares against the unrounded score, so a floor set to the number
+	// Stryker prints fails on the very run that produced it.
 	//
 	// Measure from a deleted `reports/stryker-incremental.json`. An incremental
 	// run reuses results whose tests have since changed, so it reports
@@ -54,7 +52,7 @@ export default {
 	// fail this gate on a suite that passes it.
 	thresholds: {
 		...sharedConfig.thresholds,
-		break: 92.62,
+		break: 92.81,
 	},
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",
