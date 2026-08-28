@@ -2613,7 +2613,7 @@ describe("narrowing a workspace package to its coverage universe", () => {
 			vol.existsSync(
 				path.join(
 					WORKSPACE_ROOT,
-					".jest-roblox/workspace/@halcyon-foo/coverage/.spine/out/loose.luau",
+					".jest-roblox/workspace/@halcyon-foo/coverage/.spine/out/.self/loose.luau",
 				),
 			),
 		).toBeTrue();

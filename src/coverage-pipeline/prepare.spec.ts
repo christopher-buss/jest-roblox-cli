@@ -3348,8 +3348,50 @@ describe("narrowing to the coverage universe", () => {
 
 		prepareCoverage(config);
 
-		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/loose.luau")).toBeTrue();
-		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/modules/net.luau")).toBeTrue();
+		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/.self/loose.luau")).toBeTrue();
+		expect(
+			vol.existsSync(".jest-roblox/coverage/.spine/out/modules/.self/net.luau"),
+		).toBeTrue();
+	});
+
+	it("should refill a spine leaf a warm run recorded elsewhere", async () => {
+		expect.assertions(2);
+
+		seedNarrowableRoot();
+		const { buildWithRojo } = await setupMocksAsync();
+		const config = makeConfig({
+			collectCoverageFrom: ["**/ecs/**"],
+			luauRoots: ["out"],
+			rootDir: process.cwd(),
+		});
+
+		prepareCoverage(config);
+		// Rewind the shadow to the shape the nested-spine layout left: each
+		// level's files directly under its mirror, and a manifest recording
+		// them there.
+		const mirrored = [
+			{ name: "loose.luau", level: "out" },
+			{ name: "net.luau", level: "out/modules" },
+		];
+		for (const { name, level } of mirrored) {
+			const leaf = `.jest-roblox/coverage/.spine/${level}/.self`;
+			vol.renameSync(`${leaf}/${name}`, `.jest-roblox/coverage/.spine/${level}/${name}`);
+			vol.rmdirSync(leaf);
+		}
+
+		const manifestPath = ".jest-roblox/coverage/coverage-manifest.json";
+		vol.writeFileSync(
+			manifestPath,
+			String(vol.readFileSync(manifestPath)).replaceAll("/.self/", "/"),
+		);
+
+		prepareCoverage(config);
+
+		// Carrying those records forward would leave every mounted leaf empty,
+		// so the place would build each demoted level without its own files —
+		// and, seeing no change, hand back the place that already had.
+		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/.self/loose.luau")).toBeTrue();
+		expect(buildWithRojo).toHaveBeenCalledTimes(2);
 	});
 
 	it("should record the narrowed roots in the manifest", async () => {
@@ -3406,7 +3448,7 @@ describe("narrowing to the coverage universe", () => {
 
 		// The place mounts the spine in `out`'s place, so anything baked into
 		// the mirror would never reach it.
-		expect(layouts[0]!.mountedDirectory("out")).toBe(".jest-roblox/coverage/.spine/out");
+		expect(layouts[0]!.mountedDirectory("out")).toBe(".jest-roblox/coverage/.spine/out/.self");
 		expect(layouts[0]!.mountedDirectory("out/modules/ecs")).toBe(
 			".jest-roblox/coverage/out/modules/ecs",
 		);
