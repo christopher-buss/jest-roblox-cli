@@ -55,6 +55,10 @@ export function createInstrumentUniverse(
 	const ignore = filter.ignore ?? [];
 	const anchor = resolveUniverseAnchor(filter.rootDir);
 	const isInUniverse = createCoverageUniverseMatcher(filter);
+	// Every answer costs a sidecar read and a JSON parse, and a run asks twice
+	// for most files: narrowing walks each rojo mount whole, then the shadow
+	// pass walks the roots it kept. Remembering the verdict halves that.
+	const decided = new Map<string, boolean>();
 
 	return {
 		// Sorted before hashing: the matcher ORs each list, so reordering the
@@ -66,13 +70,20 @@ export function createInstrumentUniverse(
 			JSON.stringify({ anchor, ignore: ignore.toSorted(), include: include.toSorted() }),
 		),
 		includes: (luauPath) => {
+			const wasDecided = decided.get(luauPath);
+			if (wasDecided !== undefined) {
+				return wasDecided;
+			}
+
 			const sources = readSourcePaths(luauPath);
 			// An unreadable sidecar says nothing about the file's origin, and
 			// the compiled path cannot match a `.ts` glob — so treating it as
 			// its own source would silently drop the file from the report.
 			// Probe it: a wasted probe costs bytes, a missing one fails a
 			// threshold.
-			return sources === undefined || sources.some(isInUniverse);
+			const isIncluded = sources === undefined || sources.some(isInUniverse);
+			decided.set(luauPath, isIncluded);
+			return isIncluded;
 		},
 	};
 }

@@ -243,4 +243,26 @@ describe(computeRojoInputsHash, () => {
 			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 	});
+
+	it("should pass over a luauRoot nested inside a mounted directory", () => {
+		expect.assertions(2);
+
+		reset();
+		writeProject({ $className: "DataModel", Out: { $path: "out" } });
+		vol.mkdirSync("/project/out/modules/ecs", { recursive: true });
+		vol.mkdirSync("/project/out/client", { recursive: true });
+		vol.writeFileSync("/project/out/modules/ecs/world.luau", "-- v1");
+		vol.writeFileSync("/project/out/client/button.luau", "-- v1");
+		const before = hashOf(["out/modules/ecs"]);
+
+		// The shadow diff content-hashes the root itself, so re-reading it here
+		// would double the work the narrowing exists to avoid.
+		vol.writeFileSync("/project/out/modules/ecs/world.luau", "-- v2");
+
+		expect(hashOf(["out/modules/ecs"])).toBe(before);
+
+		vol.writeFileSync("/project/out/client/button.luau", "-- v2");
+
+		expect(hashOf(["out/modules/ecs"])).not.toBe(before);
+	});
 });

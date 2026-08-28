@@ -3036,7 +3036,7 @@ describe(synthesize, () => {
 	});
 
 	describe("unreachable coverage roots", () => {
-		it("should warn when a coverage root sits below the $path mount above it", () => {
+		it("should not warn about a coverage root the mount above it can be demoted onto", () => {
 			expect.assertions(2);
 
 			vol.reset();
@@ -3072,9 +3072,10 @@ describe(synthesize, () => {
 			expect(child(parsed.tree, "ReplicatedStorage")!.$path).toBe(
 				normalizeWindowsPath(path.join(FOO_DIR, "src")),
 			);
-			expect(stderr).toHaveBeenCalledExactlyOnceWith(
-				'Warning: luauRoot "src/server" sits below the rojo $path mount "src", which the place loads unmodified, so it reports no coverage. Point the root at a mount, or mount "src/server" in the rojo project.\n',
-			);
+			// No spine on this descriptor, so the mount is left alone — but the
+			// root is reachable in principle, and saying otherwise would send the
+			// reader after a config they have written correctly.
+			expect(stderr).not.toHaveBeenCalled();
 		});
 
 		it("should stay silent when every coverage root backs a $path mount", () => {
@@ -3123,8 +3124,7 @@ describe(synthesize, () => {
 						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
 					},
 				}),
-				[path.join(FOO_DIR, "src/client/init.luau")]: "",
-				[path.join(FOO_DIR, "src/server/init.luau")]: "",
+				[path.join(FOO_DIR, "src/init.luau")]: "",
 			});
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
@@ -3134,12 +3134,12 @@ describe(synthesize, () => {
 						name: "@halcyon/foo",
 						coverageRoots: [
 							{
-								luauRoot: "src/client",
-								shadowDir: path.join(FOO_DIR, ".jest-roblox/src/client"),
+								luauRoot: "elsewhere/client",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/elsewhere/client"),
 							},
 							{
-								luauRoot: "src/server",
-								shadowDir: path.join(FOO_DIR, ".jest-roblox/src/server"),
+								luauRoot: "elsewhere/server",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/elsewhere/server"),
 							},
 						],
 						packageDirectory: FOO_DIR,
@@ -3148,7 +3148,16 @@ describe(synthesize, () => {
 				],
 			});
 
-			expect(stderr).toHaveBeenCalledTimes(2);
+			// Named without an owner: the descriptor here is a synthetic package
+			// the user never wrote, so naming it would send them looking for it.
+			expect(stderr.mock.calls).toStrictEqual([
+				[
+					'Warning: luauRoot "elsewhere/client" does not correspond to any rojo $path mount, so it reports no coverage.\n',
+				],
+				[
+					'Warning: luauRoot "elsewhere/server" does not correspond to any rojo $path mount, so it reports no coverage.\n',
+				],
+			]);
 		});
 	});
 
@@ -3436,6 +3445,255 @@ describe(synthesize, () => {
 
 			expect(jestConfig).toBeDefined();
 			expect(jestConfig!.$path).toContain("jest.config.luau");
+		});
+	});
+
+	describe("coverage roots below a $path mount", () => {
+		it("should demote the containing mount onto the spine and hang the root off it", () => {
+			expect.assertions(4);
+
+			vol.reset();
+
+			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src/server");
+			const spineDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src");
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/$reserved/init.luau")]: "",
+				[path.join(FOO_DIR, "src/client/init.luau")]: "",
+				[path.join(FOO_DIR, "src/loose.luau")]: "",
+				[path.join(FOO_DIR, "src/server/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageRoots: [{ luauRoot: "src/server", shadowDir: shadowDirectory }],
+						coverageSpine: [{ luauRoot: "src", shadowDir: spineDirectory }],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const mount = child(parseFixture(result).tree, "ReplicatedStorage")!;
+
+			// The spine carries the mount's own loose files, so `src/loose.luau`
+			// still reaches the place without a node of its own.
+			expect(mount.$path).toBe(normalizeWindowsPath(spineDirectory));
+			expect(mount.$className).toBe("ReplicatedStorage");
+			expect(child(mount, "server")!.$path).toBe(normalizeWindowsPath(shadowDirectory));
+			expect(child(mount, "client")!.$path).toBe(
+				normalizeWindowsPath(path.join(FOO_DIR, "src/client")),
+			);
+		});
+
+		it("should promote directories and nothing else", () => {
+			expect.assertions(2);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/$reserved/init.luau")]: "",
+				[path.join(FOO_DIR, "src/loose.luau")]: "",
+				[path.join(FOO_DIR, "src/server/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageRoots: [
+							{
+								luauRoot: "src/server",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/src/server"),
+							},
+						],
+						coverageSpine: [
+							{
+								luauRoot: "src",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src"),
+							},
+						],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const mount = child(parseFixture(result).tree, "ReplicatedStorage")!;
+
+			// A loose file is already in the spine copy, and a reserved-key name
+			// would collide with one of rojo's own.
+			expect(mount["loose.luau"]).toBeUndefined();
+			expect(mount["$reserved"]).toBeUndefined();
+		});
+
+		it("should stay silent about a root the spine reaches", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/server/init.luau")]: "",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+			synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageRoots: [
+							{
+								luauRoot: "src/server",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/src/server"),
+							},
+						],
+						coverageSpine: [
+							{
+								luauRoot: "src",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src"),
+							},
+						],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			expect(stderr).not.toHaveBeenCalled();
+		});
+
+		it("should carry the demote down every level of the spine", () => {
+			expect.assertions(3);
+
+			vol.reset();
+
+			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src/modules/ecs");
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/modules/ecs/world.luau")]: "",
+				[path.join(FOO_DIR, "src/modules/net/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageRoots: [
+							{ luauRoot: "src/modules/ecs", shadowDir: shadowDirectory },
+						],
+						coverageSpine: [
+							{
+								luauRoot: "src",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src"),
+							},
+							{
+								luauRoot: "src/modules",
+								shadowDir: path.join(
+									FOO_DIR,
+									".jest-roblox/coverage/.spine/src/modules",
+								),
+							},
+						],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const modules = descend(parseFixture(result).tree, "ReplicatedStorage", "modules")!;
+
+			expect(modules.$path).toBe(
+				normalizeWindowsPath(
+					path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src/modules"),
+				),
+			);
+			expect(child(modules, "ecs")!.$path).toBe(normalizeWindowsPath(shadowDirectory));
+			expect(child(modules, "net")!.$path).toBe(
+				normalizeWindowsPath(path.join(FOO_DIR, "src/modules/net")),
+			);
+		});
+
+		it("should leave a directory the project already declares to the project", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							$className: "ReplicatedStorage",
+							$path: "src",
+							client: { $className: "Folder" },
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "src/client/init.luau")]: "",
+				[path.join(FOO_DIR, "src/server/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageRoots: [
+							{
+								luauRoot: "src/server",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/src/server"),
+							},
+						],
+						coverageSpine: [
+							{
+								luauRoot: "src",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src"),
+							},
+						],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			expect(descend(parseFixture(result).tree, "ReplicatedStorage", "client")).toStrictEqual(
+				{
+					$className: "Folder",
+				},
+			);
 		});
 	});
 });

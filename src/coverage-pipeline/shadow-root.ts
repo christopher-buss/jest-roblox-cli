@@ -201,6 +201,51 @@ const NO_EXCLUSIONS = new Set<string>();
 const COV_MAP_SUFFIX = ".cov-map.json";
 
 /**
+ * Mirror one file into the shadow, or carry its previous record forward.
+ *
+ * The carry-forward wants both a matching source hash AND the shadow file the
+ * record points at: a partial cleanup or an interrupted run can leave the
+ * record valid on paper while the file it names is gone.
+ *
+ * Exported for the spine mirror, which copies the loose files of the
+ * directories above a narrowed root: one owner for "a verbatim file in the
+ * shadow, with the record that decides whether to copy it again".
+ */
+export function syncOneFile(
+	sourcePath: string,
+	shadowPath: string,
+	previousRecord: NonInstrumentedFileRecord | undefined,
+): NonInstrumentedFileRecord {
+	const absoluteSource = path.resolve(sourcePath);
+	const currentHash = hashFile(absoluteSource);
+	if (previousRecord?.sourceHash === currentHash && fs.existsSync(previousRecord.shadowPath)) {
+		return previousRecord;
+	}
+
+	fs.mkdirSync(path.dirname(shadowPath), { recursive: true });
+	fs.copyFileSync(absoluteSource, shadowPath);
+
+	return { shadowPath, sourceHash: currentHash, sourcePath };
+}
+
+/**
+ * Best-effort deletion: something we cannot remove stays put rather than being
+ * reported as gone, so the caller never rebuilds the place over a lie.
+ *
+ * Exported for the spine prune, which clears the same shadow under the same
+ * contract.
+ */
+export function tryRemove(deleteEntry: () => void): boolean {
+	let wasRemoved = false;
+	try {
+		deleteEntry();
+		wasRemoved = true;
+	} catch {}
+
+	return wasRemoved;
+}
+
+/**
  * Does the source file backing a shadow entry still exist? A `.cov-map.json`
  * sidecar has no direct twin — it is keyed to its base `.luau`/`.lua`.
  */
@@ -214,20 +259,6 @@ function sourceTwinExists(luauRoot: string, relativePath: string): boolean {
 	}
 
 	return fs.existsSync(path.resolve(luauRoot, relativePath));
-}
-
-/**
- * Best-effort deletion: something we cannot remove stays put rather than being
- * reported as gone, so the caller never rebuilds the place over a lie.
- */
-function remove(deleteEntry: () => void): boolean {
-	let wasRemoved = false;
-	try {
-		deleteEntry();
-		wasRemoved = true;
-	} catch {}
-
-	return wasRemoved;
 }
 
 //
@@ -295,7 +326,7 @@ function pruneOrphanFile(
 		return false;
 	}
 
-	return remove(() => {
+	return tryRemove(() => {
 		fs.unlinkSync(shadowPath);
 	});
 }
@@ -343,7 +374,7 @@ function pruneChildDirectory(
 		return pruneShadowDirectory(context, shadowPath);
 	}
 
-	return remove(() => {
+	return tryRemove(() => {
 		fs.rmSync(shadowPath, { recursive: true });
 	});
 }
@@ -389,30 +420,6 @@ function discoverShadowSyncFiles(
 		{ accept: shouldSyncToShadow, skip: isCopyIgnored },
 		results,
 	);
-}
-
-/**
- * Mirror one file into the shadow, or carry its previous record forward.
- *
- * The carry-forward wants both a matching source hash AND the shadow file the
- * record points at: a partial cleanup or an interrupted run can leave the
- * record valid on paper while the file it names is gone.
- */
-function syncOneFile(
-	sourcePath: string,
-	shadowPath: string,
-	previousRecord: NonInstrumentedFileRecord | undefined,
-): NonInstrumentedFileRecord {
-	const absoluteSource = path.resolve(sourcePath);
-	const currentHash = hashFile(absoluteSource);
-	if (previousRecord?.sourceHash === currentHash && fs.existsSync(previousRecord.shadowPath)) {
-		return previousRecord;
-	}
-
-	fs.mkdirSync(path.dirname(shadowPath), { recursive: true });
-	fs.copyFileSync(absoluteSource, shadowPath);
-
-	return { shadowPath, sourceHash: currentHash, sourcePath };
 }
 
 function syncNonInstrumentedFiles({

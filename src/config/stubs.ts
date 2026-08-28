@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 
+import type { ShadowLayout } from "../coverage-pipeline/spine.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import { isString } from "../utils/is-string.ts";
 import { ConfigError } from "./errors.ts";
@@ -245,14 +246,14 @@ export function generateProjectStubs(
 export function syncStubsToShadowDirectory(
 	projects: Array<ResolvedProjectConfig>,
 	rootDirectory: string,
-	shadowDirectory: string,
+	shadow: ShadowLayout,
 ): boolean {
 	let hasChanged = false;
 	const expectedPaths = new Set<string>();
 
 	for (const project of projects) {
 		for (const mount of project.rojoMounts) {
-			const result = syncMountStub(project, mount.fsPath, rootDirectory, shadowDirectory);
+			const result = syncMountStub(project, mount.fsPath, rootDirectory, shadow);
 			if (result.targetPath !== undefined) {
 				expectedPaths.add(result.targetPath);
 			}
@@ -261,7 +262,7 @@ export function syncStubsToShadowDirectory(
 		}
 	}
 
-	for (const existing of findShadowStubs(shadowDirectory)) {
+	for (const existing of findShadowStubs(shadow.root)) {
 		if (expectedPaths.has(existing)) {
 			continue;
 		}
@@ -277,7 +278,7 @@ export function syncStubsToShadowDirectory(
 		}
 
 		fs.unlinkSync(existing);
-		removeEmptyParents(path.dirname(existing), shadowDirectory);
+		removeEmptyParents(path.dirname(existing), shadow.root);
 		hasChanged = true;
 	}
 
@@ -354,7 +355,7 @@ function syncMountStub(
 	project: ResolvedProjectConfig,
 	fsPath: string,
 	rootDirectory: string,
-	shadowDirectory: string,
+	shadow: ShadowLayout,
 ): SyncMountStubResult {
 	assertMountContained(project, fsPath, rootDirectory);
 
@@ -363,7 +364,10 @@ function syncMountStub(
 		return { changed: false, targetPath: undefined };
 	}
 
-	const targetPath = path.resolve(shadowDirectory, fsPath, STUB_FILENAME);
+	// Asked rather than joined onto the shadow root: a mount the coverage
+	// narrowing demoted is served from its spine copy, and a stub baked into
+	// the mirror beside it would be in a directory the place never mounts.
+	const targetPath = path.resolve(shadow.mountedDirectory(fsPath), STUB_FILENAME);
 	const sourceContent = fs.readFileSync(sourcePath);
 
 	if (fs.existsSync(targetPath)) {

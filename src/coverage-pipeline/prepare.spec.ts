@@ -33,6 +33,7 @@ import {
 	toCoverageArtifacts,
 } from "./prepare.ts";
 import { computeRojoInputsHash } from "./rojo-inputs.ts";
+import type { ShadowLayout } from "./spine.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -1488,7 +1489,7 @@ describe(prepareCoverage, () => {
 			seedIncrementalScenario();
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
-			const beforeBuild = vi.fn<(shadowDirectory: string) => boolean>().mockReturnValue(true);
+			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>().mockReturnValue(true);
 
 			prepareCoverage(config, { beforeBuild });
 
@@ -1504,9 +1505,7 @@ describe(prepareCoverage, () => {
 			seedIncrementalScenario();
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
-			const beforeBuild = vi
-				.fn<(shadowDirectory: string) => boolean>()
-				.mockReturnValue(false);
+			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>().mockReturnValue(false);
 
 			prepareCoverage(config, { beforeBuild });
 
@@ -2356,19 +2355,19 @@ describe(prepareCoverage, () => {
 	});
 
 	describe("when beforeBuild callback is provided", () => {
-		it("should call beforeBuild with shadow directory path", async () => {
+		it("should call beforeBuild with the shadow layout", async () => {
 			expect.assertions(2);
 
 			seedFilesystem();
 			const { buildWithRojo } = await setupMocksAsync();
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
-			const beforeBuild = vi
-				.fn<(shadowDirectory: string) => boolean>()
-				.mockReturnValue(false);
+			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>().mockReturnValue(false);
 
 			prepareCoverage(config, { beforeBuild });
 
-			expect(beforeBuild).toHaveBeenCalledWith(".jest-roblox/coverage");
+			expect(beforeBuild).toHaveBeenCalledWith(
+				expect.objectContaining({ root: ".jest-roblox/coverage" }),
+			);
 			expect(buildWithRojo).toHaveBeenCalledWith(expect.any(String), expect.any(String));
 		});
 
@@ -2383,7 +2382,7 @@ describe(prepareCoverage, () => {
 			// difference between the two phases.
 			let clock = 1_000;
 			vi.spyOn(Date, "now").mockImplementation(() => clock);
-			const beforeBuild = vi.fn<(shadowDirectory: string) => boolean>(() => {
+			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>(() => {
 				clock += 90;
 				return false;
 			});
@@ -2971,5 +2970,126 @@ describe(toCoverageArtifacts, () => {
 			projects,
 			rebuilt: true,
 		});
+	});
+});
+
+describe("narrowing to the coverage universe", () => {
+	/**
+	 * A mount whose probes all sit in one subtree, with unprobed siblings
+	 * either side and a loose file the mount itself owns.
+	 */
+	function seedNarrowableRoot(): void {
+		// Rooted at the invocation directory, which is what `rootDir` is in a
+		// real single-mode run: the mount the demote rewrites has to resolve to
+		// the same directory the shadow walk reads.
+		vol.mkdirSync(process.cwd(), { recursive: true });
+		vol.writeFileSync(
+			"default.project.json",
+			JSON.stringify({
+				name: "test",
+				tree: { $className: "DataModel", ReplicatedStorage: { $path: "out" } },
+			}),
+		);
+		vol.mkdirSync("out/modules/ecs", { recursive: true });
+		vol.mkdirSync("out/client", { recursive: true });
+		vol.writeFileSync("out/modules/ecs/world.luau", "local x = 1");
+		vol.writeFileSync("out/modules/net.luau", "local x = 2");
+		vol.writeFileSync("out/client/button.luau", "local x = 3");
+		vol.writeFileSync("out/loose.luau", "local x = 4");
+	}
+
+	it("should mirror only the subtrees the universe resolves to", async () => {
+		expect.assertions(3);
+
+		seedNarrowableRoot();
+		await setupMocksAsync();
+		const config = makeConfig({
+			collectCoverageFrom: ["**/ecs/**"],
+			luauRoots: ["out"],
+			rootDir: process.cwd(),
+		});
+
+		prepareCoverage(config);
+
+		expect(vol.existsSync(".jest-roblox/coverage/out/modules/ecs/world.luau")).toBeTrue();
+		expect(vol.existsSync(".jest-roblox/coverage/out/client/button.luau")).toBeFalse();
+		expect(vol.existsSync(".jest-roblox/coverage/out/modules/net.luau")).toBeFalse();
+	});
+
+	it("should carry each demoted level's loose files onto the spine", async () => {
+		expect.assertions(2);
+
+		seedNarrowableRoot();
+		await setupMocksAsync();
+		const config = makeConfig({
+			collectCoverageFrom: ["**/ecs/**"],
+			luauRoots: ["out"],
+			rootDir: process.cwd(),
+		});
+
+		prepareCoverage(config);
+
+		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/loose.luau")).toBeTrue();
+		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/modules/net.luau")).toBeTrue();
+	});
+
+	it("should record the narrowed roots in the manifest", async () => {
+		expect.assertions(1);
+
+		seedNarrowableRoot();
+		await setupMocksAsync();
+		const config = makeConfig({
+			collectCoverageFrom: ["**/ecs/**"],
+			luauRoots: ["out"],
+			rootDir: process.cwd(),
+		});
+
+		const result = prepareCoverage(config);
+
+		expect(result.manifest.luauRoots).toStrictEqual(["out/modules/ecs"]);
+	});
+
+	it("should leave a mount the universe never reaches out of the shadow", async () => {
+		expect.assertions(2);
+
+		seedNarrowableRoot();
+		await setupMocksAsync();
+		const config = makeConfig({
+			collectCoverageFrom: ["**/nothing-here/**"],
+			luauRoots: ["out"],
+			rootDir: process.cwd(),
+		});
+
+		const result = prepareCoverage(config);
+
+		expect(result.manifest.luauRoots).toStrictEqual([]);
+		expect(vol.existsSync(".jest-roblox/coverage/out")).toBeFalse();
+	});
+
+	it("should hand the bake the spine copy for a demoted directory", async () => {
+		expect.assertions(2);
+
+		seedNarrowableRoot();
+		await setupMocksAsync();
+		const config = makeConfig({
+			collectCoverageFrom: ["**/ecs/**"],
+			luauRoots: ["out"],
+			rootDir: process.cwd(),
+		});
+		const layouts: Array<ShadowLayout> = [];
+
+		prepareCoverage(config, {
+			beforeBuild: (layout) => {
+				layouts.push(layout);
+				return false;
+			},
+		});
+
+		// The place mounts the spine in `out`'s place, so anything baked into
+		// the mirror would never reach it.
+		expect(layouts[0]!.mountedDirectory("out")).toBe(".jest-roblox/coverage/.spine/out");
+		expect(layouts[0]!.mountedDirectory("out/modules/ecs")).toBe(
+			".jest-roblox/coverage/out/modules/ecs",
+		);
 	});
 });

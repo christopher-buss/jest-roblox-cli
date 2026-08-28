@@ -767,7 +767,10 @@ describe(runMultiProjectAsync, () => {
 		const { config } = setupDefaults({ collectCoverage: true });
 		mocks.syncStubsToShadowDirectory.mockReturnValue(false);
 		mocks.prepareCoverage.mockImplementation((_config, options) => {
-			options!.beforeBuild!(".jest-roblox/coverage");
+			options!.beforeBuild!({
+				mountedDirectory: (relative) => `.jest-roblox/coverage/${relative}`,
+				root: ".jest-roblox/coverage",
+			});
 			return {
 				buildId: "test-build-id",
 				coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
@@ -802,7 +805,7 @@ describe(runMultiProjectAsync, () => {
 		expect(mocks.syncStubsToShadowDirectory).toHaveBeenCalledWith(
 			expect.any(Array),
 			expect.stringMatching(/[\\/]\.jest-roblox[\\/]cache$/),
-			".jest-roblox/coverage",
+			expect.objectContaining({ root: ".jest-roblox/coverage" }),
 		);
 	});
 

@@ -101,7 +101,7 @@ export function prepareBakedCoverage(
 ): BakedCoverage {
 	const coverage = prepareCoverage(config, {
 		beforeBuild: bakeStubs
-			? (shadowDirectory) => syncStubsToShadowDirectory(projects, cacheRoot, shadowDirectory)
+			? (shadow) => syncStubsToShadowDirectory(projects, cacheRoot, shadow)
 			: undefined,
 		// The same globs `buildMultiRunResult` reports against, so a file is
 		// probed exactly when this run would render a line for it.

@@ -190,13 +190,21 @@ package's own jest.config or in a shared config that every package extends.
 | `luauRoots`        | Where Luau files live for coverage instrumentation                | auto from tsconfig `outDir` |
 | `bootProbeTimeout` | How long the boot probe is given to prove a place version starts  | `90000` (90 s)              |
 
-A coverage run mirrors each `luauRoot` into a shadow tree and repoints the Rojo
-`$path` mounts that land on it or inside it at that shadow, so a root your Rojo
-project reaches only through a mount _above_ it never gets loaded: the place
-still carries the original sources and the root reports nothing. Set each
-`luauRoot` to a `$path` mount, or to a directory containing one — anything else
-warns and names the mount to widen to. In workspace mode the root is dropped
-outright; elsewhere it is instrumented and the place ignores it.
+A coverage run does not mirror a whole `luauRoot`. It resolves your coverage
+universe against the file system first and mirrors only the directories that
+actually hold a covered file, which on a large project is a small fraction of
+the tree. A Rojo `$path` mount that lands on such a directory is repointed at
+the shadow; a mount _above_ one is demoted instead — its `$path` moves to a copy
+of that directory's own loose files and the narrowed directory is hung
+underneath as an explicit child, so its unprobed siblings keep loading from your
+`outDir` rather than being copied.
+
+That makes a `luauRoot` above, at, or below a `$path` mount all work. Only a
+root no mount reaches at all reports nothing, and the run says so by name.
+
+Narrowing steps aside when it would not pay: a config whose covered files are
+scattered across a wide tree keeps most of the mount whichever way it is split,
+so the mount is taken whole instead of buying a project node per sibling.
 
 `timeout` is the deadline Roblox is given for the script, not a hard cap on the
 run. Roblox starts that clock when the script begins running — after the place
@@ -272,12 +280,12 @@ Put these under `test: { ... }`.
 
 `coverageCopyIgnorePatterns` is the other half of that: it decides what the
 coverage place carries at all, not what the report covers. A coverage run
-mirrors each `luauRoot` into a shadow tree and builds the place from that, and
-the default drops the three sidecars roblox-ts emits beside every module. rojo
-mounts none of those extensions, and every reader of a source map opens the one
-in `outDir` — the stack mapper resolves `$path` from your own rojo project, not
-the synthesized one — so on a large project they are roughly three quarters of
-the copied files.
+mirrors the covered directories into a shadow tree and builds the place from
+that, and the default drops the three sidecars roblox-ts emits beside every
+module. rojo mounts none of those extensions, and every reader of a source map
+opens the one in `outDir` — the stack mapper resolves `$path` from your own rojo
+project, not the synthesized one — so on a large project they are roughly three
+quarters of the copied files.
 
 Patterns match a path relative to its compiled root, directories included, and
 they are matched exactly (no substring containment) because an over-match drops

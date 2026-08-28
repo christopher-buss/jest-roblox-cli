@@ -28,6 +28,7 @@ describe(stageWorkspacePlace, () => {
 		const cacheDirectory = path.resolve("/cache");
 		const coverage = fromAny<WorkspacePackageCoverage, unknown>({
 			coverageRoots: [{ shadowDir: path.resolve("/cache/shadow") }],
+			coverageSpine: [{ shadowDir: path.resolve("/cache/shadow-spine") }],
 			manifest: fromAny<CoverageManifest, unknown>({ files: {} }),
 		});
 		const coverageByPackage = new Map([["@scope/package", coverage]]);
@@ -79,7 +80,7 @@ describe(stageWorkspacePlace, () => {
 			reuse: {
 				cacheFile: path.join(cacheDirectory, "synthesized.place-cache.json"),
 				manifests: [coverage.manifest],
-				shadowRoots: ["shadow"],
+				shadowRoots: ["shadow", "shadow-spine"],
 			},
 		});
 		expect(emitWorkspaceBuildManifests).toHaveBeenCalledWith([coverage], artifact);

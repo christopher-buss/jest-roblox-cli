@@ -18,7 +18,8 @@ import type { PendingEntry } from "./test-selection.ts";
  * Clears leftover stubs, writes each live project's `jest.config` stub into the
  * package cache root, and returns the synthesizer descriptors — each carrying
  * its `stubMounts` plus, for instrumented packages, the `coverageRoots` that
- * redirect its `$path` entries at the shadow tree.
+ * redirect its `$path` entries at the shadow tree and the `coverageSpine` the
+ * demote mounts in place of the ones above them.
  */
 export function stageWorkspaceStubs({
 	contexts,
@@ -39,7 +40,11 @@ export function stageWorkspaceStubs({
 		.map((descriptor) => {
 			const coverage = coverageByPackage.get(descriptor.name);
 			return coverage !== undefined
-				? { ...descriptor, coverageRoots: coverage.coverageRoots }
+				? {
+						...descriptor,
+						coverageRoots: coverage.coverageRoots,
+						coverageSpine: coverage.coverageSpine,
+					}
 				: descriptor;
 		});
 }

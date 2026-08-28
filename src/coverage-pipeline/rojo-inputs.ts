@@ -22,6 +22,16 @@ export interface RojoInputsOptions {
 	rootDirectory: string;
 }
 
+/** What the input walk carries down the tree, unchanged at every level. */
+interface InputWalk {
+	files: Set<string>;
+	/**
+	 * Canonical luauRoot paths, whose subtrees the shadow diff already hashes.
+	 */
+	luauRootKeys: Array<string>;
+	visitedDirectories: Set<string>;
+}
+
 /**
  * SHA-256 over every rojo build input that lives OUTSIDE the instrumented
  * luauRoots: non-luauRoot `$path` mounts (e.g. `include/RuntimeLib.lua`,
@@ -57,13 +67,9 @@ export function computeRojoInputsHash({
 	}
 
 	const visitedDirectories = new Set<string>();
+	const walk: InputWalk = { files, luauRootKeys, visitedDirectories };
 	for (const mount of mounts) {
-		const mountPath = path.join(projectDirectory, mount);
-		if (coveredByLuauRoot(toKey(mountPath), luauRootKeys)) {
-			continue;
-		}
-
-		collectInputFiles(mountPath, visitedDirectories, files);
+		collectInputFiles(path.join(projectDirectory, mount), walk);
 	}
 
 	return digestFiles(files, rootDirectory);
@@ -105,10 +111,6 @@ function toKey(filePath: string): string {
 	return normalizeWindowsPath(filePath);
 }
 
-function coveredByLuauRoot(mountKey: string, luauRootKeys: Array<string>): boolean {
-	return luauRootKeys.some((root) => mountKey === root || mountKey.startsWith(`${root}/`));
-}
-
 function digestFiles(files: Set<string>, rootDirectory: string): string {
 	const lines: Array<string> = [];
 	for (const file of files) {
@@ -120,11 +122,11 @@ function digestFiles(files: Set<string>, rootDirectory: string): string {
 	return createHash("sha256").update(lines.join("\n")).digest("hex");
 }
 
-function collectInputFiles(
-	target: string,
-	visitedDirectories: Set<string>,
-	files: Set<string>,
-): void {
+function coveredByLuauRoot(mountKey: string, luauRootKeys: Array<string>): boolean {
+	return luauRootKeys.some((root) => mountKey === root || mountKey.startsWith(`${root}/`));
+}
+
+function collectInputFiles(target: string, walk: InputWalk): void {
 	let stats: fs.Stats;
 	try {
 		stats = fs.statSync(target);
@@ -133,27 +135,31 @@ function collectInputFiles(
 		return;
 	}
 
-	if (stats.isDirectory()) {
-		walkDirectory(target, visitedDirectories, files);
+	if (!stats.isDirectory()) {
+		walk.files.add(toKey(target));
 		return;
 	}
 
-	files.add(toKey(target));
+	// A luauRoot is skipped wherever it turns up, not just when it is the mount
+	// itself: narrowing puts the roots below their mount, so the walk reaches
+	// them on the way down. The shadow diff already content-hashes them, and
+	// re-reading a whole instrumented subtree here is the work narrowing exists
+	// to avoid. Directories only — a root is one, and a file under a root is
+	// reached solely by descending through it.
+	if (!coveredByLuauRoot(toKey(target), walk.luauRootKeys)) {
+		walkDirectory(target, walk);
+	}
 }
 
-function walkDirectory(
-	directory: string,
-	visitedDirectories: Set<string>,
-	files: Set<string>,
-): void {
+function walkDirectory(directory: string, walk: InputWalk): void {
 	// realpath collapses pnpm symlink cycles to a canonical key so a self- or
 	// ancestor-referencing link is walked once rather than forever.
 	const real = toKey(fs.realpathSync(directory));
-	if (visitedDirectories.has(real)) {
+	if (walk.visitedDirectories.has(real)) {
 		return;
 	}
 
-	visitedDirectories.add(real);
+	walk.visitedDirectories.add(real);
 
 	const entries = fs.readdirSync(directory, { withFileTypes: true });
 	for (const entry of entries) {
@@ -162,6 +168,6 @@ function walkDirectory(
 			continue;
 		}
 
-		collectInputFiles(path.join(directory, entry.name), visitedDirectories, files);
+		collectInputFiles(path.join(directory, entry.name), walk);
 	}
 }

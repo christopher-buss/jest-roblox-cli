@@ -34,8 +34,14 @@ import type {
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
 import { MANIFEST_VERSION, readManifest, writeManifest } from "./manifest.ts";
+import type { NarrowedMount } from "./narrow-roots.ts";
+import { narrowLuauRoots } from "./narrow-roots.ts";
 import { tryComputeRojoInputsHash } from "./rojo-inputs.ts";
+import { collectRojoMounts } from "./root-reachability.ts";
+import type { ShadowRootResult } from "./shadow-root.ts";
 import { prepareShadowRoot } from "./shadow-root.ts";
+import type { ShadowLayout } from "./spine.ts";
+import { createShadowLayout, prepareSpine } from "./spine.ts";
 
 const COVERAGE_DIR = ".jest-roblox/coverage";
 const COVERAGE_MANIFEST = "coverage-manifest.json";
@@ -77,7 +83,7 @@ export interface PrepareCoverageResult {
 
 export interface PrepareCoverageOptions {
 	/** Hook run after the shadow tree is populated, before the place build. */
-	beforeBuild?: ((shadowDirectory: string) => boolean) | undefined;
+	beforeBuild?: ((layout: ShadowLayout) => boolean) | undefined;
 	/**
 	 * The run's effective coverage include globs, per `resolveCoverageInclude`
 	 * — which is where the `collectCoverageFrom ?? derived` fallback lives. A
@@ -110,6 +116,27 @@ interface PriorPlaceReuse {
 	reusable: boolean;
 }
 
+/** One read of a rojo project: the tree, or why there is none. */
+interface RojoProjectRead {
+	/**
+	 * The parse failure, held rather than thrown, and set only for a project
+	 * too malformed to read — never for a missing one. A run that names its own
+	 * `luauRoots` never needs the tree, and refusing it for a project it does
+	 * not read would turn a working run into a hard failure, so only the root
+	 * auto-detect rethrows this.
+	 */
+	failure: Error | undefined;
+	/** Absent when the project is missing or too malformed to parse. */
+	project: RojoProject | undefined;
+}
+
+/** The rojo project a run reads, parsed once and shared by everything. */
+interface RojoContext extends RojoProjectRead {
+	config: ResolvedConfig;
+	/** What `$path` resolves against — the project's own directory. */
+	rojoDirectory: string | undefined;
+}
+
 /** Everything resolved from config before any shadow dir is touched. */
 interface CoverageInputs {
 	buildManifestPath: string;
@@ -124,6 +151,12 @@ interface CoverageInputs {
 	isCopyIgnored: CopyIgnoreMatcher;
 	luauRoots: Array<string>;
 	manifestPath: string;
+	/**
+	 * Each rojo mount with the roots the universe narrowed it to. Carried
+	 * whole because the spine mirror reads `coverageCopyIgnorePatterns` in the
+	 * mount's own frame, which a flattened root list would have lost.
+	 */
+	narrowed: Array<NarrowedMount>;
 	previousManifest: CoverageManifest | undefined;
 	rojoInputsHash: string;
 	rojoProjectPath: string;
@@ -135,8 +168,18 @@ interface CoverageInputs {
 interface ShadowRootsResult {
 	changed: boolean;
 	coverageRoots: Array<CoverageRoot>;
+	/** The demoted levels, paired with the shadow copy that stands in. */
+	coverageSpine: Array<CoverageRoot>;
 	files: Record<string, InstrumentedFileRecord>;
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
+}
+
+/** What the coverage place build reads, once the shadow is populated. */
+interface BuildCoveragePlaceOptions {
+	packageDirectory: string;
+	placeFile: string;
+	rojoProjectPath: string;
+	shadow: Pick<ShadowRootsResult, "coverageRoots" | "coverageSpine">;
 }
 
 interface RojoInputsHashResult {
@@ -217,7 +260,7 @@ export function findRojoProject(config: ResolvedConfig): string {
 }
 
 export function resolveLuauRoots(config: ResolvedConfig): Array<string> {
-	return resolveLuauRootsWithRojo(config);
+	return resolveLuauRootsWithRojo(readRojoContext(config, tryFindRojoProject(config)));
 }
 
 export function prepareCoverage(
@@ -237,7 +280,7 @@ export function prepareCoverage(
 
 	const stagingStart = Date.now();
 	const hasChanges = hasCoverageChanges(inputs, {
-		hasExtraChanges: beforeBuild?.(COVERAGE_DIR) === true,
+		hasExtraChanges: beforeBuild?.(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true,
 		isIncremental,
 		shadow,
 	});
@@ -277,6 +320,15 @@ function containsLuauFiles(directoryPath: string): boolean {
 	});
 }
 
+/** {@link findRojoProject}, answering `undefined` where there is no project. */
+function tryFindRojoProject(config: ResolvedConfig): string | undefined {
+	try {
+		return findRojoProject(config);
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * Auto-detect coverage roots from the Rojo project's `$path` mounts. Returns
  * `undefined` when no project file was found or it mounted nothing
@@ -284,41 +336,26 @@ function containsLuauFiles(directoryPath: string): boolean {
  */
 function detectRootsFromRojo(
 	config: ResolvedConfig,
-	rojoProjectPath?: string,
+	resolved: RojoProject | undefined,
 ): Array<string> | undefined {
-	try {
-		const resolvedPath = rojoProjectPath ?? findRojoProject(config);
-		const validated = rojoProjectSchema(JSON.parse(fs.readFileSync(resolvedPath, "utf-8")));
-		if (validated instanceof type.errors) {
-			throw new Error(validated.summary);
-		}
-
-		const rojoProject = validated;
-		const resolved = {
-			...rojoProject,
-			tree: resolveNestedProjects(rojoProject.tree, path.dirname(resolvedPath)),
-		};
-		const roots = collectLuauRootsFromRojo(resolved, config);
-		if (roots.length > 0) {
-			return roots;
-		}
-	} catch (err) {
-		// Expected: no project file found → fall through to tsconfig.
-		// Unexpected: malformed JSON → surface to help debugging.
-		if (err instanceof SyntaxError) {
-			throw new Error(`Malformed Rojo project JSON: ${err.message}`, { cause: err });
-		}
+	if (resolved === undefined) {
+		return undefined;
 	}
 
-	return undefined;
+	const roots = collectLuauRootsFromRojo(resolved, config);
+	return roots.length > 0 ? roots : undefined;
 }
 
-function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: string): Array<string> {
+function resolveLuauRootsWithRojo({ config, failure, project }: RojoContext): Array<string> {
 	if (config.luauRoots !== undefined && config.luauRoots.length > 0) {
 		return config.luauRoots;
 	}
 
-	const rojoRoots = detectRootsFromRojo(config, rojoProjectPath);
+	if (failure !== undefined) {
+		throw failure;
+	}
+
+	const rojoRoots = detectRootsFromRojo(config, project);
 	if (rojoRoots !== undefined) {
 		return rojoRoots;
 	}
@@ -332,6 +369,56 @@ function resolveLuauRootsWithRojo(config: ResolvedConfig, rojoProjectPath?: stri
 	throw new Error(
 		"Could not determine luauRoots. Set luauRoots in config or ensure tsconfig has outDir.",
 	);
+}
+
+/**
+ * The project with its nested `.project.json` mounts inlined, or `undefined`
+ * when there is none to read. Both the root auto-detect and the mount set the
+ * demote is judged against come from this one read.
+ */
+function loadResolvedRojoProject(resolvedPath: string): RojoProjectRead {
+	try {
+		const validated = rojoProjectSchema(JSON.parse(fs.readFileSync(resolvedPath, "utf-8")));
+		if (validated instanceof type.errors) {
+			throw new Error(validated.summary);
+		}
+
+		return {
+			failure: undefined,
+			project: {
+				...validated,
+				tree: resolveNestedProjects(validated.tree, path.dirname(resolvedPath)),
+			},
+		};
+	} catch (err) {
+		// Expected: nothing readable there → the caller falls through to the
+		// tsconfig outDir. Unexpected: malformed JSON → held for the caller
+		// that depends on the tree, to help debugging.
+		return {
+			failure:
+				err instanceof SyntaxError
+					? new Error(`Malformed Rojo project JSON: ${err.message}`, { cause: err })
+					: undefined,
+			project: undefined,
+		};
+	}
+}
+
+/** {@link loadResolvedRojoProject}, with the parse failure held for later. */
+function readRojoContext(config: ResolvedConfig, rojoProjectPath: string | undefined): RojoContext {
+	if (rojoProjectPath === undefined) {
+		// No project file at all: the caller falls through to tsconfig's outDir,
+		// and there are no mounts to judge a demote against.
+		return { config, failure: undefined, project: undefined, rojoDirectory: undefined };
+	}
+
+	const projectPath = rojoProjectPath;
+
+	return {
+		...loadResolvedRojoProject(projectPath),
+		config,
+		rojoDirectory: path.dirname(projectPath),
+	};
 }
 
 // Announce the reuse and hand the prior place back. Nothing was built, but the
@@ -404,6 +491,48 @@ function loadCoverageManifest(manifestPath: string): CoverageManifest | undefine
 }
 
 /**
+ * The run's instrument-time universe.
+ *
+ * No `rootDir`: the candidate paths these globs are matched against are
+ * cwd-relative here. `luauRoots` are walked from the invocation directory and
+ * `COVERAGE_DIR` hangs off it, so the manifest keys — and through them the
+ * mapped TS paths — are cwd-relative too. Anchoring the globs anywhere else
+ * would match none of them. Only workspace mode, whose candidates are absolute
+ * under a package, has an anchor worth preferring.
+ */
+function resolveUniverse(
+	config: ResolvedConfig,
+	coverageInclude: Array<string> | undefined,
+): InstrumentUniverse | undefined {
+	return createInstrumentUniverse({
+		ignore: config.coveragePathIgnorePatterns,
+		include: coverageInclude ?? config.collectCoverageFrom,
+	});
+}
+
+/**
+ * The project's `$path` mounts, in the frame `luauRoots` are written in.
+ *
+ * Only a mount is a directory the demote can rewrite, and a `luauRoot` need
+ * not be one — `places/main` names `out` while the project mounts
+ * `out/client` and `out/server`.
+ *
+ * Relativized against `rootDir` because that is what synthesis resolves a
+ * coverage root against, so a mount and a root agree here exactly when they
+ * agree there.
+ */
+function resolveRojoMounts({ config, project, rojoDirectory }: RojoContext): ReadonlySet<string> {
+	if (project === undefined || rojoDirectory === undefined) {
+		return new Set();
+	}
+
+	const mounts = collectRojoMounts(project.tree, rojoDirectory);
+	return new Set(
+		Array.from(mounts, (mount) => normalizeWindowsPath(path.relative(config.rootDir, mount))),
+	);
+}
+
+/**
  * Resolve the rojo project, the luau roots, the non-luauRoot inputs hash and
  * the prior manifest — everything the rest of the run reads but never mutates.
  */
@@ -412,39 +541,39 @@ function resolveCoverageInputs(
 	coverageInclude: Array<string> | undefined,
 ): CoverageInputs {
 	const rojoProjectPath = findRojoProject(config);
-	const luauRoots = resolveLuauRootsWithRojo(config, rojoProjectPath);
+	// One read: the root auto-detect and the mount set the demote is judged
+	// against both come from the same tree, nested projects included.
+	const rojo = readRojoContext(config, rojoProjectPath);
+	const mounts = resolveLuauRootsWithRojo(rojo);
 
-	validateRelativeRoots(luauRoots);
+	validateRelativeRoots(mounts);
 
-	const { hash: rojoInputsHash, resolved: hasResolvedInputs } = resolveRojoInputsHash(
-		config,
-		rojoProjectPath,
-		luauRoots,
-	);
-
+	const isCopyIgnored = createCopyIgnoreMatcher(config.coverageCopyIgnorePatterns);
+	const universe = resolveUniverse(config, coverageInclude);
+	// Narrowed before anything is instrumented: the universe resolves off
+	// directory entries and source maps alone, so what comes back is what the
+	// shadow has to mirror rather than every file the mount holds.
+	const narrowed = narrowLuauRoots(mounts, {
+		isCopyIgnored,
+		rojoMounts: resolveRojoMounts(rojo),
+		universe,
+	});
+	const luauRoots = narrowed.flatMap((entry) => entry.roots);
+	const inputs = resolveRojoInputsHash(config, rojoProjectPath, luauRoots);
 	const manifestPath = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
 
 	return {
 		buildManifestPath: path.join(COVERAGE_DIR, BUILD_MANIFEST_FILE),
 		copyIgnoreHash: hashCopyIgnorePatterns(config.coverageCopyIgnorePatterns),
-		hasResolvedInputs,
-		isCopyIgnored: createCopyIgnoreMatcher(config.coverageCopyIgnorePatterns),
+		hasResolvedInputs: inputs.resolved,
+		isCopyIgnored,
 		luauRoots,
 		manifestPath,
+		narrowed,
 		previousManifest: loadCoverageManifest(manifestPath),
-		rojoInputsHash,
+		rojoInputsHash: inputs.hash,
 		rojoProjectPath,
-		// No `rootDir`: the candidate paths these globs are matched against are
-		// cwd-relative here. `luauRoots` are walked from the invocation
-		// directory and `COVERAGE_DIR` hangs off it, so the manifest keys — and
-		// through them the mapped TS paths — are cwd-relative too. Anchoring
-		// the globs anywhere else would match none of them. Only workspace
-		// mode, whose candidates are absolute under a package, has an anchor
-		// worth preferring.
-		universe: createInstrumentUniverse({
-			ignore: config.coveragePathIgnorePatterns,
-			include: coverageInclude ?? config.collectCoverageFrom,
-		}),
+		universe,
 	};
 }
 
@@ -487,31 +616,42 @@ function decideIncremental(
 	return isIncremental;
 }
 
+/**
+ * One narrowed root, instrumented into the shadow directory that mirrors it.
+ */
+function instrumentOneRoot(
+	{ isCopyIgnored, previousManifest, universe }: CoverageInputs,
+	{ isIncremental, luauRoot }: { isIncremental: boolean; luauRoot: string },
+): ShadowRootResult {
+	return prepareShadowRoot({
+		isCopyIgnored,
+		luauRoot,
+		previousManifest,
+		shadowDir: normalizeWindowsPath(path.join(COVERAGE_DIR, luauRoot)),
+		universe,
+		useIncremental: isIncremental,
+	});
+}
+
 /** Instrument every luauRoot into its shadow dir and merge the results. */
-function prepareShadowRoots(
-	{ isCopyIgnored, luauRoots, previousManifest, universe }: CoverageInputs,
-	isIncremental: boolean,
-): ShadowRootsResult {
+function prepareShadowRoots(inputs: CoverageInputs, isIncremental: boolean): ShadowRootsResult {
 	const files: Record<string, InstrumentedFileRecord> = {};
-	const nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord> = {};
 	const coverageRoots: Array<CoverageRoot> = [];
-	let hasChanges = false;
+	// Paths here are already the source's own — this mode walks them from the
+	// invocation directory — so a spine level names its own directory.
+	const spine = prepareSpine({
+		isCopyIgnored: inputs.isCopyIgnored,
+		narrowed: inputs.narrowed,
+		previousNonInstrumented: inputs.previousManifest?.nonInstrumentedFiles,
+		shadowRoot: COVERAGE_DIR,
+		toSourcePath: (relativePath) => relativePath,
+	});
+	const nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord> = { ...spine.files };
+	let hasChanges = spine.changed;
 
-	for (const luauRoot of luauRoots) {
-		const shadowDirectory = normalizeWindowsPath(path.join(COVERAGE_DIR, luauRoot));
-		const result = prepareShadowRoot({
-			isCopyIgnored,
-			luauRoot,
-			previousManifest,
-			shadowDir: shadowDirectory,
-			universe,
-			useIncremental: isIncremental,
-		});
-
-		if (result.changed) {
-			hasChanges = true;
-		}
-
+	for (const luauRoot of inputs.luauRoots) {
+		const result = instrumentOneRoot(inputs, { isIncremental, luauRoot });
+		hasChanges ||= result.changed;
 		Object.assign(files, result.files);
 		Object.assign(nonInstrumentedFiles, result.nonInstrumentedFiles);
 		coverageRoots.push({
@@ -520,7 +660,13 @@ function prepareShadowRoots(
 		});
 	}
 
-	return { changed: hasChanges, coverageRoots, files, nonInstrumentedFiles };
+	return {
+		changed: hasChanges,
+		coverageRoots,
+		coverageSpine: spine.directories,
+		files,
+		nonInstrumentedFiles,
+	};
 }
 
 /**
@@ -622,12 +768,12 @@ function reuseCoverageResult(
 	};
 }
 
-function buildRojoProject(
-	rojoProjectPath: string,
-	packageDirectory: string,
-	coverageRoots: Array<CoverageRoot>,
-	placeFile: string,
-): BuildManifestArtifact {
+function buildRojoProject({
+	packageDirectory,
+	placeFile,
+	rojoProjectPath,
+	shadow,
+}: BuildCoveragePlaceOptions): BuildManifestArtifact {
 	return buildPlace({
 		// The coverage place is shared by every backend. studio-cli opens it
 		// directly and drives the plugin's Run-mode runner, which refuses to run
@@ -638,7 +784,8 @@ function buildRojoProject(
 		packages: [
 			{
 				name: "jest-roblox-coverage",
-				coverageRoots,
+				coverageRoots: shadow.coverageRoots,
+				coverageSpine: shadow.coverageSpine,
 				packageDirectory: path.resolve(packageDirectory),
 				rojoProjectPath: path.resolve(rojoProjectPath),
 			},
@@ -694,12 +841,12 @@ function buildCoveragePlaceAndManifest(
 	shadow: ShadowRootsResult,
 	placeFile: string,
 ): Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest"> {
-	const coveragePlace = buildRojoProject(
-		inputs.rojoProjectPath,
-		config.rootDir,
-		shadow.coverageRoots,
+	const coveragePlace = buildRojoProject({
+		packageDirectory: config.rootDir,
 		placeFile,
-	);
+		rojoProjectPath: inputs.rojoProjectPath,
+		shadow,
+	});
 
 	const buildId = crypto.randomUUID();
 	const manifest = buildAndWriteManifest({

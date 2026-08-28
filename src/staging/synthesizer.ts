@@ -63,6 +63,14 @@ export interface PackageDescriptor {
 	 */
 	coverageRoots?: Array<CoverageRoot> | undefined;
 	/**
+	 * The directories between each `coverageRoots` entry and the `$path` mount
+	 * above it, mapped to the shadow's copy of that directory's own loose
+	 * files. A mount named here is demoted: its `$path` moves to the spine copy
+	 * and every directory beneath it becomes an explicit child, so the coverage
+	 * root can be swapped without the mount above serving the originals.
+	 */
+	coverageSpine?: Array<CoverageRoot> | undefined;
+	/**
 	 * Per-package `luauRoots`, forwarded to `prepareWorkspaceCoverage` so the
 	 * short-circuit honors the user-listed source dirs. Not read by synthesis
 	 * itself.
@@ -118,6 +126,11 @@ type JsonStringifyValue =
 interface AbsolutizeOptions {
 	/** Each `luauRoot` made absolute, so the walk resolves it once. */
 	coverageRoots: Array<CoverageRoot> | undefined;
+	/**
+	 * Absolute spine directory, by the absolute source directory it stands
+	 * in for.
+	 */
+	spine: Map<string, string> | undefined;
 }
 
 /**
@@ -227,6 +240,17 @@ function resolveCoverageRoots(
 }
 
 /**
+ * The spine directory for each source directory it stands in for, resolved the
+ * same way `resolveCoverageRoots` resolves a root.
+ */
+function resolveSpine(descriptor: PackageDescriptor): Map<string, string> | undefined {
+	const resolved = resolveCoverageRoots(descriptor.packageDirectory, descriptor.coverageSpine);
+	return resolved === undefined
+		? undefined
+		: new Map(resolved.map((entry) => [entry.luauRoot, entry.shadowDir]));
+}
+
+/**
  * Say so when a coverage root no `$path` in this project reaches — off the
  * tree entirely, or nested below the mount that contains it. Either way the
  * shadow is built and the place loads the originals, so the run reports zero
@@ -260,8 +284,7 @@ function isTreeNode(value: RojoTreeNode[string]): value is RojoTreeNode {
 	return typeof value === "object" && !("optional" in value);
 }
 
-function resolveDollarPath(value: string, treeBase: string, options: AbsolutizeOptions): string {
-	const absoluteTarget = normalizeWindowsPath(path.resolve(treeBase, value));
+function resolveDollarPath(absoluteTarget: string, options: AbsolutizeOptions): string {
 	if (options.coverageRoots === undefined) {
 		return absoluteTarget;
 	}
@@ -275,9 +298,11 @@ function absolutizePaths(
 	options: AbsolutizeOptions,
 ): RojoTreeNode {
 	const result: RojoTreeNode = {};
+	let mountTarget: string | undefined;
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
-			result[key] = resolveDollarPath(value, treeBase, options);
+			mountTarget = normalizeWindowsPath(path.resolve(treeBase, value));
+			result[key] = resolveDollarPath(mountTarget, options);
 			continue;
 		}
 
@@ -289,7 +314,9 @@ function absolutizePaths(
 		result[key] = value;
 	}
 
-	return result;
+	// After the loop, so a name the project declares for itself wins over the
+	// sibling node the demote would otherwise invent for the same directory.
+	return mountTarget === undefined ? result : demoteToSpine(result, mountTarget, options);
 }
 
 /** Both the wrap and no-wrap paths absolutize a package's tree through here. */
@@ -298,6 +325,7 @@ function absolutizePackagePaths(node: RojoTreeNode, descriptor: PackageDescripto
 	warnUnreachableCoverageRoots(descriptor, node);
 	return absolutizePaths(node, path.dirname(descriptor.rojoProjectPath), {
 		coverageRoots: resolveCoverageRoots(descriptor.packageDirectory, descriptor.coverageRoots),
+		spine: resolveSpine(descriptor),
 	});
 }
 
@@ -721,6 +749,57 @@ function applyHoistedServices(tree: RojoTreeNode, hoisted: ReadonlyArray<Hoisted
 		// claim on this service together — so this assigns rather than merges.
 		cursor.$properties = { ...service.properties };
 	}
+}
+
+/**
+ * The node one directory under a demoted mount becomes: the shadow when it is
+ * a coverage root, a demote of its own when the spine carries on through it,
+ * and the original directory otherwise.
+ */
+function spineChildNode(absoluteTarget: string, options: AbsolutizeOptions): RojoTreeNode {
+	// `demoteToSpine` hands a node it does not demote straight back, so the
+	// fallback is the node it is given rather than a second lookup here.
+	return demoteToSpine(
+		{ $path: resolveDollarPath(absoluteTarget, options) },
+		absoluteTarget,
+		options,
+	);
+}
+
+/**
+ * Rojo mounts a directory whole, so a coverage root below a `$path` cannot be
+ * swapped in place: the mount keeps serving the originals. Demoting moves the
+ * mount's `$path` onto a spine directory holding that directory's own loose
+ * files — which is what keeps an `init.luau`, a `.meta.json` and every
+ * extension rojo mounts for itself working — and promotes each directory
+ * beneath it to an explicit child, pointed at the shadow or back at the source.
+ *
+ * A name the project already declares is left alone: it is the author's node,
+ * and rojo would build both.
+ */
+function demoteToSpine(
+	node: RojoTreeNode,
+	absoluteTarget: string,
+	options: AbsolutizeOptions,
+): RojoTreeNode {
+	const spineDirectory = options.spine?.get(absoluteTarget);
+	if (spineDirectory === undefined) {
+		return node;
+	}
+
+	node.$path = spineDirectory;
+	const entries = fs.readdirSync(absoluteTarget, { withFileTypes: true });
+	for (const entry of entries) {
+		// A dollar-prefixed disk entry collides with rojo's own reserved keys,
+		// the same reason `demoteAutoMountToExplicit` passes over one.
+		if (!entry.isDirectory() || entry.name.startsWith("$") || node[entry.name] !== undefined) {
+			continue;
+		}
+
+		node[entry.name] = spineChildNode(path.posix.join(absoluteTarget, entry.name), options);
+	}
+
+	return node;
 }
 
 function transformNodeValue({

@@ -78,8 +78,9 @@ describe(stageWorkspaceStubs, () => {
 		const foo = makeContext("@halcyon/foo", [client, dormant]);
 		const bar = makeContext("@halcyon/bar", [server]);
 		const coverageRoots = [{ luauRoot: "src", shadowDir: "/shadow/foo" }];
+		const coverageSpine = [{ luauRoot: ".", shadowDir: "/shadow/.spine" }];
 		const coverageByPackage = new Map<string, WorkspacePackageCoverage>([
-			["@halcyon/foo", fromAny({ coverageRoots })],
+			["@halcyon/foo", fromAny({ coverageRoots, coverageSpine })],
 		]);
 		const timing = immediateTiming();
 
@@ -102,6 +103,7 @@ describe(stageWorkspaceStubs, () => {
 			{
 				...foo.descriptor,
 				coverageRoots,
+				coverageSpine,
 				stubMounts: [
 					{
 						absStubPath: path.resolve(foo.cacheRoot, "src/Server/jest.config.luau"),

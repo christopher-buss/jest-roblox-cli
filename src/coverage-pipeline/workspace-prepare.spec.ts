@@ -1745,17 +1745,16 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should reject a luauRoot nested below the $path mount that covers it", async () => {
-			expect.assertions(3);
+		it("should take a luauRoot nested below the $path mount that covers it", async () => {
+			expect.assertions(4);
 
 			onTestFinished(() => {
 				vol.reset();
 			});
 
 			// rojo mounts `src` whole; the package opts into a narrower
-			// `luauRoot` underneath it. Nothing redirects the containing
-			// mount, so instrumenting `src/client` would build a shadow the
-			// place never loads and report empty coverage in silence.
+			// `luauRoot` underneath it. The mount above is demoted onto its
+			// spine copy, so the place loads the instrumented subtree.
 			vol.fromJSON({
 				[FOO_PROJECT]: JSON.stringify({
 					name: "foo-test",
@@ -1781,14 +1780,15 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(mocked).not.toHaveBeenCalled();
-			expect(result!.coverageRoots).toStrictEqual([]);
-			expect(stderr).toHaveBeenCalledExactlyOnceWith(
-				'Warning: luauRoot "src/client" in @halcyon/foo sits below the rojo $path mount "src", which the place loads unmodified, so it reports no coverage. Point the root at a mount, or mount "src/client" in the rojo project.\n',
-			);
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result!.coverageRoots.map((root) => root.luauRoot)).toStrictEqual([
+				"src/client",
+			]);
+			expect(result!.coverageSpine.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+			expect(stderr).not.toHaveBeenCalled();
 		});
 
-		it("should name the deepest containing mount when several sit above the root", async () => {
+		it("should demote the deepest containing mount when several sit above the root", async () => {
 			expect.assertions(1);
 
 			onTestFinished(() => {
@@ -1796,8 +1796,8 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			// `src` and `src/client` both sit above `src/client/ui`, and
-			// `src/client` is the one that shadows it. Declared shallow-first
-			// so the deeper mount has to displace an incumbent.
+			// `src/client` is the one the place reads it through. Declared
+			// shallow-first so the deeper mount has to displace an incumbent.
 			vol.fromJSON({
 				[FOO_PROJECT]: JSON.stringify({
 					name: "foo-test",
@@ -1811,10 +1811,9 @@ describe(prepareWorkspaceCoverage, () => {
 				}),
 				[path.join(FOO_DIR, "src/client/ui/init.luau")]: "local x = 1",
 			});
-			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 			await mockInstrumentRootAsync();
 
-			prepareWorkspaceCoverage({
+			const [result] = prepareWorkspaceCoverage({
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -1826,12 +1825,12 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(stderr).toHaveBeenCalledExactlyOnceWith(
-				expect.stringContaining('sits below the rojo $path mount "src/client"'),
-			);
+			expect(result!.coverageSpine.map((entry) => entry.luauRoot)).toStrictEqual([
+				"src/client",
+			]);
 		});
 
-		it("should name the deepest containing mount whichever order they are declared", async () => {
+		it("should demote the deepest containing mount whichever order they are declared", async () => {
 			expect.assertions(1);
 
 			onTestFinished(() => {
@@ -1853,10 +1852,9 @@ describe(prepareWorkspaceCoverage, () => {
 				}),
 				[path.join(FOO_DIR, "src/client/ui/init.luau")]: "local x = 1",
 			});
-			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 			await mockInstrumentRootAsync();
 
-			prepareWorkspaceCoverage({
+			const [result] = prepareWorkspaceCoverage({
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -1868,9 +1866,9 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(stderr).toHaveBeenCalledExactlyOnceWith(
-				expect.stringContaining('sits below the rojo $path mount "src/client"'),
-			);
+			expect(result!.coverageSpine.map((entry) => entry.luauRoot)).toStrictEqual([
+				"src/client",
+			]);
 		});
 
 		it("should reject a luauRoot that escapes the package through a traversal", async () => {
@@ -2516,3 +2514,77 @@ function readPackageBuildManifest(safeName: string): BuildManifest {
 		JSON.parse(vol.readFileSync(buildManifestPath, "utf-8").toString()),
 	);
 }
+
+describe("narrowing a workspace package to its coverage universe", () => {
+	/** A package whose probes all sit in one subtree below its rojo mount. */
+	function seedNarrowablePackage(): void {
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({
+			[FOO_PROJECT]: JSON.stringify({
+				name: "foo-test",
+				tree: { $className: "DataModel", ReplicatedStorage: { Pkg: { $path: "out" } } },
+			}),
+			[path.join(FOO_DIR, "out/client/button.luau")]: "local x = 1",
+			[path.join(FOO_DIR, "out/loose.luau")]: "local x = 2",
+			[path.join(FOO_DIR, "out/modules/ecs/world.luau")]: "local x = 3",
+			[path.join(FOO_DIR, "out/modules/net.luau")]: "local x = 4",
+		});
+	}
+
+	function prepareNarrowed(): ReturnType<typeof prepareWorkspaceCoverage> {
+		return prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					collectCoverageFrom: ["**/ecs/**"],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+	}
+
+	it("should instrument the narrowed root rather than the whole mount", async () => {
+		expect.assertions(1);
+
+		seedNarrowablePackage();
+		await mockInstrumentRootAsync();
+
+		const [result] = prepareNarrowed();
+
+		expect(result!.coverageRoots.map((root) => root.luauRoot)).toStrictEqual([
+			"out/modules/ecs",
+		]);
+	});
+
+	it("should name the demoted mount and carry its loose files onto the spine", async () => {
+		expect.assertions(3);
+
+		seedNarrowablePackage();
+		await mockInstrumentRootAsync();
+
+		const [result] = prepareNarrowed();
+
+		expect(result!.coverageSpine.map((entry) => entry.luauRoot)).toStrictEqual([
+			"out",
+			"out/modules",
+		]);
+		expect(
+			vol.existsSync(
+				path.join(
+					WORKSPACE_ROOT,
+					".jest-roblox/workspace/@halcyon-foo/coverage/.spine/out/loose.luau",
+				),
+			),
+		).toBeTrue();
+		// Recorded, not just copied: the hash is what lets a warm run leave the
+		// copy alone rather than write it again.
+		expect(Object.keys(result!.manifest.nonInstrumentedFiles)).toContain(
+			normalizeWindowsPath(path.join(FOO_DIR, "out/loose.luau")),
+		);
+	});
+});

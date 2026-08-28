@@ -112,7 +112,9 @@ function buildWorkspacePlace({
 				// Relative: the hash joins each root onto the project directory,
 				// and `shadowDir` is absolute.
 				shadowRoots: coverage.flatMap((entry) => {
-					return entry.coverageRoots.map((root) => {
+					// Spine copies included: they are what a demoted mount
+					// serves, so a change there changes the place.
+					return [...entry.coverageRoots, ...entry.coverageSpine].map((root) => {
 						return path.relative(cacheDirectory, root.shadowDir);
 					});
 				}),

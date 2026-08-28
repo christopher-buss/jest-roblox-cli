@@ -38,16 +38,14 @@ export function collectRojoMounts(tree: RojoTreeNode, rojoDirectory: string): Se
 }
 
 /**
- * The warning for a `luauRoot` the place will never load, or `undefined` when
- * the root is good. A root earns its coverage through the `$path` mounts that
- * land on it or inside it, because those are the mounts synthesis redirects
- * into the shadow tree — so the test is `isWithinRoot`, the redirect's own
- * rule, and a root this accepts is one the synthesized place picks up.
+ * The warning for a `luauRoot` no `$path` in the project reaches, or
+ * `undefined` when the root is good.
  *
- * A root *below* its mount fails that test. Synthesis rewrites a `$path` at or
- * inside a coverage root and nothing else, so the mount above keeps pointing
- * at the original sources: the shadow is built, never loaded, and the report
- * comes back empty.
+ * A root earns its coverage two ways. A mount that lands on it or inside it is
+ * redirected into the shadow outright. A mount *above* it is demoted instead:
+ * that mount's `$path` moves onto a spine copy and the root hangs underneath
+ * as an explicit child. Either direction of containment reaches the root, so
+ * only one standing off the tree altogether reports nothing.
  */
 export function unreachableRootWarning({
 	base,
@@ -56,34 +54,13 @@ export function unreachableRootWarning({
 	subject,
 }: RootReachability): string | undefined {
 	const root = normalizeWindowsPath(path.resolve(base, rawRoot));
-	let containing: string | undefined;
-	for (const mount of mounts) {
-		if (isWithinRoot(mount, root)) {
-			return undefined;
-		}
-
-		if (!isWithinRoot(root, mount)) {
-			continue;
-		}
-
-		// Deepest wins: with both `src` and `src/a` above `src/a/b`, `src/a`
-		// is the one that actually shadows the root. Two mounts above one root
-		// nest, so "deeper" is "inside the incumbent" — which keeps the
-		// message off the mount set's iteration order.
-		if (containing === undefined || isWithinRoot(mount, containing)) {
-			containing = mount;
-		}
+	const isReached = [...mounts].some((mount) => {
+		return isWithinRoot(mount, root) || isWithinRoot(root, mount);
+	});
+	if (isReached) {
+		return undefined;
 	}
 
 	const owner = subject === undefined ? "" : ` in ${subject}`;
-	if (containing === undefined) {
-		return `Warning: luauRoot "${rawRoot}"${owner} does not correspond to any rojo $path mount, so it reports no coverage.\n`;
-	}
-
-	// Named in the frame the root was written in, so the reader can find it in
-	// their own `.project.json`. The remedy stays generic rather than "widen to
-	// <mount>": a mount above `base` relativizes to a `..` path the caller
-	// would turn away, so quoting it back as advice would misdirect.
-	const mount = normalizeWindowsPath(path.relative(base, containing));
-	return `Warning: luauRoot "${rawRoot}"${owner} sits below the rojo $path mount "${mount}", which the place loads unmodified, so it reports no coverage. Point the root at a mount, or mount "${rawRoot}" in the rojo project.\n`;
+	return `Warning: luauRoot "${rawRoot}"${owner} does not correspond to any rojo $path mount, so it reports no coverage.\n`;
 }

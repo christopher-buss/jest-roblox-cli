@@ -178,6 +178,7 @@ async function runWorkspaceResultsAsync(
 function coverageEntry(packageName: string): WorkspacePackageCoverage {
 	return {
 		coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+		coverageSpine: [],
 		manifest: {
 			buildId: "test-build-id",
 			files: {},
@@ -1975,6 +1976,7 @@ describe(runWorkspaceAsync, () => {
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
 						files: {},
@@ -2043,6 +2045,7 @@ describe(runWorkspaceAsync, () => {
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
 						files: {},
@@ -2119,6 +2122,7 @@ describe(runWorkspaceAsync, () => {
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
 						files: {},
@@ -2178,6 +2182,7 @@ describe(runWorkspaceAsync, () => {
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
 						files: {},
@@ -2234,6 +2239,7 @@ describe(runWorkspaceAsync, () => {
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [],
+					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
 						files: {},
@@ -2297,6 +2303,7 @@ describe(runWorkspaceAsync, () => {
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
 					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageSpine: [],
 					manifest,
 					manifestPath: "/shadow/coverage-manifest.json",
 					pkg: "@halcyon/foo",
