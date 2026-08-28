@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
-import { hashFile } from "../utils/hash.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { hashBuffer, hashFile } from "../utils/hash.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { CopyIgnoreMatcher, RootFiles } from "./discover-files.ts";
 import {
 	discoverRootFiles,
@@ -94,6 +94,26 @@ interface SyncNonInstrumentedOptions {
 	shadowDir: string;
 }
 
+/** One root's mirror walk: where it reads from and where it writes to. */
+interface MirrorSourceTreeOptions {
+	isCopyIgnored: CopyIgnoreMatcher;
+	/** Source root, POSIX-normalized, with no trailing separator. */
+	posixRoot: string;
+	shadowDirectory: string;
+}
+
+/** What one root's mirror walk found, and what it made on the way. */
+interface MirroredTree {
+	/**
+	 * Whether any shadow directory had to be created. A warm run reads this
+	 * as "a directory appeared upstream", which the place has to be rebuilt
+	 * around.
+	 */
+	hasCreatedDirectory: boolean;
+	/** Paths, relative to the root, the shadow carries verbatim. */
+	syncPaths: Array<string>;
+}
+
 /** What the reconcile walk holds constant across the whole tree. */
 interface PruneContext {
 	isCopyIgnored: CopyIgnoreMatcher;
@@ -108,11 +128,14 @@ interface InstrumentedFiles {
 }
 
 /**
- * Populate a shadow dir from one luauRoot: bulk-copy every file (cold path),
- * run the instrumenter to overlay instrumented prod files, then sync the files
- * the instrumenter never emits (spec/test/snap plus non-luau rojo files) with
- * hash-tracked records so the shadow is a complete mirror that satisfies rojo
- * + testMatch.
+ * Populate a shadow dir from one luauRoot: run the instrumenter to write the
+ * instrumented prod twins, then sync everything it never emits (spec/test/snap
+ * plus non-luau rojo files) with hash-tracked records, so the shadow is a
+ * complete mirror that satisfies rojo + testMatch.
+ *
+ * Between them those two passes write every file the shadow carries, so no
+ * pass copies the root wholesale. Directories are what neither reaches, and
+ * the sync mirrors those as it walks.
  *
  * On a warm run (cache hit) only changed files are re-instrumented, and the
  * shadow is reconciled against source so files deleted upstream don't linger.
@@ -120,8 +143,6 @@ interface InstrumentedFiles {
 export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRootResult {
 	const { luauRoot, shadowDir } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
-
-	seedColdShadow(options);
 
 	const rootFiles = splitRootFiles(options);
 	const plan = planIncremental(options, rootFiles);
@@ -207,7 +228,13 @@ const COV_MAP_SUFFIX = ".cov-map.json";
  * record points at: a partial cleanup or an interrupted run can leave the
  * record valid on paper while the file it names is gone.
  *
- * Exported for the spine mirror, which copies the loose files of the
+ * One read serves both jobs. The hash decides whether the copy is needed, and
+ * when it is, the bytes are already in hand — `copyFileSync` would open and
+ * read the same file a second time. The directory above `shadowPath` belongs to
+ * whichever pass owns the tree: the mirror walk creates every directory it
+ * enters, and the spine mirror creates the level it is about to fill.
+ *
+ * Exported for that spine mirror, which copies the loose files of the
  * directories above a narrowed root: one owner for "a verbatim file in the
  * shadow, with the record that decides whether to copy it again".
  */
@@ -216,14 +243,13 @@ export function syncOneFile(
 	shadowPath: string,
 	previousRecord: NonInstrumentedFileRecord | undefined,
 ): NonInstrumentedFileRecord {
-	const absoluteSource = path.resolve(sourcePath);
-	const currentHash = hashFile(absoluteSource);
+	const contents = fs.readFileSync(path.resolve(sourcePath));
+	const currentHash = hashBuffer(contents);
 	if (previousRecord?.sourceHash === currentHash && fs.existsSync(previousRecord.shadowPath)) {
 		return previousRecord;
 	}
 
-	fs.mkdirSync(path.dirname(shadowPath), { recursive: true });
-	fs.copyFileSync(absoluteSource, shadowPath);
+	fs.writeFileSync(shadowPath, contents);
 
 	return { shadowPath, sourceHash: currentHash, sourcePath };
 }
@@ -264,7 +290,7 @@ function sourceTwinExists(luauRoot: string, relativePath: string): boolean {
 //
 // Reconcile a warm shadow dir against its source root: drop every shadow entry
 // whose source counterpart no longer exists. One rule covers files and
-// directories alike, so a warm run converges on what a cold `cpSync` would have
+// directories alike, so a warm run converges on what a cold run would have
 // produced.
 //
 // Files are the common case, across every category the pipeline manages —
@@ -284,16 +310,14 @@ function sourceTwinExists(luauRoot: string, relativePath: string): boolean {
 //
 // Returns whether anything was removed, so the caller forces a place rebuild.
 //
+// Both callers run the mirror sync first, and that creates the shadow root
+// before anything else, so the walk below always has a directory to read.
 //
 function reconcileShadowToSource(
 	luauRoot: string,
 	shadowDirectory: string,
 	isCopyIgnored: CopyIgnoreMatcher,
 ): boolean {
-	if (!fs.existsSync(shadowDirectory)) {
-		return false;
-	}
-
 	const shadowRoot = normalizeWindowsPath(shadowDirectory);
 	return pruneShadowDirectory({ isCopyIgnored, luauRoot, shadowRoot }, shadowRoot);
 }
@@ -401,7 +425,7 @@ function carryForwardRecords(
 	allFiles: Record<string, InstrumentedFileRecord>,
 	skipFiles: Set<string>,
 ): void {
-	const posixRoot = normalizeWindowsPath(luauRoot);
+	const posixRoot = toPosixRoot(luauRoot);
 
 	for (const relativePath of skipFiles) {
 		const fileKey = `${posixRoot}/${relativePath}`;
@@ -409,17 +433,74 @@ function carryForwardRecords(
 	}
 }
 
-function discoverShadowSyncFiles(
-	posixRoot: string,
-	isCopyIgnored: CopyIgnoreMatcher,
-	results: Array<string>,
-): void {
+/**
+ * Make one shadow directory, clearing a file that already occupies its path.
+ *
+ * A source path that turned from a file into a directory between runs leaves
+ * the warm shadow holding the old file exactly where the twin has to go. The
+ * reconcile pass is no help: it runs after the mirror walk, and it only drops
+ * entries whose source is gone — this one's source is still there, just a
+ * directory now.
+ *
+ * The type is read rather than inferred from a failed `mkdirSync`, which
+ * reports the clash differently across filesystem implementations. One `stat`
+ * per source directory, against one `readdir` the walk already spends there.
+ *
+ * Returns whether the shadow gained a directory it did not have.
+ */
+function createShadowDirectory(shadowPath: string): boolean {
+	const existing = fs.statSync(shadowPath, { throwIfNoEntry: false });
+	if (existing?.isDirectory() === true) {
+		return false;
+	}
+
+	if (existing !== undefined) {
+		fs.rmSync(shadowPath, { force: true });
+	}
+
+	fs.mkdirSync(shadowPath, { recursive: true });
+	return true;
+}
+
+/**
+ * Collect everything the shadow must carry verbatim, giving each source
+ * directory a twin on the way past — the root included, so a root of nothing
+ * still has somewhere for its `$path` to land.
+ *
+ * The directory pass rides the walk rather than following it because the walk
+ * reaches a parent before its children, which is the order `mkdirSync` wants
+ * anyway. It is also the only pass that can see a directory holding nothing:
+ * writing a file makes the directories above it, so an empty one would
+ * otherwise never be created, and rojo mounts one as a Folder the runtime can
+ * look up.
+ *
+ * A twin that had to be created is what tells a warm run that a new directory
+ * appeared and the place has to be rebuilt around it. Returns whether any was.
+ */
+function mirrorSourceTree({
+	isCopyIgnored,
+	posixRoot,
+	shadowDirectory,
+}: MirrorSourceTreeOptions): MirroredTree {
+	const syncPaths: Array<string> = [];
+	let hasCreatedDirectory = createShadowDirectory(shadowDirectory);
+
 	walkLuauDirectory(
 		posixRoot,
 		posixRoot,
-		{ accept: shouldSyncToShadow, skip: isCopyIgnored },
-		results,
+		{
+			accept: shouldSyncToShadow,
+			onDirectory: (relativePath) => {
+				if (createShadowDirectory(`${shadowDirectory}/${relativePath}`)) {
+					hasCreatedDirectory = true;
+				}
+			},
+			skip: isCopyIgnored,
+		},
+		syncPaths,
 	);
+
+	return { hasCreatedDirectory, syncPaths };
 }
 
 function syncNonInstrumentedFiles({
@@ -429,21 +510,24 @@ function syncNonInstrumentedFiles({
 	previousNonInstrumented,
 	shadowDir,
 }: SyncNonInstrumentedOptions): SyncResult {
-	const posixRoot = normalizeWindowsPath(luauRoot);
-	const discovered: Array<string> = [];
-	discoverShadowSyncFiles(posixRoot, isCopyIgnored, discovered);
+	const posixRoot = toPosixRoot(luauRoot);
+	const { hasCreatedDirectory, syncPaths } = mirrorSourceTree({
+		isCopyIgnored,
+		posixRoot,
+		shadowDirectory: shadowDir,
+	});
 	// Appended one at a time: spreading a set this size into `push` passes one
 	// argument per element, and a whole-tree universe overflows the limit. No
 	// gate needed on the way in — `discoverRootFiles` built this set from the
 	// same walk, so an ignored path never reached it.
 	for (const relativePath of excluded) {
-		discovered.push(relativePath);
+		syncPaths.push(relativePath);
 	}
 
 	const files: Record<string, NonInstrumentedFileRecord> = {};
-	let hasChanged = false;
+	let hasChanged = hasCreatedDirectory;
 
-	for (const relativePath of discovered) {
+	for (const relativePath of syncPaths) {
 		const sourcePath = `${posixRoot}/${relativePath}`;
 		const previousRecord = previousNonInstrumented?.[sourcePath];
 		const record = syncOneFile(sourcePath, `${shadowDir}/${relativePath}`, previousRecord);
@@ -459,7 +543,7 @@ function syncNonInstrumentedFiles({
 
 function computeSkipFiles(luauRoot: string, previousManifest: CoverageManifest): Set<string> {
 	const skipFiles = new Set<string>();
-	const posixRoot = normalizeWindowsPath(luauRoot);
+	const posixRoot = toPosixRoot(luauRoot);
 
 	for (const [fileKey, record] of Object.entries(previousManifest.files)) {
 		if (!fileKey.startsWith(`${posixRoot}/`)) {
@@ -493,7 +577,7 @@ function computeSkipFiles(luauRoot: string, previousManifest: CoverageManifest):
 }
 
 function countPreviousFilesForRoot(luauRoot: string, previousManifest: CoverageManifest): number {
-	const posixRoot = normalizeWindowsPath(luauRoot);
+	const posixRoot = toPosixRoot(luauRoot);
 	let count = 0;
 	for (const fileKey of Object.keys(previousManifest.files)) {
 		if (fileKey.startsWith(`${posixRoot}/`)) {
@@ -561,39 +645,6 @@ function buildFullCacheResult({
 		nonInstrumentedFiles: syncResult.files,
 		shadowDir,
 	};
-}
-
-/**
- * Cold path only: bulk-copy the whole root so the shadow starts as a complete
- * mirror, before the instrumenter overlays its instrumented twins.
- *
- * This is the only pass that reaches every file, so the ignore gate is stated
- * here as well as in the walks — those govern what is added afterwards and
- * would leave whatever this already wrote.
- */
-function seedColdShadow({
-	isCopyIgnored,
-	luauRoot,
-	shadowDir,
-	useIncremental,
-}: PrepareShadowRootOptions): void {
-	if (useIncremental) {
-		return;
-	}
-
-	fs.mkdirSync(shadowDir, { recursive: true });
-	// cpSync only ever hands the filter a path it built by joining onto
-	// `luauRoot`, so the prefix is literal and a slice beats `path.relative`,
-	// which would re-resolve both sides once per entry across the whole tree.
-	// The root itself slices to `""`, which no pattern matches, so the copy is
-	// never refused at its own top. The prefix is measured through `path.join`
-	// rather than from `luauRoot.length`: join collapses a trailing separator,
-	// so a root written `out/` would otherwise leave every slice one short.
-	const prefixLength = path.join(luauRoot, "x").length - 1;
-	fs.cpSync(luauRoot, shadowDir, {
-		filter: (source) => !isCopyIgnored(normalizeWindowsPath(source.slice(prefixLength))),
-		recursive: true,
-	});
 }
 
 /**

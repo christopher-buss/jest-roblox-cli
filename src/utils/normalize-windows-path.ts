@@ -27,8 +27,24 @@ export function isAbsolutePath(input: string): boolean {
 	return input.startsWith("/") || DRIVE_LETTER_START_REGEX.test(input);
 }
 
+const TRAILING_SLASH = /\/$/;
+
 export function normalizeWindowsPath(input = ""): string {
 	return input
 		.replace(/\\/g, "/")
 		.replace(DRIVE_LETTER_START_REGEX, (driveLetterMatch) => driveLetterMatch.toUpperCase());
+}
+
+/**
+ * The POSIX form of a directory used as a path prefix — a luau root, an
+ * `outDir` — with the trailing separator dropped.
+ *
+ * Every walk in the coverage pipeline slices its results against the root it
+ * was handed, so a root written `out/` would otherwise leave each slice one
+ * character short and mangle every relative path in the tree. Producers and
+ * consumers of those paths have to normalize the same way, which is why this
+ * is one function rather than a `replace` at each site.
+ */
+export function toPosixRoot(directoryPath: string): string {
+	return normalizeWindowsPath(directoryPath).replace(TRAILING_SLASH, "");
 }

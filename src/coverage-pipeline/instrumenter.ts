@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { luauParser } from "../luau/parser.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { hashBuffer } from "../utils/hash.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
@@ -80,7 +80,7 @@ export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest
 	const files: CoverageManifest["files"] = {};
 	const context: InstrumentFileContext = {
 		createdDirectories: new Set<string>(),
-		posixLuauRoot: normalizeWindowsPath(luauRoot),
+		posixLuauRoot: toPosixRoot(luauRoot),
 		shadowDir,
 		timing,
 	};
@@ -105,7 +105,7 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 	const { luauRoot, manifestPath, shadowDir } = options;
 
 	const files = instrumentRoot(options);
-	const posixLuauRoot = normalizeWindowsPath(luauRoot);
+	const posixLuauRoot = toPosixRoot(luauRoot);
 
 	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {

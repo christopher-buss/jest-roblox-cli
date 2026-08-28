@@ -3,7 +3,7 @@ import * as path from "node:path";
 import picomatch from "picomatch";
 
 import { hashString } from "../utils/hash.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
 
 /**
@@ -21,9 +21,8 @@ const NON_INSTRUMENTED_SUFFIXES = [
 
 /**
  * The `coverageCopyIgnorePatterns` gate, over paths relative to the compiled
- * root. One matcher answers for the whole shadow — the cold copy, the walks,
- * and the reconcile — so a pattern cannot mean one thing on a cold run and
- * another on a warm one.
+ * root. One matcher answers for the whole shadow — the walks and the reconcile
+ * — so a pattern cannot mean one thing on a cold run and another on a warm one.
  */
 export type CopyIgnoreMatcher = (relativePath: string) => boolean;
 
@@ -50,6 +49,12 @@ export interface DiscoverRootFilesOptions {
 export interface WalkFilter {
 	/** Collect a file when true. Receives the entry's own name. */
 	accept: (name: string) => boolean;
+	/**
+	 * Called for every directory the walk descends into, with its path relative
+	 * to the walk root. A directory carries no file to collect, so this is the
+	 * only way a caller mirroring the tree learns an empty one exists.
+	 */
+	onDirectory?: ((relativePath: string) => void) | undefined;
 	/**
 	 * Skip an entry when true — a directory takes its subtree with it.
 	 * Receives the path relative to the walk root.
@@ -119,6 +124,7 @@ export function walkLuauDirectory(
 				continue;
 			}
 
+			filter.onDirectory?.(relative);
 			walkLuauDirectory(fullPath, relativeTo, filter, results);
 		} else if (filter.accept(entry.name)) {
 			results.push(relative);
@@ -143,7 +149,7 @@ export function discoverRootFiles(
 	luauRoot: string,
 	{ isCopyIgnored, universe }: DiscoverRootFilesOptions = {},
 ): RootFiles {
-	const posixRoot = normalizeWindowsPath(luauRoot);
+	const posixRoot = toPosixRoot(luauRoot);
 	const discovered: Array<string> = [];
 	walkLuauDirectory(
 		posixRoot,

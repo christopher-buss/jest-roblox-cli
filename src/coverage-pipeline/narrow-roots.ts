@@ -1,6 +1,6 @@
 import * as path from "node:path";
 
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { CopyIgnoreMatcher } from "./discover-files.ts";
 import { isInstrumentableFile, walkLuauDirectory } from "./discover-files.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
@@ -64,6 +64,12 @@ export interface NarrowedMount {
 	spine: Array<string>;
 }
 
+/** One mount's walk: what the shadow would carry, and what the list refused. */
+interface CarriedFiles {
+	carried: Array<string>;
+	hasIgnoredPaths: boolean;
+}
+
 /**
  * Narrow one rojo mount to the directories the coverage universe actually
  * resolves to.
@@ -88,17 +94,27 @@ export function narrowRootToUniverse(
 		return [...WHOLE_MOUNT];
 	}
 
-	const carried = carriedFiles(luauRoot, isCopyIgnored);
+	const posixRoot = toPosixRoot(luauRoot);
+	const { carried, hasIgnoredPaths } = carriedFiles(posixRoot, isCopyIgnored);
 	const probed = carried.filter((relativePath) => {
 		return (
 			isInstrumentableFile(path.posix.basename(relativePath)) &&
-			universe.includes(`${normalizeWindowsPath(luauRoot)}/${relativePath}`)
+			universe.includes(`${posixRoot}/${relativePath}`)
 		);
 	});
 	// A probe sitting directly in the mount makes the mount its own probe
 	// directory, and nothing narrower can hold it. A mount with no probe at all
 	// falls out of the collapse below as no roots, which is the same answer.
 	if (probed.some((relativePath) => !relativePath.includes("/"))) {
+		return [...WHOLE_MOUNT];
+	}
+
+	// A mount the ignore list emptied is not a mount the universe never
+	// reached, and only the second is safe to leave alone. No probe survives to
+	// narrow towards, so the mount is taken whole: the shadow it earns is the
+	// only tree the ignored path is missing from, and dropping it would mount
+	// the source and hand the place back what the pattern excluded.
+	if (hasIgnoredPaths && probed.length === 0) {
 		return [...WHOLE_MOUNT];
 	}
 
@@ -123,7 +139,7 @@ export function narrowLuauRoots(
 	options: NarrowMountsOptions,
 ): Array<NarrowedMount> {
 	return mounts.map((mount) => {
-		const frame = trimTrailingSlash(normalizeWindowsPath(mount));
+		const frame = toPosixRoot(mount);
 		const narrowed = narrowRootToUniverse(mount, options).map((relative) => {
 			return relative === "" ? frame : `${frame}/${relative}`;
 		});
@@ -137,18 +153,35 @@ export function narrowLuauRoots(
 }
 
 /**
- * Every file the shadow would carry for this mount, mount-relative.
+ * Every file the shadow would carry for this mount, mount-relative, and whether
+ * the ignore list refused anything on the way.
  *
  * The whole set, not just the probed half: the share the threshold reads is a
  * share of the copying, and a spec file or a `.meta.json` costs the same to
  * copy as a module. Copy-ignored paths are left out because the shadow never
- * holds them either way.
+ * holds them either way — which is exactly why the walk has to say it saw them.
+ * Nothing downstream can tell a mount the list emptied from one that was empty.
  */
-function carriedFiles(luauRoot: string, isCopyIgnored: CopyIgnoreMatcher): Array<string> {
-	const posixRoot = normalizeWindowsPath(luauRoot);
+function carriedFiles(posixRoot: string, isCopyIgnored: CopyIgnoreMatcher): CarriedFiles {
 	const carried: Array<string> = [];
-	walkLuauDirectory(posixRoot, posixRoot, { accept: () => true, skip: isCopyIgnored }, carried);
-	return carried;
+	let hasIgnoredPaths = false;
+	walkLuauDirectory(
+		posixRoot,
+		posixRoot,
+		{
+			accept: () => true,
+			skip: (relativePath) => {
+				if (!isCopyIgnored(relativePath)) {
+					return false;
+				}
+
+				hasIgnoredPaths = true;
+				return true;
+			},
+		},
+		carried,
+	);
+	return { carried, hasIgnoredPaths };
 }
 
 /** The directories that directly hold a probed file, mount-relative. */
@@ -190,8 +223,4 @@ function isLoadable(roots: ReadonlyArray<string>, mounts: ReadonlySet<string>): 
 	return roots.every((root) => {
 		return [...mounts].some((mount) => isWithinRoot(mount, root) || isWithinRoot(root, mount));
 	});
-}
-
-function trimTrailingSlash(directory: string): string {
-	return directory.endsWith("/") ? directory.slice(0, -1) : directory;
 }

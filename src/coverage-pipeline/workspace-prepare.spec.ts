@@ -37,7 +37,7 @@ function isoNow(): string {
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, cpSync: memfs.vol.cpSync.bind(memfs.vol), default: memfs.fs });
+	return fromAny({ ...memfs.fs, default: memfs.fs });
 });
 vi.mock(import("./instrumenter"));
 
@@ -149,6 +149,39 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(result[0]!.manifest.coverageUniverseHash).toMatch(/^[a-f0-9]{64}$/);
 		},
 	);
+
+	it("should leave a root the universe never touches out of the coverage roots", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedPackage(FOO_DIR, {
+			luauRoots: ["out", "vendor"],
+			rojoTree: {
+				$className: "DataModel",
+				ReplicatedStorage: { Pkg: { $path: "out" }, Vendor: { $path: "vendor" } },
+			},
+		});
+		await mockInstrumentRootAsync();
+
+		const [result] = prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "@halcyon/foo",
+					collectCoverageFrom: ["out/init.luau"],
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		// Only `out` earns a redirect; `vendor` keeps its original mount, which
+		// serves exactly the bytes a shadow of it would have.
+		expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["out"]);
+	});
 
 	it("should instrument the whole package when it names no coverage globs", async () => {
 		expect.assertions(2);
@@ -337,13 +370,14 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(Object.keys(manifest.files)).toContain(expectedKey);
 	});
 
-	// Codex review follow-up: on a cold run, prepareShadowRoot only
-	// does mkdirSync + cpSync (both merge). If a prior run wrote files into
-	// the package shadow that have since been deleted from source — or the
-	// cache is invalid / version-stale and we fall back to a cold run — those
-	// stale files survive into the redirected $path mount. Single-package
-	// prepares avoid this by rmSync-ing COVERAGE_DIR before instrumenting;
-	// workspace must nuke its own per-package shadow root for symmetry.
+	// Codex review follow-up: a cold run only ever adds to the package shadow —
+	// the instrumenter and the mirror sync both merge, and the reconcile that
+	// deletes runs warm. If a prior run wrote files that have since been deleted
+	// from source — or the cache is invalid / version-stale and we fall back to
+	// a cold run — those stale files survive into the redirected $path mount.
+	// Single-package prepares avoid this by rmSync-ing COVERAGE_DIR before
+	// instrumenting; workspace must nuke its own per-package shadow root for
+	// symmetry.
 	it("should remove stale shadow files when running cold (no cache)", async () => {
 		expect.assertions(2);
 
@@ -365,6 +399,7 @@ describe(prepareWorkspaceCoverage, () => {
 				},
 			}),
 			[path.join(FOO_DIR, "out/init.luau")]: "local x = 1",
+			[path.join(FOO_DIR, "out/live.spec.luau")]: "return {}",
 			// Stale spec from a prior run — source has no matching file.
 			[staleSpecPath]: "return {}",
 		});
@@ -377,10 +412,11 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		// Stale shadow file gone — rmSync of package shadow before cpSync.
+		// Stale shadow file gone — rmSync of the package shadow before the run
+		// writes anything into it.
 		expect(vol.existsSync(staleSpecPath)).toBeFalse();
-		// Current source still landed via cpSync.
-		expect(vol.existsSync(path.join(packageShadow, "out/init.luau"))).toBeTrue();
+		// Current source still landed, through the mirror sync.
+		expect(vol.existsSync(path.join(packageShadow, "out/live.spec.luau"))).toBeTrue();
 	});
 
 	it("should bypass a full cache hit when the descriptor opts out via per-pkg coverageCache", async () => {
@@ -840,7 +876,7 @@ describe(prepareWorkspaceCoverage, () => {
 	});
 
 	// Symmetry with prepareCoverage: each non-instrumented file the
-	// shadow inherits via cpSync (spec/test/snap luau) needs a record in
+	// shadow mirrors verbatim (spec/test/snap luau) needs a record in
 	// the manifest so a future incremental run can detect stale shadow
 	// entries and prune them.
 	it("should track non-instrumented files (spec/test/snap) in the per-package manifest", async () => {
@@ -1101,9 +1137,9 @@ describe(prepareWorkspaceCoverage, () => {
 	// `src/foo.spec.luau`), `containsLuauFiles` makes the dir a coverage
 	// root because the helper passes `isInstrumentableLuauFile`. The
 	// synthesizer then redirects `$path` to the shadow, which only holds
-	// the instrumented helper — the spec disappears. The fix: bulk-copy
-	// the source tree into the shadow (matching prepareCoverage's
-	// behavior) so spec files survive the redirect.
+	// the instrumented helper — the spec disappears. The fix: the mirror
+	// sync carries every file the instrumenter never emits into the
+	// shadow, so spec files survive the redirect.
 	it("should preserve spec files in the shadow when $path mixes specs with non-spec helpers", async () => {
 		expect.assertions(2);
 
@@ -2344,8 +2380,8 @@ describe(prepareWorkspaceCoverage, () => {
 					JSON.stringify(previousManifest),
 				// A sidecar marker: reconciliation keeps it (its base
 				// `init.luau` source exists), but a cold rmSync would wipe it and
-				// cpSync can't restore it (sidecars aren't in source). So its
-				// survival proves the shadow was preserved, not rebuilt.
+				// no mirror pass can restore it (sidecars aren't in source). So
+				// its survival proves the shadow was preserved, not rebuilt.
 				[path.join(packageShadow, "out/init.cov-map.json")]: "{}",
 			});
 			await mockInstrumentRootAsync();

@@ -292,6 +292,16 @@ they are matched exactly (no substring containment) because an over-match drops
 something the runtime needs. An ignored path is never probed either, so a
 pattern naming a `.luau` keeps that module out of the place entirely.
 
+The mirror descends neither `node_modules` nor a dot-prefixed directory, which
+is what every walk in the pipeline does — nothing inside one is probed, and
+nothing inside one reaches the coverage place. A subtree the place has to load
+belongs under a `$path` mount of its own, outside any `luauRoot`.
+
+Narrowing never steps aside on a mount this list touches. A pattern naming the
+mount's only covered module leaves nothing to narrow towards, and taking the
+mount whole is what keeps the module out: the shadow is the one tree it is
+missing from, so a mount left on your `outDir` would serve it anyway.
+
 Declare a function to keep the defaults and add to them:
 
 ```ts

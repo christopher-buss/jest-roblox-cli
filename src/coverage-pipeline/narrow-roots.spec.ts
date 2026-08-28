@@ -60,6 +60,47 @@ describe(narrowRootToUniverse, () => {
 		).toStrictEqual([]);
 	});
 
+	it("should keep the mount whole when the ignore list is what emptied it", () => {
+		expect.assertions(1);
+
+		seed("modules/ecs/world.luau");
+
+		// The universe reaches `world.luau` and the list takes it, so nothing
+		// survives to narrow towards. Dropping the mount here would leave the
+		// place on the original tree, which serves the module the list
+		// excluded — the shadow is the only tree missing it.
+		expect(
+			narrowRootToUniverse(MOUNT, {
+				isCopyIgnored: createCopyIgnoreMatcher(["**/ecs/**"]),
+				universe: universeOf("modules/ecs/world.luau"),
+			}),
+		).toStrictEqual([""]);
+	});
+
+	it("should read a mount written with a trailing separator", () => {
+		expect.assertions(1);
+
+		// Wide enough that narrowing pays: a mount whose probed directory holds
+		// nearly all of it is taken whole, which would answer `[""]` here for a
+		// reason that has nothing to do with the separator.
+		seed(
+			"modules/ecs/world.luau",
+			"modules/other/a.luau",
+			"modules/other/b.luau",
+			"client/button.luau",
+		);
+
+		// Every walk slices its results against the root it was handed, so a
+		// separator on the end lands each slice a character in and no probe
+		// matches the universe.
+		expect(
+			narrowRootToUniverse(`${MOUNT}/`, {
+				isCopyIgnored: NO_COPY_IGNORE,
+				universe: universeOf("modules/ecs/world.luau"),
+			}),
+		).toStrictEqual(["modules/ecs"]);
+	});
+
 	it("should narrow to the directory the probed files live in", () => {
 		expect.assertions(1);
 
