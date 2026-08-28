@@ -1,5 +1,11 @@
 import type { Mount, PathClassifier, PathKind, RojoTreeNode } from "@isentinel/rojo-utils";
-import { collectMounts, collectPaths, findInTree, pruneAncestors } from "@isentinel/rojo-utils";
+import {
+	collectMounts,
+	collectPaths,
+	findInTree,
+	pruneAncestors,
+	resolveMountPath,
+} from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
 import { loadConfig as c12LoadConfig } from "c12";
@@ -146,8 +152,9 @@ export function applyProjectRoot(
 
 export function createFsClassifier(rootDirectory: string): PathClassifier {
 	return function classify(fsPath): PathKind {
-		const absolute = path.isAbsolute(fsPath) ? fsPath : path.resolve(rootDirectory, fsPath);
-		const stat = fs.statSync(absolute, { throwIfNoEntry: false });
+		const stat = fs.statSync(resolveMountPath(rootDirectory, fsPath), {
+			throwIfNoEntry: false,
+		});
 		if (stat === undefined) {
 			return "missing";
 		}

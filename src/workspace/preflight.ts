@@ -1,4 +1,9 @@
-import { collectPaths, type LoadedRojoProject, loadRojoProject } from "@isentinel/rojo-utils";
+import {
+	collectPaths,
+	type LoadedRojoProject,
+	loadRojoProject,
+	resolveMountPath,
+} from "@isentinel/rojo-utils";
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -48,7 +53,7 @@ function validatePackage(descriptor: PackageDescriptor, errors: Array<PreflightE
 
 	const projectDirectory = path.dirname(descriptor.rojoProjectPath);
 	for (const relative of paths) {
-		if (!fs.existsSync(path.resolve(projectDirectory, relative))) {
+		if (!fs.existsSync(resolveMountPath(projectDirectory, relative))) {
 			errors.push({
 				package: descriptor.name,
 				reason: `$path target not found: ${relative}`,

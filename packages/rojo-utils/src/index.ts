@@ -9,6 +9,7 @@ export type { RojoConfigFileResult, RojoResolverState } from "./rojo-resolver.ts
 export {
 	collectPaths,
 	rebaseTreePaths,
+	resolveMountPath,
 	resolveNestedProjects,
 	resolveNestedProjectSources,
 } from "./rojo-tree.ts";

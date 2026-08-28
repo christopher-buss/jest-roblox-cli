@@ -3218,6 +3218,35 @@ describe(collectLuauRootsFromRojo, () => {
 			);
 		});
 
+		it("should keep a mount when the rojo directory is relative", async () => {
+			expect.assertions(1);
+
+			const project: RojoProject = {
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { $path: "out" },
+				},
+			};
+
+			// Rooted at the invocation directory, which is what `rootDir` is in a
+			// real single-mode run.
+			vol.mkdirSync(path.join(process.cwd(), "out"), { recursive: true });
+			vol.writeFileSync(path.join(process.cwd(), "out/init.luau"), "");
+
+			await setupMocksAsync();
+			// `path.dirname("default.project.json")` is `"."`, which is what a
+			// project named relative to the cwd hands down. A mount joined onto
+			// that is relative too, and nothing relative is ever inside the
+			// absolute frame — so the project would report no roots at all and
+			// fall back to the tsconfig `outDir`.
+			const config = makeConfig({ rootDir: process.cwd() });
+
+			expect(collectLuauRootsFromRojo({ project, rojoDirectory: "." }, config)).toStrictEqual(
+				["out"],
+			);
+		});
+
 		it("should keep a mount when rootDir is a filesystem root", async () => {
 			expect.assertions(1);
 
@@ -3235,10 +3264,12 @@ describe(collectLuauRootsFromRojo, () => {
 			vol.writeFileSync("/out/init.luau", "");
 
 			await setupMocksAsync();
-			// The one frame a resolve leaves a trailing separator on, so a
-			// containment test reading it verbatim weighs every child against
-			// `//` and keeps none.
-			const config = makeConfig({ rootDir: path.resolve("/") });
+			// The one frame that carries a trailing separator, so a containment
+			// test reading it verbatim weighs every child against `//` and keeps
+			// none. Written as the volume writes it: the frame and the rojo
+			// directory name one directory, and only a host-dependent read of
+			// "absolute" could make `/` and `C:/` meet.
+			const config = makeConfig({ rootDir: "/" });
 
 			expect(collectLuauRootsFromRojo({ project, rojoDirectory: "/" }, config)).toStrictEqual(
 				["out"],

@@ -86,6 +86,25 @@ More logs after
 		expect(extractJsonFromOutput(output)).toBe('{"success":true}');
 	});
 
+	it("should ignore a line that parses as JSON but opens no object", () => {
+		expect.assertions(1);
+
+		// Valid json, and balanced, so only the `{` gate rejects it.
+		const output = ['"hello"', '{"a":1}'].join("\n");
+
+		expect(extractJsonFromOutput(output)).toBe('{"a":1}');
+	});
+
+	it("should not restart the scan at a nested object already inside the envelope", () => {
+		expect.assertions(1);
+
+		// The gate applies only while the scan is idle, or the nested object
+		// becomes the candidate and the envelope around it is lost.
+		const output = ['{"a":', '{"b":1}', "}"].join("\n");
+
+		expect(extractJsonFromOutput(output)).toBe(output);
+	});
+
 	it("should collect every line until a nested object is balanced", () => {
 		expect.assertions(1);
 
@@ -183,6 +202,14 @@ describe(parseJestOutput, () => {
 		expect(result.success).toBeTrue();
 		expect(result.numTotalTests).toBe(3);
 		expect(result.numPassedTests).toBe(3);
+	});
+
+	it("should reject output that is valid JSON but not an object", () => {
+		expect.assertions(1);
+
+		// Without the `{` the fast path would hand this to the schema, which
+		// reports a shape error naming no output.
+		expect(() => parseJestOutput("[1,2]")).toThrow("No valid Jest result JSON found");
 	});
 
 	it.for(["{", "}"])(

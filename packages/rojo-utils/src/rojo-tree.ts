@@ -1,6 +1,6 @@
 import { type } from "arktype";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import type { RojoTreeNode } from "./types.ts";
 import { isRojoTreeNode } from "./types.ts";
@@ -62,6 +62,32 @@ export function collectPaths(node: RojoTreeNode, result: Array<string>): void {
 	}
 }
 
+/**
+ * The filesystem path a `$path` mount names, given the directory it is written
+ * against — a project's own directory, or the root a mount was already rebased
+ * onto. A `luauRoot` is written the same way and resolves through here too, so
+ * a root and a mount are weighed on one rule.
+ *
+ * Joined, never resolved. `path.resolve` reads a drive-less absolute path
+ * (`/external/out`) as drive-relative on Windows and answers with the base's
+ * drive, so one mount names a different directory on each host; it also
+ * resolves a relative `baseDirectory` against the process cwd, which is not a
+ * frame any mount is written in. An absolute mount is already the location, so
+ * it is joined onto nothing.
+ *
+ * Returns a posix-separated path with no trailing separator, matching what
+ * {@link collectPaths} yields. A mount may be written `out/`, and `join` keeps
+ * that slash where `resolve` ate it; every containment test downstream builds
+ * its own `/` boundary, so a mount carrying one reads as inside nothing and
+ * nothing reads as inside it.
+ *
+ * The drive letter is left as written, so a caller that compares two of these
+ * canonicalizes both.
+ */
+export function resolveMountPath(baseDirectory: string, mount: string): string {
+	return dropTrailingSlash(resolveNativeMountPath(baseDirectory, mount).replaceAll("\\", "/"));
+}
+
 export function rebaseTreePaths(
 	node: RojoTreeNode,
 	fromDirectory: string,
@@ -71,8 +97,8 @@ export function rebaseTreePaths(
 
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
-			const absolutePath = resolve(fromDirectory, value);
-			result[key] = relative(toDirectory, absolutePath).replaceAll("\\", "/");
+			const mountPath = resolveNativeMountPath(fromDirectory, value);
+			result[key] = relative(toDirectory, mountPath).replaceAll("\\", "/");
 			continue;
 		}
 
@@ -101,16 +127,32 @@ function isAbsoluteMount(value: string): boolean {
 	return ABSOLUTE_MOUNT.test(value);
 }
 
+/** {@link resolveMountPath}, with the separators left as written. */
+function resolveNativeMountPath(baseDirectory: string, mount: string): string {
+	return isAbsoluteMount(mount) ? mount : join(baseDirectory, mount);
+}
+
+/**
+ * Drop a trailing separator, unless it is the whole location: `/` is the posix
+ * root and `D:/` a drive root, and a mount can name either.
+ */
+function dropTrailingSlash(mountPath: string): string {
+	if (!mountPath.endsWith("/")) {
+		return mountPath;
+	}
+
+	const stripped = mountPath.slice(0, -1);
+	return stripped === "" || stripped.endsWith(":") ? mountPath : stripped;
+}
+
 function nestedProjectPath(currentDirectory: string, value: string): string | undefined {
 	// Resolve a `$path` string to the nested project file it should inline, or
 	// undefined when the path is a plain source mount. Rojo treats a `$path`
 	// pointing at a directory containing `default.project.json` as a nested
 	// project (e.g. `$path: ".."` into a package root), so honor that alongside
 	// explicit `*.project.json` references.
-	// join rather than resolve: resolve reads a POSIX-absolute path as
-	// drive-relative on Windows and stamps `currentDirectory`'s drive onto it.
-	// An absolute `$path` is already the location, so it is joined onto nothing.
-	const mountPath = isAbsoluteMount(value) ? value : join(currentDirectory, value);
+	// Native separators: this path is reported back in `projectFiles`.
+	const mountPath = resolveNativeMountPath(currentDirectory, value);
 	if (value.endsWith(".project.json")) {
 		return mountPath;
 	}
@@ -173,12 +215,12 @@ function resolveRootRelativePath(
 	// nesting. Rebasing it onto `originalRoot` would name a directory that does
 	// not exist, and every caller that walks the mounts would then miss the
 	// files under it.
+	const mountPath = resolveMountPath(currentDirectory, value);
 	if (isAbsoluteMount(value)) {
-		return value.replaceAll("\\", "/");
+		return mountPath;
 	}
 
-	const absolutePath = join(currentDirectory, value);
-	return relative(originalRoot, absolutePath).replaceAll("\\", "/");
+	return relative(originalRoot, mountPath).replaceAll("\\", "/");
 }
 
 function resolveTree(

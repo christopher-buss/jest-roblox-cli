@@ -110,6 +110,9 @@ export function filterCoverageUniverse(
 	mapped: MappedCoverageResult,
 	filter: CoverageUniverseFilter,
 ): MappedCoverageResult {
+	// The argument itself, not an equal copy: a filter that names neither an
+	// include nor an ignore has nothing to decide, and the answer is every file
+	// that came in.
 	if ((filter.include ?? []).length === 0 && (filter.ignore ?? []).length === 0) {
 		return mapped;
 	}

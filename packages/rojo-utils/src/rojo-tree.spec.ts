@@ -6,6 +6,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import {
 	collectPaths,
 	rebaseTreePaths,
+	resolveMountPath,
 	resolveNestedProjects,
 	resolveNestedProjectSources,
 } from "./rojo-tree.ts";
@@ -710,6 +711,76 @@ describe(resolveNestedProjectSources, () => {
 				pkg: { $path: "pkg/src" },
 			},
 		});
+	});
+});
+
+describe(resolveMountPath, () => {
+	it("should join a relative mount onto the base directory", () => {
+		expect.assertions(1);
+
+		expect(resolveMountPath("/repo/place", "out/client")).toBe("/repo/place/out/client");
+	});
+
+	it("should collapse traversal in a relative mount", () => {
+		expect.assertions(1);
+
+		expect(resolveMountPath("/repo/place", "../shared/out")).toBe("/repo/shared/out");
+	});
+
+	// Against a drive base, so the first row is the case `path.resolve` gets
+	// wrong: it reads a drive-less absolute mount as drive-relative on Windows
+	// and answers with the base's drive, naming a directory that does not exist.
+	it.for([
+		{ expected: "/external/out", mount: "/external/out" },
+		{ expected: "D:/external/out", mount: "D:/external/out" },
+		{ expected: "D:/external/out", mount: "D:\\external\\out" },
+		{ expected: "/external/out", mount: "\\external\\out" },
+	])("should return the absolute mount $mount unjoined", ({ expected, mount }) => {
+		expect.assertions(1);
+
+		expect(resolveMountPath("C:/repo/place", mount)).toBe(expected);
+	});
+
+	it("should return a posix path for a backslash base directory", () => {
+		expect.assertions(1);
+
+		expect(resolveMountPath("D:\\repo\\place", "out/client")).toBe("D:/repo/place/out/client");
+	});
+
+	// `join` keeps a trailing separator where `resolve` ate it. Containment
+	// tests downstream append their own `/`, so a mount ending in one sits
+	// inside nothing and holds nothing.
+	it.for([
+		{ expected: "/repo/place/out", mount: "out/" },
+		{ expected: "/repo/place", mount: "./" },
+		{ expected: "/repo/place/out/client", mount: "out/client/" },
+		{ expected: "/external/out", mount: "/external/out/" },
+		{ expected: "D:/external/out", mount: "D:\\external\\out\\" },
+	])("should drop the trailing separator on $mount", ({ expected, mount }) => {
+		expect.assertions(1);
+
+		expect(resolveMountPath("/repo/place", mount)).toBe(expected);
+	});
+
+	it.for([
+		{ label: "posix", mount: "/" },
+		{ label: "drive", mount: "D:/" },
+	])("should keep a bare $label root whole", ({ mount }) => {
+		expect.assertions(1);
+
+		// Nothing left to name if the separator goes.
+		expect(resolveMountPath("/repo/place", mount)).toBe(mount);
+	});
+
+	it("should leave a mount that contains a root a valid prefix of what it holds", () => {
+		expect.assertions(1);
+
+		// The shape every coverage containment test needs: `${mount}/` has to be
+		// the prefix of a root below it, which a trailing separator would break.
+		const mount = resolveMountPath("/repo/place", "out/");
+		const root = resolveMountPath("/repo/place", "out/client");
+
+		expect(root.startsWith(`${mount}/`)).toBeTrue();
 	});
 });
 

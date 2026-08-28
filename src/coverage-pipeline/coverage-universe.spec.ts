@@ -126,6 +126,14 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual([]);
 	});
 
+	it("should hand back the same result when the filter selects nothing", () => {
+		expect.assertions(1);
+
+		const result = resultFor("src/a.ts", "lib/b.ts");
+
+		expect(filterCoverageUniverse(result, {})).toBe(result);
+	});
+
 	it("should drop files matching a negated include glob", () => {
 		expect.assertions(1);
 
@@ -250,6 +258,12 @@ describe(resolveUniverseAnchor, () => {
 		expect.assertions(1);
 
 		expect(resolveUniverseAnchor("D:\\repo\\packages\\foo")).toBe("D:/repo/packages/foo");
+	});
+
+	it("should keep a posix absolute rootDir whole", () => {
+		expect.assertions(1);
+
+		expect(resolveUniverseAnchor("/repo/packages/foo")).toBe("/repo/packages/foo");
 	});
 
 	it("should drop a trailing slash so the anchor is a clean prefix", () => {

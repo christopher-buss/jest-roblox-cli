@@ -1,4 +1,4 @@
-import { loadRojoProject } from "@isentinel/rojo-utils";
+import { loadRojoProject, resolveMountPath } from "@isentinel/rojo-utils";
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -301,7 +301,7 @@ function absolutizePaths(
 	let mountTarget: string | undefined;
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
-			mountTarget = normalizeWindowsPath(path.resolve(treeBase, value));
+			mountTarget = normalizeWindowsPath(resolveMountPath(treeBase, value));
 			result[key] = resolveDollarPath(mountTarget, options);
 			continue;
 		}

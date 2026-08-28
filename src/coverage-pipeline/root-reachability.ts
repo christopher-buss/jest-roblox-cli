@@ -1,6 +1,6 @@
-import { collectPaths } from "@isentinel/rojo-utils";
+import { collectPaths, resolveMountPath } from "@isentinel/rojo-utils";
 
-import * as path from "node:path";
+import process from "node:process";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
@@ -45,12 +45,13 @@ export function collectRojoMounts(tree: RojoTreeNode, rojoDirectory: string): Se
 	const collected: Array<string> = [];
 	collectPaths(tree, collected);
 
-	// path.resolve passes a host-absolute rawPath through and resolves a
-	// relative one against the rojo dir, so no isAbsolute branch is needed. It
-	// stamps this host's drive onto a drive-less absolute path, which changes
-	// nothing here: every root it is weighed against is resolved the same way.
+	// Drive letter upper-cased on top of the mount rule: every root these are
+	// weighed against arrives through `normalizeWindowsPath`, and two spellings
+	// of one drive compare unequal.
 	return new Set(
-		collected.map((rawPath) => normalizeWindowsPath(path.resolve(rojoDirectory, rawPath))),
+		collected.map((rawPath) => {
+			return normalizeWindowsPath(resolveMountPath(inCwdFrame(rojoDirectory), rawPath));
+		}),
 	);
 }
 
@@ -70,7 +71,10 @@ export function unreachableRootWarning({
 	rawRoot,
 	subject,
 }: RootReachability): string | undefined {
-	const root = normalizeWindowsPath(path.resolve(base, rawRoot));
+	// Resolved exactly as the mounts were. A root and a mount only ever meet
+	// here, so a rule that differs by side answers "does not reach" for two
+	// spellings of one directory.
+	const root = normalizeWindowsPath(resolveMountPath(inCwdFrame(base), rawRoot));
 	const isReached = [...mounts].some((mount) => {
 		return isWithinRoot(mount, root) || isWithinRoot(root, mount);
 	});
@@ -100,14 +104,13 @@ export function resolveMountWithin(
 ): string | undefined {
 	// `toPosixRoot`, because `isWithinRoot` reads the separator itself and a
 	// frame that resolves to a filesystem root (`/`, `C:/`) is the one path
-	// `path.resolve` leaves a trailing one on — which would weigh every child
-	// against `//` and reject the lot.
-	const base = toPosixRoot(path.resolve(frame));
-	// Resolved exactly as {@link collectRojoMounts} resolves the same `$path`,
-	// host-dependent absoluteness included: a root is weighed against that
-	// mount set, so a second reading of what "absolute" means would let a root
-	// and the mount it came from disagree.
-	const absolute = toPosixRoot(path.resolve(rojoDirectory, rawPath));
+	// that keeps a trailing one — which would weigh every child against `//`
+	// and reject the lot.
+	const base = toPosixRoot(inCwdFrame(frame));
+	// Resolved exactly as {@link collectRojoMounts} resolves the same `$path`:
+	// a root is weighed against that mount set, so a second reading of what
+	// "absolute" means would let a root and the mount it came from disagree.
+	const absolute = toPosixRoot(resolveMountPath(inCwdFrame(rojoDirectory), rawPath));
 	// `isWithinRoot` admits the root itself, hence the inequality: the frame is
 	// what roots are written from, not a root within it.
 	if (absolute === base || !isWithinRoot(absolute, base)) {
@@ -117,4 +120,17 @@ export function resolveMountWithin(
 	// Sliced rather than relativized: at a filesystem root `base` is the empty
 	// string, which `path.relative` would resolve against the cwd instead.
 	return absolute.slice(base.length + 1);
+}
+
+/**
+ * A directory in the frame every mount here is stated in.
+ *
+ * A rojo directory arrives relative whenever the project was named relative —
+ * `path.dirname("default.project.json")` is `"."` — and a mount joined onto
+ * that is relative too, so it could never sit inside an absolute frame and the
+ * whole project would report no roots. The cwd is what a relative one is
+ * written against, and `resolveMountPath` leaves an absolute one alone.
+ */
+function inCwdFrame(directory: string): string {
+	return resolveMountPath(normalizeWindowsPath(process.cwd()), directory);
 }
