@@ -229,10 +229,12 @@ const COV_MAP_SUFFIX = ".cov-map.json";
 /**
  * Mirror one file into the shadow, or carry its previous record forward.
  *
- * The carry-forward wants both a matching source hash AND a file still at the
- * path the record points at: a partial cleanup or an interrupted run can leave
- * the record valid on paper while the file it names is gone — or replaced by a
- * directory, which is the same lie told the other way round.
+ * The carry-forward wants a matching source hash AND a record naming the very
+ * path this call would write AND a file still there: a partial cleanup or an
+ * interrupted run can leave the record valid on paper while the file it names
+ * is gone — or replaced by a directory, which is the same lie told the other
+ * way round — and a record from a run that mirrored this file somewhere else
+ * proves nothing about the path we mirror it to now.
  *
  * One read serves both jobs. The hash decides whether the copy is needed, and
  * when it is, the bytes are already in hand — `copyFileSync` would open and
@@ -251,7 +253,11 @@ export function syncOneFile(
 ): NonInstrumentedFileRecord {
 	const contents = fs.readFileSync(path.resolve(sourcePath));
 	const currentHash = hashBuffer(contents);
-	if (previousRecord?.sourceHash === currentHash && shadowHoldsFile(previousRecord.shadowPath)) {
+	if (
+		previousRecord?.sourceHash === currentHash &&
+		previousRecord.shadowPath === shadowPath &&
+		shadowHoldsFile(shadowPath)
+	) {
 		return previousRecord;
 	}
 
