@@ -46,12 +46,16 @@ const HOSTILE_ROOT_CONFIG = [
 	"",
 ].join("\n");
 
+// `--no-upload-cache` keeps the two runs comparable: the second would
+// otherwise reuse the place the first uploaded, reporting a cache hit and
+// skipping the Boot Probe. That is run order, not anything the config changed.
 const CLI_ARGUMENTS = [
 	"--workspace",
 	"--packages=@e2e/nested",
 	"--coverage",
 	"--backend",
 	"open-cloud",
+	"--no-upload-cache",
 ];
 
 interface RunSnapshot {

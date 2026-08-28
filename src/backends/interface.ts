@@ -4,6 +4,7 @@ import type {
 	StreamingResultEntry,
 	StreamingResultReader,
 } from "../memory-store/sorted-map-client.ts";
+import type { RunProgress } from "../progress/reporter.ts";
 import type { SnapshotWrites } from "../reporter/parser.ts";
 import type { JestResult } from "../types/jest-result.ts";
 
@@ -78,6 +79,13 @@ export interface BackendOptions {
 	 * ignores the field entirely.
 	 */
 	parallel?: ParallelOption;
+	/**
+	 * Where the backend announces the stages only it can see: the upload, the
+	 * Boot Probe, and the dispatch window. Those sit inside `runTestsAsync`,
+	 * which holds no timing collector, so they cannot reach the reporter the
+	 * way a host phase does.
+	 */
+	progress?: RunProgress | undefined;
 	/**
 	 * Workspace mode, non-work-stealing only: rebuilds `scriptOverride` for a
 	 * subset of jobs. A task that fills its return-envelope budget comes back

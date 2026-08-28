@@ -14,6 +14,7 @@ import {
 } from "./formatters/github-actions.ts";
 import { writeJsonFileAsync } from "./formatters/json.ts";
 import { findFormatterOptions, usesAgentFormatter } from "./formatters/utils.ts";
+import { NOOP_RUN_PROGRESS, type RunProgress } from "./progress/reporter.ts";
 import {
 	extractCoverageDisplayFilter,
 	extractCoveragePackages,
@@ -118,10 +119,9 @@ export async function outputSingleResultAsync(
 		stagingMs,
 		typecheckResult,
 	}: SingleRunResult,
+	progress: RunProgress = NOOP_RUN_PROGRESS,
 ): Promise<number> {
 	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
-	const coverageData = runtimeResult?.coverageData;
-
 	const isCoveragePassed = emitResultsAndCoverage({
 		config,
 		coverageEnabled: config.collectCoverage,
@@ -134,18 +134,17 @@ export async function outputSingleResultAsync(
 				typecheckResult,
 			});
 		},
-		runCoverage: () => processCoverage({ agentTextFilter, config, coverageData }),
+		progress,
+		runCoverage: () => {
+			return processCoverage({
+				agentTextFilter,
+				config,
+				coverageData: runtimeResult?.coverageData,
+			});
+		},
 	});
 
-	await writeResultFileAsync(config.outputFile, typecheckResult, runtimeResult?.result);
-
-	if (runtimeResult !== undefined) {
-		writeGameOutputIfConfigured(config, runtimeResult.gameOutput, {
-			hintsShown: !mergedResult.success,
-		});
-	}
-
-	runGitHubActionsFormatter(config, mergedResult, runtimeResult?.sourceMapper);
+	await writeSingleRunSinksAsync(config, { mergedResult, runtimeResult, typecheckResult });
 
 	return emitFinalStatus(config, {
 		isCoveragePassed,
@@ -187,22 +186,25 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 export async function outputMultiResultAsync(
 	rootConfig: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
+	progress: RunProgress = NOOP_RUN_PROGRESS,
 ): Promise<number> {
 	const { coverageMs, mode, projectResults, stagingMs, typecheckResult } = result;
 	const config = buildReportConfig(rootConfig, result);
 
 	if (typecheckResult !== undefined && projectResults.length === 0) {
-		return outputSingleResultAsync(config, {
-			coverageMs,
-			mode: "single",
-			stagingMs,
-			typecheckResult,
-		});
+		return outputSingleResultAsync(
+			config,
+			{ coverageMs, mode: "single", stagingMs, typecheckResult },
+			progress,
+		);
 	}
 
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
 	const mergedResult = mergeResults(typecheckResult, merged.result);
-	const isCoveragePassed = emitMultiResults(toMultiOutputContext(config, result, merged), result);
+	const isCoveragePassed = emitMultiResults(toMultiOutputContext(config, result, merged), {
+		progress,
+		result,
+	});
 
 	// Workspace runs write their own result + Game Output sinks (the runner
 	// has package identity, the workspace root, and the consensus-resolved
@@ -222,46 +224,6 @@ export async function outputMultiResultAsync(
 		mergedResult,
 		snapshotWriteFailures: merged.snapshotWriteFailures,
 	});
-}
-
-// In agent mode the run summary must survive an agent trimming the tail of the
-// output. The coverage report would otherwise print below the summary and bury
-// it, so when coverage is enabled the summary is deferred to print *after* the
-// report. Every other mode keeps the human reading order: results first,
-// coverage last. Single and multi both route through here so the ordering
-// can't drift between modes.
-//
-// `coverageEnabled` only decides *when* the summary prints relative to coverage;
-// it does not gate the coverage call itself. `runCoverage` (`processCoverage`)
-// already no-ops when coverage is off, so it is always invoked here.
-function emitResultsAndCoverage({
-	config,
-	coverageEnabled,
-	printResults,
-	runCoverage,
-}: {
-	config: ResolvedConfig;
-	coverageEnabled: boolean;
-	printResults: () => void;
-	runCoverage: () => boolean;
-}): boolean {
-	const shouldDeferResults =
-		coverageEnabled && usesAgentFormatter(config.formatters, config.verbose);
-
-	if (!shouldDeferResults) {
-		printResults();
-	}
-
-	try {
-		return runCoverage();
-	} finally {
-		// `finally` so the deferred summary still reaches stdout even when
-		// coverage mapping throws (e.g. a malformed coverage map) — losing it
-		// would regress the unconditional "results print" of the non-agent path.
-		if (shouldDeferResults) {
-			printResults();
-		}
-	}
 }
 
 function writeGameOutputIfConfigured(
@@ -310,6 +272,80 @@ function runGitHubActionsFormatter(
 		if (outputPath !== undefined) {
 			const summary = formatJobSummary(result, options);
 			fs.appendFileSync(outputPath, summary);
+		}
+	}
+}
+
+/**
+ * Every file a single run leaves behind: the result JSON, Game Output,
+ * annotations.
+ */
+async function writeSingleRunSinksAsync(
+	config: ResolvedConfig,
+	{
+		mergedResult,
+		runtimeResult,
+		typecheckResult,
+	}: Pick<SingleRunResult, "runtimeResult" | "typecheckResult"> & { mergedResult: JestResult },
+): Promise<void> {
+	await writeResultFileAsync(config.outputFile, typecheckResult, runtimeResult?.result);
+
+	if (runtimeResult !== undefined) {
+		writeGameOutputIfConfigured(config, runtimeResult.gameOutput, {
+			hintsShown: !mergedResult.success,
+		});
+	}
+
+	runGitHubActionsFormatter(config, mergedResult, runtimeResult?.sourceMapper);
+}
+
+// In agent mode the run summary must survive an agent trimming the tail of the
+// output. The coverage report would otherwise print below the summary and bury
+// it, so when coverage is enabled the summary is deferred to print *after* the
+// report. Every other mode keeps the human reading order: results first,
+// coverage last. Single and multi both route through here so the ordering
+// can't drift between modes.
+//
+// `coverageEnabled` only decides *when* the summary prints relative to coverage;
+// it does not gate the coverage call itself. `runCoverage` (`processCoverage`)
+// already no-ops when coverage is off, so it is always invoked here.
+function emitResultsAndCoverage({
+	config,
+	coverageEnabled,
+	printResults,
+	progress,
+	runCoverage,
+}: {
+	config: ResolvedConfig;
+	coverageEnabled: boolean;
+	printResults: () => void;
+	progress: RunProgress;
+	runCoverage: () => boolean;
+}): boolean {
+	const shouldDeferResults =
+		coverageEnabled && usesAgentFormatter(config.formatters, config.verbose);
+
+	if (!shouldDeferResults) {
+		printResults();
+	}
+
+	// The last stretch a run goes quiet through, and the one the reader is
+	// most likely to attribute to coverage — because it is. `runCoverage`
+	// merges the raw hit counts, maps them back to source and renders the
+	// istanbul report; the report prints its own header, but only once the
+	// merge it sits behind is done. Closed before the block settles, so the
+	// stage is `✓` rather than the `·` a run that died here would show.
+	const done = coverageEnabled ? progress.begin("coverage") : undefined;
+	try {
+		const isPassed = runCoverage();
+		done?.();
+		return isPassed;
+	} finally {
+		// `finally` so the deferred summary still reaches stdout even when
+		// coverage mapping throws (e.g. a malformed coverage map) — losing it
+		// would regress the unconditional "results print" of the non-agent path.
+		if (shouldDeferResults) {
+			printResults();
 		}
 	}
 }
@@ -457,7 +493,7 @@ function toMultiOutputContext(
 
 function emitMultiResults(
 	context: MultiOutputContext,
-	result: MultiRunResult | WorkspaceRunResult,
+	{ progress, result }: { progress: RunProgress; result: MultiRunResult | WorkspaceRunResult },
 ): boolean {
 	const { config, merged } = context;
 	const displayFilter = extractCoverageDisplayFilter(result);
@@ -468,6 +504,7 @@ function emitMultiResults(
 		printResults: () => {
 			printMultiResults(context);
 		},
+		progress,
 		runCoverage: () => {
 			return processCoverage({
 				agentTextFilter: displayFilter,

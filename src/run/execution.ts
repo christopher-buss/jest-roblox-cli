@@ -9,6 +9,7 @@ import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import { type ProjectInput, runProjectsAsync } from "../executor.ts";
+import { describePlaceFile } from "../progress/stages.ts";
 import { buildPlace } from "../staging/place-builder.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
@@ -188,6 +189,9 @@ function buildPlaceForBackend(backend: Backend, { discovery, staged }: Execution
 	const start = Date.now();
 	timing.profile("buildOpenCloudPlace", () => {
 		buildOpenCloudPlace(rootConfig, projects, staged.cacheRoot);
+		// Inside the span: closing it closes the stage, and a size handed over
+		// after that arrives too late to reach the line the stage prints.
+		timing.progress.describe("build", describePlaceFile(resolvePlaceFilePath(rootConfig)));
 	});
 	return Date.now() - start;
 }
@@ -227,6 +231,7 @@ async function runAgainstBackendAsync(
 			collectCoverage: rootConfig.collectCoverage,
 			color: rootConfig.color,
 			formatters: rootConfig.formatters,
+			progress: timing.progress,
 			rootDir: rootConfig.rootDir,
 			silent: rootConfig.silent,
 			verbose: rootConfig.verbose,

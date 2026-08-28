@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 
+import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
+import { describeProjectCount } from "../progress/stages.ts";
 import { decodeEnvelope } from "./envelope.ts";
 import type { Backend, BackendOptions, BackendResult, RawBackendEntry } from "./interface.ts";
 import { buildRunPayload, type RunPayloadRequest } from "./plugin-payload.ts";
@@ -123,7 +125,14 @@ export class StudioBackend implements Backend {
 
 		this.wss ??= pre?.server ?? this.createServer(this.port);
 
-		return this.executeViaPluginAsync(this.wss, options, pre?.socket);
+		// Announced here rather than in the executor, which wraps every backend
+		// alike and so would open the stage around the upload too: only a
+		// backend knows when its own dispatch window starts.
+		const progress = options.progress ?? NOOP_RUN_PROGRESS;
+		const done = progress.begin("tests", describeProjectCount(options.jobs.length));
+		const result = await this.executeViaPluginAsync(this.wss, options, pre?.socket);
+		done();
+		return result;
 	}
 
 	private async executeViaPluginAsync(

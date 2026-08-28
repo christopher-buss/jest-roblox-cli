@@ -1,6 +1,8 @@
 import { performance } from "node:perf_hooks";
 import process from "node:process";
 
+import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
+import { SPAN_STAGES, type StageId } from "../progress/stages.ts";
 import {
 	createSpanTree,
 	emitFinalReport,
@@ -12,6 +14,13 @@ import {
 export interface CreateTimingCollectorOptions {
 	clock?: { now: () => number };
 	enabled?: boolean;
+	/**
+	 * Where the phases this collector opens are announced to the person
+	 * watching. Supplying one keeps the span tree live even with the timing
+	 * report off, which is the point: the stages a run reports and the phases
+	 * it profiles are then the same events, told twice.
+	 */
+	progress?: RunProgress;
 	sink?: (line: string) => void;
 }
 
@@ -28,6 +37,13 @@ export interface TimingCollector {
 	flushTimingReport: () => void;
 	profile: <T>(name: string, func: () => T extends Promise<unknown> ? never : T) => T;
 	profileAsync: <T>(name: string, func: () => Promise<T>) => Promise<T>;
+	/**
+	 * The run's stage reporter, carried here because the collector is already
+	 * threaded through every layer that has a stage to announce — the run
+	 * header that reveals it, the backend that owns upload and dispatch, the
+	 * workspace sink that writes between repaints.
+	 */
+	readonly progress: RunProgress;
 	/**
 	 * Register a leaf span under the current stack frame whose `elapsedMs` is
 	 * supplied directly. Used to surface durations the orchestrator did not
@@ -61,40 +77,119 @@ export interface TimingCollector {
  */
 export function createTimingCollector(options: CreateTimingCollectorOptions = {}): TimingCollector {
 	const isEnabled = options.enabled ?? process.env["TIMING"] !== undefined;
-	if (!isEnabled) {
+	const { progress } = options;
+	if (!isEnabled && progress === undefined) {
 		return createNoopTimingCollector();
 	}
 
+	const reporter = progress ?? NOOP_RUN_PROGRESS;
+
 	const clock = options.clock ?? { now: () => performance.now() };
 	const sink = options.sink ?? ((line: string) => void process.stderr.write(`${line}\n`));
-	// No enabled check here — a disabled collector never opens or records a
-	// span, so nothing ever reaches these callbacks.
-	const spans = createSpanTree(clock, {
-		onRootComplete: (root) => {
-			emitSpanNode(root, sink);
-		},
-		onRootOpen: (root) => {
-			sink(formatPhaseStart(root.name));
-		},
-	});
+	const spans = createObservedSpanTree({ clock, isEnabled, reporter, sink });
 	const { profile, profileAsync } = createProfilers(spans);
 
 	function record(name: string, elapsedMs: number): void {
 		spans.record(name, elapsedMs);
 	}
 
-	function flushTimingReport(): void {
-		if (spans.roots.size === 0) {
+	return {
+		enabled: isEnabled,
+		flushTimingReport: createFlusher({ isEnabled, sink, spans }),
+		profile,
+		profileAsync,
+		progress: reporter,
+		record,
+	};
+}
+
+/**
+ * Turns span open/close pairs into stage open/close pairs, for the spans
+ * `SPAN_STAGES` names. Holds one closer per stage rather than per span, so a
+ * phase that runs twice reopens the same stage instead of leaving the first
+ * one hanging; a closer left behind after its stage closed is idempotent, so
+ * the map keeps at most one entry per stage and never needs clearing.
+ */
+function createStageAnnouncer(progress: RunProgress): {
+	close: (name: string) => void;
+	open: (name: string) => void;
+} {
+	const closers = new Map<StageId, () => void>();
+	return {
+		close: (name: string) => {
+			const stage = SPAN_STAGES[name];
+			if (stage === undefined) {
+				return;
+			}
+
+			closers.get(stage)?.();
+		},
+		open: (name: string) => {
+			const stage = SPAN_STAGES[name];
+			if (stage === undefined) {
+				return;
+			}
+
+			closers.set(stage, progress.begin(stage));
+		},
+	};
+}
+
+/**
+ * The one span tree, wired to both of its readers: the `[TIMING]` waterfall,
+ * which writes only while the report is on, and the stage reporter, which
+ * announces the phases a person is waiting on whether or not it is.
+ */
+function createObservedSpanTree({
+	clock,
+	isEnabled,
+	reporter,
+	sink,
+}: {
+	clock: { now: () => number };
+	isEnabled: boolean;
+	reporter: RunProgress;
+	sink: (line: string) => void;
+}): SpanTree {
+	const stages = createStageAnnouncer(reporter);
+	return createSpanTree(clock, {
+		onSpanClose: (node, isRoot) => {
+			stages.close(node.name);
+			if (isRoot && isEnabled) {
+				emitSpanNode(node, sink);
+			}
+		},
+		onSpanOpen: (node, isRoot) => {
+			stages.open(node.name);
+			if (isRoot && isEnabled) {
+				sink(formatPhaseStart(node.name));
+			}
+		},
+	});
+}
+
+/**
+ * The end-of-run drain: everything the closing phases did not already say,
+ * then the host total. Silent while the report is off, and empties the tree
+ * so the second call the run's `finally` makes is a no-op.
+ */
+function createFlusher({
+	isEnabled,
+	sink,
+	spans,
+}: {
+	isEnabled: boolean;
+	sink: (line: string) => void;
+	spans: SpanTree;
+}): () => void {
+	return () => {
+		if (!isEnabled || spans.roots.size === 0) {
 			return;
 		}
 
 		emitFinalReport(spans.roots, sink);
-		// Clear so a second flush (the run wraps this in a `finally`) is a no-op
-		// rather than re-emitting every recorded span.
 		spans.roots.clear();
-	}
-
-	return { enabled: true, flushTimingReport, profile, profileAsync, record };
+	};
 }
 
 function noOp(): void {
@@ -118,13 +213,20 @@ function createNoopTimingCollector(): TimingCollector {
 		flushTimingReport: noOp,
 		profile: passthroughProfile,
 		profileAsync: passthroughProfileAsync,
+		progress: NOOP_RUN_PROGRESS,
 		record: noOp,
 	};
 }
 
 /**
- * The two span-opening entry points for an enabled collector. Disabled runs
+ * The two span-opening entry points for a live collector. Disabled runs
  * receive the direct-call implementations from `createNoopTimingCollector`.
+ *
+ * Every span opens, including the per-file ones instrumentation opens
+ * thousands of and no reader ever asks for. Skipping the unnamed ones was
+ * measured at a millisecond or two across a thousand-file coverage run, and
+ * bought that with a branch whose two sides are indistinguishable from
+ * outside — nothing reads a disabled tree, so nothing can tell.
  */
 function createProfilers(spans: SpanTree): Pick<TimingCollector, "profile" | "profileAsync"> {
 	function profile<T>(name: string, func: () => T extends Promise<unknown> ? never : T): T {

@@ -21,6 +21,7 @@ vi.mock(import("./run"));
 vi.mock(import("./output"));
 
 const stdEnvironmentMock = vi.hoisted(() => ({ isAgent: false }));
+
 vi.mock(import("std-env"), async (importOriginal) => {
 	const actual = await importOriginal();
 	return {
@@ -1236,6 +1237,7 @@ describe(main, () => {
 		expect(mocks.runJestRoblox).toHaveBeenCalledWith(
 			expect.objectContaining({ files: undefined, parallel: 2 }),
 			expect.any(Object),
+			expect.any(Object),
 		);
 	});
 });
@@ -1369,7 +1371,27 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([]);
 
 		expect(code).toBe(0);
-		expect(mocks.outputMultiResult).toHaveBeenCalledWith(expect.any(Object), multi);
+		expect(mocks.outputMultiResult).toHaveBeenCalledWith(
+			expect.any(Object),
+			multi,
+			expect.any(Object),
+		);
+	});
+
+	it("should hand the run and the report the same stage reporter", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		setupDefaults();
+		mocks.runJestRoblox.mockResolvedValue(makeMultiResult());
+
+		await runAsync([]);
+
+		// Same object, not merely one each: the block has to stay open across
+		// the run so the coverage stage can join it afterwards.
+		expect(mocks.outputMultiResult.mock.calls[0]![2]).toBe(
+			mocks.runJestRoblox.mock.calls[0]![2],
+		);
 	});
 
 	it("should dispatch WorkspaceRunResult to outputMultiResult", async () => {
@@ -1383,7 +1405,11 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([]);
 
 		expect(code).toBe(0);
-		expect(mocks.outputMultiResult).toHaveBeenCalledWith(expect.any(Object), workspace);
+		expect(mocks.outputMultiResult).toHaveBeenCalledWith(
+			expect.any(Object),
+			workspace,
+			expect.any(Object),
+		);
 	});
 
 	it("should write validationMessage to stderr and return validationExitCode", async () => {

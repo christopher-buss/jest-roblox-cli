@@ -18,6 +18,7 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 - Three backends: Open Cloud (remote), Studio (attached, local), and Studio CLI
   (self-launched headless Studio, local)
 - Multiple output formatters (human, agent, JSON, GitHub Actions)
+- Live stage progress, so a long upload or dispatch never looks stalled
 
 <!-- prettier-ignore -->
 > [!NOTE]
@@ -757,6 +758,14 @@ project) under `.jest-roblox/output/`.
 4. Parses Jest JSON output from the session
 5. Maps Luau line numbers to TypeScript via source maps (roblox-ts only)
 6. Prints results
+
+Each step announces itself under the `RUN` header — including the coverage merge
+and report, which run after the tests and take as long as they take — with what
+it is working on — the size of the place going up, the version that booted, the
+number of projects dispatched — so a slow one says which it is. A terminal gets
+one block, repainted in place with a running duration; a pipe, a redirect and a
+CI log get a line as each step starts and another as it ends. `--silent`,
+`--formatters json` and `--formatters agent` report no stages at all.
 
 <!-- prettier-ignore -->
 > [!NOTE]

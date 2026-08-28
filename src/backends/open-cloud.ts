@@ -12,6 +12,8 @@ import type { Except } from "type-fest";
 
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
+import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
+import { describePlaceFile, describeProjectCount } from "../progress/stages.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
 import { errorChain, formatMissingScopes, walkErrorChain } from "../utils/error-chain.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
@@ -170,46 +172,68 @@ export class OpenCloudBackend implements Backend {
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
 	}
 
-	public async runTestsAsync({
-		jobs,
-		parallel,
-		scriptFactory,
-		scriptOverride,
-		streaming,
-		workStealing,
-	}: BackendOptions): Promise<BackendResult> {
+	public async runTestsAsync(options: BackendOptions): Promise<BackendResult> {
+		const {
+			jobs,
+			progress = NOOP_RUN_PROGRESS,
+			scriptOverride,
+			workStealing: isStealing,
+		} = options;
 		this.raceWarned = false;
 		this.staleCacheWarned = false;
-		const primary = resolvePrimaryJob(jobs, scriptOverride, workStealing);
+		const primary = resolvePrimaryJob(jobs, scriptOverride, isStealing);
 		// timeout and bootProbeTimeout are picked from the first job — both are
 		// per-run knobs, and one run boots one version of one place.
 		const target = toCacheTarget(this.credentials, resolvePlaceFilePath(primary.config));
 
-		const upload = await this.uploadOrReuseAsync(primary.config, target);
-		const executeAsync = async (uploadOutcome: UploadOutcome): Promise<DispatchOutcome> => {
-			await this.verifyBootAsync({ config: primary.config, target, upload: uploadOutcome });
-			return this.dispatchAsync(
-				{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing },
-				primary.config,
-				toVersionContext(primary.config.rootDir, target, uploadOutcome),
-			);
+		const attemptAsync = async (upload: UploadOutcome): Promise<DispatchOutcome> => {
+			return this.bootAndDispatchAsync({ options, primary, progress, target, upload });
 		};
 
+		const upload = await this.uploadOrReuseAsync({ config: primary.config, progress, target });
 		const executionStart = Date.now();
 		const { extraUploadMs, outcome } = await this.executeReusingUploadAsync(
-			{ config: primary.config, target, upload },
-			executeAsync,
+			{ config: primary.config, progress, target, upload },
+			attemptAsync,
 		);
 
-		return {
-			...outcome,
-			// A self-heal re-upload runs inside the execution window, so it
-			// belongs to `uploadMs` and comes back out of `executionMs`.
-			timing: {
-				executionMs: Date.now() - executionStart - extraUploadMs,
-				uploadMs: upload.uploadMs + extraUploadMs,
-			},
-		};
+		return splitUploadAndExecution({
+			executionStart,
+			extraUploadMs,
+			outcome,
+			uploadMs: upload.uploadMs,
+		});
+	}
+
+	/**
+	 * One attempt against one place version: prove it boots, then run every job
+	 * on it. The self-heal path calls this a second time with a fresh upload,
+	 * so the `tests` stage reopens rather than reporting twice.
+	 */
+	private async bootAndDispatchAsync({
+		options,
+		primary,
+		progress,
+		target,
+		upload,
+	}: {
+		options: BackendOptions;
+		primary: ProjectJob;
+		progress: RunProgress;
+		target: UploadCacheTarget;
+		upload: UploadOutcome;
+	}): Promise<DispatchOutcome> {
+		await this.verifyBootAsync({ config: primary.config, progress, target, upload });
+		// Closed on success only: a dispatch that throws leaves the stage open,
+		// and the reporter then names it as the step the run died inside.
+		const done = progress.begin("tests", describeProjectCount(options.jobs.length));
+		const outcome = await this.dispatchAsync(
+			options,
+			primary.config,
+			toVersionContext(primary.config.rootDir, target, upload),
+		);
+		done();
+		return outcome;
 	}
 
 	/**
@@ -313,10 +337,12 @@ export class OpenCloudBackend implements Backend {
 	private async executeReusingUploadAsync(
 		{
 			config,
+			progress,
 			target,
 			upload,
 		}: {
 			config: ResolvedConfig;
+			progress: RunProgress;
 			target: UploadCacheTarget;
 			upload: UploadOutcome;
 		},
@@ -333,7 +359,7 @@ export class OpenCloudBackend implements Backend {
 				"Warning: cached place version is gone — re-uploading and retrying.\n",
 			);
 			invalidateCachedVersion(config.rootDir, target);
-			const fresh = await this.uploadOrReuseAsync(config, target);
+			const fresh = await this.uploadOrReuseAsync({ config, progress, target });
 			return { extraUploadMs: fresh.uploadMs, outcome: await executeAsync(fresh) };
 		}
 	}
@@ -529,10 +555,15 @@ export class OpenCloudBackend implements Backend {
 	 * so only {@link OpenCloudBackend.verifyBootAsync} may record one. The
 	 * hash rides out on the outcome for it to write with.
 	 */
-	private async uploadOrReuseAsync(
-		config: ResolvedConfig,
-		target: UploadCacheTarget,
-	): Promise<UploadOutcome> {
+	private async uploadOrReuseAsync({
+		config,
+		progress,
+		target,
+	}: {
+		config: ResolvedConfig;
+		progress: RunProgress;
+		target: UploadCacheTarget;
+	}): Promise<UploadOutcome> {
 		const start = Date.now();
 		const hash = config.uploadCache ? hashPlaceFile(target.placeFilePath) : undefined;
 		// A hash of undefined means "no cache this run" for both reads and
@@ -540,6 +571,9 @@ export class OpenCloudBackend implements Backend {
 		if (hash !== undefined) {
 			const cached = readCachedVersion(config.rootDir, target, hash);
 			if (cached !== undefined) {
+				// Noted rather than opened: nothing went over the wire, so the
+				// stage has a result and never had a wait.
+				progress.note("upload", `cache hit, version ${cached.toString()}`);
 				return {
 					fromCache: true,
 					hash,
@@ -549,9 +583,11 @@ export class OpenCloudBackend implements Backend {
 			}
 		}
 
+		const done = progress.begin("upload", describePlaceFile(target.placeFilePath));
 		const upload = await this.runner.uploadPlaceAsync({
 			placeFilePath: target.placeFilePath,
 		});
+		done(`version ${upload.versionNumber.toString()}`);
 
 		return {
 			fromCache: false,
@@ -579,10 +615,12 @@ export class OpenCloudBackend implements Backend {
 	 */
 	private async verifyBootAsync({
 		config,
+		progress,
 		target,
 		upload,
 	}: {
 		config: ResolvedConfig;
+		progress: RunProgress;
 		target: UploadCacheTarget;
 		upload: UploadOutcome;
 	}): Promise<void> {
@@ -591,6 +629,7 @@ export class OpenCloudBackend implements Backend {
 			return;
 		}
 
+		const done = progress.begin("boot", `version ${upload.versionNumber.toString()}`);
 		try {
 			await this.runner.executeScriptAsync({
 				placeVersion: upload.versionNumber,
@@ -609,6 +648,7 @@ export class OpenCloudBackend implements Backend {
 			});
 		}
 
+		done();
 		if (upload.hash !== undefined) {
 			writeCachedVersion(config.rootDir, target, upload.hash, upload.versionNumber);
 		}
@@ -764,6 +804,31 @@ function rethrowBootProbeFailure(
 		"--backend=studio-cli, to see why it will not load.",
 	];
 	throw new Error(lines.join("\n"), { cause: err });
+}
+
+/**
+ * Split the run's wall clock into the two numbers the result carries. A
+ * self-heal re-upload runs inside the execution window, so it belongs to
+ * `uploadMs` and comes back out of `executionMs`.
+ */
+function splitUploadAndExecution({
+	executionStart,
+	extraUploadMs,
+	outcome,
+	uploadMs,
+}: {
+	executionStart: number;
+	extraUploadMs: number;
+	outcome: DispatchOutcome;
+	uploadMs: number;
+}): BackendResult {
+	return {
+		...outcome,
+		timing: {
+			executionMs: Date.now() - executionStart - extraUploadMs,
+			uploadMs: uploadMs + extraUploadMs,
+		},
+	};
 }
 
 function toVersionContext(

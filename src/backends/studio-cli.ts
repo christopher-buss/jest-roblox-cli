@@ -12,6 +12,8 @@ import type { WebSocket } from "ws";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import { findRojoProject } from "../coverage-pipeline/prepare.ts";
+import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
+import { describeProjectCount } from "../progress/stages.ts";
 import {
 	type BuildPlaceOptions,
 	buildPlace as defaultBuildPlace,
@@ -295,6 +297,7 @@ export class StudioCliBackend implements Backend {
 	public async runTestsAsync({
 		jobs,
 		parallel,
+		progress = NOOP_RUN_PROGRESS,
 		vmParallel,
 		workStealing,
 	}: BackendOptions): Promise<BackendResult> {
@@ -302,10 +305,7 @@ export class StudioCliBackend implements Backend {
 		const place = this.prepareRunPlace(jobs);
 		const runRequest = { runBudgetMs: this.timeout, vmParallel };
 		const { placeFile } = place;
-		const deadline: ResultDeadline = {
-			outputFile: studioOutputFile(place.workDirectory),
-			timeout: this.timeout,
-		};
+		const deadline = this.deadlineFor(place.workDirectory);
 		const server = this.createServer();
 		let child: StudioCliProcess | undefined;
 		// Set once the background watch owns teardown (result in hand), so the
@@ -316,10 +316,16 @@ export class StudioCliBackend implements Backend {
 			const requestId = randomUUID();
 			const args = buildStudioArgs({ ...place, ...runRequest, jobs, port, requestId });
 			const studioPath = this.discover(this.studioPath);
+			// Announced here rather than in the executor, which wraps every
+			// backend alike: only a backend knows when its own dispatch window
+			// starts.
+			const done = progress.begin("tests", describeProjectCount(jobs.length));
 			const executionStart = Date.now();
 			child = this.launch({ args, headed: this.headed, placeFile, studioPath });
 			const message = await waitForResultAsync(server, child, requestId, deadline);
 			const executionMs = Date.now() - executionStart;
+
+			done();
 
 			startGracefulTeardown(child, server, this.gracefulShutdownTimeout);
 			wasGracefulTeardownStarted = true;
@@ -359,6 +365,11 @@ export class StudioCliBackend implements Backend {
 		});
 
 		return placeFile;
+	}
+
+	/** Where a run's result lands, and how long Studio has to put it there. */
+	private deadlineFor(workDirectory: string): ResultDeadline {
+		return { outputFile: studioOutputFile(workDirectory), timeout: this.timeout };
 	}
 
 	/**

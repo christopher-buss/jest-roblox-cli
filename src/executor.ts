@@ -242,6 +242,7 @@ async function dispatchToBackendAsync(
 		const result = await options.backend.runTestsAsync({
 			jobs,
 			parallel: options.parallel,
+			progress: timing.progress,
 			scriptFactory: options.scriptFactory,
 			scriptOverride: options.scriptOverride,
 			streaming: options.streaming,

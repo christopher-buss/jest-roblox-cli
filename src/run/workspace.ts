@@ -17,6 +17,7 @@ import {
 } from "../coverage-pipeline/workspace-aggregate.ts";
 import type { BailSummary } from "../formatters/shared.ts";
 import { isDefaultHumanFormatter } from "../formatters/utils.ts";
+import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -191,14 +192,21 @@ async function resolveWorkspaceOptionsAsync(
 // `collectCoverage` is intentionally omitted: workspace coverage is per-package
 // (driven by each package's manifest), so there is no workspace-level flag to
 // surface the "Coverage enabled" subtitle.
-function emitWorkspaceRunHeader(
-	cli: CliOptions,
-	runOptions: WorkspaceRunOptions,
-	workspaceRoot: string,
-): void {
+function emitWorkspaceRunHeader({
+	cli,
+	progress,
+	runOptions,
+	workspaceRoot,
+}: {
+	cli: CliOptions;
+	progress: RunProgress;
+	runOptions: WorkspaceRunOptions;
+	workspaceRoot: string;
+}): void {
 	emitRunHeader({
 		color: runOptions.color,
 		formatters: runOptions.formatters,
+		progress,
 		rootDir: workspaceRoot,
 		silent: runOptions.silent,
 		verbose: cli.verbose,
@@ -445,10 +453,15 @@ function buildWorkspaceResult({
  * final envelope so live per-package stdout writes would
  * either break the structured output or be silenced anyway.
  */
-function resolveStreamingProgressSink(
-	runOptions: WorkspaceRunOptions,
-	cli: CliOptions,
-): StreamingAggregatorOnEntry | undefined {
+function resolveStreamingProgressSink({
+	cli,
+	progress,
+	runOptions,
+}: {
+	cli: CliOptions;
+	progress: RunProgress;
+	runOptions: WorkspaceRunOptions;
+}): StreamingAggregatorOnEntry | undefined {
 	if (
 		!isDefaultHumanFormatter({
 			formatters: runOptions.formatters,
@@ -459,9 +472,14 @@ function resolveStreamingProgressSink(
 		return undefined;
 	}
 
+	// Through the reporter rather than stdout: a live stage block owns the last
+	// lines on screen, so a bare write would land inside it and leave the next
+	// repaint erasing this line in place of its own rows.
 	return (entry) => {
 		const line = formatStreamingProgressLine(entry, { color: runOptions.color });
-		process.stdout.write(`${line}\n`);
+		progress.interleave(() => {
+			process.stdout.write(`${line}\n`);
+		});
 	};
 }
 
@@ -480,11 +498,12 @@ async function executeWorkspaceRunAsync({
 	}
 
 	const { backend, workStealingCredentials } = resolution;
+	const progress = timing?.progress ?? NOOP_RUN_PROGRESS;
 
 	let output;
 	try {
-		emitWorkspaceRunHeader(cli, runOptions, workspaceRoot);
-		const onStreamingResult = resolveStreamingProgressSink(runOptions, cli);
+		emitWorkspaceRunHeader({ cli, progress, runOptions, workspaceRoot });
+		const onStreamingResult = resolveStreamingProgressSink({ cli, progress, runOptions });
 		output = await runWorkspaceAsync({
 			backend,
 			cli,

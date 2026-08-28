@@ -507,7 +507,10 @@ describe(runWorkspaceModeAsync, () => {
 			});
 			writeSpy.mockRestore();
 
-			expect(writes.join("")).toContain("@halcyon/foo  1 passed (42ms)");
+			// Whole write, not a substring: the line ends at its newline, and a
+			// `toContain` here let a template literal smuggle a trailing indent
+			// onto every streaming line.
+			expect(writes.at(-1)).toBe("▶ @halcyon/foo  1 passed (42ms)\n");
 		});
 
 		it("should compose 'pkg › project' when names differ", async () => {

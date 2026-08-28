@@ -3,6 +3,7 @@ import { resolveTypecheckConfig } from "./config/resolve-typecheck-config.ts";
 import type { CliOptions, ResolvedConfig } from "./config/schema.ts";
 import { emitBuildManifest } from "./coverage-pipeline/build-manifest.ts";
 import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
+import { NOOP_RUN_PROGRESS, type RunProgress } from "./progress/reporter.ts";
 import { loadRojoTree, runMultiProjectAsync, runResolvedProjectsAsync } from "./run/multi.ts";
 import { buildImplicitProject } from "./run/single-projects.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
@@ -51,13 +52,18 @@ export async function runSingleOrMultiAsync(
 export async function runJestRobloxAsync(
 	cli: CliOptions,
 	config: ResolvedConfig,
+	progress: RunProgress = NOOP_RUN_PROGRESS,
 ): Promise<MultiRunResult | WorkspaceRunResult> {
 	// One collector per top-level run, flushed in `finally` so a TIMING run
 	// still emits the host waterfall when a profiled phase throws (missing
 	// lute, rojo build failure, dispatch timeout) — exactly the slow or
-	// broken runs the profiler exists to diagnose. Disabled (TIMING unset)
-	// every span is a no-op so behavior stays byte-identical.
-	const timing = createTimingCollector();
+	// broken runs the profiler exists to diagnose. The stage reporter rides
+	// with it: the phases it profiles are the stages it announces.
+	//
+	// The reporter is passed in rather than built here, because the run is not
+	// the whole invocation: the coverage merge and its report come after this
+	// returns, and whoever owns the terminal owns settling the block.
+	const timing = createTimingCollector({ progress });
 	try {
 		// Workspace mode resolves its own per-package config. The one exception
 		// is `workspace.root`/`workspace.packages`: those come from the

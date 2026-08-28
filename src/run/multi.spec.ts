@@ -28,6 +28,7 @@ import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import { type ExecuteResult, runProjectsAsync } from "../executor.ts";
 import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
+import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import { synthesize } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { runTypecheckAsync } from "../typecheck/runner.ts";
@@ -186,6 +187,7 @@ function recordingTimingCollector() {
 			asyncNames.push(name);
 			return func();
 		},
+		progress: NOOP_RUN_PROGRESS,
 		record: (name, elapsedMs) => {
 			records.push({ name, elapsedMs });
 		},

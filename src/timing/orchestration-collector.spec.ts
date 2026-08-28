@@ -1,6 +1,7 @@
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
+import type { RunProgress } from "../progress/reporter.ts";
 import { createTimingCollector } from "./orchestration-collector.ts";
 
 function createCapturingSink() {
@@ -22,6 +23,38 @@ function createScriptedClock(times: Array<number>) {
 			return value;
 		},
 	};
+}
+
+function createRecordingProgress() {
+	const calls: Array<string> = [];
+	const progress: RunProgress = {
+		begin: (id, detail) => {
+			calls.push(detail === undefined ? `begin:${id}` : `begin:${id}:${detail}`);
+			return (closingDetail) => {
+				calls.push(
+					closingDetail === undefined ? `end:${id}` : `end:${id}:${closingDetail}`,
+				);
+			};
+		},
+		describe: (id, detail) => {
+			calls.push(`describe:${id}:${detail}`);
+		},
+		finish: () => {
+			calls.push("finish");
+		},
+		interleave: (write) => {
+			calls.push("interleave");
+			write();
+		},
+		note: (id, detail) => {
+			calls.push(`note:${id}:${detail}`);
+		},
+		reveal: () => {
+			calls.push("reveal");
+		},
+	};
+
+	return { calls, progress };
 }
 
 describe(createTimingCollector, () => {
@@ -538,6 +571,87 @@ describe(createTimingCollector, () => {
 
 		collector.profile("synthesize", () => {});
 		collector.record("backend.uploadMs", 4);
+
+		expect(lines).toStrictEqual([]);
+	});
+
+	it("should open and close the stage a profiled phase stands for", () => {
+		expect.assertions(1);
+
+		const { calls, progress } = createRecordingProgress();
+		const collector = createTimingCollector({ progress });
+
+		collector.profile("prepareCoverage", () => {});
+
+		expect(calls).toStrictEqual(["begin:instrument", "end:instrument"]);
+	});
+
+	it("should announce a stage from a span nested inside another phase", () => {
+		expect.assertions(1);
+
+		const { calls, progress } = createRecordingProgress();
+		const collector = createTimingCollector({ progress });
+
+		collector.profile("runProjects", () => {
+			collector.profile("processResults", () => {});
+		});
+
+		expect(calls).toStrictEqual(["begin:results", "end:results"]);
+	});
+
+	it("should stay silent for a phase that stands for no stage", () => {
+		expect.assertions(1);
+
+		const { calls, progress } = createRecordingProgress();
+		const collector = createTimingCollector({ progress });
+
+		collector.profile("buildJobs", () => {});
+
+		expect(calls).toStrictEqual([]);
+	});
+
+	it("should announce nothing for an async phase that stands for no stage", async () => {
+		expect.assertions(2);
+
+		const { calls, progress } = createRecordingProgress();
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({ enabled: false, progress, sink });
+
+		await collector.profileAsync("prepareDispatch", async () => {});
+		collector.flushTimingReport();
+
+		expect(calls).toStrictEqual([]);
+		expect(lines).toStrictEqual([]);
+	});
+
+	it("should report a whole millisecond of unmeasured time", () => {
+		expect.assertions(1);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 1, 3, 3]),
+			enabled: true,
+			sink,
+		});
+
+		// The parent spans 3ms and its child 2ms, leaving exactly 1ms
+		// unaccounted — the smallest gap the report still names.
+		collector.profile("prepareCoverage", () => {
+			collector.profile("parse-ast", () => {});
+		});
+
+		expect(lines).toContain("[TIMING]   (unmeasured): 1ms");
+	});
+
+	it("should keep the timing report quiet while only progress is wanted", () => {
+		expect.assertions(1);
+
+		const { progress } = createRecordingProgress();
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({ enabled: false, progress, sink });
+
+		collector.profile("prepareCoverage", () => {});
+		collector.flushTimingReport();
 
 		expect(lines).toStrictEqual([]);
 	});

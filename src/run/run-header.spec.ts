@@ -1,6 +1,7 @@
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
+import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import type { RunHeaderInput } from "./run-header.ts";
 import { emitRunHeader } from "./run-header.ts";
 
@@ -8,6 +9,7 @@ function baseInput(overrides: Partial<RunHeaderInput> = {}): RunHeaderInput {
 	return {
 		color: false,
 		formatters: ["default"],
+		progress: NOOP_RUN_PROGRESS,
 		rootDir: "/project",
 		silent: false,
 		verbose: false,

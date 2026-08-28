@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import { emitWorkspaceBuildManifests } from "../coverage-pipeline/workspace-prepare.ts";
+import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import { buildPlace } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -43,7 +44,7 @@ describe(stageWorkspacePlace, () => {
 		const profile = vi.fn<(label: string, callback: () => typeof artifact) => typeof artifact>(
 			(_label, callback) => callback(),
 		);
-		const timing = fromAny<TimingCollector, unknown>({ profile });
+		const timing = fromAny<TimingCollector, unknown>({ profile, progress: NOOP_RUN_PROGRESS });
 		vi.spyOn(Date, "now")
 			.mockReturnValueOnce(100)
 			.mockReturnValueOnce(130)

@@ -43,3 +43,15 @@
    project tree matches the compiled output structure
 4. For coverage issues, verify [lute](https://github.com/luau-lang/lute/) is
    installed and on PATH
+
+## Where a run is right now
+
+Every step between the `RUN` header and the report announces itself:
+`instrument`, `build place`, `upload`, `boot probe`, `run tests`,
+`collect results`, `coverage`. A stage still marked `·` when the run ends is the
+one it died inside.
+
+A terminal repaints one block with a running duration; a pipe or a CI log gets
+one line as a stage opens and another as it closes. Set `TIMING` for the full
+`[TIMING]` waterfall on stderr, which measures every phase rather than the six
+worth naming.

@@ -4,6 +4,7 @@ import {
 	emitWorkspaceBuildManifests,
 	type WorkspacePackageCoverage,
 } from "../coverage-pipeline/workspace-prepare.ts";
+import { describePlaceFile } from "../progress/stages.ts";
 import { buildPlace } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -98,7 +99,7 @@ function buildWorkspacePlace({
 	const placeFile = path.join(cacheDirectory, SYNTHESIZED_PLACE_FILE);
 	const coverage = [...coverageByPackage.values()];
 	const coveragePlace = timing.profile("rojoBuild", () => {
-		return buildPlace({
+		const built = buildPlace({
 			packages: descriptors,
 			placeFile,
 			projectFile: path.join(cacheDirectory, SYNTHESIZED_PROJECT_FILE),
@@ -117,6 +118,10 @@ function buildWorkspacePlace({
 				}),
 			},
 		});
+		// Inside the span: closing it closes the stage, and a size handed over
+		// after that arrives too late to reach the line the stage prints.
+		timing.progress.describe("build", describePlaceFile(placeFile));
+		return built;
 	});
 
 	// Emit only after the shared build succeeds: `buildPlace` throws on a failed

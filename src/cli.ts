@@ -18,6 +18,7 @@ import {
 	VALID_COVERAGE_REPORTERS,
 } from "./config/schema.ts";
 import { outputMultiResultAsync } from "./output.ts";
+import { createStdoutRunProgress, type RunProgress } from "./progress/reporter.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
 import { runJestRobloxAsync } from "./run.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
@@ -554,6 +555,7 @@ function printError(err: unknown): void {
 async function dispatchResultAsync(
 	config: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
+	progress: RunProgress,
 ): Promise<number> {
 	if (result.validationExitCode !== undefined) {
 		if (result.validationMessage !== undefined) {
@@ -567,7 +569,7 @@ async function dispatchResultAsync(
 		return 0;
 	}
 
-	return outputMultiResultAsync(config, result);
+	return outputMultiResultAsync(config, result, progress);
 }
 
 async function runInnerAsync(args: Array<string>): Promise<number> {
@@ -592,8 +594,17 @@ async function runInnerAsync(args: Array<string>): Promise<number> {
 	const loadedConfig = await loadConfig(cli.config, cli.workspaceRoot);
 	const config = mergeCliWithConfig(cli, loadedConfig);
 
-	const result = await runJestRobloxAsync(cli, config);
-	return dispatchResultAsync(config, result);
+	// The CLI owns the terminal for the whole invocation, so it owns the stage
+	// block: the run is only part of it, and the coverage merge and report the
+	// user waits on just as long come after the run returns. Settled in a
+	// `finally`, so a throw leaves the block naming the step it died inside.
+	const progress = createStdoutRunProgress();
+	try {
+		const result = await runJestRobloxAsync(cli, config, progress);
+		return await dispatchResultAsync(config, result, progress);
+	} finally {
+		progress.finish();
+	}
 }
 
 const LUAU_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [

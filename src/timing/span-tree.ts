@@ -8,8 +8,8 @@ export interface SpanNode {
 	children: Map<string, SpanNode>;
 	/**
 	 * Whether an `open` on this node has ever closed. Distinguishes a span the
-	 * tree has already reported through `onRootComplete` from one that only
-	 * ever arrived by `record`, which has no close and so reports nowhere.
+	 * tree has already reported through a root `onSpanClose` from one that
+	 * only ever arrived by `record`, which has no close and so reports nowhere.
 	 */
 	closed: boolean;
 	count: number;
@@ -18,20 +18,25 @@ export interface SpanNode {
 
 export interface CreateSpanTreeOptions {
 	/**
-	 * Called as a top-level span closes, with the root node it closed. That
-	 * close is the tree's only "nothing more can land here" signal: a phase
-	 * that instruments N files closes its Nth `parse-ast` and its own span in
-	 * the same breath, so this is the first moment the subtree can be reported
-	 * as a total rather than as N separate lines. A root opened twice fires
-	 * twice, each time with the running total.
+	 * Called as any span closes, with `isRoot` true for a top-level one. That
+	 * root close is the tree's only "nothing more can land here" signal: a
+	 * phase that instruments N files closes its Nth `parse-ast` and its own
+	 * span in the same breath, so it is the first moment the subtree can be
+	 * reported as a total rather than as N separate lines. A root opened twice
+	 * fires twice, each time with the running total.
+	 *
+	 * Depth is carried rather than filtered because the two readers want
+	 * different ones: the timing report wants roots, while a user-facing stage
+	 * is named wherever the work happens to sit — `processResults` nests under
+	 * `runProjects`, and a root-only callback would never see it.
 	 */
-	onRootComplete: (root: SpanNode) => void;
+	onSpanClose: (node: SpanNode, isRoot: boolean) => void;
 	/**
-	 * Called as a top-level span opens. The close-time report says where the
-	 * run has been; this says where it is now, which is the only thing a run
-	 * that hangs mid-phase can tell you.
+	 * Called as any span opens, with `isRoot` true for a top-level one. The
+	 * close-time report says where the run has been; this says where it is
+	 * now, which is the only thing a run that hangs mid-phase can tell you.
 	 */
-	onRootOpen: (root: SpanNode) => void;
+	onSpanOpen: (node: SpanNode, isRoot: boolean) => void;
 }
 
 export interface SpanTree {
@@ -55,7 +60,7 @@ export interface SpanTree {
  */
 export function createSpanTree(
 	clock: { now: () => number },
-	{ onRootComplete, onRootOpen }: CreateSpanTreeOptions,
+	{ onSpanClose, onSpanOpen }: CreateSpanTreeOptions,
 ): SpanTree {
 	const roots = new Map<string, SpanNode>();
 	const stack: Array<SpanNode> = [];
@@ -68,8 +73,8 @@ export function createSpanTree(
 
 	function open(name: string): () => void {
 		const node = nodeFor(name);
-		pushSpan({ node, onRootOpen, stack });
-		return createCloser({ clock, node, onRootComplete, stack });
+		pushSpan({ node, onSpanOpen, stack });
+		return createCloser({ clock, node, onSpanClose, stack });
 	}
 
 	function record(name: string, elapsedMs: number): void {
@@ -123,12 +128,12 @@ export function formatPhaseStart(name: string): string {
 function createCloser({
 	clock,
 	node,
-	onRootComplete,
+	onSpanClose,
 	stack,
 }: {
 	clock: { now: () => number };
 	node: SpanNode;
-	onRootComplete: (root: SpanNode) => void;
+	onSpanClose: (node: SpanNode, isRoot: boolean) => void;
 	stack: Array<SpanNode>;
 }): () => void {
 	const start = clock.now();
@@ -140,29 +145,23 @@ function createCloser({
 		// root looking unannounced and get it written a second time.
 		node.closed = true;
 		stack.pop();
-		if (stack.length === 0) {
-			onRootComplete(node);
-		}
+		onSpanClose(node, stack.length === 0);
 	};
 }
 
-/** Pushes `node` onto the stack, announcing it if it is a top-level phase. */
+/** Pushes `node` onto the stack and announces it. */
 function pushSpan({
 	node,
-	onRootOpen,
+	onSpanOpen,
 	stack,
 }: {
 	node: SpanNode;
-	onRootOpen: (root: SpanNode) => void;
+	onSpanOpen: (node: SpanNode, isRoot: boolean) => void;
 	stack: Array<SpanNode>;
 }): void {
 	stack.push(node);
-	if (stack.length !== 1) {
-		return;
-	}
-
 	try {
-		onRootOpen(node);
+		onSpanOpen(node, stack.length === 1);
 	} catch (err) {
 		// The caller has no closer yet, so nothing else can pop this frame — a
 		// sink that throws (stderr EPIPE) would otherwise nest every later span
