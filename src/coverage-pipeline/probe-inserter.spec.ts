@@ -222,6 +222,69 @@ describe("probe-inserter", () => {
 			expect(result.slice(directives.length)).not.toContain("--!");
 		});
 
+		it("should keep hoisting past a directive Luau does not act on", () => {
+			expect.assertions(1);
+
+			// Luau reads `--!Native` as a hot comment and ignores it, so the
+			// `--!native` behind it still opens the file and still counts.
+			const directives = "--!strict\n--!Native\n--!native\n";
+			const result = insertProbes(`${directives}local x = 1`, emptyResult(), "test.luau");
+
+			expect(result).toStartWith(directives);
+		});
+
+		it("should keep hoisting past a blank line between directives", () => {
+			expect.assertions(1);
+
+			const header = "--!strict\n\n--!native\n";
+			const result = insertProbes(`${header}local x = 1`, emptyResult(), "test.luau");
+
+			expect(result).toStartWith(header);
+		});
+
+		it("should keep hoisting past a plain comment between directives", () => {
+			expect.assertions(2);
+
+			const lineCommented = "--!strict\n-- why native\n--!native\n";
+			const blockCommented = "--!strict\n--[[ why\nnative ]]\n--!native\n";
+
+			expect(
+				insertProbes(`${lineCommented}local x = 1`, emptyResult(), "test.luau"),
+			).toStartWith(lineCommented);
+			expect(
+				insertProbes(`${blockCommented}local x = 1`, emptyResult(), "test.luau"),
+			).toStartWith(blockCommented);
+		});
+
+		it("should hoist a directive that carries leading whitespace", () => {
+			expect.assertions(1);
+
+			const header = "--!strict\n\t--!native\n";
+			const result = insertProbes(`${header}local x = 1`, emptyResult(), "test.luau");
+
+			expect(result).toStartWith(header);
+		});
+
+		it("should keep code below the preamble when a bare return splits a line", () => {
+			expect.assertions(1);
+
+			const collector: CollectorResult = {
+				...emptyResult(),
+				statements: [
+					{
+						index: 1,
+						location: { beginColumn: 11, beginLine: 1, endColumn: 22, endLine: 1 },
+					},
+				],
+			};
+
+			// Luau ends the comment at the `\r` and calls what follows code, so
+			// hoisting the whole line would put `__cov_s[1]` above its own table.
+			const result = insertProbes("--!strict\rlocal x = 1", collector, "test.luau");
+
+			expect(result).toStartWith("if _G.__jest_roblox_cov");
+		});
+
 		it("should only treat a leading mode directive as a directive", () => {
 			expect.assertions(1);
 

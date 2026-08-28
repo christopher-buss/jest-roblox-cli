@@ -1,5 +1,6 @@
 import assert from "node:assert";
 
+import { countLinesThroughLastDirective } from "../luau/directive-header.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 
 /**
@@ -26,7 +27,6 @@ interface ProbeInfo {
 // ends up further right.
 const KIND_RANK = { close: 2, open: 0, point: 1 } satisfies Record<ProbeKind, number>;
 const TRAILING_WHITESPACE = /\s$/;
-const MODE_DIRECTIVE = /^--![a-z]/;
 
 export function insertProbes(source: string, result: CollectorResult, fileKey: string): string {
 	const lines = splitLines(source);
@@ -34,14 +34,14 @@ export function insertProbes(source: string, result: CollectorResult, fileKey: s
 
 	applyProbes(lines, probes);
 
-	const modeDirectives = extractModeDirectives(lines);
+	const directiveHeader = extractDirectiveHeader(lines);
 
 	// A file with nothing to count declares nothing, so the twin is its source
 	// verbatim. Emitting anyway would need a line the source does not have when
 	// directives are the whole file: appended, the preamble lands inside that
 	// comment; prepended, the directive stops opening the file.
 	if (!hasCoverageSites(result)) {
-		return modeDirectives + lines.join("\n");
+		return directiveHeader + lines.join("\n");
 	}
 
 	// The preamble shares the first line that survives the directive strip: the
@@ -62,7 +62,7 @@ export function insertProbes(source: string, result: CollectorResult, fileKey: s
 
 	lines[0] = firstLineParts.join("; ");
 
-	return modeDirectives + lines.join("\n");
+	return directiveHeader + lines.join("\n");
 }
 
 /**
@@ -229,23 +229,15 @@ function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): voi
 }
 
 /**
- * Luau reads hot comments only from the run of lines that opens a file, so the
- * whole run has to lead the preamble. It moves intact: a directive left behind
- * compiles the twin under settings the original never asked for.
+ * Takes the header block off the top so the preamble can slot in behind it.
+ * The block moves intact — a `--!native` the preamble gets ahead of stops
+ * being a directive, and the twin then compiles under settings the original
+ * never asked for.
  */
-function extractModeDirectives(lines: Array<string>): string {
-	let directiveCount = 0;
-	for (const line of lines) {
-		if (!MODE_DIRECTIVE.test(line)) {
-			break;
-		}
-
-		directiveCount += 1;
-	}
-
+function extractDirectiveHeader(lines: Array<string>): string {
 	return lines
-		.splice(0, directiveCount)
-		.map((directive) => `${directive}\n`)
+		.splice(0, countLinesThroughLastDirective(lines))
+		.map((headerLine) => `${headerLine}\n`)
 		.join("");
 }
 

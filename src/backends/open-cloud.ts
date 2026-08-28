@@ -12,6 +12,7 @@ import type { Except } from "type-fest";
 
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
+import { countLinesThroughLastDirective } from "../luau/directive-header.ts";
 import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
 import { describePlaceFile, describeProjectCount } from "../progress/stages.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
@@ -882,23 +883,15 @@ function resolvePrimaryJob(
 }
 
 /**
- * Insert the version guard after any leading `--!` directive lines — Luau
- * honors directives only in the leading comment block, so a plain line-1
- * prepend would silently disable a caller's `--!strict`/`--!native`/etc.
+ * Insert the version guard behind the script's header block — Luau honors
+ * `--!strict`/`--!native`/etc only while nothing else has opened the file, so
+ * a plain line-1 prepend would silently disable a caller's directives.
  */
 function injectVersionGuard(script: string, placeVersion: number): string {
 	const guard = `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}:" .. tostring(game.PlaceVersion) end`;
 	const lines = script.split("\n");
-	let insertAt = 0;
-	for (const line of lines) {
-		if (!line.startsWith("--!")) {
-			break;
-		}
 
-		insertAt += 1;
-	}
-
-	lines.splice(insertAt, 0, guard);
+	lines.splice(countLinesThroughLastDirective(lines), 0, guard);
 	return lines.join("\n");
 }
 

@@ -771,6 +771,44 @@ describe(OpenCloudBackend, () => {
 			);
 		});
 
+		it("should inject the guard behind a directive that follows a comment", async () => {
+			expect.assertions(1);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTestsAsync({
+				jobs: [job("alpha")],
+				scriptOverride: "-- boot notes\n--!native\nreturn nil",
+			});
+
+			// The comment is no token, so the `--!native` behind it is still a
+			// directive — and the guard ahead of it would end that.
+			expect(stub.executeCalls[0]!.script).toBe(
+				`-- boot notes\n--!native\n${guardPrefix(1)}return nil`,
+			);
+		});
+
+		it("should inject the guard after a directive Luau does not act on", async () => {
+			expect.assertions(1);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTestsAsync({
+				jobs: [job("alpha")],
+				scriptOverride: "--!Native\n--!strict\nreturn nil",
+			});
+
+			// `--!Native` is a hot comment Luau ignores, not the end of the
+			// block, so the guard goes behind the `--!strict` it shields.
+			expect(stub.executeCalls[0]!.script).toBe(
+				`--!Native\n--!strict\n${guardPrefix(1)}return nil`,
+			);
+		});
+
 		it("should retry a raced bucket once, pinned to the uploaded version", async () => {
 			expect.assertions(5);
 
