@@ -34,10 +34,10 @@ export function insertProbes(source: string, result: CollectorResult, fileKey: s
 
 	applyProbes(lines, probes);
 
-	const modeDirective = extractModeDirective(lines);
-	const preamble = buildPreamble(modeDirective, fileKey, result);
+	const modeDirectives = extractModeDirectives(lines);
+	const preamble = buildPreamble(fileKey, result);
 
-	return preamble + lines.join("\n");
+	return modeDirectives + preamble + lines.join("\n");
 }
 
 /**
@@ -203,15 +203,25 @@ function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): voi
 	}
 }
 
-function extractModeDirective(lines: Array<string>): string {
-	const [firstLine] = lines;
-	if (firstLine !== undefined && MODE_DIRECTIVE.test(firstLine)) {
-		const directive = `${firstLine}\n`;
-		lines.splice(0, 1);
-		return directive;
+/**
+ * Luau reads hot comments only from the run of lines that opens a file, so the
+ * whole run has to lead the preamble. It moves intact: a directive left behind
+ * compiles the twin under settings the original never asked for.
+ */
+function extractModeDirectives(lines: Array<string>): string {
+	let directiveCount = 0;
+	for (const line of lines) {
+		if (!MODE_DIRECTIVE.test(line)) {
+			break;
+		}
+
+		directiveCount += 1;
 	}
 
-	return "";
+	return lines
+		.splice(0, directiveCount)
+		.map((directive) => `${directive}\n`)
+		.join("");
 }
 
 // Splits source into lines, stripping \r from CRLF endings.
@@ -280,11 +290,10 @@ function buildBranchInit(result: CollectorResult): string {
 	return init;
 }
 
-function buildPreamble(modeDirective: string, fileKey: string, result: CollectorResult): string {
+function buildPreamble(fileKey: string, result: CollectorResult): string {
 	const escapedKey = escapeLuauString(fileKey);
 
-	let preamble = modeDirective;
-	preamble += "if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end\n";
+	let preamble = "if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end\n";
 	preamble += `local __cov_file_key = "${escapedKey}"\n`;
 	preamble +=
 		"if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end\n";

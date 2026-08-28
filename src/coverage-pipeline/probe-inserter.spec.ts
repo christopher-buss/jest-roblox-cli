@@ -106,6 +106,18 @@ describe("probe-inserter", () => {
 			expect(result).toMatchSnapshot();
 		});
 
+		it("should hoist every leading mode directive above the preamble", () => {
+			expect.assertions(2);
+
+			const directives = "--!strict\n--!native\n--!optimize 2\n";
+			const result = insertProbes(`${directives}local x = 1`, emptyResult(), "test.luau");
+
+			expect(result).toStartWith(directives);
+			// Below the preamble a directive no longer opens the file, so
+			// Luau stops reading it however it is spaced.
+			expect(result.slice(directives.length)).not.toContain("--!");
+		});
+
 		it("should only treat a leading mode directive as a directive", () => {
 			expect.assertions(1);
 
