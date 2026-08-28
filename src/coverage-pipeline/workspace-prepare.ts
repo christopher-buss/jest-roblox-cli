@@ -72,7 +72,7 @@ export interface WorkspacePackageDescriptor {
 	 * `discoverPackageLuauRoots` skips the rojo-tree walk and uses these roots
 	 * directly (after validating each entry against the rojo `$path` mounts).
 	 * An empty array or undefined falls back to the rojo walk — matches single
-	 * mode's `> 0` gate at `prepare.ts:resolveLuauRootsWithRojo`.
+	 * mode's `> 0` gate in `prepare.ts:selectRawLuauRoots`.
 	 */
 	luauRoots?: Array<string> | undefined;
 	packageDirectory: string;
@@ -562,7 +562,7 @@ function discoverFromRojoWalk({
 function discoverPackageLuauRoots(options: DiscoverRootsOptions): Array<string> {
 	const { descriptor } = options;
 	// Short-circuit when the package opts into explicit luauRoots — mirrors
-	// single mode's `> 0` gate at `prepare.ts:resolveLuauRootsWithRojo:187`.
+	// single mode's `> 0` gate in `prepare.ts:selectRawLuauRoots`.
 	// Empty array falls through to the rojo walk (auto-detect).
 	if (descriptor.luauRoots !== undefined && descriptor.luauRoots.length > 0) {
 		return discoverFromLuauRoots(options, descriptor.luauRoots);

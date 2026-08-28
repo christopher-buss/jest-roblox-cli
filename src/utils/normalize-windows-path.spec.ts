@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { dropDriveLetter, isAbsolutePath, normalizeWindowsPath } from "./normalize-windows-path.ts";
+import {
+	dropDriveLetter,
+	isAbsolutePath,
+	normalizeWindowsPath,
+	toPosixRoot,
+} from "./normalize-windows-path.ts";
 
 describe(dropDriveLetter, () => {
 	it("should only drop a drive letter at the start", () => {
@@ -62,5 +67,26 @@ describe(normalizeWindowsPath, () => {
 		expect.assertions(1);
 
 		expect(normalizeWindowsPath("src\\components\\App.tsx")).toBe("src/components/App.tsx");
+	});
+});
+
+describe(toPosixRoot, () => {
+	it("should remove a trailing separator", () => {
+		expect.assertions(1);
+
+		expect(toPosixRoot("out/")).toBe("out");
+	});
+
+	it("should remove a leading current-directory prefix", () => {
+		expect.assertions(2);
+
+		expect(toPosixRoot("./out")).toBe("out");
+		expect(toPosixRoot(".\\out")).toBe("out");
+	});
+
+	it("should remove a current-directory segment at the start only", () => {
+		expect.assertions(1);
+
+		expect(toPosixRoot("out/./nested")).toBe("out/./nested");
 	});
 });

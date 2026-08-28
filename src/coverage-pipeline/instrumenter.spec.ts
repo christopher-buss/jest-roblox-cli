@@ -101,6 +101,20 @@ describe(instrumentRoot, () => {
 		]);
 	});
 
+	// The walk writes each file name relative to the root, then this function
+	// reads those names back from the disk. If the root keeps a leading `./`,
+	// each name loses two characters and the read fails with an ENOENT for a
+	// file that does not exist.
+	it("should instrument a root written with a ./ prefix", () => {
+		expect.assertions(1);
+
+		setupFilesystem({ files: { "shared/player.luau": "local x = 1\n" }, luauRoot: "out" });
+
+		const files = instrumentRoot({ luauRoot: "./out", shadowDir: "/shadow" });
+
+		expect(Object.keys(files)).toStrictEqual(["out/shared/player.luau"]);
+	});
+
 	describe("when copy-ignored paths are provided", () => {
 		it("should never instrument a path the shadow will not carry", () => {
 			expect.assertions(1);

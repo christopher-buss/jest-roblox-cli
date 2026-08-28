@@ -28,6 +28,7 @@ export function isAbsolutePath(input: string): boolean {
 }
 
 const TRAILING_SLASH = /\/$/;
+const LEADING_CURRENT_DIRECTORY = /^\.\//;
 
 export function normalizeWindowsPath(input = ""): string {
 	return input
@@ -36,15 +37,21 @@ export function normalizeWindowsPath(input = ""): string {
 }
 
 /**
- * The POSIX form of a directory used as a path prefix — a luau root, an
- * `outDir` — with the trailing separator dropped.
+ * Converts a directory to the POSIX form used as a path prefix, such as a luau
+ * root or a tsconfig `outDir`. Removes a leading `./` and a trailing `/`.
  *
- * Every walk in the coverage pipeline slices its results against the root it
- * was handed, so a root written `out/` would otherwise leave each slice one
- * character short and mangle every relative path in the tree. Producers and
- * consumers of those paths have to normalize the same way, which is why this
- * is one function rather than a `replace` at each site.
+ * A caller either removes the root from the start of a file path, or compares
+ * the root to a rojo `$path`. Both operations need the root and the paths to
+ * have the same spelling. `path.join` writes no leading `./`, thus a root that
+ * has one is two characters too long. A root with a trailing `/` is one
+ * character too long. These spellings all name the same directory, thus this
+ * function corrects them for all callers in one place.
+ *
+ * It corrects these two spellings only. `out/./nested`, `out/../out` and `.`
+ * go to the caller unchanged.
  */
 export function toPosixRoot(directoryPath: string): string {
-	return normalizeWindowsPath(directoryPath).replace(TRAILING_SLASH, "");
+	return normalizeWindowsPath(directoryPath)
+		.replace(LEADING_CURRENT_DIRECTORY, "")
+		.replace(TRAILING_SLASH, "");
 }

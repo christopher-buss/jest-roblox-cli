@@ -11,9 +11,8 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { resolveLuauRoots } from "../coverage-pipeline/prepare.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { TYPE_TEST_PATTERN } from "./discovery.ts";
-
-const TRAILING_SLASH = /\/$/;
 
 /**
  * Map each compiled-Luau root to its Rojo mount (FS path ↔ DataModel path) via
@@ -26,10 +25,10 @@ export function deriveProjectMounts(
 	rojoTree: RojoTreeNode,
 ): Array<Mount> {
 	const mounts = luauRoots.flatMap((luauRoot) => {
-		// Strip a trailing separator before the lookup, mirroring
-		// `mapFsRootToDataModel` — a tsconfig `outDir` like "out/shared/" must
-		// still match the Rojo `$path: "out/shared"` mount.
-		const fsPath = luauRoot.replace(TRAILING_SLASH, "");
+		// `findInTree` does an exact string match. Thus a root written
+		// "out/shared/" or "./out/shared" must first become "out/shared", or
+		// it does not find the mount that it names.
+		const fsPath = toPosixRoot(luauRoot);
 		const dataModelPath = findInTree(rojoTree, fsPath, "");
 		return dataModelPath !== undefined ? [{ dataModelPath, fsPath }] : [];
 	});

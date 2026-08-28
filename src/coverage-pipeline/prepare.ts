@@ -14,7 +14,7 @@ import type { CoverageRoot } from "../staging/synthesizer.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashFileAsync } from "../utils/hash.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type {
 	BuildManifestArtifact,
 	BuildManifestFileRecord,
@@ -380,7 +380,13 @@ function detectRootsFromRojo(
 	return roots.length > 0 ? roots : undefined;
 }
 
-function resolveLuauRootsWithRojo({ config, failure, loaded }: RojoContext): Array<string> {
+/**
+ * Gets the luau roots from the first source that supplies them: the config
+ * `luauRoots`, the rojo mounts, then the tsconfig `outDir`. Each root keeps
+ * the spelling of its source. Use {@link resolveLuauRootsWithRojo} to get
+ * corrected roots.
+ */
+function selectRawLuauRoots({ config, failure, loaded }: RojoContext): Array<string> {
 	if (config.luauRoots !== undefined && config.luauRoots.length > 0) {
 		return config.luauRoots;
 	}
@@ -403,6 +409,17 @@ function resolveLuauRootsWithRojo({ config, failure, loaded }: RojoContext): Arr
 	throw new Error(
 		"Could not determine luauRoots. Set luauRoots in config or ensure tsconfig has outDir.",
 	);
+}
+
+/**
+ * Gets the luau roots for this run and corrects the spelling of each one. A
+ * user writes the config `luauRoots` and the tsconfig `outDir` by hand, thus
+ * their spelling can differ from the spelling the pipeline needs. The
+ * correction is here, and not in each source, so that a new source also gets
+ * it.
+ */
+function resolveLuauRootsWithRojo(context: RojoContext): Array<string> {
+	return selectRawLuauRoots(context).map(toPosixRoot);
 }
 
 /**

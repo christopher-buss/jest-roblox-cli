@@ -16,6 +16,7 @@ import type { TsconfigDirectories } from "../executor.ts";
 import { resolveTsconfigDirectories } from "../executor.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import { isString } from "../utils/is-string.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { ConfigError } from "./errors.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
@@ -27,7 +28,6 @@ import type {
 } from "./schema.ts";
 import { projectConfigFileSchema } from "./schema.ts";
 
-const TRAILING_SLASH = /\/$/;
 const TS_OR_LUAU_EXTENSION = /\.(tsx?|luau?)$/;
 const GLOB_CHARACTER = /[*?[{]/;
 
@@ -96,7 +96,7 @@ export function extractStaticRoot(pattern: string): StaticRootPattern {
 export { stripTsExtension } from "../utils/extensions.ts";
 
 export function mapFsRootToDataModel(outDirectory: string, rojoTree: RojoTreeNode): string {
-	const normalized = outDirectory.replace(TRAILING_SLASH, "");
+	const normalized = toPosixRoot(outDirectory);
 	const result = findInTree(rojoTree, normalized, "");
 	if (result === undefined) {
 		const available: Array<string> = [];

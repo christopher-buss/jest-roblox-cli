@@ -272,6 +272,17 @@ describe(mapFsRootToDataModel, () => {
 		expect(result).toBe("ServerScriptService/server");
 	});
 
+	// Multi mode uses this function where single mode uses
+	// `deriveProjectMounts`. Both do an exact match against `$path`, thus both
+	// must accept the same spellings of the same directory.
+	it("should map an outDir written with a ./ prefix", () => {
+		expect.assertions(1);
+
+		const result = mapFsRootToDataModel("./out/client", simpleRojoTree);
+
+		expect(result).toBe("ReplicatedStorage/client");
+	});
+
 	it("should handle nested tree structures", () => {
 		expect.assertions(1);
 

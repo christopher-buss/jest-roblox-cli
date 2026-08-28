@@ -62,6 +62,17 @@ describe(deriveProjectMounts, () => {
 			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" },
 		]);
 	});
+
+	// The lookup is an exact match against `$path`. A root that keeps its
+	// leading `./` does not find the mount, and the run then reports that the
+	// rojo project mounts none of its output.
+	it("should strip a leading current-directory prefix before the rojo lookup", () => {
+		expect.assertions(1);
+
+		expect(deriveProjectMounts(["./out/shared"], tree)).toStrictEqual([
+			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" },
+		]);
+	});
 });
 
 describe(buildImplicitProject, () => {

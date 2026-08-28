@@ -3047,6 +3047,16 @@ describe(resolveLuauRoots, () => {
 			expect(resolveLuauRoots(config)).toStrictEqual(["out-tsc/test"]);
 		});
 
+		it("should normalize a tsconfig outDir written with a ./ prefix", async () => {
+			expect.assertions(1);
+
+			seedFilesystem();
+			await setupMocksAsync({ outDir: "./out" });
+			const config = makeConfig();
+
+			expect(resolveLuauRoots(config)).toStrictEqual(["out"]);
+		});
+
 		it("should fall through to tsconfig when no Rojo project exists", async () => {
 			expect.assertions(1);
 
