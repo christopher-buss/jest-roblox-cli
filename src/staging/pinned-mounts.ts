@@ -9,7 +9,7 @@ import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { buildWithRojo } from "../utils/rojo-builder.ts";
+import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import {
 	isModelFile,
 	META_JSON_FILE,
@@ -53,10 +53,10 @@ interface Walk {
 }
 
 /**
- * What {@link demotePinnedMounts} would emit, as a number the place-reuse key
- * can hold. Bump it whenever this module would produce different bytes from
- * unchanged sources — a class added to `PINNED_PARENT_CLASSES`, a different
- * fold, a different stand-in layout.
+ * What {@link demotePinnedMountsAsync} would emit, as a number the place-reuse
+ * key can hold. Bump it whenever this module would produce different bytes
+ * from unchanged sources — a class added to `PINNED_PARENT_CLASSES`, a
+ * different fold, a different stand-in layout.
  *
  * The key covers this pass's inputs and not the pass, so without a bump a
  * place built by the old rule reads as current and is handed out unchanged.
@@ -105,11 +105,11 @@ const DRIVE_LETTER = /^[A-Za-z]:/;
  * {@link PINNED_MOUNT_PASS_VERSION} bumped with it; the place-reuse key reads
  * this pass through that number and through nothing else.
  */
-export function demotePinnedMounts({
+export async function demotePinnedMountsAsync({
 	projectDirectory,
 	projectJson,
 	shadowDirectory,
-}: DemotePinnedMountsOptions): string {
+}: DemotePinnedMountsOptions): Promise<string> {
 	const project = JSON.parse(projectJson);
 	if (!isRojoTreeNode(project)) {
 		return projectJson;
@@ -132,13 +132,11 @@ export function demotePinnedMounts({
 	}
 
 	fs.mkdirSync(shadowDirectory, { recursive: true });
-	const ignores = new Set(declaredIgnores);
-	const options = { declaredIgnores, projectDirectory, shadowDirectory };
-	for (const mount of pinned) {
-		for (const replaced of standInFor(mount, options)) {
-			ignores.add(replaced);
-		}
-	}
+	const ignores = await buildStandInsAsync(pinned, {
+		declaredIgnores,
+		projectDirectory,
+		shadowDirectory,
+	});
 
 	// Written through Reflect: a rojo tree node holds instance children, and the
 	// static shape has no slot for the project-level list this appends to.
@@ -208,7 +206,7 @@ function foldPinnedClasses(xml: string): string {
  * stand-in's children into the live service by name and never reads its class,
  * so a Folder in that position costs the package nothing.
  */
-function writeFolderShadow({
+async function writeFolderShadowAsync({
 	globIgnorePaths,
 	mount,
 	shadowDirectory,
@@ -216,7 +214,7 @@ function writeFolderShadow({
 	globIgnorePaths: Array<string>;
 	mount: PinnedMount;
 	shadowDirectory: string;
-}): string {
+}): Promise<string> {
 	const name = mount.childName ?? mountedName(path.basename(mount.source));
 	// Named for the instance, disambiguated by a digest of the source path: two
 	// mounts can build a `StarterPlayerScripts`, and the digest keeps the name
@@ -237,7 +235,7 @@ function writeFolderShadow({
 			tree: { $path: normalizeWindowsPath(mount.source) },
 		}),
 	);
-	buildWithRojo(projectFile, shadowFile);
+	await buildWithRojoAsync(projectFile, shadowFile);
 
 	fs.writeFileSync(shadowFile, foldPinnedClasses(fs.readFileSync(shadowFile, "utf-8")));
 	return shadowFile;
@@ -249,7 +247,7 @@ function writeFolderShadow({
  * and the replaced original when the stand-in joins a directory auto-mount that
  * would otherwise re-add it alongside.
  */
-function standInFor(
+async function standInForAsync(
 	mount: PinnedMount,
 	{
 		declaredIgnores,
@@ -260,11 +258,15 @@ function standInFor(
 		projectDirectory: string;
 		shadowDirectory: string;
 	},
-): Array<string> {
+): Promise<Array<string>> {
 	// Only the consumer's own patterns reach the child build: a generated entry
 	// names a path relative to `projectDirectory`, which resolves against
 	// nothing in a project that lives in `shadowDirectory`.
-	const shadow = writeFolderShadow({ globIgnorePaths: declaredIgnores, mount, shadowDirectory });
+	const shadow = await writeFolderShadowAsync({
+		globIgnorePaths: declaredIgnores,
+		mount,
+		shadowDirectory,
+	});
 	if (mount.childName === undefined) {
 		mount.target.$path = shadow;
 		return [];
@@ -275,6 +277,32 @@ function standInFor(
 	// relative `$path` of the enclosing mount, joined with the entry name.
 	// `relativizeProjectPaths` puts every `$path` in that same frame.
 	return [normalizeWindowsPath(path.relative(projectDirectory, mount.source))];
+}
+
+/**
+ * Build every pinned mount's stand-in, in order, and report the ignore list the
+ * project now needs — the declared entries plus whatever each stand-in
+ * replaced. Serial rather than concurrent: two mounts can build the same
+ * instance name, and the digest that keeps their files apart is no help if two
+ * rojo runs write the shadow directory at once.
+ */
+async function buildStandInsAsync(
+	pinned: Array<PinnedMount>,
+	options: {
+		declaredIgnores: Array<string>;
+		projectDirectory: string;
+		shadowDirectory: string;
+	},
+): Promise<Set<string>> {
+	const ignores = new Set(options.declaredIgnores);
+	for (const mount of pinned) {
+		const replacements = await standInForAsync(mount, options);
+		for (const replaced of replacements) {
+			ignores.add(replaced);
+		}
+	}
+
+	return ignores;
 }
 
 function findStage({ tree }: RojoTreeNode): RojoTreeNode | undefined {

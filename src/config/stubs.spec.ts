@@ -1455,7 +1455,8 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 				displayName: "shared",
 				// User-authored config; per-mount FS check elsewhere causes
 				// no cache stub to exist for this mount. The shadow already
-				// has the user's file (mirrored from source by prepareCoverage).
+				// has the user's file (mirrored from source by
+				// prepareCoverageAsync).
 				rojoMounts: [{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/Shared" }],
 			}),
 		];

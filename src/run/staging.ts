@@ -13,7 +13,7 @@ import {
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
 import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
-import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
+import { prepareCoverageAsync, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import type { StubMount } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { toBuildManifestProjects } from "./manifest-projects.ts";
@@ -93,13 +93,13 @@ export function collectStubMounts(
  * (stubs land in `cacheRoot`, not `rootDir`), so without it the coverage place
  * would build with no `jest.config` ModuleScripts.
  */
-export function prepareBakedCoverage(
+export async function prepareBakedCoverageAsync(
 	config: ResolvedConfig,
 	projects: Array<ResolvedProjectConfig>,
 	cacheRoot: string,
 	bakeStubs: boolean,
-): BakedCoverage {
-	const coverage = prepareCoverage(config, {
+): Promise<BakedCoverage> {
+	const coverage = await prepareCoverageAsync(config, {
 		beforeBuild: bakeStubs
 			? (shadow) => syncStubsToShadowDirectory(projects, cacheRoot, shadow)
 			: undefined,
@@ -119,11 +119,11 @@ export function prepareBakedCoverage(
  * `--coverage` is on. Runs before any backend exists, so nothing here can leak
  * one.
  */
-export function stageRun(
+export async function stageRunAsync(
 	projects: Array<ResolvedProjectConfig>,
 	rootConfig: ResolvedConfig,
 	timing: TimingCollector,
-): StagedRun {
+): Promise<StagedRun> {
 	// Stubs land in `.jest-roblox/cache/` instead of the user's source tree.
 	// Open-cloud builds the place from a synthesizer-produced project that
 	// mounts those cache stubs via `$path` named-children; studio skips the
@@ -157,9 +157,10 @@ export function stageRun(
 
 	const stubStagingMs = Date.now() - stagingStart;
 
-	const { coverageStagingMs, ...coverage } = timing.profile("prepareCoverage", () => {
-		return prepareMultiProjectCoverage(rootConfig, projects, cacheRoot);
-	});
+	const { coverageStagingMs, ...coverage } = await timing.profileAsync(
+		"prepareCoverage",
+		async () => prepareMultiCoverageAsync(rootConfig, projects, cacheRoot),
+	);
 	return { cacheRoot, ...coverage, stagingMs: stubStagingMs + coverageStagingMs };
 }
 
@@ -184,11 +185,11 @@ function collectStubMountsForProject(
 	return stubMounts;
 }
 
-function prepareMultiProjectCoverage(
+async function prepareMultiCoverageAsync(
 	rootConfig: ResolvedConfig,
 	projects: Array<ResolvedProjectConfig>,
 	cacheRoot: string,
-): StagedCoverageRun {
+): Promise<StagedCoverageRun> {
 	if (!rootConfig.collectCoverage) {
 		return { coverageMs: 0, coverageStagingMs: 0, effectiveConfig: rootConfig };
 	}
@@ -199,7 +200,7 @@ function prepareMultiProjectCoverage(
 	// stubs baked in. `auto` never resolves to studio-cli, so the config flag is
 	// the exact, probe-free signal.
 	const isBakeStubs = rootConfig.backend !== "studio-cli";
-	const { artifacts, coverage } = prepareBakedCoverage(
+	const { artifacts, coverage } = await prepareBakedCoverageAsync(
 		rootConfig,
 		projects,
 		cacheRoot,

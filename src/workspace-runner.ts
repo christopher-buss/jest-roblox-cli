@@ -18,7 +18,7 @@ import { ensurePackageDirectories } from "./workspace/ensure-paths.ts";
 import { writeWorkspaceSinksAsync } from "./workspace/output-sinks.ts";
 import { type LoadedPackage, loadWorkspacePackagesAsync } from "./workspace/package-loader.ts";
 import type { PackageInfo } from "./workspace/package-resolver.ts";
-import { type StagedWorkspacePlace, stageWorkspacePlace } from "./workspace/place-staging.ts";
+import { type StagedWorkspacePlace, stageWorkspacePlaceAsync } from "./workspace/place-staging.ts";
 import { type PreflightError, validatePackages } from "./workspace/preflight.ts";
 import { resolvePackageContextsAsync } from "./workspace/project-contexts.ts";
 import type { PendingEntry } from "./workspace/test-selection.ts";
@@ -184,16 +184,16 @@ function splitBailedSelection(
 	};
 }
 
-// Argument shuffle only: `stageWorkspacePlace` owns the phase measurements
+// Argument shuffle only: `stageWorkspacePlaceAsync` owns the phase measurements
 // this run reports.
-function stagePlaceForRun({
+async function stagePlaceForRunAsync({
 	cacheDirectory,
 	loaded,
 	options,
 	selection,
 	timing,
-}: WorkspaceRuntimeInput): StagedWorkspacePlace {
-	return stageWorkspacePlace({
+}: WorkspaceRuntimeInput): Promise<StagedWorkspacePlace> {
+	return stageWorkspacePlaceAsync({
 		cacheDirectory,
 		loaded,
 		selection,
@@ -206,11 +206,11 @@ async function runWorkspaceRuntimeAsync(
 	input: WorkspaceRuntimeInput,
 ): Promise<WorkspaceRunnerOutput> {
 	const { options, selection, timing } = input;
-	const { coverageByPackage, coverageMs, placeFile, stagingMs } = stagePlaceForRun(input);
+	const staged = await stagePlaceForRunAsync(input);
 
 	const { ranProjectIndices, results, typecheckPass } = await executeWorkspaceRunAsync({
 		...input,
-		placeFile,
+		placeFile: staged.placeFile,
 		// The window opens only now, after staging: staging measured itself and
 		// the print layer adds that onto the total, so opening it any earlier
 		// would count the same milliseconds twice.
@@ -232,13 +232,13 @@ async function runWorkspaceRuntimeAsync(
 
 	return {
 		...attachTypecheck(
-			attachCoverageManifests(results, ran, coverageByPackage),
+			attachCoverageManifests(results, ran, staged.coverageByPackage),
 			typecheckPass.outcome,
 			timing,
 		),
 		...(bailedPackages.length > 0 ? { bailedPackages } : {}),
-		coverageMs,
-		stagingMs,
+		coverageMs: staged.coverageMs,
+		stagingMs: staged.stagingMs,
 	};
 }
 

@@ -17,7 +17,7 @@ import { resolveAllSetupFilePaths } from "./discovery.ts";
 import { executeTestPlanAsync, runTypecheckPassAsync } from "./execution.ts";
 import { buildMultiRunResult } from "./multi-result.ts";
 import type { StagedRun } from "./staging.ts";
-import { stageRun } from "./staging.ts";
+import { stageRunAsync } from "./staging.ts";
 import type { EmptyRunPolicy, RunDiscovery } from "./test-plan.ts";
 import { buildTestPlan } from "./test-plan.ts";
 import type { MultiRunResult, RunOptions } from "./types.ts";
@@ -64,7 +64,7 @@ export async function runResolvedProjectsAsync(
 		return runMultiTypecheckOnlyAsync(discovery);
 	}
 
-	const staged = stageRun(discovery.projects, rootConfig, timing);
+	const staged = await stageRunAsync(discovery.projects, rootConfig, timing);
 	const plan = buildTestPlan({
 		...discovery,
 		effectivePlaceFile: staged.effectiveConfig.placeFile,

@@ -5,9 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
 import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
-import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
+import { prepareCoverageAsync, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import { NOOP_TIMING_COLLECTOR } from "../timing/orchestration-collector.ts";
-import { stageRun } from "./staging.ts";
+import { stageRunAsync } from "./staging.ts";
 
 // No `node:fs` mock: every path `stageRun` takes here goes through one of the
 // two mocked modules, so nothing reaches the filesystem.
@@ -19,7 +19,7 @@ const COVERAGE_PLACE = "/test/.jest-roblox/coverage/game.rbxl";
 const mocks = {
 	cleanLeftoverStubs: vi.mocked(cleanLeftoverStubs),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
-	prepareCoverage: vi.mocked(prepareCoverage),
+	prepareCoverageAsync: vi.mocked(prepareCoverageAsync),
 	toCoverageArtifacts: vi.mocked(toCoverageArtifacts),
 };
 
@@ -52,12 +52,12 @@ describe("staging", () => {
 		// The three fields `stageRun` reads. The rest of `PrepareCoverageResult`
 		// reaches `toCoverageArtifacts`, which is mocked, so filling it in would
 		// only give a future field one more place to be added.
-		mocks.prepareCoverage.mockReturnValue(
+		mocks.prepareCoverageAsync.mockResolvedValue(
 			fromAny({ instrumentMs: 0, placeFile: COVERAGE_PLACE, stagingMs: 0 }),
 		);
 	}
 
-	describe(stageRun, () => {
+	describe(stageRunAsync, () => {
 		// `buildSourceMapper` resolves a DataModel path to a file through the
 		// `rojoProject` this config carries, then reads `<outDir>/x.luau.map`.
 		// Only the user's project points at the real `outDir`; the synthesized
@@ -65,7 +65,7 @@ describe("staging", () => {
 		// mirroring is incidental rather than guaranteed. Swapping the field
 		// degrades every frame to a bare Luau path with no error, so the whole
 		// object is pinned rather than one key.
-		it("should change only placeFile when coverage rebuilds the place", () => {
+		it("should change only placeFile when coverage rebuilds the place", async () => {
 			expect.assertions(3);
 
 			setupMocks();
@@ -74,7 +74,7 @@ describe("staging", () => {
 			// the oracle along with the value under test.
 			const before = structuredClone(rootConfig);
 
-			const staged = stageRun([makeProject()], rootConfig, NOOP_TIMING_COLLECTOR);
+			const staged = await stageRunAsync([makeProject()], rootConfig, NOOP_TIMING_COLLECTOR);
 
 			expect(before.placeFile).not.toBe(COVERAGE_PLACE);
 			expect(rootConfig).toStrictEqual(before);
@@ -84,17 +84,17 @@ describe("staging", () => {
 			});
 		});
 
-		it("should pass the root config through untouched without coverage", () => {
+		it("should pass the root config through untouched without coverage", async () => {
 			expect.assertions(2);
 
 			setupMocks();
 			const rootConfig = makeConfig();
 			const before = structuredClone(rootConfig);
 
-			const staged = stageRun([makeProject()], rootConfig, NOOP_TIMING_COLLECTOR);
+			const staged = await stageRunAsync([makeProject()], rootConfig, NOOP_TIMING_COLLECTOR);
 
 			expect(staged.effectiveConfig).toStrictEqual(before);
-			expect(mocks.prepareCoverage).not.toHaveBeenCalled();
+			expect(mocks.prepareCoverageAsync).not.toHaveBeenCalled();
 		});
 	});
 });

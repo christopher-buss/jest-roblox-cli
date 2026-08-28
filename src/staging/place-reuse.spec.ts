@@ -7,7 +7,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import {
-	computePlaceInputsKey,
+	computePlaceInputsKeyAsync,
 	readPlaceReuseRecord,
 	writePlaceReuseRecord,
 } from "./place-reuse.ts";
@@ -43,7 +43,7 @@ function manifest(overrides: Partial<CoverageManifest> = {}): CoverageManifest {
 	};
 }
 
-function keyFor({
+async function keyForAsync({
 	manifests = [],
 	projectJson = project({ Assets: "assets" }),
 	shadowRoots = [],
@@ -54,7 +54,7 @@ function keyFor({
 	shadowRoots?: Array<string>;
 	stagingVersion?: number;
 } = {}) {
-	return computePlaceInputsKey({
+	return computePlaceInputsKeyAsync({
 		manifests,
 		projectFile: PROJECT_FILE,
 		projectJson,
@@ -63,8 +63,8 @@ function keyFor({
 	});
 }
 
-describe(computePlaceInputsKey, () => {
-	it("should report the same key when nothing changed", () => {
+describe(computePlaceInputsKeyAsync, () => {
+	it("should report the same key when nothing changed", async () => {
 		expect.assertions(2);
 
 		onTestFinished(() => {
@@ -73,13 +73,13 @@ describe(computePlaceInputsKey, () => {
 
 		vol.fromJSON({ "/cache/assets/model.txt": "one" });
 
-		const first = keyFor();
+		const first = await keyForAsync();
 
 		expect(first).toBeString();
-		expect(keyFor()).toBe(first);
+		await expect(keyForAsync()).resolves.toBe(first);
 	});
 
-	it("should report a different key when a walked input changes", () => {
+	it("should report a different key when a walked input changes", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
@@ -87,39 +87,39 @@ describe(computePlaceInputsKey, () => {
 		});
 
 		vol.fromJSON({ "/cache/assets/model.txt": "one" });
-		const before = keyFor();
+		const before = await keyForAsync();
 
 		vol.fromJSON({ "/cache/assets/model.txt": "two" });
 
-		expect(keyFor()).not.toBe(before);
+		await expect(keyForAsync()).resolves.not.toBe(before);
 	});
 
-	it("should report a different key when an instrumented source hash changes", () => {
+	it("should report a different key when an instrumented source hash changes", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
 			vol.reset();
 		});
 
-		const before = keyFor({
+		const before = await keyForAsync({
 			manifests: [manifest({ files: { "src/a.luau": fromAny({ sourceHash: "aaa" }) } })],
 		});
 
-		const after = keyFor({
+		const after = await keyForAsync({
 			manifests: [manifest({ files: { "src/a.luau": fromAny({ sourceHash: "bbb" }) } })],
 		});
 
 		expect(after).not.toBe(before);
 	});
 
-	it("should report a different key when a non-instrumented source hash changes", () => {
+	it("should report a different key when a non-instrumented source hash changes", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
 			vol.reset();
 		});
 
-		const before = keyFor({
+		const before = await keyForAsync({
 			manifests: [
 				manifest({
 					nonInstrumentedFiles: { "src/a.json": fromAny({ sourceHash: "aaa" }) },
@@ -127,7 +127,7 @@ describe(computePlaceInputsKey, () => {
 			],
 		});
 
-		const after = keyFor({
+		const after = await keyForAsync({
 			manifests: [
 				manifest({
 					nonInstrumentedFiles: { "src/a.json": fromAny({ sourceHash: "bbb" }) },
@@ -138,19 +138,21 @@ describe(computePlaceInputsKey, () => {
 		expect(after).not.toBe(before);
 	});
 
-	it("should report a different key when the instrumenter version bumps", () => {
+	it("should report a different key when the instrumenter version bumps", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
 			vol.reset();
 		});
 
-		const before = keyFor({ manifests: [manifest({ instrumenterVersion: 1 })] });
+		const before = await keyForAsync({ manifests: [manifest({ instrumenterVersion: 1 })] });
 
-		expect(keyFor({ manifests: [manifest({ instrumenterVersion: 2 })] })).not.toBe(before);
+		await expect(
+			keyForAsync({ manifests: [manifest({ instrumenterVersion: 2 })] }),
+		).resolves.not.toBe(before);
 	});
 
-	it("should leave shadow roots out of the walk", () => {
+	it("should leave shadow roots out of the walk", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
@@ -159,14 +161,16 @@ describe(computePlaceInputsKey, () => {
 
 		vol.fromJSON({ "/cache/shadow/a.luau": "one" });
 		const shadowProject = project({ Shadow: "shadow" });
-		const before = keyFor({ projectJson: shadowProject, shadowRoots: ["shadow"] });
+		const before = await keyForAsync({ projectJson: shadowProject, shadowRoots: ["shadow"] });
 
 		vol.fromJSON({ "/cache/shadow/a.luau": "two" });
 
-		expect(keyFor({ projectJson: shadowProject, shadowRoots: ["shadow"] })).toBe(before);
+		await expect(
+			keyForAsync({ projectJson: shadowProject, shadowRoots: ["shadow"] }),
+		).resolves.toBe(before);
 	});
 
-	it("should key on the project text, not the file the project file names", () => {
+	it("should key on the project text, not the file the project file names", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
@@ -177,10 +181,10 @@ describe(computePlaceInputsKey, () => {
 		// written, so reading it back would find the run before this one.
 		vol.fromJSON({ "/cache/assets/model.txt": "one" });
 
-		expect(keyFor()).toBeString();
+		await expect(keyForAsync()).resolves.toBeString();
 	});
 
-	it("should report a different key when the staging pass version bumps", () => {
+	it("should report a different key when the staging pass version bumps", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
@@ -190,12 +194,12 @@ describe(computePlaceInputsKey, () => {
 		// The passes that run between this key and the built place are code,
 		// not inputs: nothing on disk moves when what they emit changes.
 		vol.fromJSON({ "/cache/assets/model.txt": "one" });
-		const before = keyFor({ stagingVersion: 1 });
+		const before = await keyForAsync({ stagingVersion: 1 });
 
-		expect(keyFor({ stagingVersion: 2 })).not.toBe(before);
+		await expect(keyForAsync({ stagingVersion: 2 })).resolves.not.toBe(before);
 	});
 
-	it("should report the same key when the manifests arrive in a different order", () => {
+	it("should report the same key when the manifests arrive in a different order", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
@@ -214,10 +218,12 @@ describe(computePlaceInputsKey, () => {
 			shadowDir: "/cache/shadow-b",
 		});
 
-		expect(keyFor({ manifests: [second, first] })).toBe(keyFor({ manifests: [first, second] }));
+		await expect(keyForAsync({ manifests: [second, first] })).resolves.toBe(
+			await keyForAsync({ manifests: [first, second] }),
+		);
 	});
 
-	it("should report undefined and warn when the project text cannot be parsed", () => {
+	it("should report undefined and warn when the project text cannot be parsed", async () => {
 		expect.assertions(2);
 
 		onTestFinished(() => {
@@ -226,13 +232,13 @@ describe(computePlaceInputsKey, () => {
 
 		const warn = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		expect(keyFor({ projectJson: "{ not json" })).toBeUndefined();
+		await expect(keyForAsync({ projectJson: "{ not json" })).resolves.toBeUndefined();
 		expect(warn.mock.calls.flat().join("")).toContain("could not hash rojo build inputs");
 	});
 });
 
 describe(readPlaceReuseRecord, () => {
-	it("should round-trip a written record", () => {
+	it("should round-trip a written record", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
@@ -248,13 +254,13 @@ describe(readPlaceReuseRecord, () => {
 		});
 	});
 
-	it("should report undefined when no record exists", () => {
+	it("should report undefined when no record exists", async () => {
 		expect.assertions(1);
 
 		expect(readPlaceReuseRecord("/cache/missing.json")).toBeUndefined();
 	});
 
-	it("should report undefined for malformed json", () => {
+	it("should report undefined for malformed json", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {
@@ -266,7 +272,7 @@ describe(readPlaceReuseRecord, () => {
 		expect(readPlaceReuseRecord("/cache/place.json")).toBeUndefined();
 	});
 
-	it("should report undefined when the record has the wrong shape", () => {
+	it("should report undefined when the record has the wrong shape", async () => {
 		expect.assertions(1);
 
 		onTestFinished(() => {

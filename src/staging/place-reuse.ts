@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
-import { tryComputeRojoInputsHash } from "../coverage-pipeline/rojo-inputs.ts";
+import { tryComputeRojoInputsHashAsync } from "../coverage-pipeline/rojo-inputs.ts";
 import { atomicWrite } from "../utils/atomic-write.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
@@ -74,8 +74,10 @@ export interface PlaceInputsKeyOptions {
  * project). The caller then rebuilds, which is what would have happened
  * without a cache at all.
  */
-export function computePlaceInputsKey(options: PlaceInputsKeyOptions): string | undefined {
-	const rojoHash = tryComputeRojoInputsHash({
+export async function computePlaceInputsKeyAsync(
+	options: PlaceInputsKeyOptions,
+): Promise<string | undefined> {
+	const rojoHash = await tryComputeRojoInputsHashAsync({
 		luauRoots: options.shadowRoots,
 		projectJson: options.projectJson,
 		rojoProjectPath: options.projectFile,

@@ -3,7 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { vol } from "memfs";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { computeRojoInputsHash } from "./rojo-inputs.ts";
+import { computeRojoInputsHashAsync } from "./rojo-inputs.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -28,8 +28,8 @@ function writeRawProject(contents: string): void {
 	vol.writeFileSync(PROJECT, contents);
 }
 
-function hashOf(luauRoots: Array<string> = [], projectJson?: string): string {
-	return computeRojoInputsHash({
+async function hashOfAsync(luauRoots: Array<string> = [], projectJson?: string): Promise<string> {
+	return computeRojoInputsHashAsync({
 		luauRoots,
 		projectJson,
 		rojoProjectPath: PROJECT,
@@ -37,8 +37,8 @@ function hashOf(luauRoots: Array<string> = [], projectJson?: string): string {
 	});
 }
 
-describe(computeRojoInputsHash, () => {
-	it("should hash the project text the caller holds rather than the file on disk", () => {
+describe(computeRojoInputsHashAsync, () => {
+	it("should hash the project text the caller holds rather than the file on disk", async () => {
 		expect.assertions(2);
 
 		reset();
@@ -51,24 +51,24 @@ describe(computeRojoInputsHash, () => {
 			tree: { $className: "DataModel", Inc: { $path: "include" } },
 		});
 
-		const first = hashOf([], held);
+		const first = await hashOfAsync([], held);
 
 		expect(first).toMatch(/^[a-f0-9]{64}$/);
 		// Same tree, different bytes: the text is the input, not what it parses
 		// to, so a whitespace-only edit still moves the digest.
-		expect(hashOf([], `${held} `)).not.toBe(first);
+		await expect(hashOfAsync([], `${held} `)).resolves.not.toBe(first);
 	});
 
-	it("should return a sha256 digest", () => {
+	it("should return a sha256 digest", async () => {
 		expect.assertions(1);
 
 		reset();
 		writeProject({ $className: "DataModel" });
 
-		expect(hashOf()).toMatch(/^[a-f0-9]{64}$/);
+		await expect(hashOfAsync()).resolves.toMatch(/^[a-f0-9]{64}$/);
 	});
 
-	it("should be stable when nothing changes", () => {
+	it("should be stable when nothing changes", async () => {
 		expect.assertions(1);
 
 		reset();
@@ -76,50 +76,50 @@ describe(computeRojoInputsHash, () => {
 		vol.mkdirSync("/project/include", { recursive: true });
 		vol.writeFileSync("/project/include/RuntimeLib.lua", "-- v1");
 
-		expect(hashOf()).toBe(hashOf());
+		await expect(hashOfAsync()).resolves.toBe(await hashOfAsync());
 	});
 
-	it("should change when a mounted directory's file content changes", () => {
+	it("should change when a mounted directory's file content changes", async () => {
 		expect.assertions(1);
 
 		reset();
 		writeProject({ $className: "DataModel", Inc: { $path: "include" } });
 		vol.mkdirSync("/project/include", { recursive: true });
 		vol.writeFileSync("/project/include/RuntimeLib.lua", "-- v1");
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		vol.writeFileSync("/project/include/RuntimeLib.lua", "-- v2");
 
-		expect(hashOf()).not.toBe(before);
+		await expect(hashOfAsync()).resolves.not.toBe(before);
 	});
 
-	it("should change when a directly mounted file changes", () => {
+	it("should change when a directly mounted file changes", async () => {
 		expect.assertions(1);
 
 		reset();
 		writeProject({ $className: "DataModel", Lib: { $path: "include/RuntimeLib.lua" } });
 		vol.mkdirSync("/project/include", { recursive: true });
 		vol.writeFileSync("/project/include/RuntimeLib.lua", "-- v1");
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		vol.writeFileSync("/project/include/RuntimeLib.lua", "-- v2");
 
-		expect(hashOf()).not.toBe(before);
+		await expect(hashOfAsync()).resolves.not.toBe(before);
 	});
 
-	it("should change when the rojo project file itself changes", () => {
+	it("should change when the rojo project file itself changes", async () => {
 		expect.assertions(1);
 
 		reset();
 		writeProject({ $className: "DataModel" });
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		writeProject({ $className: "DataModel", $ignoreUnknownInstances: true });
 
-		expect(hashOf()).not.toBe(before);
+		await expect(hashOfAsync()).resolves.not.toBe(before);
 	});
 
-	it("should change when an inlined nested project file changes", () => {
+	it("should change when an inlined nested project file changes", async () => {
 		expect.assertions(1);
 
 		reset();
@@ -130,17 +130,17 @@ describe(computeRojoInputsHash, () => {
 			JSON.stringify({ name: "pkg-a", tree: { $path: "src" } }),
 		);
 		vol.mkdirSync("/project/pkg/src", { recursive: true });
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		vol.writeFileSync(
 			"/project/pkg/default.project.json",
 			JSON.stringify({ name: "pkg-b", tree: { $path: "src" } }),
 		);
 
-		expect(hashOf()).not.toBe(before);
+		await expect(hashOfAsync()).resolves.not.toBe(before);
 	});
 
-	it("should change when a file under an absolute mount changes", () => {
+	it("should change when a file under an absolute mount changes", async () => {
 		expect.assertions(1);
 
 		reset();
@@ -149,14 +149,14 @@ describe(computeRojoInputsHash, () => {
 		writeProject({ $className: "DataModel", Ext: { $path: "/external/out" } });
 		vol.mkdirSync("/external/out", { recursive: true });
 		vol.writeFileSync("/external/out/a.luau", "local a = 1");
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		vol.writeFileSync("/external/out/a.luau", "local a = 2");
 
-		expect(hashOf()).not.toBe(before);
+		await expect(hashOfAsync()).resolves.not.toBe(before);
 	});
 
-	it("should exclude mounts that are or are nested under a luauRoot", () => {
+	it("should exclude mounts that are or are nested under a luauRoot", async () => {
 		expect.assertions(2);
 
 		reset();
@@ -171,20 +171,20 @@ describe(computeRojoInputsHash, () => {
 		vol.writeFileSync("/project/out/nested/b.luau", "local b = 1");
 		vol.mkdirSync("/project/include", { recursive: true });
 		vol.writeFileSync("/project/include/x.lua", "-- x");
-		const before = hashOf(["out"]);
+		const before = await hashOfAsync(["out"]);
 
 		vol.writeFileSync("/project/out/a.luau", "local a = 2");
 		vol.writeFileSync("/project/out/nested/b.luau", "local b = 2");
-		const afterLuauRootEdits = hashOf(["out"]);
+		const afterLuauRootEdits = await hashOfAsync(["out"]);
 
 		vol.writeFileSync("/project/include/x.lua", "-- changed");
-		const afterIncludeEdit = hashOf(["out"]);
+		const afterIncludeEdit = await hashOfAsync(["out"]);
 
 		expect(afterLuauRootEdits).toBe(before);
 		expect(afterIncludeEdit).not.toBe(before);
 	});
 
-	it("should skip dot-prefixed entries inside a mount", () => {
+	it("should skip dot-prefixed entries inside a mount", async () => {
 		expect.assertions(1);
 
 		reset();
@@ -192,38 +192,38 @@ describe(computeRojoInputsHash, () => {
 		vol.mkdirSync("/project/include/.cache", { recursive: true });
 		vol.writeFileSync("/project/include/.cache/junk", "v1");
 		vol.writeFileSync("/project/include/a.lua", "x");
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		vol.writeFileSync("/project/include/.cache/junk", "v2");
 
-		expect(hashOf()).toBe(before);
+		await expect(hashOfAsync()).resolves.toBe(before);
 	});
 
-	it("should drop mounts that do not exist on disk", () => {
+	it("should drop mounts that do not exist on disk", async () => {
 		expect.assertions(1);
 
 		reset();
 		writeProject({ $className: "DataModel", Ghost: { $path: "ghost" } });
 
-		expect(hashOf()).toMatch(/^[a-f0-9]{64}$/);
+		await expect(hashOfAsync()).resolves.toMatch(/^[a-f0-9]{64}$/);
 	});
 
-	it("should change when a file is moved with identical content", () => {
+	it("should change when a file is moved with identical content", async () => {
 		expect.assertions(1);
 
 		reset();
 		writeProject({ $className: "DataModel", Inc: { $path: "include" } });
 		vol.mkdirSync("/project/include", { recursive: true });
 		vol.writeFileSync("/project/include/a.lua", "same");
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		vol.unlinkSync("/project/include/a.lua");
 		vol.writeFileSync("/project/include/b.lua", "same");
 
-		expect(hashOf()).not.toBe(before);
+		await expect(hashOfAsync()).resolves.not.toBe(before);
 	});
 
-	it("should hash a file reached through a symlinked directory", () => {
+	it("should hash a file reached through a symlinked directory", async () => {
 		expect.assertions(1);
 
 		reset();
@@ -232,14 +232,14 @@ describe(computeRojoInputsHash, () => {
 		vol.mkdirSync("/shared", { recursive: true });
 		vol.writeFileSync("/shared/a.lua", "v1");
 		vol.symlinkSync("/shared", "/project/include/linked");
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		vol.writeFileSync("/shared/a.lua", "v2");
 
-		expect(hashOf()).not.toBe(before);
+		await expect(hashOfAsync()).resolves.not.toBe(before);
 	});
 
-	it("should hash a file a mount reaches only by following a symlink", () => {
+	it("should hash a file a mount reaches only by following a symlink", async () => {
 		expect.assertions(1);
 
 		reset();
@@ -248,14 +248,14 @@ describe(computeRojoInputsHash, () => {
 		vol.writeFileSync("/shared/nested/a.lua", "v1");
 		vol.mkdirSync("/project", { recursive: true });
 		vol.symlinkSync("/shared", "/project/linked");
-		const before = hashOf();
+		const before = await hashOfAsync();
 
 		vol.writeFileSync("/shared/nested/a.lua", "v2");
 
-		expect(hashOf()).not.toBe(before);
+		await expect(hashOfAsync()).resolves.not.toBe(before);
 	});
 
-	it("should terminate on a symlink cycle", () => {
+	it("should terminate on a symlink cycle", async () => {
 		expect.assertions(1);
 
 		reset();
@@ -264,57 +264,57 @@ describe(computeRojoInputsHash, () => {
 		vol.writeFileSync("/project/include/a.lua", "x");
 		vol.symlinkSync("/project/include", "/project/include/loop");
 
-		expect(hashOf()).toMatch(/^[a-f0-9]{64}$/);
+		await expect(hashOfAsync()).resolves.toMatch(/^[a-f0-9]{64}$/);
 	});
 
 	describe("when the project file has no tree object", () => {
-		it("should throw when the project is not a JSON object", () => {
+		it("should throw when the project is not a JSON object", async () => {
 			expect.assertions(1);
 
 			reset();
 			writeRawProject('"just a string"');
 
-			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
+			await expect(hashOfAsync()).rejects.toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 
-		it("should throw when the project is JSON null", () => {
+		it("should throw when the project is JSON null", async () => {
 			expect.assertions(1);
 
 			reset();
 			writeRawProject("null");
 
-			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
+			await expect(hashOfAsync()).rejects.toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 
-		it("should throw when the project is a JSON array", () => {
+		it("should throw when the project is a JSON array", async () => {
 			expect.assertions(1);
 
 			reset();
 			writeRawProject("[]");
 
-			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
+			await expect(hashOfAsync()).rejects.toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 
-		it("should throw when tree is missing", () => {
+		it("should throw when tree is missing", async () => {
 			expect.assertions(1);
 
 			reset();
 			writeRawProject('{ "name": "test" }');
 
-			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
+			await expect(hashOfAsync()).rejects.toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 
-		it("should throw when tree is an array", () => {
+		it("should throw when tree is an array", async () => {
 			expect.assertions(1);
 
 			reset();
 			writeRawProject('{ "name": "test", "tree": [] }');
 
-			expect(hashOf).toThrowWithMessage(Error, /Invalid Rojo project/);
+			await expect(hashOfAsync()).rejects.toThrowWithMessage(Error, /Invalid Rojo project/);
 		});
 	});
 
-	it("should pass over a luauRoot nested inside a mounted directory", () => {
+	it("should pass over a luauRoot nested inside a mounted directory", async () => {
 		expect.assertions(2);
 
 		reset();
@@ -323,16 +323,16 @@ describe(computeRojoInputsHash, () => {
 		vol.mkdirSync("/project/out/client", { recursive: true });
 		vol.writeFileSync("/project/out/modules/ecs/world.luau", "-- v1");
 		vol.writeFileSync("/project/out/client/button.luau", "-- v1");
-		const before = hashOf(["out/modules/ecs"]);
+		const before = await hashOfAsync(["out/modules/ecs"]);
 
 		// The shadow diff content-hashes the root itself, so re-reading it here
 		// would double the work the narrowing exists to avoid.
 		vol.writeFileSync("/project/out/modules/ecs/world.luau", "-- v2");
 
-		expect(hashOf(["out/modules/ecs"])).toBe(before);
+		await expect(hashOfAsync(["out/modules/ecs"])).resolves.toBe(before);
 
 		vol.writeFileSync("/project/out/client/button.luau", "-- v2");
 
-		expect(hashOf(["out/modules/ecs"])).not.toBe(before);
+		await expect(hashOfAsync(["out/modules/ecs"])).resolves.not.toBe(before);
 	});
 });

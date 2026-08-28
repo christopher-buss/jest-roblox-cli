@@ -7,8 +7,9 @@ import * as path from "node:path";
 import process from "node:process";
 
 import { rojoProjectSchema } from "../types/rojo.ts";
+import { mapWithLimitAsync } from "../utils/concurrency.ts";
 import { errorMessage } from "../utils/error-message.ts";
-import { hashFile, hashString } from "../utils/hash.ts";
+import { hashFileAsync, hashString } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { isWithinRoot } from "./redirect-path.ts";
 
@@ -28,6 +29,13 @@ export interface RojoInputsOptions {
 	rojoProjectPath: string;
 	rootDirectory: string;
 }
+
+/**
+ * Reads in flight while the input digest runs. High enough to keep the disk
+ * busy through the latency of any one read, low enough that a tree of tens of
+ * thousands of files cannot exhaust the process file-handle budget.
+ */
+const HASH_CONCURRENCY = 32;
 
 /** What the input walk carries down the tree, unchanged at every level. */
 interface InputWalk {
@@ -57,17 +65,17 @@ interface ProjectDigest {
  * re-reading the compiled output here would be wasted work. Throws on a
  * malformed or circular rojo project; the caller degrades to a rebuild.
  */
-export function computeRojoInputsHash({
+export async function computeRojoInputsHashAsync({
 	luauRoots,
 	projectJson,
 	rojoProjectPath,
 	rootDirectory,
-}: RojoInputsOptions): string {
+}: RojoInputsOptions): Promise<string> {
 	const projectDirectory = path.dirname(rojoProjectPath);
 	// One read, and the digest is taken from what it returned: parsing one
 	// state of the file and hashing another would fingerprint a tree that was
 	// never walked.
-	const projectText = projectJson ?? fs.readFileSync(rojoProjectPath, "utf-8");
+	const projectText = projectJson ?? (await fs.promises.readFile(rojoProjectPath, "utf-8"));
 	const project: ProjectDigest = { key: toKey(rojoProjectPath), hash: hashString(projectText) };
 
 	const { projectFiles, tree } = resolveNestedProjectSources(
@@ -94,22 +102,25 @@ export function computeRojoInputsHash({
 	for (const mount of distinctMounts) {
 		// Normalized here and nowhere below, so a child path is the parent's
 		// plus a name.
-		collectInputFiles(toKey(resolveMountPath(projectDirectory, mount)), walk);
+		await collectInputFilesAsync(toKey(resolveMountPath(projectDirectory, mount)), walk);
 	}
 
-	return digestFiles({ files, project, rootDirectory });
+	return digestFilesAsync({ files, project, rootDirectory });
 }
 
 /**
- * {@link computeRojoInputsHash}, degrading to `undefined` instead of throwing.
+ * {@link computeRojoInputsHashAsync}, degrading to `undefined` instead of
+ * throwing.
  *
  * A project too malformed to hash is also too malformed to build, so every
  * caller wants the same answer — warn, then treat the inputs as changed and let
  * the build report the real fault. Shared so both callers say the same thing.
  */
-export function tryComputeRojoInputsHash(options: RojoInputsOptions): string | undefined {
+export async function tryComputeRojoInputsHashAsync(
+	options: RojoInputsOptions,
+): Promise<string | undefined> {
 	try {
-		return computeRojoInputsHash(options);
+		return await computeRojoInputsHashAsync(options);
 	} catch (err) {
 		process.stderr.write(`Warning: could not hash rojo build inputs: ${errorMessage(err)}
 `);
@@ -144,7 +155,7 @@ function toKey(filePath: string): string {
  * digested from the text this call read the project as, which need not be the
  * bytes at the path naming it, and need not be on disk at all.
  */
-function digestFiles({
+async function digestFilesAsync({
 	files,
 	project,
 	rootDirectory,
@@ -152,13 +163,15 @@ function digestFiles({
 	files: Set<string>;
 	project: ProjectDigest;
 	rootDirectory: string;
-}): string {
+}): Promise<string> {
 	const lines: Array<string> = [];
-	for (const file of files) {
+	// Unordered on purpose: the sort below is what makes the digest stable,
+	// so the reads are free to settle in whatever order the disk answers in.
+	await mapWithLimitAsync([...files], HASH_CONCURRENCY, async (file) => {
 		const relativePath = toKey(path.relative(rootDirectory, file));
-		const hash = file === project.key ? project.hash : hashFile(file);
+		const hash = file === project.key ? project.hash : await hashFileAsync(file);
 		lines.push(`${relativePath}\0${hash}`);
-	}
+	});
 
 	lines.sort();
 	return hashString(lines.join("\n"));
@@ -173,17 +186,17 @@ function coveredByLuauRoot(directoryKey: string, luauRootKeys: Array<string>): b
  * exist on disk at all, or a symlink, which `readdir` reports as a link rather
  * than as whatever it points at.
  */
-function collectInputFiles(target: string, walk: InputWalk): void {
+async function collectInputFilesAsync(target: string, walk: InputWalk): Promise<void> {
 	let stats: fs.Stats;
 	try {
-		stats = fs.statSync(target);
+		stats = await fs.promises.stat(target);
 	} catch {
 		// Mount declared in the rojo tree but absent on disk.
 		return;
 	}
 
 	if (stats.isDirectory()) {
-		descend({ directory: target, walk });
+		await descendAsync({ directory: target, walk });
 		return;
 	}
 
@@ -203,7 +216,7 @@ function collectInputFiles(target: string, walk: InputWalk): void {
  * Directories only — a root is one, and a file under a root is reached solely
  * by descending through it.
  */
-function descend({
+async function descendAsync({
 	directory,
 	inheritedReal,
 	walk,
@@ -212,21 +225,21 @@ function descend({
 	/** Omitted by a caller entering the walk, which has no parent to ask. */
 	inheritedReal?: string | undefined;
 	walk: InputWalk;
-}): void {
+}): Promise<void> {
 	if (coveredByLuauRoot(directory, walk.luauRootKeys)) {
 		return;
 	}
 
 	// realpath collapses pnpm symlink cycles to a canonical key so a self- or
 	// ancestor-referencing link is walked once rather than forever.
-	const real = inheritedReal ?? toKey(fs.realpathSync(directory));
+	const real = inheritedReal ?? toKey(await fs.promises.realpath(directory));
 	if (walk.visitedDirectories.has(real)) {
 		return;
 	}
 
 	walk.visitedDirectories.add(real);
 
-	const entries = fs.readdirSync(directory, { withFileTypes: true });
+	const entries = await fs.promises.readdir(directory, { withFileTypes: true });
 	for (const entry of entries) {
 		// Skip .git, .jest-roblox, and other dot entries.
 		if (entry.name.startsWith(".")) {
@@ -238,14 +251,14 @@ function descend({
 		// than one per entry.
 		const target = `${directory}/${entry.name}`;
 		if (entry.isDirectory()) {
-			descend({ directory: target, inheritedReal: `${real}/${entry.name}`, walk });
+			await descendAsync({ directory: target, inheritedReal: `${real}/${entry.name}`, walk });
 			continue;
 		}
 
 		if (entry.isSymbolicLink()) {
 			// Resolved where it is followed, which is the only place a walk can
 			// reach the same directory twice, or forever.
-			collectInputFiles(target, walk);
+			await collectInputFilesAsync(target, walk);
 			continue;
 		}
 

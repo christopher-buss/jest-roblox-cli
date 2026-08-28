@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`demotePinnedMounts > should fold the pinned class to Folder and drop the properties it carried 1`] = `
+exports[`demotePinnedMountsAsync > should fold the pinned class to Folder and drop the properties it carried 1`] = `
 "<roblox version="4">
   <Item class="Folder" referent="0">
     <Properties>

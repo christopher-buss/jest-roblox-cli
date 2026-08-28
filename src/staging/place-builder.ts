@@ -3,11 +3,11 @@ import * as path from "node:path";
 
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
-import { hashFile } from "../utils/hash.ts";
-import { buildWithRojo } from "../utils/rojo-builder.ts";
-import { demotePinnedMounts, PINNED_MOUNT_PASS_VERSION } from "./pinned-mounts.ts";
+import { hashFileAsync } from "../utils/hash.ts";
+import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
+import { demotePinnedMountsAsync, PINNED_MOUNT_PASS_VERSION } from "./pinned-mounts.ts";
 import {
-	computePlaceInputsKey,
+	computePlaceInputsKeyAsync,
 	readPlaceReuseRecord,
 	writePlaceReuseRecord,
 } from "./place-reuse.ts";
@@ -15,7 +15,7 @@ import { relativizeProjectPaths } from "./relativize-paths.ts";
 import type { PackageDescriptor } from "./synthesizer.ts";
 import { synthesize } from "./synthesizer.ts";
 
-/** Where {@link demotePinnedMounts} parks its Folder-rooted stand-ins. */
+/** Where {@link demotePinnedMountsAsync} parks its Folder-rooted stand-ins. */
 const PINNED_SHADOW_DIR = "pinned-shadow";
 
 export interface PlaceReuseOptions {
@@ -59,31 +59,36 @@ interface ReusePlan {
  * Clean Place and a Coverage-Instrumented Place differ only in whether the
  * descriptors carry `coverageRoots`.
  */
-export function buildPlace({
+export async function buildPlaceAsync({
 	loadStringEnabled,
 	packages,
 	placeFile,
 	projectFile,
 	reuse,
 	wrap,
-}: BuildPlaceOptions): BuildManifestArtifact {
+}: BuildPlaceOptions): Promise<BuildManifestArtifact> {
 	const projectDirectory = path.dirname(projectFile);
 	const projectJson = synthesize({ loadStringEnabled, packages, wrap });
 
 	// Planned before anything is written or built, so a reused place pays for
 	// neither of the two passes below — see `PlaceInputsKeyOptions.projectJson`
 	// for why a key over the synthesized project can answer for what they write.
-	const plan = planReuse({
+	const plan = await planReuseAsync({
 		projectFile,
 		projectJson: relativizeProjectPaths(projectJson, projectDirectory),
 		reuse,
 	});
-	const reused = plan === undefined ? undefined : tryReuse(plan, placeFile);
+	const reused = plan === undefined ? undefined : await tryReuseAsync(plan, placeFile);
 	if (reused !== undefined) {
 		return reused;
 	}
 
-	const artifact = stageAndBuild({ placeFile, projectDirectory, projectFile, projectJson });
+	const artifact = await stageAndBuildAsync({
+		placeFile,
+		projectDirectory,
+		projectFile,
+		projectJson,
+	});
 	if (plan !== undefined) {
 		writePlaceReuseRecord(plan.cacheFile, {
 			inputsKey: plan.inputsKey,
@@ -102,7 +107,7 @@ export function buildPlace({
  * list inert. The pinned-mount pass runs before it for the same reason — the
  * ignore entries it adds are expressed in that relative frame.
  */
-function stageAndBuild({
+async function stageAndBuildAsync({
 	placeFile,
 	projectDirectory,
 	projectFile,
@@ -112,9 +117,9 @@ function stageAndBuild({
 	projectDirectory: string;
 	projectFile: string;
 	projectJson: string;
-}): BuildManifestArtifact {
+}): Promise<BuildManifestArtifact> {
 	const staged = relativizeProjectPaths(
-		demotePinnedMounts({
+		await demotePinnedMountsAsync({
 			projectDirectory,
 			projectJson,
 			shadowDirectory: path.join(projectDirectory, PINNED_SHADOW_DIR),
@@ -127,8 +132,8 @@ function stageAndBuild({
 	// exists for every caller rather than relying on each one to pre-create it.
 	fs.mkdirSync(path.dirname(placeFile), { recursive: true });
 
-	buildWithRojo(projectFile, placeFile);
-	return { hash: hashFile(placeFile), path: placeFile };
+	await buildWithRojoAsync(projectFile, placeFile);
+	return { hash: await hashFileAsync(placeFile), path: placeFile };
 }
 
 /**
@@ -137,7 +142,7 @@ function stageAndBuild({
  * inputs would not hash. Pairing the two means a caller never holds a key
  * without somewhere to put it.
  */
-function planReuse({
+async function planReuseAsync({
 	projectFile,
 	projectJson,
 	reuse,
@@ -145,12 +150,12 @@ function planReuse({
 	projectFile: string;
 	projectJson: string;
 	reuse: PlaceReuseOptions | undefined;
-}): ReusePlan | undefined {
+}): Promise<ReusePlan | undefined> {
 	if (reuse === undefined) {
 		return undefined;
 	}
 
-	const inputsKey = computePlaceInputsKey({
+	const inputsKey = await computePlaceInputsKeyAsync({
 		manifests: reuse.manifests,
 		projectFile,
 		projectJson,
@@ -164,9 +169,9 @@ function planReuse({
 	return inputsKey === undefined ? undefined : { cacheFile: reuse.cacheFile, inputsKey };
 }
 
-function hashPlace(placeFile: string): string | undefined {
+async function hashPlaceAsync(placeFile: string): Promise<string | undefined> {
 	try {
-		return hashFile(placeFile);
+		return await hashFileAsync(placeFile);
 	} catch {
 		// Absent or unreadable: no hash can match, so the caller rebuilds.
 		return undefined;
@@ -185,9 +190,15 @@ function hashPlace(placeFile: string): string | undefined {
  * truncated place out, with the previous hash riding along into every Build
  * Manifest. Reading it back costs a fraction of building it again.
  */
-function tryReuse(plan: ReusePlan, placeFile: string): BuildManifestArtifact | undefined {
+async function tryReuseAsync(
+	plan: ReusePlan,
+	placeFile: string,
+): Promise<BuildManifestArtifact | undefined> {
 	const record = readPlaceReuseRecord(plan.cacheFile);
-	if (record?.inputsKey !== plan.inputsKey || hashPlace(placeFile) !== record.placeHash) {
+	if (
+		record?.inputsKey !== plan.inputsKey ||
+		(await hashPlaceAsync(placeFile)) !== record.placeHash
+	) {
 		return undefined;
 	}
 

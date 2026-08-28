@@ -875,7 +875,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(vol.existsSync(shadowSpecPath)).toBeTrue();
 	});
 
-	// Symmetry with prepareCoverage: each non-instrumented file the
+	// Symmetry with prepareCoverageAsync: each non-instrumented file the
 	// shadow mirrors verbatim (spec/test/snap luau) needs a record in
 	// the manifest so a future incremental run can detect stale shadow
 	// entries and prune them.

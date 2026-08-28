@@ -17,7 +17,7 @@ import { runSingleOrMultiAsync } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { collectStubMounts } from "../run/staging.ts";
 import type { MultiRunResult } from "../run/types.ts";
-import { buildPlace } from "../staging/place-builder.ts";
+import { buildPlaceAsync } from "../staging/place-builder.ts";
 import { prepareArtifactsAsync } from "./prepare-artifacts.ts";
 
 vi.mock(import("../run.ts"));
@@ -43,7 +43,7 @@ vi.mock(import("../coverage-pipeline/prepare.ts"), () => {
 });
 
 const mocks = {
-	buildPlace: vi.mocked(buildPlace),
+	buildPlaceAsync: vi.mocked(buildPlaceAsync),
 	collectStubMounts: vi.mocked(collectStubMounts),
 	emitBuildManifest: vi.mocked(emitBuildManifest),
 	loadRojoTree: vi.mocked(loadRojoTree),
@@ -132,7 +132,7 @@ describe(prepareArtifactsAsync, () => {
 		mocks.runSingleOrMulti.mockResolvedValue(
 			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
@@ -156,7 +156,7 @@ describe(prepareArtifactsAsync, () => {
 		mocks.runSingleOrMulti.mockResolvedValue(
 			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
@@ -178,7 +178,7 @@ describe(prepareArtifactsAsync, () => {
 		mocks.runSingleOrMulti.mockResolvedValue(
 			multiResult({ coverageArtifacts: makeArtifacts({ projects: [project] }) }),
 		);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
@@ -190,7 +190,7 @@ describe(prepareArtifactsAsync, () => {
 
 		const artifacts = makeArtifacts();
 		mocks.runSingleOrMulti.mockResolvedValue(multiResult({ coverageArtifacts: artifacts }));
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 
 		await prepareArtifactsAsync(makeConfig());
 
@@ -210,7 +210,7 @@ describe(prepareArtifactsAsync, () => {
 				merged: { coverageData: { "a.luau": { s: { "0": 1 } } } },
 			}),
 		);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
@@ -223,12 +223,12 @@ describe(prepareArtifactsAsync, () => {
 		mocks.runSingleOrMulti.mockResolvedValue(
 			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 
 		await prepareArtifactsAsync(makeConfig());
 
 		expect(mocks.resolveAllProjects).not.toHaveBeenCalled();
-		expect(mocks.buildPlace.mock.calls[0]![0].packages[0]!.stubMounts).toBeUndefined();
+		expect(mocks.buildPlaceAsync.mock.calls[0]![0].packages[0]!.stubMounts).toBeUndefined();
 	});
 
 	it("should build the clean place with stub mounts in multi mode", async () => {
@@ -250,11 +250,11 @@ describe(prepareArtifactsAsync, () => {
 				dataModelPath: "game.X",
 			},
 		]);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 
 		const bundle = await prepareArtifactsAsync(config);
 
-		expect(mocks.buildPlace.mock.calls[0]![0].packages[0]!.stubMounts).toHaveLength(1);
+		expect(mocks.buildPlaceAsync.mock.calls[0]![0].packages[0]!.stubMounts).toHaveLength(1);
 		expect(bundle.coverageData).toStrictEqual({ "b.luau": { s: { "0": 1 } } });
 	});
 
@@ -267,7 +267,7 @@ describe(prepareArtifactsAsync, () => {
 				merged: { attribution: EXAMPLE_ATTRIBUTION },
 			}),
 		);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		await prepareArtifactsAsync(makeConfig());
@@ -288,7 +288,7 @@ describe(prepareArtifactsAsync, () => {
 				merged: { attribution: EXAMPLE_ATTRIBUTION },
 			}),
 		);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 		mocks.readManifest.mockReturnValue({ kind: "missing" });
 
 		await prepareArtifactsAsync(makeConfig());
@@ -302,7 +302,7 @@ describe(prepareArtifactsAsync, () => {
 		mocks.runSingleOrMulti.mockResolvedValue(
 			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
-		mocks.buildPlace.mockReturnValue(CLEAN_PLACE);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
 
 		await prepareArtifactsAsync(makeConfig());
 

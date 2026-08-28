@@ -6,7 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { buildWithRojo } from "../utils/rojo-builder.ts";
+import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import { isModelFile, readDeclaredClasses } from "./model-classes.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "__fixtures__/pinned");
@@ -50,7 +50,7 @@ function temporaryDirectory(): string {
  * @param rootClass - Class the project pins its root to.
  * @returns Path to the built model.
  */
-function buildModel(rootClass: string): string {
+async function buildModelAsync(rootClass: string): Promise<string> {
 	const directory = temporaryDirectory();
 	const sourceDirectory = path.join(directory, "many");
 	fs.mkdirSync(sourceDirectory);
@@ -71,7 +71,7 @@ function buildModel(rootClass: string): string {
 	);
 
 	const modelPath = path.join(directory, "model.rbxm");
-	buildWithRojo(projectPath, modelPath);
+	await buildWithRojoAsync(projectPath, modelPath);
 	return modelPath;
 }
 
@@ -175,10 +175,12 @@ describe(readDeclaredClasses, () => {
 		"should read every class out of a binary model, LZ4 chunks included",
 		// A real rojo spawn, so the suite-wide per-test budget cannot hold it.
 		{ timeout: 5000 },
-		() => {
+		async () => {
 			expect.assertions(1);
 
-			expect(readDeclaredClasses(buildModel("StarterPlayerScripts"))).toStrictEqual(
+			expect(
+				readDeclaredClasses(await buildModelAsync("StarterPlayerScripts")),
+			).toStrictEqual(
 				expect.arrayContaining(["Folder", "ModuleScript", "StarterPlayerScripts"]),
 			);
 		},

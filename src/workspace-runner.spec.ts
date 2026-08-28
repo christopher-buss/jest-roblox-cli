@@ -23,7 +23,7 @@ import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { MANIFEST_VERSION } from "./coverage-pipeline/manifest.ts";
 import type { WorkspacePackageCoverage } from "./coverage-pipeline/workspace-prepare.ts";
 import { prepareWorkStealingQueueAsync } from "./memory-store/work-stealing.ts";
-import { buildPlace } from "./staging/place-builder.ts";
+import { buildPlaceAsync } from "./staging/place-builder.ts";
 import { createTimingCollector } from "./timing/orchestration-collector.ts";
 import { runTypecheckAsync } from "./typecheck/runner.ts";
 import type { JestResult } from "./types/jest-result.ts";
@@ -763,7 +763,7 @@ describe(runWorkspaceAsync, () => {
 			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 		});
 
-		vi.mocked(buildPlace).mockImplementationOnce(() => {
+		vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
 			throw new Error("rojo boom");
 		});
 
@@ -2636,7 +2636,7 @@ describe(runWorkspaceAsync, () => {
 				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([entry]);
 			const place = { hash: "place-hash", path: "synthesized.rbxl" };
-			vi.mocked(buildPlace).mockReturnValue(place);
+			vi.mocked(buildPlaceAsync).mockResolvedValue(place);
 
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
@@ -2673,7 +2673,7 @@ describe(runWorkspaceAsync, () => {
 			const { emitWorkspaceBuildManifests, prepareWorkspaceCoverage } =
 				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([coverageEntry("@halcyon/foo")]);
-			vi.mocked(buildPlace).mockImplementationOnce(() => {
+			vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
 				throw new Error("rojo boom");
 			});
 
@@ -2750,7 +2750,7 @@ describe(runWorkspaceAsync, () => {
 		// duration is to move the clock from inside the rojo build it ends on.
 		let clock = 1_000;
 		vi.spyOn(Date, "now").mockImplementation(() => clock);
-		vi.mocked(buildPlace).mockImplementationOnce(() => {
+		vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
 			clock += 250;
 			return { hash: "hash", path: "place.rbxl" };
 		});
@@ -2800,7 +2800,7 @@ describe(runWorkspaceAsync, () => {
 			clock += 120;
 			return [coverageEntry("@halcyon/foo")];
 		});
-		vi.mocked(buildPlace).mockImplementationOnce(() => {
+		vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
 			clock += 250;
 			return { hash: "hash", path: "place.rbxl" };
 		});
@@ -4997,7 +4997,7 @@ describe("workspace type tests", () => {
 		});
 
 		expect(captured.options).toBeUndefined();
-		expect(vi.mocked(buildPlace)).not.toHaveBeenCalled();
+		expect(vi.mocked(buildPlaceAsync)).not.toHaveBeenCalled();
 		expect(result!.typecheckResult).toBeDefined();
 		expect(result!.results).toHaveLength(0);
 	});

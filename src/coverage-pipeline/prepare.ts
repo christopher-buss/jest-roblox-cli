@@ -9,11 +9,11 @@ import process from "node:process";
 import picomatch from "picomatch";
 
 import type { ResolvedConfig } from "../config/schema.ts";
-import { buildPlace } from "../staging/place-builder.ts";
+import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { CoverageRoot } from "../staging/synthesizer.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
-import { hashFile } from "../utils/hash.ts";
+import { hashFileAsync } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type {
 	BuildManifestArtifact,
@@ -36,7 +36,7 @@ import type {
 import { MANIFEST_VERSION, readManifest, writeManifest } from "./manifest.ts";
 import type { NarrowedMount } from "./narrow-roots.ts";
 import { narrowLuauRoots } from "./narrow-roots.ts";
-import { tryComputeRojoInputsHash } from "./rojo-inputs.ts";
+import { tryComputeRojoInputsHashAsync } from "./rojo-inputs.ts";
 import { collectRojoMounts, resolveMountWithin } from "./root-reachability.ts";
 import type { ShadowRootResult } from "./shadow-root.ts";
 import { prepareShadowRoot } from "./shadow-root.ts";
@@ -295,12 +295,12 @@ export function resolveLuauRoots(config: ResolvedConfig): Array<string> {
 	return resolveLuauRootsWithRojo(readRojoContext(config, tryFindRojoProject(config)));
 }
 
-export function prepareCoverage(
+export async function prepareCoverageAsync(
 	config: ResolvedConfig,
 	{ beforeBuild, coverageInclude }: PrepareCoverageOptions = {},
-): PrepareCoverageResult {
+): Promise<PrepareCoverageResult> {
 	const instrumentStart = Date.now();
-	const inputs = resolveCoverageInputs(config, coverageInclude);
+	const inputs = await resolveCoverageInputsAsync(config, coverageInclude);
 	const isIncremental = decideIncremental(config, inputs);
 
 	const shadow = prepareShadowRoots(inputs, isIncremental);
@@ -318,12 +318,12 @@ export function prepareCoverage(
 	});
 	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
 	const files = toBuildManifestFiles(shadow.files);
-	const reused = reuseCoverageResult(inputs, files, hasChanges);
+	const reused = await reuseCoverageResultAsync(inputs, files, hasChanges);
 	if (reused !== undefined) {
 		return toReusedResult(reused, instrumentMs, Date.now() - stagingStart);
 	}
 
-	const built = buildCoveragePlaceAndManifest(config, inputs, shadow, placeFile);
+	const built = await buildPlaceAndManifestAsync(config, inputs, shadow, placeFile);
 
 	return {
 		buildId: built.buildId,
@@ -483,12 +483,12 @@ function validateRelativeRoots(luauRoots: Array<string>): void {
  * to hash would also fail the rebuild's own parse) rather than hard-failing a
  * working run.
  */
-function resolveRojoInputsHash(
+async function resolveRojoInputsHashAsync(
 	config: ResolvedConfig,
 	rojoProjectPath: string,
 	luauRoots: Array<string>,
-): RojoInputsHashResult {
-	const hash = tryComputeRojoInputsHash({
+): Promise<RojoInputsHashResult> {
+	const hash = await tryComputeRojoInputsHashAsync({
 		luauRoots,
 		rojoProjectPath,
 		rootDirectory: config.rootDir,
@@ -567,10 +567,10 @@ function resolveRojoMounts({ config, loaded }: RojoContext): ReadonlySet<string>
  * Resolve the rojo project, the luau roots, the non-luauRoot inputs hash and
  * the prior manifest — everything the rest of the run reads but never mutates.
  */
-function resolveCoverageInputs(
+async function resolveCoverageInputsAsync(
 	config: ResolvedConfig,
 	coverageInclude: Array<string> | undefined,
-): CoverageInputs {
+): Promise<CoverageInputs> {
 	const rojoProjectPath = findRojoProject(config);
 	// One read: the root auto-detect and the mount set the demote is judged
 	// against both come from the same tree, nested projects included.
@@ -590,7 +590,7 @@ function resolveCoverageInputs(
 		universe,
 	});
 	const luauRoots = narrowed.flatMap((entry) => entry.roots);
-	const inputs = resolveRojoInputsHash(config, rojoProjectPath, luauRoots);
+	const inputs = await resolveRojoInputsHashAsync(config, rojoProjectPath, luauRoots);
 	const manifestPath = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
 
 	return {
@@ -769,11 +769,11 @@ function priorPlaceIsReusable(placeFilePath: string, buildManifestPath: string):
  * `undefined` so the caller does a full rebuild rather than publishing a
  * manifest that points at a stale or absent `.rbxl`.
  */
-function reuseCoverageResult(
+async function reuseCoverageResultAsync(
 	{ buildManifestPath, previousManifest }: CoverageInputs,
 	files: Record<string, BuildManifestFileRecord>,
 	hasChanges: boolean,
-): ReusedCoverage | undefined {
+): Promise<ReusedCoverage | undefined> {
 	if (hasChanges || previousManifest?.placeFilePath === undefined) {
 		return undefined;
 	}
@@ -789,7 +789,7 @@ function reuseCoverageResult(
 		// Reuse the hash `readBuildManifest` already computed; only a
 		// pre-BuildManifest cache (no recorded place) falls back to hashing.
 		coveragePlace: reuse.coveragePlace ?? {
-			hash: hashFile(placeFilePath),
+			hash: await hashFileAsync(placeFilePath),
 			path: placeFilePath,
 		},
 		files,
@@ -799,13 +799,13 @@ function reuseCoverageResult(
 	};
 }
 
-function buildRojoProject({
+async function buildRojoProjectAsync({
 	packageDirectory,
 	placeFile,
 	rojoProjectPath,
 	shadow,
-}: BuildCoveragePlaceOptions): BuildManifestArtifact {
-	return buildPlace({
+}: BuildCoveragePlaceOptions): Promise<BuildManifestArtifact> {
+	return buildPlaceAsync({
 		// The coverage place is shared by every backend. studio-cli opens it
 		// directly and drives the plugin's Run-mode runner, which refuses to run
 		// unless LoadString is enabled; enabling it here is benign for the
@@ -866,13 +866,13 @@ function buildAndWriteManifest({
  * disk. The caller owns Build Manifest emission (it alone knows the full place
  * set), keeping that write a single atomic operation.
  */
-function buildCoveragePlaceAndManifest(
+async function buildPlaceAndManifestAsync(
 	config: ResolvedConfig,
 	inputs: CoverageInputs,
 	shadow: ShadowRootsResult,
 	placeFile: string,
-): Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest"> {
-	const coveragePlace = buildRojoProject({
+): Promise<Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest">> {
+	const coveragePlace = await buildRojoProjectAsync({
 		packageDirectory: config.rootDir,
 		placeFile,
 		rojoProjectPath: inputs.rojoProjectPath,

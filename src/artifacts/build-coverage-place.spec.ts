@@ -13,7 +13,7 @@ import {
 } from "../coverage-pipeline/prepare.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { buildImplicitProject } from "../run/single-projects.ts";
-import { prepareBakedCoverage } from "../run/staging.ts";
+import { prepareBakedCoverageAsync } from "../run/staging.ts";
 import { buildCoveragePlaceAsync } from "./build-coverage-place.ts";
 
 vi.mock(import("../run.ts"));
@@ -30,7 +30,7 @@ const mocks = {
 	emitBuildManifest: vi.mocked(emitBuildManifest),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
 	loadRojoTree: vi.mocked(loadRojoTree),
-	prepareBakedCoverage: vi.mocked(prepareBakedCoverage),
+	prepareBakedCoverageAsync: vi.mocked(prepareBakedCoverageAsync),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
 };
 
@@ -61,7 +61,7 @@ function makeArtifacts(overrides: Partial<CoverageArtifacts> = {}): CoverageArti
 function primeHappyPath(artifacts = makeArtifacts()): void {
 	mocks.loadRojoTree.mockReturnValue(fromAny({ $className: "DataModel" }));
 	mocks.buildImplicitProject.mockReturnValue(fromAny({ displayName: "test", rojoMounts: [] }));
-	mocks.prepareBakedCoverage.mockReturnValue({ artifacts, coverage: fromAny({}) });
+	mocks.prepareBakedCoverageAsync.mockResolvedValue({ artifacts, coverage: fromAny({}) });
 }
 
 describe(buildCoveragePlaceAsync, () => {
@@ -89,7 +89,7 @@ describe(buildCoveragePlaceAsync, () => {
 
 		await buildCoveragePlaceAsync(makeConfig({ collectCoverage: false }));
 
-		expect(mocks.prepareBakedCoverage.mock.calls[0]![0].collectCoverage).toBeTrue();
+		expect(mocks.prepareBakedCoverageAsync.mock.calls[0]![0].collectCoverage).toBeTrue();
 	});
 
 	it("should emit the build manifest with the coverage place and no clean place", async () => {
@@ -115,8 +115,9 @@ describe(buildCoveragePlaceAsync, () => {
 
 		expect(mocks.cleanLeftoverStubs).toHaveBeenCalledOnce();
 		expect(mocks.generateProjectStubs).toHaveBeenCalledOnce();
-		// The 4th arg to prepareBakedCoverage is `bakeStubs` — always true here.
-		expect(mocks.prepareBakedCoverage.mock.calls[0]![3]).toBeTrue();
+		// The 4th arg to prepareBakedCoverageAsync is `bakeStubs` — always true
+		// here.
+		expect(mocks.prepareBakedCoverageAsync.mock.calls[0]![3]).toBeTrue();
 	});
 
 	it("should resolve the implicit project when the config declares no projects", async () => {

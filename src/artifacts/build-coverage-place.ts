@@ -16,7 +16,7 @@ import {
 } from "../coverage-pipeline/prepare.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { buildImplicitProject } from "../run/single-projects.ts";
-import { prepareBakedCoverage } from "../run/staging.ts";
+import { prepareBakedCoverageAsync } from "../run/staging.ts";
 
 const CACHE_DIR = path.join(".jest-roblox", "cache");
 
@@ -73,7 +73,7 @@ export async function buildCoveragePlaceAsync(
 	cleanLeftoverStubs(projects, merged.rootDir);
 	generateProjectStubs(projects, merged.rootDir, cacheRoot);
 
-	const { artifacts } = prepareBakedCoverage(merged, projects, cacheRoot, true);
+	const { artifacts } = await prepareBakedCoverageAsync(merged, projects, cacheRoot, true);
 
 	// Emit only when the place was rebuilt this run, matching `runJestRoblox`:
 	// the reuse path leaves the prior (still-valid) build manifest in place, and

@@ -5,7 +5,7 @@ import {
 	type WorkspacePackageCoverage,
 } from "../coverage-pipeline/workspace-prepare.ts";
 import { describePlaceFile } from "../progress/stages.ts";
-import { buildPlace } from "../staging/place-builder.ts";
+import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { prepareWorkspaceCoverageMap } from "./coverage-attach.ts";
@@ -44,7 +44,7 @@ export interface StagedWorkspacePlace {
  * `PreDispatchTiming` for what the two halves mean and why they are measured
  * here rather than left to the residual.
  */
-export function stageWorkspacePlace({
+export async function stageWorkspacePlaceAsync({
 	cacheDirectory,
 	loaded,
 	selection,
@@ -56,7 +56,7 @@ export function stageWorkspacePlace({
 	selection: WorkspaceTestSelection;
 	timing: TimingCollector;
 	workspaceRoot: string;
-}): StagedWorkspacePlace {
+}): Promise<StagedWorkspacePlace> {
 	const { filteredContexts: contexts, pending } = selection;
 	const coverageStart = Date.now();
 	const coverageByPackage = prepareWorkspaceCoverageMap({
@@ -75,7 +75,7 @@ export function stageWorkspacePlace({
 
 	const stagingStart = isCoverage ? Date.now() : coverageStart;
 	const descriptors = stageWorkspaceStubs({ contexts, coverageByPackage, pending, timing });
-	const placeFile = buildWorkspacePlace({
+	const placeFile = await buildWorkspacePlaceAsync({
 		cacheDirectory,
 		coverageByPackage,
 		descriptors,
@@ -85,7 +85,7 @@ export function stageWorkspacePlace({
 	return { coverageByPackage, coverageMs, placeFile, stagingMs: Date.now() - stagingStart };
 }
 
-function buildWorkspacePlace({
+async function buildWorkspacePlaceAsync({
 	cacheDirectory,
 	coverageByPackage,
 	descriptors,
@@ -95,11 +95,11 @@ function buildWorkspacePlace({
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
 	descriptors: Array<PackageDescriptor>;
 	timing: TimingCollector;
-}): string {
+}): Promise<string> {
 	const placeFile = path.join(cacheDirectory, SYNTHESIZED_PLACE_FILE);
 	const coverage = [...coverageByPackage.values()];
-	const coveragePlace = timing.profile("rojoBuild", () => {
-		const built = buildPlace({
+	const coveragePlace = await timing.profileAsync("rojoBuild", async () => {
+		const built = await buildPlaceAsync({
 			packages: descriptors,
 			placeFile,
 			projectFile: path.join(cacheDirectory, SYNTHESIZED_PROJECT_FILE),
@@ -127,10 +127,10 @@ function buildWorkspacePlace({
 		return built;
 	});
 
-	// Emit only after the shared build succeeds: `buildPlace` throws on a failed
-	// rojo build, so a per-package Build Manifest never points at a place that
-	// isn't on disk. Every coverage package records the one shared instrumented
-	// place as its coverage place.
+	// Emit only after the shared build succeeds: `buildPlaceAsync` throws on a
+	// failed rojo build, so a per-package Build Manifest never points at a place
+	// that isn't on disk. Every coverage package records the one shared
+	// instrumented place as its coverage place.
 	if (coverage.length > 0) {
 		emitWorkspaceBuildManifests(coverage, coveragePlace);
 	}

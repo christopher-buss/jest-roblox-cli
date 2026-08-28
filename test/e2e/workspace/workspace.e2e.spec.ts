@@ -15,7 +15,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { synthesize } from "../../../src/staging/synthesizer.ts";
-import { buildWithRojo } from "../../../src/utils/rojo-builder.ts";
+import { buildWithRojoAsync } from "../../../src/utils/rojo-builder.ts";
 import { createFixtureSandbox, rojoOnPath } from "../cli/helpers.ts";
 
 const FIXTURE = path.resolve(__dirname, "../fixtures/workspace");
@@ -25,7 +25,7 @@ describe("workspace e2e — foundation pipeline", () => {
 	// superset of this tree (it contains the same `@e2e/foo` mount), so a build
 	// here would spend a `rojo build` subprocess re-proving what that one
 	// proves. This case needs no external tool at all.
-	it("should produce byte-stable synthesized project.json across two runs", () => {
+	it("should produce byte-stable synthesized project.json across two runs", async () => {
 		expect.assertions(1);
 
 		const sandbox = createFixtureSandbox(FIXTURE);
@@ -38,7 +38,7 @@ describe("workspace e2e — foundation pipeline", () => {
 
 	it.skipIf(!rojoOnPath())(
 		"should produce a buildable rbxl when synthesizing two packages together",
-		() => {
+		async () => {
 			expect.assertions(3);
 
 			const sandbox = createFixtureSandbox(FIXTURE);
@@ -68,7 +68,7 @@ describe("workspace e2e — foundation pipeline", () => {
 			const synthProjectPath = path.join(cacheDirectory, "synthesized.project.json");
 			const synthRbxlPath = path.join(cacheDirectory, "synthesized.rbxl");
 			fs.writeFileSync(synthProjectPath, projectJson);
-			buildWithRojo(synthProjectPath, synthRbxlPath);
+			await buildWithRojoAsync(synthProjectPath, synthRbxlPath);
 
 			expect(fs.statSync(synthRbxlPath).size).toBeGreaterThan(0);
 		},

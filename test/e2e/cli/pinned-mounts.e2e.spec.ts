@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { buildPlace } from "../../../src/staging/place-builder.ts";
+import { buildPlaceAsync } from "../../../src/staging/place-builder.ts";
 import { rojoOnPath } from "./helpers.ts";
 
 /**
@@ -100,7 +100,7 @@ function serviceModel(rootClass: string, childName: string): string {
  * what a place round-trip writes out, and what the synthesizer alone cannot
  * see, because the class lives in the file rather than in the project.
  */
-function buildFixturePlace(models: Record<string, string>): string {
+async function buildFixturePlaceAsync(models: Record<string, string>): Promise<string> {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pinned-mounts-e2e-"));
 	onTestFinished(() => {
 		fs.rmSync(root, { force: true, recursive: true });
@@ -128,7 +128,7 @@ function buildFixturePlace(models: Record<string, string>): string {
 	);
 
 	const placeFile = path.join(root, "out/place.rbxlx");
-	buildPlace({
+	await buildPlaceAsync({
 		packages: [{ name: "fixture", packageDirectory: root, rojoProjectPath }],
 		placeFile,
 		projectFile: path.join(root, "cache/synth.project.json"),
@@ -138,11 +138,11 @@ function buildFixturePlace(models: Record<string, string>): string {
 }
 
 describe.skipIf(!rojoOnPath())("staged pinned classes", () => {
-	it("should build a place with no parent-pinned class inside the stage", () => {
+	it("should build a place with no parent-pinned class inside the stage", async () => {
 		expect.assertions(2);
 
 		const staged = stagedClasses(
-			buildFixturePlace({
+			await buildFixturePlaceAsync({
 				StarterCharacterScripts: "CharacterModule",
 				StarterPlayerScripts: "ClientModule",
 			}),
@@ -155,10 +155,10 @@ describe.skipIf(!rojoOnPath())("staged pinned classes", () => {
 		expect(staged).toContain("ModuleScript");
 	});
 
-	it("should keep the instance names the package's own mount would have built", () => {
+	it("should keep the instance names the package's own mount would have built", async () => {
 		expect.assertions(1);
 
-		const placeFile = buildFixturePlace({ StarterPlayerScripts: "ClientModule" });
+		const placeFile = await buildFixturePlaceAsync({ StarterPlayerScripts: "ClientModule" });
 		// The materializer matches the live sub-service by name, and exactly one
 		// node may carry it — a duplicate would mean the ignored original came
 		// back alongside the stand-in.

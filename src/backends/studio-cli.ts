@@ -16,7 +16,7 @@ import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import { describeProjectCount } from "../progress/stages.ts";
 import {
 	type BuildPlaceOptions,
-	buildPlace as defaultBuildPlace,
+	buildPlaceAsync as defaultBuildPlace,
 } from "../staging/place-builder.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { decodeEnvelope } from "./envelope.ts";
@@ -196,7 +196,7 @@ export type StudioCliLauncher = (request: StudioCliLaunchRequest) => StudioCliPr
 
 export interface StudioCliOptions {
 	/** Place Builder seam; defaults to the real {@link defaultBuildPlace}. */
-	buildPlace?: ((options: BuildPlaceOptions) => BuildManifestArtifact) | undefined;
+	buildPlaceAsync?: ((options: BuildPlaceOptions) => Promise<BuildManifestArtifact>) | undefined;
 	/**
 	 * Result-server factory seam; defaults to an ephemeral-port `ws` server.
 	 *
@@ -268,7 +268,9 @@ interface StudioCliResultWait {
 }
 
 export class StudioCliBackend implements Backend {
-	private readonly buildPlace: (options: BuildPlaceOptions) => BuildManifestArtifact;
+	private readonly buildPlaceAsync: (
+		options: BuildPlaceOptions,
+	) => Promise<BuildManifestArtifact>;
 	private readonly createServer: () => WebSocketServer;
 	private readonly discover: (override: string | undefined) => string;
 	private readonly gracefulShutdownTimeout: number;
@@ -280,7 +282,7 @@ export class StudioCliBackend implements Backend {
 	public readonly kind = "studio-cli" as const;
 
 	constructor(options: StudioCliOptions = {}) {
-		this.buildPlace = options.buildPlace ?? defaultBuildPlace;
+		this.buildPlaceAsync = options.buildPlaceAsync ?? defaultBuildPlace;
 		this.createServer =
 			options.createServer ?? (() => new WebSocketServer({ host: "127.0.0.1", port: 0 }));
 		this.discover =
@@ -303,7 +305,7 @@ export class StudioCliBackend implements Backend {
 		workStealing,
 	}: BackendOptions): Promise<BackendResult> {
 		assertSerialJobs({ jobs, parallel, workStealing });
-		const place = this.prepareRunPlace(jobs);
+		const place = await this.prepareRunPlaceAsync(jobs);
 		const runRequest = { runBudgetMs: this.timeout, vmParallel };
 		const { placeFile } = place;
 		const deadline = this.deadlineFor(place.workDirectory);
@@ -345,13 +347,13 @@ export class StudioCliBackend implements Backend {
 	 * LoadString gate passes. Coverage runs skip this and open the instrumented
 	 * place instead.
 	 */
-	private buildCleanPlace(
+	private async buildCleanPlaceAsync(
 		primary: ProjectJob,
 		rootDirectory: string,
 		workDirectory: string,
-	): string {
+	): Promise<string> {
 		const placeFile = path.join(workDirectory, PLACE_FILE);
-		this.buildPlace({
+		await this.buildPlaceAsync({
 			loadStringEnabled: true,
 			packages: [
 				{
@@ -377,7 +379,7 @@ export class StudioCliBackend implements Backend {
 	 * Resolve the place Studio opens for this run and the scratch directory its
 	 * bootstrap/output files live in, creating both as needed.
 	 */
-	private prepareRunPlace(jobs: Array<ProjectJob>): RunPlace {
+	private async prepareRunPlaceAsync(jobs: Array<ProjectJob>): Promise<RunPlace> {
 		// jobs[0] is the per-run knob source (rootDir, rojoProject, timeout).
 		// eslint-disable-next-line ts/no-non-null-assertion -- assertSerialJobs checked length
 		const primary = jobs[0]!;
@@ -410,7 +412,7 @@ export class StudioCliBackend implements Backend {
 
 		return {
 			isWorkspace,
-			placeFile: this.buildCleanPlace(primary, rootDirectory, workDirectory),
+			placeFile: await this.buildCleanPlaceAsync(primary, rootDirectory, workDirectory),
 			workDirectory,
 		};
 	}

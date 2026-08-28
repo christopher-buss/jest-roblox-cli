@@ -25,7 +25,7 @@ import {
 	syncStubsToShadowDirectory,
 } from "../config/stubs.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
-import { prepareCoverage, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
+import { prepareCoverageAsync, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import { type ExecuteResult, runProjectsAsync } from "../executor.ts";
 import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
 import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
@@ -34,7 +34,7 @@ import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { runTypecheckAsync } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { buildWithRojo } from "../utils/rojo-builder.ts";
+import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import { runMultiProjectAsync } from "./multi.ts";
 
 vi.mock(import("node:fs"), async () => {
@@ -57,14 +57,14 @@ vi.mock(import("../typecheck/runner"));
 vi.mock(import("../staging/synthesizer"));
 
 const mocks = {
-	buildWithRojo: vi.mocked(buildWithRojo),
+	buildWithRojoAsync: vi.mocked(buildWithRojoAsync),
 	cleanLeftoverStubs: vi.mocked(cleanLeftoverStubs),
 	createSetupResolver: vi.mocked(createSetupResolver),
 	extractStaticRoot: vi.mocked(extractStaticRoot),
 	filterProjectsByFiles: vi.mocked(filterProjectsByFiles),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
 	hasUserAuthoredConfig: vi.mocked(hasUserAuthoredConfig),
-	prepareCoverage: vi.mocked(prepareCoverage),
+	prepareCoverageAsync: vi.mocked(prepareCoverageAsync),
 	resolveAllProjects: vi.mocked(resolveAllProjects),
 	resolveAllTsconfigMappings: vi.mocked(resolveAllTsconfigMappings),
 	resolveBackend: vi.mocked(resolveBackendAsync),
@@ -226,7 +226,7 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	);
 	// The Place Builder hashes the `.rbxl` after building, so the rojo mock
 	// must leave an artifact on disk for `hashFile` to read.
-	mocks.buildWithRojo.mockImplementation((_projectPath, outputPath) => {
+	mocks.buildWithRojoAsync.mockImplementation(async (_projectPath, outputPath) => {
 		vol.mkdirSync(path.dirname(outputPath), { recursive: true });
 		vol.writeFileSync(outputPath, "RBXL");
 	});
@@ -488,7 +488,7 @@ describe(runMultiProjectAsync, () => {
 		expect(synthArgs.packages[0]!.rojoProjectPath).toContain("default.project.json");
 	});
 
-	it("should call buildWithRojo when coverage is disabled and backend is open-cloud", async () => {
+	it("should call buildWithRojoAsync when coverage is disabled and backend is open-cloud", async () => {
 		expect.assertions(5);
 
 		const { config } = setupDefaults();
@@ -507,7 +507,7 @@ describe(runMultiProjectAsync, () => {
 		});
 
 		expect({
-			buildCalls: mocks.buildWithRojo.mock.calls.length,
+			buildCalls: mocks.buildWithRojoAsync.mock.calls.length,
 			synthesizeCalls: mocks.synthesize.mock.calls.length,
 		}).toStrictEqual({ buildCalls: 1, synthesizeCalls: 1 });
 
@@ -515,7 +515,7 @@ describe(runMultiProjectAsync, () => {
 
 		expect({
 			name: synth.packages[0]!.name,
-			projectPath: mocks.buildWithRojo.mock.calls[0]![0],
+			projectPath: mocks.buildWithRojoAsync.mock.calls[0]![0],
 			wrap: synth.wrap,
 		}).toStrictEqual({
 			name: "multi-project",
@@ -527,16 +527,20 @@ describe(runMultiProjectAsync, () => {
 			names: recorded.names,
 			records: recorded.records,
 		}).toStrictEqual({
-			asyncNames: ["resolveAllProjects", "resolveBackend", "runProjects"],
+			asyncNames: [
+				"resolveAllProjects",
+				"prepareCoverage",
+				"resolveBackend",
+				"buildOpenCloudPlace",
+				"runProjects",
+			],
 			names: [
 				"loadRojoTree",
 				"resolveSetupFilePaths",
 				"selectProjects",
 				"cleanLeftoverStubs",
 				"generateProjectStubs",
-				"prepareCoverage",
 				"collectPendingJobs",
-				"buildOpenCloudPlace",
 			],
 			records: [],
 		});
@@ -573,7 +577,7 @@ describe(runMultiProjectAsync, () => {
 		});
 	});
 
-	it("should skip buildWithRojo entirely when backend is studio", async () => {
+	it("should skip buildWithRojoAsync entirely when backend is studio", async () => {
 		expect.assertions(2);
 
 		const { config } = setupDefaults();
@@ -587,15 +591,15 @@ describe(runMultiProjectAsync, () => {
 			rawProjects: [makeProjectEntry("client")],
 		});
 
-		expect(mocks.buildWithRojo).not.toHaveBeenCalled();
+		expect(mocks.buildWithRojoAsync).not.toHaveBeenCalled();
 		expect(mocks.synthesize).not.toHaveBeenCalled();
 	});
 
-	it("should skip buildWithRojo and prepare coverage when collectCoverage is true", async () => {
+	it("should skip buildWithRojoAsync and prepare coverage when collectCoverage is true", async () => {
 		expect.assertions(3);
 
 		const { config } = setupDefaults({ collectCoverage: true });
-		mocks.prepareCoverage.mockReturnValue({
+		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},
@@ -623,8 +627,8 @@ describe(runMultiProjectAsync, () => {
 			rawProjects: [makeProjectEntry("client")],
 		});
 
-		expect(mocks.buildWithRojo).not.toHaveBeenCalled();
-		expect(mocks.prepareCoverage).toHaveBeenCalledOnce();
+		expect(mocks.buildWithRojoAsync).not.toHaveBeenCalled();
+		expect(mocks.prepareCoverageAsync).toHaveBeenCalledOnce();
 		expect(result.coverageMs).toBeGreaterThanOrEqual(0);
 	});
 
@@ -635,7 +639,7 @@ describe(runMultiProjectAsync, () => {
 		// Frozen: the stub sweep must contribute nothing, so the only staging
 		// left is the place build the coverage bake reports.
 		vi.spyOn(Date, "now").mockReturnValue(1_000);
-		mocks.prepareCoverage.mockReturnValue({
+		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},
@@ -701,7 +705,7 @@ describe(runMultiProjectAsync, () => {
 		// duration is to move the clock from inside it.
 		let clock = 1_000;
 		vi.spyOn(Date, "now").mockImplementation(() => clock);
-		mocks.buildWithRojo.mockImplementation((_projectPath, outputPath) => {
+		mocks.buildWithRojoAsync.mockImplementation(async (_projectPath, outputPath) => {
 			clock += 250;
 			vol.mkdirSync(path.dirname(outputPath), { recursive: true });
 			vol.writeFileSync(outputPath, "RBXL");
@@ -722,7 +726,7 @@ describe(runMultiProjectAsync, () => {
 		expect.assertions(1);
 
 		const { config } = setupDefaults({ collectCoverage: true });
-		mocks.prepareCoverage.mockReturnValue({
+		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},
@@ -766,7 +770,7 @@ describe(runMultiProjectAsync, () => {
 
 		const { config } = setupDefaults({ collectCoverage: true });
 		mocks.syncStubsToShadowDirectory.mockReturnValue(false);
-		mocks.prepareCoverage.mockImplementation((_config, options) => {
+		mocks.prepareCoverageAsync.mockImplementation(async (_config, options) => {
 			options!.beforeBuild!({
 				mountedDirectory: (relative) => `.jest-roblox/coverage/${relative}`,
 				root: ".jest-roblox/coverage",
@@ -816,7 +820,7 @@ describe(runMultiProjectAsync, () => {
 		// `config/projects` is auto-mocked here, so the derivation has no static
 		// root to work from unless this one is given back.
 		mocks.extractStaticRoot.mockReturnValue({ glob: "**/*.spec.ts", root: "src/client" });
-		mocks.prepareCoverage.mockReturnValue({
+		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},
@@ -847,7 +851,7 @@ describe(runMultiProjectAsync, () => {
 		// The report narrows by the derived set whether or not the user set
 		// `collectCoverageFrom`; instrumentation has to see the same value, or
 		// the default path probes files no report will ever ask about.
-		expect(mocks.prepareCoverage).toHaveBeenCalledWith(
+		expect(mocks.prepareCoverageAsync).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({
 				coverageInclude: expect.arrayContaining(["src/client/**/*.ts"]),
@@ -865,7 +869,7 @@ describe(runMultiProjectAsync, () => {
 		expect.assertions(2);
 
 		const { config } = setupDefaults({ backend: "studio-cli", collectCoverage: true });
-		mocks.prepareCoverage.mockImplementation((_config, options) => {
+		mocks.prepareCoverageAsync.mockImplementation(async (_config, options) => {
 			// The absent hook *is* the contract: no `beforeBuild`, no stub bake.
 			expect(options!.beforeBuild).toBeUndefined();
 
@@ -1407,7 +1411,7 @@ describe(runMultiProjectAsync, () => {
 			collectCoverage: true,
 			typecheck: { enabled: true },
 		});
-		mocks.prepareCoverage.mockReturnValue({
+		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
 			files: {},

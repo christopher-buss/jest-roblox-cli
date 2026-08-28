@@ -21,7 +21,7 @@ import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import { runSingleOrMultiAsync } from "../run.ts";
 import { loadRojoTree } from "../run/multi.ts";
 import { collectStubMounts } from "../run/staging.ts";
-import { buildPlace } from "../staging/place-builder.ts";
+import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import { createTimingCollector } from "../timing/orchestration-collector.ts";
 
@@ -148,7 +148,7 @@ async function buildCleanPlaceAsync(config: ResolvedConfig): Promise<BuildManife
 		descriptor.stubMounts = collectStubMounts(projects, config.rootDir, cacheRoot);
 	}
 
-	return buildPlace({
+	return buildPlaceAsync({
 		packages: [descriptor],
 		placeFile: CLEAN_PLACE_FILE,
 		projectFile: CLEAN_PROJECT_FILE,

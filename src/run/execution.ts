@@ -10,7 +10,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import { type ProjectInput, runProjectsAsync } from "../executor.ts";
 import { describePlaceFile } from "../progress/stages.ts";
-import { buildPlace } from "../staging/place-builder.ts";
+import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheckPassAsync as runGroupedTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
@@ -145,17 +145,17 @@ async function runJobsAsync({
 	});
 }
 
-function buildOpenCloudPlace(
+async function buildOpenCloudPlaceAsync(
 	rootConfig: ResolvedConfig,
 	projects: Array<ResolvedProjectConfig>,
 	cacheRoot: string,
-): void {
+): Promise<void> {
 	const userRojoProjectPath = path.resolve(
 		rootConfig.rootDir,
 		rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
 	);
 
-	buildPlace({
+	await buildPlaceAsync({
 		packages: [
 			{
 				name: "multi-project",
@@ -180,15 +180,18 @@ function buildOpenCloudPlace(
  * instrumented place, and `stageRun` charged that build to staging too, so the
  * two paths report the same phase under the same name.
  */
-function buildPlaceForBackend(backend: Backend, { discovery, staged }: ExecutionInput): number {
+async function buildPlaceForBackendAsync(
+	backend: Backend,
+	{ discovery, staged }: ExecutionInput,
+): Promise<number> {
 	const { projects, rootConfig, timing } = discovery;
 	if (rootConfig.collectCoverage || backend.kind !== "open-cloud") {
 		return 0;
 	}
 
 	const start = Date.now();
-	timing.profile("buildOpenCloudPlace", () => {
-		buildOpenCloudPlace(rootConfig, projects, staged.cacheRoot);
+	await timing.profileAsync("buildOpenCloudPlace", async () => {
+		await buildOpenCloudPlaceAsync(rootConfig, projects, staged.cacheRoot);
 		// Inside the span: closing it closes the stage, and a size handed over
 		// after that arrives too late to reach the line the stage prints.
 		timing.progress.describe("build", describePlaceFile(resolvePlaceFilePath(rootConfig)));
@@ -224,7 +227,7 @@ async function runAgainstBackendAsync(
 ): Promise<ExecutionOutcome> {
 	const { discovery, plan, staged } = input;
 	const { cliTypecheck, rootConfig, timing } = discovery;
-	const placeBuildMs = buildPlaceForBackend(backend, input);
+	const placeBuildMs = await buildPlaceForBackendAsync(backend, input);
 
 	if (plan.jobs.length > 0) {
 		emitRunHeader({

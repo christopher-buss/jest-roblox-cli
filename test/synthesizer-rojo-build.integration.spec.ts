@@ -9,7 +9,7 @@ import { createCopyIgnoreMatcher } from "../src/coverage-pipeline/discover-files
 import { prepareSpine, resolveSpineDirectories } from "../src/coverage-pipeline/spine.ts";
 import { synthesize } from "../src/staging/synthesizer.ts";
 import { normalizeWindowsPath } from "../src/utils/normalize-windows-path.ts";
-import { buildWithRojo } from "../src/utils/rojo-builder.ts";
+import { buildWithRojoAsync } from "../src/utils/rojo-builder.ts";
 
 function rojoOnPath(): boolean {
 	try {
@@ -75,7 +75,7 @@ function childNames(node: SourcemapNode): Array<string> {
 describe("synthesizer + rojo build integration", () => {
 	it.skipIf(!rojoOnPath())(
 		"should produce a project.json that rojo can build into a valid rbxl",
-		() => {
+		async () => {
 			expect.assertions(2);
 
 			const workspace = createTemporaryDirectory();
@@ -109,7 +109,7 @@ describe("synthesizer + rojo build integration", () => {
 			const synthRbxlPath = path.join(synthDirectory, "synthesized.rbxl");
 			fs.writeFileSync(synthProjectPath, synthesized);
 
-			buildWithRojo(synthProjectPath, synthRbxlPath);
+			await buildWithRojoAsync(synthProjectPath, synthRbxlPath);
 
 			expect(fs.existsSync(synthRbxlPath)).toBeTrue();
 			expect(fs.statSync(synthRbxlPath).size).toBeGreaterThan(0);
