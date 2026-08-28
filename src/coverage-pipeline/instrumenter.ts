@@ -10,6 +10,7 @@ import type { CollectorResult } from "./coverage-collector.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
 import { writeCoverageMap } from "./coverage-map.ts";
+import type { CopyIgnoreMatcher } from "./discover-files.ts";
 import { discoverRootFiles } from "./discover-files.ts";
 import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
 import { MANIFEST_VERSION, writeManifest } from "./manifest.ts";
@@ -20,6 +21,13 @@ export const INSTRUMENTER_VERSION = 4;
 const LUAU_EXTENSION = /\.luau?$/;
 
 export interface InstrumentRootOptions {
+	/**
+	 * Paths the shadow never carries, relative to `luauRoot`. Asked here as
+	 * well as at the copy so an ignored module is never probed into existence
+	 * behind the copy's back — the standalone `instrument` subcommand, which
+	 * builds no shadow to keep in step, leaves it out.
+	 */
+	isCopyIgnored?: CopyIgnoreMatcher | undefined;
 	luauRoot: string;
 	shadowDir: string;
 	/**
@@ -62,11 +70,11 @@ interface InstrumentFileContext {
  * writing a manifest — used by `prepareCoverage()` to merge multiple roots.
  */
 export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest["files"] {
-	const { luauRoot, shadowDir, skipFiles } = options;
+	const { isCopyIgnored, luauRoot, shadowDir, skipFiles } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 
 	const fileList = timing.profile("discover-files", () => {
-		return [...discoverRootFiles(luauRoot).instrumentable];
+		return [...discoverRootFiles(luauRoot, { isCopyIgnored }).instrumentable];
 	});
 
 	const files: CoverageManifest["files"] = {};

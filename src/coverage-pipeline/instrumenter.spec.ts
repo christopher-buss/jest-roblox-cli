@@ -6,6 +6,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createTimingCollector } from "../timing/orchestration-collector.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { createCopyIgnoreMatcher } from "./discover-files.ts";
 import { instrument, instrumentRoot } from "./instrumenter.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";
 
@@ -81,6 +82,40 @@ describe(instrumentRoot, () => {
 			expect(keys.map(readEmbeddedFileKey)).toStrictEqual(
 				keys.map((key) => JSON.stringify(key)),
 			);
+		});
+	});
+
+	// The shadow tree carries no `.luau.map`: `coverageCopyIgnorePatterns`
+	// leaves them behind because every reader opens the one in `outDir`. This
+	// pins the coverage half of that — the stack mapper's half holds because a
+	// coverage run swaps only `placeFile`, never `rojoProject`.
+	it("should record each source map against the source root, not the shadow", () => {
+		expect.assertions(1);
+
+		setupFilesystem({ files: { "init.luau": "local x = 1\n" } });
+
+		const files = instrumentRoot({ luauRoot: "/luau-root", shadowDir: "/shadow" });
+
+		expect(Object.values(files).map((record) => record.sourceMapPath)).toStrictEqual([
+			"/luau-root/init.luau.map",
+		]);
+	});
+
+	describe("when copy-ignored paths are provided", () => {
+		it("should never instrument a path the shadow will not carry", () => {
+			expect.assertions(1);
+
+			setupFilesystem({
+				files: { "init.luau": "local x = 1\n", "vendor/dep.luau": "local y = 2\n" },
+			});
+
+			const files = instrumentRoot({
+				isCopyIgnored: createCopyIgnoreMatcher(["vendor", "vendor/**"]),
+				luauRoot: "/luau-root",
+				shadowDir: "/shadow",
+			});
+
+			expect(Object.keys(files)).toStrictEqual(["/luau-root/init.luau"]);
 		});
 	});
 

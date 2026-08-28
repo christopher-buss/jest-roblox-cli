@@ -79,6 +79,11 @@ function buildPackageDescriptor(
 	// default; an undefined descriptor field means "inherit
 	// DEFAULT_CONFIG" inside `prepareWorkspaceCoverage`.
 	const hasExplicitCoverageCache = packageConfig.coverageCache !== DEFAULT_CONFIG.coverageCache;
+	// `coverageCopyIgnorePatterns` is read the same way — a non-empty
+	// `DEFAULT_CONFIG` array, so reference identity is again the "user set
+	// this" signal.
+	const hasExplicitCopyIgnore =
+		packageConfig.coverageCopyIgnorePatterns !== DEFAULT_CONFIG.coverageCopyIgnorePatterns;
 
 	const descriptor: PackageDescriptor = {
 		name: info.name,
@@ -92,6 +97,10 @@ function buildPackageDescriptor(
 	};
 	if (hasExplicitCoverageCache) {
 		descriptor.coverageCache = packageConfig.coverageCache;
+	}
+
+	if (hasExplicitCopyIgnore) {
+		descriptor.coverageCopyIgnorePatterns = packageConfig.coverageCopyIgnorePatterns;
 	}
 
 	if (hasExplicitIgnore) {

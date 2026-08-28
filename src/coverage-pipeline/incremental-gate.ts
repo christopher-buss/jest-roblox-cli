@@ -3,6 +3,8 @@ import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type { CoverageManifest } from "./manifest.ts";
 
 export interface ReuseCoverageManifestOptions {
+	/** Digest of the copy-ignore list this run will mirror against. */
+	copyIgnoreHash: string;
 	/** The `coverageCache` knob, already resolved for this mode. */
 	coverageCache: boolean;
 	/** The universe this run will instrument against, if any. */
@@ -20,19 +22,25 @@ export interface ReuseCoverageManifestOptions {
  *
  * `false` means the caller must wipe the shadow tree and start cold. Nothing
  * here can be repaired incrementally: a bumped instrumenter writes different
- * probes into files whose source hashes never moved, and a narrowed universe
+ * probes into files whose source hashes never moved, a narrowed universe
  * demotes a file from instrumented to mirrored while its source hash likewise
- * stays put.
+ * stays put, and a widened copy-ignore list demotes one from mirrored to absent
+ * the same way — while the counts the warm path reasons about are drawn from a
+ * manifest the old list wrote.
  */
 export function canReuseCoverageManifest(
 	previousManifest: CoverageManifest | undefined,
-	{ coverageCache, universe }: ReuseCoverageManifestOptions,
+	{ copyIgnoreHash, coverageCache, universe }: ReuseCoverageManifestOptions,
 ): previousManifest is CoverageManifest {
 	if (!coverageCache || previousManifest === undefined) {
 		return false;
 	}
 
 	if (previousManifest.instrumenterVersion !== INSTRUMENTER_VERSION) {
+		return false;
+	}
+
+	if (previousManifest.copyIgnoreHash !== copyIgnoreHash) {
 		return false;
 	}
 

@@ -22,6 +22,8 @@ import type {
 	CoverageArtifacts,
 } from "./build-manifest.ts";
 import { BUILD_MANIFEST_FILE, readBuildManifest, toBuildManifestFiles } from "./build-manifest.ts";
+import type { CopyIgnoreMatcher } from "./discover-files.ts";
+import { createCopyIgnoreMatcher, hashCopyIgnorePatterns } from "./discover-files.ts";
 import { canReuseCoverageManifest } from "./incremental-gate.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
 import { createInstrumentUniverse } from "./instrument-universe.ts";
@@ -88,6 +90,7 @@ export interface PrepareCoverageOptions {
 interface WriteManifestOptions {
 	allFiles: Record<string, InstrumentedFileRecord>;
 	buildId: string;
+	copyIgnoreHash: string;
 	coverageUniverseHash: string | undefined;
 	luauRoots: Array<string>;
 	manifestPath: string;
@@ -110,11 +113,15 @@ interface PriorPlaceReuse {
 /** Everything resolved from config before any shadow dir is touched. */
 interface CoverageInputs {
 	buildManifestPath: string;
+	/** Digest of the copy-ignore list, for the incremental gate. */
+	copyIgnoreHash: string;
 	/**
 	 * `false` when the rojo inputs could not be hashed, which turns the
 	 * inputs-drift check off rather than forcing a rebuild.
 	 */
 	hasResolvedInputs: boolean;
+	/** The compiled `coverageCopyIgnorePatterns` gate for every root. */
+	isCopyIgnored: CopyIgnoreMatcher;
 	luauRoots: Array<string>;
 	manifestPath: string;
 	previousManifest: CoverageManifest | undefined;
@@ -419,7 +426,9 @@ function resolveCoverageInputs(
 
 	return {
 		buildManifestPath: path.join(COVERAGE_DIR, BUILD_MANIFEST_FILE),
+		copyIgnoreHash: hashCopyIgnorePatterns(config.coverageCopyIgnorePatterns),
 		hasResolvedInputs,
+		isCopyIgnored: createCopyIgnoreMatcher(config.coverageCopyIgnorePatterns),
 		luauRoots,
 		manifestPath,
 		previousManifest: loadCoverageManifest(manifestPath),
@@ -450,9 +459,10 @@ function hasDroppedLuauRoot(previous: Array<string>, current: Array<string>): bo
  */
 function decideIncremental(
 	config: ResolvedConfig,
-	{ luauRoots, previousManifest, universe }: CoverageInputs,
+	{ copyIgnoreHash, luauRoots, previousManifest, universe }: CoverageInputs,
 ): boolean {
 	let isIncremental = canReuseCoverageManifest(previousManifest, {
+		copyIgnoreHash,
 		coverageCache: config.coverageCache,
 		universe,
 	});
@@ -479,7 +489,7 @@ function decideIncremental(
 
 /** Instrument every luauRoot into its shadow dir and merge the results. */
 function prepareShadowRoots(
-	{ luauRoots, previousManifest, universe }: CoverageInputs,
+	{ isCopyIgnored, luauRoots, previousManifest, universe }: CoverageInputs,
 	isIncremental: boolean,
 ): ShadowRootsResult {
 	const files: Record<string, InstrumentedFileRecord> = {};
@@ -490,6 +500,7 @@ function prepareShadowRoots(
 	for (const luauRoot of luauRoots) {
 		const shadowDirectory = normalizeWindowsPath(path.join(COVERAGE_DIR, luauRoot));
 		const result = prepareShadowRoot({
+			isCopyIgnored,
 			luauRoot,
 			previousManifest,
 			shadowDir: shadowDirectory,
@@ -641,6 +652,7 @@ function buildRojoProject(
 function buildAndWriteManifest({
 	allFiles,
 	buildId,
+	copyIgnoreHash,
 	coverageUniverseHash,
 	luauRoots,
 	manifestPath,
@@ -651,6 +663,7 @@ function buildAndWriteManifest({
 	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
 		buildId,
+		copyIgnoreHash,
 		coverageUniverseHash,
 		files: allFiles,
 		generatedAt: generatedAtDate.toISOString(),
@@ -692,6 +705,7 @@ function buildCoveragePlaceAndManifest(
 	const manifest = buildAndWriteManifest({
 		allFiles: shadow.files,
 		buildId,
+		copyIgnoreHash: inputs.copyIgnoreHash,
 		coverageUniverseHash: inputs.universe?.digest,
 		luauRoots: inputs.luauRoots,
 		manifestPath: inputs.manifestPath,

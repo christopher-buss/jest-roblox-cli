@@ -225,6 +225,16 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("coverageDirectory");
 	});
 
+	it("should not pass coverageCopyIgnorePatterns to Jest argv", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(
+			createOptions({ config: { coverageCopyIgnorePatterns: ["**/*.d.ts"] } }),
+		);
+
+		expect(argv).not.toHaveProperty("coverageCopyIgnorePatterns");
+	});
+
 	it("should not pass coveragePathIgnorePatterns to Jest argv", () => {
 		expect.assertions(1);
 

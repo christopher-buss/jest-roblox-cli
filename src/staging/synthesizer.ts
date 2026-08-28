@@ -39,6 +39,12 @@ export interface PackageDescriptor {
 	 */
 	coverageCache?: boolean | undefined;
 	/**
+	 * Per-package `coverageCopyIgnorePatterns`, forwarded to
+	 * `prepareWorkspaceCoverage` so the shadow tree leaves out what this
+	 * package's config says it should. Not read by synthesis itself.
+	 */
+	coverageCopyIgnorePatterns?: Array<string> | undefined;
+	/**
 	 * Per-package coverage ignore patterns, forwarded to
 	 * `prepareWorkspaceCoverage` so the matcher reflects the merged pkgConfig
 	 * instead of the workspace-root default. Not read by synthesis itself.

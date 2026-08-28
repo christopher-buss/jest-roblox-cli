@@ -68,6 +68,15 @@ export interface CoverageManifest {
 	/** Shared UUID linking this manifest to its sibling `BuildManifest`. */
 	buildId: string;
 	/**
+	 * Digest of the `coverageCopyIgnorePatterns` that decided what this shadow
+	 * carries, per `hashCopyIgnorePatterns`. The incremental cache rebuilds on
+	 * a mismatch: a widened list demotes a file the shadow already holds while
+	 * its source hash stays put, exactly as a narrowed universe does. Absent on
+	 * manifests written before this field existed, which reads as changed and
+	 * repopulates it on the next run.
+	 */
+	copyIgnoreHash?: string | undefined;
+	/**
 	 * Digest of the `collectCoverageFrom` / `coveragePathIgnorePatterns` pair
 	 * that decided which files were instrumented, per
 	 * `createInstrumentUniverse`. Absent when the config narrowed nothing, so
@@ -131,6 +140,7 @@ const nonInstrumentedRecordSchema = type({
 
 export const manifestSchema: type<CoverageManifest> = type({
 	"buildId": "string",
+	"copyIgnoreHash?": "string",
 	"coverageUniverseHash?": "string",
 	"files": type({ "[string]": instrumentedFileRecordSchema }),
 	"generatedAt": "string",

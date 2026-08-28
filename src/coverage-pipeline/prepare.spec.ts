@@ -12,7 +12,11 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
-import { discoverRootFiles } from "./discover-files.ts";
+import {
+	createCopyIgnoreMatcher,
+	discoverRootFiles,
+	hashCopyIgnorePatterns,
+} from "./discover-files.ts";
 import { createInstrumentUniverse } from "./instrument-universe.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type {
@@ -37,6 +41,8 @@ vi.mock(import("node:fs"), async () => {
 vi.mock(import("./instrumenter"));
 vi.mock(import("../utils/rojo-builder"));
 vi.mock(import("get-tsconfig"));
+
+const DEFAULT_COPY_IGNORE_HASH = hashCopyIgnorePatterns(DEFAULT_CONFIG.coverageCopyIgnorePatterns);
 
 const COVERED_FILE = "out-tsc/test/init.luau";
 const UNCOVERED_FILE = "out-tsc/test/ui/button.luau";
@@ -233,6 +239,88 @@ describe(prepareCoverage, () => {
 			expect(vol.readFileSync(".jest-roblox/coverage/out-tsc/test/init.luau", "utf-8")).toBe(
 				"local x = 1",
 			);
+		});
+
+		it("should honour the ignore list when luauRoots carries a trailing slash", async () => {
+			expect.assertions(2);
+
+			seedFilesystem();
+			vol.writeFileSync("out-tsc/test/init.d.ts", "export {};");
+			await setupMocksAsync();
+
+			// `path.join` collapses the separator, so a naive prefix slice lands
+			// a character in and every relative path comes out mangled.
+			const config = makeConfig({ luauRoots: ["out-tsc/test/"] });
+
+			prepareCoverage(config);
+
+			expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/init.luau")).toBeTrue();
+			expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/init.d.ts")).toBeFalse();
+		});
+
+		it("should leave declaration artifacts out of the shadow directory", async () => {
+			expect.assertions(2);
+
+			seedFilesystem();
+			// One fixture per default. `.luau.map` earns its own: every reader
+			// of a source map opens the one in `outDir`, so the shadow copy is
+			// dead weight — but nothing else here would notice it being copied.
+			vol.writeFileSync("out-tsc/test/init.d.ts", "export {};");
+			vol.writeFileSync("out-tsc/test/init.d.ts.map", "{}");
+			vol.writeFileSync("out-tsc/test/init.luau.map", "{}");
+			await setupMocksAsync();
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			const result = prepareCoverage(config);
+
+			const ignored = [
+				"out-tsc/test/init.d.ts",
+				"out-tsc/test/init.d.ts.map",
+				"out-tsc/test/init.luau.map",
+			];
+
+			expect(
+				ignored.filter((relativePath) => {
+					return vol.existsSync(`.jest-roblox/coverage/${relativePath}`);
+				}),
+			).toStrictEqual([]);
+			expect(Object.keys(result.manifest.nonInstrumentedFiles)).not.toIncludeAnyMembers(
+				ignored,
+			);
+		});
+
+		it("should keep an ignored directory out of the shadow on a cold run", async () => {
+			expect.assertions(1);
+
+			seedFilesystem();
+			vol.mkdirSync("out-tsc/test/vendor", { recursive: true });
+			vol.writeFileSync("out-tsc/test/vendor/dep.meta.json", "{}");
+			await setupMocksAsync();
+			const config = makeConfig({
+				coverageCopyIgnorePatterns: ["vendor", "vendor/**"],
+				luauRoots: ["out-tsc/test"],
+			});
+
+			prepareCoverage(config);
+
+			expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/vendor")).toBeFalse();
+		});
+
+		it("should mirror declaration artifacts when the ignore list is emptied", async () => {
+			expect.assertions(2);
+
+			seedFilesystem();
+			vol.writeFileSync("out-tsc/test/init.d.ts", "export {};");
+			await setupMocksAsync();
+			const config = makeConfig({
+				coverageCopyIgnorePatterns: [],
+				luauRoots: ["out-tsc/test"],
+			});
+
+			const result = prepareCoverage(config);
+
+			expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/init.d.ts")).toBeTrue();
+			expect(result.manifest.nonInstrumentedFiles).toHaveProperty("out-tsc/test/init.d.ts");
 		});
 	});
 
@@ -715,11 +803,18 @@ describe(prepareCoverage, () => {
 			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
 			vol.writeFileSync(
 				".jest-roblox/coverage/coverage-manifest.json",
-				JSON.stringify({ buildId: "prev-build-id", ...manifest }),
+				// The digest of the config these scenarios run under. Without it
+				// every incremental case would gate itself onto the cold path.
+				JSON.stringify({
+					buildId: "prev-build-id",
+					copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
+					...manifest,
+				}),
 			);
 		}
 
 		function seedIncrementalScenario({
+			copyIgnoreHash = DEFAULT_COPY_IGNORE_HASH,
 			fileContents = { "out-tsc/test/init.luau": "local x = 1" },
 			previousFiles = {
 				"out-tsc/test/init.luau": makeFileRecord({
@@ -730,6 +825,7 @@ describe(prepareCoverage, () => {
 			previousNonInstrumentedFiles = {},
 			previousPlaceFilePath = ".jest-roblox/coverage/game.rbxl",
 		}: {
+			copyIgnoreHash?: string;
 			fileContents?: Record<string, string>;
 			previousFiles?: Record<string, InstrumentedFileRecord>;
 			previousInstrumenterVersion?: number;
@@ -771,6 +867,7 @@ describe(prepareCoverage, () => {
 			}
 
 			seedPreviousManifest({
+				copyIgnoreHash,
 				files: previousFiles,
 				generatedAt: isoNow(),
 				instrumenterVersion: previousInstrumenterVersion,
@@ -1683,6 +1780,114 @@ describe(prepareCoverage, () => {
 				expect(
 					result.manifest.nonInstrumentedFiles["out-tsc/test/init.meta.json"],
 				).toBeDefined();
+			});
+
+			// The three failure shapes a warm run takes when the copy-ignore
+			// list moves under it: a carried-forward record for a file the
+			// reconcile just deleted, an orphan cov-map keeping that file in
+			// the report at 0%, and — the hard one — a new file lost entirely
+			// because `instrumentable.size` cancelled against a newly-ignored
+			// one and faked a full cache hit. All three are the same bug: the
+			// warm path reasons from counts a manifest the old list wrote.
+			it("should rebuild cold when the copy-ignore list changed since the manifest", async () => {
+				expect.assertions(2);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+
+				const result = prepareCoverage(
+					makeConfig({
+						coverageCopyIgnorePatterns: ["init.luau"],
+						luauRoots: ["out-tsc/test"],
+					}),
+				);
+
+				// Warm, the previous record would be carried forward for a file
+				// the reconcile then deletes — and the report would zero-fill it
+				// against a place that no longer loads it.
+				expect(result.manifest.files).not.toHaveProperty("out-tsc/test/init.luau");
+				// Warm, `instrumentable.size === previousCount` can cancel a
+				// newly-ignored file against a newly-added one and short-circuit
+				// into a full cache hit, which never instruments at all.
+				expect(instrumentRoot).toHaveBeenCalledOnce();
+			});
+
+			it("should reuse the cache when the copy-ignore list only reorders", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+
+				// The matcher ORs the list, so the order cannot change what is
+				// ignored — and a digest that moved anyway would spend a cold
+				// rebuild on a no-op config edit.
+				prepareCoverage(
+					makeConfig({
+						coverageCopyIgnorePatterns: [
+							...DEFAULT_CONFIG.coverageCopyIgnorePatterns,
+						].toReversed(),
+						luauRoots: ["out-tsc/test"],
+					}),
+				);
+
+				expect(instrumentRoot).not.toHaveBeenCalled();
+			});
+
+			it("should keep a cov-map sidecar a user JSON pattern would match", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					copyIgnoreHash: hashCopyIgnorePatterns(["**/*.json"]),
+				});
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/init.cov-map.json", "{}");
+
+				// The sidecar is instrumenter output, not a copy, so the list
+				// has no say over it. Deleting it would leave the manifest
+				// record pointing at a missing map, and the report drops that
+				// module without saying so.
+				prepareCoverage(
+					makeConfig({
+						coverageCopyIgnorePatterns: ["**/*.json"],
+						luauRoots: ["out-tsc/test"],
+					}),
+				);
+
+				expect(
+					vol.existsSync(".jest-roblox/coverage/out-tsc/test/init.cov-map.json"),
+				).toBeTrue();
+			});
+
+			it("should remove declaration artifacts an earlier run copied in", async () => {
+				expect.assertions(2);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/init.d.ts": "export {};",
+						"out-tsc/test/init.d.ts.map": "{}",
+						"out-tsc/test/init.luau": "local x = 1",
+					},
+				});
+				// Copied in by a cold run that predates the exclusion. Both
+				// sources still exist, so only the artifact rule can drop them.
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/init.d.ts", "export {};");
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/init.d.ts.map", "{}");
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(vol.existsSync(".jest-roblox/coverage/out-tsc/test/init.d.ts")).toBeFalse();
+				expect(
+					vol.existsSync(".jest-roblox/coverage/out-tsc/test/init.d.ts.map"),
+				).toBeFalse();
 			});
 
 			it("should remove an orphaned cov-map sidecar when its base source is gone", async () => {
@@ -2699,6 +2904,24 @@ describe(discoverRootFiles, () => {
 		expect(discoverRootFiles("out").excluded).toStrictEqual(new Set());
 	});
 
+	it("should leave a copy-ignored prod file out of both sets", () => {
+		expect.assertions(2);
+
+		setup();
+		vol.mkdirSync("out/vendor", { recursive: true });
+		vol.writeFileSync("out/player.luau", "");
+		vol.writeFileSync("out/vendor/dep.luau", "");
+
+		// Neither probed nor mirrored: the instrumenter reads this same split,
+		// so a path missing here is a path nothing writes into the shadow.
+		const result = discoverRootFiles("out", {
+			isCopyIgnored: createCopyIgnoreMatcher(["**/vendor/**", "vendor"]),
+		});
+
+		expect(result.instrumentable).toStrictEqual(new Set(["player.luau"]));
+		expect(result.excluded).toStrictEqual(new Set());
+	});
+
 	it("should split prod files by the coverage universe", () => {
 		expect.assertions(2);
 
@@ -2709,7 +2932,7 @@ describe(discoverRootFiles, () => {
 		vol.writeFileSync("out/ui/button.luau", "");
 
 		const universe = createInstrumentUniverse({ include: ["out/ecs/**/*.luau"] });
-		const result = discoverRootFiles("out", universe);
+		const result = discoverRootFiles("out", { universe });
 
 		expect(result.instrumentable).toStrictEqual(new Set(["ecs/move.luau"]));
 		expect(result.excluded).toStrictEqual(new Set(["ui/button.luau"]));

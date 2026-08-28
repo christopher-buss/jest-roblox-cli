@@ -7,9 +7,11 @@ import process from "node:process";
 import type { MockedFunction } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BuildManifest, BuildManifestArtifact } from "./build-manifest.ts";
 import { buildManifestSchema } from "./build-manifest.ts";
+import { hashCopyIgnorePatterns } from "./discover-files.ts";
 import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
 import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
 import { MANIFEST_VERSION, manifestSchema } from "./manifest.ts";
@@ -38,6 +40,8 @@ vi.mock(import("node:fs"), async () => {
 	return fromAny({ ...memfs.fs, cpSync: memfs.vol.cpSync.bind(memfs.vol), default: memfs.fs });
 });
 vi.mock(import("./instrumenter"));
+
+const DEFAULT_COPY_IGNORE_HASH = hashCopyIgnorePatterns(DEFAULT_CONFIG.coverageCopyIgnorePatterns);
 
 const WORKSPACE_ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(WORKSPACE_ROOT, "packages/foo");
@@ -400,6 +404,7 @@ describe(prepareWorkspaceCoverage, () => {
 			.replaceAll("\\", "/");
 		const previousManifest: CoverageManifest = {
 			buildId: "prev-build-id",
+			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 			files: {
 				[fileKey]: {
 					key: fileKey,
@@ -465,6 +470,7 @@ describe(prepareWorkspaceCoverage, () => {
 		const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 		const previousManifest: CoverageManifest = {
 			buildId: "prev-build-id",
+			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 			coverageUniverseHash: "a-different-universe",
 			files: {
 				[fileKey]: {
@@ -521,6 +527,7 @@ describe(prepareWorkspaceCoverage, () => {
 		const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 		const previousManifest: CoverageManifest = {
 			buildId: "prev-build-id",
+			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 			files: {
 				[fileKey]: {
 					key: fileKey,
@@ -628,6 +635,7 @@ describe(prepareWorkspaceCoverage, () => {
 			.replaceAll("\\", "/");
 		const previousManifest: CoverageManifest = {
 			buildId: "prev-build-id",
+			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 			files: {
 				[fileKey]: {
 					key: fileKey,
@@ -697,6 +705,7 @@ describe(prepareWorkspaceCoverage, () => {
 			.replaceAll("\\", "/");
 		const previousManifest: CoverageManifest = {
 			buildId: "prev-build-id",
+			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 			files: {
 				[fileKey]: {
 					key: fileKey,
@@ -770,6 +779,7 @@ describe(prepareWorkspaceCoverage, () => {
 		const shadowSpecPath = `${packageShadow}/out-test/src/foo.spec.luau`;
 		const previousManifest: CoverageManifest = {
 			buildId: "prev-build-id",
+			copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 			files: {
 				[helperKey]: {
 					key: helperKey,
@@ -1594,6 +1604,113 @@ describe(prepareWorkspaceCoverage, () => {
 			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
 		});
 
+		it("should honor per-pkg coverageCopyIgnorePatterns over the DEFAULT_CONFIG fallback", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			seedMultiMount();
+			vol.writeFileSync(path.join(FOO_DIR, "src/notes.md"), "keep me");
+			vol.writeFileSync(path.join(FOO_DIR, "src/build.tsbuildinfo"), "{}");
+			await mockInstrumentRootAsync();
+
+			const [result] = prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
+						luauRoots: ["src"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			const mirrored = Object.keys(result!.manifest.nonInstrumentedFiles);
+
+			expect(mirrored.some((entry) => entry.endsWith("src/notes.md"))).toBeTrue();
+			expect(mirrored.some((entry) => entry.endsWith(".tsbuildinfo"))).toBeFalse();
+		});
+
+		it("should rebuild a package cold when its copy-ignore list changed", async () => {
+			expect.assertions(3);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// Workspace mode writes its own manifest and runs its own
+			// incremental gate, so the single/multi warm-cache test cannot
+			// speak for it.
+			const packageShadow = path
+				.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage")
+				.replaceAll("\\", "/");
+			const fileKey = `${path.join(FOO_DIR, "src").replaceAll("\\", "/")}/init.luau`;
+			const mirroredKey = `${path.join(FOO_DIR, "src").replaceAll("\\", "/")}/build.tsbuildinfo`;
+			const previousManifest: CoverageManifest = {
+				buildId: "prev-build-id",
+				// Written under the defaults; the run below adds a pattern.
+				copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
+				files: {
+					[fileKey]: {
+						key: fileKey,
+						coverageMapPath: `${fileKey}.cov-map.json`,
+						instrumentedLuauPath: `${packageShadow}/src/init.luau`,
+						originalLuauPath: fileKey,
+						sourceHash: sha256("local x = 1"),
+						sourceMapPath: `${fileKey}.map`,
+						statementCount: 1,
+					},
+				},
+				generatedAt: isoNow(),
+				instrumenterVersion: INSTRUMENTER_VERSION,
+				luauRoots: [`${packageShadow}/src`],
+				nonInstrumentedFiles: {
+					[mirroredKey]: {
+						shadowPath: `${packageShadow}/src/build.tsbuildinfo`,
+						sourceHash: sha256("{}"),
+						sourcePath: mirroredKey,
+					},
+				},
+				shadowDir: packageShadow,
+				version: MANIFEST_VERSION,
+			};
+
+			seedMultiMount();
+			vol.writeFileSync(mirroredKey, "{}");
+			vol.mkdirSync(`${packageShadow}/src`, { recursive: true });
+			vol.writeFileSync(
+				`${packageShadow}/coverage-manifest.json`,
+				JSON.stringify(previousManifest),
+			);
+			vol.writeFileSync(`${packageShadow}/src/build.tsbuildinfo`, "{}");
+			// A sidecar whose module still exists in source: the warm reconcile
+			// keeps it, so only a cold rmSync can take it. Anything the
+			// reconcile would drop anyway cannot tell the two paths apart.
+			vol.writeFileSync(`${packageShadow}/src/init.cov-map.json`, "{}");
+			const mocked = await mockInstrumentRootAsync();
+
+			const [result] = prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
+						luauRoots: ["src"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(vol.existsSync(`${packageShadow}/src/init.cov-map.json`)).toBeFalse();
+			expect(result!.manifest.nonInstrumentedFiles).not.toHaveProperty(mirroredKey);
+			expect(mocked).toHaveBeenCalledOnce();
+		});
+
 		it("should instrument every mount when the descriptor opts out of every pattern via an empty array", async () => {
 			expect.assertions(2);
 
@@ -1790,6 +1907,7 @@ describe(prepareWorkspaceCoverage, () => {
 			const vendoredShadowDirectory = path.join(packageShadow, "vendored-packages");
 			const previousManifest: CoverageManifest = {
 				buildId: "prev-build-id",
+				copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 				files: {
 					[sourceFileKey]: {
 						key: sourceFileKey,
@@ -1858,6 +1976,7 @@ describe(prepareWorkspaceCoverage, () => {
 			const previousFileKey = `${path.join(FOO_DIR, "vendored-packages").replaceAll("\\", "/")}/dep/init.luau`;
 			const previousManifest: CoverageManifest = {
 				buildId: "prev-build-id",
+				copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 				files: {
 					[previousFileKey]: {
 						key: previousFileKey,
@@ -1918,6 +2037,7 @@ describe(prepareWorkspaceCoverage, () => {
 			const fileKey = `${path.join(FOO_DIR, "out").replaceAll("\\", "/")}/init.luau`;
 			const previousManifest: CoverageManifest = {
 				buildId: "prev-build-id",
+				copyIgnoreHash: DEFAULT_COPY_IGNORE_HASH,
 				files: {
 					[fileKey]: {
 						key: fileKey,

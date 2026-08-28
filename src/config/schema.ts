@@ -229,6 +229,24 @@ export interface GlobalTestConfig extends SharedTestConfig {
 	collectCoverageFrom?: Array<string>;
 	/** Alias for {@link collectCoverage}. */
 	coverage?: boolean;
+	/**
+	 * Globs for files a coverage run never copies into the instrumented place
+	 * it builds. Matched against each file's path relative to its compiled
+	 * root, so `**\/*.d.ts` and `foo/bar.json` both work.
+	 *
+	 * Distinct from {@link coveragePathIgnorePatterns}, which decides what the
+	 * *report* covers: this one decides what reaches the place at all, and a
+	 * pattern that matches a `.luau` removes that module from the build.
+	 *
+	 * Defaults to the three sidecars roblox-ts emits beside every module: rojo
+	 * mounts none of those extensions, and every reader of a source map opens
+	 * the one in `outDir`. Declare a function to keep them and add your own:
+	 *
+	 * ```ts
+	 * coverageCopyIgnorePatterns: (defaults) => [...defaults, "**\/*.tsbuildinfo"],
+	 * ```
+	 */
+	coverageCopyIgnorePatterns?: Array<string>;
 	/** Directory coverage reports are written to. Default `"coverage"`. */
 	coverageDirectory?: string;
 	/** Globs excluded from coverage collection. */
@@ -490,6 +508,7 @@ export interface ResolvedConfig
 	collectPerTestCoverage?: boolean | undefined;
 	color: boolean;
 	coverageCache: boolean;
+	coverageCopyIgnorePatterns: Array<string>;
 	coverageDirectory: string;
 	coveragePathIgnorePatterns: Array<string>;
 	coverageReporters: Array<CoverageReporter>;
@@ -620,6 +639,13 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 	collectCoverage: false,
 	color: true,
 	coverageCache: true,
+	// The three sidecars roblox-ts emits beside every compiled module. rojo
+	// mounts none of these extensions, and every stage that wants a source map
+	// opens the one in `outDir`: the source mapper resolves `$path` from the
+	// user's own rojo project, never the synthesized one, and the coverage
+	// manifest records `sourceMapPath` against the source root. On a
+	// game-sized tree they are three quarters of the mirrored files.
+	coverageCopyIgnorePatterns: ["**/*.d.ts", "**/*.d.ts.map", "**/*.luau.map"],
 	coverageDirectory: "coverage",
 	coveragePathIgnorePatterns: [
 		"**/*.spec.lua",
@@ -847,6 +873,7 @@ const globalTestConfigSchema = type({
 	"collectCoverage?": "boolean",
 	"collectCoverageFrom?": "string[]",
 	"coverage?": "boolean",
+	"coverageCopyIgnorePatterns?": "string[]",
 	"coverageDirectory?": "string",
 	"coveragePathIgnorePatterns?": "string[]",
 	"coverageReporters?": "string[]",
@@ -923,6 +950,7 @@ export type ConfigInput = {
 
 type MergeableTestKey =
 	| "collectCoverageFrom"
+	| "coverageCopyIgnorePatterns"
 	| "coveragePathIgnorePatterns"
 	| "coverageReporters"
 	| "coverageThreshold"
@@ -1007,6 +1035,7 @@ const GLOBAL_ONLY_KEYS_LIST = [
 	"collectCoverage",
 	"collectCoverageFrom",
 	"coverage",
+	"coverageCopyIgnorePatterns",
 	"coverageDirectory",
 	"coveragePathIgnorePatterns",
 	"coverageReporters",
@@ -1075,6 +1104,7 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
 	"collectCoverage",
 	"collectCoverageFrom",
 	"collectPerTestCoverage",
+	"coverageCopyIgnorePatterns",
 	"coverageDirectory",
 	"coveragePathIgnorePatterns",
 	"coverageReporters",

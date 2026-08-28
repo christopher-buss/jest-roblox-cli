@@ -227,14 +227,15 @@ Put these under `test: { ... }`.
 
 Put these under `test: { ... }`.
 
-| Field                        | What it does                           | Default                                     |
-| ---------------------------- | -------------------------------------- | ------------------------------------------- |
-| `collectCoverage`            | Turn on coverage                       | `false`                                     |
-| `coverageDirectory`          | Where to write coverage reports        | `"coverage"`                                |
-| `coverageReporters`          | Which report formats to use            | `["text", "lcov"]`                          |
-| `coverageThreshold`          | Minimum coverage to pass               | —                                           |
-| `coveragePathIgnorePatterns` | Files to leave out of coverage         | test files, `node_modules`, `rbxts_include` |
-| `collectCoverageFrom`        | Globs for files to include in coverage | —                                           |
+| Field                        | What it does                             | Default                                       |
+| ---------------------------- | ---------------------------------------- | --------------------------------------------- |
+| `collectCoverage`            | Turn on coverage                         | `false`                                       |
+| `coverageDirectory`          | Where to write coverage reports          | `"coverage"`                                  |
+| `coverageReporters`          | Which report formats to use              | `["text", "lcov"]`                            |
+| `coverageThreshold`          | Minimum coverage to pass                 | —                                             |
+| `coveragePathIgnorePatterns` | Files to leave out of coverage           | test files, `node_modules`, `rbxts_include`   |
+| `collectCoverageFrom`        | Globs for files to include in coverage   | —                                             |
+| `coverageCopyIgnorePatterns` | Files to leave out of the coverage place | `**/*.d.ts`, `**/*.d.ts.map`, `**/*.luau.map` |
 
 <!-- prettier-ignore -->
 > [!NOTE]
@@ -259,6 +260,34 @@ Put these under `test: { ... }`.
 > the lever to pull on `OUTPUT_SIZE_LIMIT_EXCEEDED`. Workspace mode has no
 > derived fallback, so a package that sets nothing probes its whole
 > `luauRoots`.
+
+`coverageCopyIgnorePatterns` is the other half of that: it decides what the
+coverage place carries at all, not what the report covers. A coverage run
+mirrors each `luauRoot` into a shadow tree and builds the place from that, and
+the default drops the three sidecars roblox-ts emits beside every module. rojo
+mounts none of those extensions, and every reader of a source map opens the one
+in `outDir` — the stack mapper resolves `$path` from your own rojo project, not
+the synthesized one — so on a large project they are roughly three quarters of
+the copied files.
+
+Patterns match a path relative to its compiled root, directories included, and
+they are matched exactly (no substring containment) because an over-match drops
+something the runtime needs. An ignored path is never probed either, so a
+pattern naming a `.luau` keeps that module out of the place entirely.
+
+Declare a function to keep the defaults and add to them:
+
+```ts
+export default defineConfig({
+	test: {
+		coverageCopyIgnorePatterns: (defaults) => {
+			return [...defaults, "**/*.tsbuildinfo"];
+		},
+	},
+});
+```
+
+Passing an array replaces the defaults outright; `[]` copies everything.
 
 ### Project-level config
 

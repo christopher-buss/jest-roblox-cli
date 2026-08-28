@@ -30,6 +30,7 @@ interface ExtendsLayerRequest {
 
 type MergerKey =
 	| "collectCoverageFrom"
+	| "coverageCopyIgnorePatterns"
 	| "coveragePathIgnorePatterns"
 	| "coverageReporters"
 	| "coverageThreshold"
@@ -290,6 +291,7 @@ const EMPTY_OBJECT_DEFAULT_KEYS: ReadonlySet<MergerKey> = new Set<MergerKey>([
 const MERGEABLE_KEYS: ReadonlySet<string> = new Set<MergerKey>([
 	...EMPTY_ARRAY_DEFAULT_KEYS,
 	...EMPTY_OBJECT_DEFAULT_KEYS,
+	"coverageCopyIgnorePatterns",
 	"coveragePathIgnorePatterns",
 	"coverageReporters",
 	"testMatch",

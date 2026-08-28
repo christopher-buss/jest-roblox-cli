@@ -12,6 +12,8 @@ import { atomicWrite } from "../utils/atomic-write.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestArtifact } from "./build-manifest.ts";
 import { BUILD_MANIFEST_FILE, emitBuildManifest, toBuildManifestFiles } from "./build-manifest.ts";
+import type { CopyIgnoreMatcher } from "./discover-files.ts";
+import { createCopyIgnoreMatcher, hashCopyIgnorePatterns } from "./discover-files.ts";
 import { canReuseCoverageManifest } from "./incremental-gate.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
 import { createInstrumentUniverse } from "./instrument-universe.ts";
@@ -41,6 +43,12 @@ export interface WorkspacePackageDescriptor {
 	 * intentionally not consulted.
 	 */
 	coverageCache?: boolean | undefined;
+	/**
+	 * Per-package `coverageCopyIgnorePatterns`. When undefined, falls back to
+	 * `DEFAULT_CONFIG.coverageCopyIgnorePatterns` — workspace mode reads this
+	 * knob per-package only, like every other coverage knob here.
+	 */
+	coverageCopyIgnorePatterns?: Array<string> | undefined;
 	/**
 	 * Per-package `coveragePathIgnorePatterns`. When undefined, the matcher
 	 * falls back to `DEFAULT_CONFIG.coveragePathIgnorePatterns` — workspace
@@ -115,6 +123,10 @@ export interface PrepareWorkspaceCoverageOptions {
  * them per-package against TS source paths).
  */
 interface PackageIgnore {
+	/** Digest of `copyPatterns`, for the incremental gate. */
+	copyDigest: string;
+	/** This package's `coverageCopyIgnorePatterns` gate. */
+	copyMatcher: CopyIgnoreMatcher;
 	matcher: (filePath: string) => boolean;
 	patterns: Array<string>;
 }
@@ -126,6 +138,8 @@ interface PackagePaths {
 }
 
 interface PackageIncrementalOptions {
+	/** Digest of this package's copy-ignore list, for the incremental gate. */
+	copyIgnoreHash: string;
 	descriptor: WorkspacePackageDescriptor;
 	luauRoots: Array<string>;
 	packageShadowRoot: string;
@@ -134,6 +148,7 @@ interface PackageIncrementalOptions {
 }
 
 interface InstrumentPackageOptions extends PackageIncrementalOptions {
+	isCopyIgnored: CopyIgnoreMatcher;
 	isIncremental: boolean;
 	timing: TimingCollector;
 }
@@ -143,6 +158,25 @@ interface InstrumentedPackage {
 	coverageRoots: Array<WorkspaceCoverageRoot>;
 	files: Record<string, InstrumentedFileRecord>;
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
+}
+
+/** What one package's instrumentation pass resolves for itself. */
+interface InstrumentPackageInputs {
+	descriptor: WorkspacePackageDescriptor;
+	ignore: PackageIgnore;
+	manifestPath: string;
+	packageShadowRoot: string;
+	timing: TimingCollector;
+	universe: InstrumentUniverse | undefined;
+}
+
+/** One package's manifest write, after its roots are instrumented. */
+interface WritePackageManifestOptions {
+	copyIgnoreHash: string;
+	instrumented: InstrumentedPackage;
+	manifestPath: string;
+	packageShadowRoot: string;
+	universe: InstrumentUniverse | undefined;
 }
 
 /**
@@ -162,9 +196,19 @@ export function prepareWorkspaceCoverage(
 	// field share one picomatch compile; the workspace-root config is
 	// intentionally not threaded through here.
 	const defaultMatcher = createIgnoreMatcher(DEFAULT_CONFIG.coveragePathIgnorePatterns);
+	// Hoisted for the same reason, one knob over: nothing else in the workspace
+	// re-parses the defaults per package.
+	const defaultCopyMatcher = createCopyIgnoreMatcher(DEFAULT_CONFIG.coverageCopyIgnorePatterns);
 
 	return packages.map((descriptor) => {
+		const copyPatterns =
+			descriptor.coverageCopyIgnorePatterns ?? DEFAULT_CONFIG.coverageCopyIgnorePatterns;
 		const ignore: PackageIgnore = {
+			copyDigest: hashCopyIgnorePatterns(copyPatterns),
+			copyMatcher:
+				descriptor.coverageCopyIgnorePatterns !== undefined
+					? createCopyIgnoreMatcher(descriptor.coverageCopyIgnorePatterns)
+					: defaultCopyMatcher,
 			matcher:
 				descriptor.coveragePathIgnorePatterns !== undefined
 					? createIgnoreMatcher(descriptor.coveragePathIgnorePatterns)
@@ -202,6 +246,89 @@ export function emitWorkspaceBuildManifests(
 			rebuilt: true,
 		});
 	}
+}
+
+/**
+ * Map an npm-style package name (`@scope/name`) to a filesystem-safe directory
+ * segment. Replaces "/" with "-" so the on-disk path is one segment deep.
+ */
+function safePackageName(name: string): string {
+	return name.replaceAll("/", "-");
+}
+
+/** Where one package's shadow tree and its Coverage Manifest live on disk. */
+function resolvePackagePaths(name: string, workspaceRoot: string): PackagePaths {
+	const packageShadowRoot = path.join(
+		workspaceRoot,
+		WORKSPACE_COVERAGE_DIR,
+		safePackageName(name),
+		"coverage",
+	);
+
+	return {
+		manifestPath: normalizeWindowsPath(path.join(packageShadowRoot, "coverage-manifest.json")),
+		packageShadowRoot,
+	};
+}
+
+function writePackageManifest({
+	copyIgnoreHash,
+	instrumented,
+	manifestPath,
+	packageShadowRoot,
+	universe,
+}: WritePackageManifestOptions): CoverageManifest {
+	const generatedAtDate = new Date();
+	const manifest: CoverageManifest = {
+		buildId: crypto.randomUUID(),
+		copyIgnoreHash,
+		coverageUniverseHash: universe?.digest,
+		files: instrumented.files,
+		generatedAt: generatedAtDate.toISOString(),
+		instrumenterVersion: INSTRUMENTER_VERSION,
+		luauRoots: instrumented.coverageRoots.map((entry) => entry.shadowDir),
+		nonInstrumentedFiles: instrumented.nonInstrumentedFiles,
+		shadowDir: normalizeWindowsPath(packageShadowRoot),
+		version: MANIFEST_VERSION,
+	};
+
+	// atomicWrite creates the manifest's parent directory, so a package with no
+	// instrumentable luau roots (the loop above ran zero times, leaving
+	// packageShadowRoot uncreated) still gets a manifest written.
+	atomicWrite(manifestPath, JSON.stringify(manifest, undefined, "\t"));
+
+	return manifest;
+}
+
+/**
+ * The anchor this package's coverage globs resolve against. `rootDir` defaults
+ * to the package directory the same way the config loader defaults it, so a
+ * descriptor built by a caller with no coverage stake — the staging and
+ * preflight paths — need not state one.
+ */
+function resolvePackageAnchor(descriptor: WorkspacePackageDescriptor): string {
+	return descriptor.rootDir ?? descriptor.packageDirectory;
+}
+
+/**
+ * The package's coverage universe, built from the same patterns its own report
+ * and threshold gate use — so a file earns probes exactly when that package
+ * would report on it. `undefined` when the package names no coverage globs.
+ *
+ * Deliberately no `deriveCoverageFromIncludes` fallback, unlike multi mode:
+ * the workspace report has none either (`workspace-aggregate.ts` filters on the
+ * raw per-package value), and adding one here would probe against a universe
+ * the package's own report never applies.
+ */
+function resolvePackageUniverse(
+	descriptor: WorkspacePackageDescriptor,
+	ignore: PackageIgnore,
+): InstrumentUniverse | undefined {
+	return createInstrumentUniverse({
+		ignore: ignore.patterns,
+		include: descriptor.collectCoverageFrom,
+		rootDir: resolvePackageAnchor(descriptor),
+	});
 }
 
 function isInstrumentableLuauFile(filename: string): boolean {
@@ -439,29 +566,6 @@ function loadPackageManifest(manifestPath: string): CoverageManifest | undefined
 	}
 }
 
-/**
- * Map an npm-style package name (`@scope/name`) to a filesystem-safe directory
- * segment. Replaces "/" with "-" so the on-disk path is one segment deep.
- */
-function safePackageName(name: string): string {
-	return name.replaceAll("/", "-");
-}
-
-/** Where one package's shadow tree and its Coverage Manifest live on disk. */
-function resolvePackagePaths(name: string, workspaceRoot: string): PackagePaths {
-	const packageShadowRoot = path.join(
-		workspaceRoot,
-		WORKSPACE_COVERAGE_DIR,
-		safePackageName(name),
-		"coverage",
-	);
-
-	return {
-		manifestPath: normalizeWindowsPath(path.join(packageShadowRoot, "coverage-manifest.json")),
-		packageShadowRoot,
-	};
-}
-
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
 	if (a.size !== b.size) {
 		return false;
@@ -481,6 +585,7 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
  * shadow root when it can't.
  */
 function decidePackageIncremental({
+	copyIgnoreHash,
 	descriptor,
 	luauRoots,
 	packageShadowRoot,
@@ -489,6 +594,7 @@ function decidePackageIncremental({
 }: PackageIncrementalOptions): boolean {
 	const isCoverageCacheEnabled = descriptor.coverageCache ?? DEFAULT_CONFIG.coverageCache;
 	let isIncremental = canReuseCoverageManifest(previousManifest, {
+		copyIgnoreHash,
 		coverageCache: isCoverageCacheEnabled,
 		universe,
 	});
@@ -525,6 +631,7 @@ function decidePackageIncremental({
 /** Instrument each of the package's luau roots into its shadow tree. */
 function instrumentPackageRoots({
 	descriptor,
+	isCopyIgnored,
 	isIncremental,
 	luauRoots,
 	packageShadowRoot,
@@ -545,6 +652,7 @@ function instrumentPackageRoots({
 		);
 
 		const result = prepareShadowRoot({
+			isCopyIgnored,
 			luauRoot: absoluteSourceRoot,
 			previousManifest,
 			shadowDir: shadowDirectory,
@@ -561,61 +669,34 @@ function instrumentPackageRoots({
 	return { coverageRoots, files: allFiles, nonInstrumentedFiles: allNonInstrumented };
 }
 
-function writePackageManifest(
-	manifestPath: string,
-	packageShadowRoot: string,
-	instrumented: InstrumentedPackage,
-	universe: InstrumentUniverse | undefined,
-): CoverageManifest {
-	const generatedAtDate = new Date();
-	const manifest: CoverageManifest = {
-		buildId: crypto.randomUUID(),
-		coverageUniverseHash: universe?.digest,
-		files: instrumented.files,
-		generatedAt: generatedAtDate.toISOString(),
-		instrumenterVersion: INSTRUMENTER_VERSION,
-		luauRoots: instrumented.coverageRoots.map((entry) => entry.shadowDir),
-		nonInstrumentedFiles: instrumented.nonInstrumentedFiles,
-		shadowDir: normalizeWindowsPath(packageShadowRoot),
-		version: MANIFEST_VERSION,
+/**
+ * Discover this package's roots, decide whether its cache survives, and
+ * instrument what is left. `InstrumentPackageOptions extends
+ * PackageIncrementalOptions`, so the decision and the instrumentation read one
+ * options bag.
+ */
+function instrumentPackage({
+	descriptor,
+	ignore,
+	manifestPath,
+	packageShadowRoot,
+	timing,
+	universe,
+}: InstrumentPackageInputs): InstrumentedPackage {
+	const options: PackageIncrementalOptions = {
+		copyIgnoreHash: ignore.copyDigest,
+		descriptor,
+		luauRoots: discoverPackageLuauRoots(descriptor, ignore.matcher),
+		packageShadowRoot,
+		previousManifest: loadPackageManifest(manifestPath),
+		universe,
 	};
 
-	// atomicWrite creates the manifest's parent directory, so a package with no
-	// instrumentable luau roots (the loop above ran zero times, leaving
-	// packageShadowRoot uncreated) still gets a manifest written.
-	atomicWrite(manifestPath, JSON.stringify(manifest, undefined, "\t"));
-
-	return manifest;
-}
-
-/**
- * The anchor this package's coverage globs resolve against. `rootDir` defaults
- * to the package directory the same way the config loader defaults it, so a
- * descriptor built by a caller with no coverage stake — the staging and
- * preflight paths — need not state one.
- */
-function resolvePackageAnchor(descriptor: WorkspacePackageDescriptor): string {
-	return descriptor.rootDir ?? descriptor.packageDirectory;
-}
-
-/**
- * The package's coverage universe, built from the same patterns its own report
- * and threshold gate use — so a file earns probes exactly when that package
- * would report on it. `undefined` when the package names no coverage globs.
- *
- * Deliberately no `deriveCoverageFromIncludes` fallback, unlike multi mode:
- * the workspace report has none either (`workspace-aggregate.ts` filters on the
- * raw per-package value), and adding one here would probe against a universe
- * the package's own report never applies.
- */
-function resolvePackageUniverse(
-	descriptor: WorkspacePackageDescriptor,
-	ignore: PackageIgnore,
-): InstrumentUniverse | undefined {
-	return createInstrumentUniverse({
-		ignore: ignore.patterns,
-		include: descriptor.collectCoverageFrom,
-		rootDir: resolvePackageAnchor(descriptor),
+	return instrumentPackageRoots({
+		...options,
+		isCopyIgnored: ignore.copyMatcher,
+		isIncremental: decidePackageIncremental(options),
+		timing,
 	});
 }
 
@@ -627,15 +708,22 @@ function prepareForPackage(
 ): WorkspacePackageCoverage {
 	const { manifestPath, packageShadowRoot } = resolvePackagePaths(descriptor.name, workspaceRoot);
 
-	const previousManifest = loadPackageManifest(manifestPath);
-	const luauRoots = discoverPackageLuauRoots(descriptor, ignore.matcher);
 	const universe = resolvePackageUniverse(descriptor, ignore);
-	// `InstrumentPackageOptions extends PackageIncrementalOptions`, so the
-	// second call is the first plus what only it needs.
-	const options = { descriptor, luauRoots, packageShadowRoot, previousManifest, universe };
-	const isIncremental = decidePackageIncremental(options);
-	const instrumented = instrumentPackageRoots({ ...options, isIncremental, timing });
-	const manifest = writePackageManifest(manifestPath, packageShadowRoot, instrumented, universe);
+	const instrumented = instrumentPackage({
+		descriptor,
+		ignore,
+		manifestPath,
+		packageShadowRoot,
+		timing,
+		universe,
+	});
+	const manifest = writePackageManifest({
+		copyIgnoreHash: ignore.copyDigest,
+		instrumented,
+		manifestPath,
+		packageShadowRoot,
+		universe,
+	});
 
 	return {
 		coveragePathIgnorePatterns: ignore.patterns,

@@ -443,6 +443,23 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			expect(result.testMatch).toContain("**/*.custom.ts");
 		});
 
+		it("should append to the built-in copy-ignore patterns via a merger function", async () => {
+			expect.assertions(3);
+
+			const temporaryDirectory = makeTemporaryDirectory();
+			const configPath = path.join(temporaryDirectory, "jest.config.mjs");
+			fs.writeFileSync(
+				configPath,
+				'export default { test: { coverageCopyIgnorePatterns: defaults => [...defaults, "**/*.tsbuildinfo"] } };',
+			);
+
+			const result = await loadConfig(configPath, temporaryDirectory);
+
+			expect(result.coverageCopyIgnorePatterns).toContain("**/*.d.ts");
+			expect(result.coverageCopyIgnorePatterns).toContain("**/*.d.ts.map");
+			expect(result.coverageCopyIgnorePatterns).toContain("**/*.tsbuildinfo");
+		});
+
 		it("should pass object defaults to standalone test merger functions", async () => {
 			expect.assertions(1);
 

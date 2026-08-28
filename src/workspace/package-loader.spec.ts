@@ -66,6 +66,7 @@ describe(loadWorkspacePackagesAsync, () => {
 		const packageConfig = makeConfig({
 			collectCoverageFrom: ["src/**/*.ts"],
 			coverageCache: !DEFAULT_CONFIG.coverageCache,
+			coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
 			coveragePathIgnorePatterns: ["generated/**"],
 			luauRoots: ["src", "test"],
 			rojoProject: "custom.project.json",
@@ -82,6 +83,7 @@ describe(loadWorkspacePackagesAsync, () => {
 			name: "pkg",
 			collectCoverageFrom: ["src/**/*.ts"],
 			coverageCache: !DEFAULT_CONFIG.coverageCache,
+			coverageCopyIgnorePatterns: ["**/*.tsbuildinfo"],
 			coveragePathIgnorePatterns: ["generated/**"],
 			luauRoots: ["src", "test"],
 			packageDirectory: "/repo/pkg",
