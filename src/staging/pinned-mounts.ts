@@ -52,6 +52,17 @@ interface Walk {
 	scanned: Set<string>;
 }
 
+/**
+ * What {@link demotePinnedMounts} would emit, as a number the place-reuse key
+ * can hold. Bump it whenever this module would produce different bytes from
+ * unchanged sources — a class added to `PINNED_PARENT_CLASSES`, a different
+ * fold, a different stand-in layout.
+ *
+ * The key covers this pass's inputs and not the pass, so without a bump a
+ * place built by the old rule reads as current and is handed out unchanged.
+ */
+export const PINNED_MOUNT_PASS_VERSION = 1;
+
 const STAGE_KEY = "__pkg_stage";
 const PINNED_XML_CLASS = /(<Item\s+class=")([^"]+)(")/g;
 /**
@@ -89,6 +100,10 @@ const DRIVE_LETTER = /^[A-Za-z]:/;
  *
  * A no-wrap project has no stage and keeps every service where the engine
  * wants it, so this is a no-op for one.
+ *
+ * A change to what this emits from unchanged sources needs
+ * {@link PINNED_MOUNT_PASS_VERSION} bumped with it; the place-reuse key reads
+ * this pass through that number and through nothing else.
  */
 export function demotePinnedMounts({
 	projectDirectory,

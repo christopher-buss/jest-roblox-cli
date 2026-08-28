@@ -26,6 +26,24 @@ const PLACE_FILE = "/out/game.rbxl";
 const PLACE_BYTES = "RBXL-BYTES";
 const MOUNT_DIR = "/repo/out";
 const PROJECT_JSON = JSON.stringify({ name: "synth", tree: { $path: MOUNT_DIR } });
+const STAGE_DIR = "/repo/staged";
+const STAGED_PROJECT_JSON = JSON.stringify({
+	name: "synth",
+	tree: {
+		$className: "DataModel",
+		ServerStorage: { $className: "ServerStorage", __pkg_stage: { $path: STAGE_DIR } },
+	},
+});
+/** What `rojo build` emits for the pinned mount, before the class fold. */
+const STAND_IN_XML = [
+	'<roblox version="4">',
+	'  <Item class="StarterGui" referent="0">',
+	"    <Properties>",
+	'      <string name="Name">Gui</string>',
+	"    </Properties>",
+	"  </Item>",
+	"</roblox>",
+].join("\n");
 
 function makeDescriptor(): PackageDescriptor {
 	return {
@@ -266,6 +284,35 @@ describe("place reuse", () => {
 		});
 
 		build();
+		build();
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledTimes(2);
+	});
+
+	it("should skip the pinned-mount pass when nothing changed", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		// A staged mount carrying a class the engine pins: the pinned-mount
+		// pass spawns rojo once to build its Folder-rooted stand-in, on top of
+		// the one spawn the place itself costs.
+		vi.mocked(synthesize).mockReturnValue(STAGED_PROJECT_JSON);
+		// The same bytes for both outputs: only the stand-in is read back, and
+		// nothing here parses the place.
+		vi.mocked(buildWithRojo).mockImplementation((_projectPath, outputPath) => {
+			vol.writeFileSync(outputPath, STAND_IN_XML);
+		});
+		vol.fromJSON({
+			[`${STAGE_DIR}/Gui.model.json`]: JSON.stringify({ ClassName: "StarterGui" }),
+		});
+
+		build();
+
+		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledTimes(2);
+
 		build();
 
 		expect(vi.mocked(buildWithRojo)).toHaveBeenCalledTimes(2);

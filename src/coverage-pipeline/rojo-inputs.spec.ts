@@ -28,15 +28,37 @@ function writeRawProject(contents: string): void {
 	vol.writeFileSync(PROJECT, contents);
 }
 
-function hashOf(luauRoots: Array<string> = []): string {
+function hashOf(luauRoots: Array<string> = [], projectJson?: string): string {
 	return computeRojoInputsHash({
 		luauRoots,
+		projectJson,
 		rojoProjectPath: PROJECT,
 		rootDirectory: "/project",
 	});
 }
 
 describe(computeRojoInputsHash, () => {
+	it("should hash the project text the caller holds rather than the file on disk", () => {
+		expect.assertions(2);
+
+		reset();
+		vol.mkdirSync("/project/include", { recursive: true });
+		vol.writeFileSync("/project/include/a.lua", "x");
+		// Nothing at PROJECT: the caller has not written the project yet, and
+		// hashing it off disk would throw rather than answer.
+		const held = JSON.stringify({
+			name: "test",
+			tree: { $className: "DataModel", Inc: { $path: "include" } },
+		});
+
+		const first = hashOf([], held);
+
+		expect(first).toMatch(/^[a-f0-9]{64}$/);
+		// Same tree, different bytes: the text is the input, not what it parses
+		// to, so a whitespace-only edit still moves the digest.
+		expect(hashOf([], `${held} `)).not.toBe(first);
+	});
+
 	it("should return a sha256 digest", () => {
 		expect.assertions(1);
 
@@ -181,6 +203,38 @@ describe(computeRojoInputsHash, () => {
 
 		vol.unlinkSync("/project/include/a.lua");
 		vol.writeFileSync("/project/include/b.lua", "same");
+
+		expect(hashOf()).not.toBe(before);
+	});
+
+	it("should hash a file reached through a symlinked directory", () => {
+		expect.assertions(1);
+
+		reset();
+		writeProject({ $className: "DataModel", Inc: { $path: "include" } });
+		vol.mkdirSync("/project/include", { recursive: true });
+		vol.mkdirSync("/shared", { recursive: true });
+		vol.writeFileSync("/shared/a.lua", "v1");
+		vol.symlinkSync("/shared", "/project/include/linked");
+		const before = hashOf();
+
+		vol.writeFileSync("/shared/a.lua", "v2");
+
+		expect(hashOf()).not.toBe(before);
+	});
+
+	it("should hash a file a mount reaches only by following a symlink", () => {
+		expect.assertions(1);
+
+		reset();
+		writeProject({ $className: "DataModel", Inc: { $path: "linked" } });
+		vol.mkdirSync("/shared/nested", { recursive: true });
+		vol.writeFileSync("/shared/nested/a.lua", "v1");
+		vol.mkdirSync("/project", { recursive: true });
+		vol.symlinkSync("/shared", "/project/linked");
+		const before = hashOf();
+
+		vol.writeFileSync("/shared/nested/a.lua", "v2");
 
 		expect(hashOf()).not.toBe(before);
 	});

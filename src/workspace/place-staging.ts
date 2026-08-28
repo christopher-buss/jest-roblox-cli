@@ -109,8 +109,9 @@ function buildWorkspacePlace({
 			reuse: {
 				cacheFile: path.join(cacheDirectory, PLACE_REUSE_FILE),
 				manifests: coverage.map((entry) => entry.manifest),
-				// Relative: the hash joins each root onto the project directory,
-				// and `shadowDir` is absolute.
+				// Relative: the hash resolves each root against the project
+				// directory, the frame every other path in the key is expressed
+				// in, and `shadowDir` is absolute.
 				shadowRoots: coverage.flatMap((entry) => {
 					// Spine copies included: they are what a demoted mount
 					// serves, so a change there changes the place.

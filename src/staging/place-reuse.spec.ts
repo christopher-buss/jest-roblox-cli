@@ -43,11 +43,23 @@ function manifest(overrides: Partial<CoverageManifest> = {}): CoverageManifest {
 	};
 }
 
-function keyFor(manifests: Array<CoverageManifest>, shadowRoots: Array<string> = []) {
+function keyFor({
+	manifests = [],
+	projectJson = project({ Assets: "assets" }),
+	shadowRoots = [],
+	stagingVersion = 1,
+}: {
+	manifests?: Array<CoverageManifest>;
+	projectJson?: string;
+	shadowRoots?: Array<string>;
+	stagingVersion?: number;
+} = {}) {
 	return computePlaceInputsKey({
 		manifests,
 		projectFile: PROJECT_FILE,
+		projectJson,
 		shadowRoots,
+		stagingVersion,
 	});
 }
 
@@ -59,15 +71,12 @@ describe(computePlaceInputsKey, () => {
 			vol.reset();
 		});
 
-		vol.fromJSON({
-			"/cache/assets/model.txt": "one",
-			[PROJECT_FILE]: project({ Assets: "assets" }),
-		});
+		vol.fromJSON({ "/cache/assets/model.txt": "one" });
 
-		const first = keyFor([]);
+		const first = keyFor();
 
 		expect(first).toBeString();
-		expect(keyFor([])).toBe(first);
+		expect(keyFor()).toBe(first);
 	});
 
 	it("should report a different key when a walked input changes", () => {
@@ -77,15 +86,12 @@ describe(computePlaceInputsKey, () => {
 			vol.reset();
 		});
 
-		vol.fromJSON({
-			"/cache/assets/model.txt": "one",
-			[PROJECT_FILE]: project({ Assets: "assets" }),
-		});
-		const before = keyFor([]);
+		vol.fromJSON({ "/cache/assets/model.txt": "one" });
+		const before = keyFor();
 
 		vol.fromJSON({ "/cache/assets/model.txt": "two" });
 
-		expect(keyFor([])).not.toBe(before);
+		expect(keyFor()).not.toBe(before);
 	});
 
 	it("should report a different key when an instrumented source hash changes", () => {
@@ -95,14 +101,13 @@ describe(computePlaceInputsKey, () => {
 			vol.reset();
 		});
 
-		vol.fromJSON({ [PROJECT_FILE]: project({ Assets: "assets" }) });
-		const before = keyFor([
-			manifest({ files: { "src/a.luau": fromAny({ sourceHash: "aaa" }) } }),
-		]);
+		const before = keyFor({
+			manifests: [manifest({ files: { "src/a.luau": fromAny({ sourceHash: "aaa" }) } })],
+		});
 
-		const after = keyFor([
-			manifest({ files: { "src/a.luau": fromAny({ sourceHash: "bbb" }) } }),
-		]);
+		const after = keyFor({
+			manifests: [manifest({ files: { "src/a.luau": fromAny({ sourceHash: "bbb" }) } })],
+		});
 
 		expect(after).not.toBe(before);
 	});
@@ -114,14 +119,21 @@ describe(computePlaceInputsKey, () => {
 			vol.reset();
 		});
 
-		vol.fromJSON({ [PROJECT_FILE]: project({ Assets: "assets" }) });
-		const before = keyFor([
-			manifest({ nonInstrumentedFiles: { "src/a.json": fromAny({ sourceHash: "aaa" }) } }),
-		]);
+		const before = keyFor({
+			manifests: [
+				manifest({
+					nonInstrumentedFiles: { "src/a.json": fromAny({ sourceHash: "aaa" }) },
+				}),
+			],
+		});
 
-		const after = keyFor([
-			manifest({ nonInstrumentedFiles: { "src/a.json": fromAny({ sourceHash: "bbb" }) } }),
-		]);
+		const after = keyFor({
+			manifests: [
+				manifest({
+					nonInstrumentedFiles: { "src/a.json": fromAny({ sourceHash: "bbb" }) },
+				}),
+			],
+		});
 
 		expect(after).not.toBe(before);
 	});
@@ -133,10 +145,9 @@ describe(computePlaceInputsKey, () => {
 			vol.reset();
 		});
 
-		vol.fromJSON({ [PROJECT_FILE]: project({ Assets: "assets" }) });
-		const before = keyFor([manifest({ instrumenterVersion: 1 })]);
+		const before = keyFor({ manifests: [manifest({ instrumenterVersion: 1 })] });
 
-		expect(keyFor([manifest({ instrumenterVersion: 2 })])).not.toBe(before);
+		expect(keyFor({ manifests: [manifest({ instrumenterVersion: 2 })] })).not.toBe(before);
 	});
 
 	it("should leave shadow roots out of the walk", () => {
@@ -146,28 +157,54 @@ describe(computePlaceInputsKey, () => {
 			vol.reset();
 		});
 
-		vol.fromJSON({
-			"/cache/shadow/a.luau": "one",
-			[PROJECT_FILE]: project({ Shadow: "shadow" }),
-		});
-		const before = keyFor([], ["shadow"]);
+		vol.fromJSON({ "/cache/shadow/a.luau": "one" });
+		const shadowProject = project({ Shadow: "shadow" });
+		const before = keyFor({ projectJson: shadowProject, shadowRoots: ["shadow"] });
 
 		vol.fromJSON({ "/cache/shadow/a.luau": "two" });
 
-		expect(keyFor([], ["shadow"])).toBe(before);
+		expect(keyFor({ projectJson: shadowProject, shadowRoots: ["shadow"] })).toBe(before);
 	});
 
-	it("should report undefined and warn when the project file cannot be hashed", () => {
+	it("should key on the project text, not the file the project file names", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		// Nothing at PROJECT_FILE: the key is planned before the project is
+		// written, so reading it back would find the run before this one.
+		vol.fromJSON({ "/cache/assets/model.txt": "one" });
+
+		expect(keyFor()).toBeString();
+	});
+
+	it("should report a different key when the staging pass version bumps", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		// The passes that run between this key and the built place are code,
+		// not inputs: nothing on disk moves when what they emit changes.
+		vol.fromJSON({ "/cache/assets/model.txt": "one" });
+		const before = keyFor({ stagingVersion: 1 });
+
+		expect(keyFor({ stagingVersion: 2 })).not.toBe(before);
+	});
+
+	it("should report undefined and warn when the project text cannot be parsed", () => {
 		expect.assertions(2);
 
 		onTestFinished(() => {
 			vol.reset();
 		});
 
-		vol.fromJSON({ [PROJECT_FILE]: "{ not json" });
 		const warn = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		expect(keyFor([])).toBeUndefined();
+		expect(keyFor({ projectJson: "{ not json" })).toBeUndefined();
 		expect(warn.mock.calls.flat().join("")).toContain("could not hash rojo build inputs");
 	});
 });

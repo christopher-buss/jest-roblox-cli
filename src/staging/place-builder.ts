@@ -5,7 +5,7 @@ import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { hashFile } from "../utils/hash.ts";
 import { buildWithRojo } from "../utils/rojo-builder.ts";
-import { demotePinnedMounts } from "./pinned-mounts.ts";
+import { demotePinnedMounts, PINNED_MOUNT_PASS_VERSION } from "./pinned-mounts.ts";
 import {
 	computePlaceInputsKey,
 	readPlaceReuseRecord,
@@ -68,35 +68,22 @@ export function buildPlace({
 	wrap,
 }: BuildPlaceOptions): BuildManifestArtifact {
 	const projectDirectory = path.dirname(projectFile);
-	// Relative `$path`s, written last: rojo matches `globIgnorePaths` against the
-	// path as the project expresses it, so absolute ones would leave the ignore
-	// list inert. The pinned-mount pass runs before it for the same reason — the
-	// ignore entries it adds are expressed in that relative frame — and before
-	// the reuse key is planned, so a stand-in rebuilt from edited sources
-	// changes the key rather than reusing a place built from the old ones.
-	const projectJson = relativizeProjectPaths(
-		demotePinnedMounts({
-			projectDirectory,
-			projectJson: synthesize({ loadStringEnabled, packages, wrap }),
-			shadowDirectory: path.join(projectDirectory, PINNED_SHADOW_DIR),
-		}),
-		projectDirectory,
-	);
-	fs.mkdirSync(projectDirectory, { recursive: true });
-	fs.writeFileSync(projectFile, projectJson);
-	// `rojo build -o` fails if the output directory is missing, so ensure it
-	// exists for every caller rather than relying on each one to pre-create it.
-	fs.mkdirSync(path.dirname(placeFile), { recursive: true });
+	const projectJson = synthesize({ loadStringEnabled, packages, wrap });
 
-	// Planned after the project file is written, because the key covers it.
-	const plan = planReuse(reuse, projectFile);
+	// Planned before anything is written or built, so a reused place pays for
+	// neither of the two passes below — see `PlaceInputsKeyOptions.projectJson`
+	// for why a key over the synthesized project can answer for what they write.
+	const plan = planReuse({
+		projectFile,
+		projectJson: relativizeProjectPaths(projectJson, projectDirectory),
+		reuse,
+	});
 	const reused = plan === undefined ? undefined : tryReuse(plan, placeFile);
 	if (reused !== undefined) {
 		return reused;
 	}
 
-	buildWithRojo(projectFile, placeFile);
-	const artifact = { hash: hashFile(placeFile), path: placeFile };
+	const artifact = stageAndBuild({ placeFile, projectDirectory, projectFile, projectJson });
 	if (plan !== undefined) {
 		writePlaceReuseRecord(plan.cacheFile, {
 			inputsKey: plan.inputsKey,
@@ -108,15 +95,57 @@ export function buildPlace({
 }
 
 /**
+ * Write the project the build reads, then build the place from it.
+ *
+ * Relative `$path`s, written last: rojo matches `globIgnorePaths` against the
+ * path as the project expresses it, so absolute ones would leave the ignore
+ * list inert. The pinned-mount pass runs before it for the same reason — the
+ * ignore entries it adds are expressed in that relative frame.
+ */
+function stageAndBuild({
+	placeFile,
+	projectDirectory,
+	projectFile,
+	projectJson,
+}: {
+	placeFile: string;
+	projectDirectory: string;
+	projectFile: string;
+	projectJson: string;
+}): BuildManifestArtifact {
+	const staged = relativizeProjectPaths(
+		demotePinnedMounts({
+			projectDirectory,
+			projectJson,
+			shadowDirectory: path.join(projectDirectory, PINNED_SHADOW_DIR),
+		}),
+		projectDirectory,
+	);
+	fs.mkdirSync(projectDirectory, { recursive: true });
+	fs.writeFileSync(projectFile, staged);
+	// `rojo build -o` fails if the output directory is missing, so ensure it
+	// exists for every caller rather than relying on each one to pre-create it.
+	fs.mkdirSync(path.dirname(placeFile), { recursive: true });
+
+	buildWithRojo(projectFile, placeFile);
+	return { hash: hashFile(placeFile), path: placeFile };
+}
+
+/**
  * The cache file to consult and the key to match it against, or `undefined`
  * when this build has no cache to work with — reuse was not asked for, or the
  * inputs would not hash. Pairing the two means a caller never holds a key
  * without somewhere to put it.
  */
-function planReuse(
-	reuse: PlaceReuseOptions | undefined,
-	projectFile: string,
-): ReusePlan | undefined {
+function planReuse({
+	projectFile,
+	projectJson,
+	reuse,
+}: {
+	projectFile: string;
+	projectJson: string;
+	reuse: PlaceReuseOptions | undefined;
+}): ReusePlan | undefined {
 	if (reuse === undefined) {
 		return undefined;
 	}
@@ -124,7 +153,12 @@ function planReuse(
 	const inputsKey = computePlaceInputsKey({
 		manifests: reuse.manifests,
 		projectFile,
+		projectJson,
 		shadowRoots: reuse.shadowRoots,
+		// The pinned-mount pass is the only staging code the key cannot read
+		// off its own inputs: the path rewrite is already applied to the text
+		// above, so a change to that rule moves the key on its own.
+		stagingVersion: PINNED_MOUNT_PASS_VERSION,
 	});
 
 	return inputsKey === undefined ? undefined : { cacheFile: reuse.cacheFile, inputsKey };
