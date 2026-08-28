@@ -24,10 +24,12 @@ const SPINE_DIR = ".spine";
  * Rojo mounts a directory whole, so a level's mount may not contain the level
  * below it: the demote hangs that one off an explicit child as well, and rojo
  * would build both into same-named Instances. The leaf breaks that up — two
- * levels on one chain mirror to `<a>/.self` and `<a>/<b>/.self`, which are
- * siblings rather than nested. Dot-prefixed so no source directory can ever
- * claim the name: the coverage walk skips a dot-prefixed directory, so nothing
- * under one is ever a coverage root, and a spine level is an ancestor of one.
+ * levels on one chain mirror to `<a>/.self` and `<a>/<b>/.self`, siblings
+ * rather than one inside the other.
+ *
+ * Which holds as long as `<b>` is never `.self`, and dot-prefixing is what
+ * buys that: every level below the mount is a directory the coverage walk
+ * descended to reach a root, and that walk passes over a dot-prefixed name.
  */
 const SPINE_LEAF = ".self";
 
