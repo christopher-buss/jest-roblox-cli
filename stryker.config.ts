@@ -52,7 +52,7 @@ export default {
 	// fail this gate on a suite that passes it.
 	thresholds: {
 		...sharedConfig.thresholds,
-		break: 92.81,
+		break: 92.84,
 	},
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",

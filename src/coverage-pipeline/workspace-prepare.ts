@@ -28,7 +28,11 @@ import { MANIFEST_VERSION, readManifest } from "./manifest.ts";
 import type { NarrowedMount } from "./narrow-roots.ts";
 import { narrowLuauRoots } from "./narrow-roots.ts";
 import { isWithinRoot } from "./redirect-path.ts";
-import { collectRojoMounts, unreachableRootWarning } from "./root-reachability.ts";
+import {
+	collectRojoMounts,
+	resolveMountWithin,
+	unreachableRootWarning,
+} from "./root-reachability.ts";
 import type { ShadowRootResult } from "./shadow-root.ts";
 import { isNonInstrumentedFile, prepareShadowRoot } from "./shadow-root.ts";
 import { prepareSpine } from "./spine.ts";
@@ -533,18 +537,18 @@ function discoverFromRojoWalk({
 	const seen = new Set<string>();
 	const result: Array<string> = [];
 	for (const rawPath of collected) {
-		// path.resolve treats host-absolute rawPaths as already-resolved (passes
-		// them through verbatim) and resolves relative ones against the rojo
-		// dir, so no separate isAbsolute branch is needed. The relativize below
-		// is what decides an absolute mount's fate: one inside the package is
-		// kept, one outside escapes and is dropped.
-		const absolute = path.resolve(rojoDirectory, rawPath);
-		const relative = normalizeWindowsPath(path.relative(descriptor.packageDirectory, absolute));
-		if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+		// The package directory is the frame here; single mode passes its own
+		// and the answer is the same shape. See {@link resolveMountWithin}.
+		const relative = resolveMountWithin(rawPath, {
+			frame: descriptor.packageDirectory,
+			rojoDirectory,
+		});
+		if (relative === undefined || seen.has(relative)) {
 			continue;
 		}
 
-		if (seen.has(relative) || !isInstrumentableRoot(absolute, relative, matchesIgnored)) {
+		const absolute = path.resolve(descriptor.packageDirectory, relative);
+		if (!isInstrumentableRoot(absolute, relative, matchesIgnored)) {
 			continue;
 		}
 

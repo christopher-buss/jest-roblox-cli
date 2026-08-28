@@ -3,7 +3,7 @@ import { collectPaths } from "@isentinel/rojo-utils";
 import * as path from "node:path";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { isWithinRoot } from "./redirect-path.ts";
 
 /** One `luauRoots` entry, weighed against a project's rojo `$path` mounts. */
@@ -16,6 +16,21 @@ export interface RootReachability {
 	rawRoot: string;
 	/** Who declared the entry. Named in the warning when the mode has one. */
 	subject?: string | undefined;
+}
+
+/**
+ * Where a rojo `$path` is read from, and the frame the answer is written in.
+ */
+export interface MountFrame {
+	/**
+	 * What a coverage root is written relative to: the package directory in
+	 * workspace mode, `rootDir` in single and multi mode. Both are the same
+	 * thing — synthesis resolves a root against the package directory, and a
+	 * single-mode run is one synthetic package rooted at `rootDir`.
+	 */
+	frame: string;
+	/** What a `$path` resolves against — the rojo project's own directory. */
+	rojoDirectory: string;
 }
 
 /**
@@ -65,4 +80,41 @@ export function unreachableRootWarning({
 
 	const owner = subject === undefined ? "" : ` in ${subject}`;
 	return `Warning: luauRoot "${rawRoot}"${owner} does not correspond to any rojo $path mount, so it reports no coverage.\n`;
+}
+
+/**
+ * A rojo `$path` as a coverage root inside `frame`, or `undefined` when it
+ * lands outside one.
+ *
+ * The question every mode asks of a mount before taking it as a root, so that
+ * they cannot answer it differently. Whether the `$path` is written absolute
+ * is not the question: an absolute one under the frame names a root the shadow
+ * can mirror, and a relative `../outside/out` names one it cannot.
+ *
+ * Judged on the resolved path, not the spelling — `src/..` names the frame and
+ * a directory honestly called `..cache` does not escape it.
+ */
+export function resolveMountWithin(
+	rawPath: string,
+	{ frame, rojoDirectory }: MountFrame,
+): string | undefined {
+	// `toPosixRoot`, because `isWithinRoot` reads the separator itself and a
+	// frame that resolves to a filesystem root (`/`, `C:/`) is the one path
+	// `path.resolve` leaves a trailing one on — which would weigh every child
+	// against `//` and reject the lot.
+	const base = toPosixRoot(path.resolve(frame));
+	// Resolved exactly as {@link collectRojoMounts} resolves the same `$path`,
+	// host-dependent absoluteness included: a root is weighed against that
+	// mount set, so a second reading of what "absolute" means would let a root
+	// and the mount it came from disagree.
+	const absolute = toPosixRoot(path.resolve(rojoDirectory, rawPath));
+	// `isWithinRoot` admits the root itself, hence the inequality: the frame is
+	// what roots are written from, not a root within it.
+	if (absolute === base || !isWithinRoot(absolute, base)) {
+		return undefined;
+	}
+
+	// Sliced rather than relativized: at a filesystem root `base` is the empty
+	// string, which `path.relative` would resolve against the cwd instead.
+	return absolute.slice(base.length + 1);
 }

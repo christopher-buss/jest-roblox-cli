@@ -14,7 +14,7 @@ import type { CoverageRoot } from "../staging/synthesizer.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashFile } from "../utils/hash.ts";
-import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type {
 	BuildManifestArtifact,
 	BuildManifestFileRecord,
@@ -37,7 +37,7 @@ import { MANIFEST_VERSION, readManifest, writeManifest } from "./manifest.ts";
 import type { NarrowedMount } from "./narrow-roots.ts";
 import { narrowLuauRoots } from "./narrow-roots.ts";
 import { tryComputeRojoInputsHash } from "./rojo-inputs.ts";
-import { collectRojoMounts } from "./root-reachability.ts";
+import { collectRojoMounts, resolveMountWithin } from "./root-reachability.ts";
 import type { ShadowRootResult } from "./shadow-root.ts";
 import { prepareShadowRoot } from "./shadow-root.ts";
 import type { ShadowLayout } from "./spine.ts";
@@ -93,6 +93,13 @@ export interface PrepareCoverageOptions {
 	coverageInclude?: Array<string> | undefined;
 }
 
+/** A rojo project this run could read, with the frame its mounts are in. */
+export interface RojoProjectInFrame {
+	project: RojoProject;
+	/** What `$path` resolves against — the project's own directory. */
+	rojoDirectory: string;
+}
+
 interface WriteManifestOptions {
 	allFiles: Record<string, InstrumentedFileRecord>;
 	buildId: string;
@@ -126,15 +133,17 @@ interface RojoProjectRead {
 	 * auto-detect rethrows this.
 	 */
 	failure: Error | undefined;
-	/** Absent when the project is missing or too malformed to parse. */
-	project: RojoProject | undefined;
+	/**
+	 * Absent when the project is missing or too malformed to parse. The tree
+	 * and the directory it is read against travel as one: a mount means
+	 * nothing without the frame it resolves in.
+	 */
+	loaded: RojoProjectInFrame | undefined;
 }
 
 /** The rojo project a run reads, parsed once and shared by everything. */
 interface RojoContext extends RojoProjectRead {
 	config: ResolvedConfig;
-	/** What `$path` resolves against — the project's own directory. */
-	rojoDirectory: string | undefined;
 }
 
 /** Everything resolved from config before any shadow dir is touched. */
@@ -208,8 +217,18 @@ export function toCoverageArtifacts(
 	};
 }
 
+/**
+ * The project's `$path` mounts that this run can take as coverage roots,
+ * `rootDir`-relative.
+ *
+ * `rootDir` is the frame — `MountFrame` says why the modes share one, and here
+ * it is where a root is read from by everything downstream: synthesis resolves
+ * one against it, the rojo inputs hash joins one onto it, and
+ * `resolveRojoMounts` states the mounts in it. A root probed in any other
+ * frame, the cwd included, is one the rest of the run cannot find.
+ */
 export function collectLuauRootsFromRojo(
-	project: RojoProject,
+	{ project, rojoDirectory }: RojoProjectInFrame,
 	config: ResolvedConfig,
 ): Array<string> {
 	const paths: Array<string> = [];
@@ -220,33 +239,35 @@ export function collectLuauRootsFromRojo(
 	// mirroring Jest's regex-based coveragePathIgnorePatterns behavior.
 	const isIgnored = picomatch(ignorePatterns, { contains: true });
 
-	return paths.filter((directoryPath) => {
-		// An absolute mount cannot be a luauRoot: a root names where the shadow
-		// mirrors a tree under `rootDir`, and `validateRelativeRoots` rejects
-		// anything else. Rojo still builds the mount; it just reports no
-		// coverage. Workspace mode asks the wider question in
-		// `discoverFromRojoWalk` — does the mount land inside the package —
-		// which also keeps an absolute mount that does; the two answers differ
-		// until this one resolves against `rootDir` rather than the cwd.
-		if (isAbsolutePath(directoryPath)) {
-			return false;
+	const seen = new Set<string>();
+	const roots: Array<string> = [];
+	for (const rawPath of paths) {
+		const root = resolveMountWithin(rawPath, { frame: config.rootDir, rojoDirectory });
+		// One `$path` mounted at two places in the tree is one root: taken
+		// twice it is instrumented into the same shadow dir twice and named
+		// twice in the manifest. Workspace mode dedupes in
+		// `discoverFromRojoWalk` for the same reason.
+		if (root === undefined || seen.has(root) || isIgnored(root)) {
+			continue;
 		}
 
+		const directoryPath = path.resolve(config.rootDir, root);
 		if (!fs.existsSync(directoryPath)) {
-			return false;
+			continue;
 		}
 
 		// Only directories can be coverage roots (skip single-file $path entries)
 		if (!fs.statSync(directoryPath).isDirectory()) {
-			return false;
+			continue;
 		}
 
-		if (isIgnored(directoryPath)) {
-			return false;
+		if (containsLuauFiles(directoryPath)) {
+			seen.add(root);
+			roots.push(root);
 		}
+	}
 
-		return containsLuauFiles(directoryPath);
-	});
+	return roots;
 }
 
 export function findRojoProject(config: ResolvedConfig): string {
@@ -346,18 +367,18 @@ function tryFindRojoProject(config: ResolvedConfig): string | undefined {
  * instrumentable, so the caller falls through to the tsconfig `outDir`.
  */
 function detectRootsFromRojo(
+	loaded: RojoProjectInFrame | undefined,
 	config: ResolvedConfig,
-	resolved: RojoProject | undefined,
 ): Array<string> | undefined {
-	if (resolved === undefined) {
+	if (loaded === undefined) {
 		return undefined;
 	}
 
-	const roots = collectLuauRootsFromRojo(resolved, config);
+	const roots = collectLuauRootsFromRojo(loaded, config);
 	return roots.length > 0 ? roots : undefined;
 }
 
-function resolveLuauRootsWithRojo({ config, failure, project }: RojoContext): Array<string> {
+function resolveLuauRootsWithRojo({ config, failure, loaded }: RojoContext): Array<string> {
 	if (config.luauRoots !== undefined && config.luauRoots.length > 0) {
 		return config.luauRoots;
 	}
@@ -366,7 +387,7 @@ function resolveLuauRootsWithRojo({ config, failure, project }: RojoContext): Ar
 		throw failure;
 	}
 
-	const rojoRoots = detectRootsFromRojo(config, project);
+	const rojoRoots = detectRootsFromRojo(loaded, config);
 	if (rojoRoots !== undefined) {
 		return rojoRoots;
 	}
@@ -394,11 +415,16 @@ function loadResolvedRojoProject(resolvedPath: string): RojoProjectRead {
 			throw new Error(validated.summary);
 		}
 
+		const rojoDirectory = path.dirname(resolvedPath);
+
 		return {
 			failure: undefined,
-			project: {
-				...validated,
-				tree: resolveNestedProjects(validated.tree, path.dirname(resolvedPath)),
+			loaded: {
+				project: {
+					...validated,
+					tree: resolveNestedProjects(validated.tree, rojoDirectory),
+				},
+				rojoDirectory,
 			},
 		};
 	} catch (err) {
@@ -410,7 +436,7 @@ function loadResolvedRojoProject(resolvedPath: string): RojoProjectRead {
 				err instanceof SyntaxError
 					? new Error(`Malformed Rojo project JSON: ${err.message}`, { cause: err })
 					: undefined,
-			project: undefined,
+			loaded: undefined,
 		};
 	}
 }
@@ -420,16 +446,10 @@ function readRojoContext(config: ResolvedConfig, rojoProjectPath: string | undef
 	if (rojoProjectPath === undefined) {
 		// No project file at all: the caller falls through to tsconfig's outDir,
 		// and there are no mounts to judge a demote against.
-		return { config, failure: undefined, project: undefined, rojoDirectory: undefined };
+		return { config, failure: undefined, loaded: undefined };
 	}
 
-	const projectPath = rojoProjectPath;
-
-	return {
-		...loadResolvedRojoProject(projectPath),
-		config,
-		rojoDirectory: path.dirname(projectPath),
-	};
+	return { ...loadResolvedRojoProject(rojoProjectPath), config };
 }
 
 // Announce the reuse and hand the prior place back. Nothing was built, but the
@@ -532,12 +552,12 @@ function resolveUniverse(
  * coverage root against, so a mount and a root agree here exactly when they
  * agree there.
  */
-function resolveRojoMounts({ config, project, rojoDirectory }: RojoContext): ReadonlySet<string> {
-	if (project === undefined || rojoDirectory === undefined) {
+function resolveRojoMounts({ config, loaded }: RojoContext): ReadonlySet<string> {
+	if (loaded === undefined) {
 		return new Set();
 	}
 
-	const mounts = collectRojoMounts(project.tree, rojoDirectory);
+	const mounts = collectRojoMounts(loaded.project.tree, loaded.rojoDirectory);
 	return new Set(
 		Array.from(mounts, (mount) => normalizeWindowsPath(path.relative(config.rootDir, mount))),
 	);

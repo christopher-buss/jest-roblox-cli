@@ -11,6 +11,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
 import {
 	createCopyIgnoreMatcher,
@@ -34,6 +35,7 @@ import {
 } from "./prepare.ts";
 import { computeRojoInputsHash } from "./rojo-inputs.ts";
 import type { ShadowLayout } from "./spine.ts";
+import { prepareWorkspaceCoverage } from "./workspace-prepare.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
@@ -183,7 +185,11 @@ describe(prepareCoverage, () => {
 			await setupMocksAsync();
 			const config = makeConfig({ luauRoots: ["/abs/out"] });
 
-			expect(() => prepareCoverage(config)).toThrow(/luauRoots must be relative paths/);
+			expect(() => prepareCoverage(config)).toThrowWithMessage(
+				Error,
+				"luauRoots must be relative paths, got absolute path. " +
+					"Set a relative outDir in tsconfig or relative luauRoots in config.",
+			);
 		});
 
 		it("should throw when luauRoots is not provided and tsconfig has no outDir", async () => {
@@ -1509,9 +1515,10 @@ describe(prepareCoverage, () => {
 		});
 
 		it("should fall back to full instrumentation when manifest JSON is malformed", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { instrumentRoot } = await setupMocksAsync();
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			seedFilesystem();
 			vol.mkdirSync(".jest-roblox/coverage", { recursive: true });
@@ -1524,6 +1531,11 @@ describe(prepareCoverage, () => {
 			const callArgs = vi.mocked(instrumentRoot).mock.calls[0]![0];
 
 			expect(callArgs.skipFiles).toBeUndefined();
+			// The discard says which fault it found: an unreadable cache and a
+			// cache that parsed but failed the schema are different problems.
+			expect(stderr).toHaveBeenCalledWith(
+				"Warning: Previous coverage manifest is malformed JSON (cache discarded)\n",
+			);
 		});
 
 		it("should re-instrument all when instrumenterVersion differs", async () => {
@@ -1545,9 +1557,10 @@ describe(prepareCoverage, () => {
 		});
 
 		it("should re-instrument all when manifest file record lacks sourceHash", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { instrumentRoot } = await setupMocksAsync();
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			seedFilesystem();
 			vol.mkdirSync("out-tsc/test", { recursive: true });
@@ -1576,6 +1589,13 @@ describe(prepareCoverage, () => {
 			const callArgs = vi.mocked(instrumentRoot).mock.calls[0]![0];
 
 			expect(callArgs.skipFiles).toBeUndefined();
+			// A cache that parsed but failed the schema says which field it
+			// tripped on, so the discard can be told from an unreadable file.
+			expect(stderr).toHaveBeenCalledWith(
+				expect.stringContaining(
+					"Warning: Previous coverage manifest is invalid (cache discarded): ",
+				),
+			);
 		});
 
 		it("should handle incremental mode across multiple luauRoots", async () => {
@@ -2806,10 +2826,10 @@ describe(resolveLuauRoots, () => {
 			};
 
 			vol.mkdirSync("/project", { recursive: true });
-			vol.mkdirSync("packages/core/out", { recursive: true });
-			vol.mkdirSync("packages/test-utils/out", { recursive: true });
-			vol.writeFileSync("packages/core/out/init.luau", "");
-			vol.writeFileSync("packages/test-utils/out/init.luau", "");
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.mkdirSync("/project/packages/test-utils/out", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
+			vol.writeFileSync("/project/packages/test-utils/out/init.luau", "");
 			vol.writeFileSync("/project/default.project.json", JSON.stringify(multiRootProject));
 
 			await setupMocksAsync();
@@ -2818,6 +2838,33 @@ describe(resolveLuauRoots, () => {
 			const roots = resolveLuauRoots(config);
 
 			expect(roots).toStrictEqual(["packages/core/out", "packages/test-utils/out"]);
+		});
+
+		it("should auto-detect when luauRoots is an empty array", async () => {
+			expect.assertions(1);
+
+			const project = {
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$path: "packages/core/out",
+					},
+				},
+			};
+
+			vol.mkdirSync("/project", { recursive: true });
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
+			vol.writeFileSync("/project/default.project.json", JSON.stringify(project));
+
+			await setupMocksAsync();
+			// An empty array names no roots, which is not the same as choosing
+			// them: the run walks the rojo project rather than instrumenting
+			// nothing.
+			const config = makeConfig({ luauRoots: [] });
+
+			expect(resolveLuauRoots(config)).toStrictEqual(["packages/core/out"]);
 		});
 
 		it("should skip $path entries that do not exist on disk", async () => {
@@ -2837,8 +2884,8 @@ describe(resolveLuauRoots, () => {
 			};
 
 			vol.mkdirSync("/project", { recursive: true });
-			vol.mkdirSync("packages/core/out", { recursive: true });
-			vol.writeFileSync("packages/core/out/init.luau", "");
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
 			vol.writeFileSync("/project/default.project.json", JSON.stringify(projectWithMissing));
 
 			await setupMocksAsync();
@@ -2864,10 +2911,10 @@ describe(resolveLuauRoots, () => {
 			};
 
 			vol.mkdirSync("/project", { recursive: true });
-			vol.mkdirSync("packages/core/out", { recursive: true });
-			vol.mkdirSync("packages/empty/out", { recursive: true });
-			vol.writeFileSync("packages/core/out/init.luau", "");
-			vol.writeFileSync("packages/empty/out/readme.txt", "no luau here");
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.mkdirSync("/project/packages/empty/out", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
+			vol.writeFileSync("/project/packages/empty/out/readme.txt", "no luau here");
 			vol.writeFileSync("/project/default.project.json", JSON.stringify(projectWithEmpty));
 
 			await setupMocksAsync();
@@ -2897,8 +2944,8 @@ describe(resolveLuauRoots, () => {
 			};
 
 			vol.mkdirSync("/project", { recursive: true });
-			vol.mkdirSync("src/Client/Systems", { recursive: true });
-			vol.writeFileSync("src/Client/Systems/FriendsController.luau", "");
+			vol.mkdirSync("/project/src/Client/Systems", { recursive: true });
+			vol.writeFileSync("/project/src/Client/Systems/FriendsController.luau", "");
 			vol.writeFileSync("/project/default.project.json", JSON.stringify(parentProject));
 			vol.writeFileSync("/project/client.project.json", JSON.stringify(clientProject));
 
@@ -2925,10 +2972,10 @@ describe(resolveLuauRoots, () => {
 			};
 
 			vol.mkdirSync("/project", { recursive: true });
-			vol.mkdirSync("packages/core/out", { recursive: true });
-			vol.mkdirSync("rojo-sync/rbxts", { recursive: true });
-			vol.writeFileSync("packages/core/out/init.luau", "");
-			vol.writeFileSync("rojo-sync/rbxts/init.luau", "");
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.mkdirSync("/project/rojo-sync/rbxts", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
+			vol.writeFileSync("/project/rojo-sync/rbxts/init.luau", "");
 			vol.writeFileSync("/project/default.project.json", JSON.stringify(projectWithSync));
 
 			await setupMocksAsync();
@@ -2984,6 +3031,11 @@ describe(resolveLuauRoots, () => {
 });
 
 describe(collectLuauRootsFromRojo, () => {
+	// Every case here sites the project at `rootDir`, which is the common
+	// shape: the frame a root is written in and the frame a `$path` resolves
+	// in are then the same directory.
+	const rojoDirectory = "/project";
+
 	describe("when collecting paths from nested tree nodes", () => {
 		it("should find $path values in deeply nested nodes", async () => {
 			expect.assertions(1);
@@ -3003,15 +3055,15 @@ describe(collectLuauRootsFromRojo, () => {
 				},
 			};
 
-			vol.mkdirSync("packages/core/out", { recursive: true });
-			vol.mkdirSync("packages/test-utils/out", { recursive: true });
-			vol.writeFileSync("packages/core/out/init.luau", "");
-			vol.writeFileSync("packages/test-utils/out/init.luau", "");
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.mkdirSync("/project/packages/test-utils/out", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
+			vol.writeFileSync("/project/packages/test-utils/out/init.luau", "");
 
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(collectLuauRootsFromRojo(project, config)).toStrictEqual([
+			expect(collectLuauRootsFromRojo({ project, rojoDirectory }, config)).toStrictEqual([
 				"packages/core/out",
 				"packages/test-utils/out",
 			]);
@@ -3037,19 +3089,21 @@ describe(collectLuauRootsFromRojo, () => {
 				},
 			};
 
-			vol.mkdirSync("packages/core/out", { recursive: true });
-			vol.writeFileSync("packages/core/out/init.luau", "");
-			vol.writeFileSync("packages/core/jest.config.luau", "return {}");
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
+			vol.writeFileSync("/project/packages/core/jest.config.luau", "return {}");
 
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(collectLuauRootsFromRojo(project, config)).toStrictEqual(["packages/core/out"]);
+			expect(collectLuauRootsFromRojo({ project, rojoDirectory }, config)).toStrictEqual([
+				"packages/core/out",
+			]);
 		});
 	});
 
 	describe("when .luau files are in subdirectories", () => {
-		it("should detect .luau files recursively", async () => {
+		it("should detect .luau files nested beside a non-luau sibling", async () => {
 			expect.assertions(1);
 
 			const project: RojoProject = {
@@ -3062,13 +3116,18 @@ describe(collectLuauRootsFromRojo, () => {
 				},
 			};
 
-			vol.mkdirSync("packages/core/out/nested", { recursive: true });
-			vol.writeFileSync("packages/core/out/nested/module.luau", "");
+			vol.mkdirSync("/project/packages/core/out/nested", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/nested/module.luau", "");
+			// A loose non-luau file beside the tree: one entry that is not luau
+			// does not cost the mount its coverage.
+			vol.writeFileSync("/project/packages/core/out/readme.txt", "");
 
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(collectLuauRootsFromRojo(project, config)).toStrictEqual(["packages/core/out"]);
+			expect(collectLuauRootsFromRojo({ project, rojoDirectory }, config)).toStrictEqual([
+				"packages/core/out",
+			]);
 		});
 	});
 
@@ -3089,28 +3148,51 @@ describe(collectLuauRootsFromRojo, () => {
 				},
 			};
 
-			vol.mkdirSync("packages/core/out", { recursive: true });
-			vol.mkdirSync("node_modules/@rbxts", { recursive: true });
-			vol.writeFileSync("packages/core/out/init.luau", "");
-			vol.writeFileSync("node_modules/@rbxts/init.luau", "");
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.mkdirSync("/project/node_modules/@rbxts", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
+			vol.writeFileSync("/project/node_modules/@rbxts/init.luau", "");
 
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(collectLuauRootsFromRojo(project, config)).toStrictEqual(["packages/core/out"]);
+			expect(collectLuauRootsFromRojo({ project, rojoDirectory }, config)).toStrictEqual([
+				"packages/core/out",
+			]);
 		});
 	});
 
-	describe("when a $path is absolute", () => {
-		it("should exclude it from the auto-detected roots", async () => {
+	// The mount is judged on where it lands, not on how it is spelled: the
+	// shadow mirrors a tree under `rootDir` and the manifest keys the report
+	// reads are written from there, so a mount elsewhere in the rojo tree has
+	// no root to be — however it is written.
+	describe("when a $path is resolved against rootDir", () => {
+		it.for([
+			{
+				mount: "/project/vendor/out",
+				roots: ["vendor/out", "packages/core/out"],
+				shape: "an absolute mount inside rootDir",
+			},
+			{
+				mount: "/external/out",
+				roots: ["packages/core/out"],
+				shape: "an absolute mount outside rootDir",
+			},
+			{
+				mount: "../outside/out",
+				roots: ["packages/core/out"],
+				shape: "a relative mount that escapes rootDir",
+			},
+			{ mount: ".", roots: ["packages/core/out"], shape: "a mount naming rootDir itself" },
+		])("should answer $roots for $shape", async ({ mount, roots }) => {
 			expect.assertions(1);
 
 			const project: RojoProject = {
 				name: "test",
 				tree: {
 					$className: "DataModel",
-					External: {
-						$path: "/external/out",
+					Mounted: {
+						$path: mount,
 					},
 					ReplicatedStorage: {
 						$path: "packages/core/out",
@@ -3118,16 +3200,177 @@ describe(collectLuauRootsFromRojo, () => {
 				},
 			};
 
-			vol.mkdirSync("packages/core/out", { recursive: true });
-			vol.mkdirSync("/external/out", { recursive: true });
-			vol.writeFileSync("packages/core/out/init.luau", "");
-			vol.writeFileSync("/external/out/init.luau", "");
+			// Seeded wherever the mount lands, so each row turns on where the
+			// directory is rather than on whether it is there at all.
+			for (const directory of [
+				"/project/packages/core/out",
+				path.resolve(rojoDirectory, mount),
+			]) {
+				vol.mkdirSync(directory, { recursive: true });
+				vol.writeFileSync(`${directory}/init.luau`, "");
+			}
 
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(collectLuauRootsFromRojo(project, config)).toStrictEqual(["packages/core/out"]);
+			expect(collectLuauRootsFromRojo({ project, rojoDirectory }, config)).toStrictEqual(
+				roots,
+			);
 		});
+
+		it("should keep a mount when rootDir is a filesystem root", async () => {
+			expect.assertions(1);
+
+			const project: RojoProject = {
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$path: "out",
+					},
+				},
+			};
+
+			vol.mkdirSync("/out", { recursive: true });
+			vol.writeFileSync("/out/init.luau", "");
+
+			await setupMocksAsync();
+			// The one frame a resolve leaves a trailing separator on, so a
+			// containment test reading it verbatim weighs every child against
+			// `//` and keeps none.
+			const config = makeConfig({ rootDir: path.resolve("/") });
+
+			expect(collectLuauRootsFromRojo({ project, rojoDirectory: "/" }, config)).toStrictEqual(
+				["out"],
+			);
+		});
+
+		it("should state a subdirectory project's mount in the rootDir frame", async () => {
+			expect.assertions(1);
+
+			const project: RojoProject = {
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$path: "out",
+					},
+				},
+			};
+
+			vol.mkdirSync("/project/sub/out", { recursive: true });
+			vol.writeFileSync("/project/sub/out/init.luau", "");
+
+			await setupMocksAsync();
+			const config = makeConfig();
+
+			// The only layout where the two frames are different directories:
+			// rojo reads `out` against the project beside it, and the root is
+			// written from `rootDir`, so the same mount is `sub/out` there.
+			expect(
+				collectLuauRootsFromRojo({ project, rojoDirectory: "/project/sub" }, config),
+			).toStrictEqual(["sub/out"]);
+		});
+
+		it("should take one root for a $path mounted twice", async () => {
+			expect.assertions(1);
+
+			const project: RojoProject = {
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$path: "packages/core/out",
+					},
+					ServerScriptService: {
+						$path: "packages/core/out",
+					},
+				},
+			};
+
+			vol.mkdirSync("/project/packages/core/out", { recursive: true });
+			vol.writeFileSync("/project/packages/core/out/init.luau", "");
+
+			await setupMocksAsync();
+			const config = makeConfig();
+
+			expect(collectLuauRootsFromRojo({ project, rojoDirectory }, config)).toStrictEqual([
+				"packages/core/out",
+			]);
+		});
+	});
+});
+
+/**
+ * Both modes take a rojo `$path` as a coverage root exactly when it lands
+ * inside their frame — see `MountFrame` for why the two frames are one thing.
+ * Each layout here answers containment one way and the narrower "is the
+ * `$path` absolute" the other, so a mode asking the narrow question fails
+ * against the mode that does not.
+ */
+describe("cross-mode $path containment", () => {
+	const packageDirectory = normalizeWindowsPath(path.resolve("/pkg"));
+	const packageProject = `${packageDirectory}/test.project.json`;
+
+	function seedPackage(mount: string): RojoProject {
+		const project: RojoProject = {
+			name: "test",
+			tree: {
+				$className: "DataModel",
+				ReplicatedStorage: {
+					$path: mount,
+				},
+			},
+		};
+
+		// The outside directory is seeded in the invocation directory's frame
+		// too. A mode that probed the cwd would find it there and keep it, so
+		// seeding both frames is what makes the escaping row fail such a mode
+		// rather than pass on a missing directory.
+		for (const directory of [
+			`${packageDirectory}/out`,
+			"/outside/out",
+			path.resolve("../outside/out"),
+		]) {
+			vol.mkdirSync(directory, { recursive: true });
+			vol.writeFileSync(`${directory}/init.luau`, "local x = 1");
+		}
+
+		vol.writeFileSync(packageProject, JSON.stringify(project));
+
+		return project;
+	}
+
+	it.for([
+		{ mount: `${packageDirectory}/out`, roots: ["out"], shape: "an absolute mount inside" },
+		{ mount: "../outside/out", roots: [], shape: "a relative mount outside" },
+	])("should answer the same for $shape the frame", async ({ mount, roots }) => {
+		expect.assertions(1);
+
+		const project = seedPackage(mount);
+		await setupMocksAsync();
+
+		const single = collectLuauRootsFromRojo(
+			{ project, rojoDirectory: packageDirectory },
+			makeConfig({ rootDir: packageDirectory }),
+		);
+		const [workspace] = prepareWorkspaceCoverage({
+			packages: [
+				{
+					name: "pkg",
+					packageDirectory,
+					rojoProjectPath: packageProject,
+				},
+			],
+			workspaceRoot: packageDirectory,
+		});
+
+		// One assertion, so a failure prints both answers: what is under test
+		// is that they agree, not what either one says on its own.
+		expect({
+			single,
+			workspace: workspace!.coverageRoots.map((root) => root.luauRoot),
+		}).toStrictEqual({ single: roots, workspace: roots });
 	});
 });
 
