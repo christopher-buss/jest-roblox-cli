@@ -16,7 +16,7 @@ import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
 import { MANIFEST_VERSION, writeManifest } from "./manifest.ts";
 import { insertProbes } from "./probe-inserter.ts";
 
-export const INSTRUMENTER_VERSION = 4;
+export const INSTRUMENTER_VERSION = 5;
 
 const LUAU_EXTENSION = /\.luau?$/;
 
@@ -204,6 +204,9 @@ function instrumentFile(
 		instrumentedLuauPath: normalizeWindowsPath(shadowFilePath),
 		originalLuauPath: fileKey,
 		sourceHash: hashBuffer(sourceBuffer),
+		// The original's map, not one beside the twin in the shadow. Legal
+		// because `insertProbes` keeps the twin line-for-line aligned with the
+		// original, so one map describes both without a line shift.
 		sourceMapPath: `${fileKey}.map`,
 		statementCount: collectorResult.statements.length,
 	};

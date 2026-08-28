@@ -29,7 +29,7 @@ function callInstrumentWithDefaults() {
 function readEmbeddedFileKey(fileKey: string): string | undefined {
 	const relativePath = fileKey.slice("/luau-root/".length);
 	const instrumented = vol.readFileSync(`/shadow/${relativePath}`, "utf-8").toString();
-	return /^local __cov_file_key = (.+)$/m.exec(instrumented)?.[1];
+	return /local __cov_file_key = ("(?:[^"\\]|\\.)*")/.exec(instrumented)?.[1];
 }
 
 /** Seed memfs with source files; instrumentation parses them in process. */
@@ -376,7 +376,7 @@ describe(instrument, () => {
 
 			const result = callInstrumentWithDefaults();
 
-			expect(result.instrumenterVersion).toBe(4);
+			expect(result.instrumenterVersion).toBe(5);
 		});
 
 		it("should emit manifest file records with correct metadata", () => {

@@ -22,7 +22,7 @@ function instrumentFixture(fixtureName: string, fileKey: string) {
 	const instrumentedSource = insertProbes(source, result, fileKey);
 	const covMap = buildCoverageMap(result);
 
-	return { covMap, instrumentedSource, result };
+	return { covMap, instrumentedSource, result, source };
 }
 
 /** Parse-checks instrumented output; "OK" when it is non-empty valid Luau. */
@@ -457,5 +457,24 @@ describe("instrumentation pipeline (integration)", () => {
 
 			expect(validateLuauSource(instrumentedSource)).toBe("OK");
 		});
+	});
+
+	// The alignment invariant the AGENTS.md Coverage section states. Every
+	// fixture, because the shift it guards against grew with the file.
+	describe("when a stack frame is mapped back to source", () => {
+		it.for(fs.readdirSync(FIXTURES_DIR).filter((name) => name.endsWith(".luau")))(
+			"should keep %s line-for-line aligned with its original",
+			(fixtureName) => {
+				expect.assertions(1);
+
+				const { instrumentedSource, source } = instrumentFixture(fixtureName, fixtureName);
+
+				// The twin drops the source's trailing newline, so count the
+				// lines that carry code rather than the terminator after them.
+				const originalLineCount = source.replace(/\r?\n$/u, "").split(/\r?\n/u).length;
+
+				expect(instrumentedSource.split("\n")).toHaveLength(originalLineCount);
+			},
+		);
 	});
 });

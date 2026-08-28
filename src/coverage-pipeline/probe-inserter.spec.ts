@@ -51,15 +51,119 @@ function wrap({
 
 describe("probe-inserter", () => {
 	describe(insertProbes, () => {
-		it("should return preamble-only for empty result", () => {
-			expect.assertions(4);
+		// A file that is nothing but its directive run has nowhere to put a
+		// preamble: appended, it lands inside the comment; prepended, the
+		// directive stops opening the file. Nothing to count either, so nothing
+		// to declare.
+		it("should leave a file with no coverage sites verbatim", () => {
+			expect.assertions(3);
 
-			const source = "";
-			const result = insertProbes(source, emptyResult(), "test.luau");
+			expect(insertProbes("--!strict\n", emptyResult(), "test.luau")).toBe("--!strict\n");
+			expect(insertProbes("--!strict\n--!native\n", emptyResult(), "test.luau")).toBe(
+				"--!strict\n--!native\n",
+			);
+			expect(insertProbes("-- one\n-- two\n", emptyResult(), "test.luau")).toBe(
+				"-- one\n-- two",
+			);
+		});
+
+		it("should declare the function bucket for a file whose only sites are functions", () => {
+			expect.assertions(3);
+
+			const collector: CollectorResult = {
+				...emptyResult(),
+				functions: [
+					{
+						name: "f",
+						bodyFirstColumn: 0,
+						bodyFirstLine: 0,
+						index: 1,
+						location: { beginColumn: 1, beginLine: 1, endColumn: 4, endLine: 2 },
+					},
+				],
+			};
+
+			const result = insertProbes("local function f()\nend", collector, "test.luau");
+
+			expect(result).toContain("local __cov_f =");
+			expect(result).toContain("for __i = 1, 1 do if __cov_f");
+			expect(result).not.toContain("__cov_s[__i]");
+		});
+
+		it("should declare the branch bucket for a file whose only sites are branches", () => {
+			expect.assertions(2);
+
+			const collector: CollectorResult = {
+				...emptyResult(),
+				branches: [
+					{
+						arms: [
+							binaryArm({ beginColumn: 1, endColumn: 2 }),
+							binaryArm({ beginColumn: 3, endColumn: 4 }),
+						],
+						branchType: "expr-if",
+						index: 1,
+					},
+				],
+			};
+
+			const result = insertProbes("local x = a or b", collector, "test.luau");
+
+			expect(result).toContain("local __cov_b =");
+			expect(result).not.toContain("__cov_s[__i]");
+		});
+
+		// The one case no fixture in `test/fixtures/coverage-pipeline` covers:
+		// a leading mode directive, which the fold has to skip past. The branch
+		// count is what used to grow the shift, so it varies here too.
+		it("should keep every original line at its original line number", () => {
+			expect.assertions(2);
+
+			const source = '--!strict\nlocal a = 1\nlocal b = 2\nerror("boom")';
+			const collector: CollectorResult = {
+				...emptyResult(),
+				branches: Array.from({ length: 12 }, (_unused, index) => {
+					return {
+						arms: [
+							binaryArm({ beginColumn: 1, endColumn: 2, line: 2 }),
+							binaryArm({ beginColumn: 3, endColumn: 4, line: 2 }),
+						],
+						branchType: "expr-if" as const,
+						index: index + 1,
+					};
+				}),
+			};
+
+			const result = insertProbes(source, collector, "test.luau");
+
+			const lines = result.split("\n");
+
+			expect(lines).toHaveLength(4);
+			expect(lines[3]).toBe('error("boom")');
+		});
+
+		it("should declare only the buckets the file's sites need", () => {
+			expect.assertions(5);
+
+			const source = "local x = 1";
+			const collector: CollectorResult = {
+				...emptyResult(),
+				statements: [
+					{
+						index: 1,
+						location: { beginColumn: 1, beginLine: 1, endColumn: 12, endLine: 1 },
+					},
+				],
+			};
+
+			const result = insertProbes(source, collector, "test.luau");
 
 			expect(result).toContain("_G.__jest_roblox_cov");
 			expect(result).toContain('__cov_file_key = "test.luau"');
-			expect(result).not.toContain("for __i = 1,");
+			expect(result).not.toContain("local __cov_f =");
+			expect(result).not.toContain("local __cov_b =");
+			// Pins the statement-only preamble verbatim; the contract test below
+			// pins the shape once every bucket is in play.
 			expect(result).toMatchSnapshot();
 		});
 

@@ -1,0 +1,2 @@
+--!strict
+-- A placeholder module with nothing to count.

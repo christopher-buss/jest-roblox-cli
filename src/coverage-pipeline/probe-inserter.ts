@@ -35,9 +35,34 @@ export function insertProbes(source: string, result: CollectorResult, fileKey: s
 	applyProbes(lines, probes);
 
 	const modeDirectives = extractModeDirectives(lines);
-	const preamble = buildPreamble(fileKey, result);
 
-	return modeDirectives + preamble + lines.join("\n");
+	// A file with nothing to count declares nothing, so the twin is its source
+	// verbatim. Emitting anyway would need a line the source does not have when
+	// directives are the whole file: appended, the preamble lands inside that
+	// comment; prepended, the directive stops opening the file.
+	if (!hasCoverageSites(result)) {
+		return modeDirectives + lines.join("\n");
+	}
+
+	// The preamble shares the first line that survives the directive strip: the
+	// runtime reports frame lines against this twin, but the stack-trace mapper
+	// reads the source map of the original file, so the twin stays line-for-line
+	// aligned with it. Joined with `;` rather than a space so a first line
+	// opening with `(` cannot read as a call on the statement before it. Lines
+	// align, positions do not — the shared line's columns sit right of the
+	// original's by the preamble's width. That reaches the mapper only through
+	// a frame on the shared line carrying a column, which a Luau traceback does
+	// not emit, and even then the mapper recomputes the TypeScript column from
+	// the mapped line's text rather than from the map.
+	const firstLineParts = buildPreamble(fileKey, result);
+	const [originalFirstLine] = lines;
+	// A site sits on a line, so the strip above cannot have taken the last one.
+	assert(originalFirstLine !== undefined, "Coverage sites with no line to hold them");
+	firstLineParts.push(originalFirstLine);
+
+	lines[0] = firstLineParts.join("; ");
+
+	return modeDirectives + lines.join("\n");
 }
 
 /**
@@ -249,6 +274,13 @@ function splitLines(source: string): Array<string> {
 	return lines;
 }
 
+/** Whether the file has anything a counter table would hold. */
+function hasCoverageSites(result: CollectorResult): boolean {
+	return (
+		result.statements.length > 0 || result.functions.length > 0 || result.branches.length > 0
+	);
+}
+
 /**
  * The only escaper for the file key. `local __cov_file_key = "<escaped>"` is
  * one half of the cross-machine join key pair — the other half is the manifest
@@ -265,54 +297,67 @@ function escapeLuauString(value: string): string {
 }
 
 /**
+ * The one emitter for a counter bucket's `ensure the table, then bind a local`
+ * pair. Three buckets share it so the field letter cannot drift between the
+ * `nil` guard, the assignment, and the local the probes read.
+ */
+function bindBucket(field: "b" | "f" | "s"): Array<string> {
+	const bucket = `_G.__jest_roblox_cov[__cov_file_key].${field}`;
+	return [`if ${bucket} == nil then ${bucket} = {} end`, `local __cov_${field} = ${bucket}`];
+}
+
+/**
  * The branch half of the preamble: the shared `__cov_b` table, one zero-filled
  * arm vector per branch, and the `__cov_br` wrap helper when any expression
  * wrap probe needs it. Empty when the file has no branches.
  */
-function buildBranchInit(result: CollectorResult): string {
+function buildBranchInit(result: CollectorResult): Array<string> {
 	if (result.branches.length === 0) {
-		return "";
+		return [];
 	}
 
-	let init =
-		"if _G.__jest_roblox_cov[__cov_file_key].b == nil then _G.__jest_roblox_cov[__cov_file_key].b = {} end\n";
-	init += "local __cov_b = _G.__jest_roblox_cov[__cov_file_key].b\n";
+	const statements = bindBucket("b");
 	for (const branch of result.branches) {
 		const zeros = branch.arms.map(() => "0").join(", ");
-		init += `if __cov_b[${branch.index}] == nil then __cov_b[${branch.index}] = {${zeros}} end\n`;
+		statements.push(
+			`if __cov_b[${branch.index}] == nil then __cov_b[${branch.index}] = {${zeros}} end`,
+		);
 	}
 
 	if (result.wrapProbes.length > 0) {
-		init +=
-			"local function __cov_br(__bi, __ai, ...) __cov_b[__bi][__ai] += 1; return ... end\n";
+		statements.push(
+			"local function __cov_br(__bi, __ai, ...) __cov_b[__bi][__ai] += 1; return ... end",
+		);
 	}
 
-	return init;
+	return statements;
 }
 
-function buildPreamble(fileKey: string, result: CollectorResult): string {
+/** Zeroes every slot of a bucket the caller has already bound. */
+function zeroFill(field: "f" | "s", count: number): string {
+	return `for __i = 1, ${count} do if __cov_${field}[__i] == nil then __cov_${field}[__i] = 0 end end`;
+}
+
+/** Every statement the file's probes need in scope, in dependency order. */
+function buildPreamble(fileKey: string, result: CollectorResult): Array<string> {
 	const escapedKey = escapeLuauString(fileKey);
 
-	let preamble = "if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end\n";
-	preamble += `local __cov_file_key = "${escapedKey}"\n`;
-	preamble +=
-		"if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end\n";
-	preamble +=
-		"if _G.__jest_roblox_cov[__cov_file_key].s == nil then _G.__jest_roblox_cov[__cov_file_key].s = {} end\n";
-	preamble += "local __cov_s = _G.__jest_roblox_cov[__cov_file_key].s\n";
+	const statements = [
+		"if _G.__jest_roblox_cov == nil then _G.__jest_roblox_cov = {} end",
+		`local __cov_file_key = "${escapedKey}"`,
+		"if _G.__jest_roblox_cov[__cov_file_key] == nil then _G.__jest_roblox_cov[__cov_file_key] = {} end",
+		...bindBucket("s"),
+	];
 
 	if (result.statements.length > 0) {
-		preamble += `for __i = 1, ${result.statements.length} do if __cov_s[__i] == nil then __cov_s[__i] = 0 end end\n`;
+		statements.push(zeroFill("s", result.statements.length));
 	}
 
 	if (result.functions.length > 0) {
-		preamble +=
-			"if _G.__jest_roblox_cov[__cov_file_key].f == nil then _G.__jest_roblox_cov[__cov_file_key].f = {} end\n";
-		preamble += "local __cov_f = _G.__jest_roblox_cov[__cov_file_key].f\n";
-		preamble += `for __i = 1, ${result.functions.length} do if __cov_f[__i] == nil then __cov_f[__i] = 0 end end\n`;
+		statements.push(...bindBucket("f"), zeroFill("f", result.functions.length));
 	}
 
-	preamble += buildBranchInit(result);
+	statements.push(...buildBranchInit(result));
 
-	return preamble;
+	return statements;
 }
