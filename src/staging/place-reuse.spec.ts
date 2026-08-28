@@ -195,6 +195,28 @@ describe(computePlaceInputsKey, () => {
 		expect(keyFor({ stagingVersion: 2 })).not.toBe(before);
 	});
 
+	it("should report the same key when the manifests arrive in a different order", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		// Manifests arrive in whatever order the packages were prepared in.
+		// Sorting the lines is what keeps that order from reading as a
+		// changed input and rebuilding a place that is already on disk.
+		const first = manifest({
+			files: { "src/a.luau": fromAny({ sourceHash: "aaa" }) },
+			shadowDir: "/cache/shadow-a",
+		});
+		const second = manifest({
+			files: { "src/b.luau": fromAny({ sourceHash: "bbb" }) },
+			shadowDir: "/cache/shadow-b",
+		});
+
+		expect(keyFor({ manifests: [second, first] })).toBe(keyFor({ manifests: [first, second] }));
+	});
+
 	it("should report undefined and warn when the project text cannot be parsed", () => {
 		expect.assertions(2);
 
