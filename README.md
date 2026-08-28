@@ -376,10 +376,14 @@ Three ways to run tests, plus an auto-pick:
 
 ### Auto (default)
 
-`--backend auto` (the default) probes for a connected Studio plugin first. If
-detected, runs via Studio; otherwise falls back to Open Cloud — but only if
-credentials are available (see Open Cloud below). With no plugin and no
-credentials, the run errors instead of silently falling back.
+`--backend auto` (the default) probes for a connected Studio plugin first. If a
+plugin matching this release answers, runs via Studio; otherwise falls back to
+Open Cloud — but only if credentials are available (see Open Cloud below). With
+no plugin and no credentials, the run errors instead of silently falling back.
+
+A plugin that connects but reports a different protocol version is an error
+rather than a fallback — see
+[Several plugins installed](#several-plugins-installed).
 
 ### Open Cloud (remote)
 
@@ -449,7 +453,7 @@ Create a file named drillbit.toml in your project's directory.
 
 ```toml
 [plugins.jest_roblox]
-github = "https://github.com/christopher-buss/jest-roblox-cli/releases/download/v0.2.7/JestRobloxRunner.rbxm"
+github = "https://github.com/christopher-buss/jest-roblox-cli/releases/download/v0.3.20/JestRobloxRunner.rbxm"
 ```
 
 Then run `drillbit` and it will download the plugin and install it in Studio for
@@ -458,6 +462,36 @@ you.
 Or download `JestRobloxRunner.rbxm` from the
 [latest release](https://github.com/christopher-buss/jest-roblox-cli/releases)
 and drop it into your Studio plugins folder.
+
+#### Several plugins installed
+
+Studio runs every plugin in your plugins folder, so a leftover copy of an older
+`JestRobloxRunner` opens its own connection alongside the current one. Each
+connection announces its protocol version, and the CLI runs on one that speaks
+the protocol this release speaks — the others are left alone. The release
+numbers need not match; the protocol is the compatibility contract, so a plugin
+from a neighbouring release that speaks the same protocol serves the run.
+
+When no connection speaks it, the run stops before building a place and names
+every connection it found:
+
+```text
+No compatible jest-roblox Studio plugin. This CLI speaks protocol v6, and the 2 plugin connection(s) on this port report:
+  - JestRobloxRunner 0.3.18 (protocol v5)
+  - a plugin that sent no handshake (it predates the handshake entirely)
+Install the JestRobloxRunner.rbxm shipped with jest-roblox 0.3.20, and remove the other copies from your Studio plugins folder.
+```
+
+This is an error even when Open Cloud credentials are set: a plugin that cannot
+serve the run is something to fix, not a reason to switch backend.
+
+`--backend studio-cli` cannot make this choice. It drives the plugin through Run
+mode rather than a socket, every installed copy gets its own runner, and
+`StudioTestService:EndTest` is first-past-the-post — a copy that refuses the
+version answers in milliseconds while the copy that can serve the run is still
+running your suite. Copies from this release onwards stand down for one that has
+claimed the run, but a copy predating it answers regardless. **Keep exactly one
+`JestRobloxRunner` in your plugins folder if you use `studio-cli`.**
 
 ### Studio CLI (self-launched, local)
 

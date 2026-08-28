@@ -3,7 +3,7 @@
 exports[`StudioCliBackend > should write a bootstrap that drives ExecuteRunModeAsync over a result socket 1`] = `
 "local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
-local payload = HttpService:JSONDecode([=[{"protocolVersion":5,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec-d","**/*.test-d","**/*.spec","**/*.spec","**/*.test","**/*.test"],"passWithNoTests":false,"silent":false,"testPathIgnorePatterns":["/node_modules/","/dist/","/out/"],"verbose":false,"testNamePattern":"alpha-pattern","reporters":[]}]},"runtimeStubMounts":[[]]}]=])
+local payload = HttpService:JSONDecode([=[{"protocolVersion":6,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec-d","**/*.test-d","**/*.spec","**/*.spec","**/*.test","**/*.test"],"passWithNoTests":false,"silent":false,"testPathIgnorePatterns":["/node_modules/","/dist/","/out/"],"verbose":false,"testNamePattern":"alpha-pattern","reporters":[]}]},"runtimeStubMounts":[[]]}]=])
 local URL = "ws://localhost:<port>"
 local REQUEST_ID = [=[<request-id>]=]
 local ok, result = pcall(function()
@@ -15,7 +15,7 @@ if not ok then
 elseif typeof(result) ~= "table" or result.jestOutput == nil then
 	message = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = "studio-cli: the jest plugin produced no result. Install or update the jest-roblox Studio plugin.", success = false }) }
 else
-	message = { type = "results", requestId = REQUEST_ID, protocolVersion = result.protocolVersion, gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput }
+	message = { type = "results", requestId = REQUEST_ID, protocolVersion = result.protocolVersion, pluginVersion = result.pluginVersion, gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput }
 end
 local encoded = HttpService:JSONEncode(message)
 local connected, socket = pcall(function()

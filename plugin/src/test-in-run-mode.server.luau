@@ -1,5 +1,6 @@
 --!strict
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StudioTestService = game:GetService("StudioTestService")
 
@@ -9,7 +10,8 @@ end
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `STUDIO_CLI_PROTOCOL_VERSION` in
--- `src/backends/studio-cli.ts`. v5 adds the optional `vmParallel` count: a
+-- `src/backends/studio-cli.ts`. v6 adds the plugin's own release version to
+-- the result and the claim below; v5 added the optional `vmParallel` count: a
 -- plugin predating it would run a parallel request sequentially and say
 -- nothing, so the handshake is what turns that into an "update the plugin"
 -- error. v4 nested the fields the runner adds to Jest's result under `runner`
@@ -17,7 +19,28 @@ end
 -- the version the CLI sent and echoes its own in `EndTest`, so the CLI
 -- surfaces a clean error against a mismatched plugin rather than running with
 -- stale runtime semantics.
-local PROTOCOL_VERSION = 5
+local PROTOCOL_VERSION = 6
+
+-- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
+-- tree served straight out of source control. Diagnostic only — see the same
+-- lookup in `init.server.luau`.
+local versionOk, PluginVersion = pcall(require, script.Parent:FindFirstChild("version") :: any)
+if not versionOk or typeof(PluginVersion) ~= "string" then
+	PluginVersion = "unknown"
+end
+
+-- Set by whichever installed copy of the plugin can serve this run. Studio
+-- injects a run-mode runner for *every* installed copy, and they all reach
+-- `EndTest` for the same run: without a claim, a stale copy's refusal lands
+-- first and loses the run for a Studio that also has a working copy. Held on
+-- ReplicatedStorage rather than the DataModel because the plugin already
+-- carries an attribute there, so the surface is known to work.
+local RUN_CLAIM_ATTRIBUTE = "JestRobloxRunClaimed"
+
+-- How long a copy that cannot serve the run waits for a copy that can. Only
+-- ever waited out in full when this is the sole installed copy, in which case
+-- the mismatch is the run's real cause and has to be reported.
+local MISMATCH_DEFER_SECONDS = 3
 
 -- How long to wait for the actor hosts to bind their message handler. They
 -- bind as the run-mode session starts, so this only absorbs the gap between
@@ -38,6 +61,7 @@ local function endTest(jestOutput: string, gameOutput: string?): ()
 			jestOutput = jestOutput,
 			gameOutput = gameOutput or "[]",
 			protocolVersion = PROTOCOL_VERSION,
+			pluginVersion = PluginVersion,
 		})
 	end)
 	if not ok then
@@ -72,15 +96,34 @@ local clientVersion = if typeof(testArgs.protocolVersion) == "number"
 	then testArgs.protocolVersion
 	else nil
 if clientVersion ~= PROTOCOL_VERSION then
+	-- Defer to any installed copy that can serve this run before reporting.
+	-- Reporting straight away is what makes a stale copy fatal to a Studio
+	-- that also has a working one: `EndTest` is first-past-the-post, and
+	-- refusing costs nothing while running the suite takes seconds.
+	local deadline = os.clock() + MISMATCH_DEFER_SECONDS
+	repeat
+		if ReplicatedStorage:GetAttribute(RUN_CLAIM_ATTRIBUTE) ~= nil then
+			return
+		end
+
+		task.wait(0.05)
+	until os.clock() >= deadline
+
 	endWithError(
 		"Studio plugin protocol version mismatch — plugin v"
 			.. tostring(PROTOCOL_VERSION)
-			.. ", CLI v"
+			.. " ("
+			.. PluginVersion
+			.. "), CLI v"
 			.. tostring(clientVersion)
 			.. ". Update the jest-roblox Studio plugin to match the CLI."
 	)
 	return
 end
+
+-- Claim the run before doing anything that takes time, so the copies that
+-- cannot serve it stand down rather than answering in our place.
+ReplicatedStorage:SetAttribute(RUN_CLAIM_ATTRIBUTE, PROTOCOL_VERSION)
 
 local loadStringEnabled = pcall(function()
 	loadstring("return true")

@@ -13,14 +13,28 @@ local RECONNECT_DELAY = 0.1
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `PROTOCOL_VERSION` in the run-mode runner
--- beside this file. Bumped when the runtime contract changes — v5 adds the
--- optional `vmParallel` count, which a plugin predating it would ignore and
--- run sequentially without saying so; v4 nested the fields the runner adds to
--- Jest's result under `runner` and renamed the frame key `request_id` to
--- `requestId`. The plugin rejects mismatched CLI versions with a
--- `version_mismatch` response so users see a clear upgrade message rather than
--- running with stale behaviour or an opaque timeout.
-local PROTOCOL_VERSION = 5
+-- beside this file. Bumped when the runtime contract changes — v6 adds the
+-- `hello` announcement below; v5 added the optional `vmParallel` count, which
+-- a plugin predating it would ignore and run sequentially without saying so;
+-- v4 nested the fields the runner adds to Jest's result under `runner` and
+-- renamed the frame key `request_id` to `requestId`. The plugin rejects
+-- mismatched CLI versions with a `version_mismatch` response so users see a
+-- clear upgrade message rather than running with stale behaviour or an opaque
+-- timeout.
+local PROTOCOL_VERSION = 6
+
+-- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
+-- tree served straight out of source control. Diagnostic only: the CLI selects
+-- on PROTOCOL_VERSION and reports this so a user running several installed
+-- copies is told which file to remove.
+--
+-- `script` is the plugin root here (rojo maps `src/init.server.luau` onto the
+-- tree root), so `version` is a child of it rather than a sibling — unlike in
+-- the run-mode runner beside this file.
+local versionOk, PluginVersion = pcall(require, script:FindFirstChild("version") :: any)
+if not versionOk or typeof(PluginVersion) ~= "string" then
+	PluginVersion = "unknown"
+end
 
 local IsDebug = ReplicatedStorage:GetAttribute("JEST_ROBLOX_DEBUG") == true
 ReplicatedStorage:GetAttributeChangedSignal("JEST_ROBLOX_DEBUG"):Connect(function(): ()
@@ -193,6 +207,19 @@ local function connect(): ()
 
 	local opened = ws.Opened:Once(function(): ()
 		print("[jest-roblox] Connected to CLI")
+
+		-- Announce unprompted, as early as a send is legal. Studio runs every
+		-- installed copy of this plugin and each one dials the same port, so
+		-- the CLI has to choose between the sockets before it dispatches:
+		-- without this it would ask all of them and settle on whichever
+		-- answered first, which is always the copy that refuses outright.
+		assert(ws, "Luau")
+		ws:Send(HttpService:JSONEncode({
+			type = "hello",
+			protocolVersion = PROTOCOL_VERSION,
+			pluginVersion = PluginVersion,
+			pluginName = plugin.Name,
+		}))
 	end)
 	table.insert(connections, opened)
 

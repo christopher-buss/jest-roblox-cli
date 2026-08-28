@@ -47,9 +47,14 @@ interface ReplyOptions {
 	entries?: Array<{ elapsedMs?: number; jestOutput: string }>;
 	gameOutput?: string;
 	omitProtocolVersion?: boolean;
+	pluginVersion?: string;
 	protocolVersion?: number;
 	rawJestOutput?: string;
 }
+
+// The protocol this CLI speaks, pinned here on purpose: the spec asserts the
+// wire, so a bump has to be made deliberately in both places.
+const PROTOCOL_VERSION = 6;
 
 function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
 	return {
@@ -135,7 +140,11 @@ function resultFrame(requestId: string, reply: ReplyOptions): string {
 	return JSON.stringify(
 		reply.omitProtocolVersion === true
 			? frame
-			: { ...frame, protocolVersion: reply.protocolVersion ?? 5 },
+			: {
+					...frame,
+					pluginVersion: reply.pluginVersion,
+					protocolVersion: reply.protocolVersion ?? PROTOCOL_VERSION,
+				},
 	);
 }
 
@@ -436,6 +445,20 @@ describe(StudioCliBackend, () => {
 		const backend = backendReplying({ protocolVersion: 2 });
 
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(/protocol.*mismatch/i);
+	});
+
+	it("should name the release the answering plugin came from", async () => {
+		// Several copies can be installed at once, and each answers with its
+		// own release: a protocol number alone would not say which to remove.
+		expect.assertions(1);
+
+		resetVol();
+
+		const backend = backendReplying({ pluginVersion: "0.3.18", protocolVersion: 5 });
+
+		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(
+			/plugin from jest-roblox 0\.3\.18 reported v5/,
+		);
 	});
 
 	it("should carry a large jestOutput through the socket frame intact (no print cap)", async () => {

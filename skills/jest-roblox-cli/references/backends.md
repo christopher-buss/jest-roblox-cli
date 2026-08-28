@@ -2,11 +2,16 @@
 
 `--backend auto` (default) resolves like this:
 
-1. Probe for Studio plugin on WebSocket port 3001 (500ms timeout)
-2. If plugin detected → use Studio. If Open Cloud credentials also exist, Studio
-   failures fall back to Open Cloud automatically.
-3. If no plugin → use Open Cloud (requires all three env vars below)
-4. If neither → error: "No backend available"
+1. Probe for Studio plugins on WebSocket port 3001 (500ms timeout)
+2. If a connection announces this CLI's protocol version → use Studio. If Open
+   Cloud credentials also exist, Studio failures fall back to Open Cloud
+   automatically.
+3. If plugins connected but none announced a matching version → error naming
+   every connection, even when credentials exist. Studio runs every installed
+   copy, so this is usually a stale `JestRobloxRunner.rbxm` left in the plugins
+   folder.
+4. If no plugin → use Open Cloud (requires all three env vars below)
+5. If neither → error: "No backend available"
 
 | Backend    | Flag                   | Requirements                                                         |
 | ---------- | ---------------------- | -------------------------------------------------------------------- |
@@ -49,6 +54,14 @@ that follows on the next run is expected, not a cache fault.
 Connects to a locally running Roblox Studio instance via WebSocket. Requires the
 jest-roblox Studio plugin to be installed. The plugin listens on the configured
 port (default: 3001) and executes tests when the CLI connects.
+
+Studio runs every plugin in the plugins folder, so several installed copies open
+several connections. Each announces
+`{ protocolVersion, pluginVersion, pluginName }` on open, and the CLI dispatches
+`run_tests` to the one whose protocol matches — never to all of them.
+Broadcasting is what used to let a stale copy decide the run: refusing a version
+costs nothing while running the suite takes seconds, so the refusal always
+arrived first.
 
 If Studio is busy (e.g. a previous play session is still running), and Open
 Cloud credentials are available, the CLI automatically falls back to Open Cloud.

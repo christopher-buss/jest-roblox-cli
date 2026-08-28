@@ -46,7 +46,7 @@ const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
  * omits the echo (a stale runner predating the handshake) or returns a
  * different number, surfacing a clean "update the plugin" error.
  */
-const STUDIO_CLI_PROTOCOL_VERSION = 5;
+export const STUDIO_CLI_PROTOCOL_VERSION = 6;
 
 type StudioCliPayload = RunPayload & {
 	protocolVersion: typeof STUDIO_CLI_PROTOCOL_VERSION;
@@ -139,6 +139,7 @@ const BOOTSTRAP_SEND_LINES = [
 const resultMessageSchema = type({
 	"gameOutput?": "string",
 	"jestOutput": "string",
+	"pluginVersion?": "string",
 	"protocolVersion?": "number",
 	"requestId": "string",
 	"type": "'results'",
@@ -506,7 +507,7 @@ function bootstrapRunLines(
 		'elseif typeof(result) ~= "table" or result.jestOutput == nil then',
 		'\tmessage = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = "studio-cli: the jest plugin produced no result. Install or update the jest-roblox Studio plugin.", success = false }) }',
 		"else",
-		'\tmessage = { type = "results", requestId = REQUEST_ID, protocolVersion = result.protocolVersion, gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput }',
+		'\tmessage = { type = "results", requestId = REQUEST_ID, protocolVersion = result.protocolVersion, pluginVersion = result.pluginVersion, gameOutput = result.gameOutput or "[]", jestOutput = result.jestOutput }',
 		"end",
 	];
 }
@@ -564,15 +565,19 @@ function buildStudioArgs({
  * Either way the user must update the plugin. Mirrors the WebSocket backend's
  * `version_mismatch` path.
  */
-function assertProtocolMatch(actual: number | undefined): void {
+function assertProtocolMatch(actual: number | undefined, pluginVersion: string | undefined): void {
 	if (actual === STUDIO_CLI_PROTOCOL_VERSION) {
 		return;
 	}
 
 	const reported = actual === undefined ? "no version" : `v${actual.toString()}`;
+	// Names the release the answering copy came from where it reported one:
+	// several copies can be installed at once, and a protocol number alone
+	// does not say which file to remove.
+	const release = pluginVersion === undefined ? "" : ` from jest-roblox ${pluginVersion}`;
 	throw new Error(
 		"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-			`(plugin reported ${reported}, CLI expects v${STUDIO_CLI_PROTOCOL_VERSION.toString()}). ` +
+			`(plugin${release} reported ${reported}, CLI expects v${STUDIO_CLI_PROTOCOL_VERSION.toString()}). ` +
 			"Update the jest-roblox Studio plugin to match this CLI version.",
 	);
 }
@@ -591,7 +596,7 @@ function buildBackendResult(
 	executionMs: number,
 ): BackendResult {
 	const { entries, gameOutputScope } = decodeEnvelope(message.jestOutput);
-	assertProtocolMatch(message.protocolVersion);
+	assertProtocolMatch(message.protocolVersion, message.pluginVersion);
 	if (entries.length !== jobs.length) {
 		throw new Error(
 			`studio-cli backend returned ${entries.length.toString()} entries but request had ${jobs.length.toString()} jobs`,

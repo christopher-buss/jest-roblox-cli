@@ -1187,6 +1187,12 @@ describe("lUAU_ERROR_HINTS", () => {
 			"loadstring() is not available",
 			'loadstring() must be enabled for Jest to run. Add "LoadStringEnabled": true to ServerScriptService.$properties in your project.json.',
 		],
+		// Verbatim from a v3 plugin, which is the point: the copy that answers
+		// is a stale one whose wording is already fixed on disk.
+		[
+			"Studio plugin protocol version mismatch — plugin v3, CLI v6. Update the jest-roblox Studio plugin to match the CLI.",
+			"If you have more than one JestRobloxRunner installed, this may be a stale copy rather than the one you just updated: Studio runs them all, and on --backend studio-cli the first to answer decides the run. Check your Studio plugins folder and remove the copies you do not want.",
+		],
 	])("should hint for: %s", async ([message, hint]) => {
 		expect.assertions(2);
 

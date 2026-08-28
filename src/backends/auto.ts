@@ -15,8 +15,14 @@ import {
 	type ParallelOption,
 } from "./interface.ts";
 import { createOpenCloudBackend } from "./open-cloud.ts";
+import {
+	closePluginServer,
+	describePluginMismatch,
+	type PluginCandidate,
+	PluginConnectionPool,
+} from "./plugin-connections.ts";
 import { createStudioCliBackend } from "./studio-cli.ts";
-import { createStudioBackend } from "./studio.ts";
+import { createStudioBackend, STUDIO_PROTOCOL_VERSION } from "./studio.ts";
 import { VM_HOST_POOL_SIZE } from "./vm-parallel.ts";
 
 const ENV_PREFIX = "JEST_";
@@ -35,9 +41,26 @@ export interface ProbeResult {
 
 export interface ProbeDetected {
 	detected: true;
+	/**
+	 * The probe's pool, handed on rather than rebuilt: it holds what each
+	 * connection announced, and an announcement is only ever sent once.
+	 */
+	pool: PluginConnectionPool;
 	server: WebSocketServer;
 	socket: WebSocket;
 }
+
+/**
+ * Studio is listening, but nothing on the port speaks this CLI's protocol —
+ * typically several installed plugin copies, all of them stale.
+ */
+export interface ProbeIncompatible {
+	candidates: Array<PluginCandidate>;
+	detected: "incompatible";
+	server: WebSocketServer;
+}
+
+export type ProbeOutcome = ProbeDetected | ProbeIncompatible | ProbeResult;
 
 export class StudioWithFallback implements Backend {
 	private readonly credentials: RunnerCredentials;
@@ -71,41 +94,61 @@ export class StudioWithFallback implements Backend {
 	}
 }
 
+/**
+ * What is on the Studio port: nothing, a plugin this CLI can drive, or plugins
+ * it cannot.
+ *
+ * The probe selects rather than merely detects. A Studio with several installed
+ * copies of the plugin opens one socket per copy, so "something connected" says
+ * nothing about whether the run can proceed — the answer is the copy whose
+ * announced protocol matches, if any.
+ */
 export async function probeStudioPluginAsync(
 	port: number,
 	timeoutMs: number,
 	createServer: (port: number) => WebSocketServer = (wsPort) => {
 		return new WebSocketServer({ port: wsPort });
 	},
-): Promise<ProbeDetected | ProbeResult> {
+): Promise<ProbeOutcome> {
 	return new Promise((resolve) => {
 		const wss = createServer(port);
+		const pool = new PluginConnectionPool(wss);
 
-		const timer = setTimeout(() => {
-			wss.close();
-			resolve({ detected: false });
-		}, timeoutMs);
-
-		wss.on("connection", (ws: WebSocket) => {
-			clearTimeout(timer);
-			resolve({ detected: true, server: wss, socket: ws });
-		});
-
+		// A server that failed to bind will never see a plugin. Abort the wait
+		// rather than resolving here, so the one path below owns the close.
 		wss.on("error", () => {
-			clearTimeout(timer);
-			wss.close();
-			resolve({ detected: false });
+			pool.abortSelection();
 		});
+
+		void pool
+			.selectAsync({ connectTimeoutMs: timeoutMs, expectedVersion: STUDIO_PROTOCOL_VERSION })
+			.then((selection) => {
+				if (selection.kind === "selected") {
+					resolve({ detected: true, pool, server: wss, socket: selection.socket });
+					return;
+				}
+
+				if (selection.kind === "incompatible") {
+					// Left open: the caller reads the candidates to name each
+					// plugin in its error, then closes.
+					resolve({
+						candidates: selection.candidates,
+						detected: "incompatible",
+						server: wss,
+					});
+					return;
+				}
+
+				closePluginServer(wss);
+				resolve({ detected: false });
+			});
 	});
 }
 
 export async function resolveBackendAsync(
 	cli: CliOptions,
 	config: ResolvedConfig,
-	probe: (
-		port: number,
-		timeoutMs: number,
-	) => Promise<ProbeDetected | ProbeResult> = probeStudioPluginAsync,
+	probe: (port: number, timeoutMs: number) => Promise<ProbeOutcome> = probeStudioPluginAsync,
 ): Promise<Backend> {
 	const backend = await resolveBackendKindAsync(cli, config, probe);
 	assertVmParallel(backend, config.experimentalVmParallel);
@@ -157,6 +200,36 @@ function createExplicitBackend(cli: CliOptions, config: ResolvedConfig): Backend
 	return undefined;
 }
 
+/**
+ * The Studio backend for the plugin the probe already selected — handed the
+ * probe's server, socket and pool rather than opening its own, so the plugin is
+ * not asked to connect a second time.
+ */
+function attachStudioBackend(probeResult: ProbeDetected, config: ResolvedConfig): Backend {
+	return createStudioBackend({
+		port: config.port,
+		preConnected: {
+			pool: probeResult.pool,
+			server: probeResult.server,
+			socket: probeResult.socket,
+		},
+		timeout: config.timeout,
+	});
+}
+
+/**
+ * Fail the run rather than fall back.
+ *
+ * A plugin that is present but cannot serve this CLI is something to fix, not
+ * a reason to change backend behind the user's back: Open Cloud runs different
+ * code against a different place. The credential fallback stays for the case it
+ * was written for — no plugin at all.
+ */
+function incompatiblePluginError(probeResult: ProbeIncompatible): Error {
+	closePluginServer(probeResult.server);
+	return new Error(describePluginMismatch(probeResult.candidates, STUDIO_PROTOCOL_VERSION));
+}
+
 function hasUserOverrides(cli: CliOptions): boolean {
 	return cli.apiKey !== undefined || cli.universeId !== undefined || cli.placeId !== undefined;
 }
@@ -184,23 +257,19 @@ async function resolveAutoBackendAsync({
 }: {
 	cli: CliOptions;
 	config: ResolvedConfig;
-	probe: (port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>;
+	probe: (port: number, timeoutMs: number) => Promise<ProbeOutcome>;
 }): Promise<Backend> {
 	const credentials = tryBuildCredentials(cli, config);
 	const probeResult = await probe(config.port, 500);
 
+	if (probeResult.detected === "incompatible") {
+		throw incompatiblePluginError(probeResult);
+	}
+
 	if (probeResult.detected) {
 		process.stderr.write("Backend: studio (plugin detected)\n");
-		const studio = createStudioBackend({
-			port: config.port,
-			preConnected: { server: probeResult.server, socket: probeResult.socket },
-			timeout: config.timeout,
-		});
-		if (credentials !== undefined) {
-			return new StudioWithFallback(studio, credentials);
-		}
-
-		return studio;
+		const studio = attachStudioBackend(probeResult, config);
+		return credentials === undefined ? studio : new StudioWithFallback(studio, credentials);
 	}
 
 	if (credentials !== undefined) {
@@ -221,7 +290,7 @@ async function resolveAutoBackendAsync({
 async function resolveBackendKindAsync(
 	cli: CliOptions,
 	config: ResolvedConfig,
-	probe: (port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>,
+	probe: (port: number, timeoutMs: number) => Promise<ProbeOutcome>,
 ): Promise<Backend> {
 	const explicit = createExplicitBackend(cli, config);
 	if (explicit !== undefined) {

@@ -1,10 +1,12 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
+import { Buffer } from "node:buffer";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
+import type { MockWebSocket as MockWebSocketType } from "../../test/mocks/mock-web-socket.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
@@ -12,6 +14,7 @@ import { probeStudioPluginAsync, resolveBackendAsync, StudioWithFallback } from 
 import type { ProbeDetected, ProbeResult } from "./auto.ts";
 import type { Backend } from "./interface.ts";
 import { OpenCloudBackend } from "./open-cloud.ts";
+import { PluginConnectionPool } from "./plugin-connections.ts";
 import { StudioCliBackend } from "./studio-cli.ts";
 import { StudioBackend } from "./studio.ts";
 
@@ -36,21 +39,46 @@ function useProbeTimers(): void {
 	});
 }
 
+// The protocol the probe selects on, pinned here rather than imported: the
+// spec asserts the wire a real plugin puts on it.
+const PROTOCOL_VERSION = 6;
+
+/** Connect a plugin and let it announce itself, the way a real one does. */
+function connectPlugin(
+	wss: { emit: (event: string, payload: unknown) => void },
+	hello: Record<string, unknown> = {},
+): MockWebSocketType {
+	const socket = new MockWebSocket();
+	wss.emit("connection", socket);
+	socket.emit(
+		"message",
+		Buffer.from(
+			JSON.stringify({
+				pluginName: "JestRobloxRunner",
+				pluginVersion: "9.9.9",
+				protocolVersion: PROTOCOL_VERSION,
+				type: "hello",
+				...hello,
+			}),
+		),
+	);
+	return socket;
+}
+
 describe(probeStudioPluginAsync, () => {
 	it("should return detected with server and socket when plugin connects", async () => {
 		expect.assertions(5);
 
 		useProbeTimers();
-		const mockSocket = new MockWebSocket();
 		const promise = probeStudioPluginAsync(4321, 2000);
 
 		const wss = getLastCreatedServer();
 		assert(wss, "expected server to be created");
-		wss.emit("connection", mockSocket);
+		const mockSocket = connectPlugin(wss);
 
 		const result = await promise;
 
-		assert(result.detected, "expected probe to detect plugin");
+		assert(result.detected === true, "expected probe to detect plugin");
 
 		expect(result.server).toBe(fromPartial<WebSocketServer>(wss));
 		expect(result.socket).toBe(fromPartial<WebSocket>(mockSocket));
@@ -99,12 +127,55 @@ describe(probeStudioPluginAsync, () => {
 
 		expect(getLastCreatedServer()!.close).toHaveBeenCalledWith();
 	});
+
+	it("should report every connection as incompatible when none match", async () => {
+		// Several installed copies, all stale. The server stays open so the
+		// caller can name each one in its error.
+		expect.assertions(3);
+
+		useProbeTimers();
+		const promise = probeStudioPluginAsync(0, 5000);
+
+		const wss = getLastCreatedServer();
+		assert(wss, "expected server to be created");
+		connectPlugin(wss, { protocolVersion: PROTOCOL_VERSION - 1 });
+		connectPlugin(wss, { protocolVersion: PROTOCOL_VERSION - 2 });
+		await vi.runAllTimersAsync();
+
+		const result = await promise;
+
+		assert(result.detected === "incompatible", "expected an incompatible probe result");
+
+		expect(result.candidates).toHaveLength(2);
+		expect(result.candidates[0]!.hello!.protocolVersion).toBe(PROTOCOL_VERSION - 1);
+		expect(wss.close).not.toHaveBeenCalled();
+	});
+
+	it("should detect the one matching plugin among stale ones", async () => {
+		expect.assertions(1);
+
+		useProbeTimers();
+		const promise = probeStudioPluginAsync(0, 5000);
+
+		const wss = getLastCreatedServer();
+		assert(wss, "expected server to be created");
+		connectPlugin(wss, { protocolVersion: PROTOCOL_VERSION - 1 });
+		const current = connectPlugin(wss);
+
+		const result = await promise;
+
+		assert(result.detected === true, "expected probe to detect plugin");
+
+		expect(result.socket).toBe(fromPartial<WebSocket>(current));
+	});
 });
 
 function mockDetected(): ProbeDetected {
+	const server = new WebSocketServer({ port: 0 });
 	return {
 		detected: true,
-		server: new WebSocketServer({ port: 0 }),
+		pool: new PluginConnectionPool(server),
+		server,
 		socket: fromPartial(new MockWebSocket()),
 	};
 }
@@ -136,6 +207,46 @@ describe(resolveBackendAsync, () => {
 		expect(backend).toBeInstanceOf(StudioBackend);
 		expect(probeAsync).toHaveBeenCalledExactlyOnceWith(DEFAULT_CONFIG.port, 500);
 		expect(stderr).toHaveBeenCalledExactlyOnceWith("Backend: studio (plugin detected)\n");
+	});
+
+	it("should throw rather than fall back when the connected plugins are incompatible", async () => {
+		// A plugin that is present but unusable is something to fix. Falling
+		// back would run different code against a different place under a
+		// backend the user did not choose, and hide the bad install doing it.
+		expect.assertions(3);
+
+		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "test-key");
+		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
+		vi.stubEnv("ROBLOX_PLACE_ID", "456");
+
+		const server = new MockWebSocketServer({ port: 0 });
+		const socket = new MockWebSocket();
+		server.emit("connection", socket);
+
+		await expect(
+			resolveBackendAsync(makeCli(), makeConfig({ backend: "auto" }), async () => {
+				return {
+					candidates: [
+						{
+							hello: {
+								pluginName: "JestRobloxRunner",
+								pluginVersion: "0.3.18",
+								protocolVersion: 5,
+								type: "hello" as const,
+							},
+							socket: fromPartial<WebSocket>(socket),
+						},
+					],
+					detected: "incompatible" as const,
+					server: fromPartial<WebSocketServer>(server),
+				};
+			}),
+		).rejects.toThrow(/No compatible jest-roblox Studio plugin/);
+
+		// The live socket has to go, or it keeps the event loop alive and the
+		// CLI never exits to print the error.
+		expect(socket.terminate).toHaveBeenCalledOnce();
+		expect(server.close).toHaveBeenCalledOnce();
 	});
 
 	it("should fall back to open-cloud when plugin unavailable", async () => {

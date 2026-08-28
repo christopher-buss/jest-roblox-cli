@@ -54,7 +54,7 @@
 		"build": "pnpm build:packages && pnpm build:bundle && tsdown && pnpm build:plugin",
 		"build:bundle": "weld",
 		"build:packages": "pnpm -r --filter !@isentinel/jest-roblox run build",
-		"build:plugin": "rojo build plugin/plugin.project.json -o plugin/JestRobloxRunner.rbxm",
+		"build:plugin": "node scripts/stamp-plugin-version.run.ts && rojo build plugin/plugin.project.json -o plugin/JestRobloxRunner.rbxm",
 		"lint": "eslint --cache",
 		"lint:ci": "eslint --cache --cache-strategy content",
 		"mutation": "pnpm build:bundle && stryker run",

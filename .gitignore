@@ -17,6 +17,7 @@ src/test-runner.bundled.luau
 src/test-runner.bundled.luau.map
 src/materializer.bundled.luau
 src/materializer.bundled.luau.map
+plugin/src/version.luau
 plugin/out/
 .standalone/.preview
 dist/

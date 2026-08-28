@@ -632,6 +632,13 @@ const LUAU_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [
 		/loadstring\(\) is not available/,
 		'loadstring() must be enabled for Jest to run. Add "LoadStringEnabled": true to ServerScriptService.$properties in your project.json.',
 	],
+	// Matches the wording every plugin version uses, including the ones that
+	// predate this hint — the copy that reports the mismatch is by definition
+	// not the one that could be taught to explain it.
+	[
+		/protocol version mismatch/i,
+		"If you have more than one JestRobloxRunner installed, this may be a stale copy rather than the one you just updated: Studio runs them all, and on --backend studio-cli the first to answer decides the run. Check your Studio plugins folder and remove the copies you do not want.",
+	],
 ];
 
 function validateBackend(value: string | undefined): Backend | undefined {

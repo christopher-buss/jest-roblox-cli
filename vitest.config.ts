@@ -203,7 +203,7 @@ export const unitProject = {
 			"./src/cli.ts",
 			"**/*.luau",
 		],
-		include: ["src/**/*.spec.ts", "test/**/*.spec.ts"],
+		include: ["src/**/*.spec.ts", "test/**/*.spec.ts", "scripts/**/*.spec.ts"],
 		restoreMocks: true,
 		setupFiles,
 		typecheck: {

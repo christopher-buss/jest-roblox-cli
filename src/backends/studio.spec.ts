@@ -32,6 +32,48 @@ const pluginRequest = type({
 	requestId: "string",
 });
 
+// The protocol this CLI speaks, pinned here on purpose: the spec asserts the
+// wire, so a bump has to be made deliberately in both places.
+const PROTOCOL_VERSION = 6;
+
+/**
+ * Connect a plugin that announces a protocol the CLI can use.
+ *
+ * Dispatch waits for that announcement now, so a socket that only connects is
+ * never asked to run anything.
+ */
+function connectPlugin(
+	wss: MockWebSocketServerType,
+	socket: MockWebSocketType = new MockWebSocket(),
+	hello: Record<string, unknown> = {},
+): MockWebSocketType {
+	wss.emit("connection", socket);
+	socket.emit(
+		"message",
+		Buffer.from(
+			JSON.stringify({
+				pluginName: "JestRobloxRunner",
+				pluginVersion: "9.9.9",
+				protocolVersion: PROTOCOL_VERSION,
+				type: "hello",
+				...hello,
+			}),
+		),
+	);
+	return socket;
+}
+
+/**
+ * Fake the timers the plugin selection runs on, for a test that means to reach
+ * the end of a window rather than wait one out.
+ */
+function useSelectionTimers(): void {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
+}
+
 function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
 	return {
 		config: { ...DEFAULT_CONFIG, backend: "studio", placeFile: "./test.rbxl", ...overrides },
@@ -107,7 +149,7 @@ async function captureVmRequestAsync(
 					JSON.stringify({
 						gameOutput: "[]",
 						jestOutput: envelope(jobs.map(() => ({ jestOutput: successResult() }))),
-						protocolVersion: 5,
+						protocolVersion: PROTOCOL_VERSION,
 						requestId: captured!.requestId,
 						type: "results",
 					}),
@@ -116,7 +158,7 @@ async function captureVmRequestAsync(
 		});
 	});
 
-	wss.emit("connection", socket);
+	connectPlugin(wss, socket);
 	await promise;
 
 	return captured!;
@@ -137,7 +179,7 @@ function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): Moc
 						JSON.stringify({
 							gameOutput: reply.gameOutput ?? JSON.stringify([]),
 							jestOutput,
-							protocolVersion: 5,
+							protocolVersion: PROTOCOL_VERSION,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -147,7 +189,7 @@ function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): Moc
 		}
 	});
 
-	wss.emit("connection", socket);
+	connectPlugin(wss, socket);
 	return socket;
 }
 
@@ -171,7 +213,7 @@ describe("protocol version handshake", () => {
 						JSON.stringify({
 							gameOutput: "[]",
 							jestOutput: envelope([{ elapsedMs: 1, jestOutput: successResult() }]),
-							protocolVersion: 5,
+							protocolVersion: PROTOCOL_VERSION,
 							requestId: captured!.requestId,
 							type: "results",
 						}),
@@ -180,20 +222,20 @@ describe("protocol version handshake", () => {
 			});
 		});
 
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 		await promise;
 
 		expect(captured!.protocolVersion).toBeTypeOf("number");
 	});
 
-	it("should reject a stale v1 plugin response that omits protocolVersion echo", async () => {
+	it("should reject a response that omits the protocolVersion echo", async () => {
 		expect.assertions(1);
 
-		// A pre-v2 plugin would ignore the request-side `protocolVersion`
-		// and return a valid-looking results envelope without echoing it.
-		// Schema rejection on the response surfaces this as the standard
-		// "Invalid plugin message" error rather than running with no
-		// runtime injection.
+		// A plugin that announces a protocol it does not actually serve:
+		// selected on its announcement, then answering like a pre-v2 plugin
+		// that ignored the request-side `protocolVersion`. Schema rejection on
+		// the response surfaces this as the standard "Invalid plugin message"
+		// error rather than running with no runtime injection.
 		const backend = new StudioBackend({ port: 0 });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
@@ -218,15 +260,15 @@ describe("protocol version handshake", () => {
 			});
 		});
 
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 
 		await expect(promise).rejects.toThrow(/invalid plugin message/i);
 	});
 
-	it("should reject a v2 plugin echo now that the protocol is v3", async () => {
-		// The workspace dispatch + run-mode handshake bumped the contract to v3.
-		// A plugin that still echoes v2 predates this CLI and must be rejected so
-		// the user upgrades rather than running with stale runtime semantics.
+	it("should reject an echo from a protocol older than the current one", async () => {
+		// A plugin that echoes an older protocol than it announced predates this
+		// CLI and must be rejected so the user upgrades rather than running with
+		// stale runtime semantics.
 		expect.assertions(1);
 
 		const backend = new StudioBackend({ port: 0 });
@@ -253,9 +295,87 @@ describe("protocol version handshake", () => {
 			});
 		});
 
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 
 		await expect(promise).rejects.toThrow(/invalid plugin message/i);
+	});
+
+	it("should dispatch only to the plugin whose announced protocol matches", async () => {
+		// The multi-install case: Studio runs every copy in the plugins folder
+		// and each opens its own socket. A stale copy refuses the moment it is
+		// asked, while the copy that can serve the run is still running the
+		// suite — so asking all of them means the refusal decides the run.
+		expect.assertions(3);
+
+		const backend = new StudioBackend({ port: 0 });
+		const promise = backend.runTestsAsync(singleJobOptions);
+
+		const wss = getLastCreatedServer()!;
+		const stale = connectPlugin(wss, new MockWebSocket(), {
+			pluginVersion: "0.3.18",
+			protocolVersion: PROTOCOL_VERSION - 1,
+		});
+		const ancient = connectPlugin(wss, new MockWebSocket(), {
+			protocolVersion: PROTOCOL_VERSION - 3,
+		});
+		const current = connectAndReply(wss, {});
+
+		await promise;
+
+		expect(current.send).toHaveBeenCalledOnce();
+		expect(stale.send).not.toHaveBeenCalled();
+		expect(ancient.send).not.toHaveBeenCalled();
+	});
+
+	it("should name every connected plugin when none of them match", async () => {
+		expect.assertions(4);
+
+		// Fake timers: the grace window the CLI holds open for announcements is
+		// the only thing this waits on, and it is a real 750ms otherwise.
+		useSelectionTimers();
+		const backend = new StudioBackend({ port: 0 });
+		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+
+		const wss = getLastCreatedServer()!;
+		connectPlugin(wss, new MockWebSocket(), {
+			pluginVersion: "0.3.18",
+			protocolVersion: PROTOCOL_VERSION - 1,
+		});
+		connectPlugin(wss, new MockWebSocket(), {
+			pluginName: "OldRunner",
+			pluginVersion: undefined,
+			protocolVersion: PROTOCOL_VERSION - 2,
+		});
+		await vi.runAllTimersAsync();
+
+		const caught: unknown = await settled;
+		assert(caught instanceof Error);
+
+		expect(caught.message).toContain("No compatible jest-roblox Studio plugin");
+		expect(caught.message).toContain(
+			`JestRobloxRunner 0.3.18 (protocol v${PROTOCOL_VERSION - 1})`,
+		);
+		expect(caught.message).toContain("OldRunner (protocol v4, version not reported)");
+		expect(caught.message).toContain("remove the other copies");
+	});
+
+	it("should report a connection that never announces itself", async () => {
+		// Every plugin predating the handshake looks like this: connected,
+		// silent, and unusable. It has to be named rather than waited on.
+		expect.assertions(1);
+
+		useSelectionTimers();
+		const backend = new StudioBackend({ port: 0 });
+		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+
+		const wss = getLastCreatedServer()!;
+		wss.emit("connection", new MockWebSocket());
+		await vi.runAllTimersAsync();
+
+		const caught: unknown = await settled;
+		assert(caught instanceof Error);
+
+		expect(caught.message).toContain("sent no handshake");
 	});
 
 	it("should throw a clear upgrade error on version_mismatch response", async () => {
@@ -284,7 +404,7 @@ describe("protocol version handshake", () => {
 			});
 		});
 
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 
 		await expect(promise).rejects.toThrow(/protocol version mismatch/i);
 	});
@@ -326,7 +446,7 @@ describe(StudioBackend, () => {
 								{ elapsedMs: 10, jestOutput: successResult() },
 								{ elapsedMs: 20, jestOutput: successResult() },
 							]),
-							protocolVersion: 5,
+							protocolVersion: PROTOCOL_VERSION,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -335,7 +455,7 @@ describe(StudioBackend, () => {
 			});
 		});
 
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 
 		await promise;
 
@@ -420,7 +540,7 @@ describe(StudioBackend, () => {
 								{ jestOutput: successResult() },
 								{ jestOutput: successResult() },
 							]),
-							protocolVersion: 5,
+							protocolVersion: PROTOCOL_VERSION,
 							requestId,
 							type: "results",
 						}),
@@ -429,7 +549,7 @@ describe(StudioBackend, () => {
 			});
 		});
 
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 		await promise;
 
 		expect(captured!.workspace.entries).toHaveLength(2);
@@ -536,11 +656,7 @@ describe(StudioBackend, () => {
 	it("should throw on connection timeout", async () => {
 		expect.assertions(1);
 
-		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-
+		useSelectionTimers();
 		const backend = new StudioBackend({ port: 0, timeout: 100 });
 
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
@@ -552,6 +668,25 @@ describe(StudioBackend, () => {
 		expect(caught.message).toContain("Timed out waiting for Studio plugin connection");
 	});
 
+	it("should throw when the selected plugin never returns results", async () => {
+		// Distinct from the connection timeout: a plugin was found and asked,
+		// and then went quiet. Saying "waiting for a connection" here would
+		// send the user looking for the wrong fault.
+		expect.assertions(1);
+
+		useSelectionTimers();
+		const backend = new StudioBackend({ port: 0, timeout: 100 });
+		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+
+		connectPlugin(getLastCreatedServer()!);
+		await vi.runAllTimersAsync();
+		const caught: unknown = await settled;
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toBe("Timed out waiting for the Studio plugin to return results");
+	});
+
 	it("should throw when the plugin disconnects before sending results", async () => {
 		expect.assertions(1);
 
@@ -560,11 +695,12 @@ describe(StudioBackend, () => {
 
 		const wss = getLastCreatedServer()!;
 		const socket = new MockWebSocket();
-		wss.emit("connection", socket);
-
-		queueMicrotask(() => {
-			socket.emit("close");
+		socket.send.mockImplementation(() => {
+			queueMicrotask(() => {
+				socket.emit("close");
+			});
 		});
+		connectPlugin(wss, socket);
 
 		await expect(promise).rejects.toThrowWithMessage(
 			Error,
@@ -594,7 +730,7 @@ describe(StudioBackend, () => {
 									}),
 								},
 							]),
-							protocolVersion: 5,
+							protocolVersion: PROTOCOL_VERSION,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -629,7 +765,7 @@ describe(StudioBackend, () => {
 			});
 		});
 
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 
 		await expect(promise).rejects.toThrowWithMessage(Error, /Invalid plugin message/);
 	});
@@ -642,11 +778,12 @@ describe(StudioBackend, () => {
 
 		const wss = getLastCreatedServer()!;
 		const socket = new MockWebSocket();
-		wss.emit("connection", socket);
-
-		queueMicrotask(() => {
-			socket.emit("error", new Error("socket error"));
+		socket.send.mockImplementation(() => {
+			queueMicrotask(() => {
+				socket.emit("error", new Error("socket error"));
+			});
 		});
+		connectPlugin(wss, socket);
 
 		await expect(promise).rejects.toThrowWithMessage(Error, "socket error");
 	});
@@ -683,7 +820,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: "wrong",
-							protocolVersion: 5,
+							protocolVersion: PROTOCOL_VERSION,
 							requestId: "wrong-id",
 							type: "results",
 						}),
@@ -694,7 +831,7 @@ describe(StudioBackend, () => {
 					Buffer.from(
 						JSON.stringify({
 							jestOutput: envelope([{ jestOutput: successResult() }]),
-							protocolVersion: 5,
+							protocolVersion: PROTOCOL_VERSION,
 							requestId: message.requestId,
 							type: "results",
 						}),
@@ -703,7 +840,7 @@ describe(StudioBackend, () => {
 			});
 		});
 
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 
 		const { rawResults } = await promise;
 
@@ -824,6 +961,27 @@ describe(StudioBackend, () => {
 		expect(socket.terminate).toHaveBeenCalledOnce();
 	});
 
+	it("should stop the pending selection on close so the CLI can exit", async () => {
+		// Closing the server does not stop the pool's connect timer. On the
+		// default timeout that handle holds the process open for five minutes
+		// after a failure the caller has already surfaced.
+		expect.assertions(1);
+
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+
+		const backend = new StudioBackend({ port: 0 });
+		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
+		backend.closeAsync();
+
+		const caught: unknown = await settled;
+		assert(caught instanceof Error);
+
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("should tear down a pre-connected server on close when runTests never ran", () => {
 		// The auto probe can detect a Studio (preConnected) and then hit a
 		// zero-jobs / passWithNoTests flow that closes the backend without ever
@@ -835,7 +993,7 @@ describe(StudioBackend, () => {
 		const wss = new MockWebSocketServer({ port: 0 });
 		const socket = new MockWebSocket();
 		// Mirror ws: the probe's connection is tracked in server.clients.
-		wss.emit("connection", socket);
+		connectPlugin(wss, socket);
 
 		const backend = new StudioBackend({
 			port: 0,
