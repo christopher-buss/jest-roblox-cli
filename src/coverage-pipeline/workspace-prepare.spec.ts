@@ -1261,7 +1261,7 @@ describe(prepareWorkspaceCoverage, () => {
 
 		expect(mocked).not.toHaveBeenCalled();
 		expect(stderr).toHaveBeenCalledExactlyOnceWith(
-			'Warning: luauRoot "Stryker was here" in @halcyon/foo does not correspond to any rojo $path mount; coverage will be skipped for this root.\n',
+			'Warning: luauRoot "Stryker was here" in @halcyon/foo does not correspond to any rojo $path mount, so it reports no coverage.\n',
 		);
 	});
 
@@ -1745,22 +1745,305 @@ describe(prepareWorkspaceCoverage, () => {
 			]);
 		});
 
-		it("should accept luauRoots nested inside a $path mount", async () => {
-			expect.assertions(2);
+		it("should reject a luauRoot nested below the $path mount that covers it", async () => {
+			expect.assertions(3);
 
 			onTestFinished(() => {
 				vol.reset();
 			});
 
-			// rojo mounts `src` at the parent level; the package opts into a
-			// narrower `luauRoot` underneath it. Exercises the
-			// `candidate.startsWith(mount/)` branch of `isOnRojoTree`.
+			// rojo mounts `src` whole; the package opts into a narrower
+			// `luauRoot` underneath it. Nothing redirects the containing
+			// mount, so instrumenting `src/client` would build a shadow the
+			// place never loads and report empty coverage in silence.
 			vol.fromJSON({
 				[FOO_PROJECT]: JSON.stringify({
 					name: "foo-test",
 					tree: {
 						$className: "DataModel",
 						ReplicatedStorage: { Src: { $path: "src" } },
+					},
+				}),
+				[path.join(FOO_DIR, "src/client/init.luau")]: "local x = 1",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			const mocked = await mockInstrumentRootAsync();
+
+			const [result] = prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src/client"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).not.toHaveBeenCalled();
+			expect(result!.coverageRoots).toStrictEqual([]);
+			expect(stderr).toHaveBeenCalledExactlyOnceWith(
+				'Warning: luauRoot "src/client" in @halcyon/foo sits below the rojo $path mount "src", which the place loads unmodified, so it reports no coverage. Point the root at a mount, or mount "src/client" in the rojo project.\n',
+			);
+		});
+
+		it("should name the deepest containing mount when several sit above the root", async () => {
+			expect.assertions(1);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// `src` and `src/client` both sit above `src/client/ui`, and
+			// `src/client` is the one that shadows it. Declared shallow-first
+			// so the deeper mount has to displace an incumbent.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							ASrc: { $path: "src" },
+							BClient: { $path: "src/client" },
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "src/client/ui/init.luau")]: "local x = 1",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			await mockInstrumentRootAsync();
+
+			prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src/client/ui"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(stderr).toHaveBeenCalledExactlyOnceWith(
+				expect.stringContaining('sits below the rojo $path mount "src/client"'),
+			);
+		});
+
+		it("should name the deepest containing mount whichever order they are declared", async () => {
+			expect.assertions(1);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// The test above, deep-first: the shallower mount must not displace
+			// the incumbent it contains.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							AClient: { $path: "src/client" },
+							BSrc: { $path: "src" },
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "src/client/ui/init.luau")]: "local x = 1",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			await mockInstrumentRootAsync();
+
+			prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src/client/ui"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(stderr).toHaveBeenCalledExactlyOnceWith(
+				expect.stringContaining('sits below the rojo $path mount "src/client"'),
+			);
+		});
+
+		it("should reject a luauRoot that escapes the package through a traversal", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// Spelled with no leading `..`, so only resolving it reveals that it
+			// lands outside the package — on a directory the rojo tree really
+			// does mount, so reachability alone would wave it through.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { Bar: { $path: "../bar" } },
+					},
+				}),
+				[path.join(BAR_DIR, "init.luau")]: "local x = 1",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			const mocked = await mockInstrumentRootAsync();
+
+			prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src/../../bar"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).not.toHaveBeenCalled();
+			expect(stderr).toHaveBeenCalledExactlyOnceWith(
+				'Warning: luauRoot "src/../../bar" in @halcyon/foo is not a directory inside the package, so it reports no coverage.\n',
+			);
+		});
+
+		it("should reject a traversal that resolves back to the package root", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { Root: { $path: "." } },
+					},
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			const mocked = await mockInstrumentRootAsync();
+
+			prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["src/.."],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).not.toHaveBeenCalled();
+			expect(stderr).toHaveBeenCalledExactlyOnceWith(
+				'Warning: luauRoot "src/.." in @halcyon/foo is not a directory inside the package, so it reports no coverage.\n',
+			);
+		});
+
+		it("should accept a directory whose name merely starts with two dots", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// `..cache` is a directory inside the package, not a step out of it.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { Cache: { $path: "..cache" } },
+					},
+				}),
+				[path.join(FOO_DIR, "..cache/init.luau")]: "local x = 1",
+			});
+			const mocked = await mockInstrumentRootAsync();
+
+			const [result] = prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: ["..cache"],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).toHaveBeenCalledOnce();
+			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["..cache"]);
+		});
+
+		it("should reject an empty luauRoot, which names the package itself", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { Src: { $path: "src" } },
+					},
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "local x = 1",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			const mocked = await mockInstrumentRootAsync();
+
+			prepareWorkspaceCoverage({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						luauRoots: [""],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				workspaceRoot: WORKSPACE_ROOT,
+			});
+
+			expect(mocked).not.toHaveBeenCalled();
+			expect(stderr).toHaveBeenCalledExactlyOnceWith(
+				'Warning: luauRoot "" in @halcyon/foo is not a directory inside the package, so it reports no coverage.\n',
+			);
+		});
+
+		it("should accept a luauRoot nested below one mount when a finer mount lands on it", async () => {
+			expect.assertions(2);
+
+			onTestFinished(() => {
+				vol.reset();
+			});
+
+			// rojo mounts both `src` and `src/client`. The finer mount is the
+			// one that redirects, so the nested root is reachable after all.
+			vol.fromJSON({
+				[FOO_PROJECT]: JSON.stringify({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							Client: { $path: "src/client" },
+							Src: { $path: "src" },
+						},
 					},
 				}),
 				[path.join(FOO_DIR, "src/client/init.luau")]: "local x = 1",

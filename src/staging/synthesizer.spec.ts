@@ -3,6 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { type } from "arktype";
 import { vol } from "memfs";
 import * as path from "node:path";
+import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
 import { ConfigError } from "../config/errors.ts";
@@ -3031,6 +3032,123 @@ describe(synthesize, () => {
 					"ReplicatedStorage",
 				)!.$path,
 			).toBe(normalizeWindowsPath(shadowDirectory));
+		});
+	});
+
+	describe("unreachable coverage roots", () => {
+		it("should warn when a coverage root sits below the $path mount above it", () => {
+			expect.assertions(2);
+
+			vol.reset();
+
+			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src/server");
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/client/init.luau")]: "",
+				[path.join(FOO_DIR, "src/server/init.luau")]: "",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+			const result = synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageRoots: [{ luauRoot: "src/server", shadowDir: shadowDirectory }],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const parsed = parseFixture(result);
+
+			expect(child(parsed.tree, "ReplicatedStorage")!.$path).toBe(
+				normalizeWindowsPath(path.join(FOO_DIR, "src")),
+			);
+			expect(stderr).toHaveBeenCalledExactlyOnceWith(
+				'Warning: luauRoot "src/server" sits below the rojo $path mount "src", which the place loads unmodified, so it reports no coverage. Point the root at a mount, or mount "src/server" in the rojo project.\n',
+			);
+		});
+
+		it("should stay silent when every coverage root backs a $path mount", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src");
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+			synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageRoots: [{ luauRoot: "src", shadowDir: shadowDirectory }],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			expect(stderr).not.toHaveBeenCalled();
+		});
+
+		it("should warn once per unreachable root in wrap mode", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/client/init.luau")]: "",
+				[path.join(FOO_DIR, "src/server/init.luau")]: "",
+			});
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+			synthesize({
+				packages: [
+					{
+						name: "@halcyon/foo",
+						coverageRoots: [
+							{
+								luauRoot: "src/client",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/src/client"),
+							},
+							{
+								luauRoot: "src/server",
+								shadowDir: path.join(FOO_DIR, ".jest-roblox/src/server"),
+							},
+						],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+			});
+
+			expect(stderr).toHaveBeenCalledTimes(2);
 		});
 	});
 

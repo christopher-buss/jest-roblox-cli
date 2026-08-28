@@ -2,9 +2,14 @@ import { loadRojoProject } from "@isentinel/rojo-utils";
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import process from "node:process";
 
 import { ConfigError } from "../config/errors.ts";
 import { redirectPathToShadow } from "../coverage-pipeline/redirect-path.ts";
+import {
+	collectRojoMounts,
+	unreachableRootWarning,
+} from "../coverage-pipeline/root-reachability.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
@@ -111,11 +116,7 @@ type JsonStringifyValue =
 	| undefined;
 
 interface AbsolutizeOptions {
-	/**
-	 * Base for resolving `coverageRoots[].luauRoot`. Typically
-	 * `packageDirectory`.
-	 */
-	coverageBase: string;
+	/** Each `luauRoot` made absolute, so the walk resolves it once. */
 	coverageRoots: Array<CoverageRoot> | undefined;
 }
 
@@ -202,29 +203,19 @@ function readGlobIgnorePaths(raw: JSONObject): Array<string> | undefined {
 		: undefined;
 }
 
-function isTreeNode(value: RojoTreeNode[string]): value is RojoTreeNode {
-	return typeof value === "object" && !("optional" in value);
-}
-
-function resolveDollarPath(
-	value: string,
-	treeBase: string,
+/**
+ * `$path` resolves against the rojo project directory per rojo's convention.
+ * `luauRoot` resolves against `coverageBase` (the package directory) because
+ * that's the documented contract for coverage roots, and the two diverge
+ * whenever a project file lives in a subdirectory of its package. Trailing
+ * slash on `luauRoot` is stripped so `$path: "out/"` matches `luauRoot: "out"`
+ * exactly.
+ */
+function resolveCoverageRoots(
 	coverageBase: string,
 	coverageRoots: Array<CoverageRoot> | undefined,
-): string {
-	const absoluteTarget = normalizeWindowsPath(path.resolve(treeBase, value));
-
-	if (coverageRoots === undefined) {
-		return absoluteTarget;
-	}
-
-	// `$path` resolves against `treeBase` (rojo project directory) per rojo's
-	// convention. `luauRoot` resolves against `coverageBase` (package
-	// directory) because that's the documented contract for coverage roots,
-	// and the two diverge whenever a project file lives in a subdirectory of
-	// its package. Trailing slash on `luauRoot` is stripped so `$path: "out/"`
-	// matches `luauRoot: "out"` exactly.
-	const resolvedRoots = coverageRoots.map((root) => {
+): Array<CoverageRoot> | undefined {
+	return coverageRoots?.map((root) => {
 		return {
 			luauRoot: normalizeWindowsPath(path.resolve(coverageBase, root.luauRoot)).replace(
 				TRAILING_SLASH,
@@ -233,8 +224,49 @@ function resolveDollarPath(
 			shadowDir: normalizeWindowsPath(root.shadowDir),
 		};
 	});
+}
 
-	return redirectPathToShadow(absoluteTarget, resolvedRoots) ?? absoluteTarget;
+/**
+ * Say so when a coverage root no `$path` in this project reaches — off the
+ * tree entirely, or nested below the mount that contains it. Either way the
+ * shadow is built and the place loads the originals, so the run reports zero
+ * coverage for that root with nothing else to show for the work.
+ *
+ * Workspace mode drops such a root before it reaches synthesis, so what this
+ * catches in practice is single and multi mode, where `luauRoots` comes
+ * straight from the config with no mount check of its own. No `subject`: the
+ * descriptor there names a synthetic package the user never wrote.
+ */
+function warnUnreachableCoverageRoots(descriptor: PackageDescriptor, tree: RojoTreeNode): void {
+	const { coverageRoots } = descriptor;
+	if (coverageRoots === undefined) {
+		return;
+	}
+
+	const mounts = collectRojoMounts(tree, path.dirname(descriptor.rojoProjectPath));
+	for (const root of coverageRoots) {
+		const warning = unreachableRootWarning({
+			base: descriptor.packageDirectory,
+			mounts,
+			rawRoot: root.luauRoot,
+		});
+		if (warning !== undefined) {
+			process.stderr.write(warning);
+		}
+	}
+}
+
+function isTreeNode(value: RojoTreeNode[string]): value is RojoTreeNode {
+	return typeof value === "object" && !("optional" in value);
+}
+
+function resolveDollarPath(value: string, treeBase: string, options: AbsolutizeOptions): string {
+	const absoluteTarget = normalizeWindowsPath(path.resolve(treeBase, value));
+	if (options.coverageRoots === undefined) {
+		return absoluteTarget;
+	}
+
+	return redirectPathToShadow(absoluteTarget, options.coverageRoots) ?? absoluteTarget;
 }
 
 function absolutizePaths(
@@ -245,12 +277,7 @@ function absolutizePaths(
 	const result: RojoTreeNode = {};
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
-			result[key] = resolveDollarPath(
-				value,
-				treeBase,
-				options.coverageBase,
-				options.coverageRoots,
-			);
+			result[key] = resolveDollarPath(value, treeBase, options);
 			continue;
 		}
 
@@ -263,6 +290,15 @@ function absolutizePaths(
 	}
 
 	return result;
+}
+
+/** Both the wrap and no-wrap paths absolutize a package's tree through here. */
+function absolutizePackagePaths(node: RojoTreeNode, descriptor: PackageDescriptor): RojoTreeNode {
+	// Before the walk, while every `$path` still reads as the project wrote it.
+	warnUnreachableCoverageRoots(descriptor, node);
+	return absolutizePaths(node, path.dirname(descriptor.rojoProjectPath), {
+		coverageRoots: resolveCoverageRoots(descriptor.packageDirectory, descriptor.coverageRoots),
+	});
 }
 
 function demoteAutoMountToExplicit(parent: RojoTreeNode, parentPath: string): void {
@@ -474,10 +510,7 @@ function stagePackage(
 	const project = loadRojoProject(descriptor.rojoProjectPath);
 	const services: Array<HoistedService> = [];
 	const folder = transformToFolder(project.tree, services);
-	const root = absolutizePaths(folder, path.dirname(descriptor.rojoProjectPath), {
-		coverageBase: descriptor.packageDirectory,
-		coverageRoots: descriptor.coverageRoots,
-	});
+	const root = absolutizePackagePaths(folder, descriptor);
 	injectStubMounts(root, descriptor.stubMounts);
 	markRunContextScripts(root, project.raw);
 	stage[descriptor.name] = root;
@@ -572,10 +605,7 @@ function synthesizeNoWrap(packages: Array<PackageDescriptor>, loadStringEnabled 
 	// eslint-disable-next-line ts/no-non-null-assertion -- length-1 invariant
 	const descriptor = packages[0]!;
 	const project = loadRojoProject(descriptor.rojoProjectPath);
-	const tree = absolutizePaths(project.tree, path.dirname(descriptor.rojoProjectPath), {
-		coverageBase: descriptor.packageDirectory,
-		coverageRoots: descriptor.coverageRoots,
-	});
+	const tree = absolutizePackagePaths(project.tree, descriptor);
 
 	// Inject in no-wrap mode too so single-package callers (multi-project +
 	// open-cloud) share the same `$path` named-child mounting workspace uses.

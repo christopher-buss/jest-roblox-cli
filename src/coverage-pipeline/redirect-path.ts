@@ -8,6 +8,19 @@ export interface CoverageRoot {
 }
 
 /**
+ * True when `target` is `root` itself or sits inside it. Both must already be
+ * normalized (forward slashes, no trailing slash), and the `/` guards the
+ * boundary so `out-tsc` does not read as inside `out`.
+ *
+ * The one containment rule the coverage path has: it decides which `$path`
+ * mounts a redirect rewrites, and so — read the other way round — which
+ * coverage roots the synthesized place can load at all.
+ */
+export function isWithinRoot(target: string, root: string): boolean {
+	return target === root || target.startsWith(`${root}/`);
+}
+
+/**
  * If `target` falls within any coverage root, return the equivalent path
  * inside the corresponding shadow directory. Otherwise return `undefined`.
  *
@@ -24,11 +37,8 @@ export function redirectPathToShadow(
 	coverageRoots: ReadonlyArray<CoverageRoot>,
 ): string | undefined {
 	for (const root of coverageRoots) {
-		if (target === root.luauRoot) {
-			return root.shadowDir;
-		}
-
-		if (target.startsWith(`${root.luauRoot}/`)) {
+		// An exact hit slices nothing off, so it lands on `shadowDir` itself.
+		if (isWithinRoot(target, root.luauRoot)) {
 			return root.shadowDir + target.slice(root.luauRoot.length);
 		}
 	}

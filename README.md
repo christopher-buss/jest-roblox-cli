@@ -190,6 +190,14 @@ package's own jest.config or in a shared config that every package extends.
 | `luauRoots`        | Where Luau files live for coverage instrumentation                | auto from tsconfig `outDir` |
 | `bootProbeTimeout` | How long the boot probe is given to prove a place version starts  | `90000` (90 s)              |
 
+A coverage run mirrors each `luauRoot` into a shadow tree and repoints the Rojo
+`$path` mounts that land on it or inside it at that shadow, so a root your Rojo
+project reaches only through a mount _above_ it never gets loaded: the place
+still carries the original sources and the root reports nothing. Set each
+`luauRoot` to a `$path` mount, or to a directory containing one — anything else
+warns and names the mount to widen to. In workspace mode the root is dropped
+outright; elsewhere it is instrumented and the place ignores it.
+
 `timeout` is the deadline Roblox is given for the script, not a hard cap on the
 run. Roblox starts that clock when the script begins running — after the place
 boots — so a run that overruns waits a short fixed allowance past the deadline

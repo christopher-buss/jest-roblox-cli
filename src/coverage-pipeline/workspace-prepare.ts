@@ -24,6 +24,8 @@ import type {
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
 import { MANIFEST_VERSION, readManifest } from "./manifest.ts";
+import { isWithinRoot } from "./redirect-path.ts";
+import { collectRojoMounts, unreachableRootWarning } from "./root-reachability.ts";
 import { isNonInstrumentedFile, prepareShadowRoot } from "./shadow-root.ts";
 
 const WORKSPACE_COVERAGE_DIR = ".jest-roblox/workspace";
@@ -168,6 +170,15 @@ interface InstrumentPackageInputs {
 	packageShadowRoot: string;
 	timing: TimingCollector;
 	universe: InstrumentUniverse | undefined;
+}
+
+/** One explicit `luauRoots` entry, weighed against the package's rojo tree. */
+interface RootCheck {
+	descriptor: WorkspacePackageDescriptor;
+	/** Absolute `$path` mounts of the package's rojo project. */
+	mounts: Set<string>;
+	/** The entry as the user wrote it. */
+	rawRoot: string;
 }
 
 /** One package's manifest write, after its roots are instrumented. */
@@ -404,6 +415,73 @@ function isInstrumentableRoot(
 	return containsLuauFiles(absolutePath);
 }
 
+/**
+ * Why this package cannot take `rawRoot` as a coverage root, or `undefined`
+ * when it can.
+ *
+ * A root has to name a directory strictly inside the package: the shadow tree
+ * mirrors it under `packageShadowRoot` and the manifest keys the report reads
+ * are package-relative. A path elsewhere in the rojo tree belongs to whichever
+ * package owns it, and the package directory itself is the package, not a root
+ * within it. Past that, the root has to be one the synthesized place will
+ * actually load.
+ */
+function rejectRoot({ descriptor, mounts, rawRoot }: RootCheck): string | undefined {
+	const packageDirectory = normalizeWindowsPath(descriptor.packageDirectory);
+	const root = normalizeWindowsPath(path.resolve(descriptor.packageDirectory, rawRoot));
+	// Judged on the resolved path, not the spelling: `./` and `src/..` name the
+	// package root, `src/../../bar` escapes it, and a directory honestly called
+	// `..cache` is none of those. `isWithinRoot` admits the root itself, hence
+	// the inequality — the package directory is the package, not a root in it.
+	if (root === packageDirectory || !isWithinRoot(root, packageDirectory)) {
+		return `Warning: luauRoot "${rawRoot}" in ${descriptor.name} is not a directory inside the package, so it reports no coverage.\n`;
+	}
+
+	return unreachableRootWarning({
+		base: descriptor.packageDirectory,
+		mounts,
+		rawRoot,
+		subject: descriptor.name,
+	});
+}
+
+function discoverFromLuauRoots(
+	descriptor: WorkspacePackageDescriptor,
+	luauRoots: Array<string>,
+	matchesIgnored: (filePath: string) => boolean,
+): Array<string> {
+	const mounts = collectRojoMounts(
+		loadRojoProject(descriptor.rojoProjectPath).tree,
+		path.dirname(descriptor.rojoProjectPath),
+	);
+	const seen = new Set<string>();
+	const result: Array<string> = [];
+	for (const rawRoot of luauRoots) {
+		const absolute = path.resolve(descriptor.packageDirectory, rawRoot);
+		// Canonical, so two spellings of one directory dedupe to one root and
+		// the shadow tree mirrors it at the path the manifest names.
+		const relative = normalizeWindowsPath(path.relative(descriptor.packageDirectory, absolute));
+		if (seen.has(relative)) {
+			continue;
+		}
+
+		const warning = rejectRoot({ descriptor, mounts, rawRoot });
+		if (warning !== undefined) {
+			process.stderr.write(warning);
+			continue;
+		}
+
+		if (!isInstrumentableRoot(absolute, relative, matchesIgnored)) {
+			continue;
+		}
+
+		seen.add(relative);
+		result.push(relative);
+	}
+
+	return result;
+}
+
 function collectRojoMountedPaths(descriptor: WorkspacePackageDescriptor): Array<string> {
 	const project = loadRojoProject(descriptor.rojoProjectPath);
 	const resolvedTree = resolveNestedProjects(
@@ -414,88 +492,6 @@ function collectRojoMountedPaths(descriptor: WorkspacePackageDescriptor): Array<
 	const collected: Array<string> = [];
 	collectPaths(resolvedTree, collected);
 	return collected;
-}
-
-/**
- * Returns the set of package-relative directory paths the rojo tree mounts.
- * Used by the per-pkg `luauRoots` short-circuit to validate that each user-
- * provided root corresponds to an actual `$path` mount — off-tree entries
- * become orphan instrumented code (shadow built, never loaded at runtime).
- */
-function buildRojoMountSet(
-	descriptor: WorkspacePackageDescriptor,
-	collected: Array<string>,
-): Set<string> {
-	const rojoDirectory = path.dirname(descriptor.rojoProjectPath);
-	const mounts = new Set<string>();
-	for (const rawPath of collected) {
-		const absolute = path.resolve(rojoDirectory, rawPath);
-		const relative = normalizeWindowsPath(path.relative(descriptor.packageDirectory, absolute));
-		if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
-			continue;
-		}
-
-		mounts.add(relative);
-	}
-
-	return mounts;
-}
-
-/**
- * True when `candidate` is a rojo `$path` mount or is nested under one. A
- * `luauRoot: "src/Client"` is valid when rojo mounts either `src` or
- * `src/Client` (the synthesized rojo project still resolves the shadow at
- * runtime in either case).
- */
-function isOnRojoTree(candidate: string, mounts: Set<string>): boolean {
-	for (const mount of mounts) {
-		if (candidate === mount) {
-			return true;
-		}
-
-		if (candidate.startsWith(`${mount}/`)) {
-			return true;
-		}
-
-		if (mount.startsWith(`${candidate}/`)) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-function discoverFromLuauRoots(
-	descriptor: WorkspacePackageDescriptor,
-	luauRoots: Array<string>,
-	matchesIgnored: (filePath: string) => boolean,
-): Array<string> {
-	const mounts = buildRojoMountSet(descriptor, collectRojoMountedPaths(descriptor));
-	const seen = new Set<string>();
-	const result: Array<string> = [];
-	for (const rawRoot of luauRoots) {
-		const relative = normalizeWindowsPath(rawRoot);
-		if (seen.has(relative)) {
-			continue;
-		}
-
-		if (!isOnRojoTree(relative, mounts)) {
-			process.stderr.write(
-				`Warning: luauRoot "${rawRoot}" in ${descriptor.name} does not correspond to any rojo $path mount; coverage will be skipped for this root.\n`,
-			);
-			continue;
-		}
-
-		const absolute = path.resolve(descriptor.packageDirectory, relative);
-		if (!isInstrumentableRoot(absolute, relative, matchesIgnored)) {
-			continue;
-		}
-
-		seen.add(relative);
-		result.push(relative);
-	}
-
-	return result;
 }
 
 function discoverFromRojoWalk(
