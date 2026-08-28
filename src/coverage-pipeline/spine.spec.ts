@@ -135,7 +135,7 @@ describe(prepareSpine, () => {
 	});
 
 	it("should keep a deeper spine level outside the level above it", () => {
-		expect.assertions(4);
+		expect.assertions(3);
 
 		seed({
 			[at("server/loose.luau")]: "return nil",
@@ -150,7 +150,6 @@ describe(prepareSpine, () => {
 		// place would carry two Instances of the same name.
 		expect(below!.shadowDir.startsWith(`${above!.shadowDir}/`)).toBeFalse();
 		expect(vol.readdirSync(above!.shadowDir)).toStrictEqual(["loose.luau"]);
-		expect(vol.existsSync(`${above!.shadowDir}/loose.luau`)).toBeTrue();
 		expect(vol.existsSync(`${below!.shadowDir}/net.luau`)).toBeTrue();
 	});
 
