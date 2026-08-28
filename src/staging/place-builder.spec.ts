@@ -2,10 +2,12 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
 import { Buffer } from "node:buffer";
+import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { ageFile } from "../../test/mocks/aged-file.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
@@ -185,6 +187,7 @@ describe(buildPlaceAsync, () => {
 });
 
 const CACHE_FILE = "/cache/place-cache.json";
+const DIGEST_CACHE_FILE = "/cache/input-digests";
 
 describe("place reuse", () => {
 	function seedBuild(): void {
@@ -193,6 +196,8 @@ describe("place reuse", () => {
 			vol.writeFileSync(outputPath, PLACE_BYTES);
 		});
 		vol.fromJSON({ [`${MOUNT_DIR}/init.luau`]: "print('hi')" });
+		// Back-dated so the digest cache is allowed to record a digest for it.
+		ageFile(`${MOUNT_DIR}/init.luau`, 60);
 	}
 
 	async function buildAsync(): ReturnType<typeof buildPlaceAsync> {
@@ -200,9 +205,30 @@ describe("place reuse", () => {
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
-			reuse: { cacheFile: CACHE_FILE, manifests: [], shadowRoots: [] },
+			reuse: {
+				cacheFile: CACHE_FILE,
+				digestCacheFile: DIGEST_CACHE_FILE,
+				manifests: [],
+				shadowRoots: [],
+			},
 		});
 	}
+
+	it("should not re-read an unchanged mount to decide on reuse", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		seedBuild();
+		await buildAsync();
+
+		const readFile = vi.spyOn(nodeFs.promises, "readFile");
+		await buildAsync();
+
+		expect(readFile).not.toHaveBeenCalledWith(`${MOUNT_DIR}/init.luau`);
+	});
 
 	it("should skip the rojo buildAsync when nothing changed", async () => {
 		expect.assertions(3);

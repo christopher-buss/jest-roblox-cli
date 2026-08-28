@@ -1,9 +1,11 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
+import * as nodeFs from "node:fs";
 import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { ageFile } from "../../test/mocks/aged-file.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import {
@@ -19,6 +21,7 @@ vi.mock(import("node:fs"), async () => {
 
 const ROOT = "/cache";
 const PROJECT_FILE = "/cache/synthesized.project.json";
+const DIGEST_CACHE = "/cache/input-digests";
 
 function project(paths: Record<string, string>): string {
 	const tree: Record<string, unknown> = { $className: "DataModel" };
@@ -55,6 +58,7 @@ async function keyForAsync({
 	stagingVersion?: number;
 } = {}) {
 	return computePlaceInputsKeyAsync({
+		digestCacheFile: DIGEST_CACHE,
 		manifests,
 		projectFile: PROJECT_FILE,
 		projectJson,
@@ -64,6 +68,23 @@ async function keyForAsync({
 }
 
 describe(computePlaceInputsKeyAsync, () => {
+	it("should not re-read a mount whose stat stood still", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({ "/cache/assets/model.txt": "one" });
+		ageFile("/cache/assets/model.txt", 60);
+		const first = await keyForAsync();
+
+		const readFile = vi.spyOn(nodeFs.promises, "readFile");
+
+		await expect(keyForAsync()).resolves.toBe(first);
+		expect(readFile).not.toHaveBeenCalledWith("/cache/assets/model.txt");
+	});
+
 	it("should report the same key when nothing changed", async () => {
 		expect.assertions(2);
 

@@ -21,6 +21,8 @@ const PINNED_SHADOW_DIR = "pinned-shadow";
 export interface PlaceReuseOptions {
 	/** Where the previous build's key and place hash are recorded. */
 	cacheFile: string;
+	/** Forwarded to `openInputDigestCache`, which says what it claims. */
+	digestCacheFile: string;
 	/** Coverage manifests standing in for a walk of the instrumented trees. */
 	manifests: Array<CoverageManifest>;
 	/** Shadow mounts the manifests cover, kept out of the walk. */
@@ -156,6 +158,7 @@ async function planReuseAsync({
 	}
 
 	const inputsKey = await computePlaceInputsKeyAsync({
+		digestCacheFile: reuse.digestCacheFile,
 		manifests: reuse.manifests,
 		projectFile,
 		projectJson,

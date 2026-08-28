@@ -3,11 +3,13 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { type } from "arktype";
 import { vol } from "memfs";
 import * as crypto from "node:crypto";
+import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { writeAgedFile } from "../../test/mocks/aged-file.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
@@ -1050,6 +1052,7 @@ describe(prepareCoverageAsync, () => {
 				nonInstrumentedFiles: previousNonInstrumentedFiles,
 				placeFilePath: previousPlaceFilePath,
 				rojoInputsHash: await computeRojoInputsHashAsync({
+					digestCacheFile: "/project/.jest-roblox/expected-digests",
 					luauRoots: ["out-tsc/test"],
 					rojoProjectPath: "/project/default.project.json",
 					rootDirectory: "/project",
@@ -1730,6 +1733,7 @@ describe(prepareCoverageAsync, () => {
 					nonInstrumentedFiles: {},
 					placeFilePath: ".jest-roblox/coverage/game.rbxl",
 					rojoInputsHash: await computeRojoInputsHashAsync({
+						digestCacheFile: "/project/.jest-roblox/expected-digests",
 						luauRoots: ["out-tsc/test"],
 						rojoProjectPath: "/project/default.project.json",
 						rootDirectory: "/project",
@@ -3751,5 +3755,30 @@ describe("narrowing to the coverage universe", () => {
 		expect(layouts[0]!.mountedDirectory("out/modules/ecs")).toBe(
 			".jest-roblox/coverage/out/modules/ecs",
 		);
+	});
+});
+
+describe("when hashing the rojo build inputs", () => {
+	it("should not re-read an unchanged mount on the next run", async () => {
+		expect.assertions(1);
+
+		seedFilesystem();
+		vol.mkdirSync("/project/assets", { recursive: true });
+		writeAgedFile("/project/assets/model.txt", "one");
+		vol.writeFileSync(
+			"/project/default.project.json",
+			JSON.stringify({
+				name: "test",
+				tree: { $className: "DataModel", Assets: { $path: "assets" } },
+			}),
+		);
+		await setupMocksAsync();
+		const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+		await prepareCoverageAsync(config);
+
+		const readFile = vi.spyOn(nodeFs.promises, "readFile");
+		await prepareCoverageAsync(config);
+
+		expect(readFile).not.toHaveBeenCalledWith("/project/assets/model.txt");
 	});
 });

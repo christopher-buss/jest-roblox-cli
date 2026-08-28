@@ -9,11 +9,18 @@ import process from "node:process";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { mapWithLimitAsync } from "../utils/concurrency.ts";
 import { errorMessage } from "../utils/error-message.ts";
-import { hashFileAsync, hashString } from "../utils/hash.ts";
+import { hashString } from "../utils/hash.ts";
+import type { InputDigestCache } from "../utils/input-digest-cache.ts";
+import { openInputDigestCache } from "../utils/input-digest-cache.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { isWithinRoot } from "./redirect-path.ts";
 
 export interface RojoInputsOptions {
+	/**
+	 * Where this walk keeps a digest per file. See `openInputDigestCache` for
+	 * what a recorded digest claims and what it gives up.
+	 */
+	digestCacheFile: string;
 	/**
 	 * Instrumented roots, excluded because the shadow diff already hashes
 	 * them. Relative to `rootDirectory`.
@@ -66,11 +73,15 @@ interface ProjectDigest {
  * malformed or circular rojo project; the caller degrades to a rebuild.
  */
 export async function computeRojoInputsHashAsync({
+	digestCacheFile,
 	luauRoots,
 	projectJson,
 	rojoProjectPath,
 	rootDirectory,
 }: RojoInputsOptions): Promise<string> {
+	// Opened before the walk: a digest is only recorded for a file whose mtime
+	// already predates this moment, so the moment has to precede the reads.
+	const digests = openInputDigestCache(digestCacheFile);
 	const projectDirectory = path.dirname(rojoProjectPath);
 	// One read, and the digest is taken from what it returned: parsing one
 	// state of the file and hashing another would fingerprint a tree that was
@@ -105,7 +116,11 @@ export async function computeRojoInputsHashAsync({
 		await collectInputFilesAsync(toKey(resolveMountPath(projectDirectory, mount)), walk);
 	}
 
-	return digestFilesAsync({ files, project, rootDirectory });
+	const hash = await digestFilesAsync({ digests, files, project, rootDirectory });
+	// After the last read and not before: a file that vanishes mid-walk throws
+	// above, and the previous record is worth more than a half-written one.
+	digests.save();
+	return hash;
 }
 
 /**
@@ -156,10 +171,12 @@ function toKey(filePath: string): string {
  * bytes at the path naming it, and need not be on disk at all.
  */
 async function digestFilesAsync({
+	digests,
 	files,
 	project,
 	rootDirectory,
 }: {
+	digests: InputDigestCache;
 	files: Set<string>;
 	project: ProjectDigest;
 	rootDirectory: string;
@@ -169,7 +186,7 @@ async function digestFilesAsync({
 	// so the reads are free to settle in whatever order the disk answers in.
 	await mapWithLimitAsync([...files], HASH_CONCURRENCY, async (file) => {
 		const relativePath = toKey(path.relative(rootDirectory, file));
-		const hash = file === project.key ? project.hash : await hashFileAsync(file);
+		const hash = file === project.key ? project.hash : await digests.hashOfAsync(file);
 		lines.push(`${relativePath}\0${hash}`);
 	});
 

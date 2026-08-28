@@ -46,6 +46,7 @@ describe(computePlaceInputsKeyAsync, () => {
 		}, 0);
 
 		const key = await computePlaceInputsKeyAsync({
+			digestCacheFile: path.join(path.dirname(projectFile), "input-digests"),
 			manifests: [],
 			projectFile,
 			projectJson,

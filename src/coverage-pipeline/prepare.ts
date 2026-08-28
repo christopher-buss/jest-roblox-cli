@@ -44,6 +44,8 @@ import type { ShadowLayout } from "./spine.ts";
 import { createShadowLayout, prepareSpine } from "./spine.ts";
 
 const COVERAGE_DIR = ".jest-roblox/coverage";
+/** Framed on `rootDir`, and outside the directory a cold rebuild wipes. */
+const INPUT_DIGEST_PATH = ".jest-roblox/input-digests";
 const COVERAGE_MANIFEST = "coverage-manifest.json";
 
 /** Where the coverage path publishes its sibling manifests (cwd-relative). */
@@ -489,6 +491,7 @@ async function resolveRojoInputsHashAsync(
 	luauRoots: Array<string>,
 ): Promise<RojoInputsHashResult> {
 	const hash = await tryComputeRojoInputsHashAsync({
+		digestCacheFile: path.join(config.rootDir, INPUT_DIGEST_PATH),
 		luauRoots,
 		rojoProjectPath,
 		rootDirectory: config.rootDir,

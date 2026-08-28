@@ -1,8 +1,10 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
+import * as fs from "node:fs";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { writeAgedFile } from "../../test/mocks/aged-file.ts";
 import { computeRojoInputsHashAsync } from "./rojo-inputs.ts";
 
 vi.mock(import("node:fs"), async () => {
@@ -11,6 +13,7 @@ vi.mock(import("node:fs"), async () => {
 });
 
 const PROJECT = "/project/default.project.json";
+const DIGEST_CACHE = "/project/.jest-roblox/input-digests";
 
 function reset(): void {
 	onTestFinished(() => {
@@ -30,6 +33,7 @@ function writeRawProject(contents: string): void {
 
 async function hashOfAsync(luauRoots: Array<string> = [], projectJson?: string): Promise<string> {
 	return computeRojoInputsHashAsync({
+		digestCacheFile: DIGEST_CACHE,
 		luauRoots,
 		projectJson,
 		rojoProjectPath: PROJECT,
@@ -38,6 +42,62 @@ async function hashOfAsync(luauRoots: Array<string> = [], projectJson?: string):
 }
 
 describe(computeRojoInputsHashAsync, () => {
+	it("should reuse recorded digests rather than re-read an unchanged mount", async () => {
+		expect.assertions(2);
+
+		reset();
+		writeProject({ $className: "DataModel", Inc: { $path: "include" } });
+		vol.mkdirSync("/project/include", { recursive: true });
+		writeAgedFile("/project/include/a.lua", "-- v1");
+		const before = await hashOfAsync();
+
+		const readFile = vi.spyOn(fs.promises, "readFile");
+
+		await expect(hashOfAsync()).resolves.toBe(before);
+		expect(readFile).not.toHaveBeenCalledWith("/project/include/a.lua");
+	});
+
+	it("should still move when a file changes under a warm digest cache", async () => {
+		expect.assertions(1);
+
+		reset();
+		writeProject({ $className: "DataModel", Inc: { $path: "include" } });
+		vol.mkdirSync("/project/include", { recursive: true });
+		writeAgedFile("/project/include/a.lua", "-- v1");
+		const before = await hashOfAsync();
+
+		writeAgedFile("/project/include/a.lua", "-- v2 is longer");
+
+		await expect(hashOfAsync()).resolves.not.toBe(before);
+	});
+
+	it("should hash the same tree the same wherever the root sits", async () => {
+		expect.assertions(1);
+
+		reset();
+		// Relative to the root and nothing else, so a checkout moved to another
+		// directory reuses its place rather than rebuilding it.
+		vol.mkdirSync("/elsewhere/include", { recursive: true });
+		const projectText = JSON.stringify({
+			name: "test",
+			tree: { $className: "DataModel", Inc: { $path: "include" } },
+		});
+		vol.writeFileSync("/elsewhere/default.project.json", projectText);
+		writeAgedFile("/elsewhere/include/a.lua", "-- v1");
+		vol.mkdirSync("/project/include", { recursive: true });
+		vol.writeFileSync(PROJECT, projectText);
+		writeAgedFile("/project/include/a.lua", "-- v1");
+
+		await expect(
+			computeRojoInputsHashAsync({
+				digestCacheFile: "/elsewhere/.jest-roblox/input-digests",
+				luauRoots: [],
+				rojoProjectPath: "/elsewhere/default.project.json",
+				rootDirectory: "/elsewhere",
+			}),
+		).resolves.toBe(await hashOfAsync());
+	});
+
 	it("should hash the project text the caller holds rather than the file on disk", async () => {
 		expect.assertions(2);
 

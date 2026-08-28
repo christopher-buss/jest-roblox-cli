@@ -82,6 +82,7 @@ describe(stageWorkspacePlaceAsync, () => {
 			projectFile: path.join(cacheDirectory, "synthesized.project.json"),
 			reuse: {
 				cacheFile: path.join(cacheDirectory, "synthesized.place-cache.json"),
+				digestCacheFile: path.join(cacheDirectory, "synthesized.input-digests"),
 				manifests: [coverage.manifest],
 				shadowRoots: ["shadow", "shadow-spine"],
 			},

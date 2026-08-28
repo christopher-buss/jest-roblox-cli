@@ -16,6 +16,12 @@ import type { WorkspaceTestSelection } from "./test-selection.ts";
 const SYNTHESIZED_PROJECT_FILE = "synthesized.project.json";
 const SYNTHESIZED_PLACE_FILE = "synthesized.rbxl";
 const PLACE_REUSE_FILE = "synthesized.place-cache.json";
+/**
+ * Sits beside the reuse record and shares its lifetime: both answer for the
+ * same set of inputs, and a run that discards one has nothing to gain by
+ * keeping the other.
+ */
+const INPUT_DIGEST_FILE = "synthesized.input-digests";
 
 export interface StagedWorkspacePlace {
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
@@ -108,6 +114,7 @@ async function buildWorkspacePlaceAsync({
 			// with nothing edited would otherwise rebuild it from scratch.
 			reuse: {
 				cacheFile: path.join(cacheDirectory, PLACE_REUSE_FILE),
+				digestCacheFile: path.join(cacheDirectory, INPUT_DIGEST_FILE),
 				manifests: coverage.map((entry) => entry.manifest),
 				// Relative: the hash resolves each root against the project
 				// directory, the frame every other path in the key is expressed

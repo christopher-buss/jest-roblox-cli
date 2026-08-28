@@ -22,6 +22,8 @@ export interface PlaceReuseRecord {
 const placeReuseSchema = type({ inputsKey: "string", placeHash: "string" });
 
 export interface PlaceInputsKeyOptions {
+	/** Forwarded to `openInputDigestCache`, which says what it claims. */
+	digestCacheFile: string;
 	/**
 	 * Content hashes for the instrumented trees, folded in instead of walking
 	 * them. Instrumentation already recorded a hash per source file, so
@@ -78,6 +80,7 @@ export async function computePlaceInputsKeyAsync(
 	options: PlaceInputsKeyOptions,
 ): Promise<string | undefined> {
 	const rojoHash = await tryComputeRojoInputsHashAsync({
+		digestCacheFile: options.digestCacheFile,
 		luauRoots: options.shadowRoots,
 		projectJson: options.projectJson,
 		rojoProjectPath: options.projectFile,
