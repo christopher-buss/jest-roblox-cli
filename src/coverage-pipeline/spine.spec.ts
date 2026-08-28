@@ -18,6 +18,11 @@ const REPO = normalizeWindowsPath(path.resolve("/repo"));
 const SHADOW = `${REPO}/.jest-roblox/coverage`;
 const SPINE = `${SHADOW}/.spine`;
 
+/** The copy the place mounts in one demoted level's stead. */
+function mounted(level: string): string {
+	return `${SPINE}/${level}/.self`;
+}
+
 const NO_COPY_IGNORE = createCopyIgnoreMatcher([]);
 
 const OUT = normalizeWindowsPath(path.resolve("/repo/out"));
@@ -124,9 +129,29 @@ describe(prepareSpine, () => {
 
 		spineOf(["out/server", "out/server/modules"]);
 
-		expect(vol.existsSync(`${SPINE}/out/server/loose.luau`)).toBeTrue();
-		expect(vol.existsSync(`${SPINE}/out/server/modules/net.luau`)).toBeTrue();
-		expect(vol.existsSync(`${SPINE}/out/server/modules/ecs`)).toBeFalse();
+		expect(vol.existsSync(`${mounted("out/server")}/loose.luau`)).toBeTrue();
+		expect(vol.existsSync(`${mounted("out/server/modules")}/net.luau`)).toBeTrue();
+		expect(vol.existsSync(`${mounted("out/server/modules")}/ecs`)).toBeFalse();
+	});
+
+	it("should keep a deeper spine level outside the level above it", () => {
+		expect.assertions(4);
+
+		seed({
+			[at("server/loose.luau")]: "return nil",
+			[at("server/modules/net.luau")]: "return nil",
+		});
+
+		const [above, below] = spineOf(["out/server", "out/server/modules"]).directories;
+
+		// Rojo mounts a directory whole. A mount that physically held the level
+		// below it would serve that level twice — once through this `$path`,
+		// once through the explicit child the demote hangs beside it — and the
+		// place would carry two Instances of the same name.
+		expect(below!.shadowDir.startsWith(`${above!.shadowDir}/`)).toBeFalse();
+		expect(vol.readdirSync(above!.shadowDir)).toStrictEqual(["loose.luau"]);
+		expect(vol.existsSync(`${above!.shadowDir}/loose.luau`)).toBeTrue();
+		expect(vol.existsSync(`${below!.shadowDir}/net.luau`)).toBeTrue();
 	});
 
 	it("should name the copy the place mounts for each demoted level", () => {
@@ -135,7 +160,7 @@ describe(prepareSpine, () => {
 		seed({ [at("server/loose.luau")]: "return nil" });
 
 		expect(spineOf(["out/server"]).directories).toStrictEqual([
-			{ luauRoot: "out/server", shadowDir: `${SPINE}/out/server` },
+			{ luauRoot: "out/server", shadowDir: mounted("out/server") },
 		]);
 	});
 
@@ -162,7 +187,7 @@ describe(prepareSpine, () => {
 			isCopyIgnored: createCopyIgnoreMatcher(["skip.luau.map"]),
 		});
 
-		expect(vol.existsSync(`${SPINE}/out/server/skip.luau.map`)).toBeFalse();
+		expect(vol.existsSync(`${mounted("out/server")}/skip.luau.map`)).toBeFalse();
 		expect(Object.keys(result.files)).toStrictEqual([at("server/keep.luau")]);
 	});
 
@@ -204,7 +229,7 @@ describe(prepareSpine, () => {
 		vol.unlinkSync(at("server/loose.luau"));
 		const result = spineOf(["out/server"]);
 
-		expect(vol.existsSync(`${SPINE}/out/server/loose.luau`)).toBeFalse();
+		expect(vol.existsSync(`${mounted("out/server")}/loose.luau`)).toBeFalse();
 		expect(result.changed).toBeTrue();
 	});
 });

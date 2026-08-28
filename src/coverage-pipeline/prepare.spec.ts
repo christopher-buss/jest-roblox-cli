@@ -3319,8 +3319,10 @@ describe("narrowing to the coverage universe", () => {
 
 		prepareCoverage(config);
 
-		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/loose.luau")).toBeTrue();
-		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/modules/net.luau")).toBeTrue();
+		expect(vol.existsSync(".jest-roblox/coverage/.spine/out/.self/loose.luau")).toBeTrue();
+		expect(
+			vol.existsSync(".jest-roblox/coverage/.spine/out/modules/.self/net.luau"),
+		).toBeTrue();
 	});
 
 	it("should record the narrowed roots in the manifest", async () => {
@@ -3377,7 +3379,7 @@ describe("narrowing to the coverage universe", () => {
 
 		// The place mounts the spine in `out`'s place, so anything baked into
 		// the mirror would never reach it.
-		expect(layouts[0]!.mountedDirectory("out")).toBe(".jest-roblox/coverage/.spine/out");
+		expect(layouts[0]!.mountedDirectory("out")).toBe(".jest-roblox/coverage/.spine/out/.self");
 		expect(layouts[0]!.mountedDirectory("out/modules/ecs")).toBe(
 			".jest-roblox/coverage/out/modules/ecs",
 		);

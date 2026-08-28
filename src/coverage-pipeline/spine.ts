@@ -18,6 +18,20 @@ import { syncOneFile, tryRemove } from "./shadow-root.ts";
 const SPINE_DIR = ".spine";
 
 /**
+ * The directory a spine level's own files actually sit in, one below the
+ * mirror of its source path.
+ *
+ * Rojo mounts a directory whole, so a level's mount may not contain the level
+ * below it: the demote hangs that one off an explicit child as well, and rojo
+ * would build both into same-named Instances. The leaf breaks that up — two
+ * levels on one chain mirror to `<a>/.self` and `<a>/<b>/.self`, which are
+ * siblings rather than nested. Dot-prefixed so no source directory can ever
+ * claim the name: the coverage walk skips a dot-prefixed directory, so nothing
+ * under one is ever a coverage root, and a spine level is an ancestor of one.
+ */
+const SPINE_LEAF = ".self";
+
+/**
  * Where the built place reads each source directory from, for a caller that
  * bakes files into the shadow before the build.
  *
@@ -218,19 +232,23 @@ function containingMount(root: string, mounts: ReadonlySet<string>): string | un
 
 /** The shadow copy that stands in for one demoted source directory. */
 function toSpineDirectory(shadowRoot: string, relativePath: string): string {
-	return normalizeWindowsPath(path.join(shadowRoot, SPINE_DIR, relativePath));
+	return normalizeWindowsPath(path.join(shadowRoot, SPINE_DIR, relativePath, SPINE_LEAF));
 }
 
 /**
- * Drop every spine file this pass did not mirror. Nothing else reconciles
+ * Drop every spine entry this pass did not mirror. Nothing else reconciles
  * these — the per-root walk starts below them — so a source file deleted
  * between runs would otherwise keep loading from the place.
+ *
+ * Files are all there is to find: only the mirror and the stub bake write into
+ * a spine leaf, and the leaf is where the layout puts a level's loose files
+ * precisely so that nothing nests underneath it.
  */
 function pruneSpineDirectory(spineDirectory: string, mirrored: ReadonlySet<string>): boolean {
 	let hasDeleted = false;
 	const entries = fs.readdirSync(spineDirectory, { withFileTypes: true });
 	for (const entry of entries) {
-		if (entry.isDirectory() || mirrored.has(entry.name)) {
+		if (mirrored.has(entry.name)) {
 			continue;
 		}
 
