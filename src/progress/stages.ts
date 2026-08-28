@@ -3,31 +3,38 @@ import * as fs from "node:fs";
 /**
  * The stages a run announces while it works. Each one covers a stretch that
  * produces no output of its own, so the CLI never looks stalled between the
- * run header and the report.
+ * run header and the first result.
+ *
+ * Which is why the set stops at `tests`. Collecting results and merging
+ * coverage are silent to nobody: the per-project lines come out of the first
+ * and the istanbul report out of the second, so a stage over the top of them
+ * only says a second time what that output already says.
  */
-export type StageId = "boot" | "build" | "coverage" | "instrument" | "results" | "tests" | "upload";
+export type StageId = "boot" | "build" | "instrument" | "tests" | "upload";
 
 /**
- * Every stage, listed so the label column can be sized from the longest of
- * them. The order is the one a run that hits all of them passes through, which
- * nothing depends on — the block orders itself by when a stage first opened.
+ * Every stage, in the order a run that hits all of them passes through.
+ * Nothing depends on that order — the block orders itself by when a stage
+ * first opened — so the list exists to size the label column from the longest
+ * label, and to say where `LAST_STAGE` sits.
  */
-export const STAGE_IDS: ReadonlyArray<StageId> = [
-	"instrument",
-	"build",
-	"upload",
-	"boot",
-	"tests",
-	"results",
-	"coverage",
-];
+export const STAGE_IDS: ReadonlyArray<StageId> = ["instrument", "build", "upload", "boot", "tests"];
+
+/**
+ * The stage a run's own output takes over from, and where the block therefore
+ * settles: the rows stay on screen as scrollback and nothing repaints them
+ * again. A block still drawn under the streaming results would erase the
+ * summary it lands between in place of its own rows.
+ *
+ * Last in `STAGE_IDS`, which a test holds it to. A stage opened after this one
+ * renders nothing.
+ */
+export const LAST_STAGE: StageId = "tests";
 
 export const STAGE_LABELS: Record<StageId, string> = {
 	boot: "boot probe",
 	build: "build place",
-	coverage: "coverage",
 	instrument: "instrument",
-	results: "collect results",
 	tests: "run tests",
 	upload: "upload",
 };
@@ -46,7 +53,6 @@ export const STAGE_LABELS: Record<StageId, string> = {
 export const SPAN_STAGES: Record<string, StageId> = {
 	buildOpenCloudPlace: "build",
 	prepareCoverage: "instrument",
-	processResults: "results",
 	rojoBuild: "build",
 };
 

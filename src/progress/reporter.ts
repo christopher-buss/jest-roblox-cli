@@ -4,7 +4,7 @@ import process from "node:process";
 import { getTerminalWidth } from "../formatters/shared.ts";
 import { createStyles, type Styles } from "../formatters/styles.ts";
 import { formatStage, type StageState, type StageView } from "./render.ts";
-import type { StageId } from "./stages.ts";
+import { LAST_STAGE, type StageId } from "./stages.ts";
 
 /**
  * The sink every stage announcement goes through. One reporter per run,
@@ -32,6 +32,8 @@ export interface RunProgress {
 	 * Runs `write` with the block cleared, then redraws it. Everything that
 	 * reaches stdout mid-run goes through here: a bare write lands inside the
 	 * block, and the next repaint then erases it in place of its own rows.
+	 * Straight through once the block has settled, which is when most of a
+	 * run's output arrives.
 	 */
 	interleave: (write: () => void) => void;
 	/**
@@ -129,6 +131,12 @@ class RunProgressReporter implements RunProgress {
 	private frameIndex = 0;
 	private isRevealed = false;
 	/**
+	 * Whether the block has handed the terminal back. Set once the last stage
+	 * completes and never cleared: from then on the rows are scrollback like
+	 * any other, so nothing here writes, erases or repaints again.
+	 */
+	private isSettled = false;
+	/**
 	 * How many rows are on screen right now, which is NOT the record count: a
 	 * stage is recorded before the repaint that first draws it, so between the
 	 * two the block is one row shorter than the map. Deriving this from the map
@@ -178,13 +186,9 @@ class RunProgressReporter implements RunProgress {
 	}
 
 	public finish(): void {
-		if (this.timer !== undefined) {
-			clearInterval(this.timer);
-			this.timer = undefined;
-		}
-
-		for (const release of this.released.splice(0)) {
-			release();
+		this.stopAnimating();
+		if (this.isSettled) {
+			return;
 		}
 
 		const unfinished = [...this.records.values()].filter((record) => record.state === "active");
@@ -236,6 +240,7 @@ class RunProgressReporter implements RunProgress {
 				this.writeStageLine(record);
 			}
 
+			this.settleIfComplete();
 			return;
 		}
 
@@ -252,6 +257,7 @@ class RunProgressReporter implements RunProgress {
 		}, this.options.frameMs);
 		this.timer.unref();
 		this.repaint();
+		this.settleIfComplete();
 	}
 
 	/** Keeps a row inside the terminal, so a repaint's cursor maths holds. */
@@ -278,22 +284,23 @@ class RunProgressReporter implements RunProgress {
 
 	/** The one place a state change reaches the terminal, in either shape. */
 	private flush(changed: StageRecord): void {
-		if (!this.isRevealed) {
+		if (this.isSettled || !this.isRevealed) {
 			return;
 		}
 
 		if (this.options.live) {
 			this.repaint();
-			return;
+		} else {
+			this.writeStageLine(changed);
 		}
 
-		this.writeStageLine(changed);
+		this.settleIfComplete();
 	}
 
 	/**
 	 * Wraps every guarded stream's `write` in `interleave`, so a warning from
 	 * code that has never heard of this block still lands above it. Released
-	 * by `finish`, which the run calls from a `finally`.
+	 * when the block settles, or by `finish` for a run that never got that far.
 	 */
 	private guardStreams(): void {
 		for (const stream of this.options.guarded) {
@@ -352,6 +359,38 @@ class RunProgressReporter implements RunProgress {
 		});
 		this.options.sink(`${erase}${rows.join("")}`);
 		this.paintedRows = rows.length;
+	}
+
+	/**
+	 * Hands the terminal back once the last stage is done, leaving the rows
+	 * that are on screen as ordinary scrollback: `paintedRows` drops to zero,
+	 * so the next `interleave` writes straight through instead of erasing a
+	 * block it no longer owns, and every later announcement renders nothing.
+	 *
+	 * Called from wherever a stage can reach its final state with the block
+	 * visible, which is either a state change after the header or the header
+	 * itself catching up on stages that already ran.
+	 */
+	private settleIfComplete(): void {
+		if (this.isSettled || this.records.get(LAST_STAGE)?.state !== "done") {
+			return;
+		}
+
+		this.isSettled = true;
+		this.paintedRows = 0;
+		this.stopAnimating();
+	}
+
+	/** Drops the timer and the stream guards, so nothing repaints unasked. */
+	private stopAnimating(): void {
+		if (this.timer !== undefined) {
+			clearInterval(this.timer);
+			this.timer = undefined;
+		}
+
+		for (const release of this.released.splice(0)) {
+			release();
+		}
 	}
 
 	private toView(record: StageRecord): StageView {

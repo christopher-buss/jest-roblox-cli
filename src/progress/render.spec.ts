@@ -18,7 +18,7 @@ describe(formatStage, () => {
 			AS_LINE,
 		);
 
-		expect(line).toBe(" → upload           12.4 MB");
+		expect(line).toBe(" → upload       12.4 MB");
 	});
 
 	it("should report sub-second work in milliseconds", () => {
@@ -29,7 +29,7 @@ describe(formatStage, () => {
 			AS_LINE,
 		);
 
-		expect(line).toBe(" ✓ upload           340ms");
+		expect(line).toBe(" ✓ upload       340ms");
 	});
 
 	it("should turn over to seconds at exactly one second", () => {
@@ -44,8 +44,8 @@ describe(formatStage, () => {
 			AS_LINE,
 		);
 
-		expect(under).toBe(" ✓ upload           999ms");
-		expect(at).toBe(" ✓ upload           1.0s");
+		expect(under).toBe(" ✓ upload       999ms");
+		expect(at).toBe(" ✓ upload       1.0s");
 	});
 
 	it("should report longer work in seconds to one decimal", () => {
@@ -56,7 +56,7 @@ describe(formatStage, () => {
 			AS_LINE,
 		);
 
-		expect(line).toBe(" ✓ run tests        31.6s");
+		expect(line).toBe(" ✓ run tests    31.6s");
 	});
 
 	it("should carry the closing detail and duration when a stage completes", () => {
@@ -67,7 +67,7 @@ describe(formatStage, () => {
 			AS_LINE,
 		);
 
-		expect(line).toBe(" ✓ upload           cache hit, version 87  220ms");
+		expect(line).toBe(" ✓ upload       cache hit, version 87  220ms");
 	});
 
 	it("should omit the detail column when a stage reports none", () => {
@@ -78,7 +78,7 @@ describe(formatStage, () => {
 			AS_LINE,
 		);
 
-		expect(line).toBe(" ✓ instrument       8.4s");
+		expect(line).toBe(" ✓ instrument   8.4s");
 	});
 
 	it("should mark a stage that never finished", () => {
@@ -100,7 +100,7 @@ describe(formatStage, () => {
 			AS_ROW,
 		);
 
-		expect(row).toBe(" ⠹ upload           12.4 MB  4.7s");
+		expect(row).toBe(" ⠹ upload       12.4 MB  4.7s");
 	});
 
 	it("should drop the duration for a stage the run never finished", () => {
@@ -111,6 +111,6 @@ describe(formatStage, () => {
 			AS_ROW,
 		);
 
-		expect(row).toBe(" · boot probe       version 87");
+		expect(row).toBe(" · boot probe   version 87");
 	});
 });

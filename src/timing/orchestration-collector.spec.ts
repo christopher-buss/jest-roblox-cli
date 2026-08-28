@@ -593,10 +593,13 @@ describe(createTimingCollector, () => {
 		const collector = createTimingCollector({ progress });
 
 		collector.profile("runProjects", () => {
-			collector.profile("processResults", () => {});
+			collector.profile("prepareCoverage", () => {});
 		});
 
-		expect(calls).toStrictEqual(["begin:results", "end:results"]);
+		// A stage is named where the work sits, not where the root phase does,
+		// so nesting one inside a phase that stands for no stage must not
+		// swallow it.
+		expect(calls).toStrictEqual(["begin:instrument", "end:instrument"]);
 	});
 
 	it("should stay silent for a phase that stands for no stage", () => {

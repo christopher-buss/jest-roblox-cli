@@ -1377,27 +1377,7 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([]);
 
 		expect(code).toBe(0);
-		expect(mocks.outputMultiResult).toHaveBeenCalledWith(
-			expect.any(Object),
-			multi,
-			expect.any(Object),
-		);
-	});
-
-	it("should hand the run and the report the same stage reporter", async () => {
-		expect.assertions(1);
-
-		setupOutputSpies();
-		setupDefaults();
-		mocks.runJestRoblox.mockResolvedValue(makeMultiResult());
-
-		await runAsync([]);
-
-		// Same object, not merely one each: the block has to stay open across
-		// the run so the coverage stage can join it afterwards.
-		expect(mocks.outputMultiResult.mock.calls[0]![2]).toBe(
-			mocks.runJestRoblox.mock.calls[0]![2],
-		);
+		expect(mocks.outputMultiResult).toHaveBeenCalledWith(expect.any(Object), multi);
 	});
 
 	it("should dispatch WorkspaceRunResult to outputMultiResult", async () => {
@@ -1411,11 +1391,7 @@ describe("runInner orchestration", () => {
 		const code = await runAsync([]);
 
 		expect(code).toBe(0);
-		expect(mocks.outputMultiResult).toHaveBeenCalledWith(
-			expect.any(Object),
-			workspace,
-			expect.any(Object),
-		);
+		expect(mocks.outputMultiResult).toHaveBeenCalledWith(expect.any(Object), workspace);
 	});
 
 	it("should write validationMessage to stderr and return validationExitCode", async () => {

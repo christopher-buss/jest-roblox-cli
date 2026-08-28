@@ -4,7 +4,17 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { describePlaceFile, describeProjectCount } from "./stages.ts";
+import { describePlaceFile, describeProjectCount, LAST_STAGE, STAGE_IDS } from "./stages.ts";
+
+describe("the stage the block settles on", () => {
+	it("should be the last stage a run passes through", () => {
+		expect.assertions(1);
+
+		// The block settles here, so a stage listed after it would open onto a
+		// terminal the reporter has already handed back and render nothing.
+		expect(STAGE_IDS.at(-1)).toBe(LAST_STAGE);
+	});
+});
 
 /** Writes a file of exactly `bytes` and returns its path, cleaning up after. */
 function makePlaceFile(bytes: number): string {

@@ -14,7 +14,6 @@ import {
 } from "./formatters/github-actions.ts";
 import { writeJsonFileAsync } from "./formatters/json.ts";
 import { findFormatterOptions, usesAgentFormatter } from "./formatters/utils.ts";
-import { NOOP_RUN_PROGRESS, type RunProgress } from "./progress/reporter.ts";
 import {
 	extractCoverageDisplayFilter,
 	extractCoveragePackages,
@@ -119,7 +118,6 @@ export async function outputSingleResultAsync(
 		stagingMs,
 		typecheckResult,
 	}: SingleRunResult,
-	progress: RunProgress = NOOP_RUN_PROGRESS,
 ): Promise<number> {
 	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
 	const isCoveragePassed = emitResultsAndCoverage({
@@ -134,7 +132,6 @@ export async function outputSingleResultAsync(
 				typecheckResult,
 			});
 		},
-		progress,
 		runCoverage: () => {
 			return processCoverage({
 				agentTextFilter,
@@ -186,25 +183,22 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 export async function outputMultiResultAsync(
 	rootConfig: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
-	progress: RunProgress = NOOP_RUN_PROGRESS,
 ): Promise<number> {
 	const { coverageMs, mode, projectResults, stagingMs, typecheckResult } = result;
 	const config = buildReportConfig(rootConfig, result);
 
 	if (typecheckResult !== undefined && projectResults.length === 0) {
-		return outputSingleResultAsync(
-			config,
-			{ coverageMs, mode: "single", stagingMs, typecheckResult },
-			progress,
-		);
+		return outputSingleResultAsync(config, {
+			coverageMs,
+			mode: "single",
+			stagingMs,
+			typecheckResult,
+		});
 	}
 
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
 	const mergedResult = mergeResults(typecheckResult, merged.result);
-	const isCoveragePassed = emitMultiResults(toMultiOutputContext(config, result, merged), {
-		progress,
-		result,
-	});
+	const isCoveragePassed = emitMultiResults(toMultiOutputContext(config, result, merged), result);
 
 	// Workspace runs write their own result + Game Output sinks (the runner
 	// has package identity, the workspace root, and the consensus-resolved
@@ -313,13 +307,11 @@ function emitResultsAndCoverage({
 	config,
 	coverageEnabled,
 	printResults,
-	progress,
 	runCoverage,
 }: {
 	config: ResolvedConfig;
 	coverageEnabled: boolean;
 	printResults: () => void;
-	progress: RunProgress;
 	runCoverage: () => boolean;
 }): boolean {
 	const shouldDeferResults =
@@ -329,17 +321,8 @@ function emitResultsAndCoverage({
 		printResults();
 	}
 
-	// The last stretch a run goes quiet through, and the one the reader is
-	// most likely to attribute to coverage — because it is. `runCoverage`
-	// merges the raw hit counts, maps them back to source and renders the
-	// istanbul report; the report prints its own header, but only once the
-	// merge it sits behind is done. Closed before the block settles, so the
-	// stage is `✓` rather than the `·` a run that died here would show.
-	const done = coverageEnabled ? progress.begin("coverage") : undefined;
 	try {
-		const isPassed = runCoverage();
-		done?.();
-		return isPassed;
+		return runCoverage();
 	} finally {
 		// `finally` so the deferred summary still reaches stdout even when
 		// coverage mapping throws (e.g. a malformed coverage map) — losing it
@@ -493,7 +476,7 @@ function toMultiOutputContext(
 
 function emitMultiResults(
 	context: MultiOutputContext,
-	{ progress, result }: { progress: RunProgress; result: MultiRunResult | WorkspaceRunResult },
+	result: MultiRunResult | WorkspaceRunResult,
 ): boolean {
 	const { config, merged } = context;
 	const displayFilter = extractCoverageDisplayFilter(result);
@@ -504,7 +487,6 @@ function emitMultiResults(
 		printResults: () => {
 			printMultiResults(context);
 		},
-		progress,
 		runCoverage: () => {
 			return processCoverage({
 				agentTextFilter: displayFilter,

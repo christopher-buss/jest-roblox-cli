@@ -73,7 +73,7 @@ describe(createRunProgress, () => {
 		done("318 files");
 		progress.reveal({ color: false });
 
-		expect(writes).toStrictEqual([" ✓ instrument       318 files  8.4s\n"]);
+		expect(writes).toStrictEqual([" ✓ instrument   318 files  8.4s\n"]);
 	});
 
 	it("should replay finished stages only once however often the header lands", () => {
@@ -97,8 +97,8 @@ describe(createRunProgress, () => {
 		done("version 88");
 
 		expect(writes).toStrictEqual([
-			" → upload           12.4 MB\n",
-			" ✓ upload           version 88  4.7s\n",
+			" → upload       12.4 MB\n",
+			" ✓ upload       version 88  4.7s\n",
 		]);
 	});
 
@@ -111,7 +111,7 @@ describe(createRunProgress, () => {
 		done("version 88");
 		done("version 99");
 
-		expect(writes).toStrictEqual([" → upload\n", " ✓ upload           version 88  0ms\n"]);
+		expect(writes).toStrictEqual([" → upload\n", " ✓ upload       version 88  0ms\n"]);
 	});
 
 	it("should carry a detail the work itself produced onto the closing line", () => {
@@ -125,7 +125,7 @@ describe(createRunProgress, () => {
 
 		// The whole run of writes: a detail must reach the closing line without
 		// printing a line of its own in the append-only shape.
-		expect(writes).toStrictEqual([" → build place\n", " ✓ build place      12.4 MB  0ms\n"]);
+		expect(writes).toStrictEqual([" → build place\n", " ✓ build place  12.4 MB  0ms\n"]);
 	});
 
 	it("should ignore a detail for a stage that never opened", () => {
@@ -145,7 +145,7 @@ describe(createRunProgress, () => {
 		progress.reveal({ color: false });
 		progress.note("upload", "cache hit, version 87");
 
-		expect(writes).toStrictEqual([" ✓ upload           cache hit, version 87  0ms\n"]);
+		expect(writes).toStrictEqual([" ✓ upload       cache hit, version 87  0ms\n"]);
 	});
 
 	it("should name the stage a run died inside", () => {
@@ -156,7 +156,7 @@ describe(createRunProgress, () => {
 		progress.begin("boot", "version 88");
 		progress.finish();
 
-		expect(writes.at(-1)).toBe(" · boot probe       version 88\n");
+		expect(writes.at(-1)).toBe(" · boot probe   version 88\n");
 	});
 
 	it("should keep a stage silent when the run never showed a header", () => {
@@ -198,7 +198,7 @@ describe(createRunProgress, () => {
 		progress.reveal({ color: false });
 		progress.begin("upload", "a-very-long-place-name-that-keeps-going.rbxl");
 
-		expect(writes).toStrictEqual([" → upload           a-very-lo…\n"]);
+		expect(writes).toStrictEqual([" → upload       a-very-lo…\n"]);
 	});
 
 	it("should accumulate the time of a stage that runs more than once", () => {
@@ -213,7 +213,7 @@ describe(createRunProgress, () => {
 		advance(800);
 		second();
 
-		expect(writes.at(-1)).toBe(" ✓ instrument       3 packages  2.0s\n");
+		expect(writes.at(-1)).toBe(" ✓ instrument   3 packages  2.0s\n");
 	});
 
 	it("should say nothing anywhere through the shared silent reporter", () => {
@@ -242,8 +242,8 @@ describe(createRunProgress, () => {
 		progress.begin("upload", "0123456789");
 		progress.begin("boot", "01234567890");
 
-		expect(writes[0]).toBe(" → upload           0123456789\n");
-		expect(writes[1]).toBe(" → boot probe       012345678…\n");
+		expect(writes[0]).toBe(" → upload       0123456789\n");
+		expect(writes[1]).toBe(" → boot probe   012345678…\n");
 	});
 
 	it("should settle a stage the run finished before it ended", () => {
@@ -269,7 +269,7 @@ describe(createRunProgress, () => {
 		advance(1200);
 		done();
 
-		expect(writes.at(-1)).toBe(" ✓ upload           1.2s\n");
+		expect(writes.at(-1)).toBe(" ✓ upload       1.2s\n");
 	});
 
 	it("should hold the block back until the header, however the run ends", () => {
@@ -280,6 +280,83 @@ describe(createRunProgress, () => {
 		progress.finish();
 
 		expect(writes).toStrictEqual([]);
+	});
+
+	describe("settling on the last stage", () => {
+		it("should say nothing more once the last stage is done", () => {
+			expect.assertions(1);
+
+			const { progress, writes } = createHarness();
+			progress.reveal({ color: false });
+			progress.begin("tests", "42 projects")();
+			const settled = writes.length;
+			progress.begin("upload", "12.4 MB")();
+			progress.note("boot", "version 88");
+			progress.finish();
+
+			// Everything past the last stage is the run's own output. A stage
+			// printed into the middle of it says a second time what the results
+			// and the coverage report already say.
+			expect(writes).toHaveLength(settled);
+		});
+
+		it("should let a foreign line straight through once it has settled", () => {
+			expect.assertions(1);
+
+			const { progress, writeForeignLine, writes } = createHarness({ live: true });
+			progress.reveal({ color: false });
+			progress.begin("tests", "42 projects")();
+			const settled = writes.length;
+			writeForeignLine();
+
+			// No erase and no redraw: the block is scrollback now, and moving
+			// the cursor back over it would eat the line above whatever prints.
+			expect(writes.slice(settled)).toStrictEqual([`${FOREIGN_LINE}\n`]);
+		});
+
+		it("should let go of its timer once the last stage is done", () => {
+			expect.assertions(2);
+
+			vi.useFakeTimers();
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+			const { progress } = createHarness({ frameMs: 80, live: true });
+			progress.reveal({ color: false });
+			const done = progress.begin("tests", "42 projects");
+
+			expect(vi.getTimerCount()).toBe(1);
+
+			done();
+
+			// Nothing pending before the run even ends: the block is finished
+			// with the terminal, so it must not repaint over what prints next.
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it("should hand a guarded stream its own write back once it has settled", () => {
+			expect.assertions(1);
+
+			const guarded = { write: () => true };
+			const ownWrite = guarded.write;
+			const { progress } = createHarness({ guarded: [fromAny(guarded)], live: true });
+			progress.reveal({ color: false });
+			progress.begin("tests", "42 projects")();
+
+			expect(guarded.write).toBe(ownWrite);
+		});
+
+		it("should settle a last stage that finished before the header landed", () => {
+			expect.assertions(1);
+
+			const { progress, writeForeignLine, writes } = createHarness({ live: true });
+			progress.begin("tests", "42 projects")();
+			progress.reveal({ color: false });
+			const settled = writes.length;
+			writeForeignLine();
+
+			expect(writes.slice(settled)).toStrictEqual([`${FOREIGN_LINE}\n`]);
+		});
 	});
 
 	describe("repainting block", () => {
@@ -309,7 +386,7 @@ describe(createRunProgress, () => {
 			advance(24_600);
 			progress.describe("tests", "42 projects");
 
-			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ run tests        42 projects  24.6s\n`);
+			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ run tests    42 projects  24.6s\n`);
 		});
 
 		it("should let go of its timer when the run ends", () => {
@@ -339,7 +416,7 @@ describe(createRunProgress, () => {
 			progress.begin("instrument")();
 			progress.reveal({ color: false });
 
-			expect(writes).toStrictEqual([" ✓ instrument       0ms\n"]);
+			expect(writes).toStrictEqual([" ✓ instrument   0ms\n"]);
 		});
 
 		it("should keep animating while one stage of several is open", () => {
@@ -371,7 +448,7 @@ describe(createRunProgress, () => {
 			progress.describe("tests", "42 projects");
 
 			// 2s since the stage opened, not the 22s since the run did.
-			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ run tests        42 projects  2.0s\n`);
+			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ run tests    42 projects  2.0s\n`);
 		});
 
 		it("should redraw every row in place as stages progress", () => {
@@ -385,9 +462,9 @@ describe(createRunProgress, () => {
 			progress.finish();
 
 			expect(writes).toStrictEqual([
-				" ⠋ upload           12.4 MB  0ms\n",
-				`${ERASE_ONE_ROW} ✓ upload           version 88  4.7s\n`,
-				`${ERASE_ONE_ROW} ✓ upload           version 88  4.7s\n`,
+				" ⠋ upload       12.4 MB  0ms\n",
+				`${ERASE_ONE_ROW} ✓ upload       version 88  4.7s\n`,
+				`${ERASE_ONE_ROW} ✓ upload       version 88  4.7s\n`,
 			]);
 		});
 
@@ -403,7 +480,7 @@ describe(createRunProgress, () => {
 			// not on screen yet, and counting it would eat the line above the
 			// block.
 			expect(writes.at(-1)).toBe(
-				`${ERASE_ONE_ROW} ⠋ instrument       0ms\n ⠋ build place      0ms\n`,
+				`${ERASE_ONE_ROW} ⠋ instrument   0ms\n ⠋ build place  0ms\n`,
 			);
 		});
 
@@ -416,10 +493,10 @@ describe(createRunProgress, () => {
 			writeForeignLine();
 
 			expect(writes).toStrictEqual([
-				" ⠋ run tests        42 projects  0ms\n",
+				" ⠋ run tests    42 projects  0ms\n",
 				ERASE_ONE_ROW,
 				`${FOREIGN_LINE}\n`,
-				" ⠋ run tests        42 projects  0ms\n",
+				" ⠋ run tests    42 projects  0ms\n",
 			]);
 		});
 
@@ -436,7 +513,7 @@ describe(createRunProgress, () => {
 			vi.advanceTimersByTime(80);
 			progress.finish();
 
-			expect(writes.at(1)).toBe(`${ERASE_ONE_ROW} ⠙ boot probe       version 88  0ms\n`);
+			expect(writes.at(1)).toBe(`${ERASE_ONE_ROW} ⠙ boot probe   version 88  0ms\n`);
 		});
 
 		it("should redraw the block when a stage reports what it produced", () => {
@@ -447,7 +524,7 @@ describe(createRunProgress, () => {
 			progress.begin("build");
 			progress.describe("build", "12.4 MB");
 
-			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ build place      12.4 MB  0ms\n`);
+			expect(writes.at(-1)).toBe(`${ERASE_ONE_ROW} ⠋ build place  12.4 MB  0ms\n`);
 		});
 
 		it("should hold the frame while no stage is open", () => {
@@ -486,7 +563,7 @@ describe(createRunProgress, () => {
 
 			expect(writes.slice(1)).toStrictEqual([
 				ERASE_ONE_ROW,
-				" ⠋ run tests        42 projects  0ms\n",
+				" ⠋ run tests    42 projects  0ms\n",
 			]);
 			expect(written).toStrictEqual(["Warning: cached place version is gone\n"]);
 		});
