@@ -1,8 +1,8 @@
 --!strict
 local HttpService = game:GetService("HttpService")
-local LogService = game:GetService("LogService")
 
 local GameOutputCapture = require("./game-output-capture")
+local InfiniteYield = require("./infinite-yield")
 local InstanceResolver = require("./instance-resolver")
 local InterceptWriteable = require("./intercept-writeable")
 local PhaseTiming = require("./phase-timing")
@@ -107,6 +107,8 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		restoreStderr = nil
 	end
 
+	local pending: any = nil
+
 	local function runTests()
 		local t_resolveProjects0 = os.clock()
 		local projects = {}
@@ -160,7 +162,10 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 
 		local t_jestRunCLI0 = os.clock()
 		local runCLIOk, runCLIValue = pcall(function()
-			return Jest.runCLI(callingScript, config, projects):expect()
+			-- Held so the watchdog can cancel it: the thread an infinite yield
+			-- parks is this promise's executor, not the one waiting on it.
+			pending = Jest.runCLI(callingScript, config, projects)
+			return pending:expect()
 		end)
 		local t_jestRunCLI = os.clock()
 
@@ -191,35 +196,14 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		})
 	end
 
-	local jestDone = false
-	local runSuccess = false
-	local runValue: any = nil
-
-	task.spawn(function()
-		local ok, val = pcall(runTests)
-		jestDone = true
-		runSuccess = ok
-		runValue = val
-	end)
-
-	local infiniteYieldMessage: string? = nil
-	local watchdogConnection = LogService.MessageOut:Connect(
-		function(message: string, messageType: Enum.MessageType)
-			if
-				messageType == Enum.MessageType.MessageWarning
-				and string.find(message, "Infinite yield possible")
-				and not infiniteYieldMessage
-			then
-				infiniteYieldMessage = message
-			end
+	-- The guarded span starts here rather than at findJest: what runs before it
+	-- is instance lookup, which never waits on the DataModel. The yields this
+	-- catches come from a test module's own imports, under `Jest.runCLI`.
+	local runSuccess, runValue = InfiniteYield.guard(runTests, function()
+		if pending ~= nil then
+			pending:cancel()
 		end
-	)
-
-	while not jestDone and not infiniteYieldMessage do
-		task.wait(0.1)
-	end
-
-	watchdogConnection:Disconnect()
+	end)
 
 	if restoreStdout then
 		restoreStdout()
@@ -227,11 +211,6 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 
 	if restoreStderr then
 		restoreStderr()
-	end
-
-	if not jestDone and infiniteYieldMessage then
-		runSuccess = false
-		runValue = "Infinite yield detected, aborting tests: " .. infiniteYieldMessage
 	end
 
 	SnapshotPatch.unpatch(patchState)

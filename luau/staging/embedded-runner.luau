@@ -10,6 +10,7 @@ local MemoryStoreService = game:GetService("MemoryStoreService")
 
 local Bail = require("./bail")
 local GameOutputCapture = require("../game-output-capture")
+local InfiniteYield = require("../infinite-yield")
 local InstanceResolver = require("../instance-resolver")
 local InterceptWriteable = require("../intercept-writeable")
 local Materializer = require("./materializer")
@@ -160,12 +161,18 @@ local function runEntry(
 	end)
 
 	-- ALL post-patch work (require, project/setup resolution, runCLI) must
-	-- be inside this pcall so SnapshotPatch.unpatch always runs. If require
-	-- or instance resolution threw outside the pcall, the patched mock
+	-- be inside this guard so SnapshotPatch.unpatch always runs. If require
+	-- or instance resolution threw outside it, the patched mock
 	-- would persist on shared RobloxShared/JestRuntime modules and the
 	-- next package's patch would save the stale mock as "original",
 	-- causing cross-package contamination.
-	local ok, jestResultOrError = pcall(function()
+	--
+	-- The guard pcalls what it is given, and ends a package that parks on a
+	-- `WaitForChild` the stage cannot satisfy — one package failing rather than
+	-- the whole task hitting its deadline. Cancelling the run is what frees the
+	-- parked thread; see the guard on why closing this closure is not enough.
+	local pending: any = nil
+	local ok, jestResultOrError = InfiniteYield.guard(function()
 		local t_requireJest0 = os.clock()
 		local Jest = (require :: any)(JestModule)
 		local t_requireJest = os.clock()
@@ -213,7 +220,10 @@ local function runEntry(
 		entry.config.runnerTiming = nil :: any
 
 		local t_jestRunCLI0 = os.clock()
-		local result = Jest.runCLI(callingScript, entry.config, projectInstances):expect()
+		-- Held so the watchdog can cancel it: the thread an infinite yield
+		-- parks is this promise's executor, not the one waiting on it.
+		pending = Jest.runCLI(callingScript, entry.config, projectInstances)
+		local result = pending:expect()
 		local t_jestRunCLI = os.clock()
 
 		-- Through the seam runner.luau assembles through too. Setup time is
@@ -242,6 +252,10 @@ local function runEntry(
 		})
 
 		return HttpService:JSONEncode(payload)
+	end, function()
+		if pending ~= nil then
+			pending:cancel()
+		end
 	end)
 
 	if restoreStdout then

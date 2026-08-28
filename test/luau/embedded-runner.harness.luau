@@ -34,6 +34,22 @@ end
 local OUTPUT = { Value = 0 }
 local WARNING = { Value = 2 }
 
+local Enum = { MessageType = { MessageOutput = OUTPUT, MessageWarning = WARNING } }
+
+-- Faithful enough `task.spawn`: it resumes immediately, so a thunk that never
+-- yields finishes before the call returns.
+local task = {
+	spawn = function(target, ...)
+		local thread = if type(target) == "thread" then target else coroutine.create(target)
+		local ok, err = coroutine.resume(thread, ...)
+		if not ok then
+			fail("task.spawn thread errored: " .. tostring(err))
+		end
+
+		return thread
+	end,
+}
+
 local function emit(message: string, messageType)
 	for _, handler in listeners do
 		handler(message, messageType)
@@ -124,6 +140,9 @@ local jestFails = {}
 local jestRedTests = {}
 local jestMissing = {}
 local silent = {}
+local jestHangs = {}
+
+local YIELD_WARNING = "Infinite yield possible on 'ReplicatedStorage.shared:WaitForChild(\"x\")'"
 
 local function say(pkg: string, message: string, messageType)
 	if not silent[pkg] then
@@ -169,6 +188,15 @@ local Jest = {
 				say(pkg, "warn:" .. pkg, WARNING)
 				if jestFails[pkg] then
 					error("jest exploded in " .. pkg, 0)
+				end
+
+				-- What a `WaitForChild` for an instance the stage never had
+				-- does: the engine warns five seconds in, and the thread
+				-- never comes back.
+				if jestHangs[pkg] then
+					emit(YIELD_WARNING, WARNING)
+					coroutine.yield()
+					fail("the parked package was resumed")
 				end
 
 				-- Stands in for circus firing test_done: real attribution
@@ -317,6 +345,9 @@ stubs["./bail"] = __BAIL_MODULE__
 -- staging runner, so it asks under a different path than the runner does.
 stubs["./instance-resolver"] = stubs["../instance-resolver"]
 stubs["../runner-result"] = __RUNNER_RESULT_MODULE__
+-- The real watchdog too: what it does to a package that parks is the subject of
+-- the infinite-yield assertion below.
+stubs["../infinite-yield"] = __INFINITE_YIELD_MODULE__
 
 local EmbeddedRunner = __MODULE__
 
@@ -581,6 +612,28 @@ local function testCoverageWithoutAttribution()
 	check(runner.perTestCoverage == nil, "T13: no attribution means no field")
 end
 
+-- T14: a package that parks on a yield nothing will ever resolve fails on its
+-- own and the batch runs on. Unguarded the task holds that thread until Roblox
+-- ends it on the deadline, which names neither the package nor the yield.
+local function testInfiniteYieldFailsOnlyItsPackage()
+	jestHangs.a = true
+	local results = run({ "a", "b" })
+	jestHangs.a = nil
+
+	check(#results == 2, "T14: the batch runs on past the parked package")
+
+	local parked = HttpService:JSONDecode(results[1].jestOutput)
+	check(parked.success == false, "T14: the parked package fails")
+	check(
+		string.find(parked.err, "Infinite yield detected", 1, true) ~= nil,
+		"T14: the failure names the infinite yield"
+	)
+	check(has(messagesOf(results[1]), YIELD_WARNING), "T14: the warning is kept as its output")
+
+	local second = HttpService:JSONDecode(results[2].jestOutput)
+	check(second.success == true, "T14: the next package still runs")
+end
+
 testWindowAndNoBleedAcrossPackages()
 testRecordShape()
 testFailuresKeepOutput()
@@ -594,5 +647,6 @@ testPerTestCoverageReachesTheWire()
 testPerTestCoverageIsPerPackage()
 testRunnerFlagsAreStripped()
 testCoverageWithoutAttribution()
+testInfiniteYieldFailsOnlyItsPackage()
 
 print("ALL OK")

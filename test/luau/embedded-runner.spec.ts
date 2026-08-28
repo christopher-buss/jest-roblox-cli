@@ -20,6 +20,10 @@ const CAPTURE_SOURCE = fs.readFileSync(
 	"utf-8",
 );
 const BAIL_SOURCE = fs.readFileSync(path.join(LUAU_DIRECTORY, "staging/bail.luau"), "utf-8");
+const INFINITE_YIELD_SOURCE = fs.readFileSync(
+	path.join(LUAU_DIRECTORY, "infinite-yield.luau"),
+	"utf-8",
+);
 const RUNNER_RESULT_SOURCE = fs.readFileSync(
 	path.join(LUAU_DIRECTORY, "runner-result.luau"),
 	"utf-8",
@@ -38,6 +42,10 @@ describe("embedded workspace runner under lute", () => {
 			() => `(function()\n${CAPTURE_SOURCE}\nend)()`,
 		)
 			.replace("__BAIL_MODULE__", () => `(function()\n${BAIL_SOURCE}\nend)()`)
+			.replace(
+				"__INFINITE_YIELD_MODULE__",
+				() => `(function()\n${INFINITE_YIELD_SOURCE}\nend)()`,
+			)
 			.replace(
 				"__RUNNER_RESULT_MODULE__",
 				() => `(function()\n${RUNNER_RESULT_SOURCE}\nend)()`,
