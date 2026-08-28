@@ -18,6 +18,11 @@ import type {
 	InstrumentedFileRecord,
 	NonInstrumentedFileRecord,
 } from "./manifest.ts";
+import {
+	clearDirectoryAtFilePath,
+	createShadowDirectory,
+	shadowHoldsFile,
+} from "./shadow-entry.ts";
 
 export { isNonInstrumentedFile } from "./discover-files.ts";
 
@@ -224,9 +229,10 @@ const COV_MAP_SUFFIX = ".cov-map.json";
 /**
  * Mirror one file into the shadow, or carry its previous record forward.
  *
- * The carry-forward wants both a matching source hash AND the shadow file the
- * record points at: a partial cleanup or an interrupted run can leave the
- * record valid on paper while the file it names is gone.
+ * The carry-forward wants both a matching source hash AND a file still at the
+ * path the record points at: a partial cleanup or an interrupted run can leave
+ * the record valid on paper while the file it names is gone — or replaced by a
+ * directory, which is the same lie told the other way round.
  *
  * One read serves both jobs. The hash decides whether the copy is needed, and
  * when it is, the bytes are already in hand — `copyFileSync` would open and
@@ -245,10 +251,11 @@ export function syncOneFile(
 ): NonInstrumentedFileRecord {
 	const contents = fs.readFileSync(path.resolve(sourcePath));
 	const currentHash = hashBuffer(contents);
-	if (previousRecord?.sourceHash === currentHash && fs.existsSync(previousRecord.shadowPath)) {
+	if (previousRecord?.sourceHash === currentHash && shadowHoldsFile(previousRecord.shadowPath)) {
 		return previousRecord;
 	}
 
+	clearDirectoryAtFilePath(shadowPath);
 	fs.writeFileSync(shadowPath, contents);
 
 	return { shadowPath, sourceHash: currentHash, sourcePath };
@@ -434,35 +441,6 @@ function carryForwardRecords(
 }
 
 /**
- * Make one shadow directory, clearing a file that already occupies its path.
- *
- * A source path that turned from a file into a directory between runs leaves
- * the warm shadow holding the old file exactly where the twin has to go. The
- * reconcile pass is no help: it runs after the mirror walk, and it only drops
- * entries whose source is gone — this one's source is still there, just a
- * directory now.
- *
- * The type is read rather than inferred from a failed `mkdirSync`, which
- * reports the clash differently across filesystem implementations. One `stat`
- * per source directory, against one `readdir` the walk already spends there.
- *
- * Returns whether the shadow gained a directory it did not have.
- */
-function createShadowDirectory(shadowPath: string): boolean {
-	const existing = fs.statSync(shadowPath, { throwIfNoEntry: false });
-	if (existing?.isDirectory() === true) {
-		return false;
-	}
-
-	if (existing !== undefined) {
-		fs.rmSync(shadowPath, { force: true });
-	}
-
-	fs.mkdirSync(shadowPath, { recursive: true });
-	return true;
-}
-
-/**
  * Collect everything the shadow must carry verbatim, giving each source
  * directory a twin on the way past — the root included, so a root of nothing
  * still has somewhere for its `$path` to land.
@@ -563,10 +541,14 @@ function computeSkipFiles(luauRoot: string, previousManifest: CoverageManifest):
 		}
 
 		// A matching source hash isn't enough: a partial cleanup or an
-		// interrupted run can leave the manifest pointing at outputs that
-		// no longer exist. Force re-instrumentation rather than carry a
-		// record forward whose shadow files are gone.
-		if (!fs.existsSync(record.instrumentedLuauPath) || !fs.existsSync(record.coverageMapPath)) {
+		// interrupted run can leave the manifest pointing at outputs that no
+		// longer exist, or at a directory standing where one of them was.
+		// Force re-instrumentation rather than carry either kind of lie
+		// forward.
+		if (
+			!shadowHoldsFile(record.instrumentedLuauPath) ||
+			!shadowHoldsFile(record.coverageMapPath)
+		) {
 			continue;
 		}
 

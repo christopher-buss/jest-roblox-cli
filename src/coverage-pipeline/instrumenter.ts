@@ -15,6 +15,7 @@ import { discoverRootFiles } from "./discover-files.ts";
 import type { CoverageManifest, InstrumentedFileRecord } from "./manifest.ts";
 import { MANIFEST_VERSION, writeManifest } from "./manifest.ts";
 import { insertProbes } from "./probe-inserter.ts";
+import { clearDirectoryAtFilePath, createShadowDirectory } from "./shadow-entry.ts";
 
 export const INSTRUMENTER_VERSION = 5;
 
@@ -51,17 +52,21 @@ export interface InstrumentOptions extends InstrumentRootOptions {
 	manifestPath: string;
 }
 
-/** Everything the per-file instrumentation pass captures from its root. */
-interface InstrumentFileContext {
+/** Where a twin's path is rooted, and which levels of it are already judged. */
+interface ShadowPathContext {
 	/**
-	 * Shadow directories this pass has already made, so only the first file in
-	 * a directory pays the `mkdirSync`. Scoped to one `instrumentRoot` call —
-	 * one `shadowDir` — so it cannot outlive the tree it describes.
+	 * Shadow directories this pass has already judged, so only the first file
+	 * under one pays for it. Scoped to one `instrumentRoot` call — one
+	 * `shadowDir` — so it cannot outlive the tree it describes.
 	 */
 	createdDirectories: Set<string>;
+	shadowDir: string;
+}
+
+/** Everything the per-file instrumentation pass captures from its root. */
+interface InstrumentFileContext extends ShadowPathContext {
 	/** POSIX-normalized luauRoot — the first half of every file key. */
 	posixLuauRoot: string;
-	shadowDir: string;
 	timing: TimingCollector;
 }
 
@@ -143,17 +148,56 @@ function collectFileCoverage({
 }
 
 /**
- * `mkdirSync` the directory unless this pass already made it. `recursive: true`
- * stays on: the cache elides repeats only, so the first file at any depth must
- * still be able to create the whole chain above it.
+ * `createShadowDirectory` one shadow directory unless this pass already judged
+ * it. The cache holds every level it is given, so each directory costs one
+ * `stat` per run rather than one per file written under it.
  */
-function ensureDirectory(directory: string, createdDirectories: Set<string>): void {
+function ensureShadowDirectory(directory: string, createdDirectories: Set<string>): void {
 	if (createdDirectories.has(directory)) {
 		return;
 	}
 
-	fs.mkdirSync(directory, { recursive: true });
+	createShadowDirectory(directory);
 	createdDirectories.add(directory);
+}
+
+/**
+ * Ready the path one instrumented twin is written to.
+ *
+ * The chain is walked a level at a time rather than made by one recursive
+ * `mkdirSync`, because a stale file on any level blocks the whole make and the
+ * recursive call cannot be trusted to say so. The instrumenter is the pass that
+ * has to survive that: `prepareShadowRoot` instruments before it mirrors, so
+ * the mirror walk — which judges the same levels against source — has not run.
+ *
+ * The twin's own path is cleared last, and never cached: that clash is per
+ * file, so it costs a `stat` on every file written. Cheap against the write and
+ * the atomic cov-map that follow, but not free — measure before adding another.
+ *
+ * The `.cov-map.json` sidecar beside the twin is deliberately not cleared. Only
+ * a source directory named `*.cov-map.json` can put a directory on that path,
+ * and on a tree holding one the mirror walk deletes the sidecar to make its own
+ * twin every run regardless: both writers want the path, and clearing here
+ * would trade a loud failure for a shadow that thrashes silently.
+ */
+function prepareTwinPath(
+	relativePath: string,
+	shadowFilePath: string,
+	{ createdDirectories, shadowDir }: ShadowPathContext,
+): void {
+	let directory = shadowDir;
+	ensureShadowDirectory(directory, createdDirectories);
+
+	const parent = path.dirname(relativePath);
+	if (parent !== ".") {
+		// The discovery walk keys every path with "/", whatever the platform.
+		for (const segment of parent.split("/")) {
+			directory = path.join(directory, segment);
+			ensureShadowDirectory(directory, createdDirectories);
+		}
+	}
+
+	clearDirectoryAtFilePath(shadowFilePath);
 }
 
 /**
@@ -188,7 +232,7 @@ function instrumentFile(
 		// rename it adds per covered file roughly triples the cost of the write
 		// it protects. The atomic cov-map below covers the kill window that
 		// leaves. Re-measure the `write-shadow` span under `TIMING` first.
-		ensureDirectory(path.dirname(shadowFilePath), createdDirectories);
+		prepareTwinPath(relativePath, shadowFilePath, { createdDirectories, shadowDir });
 		fs.writeFileSync(shadowFilePath, instrumentedSource);
 		// Same directory as the twin, already made above — but `atomicWrite`
 		// under here remakes it per file. Deduping that too would mean an

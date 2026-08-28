@@ -307,6 +307,37 @@ describe(instrumentRoot, () => {
 			]);
 		});
 	});
+
+	describe("when the shadow holds an entry of the wrong type", () => {
+		// Neither clash reaches the mirror walk's `createShadowDirectory`:
+		// `prepareShadowRoot` instruments before it mirrors, so the
+		// instrumenter is the pass that has to survive both.
+		it("should replace a directory sitting on a twin's own path", () => {
+			expect.assertions(1);
+
+			setupFilesystem();
+			vol.mkdirSync("/shadow/init.luau", { recursive: true });
+			vol.writeFileSync("/shadow/init.luau/stale.luau", "-- stale");
+
+			instrumentRoot({ luauRoot: "/luau-root", shadowDir: "/shadow" });
+
+			expect(vol.readFileSync("/shadow/init.luau", "utf-8")).toContain("__cov_file_key");
+		});
+
+		it("should replace a file sitting on a directory above a twin", () => {
+			expect.assertions(1);
+
+			setupFilesystem({ files: { "nested/init.luau": "local x = 1\n" } });
+			vol.mkdirSync("/shadow", { recursive: true });
+			vol.writeFileSync("/shadow/nested", "-- stale");
+
+			instrumentRoot({ luauRoot: "/luau-root", shadowDir: "/shadow" });
+
+			expect(vol.readFileSync("/shadow/nested/init.luau", "utf-8")).toContain(
+				"__cov_file_key",
+			);
+		});
+	});
 });
 
 describe(instrument, () => {

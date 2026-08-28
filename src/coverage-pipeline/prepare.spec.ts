@@ -1924,6 +1924,86 @@ describe(prepareCoverage, () => {
 				expect(result.rebuilt).toBeTrue();
 			});
 
+			it("should replace a shadow directory whose source turned into a file", async () => {
+				expect.assertions(2);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/data.json": "{}",
+						"out-tsc/test/init.luau": "local x = 1",
+					},
+				});
+				// The mirror image of the case above, seeded non-empty: the
+				// whole subtree has to go, not just the entry on the path.
+				vol.mkdirSync(".jest-roblox/coverage/out-tsc/test/data.json", {
+					recursive: true,
+				});
+				vol.writeFileSync(".jest-roblox/coverage/out-tsc/test/data.json/value.json", "{}");
+
+				const result = prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(
+					vol.readFileSync(".jest-roblox/coverage/out-tsc/test/data.json", "utf-8"),
+				).toBe("{}");
+				expect(result.rebuilt).toBeTrue();
+			});
+
+			// Both carry-forwards ask whether the output they would keep is
+			// still there, and `existsSync` says yes to a directory. An
+			// interrupted run that changed a source's kind leaves exactly that,
+			// and carrying the record forward would hand rojo a Folder under
+			// the name a file should have — silently, since nothing throws.
+			it("should re-copy when the recorded shadow path became a directory", async () => {
+				expect.assertions(1);
+
+				const specContent = "-- spec";
+				const specRecord: NonInstrumentedFileRecord = {
+					shadowPath: ".jest-roblox/coverage/out-tsc/test/init.spec.luau",
+					sourceHash: sha256(specContent),
+					sourcePath: "out-tsc/test/init.spec.luau",
+				};
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario({
+					fileContents: {
+						"out-tsc/test/init.luau": "local x = 1",
+						"out-tsc/test/init.spec.luau": specContent,
+					},
+					previousNonInstrumentedFiles: {
+						"out-tsc/test/init.spec.luau": specRecord,
+					},
+				});
+				vol.rmSync(specRecord.shadowPath);
+				vol.mkdirSync(specRecord.shadowPath, { recursive: true });
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(vol.readFileSync(specRecord.shadowPath, "utf-8")).toBe(specContent);
+			});
+
+			it("should re-instrument when the recorded twin became a directory", async () => {
+				expect.assertions(1);
+
+				const { instrumentRoot } = await setupMocksAsync();
+				vi.mocked(instrumentRoot).mockReturnValue({});
+
+				seedIncrementalScenario();
+				const twin = ".jest-roblox/coverage/out-tsc/test/init.luau";
+				vol.rmSync(twin);
+				vol.mkdirSync(twin, { recursive: true });
+
+				prepareCoverage(makeConfig({ luauRoots: ["out-tsc/test"] }));
+
+				expect(instrumentRoot).toHaveBeenCalledWith(
+					expect.objectContaining({ skipFiles: new Set() }),
+				);
+			});
+
 			it("should remove orphaned non-luau files from the shadow when source is deleted", async () => {
 				expect.assertions(1);
 
