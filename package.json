@@ -90,7 +90,7 @@
 		"@isentinel/roblox-ts": "4.0.11",
 		"@isentinel/rojo-utils": "workspace:*",
 		"@isentinel/tsconfig": "2.0.0",
-		"@isentinel/weld": "0.2.0",
+		"@isentinel/weld": "0.2.1",
 		"@oxc-project/types": "0.146.0",
 		"@rbxts/jest": "3.16.0-ts.1",
 		"@rbxts/types": "latest",
