@@ -503,11 +503,13 @@ async function executeWorkspaceRunAsync({
 	let output;
 	try {
 		emitWorkspaceRunHeader({ cli, progress, runOptions, workspaceRoot });
-		const onStreamingResult = resolveStreamingProgressSink({ cli, progress, runOptions });
 		output = await runWorkspaceAsync({
 			backend,
 			cli,
-			onStreamingResult,
+			// Read here, the layer that already reads it to discover the
+			// workspace root above it.
+			cwd: process.cwd(),
+			onStreamingResult: resolveStreamingProgressSink({ cli, progress, runOptions }),
 			packageInfos,
 			runOptions,
 			timing,

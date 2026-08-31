@@ -15,6 +15,7 @@ import {
 	writeGameOutput,
 	writeGroupedGameOutput,
 } from "../utils/game-output.ts";
+import { projectKey } from "./project-key.ts";
 import type { PendingEntry, TypeTestProject } from "./test-selection.ts";
 
 const PER_PACKAGE_OUTPUT_DIRECTORY = path.join(".jest-roblox", "output");
@@ -108,12 +109,6 @@ export async function writeTypecheckOnlySinksAsync(
 			buildPerPackageResults([], [], input.typecheckByPackage, input.typeTestProjects),
 		);
 	}
-}
-
-// JSON-encode the `(pkg, project)` pair so neither segment's content can collide
-// into another pair's key (parity with `groupTypecheckByTsconfig`).
-function projectKey(packageName: string, project: string): string {
-	return JSON.stringify([packageName, project]);
 }
 
 // Builds the per-(package, project) files the workspace writes when

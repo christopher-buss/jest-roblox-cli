@@ -309,3 +309,39 @@ describe("workspace bare enumeration", () => {
 		60_000,
 	);
 });
+
+// The positional had to survive argv parsing, package enumeration, and the
+// place synthesis to matter, and none of that is reachable from the unit seam:
+// `parseArgs` is what turns `--workspace <path>` into a boolean plus a
+// positional, and the path is typed relative to the invocation directory rather
+// than to any package. A bare `--workspace` over this fixture otherwise
+// dispatches every package in it.
+describe("workspace positional file scoping", () => {
+	it.skipIf(!rojoOnPath())(
+		"should dispatch only the package that owns a relative positional file",
+		async () => {
+			expect.assertions(4);
+
+			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
+
+			const server = await startFakeOpenCloudServerAsync([
+				{ jestOutput: buildPassingJestOutput(), pkg: "@e2e/foo", project: "@e2e/foo" },
+			]);
+
+			const result = await runCliAsync(
+				["--workspace", "packages/foo/src/foo.spec.luau", "--backend", "open-cloud"],
+				{
+					cwd: sandbox,
+					env: createOpenCloudEnvironment(server.baseUrl),
+					timeoutMs: 60_000,
+				},
+			);
+
+			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
+			expect(server.requests).toHaveLength(1);
+			expect(server.requests[0]!.script).toContain('"pkg":"@e2e/foo"');
+			expect(server.requests[0]!.script).not.toContain("@e2e/bar");
+		},
+		60_000,
+	);
+});

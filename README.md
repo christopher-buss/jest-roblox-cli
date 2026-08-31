@@ -605,7 +605,8 @@ with `--workspace`.
 > `Package "<name>" not found in workspace`.
 
 A bare `--workspace` runs every package in the workspace. The two selection
-flags narrow that set rather than enabling it:
+flags narrow that set rather than enabling it, as does naming a file (see
+[Naming files](#naming-files)):
 
 ```bash
 # Every package
@@ -622,6 +623,31 @@ jest-roblox --workspace --affected-since main
 requires `--workspace`. A `--workspace` that selects nothing exits 2 — an empty
 workspace is a configuration problem, while `--affected-since` finding nothing
 is a clean run and exits 0.
+
+### Naming files
+
+A positional file narrows a workspace run the same way it narrows a
+single-package one, and it narrows all the way down: only the packages and
+projects whose `include` roots own the file are staged into the synthesized
+place, and each runs that file alone.
+
+```bash
+# Only the package that owns this file, only this file
+jest-roblox --workspace src/shared/dropdown.spec.ts
+```
+
+Paths are relative to the directory you run from, so the same argument works
+from a package subdirectory. (Outside `--workspace` the base is the config's
+`rootDir` instead — a workspace has no single one to use.) A file no package
+owns is an error listing the include roots that were searched: naming a file
+that nothing matches is a typo, not a clean run. Ownership is by include root,
+so a file under a root that several projects include selects all of them.
+
+Naming a `*.spec-d.ts` selects the type pass instead, and naming a runtime spec
+leaves the package's Type Tests out. `--project` still applies first: it decides
+which projects may run at all, and the file picks from what survives — so naming
+a file none of those projects owns is the same error, where outside
+`--workspace` the named projects would each be handed the file regardless.
 
 ### Excluding packages
 
@@ -802,7 +828,7 @@ project) under `.jest-roblox/output/`.
 | `--typecheck`                    | Run type tests too                                                                                                                                        |
 | `--typecheckOnly`                | Run only type tests                                                                                                                                       |
 | `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                                                                   |
-| `--workspace`                    | Run every package in the workspace; narrow it with `--packages` or `--affected-since` (see [Workspace mode](#workspace-mode))                             |
+| `--workspace`                    | Run every package in the workspace; narrow it with `--packages`, `--affected-since`, or a positional file (see [Workspace mode](#workspace-mode))         |
 | `--bail`                         | Workspace mode: stop at the first failing package (see [Failing fast](#failing-fast))                                                                     |
 | `--packages <names>`             | Comma-separated package names; narrows a workspace run                                                                                                    |
 | `--affected-since <ref>`         | Run only packages affected since a git ref (workspace mode)                                                                                               |

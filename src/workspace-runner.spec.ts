@@ -590,6 +590,210 @@ describe(runWorkspaceAsync, () => {
 		);
 	});
 
+	// Regression: a positional file was discarded in workspace mode, so
+	// `--workspace path/to/one.spec.ts` staged every package and ran the whole
+	// workspace while reporting nothing about the argument it dropped.
+	it("should dispatch only the package a positional file names", async () => {
+		expect.assertions(3);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			...seedPackage(BAR_DIR, {
+				name: "@halcyon/bar",
+				specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR, testMatch: ["**/*.spec.luau"] },
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.luau"] },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli({ files: [path.join(FOO_DIR, "src/foo.spec.luau")] }),
+			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.jobs.map((job) => job.pkg)).toStrictEqual(["@halcyon/foo"]);
+
+		// The place carries only the named package, so the build shrinks with
+		// the selection rather than staging the whole workspace anyway.
+		const staged = vi.mocked(buildPlaceAsync).mock.lastCall![0].packages;
+
+		expect(staged.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
+		expect(captured.options!.scriptOverride).not.toContain("@halcyon/bar");
+	});
+
+	// A positional is typed relative to the directory the CLI was invoked from,
+	// which is a package subdirectory as often as it is the workspace root. The
+	// run takes that directory as an argument rather than reading it, so this
+	// resolves a bare `src/foo.spec.luau` from inside `@halcyon/foo`.
+	it("should resolve a relative positional against the invocation directory", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			...seedPackage(BAR_DIR, {
+				name: "@halcyon/bar",
+				specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[BAR_DIR]: { ...DEFAULT_CONFIG, rootDir: BAR_DIR, testMatch: ["**/*.spec.luau"] },
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.luau"] },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli({ files: ["src/foo.spec.luau"] }),
+			cwd: FOO_DIR,
+			packageInfos: [FOO_INFO, BAR_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.jobs.map((job) => job.pkg)).toStrictEqual(["@halcyon/foo"]);
+	});
+
+	// The Luau side matches Instance paths, so a positional narrows through the
+	// same translation `--testPathPattern` does — a namesake in a sibling
+	// directory must not ride along.
+	it("should narrow to the positional file's instance sub-path", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/a/index.spec.luau")]: "",
+					[path.join(FOO_DIR, "src/b/index.spec.luau")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.luau"] },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli({ files: [path.join(FOO_DIR, "src/a/index.spec.luau")] }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.scriptOverride).toContain(
+			'"testPathPattern":"(Pkg/a/index\\\\.spec)"',
+		);
+		expect(captured.options!.scriptOverride).not.toContain("b/index");
+	});
+
+	// A positional beats a `--testPathPattern` given alongside it, as in multi:
+	// the file set is already resolved, so the raw pattern is dropped rather
+	// than intersected.
+	it("should let a positional file override a testPathPattern given with it", async () => {
+		expect.assertions(2);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/a.spec.luau")]: "",
+					[path.join(FOO_DIR, "src/b.spec.luau")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.luau"] },
+		});
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli({
+				files: [path.join(FOO_DIR, "src/a.spec.luau")],
+				testPathPattern: "src/b.spec",
+			}),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.scriptOverride).toContain('"testPathPattern":"(Pkg/a\\\\.spec)"');
+		expect(captured.options!.scriptOverride).not.toContain('"testPathPattern":"src/b.spec"');
+	});
+
+	// A file no package owns is a mistake in the argument, not an empty run:
+	// reporting it as green would hide the typo behind a passing exit.
+	it("should reject a positional file no package owns, naming the roots searched", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.luau"] },
+		});
+
+		const { backend } = createStubBackend([]);
+
+		await expect(
+			runWorkspaceAsync({
+				backend,
+				cli: makeCli({ files: [path.join(ROOT, "elsewhere/nope.spec.luau")] }),
+				packageInfos: [FOO_INFO],
+				runOptions: makeRunOptions(),
+				version: "0.0.0-test",
+				workspaceRoot: ROOT,
+			}),
+		).rejects.toThrow("No project contains the requested file(s):");
+	});
+
 	it("should synthesize one virtual project named after the package when projects: is absent", async () => {
 		expect.assertions(2);
 
@@ -4604,6 +4808,96 @@ describe("workspace type tests", () => {
 			}),
 		);
 		expect(result!.typecheckResult).toBeDefined();
+	});
+
+	// The positional selects the type pass as well, so naming one type test
+	// checks that file rather than every `-d` file in the package it lives in.
+	it("should check only the type test a positional file names", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/other.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/wanted.spec-d.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+		});
+
+		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+
+		const { backend } = createStubBackend([]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli({ files: [path.join(FOO_DIR, "src/wanted.spec-d.ts")] }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		const { files } = vi.mocked(runTypecheckAsync).mock.calls[0]![0];
+
+		// Absolute and platform-native, the same shape the glob half produces —
+		// the two feed one tsgo group, and the ownership match that selected
+		// this file hands back a posix path.
+		expect(files).toStrictEqual([path.join(FOO_DIR, "src/wanted.spec-d.ts")]);
+	});
+
+	// The mirror of the case above: a runtime positional leaves the package's
+	// type tests out entirely, rather than checking them alongside the one file
+	// the user named.
+	it("should skip the type pass when a positional file names a runtime spec", async () => {
+		expect.assertions(1);
+
+		vol.reset();
+		vol.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: true },
+			},
+		});
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		await runWorkspaceAsync({
+			backend,
+			cli: makeCli({ files: [path.join(FOO_DIR, "src/foo.spec.ts")] }),
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(vi.mocked(runTypecheckAsync)).not.toHaveBeenCalled();
 	});
 
 	it("should use an explicit test.typecheck.include instead of deriving from the runtime include", async () => {

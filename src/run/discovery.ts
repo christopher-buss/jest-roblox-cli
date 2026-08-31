@@ -10,14 +10,14 @@ const DEFAULT_ROJO_PROJECT = "default.project.json";
 // eslint-disable-next-line ts/no-inferrable-types -- isolatedDeclarations requires explicit annotation
 export const TYPE_TEST_PATTERN: RegExp = /\.(test-d|spec-d)\.ts$/;
 
+export interface ClassifiedTestFiles {
+	runtimeFiles: Array<string>;
+	typeTestFiles: Array<string>;
+}
+
 interface TestFileDiscovery {
 	files: Array<string>;
 	totalFiles: number;
-}
-
-interface ClassifiedTestFiles {
-	runtimeFiles: Array<string>;
-	typeTestFiles: Array<string>;
 }
 
 /**

@@ -98,7 +98,8 @@ Open Cloud credentials (open-cloud backend only):
 Examples:
   jest-roblox                         Run all tests (open-cloud)
   jest-roblox --backend studio        Run tests via Studio plugin
-  jest-roblox src/player.spec.ts      Run specific test file
+  jest-roblox src/player.spec.ts      Run specific test file (also narrows
+                                      a --workspace run to its package)
   jest-roblox -t "should spawn"       Run tests matching pattern
   jest-roblox --formatters json       Output JSON to file
   jest-roblox --coverage              Run tests with coverage instrumentation

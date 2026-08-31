@@ -46,6 +46,14 @@ export interface RunWorkspaceOptions {
 	backend?: Backend | undefined;
 	cli: CliOptions;
 	/**
+	 * Directory a relative positional file resolves against — the one the CLI
+	 * was invoked from, which is not the workspace root when the run was
+	 * started inside a package. Optional so direct test seams keep working;
+	 * production callers always pass one, and omitting it falls back to the
+	 * value they would have passed.
+	 */
+	cwd?: string | undefined;
+	/**
 	 * When provided, called once per newly-observed streaming result as
 	 * packages complete (work-stealing mode only). The intended consumer is
 	 * the human formatter, which uses this hook to flush per-package output
@@ -321,7 +329,9 @@ async function runWorkspaceProfiledAsync(
 		return resolvePackageContextsAsync({ cacheDirectory, loaded });
 	});
 
-	const selection = timing.profile("discoverTests", () => selectWorkspaceTests(contexts, cli));
+	const selection = timing.profile("discoverTests", () => {
+		return selectWorkspaceTests({ cli, contexts, cwd: options.cwd ?? process.cwd() });
+	});
 	if (selection.emptyPackageErrors.length > 0) {
 		reportTestSelectionErrors(selection);
 		return undefined;
