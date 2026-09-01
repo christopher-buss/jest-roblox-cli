@@ -27,6 +27,21 @@ function exampleManifest(): CoverageManifest {
 	};
 }
 
+/**
+ * A manifest as a warm run reads it: the shadow found `out/m.luau` unchanged
+ * and carried the previous run's record forward verbatim, attribution included.
+ */
+function warmManifest(): CoverageManifest {
+	const manifest = exampleManifest();
+	manifest.files["out/m.luau"] = {
+		...manifest.files["out/m.luau"]!,
+		coveringTestIds: { "1": ["stale"], "2": ["stale"] },
+		staticStatementIds: ["0"],
+	};
+
+	return manifest;
+}
+
 describe(harvestAttribution, () => {
 	it("should attribute a covered statement to the single test that hit it", () => {
 		expect.assertions(2);
@@ -276,6 +291,48 @@ describe(applyAttribution, () => {
 		});
 
 		expect(result.files["out/ghost.luau"]).toBeUndefined();
+	});
+
+	it("should drop a carried-forward coveringTestIds when this run has only static ids", () => {
+		expect.assertions(3);
+
+		// The detector-regression case: every statement of the file became
+		// module-load code, so this harvest names it under static ids alone.
+		const result = applyAttribution(warmManifest(), {
+			coveringTestIds: {},
+			staticStatementIds: { "out/m.luau": ["0", "1", "2"] },
+			tests: [],
+		});
+
+		expect(result.files["out/m.luau"]!.coveringTestIds).toBeUndefined();
+		expect(result.files["out/m.luau"]!.staticStatementIds).toStrictEqual(["0", "1", "2"]);
+		expect(result.files["out/m.luau"]!.statementCount).toBe(3);
+	});
+
+	it("should drop a carried-forward staticStatementIds when this run has only covering ids", () => {
+		expect.assertions(2);
+
+		const result = applyAttribution(warmManifest(), {
+			coveringTestIds: { "out/m.luau": { "0": ["t1"] } },
+			staticStatementIds: {},
+			tests: [],
+		});
+
+		expect(result.files["out/m.luau"]!.staticStatementIds).toBeUndefined();
+		expect(result.files["out/m.luau"]!.coveringTestIds).toStrictEqual({ "0": ["t1"] });
+	});
+
+	it("should drop both carried-forward fields when this run attributes the file nothing", () => {
+		expect.assertions(2);
+
+		const result = applyAttribution(warmManifest(), {
+			coveringTestIds: {},
+			staticStatementIds: {},
+			tests: [],
+		});
+
+		expect(result.files["out/m.luau"]!.coveringTestIds).toBeUndefined();
+		expect(result.files["out/m.luau"]!.staticStatementIds).toBeUndefined();
 	});
 });
 

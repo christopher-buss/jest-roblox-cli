@@ -1,4 +1,4 @@
-import type { CoverageManifest, TestRecord } from "./manifest.ts";
+import type { CoverageManifest, InstrumentedFileRecord, TestRecord } from "./manifest.ts";
 import type { PerTestCoverageEntry, RawCoverageData } from "./types.ts";
 
 export interface AttributionResult {
@@ -68,12 +68,23 @@ export function harvestAttribution(
  * on its record. Attribution for a file absent from the manifest (e.g. a
  * covered helper outside the report universe) is dropped — the manifest's file
  * set stays the source of truth.
+ *
+ * Every record drops both attribution fields before either is written, so what
+ * a record carries always comes from one harvest. A warm shadow carries an
+ * unchanged file's record forward verbatim and the two fields are written from
+ * separate maps, so a file this run has static ids for but no covering ids for
+ * would otherwise keep the last run's covering ids — and consumers read the two
+ * sets as one run's disjoint halves.
  */
 export function applyAttribution(
 	manifest: CoverageManifest,
 	attribution: AttributionResult,
 ): CoverageManifest {
-	const files = { ...manifest.files };
+	const files: CoverageManifest["files"] = {};
+	for (const [fileKey, record] of Object.entries(manifest.files)) {
+		files[fileKey] = clearAttribution(record);
+	}
+
 	for (const [fileKey, coveringTestIds] of Object.entries(attribution.coveringTestIds)) {
 		const record = files[fileKey];
 		if (record !== undefined) {
@@ -143,6 +154,17 @@ function deriveStatic(
 	}
 
 	return staticStatementIds;
+}
+
+/**
+ * A record with neither attribution field, ready to take this run's. Both go
+ * together: leaving one behind is what pairs two runs' halves on one record.
+ */
+function clearAttribution(record: InstrumentedFileRecord): InstrumentedFileRecord {
+	const cleared = { ...record };
+	delete cleared.coveringTestIds;
+	delete cleared.staticStatementIds;
+	return cleared;
 }
 
 function mergeStatic(
