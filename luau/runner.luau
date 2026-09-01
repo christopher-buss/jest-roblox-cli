@@ -50,7 +50,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	-- during findJest/require(Jest) (broken jestPath, missing dep) also land
 	-- in the user-facing `--gameOutput` dump, and stops last during teardown
 	-- so late warns that fire after Promise:expect resumes the coroutine still
-	-- reach it — GetLogHistory has a known gap here (plans/SNAPSHOT-SUPPORT.md).
+	-- reach it — GetLogHistory drops those, though Studio Output shows them.
 	-- This runner's envelope carries a string, so an empty capture is "[]".
 	--
 	-- Skipped entirely when the caller owns a capture of its own: every

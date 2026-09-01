@@ -1171,12 +1171,12 @@ packages:
       '@types/node':
         optional: true
 
-  '@isentinel/dict-rbxts@1.0.20':
-    resolution: {integrity: sha512-G/CgNX00foLRvj3hm3lks94cV39dxfrdWc7hHi2i4E4acJqTzSxJLb6rtXPPs49Q538Ji13RJ2GOlRtimNXYOg==}
+  '@isentinel/dict-rbxts@1.0.21':
+    resolution: {integrity: sha512-I5gO11EBTNF4Zbi3S6sPRy9RkcuAqaf8DE6g8G0iDLdJxcPCxjFsGFJeeEJz9R/yklyiMSyM7Pz2GwgHrxH0/g==}
     engines: {node: '>=22'}
 
-  '@isentinel/dict-roblox@1.0.13':
-    resolution: {integrity: sha512-t66E0JBi+2+aIN3uhxhW+iYB+Qdgw2FR9rjz2qbUsiZ/VzGNkvWxewOGtGuk5RAdhwIHORg9lMod8R6e4BhnBQ==}
+  '@isentinel/dict-roblox@1.0.14':
+    resolution: {integrity: sha512-fMH9b0NHjf6rTbOtE0HMRHv/T1Oa1blSjSXR/z0h30FTcG0jwZDXDYPj7bmbJXutUptUa88gq0f7p9RKbS0z3Q==}
     engines: {node: '>=20.18.0'}
 
   '@isentinel/eslint-config@6.0.0-beta.42':
@@ -3031,8 +3031,8 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  electron-to-chromium@1.5.416:
-    resolution: {integrity: sha512-K6bvB2BjnNrugtIih6ewlbBI9DXa976jIdiIlRLHhBoEI9a4JaQjjHyF+A1IQI543aQYR4LnmOrT/K5fZj0aPA==}
+  electron-to-chromium@1.5.417:
+    resolution: {integrity: sha512-4T+DTDWuMPM4aHlHwWdAVCVWwp7LDilnhzkj+c/Lbj91XSQrLuOmZSLtS9Q4iIqjlPUbPOnC624zDVVHCHaolQ==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -3612,8 +3612,8 @@ packages:
     resolution: {integrity: sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==}
     engines: {node: '>= 4'}
 
-  ignore@7.0.7:
-    resolution: {integrity: sha512-dML0wP6oak21rsNYCJpJB6O1BJIEwNpGrTw0URPfAk4hm0e3pRfCtzkfB6olBcXcVlU2rouCyz7lCyRB0OMVCA==}
+  ignore@7.0.8:
+    resolution: {integrity: sha512-YYNsSlXBjMk92SKnkwvB5LOVSa6OznlFUGcsvrFgNJbJCd0M1XKeFVRc8ZByeCqz32FivYNHJVooLmdqrmvp/Q==}
     engines: {node: '>= 4'}
 
   import-fresh@4.0.0:
@@ -5518,7 +5518,7 @@ snapshots:
     dependencies:
       escape-string-regexp: 4.0.0
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
-      ignore: 7.0.7
+      ignore: 7.0.8
 
   '@eslint-community/eslint-utils@4.10.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))':
     dependencies:
@@ -5789,9 +5789,9 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.12.3
 
-  '@isentinel/dict-rbxts@1.0.20': {}
+  '@isentinel/dict-rbxts@1.0.21': {}
 
-  '@isentinel/dict-roblox@1.0.13': {}
+  '@isentinel/dict-roblox@1.0.14': {}
 
   '@isentinel/eslint-config@6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0-rc.2))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.80.0)(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
@@ -5801,8 +5801,8 @@ snapshots:
       '@e18e/eslint-plugin': 0.5.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxlint@1.80.0)
       '@eslint-community/eslint-plugin-eslint-comments': 4.7.2(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))
       '@eslint/markdown': 8.0.3(supports-color@10.2.2)
-      '@isentinel/dict-rbxts': 1.0.20
-      '@isentinel/dict-roblox': 1.0.13
+      '@isentinel/dict-rbxts': 1.0.21
+      '@isentinel/dict-roblox': 1.0.14
       '@oxlint/plugins': 1.78.0
       '@pobammer-ts/small-rules': 2.14.0(typescript@6.0.3)
       '@stylistic/eslint-plugin': 5.10.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))
@@ -6957,7 +6957,7 @@ snapshots:
       '@typescript-eslint/utils': 8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.62.1
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
-      ignore: 7.0.7
+      ignore: 7.0.8
       natural-compare: 1.4.0
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
@@ -7329,7 +7329,7 @@ snapshots:
     dependencies:
       baseline-browser-mapping: 2.11.20
       caniuse-lite: 1.0.30001810
-      electron-to-chromium: 1.5.416
+      electron-to-chromium: 1.5.417
       node-releases: 2.0.54
       update-browserslist-db: 1.3.2(browserslist@4.28.8)
 
@@ -7585,7 +7585,7 @@ snapshots:
       minimatch: 10.2.6
       semver: 7.8.5
 
-  electron-to-chromium@1.5.416: {}
+  electron-to-chromium@1.5.417: {}
 
   emoji-regex@10.6.0: {}
 
@@ -7784,7 +7784,7 @@ snapshots:
     dependencies:
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
       generate-differences: 0.1.1
-      ignore: 7.0.7
+      ignore: 7.0.8
       load-oxfmt-config: 0.19.0(oxfmt@0.63.0)
       oxfmt: 0.63.0
       picomatch: 4.0.5
@@ -8219,7 +8219,7 @@ snapshots:
 
   ignore@7.0.6: {}
 
-  ignore@7.0.7: {}
+  ignore@7.0.8: {}
 
   import-fresh@4.0.0: {}
 
@@ -8407,7 +8407,7 @@ snapshots:
     dependencies:
       '@ntnyq/utils': 0.21.1
       editorconfig: 3.0.2
-      ignore: 7.0.7
+      ignore: 7.0.8
       jiti: 2.7.0
       jsonc-parser: 3.3.1
       oxfmt: 0.63.0
@@ -8949,7 +8949,7 @@ snapshots:
   oxlint-plugin-oxlint-comments@0.1.0:
     dependencies:
       escape-string-regexp: 4.0.0
-      ignore: 7.0.7
+      ignore: 7.0.8
       oxlint: 1.80.0
     transitivePeerDependencies:
       - oxlint-tsgolint
