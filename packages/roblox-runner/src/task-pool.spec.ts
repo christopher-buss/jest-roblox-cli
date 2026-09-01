@@ -133,6 +133,44 @@ describe(runTaskPoolAsync, () => {
 		await expect(pool).resolves.toBeUndefined();
 	});
 
+	it("should report each settled task under its own stable slot index", async () => {
+		expect.assertions(2);
+
+		const pending: Array<Deferred> = [];
+		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
+			const deferred = makeDeferred();
+			pending.push(deferred);
+			return deferred.promise;
+		});
+
+		const slots: Array<number> = [];
+		let isDone = false;
+		const pool = runTaskPoolAsync({
+			concurrency: 2,
+			isDone: () => isDone,
+			onResult: (_result, slot) => {
+				slots.push(slot);
+			},
+			places: [{ runTask }],
+		});
+
+		// Slot 1 settles twice while slot 0 is still in flight: a consumer
+		// bounding no-progress must be able to see that one slot delivered
+		// everything, not two.
+		pending[1]!.resolve(makeScriptResult());
+		await flushAsync();
+		pending[2]!.resolve(makeScriptResult());
+		await flushAsync();
+
+		expect(slots).toStrictEqual([1, 1]);
+
+		isDone = true;
+		pending[0]!.resolve(makeScriptResult());
+		pending[3]!.resolve(makeScriptResult());
+
+		await expect(pool).resolves.toBeUndefined();
+	});
+
 	it("should relaunch a slot when a task returns while work remains", async () => {
 		expect.assertions(3);
 
@@ -563,7 +601,7 @@ describe("runTaskPool backoff", () => {
 		});
 
 		expect(runTask).toHaveBeenCalledTimes(2);
-		expect(onError).toHaveBeenCalledExactlyOnceWith(apiError);
+		expect(onError).toHaveBeenCalledExactlyOnceWith(apiError, 0);
 		expect(sleep).not.toHaveBeenCalled();
 	});
 });

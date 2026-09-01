@@ -50,10 +50,18 @@ export interface TaskPoolOptions {
 	 * Wall clock in milliseconds; injected for tests. Defaults to `Date.now`.
 	 */
 	now?: () => number;
-	/** Observe a task failure the pool does not back off on. */
-	onError?: (error: Error) => void;
-	/** Fold a settled task's envelope into the consumer's result set. */
-	onResult: (result: ScriptResult) => void;
+	/**
+	 * Observe a task failure the pool does not back off on, carrying the {@link
+	 * TaskPoolOptions.onResult} slot index.
+	 */
+	onError?: (error: Error, slot: number) => void;
+	/**
+	 * Fold a settled task's envelope into the consumer's result set. `slot` is
+	 * the index of the slot the task ran in — stable for the run and unique
+	 * across every place — so a consumer can attribute settled tasks to the
+	 * slot that produced them rather than to one undifferentiated stream.
+	 */
+	onResult: (result: ScriptResult, slot: number) => void;
 	/**
 	 * Places the one universe-scoped queue is drained across (no federation).
 	 * `concurrency` spreads across this list capped at 10/place; a single entry
@@ -94,8 +102,8 @@ interface PlaceState {
 interface PoolRuntime {
 	isDone: () => boolean;
 	now: () => number;
-	onError?: ((error: Error) => void) | undefined;
-	onResult: (result: ScriptResult) => void;
+	onError?: ((error: Error, slot: number) => void) | undefined;
+	onResult: (result: ScriptResult, slot: number) => void;
 	sleep: (ms: number) => Promise<void>;
 }
 
@@ -143,17 +151,7 @@ export async function runTaskPoolAsync(options: TaskPoolOptions): Promise<void> 
 
 	const allocations = distributeSlots(places, concurrency, warn);
 
-	const workers: Array<Promise<void>> = [];
-	for (const { place, slots } of allocations) {
-		// One state per place, shared by that place's slots: the recycle-lag
-		// clock is a property of the place, not of an individual slot.
-		const state: PlaceState = { lastCompletionMs: -Infinity, place };
-		for (let slot = 0; slot < slots; slot += 1) {
-			workers.push(workerAsync(runtime, state));
-		}
-	}
-
-	await Promise.all(workers);
+	await Promise.all(spawnWorkers(runtime, allocations));
 }
 
 /**
@@ -200,7 +198,7 @@ function classifyBackoff(error: unknown): BackoffSignal | undefined {
 }
 
 /** Drive one slot on `state`'s place until the consumer signals done. */
-async function workerAsync(runtime: PoolRuntime, state: PlaceState): Promise<void> {
+async function workerAsync(runtime: PoolRuntime, state: PlaceState, slot: number): Promise<void> {
 	while (!runtime.isDone()) {
 		let result: ScriptResult;
 		try {
@@ -216,15 +214,37 @@ async function workerAsync(runtime: PoolRuntime, state: PlaceState): Promise<voi
 				err instanceof Error
 					? err
 					: new Error("Task failed with a non-Error rejection", { cause: err });
-			runtime.onError?.(error);
+			runtime.onError?.(error, slot);
 			continue;
 		}
 
 		// Tracks slot-recycle lag (a backoff signal right after a completion)
 		// versus a genuinely-full place, per place across its slots.
 		state.lastCompletionMs = runtime.now();
-		runtime.onResult(result);
+		runtime.onResult(result, slot);
 	}
+}
+
+/**
+ * Start one worker per allocated slot. Slots are numbered across the whole
+ * pool, not per place, so the index a settled task is reported under identifies
+ * one slot for the length of the run.
+ */
+function spawnWorkers(
+	runtime: PoolRuntime,
+	allocations: ReadonlyArray<{ place: TaskPoolPlace; slots: number }>,
+): Array<Promise<void>> {
+	const workers: Array<Promise<void>> = [];
+	for (const { place, slots } of allocations) {
+		// One state per place, shared by that place's slots: the recycle-lag
+		// clock is a property of the place, not of an individual slot.
+		const state: PlaceState = { lastCompletionMs: -Infinity, place };
+		for (let slot = 0; slot < slots; slot += 1) {
+			workers.push(workerAsync(runtime, state, workers.length));
+		}
+	}
+
+	return workers;
 }
 
 /**
