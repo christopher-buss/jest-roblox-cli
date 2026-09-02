@@ -34,5 +34,6 @@ export type {
 	InstrumentedFileRecord,
 	NonInstrumentedFileRecord,
 	ReadManifestResult as ReadCoverageManifestResult,
+	TestLocation,
 	TestRecord,
 } from "./manifest.ts";

@@ -165,6 +165,26 @@ Received: "world"
 		expect(result).toBe("src/shared/test.spec.ts");
 	});
 
+	it("should map no test file line for a path outside the rojo tree", () => {
+		expect.assertions(1);
+
+		const rojoProject = {
+			name: "test",
+			tree: {
+				ReplicatedStorage: {
+					$path: "out/shared",
+				},
+			},
+		};
+
+		const mapper = createSourceMapper({
+			mappings: [{ outDir: "out", rootDir: "src" }],
+			rojoProject,
+		});
+
+		expect(mapper.mapTestFileLine("/Workspace/test.spec", 4)).toBeUndefined();
+	});
+
 	it("should return locations from mapFailureWithLocations", () => {
 		expect.assertions(3);
 
@@ -510,6 +530,7 @@ describe(combineSourceMappers, () => {
 					message: message.replace(tag, () => `${tag}_TS`),
 				};
 			},
+			mapTestFileLine: (file, line) => (file === `${tag}.spec` ? line + 100 : undefined),
 			resolveDisplayPath: (file) => (file === `${tag}.spec` ? `${tag}.spec.ts` : file),
 			resolveTestFilePath: (file) => (file === `${tag}.spec` ? `${tag}.spec.ts` : undefined),
 		};
@@ -519,6 +540,15 @@ describe(combineSourceMappers, () => {
 		expect.assertions(1);
 
 		expect(combineSourceMappers([])).toBeUndefined();
+	});
+
+	it("should map a test file line through the child that owns the file", () => {
+		expect.assertions(2);
+
+		const composite = combineSourceMappers([makeStub("A"), makeStub("B")]);
+
+		expect(composite!.mapTestFileLine("B.spec", 7)).toBe(107);
+		expect(composite!.mapTestFileLine("missing", 7)).toBeUndefined();
 	});
 
 	it("should return the only mapper unchanged when given one", () => {

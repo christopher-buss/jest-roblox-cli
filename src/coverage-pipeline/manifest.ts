@@ -13,7 +13,7 @@ import { parseVersionedManifest } from "./manifest-parse.ts";
  * probe-inserter is intentionally not formalized here: it has no serialization
  * boundary, so the TypeScript interface is sufficient.
  */
-export const MANIFEST_VERSION = 4 as const;
+export const MANIFEST_VERSION = 5 as const;
 
 export interface InstrumentedFileRecord {
 	key: string;
@@ -42,12 +42,24 @@ export interface InstrumentedFileRecord {
 	staticStatementIds?: Array<string>;
 }
 
+export interface TestLocation {
+	column: number;
+	line: number;
+}
+
 /**
  * One Jest test case's identity, recorded so Phase 3's differential cache can
  * key on which tests cover a mutant and whether their source changed.
  * `coveringTestIds` references these by `testId`.
  */
 export interface TestRecord {
+	/**
+	 * Where the test is declared, in the coordinates of the file
+	 * `testFileSourceHash` hashes: the TypeScript line when the test file has a
+	 * source map, the Luau line otherwise. The column is always 0, as Luau
+	 * frames carry none. Absent when the runtime could not read the call site.
+	 */
+	location?: TestLocation;
 	/** Full test name (describe chain + leaf `it`). */
 	testCaseId: string;
 	/** The test file's DataModel path, as the runner observed it. */
@@ -56,6 +68,12 @@ export interface TestRecord {
 	testFileSourceHash: string;
 	/** Stable unique id for the test case; referenced by `coveringTestIds`. */
 	testId: string;
+	/**
+	 * SHA-256 of the test's own range of the file: from `location` to the next
+	 * test's start, or to end of file. Lets a consumer see a spec edit that
+	 * left this test alone. Present exactly when `location` is.
+	 */
+	testSourceHash?: string;
 }
 
 export interface NonInstrumentedFileRecord {
@@ -126,10 +144,12 @@ const instrumentedFileRecordSchema = type({
 }).as<InstrumentedFileRecord>();
 
 const testRecordSchema = type({
-	testCaseId: "string",
-	testFilePath: "string",
-	testFileSourceHash: "string",
-	testId: "string",
+	"location?": type({ column: "number", line: "number" }),
+	"testCaseId": "string",
+	"testFilePath": "string",
+	"testFileSourceHash": "string",
+	"testId": "string",
+	"testSourceHash?": "string",
 }).as<TestRecord>();
 
 const nonInstrumentedRecordSchema = type({

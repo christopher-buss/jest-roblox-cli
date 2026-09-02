@@ -1470,6 +1470,7 @@ describe(runMultiProjectAsync, () => {
 									message: `[${tag}] ${message}`,
 								};
 							},
+							mapTestFileLine: () => {},
 							resolveDisplayPath: (testFilePath) => testFilePath,
 							resolveTestFilePath: () => {},
 						},

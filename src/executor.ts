@@ -20,7 +20,7 @@ import type { ResolvedConfig } from "./config/schema.ts";
 import { resolveSnapshotFormat } from "./config/snapshot-format.ts";
 import type { AttributionResult } from "./coverage-pipeline/attribution.ts";
 import { harvestAttribution } from "./coverage-pipeline/attribution.ts";
-import { resolveTestFileHash } from "./coverage-pipeline/test-file-hash.ts";
+import { createTestSourceResolver } from "./coverage-pipeline/test-source.ts";
 import { buildExecutionErrorResult } from "./executor/exec-error.ts";
 import { formatExecuteOutput } from "./executor/format-output.ts";
 import type { SnapshotWriteCounts } from "./executor/snapshot-writer.ts";
@@ -342,6 +342,10 @@ function collectProjectArtifacts(
 		? timing.profile("buildSourceMapper", () => buildSourceMapper(config, tsconfigMappings))
 		: undefined;
 
+	// Built before the result's paths are rewritten: the resolver joins the
+	// per-test entries to Jest's own test cases on the DataModel path both
+	// report.
+	const resolveTestSource = createTestSourceResolver(result, sourceMapper);
 	resolveTestFilePaths(result, sourceMapper);
 
 	// Harvest whenever per-test coverage was collected, even if no test credited
@@ -351,9 +355,7 @@ function collectProjectArtifacts(
 		config.collectPerTestCoverage === true && coverageData !== undefined;
 	const attribution =
 		perTestCoverage !== undefined || shouldHarvestStatic
-			? harvestAttribution(perTestCoverage ?? [], coverageData ?? {}, (testFilePath) => {
-					return resolveTestFileHash(sourceMapper, testFilePath);
-				})
+			? harvestAttribution(perTestCoverage ?? [], coverageData ?? {}, resolveTestSource)
 			: undefined;
 
 	return { attribution, sourceMapper, writeCounts };

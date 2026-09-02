@@ -5,9 +5,9 @@ import * as path from "node:path";
 import { assert, describe, expect, it, vi } from "vitest";
 
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
-import { createFrameMapper } from "./frame-mapper.ts";
+import { createFrameMapper, createLineMapper } from "./frame-mapper.ts";
 import type { PathResolver } from "./path-resolver.ts";
-import { getSourceContent, mapFromSourceMap } from "./v3-mapper.ts";
+import { getSourceContent, mapFromSourceMap, mapLineStart } from "./v3-mapper.ts";
 
 vi.mock(import("node:fs"), async () => {
 	const memfs = await import("memfs");
@@ -86,5 +86,62 @@ describe(createFrameMapper, () => {
 			path: resolvedSourcePath,
 			sourceContent: undefined,
 		});
+	});
+});
+
+describe(createLineMapper, () => {
+	it("should map a Luau line through the first mapping on that line of the compiled file", () => {
+		expect.assertions(2);
+
+		vi.mocked(mapLineStart).mockReturnValue({ column: 0, line: 3, source: "../src/m.spec.ts" });
+		const mapLine = createLineMapper(
+			fromAny({
+				resolve: () => {
+					return {
+						filePath: "src/m.spec.ts",
+						mapping: { outDir: "out", rootDir: "src" },
+					};
+				},
+			}),
+		);
+
+		expect(mapLine("ReplicatedStorage.m.spec", 10)).toBe(3);
+		expect(mapLineStart).toHaveBeenCalledWith("out/m.spec.luau", 10);
+	});
+
+	it("should keep the Luau line for a file with no TypeScript origin", () => {
+		expect.assertions(1);
+
+		const mapLine = createLineMapper(
+			fromAny({ resolve: () => ({ filePath: "out/m.spec.luau" }) }),
+		);
+
+		expect(mapLine("ReplicatedStorage.m.spec", 10)).toBe(10);
+	});
+
+	it("should return undefined when the path does not resolve", () => {
+		expect.assertions(1);
+
+		const mapLine = createLineMapper(fromAny({ resolve: () => {} }));
+
+		expect(mapLine("ReplicatedStorage.missing", 10)).toBeUndefined();
+	});
+
+	it("should return undefined when the source map has nothing on the line", () => {
+		expect.assertions(1);
+
+		vi.mocked(mapLineStart).mockReturnValue(undefined);
+		const mapLine = createLineMapper(
+			fromAny({
+				resolve: () => {
+					return {
+						filePath: "src/m.spec.ts",
+						mapping: { outDir: "out", rootDir: "src" },
+					};
+				},
+			}),
+		);
+
+		expect(mapLine("ReplicatedStorage.m.spec", 10)).toBeUndefined();
 	});
 });

@@ -264,6 +264,20 @@ describe(readManifest, () => {
 		expect(readManifest("/coverage/manifest.json").kind).toBe("version-mismatch");
 	});
 
+	it("should reject v4 caches (pre-test-location) as version-mismatch", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const manifest = { ...exampleManifest(), version: 4 };
+		vol.mkdirSync("/coverage", { recursive: true });
+		vol.writeFileSync("/coverage/manifest.json", JSON.stringify(manifest));
+
+		expect(readManifest("/coverage/manifest.json").kind).toBe("version-mismatch");
+	});
+
 	it("should return invalid when buildId is absent", () => {
 		expect.assertions(1);
 

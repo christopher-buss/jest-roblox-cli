@@ -1,4 +1,9 @@
-import { originalPositionFor, sourceContentFor, TraceMap } from "@jridgewell/trace-mapping";
+import {
+	LEAST_UPPER_BOUND,
+	originalPositionFor,
+	sourceContentFor,
+	TraceMap,
+} from "@jridgewell/trace-mapping";
 
 import * as fs from "node:fs";
 
@@ -34,6 +39,30 @@ export function mapFromSourceMap(
 	}
 
 	const result = originalPositionFor(traced, { column: luauColumn, line: luauLine });
+	if (result.line === null) {
+		return undefined;
+	}
+
+	return result;
+}
+
+/**
+ * The original position of the first mapping on a generated line, for a
+ * frame that carries no column. Biased upward: the default bias answers a
+ * column-0 query with the last mapping at or before it, which is none when
+ * the line starts with indentation.
+ */
+export function mapLineStart(luauPath: string, luauLine: number): MappedPosition | undefined {
+	const traced = getTraceMap(luauPath);
+	if (traced === undefined) {
+		return undefined;
+	}
+
+	const result = originalPositionFor(traced, {
+		bias: LEAST_UPPER_BOUND,
+		column: 0,
+		line: luauLine,
+	});
 	if (result.line === null) {
 		return undefined;
 	}

@@ -43,6 +43,39 @@ function warmManifest(): CoverageManifest {
 }
 
 describe(harvestAttribution, () => {
+	it("should record a test's location and range hash when its source resolves to them", () => {
+		expect.assertions(1);
+
+		const result = harvestAttribution(
+			[
+				{
+					delta: { "out/m.luau": { s: [1] } },
+					testCaseId: "adds",
+					testFilePath: "out/m.spec.luau",
+				},
+			],
+			{},
+			() => {
+				return {
+					location: { column: 0, line: 12 },
+					testFileSourceHash: "hash-a",
+					testSourceHash: "range-a",
+				};
+			},
+		);
+
+		expect(result.tests).toStrictEqual([
+			{
+				location: { column: 0, line: 12 },
+				testCaseId: "adds",
+				testFilePath: "out/m.spec.luau",
+				testFileSourceHash: "hash-a",
+				testId: "out/m.spec.luau::adds",
+				testSourceHash: "range-a",
+			},
+		]);
+	});
+
 	it("should attribute a covered statement to the single test that hit it", () => {
 		expect.assertions(2);
 
@@ -55,7 +88,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => "hash-a",
+			() => ({ testFileSourceHash: "hash-a" }),
 		);
 
 		expect(result.tests).toStrictEqual([
@@ -83,7 +116,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => "hash-a",
+			() => ({ testFileSourceHash: "hash-a" }),
 		);
 
 		expect(result.coveringTestIds).toStrictEqual({
@@ -111,7 +144,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => "hash-a",
+			() => ({ testFileSourceHash: "hash-a" }),
 		);
 
 		expect(result.tests).toHaveLength(2);
@@ -136,7 +169,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => "hash-a",
+			() => ({ testFileSourceHash: "hash-a" }),
 		);
 
 		expect(result.tests).toStrictEqual([]);
@@ -157,7 +190,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => "hash-a",
+			() => ({ testFileSourceHash: "hash-a" }),
 		);
 
 		expect(result.tests).toHaveLength(1);
@@ -180,7 +213,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{ "out/m.luau": { s: { "0": 1, "1": 1, "2": 1 } } },
-			() => "hash-a",
+			() => ({ testFileSourceHash: "hash-a" }),
 		);
 
 		expect(result.staticStatementIds).toStrictEqual({ "out/m.luau": ["0", "1"] });
@@ -191,11 +224,11 @@ describe(harvestAttribution, () => {
 
 		// No per-test deltas, so nothing is credited; statement 1 was never hit
 		// (count 0) and stays out of the static set.
-		const result = harvestAttribution(
-			[],
-			{ "out/m.luau": { s: { "0": 1, "1": 0 } } },
-			() => "hash-a",
-		);
+		const result = harvestAttribution([], { "out/m.luau": { s: { "0": 1, "1": 0 } } }, () => {
+			return {
+				testFileSourceHash: "hash-a",
+			};
+		});
 
 		expect(result.staticStatementIds).toStrictEqual({ "out/m.luau": ["0"] });
 	});
@@ -212,7 +245,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{ "out/m.luau": { s: { "1": 1 } } },
-			() => "hash-a",
+			() => ({ testFileSourceHash: "hash-a" }),
 		);
 
 		expect(result.staticStatementIds).toStrictEqual({});
@@ -230,7 +263,7 @@ describe(harvestAttribution, () => {
 				},
 			],
 			{},
-			() => {},
+			() => ({ testFileSourceHash: "" }),
 		);
 
 		expect(result.tests[0]!.testFileSourceHash).toBe("");

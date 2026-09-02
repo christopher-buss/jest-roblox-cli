@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import type { RojoProject } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 import { findExpectationColumn } from "./column-finder.ts";
-import { createFrameMapper, type MappedFrame } from "./frame-mapper.ts";
+import { createFrameMapper, createLineMapper, type MappedFrame } from "./frame-mapper.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";
 import { parseStack } from "./stack-parser.ts";
 import type { StackFrame } from "./types.ts";
@@ -37,6 +37,13 @@ export interface MappedFailure {
  */
 export interface SourceMapper {
 	mapFailureWithLocations(message: string): MappedFailure;
+	/**
+	 * The line of the file `resolveTestFilePath` names that a Luau line of the
+	 * test file came from: the TypeScript line through the source map when
+	 * there is one, the Luau line itself otherwise. Undefined when the path
+	 * does not resolve or the map has nothing on that line.
+	 */
+	mapTestFileLine(testFilePath: string, luauLine: number): number | undefined;
 	resolveDisplayPath(testFilePath: string): string;
 	resolveTestFilePath(testFilePath: string): string | undefined;
 }
@@ -58,10 +65,15 @@ export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
 	});
 
 	const mapFrame = createFrameMapper(pathResolver);
+	const mapLine = createLineMapper(pathResolver);
 
 	return {
 		mapFailureWithLocations(message: string): MappedFailure {
 			return rewriteFrames(message, mapFrame);
+		},
+
+		mapTestFileLine(testFilePath: string, luauLine: number): number | undefined {
+			return mapLine(toDataModelPath(testFilePath), luauLine);
 		},
 
 		resolveDisplayPath(testFilePath: string): string {
@@ -73,9 +85,7 @@ export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
 	};
 
 	function resolveTestFilePath(testFilePath: string): string | undefined {
-		const normalized = testFilePath.replace(LEADING_SLASH, "");
-		const dataModelPath = normalized.replaceAll("/", ".");
-		return pathResolver.resolve(dataModelPath)?.filePath;
+		return pathResolver.resolve(toDataModelPath(testFilePath))?.filePath;
 	}
 }
 
@@ -106,6 +116,10 @@ export function combineSourceMappers(
 	return {
 		mapFailureWithLocations(message: string): MappedFailure {
 			return chainFailures(mappers, message);
+		},
+
+		mapTestFileLine(testFilePath: string, luauLine: number): number | undefined {
+			return findOwningMapper(mappers, testFilePath)?.mapTestFileLine(testFilePath, luauLine);
 		},
 
 		resolveDisplayPath(testFilePath: string): string {
@@ -160,6 +174,14 @@ export function getSourceSnippet({
 		failureLine: line,
 		lines,
 	};
+}
+
+/**
+ * Jest's slash-joined test path (optionally leading-slashed) as a DataModel
+ * path.
+ */
+function toDataModelPath(testFilePath: string): string {
+	return testFilePath.replace(LEADING_SLASH, "").replaceAll("/", ".");
 }
 
 function collectLocation(

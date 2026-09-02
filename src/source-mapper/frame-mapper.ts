@@ -6,7 +6,7 @@ import { replacePrefix } from "../utils/tsconfig-mapping.ts";
 import { findExpectationColumn } from "./column-finder.ts";
 import type { PathResolver } from "./path-resolver.ts";
 import type { StackFrame } from "./types.ts";
-import { getSourceContent, mapFromSourceMap } from "./v3-mapper.ts";
+import { getSourceContent, mapFromSourceMap, mapLineStart } from "./v3-mapper.ts";
 
 const TS_EXTENSION = /\.ts$/;
 
@@ -54,6 +54,40 @@ export function createFrameMapper(
 		);
 
 		return { luauPath, source: mapToSource(luauPath, frame) };
+	};
+}
+
+/**
+ * Builds the function that turns a Luau line of a test file into the line of
+ * its source. Shares the frame mapper's path chain up to the `.luau` path, then
+ * asks the source map for the first mapping on that line rather than an exact
+ * column, because the runtime reports test call sites without one.
+ *
+ * @param pathResolver - Resolves a DataModel path to a file path and mapping.
+ * @returns A mapper giving the source line, the Luau line itself for a file
+ *   with no TypeScript origin, or `undefined` when it cannot resolve the path
+ *   or the map has nothing on the line.
+ */
+export function createLineMapper(
+	pathResolver: PathResolver,
+): (dataModelPath: string, luauLine: number) => number | undefined {
+	return function mapLine(dataModelPath, luauLine): number | undefined {
+		const resolved = pathResolver.resolve(dataModelPath);
+		if (resolved === undefined) {
+			return undefined;
+		}
+
+		if (resolved.mapping === undefined) {
+			return luauLine;
+		}
+
+		const luauPath = replacePrefix(
+			resolved.filePath,
+			resolved.mapping.rootDir,
+			resolved.mapping.outDir,
+		).replace(TS_EXTENSION, ".luau");
+
+		return mapLineStart(luauPath, luauLine)?.line ?? undefined;
 	};
 }
 

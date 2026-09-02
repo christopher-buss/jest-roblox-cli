@@ -1,4 +1,5 @@
 import type { CoverageManifest, InstrumentedFileRecord, TestRecord } from "./manifest.ts";
+import type { TestSourceResolver } from "./test-source.ts";
 import type { PerTestCoverageEntry, RawCoverageData } from "./types.ts";
 
 export interface AttributionResult {
@@ -17,13 +18,14 @@ export interface AttributionResult {
  * Assemble the per-test attribution records the coverage manifest carries from
  * the runner's per-test deltas. `cumulative` is the whole-run hit table, used
  * to derive the static set (statements hit but credited to no test window).
- * `resolveSourceHash` maps a test file path to its source hash (an injected
- * seam so the harvester stays pure and fs-free).
+ * `resolveTestSource` answers what a test's source looks like — its file hash,
+ * and its location and range hash when the run reported where it is — an
+ * injected seam so the harvester stays pure and fs-free.
  */
 export function harvestAttribution(
 	entries: ReadonlyArray<PerTestCoverageEntry>,
 	cumulative: RawCoverageData,
-	resolveSourceHash: (testFilePath: string) => string | undefined,
+	resolveTestSource: TestSourceResolver,
 ): AttributionResult {
 	const tests: Array<TestRecord> = [];
 	const coveringTestIds: AttributionResult["coveringTestIds"] = {};
@@ -41,9 +43,9 @@ export function harvestAttribution(
 		const testId = `${entry.testFilePath}::${entry.testCaseId}`;
 
 		tests.push({
+			...resolveTestSource(entry.testFilePath, entry.testCaseId),
 			testCaseId: entry.testCaseId,
 			testFilePath: entry.testFilePath,
-			testFileSourceHash: resolveSourceHash(entry.testFilePath) ?? "",
 			testId,
 		});
 

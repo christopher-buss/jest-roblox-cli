@@ -24,6 +24,10 @@ export type JestArgv = Argv & {
 	runnerPerTestCoverage?: boolean;
 	runnerTiming?: boolean;
 	snapshotFormat?: SnapshotFormatOptions;
+	/**
+	 * A Jest option jest-roblox's `Argv` type omits; its `normalize` reads it.
+	 */
+	testLocationInResults?: boolean;
 	testMatch: Array<string>;
 };
 
@@ -59,6 +63,10 @@ export function buildJestArgv(options: JestArgvInput): JestArgv {
 
 	if (options.config.collectPerTestCoverage === true) {
 		argv.runnerPerTestCoverage = true;
+		// Attribution records where each test is declared, so a consumer can
+		// tell a spec edit that touched a test from one that did not. Jest only
+		// reads the call site when asked.
+		argv.testLocationInResults = true;
 	}
 
 	argv.reporters ??= [];

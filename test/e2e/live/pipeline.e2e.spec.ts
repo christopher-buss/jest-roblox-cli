@@ -1,8 +1,10 @@
 import { type } from "arktype";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import process from "node:process";
+import { assert, describe, expect, it, onTestFinished } from "vitest";
 
+import { loadConfig, prepareArtifactsAsync, readCoverageManifest } from "../../../src/index.ts";
 import { createFixtureSandbox, runCliAsync } from "../cli/helpers.ts";
 import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
 
@@ -29,6 +31,12 @@ import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
  */
 
 const LIVE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place");
+
+/** One-based line of the first line of `source` that contains `title`. */
+function lineOfTitle(source: string, title: string): number {
+	return source.split("\n").findIndex((line) => line.includes(title)) + 1;
+}
+
 const RUN_TIMEOUT_MS = 120_000;
 
 const coverageEntrySchema = type({
@@ -95,9 +103,10 @@ describe("live pipeline", () => {
 			);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
-			// One shared spec plus four server ones (`server-thing` and the three
-			// same-basename `index.spec` files the narrowing regression needs).
-			expect(result.stdout, "both mounts ran").toContain("5 passed");
+			// Four shared tests (one bare `it`, one nested, two `each` rows) plus
+			// four server ones (`server-thing` and the three same-basename
+			// `index.spec` files the narrowing regression needs).
+			expect(result.stdout, "both mounts ran").toContain("8 passed");
 			expect(result.stdout, "shared mount reported").toContain("live-place-shared");
 			expect(result.stdout, "server mount reported").toContain("live-place-server");
 
@@ -139,6 +148,72 @@ describe("live pipeline", () => {
 			);
 			expect(Object.values(report), "coverage counted an executed statement").toSatisfyAny(
 				(entry) => Object.values(entry.s).some((count) => count > 0),
+			);
+		},
+		RUN_TIMEOUT_MS + 5000,
+	);
+
+	// Regression for the patched jest-circus: the runtime reads a test's call
+	// site off a Luau stack whose depth differs per entry path (a bare `it`, one
+	// inside a `describe`, an `each` row), and a trim or frame-index slip on any
+	// one of them silently drops that test's location and range hash. Only the
+	// artifacts path persists attribution, so this drives `prepareArtifactsAsync`
+	// rather than the CLI; it is its own upload because no CLI run carries
+	// `tests[]`.
+	it.runIf(IS_LIVE)(
+		"should record each test's own it( line and range hash, whichever way it was declared",
+		async () => {
+			expect.assertions(7);
+
+			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
+			const previousCwd = process.cwd();
+			process.chdir(sandbox);
+			onTestFinished(() => {
+				process.chdir(previousCwd);
+			});
+
+			const bundle = await prepareArtifactsAsync({
+				...(await loadConfig("jest.no-probe.config.ts", sandbox)),
+				backend: "open-cloud",
+			});
+			const read = readCoverageManifest(bundle.coverageManifestPath);
+			assert(read.kind === "ok", `coverage manifest unreadable: ${read.kind}`);
+			assert(read.manifest.tests !== undefined, "the manifest carries no tests[]");
+
+			const specSource = fs.readFileSync(
+				path.join(sandbox, "src/shared/example.spec.ts"),
+				"utf-8",
+			);
+			const recorded = new Map(read.manifest.tests.map((test) => [test.testCaseId, test]));
+			const bare = recorded.get("subtracts at the top level");
+			const nested = recorded.get("shared example adds two numbers");
+			const firstRow = recorded.get("shared example signs a negative number");
+			const secondRow = recorded.get("shared example signs a positive number");
+			assert(
+				bare !== undefined &&
+					nested !== undefined &&
+					firstRow !== undefined &&
+					secondRow !== undefined,
+				`a fixture test has no record; recorded: ${[...recorded.keys()].join(", ")}`,
+			);
+
+			expect(bare.location, "bare it").toStrictEqual({
+				column: 0,
+				line: lineOfTitle(specSource, '"subtracts at the top level"'),
+			});
+			expect(bare.testSourceHash, "bare it range").toBeTypeOf("string");
+			expect(nested.location, "nested it").toStrictEqual({
+				column: 0,
+				line: lineOfTitle(specSource, '"adds two numbers"'),
+			});
+			expect(nested.testSourceHash, "nested it range").toBeTypeOf("string");
+			expect(firstRow.location, "each row").toStrictEqual({
+				column: 0,
+				line: lineOfTitle(specSource, '"signs a %s number"'),
+			});
+			expect(firstRow.testSourceHash, "each row range").toBeTypeOf("string");
+			expect(secondRow.testSourceHash, "each rows share a range").toBe(
+				firstRow.testSourceHash,
 			);
 		},
 		RUN_TIMEOUT_MS + 5000,

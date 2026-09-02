@@ -201,6 +201,17 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("runnerPerTestCoverage");
 	});
 
+	it("should ask Jest for test locations when collectPerTestCoverage is true", () => {
+		expect.assertions(2);
+
+		expect(
+			buildJestArgv(createOptions({ config: { collectPerTestCoverage: true } })),
+		).toHaveProperty("testLocationInResults", true);
+		expect(
+			buildJestArgv(createOptions({ config: { collectPerTestCoverage: false } })),
+		).not.toHaveProperty("testLocationInResults");
+	});
+
 	it("should not pass collectPerTestCoverage to Jest argv", () => {
 		expect.assertions(1);
 

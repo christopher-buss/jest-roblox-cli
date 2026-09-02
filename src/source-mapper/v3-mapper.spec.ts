@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { clearMapCache, getSourceContent, mapFromSourceMap } from "./v3-mapper.ts";
+import { clearMapCache, getSourceContent, mapFromSourceMap, mapLineStart } from "./v3-mapper.ts";
 
 vi.mock(import("node:fs"));
 
@@ -136,5 +136,60 @@ describe(getSourceContent, () => {
 		const result = getSourceContent("output.luau", "../src/input.ts");
 
 		expect(result).toBeNull();
+	});
+});
+
+describe(mapLineStart, () => {
+	it("should find the first mapping on an indented line that a column-0 lookup misses", () => {
+		expect.assertions(2);
+
+		onTestFinished(clearMapCache);
+
+		// cspell:ignore IAAA
+		// One segment on line 1 at generated column 4 (`IAAA`), as a tab-indented
+		// `it(` call compiles to.
+		const sourceMap = JSON.stringify({
+			file: "output.luau",
+			mappings: "IAAA",
+			sources: ["../src/input.ts"],
+			version: 3,
+		});
+
+		vi.mocked(fs.existsSync).mockReturnValue(true);
+		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
+
+		expect(mapFromSourceMap("output.luau", 1, 0)).toBeUndefined();
+		expect(mapLineStart("output.luau", 1)).toMatchObject({
+			line: 1,
+			source: "../src/input.ts",
+		});
+	});
+
+	it("should return undefined when the line has no mapping", () => {
+		expect.assertions(1);
+
+		onTestFinished(clearMapCache);
+
+		vi.mocked(fs.existsSync).mockReturnValue(true);
+		vi.mocked(fs.readFileSync).mockReturnValue(
+			JSON.stringify({
+				file: "output.luau",
+				mappings: "AAAA",
+				sources: ["../src/input.ts"],
+				version: 3,
+			}),
+		);
+
+		expect(mapLineStart("output.luau", 3)).toBeUndefined();
+	});
+
+	it("should return undefined when no .map file exists", () => {
+		expect.assertions(1);
+
+		onTestFinished(clearMapCache);
+
+		vi.mocked(fs.existsSync).mockReturnValue(false);
+
+		expect(mapLineStart("output.luau", 1)).toBeUndefined();
 	});
 });
