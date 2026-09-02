@@ -1,6 +1,8 @@
 import {
 	createFakeHttpClient,
+	createFakeSleep,
 	type FakeHttpClient,
+	type FakeSleep,
 	validDequeueBody,
 	validQueueItemBody,
 } from "@bedrock-rbx/ocale/testing";
@@ -19,13 +21,20 @@ interface SortedMapItemBody {
 
 function makeJanitor(
 	httpClient: FakeHttpClient,
-	overrides: { log?: (message: string) => void } = {},
+	overrides: {
+		claimWindowSeconds?: number;
+		log?: (message: string) => void;
+		reclaimBudgetSeconds?: number;
+		sleep?: FakeSleep;
+	} = {},
 ): MemoryStoreJanitor {
 	return createMemoryStoreJanitor({
 		apiKey: "test-key",
+		claimWindowSeconds: 45,
 		httpClient,
 		mapId: "run-a-progress",
 		queueId: "run-a-queue",
+		reclaimBudgetSeconds: 60,
 		...overrides,
 		universeId: "123",
 	});
@@ -239,6 +248,76 @@ describe("memory store janitor", () => {
 		});
 	});
 
+	describe("reclaim pass", () => {
+		it("should outwait the claim window, then sweep the items it hid", async () => {
+			expect.assertions(3);
+
+			const http = createFakeHttpClient();
+			mockLeftoverSweep(http, "read-late");
+			mockEmptyQueue(http);
+			mockEmptyProgress(http);
+			const sleep = createFakeSleep();
+
+			await makeJanitor(http, { sleep }).reclaimClaimedAsync();
+
+			expect(sleep.waits).toStrictEqual([45_000]);
+			expect(http.requests).toHaveLength(4);
+			expect(http.requests[1]!.request.body).toStrictEqual({ readId: "read-late" });
+		});
+
+		it("should delete the progress keys a starved task rewrote during the wait", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			mockEmptyQueue(http);
+			http.mockResponse({ body: { items: [validProgressItemBody("task-a")] }, status: 200 });
+			http.mockResponse({ body: {}, status: 200 });
+			const sleep = createFakeSleep();
+
+			await makeJanitor(http, { sleep }).reclaimClaimedAsync();
+
+			expect(http.requests).toHaveLength(3);
+			expect(http.requests[2]!.request.url).toContain(
+				"/sorted-maps/run-a-progress/items/task-a",
+			);
+		});
+
+		it("should cap the wait at the caller's reclaim budget and record the shortfall", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			mockEmptyQueue(http);
+			mockEmptyProgress(http);
+			const log = vi.fn<(message: string) => void>();
+			const sleep = createFakeSleep();
+
+			await makeJanitor(http, {
+				claimWindowSeconds: 1530,
+				log,
+				sleep,
+			}).reclaimClaimedAsync();
+
+			expect(sleep.waits).toStrictEqual([60_000]);
+			expect(log).toHaveBeenCalledExactlyOnceWith(
+				expect.stringContaining("waiting 60s of the 1530s claim window"),
+			);
+		});
+
+		it("should leave a clean cleanup with no wait at all", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			mockEmptyQueue(http);
+			mockEmptyProgress(http);
+			const sleep = createFakeSleep();
+
+			await makeJanitor(http, { sleep }).cleanupAsync();
+
+			expect(sleep.waits).toBeEmpty();
+			expect(http.requests).toHaveLength(2);
+		});
+	});
+
 	describe("best effort", () => {
 		it("should resolve (never reject) when every call fails", async () => {
 			expect.assertions(1);
@@ -251,6 +330,20 @@ describe("memory store janitor", () => {
 			await makeJanitor(http, { log }).cleanupAsync();
 
 			expect(log).toHaveBeenCalledTimes(2);
+		});
+
+		it("should default the wait seam to a real timer", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			mockEmptyQueue(http);
+			mockEmptyProgress(http);
+
+			// A sub-millisecond window keeps the real timer this proves is
+			// installed from costing the suite anything.
+			await expect(
+				makeJanitor(http, { claimWindowSeconds: 0.001 }).reclaimClaimedAsync(),
+			).resolves.toBeUndefined();
 		});
 
 		it("should default the log seam to a no-op", async () => {
