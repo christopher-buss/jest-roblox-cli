@@ -292,14 +292,14 @@ describe("memory store janitor", () => {
 			const sleep = createFakeSleep();
 
 			await makeJanitor(http, {
-				claimWindowSeconds: 1530,
+				claimWindowSeconds: 300,
 				log,
 				sleep,
 			}).reclaimClaimedAsync();
 
 			expect(sleep.waits).toStrictEqual([60_000]);
 			expect(log).toHaveBeenCalledExactlyOnceWith(
-				expect.stringContaining("waiting 60s of the 1530s claim window"),
+				expect.stringContaining("waiting 60s of the 300s claim window"),
 			);
 		});
 
