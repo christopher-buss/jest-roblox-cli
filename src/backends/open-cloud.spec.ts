@@ -26,6 +26,7 @@ import {
 	BOOT_PROBE_SCRIPT,
 	createOpenCloudBackend,
 	OpenCloudBackend,
+	OWNED_BOOT_PROBE_SCRIPT,
 	PLACE_VERSION_RACE_SENTINEL,
 	resolveOcaleMaxRetries,
 	resolveOpenCloudBaseUrl,
@@ -86,8 +87,13 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 		return { durationMs: 0, outputs: ["{}"] };
 	}
 
-	async function defaultProbeAsync(): Promise<ScriptResult> {
-		return { durationMs: 0, outputs: ["1"] };
+	// An owned probe reads head back, so the default has to answer as a place
+	// holding the version this stub just "uploaded" — otherwise every owned
+	// test would look like a broken lease.
+	async function defaultProbeAsync(probeOptions: ExecuteScriptOptions): Promise<ScriptResult> {
+		const uploaded = (options.uploadResult ?? DEFAULT_UPLOAD).versionNumber;
+		const output = probeOptions.script === OWNED_BOOT_PROBE_SCRIPT ? String(uploaded) : "1";
+		return { durationMs: 0, outputs: [output] };
 	}
 
 	let executeHandler: ExecuteHandler = defaultHandlerAsync;
@@ -97,7 +103,10 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 	// its own list and its own handler keeps every other test written as
 	// though it did not exist.
 	async function executeScriptAsync(executeOptions: ExecuteScriptOptions): Promise<ScriptResult> {
-		if (executeOptions.script === BOOT_PROBE_SCRIPT) {
+		if (
+			executeOptions.script === BOOT_PROBE_SCRIPT ||
+			executeOptions.script === OWNED_BOOT_PROBE_SCRIPT
+		) {
 			probeCalls.push(executeOptions);
 			return probeHandler(executeOptions);
 		}
@@ -750,6 +759,31 @@ describe(OpenCloudBackend, () => {
 			expect(stub.executeCalls).toHaveLength(1);
 			expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
 			expect(stub.executeCalls[0]!.script).toBe(`${guardPrefix(7)}stealing-script`);
+		});
+
+		/**
+		 * One writer means head already holds this run's version, so the guard
+		 * could only ever pass. Leaving it in would cost nothing at runtime but
+		 * would keep a race branch alive that cannot be reached, and the script
+		 * the runtime sees would no longer be the script the caller wrote.
+		 */
+		it("should run unguarded and unpinned when the place is owned", async () => {
+			expect.assertions(2);
+
+			const stub = createRunnerStub({
+				uploadResult: { uploadMs: 12, versionNumber: 7 },
+			});
+			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTestsAsync({
+				jobs: [job("alpha", { ownedPlace: true })],
+				scriptOverride: "stealing-script",
+				workStealing: true,
+			});
+
+			expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
+			expect(stub.executeCalls[0]!.script).toBe("stealing-script");
 		});
 
 		it("should inject the guard after leading Luau directives", async () => {
@@ -2375,6 +2409,92 @@ describe("boot probe", { timeout: 1000 }, () => {
 		expect(stub.probeCalls).toHaveLength(1);
 		expect(stub.probeCalls[0]!.script).toBe(BOOT_PROBE_SCRIPT);
 		expect(stub.probeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
+	});
+
+	/**
+	 * The pin is what makes the probe expensive, and on an owned place it buys
+	 * nothing: head is this run's version, so an unpinned probe proves the same
+	 * thing without missing the warm pool.
+	 */
+	it("should probe on head when the place is owned", async () => {
+		expect.assertions(3);
+
+		const stub = probeStub();
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace: true })]));
+
+		expect(stub.probeCalls).toHaveLength(1);
+		expect(stub.probeCalls[0]!.script).toBe(OWNED_BOOT_PROBE_SCRIPT);
+		expect(stub.probeCalls[0]!.placeVersion).toBeUndefined();
+	});
+
+	/**
+	 * `ownedPlace` is a claim the CLI cannot verify from config alone, so the
+	 * probe checks it instead of trusting it. Head answering with someone
+	 * else's version means the lease is broken: the guard has to come back, and
+	 * the run must not record that its own bytes booted when they never ran.
+	 */
+	it("should keep the guard and skip the cache when an owned head is not ours", async () => {
+		expect.assertions(3);
+
+		const stub = probeStub();
+		stub.setProbe(() => ({ durationMs: 0, outputs: [String(PROBED_VERSION + 1)] }));
+		const capture = captureStderr();
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const rootDirectory = temporaryRoot();
+		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, { ownedPlace: true })]));
+
+		capture.restore();
+
+		expect(stub.executeCalls[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
+		expect(capture.writes.join("")).toContain("another run wrote this place");
+
+		// A second run must upload again: nothing was cached, because the bytes
+		// this run uploaded are not the bytes that booted.
+		const second = await runProbedRunAsync(rootDirectory, { ownedPlace: true });
+
+		expect(second.probeCalls).toHaveLength(1);
+	});
+
+	/**
+	 * A probe that prints nothing leaves the claim unproven, which is not the
+	 * same as disproven — but it is just as far from the fact the fast path
+	 * needs, so it is treated the same way.
+	 */
+	it("should keep the guard when an owned probe reports no version", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setProbe(() => ({ durationMs: 0, outputs: [] }));
+		const capture = captureStderr();
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace: true })]));
+		capture.restore();
+
+		expect(stub.executeCalls[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
+		expect(capture.writes.join("")).toContain("head is unreadable");
+	});
+
+	/**
+	 * Ownership says no other run writes this place *now*; it says nothing
+	 * about who wrote it before this run held the lease. A cached version is a
+	 * claim about the past, so head may hold a previous holder's bytes — the
+	 * one case where dropping the guard would run the tests against code from
+	 * another checkout and report a pass. Only a version this run uploaded is
+	 * head by construction.
+	 */
+	it("should keep the guard on an owned place when the version came from cache", async () => {
+		expect.assertions(2);
+
+		const rootDirectory = temporaryRoot();
+		const first = await runProbedRunAsync(rootDirectory, { ownedPlace: true });
+		const second = await runProbedRunAsync(rootDirectory, { ownedPlace: true });
+
+		expect(first.executeCalls[0]!.script).not.toContain(PLACE_VERSION_RACE_SENTINEL);
+		expect(second.executeCalls[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
 	});
 
 	/**

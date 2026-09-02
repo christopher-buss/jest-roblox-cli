@@ -529,6 +529,24 @@ export interface ResolvedConfig
 	 * explicit path is kept as-is.
 	 */
 	outputFile?: string | undefined;
+	/**
+	 * Declare this run the only writer of its place, which lets every submit
+	 * stay on head.
+	 *
+	 * A pinned submit misses the warm-server pool and pays a cold place boot
+	 * (measured: 12.2s median against 3.0s for the same bytes on head). Two
+	 * submits pin today — the boot probe always, and the version guard's retry
+	 * when a concurrent upload moves head. Both go away once this run has
+	 * uploaded: head is then its own version, so the probe proves the same
+	 * thing unpinned and the guard has no race to catch.
+	 *
+	 * Resolved-only, with no config key and no flag behind it. The claim is
+	 * true of a place a lease handed out and false of one a person guessed at,
+	 * so the only caller who can set it honestly is the one holding the lease.
+	 * The backend still checks it rather than trusting it, and a run whose
+	 * claim fails keeps the guard.
+	 */
+	ownedPlace: boolean;
 	passWithNoTests: boolean;
 	placeFile: string;
 	port: number;
@@ -656,6 +674,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 		"**/rbxts_include/**",
 	],
 	coverageReporters: ["text", "lcov"],
+	ownedPlace: false,
 	passWithNoTests: false,
 	placeFile: "./game.rbxl",
 	port: 3001,
@@ -1112,6 +1131,9 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
 	// CLI-only, and not in `Config`, so `ROOT_CLI_KEYS_LIST` cannot carry it:
 	// it tells the plugin how many VMs to run, and means nothing to Jest.
 	"experimentalVmParallel",
+	// Resolved-only, so `ROOT_CLI_KEYS_LIST` cannot carry it: it decides how
+	// this run submits to Open Cloud, and means nothing to Jest.
+	"ownedPlace",
 	"typecheck",
 ]);
 
