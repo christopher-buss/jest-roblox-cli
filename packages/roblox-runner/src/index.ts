@@ -8,6 +8,7 @@ export { publishMessageAsync } from "./messaging-publish.ts";
 export type { PublishMessageOptions } from "./messaging-publish.ts";
 export { OcaleRunner } from "./ocale-runner.ts";
 export type { OcaleRunnerOptions } from "./ocale-runner.ts";
+export { placeVersionGuardSource, readRefusedPlaceVersion } from "./place-version-guard.ts";
 export { ProgressMap } from "./progress-map.ts";
 export type { ProgressMapOptions } from "./progress-map.ts";
 export { runTaskPoolAsync as runTaskPool } from "./task-pool.ts";

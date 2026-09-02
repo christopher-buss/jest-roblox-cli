@@ -1,4 +1,5 @@
 import { PollTimeoutError } from "@bedrock-rbx/ocale";
+import { placeVersionGuardSource } from "@isentinel/roblox-runner";
 import type {
 	ExecuteScriptOptions,
 	RemoteRunner,
@@ -6,6 +7,10 @@ import type {
 	UploadPlaceOptions,
 	UploadPlaceResult,
 } from "@isentinel/roblox-runner";
+import {
+	formatPlaceVersionRefusal,
+	PLACE_VERSION_MISMATCH,
+} from "@isentinel/roblox-runner/testing";
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -27,7 +32,6 @@ import {
 	createOpenCloudBackend,
 	OpenCloudBackend,
 	OWNED_BOOT_PROBE_SCRIPT,
-	PLACE_VERSION_RACE_SENTINEL,
 	resolveOcaleMaxRetries,
 	resolveOpenCloudBaseUrl,
 } from "./open-cloud.ts";
@@ -193,7 +197,7 @@ function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 function racedOnce(bootedVersion = 99): ScriptResult {
 	return {
 		durationMs: 3,
-		outputs: [`${PLACE_VERSION_RACE_SENTINEL}:${String(bootedVersion)}`],
+		outputs: [formatPlaceVersionRefusal(bootedVersion)],
 	};
 }
 
@@ -232,7 +236,7 @@ function raceUnpinnedExecute(raceCount: number, bootedVersion = 99): ExecuteHand
  * The exact guard line `executeGuarded` prepends to unpinned first attempts.
  */
 function guardPrefix(placeVersion: number): string {
-	return `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}:" .. tostring(game.PlaceVersion) end\n`;
+	return `${placeVersionGuardSource(placeVersion)}\n`;
 }
 
 function captureStderr(): StderrCapture {
@@ -2448,7 +2452,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		capture.restore();
 
-		expect(stub.executeCalls[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
+		expect(stub.executeCalls[0]!.script).toContain(placeVersionGuardSource(PROBED_VERSION));
 		expect(capture.writes.join("")).toContain("another run wrote this place");
 
 		// A second run must upload again: nothing was cached, because the bytes
@@ -2474,7 +2478,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace: true })]));
 		capture.restore();
 
-		expect(stub.executeCalls[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
+		expect(stub.executeCalls[0]!.script).toContain(placeVersionGuardSource(PROBED_VERSION));
 		expect(capture.writes.join("")).toContain("head is unreadable");
 	});
 
@@ -2493,8 +2497,10 @@ describe("boot probe", { timeout: 1000 }, () => {
 		const first = await runProbedRunAsync(rootDirectory, { ownedPlace: true });
 		const second = await runProbedRunAsync(rootDirectory, { ownedPlace: true });
 
-		expect(first.executeCalls[0]!.script).not.toContain(PLACE_VERSION_RACE_SENTINEL);
-		expect(second.executeCalls[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
+		// Version-agnostic: a guard pinned to any other version is still a
+		// guard, and this asserts there is none.
+		expect(first.executeCalls[0]!.script).not.toContain(PLACE_VERSION_MISMATCH);
+		expect(second.executeCalls[0]!.script).toContain(placeVersionGuardSource(PROBED_VERSION));
 	});
 
 	/**

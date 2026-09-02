@@ -1,5 +1,10 @@
 import { PermissionError, PollTimeoutError } from "@bedrock-rbx/ocale";
-import { OcaleRunner, runTaskPool } from "@isentinel/roblox-runner";
+import {
+	OcaleRunner,
+	placeVersionGuardSource,
+	readRefusedPlaceVersion,
+	runTaskPool,
+} from "@isentinel/roblox-runner";
 import type {
 	OcaleRunnerOptions,
 	RemoteRunner,
@@ -37,20 +42,6 @@ import {
 	readCachedVersion,
 	writeCachedVersion,
 } from "./upload-cache.ts";
-
-/**
- * What the version guard returns when the booted server is not running the
- * version this run asked for. The guard appends `:<booted version>`, which is
- * the only place that number is observable — Open Cloud exposes no way to ask
- * which version is head. The backend retries that task once, pinned.
- *
- * Embedded verbatim in a Luau double-quoted string literal, so it must not
- * contain backslashes, double quotes, or newlines.
- */
-export const PLACE_VERSION_RACE_SENTINEL = "__JEST_ROBLOX_PLACE_VERSION_RACE__";
-
-/** Matches the sentinel and the version the guard appends to it. */
-const RACE_SENTINEL_PATTERN = new RegExp(`^${PLACE_VERSION_RACE_SENTINEL}:(\\d+)$`);
 
 const PINNED_RETRY_NOTE = "Tasks retried pinned (slower, cold place boot).";
 
@@ -307,9 +298,8 @@ export class OpenCloudBackend implements Backend {
 	 * place boot per task (~10-45s, scaling with place size). Unpinned tasks
 	 * boot the latest saved version from the warm pool, so the first attempt
 	 * runs unpinned with a guard prepended: if the booted server is not on
-	 * this run's version, the task returns
-	 * {@link PLACE_VERSION_RACE_SENTINEL} — and the version it did boot —
-	 * instead of running. On the sentinel, the task is retried once, pinned —
+	 * this run's version, the task refuses — naming the version it did boot —
+	 * instead of running. On a refusal, the task is retried once, pinned —
 	 * correct by construction, no re-upload (the version exists even when it is
 	 * no longer head), and no unpinned retry loop for a concurrent uploader to
 	 * keep winning against.
@@ -336,7 +326,7 @@ export class OpenCloudBackend implements Backend {
 		const first = await this.runner
 			.executeScriptAsync({ bootProven: version.bootProven, script: guarded, timeout })
 			.catch(rethrowOversizedResult);
-		const bootedVersion = parseBootedVersion(first.outputs[0]);
+		const bootedVersion = readRefusedPlaceVersion(first.outputs[0]);
 		return bootedVersion === undefined
 			? first
 			: this.retryPinnedAsync({ bootedVersion, script, timeout, version });
@@ -828,18 +818,6 @@ export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenC
 }
 
 /**
- * Read a task's output as a guard verdict: the version it booted instead, or
- * undefined when the task ran rather than refusing. The guard always names a
- * version, so anything else is a task result — including the magic string on
- * its own, which only a user script could produce.
- */
-function parseBootedVersion(output: string | undefined): number | undefined {
-	const match = output === undefined ? null : RACE_SENTINEL_PATTERN.exec(output);
-	// eslint-disable-next-line ts/no-non-null-assertion -- the group is not optional
-	return match === null ? undefined : Number(match[1]!);
-}
-
-/**
  * Name what went wrong, rather than blaming the one cause the guard cannot
  * distinguish on its own. A booted version ahead of ours means someone else's
  * upload is head — a race against a fresh upload, a stale entry against a
@@ -949,10 +927,9 @@ function resolvePrimaryJob(
  * a plain line-1 prepend would silently disable a caller's directives.
  */
 function injectVersionGuard(script: string, placeVersion: number): string {
-	const guard = `if game.PlaceVersion ~= ${String(placeVersion)} then return "${PLACE_VERSION_RACE_SENTINEL}:" .. tostring(game.PlaceVersion) end`;
 	const lines = script.split("\n");
 
-	lines.splice(countLinesThroughLastDirective(lines), 0, guard);
+	lines.splice(countLinesThroughLastDirective(lines), 0, placeVersionGuardSource(placeVersion));
 	return lines.join("\n");
 }
 

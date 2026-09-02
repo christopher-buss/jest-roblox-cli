@@ -1,7 +1,12 @@
+import { placeVersionGuardSource } from "@isentinel/roblox-runner";
+import {
+	formatPlaceVersionRefusal,
+	PLACE_VERSION_MISMATCH,
+} from "@isentinel/roblox-runner/testing";
+
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { PLACE_VERSION_RACE_SENTINEL } from "../../../src/backends/open-cloud.ts";
 import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
 import {
 	buildMixedOutput,
@@ -26,7 +31,7 @@ describe("optimistic place-version pinning", () => {
 		// boot race) and returns the guard sentinel naming the version it did
 		// boot; the pinned retry runs the suite for real.
 		const server = await startFakeOpenCloudServerAsync([
-			{ rawOutput: `${PLACE_VERSION_RACE_SENTINEL}:2` },
+			{ rawOutput: formatPlaceVersionRefusal(2) },
 			{ jestOutput: buildMixedOutput(buildPassingPayload()) },
 		]);
 
@@ -41,7 +46,7 @@ describe("optimistic place-version pinning", () => {
 		expect(result.stderr).toContain(
 			"place version 1 raced by a concurrent upload — a task booted 2",
 		);
-		expect(server.requests[0]!.script).toContain(PLACE_VERSION_RACE_SENTINEL);
+		expect(server.requests[0]!.script).toContain(placeVersionGuardSource(1));
 
 		const taskPosts = server.calls.filter(isTaskCreatePost);
 
@@ -53,6 +58,6 @@ describe("optimistic place-version pinning", () => {
 		expect(taskPosts[1]!.url).not.toContain("/versions/");
 		expect(taskPosts[2]!.url).toContain("/versions/1/");
 		// The retry re-sends the original script with the guard stripped.
-		expect(server.requests[1]!.script).not.toContain(PLACE_VERSION_RACE_SENTINEL);
+		expect(server.requests[1]!.script).not.toContain(PLACE_VERSION_MISMATCH);
 	});
 });

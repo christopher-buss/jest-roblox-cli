@@ -19,7 +19,12 @@
 			"types": "./dist/index.d.mts",
 			"default": "./dist/index.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./testing": {
+			"source": "./src/testing.ts",
+			"types": "./dist/testing.d.mts",
+			"default": "./dist/testing.mjs"
+		}
 	},
 	"types": "./dist/index.d.mts",
 	"files": [
