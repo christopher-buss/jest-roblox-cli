@@ -24,6 +24,31 @@ const RECYCLE_LAG_MS = 10_000;
 /** Backoff when a place pushes back with no server-supplied retry delay. */
 const DEFAULT_BACKOFF_MS = 5_000;
 
+/**
+ * A wait the pool took instead of failing, reported so a consumer can tell a
+ * run held off by the platform apart from a merely slow one. Concurrent runs
+ * on one universe compete for the same per-place slots and the same gateway
+ * create-task budget, and that competition is otherwise invisible: the pool
+ * absorbs it, and the only symptom is a longer drain.
+ */
+export interface TaskPoolBackoff {
+	/** `rate-limit` for a gateway 429, `place-full` for RESOURCE_EXHAUSTED. */
+	kind: "place-full" | "rate-limit";
+	/**
+	 * Index into {@link TaskPoolOptions.places} of the place the slot was
+	 * launching on. Only a `place-full` wait says that place is under pressure:
+	 * the creation budget a 429 refuses is scoped to the key and host, so a
+	 * rate-limited slot names the destination it attempted and nothing about
+	 * the place itself. Summing the two per place reads a global limit as a
+	 * local one.
+	 */
+	placeIndex: number;
+	/** The slot that waited, numbered as {@link TaskPoolOptions.onResult}'s. */
+	slot: number;
+	/** How long the slot waited before retrying. */
+	waitMs: number;
+}
+
 export interface TaskPoolPlace {
 	/**
 	 * Launch one task on this place; resolves with the task's return envelope.
@@ -50,6 +75,11 @@ export interface TaskPoolOptions {
 	 * Wall clock in milliseconds; injected for tests. Defaults to `Date.now`.
 	 */
 	now?: () => number;
+	/**
+	 * Observe a wait the pool took rather than failing. Fires once per wait,
+	 * before it starts.
+	 */
+	onBackoff?: (event: TaskPoolBackoff) => void;
 	/**
 	 * Observe a task failure the pool does not back off on, carrying the {@link
 	 * TaskPoolOptions.onResult} slot index.
@@ -92,6 +122,7 @@ interface BackoffSignal {
 interface PlaceState {
 	lastCompletionMs: number;
 	place: TaskPoolPlace;
+	placeIndex: number;
 }
 
 /**
@@ -102,6 +133,7 @@ interface PlaceState {
 interface PoolRuntime {
 	isDone: () => boolean;
 	now: () => number;
+	onBackoff?: ((event: TaskPoolBackoff) => void) | undefined;
 	onError?: ((error: Error, slot: number) => void) | undefined;
 	onResult: (result: ScriptResult, slot: number) => void;
 	sleep: (ms: number) => Promise<void>;
@@ -126,7 +158,7 @@ interface PoolRuntime {
  * results.
  */
 export async function runTaskPoolAsync(options: TaskPoolOptions): Promise<void> {
-	const { concurrency, isDone, onError, onResult, places } = options;
+	const { concurrency, isDone, onBackoff, onError, onResult, places } = options;
 
 	if (concurrency < 1) {
 		throw new Error(`runTaskPool concurrency must be >= 1, got ${String(concurrency)}`);
@@ -139,6 +171,7 @@ export async function runTaskPoolAsync(options: TaskPoolOptions): Promise<void> 
 	const runtime: PoolRuntime = {
 		isDone,
 		now: options.now ?? Date.now,
+		onBackoff,
 		onError,
 		onResult,
 		sleep: options.sleep ?? delay,
@@ -162,6 +195,7 @@ export async function runTaskPoolAsync(options: TaskPoolOptions): Promise<void> 
 async function backoffAsync(
 	runtime: PoolRuntime,
 	state: PlaceState,
+	slot: number,
 	retryAfterMs: number | undefined,
 ): Promise<void> {
 	// A non-positive server retry-after (e.g. a 429 carrying `retry-after: 0`)
@@ -172,6 +206,12 @@ async function backoffAsync(
 	// always read as genuine rather than recycle lag.
 	const sinceCompletion = runtime.now() - state.lastCompletionMs;
 	const waitMs = sinceCompletion < RECYCLE_LAG_MS ? RECYCLE_LAG_MS - sinceCompletion : genuineMs;
+	// The signal, not the wait: a 429 carries a server retry delay, a full place
+	// carries none, and the recycle-lag branch above can shorten either one.
+	// The two are not interchangeable to a reader — one is scoped to this
+	// place, the other to the whole key.
+	const kind = retryAfterMs === undefined ? "place-full" : "rate-limit";
+	runtime.onBackoff?.({ kind, placeIndex: state.placeIndex, slot, waitMs });
 	await runtime.sleep(waitMs);
 }
 
@@ -206,7 +246,7 @@ async function workerAsync(runtime: PoolRuntime, state: PlaceState, slot: number
 		} catch (err) {
 			const signal = classifyBackoff(err);
 			if (signal !== undefined) {
-				await backoffAsync(runtime, state, signal.retryAfterMs);
+				await backoffAsync(runtime, state, slot, signal.retryAfterMs);
 				continue;
 			}
 
@@ -235,10 +275,10 @@ function spawnWorkers(
 	allocations: ReadonlyArray<{ place: TaskPoolPlace; slots: number }>,
 ): Array<Promise<void>> {
 	const workers: Array<Promise<void>> = [];
-	for (const { place, slots } of allocations) {
+	for (const [placeIndex, { place, slots }] of allocations.entries()) {
 		// One state per place, shared by that place's slots: the recycle-lag
 		// clock is a property of the place, not of an individual slot.
-		const state: PlaceState = { lastCompletionMs: -Infinity, place };
+		const state: PlaceState = { lastCompletionMs: -Infinity, place, placeIndex };
 		for (let slot = 0; slot < slots; slot += 1) {
 			workers.push(workerAsync(runtime, state, workers.length));
 		}

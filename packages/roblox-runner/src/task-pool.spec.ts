@@ -3,7 +3,7 @@ import { ApiError, RateLimitError } from "@bedrock-rbx/ocale";
 import { describe, expect, it, vi } from "vitest";
 
 import { runTaskPoolAsync } from "./task-pool.ts";
-import type { TaskPoolPlace } from "./task-pool.ts";
+import type { TaskPoolBackoff, TaskPoolPlace } from "./task-pool.ts";
 import type { ScriptResult } from "./types.ts";
 
 /** Envelope a task returns when it finds the shared queue already drained. */
@@ -603,5 +603,68 @@ describe("runTaskPool backoff", () => {
 		expect(runTask).toHaveBeenCalledTimes(2);
 		expect(onError).toHaveBeenCalledExactlyOnceWith(apiError, 0);
 		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it("should report a rate-limit wait to the backoff observer", async () => {
+		expect.assertions(1);
+
+		const counter = { attempt: 0 };
+		const runTask = vi.fn<() => Promise<ScriptResult>>(
+			throwOnceThenSucceed(
+				counter,
+				new RateLimitError("slow down", { retryAfterSeconds: 7 }),
+			),
+		);
+		const onBackoff = vi.fn<(event: TaskPoolBackoff) => void>();
+
+		await runTaskPoolAsync({
+			concurrency: 1,
+			isDone: () => counter.attempt >= 2,
+			now: () => 0,
+			onBackoff,
+			onResult: () => {},
+			places: [{ runTask }],
+			sleep: async () => {},
+		});
+
+		expect(onBackoff).toHaveBeenCalledExactlyOnceWith({
+			kind: "rate-limit",
+			placeIndex: 0,
+			slot: 0,
+			waitMs: 7000,
+		});
+	});
+
+	it("should report a full place to the backoff observer under the place it came from", async () => {
+		expect.assertions(1);
+
+		const counter = { attempt: 0 };
+		// Slot 0 keeps the pool's other place busy without touching `counter`, so
+		// only the full place's attempts decide when the run is done.
+		const spare: TaskPoolPlace = { runTask: async () => makeScriptResult([EMPTY_MARKER]) };
+		const full: TaskPoolPlace = {
+			runTask: throwOnceThenSucceed(
+				counter,
+				new ApiError("full", { code: "RESOURCE_EXHAUSTED", statusCode: 429 }),
+			),
+		};
+		const onBackoff = vi.fn<(event: TaskPoolBackoff) => void>();
+
+		await runTaskPoolAsync({
+			concurrency: 2,
+			isDone: () => counter.attempt >= 2,
+			now: () => 0,
+			onBackoff,
+			onResult: () => {},
+			places: [spare, full],
+			sleep: async () => {},
+		});
+
+		expect(onBackoff).toHaveBeenCalledExactlyOnceWith({
+			kind: "place-full",
+			placeIndex: 1,
+			slot: 1,
+			waitMs: 5000,
+		});
 	});
 });
