@@ -45,6 +45,12 @@ export interface SourceBytes {
 	 * character boundaries — parser spans always do.
 	 */
 	slice: (start: number, end: number) => string;
+	/**
+	 * The text a parser span covers: {@link SourceBytes.spanToRange} and
+	 * {@link SourceBytes.slice} in one call, which is how a caller holding an
+	 * index reads a node back out of its source.
+	 */
+	sliceSpan: (span: LuauSpan) => string;
 	/** Convert a parser span (1-based line/column) to a byte range. */
 	spanToRange: (span: LuauSpan) => ByteRange;
 	/** The source text this index was built from. */
@@ -98,6 +104,7 @@ export function indexSourceBytes(source: string): SourceBytes {
 		lineStartOffset,
 		rangeToSpan: (range) => byteRangeToSpan(range, lineStarts),
 		slice: (start, end) => decode(buffer, { end, start }),
+		sliceSpan: (span) => decode(buffer, spanToByteRange(span, lineStartOffset)),
 		spanToRange: (span) => spanToByteRange(span, lineStartOffset),
 		text: source,
 		toUtf16Column: createColumnConverter((line) => {

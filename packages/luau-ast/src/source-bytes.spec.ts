@@ -52,6 +52,26 @@ describe(indexSourceBytes, () => {
 		expect(bytes.slice(range.start, range.end)).toBe("y");
 	});
 
+	it("should slice a span back to its text", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes("line1\nlocal x = a >= b\nline3");
+
+		expect(
+			bytes.sliceSpan(span({ beginColumn: 13, beginLine: 2, endColumn: 15, endLine: 2 })),
+		).toBe(">=");
+	});
+
+	// "∞" is three bytes and one UTF-16 unit, so `x` starts at byte column 20
+	// but UTF-16 column 18.
+	it("should slice a span past a multi-byte character by bytes", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes('local a = "\u{221E}" .. x');
+
+		expect(bytes.sliceSpan(span({ beginColumn: 20, endColumn: 21 }))).toBe("x");
+	});
+
 	it("should report line ends as the start of the next line", () => {
 		expect.assertions(2);
 
