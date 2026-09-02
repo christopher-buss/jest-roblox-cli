@@ -144,4 +144,55 @@ describe("byte columns as UTF-16 columns", () => {
 		expect(bytes.toUtf16Column(1, 15)).toBe(13);
 		expect(bytes.toUtf16Column(2, 16)).toBe(16);
 	});
+
+	it("should convert a byte range on the first line back to a span", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes("local x = 1\nlocal y = 2\n");
+
+		expect(bytes.rangeToSpan({ end: 7, start: 6 })).toStrictEqual(
+			span({ beginColumn: 7, endColumn: 8 }),
+		);
+	});
+
+	it("should convert a byte range on a later line back to a span", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes("local a = 1\nlocal b = 2\nlocal cd = 3\n");
+
+		expect(bytes.rangeToSpan({ end: 32, start: 30 })).toStrictEqual(
+			span({ beginColumn: 7, beginLine: 3, endColumn: 9, endLine: 3 }),
+		);
+	});
+
+	it("should convert a byte range that crosses a line back to a span", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes("ab\ncd\nef\n");
+
+		expect(bytes.rangeToSpan({ end: 7, start: 1 })).toStrictEqual(
+			span({ beginColumn: 2, beginLine: 1, endColumn: 2, endLine: 3 }),
+		);
+	});
+
+	it("should answer column 1 for an offset that sits on a line start", () => {
+		expect.assertions(1);
+
+		const bytes = indexSourceBytes("ab\ncd\n");
+
+		expect(bytes.rangeToSpan({ end: 5, start: 3 })).toStrictEqual(
+			span({ beginColumn: 1, beginLine: 2, endColumn: 3, endLine: 2 }),
+		);
+	});
+
+	it("should round-trip a span through byte offsets", () => {
+		expect.assertions(1);
+
+		// Multi-byte characters shift byte columns away from UTF-16 ones, so a
+		// round trip that survives them is doing byte math both ways.
+		const bytes = indexSourceBytes('local a = "\u{221E}"\nlocal bc = "\u{1F389}"\n');
+		const original = span({ beginColumn: 7, beginLine: 2, endColumn: 9, endLine: 2 });
+
+		expect(bytes.rangeToSpan(bytes.spanToRange(original))).toStrictEqual(original);
+	});
 });

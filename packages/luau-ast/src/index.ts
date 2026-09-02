@@ -54,7 +54,13 @@ export { loadLuauParser } from "./parser.ts";
 
 // Byte offsets and span math
 export type { ByteRange, SourceBytes } from "./source-bytes.ts";
-export { indexSourceBytes } from "./source-bytes.ts";
+export {
+	BYTE_CARRIAGE_RETURN,
+	BYTE_LINE_FEED,
+	BYTE_SPACE,
+	BYTE_TAB,
+	indexSourceBytes,
+} from "./source-bytes.ts";
 
 // Span identity
 export { bindingKey } from "./span-identity.ts";

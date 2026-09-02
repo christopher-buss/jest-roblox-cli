@@ -32,6 +32,15 @@ export interface SourceBytes {
 	/** 0-based byte offset where a 1-based line starts. */
 	lineStartOffset: (line: number) => number;
 	/**
+	 * Restate a byte range as a parser span. Each offset answers the last line
+	 * starting at or before it, so an offset on a line start reads as column 1
+	 * of that line, never as one past the previous line's last byte. The two
+	 * spell the same offset, so {@link SourceBytes.spanToRange} round-trips a
+	 * range; a span that ends one past a line's last byte does not survive the
+	 * other direction.
+	 */
+	rangeToSpan: (range: ByteRange) => LuauSpan;
+	/**
 	 * Decode the bytes in `[start, end)` as text. Offsets must sit on
 	 * character boundaries — parser spans always do.
 	 */
@@ -49,7 +58,18 @@ export interface SourceBytes {
 	toUtf16Column: (line: number, column: number) => number;
 }
 
-const LINE_FEED = 0x0a;
+/**
+ * The bytes that end or pad a line. Every source scan classifies against
+ * these, whatever grammar it reads, so they live here; a byte that means
+ * something only to one grammar belongs to the scanner that knows it.
+ *
+ * A byte this low can only be the character itself — a multi-byte UTF-8
+ * sequence never contains one.
+ */
+export const BYTE_CARRIAGE_RETURN = 0x0d;
+export const BYTE_LINE_FEED = 0x0a;
+export const BYTE_SPACE = 0x20;
+export const BYTE_TAB = 0x09;
 
 /**
  * Index a Luau source for byte-offset math against parser spans.
@@ -76,6 +96,7 @@ export function indexSourceBytes(source: string): SourceBytes {
 		byteLength: buffer.length,
 		lineEndOffset,
 		lineStartOffset,
+		rangeToSpan: (range) => byteRangeToSpan(range, lineStarts),
 		slice: (start, end) => decode(buffer, { end, start }),
 		spanToRange: (span) => spanToByteRange(span, lineStartOffset),
 		text: source,
@@ -157,11 +178,71 @@ function spanToByteRange(span: LuauSpan, lineStartOffset: (line: number) => numb
  */
 function scanLineStarts(buffer: Buffer): Array<number> {
 	const lineStarts = [0];
-	let newlineOffset = buffer.indexOf(LINE_FEED);
+	let newlineOffset = buffer.indexOf(BYTE_LINE_FEED);
 	while (newlineOffset !== -1) {
 		lineStarts.push(newlineOffset + 1);
-		newlineOffset = buffer.indexOf(LINE_FEED, newlineOffset + 1);
+		newlineOffset = buffer.indexOf(BYTE_LINE_FEED, newlineOffset + 1);
 	}
 
 	return lineStarts;
+}
+
+/**
+ * The 1-based line a byte offset sits on: the last line starting at or before
+ * it. Binary search, because a caller resolving a span walks no lines at all
+ * and the file may hold thousands.
+ *
+ * @param offset - The 0-based byte offset.
+ * @param lineStarts - One start offset per line, in line order.
+ * @returns The 1-based line.
+ */
+function lineAt(offset: number, lineStarts: Array<number>): number {
+	let low = 0;
+	let high = lineStarts.length - 1;
+	while (low < high) {
+		const middle = Math.ceil((low + high) / 2);
+		const start = lineStarts[middle];
+		assert(start !== undefined, "middle sits inside the array");
+		if (start <= offset) {
+			low = middle;
+		} else {
+			high = middle - 1;
+		}
+	}
+
+	return low + 1;
+}
+
+/**
+ * The 1-based line and 1-based byte column a byte offset sits at.
+ *
+ * @param offset - The 0-based byte offset.
+ * @param lineStarts - One start offset per line, in line order.
+ * @returns The position.
+ */
+function positionAt(offset: number, lineStarts: Array<number>): { column: number; line: number } {
+	const line = lineAt(offset, lineStarts);
+	const start = lineStarts[line - 1];
+	assert(start !== undefined, "lineAt answers a line inside the array");
+
+	return { column: offset - start + 1, line };
+}
+
+/**
+ * Resolve a byte range back to the span it covers.
+ *
+ * @param range - The byte range to restate.
+ * @param lineStarts - One start offset per line, in line order.
+ * @returns The span the range covers.
+ */
+function byteRangeToSpan(range: ByteRange, lineStarts: Array<number>): LuauSpan {
+	const begin = positionAt(range.start, lineStarts);
+	const end = positionAt(range.end, lineStarts);
+
+	return {
+		beginColumn: begin.column,
+		beginLine: begin.line,
+		endColumn: end.column,
+		endLine: end.line,
+	};
 }
