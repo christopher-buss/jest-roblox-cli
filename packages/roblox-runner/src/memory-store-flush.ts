@@ -1,5 +1,6 @@
 import type { HttpClient } from "@bedrock-rbx/ocale";
-import { ApiError, NetworkError } from "@bedrock-rbx/ocale";
+
+import { createFetchHttpClient, DEFAULT_BASE_URL } from "./open-cloud-fetch.ts";
 
 export interface FlushMemoryStoreOptions {
 	readonly apiKey: string;
@@ -7,8 +8,6 @@ export interface FlushMemoryStoreOptions {
 	readonly httpClient?: HttpClient;
 	readonly universeId: string;
 }
-
-const DEFAULT_BASE_URL = "https://apis.roblox.com";
 
 /**
  * Issue the **universe-wide** `memory-store:flush` — it destroys every queue,
@@ -36,48 +35,4 @@ export async function flushMemoryStoreAsync(options: FlushMemoryStoreOptions): P
 			`Failed to flush universe ${options.universeId} MemoryStore: ${result.err.message}`,
 		);
 	}
-}
-
-async function classifyFlushResponseAsync(
-	response: Response,
-): Promise<Awaited<ReturnType<HttpClient["request"]>>> {
-	if (!response.ok) {
-		const body = await response.text();
-		return {
-			err: new ApiError(`HTTP ${response.status}: ${body}`, {
-				statusCode: response.status,
-			}),
-			success: false,
-		};
-	}
-
-	return {
-		data: { body: undefined, headers: {}, status: response.status },
-		success: true,
-	};
-}
-
-/**
- * Minimal fetch transport for the one endpoint the ocale SDK does not model.
- * Classifies like the SDK's own transport: non-2xx ⇒ `ApiError` failure,
- * thrown fetch ⇒ `NetworkError` failure.
- */
-function createFetchHttpClient(): HttpClient {
-	return {
-		request: async (request, config) => {
-			try {
-				const response = await fetch(`${config.baseUrl}${request.url}`, {
-					headers: { "x-api-key": config.apiKey },
-					method: request.method,
-				});
-				return await classifyFlushResponseAsync(response);
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				return {
-					err: new NetworkError(message, { cause: err }),
-					success: false,
-				};
-			}
-		},
-	};
 }
