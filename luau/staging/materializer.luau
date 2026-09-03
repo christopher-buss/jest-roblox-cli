@@ -87,31 +87,48 @@ end
 -- One pass, for the reason `restoreRunContext` gives: `GetDescendants` is
 -- already the whole subtree. Nothing recurses into the swapped-in clone,
 -- because a pooled entry is built from a `$path` and can hold no marker.
+--
+-- A marker's own explicit children came across in the same clone, so they move
+-- into the resolution rather than being cloned a second time. They stay in the
+-- snapshot this walk is reading, which is what resolves a marker nested inside
+-- one.
 local function resolveNestedMarkers(root: Instance, pool: Instance)
 	for _, descendant in root:GetDescendants() do
 		local entry = pooledEntry(pool, descendant)
 		if entry then
 			local resolved = entry:Clone()
 			resolved.Name = descendant.Name
+			for _, ownChild in descendant:GetChildren() do
+				ownChild.Parent = resolved
+			end
+
 			resolved.Parent = descendant.Parent
 			descendant:Destroy()
 		end
 	end
 end
 
--- What one planned clone does: take `source`, answer to the name `child`
--- carried, and land under `dest`. The two differ only for a marker, where the
--- source is the pooled entry and the name is the marker's.
-type Step = { child: Instance, dest: Instance, source: Instance }
+-- What one planned clone does: land `clone`, whole, under a live `dest`. A
+-- clone that lands inside another clone needs no step: its ancestor's step
+-- takes it live along with everything else that ancestor holds.
+--
+-- The clone is made while planning rather than at step time, so a marker's own
+-- children can be planned into the resolution the way they would be planned
+-- into any other destination. Nothing live is touched by that: a clone has no
+-- parent until its step runs, and a plan that reports a collision throws every
+-- clone it made away. The abort path is what pays for it, and an abort already
+-- costs a place upload and the cold boot behind it.
+type Step = { clone: Instance, dest: Instance }
 type Plan = {
 	add: (children: { Instance }, dest: Instance) -> (),
 	collisions: { string },
 	steps: { Step },
 }
 
--- Decides where every staged child lands without parenting any of it. A clone
--- that lands is live and its scripts are already running, so a walk that gave
--- up half way would leave those behind for whatever ran next.
+-- Decides where every staged child lands, and builds the clone that lands
+-- there, without putting any of it live. A clone that enters a live service
+-- has its scripts already running, so a walk that gave up half way would leave
+-- those behind for whatever ran next.
 --
 -- A name under one destination belongs to one instance. Two same-name children
 -- merge only when both are containers, which is the one case where the staged
@@ -120,12 +137,22 @@ type Plan = {
 -- and every later FindFirstChild silently picks whichever was parented first,
 -- including the ones the code under test makes.
 --
--- The name a step claims is held against later steps too. Nothing is parented
--- during the walk, so a second staged child of that name would otherwise find
--- the destination free and land beside the first.
+-- The name a step claims is held against later steps too. A clone bound for a
+-- live destination is not parented during the walk, so a second staged child
+-- of that name would otherwise find the destination free and land beside the
+-- first. What is held is the clone, not the staged source, so a later child of
+-- that name merges into it under the same rule that merges into a live
+-- container. A marker is what makes that reachable: what the pooled mount
+-- built and what the marker declared beside it are planned as one list, and a
+-- name in both halves has to merge exactly as it would inside a fresh clone.
 local function newPlan(pool: Instance?): Plan
 	local claimed: { [Instance]: { [string]: Instance } } = {}
 	local collisions: { string } = {}
+	-- Every clone this plan has made. A destination among them is not live, so
+	-- a clone landing in it is parented on the spot rather than earning a step
+	-- of its own: nothing starts running, and the ancestor's step carries it
+	-- across whole.
+	local pending: { [Instance]: true } = {}
 	local steps: { Step } = {}
 
 	local function add(children: { Instance }, dest: Instance)
@@ -138,35 +165,59 @@ local function newPlan(pool: Instance?): Plan
 		for _, child in children do
 			-- Resolved before anything is decided, so a marker merges, clones
 			-- and collides exactly as the mount it stands for would have.
-			local source = pooledEntry(pool, child) or child
+			local entry = pooledEntry(pool, child)
+			local source = entry or child
+			-- The one instance already standing where this child would land: a
+			-- clone a staged sibling claimed the name with, or a live child of
+			-- the destination. Never both — a name a live child holds is
+			-- merged into rather than claimed, so nothing is held for it.
 			local sibling = held[child.Name]
-			local existing = dest:FindFirstChild(child.Name)
+			local occupied = sibling or dest:FindFirstChild(child.Name)
 
-			local occupant: string? = nil
-			if sibling ~= nil then
-				-- A staged sibling claimed the name first. Its clone does not
-				-- exist yet, so there is nothing to merge into.
-				occupant = "staged " .. sibling.ClassName
-			elseif existing ~= nil and not (isContainer(existing) and isContainer(source)) then
-				occupant = "live " .. existing.ClassName
-			end
-
-			if occupant ~= nil then
+			if occupied ~= nil and not (isContainer(occupied) and isContainer(source)) then
 				table.insert(
 					collisions,
 					string.format(
-						"%s.%s: staged %s over %s",
+						"%s.%s: staged %s over %s%s",
 						dest:GetFullName(),
 						child.Name,
 						source.ClassName,
-						occupant
+						if sibling ~= nil then "staged " else "live ",
+						occupied.ClassName
 					)
 				)
-			elseif existing ~= nil then
-				add(source:GetChildren(), existing)
+			elseif occupied ~= nil then
+				-- Both halves of a marker: what the pooled mount built, and
+				-- the explicit children the marker declared beside it. One
+				-- list, so a name they both claim is judged like any other
+				-- pair.
+				local planned = source:GetChildren()
+				if entry ~= nil then
+					local ownChildren = child:GetChildren()
+					table.move(ownChildren, 1, #ownChildren, #planned + 1, planned)
+				end
+
+				add(planned, occupied)
 			else
-				held[child.Name] = source
-				table.insert(steps, { child = child, dest = dest, source = source })
+				local resolved = source:Clone()
+				resolved.Name = child.Name
+				held[child.Name] = resolved
+				pending[resolved] = true
+
+				if entry ~= nil then
+					-- The marker's own children, into the resolution rather
+					-- than beside it. No sweep for markers below: a pooled
+					-- entry is built from a `$path`, so it can hold none.
+					add(child:GetChildren(), resolved)
+				elseif pool ~= nil then
+					resolveNestedMarkers(resolved, pool)
+				end
+
+				if pending[dest] then
+					resolved.Parent = dest
+				else
+					table.insert(steps, { clone = resolved, dest = dest })
+				end
 			end
 		end
 	end
@@ -232,26 +283,16 @@ function module.materialize(pkgName: string)
 	end
 
 	for _, step in plan.steps do
-		local cloned = step.source:Clone()
-		if step.source ~= step.child then
-			cloned.Name = step.child.Name
-		end
-
-		-- Before the run-context restore, so a script inside a pooled entry
-		-- starts under the context the consuming package asked for, exactly as
-		-- one the package staged itself does.
-		if pool then
-			resolveNestedMarkers(cloned, pool)
-		end
-
 		-- Before parenting: a script that enters a live service starts
-		-- running, and it should start under the context it asked for.
+		-- running, and it should start under the context it asked for. The
+		-- plan has already resolved every marker inside the clone, so a script
+		-- a pooled entry brought is restored with the rest.
 		if runContextScripts then
-			restoreRunContext(cloned)
+			restoreRunContext(step.clone)
 		end
 
-		cloned.Parent = step.dest
-		table.insert(materialized, cloned)
+		step.clone.Parent = step.dest
+		table.insert(materialized, step.clone)
 	end
 end
 

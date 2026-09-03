@@ -88,6 +88,30 @@ describe(poolSharedMounts, () => {
 		expect(staged(project, "a", "ReplicatedStorage")!.$path).toBeUndefined();
 	});
 
+	it("should keep a marker's own children beside the pool key", () => {
+		expect.assertions(3);
+
+		// The `rbxts_include` shape: the dependency tree every package mounts,
+		// with the generated `node_modules` project hanging off it as a child
+		// of its own. A child describes the node rather than the mount, so it
+		// stays where it was written and only the mount moves.
+		seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
+
+		const project = pooledProject(
+			twoPackagesStaging(
+				{ $path: INCLUDE, node_modules: { $className: "Folder" } },
+				"rbxts_include",
+			),
+		);
+		const marker = staged(project, "a", "rbxts_include");
+
+		expect(poolKeyOf(marker)).toBe(digestOf(INCLUDE));
+		expect(marker!.$path).toBeUndefined();
+		expect(staged(project, "a", "rbxts_include", "node_modules")).toStrictEqual({
+			$className: "Folder",
+		});
+	});
+
 	it("should declare a class on both halves of what it writes", () => {
 		expect.assertions(2);
 
@@ -99,6 +123,24 @@ describe(poolSharedMounts, () => {
 
 		expect(staged(project, "__shared")!.$className).toBe("Folder");
 		expect(staged(project, "a", "Include")!.$className).toBe("Folder");
+	});
+
+	it.for([
+		["carries a declared class onto the entry", folderMount(INCLUDE), "Folder"],
+		["leaves an entry for an undeclared one classless", { $path: INCLUDE }, undefined],
+	] as const)("should %s", ([, node, expected]) => {
+		expect.assertions(1);
+
+		// Rojo reads a `$className` against what the `$path` builds and
+		// refuses the pair unless that is a Folder. The entry is where the
+		// mount now lives, so it is where the class has to be read: dropping
+		// it would build the ModuleScript an `init.luau` directory makes,
+		// under a name the project declared a Folder.
+		seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
+
+		const project = pooledProject(twoPackagesStaging(node));
+
+		expect(staged(project, "__shared", digestOf(INCLUDE))!.$className).toBe(expected);
 	});
 
 	it("should pool a mount that declares no class of its own", () => {
@@ -183,10 +225,6 @@ describe(poolSharedMounts, () => {
 	});
 
 	it.for([
-		[
-			"a mount carrying explicit children of its own",
-			{ $className: "Folder", $path: INCLUDE, Extra: { $className: "Folder" } },
-		],
 		["a mount declaring a class of its own", { $className: "Configuration", $path: INCLUDE }],
 		["a mount carrying properties of its own", { $path: INCLUDE, $properties: { Name: "x" } }],
 	] as const)("should leave %s alone", ([, node]) => {
@@ -199,20 +237,23 @@ describe(poolSharedMounts, () => {
 	});
 
 	it.for([
-		["a directory rojo mounts as a ModuleScript", "include/init.luau"],
-		["a directory an init.meta.json classes", "include/init.meta.json"],
-	] as const)("should leave %s alone", ([, seeded]) => {
+		["a ModuleScript", "include/init.luau"],
+		["whatever an init.meta.json names", "include/init.meta.json"],
+	] as const)("should pool a directory rojo mounts as %s", ([, seeded]) => {
 		expect.assertions(1);
 
-		// The plain sibling matters: one entry classing the directory is enough,
-		// however many ordinary files sit beside it.
+		// Every `@rbxts/*` package is an `init.luau` directory, so a rule that
+		// pooled plain Folders alone would miss the tree the pool exists for.
+		// The clone the materializer resolves comes from the pooled entry, so
+		// it is that class rather than the marker's Folder.
 		seed({
 			[path.join(INCLUDE, "runtime.luau")]: "",
 			[path.join(path.resolve("/repo"), seeded)]: "",
 		});
-		const projectJson = twoPackagesStaging(folderMount(INCLUDE));
 
-		expect(run(projectJson)).toBe(projectJson);
+		const project = pooledProject(twoPackagesStaging({ $path: INCLUDE }));
+
+		expect(poolKeyOf(staged(project, "a", "Include"))).toBe(digestOf(INCLUDE));
 	});
 
 	it("should leave a mount that is not on disk alone", () => {
@@ -226,15 +267,41 @@ describe(poolSharedMounts, () => {
 		expect(run(projectJson)).toBe(projectJson);
 	});
 
-	it("should leave a single file two packages mount alone", () => {
-		expect.assertions(1);
+	it.for([
+		["jest.config.luau", "return {}"],
+		["assets.rbxm", "<roblox!"],
+	] as const)("should pool the single file %s two packages mount", ([fileName, contents]) => {
+		expect.assertions(2);
 
-		const stub = path.join(path.resolve("/repo"), "jest.config.luau");
-		seed({ [stub]: "return {}\n" });
-		const projectJson = twoPackagesStaging({ $path: stub }, "Config");
+		// One rule for a mount, whether it names a directory or a file. A
+		// workspace run generates one `jest.config.luau` stub and mounts it from
+		// every package.
+		const stub = path.join(path.resolve("/repo"), fileName);
+		seed({ [stub]: contents });
 
-		expect(run(projectJson)).toBe(projectJson);
+		const project = pooledProject(twoPackagesStaging({ $path: stub }, "Config"));
+
+		expect(poolKeyOf(staged(project, "a", "Config"))).toBe(digestOf(stub));
+		expect(staged(project, "__shared", digestOf(stub))!.$path).toBe(normalizeWindowsPath(stub));
 	});
+
+	it.for(["README.md", "init.meta.json"] as const)(
+		"should leave the single file %s alone",
+		(fileName) => {
+			expect.assertions(1);
+
+			// Rojo builds no Instance for either — one it does not read, one
+			// that only describes an Instance built from elsewhere. A marker
+			// naming an entry the place does not hold fails the materialize,
+			// where the mount it replaced was merely absent, so the rule reads
+			// an allow list rather than guessing.
+			const file = path.join(path.resolve("/repo"), fileName);
+			seed({ [file]: "{}" });
+			const projectJson = twoPackagesStaging({ $path: file }, "Loose");
+
+			expect(run(projectJson)).toBe(projectJson);
+		},
+	);
 
 	it("should give every pooled path an entry of its own", () => {
 		expect.assertions(2);

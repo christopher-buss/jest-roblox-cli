@@ -41,6 +41,11 @@ local SUPERCLASS: { [string]: string } = {
 
 local getDescendantsCalls = 0
 
+-- What each Instance held the moment it entered a live service. A script
+-- starts running as soon as it is parented, so a clone that lands half built
+-- runs against a tree its own package has not finished handing it.
+local liveArrivals: { { children: { string }, name: string } } = {}
+
 local state: { [any]: any } = {}
 local instanceMeta = {}
 local methods = {}
@@ -77,6 +82,14 @@ local function setParent(instance, parent)
 	entry.fields.Parent = parent
 	if parent ~= nil then
 		table.insert(state[parent].children, instance)
+		if state[parent].live then
+			local names = {}
+			for _, child in entry.children do
+				table.insert(names, state[child].fields.Name)
+			end
+
+			table.insert(liveArrivals, { children = names, name = entry.fields.Name })
+		end
 	end
 end
 
@@ -195,7 +208,11 @@ local game = newInstance("DataModel", "game")
 for _, serviceName in
 	{ "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterPlayer" }
 do
-	setParent(newInstance(serviceName, serviceName), game)
+	local service = newInstance(serviceName, serviceName)
+	-- Anything parented under one of these is running. `liveArrivals` records
+	-- what each arrival held at that moment.
+	state[service].live = true
+	setParent(service, game)
 end
 
 local StarterPlayer = methods.FindFirstChild(game, "StarterPlayer")
@@ -598,6 +615,12 @@ end
 -- the packages rather than inside any one of them.
 local SHARED_POOL_ATTRIBUTE = "JestSharedPoolKey"
 local POOL_KEY = "0123456789abcdef"
+-- A second entry, for the shape every `@rbxts/*` package has: a directory
+-- holding an `init.luau`, which rojo mounts as a ModuleScript.
+local MODULE_POOL_KEY = "fedcba9876543210"
+-- A third entry, holding a container under a name a marker also declares. The
+-- two halves of that marker have to merge on it.
+local MERGE_POOL_KEY = "abcdef0123456789"
 
 -- Staged only once the pool cases run, so every case above them exercises the
 -- no-pool path a place built before this pass takes.
@@ -611,16 +634,30 @@ local function stagePool()
 	setParent(pooledEntry, pool)
 	setParent(newInstance("ModuleScript", "pooledModule"), pooledEntry)
 	setParent(newInstance("Script", "pooledServer"), pooledEntry)
+
+	local moduleEntry = newInstance("ModuleScript", MODULE_POOL_KEY)
+	setParent(moduleEntry, pool)
+	setParent(newInstance("ModuleScript", "nested"), moduleEntry)
+
+	local mergeEntry = newInstance("Folder", MERGE_POOL_KEY)
+	setParent(mergeEntry, pool)
+	local entryModules = newInstance("Folder", "node_modules")
+	setParent(entryModules, mergeEntry)
+	setParent(newInstance("ModuleScript", "entryModule"), entryModules)
+end
+
+-- What the pool pass leaves where a mount was: a Folder naming the entry.
+local function newMarker(name: string, key: string, parent)
+	local marker = newInstance("Folder", name)
+	methods.SetAttribute(marker, SHARED_POOL_ATTRIBUTE, key)
+	setParent(marker, parent)
+	return marker
 end
 
 -- A package whose only mount is a marker for the pooled entry. `rbxts_include`
 -- is what the real one is: the dependency tree every package mounts.
 local function stagePooledPackage(pkgName: string, runContextScripts: boolean)
-	local stagedService = stagePackage(pkgName, runContextScripts)
-
-	local marker = newInstance("Folder", "rbxts_include")
-	methods.SetAttribute(marker, SHARED_POOL_ATTRIBUTE, POOL_KEY)
-	setParent(marker, stagedService)
+	return newMarker("rbxts_include", POOL_KEY, stagePackage(pkgName, runContextScripts))
 end
 
 -- T11: a marker resolves to a clone of the pooled entry carrying the marker's
@@ -727,9 +764,7 @@ local function testNestedPooledMarkerResolves()
 	local modules = newInstance("Folder", "node_modules")
 	setParent(modules, include)
 
-	local marker = newInstance("Folder", "services")
-	methods.SetAttribute(marker, SHARED_POOL_ATTRIBUTE, POOL_KEY)
-	setParent(marker, modules)
+	newMarker("services", POOL_KEY, modules)
 
 	Materializer.materialize("nested")
 
@@ -757,6 +792,226 @@ local function testNestedPooledMarkerResolves()
 	)
 end
 
+-- T16: a marker's own explicit children are merged into the clone it resolves
+-- rather than parented beside it. `rbxts_include` mounts the shared include
+-- tree and declares `node_modules` as a child of its own, and the package
+-- requires both through one instance.
+local function testMarkerChildrenMergeIntoClone()
+	local marker = stagePooledPackage("markerChildren", true)
+
+	local modules = newInstance("Folder", "node_modules")
+	setParent(modules, marker)
+	local ownScript = newInstance("Script", "ownServer")
+	setParent(ownScript, modules)
+
+	Materializer.materialize("markerChildren")
+
+	check(
+		#methods.GetChildren(ReplicatedStorage) == 1,
+		"T16: the marker's child landed beside the clone rather than inside it"
+	)
+
+	local include = methods.FindFirstChild(ReplicatedStorage, "rbxts_include")
+	check(
+		methods.FindFirstChild(include, "pooledModule") ~= nil,
+		"T16: the pooled entry's own children came with it"
+	)
+
+	local liveModules = methods.FindFirstChild(include, "node_modules")
+	check(liveModules ~= nil, "T16: the marker's child merged into the clone")
+	check(liveModules ~= modules, "T16: the marker's child was cloned, not reparented")
+	check(
+		methods.FindFirstChild(liveModules, "ownServer").RunContext == Enum.RunContext.Server,
+		"T16: run context restored inside the marker's own child"
+	)
+
+	Materializer.reset()
+
+	check(
+		#methods.GetChildren(ReplicatedStorage) == 0,
+		"T16: reset unwound the clone and everything merged into it"
+	)
+	check(
+		methods.FindFirstChild(modules, "ownServer") == ownScript,
+		"T16: the staged marker kept its own children for the next package"
+	)
+end
+
+-- T17: a nested marker keeps its own children too. It rode into the live
+-- service inside a cloned subtree, so the children are already clones and move
+-- into the resolution rather than being cloned a second time.
+local function testNestedMarkerKeepsItsChildren()
+	local stagedService = stagePackage("nestedChildren", false)
+
+	local vendor = newInstance("Folder", "Vendor")
+	setParent(vendor, stagedService)
+
+	local marker = newMarker("rbxts_include", POOL_KEY, vendor)
+
+	local modules = newInstance("Folder", "node_modules")
+	setParent(modules, marker)
+	setParent(newInstance("ModuleScript", "ownModule"), modules)
+
+	Materializer.materialize("nestedChildren")
+
+	local include =
+		methods.FindFirstChild(methods.FindFirstChild(ReplicatedStorage, "Vendor"), "rbxts_include")
+	check(include ~= nil, "T17: the nested marker materialized under its own name")
+	check(
+		methods.FindFirstChild(include, "pooledModule") ~= nil,
+		"T17: the pooled entry's own children came with it"
+	)
+
+	local liveModules = methods.FindFirstChild(include, "node_modules")
+	check(liveModules ~= nil, "T17: the nested marker's child moved into the resolution")
+	check(
+		methods.FindFirstChild(liveModules, "ownModule") ~= nil,
+		"T17: the nested marker's child came whole"
+	)
+	check(
+		methods.FindFirstChild(marker, "node_modules") == modules,
+		"T17: the staged marker kept its own children for the next package"
+	)
+
+	Materializer.reset()
+end
+
+-- T20: a marker merging into a live container merges its two halves the way a
+-- fresh clone of it would. What the pooled mount built and what the marker
+-- declared beside it are planned as one list, so a container both halves hold
+-- has to merge rather than read as a staged-sibling collision.
+local function testMarkerHalvesMergeIntoLiveFolder()
+	local live = newInstance("Folder", "rbxts_include")
+	setParent(live, ReplicatedStorage)
+
+	local marker = newMarker("rbxts_include", MERGE_POOL_KEY, stagePackage("markerHalves", false))
+	local modules = newInstance("Folder", "node_modules")
+	setParent(modules, marker)
+	setParent(newInstance("ModuleScript", "ownModule"), modules)
+
+	Materializer.materialize("markerHalves")
+
+	check(#methods.GetChildren(live) == 1, "T20: the name both halves hold landed once")
+
+	local liveModules = methods.FindFirstChild(live, "node_modules")
+	check(liveModules ~= nil, "T20: and it landed under that name")
+	check(
+		methods.FindFirstChild(liveModules, "entryModule") ~= nil,
+		"T20: what the pooled half held is inside it"
+	)
+	check(
+		methods.FindFirstChild(liveModules, "ownModule") ~= nil,
+		"T20: what the marker's half held is too"
+	)
+
+	Materializer.reset()
+
+	check(
+		methods.FindFirstChild(live, "node_modules") == nil,
+		"T20: reset unwound both halves together"
+	)
+	live:Destroy()
+end
+
+-- What a compiled `TS.getModule` does: climb from the requiring module until
+-- an ancestor holds `node_modules`, then index the scope and the package.
+local function getModule(from: any, scope: string, packageName: string)
+	local cursor = from.Parent
+	while cursor ~= nil do
+		local modules = methods.FindFirstChild(cursor, "node_modules")
+		if modules ~= nil then
+			return methods.FindFirstChild(methods.FindFirstChild(modules, scope), packageName)
+		end
+
+		cursor = cursor.Parent
+	end
+
+	return nil
+end
+
+-- T18: a pooled entry rojo built as a ModuleScript resolves as one, under the
+-- marker's name. The marker Folder is dropped rather than cloned: compiled
+-- output requires `rbxts_include.node_modules.@rbxts.services` by absolute
+-- path and walks to the same instance through `TS.getModule`, and a Folder in
+-- that position answers both without being requireable.
+local function testPooledModuleScriptResolves()
+	local stagedService = stagePackage("pooledModuleScript", false)
+
+	local include = newInstance("Folder", "rbxts_include")
+	setParent(include, stagedService)
+	local runtimeLib = newInstance("ModuleScript", "RuntimeLib")
+	setParent(runtimeLib, include)
+
+	local modules = newInstance("Folder", "node_modules")
+	setParent(modules, include)
+	local scope = newInstance("Folder", "@rbxts")
+	setParent(scope, modules)
+	local marker = newMarker("services", MODULE_POOL_KEY, scope)
+	setParent(newInstance("ModuleScript", "ownModule"), marker)
+
+	Materializer.materialize("pooledModuleScript")
+
+	-- The absolute path compiled test output writes.
+	local liveInclude = methods.FindFirstChild(ReplicatedStorage, "rbxts_include")
+	local liveModules = methods.FindFirstChild(liveInclude, "node_modules")
+	local services =
+		methods.FindFirstChild(methods.FindFirstChild(liveModules, "@rbxts"), "services")
+	check(services ~= nil, "T18: the marker materialized under its own name")
+	check(services:IsA("ModuleScript"), "T18: the pooled ModuleScript is what stands there")
+	check(
+		methods.GetAttribute(services, SHARED_POOL_ATTRIBUTE) == nil,
+		"T18: the marker Folder did not survive materialize"
+	)
+	check(
+		methods.FindFirstChild(services, "nested") ~= nil,
+		"T18: the pooled ModuleScript's own children came with it"
+	)
+	check(
+		methods.FindFirstChild(services, "ownModule") ~= nil,
+		"T18: the marker's own child merged into the ModuleScript"
+	)
+
+	-- And the ancestor walk the same output uses for its own dependencies.
+	local liveRuntimeLib = methods.FindFirstChild(liveInclude, "RuntimeLib")
+	check(
+		getModule(liveRuntimeLib, "@rbxts", "services") == services,
+		"T18: a getModule walk reaches the same instance"
+	)
+
+	Materializer.reset()
+	check(
+		#methods.GetChildren(ReplicatedStorage) == 0,
+		"T18: reset unwound the pooled ModuleScript"
+	)
+end
+
+-- T19: a pooled clone goes live whole. A script inside a pooled entry starts
+-- running the moment the clone is parented, so the marker's own children have
+-- to be inside it by then — one `require` of `node_modules` at the top of a
+-- module is enough to fail against a clone that arrives without it.
+local function testPooledCloneGoesLiveWhole()
+	local marker = stagePooledPackage("wholeOnArrival", true)
+	setParent(newInstance("Folder", "node_modules"), marker)
+
+	table.clear(liveArrivals)
+	Materializer.materialize("wholeOnArrival")
+
+	check(#liveArrivals == 1, "T19: one clone entered a live service, got " .. #liveArrivals)
+
+	local arrival = liveArrivals[1]
+	check(arrival.name == "rbxts_include", "T19: the clone that arrived is the resolution")
+	check(
+		table.find(arrival.children, "node_modules") ~= nil,
+		"T19: the marker's own child was inside the clone before it went live"
+	)
+	check(
+		table.find(arrival.children, "pooledModule") ~= nil,
+		"T19: the pooled entry's own children were too"
+	)
+
+	Materializer.reset()
+end
+
 testRestoreRunContextIsLinear()
 testRestoreRunContextReachesEveryDepth()
 testResetClearsMaterialized()
@@ -777,5 +1032,10 @@ testResetDestroysPooledClone()
 testPooledMarkerWithoutRunContext()
 testPooledMarkerMergesIntoLiveFolder()
 testNestedPooledMarkerResolves()
+testMarkerChildrenMergeIntoClone()
+testNestedMarkerKeepsItsChildren()
+testPooledModuleScriptResolves()
+testPooledCloneGoesLiveWhole()
+testMarkerHalvesMergeIntoLiveFolder()
 
 print("ALL OK")
