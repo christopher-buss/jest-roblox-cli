@@ -7,9 +7,12 @@
 --
 -- The handler cannot be installed once per run. Circus keeps `eventHandlers` as
 -- a module-scope list in `circus/combined.lua`, and jest rebuilds the module
--- registry for every test file (ADR-0002 Finding A), so each file dispatches
--- through its own list and a handler installed before `Jest.runCLI` is in none
--- of them. `arm` therefore installs from inside each file's registry, riding
+-- registry for every test file (mutation-tester ADR-0002 Finding A), so each
+-- file dispatches through its own list and a handler installed before
+-- `Jest.runCLI` is in none of them. It is also why nothing survives a run to be
+-- reused: the list dies with the registry that holds it, so a second run
+-- against the same clone installs afresh rather than joining what the first
+-- left. `arm` therefore installs from inside each file's registry, riding
 -- the one call circus's per-file `initialize` makes back into the runtime.
 --
 -- `addEventHandler`, `getMatcherState`, and `getCoverage` are injected so the

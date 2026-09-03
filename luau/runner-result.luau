@@ -126,7 +126,9 @@ end
 	Per run rather than once per VM, because workspace mode materializes a
 	fresh Jest clone per package and the hook has to reach the circus that
 	package requires. Arming is cheap: the handler itself goes in per test
-	file, from inside the registry that file dispatches through.
+	file, from inside the registry that file dispatches through. A package's
+	projects are separate runs against that one clone, so the second arms
+	again and gets an accumulator of its own.
 ]=]
 function module.beginCoverage(jestModule: ModuleScript, options: CoverageOptions): CoverageState
 	-- Unconditionally, and before the early return: the per-file hook rides on

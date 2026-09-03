@@ -304,6 +304,40 @@ local function testMissingAddEventHandlerIsReported()
 	PerTestCoverage.disarm()
 end
 
+-- T8: two projects of one package arm the same runtime class in turn, because
+-- they are separate runs against one materialized clone. Each arm owns its
+-- accumulator — the finished one has already been encoded and returned, so
+-- appending to it or clearing it rewrites an answer the host has — and the
+-- second arm still puts exactly one handler in each of its own files.
+local function testProjectsOfOnePackageKeepSeparateAccumulators()
+	local coverage = {}
+	local matcherState = {}
+
+	local firstInstallation = armAgainst(coverage, matcherState, CIRCUS_STATE_MODULE)
+	runTestFile(matcherState, coverage, makeSpecFile("e.spec"), {
+		{ file = "out/e1.luau", name = "e adds" },
+	})
+
+	local secondInstallation = armAgainst(coverage, matcherState, CIRCUS_STATE_MODULE)
+	local secondCircus = runTestFile(matcherState, coverage, makeSpecFile("f.spec"), {
+		{ file = "out/f1.luau", name = "f adds" },
+	})
+
+	check(
+		#firstInstallation.records == 1,
+		"T8: the finished project's records survive the next, got " .. #firstInstallation.records
+	)
+	check(
+		firstInstallation.records[1].testCaseId == "e adds",
+		"T8: and stay the ones it returned"
+	)
+	check(#secondInstallation.records == 1, "T8: the second project records its own case")
+	check(secondInstallation.records[1].testCaseId == "f adds", "T8: from its own test file")
+	check(secondInstallation.failure == nil, "T8: the second project's install took")
+	check(secondCircus.handlerCount() == 1, "T8: one handler on the second project's file")
+	PerTestCoverage.disarm()
+end
+
 testRecordsCoverage()
 testDropsEmptyTest()
 testSequentialTests()
@@ -311,5 +345,6 @@ testHandlerSwallowsErrors()
 testInstallsInEveryTestFile()
 testDisarmStopsAttributing()
 testMissingAddEventHandlerIsReported()
+testProjectsOfOnePackageKeepSeparateAccumulators()
 
 print("ALL OK")
