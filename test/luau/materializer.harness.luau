@@ -426,13 +426,21 @@ local function testAllCollisionsReportedTogether()
 	-- reads "staged ModuleScript over live Folder" sends the reader to fix the
 	-- wrong tree.
 	check(
-		string.find(tostring(message), "ReplicatedStorage.First: staged Folder over live ModuleScript", 1, true)
-			~= nil,
+		string.find(
+			tostring(message),
+			"ReplicatedStorage.First: staged Folder over live ModuleScript",
+			1,
+			true
+		) ~= nil,
 		"T7: the message names the first collision, got: " .. tostring(message)
 	)
 	check(
-		string.find(tostring(message), "ReplicatedStorage.Second: staged ModuleScript over live Script", 1, true)
-			~= nil,
+		string.find(
+			tostring(message),
+			"ReplicatedStorage.Second: staged ModuleScript over live Script",
+			1,
+			true
+		) ~= nil,
 		"T7: the message names the second collision, got: " .. tostring(message)
 	)
 
@@ -495,14 +503,15 @@ local function testStagedSiblingsCollide()
 
 	check(not ok, "T9: two staged children of one name must error")
 	check(
-		string.find(tostring(message), "ReplicatedStorage.Twin: staged Folder over staged ModuleScript", 1, true)
-			~= nil,
+		string.find(
+			tostring(message),
+			"ReplicatedStorage.Twin: staged Folder over staged ModuleScript",
+			1,
+			true
+		) ~= nil,
 		"T9: the message names the contested name and both stagings, got: " .. tostring(message)
 	)
-	check(
-		#methods.GetChildren(ReplicatedStorage) == 0,
-		"T9: neither staged child lands"
-	)
+	check(#methods.GetChildren(ReplicatedStorage) == 0, "T9: neither staged child lands")
 end
 
 -- T8: a package whose whole stage is one ModuleScript goes to
@@ -518,10 +527,7 @@ local function testModuleScriptStageRoot()
 	check(materialized ~= staged, "T8: the staged copy stays on the stage")
 
 	Materializer.reset()
-	check(
-		methods.FindFirstChild(ReplicatedStorage, "solo") == nil,
-		"T8: reset removes it again"
-	)
+	check(methods.FindFirstChild(ReplicatedStorage, "solo") == nil, "T8: reset removes it again")
 
 	local live = newInstance("Folder", "solo")
 	setParent(live, ReplicatedStorage)
@@ -540,6 +546,174 @@ local function testModuleScriptStageRoot()
 	setParent(staged, nil)
 end
 
+-- The shared pool: one entry every package's marker stands for, staged beside
+-- the packages rather than inside any one of them.
+local SHARED_POOL_ATTRIBUTE = "JestSharedPoolKey"
+local POOL_KEY = "0123456789abcdef"
+
+-- Staged only once the pool cases run, so every case above them exercises the
+-- no-pool path a place built before this pass takes.
+local pooledEntry
+
+local function stagePool()
+	local pool = newInstance("Folder", "__shared")
+	setParent(pool, stage)
+
+	pooledEntry = newInstance("Folder", POOL_KEY)
+	setParent(pooledEntry, pool)
+	setParent(newInstance("ModuleScript", "pooledModule"), pooledEntry)
+	setParent(newInstance("Script", "pooledServer"), pooledEntry)
+end
+
+-- A package whose only mount is a marker for the pooled entry. `rbxts_include`
+-- is what the real one is: the dependency tree every package mounts.
+local function stagePooledPackage(pkgName: string, runContextScripts: boolean)
+	local stagedService = stagePackage(pkgName, runContextScripts)
+
+	local marker = newInstance("Folder", "rbxts_include")
+	methods.SetAttribute(marker, SHARED_POOL_ATTRIBUTE, POOL_KEY)
+	setParent(marker, stagedService)
+end
+
+-- T11: a marker resolves to a clone of the pooled entry carrying the marker's
+-- name. The marker Folder itself is never cloned: a pooled entry can be a
+-- ModuleScript, and a Folder standing in for it would shadow the require.
+local function testPooledMarkerResolves()
+	stagePooledPackage("pooled", true)
+	Materializer.materialize("pooled")
+
+	local include = methods.FindFirstChild(ReplicatedStorage, "rbxts_include")
+	check(include ~= nil, "T11: marker materialized under its own name")
+	check(
+		methods.FindFirstChild(include, "pooledModule") ~= nil,
+		"T11: the pooled entry's children came with it"
+	)
+	check(
+		methods.GetAttribute(include, SHARED_POOL_ATTRIBUTE) == nil,
+		"T11: the marker Folder itself was not cloned"
+	)
+	check(include ~= pooledEntry, "T11: the pooled entry was cloned rather than reparented")
+
+	local pooledServer = methods.FindFirstChild(include, "pooledServer")
+	check(
+		pooledServer.RunContext == Enum.RunContext.Server,
+		"T11: run context restored on the pooled clone"
+	)
+	check(
+		methods.FindFirstChild(pooledEntry, "pooledServer").RunContext == Enum.RunContext.Legacy,
+		"T11: the pooled entry itself left untouched"
+	)
+end
+
+-- T12: reset unwinds a pooled clone like any other, leaving the pool itself for
+-- the next package.
+local function testResetDestroysPooledClone()
+	Materializer.reset()
+
+	check(
+		methods.FindFirstChild(ReplicatedStorage, "rbxts_include") == nil,
+		"T12: reset destroyed the pooled clone"
+	)
+	check(#methods.GetChildren(ReplicatedStorage) == 0, "T12: live service left empty")
+	check(state[pooledEntry].destroyed ~= true, "T12: the pooled entry survives the reset")
+end
+
+-- T13: a package that did not ask for run-context scripts gets the pooled entry
+-- with its Scripts left legacy, exactly as its own staged copies would be.
+local function testPooledMarkerWithoutRunContext()
+	stagePooledPackage("pooledLegacy", false)
+	Materializer.materialize("pooledLegacy")
+
+	local include = methods.FindFirstChild(ReplicatedStorage, "rbxts_include")
+	check(include ~= nil, "T13: marker materialized under its own name")
+	check(
+		methods.FindFirstChild(include, "pooledServer").RunContext == Enum.RunContext.Legacy,
+		"T13: pooled Script left legacy when the package did not opt in"
+	)
+
+	Materializer.reset()
+end
+
+testRestoreRunContextIsLinear()
+testRestoreRunContextReachesEveryDepth()
+testResetClearsMaterialized()
+testWithoutRunContextAttribute()
+
+-- T14: a marker whose name the live service already holds merges into it, the
+-- same way the mount it stands for would have. Force-cloning instead would
+-- leave two same-named siblings and decide a require by resolution order.
+local function testPooledMarkerMergesIntoLiveFolder()
+	local live = newInstance("Folder", "rbxts_include")
+	setParent(live, ReplicatedStorage)
+	setParent(newInstance("ModuleScript", "liveOnly"), live)
+
+	stagePooledPackage("pooledMerge", false)
+	Materializer.materialize("pooledMerge")
+
+	check(
+		#methods.GetChildren(ReplicatedStorage) == 1,
+		"T14: the pooled clone merged rather than joining as a sibling"
+	)
+	check(
+		methods.FindFirstChild(live, "pooledModule") ~= nil,
+		"T14: the pooled entry's children merged in"
+	)
+	check(methods.FindFirstChild(live, "liveOnly") ~= nil, "T14: what was already there survived")
+
+	Materializer.reset()
+
+	check(
+		methods.FindFirstChild(live, "pooledModule") == nil,
+		"T14: reset removed only what it merged in"
+	)
+	check(methods.FindFirstChild(live, "liveOnly") ~= nil, "T14: reset left the live folder alone")
+	live:Destroy()
+end
+
+-- T15: a marker below the top of a staged subtree resolves too. The pass pools
+-- at any depth — `rbxts_include.node_modules.@rbxts.services` is a bare mount
+-- two levels down, and every package shares it — while the live service has no
+-- `rbxts_include` to merge into, so the whole subtree is cloned in one go and
+-- the marker rides along inside it.
+local function testNestedPooledMarkerResolves()
+	local stagedService = stagePackage("nested", true)
+
+	local include = newInstance("Folder", "rbxts_include")
+	setParent(include, stagedService)
+
+	local modules = newInstance("Folder", "node_modules")
+	setParent(modules, include)
+
+	local marker = newInstance("Folder", "services")
+	methods.SetAttribute(marker, SHARED_POOL_ATTRIBUTE, POOL_KEY)
+	setParent(marker, modules)
+
+	Materializer.materialize("nested")
+
+	local liveInclude = methods.FindFirstChild(ReplicatedStorage, "rbxts_include")
+	local liveModules = methods.FindFirstChild(liveInclude, "node_modules")
+	local services = methods.FindFirstChild(liveModules, "services")
+	check(services ~= nil, "T15: the nested marker materialized under its own name")
+	check(
+		methods.FindFirstChild(services, "pooledModule") ~= nil,
+		"T15: the nested marker resolved to the pooled entry"
+	)
+	check(
+		methods.GetAttribute(services, SHARED_POOL_ATTRIBUTE) == nil,
+		"T15: the nested marker Folder itself did not survive"
+	)
+	check(
+		methods.FindFirstChild(services, "pooledServer").RunContext == Enum.RunContext.Server,
+		"T15: run context restored on the nested pooled clone"
+	)
+
+	Materializer.reset()
+	check(
+		methods.FindFirstChild(ReplicatedStorage, "rbxts_include") == nil,
+		"T15: reset unwound the whole cloned subtree"
+	)
+end
+
 testRestoreRunContextIsLinear()
 testRestoreRunContextReachesEveryDepth()
 testResetClearsMaterialized()
@@ -551,5 +725,12 @@ testAllCollisionsReportedTogether()
 testContainersMerge()
 testStagedSiblingsCollide()
 testModuleScriptStageRoot()
+
+stagePool()
+testPooledMarkerResolves()
+testResetDestroysPooledClone()
+testPooledMarkerWithoutRunContext()
+testPooledMarkerMergesIntoLiveFolder()
+testNestedPooledMarkerResolves()
 
 print("ALL OK")

@@ -50,12 +50,12 @@ async function keyForAsync({
 	manifests = [],
 	projectJson = project({ Assets: "assets" }),
 	shadowRoots = [],
-	stagingVersion = 1,
+	stagingVersions = [1],
 }: {
 	manifests?: Array<CoverageManifest>;
 	projectJson?: string;
 	shadowRoots?: Array<string>;
-	stagingVersion?: number;
+	stagingVersions?: ReadonlyArray<number>;
 } = {}) {
 	return computePlaceInputsKeyAsync({
 		digestCacheFile: DIGEST_CACHE,
@@ -63,7 +63,7 @@ async function keyForAsync({
 		projectFile: PROJECT_FILE,
 		projectJson,
 		shadowRoots,
-		stagingVersion,
+		stagingVersions,
 	});
 }
 
@@ -215,9 +215,24 @@ describe(computePlaceInputsKeyAsync, () => {
 		// The passes that run between this key and the built place are code,
 		// not inputs: nothing on disk moves when what they emit changes.
 		vol.fromJSON({ "/cache/assets/model.txt": "one" });
-		const before = await keyForAsync({ stagingVersion: 1 });
+		const before = await keyForAsync({ stagingVersions: [1] });
 
-		await expect(keyForAsync({ stagingVersion: 2 })).resolves.not.toBe(before);
+		await expect(keyForAsync({ stagingVersions: [2] })).resolves.not.toBe(before);
+	});
+
+	it("should report a different key when two pass versions concatenate the same", async () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		// Two passes at 1 and 2 is a different rule from one pass at 12, and a
+		// key that ran them together could not tell a bump from a no-op.
+		vol.fromJSON({ "/cache/assets/model.txt": "one" });
+		const before = await keyForAsync({ stagingVersions: [1, 2] });
+
+		await expect(keyForAsync({ stagingVersions: [12] })).resolves.not.toBe(before);
 	});
 
 	it("should report the same key when the manifests arrive in a different order", async () => {

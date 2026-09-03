@@ -43,9 +43,9 @@ export interface PlaceInputsKeyOptions {
 	 * running the rewrite here puts its own rule inside the key. The walk
 	 * itself reads either frame.
 	 *
-	 * What the pinned-mount pass then writes is a function of this text, of
-	 * the mount trees the walk below covers, and of its own code — which
-	 * `stagingVersion` stands in for. A key that matches therefore says it
+	 * What the staging passes then write is a function of this text, of the
+	 * mount trees the walk below covers, and of their own code — which
+	 * `stagingVersions` stands in for. A key that matches therefore says it
 	 * would write what it wrote last time, which a reused place holds.
 	 */
 	projectJson: string;
@@ -55,12 +55,12 @@ export interface PlaceInputsKeyOptions {
 	 */
 	shadowRoots: Array<string>;
 	/**
-	 * Version of the staging passes that stand between this key and the built
+	 * One version per staging pass standing between this key and the built
 	 * place. They are code rather than inputs, so nothing on disk moves when
 	 * what they emit changes, and a place built by the old rule would read as
 	 * current. Supplied by the caller that runs them.
 	 */
-	stagingVersion: number;
+	stagingVersions: ReadonlyArray<number>;
 }
 
 /**
@@ -93,7 +93,9 @@ export async function computePlaceInputsKeyAsync(
 	}
 
 	const digest = createHash("sha256").update(rojoHash);
-	digest.update(`s\0${String(options.stagingVersion)}`);
+	// Separated rather than concatenated: `[1, 2]` and `[12]` are different
+	// rules, and a key that cannot tell them apart would reuse across a bump.
+	digest.update(`s\0${options.stagingVersions.join("\0")}`);
 	for (const line of manifestLines(options.manifests)) {
 		digest.update(line);
 	}

@@ -51,7 +51,7 @@ describe(computePlaceInputsKeyAsync, () => {
 			projectFile,
 			projectJson,
 			shadowRoots: [],
-			stagingVersion: MANIFEST_VERSION,
+			stagingVersions: [MANIFEST_VERSION],
 		});
 
 		expect(key).toBeTypeOf("string");

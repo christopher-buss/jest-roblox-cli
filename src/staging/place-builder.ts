@@ -13,11 +13,20 @@ import {
 	writePlaceReuseRecord,
 } from "./place-reuse.ts";
 import { relativizeProjectPaths } from "./relativize-paths.ts";
+import { poolSharedMounts, SHARED_POOL_PASS_VERSION } from "./shared-pool.ts";
 import type { PackageDescriptor } from "./synthesizer.ts";
 import { synthesize } from "./synthesizer.ts";
 
 /** Where {@link demotePinnedMountsAsync} parks its Folder-rooted stand-ins. */
 const PINNED_SHADOW_DIR = "pinned-shadow";
+/**
+ * One entry per pass {@link stageAndBuildAsync} runs, because those are the
+ * only staging code the reuse key cannot read off its own inputs: they run
+ * after the key is computed, so nothing on disk moves when what they emit
+ * changes. A pass added to that fold without an entry here reads as current
+ * and hands out a place built by its previous rule.
+ */
+const STAGING_PASS_VERSIONS = [PINNED_MOUNT_PASS_VERSION, SHARED_POOL_PASS_VERSION];
 
 export interface PlaceReuseOptions {
 	/** Where the previous build's key and place hash are recorded. */
@@ -120,6 +129,10 @@ export async function buildPlaceAsync({
  * path as the project expresses it, so absolute ones would leave the ignore
  * list inert. The pinned-mount pass runs before it for the same reason — the
  * ignore entries it adds are expressed in that relative frame.
+ *
+ * The shared pool runs before the pinned-mount pass, so the pinned pass sees
+ * one copy of each offending mount and builds one stand-in for it rather than
+ * one per package.
  */
 async function stageAndBuildAsync({
 	placeFile,
@@ -135,7 +148,7 @@ async function stageAndBuildAsync({
 	const staged = relativizeProjectPaths(
 		await demotePinnedMountsAsync({
 			projectDirectory,
-			projectJson,
+			projectJson: poolSharedMounts({ projectDirectory, projectJson }),
 			shadowDirectory: path.join(projectDirectory, PINNED_SHADOW_DIR),
 		}),
 		projectDirectory,
@@ -175,10 +188,10 @@ async function planReuseAsync({
 		projectFile,
 		projectJson,
 		shadowRoots: reuse.shadowRoots,
-		// The pinned-mount pass is the only staging code the key cannot read
-		// off its own inputs: the path rewrite is already applied to the text
-		// above, so a change to that rule moves the key on its own.
-		stagingVersion: PINNED_MOUNT_PASS_VERSION,
+		// The path rewrite is not among them: it is already applied to the text
+		// this key is computed over, so a change to that rule moves the key on
+		// its own.
+		stagingVersions: STAGING_PASS_VERSIONS,
 	});
 
 	return inputsKey === undefined ? undefined : { cacheFile: reuse.cacheFile, inputsKey };

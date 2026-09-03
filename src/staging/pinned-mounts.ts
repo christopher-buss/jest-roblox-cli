@@ -17,6 +17,7 @@ import {
 	readDeclaredClasses,
 } from "./model-classes.ts";
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
+import { findStage } from "./stage.ts";
 
 export interface DemotePinnedMountsOptions {
 	/** The directory the synthesized project file is written to. */
@@ -63,7 +64,6 @@ interface Walk {
  */
 export const PINNED_MOUNT_PASS_VERSION = 1;
 
-const STAGE_KEY = "__pkg_stage";
 const PINNED_XML_CLASS = /(<Item\s+class=")([^"]+)(")/g;
 /**
  * An item's own properties — the block between its opening tag and its first
@@ -303,20 +303,6 @@ async function buildStandInsAsync(
 	}
 
 	return ignores;
-}
-
-function findStage({ tree }: RojoTreeNode): RojoTreeNode | undefined {
-	if (!isRojoTreeNode(tree)) {
-		return undefined;
-	}
-
-	const serverStorage = tree["ServerStorage"];
-	if (!isRojoTreeNode(serverStorage)) {
-		return undefined;
-	}
-
-	const stage = serverStorage[STAGE_KEY];
-	return isRojoTreeNode(stage) ? stage : undefined;
 }
 
 function readGlobIgnorePaths({ globIgnorePaths: value }: RojoTreeNode): Array<string> {

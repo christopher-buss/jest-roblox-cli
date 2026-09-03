@@ -15,6 +15,11 @@ local materialized: { Instance } = {}
 -- project declares `emitLegacyScripts: false`.
 local RUN_CONTEXT_ATTRIBUTE = "JestRunContextScripts"
 
+-- Set on a marker by the shared-pool staging pass, naming the entry under
+-- ServerStorage.__pkg_stage.__shared that the marker stands for.
+local SHARED_POOL_ATTRIBUTE = "JestSharedPoolKey"
+local SHARED_POOL_NAME = "__shared"
+
 -- A `RunContext = Server` script runs wherever it sits in the DataModel, so the
 -- staged copy would run at place load — before any package is materialized, and
 -- again once it is. The place is therefore always built with legacy script
@@ -50,7 +55,54 @@ local function isContainer(instance: Instance): boolean
 	return instance:IsA("Folder") or instance:IsA("Model")
 end
 
-type Step = { child: Instance, dest: Instance }
+-- The entry a marker stands for. The place holds one copy of a mount several
+-- packages share, under `__shared`, and each package's stage holds a Folder
+-- naming it instead of a copy of its own. Everything downstream reads the
+-- entry rather than the marker: a pooled entry can be a ModuleScript, and a
+-- Folder standing in for it would merge where the entry would collide, and
+-- shadow the require where it landed.
+local function pooledEntry(pool: Instance?, source: Instance): Instance?
+	-- The nil test first: a stage with no pool has no markers either, and
+	-- GetAttribute is the pricier of the two questions to ask per child.
+	if pool == nil then
+		return nil
+	end
+
+	local key = source:GetAttribute(SHARED_POOL_ATTRIBUTE)
+	if typeof(key) ~= "string" then
+		return nil
+	end
+
+	local entry = pool:FindFirstChild(key)
+	assert(entry, "no pooled entry for " .. key)
+	return entry
+end
+
+-- Markers below the top of a cloned subtree. A staged child is cloned whole
+-- once the plan gives it a landing site, so every marker inside it comes
+-- across as the Folder it was; the pass pools at any depth, and
+-- `rbxts_include.node_modules.@rbxts.services` is two levels down. Each one is
+-- swapped for a clone of the entry it names, in place and under its own name.
+--
+-- One pass, for the reason `restoreRunContext` gives: `GetDescendants` is
+-- already the whole subtree. Nothing recurses into the swapped-in clone,
+-- because a pooled entry is built from a `$path` and can hold no marker.
+local function resolveNestedMarkers(root: Instance, pool: Instance)
+	for _, descendant in root:GetDescendants() do
+		local entry = pooledEntry(pool, descendant)
+		if entry then
+			local resolved = entry:Clone()
+			resolved.Name = descendant.Name
+			resolved.Parent = descendant.Parent
+			descendant:Destroy()
+		end
+	end
+end
+
+-- What one planned clone does: take `source`, answer to the name `child`
+-- carried, and land under `dest`. The two differ only for a marker, where the
+-- source is the pooled entry and the name is the marker's.
+type Step = { child: Instance, dest: Instance, source: Instance }
 type Plan = {
 	add: (children: { Instance }, dest: Instance) -> (),
 	collisions: { string },
@@ -71,7 +123,7 @@ type Plan = {
 -- The name a step claims is held against later steps too. Nothing is parented
 -- during the walk, so a second staged child of that name would otherwise find
 -- the destination free and land beside the first.
-local function newPlan(): Plan
+local function newPlan(pool: Instance?): Plan
 	local claimed: { [Instance]: { [string]: Instance } } = {}
 	local collisions: { string } = {}
 	local steps: { Step } = {}
@@ -84,6 +136,9 @@ local function newPlan(): Plan
 		end
 
 		for _, child in children do
+			-- Resolved before anything is decided, so a marker merges, clones
+			-- and collides exactly as the mount it stands for would have.
+			local source = pooledEntry(pool, child) or child
 			local sibling = held[child.Name]
 			local existing = dest:FindFirstChild(child.Name)
 
@@ -92,7 +147,7 @@ local function newPlan(): Plan
 				-- A staged sibling claimed the name first. Its clone does not
 				-- exist yet, so there is nothing to merge into.
 				occupant = "staged " .. sibling.ClassName
-			elseif existing ~= nil and not (isContainer(existing) and isContainer(child)) then
+			elseif existing ~= nil and not (isContainer(existing) and isContainer(source)) then
 				occupant = "live " .. existing.ClassName
 			end
 
@@ -103,15 +158,15 @@ local function newPlan(): Plan
 						"%s.%s: staged %s over %s",
 						dest:GetFullName(),
 						child.Name,
-						child.ClassName,
+						source.ClassName,
 						occupant
 					)
 				)
 			elseif existing ~= nil then
-				add(child:GetChildren(), existing)
+				add(source:GetChildren(), existing)
 			else
-				held[child.Name] = child
-				table.insert(steps, { child = child, dest = dest })
+				held[child.Name] = source
+				table.insert(steps, { child = child, dest = dest, source = source })
 			end
 		end
 	end
@@ -137,7 +192,8 @@ function module.materialize(pkgName: string)
 	assert(staged, "no stage for " .. pkgName)
 
 	local runContextScripts = staged:GetAttribute(RUN_CONTEXT_ATTRIBUTE) == true
-	local plan = newPlan()
+	local pool = stage:FindFirstChild(SHARED_POOL_NAME)
+	local plan = newPlan(pool)
 
 	if staged:IsA("ModuleScript") then
 		-- A package whose whole stage is one module has no service layer to
@@ -176,7 +232,18 @@ function module.materialize(pkgName: string)
 	end
 
 	for _, step in plan.steps do
-		local cloned = step.child:Clone()
+		local cloned = step.source:Clone()
+		if step.source ~= step.child then
+			cloned.Name = step.child.Name
+		end
+
+		-- Before the run-context restore, so a script inside a pooled entry
+		-- starts under the context the consuming package asked for, exactly as
+		-- one the package staged itself does.
+		if pool then
+			resolveNestedMarkers(cloned, pool)
+		end
+
 		-- Before parenting: a script that enters a live service starts
 		-- running, and it should start under the context it asked for.
 		if runContextScripts then

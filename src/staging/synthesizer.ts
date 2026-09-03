@@ -14,6 +14,7 @@ import {
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
+import { STAGE_KEY } from "./stage.ts";
 
 export interface StubMount {
 	absStubPath: string;
@@ -200,7 +201,7 @@ export function synthesize(input: SynthesizeInput): string {
 		$className: "DataModel",
 		ServerStorage: {
 			$className: "ServerStorage",
-			__pkg_stage: stage,
+			[STAGE_KEY]: stage,
 		},
 	};
 

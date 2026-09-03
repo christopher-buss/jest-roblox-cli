@@ -7,6 +7,8 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { createCopyIgnoreMatcher } from "../src/coverage-pipeline/discover-files.ts";
 import { prepareSpine, resolveSpineDirectories } from "../src/coverage-pipeline/spine.ts";
+import { buildPlaceAsync } from "../src/staging/place-builder.ts";
+import type { PackageDescriptor } from "../src/staging/synthesizer.ts";
 import { synthesize } from "../src/staging/synthesizer.ts";
 import { normalizeWindowsPath } from "../src/utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../src/utils/rojo-builder.ts";
@@ -72,7 +74,77 @@ function childNames(node: SourcemapNode): Array<string> {
 	return children.map((child) => child.name);
 }
 
+/**
+ * A package whose rojo project mounts the workspace-level `shared/` directory
+ * beside its own sources — the shape every package in a real workspace has,
+ * where `shared/` stands for `include/` and the generated `node_modules`.
+ */
+function writeSharingPackage(workspace: string, name: string): PackageDescriptor {
+	const packageDirectory = path.join(workspace, "packages", name);
+	fs.mkdirSync(path.join(packageDirectory, "src"), { recursive: true });
+	fs.writeFileSync(path.join(packageDirectory, "src", `${name}.luau`), "return {}\n");
+	fs.writeFileSync(
+		path.join(packageDirectory, "test.project.json"),
+		JSON.stringify({
+			name: `${name}-test`,
+			tree: {
+				$className: "DataModel",
+				ReplicatedStorage: {
+					$className: "ReplicatedStorage",
+					Src: { $path: "src" },
+					// Nested, the way a real project mounts its dependencies —
+					// `rbxts_include.node_modules.<scope>` sits two levels under
+					// the service, so the pass has to reach below the top.
+					Vendor: { Shared: { $path: "../../shared" } },
+				},
+			},
+		}),
+	);
+
+	return {
+		name: `@halcyon/${name}`,
+		packageDirectory,
+		rojoProjectPath: path.join(packageDirectory, "test.project.json"),
+	};
+}
+
 describe("synthesizer + rojo build integration", () => {
+	it.skipIf(!rojoOnPath())(
+		"should build a directory two packages mount into the place once",
+		async () => {
+			expect.assertions(4);
+
+			const workspace = createTemporaryDirectory();
+			const shared = path.join(workspace, "shared");
+			fs.mkdirSync(shared, { recursive: true });
+			fs.writeFileSync(path.join(shared, "sharedModule.luau"), "return {}\n");
+
+			const synthDirectory = path.join(workspace, ".jest-roblox/workspace");
+			const synthProjectPath = path.join(synthDirectory, "synthesized.project.json");
+			await buildPlaceAsync({
+				packages: [
+					writeSharingPackage(workspace, "foo"),
+					writeSharingPackage(workspace, "bar"),
+				],
+				placeFile: path.join(synthDirectory, "synthesized.rbxl"),
+				projectFile: synthProjectPath,
+			});
+
+			const root = readSourcemap(synthProjectPath);
+			const pool = namedNodes(root, "__shared");
+
+			// One copy of the shared directory in the whole place, under the
+			// pool, and a marker in each package where the copy used to be.
+			expect(namedNodes(root, "sharedModule")).toHaveLength(1);
+			expect(pool).toHaveLength(1);
+			expect(childNames(pool[0]!)).toHaveLength(1);
+			expect(namedNodes(root, "Shared").map((node) => childNames(node))).toStrictEqual([
+				[],
+				[],
+			]);
+		},
+	);
+
 	it.skipIf(!rojoOnPath())(
 		"should produce a project.json that rojo can build into a valid rbxl",
 		async () => {
