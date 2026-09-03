@@ -475,16 +475,6 @@ describe(decodeEnvelope, () => {
 });
 
 describe("timed-out entries", () => {
-	it("should keep the timedOut flag on the decoded entry", () => {
-		expect.assertions(1);
-
-		const jestOutput = JSON.stringify({
-			entries: [{ jestOutput: successJest(), pkg: "alpha", timedOut: true }],
-		});
-
-		expect(decodeEnvelope(jestOutput).entries[0]).toHaveProperty("timedOut", true);
-	});
-
 	it("should mark the raised error as a timeout so the report can say so", () => {
 		expect.assertions(2);
 
@@ -493,9 +483,9 @@ describe("timed-out entries", () => {
 				entry({
 					jestOutput: JSON.stringify({
 						err: "Timed out after 60s, aborting tests",
+						runner: { abandon: "timeout" },
 						success: false,
 					}),
-					timedOut: true,
 				}),
 				job("alpha"),
 				undefined,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import type { JestResult } from "../types/jest-result.ts";
 import {
@@ -1828,5 +1828,55 @@ describe("promise trace boundaries", () => {
 		expect(() => {
 			return parseJestOutput(JSON.stringify({ err: message, success: false }));
 		}).toThrowWithMessage(Error, message);
+	});
+});
+
+describe("abandon reason", () => {
+	function thrownFrom(output: string): LuauScriptError {
+		try {
+			parseJestOutput(output);
+		} catch (err) {
+			assert(err instanceof LuauScriptError);
+			return err;
+		}
+
+		throw new Error("expected the envelope to throw");
+	}
+
+	it("should mark a run the runner abandoned at its budget", () => {
+		expect.assertions(2);
+
+		const error = thrownFrom(
+			JSON.stringify({
+				err: "Timed out after 60s, aborting tests",
+				runner: { abandon: "timeout" },
+				success: false,
+			}),
+		);
+
+		expect(error.timedOut).toBeTrue();
+		expect(error.message).toBe("Timed out after 60s, aborting tests");
+	});
+
+	it("should leave a failure the runner did not abandon unmarked", () => {
+		expect.assertions(1);
+
+		const error = thrownFrom(JSON.stringify({ err: "boom", success: false }));
+
+		expect(error.timedOut).toBeUndefined();
+	});
+
+	// The block is read with the same leniency every other runner field gets:
+	// a producer that drifts drops the dimension rather than failing the parse
+	// and losing the cause the report is actually about.
+	it("should ignore an abandon reason it does not know", () => {
+		expect.assertions(2);
+
+		const error = thrownFrom(
+			JSON.stringify({ err: "boom", runner: { abandon: "wedged" }, success: false }),
+		);
+
+		expect(error.timedOut).toBeUndefined();
+		expect(error.message).toBe("boom");
 	});
 });

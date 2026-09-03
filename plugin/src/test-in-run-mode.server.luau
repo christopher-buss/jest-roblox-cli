@@ -265,8 +265,7 @@ local function runInVmHosts(requested: number): ({ any }?, string?)
 			configIndex: number,
 			jestOutput: string,
 			bannerOutput: string,
-			elapsedMs: number,
-			timedOut: boolean?
+			elapsedMs: number
 		)
 			if received[configIndex] ~= nil then
 				return
@@ -276,7 +275,6 @@ local function runInVmHosts(requested: number): ({ any }?, string?)
 				bannerOutput = bannerOutput,
 				elapsedMs = elapsedMs,
 				jestOutput = jestOutput,
-				timedOut = timedOut,
 			}
 			receivedCount += 1
 		end

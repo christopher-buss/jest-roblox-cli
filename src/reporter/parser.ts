@@ -32,8 +32,8 @@ export class LuauScriptError extends Error {
 	 */
 	public gameOutput: string | undefined;
 	/**
-	 * The entry this failure came from was abandoned at its `projectTimeout`.
-	 * Set by `buildProjectResult` from the envelope entry, and read by the
+	 * The run this failure came from was abandoned at its `projectTimeout`.
+	 * Set from the envelope's own `runner.abandon` block, and read by the
 	 * exec-error report so a timeout renders apart from a suite that threw.
 	 */
 	public timedOut: boolean | undefined;
@@ -76,6 +76,7 @@ const jestEnvelopeSchema = type({
 type JestEnvelope = typeof jestEnvelopeSchema.infer;
 
 const runnerFieldsSchema = type({
+	"abandon?": "unknown",
 	"coverage?": jsonValueSchema,
 	"perTestCoverage?": "unknown",
 	"setup?": "unknown",
@@ -357,9 +358,14 @@ function stringifyError(err: JSONValue): string {
 	return JSON.stringify(err);
 }
 
-function unwrapResult(parsed: JestEnvelope): JestEnvelope {
+function unwrapResult(parsed: JestEnvelope, runner: RunnerFields): JestEnvelope {
 	if (parsed.err !== undefined && parsed.success === false) {
-		throw new LuauScriptError(stringifyError(parsed.err));
+		const error = new LuauScriptError(stringifyError(parsed.err));
+		// Read off the same `runner` block every other dimension comes from,
+		// so a runner that gives up on a run says so through the shared result
+		// seam rather than through a field of its own on the envelope entry.
+		error.timedOut = runner.abandon === "timeout" ? true : undefined;
+		throw error;
 	}
 
 	if (parsed.value !== undefined && parsed.success === true) {
@@ -437,7 +443,7 @@ function parseParsedOutput(parsed: JestEnvelope): ParseResult {
 	const perTestCoverage = extractPerTestCoverage(runner);
 	const setupSeconds = extractSetupSeconds(runner);
 	const snapshotWrites = extractSnapshotWrites(runner);
-	const unwrapped = unwrapResult(parsed);
+	const unwrapped = unwrapResult(parsed, runner);
 
 	if (unwrapped.kind === "ExecutionError") {
 		const errorMessage = extractExecutionError(unwrapped);

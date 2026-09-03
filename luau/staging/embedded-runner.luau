@@ -86,10 +86,6 @@ export type ResultEntry = {
 	snapshotWrites: SnapshotWrites?,
 	gameOutput: string?,
 	bannerOutput: string?,
-	-- The budget elapsed before Jest returned, so `jestOutput` carries the
-	-- abandon message rather than a result. The host reports it apart from a
-	-- suite that threw.
-	timedOut: boolean?,
 }
 
 type StreamingSummary = {
@@ -120,7 +116,9 @@ end
 -- `jestSuccess=false` means Jest itself rejected; `jestOutputOrErrorMessage`
 -- carries the normalized cause string in that case, otherwise the encoded
 -- success envelope. `timedOut` is true only for the one rejection the watchdog
--- raised itself, having spent the entry's whole budget.
+-- raised itself, having spent the entry's whole budget. It stays a local
+-- answer: the caller tears the stage down on it, and encodes it for the host
+-- as the failure envelope's abandon reason.
 --
 -- `bannerOutput` is the narrower InterceptWriteable capture of Jest's
 -- own process.stdout/stderr writes, used by the CLI error banner to
@@ -435,10 +433,9 @@ local function executeEntry(
 			pkg = entry.pkg,
 			project = entry.project,
 			elapsedMs = elapsedMs,
-			jestOutput = HttpService:JSONEncode({
-				success = false,
-				err = PromiseError.normalize(stageErr),
-			}),
+			jestOutput = HttpService:JSONEncode(
+				RunnerResult.fail(PromiseError.normalize(stageErr))
+			),
 			gameOutput = stopCapture(),
 		}
 		return publishEntry(result, payload, bail), entry.pkg
@@ -470,10 +467,9 @@ local function executeEntry(
 			pkg = entry.pkg,
 			project = entry.project,
 			elapsedMs = elapsedMs,
-			jestOutput = HttpService:JSONEncode({
-				success = false,
-				err = PromiseError.normalize(jestSuccess),
-			}),
+			jestOutput = HttpService:JSONEncode(
+				RunnerResult.fail(PromiseError.normalize(jestSuccess))
+			),
 			gameOutput = gameOutput,
 		}
 	elseif jestSuccess then
@@ -491,13 +487,11 @@ local function executeEntry(
 			pkg = entry.pkg,
 			project = entry.project,
 			elapsedMs = elapsedMs,
-			jestOutput = HttpService:JSONEncode({
-				success = false,
-				err = primary,
-			}),
+			jestOutput = HttpService:JSONEncode(
+				RunnerResult.fail(primary, { abandon = if abandoned then "timeout" else nil })
+			),
 			gameOutput = gameOutput,
 			bannerOutput = bannerOutput,
-			timedOut = if timedOut then true else nil,
 		}
 	end
 

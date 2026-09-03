@@ -22,12 +22,6 @@ export interface EnvelopeEntry {
 	pkg?: string | undefined;
 	project?: string | undefined;
 	snapshotWrites?: SnapshotWrites | undefined;
-	/**
-	 * The runner abandoned this entry at its `projectTimeout` rather than
-	 * waiting for Jest. `jestOutput` then carries the abandon message, not a
-	 * result, so the entry reports as a failure that names the budget.
-	 */
-	timedOut?: boolean | undefined;
 }
 
 export interface ProjectJob {

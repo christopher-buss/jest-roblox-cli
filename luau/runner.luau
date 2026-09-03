@@ -33,28 +33,17 @@ type Config = {
 	runnerTiming: boolean?,
 }
 
-local function fail(err: string)
-	return {
-		success = false,
-		err = err,
-	}
-end
-
 local module = {}
 
 --[=[
-	Run one config and return its (jestResult, gameOutput, bannerOutput,
-	timedOut) quad.
+	Run one config and return its (jestResult, gameOutput, bannerOutput) triple.
 
-	`timedOut` says the run was abandoned at `runnerTimeoutMs` rather than
-	failing; `jestResult` then carries the abandon message. Workspace mode
-	reports the same flag from its own runner, so the host tells the two apart
+	A run abandoned at `runnerTimeoutMs` says so inside `jestResult`, as the
+	failure envelope's abandon reason — the same field workspace mode fills
+	from its own runner, so the host tells an abandoned run from a failed one
 	the same way whichever mode produced the entry.
 ]=]
-function module.run(
-	callingScript: LuaSourceContainer,
-	config: Config
-): (string, string, string, boolean)
+function module.run(callingScript: LuaSourceContainer, config: Config): (string, string, string)
 	local t0 = os.clock()
 	local timingEnabled = config.runnerTiming
 	local coverageEnabled = config.runnerCoverage
@@ -83,7 +72,7 @@ function module.run(
 	local t_findJest = os.clock()
 
 	if not findSuccess then
-		return HttpService:JSONEncode(fail(findValue :: any)), encodeGameOutput(), "[]", false
+		return HttpService:JSONEncode(RunnerResult.fail(findValue)), encodeGameOutput(), "[]"
 	end
 
 	local snapshotWrites: { [string]: string } = {}
@@ -237,7 +226,9 @@ function module.run(
 
 	local jestResult
 	if not runSuccess then
-		jestResult = HttpService:JSONEncode(fail(runValue :: any))
+		jestResult = HttpService:JSONEncode(
+			RunnerResult.fail(runValue, { abandon = if timedOut then "timeout" else nil })
+		)
 	else
 		jestResult = HttpService:JSONEncode(runValue)
 	end
@@ -246,7 +237,7 @@ function module.run(
 		return HttpService:JSONEncode(capturedMessages)
 	end)
 
-	return jestResult, encodeGameOutput(), if bannerEncodeOk then bannerEncoded else "[]", timedOut
+	return jestResult, encodeGameOutput(), if bannerEncodeOk then bannerEncoded else "[]"
 end
 
 type ProjectEntry = {
@@ -254,7 +245,6 @@ type ProjectEntry = {
 	gameOutput: string,
 	bannerOutput: string,
 	elapsedMs: number,
-	timedOut: boolean?,
 }
 
 local function encodeExecutionError(err: any): string
@@ -280,7 +270,6 @@ type RunHooks = {
 	afterConfig: ((cfg: Config, index: number) -> ())?,
 }
 
--- TODO(runner-tests): dogfood harness for Runner.runProjects
 function module.runProjects(
 	callingScript: LuaSourceContainer,
 	configs: { Config },
@@ -299,11 +288,10 @@ function module.runProjects(
 			beforeOk, beforeErr = pcall(hooks.beforeConfig, cfg, index)
 		end
 
-		local ok: boolean, jestOutput: any, gameOutput: any, bannerOutput: any, timedOut: any =
-			false, nil, nil, nil, nil
+		local ok: boolean, jestOutput: any, gameOutput: any, bannerOutput: any =
+			false, nil, nil, nil
 		if beforeOk then
-			ok, jestOutput, gameOutput, bannerOutput, timedOut =
-				pcall(module.run, callingScript, cfg)
+			ok, jestOutput, gameOutput, bannerOutput = pcall(module.run, callingScript, cfg)
 		else
 			jestOutput = beforeErr
 		end
@@ -326,7 +314,6 @@ function module.runProjects(
 				gameOutput = gameOutput :: string,
 				bannerOutput = bannerOutput :: string,
 				elapsedMs = elapsedMs,
-				timedOut = if timedOut then true else nil,
 			}
 		else
 			entries[index] = {

@@ -285,6 +285,44 @@ local function testTiming()
 	check(untimed.runner == nil, "T10: no timing means no runner key")
 end
 
+-- T11: the failure half of the seam. A run that produced no result assembles
+-- here too, so the envelope a runner emits when it fails is the one this module
+-- decides rather than one hand-rolled at each throw site.
+local function testFailureEnvelope()
+	reset()
+	local payload = RunnerResult.fail("boom")
+
+	check(payload.success == false, "T11: the payload reports failure")
+	check(payload.err == "boom", "T11: the cause travels as given")
+	check(payload.value == nil, "T11: a failure carries no result")
+	check(payload.runner == nil, "T11: no dimensions means no runner key")
+end
+
+-- T12: why a run was abandoned rides in the same `runner` block every other
+-- dimension does, so the host reads it where it reads the rest instead of from
+-- a field of its own on the entry.
+local function testAbandonReason()
+	reset()
+	local payload = RunnerResult.fail("Timed out after 5s, aborting tests", {
+		abandon = "timeout",
+	})
+
+	check(payload.success == false, "T12: an abandoned run is a failure")
+	check(payload.runner ~= nil, "T12: the abandon reason populates the runner key")
+	check(payload.runner.abandon == "timeout", "T12: and it names the budget")
+	check(payload.err ~= nil, "T12: the abandon message travels as the cause")
+end
+
+-- T13: a failure with dimensions the run did not produce stays as bare as one
+-- with none. An empty `runner` block encodes as `[]`, which reads on the host
+-- as a populated-but-empty answer rather than as no answer at all.
+local function testFailureWithoutAbandon()
+	reset()
+	local payload = RunnerResult.fail("boom", {})
+
+	check(payload.runner == nil, "T13: an empty dimension set attaches nothing")
+end
+
 testBareRunHasNoRunnerKey()
 testCoverageAttachesTheSink()
 testCoverageOffAttachesNothing()
@@ -297,5 +335,8 @@ testFailedInstallFailsTheRun()
 testSetupSeconds()
 testSnapshotWrites()
 testTiming()
+testFailureEnvelope()
+testAbandonReason()
+testFailureWithoutAbandon()
 
 print("ALL OK")

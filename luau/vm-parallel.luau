@@ -17,9 +17,6 @@ export type ProjectEntry = {
 	elapsedMs: number,
 	gameOutput: string?,
 	jestOutput: string,
-	-- The runner abandoned this config at its budget. Absent on every entry
-	-- this module builds itself: a slice that failed did not run out of time.
-	timedOut: boolean?,
 }
 
 export type Encode = (value: any) -> string

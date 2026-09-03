@@ -10,6 +10,10 @@
 -- goes missing from the other with no type error to catch it: the host parser
 -- reads every field as optional, so an absent one reads as "the run had none"
 -- rather than as a fault. Add a dimension here, not in a runner.
+--
+-- Both outcomes route here too — `build` for a run that produced a result and
+-- `fail` for one that did not. A dimension only a failed run can carry has the
+-- same seam as any other, rather than a field of its own beside the envelope.
 
 local InstanceResolver = require("./instance-resolver")
 local PerTestCoverage = require("./per-test-coverage")
@@ -45,7 +49,24 @@ export type Dimensions = {
 	timing: { [string]: number }?,
 }
 
+--[=[
+	Why a run stopped short of producing a result at all.
+
+	Only a failed run carries one, which is why it is named rather than a
+	boolean: the next reason a run is given up on is a second value here, not a
+	second flag threaded down the wire beside this one.
+]=]
+export type Abandon = "timeout"
+
+-- What a runner measured about a run that produced no result. Same
+-- empty-is-absent rule as `Dimensions`: a failure the runner did not abandon
+-- passes nothing and the envelope grows no `runner` block.
+export type FailureDimensions = {
+	abandon: Abandon?,
+}
+
 export type RunnerFields = {
+	abandon: Abandon?,
 	coverage: { [string]: any }?,
 	perTestCoverage: { PerTestCoverage.Record }?,
 	setup: number?,
@@ -53,10 +74,14 @@ export type RunnerFields = {
 	timing: { [string]: number }?,
 }
 
+-- `value` on a run that produced a result, `err` on one that did not. The two
+-- halves share a shape so the host reads the `runner` block the same way
+-- whichever half it holds.
 export type Payload = {
+	err: any?,
 	runner: RunnerFields?,
 	success: boolean,
-	value: any,
+	value: any?,
 }
 
 local module = {}
@@ -202,6 +227,29 @@ function module.build(value: any, dimensions: Dimensions): Payload
 
 	if next(runner :: any) then
 		payload.runner = runner
+	end
+
+	return payload
+end
+
+--[=[
+	Assemble the envelope a runner returns for a run that produced no result.
+
+	`build`'s other half, and here for the same reason: a dimension only a
+	failed run can carry — why the run was given up on — otherwise has no seam
+	to land on, and gets plumbed per runner and then again across the wire as a
+	field of its own. Kept beside `build` so both halves put a runner's fields
+	under the same `runner` key, and the host reads them in one place.
+]=]
+function module.fail(err: any, dimensions: FailureDimensions?): Payload
+	local payload: Payload = {
+		err = err,
+		success = false,
+	}
+
+	local abandon = if dimensions then dimensions.abandon else nil
+	if abandon ~= nil then
+		payload.runner = { abandon = abandon }
 	end
 
 	return payload

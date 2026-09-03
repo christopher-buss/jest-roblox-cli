@@ -46,7 +46,7 @@ local function report(configIndex: number, entry: any): ()
 	-- source identity, so under parallel every host captures every other host's
 	-- output; the coordinator owns one batch-scoped capture instead, and the
 	-- CLI labels it as batch-scoped.
-	results:Fire(configIndex, entry.jestOutput, entry.bannerOutput, entry.elapsedMs, entry.timedOut)
+	results:Fire(configIndex, entry.jestOutput, entry.bannerOutput, entry.elapsedMs)
 end
 
 --[[

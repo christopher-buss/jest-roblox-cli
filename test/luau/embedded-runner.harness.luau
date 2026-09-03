@@ -718,8 +718,11 @@ local function testElapsedBudgetAbandonsOnlyItsPackage()
 	check(#results == 2, "T15: the batch runs on past the abandoned package")
 
 	local abandoned = HttpService:JSONDecode(results[1].jestOutput)
-	check(results[1].timedOut == true, "T15: the abandoned package is reported as timed out")
 	check(abandoned.success == false, "T15: an abandoned package is a failure")
+	check(
+		abandoned.runner.abandon == "timeout",
+		"T15: the abandoned package says the budget is what ended it"
+	)
 	check(
 		string.find(abandoned.err, "Timed out after 5s", 1, true) ~= nil,
 		"T15: the failure names the budget"
@@ -731,21 +734,22 @@ local function testElapsedBudgetAbandonsOnlyItsPackage()
 
 	local second = HttpService:JSONDecode(results[2].jestOutput)
 	check(second.success == true, "T15: the next package still runs")
-	check(results[2].timedOut == nil, "T15: a package that finished is not marked timed out")
+	check(second.runner == nil, "T15: a package that finished names no abandon reason")
 	check(
 		has(messagesOf(results[2]), "materialize:b"),
 		"T15: the next package stages itself afresh"
 	)
 end
 
--- T16: a batch whose packages all finish inside their budget reports none of
--- them as timed out, so the flag stays absent rather than riding on every
--- entry as false.
-local function testWithinBudgetLeavesTheFlagAbsent()
+-- T16: a batch whose packages all finish inside their budget names no abandon
+-- reason, so the field stays absent rather than riding on every envelope as a
+-- reason that did not apply.
+local function testWithinBudgetLeavesTheReasonAbsent()
 	local results = EmbeddedRunner.runEmbedded({}, { entries = { budgetedEntryFor("a", 5000) } })
 
-	check(results[1].timedOut == nil, "T16: a package within budget carries no flag")
-	check(HttpService:JSONDecode(results[1].jestOutput).success == true, "T16: and it passed")
+	local decoded = HttpService:JSONDecode(results[1].jestOutput)
+	check(decoded.success == true, "T16: the package passed")
+	check(decoded.runner == nil, "T16: a package within budget names no abandon reason")
 end
 
 -- T17: under --bail a package that ran out of budget stops the batch, the same
@@ -766,7 +770,10 @@ local function testElapsedBudgetBailsTheBatch()
 
 	local results, runOutcome = outcome.results, outcome.second
 	check(#results == 1, "T17: the batch stops at the abandoned package")
-	check(results[1].timedOut == true, "T17: and that package is the abandoned one")
+	check(
+		HttpService:JSONDecode(results[1].jestOutput).runner.abandon == "timeout",
+		"T17: and that package is the abandoned one"
+	)
 	check(runOutcome.bailed == true, "T17: the task reports the bail")
 end
 
@@ -785,7 +792,7 @@ testRunnerFlagsAreStripped()
 testCoverageWithoutAttribution()
 testInfiniteYieldFailsOnlyItsPackage()
 testElapsedBudgetAbandonsOnlyItsPackage()
-testWithinBudgetLeavesTheFlagAbsent()
+testWithinBudgetLeavesTheReasonAbsent()
 testElapsedBudgetBailsTheBatch()
 
 print("ALL OK")
