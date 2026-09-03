@@ -339,7 +339,7 @@ function writePackageManifest({
 	// atomicWrite creates the manifest's parent directory, so a package with no
 	// instrumentable luau roots (the loop above ran zero times, leaving
 	// packageShadowRoot uncreated) still gets a manifest written.
-	atomicWrite(manifestPath, JSON.stringify(manifest, undefined, "\t"));
+	atomicWrite({ contents: JSON.stringify(manifest, undefined, "\t"), targetPath: manifestPath });
 
 	return manifest;
 }

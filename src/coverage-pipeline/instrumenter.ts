@@ -235,8 +235,9 @@ function instrumentFile(
 		prepareTwinPath(relativePath, shadowFilePath, { createdDirectories, shadowDir });
 		fs.writeFileSync(shadowFilePath, instrumentedSource);
 		// Same directory as the twin, already made above — but `atomicWrite`
-		// under here remakes it per file. Deduping that too would mean an
-		// opt-out on a helper six publishers share, for microseconds.
+		// under here remakes it per file. Deduping that too would mean a second
+		// opt-out on a helper the package's publishers share, for microseconds;
+		// the one `writeCoverageMap` already takes buys more than that.
 		writeCoverageMap(coverageMapOutputPath, coverageMap);
 	});
 

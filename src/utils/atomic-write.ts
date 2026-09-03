@@ -1,4 +1,5 @@
 import type { Buffer } from "node:buffer";
+import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
@@ -17,22 +18,74 @@ const RENAME_ATTEMPTS = 5;
  */
 const RENAME_RETRY_PAUSE_MS = 2;
 
+/** What separates a temp file's target basename from the stamp that owns it. */
+const TEMPORARY_INFIX = ".tmp.";
+
+/**
+ * How much randomness the stamp's nonce carries. The pid is what the sweep
+ * probes; the nonce is what keeps the probe's answer true until the delete
+ * lands. An operating system recycles a pid, so a name built from the pid alone
+ * is one a later writer can be handed while an abandoned file still holds it —
+ * and the sweep, having probed the pid between the two, deletes a write in
+ * flight. No two writes draw the same nonce, so the name the sweep resolves
+ * belongs to the owner it probed and to nothing else.
+ */
+const NONCE_BYTES = 4;
+
+/** An owner pid and its write's nonce, and nothing else, close the name. */
+const OWNER_STAMP_REGEX = /^(\d+)\.[\da-f]+$/;
+
+export interface AtomicWriteOptions {
+	/** The bytes to publish. */
+	readonly contents: Buffer | string;
+	/**
+	 * Whether to collect this target's abandoned temp files first. On by
+	 * default; a publisher that writes a directory's worth of one-shot targets
+	 * turns it off, since the scan is per write and the strays it would find
+	 * belong to a rebuilt tree. Omitting it costs a directory scan, never a
+	 * lost write.
+	 */
+	readonly sweepStrays?: boolean;
+	/** Where the bytes land, once whole. */
+	readonly targetPath: string;
+}
+
 /**
  * Publish `contents` to `targetPath` atomically: write to a sibling temp file
  * then `renameSync` into place, so a reader never observes a partial write at
  * the target. The temp file lives in the target's own directory to keep the
  * rename on a single filesystem. Parent directories are created as needed.
  *
- * The guarantee is scoped to `targetPath`: a failed write leaves the temp file
- * behind rather than a partial target — temp cleanup is not attempted.
+ * The guarantee is scoped to `targetPath`: a failed write, or a hard kill
+ * between the two steps, leaves the temp file behind rather than a partial
+ * target. Those strays accumulate, so each publish first sweeps the ones this
+ * target has collected, skipping any whose owner is still running.
+ *
+ * That the owner is named by the temp file itself is what lets the sweep live
+ * here rather than at the one caller holding a lock over its target — see
+ * `isProcessAlive` and `NONCE_BYTES` for what the two halves of that name
+ * settle between them. A caller that does hold a lock gets the sweep inside it
+ * at no extra cost.
  *
  * The rename is retried a bounded number of times; the last failure surfaces
  * once the attempts are spent.
+ *
+ * @param options - Destination, contents, and whether to sweep first.
  */
-export function atomicWrite(targetPath: string, contents: Buffer | string): void {
+export function atomicWrite({
+	contents,
+	sweepStrays = true,
+	targetPath,
+}: AtomicWriteOptions): void {
 	const directory = path.dirname(targetPath);
 	fs.mkdirSync(directory, { recursive: true });
-	const temporaryPath = path.join(directory, `${path.basename(targetPath)}.tmp.${process.pid}`);
+	const basename = path.basename(targetPath);
+	if (sweepStrays) {
+		sweepAbandonedTemporaries(directory, basename);
+	}
+
+	const stamp = `${process.pid}.${randomBytes(NONCE_BYTES).toString("hex")}`;
+	const temporaryPath = path.join(directory, `${basename}${TEMPORARY_INFIX}${stamp}`);
 	fs.writeFileSync(temporaryPath, contents);
 
 	let lastError: unknown;
@@ -61,4 +114,74 @@ export function atomicWrite(targetPath: string, contents: Buffer | string): void
  */
 function pause(milliseconds: number): void {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+/** The one `process.kill` failure that means the pid names nothing. */
+function isNoSuchProcessError(err: unknown): boolean {
+	return err instanceof Error && "code" in err && err.code === "ESRCH";
+}
+
+/**
+ * Whether `pid` still names a running process. Signal `0` runs every
+ * permission check and delivers nothing, so `ESRCH` is the one answer that
+ * means gone — a pid this user may not signal raises `EPERM` and is alive.
+ *
+ * Erring towards alive is what makes the sweep safe without a lock. A running
+ * owner is never swept, and an owner that is gone can never rename the name it
+ * left behind, so the only mistake available is keeping a stray a while longer.
+ *
+ * @param pid - The owner pid read off a temp file's name.
+ */
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (err) {
+		return !isNoSuchProcessError(err);
+	}
+}
+
+/**
+ * Delete the temp files for `basename` whose owner is gone, leaving every live
+ * owner's alone.
+ *
+ * A name that carries no nonce is left alone whatever its pid says. Only a
+ * writer from before the nonce existed makes one, and that writer is the one
+ * case where a recycled pid can put a live write behind a name this sweep has
+ * already judged abandoned.
+ *
+ * @param directory - The target's own directory, where its temp files live.
+ * @param basename - The target's filename, which its temp files are prefixed
+ *   with.
+ */
+function sweepAbandonedTemporaries(directory: string, basename: string): void {
+	const prefix = `${basename}${TEMPORARY_INFIX}`;
+	let entries: Array<string>;
+	try {
+		entries = fs.readdirSync(directory);
+	} catch {
+		// Housekeeping, so a directory the platform will not list costs the
+		// sweep rather than the write it precedes.
+		return;
+	}
+
+	for (const entry of entries) {
+		if (!entry.startsWith(prefix)) {
+			continue;
+		}
+
+		const stamp = OWNER_STAMP_REGEX.exec(entry.slice(prefix.length));
+		if (stamp === null || isProcessAlive(Number(stamp[1]))) {
+			continue;
+		}
+
+		try {
+			fs.rmSync(path.join(directory, entry));
+		} catch {
+			// Per entry, not around the loop: one file a Windows scanner holds
+			// open, or one a peer sweeping the same directory took between the
+			// listing and here, is left for the next publisher — the strays
+			// behind it are still collected.
+		}
+	}
 }

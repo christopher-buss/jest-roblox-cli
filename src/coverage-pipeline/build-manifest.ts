@@ -142,7 +142,7 @@ export interface CoverageArtifacts {
 type VerifyResult = { actual: string; kind: "mismatch" } | { kind: "missing" } | { kind: "ok" };
 
 export function writeBuildManifest(filePath: string, manifest: BuildManifest): void {
-	atomicWrite(filePath, JSON.stringify(manifest, undefined, "\t"));
+	atomicWrite({ contents: JSON.stringify(manifest, undefined, "\t"), targetPath: filePath });
 }
 
 /**

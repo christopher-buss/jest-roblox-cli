@@ -8,6 +8,7 @@
 // `source`-condition entry can re-export it for workspace typecheck without
 // dragging in the CLI's Luau-importing modules.
 export { atomicWrite } from "../utils/atomic-write.ts";
+export type { AtomicWriteOptions } from "../utils/atomic-write.ts";
 export { hashFile } from "../utils/hash.ts";
 export {
 	BUILD_MANIFEST_VERSION,

@@ -1,6 +1,8 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { vol } from "memfs";
+import * as fs from "node:fs";
+import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { CoverageMap, ReadCoverageMapResult } from "./coverage-map.ts";
@@ -88,6 +90,28 @@ describe(writeCoverageMap, () => {
 		writeCoverageMap("/deep/nested/out/x.cov-map.json", exampleCoverageMap());
 
 		expect(vol.existsSync("/deep/nested/out/x.cov-map.json")).toBeTrue();
+	});
+
+	// This runs once per covered file into the shadow mirror the instrumenter
+	// is filling, so it is the one publisher that declines `atomicWrite`'s
+	// stray sweep — a directory scan per file is more than the write costs.
+	it("should not scan the directory for strays", () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vol.fromJSON({ "/coverage/out/init.cov-map.json.tmp.4242.a1b2c3d4": "abandoned" });
+		vi.spyOn(process, "kill").mockImplementation(() => {
+			throw Object.assign(new Error("ESRCH: no such process"), { code: "ESRCH" });
+		});
+		const readSpy = vi.spyOn(fs, "readdirSync");
+
+		writeCoverageMap("/coverage/out/init.cov-map.json", exampleCoverageMap());
+
+		expect(readSpy).not.toHaveBeenCalled();
+		expect(vol.existsSync("/coverage/out/init.cov-map.json.tmp.4242.a1b2c3d4")).toBeTrue();
 	});
 });
 

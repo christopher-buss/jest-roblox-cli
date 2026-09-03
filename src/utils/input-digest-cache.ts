@@ -117,7 +117,7 @@ export function openInputDigestCache(cacheFile: string): InputDigestCache {
 				return;
 			}
 
-			atomicWrite(cacheFile, serialize(publishable));
+			atomicWrite({ contents: serialize(publishable), targetPath: cacheFile });
 		},
 	};
 }

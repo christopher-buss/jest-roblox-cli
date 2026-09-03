@@ -30,8 +30,20 @@ const coverageMapSchema = type({
 	"statementMap": type({ "[string]": spanSchema }),
 }).as<CoverageMap>();
 
+/**
+ * No stray sweep, unlike the package's other publishers. This runs once per
+ * covered file into the shadow mirror the same loop is filling, so the sweep's
+ * directory scan grows with that directory and repeats for every file in it —
+ * tens of microseconds each, where its caller in `instrumenter.ts` already
+ * declines to spend microseconds. A stray left here belongs to a tree the next
+ * instrumentation run rebuilds.
+ */
 export function writeCoverageMap(filePath: string, map: CoverageMap): void {
-	atomicWrite(filePath, JSON.stringify(map, undefined, "\t"));
+	atomicWrite({
+		contents: JSON.stringify(map, undefined, "\t"),
+		sweepStrays: false,
+		targetPath: filePath,
+	});
 }
 
 /**

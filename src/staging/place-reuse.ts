@@ -124,7 +124,7 @@ export function readPlaceReuseRecord(cacheFile: string): PlaceReuseRecord | unde
 export function writePlaceReuseRecord(cacheFile: string, record: PlaceReuseRecord): void {
 	// Atomic, like the manifests it sits beside: a torn record read back as a
 	// key match would hand out a place that was never built.
-	atomicWrite(cacheFile, JSON.stringify(record));
+	atomicWrite({ contents: JSON.stringify(record), targetPath: cacheFile });
 }
 
 /**

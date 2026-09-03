@@ -175,7 +175,7 @@ export const manifestSchema: type<CoverageManifest> = type({
 }).as<CoverageManifest>();
 
 export function writeManifest(filePath: string, manifest: CoverageManifest): void {
-	atomicWrite(filePath, JSON.stringify(manifest, undefined, "\t"));
+	atomicWrite({ contents: JSON.stringify(manifest, undefined, "\t"), targetPath: filePath });
 }
 
 export function readManifest(filePath: string): ReadManifestResult {
