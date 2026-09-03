@@ -35,6 +35,7 @@ words:
   - gsub
   - highlightjs
   - indexexpr
+  - injective
   - instrumentability
   - instrumentable
   - instrumenter

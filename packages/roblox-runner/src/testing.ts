@@ -5,4 +5,4 @@
  * the format's spelling public.
  */
 
-export { formatPlaceVersionRefusal, PLACE_VERSION_MISMATCH } from "./place-version-guard.ts";
+export { formatPlaceMismatch, PLACE_MISMATCH } from "./place-identity-guard.ts";

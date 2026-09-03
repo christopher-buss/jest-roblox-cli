@@ -83,6 +83,32 @@ describe(buildPlaceAsync, () => {
 		});
 	});
 
+	it("should stamp the content id into the place and record it on the artifact", async () => {
+		expect.assertions(2);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
+		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
+			vol.writeFileSync(outputPath, PLACE_BYTES);
+		});
+
+		const result = await buildPlaceAsync({
+			contentId: "deadbeef",
+			packages: [makeDescriptor()],
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+			wrap: false,
+		});
+
+		// Recorded on the artifact as well as stamped, because the host that
+		// compares the two reads its half off the artifact.
+		expect(synthesize).toHaveBeenCalledWith(expect.objectContaining({ contentId: "deadbeef" }));
+		expect(result.contentId).toBe("deadbeef");
+	});
+
 	it("should write the synthesized project to projectFile and buildAsync from it", async () => {
 		expect.assertions(2);
 

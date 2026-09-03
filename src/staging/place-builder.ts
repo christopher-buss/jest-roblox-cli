@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { hashFileAsync } from "../utils/hash.ts";
+import { omitUndefined } from "../utils/omit-undefined.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import { demotePinnedMountsAsync, PINNED_MOUNT_PASS_VERSION } from "./pinned-mounts.ts";
 import {
@@ -30,6 +31,14 @@ export interface PlaceReuseOptions {
 }
 
 export interface BuildPlaceOptions {
+	/**
+	 * The Place Content Id to stamp into the built place and record on the
+	 * artifact. Forwarded verbatim to {@link synthesize}, so it lands in the
+	 * project text the reuse key covers — a place built for another id can
+	 * never be reused for this one. Omit to build a place with no identity of
+	 * its own.
+	 */
+	contentId?: string | undefined;
 	/**
 	 * Force `ServerScriptService.LoadStringEnabled = true` on the built place.
 	 * Used by studio-cli's Clean Place, whose Run-mode runner gates on
@@ -62,6 +71,7 @@ interface ReusePlan {
  * descriptors carry `coverageRoots`.
  */
 export async function buildPlaceAsync({
+	contentId,
 	loadStringEnabled,
 	packages,
 	placeFile,
@@ -70,7 +80,7 @@ export async function buildPlaceAsync({
 	wrap,
 }: BuildPlaceOptions): Promise<BuildManifestArtifact> {
 	const projectDirectory = path.dirname(projectFile);
-	const projectJson = synthesize({ loadStringEnabled, packages, wrap });
+	const projectJson = synthesize({ contentId, loadStringEnabled, packages, wrap });
 
 	// Planned before anything is written or built, so a reused place pays for
 	// neither of the two passes below — see `PlaceInputsKeyOptions.projectJson`
@@ -82,7 +92,7 @@ export async function buildPlaceAsync({
 	});
 	const reused = plan === undefined ? undefined : await tryReuseAsync(plan, placeFile);
 	if (reused !== undefined) {
-		return reused;
+		return omitUndefined({ ...reused, contentId });
 	}
 
 	const artifact = await stageAndBuildAsync({
@@ -98,7 +108,9 @@ export async function buildPlaceAsync({
 		});
 	}
 
-	return artifact;
+	// Recorded as well as stamped, because the consumer that compares the two
+	// reads its half off the artifact.
+	return omitUndefined({ ...artifact, contentId });
 }
 
 /**

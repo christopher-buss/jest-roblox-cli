@@ -2634,6 +2634,30 @@ describe(synthesize, () => {
 		expect(ordered).toBe(reversed);
 	});
 
+	it("should stamp the place content id in wrap mode too", () => {
+		expect.assertions(1);
+
+		vol.reset();
+
+		vol.fromJSON({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: { $className: "DataModel" },
+			}),
+		});
+
+		const result = synthesize({
+			contentId: "deadbeef",
+			packages: [
+				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
+			],
+		});
+
+		const stamp = descend(parseFixture(result).tree, "ReplicatedStorage", "__place_content_id");
+
+		expect(stamp!.$properties!["Value"]).toBe("deadbeef");
+	});
+
 	describe("no-wrap mode (single-package coverage)", () => {
 		it("should return the package's project tree without ServerStorage.__pkg_stage wrap", () => {
 			expect.assertions(2);
@@ -2741,6 +2765,73 @@ describe(synthesize, () => {
 			expect(serverScriptService!.$properties!["LoadStringEnabled"]).toBeTrue();
 			expect(serverScriptService!.$properties!["OtherProp"]).toBe("kept");
 			expect(serverScriptService!.$path).toContain("server");
+		});
+
+		it("should stamp the place content id where a booted task can read it", () => {
+			expect.assertions(2);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $className: "ReplicatedStorage", $path: "src" },
+					},
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				contentId: "deadbeef",
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const stamp = descend(
+				parseFixture(result).tree,
+				"ReplicatedStorage",
+				"__place_content_id",
+			);
+
+			expect(stamp!.$className).toBe("StringValue");
+			expect(stamp!.$properties!["Value"]).toBe("deadbeef");
+		});
+
+		it("should stamp into a ReplicatedStorage the project never declared", () => {
+			expect.assertions(1);
+
+			vol.reset();
+
+			vol.fromJSON({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: { $className: "DataModel" },
+				}),
+			});
+
+			const result = synthesize({
+				contentId: "deadbeef",
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const replicatedStorage = child(parseFixture(result).tree, "ReplicatedStorage");
+
+			expect(replicatedStorage!.$className).toBe("ReplicatedStorage");
 		});
 
 		it("should give an implicit existing ServerScriptService its canonical class", () => {

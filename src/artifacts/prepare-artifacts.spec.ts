@@ -9,6 +9,7 @@ import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import { emitBuildManifest } from "../coverage-pipeline/build-manifest.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { MANIFEST_VERSION, readManifest, writeManifest } from "../coverage-pipeline/manifest.ts";
+import { computePlaceContentId } from "../coverage-pipeline/place-content-id.ts";
 import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
@@ -133,6 +134,7 @@ describe(prepareArtifactsAsync, () => {
 			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
@@ -150,6 +152,25 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.buildId).toBe("build-42");
 	});
 
+	it("should build the Clean Place stamped with the covering set's id", async () => {
+		expect.assertions(1);
+
+		mocks.runSingleOrMulti.mockResolvedValue(
+			multiResult({ coverageArtifacts: makeArtifacts() }),
+		);
+		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
+
+		await prepareArtifactsAsync(makeConfig());
+
+		// The id the coverage run's own file records digest to — the place has
+		// to carry the identity of the build the collector read, and this is
+		// where the two are tied together.
+		expect(mocks.buildPlaceAsync).toHaveBeenCalledWith(
+			expect.objectContaining({ contentId: computePlaceContentId(manifestWithFile()) }),
+		);
+	});
+
 	it("should surface the coverage manifest paths and an empty projects list", async () => {
 		expect.assertions(3);
 
@@ -157,6 +178,7 @@ describe(prepareArtifactsAsync, () => {
 			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
@@ -179,6 +201,7 @@ describe(prepareArtifactsAsync, () => {
 			multiResult({ coverageArtifacts: makeArtifacts({ projects: [project] }) }),
 		);
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
@@ -191,6 +214,7 @@ describe(prepareArtifactsAsync, () => {
 		const artifacts = makeArtifacts();
 		mocks.runSingleOrMulti.mockResolvedValue(multiResult({ coverageArtifacts: artifacts }));
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		await prepareArtifactsAsync(makeConfig());
 
@@ -211,6 +235,7 @@ describe(prepareArtifactsAsync, () => {
 			}),
 		);
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		const bundle = await prepareArtifactsAsync(makeConfig());
 
@@ -224,6 +249,7 @@ describe(prepareArtifactsAsync, () => {
 			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		await prepareArtifactsAsync(makeConfig());
 
@@ -251,6 +277,7 @@ describe(prepareArtifactsAsync, () => {
 			},
 		]);
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		const bundle = await prepareArtifactsAsync(config);
 
@@ -279,21 +306,20 @@ describe(prepareArtifactsAsync, () => {
 		expect(written.files["out/init.luau"]!.staticStatementIds).toStrictEqual(["0"]);
 	});
 
-	it("should not rewrite the manifest when it cannot be read", async () => {
+	it("should refuse to stamp a place when the coverage manifest cannot be read", async () => {
 		expect.assertions(1);
 
 		mocks.runSingleOrMulti.mockResolvedValue(
-			multiResult({
-				coverageArtifacts: makeArtifacts(),
-				merged: { attribution: EXAMPLE_ATTRIBUTION },
-			}),
+			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		// The manifest is what the Place Content Id is taken over, so a bundle
+		// built without it would carry a place proving less than it claims.
 		mocks.readManifest.mockReturnValue({ kind: "missing" });
 
-		await prepareArtifactsAsync(makeConfig());
-
-		expect(mocks.writeManifest).not.toHaveBeenCalled();
+		await expect(prepareArtifactsAsync(makeConfig())).rejects.toThrow(
+			/could not read the coverage manifest/,
+		);
 	});
 
 	it("should opt the coverage run into per-test attribution collection", async () => {
@@ -303,6 +329,7 @@ describe(prepareArtifactsAsync, () => {
 			multiResult({ coverageArtifacts: makeArtifacts() }),
 		);
 		mocks.buildPlaceAsync.mockResolvedValue(CLEAN_PLACE);
+		mocks.readManifest.mockReturnValue({ kind: "ok", manifest: manifestWithFile() });
 
 		await prepareArtifactsAsync(makeConfig());
 

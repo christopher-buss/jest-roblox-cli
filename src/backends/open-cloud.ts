@@ -1,7 +1,7 @@
 import { PermissionError, PollTimeoutError } from "@bedrock-rbx/ocale";
 import {
 	OcaleRunner,
-	placeVersionGuardSource,
+	placeIdentityGuardSource,
 	readRefusedPlaceVersion,
 	runTaskPool,
 } from "@isentinel/roblox-runner";
@@ -322,7 +322,7 @@ export class OpenCloudBackend implements Backend {
 				.catch(rethrowOversizedResult);
 		}
 
-		const guarded = injectVersionGuard(script, version.versionNumber);
+		const guarded = injectPlaceGuard(script, version.versionNumber);
 		const first = await this.runner
 			.executeScriptAsync({ bootProven: version.bootProven, script: guarded, timeout })
 			.catch(rethrowOversizedResult);
@@ -922,14 +922,22 @@ function resolvePrimaryJob(
 }
 
 /**
- * Insert the version guard behind the script's header block — Luau honors
+ * Insert the place guard behind the script's header block — Luau honors
  * `--!strict`/`--!native`/etc only while nothing else has opened the file, so
  * a plain line-1 prepend would silently disable a caller's directives.
+ *
+ * The version is the identity available here: this backend runs a place a
+ * caller handed it rather than one it built, so there is no Place Content Id it
+ * could hold the other half of.
  */
-function injectVersionGuard(script: string, placeVersion: number): string {
+function injectPlaceGuard(script: string, placeVersion: number): string {
 	const lines = script.split("\n");
 
-	lines.splice(countLinesThroughLastDirective(lines), 0, placeVersionGuardSource(placeVersion));
+	lines.splice(
+		countLinesThroughLastDirective(lines),
+		0,
+		placeIdentityGuardSource({ placeVersion }),
+	);
 	return lines.join("\n");
 }
 

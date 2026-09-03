@@ -11,7 +11,9 @@ import type {
 	CoverageArtifacts,
 } from "../coverage-pipeline/build-manifest.ts";
 import { emitBuildManifest } from "../coverage-pipeline/build-manifest.ts";
+import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { readManifest, writeManifest } from "../coverage-pipeline/manifest.ts";
+import { computePlaceContentId } from "../coverage-pipeline/place-content-id.ts";
 import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
@@ -67,7 +69,11 @@ export async function prepareArtifactsAsync(config: ResolvedConfig): Promise<Art
 		});
 		const result = await runSingleOrMultiAsync(cli, merged, timing);
 		const coverageArtifacts = requireCoverageArtifacts(result.coverageArtifacts);
-		const cleanPlace = await buildCleanPlaceAsync(merged);
+		// Stamped from the manifest the instrument step just published, so the
+		// id the place carries is the identity of the build the collector read.
+		const coverageManifest = requireCoverageManifest(COVERAGE_MANIFEST_PATH);
+		const contentId = computePlaceContentId(coverageManifest);
+		const cleanPlace = await buildCleanPlaceAsync(merged, contentId);
 
 		// One atomic write that knows both places — never write-then-patch.
 		emitBuildManifest(COVERAGE_BUILD_MANIFEST_PATH, coverageArtifacts, cleanPlace);
@@ -75,7 +81,7 @@ export async function prepareArtifactsAsync(config: ResolvedConfig): Promise<Art
 		// Fold per-test attribution into the coverage manifest the instrument
 		// step already published, so the consumer reads tests[] + coveringTestIds
 		// from the same artifact as the file records.
-		writeManifestAttribution(COVERAGE_MANIFEST_PATH, result.merged.attribution);
+		writeManifestAttribution(coverageManifest, result.merged.attribution);
 
 		return {
 			buildId: coverageArtifacts.buildId,
@@ -109,22 +115,35 @@ function requireCoverageArtifacts(
 }
 
 /**
- * Re-publish the coverage manifest with attribution folded in. A missing or
- * unreadable manifest, or a run that produced no attribution, is a no-op — the
- * file records the instrument step wrote stay as published.
+ * The manifest the instrument step published for this run. Unreadable is a
+ * fault rather than a degraded bundle: it is what the Place Content Id is taken
+ * over, and a place stamped from anything less proves less than it claims.
+ */
+function requireCoverageManifest(manifestPath: string): CoverageManifest {
+	const read = readManifest(manifestPath);
+	if (read.kind !== "ok") {
+		throw new Error(
+			`prepareArtifacts: could not read the coverage manifest at ${manifestPath}, so the Clean Place has no build to be stamped with.`,
+		);
+	}
+
+	return read.manifest;
+}
+
+/**
+ * Re-publish the coverage manifest with attribution folded in. A run that
+ * produced no attribution is a no-op — the file records the instrument step
+ * wrote stay as published.
  */
 function writeManifestAttribution(
-	manifestPath: string,
+	manifest: CoverageManifest,
 	attribution: AttributionResult | undefined,
 ): void {
 	if (attribution === undefined) {
 		return;
 	}
 
-	const read = readManifest(manifestPath);
-	if (read.kind === "ok") {
-		writeManifest(manifestPath, applyAttribution(read.manifest, attribution));
-	}
+	writeManifest(COVERAGE_MANIFEST_PATH, applyAttribution(manifest, attribution));
 }
 
 /**
@@ -133,7 +152,10 @@ function writeManifestAttribution(
  * carries the same `jest.config` stub mounts the coverage run already wrote to
  * the cache, so the Clean Place is runnable.
  */
-async function buildCleanPlaceAsync(config: ResolvedConfig): Promise<BuildManifestArtifact> {
+async function buildCleanPlaceAsync(
+	config: ResolvedConfig,
+	contentId: string,
+): Promise<BuildManifestArtifact> {
 	const descriptor: PackageDescriptor = {
 		name: "jest-roblox-clean",
 		packageDirectory: path.resolve(config.rootDir),
@@ -149,6 +171,7 @@ async function buildCleanPlaceAsync(config: ResolvedConfig): Promise<BuildManife
 	}
 
 	return buildPlaceAsync({
+		contentId,
 		packages: [descriptor],
 		placeFile: CLEAN_PLACE_FILE,
 		projectFile: CLEAN_PROJECT_FILE,

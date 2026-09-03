@@ -15,6 +15,7 @@ import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
+import { BUILD_MANIFEST_VERSION } from "./build-manifest.ts";
 import {
 	createCopyIgnoreMatcher,
 	discoverRootFiles,
@@ -1300,7 +1301,7 @@ describe(prepareCoverageAsync, () => {
 					files: {},
 					generatedAt: isoNow(),
 					projects: [],
-					version: 1,
+					version: BUILD_MANIFEST_VERSION,
 				}),
 			);
 
@@ -1331,7 +1332,7 @@ describe(prepareCoverageAsync, () => {
 					files: {},
 					generatedAt: isoNow(),
 					projects: [],
-					version: 1,
+					version: BUILD_MANIFEST_VERSION,
 				}),
 			);
 
@@ -1359,7 +1360,7 @@ describe(prepareCoverageAsync, () => {
 					files: {},
 					generatedAt: isoNow(),
 					projects: [],
-					version: 1,
+					version: BUILD_MANIFEST_VERSION,
 				}),
 			);
 
@@ -1755,7 +1756,7 @@ describe(prepareCoverageAsync, () => {
 						files: {},
 						generatedAt: isoNow(),
 						projects: [],
-						version: 1,
+						version: BUILD_MANIFEST_VERSION,
 					}),
 				);
 			}

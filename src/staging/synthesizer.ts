@@ -1,3 +1,4 @@
+import { PLACE_CONTENT_ID_NAME, PLACE_CONTENT_ID_SERVICE } from "@isentinel/roblox-runner";
 import { loadRojoProject, resolveMountPath } from "@isentinel/rojo-utils";
 
 import * as fs from "node:fs";
@@ -89,6 +90,15 @@ export interface PackageDescriptor {
 
 interface SynthesizeInput {
 	/**
+	 * The Place Content Id to stamp into the synthesized place, as a
+	 * `StringValue` at `ReplicatedStorage.__place_content_id`. A task that
+	 * booted the place reads it back and compares, which is how a run proves
+	 * the place holds the build it was collected against rather than trusting
+	 * the version number the publish minted. Omitted ⇒ no stamp, and the place
+	 * carries no identity beyond its version.
+	 */
+	contentId?: string | undefined;
+	/**
 	 * Force `ServerScriptService.LoadStringEnabled = true` on the synthesized
 	 * place. The wrap (workspace) path always sets it; this flag is for the
 	 * no-wrap path (studio-cli's Clean Place), whose Run-mode runner gates on
@@ -175,7 +185,7 @@ interface TransformEntry {
 
 export function synthesize(input: SynthesizeInput): string {
 	if (input.wrap === false) {
-		return synthesizeNoWrap(input.packages, input.loadStringEnabled);
+		return synthesizeNoWrap(input);
 	}
 
 	const stage: RojoTreeNode = { $className: "Folder" };
@@ -199,6 +209,7 @@ export function synthesize(input: SynthesizeInput): string {
 	// After the hoist, so a package that declares `LoadStringEnabled: false`
 	// cannot switch off the loadstring the Run-mode runner needs.
 	enableLoadString(tree);
+	stampPlaceContentId(tree, input.contentId);
 
 	const globIgnorePaths = resolveGlobIgnorePaths(globs);
 
@@ -607,6 +618,22 @@ function stableStringify(value: JsonStringifyValue): string {
 }
 
 /**
+ * The tree's node for one service, created where the project never declared it
+ * and given its canonical class where the project declared it only implicitly.
+ * Rojo infers a service's class from its name, but a node this code then hangs
+ * a property or a child on has to say what it is. Returned already attached, so
+ * a caller mutates the node the tree holds rather than writing a copy back.
+ */
+function openService(tree: RojoTreeNode, name: string): RojoTreeNode {
+	const existing = tree[name];
+	// Rojo names a service by its class, so the tree key is the class name.
+	const service = isTreeNode(existing) ? existing : { $className: name };
+	service.$className ??= name;
+	tree[name] = service;
+	return service;
+}
+
+/**
  * Force `ServerScriptService.LoadStringEnabled = true` on a no-wrap tree,
  * creating the service node if the user's project omits it and merging into
  * any existing `$properties` so a hand-set property is preserved. studio-cli's
@@ -614,16 +641,38 @@ function stableStringify(value: JsonStringifyValue): string {
  * regardless of what the user's `.project.json` declares.
  */
 function enableLoadString(tree: RojoTreeNode): void {
-	const existing = tree["ServerScriptService"];
-	const service = isTreeNode(existing) ? existing : { $className: "ServerScriptService" };
-	service.$className ??= "ServerScriptService";
-
+	const service = openService(tree, "ServerScriptService");
 	const properties = isProperties(service.$properties) ? service.$properties : {};
 	service.$properties = { ...properties, LoadStringEnabled: true };
-	tree["ServerScriptService"] = service;
 }
 
-function synthesizeNoWrap(packages: Array<PackageDescriptor>, loadStringEnabled = false): string {
+/**
+ * Park the place's content identity where a booted task can read it back, at
+ * the service and name `@isentinel/roblox-runner` spells: it owns the guard
+ * that reads the stamp, so it owns where the stamp lives.
+ *
+ * A `StringValue` rather than a file mount because rojo builds one from the
+ * project text alone — nothing to stage, and the id therefore rides in the
+ * same text the reuse key is taken over, so a place built for another id can
+ * never be handed back for this one. Merged into whatever node the project
+ * already declares for that service, so one that mounts a `$path` keeps it.
+ */
+function stampPlaceContentId(tree: RojoTreeNode, contentId: string | undefined): void {
+	if (contentId === undefined) {
+		return;
+	}
+
+	openService(tree, PLACE_CONTENT_ID_SERVICE)[PLACE_CONTENT_ID_NAME] = {
+		$className: "StringValue",
+		$properties: { Value: contentId },
+	};
+}
+
+function synthesizeNoWrap({
+	contentId,
+	loadStringEnabled = false,
+	packages,
+}: SynthesizeInput): string {
 	if (packages.length !== 1) {
 		throw new ConfigError(
 			`synthesize wrap:false requires exactly one package, got ${String(packages.length)}`,
@@ -642,6 +691,8 @@ function synthesizeNoWrap(packages: Array<PackageDescriptor>, loadStringEnabled 
 	if (loadStringEnabled) {
 		enableLoadString(tree);
 	}
+
+	stampPlaceContentId(tree, contentId);
 
 	// `raw` carries top-level fields (gameId, placeId, globIgnorePaths, etc.)
 	// that the narrow `RojoProject` shape strips; `tree` then overrides the
