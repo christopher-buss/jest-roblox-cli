@@ -193,6 +193,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
 			invisibilityWindowSeconds: 90,
 			queueId: "queue-1",
+			ttlSeconds: 600,
 		});
 		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
 		const credentials = { apiKey: "key", baseUrl: "https://example.test", universeId: "42" };
@@ -223,6 +224,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
 			invisibilityWindowSeconds: 210,
 			queueId: "queue-1",
+			ttlSeconds: 600,
 		});
 		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
 
@@ -247,6 +249,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
 			invisibilityWindowSeconds: 330,
 			queueId: "queue-1",
+			ttlSeconds: 600,
 		});
 		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
 
@@ -272,6 +275,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
 			invisibilityWindowSeconds: 330,
 			queueId: "queue-1",
+			ttlSeconds: 600,
 		});
 		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
 
@@ -299,6 +303,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
 			invisibilityWindowSeconds: 330,
 			queueId: "queue-1",
+			ttlSeconds: 600,
 		});
 		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
 

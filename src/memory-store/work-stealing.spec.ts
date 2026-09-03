@@ -91,6 +91,28 @@ describe(prepareWorkStealingQueueAsync, () => {
 		expect(prepared.invisibilityWindowSeconds).toBe(90);
 	});
 
+	// The runner re-queues an item it dropped over budget, and the put-back has
+	// to name a TTL. Reporting the one the items were seeded with is what keeps
+	// an override from stopping at this function.
+	it("should report the TTL it seeded the items with", async () => {
+		expect.assertions(2);
+
+		const { factory } = createQueueStub();
+		const options = {
+			credentials: CREDENTIALS,
+			packages: [],
+			perPackageTimeoutSeconds: 60,
+			queueFactory: factory,
+			uuid: () => "qid",
+		};
+
+		const fallback = await prepareWorkStealingQueueAsync(options);
+		const overridden = await prepareWorkStealingQueueAsync({ ...options, ttlSeconds: 120 });
+
+		expect(fallback.ttlSeconds).toBe(600);
+		expect(overridden.ttlSeconds).toBe(120);
+	});
+
 	it("should return the queueId produced by the injected uuid generator", async () => {
 		expect.assertions(1);
 

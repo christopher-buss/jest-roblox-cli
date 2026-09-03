@@ -191,6 +191,22 @@ describe(generateWorkStealingScript, () => {
 		expect(script).toContain('"pkg":"@halcyon/foo"');
 	});
 
+	// A worker that drops an entry over budget puts its queue item back, and
+	// the put-back has to name a TTL. Only the CLI knows which one the queue
+	// was seeded with, so it has to travel in the payload.
+	it("should embed the queue TTL the items were seeded with", () => {
+		expect.assertions(1);
+
+		const script = generateWorkStealingScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			"queue-uuid-1",
+			90,
+			{ queueTtlSeconds: 120 },
+		);
+
+		expect(script).toContain('"queueTtlSeconds":120');
+	});
+
 	// The materializer carries its own default, so a run that says nothing
 	// about the budget must not pin one into the payload.
 	it("should embed a result budget only when one is given", () => {

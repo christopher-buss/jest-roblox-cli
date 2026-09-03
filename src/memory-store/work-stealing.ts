@@ -31,6 +31,11 @@ interface PreparedWorkStealing {
 	invisibilityWindowSeconds: number;
 	/** Per-run UUID-keyed queue name. */
 	queueId: string;
+	/**
+	 * TTL the items were pushed with. Travels on to the runner, which names it
+	 * again when it puts back an item it dropped over its return budget.
+	 */
+	ttlSeconds: number;
 }
 
 /**
@@ -60,5 +65,6 @@ export async function prepareWorkStealingQueueAsync(
 	return {
 		invisibilityWindowSeconds: options.perPackageTimeoutSeconds + INVISIBILITY_BUFFER_SECONDS,
 		queueId,
+		ttlSeconds,
 	};
 }

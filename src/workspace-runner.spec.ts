@@ -3040,6 +3040,7 @@ describe(runWorkspaceAsync, () => {
 			vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
 				invisibilityWindowSeconds: 90,
 				queueId,
+				ttlSeconds: 600,
 			});
 		}
 

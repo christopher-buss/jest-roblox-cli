@@ -286,6 +286,7 @@ async function prepareStealingDispatchAsync({
 		{
 			bail,
 			bailMapId,
+			queueTtlSeconds: prepared.ttlSeconds,
 			...(streaming !== undefined
 				? { streaming: { sortedMapId: streaming.sortedMapId } }
 				: {}),

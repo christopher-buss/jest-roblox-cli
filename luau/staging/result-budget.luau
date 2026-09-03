@@ -10,6 +10,11 @@
 -- A worker therefore stops taking new queue items once its envelope is full
 -- and returns what it has. The items it did not take stay in the queue, and
 -- the CLI launches another task to collect them.
+--
+-- Two questions, because the size of an entry is unknown until it has run.
+-- `shouldStop` predicts, so the worker can refuse an entry rather than waste
+-- the run on a result it will not return; `fits` decides once the entry has
+-- been measured, and is what holds the cap.
 local module = {}
 
 export type Tracker = {
@@ -28,8 +33,7 @@ export type Measurable = {
 }
 
 -- Well under Open Cloud's hard 4 MiB. The slack absorbs the envelope's own
--- scaffolding and the case below where an entry turns out larger than any the
--- worker had measured when it decided to take one more.
+-- scaffolding, which `measure` counts per entry but not once for the whole.
 local DEFAULT_BUDGET_BYTES = 3400000
 
 -- Per-entry JSON scaffolding: the key names, braces, commas and quotes that
@@ -99,19 +103,30 @@ function module.add(tracker: Tracker, bytes: number)
 end
 
 --[=[
+	Whether an entry of `bytes` still fits the envelope.
+
+	A worker that has taken nothing accepts whatever it is offered. Refusing
+	the first entry would leave it for a successor that would refuse it in
+	turn, so an entry larger than the whole budget would never go out at all.
+]=]
+function module.fits(tracker: Tracker, bytes: number): boolean
+	if tracker.usedBytes == 0 then
+		return true
+	end
+
+	return tracker.usedBytes + bytes <= tracker.budgetBytes
+end
+
+--[=[
 	Whether the worker should stop taking new queue items.
 
 	The next entry's size is unknown, so the largest one measured so far stands
-	in for it. A worker that has taken nothing never stops: refusing the first
-	item would leave that item in the queue for a successor that would refuse
-	it in turn, and the run would never finish.
+	in for it — `fits` asked of a guess. A run whose entries are many small
+	ones followed by one large one defeats that guess, which is why the caller
+	asks again once the entry has been measured.
 ]=]
 function module.shouldStop(tracker: Tracker): boolean
-	if tracker.usedBytes == 0 then
-		return false
-	end
-
-	return tracker.usedBytes + tracker.largestBytes > tracker.budgetBytes
+	return not module.fits(tracker, tracker.largestBytes)
 end
 
 return module

@@ -22,6 +22,12 @@ export interface ScriptOptions {
 	 */
 	bailMapId?: string | undefined;
 	/**
+	 * TTL the queue items were seeded with, in seconds. A worker that drops an
+	 * entry over budget puts its queue item back, and only this side knows
+	 * which TTL to name. Omit to use the materializer's own default.
+	 */
+	queueTtlSeconds?: number;
+	/**
 	 * Caps the encoded size of one task's return envelope, in bytes. A worker
 	 * that reaches the cap stops taking queue items and leaves them for the
 	 * next task, so no task trips Open Cloud's 4 MiB limit on the value it
@@ -68,6 +74,7 @@ interface WorkStealingPayload extends BailPayloadFields, StreamingPayloadFields 
 	entries: Array<EntryPayload>;
 	invisibilityWindowSeconds: number;
 	queueId: string;
+	queueTtlSeconds?: number;
 	resultBudgetBytes?: number;
 }
 
@@ -106,6 +113,9 @@ export function generateWorkStealingScript(
 		entries: buildEntries(inputs),
 		invisibilityWindowSeconds,
 		queueId,
+		...(options.queueTtlSeconds !== undefined
+			? { queueTtlSeconds: options.queueTtlSeconds }
+			: {}),
 		...(options.resultBudgetBytes !== undefined
 			? { resultBudgetBytes: options.resultBudgetBytes }
 			: {}),

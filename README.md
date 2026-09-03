@@ -295,6 +295,10 @@ Put these under `test: { ... }`.
 > the lever to pull on `OUTPUT_SIZE_LIMIT_EXCEEDED`. Workspace mode has no
 > derived fallback, so a package that sets nothing probes its whole
 > `luauRoots`.
+>
+> Workspace mode also caps what one task returns, so there it is the lever on
+> run time rather than on the error: a task that fills its envelope stops and
+> hands the rest to another, and fatter payloads mean more tasks.
 
 `coverageCopyIgnorePatterns` is the other half of that: it decides what the
 coverage place carries at all, not what the report covers. A coverage run

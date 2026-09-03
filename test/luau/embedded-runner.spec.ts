@@ -28,6 +28,10 @@ const RUNNER_RESULT_SOURCE = fs.readFileSync(
 	path.join(LUAU_DIRECTORY, "runner-result.luau"),
 	"utf-8",
 );
+const RESULT_BUDGET_SOURCE = fs.readFileSync(
+	path.join(LUAU_DIRECTORY, "staging/result-budget.luau"),
+	"utf-8",
+);
 const HARNESS = fs.readFileSync(
 	path.join(CURRENT_DIRECTORY, "embedded-runner.harness.luau"),
 	"utf-8",
@@ -49,6 +53,10 @@ describe("embedded workspace runner under lute", () => {
 			.replace(
 				"__RUNNER_RESULT_MODULE__",
 				() => `(function()\n${RUNNER_RESULT_SOURCE}\nend)()`,
+			)
+			.replace(
+				"__RESULT_BUDGET_MODULE__",
+				() => `(function()\n${RESULT_BUDGET_SOURCE}\nend)()`,
 			)
 			.replace("__MODULE__", () => `(function()\n${MODULE_SOURCE}\nend)()`);
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "embedded-runner-"));

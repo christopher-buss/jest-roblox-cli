@@ -78,11 +78,45 @@ local function testMeasureToleratesMissingFields()
 	check(measured >= 50, "T6: measure handles absent optional fields")
 end
 
+-- T7: a worker that has taken nothing accepts whatever it measured, however
+-- large. Refusing it would leave the entry for a successor that would refuse it
+-- in turn, and the run would never finish.
+local function testEmptyWorkerAcceptsAnyEntry()
+	local tracker = Budget.new(100)
+
+	check(Budget.fits(tracker, 5000), "T7: an empty worker fits an entry larger than its budget")
+end
+
+-- T8: the entry that defeats the projection. Small entries keep the largest
+-- seen low, so the projection says take one more, and the entry it took
+-- overshoots the cap once measured.
+local function testMeasuredEntryOverBudgetDoesNotFit()
+	local tracker = Budget.new(1000)
+	Budget.add(tracker, 100)
+	Budget.add(tracker, 100)
+
+	check(not Budget.shouldStop(tracker), "T8: the projection lets the worker take one more")
+	check(not Budget.fits(tracker, 900), "T8: the entry it took does not fit once measured")
+end
+
+-- T9: an entry that exactly fills what is left still fits — the cap bounds what
+-- the envelope may reach, not what it must stay under.
+local function testEntryFillingTheBudgetFits()
+	local tracker = Budget.new(1000)
+	Budget.add(tracker, 600)
+
+	check(Budget.fits(tracker, 400), "T9: 600 used plus a 400-byte entry fits a 1000 cap")
+	check(not Budget.fits(tracker, 401), "T9: one byte more does not")
+end
+
 testFirstItemAlwaysTaken()
 testKeepsTakingWhileItFits()
 testProjectsFromLargestSeen()
 testStopsBeforeOverflow()
 testMeasureCountsPayloadFields()
 testMeasureToleratesMissingFields()
+testEmptyWorkerAcceptsAnyEntry()
+testMeasuredEntryOverBudgetDoesNotFit()
+testEntryFillingTheBudgetFits()
 
 print("ALL OK")

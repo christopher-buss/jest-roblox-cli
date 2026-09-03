@@ -36,6 +36,10 @@ local WARNING = { Value = 2 }
 
 local Enum = { MessageType = { MessageOutput = OUTPUT, MessageWarning = WARNING } }
 
+-- What the runner asked `task.wait` for, so a test can tell a retry that backed
+-- off from one that hammered the API.
+local taskWaits = {}
+
 -- Deadlines the watchdog has armed and the clock has not reached; `elapse`
 -- below is the clock reaching them. Nothing advances on its own, so a test
 -- says exactly when a package runs out of budget.
@@ -44,6 +48,10 @@ local armed = {}
 -- Faithful enough `task.spawn`: it resumes immediately, so a thunk that never
 -- yields finishes before the call returns.
 local task = {
+	wait = function(seconds: number)
+		table.insert(taskWaits, seconds)
+		return seconds
+	end,
 	spawn = function(target, ...)
 		local thread = if type(target) == "thread" then target else coroutine.create(target)
 		local ok, err = coroutine.resume(thread, ...)
@@ -109,6 +117,14 @@ end
 -- `sortedMaps` is keyed by id so a test can plant a sibling's bail signal.
 local queueItems = {}
 local sortedMaps = {}
+-- What the loop removed, so a test can tell a read it settled from one it left
+-- standing for the invisibility window to return. `requeueFailures` is how many
+-- put-backs the MemoryStore API refuses before it accepts one, and
+-- `queuePriority` is what the real queue orders reads by.
+local removedReads = {}
+local requeueFailures = 0
+local queuePriority = {}
+local addedTtls = {}
 
 local function sortedMapFor(id: string)
 	local existing = sortedMaps[id]
@@ -131,13 +147,38 @@ end
 
 local MemoryStoreService = {}
 
+-- Highest priority first, insertion order breaking ties — how the real queue
+-- orders reads, and what a re-queued item rides to the front of.
+local function popHighestPriority()
+	local best = nil
+	for index, item in queueItems do
+		if best == nil or (queuePriority[item] or 0) > (queuePriority[queueItems[best]] or 0) then
+			best = index
+		end
+	end
+
+	return if best == nil then nil else table.remove(queueItems, best)
+end
+
 function MemoryStoreService:GetQueue()
 	return {
 		ReadAsync = function()
-			local item = table.remove(queueItems, 1)
+			local item = popHighestPriority()
 			return if item == nil then {} else { item }, item
 		end,
-		RemoveAsync = function() end,
+		AddAsync = function(_self, value, expiration, priority)
+			if requeueFailures > 0 then
+				requeueFailures -= 1
+				error("AddAsync exploded", 0)
+			end
+
+			table.insert(queueItems, value)
+			table.insert(addedTtls, expiration)
+			queuePriority[value] = priority
+		end,
+		RemoveAsync = function(_self, removeId)
+			table.insert(removedReads, removeId)
+		end,
 	}
 end
 
@@ -304,18 +345,6 @@ local stubs = {
 			return tostring(err)
 		end,
 	},
-	["./result-budget"] = {
-		new = function()
-			return {}
-		end,
-		shouldStop = function()
-			return false
-		end,
-		add = function() end,
-		measure = function()
-			return 0
-		end,
-	},
 	["../setup-timing"] = {
 		patch = function()
 			return nil
@@ -388,6 +417,10 @@ stubs["../runner-result"] = __RUNNER_RESULT_MODULE__
 -- The real watchdog too: what it does to a package that parks is the subject of
 -- the infinite-yield assertion below.
 stubs["../infinite-yield"] = __INFINITE_YIELD_MODULE__
+-- And the real budget: what a runner does with an entry that overshoots the
+-- return envelope is only worth asserting against the sizes the real module
+-- measures. It is pure over strings, so it needs nothing from this file.
+stubs["./result-budget"] = __RESULT_BUDGET_MODULE__
 
 local EmbeddedRunner = __MODULE__
 
@@ -438,38 +471,49 @@ local function runInThread(fn)
 	return outcome
 end
 
-local function run(pkgs)
+local function payloadFor(pkgs, payload)
 	local entries = {}
 	for _, pkg in pkgs do
 		table.insert(entries, entryFor(pkg))
 	end
 
-	return EmbeddedRunner.runEmbedded({}, { entries = entries })
-end
-
-local function runBailing(pkgs)
-	local entries = {}
-	for _, pkg in pkgs do
-		table.insert(entries, entryFor(pkg))
-	end
-
-	return EmbeddedRunner.runEmbedded({}, { bail = true, entries = entries })
-end
-
-local function runStealing(pkgs, payload)
-	local entries = {}
-	queueItems = {}
-	for _, pkg in pkgs do
-		table.insert(entries, entryFor(pkg))
-		table.insert(queueItems, { pkg = pkg, project = "unit" })
-	end
-
-	local full = { entries = entries, invisibilityWindowSeconds = 90, queueId = "q" }
-	for key, value in payload do
+	local full = { entries = entries }
+	for key, value in payload or {} do
 		full[key] = value
 	end
 
-	return EmbeddedRunner.runWorkStealing({}, full)
+	return full
+end
+
+local function run(pkgs, payload)
+	return EmbeddedRunner.runEmbedded({}, payloadFor(pkgs, payload))
+end
+
+local function runBailing(pkgs)
+	return run(pkgs, { bail = true })
+end
+
+local function stealingPayload(pkgs, payload)
+	local full = payloadFor(pkgs, payload)
+	full.invisibilityWindowSeconds = 90
+	full.queueId = "q"
+	return full
+end
+
+-- One task against a freshly seeded queue. A test that wants the replacement
+-- task the deferral asks for calls `runWorkStealing` again on the queue this
+-- one left behind.
+local function runStealing(pkgs, payload)
+	queueItems = {}
+	queuePriority = {}
+	removedReads = {}
+	addedTtls = {}
+	taskWaits = {}
+	for _, pkg in pkgs do
+		table.insert(queueItems, { pkg = pkg, project = "unit" })
+	end
+
+	return EmbeddedRunner.runWorkStealing({}, stealingPayload(pkgs, payload))
 end
 
 -- T1: the capture opens before the package is materialized and spans its run,
@@ -777,6 +821,140 @@ local function testElapsedBudgetBailsTheBatch()
 	check(runOutcome.bailed == true, "T17: the task reports the bail")
 end
 
+-- The anime-rush shape in miniature: two small packages, then one that
+-- overshoots the cap on its own. `measure` counts the pkg field like any other,
+-- so a name this long stands in for the entry that carries a coverage payload.
+-- Small entries first is what matters — they keep the largest measured low, so
+-- the projection lets the worker take the big one.
+local HUGE_PKG = string.rep("z", 5000)
+local SMALL_BUDGET_BYTES = 3000
+
+-- T18: an entry measured over the cap is left out of the results and the run
+-- says it deferred, so the CLI sends another task to collect it. Committing it
+-- would push the envelope past Open Cloud's 4 MiB limit, which loses every
+-- package the task ran, not just this one.
+local function testOversizedEntryIsDeferredNotCommitted()
+	local results, outcome = run({ "a", "b", HUGE_PKG }, { resultBudgetBytes = SMALL_BUDGET_BYTES })
+
+	check(#results == 2, "T18: the oversized entry is not in the results")
+	check(results[1].pkg == "a" and results[2].pkg == "b", "T18: the entries that fit are kept")
+	check(outcome.deferred, "T18: the outcome asks for a replacement task")
+	check(not outcome.bailed, "T18: a deferral is not a bail")
+end
+
+-- T19: an entry larger than the whole budget still goes out, as long as the
+-- worker had taken nothing. Refusing it here would leave it for a task that
+-- would refuse it in turn, and the run would never finish.
+local function testEntryOverTheWholeBudgetStillGoesOut()
+	local results, outcome = run({ HUGE_PKG, "a" }, { resultBudgetBytes = SMALL_BUDGET_BYTES })
+
+	check(#results == 1, "T19: the oversized first entry is the only one")
+	check(results[1].pkg == HUGE_PKG, "T19: and it is returned rather than dropped")
+	check(outcome.deferred, "T19: the entries behind it are deferred")
+end
+
+-- T20: the dropped entry is not streamed either. It is going to run again on
+-- another task, and a package the CLI has already been told about would print
+-- twice and — under --bail — trip the run on a failure no envelope reports.
+local function testDroppedEntryIsNotStreamed()
+	sortedMaps["stream-map"] = nil
+	local results = run({ "a", HUGE_PKG }, {
+		resultBudgetBytes = SMALL_BUDGET_BYTES,
+		sortedMapId = "stream-map",
+	})
+
+	check(#results == 1, "T20: only the entry that fits is kept")
+	local streamed = sortedMaps["stream-map"].items
+	check(streamed["a::unit"] ~= nil, "T20: the entry that fits is streamed")
+	check(streamed[HUGE_PKG .. "::unit"] == nil, "T20: the dropped entry is not streamed")
+end
+
+-- T21: the pop loop drops the same entry, and puts its queue item back so the
+-- replacement task finds it. Left as this worker read it, the item stays
+-- invisible for the rest of the window and a replacement that boots inside it
+-- reads an empty queue — the package would be lost, not retried.
+local function testOversizedEntryGoesBackOnTheQueue()
+	local results, outcome = runStealing(
+		{ "a", "b", HUGE_PKG },
+		{ resultBudgetBytes = SMALL_BUDGET_BYTES }
+	)
+
+	check(#results == 2, "T21: the oversized entry is not in the results")
+	check(outcome.deferred, "T21: the outcome asks for a replacement task")
+	check(#queueItems == 1, "T21: the item it dropped is back on the queue")
+	check(queueItems[1].pkg == HUGE_PKG, "T21: and it is the one it dropped")
+	check(#removedReads == 3, "T21: every read is settled, the put-back one included")
+end
+
+-- T22: the replacement task takes the dropped item before anything else, so it
+-- meets it with an empty envelope, which accepts an entry of any size. Put back
+-- behind the items still queued, the worker that reached it would be carrying
+-- results again and could drop it a second time — and a third, until the CLI
+-- runs out of launches and the run ends missing that package.
+local function testReplacementTakesTheDroppedItemFirst()
+	local pkgs = { "a", HUGE_PKG, "b", "c" }
+	local options = { resultBudgetBytes = SMALL_BUDGET_BYTES }
+	local first = runStealing(pkgs, options)
+	check(#first == 1 and first[1].pkg == "a", "T22: the first task drops the oversized entry")
+
+	local replacement = EmbeddedRunner.runWorkStealing({}, stealingPayload(pkgs, options))
+
+	check(replacement[1] ~= nil, "T22: the replacement task takes something")
+	check(replacement[1].pkg == HUGE_PKG, "T22: and takes the dropped entry first")
+end
+
+-- T23: the put-back names the TTL the CLI seeded the queue with. Only the CLI
+-- knows it, and the queue cannot report what is left of the item's own.
+local function testRequeueUsesTheSeededTtl()
+	runStealing(
+		{ "a", "b", HUGE_PKG },
+		{ queueTtlSeconds = 120, resultBudgetBytes = SMALL_BUDGET_BYTES }
+	)
+
+	check(#addedTtls == 1 and addedTtls[1] == 120, "T23: the put-back names the payload's TTL")
+end
+
+-- T24: a put-back refused on every attempt leaves this worker's read standing
+-- instead. The item then comes back when its invisibility window expires, for
+-- whichever sibling is still draining; removing the read on top of a failed
+-- put-back would take even that away.
+local function testFailedRequeueLeavesTheReadStanding()
+	-- More refusals than the runner has attempts.
+	requeueFailures = 100
+	local results, outcome = runStealing(
+		{ "a", "b", HUGE_PKG },
+		{ resultBudgetBytes = SMALL_BUDGET_BYTES }
+	)
+	requeueFailures = 0
+
+	check(#results == 2, "T24: the oversized entry is still dropped")
+	check(outcome.deferred, "T24: and still asks for a replacement task")
+	check(#queueItems == 0, "T24: nothing landed back on the queue")
+	check(#removedReads == 2, "T24: the read it could not put back is left standing")
+	check(#taskWaits > 0, "T24: it retried before giving up")
+end
+
+-- T25: a refused put-back is retried, and the item lands on the retry. Giving up
+-- on the first refusal would leave the item invisible for the rest of its
+-- window, and the replacement task the deferral asks for reads the queue
+-- non-blocking — it boots well inside that window and finds nothing.
+local function testRefusedRequeueIsRetried()
+	requeueFailures = 2
+	local results, outcome = runStealing(
+		{ "a", "b", HUGE_PKG },
+		{ resultBudgetBytes = SMALL_BUDGET_BYTES }
+	)
+	requeueFailures = 0
+
+	check(#results == 2, "T25: the oversized entry is still dropped")
+	check(outcome.deferred, "T25: and still asks for a replacement task")
+	check(#queueItems == 1, "T25: the retry lands the item back on the queue")
+	check(queueItems[1].pkg == HUGE_PKG, "T25: and it is the one it dropped")
+	check(#removedReads == 3, "T25: the read is settled once the put-back lands")
+	check(#taskWaits == 2, "T25: it waited between attempts rather than hammering")
+	check(taskWaits[2] > taskWaits[1], "T25: and backed off further each time")
+end
+
 testWindowAndNoBleedAcrossPackages()
 testRecordShape()
 testFailuresKeepOutput()
@@ -794,5 +972,13 @@ testInfiniteYieldFailsOnlyItsPackage()
 testElapsedBudgetAbandonsOnlyItsPackage()
 testWithinBudgetLeavesTheReasonAbsent()
 testElapsedBudgetBailsTheBatch()
+testOversizedEntryIsDeferredNotCommitted()
+testEntryOverTheWholeBudgetStillGoesOut()
+testDroppedEntryIsNotStreamed()
+testOversizedEntryGoesBackOnTheQueue()
+testReplacementTakesTheDroppedItemFirst()
+testRequeueUsesTheSeededTtl()
+testFailedRequeueLeavesTheReadStanding()
+testRefusedRequeueIsRetried()
 
 print("ALL OK")

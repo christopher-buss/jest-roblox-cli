@@ -25,6 +25,30 @@ type CapturedMessage = InterceptWriteable.CapturedMessage
 
 type SnapshotWrites = { [string]: string }
 
+-- What `payload.queueTtlSeconds` falls back to, matching the CLI's own default
+-- in `src/memory-store/work-stealing.ts`.
+local DEFAULT_QUEUE_TTL_SECONDS = 600
+
+-- Priority a re-queued item goes back at, above the 0 the CLI seeds with, so
+-- the next read takes it ahead of everything still queued. Put back at the
+-- seeded priority it would go behind them all, and the worker that finally
+-- reached it would be carrying results again and would drop it a second time.
+--
+-- This puts the item in front, not in front of an empty worker: a sibling
+-- mid-drain reads it first too, and drops it again. That costs another run of
+-- the package and another deferral, and the replacement the deferral earns does
+-- meet it empty, so the item still lands — but a run whose siblings keep
+-- winning the race can spend its whole launch budget on it.
+local REQUEUE_PRIORITY = 1
+
+-- How many times a put-back is tried before the worker gives up, and the wait
+-- before the second try — each try after that waits twice as long as the one
+-- before. MemoryStore refuses a write when the queue is over its request
+-- quota, which clears on the order of a second, so a short backoff is what the
+-- retries are for; a longer one would only sit on the task's deadline.
+local REQUEUE_ATTEMPTS = 3
+local REQUEUE_BACKOFF_SECONDS = 0.5
+
 export type EntryPayload = {
 	pkg: string,
 	project: string,
@@ -51,6 +75,12 @@ export type Payload = {
 	bailMapId: string?,
 	queueId: string?,
 	invisibilityWindowSeconds: number?,
+	-- TTL the CLI seeded the queue items with, named again when this task puts
+	-- an item back. The queue reports nothing about what is left of the item's
+	-- own, so a put-back restarts the TTL rather than continuing it, and an item
+	-- dropped repeatedly outlives the seeded window. Absent means the default
+	-- below.
+	queueTtlSeconds: number?,
 	-- Caps the encoded size of this task's return envelope. Absent means the
 	-- module's own default. See `result-budget.luau`.
 	resultBudgetBytes: number?,
@@ -72,6 +102,20 @@ export type RunOutcome = {
 -- Why a loop stopped with work left, before it is widened to the wire's pair of
 -- booleans. `nil` means it stopped because there was nothing left to take.
 type StopReason = "bailed" | "deferred"
+
+--[=[
+	One task's run, as everything below the two loops sees it.
+
+	The envelope being assembled and the two things that decide when to stop
+	assembling it, in one value: they are read together by every step of taking
+	a package, and both loops set them up the same way.
+]=]
+type Run = {
+	bail: Bail.State,
+	budget: ResultBudget.Tracker,
+	payload: Payload,
+	results: { ResultEntry },
+}
 
 type QueueItem = {
 	pkg: string,
@@ -361,10 +405,10 @@ end
 	string the return-envelope budget exists to cap — so a run with neither a
 	streaming consumer nor `--bail` must not pay for it.
 ]=]
-local function summarize(result: ResultEntry, payload: Payload, bail: Bail.State): StreamingSummary?
-	local sortedMapId = payload.sortedMapId
+local function summarize(run: Run, result: ResultEntry): StreamingSummary?
+	local sortedMapId = run.payload.sortedMapId
 	local isStreaming = sortedMapId ~= nil and sortedMapId ~= ""
-	if not isStreaming and not Bail.isEnabled(bail) then
+	if not isStreaming and not Bail.isEnabled(run.bail) then
 		return nil
 	end
 
@@ -376,14 +420,18 @@ end
 -- that ran it stops. A package whose output will not decode counts as failed —
 -- `buildSummary` defaults that way, and stopping on an unreadable result is
 -- the same call `--bail` makes on a readable failure.
-local function publishEntry(result: ResultEntry, payload: Payload, bail: Bail.State): ResultEntry
-	local summary = summarize(result, payload, bail)
+--
+-- Called per entry rather than per task, so the CLI streams a package's output
+-- without waiting for the ones after it. If the SortedMap write fails the entry
+-- still lands in the envelope returned at task end, so streaming failure
+-- degrades to batched output rather than a lost result.
+local function publishEntry(run: Run, result: ResultEntry)
+	local summary = summarize(run, result)
 	if summary ~= nil then
+		local payload = run.payload
 		streamResult(summary, payload.sortedMapId, payload.streamingTtlSeconds)
-		Bail.observe(bail, summary.success)
+		Bail.observe(run.bail, summary.success)
 	end
-
-	return result
 end
 
 --[=[
@@ -396,9 +444,7 @@ end
 local function executeEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload,
-	prevPkg: string?,
-	payload: Payload,
-	bail: Bail.State
+	prevPkg: string?
 ): (ResultEntry, string?)
 	local t0 = os.clock()
 	local changingPackage = entry.pkg ~= prevPkg
@@ -438,7 +484,7 @@ local function executeEntry(
 			),
 			gameOutput = stopCapture(),
 		}
-		return publishEntry(result, payload, bail), entry.pkg
+		return result, entry.pkg
 	end
 
 	local pcallOk, jestSuccess, primary, snapshotWrites, bannerOutput, timedOut =
@@ -495,12 +541,44 @@ local function executeEntry(
 		}
 	end
 
-	-- Published immediately so the CLI can stream this package's output without
-	-- waiting for the whole task to finish. Best-effort (pcall): if the
-	-- SortedMap write fails the entry still lands in the envelope returned at
-	-- task end, so streaming failure degrades to the existing batched behavior
-	-- rather than losing the result.
-	return publishEntry(result, payload, bail), if abandoned then nil else entry.pkg
+	return result, if abandoned then nil else entry.pkg
+end
+
+-- Take the item this worker read off the queue for good. Best-effort: a remove
+-- that fails leaves the item to reappear on its invisibility window, where a
+-- sibling runs it again and the CLI folds the duplicate into one result.
+local function retireRead(queue: any, removeId: any)
+	pcall(function()
+		queue:RemoveAsync(removeId)
+	end)
+end
+
+--[=[
+	Put a read item back on the queue, retrying a refusal.
+
+	Returns whether it landed. It has to: an item that never lands stays
+	invisible for the rest of its window, and the replacement task the deferral
+	asks for reads non-blocking, so it boots well inside that window and finds
+	nothing. What is left is a sibling still draining when the window expires —
+	and a worker that is the last one running has no sibling, so the package is
+	lost rather than late. Hence the retries: a refusal is normally the request
+	quota, which the next attempt clears.
+]=]
+local function requeueRead(queue: any, item: QueueItem, ttlSeconds: number): boolean
+	for attempt = 1, REQUEUE_ATTEMPTS do
+		local added = pcall(function()
+			queue:AddAsync(item, ttlSeconds, REQUEUE_PRIORITY)
+		end)
+		if added then
+			return true
+		end
+
+		if attempt < REQUEUE_ATTEMPTS then
+			task.wait(REQUEUE_BACKOFF_SECONDS * 2 ^ (attempt - 1))
+		end
+	end
+
+	return false
 end
 
 -- Absent on the single-task path, where there are no siblings to tell.
@@ -524,12 +602,12 @@ end
 	report the bail, because a deferral asks the CLI for a replacement task and
 	a bail asks it for none.
 ]=]
-local function stopReason(bail: Bail.State, budget: ResultBudget.Tracker): StopReason?
-	if Bail.shouldStop(bail) then
+local function stopReason(run: Run): StopReason?
+	if Bail.shouldStop(run.bail) then
 		return "bailed"
 	end
 
-	if ResultBudget.shouldStop(budget) then
+	if ResultBudget.shouldStop(run.budget) then
 		return "deferred"
 	end
 
@@ -538,6 +616,38 @@ end
 
 local function toOutcome(stop: StopReason?): RunOutcome
 	return { bailed = stop == "bailed", deferred = stop == "deferred" }
+end
+
+--[=[
+	Put a finished entry in the envelope, or refuse it.
+
+	Measured before it is committed, because measuring afterwards decides
+	nothing: the entry is already in the results by then, and the envelope goes
+	out over Open Cloud's 4 MiB limit. Open Cloud rejects the whole task, so
+	every package it ran is lost, not just the one that tipped it over.
+
+	A refused entry is dropped rather than returned, and its caller defers so
+	another task runs it again. That wastes the work the entry already did,
+	which is the price of a cap that holds. Nothing is published for it either:
+	it is going to be reported by the task that reruns it, and a package the CLI
+	has already heard about would print twice and could trip `--bail` on a
+	failure no envelope carries.
+
+	The whole entry goes, rather than the `gameOutput` and coverage payload that
+	usually push it over. Shedding those would keep the run cheaper, but it
+	returns a package whose coverage silently covers less than it ran — a wrong
+	report where a rerun costs only time.
+]=]
+local function commitEntry(run: Run, result: ResultEntry): boolean
+	local measured = ResultBudget.measure(result)
+	if not ResultBudget.fits(run.budget, measured) then
+		return false
+	end
+
+	publishEntry(run, result)
+	table.insert(run.results, result)
+	ResultBudget.add(run.budget, measured)
+	return true
 end
 
 local module = {}
@@ -554,30 +664,36 @@ function module.runEmbedded(
 	callingScript: LuaSourceContainer,
 	payload: Payload
 ): ({ ResultEntry }, RunOutcome)
-	local results: { ResultEntry } = {}
+	local run: Run = {
+		-- No queue on this path, so no siblings to tell: the trip stays local.
+		bail = Bail.new({ enabled = payload.bail }),
+		budget = ResultBudget.new(payload.resultBudgetBytes),
+		payload = payload,
+		results = {},
+	}
 	local prevPkg: string? = nil
-	local budget = ResultBudget.new(payload.resultBudgetBytes)
-	-- No queue on this path, so no siblings to tell: the trip stays local.
-	local bail = Bail.new({ enabled = payload.bail })
 	local stop: StopReason? = nil
 
 	for _, entry in payload.entries do
-		stop = stopReason(bail, budget)
+		stop = stopReason(run)
 		if stop ~= nil then
 			break
 		end
 
-		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg, payload, bail)
-		table.insert(results, result)
-		ResultBudget.add(budget, ResultBudget.measure(result))
+		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg)
 		prevPkg = stagedPkg
+
+		if not commitEntry(run, result) then
+			stop = "deferred"
+			break
+		end
 	end
 
 	if prevPkg ~= nil then
 		Materializer.reset()
 	end
 
-	return results, toOutcome(stop)
+	return run.results, toOutcome(stop)
 end
 
 --[=[
@@ -600,23 +716,26 @@ function module.runWorkStealing(
 	end
 
 	local queue = MemoryStoreService:GetQueue(queueId, invisibility)
-	local results: { ResultEntry } = {}
+	local run: Run = {
+		-- Siblings drain the same queue, and Open Cloud cannot cancel a running
+		-- task, so the trip travels through the results map they all share.
+		bail = Bail.new({
+			enabled = payload.bail,
+			map = resolveSignalMap(payload),
+			ttlSeconds = payload.streamingTtlSeconds,
+		}),
+		budget = ResultBudget.new(payload.resultBudgetBytes),
+		payload = payload,
+		results = {},
+	}
 	local prevPkg: string? = nil
-	local budget = ResultBudget.new(payload.resultBudgetBytes)
-	-- Siblings drain the same queue, and Open Cloud cannot cancel a running
-	-- task, so the trip travels through the results map they all share.
-	local bail = Bail.new({
-		enabled = payload.bail,
-		map = resolveSignalMap(payload),
-		ttlSeconds = payload.streamingTtlSeconds,
-	})
 	local stop: StopReason? = nil
 
 	while true do
 		-- Asked before reading, not after running: an item this worker never
 		-- reads stays visible in the queue, so a sibling task picks it up
 		-- immediately instead of waiting out the invisibility window.
-		stop = stopReason(bail, budget)
+		stop = stopReason(run)
 		if stop ~= nil then
 			break
 		end
@@ -646,27 +765,41 @@ function module.runWorkStealing(
 		local entry = entryByKey[key]
 		if entry == nil then
 			-- Foreign / stale queue item — discard and keep popping.
-			pcall(function()
-				queue:RemoveAsync(removeId)
-			end)
+			retireRead(queue, removeId)
 			continue
 		end
 
-		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg, payload, bail)
-		table.insert(results, result)
-		ResultBudget.add(budget, ResultBudget.measure(result))
+		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg)
 		prevPkg = stagedPkg
 
-		pcall(function()
-			queue:RemoveAsync(removeId)
-		end)
+		if not commitEntry(run, result) then
+			stop = "deferred"
+			-- A dropped entry has to run again, and left as this worker read
+			-- it the item stays invisible for the rest of the window — the
+			-- replacement task the deferral asks for boots well inside that
+			-- and would read an empty queue. Put back before the read is
+			-- retired, so a task that dies between the two leaves a duplicate
+			-- the CLI folds into one result rather than losing the package.
+			-- A put-back refused every attempt leaves the read standing
+			-- instead: the item then comes back on its invisibility window,
+			-- which only a sibling still draining is there to read, and that is
+			-- more than retiring the read would leave.
+			local ttl = payload.queueTtlSeconds or DEFAULT_QUEUE_TTL_SECONDS
+			if requeueRead(queue, item, ttl) then
+				retireRead(queue, removeId)
+			end
+
+			break
+		end
+
+		retireRead(queue, removeId)
 	end
 
 	if prevPkg ~= nil then
 		Materializer.reset()
 	end
 
-	return results, toOutcome(stop)
+	return run.results, toOutcome(stop)
 end
 
 return module
