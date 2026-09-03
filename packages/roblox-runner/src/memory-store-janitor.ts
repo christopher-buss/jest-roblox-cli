@@ -3,7 +3,7 @@ import type { StorageClient } from "@bedrock-rbx/ocale/storage";
 
 import { setTimeout as delay } from "node:timers/promises";
 
-import { createWorkQueueStorage } from "./work-queue-shared.ts";
+import { createWorkQueueStorage, dequeueOrEmptyAsync } from "./work-queue-shared.ts";
 
 export interface MemoryStoreJanitorOptions {
 	readonly apiKey: string;
@@ -192,7 +192,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 
 	/** One dequeue→discard sweep; `true` while more items may remain. */
 	private async sweepQueueOnceAsync(): Promise<boolean> {
-		const read = await this.storage.queues.dequeue({
+		const read = await dequeueOrEmptyAsync(this.storage, {
 			count: PAGE_SIZE,
 			invisibilityWindow: DISCARD_CLAIM_SECONDS,
 			queueId: this.queueId,
@@ -205,7 +205,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 			return false;
 		}
 
-		if (read.data.items.length === 0) {
+		if (read.data.readId === undefined) {
 			return false;
 		}
 

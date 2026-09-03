@@ -20,8 +20,8 @@ importers:
   .:
     dependencies:
       '@bedrock-rbx/ocale':
-        specifier: 0.1.5
-        version: 0.1.5
+        specifier: 0.3.0
+        version: 0.3.0
       '@jridgewell/trace-mapping':
         specifier: 0.3.31
         version: 0.3.31
@@ -228,8 +228,8 @@ importers:
   packages/roblox-runner:
     dependencies:
       '@bedrock-rbx/ocale':
-        specifier: 0.1.5
-        version: 0.1.5
+        specifier: 0.3.0
+        version: 0.3.0
       arktype:
         specifier: 2.2.3
         version: 2.2.3
@@ -555,8 +555,8 @@ packages:
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
 
-  '@bedrock-rbx/ocale@0.1.5':
-    resolution: {integrity: sha512-1c+nq9LfXw9vWmqp5K2mtx/VZcYPxY1B3+uzsUnV5yVTEe34TuWCMkcErb3JBg4B7ZEO/5ywGN7dBYkamYV9RA==}
+  '@bedrock-rbx/ocale@0.3.0':
+    resolution: {integrity: sha512-J9NRLDs8lskcFVn9LhQs7Alpg+AT953YJSigLlACkStw7rzueSQ+choZ7GH7nyHE9UnCzOL/+InqY7PABDws/A==}
     engines: {bun: '>=1.3.0', node: '>=24.12.0'}
 
   '@better-typescript-lib/decorators@2.12.0':
@@ -5175,7 +5175,7 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@bedrock-rbx/ocale@0.1.5': {}
+  '@bedrock-rbx/ocale@0.3.0': {}
 
   '@better-typescript-lib/decorators@2.12.0(typescript@6.0.3)':
     dependencies:

@@ -58,6 +58,11 @@ function mockLeftoverSweep(http: FakeHttpClient, readId: string): void {
 	http.mockResponse({ body: {}, status: 200 });
 }
 
+/**
+ * An empty read. How the endpoint spells one on the wire is
+ * `dequeueOrEmptyAsync`'s business, and its own spec's; the janitor only sees
+ * the normalised result.
+ */
 function mockEmptyQueue(http: FakeHttpClient): void {
 	http.mockResponse({ body: validDequeueBody({ queueItems: [] }), status: 200 });
 }
@@ -98,19 +103,43 @@ describe("memory store janitor", () => {
 			expect(http.requests[0]!.request.url).toContain("invisibilityWindow=1s");
 		});
 
-		it("should be a no-op after a clean drain (one empty read, zero discards)", async () => {
-			expect.assertions(2);
+		it("should be a no-op after a clean drain (one empty read, zero discards, no log)", async () => {
+			expect.assertions(3);
 
 			const http = createFakeHttpClient();
 			mockEmptyQueue(http);
 			mockEmptyProgress(http);
+			const log = vi.fn<(message: string) => void>();
 
-			await makeJanitor(http).cleanupAsync();
+			await makeJanitor(http, { log }).cleanupAsync();
 
 			expect(http.requests).toHaveLength(2);
 			expect(
 				http.requests.some(({ request }) => request.url.includes(":discard")),
 			).toBeFalse();
+			expect(log).not.toHaveBeenCalled();
+		});
+
+		it("should stay silent on the 404 the endpoint really ends a drain with", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			mockLeftoverSweep(http, "read-1");
+			// The response the false alarm was reported against, rather than
+			// the shape `mockEmptyQueue` stands in with. What makes it an empty
+			// read is `dequeueOrEmptyAsync`'s business; that the janitor is
+			// wired through it is this test's.
+			http.mockApiError({
+				code: "NOT_FOUND",
+				message: "HTTP 404: Queue items not found.",
+				statusCode: 404,
+			});
+			mockEmptyProgress(http);
+			const log = vi.fn<(message: string) => void>();
+
+			await makeJanitor(http, { log }).cleanupAsync();
+
+			expect(log).not.toHaveBeenCalled();
 		});
 
 		it("should touch only its own queue and map, and never the universe flush endpoint", async () => {

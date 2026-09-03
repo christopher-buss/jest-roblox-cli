@@ -1,4 +1,8 @@
-import { createFakeHttpClient, type FakeHttpClient } from "@bedrock-rbx/ocale/testing";
+import {
+	createFakeHttpClient,
+	type FakeHttpClient,
+	validDequeueBody,
+} from "@bedrock-rbx/ocale/testing";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { describe, expect, it } from "vitest";
@@ -247,6 +251,23 @@ describe("work queue capabilities", () => {
 			const captured = http.requests[0]!.request;
 
 			expect(captured.url).toContain("invisibilityWindow=1s");
+		});
+
+		it("should hand back an empty batch, with nothing to discard, on an empty read", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({
+				body: validDequeueBody({ id: "read-empty", queueItems: [] }),
+				status: 200,
+			});
+
+			const queue = makeReader(http);
+			const batch = await queue.claimAsync(1, 30_000);
+			await batch.commit();
+
+			expect(batch.items).toBeEmpty();
+			expect(http.requests).toHaveLength(1);
 		});
 
 		it("should throw when claim returns API error", async () => {

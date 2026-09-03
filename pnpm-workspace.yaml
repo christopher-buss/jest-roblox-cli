@@ -10,6 +10,7 @@ overrides:
   "@typescript-eslint/utils": 8.62.1
 
 minimumReleaseAgeExclude:
+  - "@bedrock-rbx/ocale"
   - "@isentinel/eslint-config"
 
 publicHoistPattern:

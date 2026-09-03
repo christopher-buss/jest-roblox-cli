@@ -1,7 +1,11 @@
 import type { HttpClient, SleepFunc } from "@bedrock-rbx/ocale";
 import type { StorageClient } from "@bedrock-rbx/ocale/storage";
 
-import { createWorkQueueStorage, msToSecondsCeil } from "./work-queue-shared.ts";
+import {
+	createWorkQueueStorage,
+	dequeueOrEmptyAsync,
+	msToSecondsCeil,
+} from "./work-queue-shared.ts";
 
 export interface WorkQueueReaderOptions<T> {
 	readonly apiKey: string;
@@ -19,6 +23,11 @@ export interface ClaimedBatch<T> {
 }
 
 export interface WorkQueueReader<T> {
+	/**
+	 * Claim up to `count` items, holding them invisible to other consumers for
+	 * `invisibilityMs`. A queue with nothing visible is not an error: it yields
+	 * an empty batch, so a consumer can poll one until work arrives.
+	 */
 	claimAsync(count: number, invisibilityMs: number): Promise<ClaimedBatch<T>>;
 }
 
@@ -37,7 +46,7 @@ class OpenCloudWorkQueueReader<T> implements WorkQueueReader<T> {
 
 	public async claimAsync(count: number, invisibilityMs: number): Promise<ClaimedBatch<T>> {
 		const invisibilityWindow = msToSecondsCeil(invisibilityMs);
-		const result = await this.storage.queues.dequeue({
+		const result = await dequeueOrEmptyAsync(this.storage, {
 			count,
 			invisibilityWindow,
 			queueId: this.queueId,
@@ -55,7 +64,15 @@ class OpenCloudWorkQueueReader<T> implements WorkQueueReader<T> {
 		};
 	}
 
-	private async commitBatchAsync(readId: string): Promise<void> {
+	/**
+	 * Discard the claim, so the items never resurface. An empty read yields no
+	 * `readId` and so has nothing to discard.
+	 */
+	private async commitBatchAsync(readId: string | undefined): Promise<void> {
+		if (readId === undefined) {
+			return;
+		}
+
 		const result = await this.storage.queues.discard({
 			queueId: this.queueId,
 			readId,

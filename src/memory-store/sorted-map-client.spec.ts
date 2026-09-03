@@ -1,3 +1,4 @@
+import { OpenCloudError } from "@bedrock-rbx/ocale";
 import type {
 	CreateSortedMapItemParameters,
 	DeleteSortedMapItemParameters,
@@ -23,9 +24,9 @@ interface SortedMapStub {
 }
 
 interface StubBehavior {
-	createError?: Error;
-	deleteError?: Error;
-	listError?: Error;
+	createError?: OpenCloudError;
+	deleteError?: OpenCloudError;
+	listError?: OpenCloudError;
 	listPages?: Array<ListSortedMapItemsResult>;
 }
 
@@ -177,7 +178,7 @@ describe(StreamingResultClient, () => {
 		it("should throw when sortedMaps.create returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ createError: new Error("rate limited") });
+			const stub = createSortedMapStub({ createError: new OpenCloudError("rate limited") });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",
@@ -289,7 +290,7 @@ describe(StreamingResultClient, () => {
 		it("should throw when sortedMaps.list returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ listError: new Error("auth failed") });
+			const stub = createSortedMapStub({ listError: new OpenCloudError("auth failed") });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",
@@ -345,7 +346,7 @@ describe(StreamingResultClient, () => {
 		it("should throw when sortedMaps.delete returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ deleteError: new Error("not found") });
+			const stub = createSortedMapStub({ deleteError: new OpenCloudError("not found") });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",
