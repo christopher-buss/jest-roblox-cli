@@ -188,11 +188,13 @@ function formatFailedFileSummary(
 }
 
 function formatExecErrorFileSummary(
-	_file: TestFileResult,
+	file: TestFileResult,
 	formattedPath: string,
 	styles: Styles,
 ): Array<string> {
-	const symbol = styles.status.fail("✗");
+	// A clock rather than a cross: the file line is the first thing read, and a
+	// run that ran out of time is acted on differently from one that threw.
+	const symbol = file.timedOut === true ? styles.status.pending("⏱") : styles.status.fail("✗");
 	return [` ${symbol} ${formattedPath}`];
 }
 

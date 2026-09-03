@@ -34,7 +34,7 @@ const pluginRequest = type({
 
 // The protocol this CLI speaks, pinned here on purpose: the spec asserts the
 // wire, so a bump has to be made deliberately in both places.
-const PROTOCOL_VERSION = 6;
+const PROTOCOL_VERSION = 7;
 
 /**
  * Connect a plugin that announces a protocol the CLI can use.
@@ -355,7 +355,9 @@ describe("protocol version handshake", () => {
 		expect(caught.message).toContain(
 			`JestRobloxRunner 0.3.18 (protocol v${PROTOCOL_VERSION - 1})`,
 		);
-		expect(caught.message).toContain("OldRunner (protocol v4, version not reported)");
+		expect(caught.message).toContain(
+			`OldRunner (protocol v${PROTOCOL_VERSION - 2}, version not reported)`,
+		);
 		expect(caught.message).toContain("remove the other copies");
 	});
 

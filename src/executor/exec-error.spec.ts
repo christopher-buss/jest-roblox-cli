@@ -6,6 +6,7 @@ import type { BackendTiming } from "../backends/interface.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
+import { EXEC_ERROR_FILE_PATH } from "../types/jest-result.ts";
 import { buildExecutionErrorResult } from "./exec-error.ts";
 
 const BACKEND_TIMING: BackendTiming = {
@@ -17,14 +18,17 @@ function buildResult({
 	bannerOutput,
 	deferFormatting,
 	message = "failure",
+	timedOut,
 }: {
 	bannerOutput?: string | undefined;
 	deferFormatting: boolean | undefined;
 	message?: string | undefined;
+	timedOut?: boolean | undefined;
 }) {
 	const error = new LuauScriptError(message);
 	error.bannerOutput = bannerOutput;
 	error.gameOutput = "complete game log";
+	error.timedOut = timedOut;
 
 	return buildExecutionErrorResult({
 		backendTiming: BACKEND_TIMING,
@@ -59,8 +63,9 @@ describe(buildExecutionErrorResult, () => {
 						numFailingTests: 0,
 						numPassingTests: 0,
 						numPendingTests: 0,
-						testFilePath: "<exec-error>",
+						testFilePath: EXEC_ERROR_FILE_PATH,
 						testResults: [],
+						timedOut: undefined,
 					},
 				],
 			},
@@ -72,6 +77,15 @@ describe(buildExecutionErrorResult, () => {
 				uploadMs: 11,
 			},
 		});
+	});
+
+	it("should mark an abandoned run timed out and still fail the run", () => {
+		expect.assertions(2);
+
+		const result = buildResult({ deferFormatting: true, timedOut: true });
+
+		expect(result.result.testResults[0]).toHaveProperty("timedOut", true);
+		expect(result.exitCode).toBe(1);
 	});
 
 	it("should format immediately unless formatting is explicitly deferred", () => {

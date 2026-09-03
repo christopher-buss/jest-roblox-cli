@@ -46,7 +46,7 @@ const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
  * omits the echo (a stale runner predating the handshake) or returns a
  * different number, surfacing a clean "update the plugin" error.
  */
-export const STUDIO_CLI_PROTOCOL_VERSION = 6;
+export const STUDIO_CLI_PROTOCOL_VERSION = 7;
 
 type StudioCliPayload = RunPayload & {
 	protocolVersion: typeof STUDIO_CLI_PROTOCOL_VERSION;

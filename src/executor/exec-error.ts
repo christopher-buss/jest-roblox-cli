@@ -1,6 +1,7 @@
 import type { BackendTiming } from "../backends/interface.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { LuauScriptError } from "../reporter/parser.ts";
+import { EXEC_ERROR_FILE_PATH } from "../types/jest-result.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { TimingResult } from "../types/timing.ts";
 import { parseGameOutput } from "../utils/game-output.ts";
@@ -108,8 +109,13 @@ function buildExecErrorJestResult(error: LuauScriptError, startTime: number): Je
 				numFailingTests: 0,
 				numPassingTests: 0,
 				numPendingTests: 0,
-				testFilePath: "<exec-error>",
+				testFilePath: EXEC_ERROR_FILE_PATH,
 				testResults: [],
+				// A field rather than a second synthetic path: the source
+				// mapper rewrites every `testFilePath` it can resolve, and a
+				// JSON consumer reads this without knowing which strings the
+				// CLI reserves.
+				timedOut: error.timedOut,
 			},
 		],
 	};

@@ -10,8 +10,11 @@ end
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `STUDIO_CLI_PROTOCOL_VERSION` in
--- `src/backends/studio-cli.ts`. v6 adds the plugin's own release version to
--- the result and the claim below; v5 added the optional `vmParallel` count: a
+-- `src/backends/studio-cli.ts`. v7 adds the `runnerTimeoutMs` argv the runner
+-- bounds a project's run with and strips before calling Jest, so a v6 plugin
+-- handed one runs unbounded and passes the key on to Jest; v6 adds the plugin's
+-- own release version to the result and the claim below; v5 added the optional
+-- `vmParallel` count: a
 -- plugin predating it would run a parallel request sequentially and say
 -- nothing, so the handshake is what turns that into an "update the plugin"
 -- error. v4 nested the fields the runner adds to Jest's result under `runner`
@@ -19,7 +22,7 @@ end
 -- the version the CLI sent and echoes its own in `EndTest`, so the CLI
 -- surfaces a clean error against a mismatched plugin rather than running with
 -- stale runtime semantics.
-local PROTOCOL_VERSION = 6
+local PROTOCOL_VERSION = 7
 
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
 -- tree served straight out of source control. Diagnostic only — see the same
@@ -258,7 +261,13 @@ local function runInVmHosts(requested: number): ({ any }?, string?)
 	local receivedCount = 0
 
 	local connection = results.Event:Connect(
-		function(configIndex: number, jestOutput: string, bannerOutput: string, elapsedMs: number)
+		function(
+			configIndex: number,
+			jestOutput: string,
+			bannerOutput: string,
+			elapsedMs: number,
+			timedOut: boolean?
+		)
 			if received[configIndex] ~= nil then
 				return
 			end
@@ -267,6 +276,7 @@ local function runInVmHosts(requested: number): ({ any }?, string?)
 				bannerOutput = bannerOutput,
 				elapsedMs = elapsedMs,
 				jestOutput = jestOutput,
+				timedOut = timedOut,
 			}
 			receivedCount += 1
 		end

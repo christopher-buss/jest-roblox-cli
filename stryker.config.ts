@@ -49,10 +49,13 @@ export default {
 	// Measure from a deleted `reports/stryker-incremental.json`. An incremental
 	// run reuses results whose tests have since changed, so it reports
 	// survivors a full run kills and reads low by a few hundredths — enough to
-	// fail this gate on a suite that passes it.
+	// fail this gate on a suite that passes it. Note `nx-stryker-seed` restores
+	// the file from the Nx cache, so deleting it locally is not enough on its
+	// own: an incremental measurement reads low, which only ever sets the floor
+	// too conservatively, never too high.
 	thresholds: {
 		...sharedConfig.thresholds,
-		break: 92.99,
+		break: 94.37,
 	},
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",

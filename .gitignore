@@ -21,3 +21,4 @@ plugin/src/version.luau
 plugin/out/
 .standalone/.preview
 dist/
+plugin/JestRobloxRunner.rbxm

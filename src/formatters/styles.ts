@@ -35,6 +35,12 @@ export interface Styles {
 		passed: ColorFunc;
 		pending: ColorFunc;
 	};
+	/**
+	 * Amber rather than the fail badge's red: a project that ran out of time
+	 * reports a budget, not an assertion, and the two read differently at a
+	 * glance.
+	 */
+	timeoutBadge: ColorFunc;
 }
 
 type StyleSet = Except<Styles, "slowTestThreshold">;
@@ -84,6 +90,7 @@ const PLAIN_STYLE_SET: StyleSet = {
 	runBadge: identity,
 	status: { fail: identity, pass: identity, pending: identity },
 	summary: { failed: identity, passed: identity, pending: identity },
+	timeoutBadge: identity,
 };
 
 const COLOR_STYLE_SET: StyleSet = {
@@ -114,6 +121,7 @@ const COLOR_STYLE_SET: StyleSet = {
 		passed: (text) => color.bold(color.green(text)),
 		pending: (text) => color.bold(color.yellow(text)),
 	},
+	timeoutBadge: (text) => color.bgYellow(color.black(color.bold(text))),
 };
 
 const PROJECT_BADGE_COLORS: Array<ColorFunc> = [

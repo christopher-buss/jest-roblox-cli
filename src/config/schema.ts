@@ -65,6 +65,16 @@ export interface SharedTestConfig {
 	 */
 	mockDataModel?: boolean;
 	/**
+	 * Wall-clock budget in milliseconds for one project's whole Jest run,
+	 * enforced inside the Roblox runtime. Default `60000`; `0` turns it off.
+	 *
+	 * The middle rung of three: `test.testTimeout` bounds a single test, this
+	 * bounds every test one project runs, and the root `timeout` bounds the
+	 * whole Open Cloud task. A project that outlives its budget is abandoned
+	 * and reported as timed out, and the run moves on to the next one.
+	 */
+	projectTimeout?: number;
+	/**
 	 * Reset mock state and remove any mocked implementation before each test
 	 * (like `jest.resetAllMocks()`). Default `false`.
 	 */
@@ -557,6 +567,7 @@ export interface ResolvedConfig
 	 * runs.
 	 */
 	projects?: Array<ProjectEntry> | undefined;
+	projectTimeout: number;
 	rootDir: string;
 	showLuau: boolean;
 	silent: boolean;
@@ -678,6 +689,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 	passWithNoTests: false,
 	placeFile: "./game.rbxl",
 	port: 3001,
+	projectTimeout: 60_000,
 	rootDir: process.cwd(),
 	showLuau: true,
 	silent: false,
@@ -810,6 +822,7 @@ const sharedTestDefinition = type.define({
 	"clearMocks?": "boolean",
 	"injectGlobals?": "boolean",
 	"mockDataModel?": "boolean",
+	"projectTimeout?": "number >= 0",
 	"resetMocks?": "boolean",
 	"resetModules?": "boolean",
 	"restoreMocks?": "boolean",
@@ -1028,6 +1041,7 @@ const SHARED_TEST_KEYS_LIST = [
 	"clearMocks",
 	"injectGlobals",
 	"mockDataModel",
+	"projectTimeout",
 	"resetMocks",
 	"resetModules",
 	"restoreMocks",
@@ -1134,6 +1148,9 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
 	// Resolved-only, so `ROOT_CLI_KEYS_LIST` cannot carry it: it decides how
 	// this run submits to Open Cloud, and means nothing to Jest.
 	"ownedPlace",
+	// Read by our own runner, not by Jest — it reaches the runtime as
+	// `runnerTimeoutMs` instead. See `buildJestArgv`.
+	"projectTimeout",
 	"typecheck",
 ]);
 

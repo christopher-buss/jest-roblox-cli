@@ -21,5 +21,6 @@ export function createTaggedStyles(): Styles {
 			passed: tag("summaryPassed"),
 			pending: tag("summaryPending"),
 		},
+		timeoutBadge: tag("timeoutBadge"),
 	};
 }

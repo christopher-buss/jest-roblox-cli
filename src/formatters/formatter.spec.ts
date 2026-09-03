@@ -23,6 +23,7 @@ import {
 	PASSING_RESULT,
 	SKIPPED_RESULT,
 	SNAPSHOT_FAILING_RESULT,
+	TIMED_OUT_RESULT,
 	TIMING,
 	TIMING_COVERAGE,
 	TIMING_NO_UPLOAD,
@@ -1637,6 +1638,48 @@ describe("formatResult exec errors", () => {
 				.length - 1;
 
 		expect(occurrences).toBe(1);
+	});
+});
+
+describe("formatResult timeouts", () => {
+	it("should name the budget rather than a suite that threw", () => {
+		expect.assertions(5);
+
+		const output = formatResult(TIMED_OUT_RESULT, TIMING, {
+			...defaultOptions,
+			color: false,
+		});
+
+		expect(output).toContain("Test suite timed out");
+		expect(output).not.toContain("Test suite failed to run");
+		expect(output).toContain("Timed out after 60s, aborting tests");
+		expect(output).toContain(" TIMEOUT ");
+		expect(output).not.toContain(" FAIL ");
+	});
+
+	it("should paint the timeout badge apart from the fail badge", () => {
+		expect.assertions(2);
+
+		const output = formatResult(TIMED_OUT_RESULT, TIMING, {
+			...defaultOptions,
+			color: true,
+		});
+		const plainFailure = formatResult(EXEC_ERROR_RESULT, TIMING, {
+			...defaultOptions,
+			color: true,
+		});
+
+		expect(output).toContain(color.bgYellow(color.black(color.bold(" TIMEOUT "))));
+		expect(plainFailure).toContain(color.bgRed(color.white(color.bold(" FAIL "))));
+	});
+
+	it("should still count the run as failed", () => {
+		expect.assertions(2);
+
+		const summary = formatTestSummary(TIMED_OUT_RESULT, createTiming(1000));
+
+		expect(summary).toContain("1 failed");
+		expect(summary).not.toContain("skipped");
 	});
 });
 

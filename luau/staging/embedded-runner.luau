@@ -35,6 +35,7 @@ export type EntryPayload = {
 		setupFilesAfterEnv: { string }?,
 		runnerCoverage: boolean?,
 		runnerPerTestCoverage: boolean?,
+		runnerTimeoutMs: number?,
 		runnerTiming: boolean?,
 		[string]: any,
 	},
@@ -85,6 +86,10 @@ export type ResultEntry = {
 	snapshotWrites: SnapshotWrites?,
 	gameOutput: string?,
 	bannerOutput: string?,
+	-- The budget elapsed before Jest returned, so `jestOutput` carries the
+	-- abandon message rather than a result. The host reports it apart from a
+	-- suite that threw.
+	timedOut: boolean?,
 }
 
 type StreamingSummary = {
@@ -110,10 +115,12 @@ local function resolveSetupPaths(paths: { string }?): { Instance }?
 	return resolved
 end
 
--- Returns: (jestSuccess, jestOutputOrErrorMessage, snapshotWrites, bannerOutput).
+-- Returns: (jestSuccess, jestOutputOrErrorMessage, snapshotWrites, bannerOutput,
+-- timedOut).
 -- `jestSuccess=false` means Jest itself rejected; `jestOutputOrErrorMessage`
 -- carries the normalized cause string in that case, otherwise the encoded
--- success envelope.
+-- success envelope. `timedOut` is true only for the one rejection the watchdog
+-- raised itself, having spent the entry's whole budget.
 --
 -- `bannerOutput` is the narrower InterceptWriteable capture of Jest's
 -- own process.stdout/stderr writes, used by the CLI error banner to
@@ -122,9 +129,12 @@ end
 local function runEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload
-): (boolean, string, SnapshotWrites?, string?)
+): (boolean, string, SnapshotWrites?, string?, boolean)
 	local t0 = os.clock()
 	local timingEnabled = entry.config.runnerTiming == true
+	-- Read before the guarded closure strips it off the config for Jest.
+	-- Absent means the host asked for no budget.
+	local budgetMs = entry.config.runnerTimeoutMs
 
 	local t_findJest0 = os.clock()
 	local JestModule = InstanceResolver.getJest(entry.config)
@@ -172,7 +182,7 @@ local function runEntry(
 	-- the whole task hitting its deadline. Cancelling the run is what frees the
 	-- parked thread; see the guard on why closing this closure is not enough.
 	local pending: any = nil
-	local ok, jestResultOrError = InfiniteYield.guard(function()
+	local ok, jestResultOrError, timedOut = InfiniteYield.guard(function()
 		local t_requireJest0 = os.clock()
 		local Jest = (require :: any)(JestModule)
 		local t_requireJest = os.clock()
@@ -217,6 +227,7 @@ local function runEntry(
 		-- table, so this only affects this entry, not siblings in the batch.
 		entry.config.runnerCoverage = nil :: any
 		entry.config.runnerPerTestCoverage = nil :: any
+		entry.config.runnerTimeoutMs = nil :: any
 		entry.config.runnerTiming = nil :: any
 
 		local t_jestRunCLI0 = os.clock()
@@ -252,11 +263,14 @@ local function runEntry(
 		})
 
 		return HttpService:JSONEncode(payload)
-	end, function()
-		if pending ~= nil then
-			pending:cancel()
-		end
-	end)
+	end, {
+		onAbandon = function()
+			if pending ~= nil then
+				pending:cancel()
+			end
+		end,
+		timeoutMs = budgetMs,
+	})
 
 	if restoreStdout then
 		restoreStdout()
@@ -281,10 +295,10 @@ local function runEntry(
 	local capturedWrites: SnapshotWrites? = if next(snapshotWrites) then snapshotWrites else nil
 
 	if not ok then
-		return false, PromiseError.normalize(jestResultOrError), nil, bannerOutput
+		return false, PromiseError.normalize(jestResultOrError), nil, bannerOutput, timedOut
 	end
 
-	return true, jestResultOrError, capturedWrites, bannerOutput
+	return true, jestResultOrError, capturedWrites, bannerOutput, false
 end
 
 local function buildSummary(result: ResultEntry): StreamingSummary
@@ -374,13 +388,20 @@ local function publishEntry(result: ResultEntry, payload: Payload, bail: Bail.St
 	return result
 end
 
+--[=[
+	Run one entry and report it, alongside the package left staged afterwards.
+
+	The caller passes that second value back as `prevPkg` on the next entry, so
+	the rule for what is still in the DataModel lives here — beside the teardown
+	that decides it — rather than in each of the two dispatch loops.
+]=]
 local function executeEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload,
 	prevPkg: string?,
 	payload: Payload,
 	bail: Bail.State
-): ResultEntry
+): (ResultEntry, string?)
 	local t0 = os.clock()
 	local changingPackage = entry.pkg ~= prevPkg
 
@@ -420,12 +441,23 @@ local function executeEntry(
 			}),
 			gameOutput = stopCapture(),
 		}
-		return publishEntry(result, payload, bail)
+		return publishEntry(result, payload, bail), entry.pkg
 	end
 
-	local pcallOk, jestSuccess, primary, snapshotWrites, bannerOutput =
+	local pcallOk, jestSuccess, primary, snapshotWrites, bannerOutput, timedOut =
 		pcall(runEntry, callingScript, entry)
 	local elapsedMs = math.floor((os.clock() - t0) * 1000)
+
+	-- Torn down here rather than at the next entry's materialize: the run this
+	-- package left behind was abandoned, not ended, and whatever its scripts do
+	-- on Destroy belongs inside its own capture window instead of landing on
+	-- the package that happens to run next. Nothing of it is left staged, which
+	-- is what this function reports back so the next entry stages afresh.
+	local abandoned = timedOut == true
+	if abandoned then
+		pcall(Materializer.reset)
+	end
+
 	local gameOutput = stopCapture()
 
 	local result: ResultEntry
@@ -465,6 +497,7 @@ local function executeEntry(
 			}),
 			gameOutput = gameOutput,
 			bannerOutput = bannerOutput,
+			timedOut = if timedOut then true else nil,
 		}
 	end
 
@@ -473,7 +506,7 @@ local function executeEntry(
 	-- SortedMap write fails the entry still lands in the envelope returned at
 	-- task end, so streaming failure degrades to the existing batched behavior
 	-- rather than losing the result.
-	return publishEntry(result, payload, bail)
+	return publishEntry(result, payload, bail), if abandoned then nil else entry.pkg
 end
 
 -- Absent on the single-task path, where there are no siblings to tell.
@@ -540,10 +573,10 @@ function module.runEmbedded(
 			break
 		end
 
-		local result = executeEntry(callingScript, entry, prevPkg, payload, bail)
+		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg, payload, bail)
 		table.insert(results, result)
 		ResultBudget.add(budget, ResultBudget.measure(result))
-		prevPkg = entry.pkg
+		prevPkg = stagedPkg
 	end
 
 	if prevPkg ~= nil then
@@ -625,10 +658,10 @@ function module.runWorkStealing(
 			continue
 		end
 
-		local result = executeEntry(callingScript, entry, prevPkg, payload, bail)
+		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg, payload, bail)
 		table.insert(results, result)
 		ResultBudget.add(budget, ResultBudget.measure(result))
-		prevPkg = entry.pkg
+		prevPkg = stagedPkg
 
 		pcall(function()
 			queue:RemoveAsync(removeId)

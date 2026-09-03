@@ -28,6 +28,7 @@ const envelopeSchema = type({
 		"pkg?": "string",
 		"project?": "string",
 		"snapshotWrites?": { "[string]": "string" },
+		"timedOut?": "boolean",
 	}).array(),
 	// Set by the run-mode coordinator when the projects ran across VM hosts:
 	// the run's game output was captured once, for the batch, so it belongs to
@@ -114,6 +115,7 @@ export function buildProjectResult(
 		gameOutput: entryGameOutput,
 		jestOutput,
 		snapshotWrites,
+		timedOut,
 	}: EnvelopeEntry,
 	job: ProjectJob,
 	fallbackGameOutput: string | undefined,
@@ -132,6 +134,10 @@ export function buildProjectResult(
 			// CONTEXT.md for the Game Output / Banner Output split.
 			err.bannerOutput = bannerOutput;
 			err.gameOutput = gameOutput;
+			// An abandoned run always decodes to a script failure, so the
+			// distinction between "timed out" and "threw" would be lost here
+			// unless it rides on the error the report is built from.
+			err.timedOut = timedOut;
 		}
 
 		throw err;

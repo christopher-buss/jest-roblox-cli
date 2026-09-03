@@ -36,6 +36,11 @@ local WARNING = { Value = 2 }
 
 local Enum = { MessageType = { MessageOutput = OUTPUT, MessageWarning = WARNING } }
 
+-- Deadlines the watchdog has armed and the clock has not reached; `elapse`
+-- below is the clock reaching them. Nothing advances on its own, so a test
+-- says exactly when a package runs out of budget.
+local armed = {}
+
 -- Faithful enough `task.spawn`: it resumes immediately, so a thunk that never
 -- yields finishes before the call returns.
 local task = {
@@ -48,7 +53,34 @@ local task = {
 
 		return thread
 	end,
+	delay = function(seconds: number, callback)
+		local thread = coroutine.create(callback)
+		table.insert(armed, { seconds = seconds, thread = thread })
+		return thread
+	end,
+	cancel = function(target)
+		for index, entry in armed do
+			if entry.thread == target then
+				table.remove(armed, index)
+				coroutine.close(target)
+				return
+			end
+		end
+
+		fail("task.cancel: thread is not armed")
+	end,
 }
+
+local function elapse()
+	local due = armed
+	armed = {}
+	for _, entry in due do
+		local ok, err = coroutine.resume(entry.thread)
+		if not ok then
+			fail("deadline thread errored: " .. tostring(err))
+		end
+	end
+end
 
 local function emit(message: string, messageType)
 	for _, handler in listeners do
@@ -141,6 +173,9 @@ local jestRedTests = {}
 local jestMissing = {}
 local silent = {}
 local jestHangs = {}
+-- Parks the way a slow package does — no warning, nothing wrong, just still
+-- working. The budget is the only thing that can end it.
+local jestParks = {}
 
 local YIELD_WARNING = "Infinite yield possible on 'ReplicatedStorage.shared:WaitForChild(\"x\")'"
 
@@ -197,6 +232,11 @@ local Jest = {
 					emit(YIELD_WARNING, WARNING)
 					coroutine.yield()
 					fail("the parked package was resumed")
+				end
+
+				if jestParks[pkg] then
+					coroutine.yield()
+					fail("the abandoned package was resumed")
 				end
 
 				-- Stands in for circus firing test_done: real attribution
@@ -374,6 +414,28 @@ local function has(messages, wanted: string): boolean
 	end
 
 	return false
+end
+
+-- An entry whose config carries a budget, in the milliseconds the host sends.
+local function budgetedEntryFor(pkg: string, budgetMs: number)
+	local entry = entryFor(pkg)
+	entry.config.runnerTimeoutMs = budgetMs
+	return entry
+end
+
+-- Drives a batch from a thread the harness owns, so a batch that parks on a
+-- package can be resumed here the way the elapsed budget resumes it in
+-- production. `done` stays false while the batch is parked.
+local function runInThread(fn)
+	local outcome = { done = false }
+	local thread = coroutine.create(function()
+		outcome.results, outcome.second = fn()
+		outcome.done = true
+	end)
+
+	local ok, err = coroutine.resume(thread)
+	check(ok, "batch thread errored: " .. tostring(err))
+	return outcome
 end
 
 local function run(pkgs)
@@ -634,6 +696,80 @@ local function testInfiniteYieldFailsOnlyItsPackage()
 	check(second.success == true, "T14: the next package still runs")
 end
 
+-- T15: a package still running when its budget elapses is abandoned, and only
+-- it. The batch runs on, the next package stages itself afresh, and the report
+-- says the budget ran out rather than that the suite threw.
+local function testElapsedBudgetAbandonsOnlyItsPackage()
+	jestParks.a = true
+
+	local outcome = runInThread(function()
+		return EmbeddedRunner.runEmbedded({}, {
+			entries = { budgetedEntryFor("a", 5000), budgetedEntryFor("b", 5000) },
+		})
+	end)
+
+	check(not outcome.done, "T15: the batch waits while the package is within budget")
+
+	elapse()
+	jestParks.a = nil
+
+	local results = outcome.results
+	check(outcome.done, "T15: the elapsed budget resumes the batch")
+	check(#results == 2, "T15: the batch runs on past the abandoned package")
+
+	local abandoned = HttpService:JSONDecode(results[1].jestOutput)
+	check(results[1].timedOut == true, "T15: the abandoned package is reported as timed out")
+	check(abandoned.success == false, "T15: an abandoned package is a failure")
+	check(
+		string.find(abandoned.err, "Timed out after 5s", 1, true) ~= nil,
+		"T15: the failure names the budget"
+	)
+
+	-- The stage is torn down inside the abandoned package's own capture, so
+	-- the reset belongs to it rather than to whatever runs next.
+	check(has(messagesOf(results[1]), "reset"), "T15: the abandoned package tears its stage down")
+
+	local second = HttpService:JSONDecode(results[2].jestOutput)
+	check(second.success == true, "T15: the next package still runs")
+	check(results[2].timedOut == nil, "T15: a package that finished is not marked timed out")
+	check(
+		has(messagesOf(results[2]), "materialize:b"),
+		"T15: the next package stages itself afresh"
+	)
+end
+
+-- T16: a batch whose packages all finish inside their budget reports none of
+-- them as timed out, so the flag stays absent rather than riding on every
+-- entry as false.
+local function testWithinBudgetLeavesTheFlagAbsent()
+	local results = EmbeddedRunner.runEmbedded({}, { entries = { budgetedEntryFor("a", 5000) } })
+
+	check(results[1].timedOut == nil, "T16: a package within budget carries no flag")
+	check(HttpService:JSONDecode(results[1].jestOutput).success == true, "T16: and it passed")
+end
+
+-- T17: under --bail a package that ran out of budget stops the batch, the same
+-- as one whose tests failed. A run that never finished proves nothing about the
+-- packages behind it, so there is no case for carrying on.
+local function testElapsedBudgetBailsTheBatch()
+	jestParks.a = true
+
+	local outcome = runInThread(function()
+		return EmbeddedRunner.runEmbedded({}, {
+			bail = true,
+			entries = { budgetedEntryFor("a", 5000), budgetedEntryFor("b", 5000) },
+		})
+	end)
+
+	elapse()
+	jestParks.a = nil
+
+	local results, runOutcome = outcome.results, outcome.second
+	check(#results == 1, "T17: the batch stops at the abandoned package")
+	check(results[1].timedOut == true, "T17: and that package is the abandoned one")
+	check(runOutcome.bailed == true, "T17: the task reports the bail")
+end
+
 testWindowAndNoBleedAcrossPackages()
 testRecordShape()
 testFailuresKeepOutput()
@@ -648,5 +784,8 @@ testPerTestCoverageIsPerPackage()
 testRunnerFlagsAreStripped()
 testCoverageWithoutAttribution()
 testInfiniteYieldFailsOnlyItsPackage()
+testElapsedBudgetAbandonsOnlyItsPackage()
+testWithinBudgetLeavesTheFlagAbsent()
+testElapsedBudgetBailsTheBatch()
 
 print("ALL OK")

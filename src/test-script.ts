@@ -22,6 +22,7 @@ export type JestArgv = Argv & {
 	jestPath?: string;
 	runnerCoverage?: boolean;
 	runnerPerTestCoverage?: boolean;
+	runnerTimeoutMs?: number;
 	runnerTiming?: boolean;
 	snapshotFormat?: SnapshotFormatOptions;
 	/**
@@ -55,6 +56,12 @@ export function buildJestArgv(options: JestArgvInput): JestArgv {
 
 	if (process.env["TIMING"] !== undefined) {
 		argv.runnerTiming = true;
+	}
+
+	// Omitted at zero rather than forwarded as one: the runner reads an absent
+	// budget as "no deadline", and zero is how a config asks for that.
+	if (options.config.projectTimeout > 0) {
+		argv.runnerTimeoutMs = options.config.projectTimeout;
 	}
 
 	if (options.config.collectCoverage) {

@@ -28,6 +28,8 @@ type Config = {
 	runnerCaptureGameOutput: boolean?,
 	runnerCoverage: boolean?,
 	runnerPerTestCoverage: boolean?,
+	-- Wall-clock budget for this config's whole run. Absent means none.
+	runnerTimeoutMs: number?,
 	runnerTiming: boolean?,
 }
 
@@ -40,7 +42,19 @@ end
 
 local module = {}
 
-function module.run(callingScript: LuaSourceContainer, config: Config): (string, string, string)
+--[=[
+	Run one config and return its (jestResult, gameOutput, bannerOutput,
+	timedOut) quad.
+
+	`timedOut` says the run was abandoned at `runnerTimeoutMs` rather than
+	failing; `jestResult` then carries the abandon message. Workspace mode
+	reports the same flag from its own runner, so the host tells the two apart
+	the same way whichever mode produced the entry.
+]=]
+function module.run(
+	callingScript: LuaSourceContainer,
+	config: Config
+): (string, string, string, boolean)
 	local t0 = os.clock()
 	local timingEnabled = config.runnerTiming
 	local coverageEnabled = config.runnerCoverage
@@ -69,7 +83,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	local t_findJest = os.clock()
 
 	if not findSuccess then
-		return HttpService:JSONEncode(fail(findValue :: any)), encodeGameOutput(), "[]"
+		return HttpService:JSONEncode(fail(findValue :: any)), encodeGameOutput(), "[]", false
 	end
 
 	local snapshotWrites: { [string]: string } = {}
@@ -153,6 +167,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		config.runnerTiming = nil :: any
 		config.runnerCoverage = nil :: any
 		config.runnerPerTestCoverage = nil :: any
+		config.runnerTimeoutMs = nil :: any
 		config.runnerCaptureGameOutput = nil :: any
 
 		local coverage = RunnerResult.beginCoverage(findValue, {
@@ -199,11 +214,16 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	-- The guarded span starts here rather than at findJest: what runs before it
 	-- is instance lookup, which never waits on the DataModel. The yields this
 	-- catches come from a test module's own imports, under `Jest.runCLI`.
-	local runSuccess, runValue = InfiniteYield.guard(runTests, function()
-		if pending ~= nil then
-			pending:cancel()
-		end
-	end)
+	-- Read before `runTests` strips it off the config for Jest.
+	local budgetMs = config.runnerTimeoutMs
+	local runSuccess, runValue, timedOut = InfiniteYield.guard(runTests, {
+		onAbandon = function()
+			if pending ~= nil then
+				pending:cancel()
+			end
+		end,
+		timeoutMs = budgetMs,
+	})
 
 	if restoreStdout then
 		restoreStdout()
@@ -226,7 +246,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		return HttpService:JSONEncode(capturedMessages)
 	end)
 
-	return jestResult, encodeGameOutput(), if bannerEncodeOk then bannerEncoded else "[]"
+	return jestResult, encodeGameOutput(), if bannerEncodeOk then bannerEncoded else "[]", timedOut
 end
 
 type ProjectEntry = {
@@ -234,6 +254,7 @@ type ProjectEntry = {
 	gameOutput: string,
 	bannerOutput: string,
 	elapsedMs: number,
+	timedOut: boolean?,
 }
 
 local function encodeExecutionError(err: any): string
@@ -278,10 +299,11 @@ function module.runProjects(
 			beforeOk, beforeErr = pcall(hooks.beforeConfig, cfg, index)
 		end
 
-		local ok: boolean, jestOutput: any, gameOutput: any, bannerOutput: any =
-			false, nil, nil, nil
+		local ok: boolean, jestOutput: any, gameOutput: any, bannerOutput: any, timedOut: any =
+			false, nil, nil, nil, nil
 		if beforeOk then
-			ok, jestOutput, gameOutput, bannerOutput = pcall(module.run, callingScript, cfg)
+			ok, jestOutput, gameOutput, bannerOutput, timedOut =
+				pcall(module.run, callingScript, cfg)
 		else
 			jestOutput = beforeErr
 		end
@@ -304,6 +326,7 @@ function module.runProjects(
 				gameOutput = gameOutput :: string,
 				bannerOutput = bannerOutput :: string,
 				elapsedMs = elapsedMs,
+				timedOut = if timedOut then true else nil,
 			}
 		else
 			entries[index] = {

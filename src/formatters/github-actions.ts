@@ -2,7 +2,7 @@ import process from "node:process";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result.ts";
-import { hasExecError } from "../types/jest-result.ts";
+import { execErrorTitle, hasExecError } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 const SEPARATOR = " · ";
@@ -150,7 +150,7 @@ export function formatJobSummary(result: JestResult, options: GitHubActionsOptio
 		if (hasExecError(file)) {
 			failures.push({
 				file: makeRelative(file.testFilePath, options.workspace),
-				title: "Test suite failed to run",
+				title: execErrorTitle(file),
 			});
 			continue;
 		}
@@ -212,7 +212,7 @@ function collectExecErrorAnnotation(
 	annotations.push({
 		file: makeRelative(file.testFilePath, options.workspace),
 		message: file.failureMessage,
-		title: "Test suite failed to run",
+		title: execErrorTitle(file),
 	});
 }
 

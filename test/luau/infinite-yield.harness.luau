@@ -55,7 +55,10 @@ local game = {
 
 -- Faithful enough `task.spawn`: it resumes immediately, so a thunk that never
 -- yields finishes before the call returns, and a parked caller is woken the
--- moment the watchdog says so.
+-- moment the watchdog says so. `armed` holds the deadlines `task.delay` has
+-- taken and the clock has not reached.
+local armed = {}
+
 local task = {
 	spawn = function(target, ...)
 		local thread = if type(target) == "thread" then target else coroutine.create(target)
@@ -66,7 +69,38 @@ local task = {
 
 		return thread
 	end,
+	delay = function(seconds: number, callback)
+		local thread = coroutine.create(callback)
+		table.insert(armed, { seconds = seconds, thread = thread })
+		return thread
+	end,
+	cancel = function(target)
+		for index, entry in armed do
+			if entry.thread == target then
+				table.remove(armed, index)
+				coroutine.close(target)
+				return
+			end
+		end
+
+		-- What the engine does when asked to cancel a thread that already ran.
+		-- A watchdog that cancelled a fired deadline would land here.
+		fail("task.cancel: thread is not armed")
+	end,
 }
+
+-- The clock reaching every armed deadline at once. Nothing here advances on
+-- its own, so a test says exactly when a budget runs out.
+local function elapse()
+	local due = armed
+	armed = {}
+	for _, entry in due do
+		local ok, err = coroutine.resume(entry.thread)
+		if not ok then
+			fail("deadline thread errored: " .. tostring(err))
+		end
+	end
+end
 
 local InfiniteYield = __MODULE__
 
@@ -76,10 +110,10 @@ local ABORT_PREFIX = "Infinite yield detected, aborting tests: "
 -- Calls the watchdog from a thread the harness owns, so a run that parks its
 -- caller can be resumed here the way the engine's warning resumes it in
 -- production. `done` stays false while the caller is parked.
-local function guardInThread(fn, onAbandon)
+local function guardInThread(fn, options)
 	local outcome = { done = false }
 	local thread = coroutine.create(function()
-		outcome.ok, outcome.value = InfiniteYield.guard(fn, onAbandon)
+		outcome.ok, outcome.value, outcome.timedOut = InfiniteYield.guard(fn, options)
 		outcome.done = true
 	end)
 
@@ -221,9 +255,11 @@ end
 -- guard hands its verdict back.
 local function testAbandonRunsTheCallersCleanup()
 	local cancelled = false
-	local outcome = guardInThread(parkForever, function()
-		cancelled = true
-	end)
+	local outcome = guardInThread(parkForever, {
+		onAbandon = function()
+			cancelled = true
+		end,
+	})
 
 	check(not cancelled, "T10: nothing is cancelled while the run is only slow")
 
@@ -239,14 +275,18 @@ local function testFinishedRunSkipsTheCleanup()
 	local cancelled = false
 	local returned = guardInThread(function()
 		return "value"
-	end, function()
-		cancelled = true
-	end)
+	end, {
+		onAbandon = function()
+			cancelled = true
+		end,
+	})
 	local threw = guardInThread(function()
 		error("jest exploded", 0)
-	end, function()
-		cancelled = true
-	end)
+	end, {
+		onAbandon = function()
+			cancelled = true
+		end,
+	})
 
 	check(returned.ok == true and threw.ok == false, "T11: both runs ended on their own")
 	check(not cancelled, "T11: neither run cancels anything")
@@ -256,14 +296,106 @@ end
 -- something else, or the run would report the cleanup's problem instead of the
 -- yield that caused it.
 local function testThrowingCleanupKeepsTheVerdict()
-	local outcome = guardInThread(parkForever, function()
-		error("cancel exploded", 0)
-	end)
+	local outcome = guardInThread(parkForever, {
+		onAbandon = function()
+			error("cancel exploded", 0)
+		end,
+	})
 
 	emit(YIELD_WARNING, WARNING)
 
 	check(outcome.ok == false, "T12: the abort survives a throwing cleanup")
 	check(outcome.value == ABORT_PREFIX .. YIELD_WARNING, "T12: it still names the yield")
+end
+
+-- T13: the whole point of the budget — a run still parked when it runs out is
+-- abandoned the way a warned one is, and says which of the two happened.
+local function testElapsedBudgetAbortsTheRun()
+	local cancelled = false
+	local outcome = guardInThread(parkForever, {
+		onAbandon = function()
+			cancelled = true
+		end,
+		timeoutMs = 60_000,
+	})
+
+	check(not outcome.done, "T13: a parked thunk parks its caller")
+	check(not cancelled, "T13: nothing is cancelled while the run is within budget")
+
+	elapse()
+
+	check(outcome.done, "T13: the elapsed budget wakes the parked caller")
+	check(outcome.ok == false, "T13: an elapsed budget is a failure")
+	check(outcome.value == "Timed out after 60s, aborting tests", "T13: the abort names the budget")
+	check(outcome.timedOut == true, "T13: the abort says it was the budget, not a yield")
+	check(cancelled, "T13: an elapsed budget runs the cleanup")
+	check(coroutine.status(parkedThread) == "dead", "T13: the abandoned thunk is closed")
+	check(not isWatching(), "T13: the watch is disconnected after a timeout")
+end
+
+-- T14: a warning that lands first ends the run and disarms the budget, so the
+-- deadline cannot fire into a guard that already returned.
+local function testWarningDisarmsTheBudget()
+	local outcome = guardInThread(parkForever, { timeoutMs = 60_000 })
+
+	check(#armed == 1, "T14: the budget is armed while the run is only slow")
+
+	emit(YIELD_WARNING, WARNING)
+
+	check(outcome.timedOut == false, "T14: the warning is what ended it, not the budget")
+	check(#armed == 0, "T14: ending the run disarms the budget")
+end
+
+-- T15: zero is how a config asks for no budget at all, and an absent one is the
+-- same answer — the warning stays the only thing that can end the run.
+local function testNoBudgetArmsNoDeadline()
+	local zero = guardInThread(parkForever, { timeoutMs = 0 })
+	check(#armed == 0, "T15: a zero budget arms no deadline")
+	emit(YIELD_WARNING, WARNING)
+	check(zero.ok == false and zero.timedOut == false, "T15: the run still ends on the warning")
+
+	local absent = guardInThread(parkForever, {})
+	check(#armed == 0, "T15: an absent budget arms no deadline")
+	emit(YIELD_WARNING, WARNING)
+	check(absent.ok == false and absent.timedOut == false, "T15: that run ends on the warning too")
+end
+
+-- T16: a budget is a deadline, not a verdict. A run that finished inside it
+-- keeps its own result and names no abandon reason.
+local function testRunWithinBudgetKeepsItsResult()
+	local outcome = guardInThread(function()
+		return "value"
+	end, { timeoutMs = 60_000 })
+
+	check(outcome.ok == true, "T16: a run within budget reports its own outcome")
+	check(outcome.value == "value", "T16: the thunk's value is passed through")
+	check(outcome.timedOut == false, "T16: a run that finished did not run out of time")
+end
+
+-- T17: the budget covers the thunk's first turn. `task.spawn` runs `fn` up to
+-- its first yield before it returns, so a deadline armed after that call would
+-- exclude every bit of synchronous setup from the budget it advertises — 50s of
+-- resolving instances followed by a park would get a further 60s.
+local function testBudgetCoversWorkBeforeTheFirstYield()
+	local cancelled = false
+	local outcome = guardInThread(function()
+		-- The clock running out during that first turn, which is the one
+		-- stretch of a run that cannot resume the caller: it is not parked yet.
+		elapse()
+		parkForever()
+	end, {
+		onAbandon = function()
+			cancelled = true
+		end,
+		timeoutMs = 60_000,
+	})
+
+	check(outcome.done, "T17: a budget spent before the first yield never parks the caller")
+	check(outcome.ok == false, "T17: it is still a failure")
+	check(outcome.timedOut == true, "T17: it is reported as the budget, not a yield")
+	check(outcome.value == "Timed out after 60s, aborting tests", "T17: the abort names the budget")
+	check(cancelled, "T17: it runs the cleanup like any other abandon")
+	check(not isWatching(), "T17: the watch is disconnected")
 end
 
 testReturnedValueIsPassedThrough()
@@ -278,5 +410,10 @@ testAbandonedThunkCannotWakeLater()
 testAbandonRunsTheCallersCleanup()
 testFinishedRunSkipsTheCleanup()
 testThrowingCleanupKeepsTheVerdict()
+testElapsedBudgetAbortsTheRun()
+testWarningDisarmsTheBudget()
+testNoBudgetArmsNoDeadline()
+testRunWithinBudgetKeepsItsResult()
+testBudgetCoversWorkBeforeTheFirstYield()
 
 print("ALL OK")

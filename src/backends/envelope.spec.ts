@@ -474,6 +474,57 @@ describe(decodeEnvelope, () => {
 	});
 });
 
+describe("timed-out entries", () => {
+	it("should keep the timedOut flag on the decoded entry", () => {
+		expect.assertions(1);
+
+		const jestOutput = JSON.stringify({
+			entries: [{ jestOutput: successJest(), pkg: "alpha", timedOut: true }],
+		});
+
+		expect(decodeEnvelope(jestOutput).entries[0]).toHaveProperty("timedOut", true);
+	});
+
+	it("should mark the raised error as a timeout so the report can say so", () => {
+		expect.assertions(2);
+
+		const thrown = captureThrown(() => {
+			buildProjectResult(
+				entry({
+					jestOutput: JSON.stringify({
+						err: "Timed out after 60s, aborting tests",
+						success: false,
+					}),
+					timedOut: true,
+				}),
+				job("alpha"),
+				undefined,
+			);
+		});
+
+		assert(thrown instanceof LuauScriptError);
+
+		expect(thrown.timedOut).toBeTrue();
+		expect(thrown.message).toBe("Timed out after 60s, aborting tests");
+	});
+
+	it("should leave an ordinary script failure unmarked", () => {
+		expect.assertions(1);
+
+		const thrown = captureThrown(() => {
+			buildProjectResult(
+				entry({ jestOutput: JSON.stringify({ err: "boom", success: false }) }),
+				job("alpha"),
+				undefined,
+			);
+		});
+
+		assert(thrown instanceof LuauScriptError);
+
+		expect(thrown.timedOut).toBeUndefined();
+	});
+});
+
 describe(isEnvelopeDeferred, () => {
 	it("should report a task that stopped with queued work outstanding", () => {
 		expect.assertions(1);

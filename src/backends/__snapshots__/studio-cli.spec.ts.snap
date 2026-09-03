@@ -3,7 +3,7 @@
 exports[`StudioCliBackend > should write a bootstrap that drives ExecuteRunModeAsync over a result socket 1`] = `
 "local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
-local payload = HttpService:JSONDecode([=[{"protocolVersion":6,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec-d","**/*.test-d","**/*.spec","**/*.spec","**/*.test","**/*.test"],"passWithNoTests":false,"silent":false,"testPathIgnorePatterns":["/node_modules/","/dist/","/out/"],"verbose":false,"testNamePattern":"alpha-pattern","reporters":[]}]},"runtimeStubMounts":[[]]}]=])
+local payload = HttpService:JSONDecode([=[{"protocolVersion":7,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec-d","**/*.test-d","**/*.spec","**/*.spec","**/*.test","**/*.test"],"passWithNoTests":false,"silent":false,"testPathIgnorePatterns":["/node_modules/","/dist/","/out/"],"verbose":false,"testNamePattern":"alpha-pattern","runnerTimeoutMs":60000,"reporters":[]}]},"runtimeStubMounts":[[]]}]=])
 local URL = "ws://localhost:<port>"
 local REQUEST_ID = [=[<request-id>]=]
 local ok, result = pcall(function()

@@ -41,7 +41,7 @@ function useProbeTimers(): void {
 
 // The protocol the probe selects on, pinned here rather than imported: the
 // spec asserts the wire a real plugin puts on it.
-const PROTOCOL_VERSION = 6;
+const PROTOCOL_VERSION = 7;
 
 /** Connect a plugin and let it announce itself, the way a real one does. */
 function connectPlugin(

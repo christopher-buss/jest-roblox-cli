@@ -25,10 +25,23 @@ depends = [
 ]
 
 [tasks.drillbit]
-run = "drillbit"
+# The `.rbxm` drillbit installs is a build output rather than a checked-in file,
+# so the build has to run first or a fresh clone has nothing to install.
+run = [
+  "pnpm build:plugin",
+  "drillbit" 
+]
+# Inputs only. `plugin/JestRobloxRunner.rbxm` and `plugin/src/version.luau` are
+# written by the build above, so watching them would re-trigger this task on its
+# own output.
 sources = [
-  "plugin/*",
-  "drillbit.toml" 
+  "drillbit.toml",
+  "luau/**/*.luau",
+  "package.json",
+  "plugin/host/**/*.luau",
+  "plugin/plugin.project.json",
+  "plugin/src/init.server.luau",
+  "plugin/src/test-in-run-mode.server.luau"
 ]
 
 [tasks.watch-drillbit]

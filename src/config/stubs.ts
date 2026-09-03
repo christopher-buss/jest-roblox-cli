@@ -97,7 +97,14 @@ export function generateProjectConfigs(
 // host. `displayName` and `include` are overwritten downstream, while
 // `include`/`exclude` are dropped by `serializeToLuau`, so filtering those here
 // would be redundant.
-const STUB_SKIP_KEYS: ReadonlySet<string> = new Set(["outDir", "root", "typecheck"]);
+const STUB_SKIP_KEYS: ReadonlySet<string> = new Set([
+	"outDir",
+	// Host-only budget our own runner enforces around `Jest.runCLI`; it
+	// reaches the runtime on the argv instead, and Jest would reject it here.
+	"projectTimeout",
+	"root",
+	"typecheck",
+]);
 
 /**
  * Refuse to let any downstream write land outside `rootDirectory`. Mount

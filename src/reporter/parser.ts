@@ -31,6 +31,12 @@ export class LuauScriptError extends Error {
 	 * log when an entry's envelope decodes to a Luau-level script failure.
 	 */
 	public gameOutput: string | undefined;
+	/**
+	 * The entry this failure came from was abandoned at its `projectTimeout`.
+	 * Set by `buildProjectResult` from the envelope entry, and read by the
+	 * exec-error report so a timeout renders apart from a suite that threw.
+	 */
+	public timedOut: boolean | undefined;
 
 	constructor(rawMessage: string) {
 		super(rawMessage.replace(TASK_SCRIPT_PREFIX, ""));

@@ -149,6 +149,23 @@ describe(buildJestArgv, () => {
 		expect(argv).not.toHaveProperty("runnerTiming");
 	});
 
+	it("should inject runnerTimeoutMs from projectTimeout", () => {
+		expect.assertions(2);
+
+		const argv = buildJestArgv(createOptions({ config: { projectTimeout: 30_000 } }));
+
+		expect(argv).toHaveProperty("runnerTimeoutMs", 30_000);
+		expect(argv).not.toHaveProperty("projectTimeout");
+	});
+
+	it("should not inject runnerTimeoutMs when the budget is zero", () => {
+		expect.assertions(1);
+
+		const argv = buildJestArgv(createOptions({ config: { projectTimeout: 0 } }));
+
+		expect(argv).not.toHaveProperty("runnerTimeoutMs");
+	});
+
 	it("should pass through snapshotFormat", () => {
 		expect.assertions(1);
 

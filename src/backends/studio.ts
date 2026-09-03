@@ -36,20 +36,25 @@ interface StudioOptions {
 /**
  * Plugin/CLI protocol version. Must match `PROTOCOL_VERSION` in
  * `plugin/src/init.server.luau`. Increment when the runtime contract
- * changes — v6 adds the `hello` announcement a plugin sends on connect, which
- * is what lets the CLI pick between several installed copies rather than
- * dispatching to whichever one connected first; v4 nests the fields the runner
- * adds to Jest's result under `runner` and renames the frame key `request_id`
- * to `requestId`. A connection that announces another version is never
- * dispatched to, so `version_mismatch` is now only reachable from a plugin
- * whose announcement and request handling disagree.
+ * changes — v7 adds the `runnerTimeoutMs` argv the runner enforces a project's
+ * budget from and strips before calling Jest, so a v6 plugin handed one runs
+ * unbounded and passes the key through to Jest; v6 adds the `hello`
+ * announcement a plugin sends on connect, which is what lets the CLI pick
+ * between several installed copies rather than dispatching to whichever one
+ * connected first; v4 nests the fields the runner adds to Jest's result under
+ * `runner` and renames the frame key `request_id` to `requestId`. A connection
+ * that announces another version is never dispatched to, so `version_mismatch`
+ * is now only reachable from a plugin whose announcement and request handling
+ * disagree.
  */
-export const STUDIO_PROTOCOL_VERSION = 6;
+export const STUDIO_PROTOCOL_VERSION = 7;
 
 const pluginResultSchema = type({
 	"gameOutput?": "string",
 	"jestOutput": "string",
-	"protocolVersion": "number == 6",
+	// Derived rather than written out, so the bump above cannot leave the
+	// schema accepting the version the CLI no longer speaks.
+	"protocolVersion": `number == ${STUDIO_PROTOCOL_VERSION}`,
 	"requestId": "string",
 	"type": "'results'",
 });

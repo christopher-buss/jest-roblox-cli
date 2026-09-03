@@ -149,6 +149,12 @@ describe("sHARED_TEST_KEYS", () => {
 		expect(SHARED_TEST_KEYS.has("testTimeout")).toBeTrue();
 	});
 
+	it("should contain projectTimeout", () => {
+		expect.assertions(1);
+
+		expect(SHARED_TEST_KEYS.has("projectTimeout")).toBeTrue();
+	});
+
 	it("should not contain global-only or CLI keys", () => {
 		expect.assertions(3);
 
@@ -253,6 +259,21 @@ describe(configSchema, () => {
 					coverageDirectory: "my-cov",
 				},
 				timeout: 60_000,
+			});
+
+			expect(result).not.toBeInstanceOf(type.errors);
+		});
+
+		it("should accept projectTimeout at test: and per-project", () => {
+			expect.assertions(1);
+
+			const result = configSchema({
+				test: {
+					projects: [
+						{ test: { displayName: "slow", include: ["src"], projectTimeout: 0 } },
+					],
+					projectTimeout: 30_000,
+				},
 			});
 
 			expect(result).not.toBeInstanceOf(type.errors);
@@ -588,6 +609,14 @@ describe(configSchema, () => {
 			expect.assertions(1);
 
 			const result = configSchema({ timeout: "slow" });
+
+			expect(result).toBeInstanceOf(type.errors);
+		});
+
+		it("should reject a negative projectTimeout", () => {
+			expect.assertions(1);
+
+			const result = configSchema({ test: { projectTimeout: -1 } });
 
 			expect(result).toBeInstanceOf(type.errors);
 		});

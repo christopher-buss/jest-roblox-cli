@@ -46,6 +46,20 @@ describe(formatFileSummary, () => {
 		);
 	});
 
+	it("should mark an abandoned project with the clock, not the cross", () => {
+		expect.assertions(1);
+
+		const file = makeFile({
+			failureMessage: "Timed out after 60s, aborting tests",
+			testFilePath: "<exec-error>",
+			timedOut: true,
+		});
+
+		expect(formatFileSummary(file, options, createTaggedStyles())).toBe(
+			" <pending>⏱</pending> <file><exec-error></file>",
+		);
+	});
+
 	it("should render failed groups and individual statuses on separate lines", () => {
 		expect.assertions(1);
 

@@ -13,6 +13,7 @@ import {
 	PASSING_RESULT,
 	SKIPPED_RESULT,
 	SNAPSHOT_FAILING_RESULT,
+	TIMED_OUT_RESULT,
 } from "./__fixtures__/results.ts";
 import { type AgentOptions, formatAgent, formatAgentMultiProject } from "./agent.ts";
 
@@ -1468,6 +1469,24 @@ describe("formatAgent snapshots", () => {
 
 			 FAIL shared/react/features/windows/__tests__/unit-menu-app.test
 			Require-by-string is not enabled for use inside Jest at this time.
+
+			 Test Files  1 failed (1)
+			      Tests   (0)"
+		`);
+	});
+
+	it("should format a timed-out result apart from a suite that threw", () => {
+		expect.assertions(1);
+
+		const output = formatAgent(TIMED_OUT_RESULT, baseOptions);
+
+		expect(output).toMatchInlineSnapshot(`
+			" ❯ shared/react/features/windows/__tests__/unit-menu-app.test (suite timed out)
+
+			⎯⎯⎯ Failed Tests 1 ⎯⎯⎯
+
+			 TIMEOUT shared/react/features/windows/__tests__/unit-menu-app.test
+			Timed out after 60s, aborting tests
 
 			 Test Files  1 failed (1)
 			      Tests   (0)"

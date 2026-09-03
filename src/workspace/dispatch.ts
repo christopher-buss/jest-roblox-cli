@@ -25,8 +25,6 @@ import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { errorMessage } from "../utils/error-message.ts";
 import type { PendingEntry } from "./test-selection.ts";
 
-const PER_PACKAGE_TIMEOUT_SECONDS = 60;
-
 export type WorkspaceDispatchSpec = Pick<
 	RunProjectsOptions,
 	"parallel" | "scriptFactory" | "scriptOverride" | "streaming" | "workStealing"
@@ -176,6 +174,43 @@ export async function prepareWorkspaceDispatchAsync({
 	return deferrableDispatch(inputs, bail);
 }
 
+/**
+ * The longest any one package in the batch may run, in the seconds the queue
+ * measures its invisibility window in.
+ *
+ * A package with no budget of its own is bounded only by the deadline Roblox
+ * gives the whole task, so that is what a sibling has to wait out before
+ * reclaiming its queue item. Taking the slowest is what keeps a fast package
+ * from setting the window for a slow one: reclaiming an item still being
+ * worked on runs it twice.
+ *
+ * That deadline is the first job's `timeout` for every package in the batch,
+ * not each package's own — the backend resolves one run timeout from `jobs[0]`
+ * and gives every work-stealing task the same one. Reading a later package's
+ * `timeout` instead sizes the window under the deadline its item is actually
+ * worked on under, which is the double-run this window exists to prevent. It
+ * bounds an explicit budget for the same reason: Roblox ends the task first, so
+ * waiting past it only delays reclaiming an item whose worker is already gone.
+ */
+function longestPackageSeconds(inputs: ReadonlyArray<MaterializerInput>): number {
+	let longestMs = 0;
+	for (const { config } of inputs) {
+		// Read here rather than above the loop because this is where the batch
+		// is known to have a first entry: an empty one never reaches the body,
+		// and answers with the zero below rather than with a deadline.
+		// eslint-disable-next-line ts/no-non-null-assertion -- non-empty inside its own loop
+		const taskDeadlineMs = inputs[0]!.config.timeout;
+		longestMs = Math.max(
+			longestMs,
+			config.projectTimeout > 0
+				? Math.min(config.projectTimeout, taskDeadlineMs)
+				: taskDeadlineMs,
+		);
+	}
+
+	return Math.ceil(longestMs / 1000);
+}
+
 function buildStreaming(input: {
 	credentials: WorkStealingCredentials;
 	generateUuid: () => string;
@@ -241,7 +276,7 @@ async function prepareStealingDispatchAsync({
 		baseUrl,
 		credentials: { apiKey, universeId },
 		packages: inputs.map((entry) => ({ pkg: entry.pkg, project: entry.project })),
-		perPackageTimeoutSeconds: PER_PACKAGE_TIMEOUT_SECONDS,
+		perPackageTimeoutSeconds: longestPackageSeconds(inputs),
 	});
 
 	const script = generateWorkStealingScript(

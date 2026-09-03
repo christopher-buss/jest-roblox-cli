@@ -1065,6 +1065,30 @@ describe(generateProjectStubs, () => {
 		expect(content).not.toContain("typecheck");
 	});
 
+	it("should not emit projectTimeout, which Jest does not know", () => {
+		expect.assertions(1);
+
+		onTestFinished(() => {
+			vol.reset();
+		});
+
+		const config: ResolvedConfig = {
+			...DEFAULT_CONFIG,
+			projectTimeout: 30_000,
+			rootDir: "/root",
+		};
+		const project = makeResolvedProject({
+			config,
+			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
+		});
+
+		generateProjectStubs([project], "/root");
+
+		const content = vol.readFileSync("/root/out/Client/jest.config.luau", "utf8");
+
+		expect(content).not.toContain("projectTimeout");
+	});
+
 	it("should emit shared jest-passthrough keys when set", () => {
 		expect.assertions(3);
 

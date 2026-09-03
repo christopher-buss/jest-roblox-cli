@@ -9,6 +9,7 @@ import {
 	FAILING_RESULT,
 	MIXED_RESULT,
 	PASSING_RESULT,
+	TIMED_OUT_RESULT,
 } from "./__fixtures__/results.ts";
 import {
 	collectAnnotations,
@@ -156,6 +157,23 @@ describe(collectAnnotations, () => {
 			file: "shared/react/features/windows/__tests__/unit-menu-app.test",
 			title: "Test suite failed to run",
 		});
+	});
+
+	it("should title a timed-out annotation after the budget", () => {
+		expect.assertions(1);
+
+		const annotations = collectAnnotations(TIMED_OUT_RESULT, {});
+
+		expect(annotations[0]).toMatchObject({ title: "Test suite timed out" });
+	});
+
+	it("should title a timed-out job-summary failure after the budget", () => {
+		expect.assertions(2);
+
+		const summary = formatJobSummary(TIMED_OUT_RESULT, {});
+
+		expect(summary).toContain("Test suite timed out");
+		expect(summary).not.toContain("Test suite failed to run");
 	});
 
 	it("should handle failed test with empty failureMessages and skip sourceMapper", () => {

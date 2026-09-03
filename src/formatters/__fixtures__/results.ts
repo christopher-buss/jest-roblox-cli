@@ -288,6 +288,22 @@ export const EXEC_ERROR_RESULT: JestResult = {
 	],
 };
 
+// The same shape an exec error takes, differing only in what abandoned it —
+// which is the whole of what the formatters are asked to tell apart. It keeps
+// the exec error's own `testFilePath` on purpose: the flag is what a formatter
+// may read, and a rendering that keyed off the path would pass here wrongly.
+export const TIMED_OUT_RESULT: JestResult = {
+	...EXEC_ERROR_RESULT,
+	testResults: [
+		{
+			// eslint-disable-next-line ts/no-non-null-assertion -- one file above
+			...EXEC_ERROR_RESULT.testResults[0]!,
+			failureMessage: "Timed out after 60s, aborting tests",
+			timedOut: true,
+		},
+	],
+};
+
 export const MIXED_WITH_EXEC_ERROR_RESULT: JestResult = {
 	numFailedTests: 0,
 	numPassedTests: 3,

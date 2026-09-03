@@ -6,6 +6,7 @@ import {
 	type SourceMapper,
 } from "../source-mapper/index.ts";
 import {
+	execErrorReason,
 	type ExecErrorTestFileResult,
 	hasExecError,
 	type JestResult,
@@ -154,7 +155,7 @@ function formatFileHeaderExecError(
 	const displayPath = resolveDisplayPath(file.testFilePath, options.sourceMapper);
 	const relativePath = makeRelative(displayPath, options.rootDir);
 
-	return [` ❯ ${relativePath} (suite failed to run)`];
+	return [` ❯ ${relativePath} (suite ${execErrorReason(file)})`];
 }
 
 function formatFileHeaderFailures(
@@ -207,7 +208,7 @@ function formatExecError(file: ExecErrorTestFileResult, options: AgentOptions): 
 
 	const errorMessage = cleanExecErrorMessage(file.failureMessage);
 
-	lines.push(` FAIL ${relativePath}`, errorMessage);
+	lines.push(` ${file.timedOut === true ? "TIMEOUT" : "FAIL"} ${relativePath}`, errorMessage);
 
 	const hint = getExecErrorHint(errorMessage);
 	if (hint !== undefined) {

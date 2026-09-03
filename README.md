@@ -237,8 +237,26 @@ Put these under `test: { ... }`.
 | `testPathIgnorePatterns` | Patterns to skip                                 | `/node_modules/`, `/dist/`, `/out/`  |
 | `setupFiles`             | Scripts to run before the test environment loads | —                                    |
 | `setupFilesAfterEnv`     | Scripts to run after the test environment loads  | —                                    |
+| `projectTimeout`         | Budget for one project's whole run (ms)          | `60000` (60 s)                       |
 | `verbose`                | Show individual test results                     | `false`                              |
 | `silent`                 | Suppress console output                          | `false`                              |
+
+Three budgets nest, from the inside out: `test.testTimeout` bounds a single
+test, `test.projectTimeout` bounds everything one project does in the runtime,
+and the root `timeout` bounds the whole Open Cloud task. Set `projectTimeout` on
+a single project (under its `projects[N].test`) to give a slow one more room
+without raising it for the rest; set it to `0` to turn the budget off.
+
+A project still running when its budget elapses is abandoned: its Jest run is
+cancelled, anything it staged is torn down, and the run moves on to the next
+project. It is reported as **timed out** rather than as a suite that threw — a
+distinct line in every formatter, naming the budget you can raise. For exit
+codes it counts as a failure (exit `1`): a project that never finished is not a
+pass, and greening on one would ship code no test reached.
+
+Without a budget one runaway project holds the whole task until Roblox ends it
+on the root `timeout`, taking every project behind it down with it and reporting
+`DEADLINE_EXCEEDED` — which names none of them.
 
 ### Coverage fields
 
@@ -476,8 +494,8 @@ When no connection speaks it, the run stops before building a place and names
 every connection it found:
 
 ```text
-No compatible jest-roblox Studio plugin. This CLI speaks protocol v6, and the 2 plugin connection(s) on this port report:
-  - JestRobloxRunner 0.3.18 (protocol v5)
+No compatible jest-roblox Studio plugin. This CLI speaks protocol v7, and the 2 plugin connection(s) on this port report:
+  - JestRobloxRunner 0.3.18 (protocol v6)
   - a plugin that sent no handshake (it predates the handshake entirely)
 Install the JestRobloxRunner.rbxm shipped with jest-roblox 0.3.23, and remove the other copies from your Studio plugins folder.
 ```

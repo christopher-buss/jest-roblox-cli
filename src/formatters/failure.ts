@@ -2,7 +2,7 @@ import assert from "node:assert";
 import color from "tinyrainbow";
 
 import type { MappedLocation, SourceMapper } from "../source-mapper/index.ts";
-import type { TestCaseResult, TestFileResult } from "../types/jest-result.ts";
+import { execErrorTitle, type TestCaseResult, type TestFileResult } from "../types/jest-result.ts";
 import {
 	type FailureContext,
 	type FormatOptions,
@@ -217,9 +217,12 @@ export function formatExecErrorDetail(
 		styles.status.fail(formatFailureSeparator(index, failureCtx.totalFailures)),
 	);
 
+	const badge =
+		file.timedOut === true ? styles.timeoutBadge(" TIMEOUT ") : styles.failBadge(" FAIL ");
+
 	const lines: Array<string> = [
-		`  ${styles.failBadge(" FAIL ")} ${styles.status.fail(displayPath)}`,
-		`  ${styles.status.fail("Test suite failed to run")}`,
+		`  ${badge} ${styles.status.fail(displayPath)}`,
+		`  ${styles.status.fail(execErrorTitle(file))}`,
 		"",
 		`  ${styles.status.fail(errorMessage)}`,
 	];

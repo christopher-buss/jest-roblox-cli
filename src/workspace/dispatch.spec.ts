@@ -31,9 +31,18 @@ vi.mock(import("../executor.ts"));
 vi.mock(import("../memory-store/work-stealing.ts"));
 vi.mock(import("../staging/test-script-staged.ts"));
 
-function makeJob(packageName: string, displayName: string): WorkspaceJob {
+function makeJob(
+	packageName: string,
+	displayName: string,
+	config: { projectTimeout?: number; timeout?: number } = {},
+): WorkspaceJob {
 	return fromAny({
-		config: { rootDir: `/repo/${packageName}` },
+		config: {
+			projectTimeout: 60_000,
+			rootDir: `/repo/${packageName}`,
+			timeout: 300_000,
+			...config,
+		},
 		displayName,
 		pkg: packageName,
 		testFiles: [`${displayName}.spec.ts`],
@@ -205,6 +214,103 @@ describe(prepareWorkspaceDispatchAsync, () => {
 			scriptOverride: "stealing-script",
 			workStealing: true,
 		});
+	});
+
+	it("should size the invisibility window off the slowest package's budget", async () => {
+		expect.assertions(1);
+
+		vi.mocked(isShardedParallel).mockReturnValue(true);
+		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
+			invisibilityWindowSeconds: 210,
+			queueId: "queue-1",
+		});
+		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
+
+		await prepareWorkspaceDispatchAsync({
+			jobs: [makeJob("pkg-a", "unit"), makeJob("pkg-b", "unit", { projectTimeout: 180_000 })],
+			parallel: "auto",
+			workStealingCredentials: { apiKey: "key", universeId: "42" },
+		});
+
+		expect(prepareWorkStealingQueueAsync).toHaveBeenCalledWith(
+			expect.objectContaining({ perPackageTimeoutSeconds: 180 }),
+		);
+	});
+
+	// A package with no budget of its own is bounded only by the deadline
+	// Roblox gives the whole task, so that is the window a sibling must wait
+	// out before reclaiming it.
+	it("should fall back to the task deadline for a package with no budget", async () => {
+		expect.assertions(1);
+
+		vi.mocked(isShardedParallel).mockReturnValue(true);
+		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
+			invisibilityWindowSeconds: 330,
+			queueId: "queue-1",
+		});
+		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
+
+		await prepareWorkspaceDispatchAsync({
+			jobs: [makeJob("pkg-a", "unit", { projectTimeout: 0 })],
+			parallel: "auto",
+			workStealingCredentials: { apiKey: "key", universeId: "42" },
+		});
+
+		expect(prepareWorkStealingQueueAsync).toHaveBeenCalledWith(
+			expect.objectContaining({ perPackageTimeoutSeconds: 300 }),
+		);
+	});
+
+	// Every task runs under the first job's `timeout`, so a later package's own
+	// run timeout is not the deadline it will be worked on under. Reading it as
+	// one sizes the window under the deadline, and the item is reclaimed and
+	// run a second time while the first task is still inside it.
+	it("should take an unbudgeted package's deadline from the first job", async () => {
+		expect.assertions(1);
+
+		vi.mocked(isShardedParallel).mockReturnValue(true);
+		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
+			invisibilityWindowSeconds: 330,
+			queueId: "queue-1",
+		});
+		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
+
+		await prepareWorkspaceDispatchAsync({
+			jobs: [
+				makeJob("pkg-a", "unit"),
+				makeJob("pkg-b", "unit", { projectTimeout: 0, timeout: 60_000 }),
+			],
+			parallel: "auto",
+			workStealingCredentials: { apiKey: "key", universeId: "42" },
+		});
+
+		expect(prepareWorkStealingQueueAsync).toHaveBeenCalledWith(
+			expect.objectContaining({ perPackageTimeoutSeconds: 300 }),
+		);
+	});
+
+	// A budget past the task deadline cannot be reached: Roblox ends the task
+	// first. Waiting it out only delays the reclaim of an item whose worker is
+	// already gone.
+	it("should cap a package budget at the task deadline", async () => {
+		expect.assertions(1);
+
+		vi.mocked(isShardedParallel).mockReturnValue(true);
+		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
+			invisibilityWindowSeconds: 330,
+			queueId: "queue-1",
+		});
+		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
+
+		await prepareWorkspaceDispatchAsync({
+			jobs: [makeJob("pkg-a", "unit", { projectTimeout: 900_000 })],
+			parallel: "auto",
+			workStealingCredentials: { apiKey: "key", universeId: "42" },
+		});
+
+		expect(prepareWorkStealingQueueAsync).toHaveBeenCalledWith(
+			expect.objectContaining({ perPackageTimeoutSeconds: 300 }),
+		);
 	});
 
 	it("should warn and fall back to a sequential script when queue setup fails", async () => {

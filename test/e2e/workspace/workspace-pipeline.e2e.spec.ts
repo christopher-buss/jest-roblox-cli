@@ -262,7 +262,7 @@ describe("workspace bare enumeration", () => {
 	it.skipIf(!rojoOnPath())(
 		"should select every package the exclude leaves and skip one with no jest.config",
 		async () => {
-			expect.assertions(4);
+			expect.assertions(5);
 
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
 			fs.writeFileSync(
@@ -305,6 +305,9 @@ describe("workspace bare enumeration", () => {
 			// shows up here rather than as a silent extra elsewhere.
 			expect(server.requests[0]!.script).toContain('"pkg":"@e2e/nested"');
 			expect(server.requests[0]!.script).not.toContain("@e2e/foo");
+			// The package's own budget rides on the same script, under the
+			// name the runtime reads it by.
+			expect(server.requests[0]!.script).toContain('"runnerTimeoutMs":12000');
 		},
 		60_000,
 	);
