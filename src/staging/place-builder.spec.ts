@@ -1,6 +1,5 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { type } from "arktype";
 import { vol } from "memfs";
 import { Buffer } from "node:buffer";
 import * as nodeFs from "node:fs";
@@ -9,6 +8,12 @@ import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { ageFile } from "../../test/mocks/aged-file.ts";
+import {
+	poolKeyOf,
+	staged,
+	stagedProject,
+	stagedProjectSchema,
+} from "../../test/mocks/staged-project.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
@@ -34,13 +39,7 @@ const PLACE_BYTES = "RBXL-BYTES";
 const MOUNT_DIR = "/repo/out";
 const PROJECT_JSON = JSON.stringify({ name: "synth", tree: { $path: MOUNT_DIR } });
 const STAGE_DIR = "/repo/staged";
-const STAGED_PROJECT_JSON = JSON.stringify({
-	name: "synth",
-	tree: {
-		$className: "DataModel",
-		ServerStorage: { $className: "ServerStorage", __pkg_stage: { $path: STAGE_DIR } },
-	},
-});
+const STAGED_PROJECT_JSON = stagedProject({ $path: STAGE_DIR });
 /** What `rojo buildAsync` emits for the pinned mount, before the class fold. */
 const STAND_IN_XML = [
 	'<roblox version="4">',
@@ -53,31 +52,13 @@ const STAND_IN_XML = [
 ].join("\n");
 
 /** Two packages mounting one directory — what the shared pool exists for. */
-const SHARED_PROJECT_JSON = JSON.stringify({
-	name: "synth",
-	tree: {
-		$className: "DataModel",
-		ServerStorage: {
-			$className: "ServerStorage",
-			__pkg_stage: {
-				a: { $className: "Folder", Shared: { $className: "Folder", $path: STAGE_DIR } },
-				b: { $className: "Folder", Shared: { $className: "Folder", $path: STAGE_DIR } },
-			},
-		},
-	},
+const SHARED_PROJECT_JSON = stagedProject({
+	a: { $className: "Folder", Shared: { $className: "Folder", $path: STAGE_DIR } },
+	b: { $className: "Folder", Shared: { $className: "Folder", $path: STAGE_DIR } },
 });
 
-const markerSchema = type({ Shared: { $attributes: { JestSharedPoolKey: "string" } } });
-const pooledProjectSchema = type({
-	tree: {
-		ServerStorage: {
-			__pkg_stage: { __shared: { "[string]": "unknown" }, a: markerSchema, b: markerSchema },
-		},
-	},
-});
-
-function readPooledProject(): typeof pooledProjectSchema.infer {
-	return pooledProjectSchema.assert(JSON.parse(String(vol.readFileSync(PROJECT_FILE, "utf8"))));
+function readPooledProject(): typeof stagedProjectSchema.infer {
+	return stagedProjectSchema.assert(JSON.parse(String(vol.readFileSync(PROJECT_FILE, "utf8"))));
 }
 
 function makeDescriptor(): PackageDescriptor {
@@ -263,12 +244,14 @@ describe(buildPlaceAsync, () => {
 			projectFile: PROJECT_FILE,
 		});
 
-		const stage = readPooledProject().tree.ServerStorage.__pkg_stage;
-		const keys = Object.keys(stage.__shared).filter((key) => key !== "$className");
+		const project = readPooledProject();
+		const keys = Object.keys(staged(project, "__shared")!).filter(
+			(key) => key !== "$className",
+		);
 
 		expect(keys).toHaveLength(1);
-		expect(stage.a.Shared.$attributes.JestSharedPoolKey).toBe(keys[0]!);
-		expect(stage.b.Shared.$attributes.JestSharedPoolKey).toBe(keys[0]!);
+		expect(poolKeyOf(staged(project, "a", "Shared"))).toBe(keys[0]!);
+		expect(poolKeyOf(staged(project, "b", "Shared"))).toBe(keys[0]!);
 	});
 
 	it("should demote a pinned mount two packages share for both of them", async () => {
@@ -296,7 +279,7 @@ describe(buildPlaceAsync, () => {
 			projectFile: PROJECT_FILE,
 		});
 
-		const pool = readPooledProject().tree.ServerStorage.__pkg_stage.__shared;
+		const pool = staged(readPooledProject(), "__shared");
 
 		expect(JSON.stringify(pool)).toContain("pinned-shadow");
 	});

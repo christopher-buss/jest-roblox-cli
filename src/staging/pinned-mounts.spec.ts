@@ -1,13 +1,19 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { type, type Type } from "arktype";
+import { type } from "arktype";
 import { vol } from "memfs";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+	mountOf,
+	seed as seedVolume,
+	staged,
+	stagedProject,
+	stagedProjectSchema,
+} from "../../test/mocks/staged-project.ts";
 import { ConfigError } from "../config/errors.ts";
-import type { RojoTreeNode } from "../types/rojo.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import { demotePinnedMountsAsync } from "./pinned-mounts.ts";
 
@@ -23,18 +29,7 @@ const SHADOW_DIR = path.join(PROJECT_DIR, "pinned-shadow");
 const ASSETS = path.resolve("/repo/game-assets");
 const META_JSON = "init.meta.json";
 
-// Rojo tree nodes are keyed by arbitrary instance names dictated by the
-// fixture's project.json, so they are read through one owned schema rather
-// than an ad-hoc cast per test.
-const rojoTreeNodeSchema: Type<RojoTreeNode> = type({
-	"[string]": "unknown",
-}).as<RojoTreeNode>();
-
-const demotedProjectSchema = type({
-	"[string]": "unknown",
-	"globIgnorePaths?": "string[]",
-	"tree": "object",
-});
+const demotedProjectSchema = stagedProjectSchema.and(type({ "globIgnorePaths?": "string[]" }));
 
 /**
  * A model whose root is a service, as `rojo build` would emit it. The nested
@@ -67,25 +62,13 @@ function serviceModelXml(rootClass: string): string {
 }
 
 /**
- * Resets the volume and stands rojo up as a stub that writes the model a real
+ * Seeds the volume and stands rojo up as a stub that writes the model a real
  * build would have produced, so the class-folding pass has something to read.
  */
 function seed(files: Record<string, string> = {}): void {
-	vol.reset();
-	vol.fromJSON(files);
+	seedVolume(files);
 	vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
 		vol.writeFileSync(outputPath, serviceModelXml("StarterPlayerScripts"));
-	});
-}
-
-function stagedProject(stage: RojoTreeNode, globIgnorePaths?: Array<string>): string {
-	return JSON.stringify({
-		...(globIgnorePaths === undefined ? {} : { globIgnorePaths }),
-		name: "jest-roblox-workspace",
-		tree: {
-			$className: "DataModel",
-			ServerStorage: { $className: "ServerStorage", __pkg_stage: stage },
-		},
 	});
 }
 
@@ -114,34 +97,6 @@ async function runAsync(projectJson: string): Promise<string> {
 
 async function demoteAsync(projectJson: string): Promise<typeof demotedProjectSchema.infer> {
 	return demotedProjectSchema.assert(JSON.parse(await runAsync(projectJson)));
-}
-
-/** Reads a foreign tree-node key, validating the child is itself a node. */
-function child(node: RojoTreeNode, key: string): RojoTreeNode | undefined {
-	const value = node[key];
-	return value === undefined ? undefined : rojoTreeNodeSchema.assert(value);
-}
-
-/**
- * Walks from the stage down a chain of node keys, short-circuiting on a miss.
- */
-function staged(
-	project: typeof demotedProjectSchema.infer,
-	...keys: Array<string>
-): RojoTreeNode | undefined {
-	return ["ServerStorage", "__pkg_stage", ...keys].reduce<RojoTreeNode | undefined>(
-		(current, key) => (current === undefined ? undefined : child(current, key)),
-		rojoTreeNodeSchema.assert(project.tree),
-	);
-}
-
-/** The `$path` a staged node mounts, or `undefined` when it mounts nothing. */
-function mountOf(
-	project: typeof demotedProjectSchema.infer,
-	...keys: Array<string>
-): string | undefined {
-	const value = staged(project, ...keys)?.$path;
-	return typeof value === "string" ? value : undefined;
 }
 
 describe(demotePinnedMountsAsync, () => {

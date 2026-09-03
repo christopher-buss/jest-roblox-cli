@@ -1,11 +1,16 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { type, type Type } from "arktype";
-import { vol } from "memfs";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+	poolKeyOf,
+	seed,
+	staged,
+	stagedProject,
+	stagedProjectSchema,
+} from "../../test/mocks/staged-project.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { poolSharedMounts } from "./shared-pool.ts";
@@ -19,55 +24,12 @@ const PROJECT_DIR = path.resolve("/repo/cache");
 const INCLUDE = path.resolve("/repo/include");
 const SHADOW = path.resolve("/repo/cache/coverage");
 
-// Rojo tree nodes are keyed by arbitrary instance names dictated by the
-// fixture's project.json, so they are read through one owned schema rather
-// than an ad-hoc cast per test.
-const rojoTreeNodeSchema: Type<RojoTreeNode> = type({
-	"[string]": "unknown",
-}).as<RojoTreeNode>();
-
-const pooledProjectSchema = type({ "[string]": "unknown", "tree": "object" });
-
-function seed(files: Record<string, string> = {}): void {
-	vol.reset();
-	vol.fromJSON(files);
-}
-
-function stagedProject(stage: RojoTreeNode): string {
-	return JSON.stringify({
-		name: "jest-roblox-workspace",
-		tree: {
-			$className: "DataModel",
-			ServerStorage: { $className: "ServerStorage", __pkg_stage: stage },
-		},
-	});
-}
-
 function run(projectJson: string): string {
 	return poolSharedMounts({ projectDirectory: PROJECT_DIR, projectJson });
 }
 
-function pooledProject(projectJson: string): typeof pooledProjectSchema.infer {
-	return pooledProjectSchema.assert(JSON.parse(run(projectJson)));
-}
-
-/** Reads a foreign tree-node key, validating the child is itself a node. */
-function child(node: RojoTreeNode, key: string): RojoTreeNode | undefined {
-	const value = node[key];
-	return value === undefined ? undefined : rojoTreeNodeSchema.assert(value);
-}
-
-/**
- * Walks from the stage down a chain of node keys, short-circuiting on a miss.
- */
-function staged(
-	project: typeof pooledProjectSchema.infer,
-	...keys: Array<string>
-): RojoTreeNode | undefined {
-	return ["ServerStorage", "__pkg_stage", ...keys].reduce<RojoTreeNode | undefined>(
-		(current, key) => (current === undefined ? undefined : child(current, key)),
-		rojoTreeNodeSchema.assert(project.tree),
-	);
+function pooledProject(projectJson: string): typeof stagedProjectSchema.infer {
+	return stagedProjectSchema.assert(JSON.parse(run(projectJson)));
 }
 
 /**
@@ -81,19 +43,6 @@ function digestOf(absolutePath: string): string {
 		.update(normalizeWindowsPath(path.relative(PROJECT_DIR, absolutePath)))
 		.digest("hex")
 		.slice(0, 16);
-}
-
-/**
- * The attribute a marker carries, or `undefined` when the node is no marker.
- */
-function poolKeyOf(node: RojoTreeNode | undefined): string | undefined {
-	const attributes = node?.["$attributes"];
-	if (attributes === undefined) {
-		return undefined;
-	}
-
-	const value = rojoTreeNodeSchema.assert(attributes)["JestSharedPoolKey"];
-	return typeof value === "string" ? value : undefined;
 }
 
 /** A childless node mounting a directory — the shape the pass pools. */
@@ -333,7 +282,7 @@ describe(poolSharedMounts, () => {
 		});
 
 		expect(poolKeyOf(staged(here, "a", "Include"))).toBe(
-			poolKeyOf(staged(pooledProjectSchema.assert(JSON.parse(there)), "a", "Include")),
+			poolKeyOf(staged(stagedProjectSchema.assert(JSON.parse(there)), "a", "Include")),
 		);
 	});
 });
