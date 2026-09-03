@@ -11,6 +11,8 @@ import picomatch from "picomatch";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { CoverageRoot } from "../staging/synthesizer.ts";
+import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import { NOOP_TIMING_COLLECTOR } from "../timing/orchestration-collector.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashFileAsync } from "../utils/hash.ts";
@@ -93,6 +95,13 @@ export interface PrepareCoverageOptions {
 	 * resolves the fallback still narrows by anything explicitly set.
 	 */
 	coverageInclude?: Array<string> | undefined;
+	/**
+	 * The run's collector, so the two phases this call reports nest under the
+	 * `prepareCoverage` span the caller opened around it. Omitted by the
+	 * offline build path, which has no run to profile; both phases are still
+	 * measured, since their durations feed a Duration line either way.
+	 */
+	timing?: TimingCollector | undefined;
 }
 
 /** A rojo project this run could read, with the frame its mounts are in. */
@@ -198,11 +207,21 @@ interface RojoInputsHashResult {
 	resolved: boolean;
 }
 
-/** A prior place this run can reuse: everything but the phase timings. */
-type ReusedCoverage = Pick<
+/**
+ * The place the bake settled on, reused or built: the result minus the two
+ * phase timings, which only the caller that spanned them can supply.
+ */
+type BakedCoveragePlace = Pick<
 	PrepareCoverageResult,
 	"buildId" | "coveragePlace" | "files" | "manifest" | "placeFile" | "rebuilt"
 >;
+
+/** What the instrumentation phase leaves behind for the place build. */
+interface InstrumentedCoverage {
+	inputs: CoverageInputs;
+	isIncremental: boolean;
+	shadow: ShadowRootsResult;
+}
 
 /** Project the coverage result down to the record an entry point emits. */
 export function toCoverageArtifacts(
@@ -299,44 +318,27 @@ export function resolveLuauRoots(config: ResolvedConfig): Array<string> {
 
 export async function prepareCoverageAsync(
 	config: ResolvedConfig,
-	{ beforeBuild, coverageInclude }: PrepareCoverageOptions = {},
+	{ beforeBuild, coverageInclude, timing = NOOP_TIMING_COLLECTOR }: PrepareCoverageOptions = {},
 ): Promise<PrepareCoverageResult> {
-	const instrumentStart = Date.now();
-	const inputs = await resolveCoverageInputsAsync(config, coverageInclude);
-	const isIncremental = decideIncremental(config, inputs);
+	const { elapsedMs: instrumentMs, value: instrumented } = await timing.profileTimedAsync(
+		"instrumentSources",
+		async () => {
+			const inputs = await resolveCoverageInputsAsync(config, coverageInclude);
+			const isIncremental = decideIncremental(config, inputs);
+			return { inputs, isIncremental, shadow: prepareShadowRoots(inputs, isIncremental) };
+		},
+	);
 
-	const shadow = prepareShadowRoots(inputs, isIncremental);
-	// Coverage pays for the instrumentation and nothing else. Everything below
-	// is the place build and the gate deciding whether to do it — `beforeBuild`
+	// Coverage pays for the instrumentation and nothing else. The other phase is
+	// the place build and the gate deciding whether to do it — `beforeBuild`
 	// bakes stubs into the shadow tree, and the reuse gate re-hashes the cached
 	// place. Both are staging: a non-coverage run pays the same work.
-	const instrumentMs = Date.now() - instrumentStart;
+	const { elapsedMs: stagingMs, value: baked } = await timing.profileTimedAsync(
+		"bakeCoveragePlace",
+		async () => bakeCoveragePlaceAsync({ beforeBuild, config, instrumented }),
+	);
 
-	const stagingStart = Date.now();
-	const hasChanges = hasCoverageChanges(inputs, {
-		hasExtraChanges: beforeBuild?.(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true,
-		isIncremental,
-		shadow,
-	});
-	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
-	const files = toBuildManifestFiles(shadow.files);
-	const reused = await reuseCoverageResultAsync(inputs, files, hasChanges);
-	if (reused !== undefined) {
-		return toReusedResult(reused, instrumentMs, Date.now() - stagingStart);
-	}
-
-	const built = await buildPlaceAndManifestAsync(config, inputs, shadow, placeFile);
-
-	return {
-		buildId: built.buildId,
-		coveragePlace: built.coveragePlace,
-		files,
-		instrumentMs,
-		manifest: built.manifest,
-		placeFile,
-		rebuilt: true,
-		stagingMs: Date.now() - stagingStart,
-	};
+	return { ...baked, instrumentMs, stagingMs };
 }
 
 function containsLuauFiles(directoryPath: string): boolean {
@@ -471,16 +473,242 @@ function readRojoContext(config: ResolvedConfig, rojoProjectPath: string | undef
 	return { ...loadResolvedRojoProject(rojoProjectPath), config };
 }
 
-// Announce the reuse and hand the prior place back. Nothing was built, but the
-// gate that decided so re-hashed the cached place, so staging still carries
-// what the decision cost.
-function toReusedResult(
-	reused: ReusedCoverage,
-	instrumentMs: number,
-	stagingMs: number,
-): PrepareCoverageResult {
-	process.stderr.write(`Reusing cached coverage place (built ${reused.manifest.generatedAt})\n`);
-	return { ...reused, instrumentMs, stagingMs };
+/**
+ * A non-luauRoot rojo input changed — the shadow diff can't see those, so force
+ * a rebuild rather than reuse a stale place built from the old include/ or
+ * vendored sources. When the inputs couldn't be hashed the check is skipped
+ * (not forced): a project too broken to hash would also fail the rebuild's own
+ * parse, so preserve the prior reuse behavior instead of converting it into a
+ * hard failure.
+ */
+function hasRojoInputDrift(
+	{ hasResolvedInputs, previousManifest, rojoInputsHash }: CoverageInputs,
+	isIncremental: boolean,
+): boolean {
+	return (
+		isIncremental && hasResolvedInputs && previousManifest?.rojoInputsHash !== rojoInputsHash
+	);
+}
+
+// Rebuild unless every input is unchanged: a non-incremental run always
+// rebuilds, and so does any drift in the shadow tree, the caller's bake hook, or
+// a rojo input.
+function hasCoverageChanges(
+	inputs: CoverageInputs,
+	{
+		hasExtraChanges,
+		isIncremental,
+		shadow,
+	}: { hasExtraChanges: boolean; isIncremental: boolean; shadow: ShadowRootsResult },
+): boolean {
+	return (
+		!isIncremental ||
+		shadow.changed ||
+		hasExtraChanges ||
+		hasRojoInputDrift(inputs, isIncremental)
+	);
+}
+
+function priorPlaceIsReusable(placeFilePath: string, buildManifestPath: string): PriorPlaceReuse {
+	if (!fs.existsSync(placeFilePath)) {
+		return { reusable: false };
+	}
+
+	// A prior build manifest validates the cached artifacts: `readBuildManifest`
+	// re-hashes the coverage place (and sources), so any drift or corruption
+	// yields a non-ok result and forces a rebuild. Pre-BuildManifest caches
+	// (coverage manifest only) have no build manifest yet, so the existence check
+	// above is the only gate — keeping the no-change path working across
+	// upgrades.
+	const previous = readBuildManifest(buildManifestPath);
+	if (previous.kind === "missing") {
+		return { reusable: true };
+	}
+
+	if (previous.kind !== "ok") {
+		process.stderr.write(
+			`Warning: Previous build manifest is unusable (${previous.kind}); rebuilding place.\n`,
+		);
+		return { reusable: false };
+	}
+
+	return { coveragePlace: previous.manifest.coveragePlace, reusable: true };
+}
+
+/**
+ * Incremental no-change short-circuit: reuse the prior place only if it is
+ * still on disk and its bytes match the prior build manifest's record. A
+ * missing or drifted artifact (e.g. an interrupted prior build) returns
+ * `undefined` so the caller does a full rebuild rather than publishing a
+ * manifest that points at a stale or absent `.rbxl`.
+ */
+async function reuseCoverageResultAsync(
+	{ buildManifestPath, previousManifest }: CoverageInputs,
+	files: Record<string, BuildManifestFileRecord>,
+	hasChanges: boolean,
+): Promise<BakedCoveragePlace | undefined> {
+	if (hasChanges || previousManifest?.placeFilePath === undefined) {
+		return undefined;
+	}
+
+	const { buildId, placeFilePath } = previousManifest;
+	const reuse = priorPlaceIsReusable(placeFilePath, buildManifestPath);
+	if (!reuse.reusable) {
+		return undefined;
+	}
+
+	return {
+		buildId,
+		// Reuse the hash `readBuildManifest` already computed; only a
+		// pre-BuildManifest cache (no recorded place) falls back to hashing.
+		coveragePlace: reuse.coveragePlace ?? {
+			hash: await hashFileAsync(placeFilePath),
+			path: placeFilePath,
+		},
+		files,
+		manifest: previousManifest,
+		placeFile: placeFilePath,
+		rebuilt: false,
+	};
+}
+
+async function buildRojoProjectAsync({
+	packageDirectory,
+	placeFile,
+	rojoProjectPath,
+	shadow,
+}: BuildCoveragePlaceOptions): Promise<BuildManifestArtifact> {
+	return buildPlaceAsync({
+		// The coverage place is shared by every backend. studio-cli opens it
+		// directly and drives the plugin's Run-mode runner, which refuses to run
+		// unless LoadString is enabled; enabling it here is benign for the
+		// open-cloud path (OCALE does not gate on it). Forcing it on at build
+		// time keeps "studio-cli only selects the coverage place" true.
+		loadStringEnabled: true,
+		packages: [
+			{
+				name: "jest-roblox-coverage",
+				coverageRoots: shadow.coverageRoots,
+				coverageSpine: shadow.coverageSpine,
+				packageDirectory: path.resolve(packageDirectory),
+				rojoProjectPath: path.resolve(rojoProjectPath),
+			},
+		],
+		placeFile,
+		projectFile: path.join(COVERAGE_DIR, path.basename(rojoProjectPath)),
+		wrap: false,
+	});
+}
+
+function buildAndWriteManifest({
+	allFiles,
+	buildId,
+	copyIgnoreHash,
+	coverageUniverseHash,
+	luauRoots,
+	manifestPath,
+	nonInstrumentedFiles,
+	placeFile,
+	rojoInputsHash,
+}: WriteManifestOptions): CoverageManifest {
+	const generatedAtDate = new Date();
+	const manifest: CoverageManifest = {
+		buildId,
+		copyIgnoreHash,
+		coverageUniverseHash,
+		files: allFiles,
+		generatedAt: generatedAtDate.toISOString(),
+		instrumenterVersion: INSTRUMENTER_VERSION,
+		luauRoots,
+		nonInstrumentedFiles,
+		placeFilePath: placeFile,
+		rojoInputsHash,
+		shadowDir: COVERAGE_DIR,
+		version: MANIFEST_VERSION,
+	};
+
+	writeManifest(manifestPath, manifest);
+
+	return manifest;
+}
+
+/**
+ * Build the `.rbxl` first, then write the manifest. The order matters: a failed
+ * `buildRojoProject` throws before the coverage manifest is written, so an
+ * interrupted run never leaves a manifest claiming an artifact that isn't on
+ * disk. The caller owns Build Manifest emission (it alone knows the full place
+ * set), keeping that write a single atomic operation.
+ */
+async function buildPlaceAndManifestAsync(
+	config: ResolvedConfig,
+	inputs: CoverageInputs,
+	shadow: ShadowRootsResult,
+	placeFile: string,
+): Promise<Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest">> {
+	const coveragePlace = await buildRojoProjectAsync({
+		packageDirectory: config.rootDir,
+		placeFile,
+		rojoProjectPath: inputs.rojoProjectPath,
+		shadow,
+	});
+
+	const buildId = crypto.randomUUID();
+	const manifest = buildAndWriteManifest({
+		allFiles: shadow.files,
+		buildId,
+		copyIgnoreHash: inputs.copyIgnoreHash,
+		coverageUniverseHash: inputs.universe?.digest,
+		luauRoots: inputs.luauRoots,
+		manifestPath: inputs.manifestPath,
+		nonInstrumentedFiles: shadow.nonInstrumentedFiles,
+		placeFile,
+		rojoInputsHash: inputs.rojoInputsHash,
+	});
+
+	return { buildId, coveragePlace, manifest };
+}
+
+/**
+ * Bake the run's stubs into the instrumented tree, decide whether the cached
+ * place still answers for it, and build one when it does not. Everything a
+ * non-coverage run would pay for over uninstrumented sources, which is why the
+ * caller reports it as staging rather than as coverage.
+ */
+async function bakeCoveragePlaceAsync({
+	beforeBuild,
+	config,
+	instrumented: { inputs, isIncremental, shadow },
+}: {
+	beforeBuild: PrepareCoverageOptions["beforeBuild"];
+	config: ResolvedConfig;
+	instrumented: InstrumentedCoverage;
+}): Promise<BakedCoveragePlace> {
+	const hasChanges = hasCoverageChanges(inputs, {
+		hasExtraChanges: beforeBuild?.(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true,
+		isIncremental,
+		shadow,
+	});
+	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
+	const files = toBuildManifestFiles(shadow.files);
+	const reused = await reuseCoverageResultAsync(inputs, files, hasChanges);
+	if (reused !== undefined) {
+		// Nothing was built, but the gate that decided so re-hashed the cached
+		// place, so this phase still carries what the decision cost.
+		process.stderr.write(
+			`Reusing cached coverage place (built ${reused.manifest.generatedAt})\n`,
+		);
+		return reused;
+	}
+
+	const built = await buildPlaceAndManifestAsync(config, inputs, shadow, placeFile);
+	return {
+		buildId: built.buildId,
+		coveragePlace: built.coveragePlace,
+		files,
+		manifest: built.manifest,
+		placeFile,
+		rebuilt: true,
+	};
 }
 
 function validateRelativeRoots(luauRoots: Array<string>): void {
@@ -718,199 +946,4 @@ function prepareShadowRoots(inputs: CoverageInputs, isIncremental: boolean): Sha
 		files,
 		nonInstrumentedFiles,
 	};
-}
-
-/**
- * A non-luauRoot rojo input changed — the shadow diff can't see those, so force
- * a rebuild rather than reuse a stale place built from the old include/ or
- * vendored sources. When the inputs couldn't be hashed the check is skipped
- * (not forced): a project too broken to hash would also fail the rebuild's own
- * parse, so preserve the prior reuse behavior instead of converting it into a
- * hard failure.
- */
-function hasRojoInputDrift(
-	{ hasResolvedInputs, previousManifest, rojoInputsHash }: CoverageInputs,
-	isIncremental: boolean,
-): boolean {
-	return (
-		isIncremental && hasResolvedInputs && previousManifest?.rojoInputsHash !== rojoInputsHash
-	);
-}
-
-// Rebuild unless every input is unchanged: a non-incremental run always
-// rebuilds, and so does any drift in the shadow tree, the caller's bake hook, or
-// a rojo input.
-function hasCoverageChanges(
-	inputs: CoverageInputs,
-	{
-		hasExtraChanges,
-		isIncremental,
-		shadow,
-	}: { hasExtraChanges: boolean; isIncremental: boolean; shadow: ShadowRootsResult },
-): boolean {
-	return (
-		!isIncremental ||
-		shadow.changed ||
-		hasExtraChanges ||
-		hasRojoInputDrift(inputs, isIncremental)
-	);
-}
-
-function priorPlaceIsReusable(placeFilePath: string, buildManifestPath: string): PriorPlaceReuse {
-	if (!fs.existsSync(placeFilePath)) {
-		return { reusable: false };
-	}
-
-	// A prior build manifest validates the cached artifacts: `readBuildManifest`
-	// re-hashes the coverage place (and sources), so any drift or corruption
-	// yields a non-ok result and forces a rebuild. Pre-BuildManifest caches
-	// (coverage manifest only) have no build manifest yet, so the existence check
-	// above is the only gate — keeping the no-change path working across
-	// upgrades.
-	const previous = readBuildManifest(buildManifestPath);
-	if (previous.kind === "missing") {
-		return { reusable: true };
-	}
-
-	if (previous.kind !== "ok") {
-		process.stderr.write(
-			`Warning: Previous build manifest is unusable (${previous.kind}); rebuilding place.\n`,
-		);
-		return { reusable: false };
-	}
-
-	return { coveragePlace: previous.manifest.coveragePlace, reusable: true };
-}
-
-/**
- * Incremental no-change short-circuit: reuse the prior place only if it is
- * still on disk and its bytes match the prior build manifest's record. A
- * missing or drifted artifact (e.g. an interrupted prior build) returns
- * `undefined` so the caller does a full rebuild rather than publishing a
- * manifest that points at a stale or absent `.rbxl`.
- */
-async function reuseCoverageResultAsync(
-	{ buildManifestPath, previousManifest }: CoverageInputs,
-	files: Record<string, BuildManifestFileRecord>,
-	hasChanges: boolean,
-): Promise<ReusedCoverage | undefined> {
-	if (hasChanges || previousManifest?.placeFilePath === undefined) {
-		return undefined;
-	}
-
-	const { buildId, placeFilePath } = previousManifest;
-	const reuse = priorPlaceIsReusable(placeFilePath, buildManifestPath);
-	if (!reuse.reusable) {
-		return undefined;
-	}
-
-	return {
-		buildId,
-		// Reuse the hash `readBuildManifest` already computed; only a
-		// pre-BuildManifest cache (no recorded place) falls back to hashing.
-		coveragePlace: reuse.coveragePlace ?? {
-			hash: await hashFileAsync(placeFilePath),
-			path: placeFilePath,
-		},
-		files,
-		manifest: previousManifest,
-		placeFile: placeFilePath,
-		rebuilt: false,
-	};
-}
-
-async function buildRojoProjectAsync({
-	packageDirectory,
-	placeFile,
-	rojoProjectPath,
-	shadow,
-}: BuildCoveragePlaceOptions): Promise<BuildManifestArtifact> {
-	return buildPlaceAsync({
-		// The coverage place is shared by every backend. studio-cli opens it
-		// directly and drives the plugin's Run-mode runner, which refuses to run
-		// unless LoadString is enabled; enabling it here is benign for the
-		// open-cloud path (OCALE does not gate on it). Forcing it on at build
-		// time keeps "studio-cli only selects the coverage place" true.
-		loadStringEnabled: true,
-		packages: [
-			{
-				name: "jest-roblox-coverage",
-				coverageRoots: shadow.coverageRoots,
-				coverageSpine: shadow.coverageSpine,
-				packageDirectory: path.resolve(packageDirectory),
-				rojoProjectPath: path.resolve(rojoProjectPath),
-			},
-		],
-		placeFile,
-		projectFile: path.join(COVERAGE_DIR, path.basename(rojoProjectPath)),
-		wrap: false,
-	});
-}
-
-function buildAndWriteManifest({
-	allFiles,
-	buildId,
-	copyIgnoreHash,
-	coverageUniverseHash,
-	luauRoots,
-	manifestPath,
-	nonInstrumentedFiles,
-	placeFile,
-	rojoInputsHash,
-}: WriteManifestOptions): CoverageManifest {
-	const generatedAtDate = new Date();
-	const manifest: CoverageManifest = {
-		buildId,
-		copyIgnoreHash,
-		coverageUniverseHash,
-		files: allFiles,
-		generatedAt: generatedAtDate.toISOString(),
-		instrumenterVersion: INSTRUMENTER_VERSION,
-		luauRoots,
-		nonInstrumentedFiles,
-		placeFilePath: placeFile,
-		rojoInputsHash,
-		shadowDir: COVERAGE_DIR,
-		version: MANIFEST_VERSION,
-	};
-
-	writeManifest(manifestPath, manifest);
-
-	return manifest;
-}
-
-/**
- * Build the `.rbxl` first, then write the manifest. The order matters: a failed
- * `buildRojoProject` throws before the coverage manifest is written, so an
- * interrupted run never leaves a manifest claiming an artifact that isn't on
- * disk. The caller owns Build Manifest emission (it alone knows the full place
- * set), keeping that write a single atomic operation.
- */
-async function buildPlaceAndManifestAsync(
-	config: ResolvedConfig,
-	inputs: CoverageInputs,
-	shadow: ShadowRootsResult,
-	placeFile: string,
-): Promise<Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest">> {
-	const coveragePlace = await buildRojoProjectAsync({
-		packageDirectory: config.rootDir,
-		placeFile,
-		rojoProjectPath: inputs.rojoProjectPath,
-		shadow,
-	});
-
-	const buildId = crypto.randomUUID();
-	const manifest = buildAndWriteManifest({
-		allFiles: shadow.files,
-		buildId,
-		copyIgnoreHash: inputs.copyIgnoreHash,
-		coverageUniverseHash: inputs.universe?.digest,
-		luauRoots: inputs.luauRoots,
-		manifestPath: inputs.manifestPath,
-		nonInstrumentedFiles: shadow.nonInstrumentedFiles,
-		placeFile,
-		rojoInputsHash: inputs.rojoInputsHash,
-	});
-
-	return { buildId, coveragePlace, manifest };
 }

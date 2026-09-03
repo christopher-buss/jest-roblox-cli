@@ -10,6 +10,7 @@ import type { Except } from "type-fest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { writeAgedFile } from "../../test/mocks/aged-file.ts";
+import { movableClockCollector, tickingClockCollector } from "../../test/mocks/movable-clock.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { RojoProject } from "../types/rojo.ts";
@@ -658,15 +659,14 @@ describe(prepareCoverageAsync, () => {
 			const { buildWithRojoAsync } = await setupMocksAsync();
 			// Synchronous work, so the clock has to move from inside the build
 			// for the two phases to be told apart at all.
-			let clock = 1_000;
-			vi.spyOn(Date, "now").mockImplementation(() => clock);
+			const clock = movableClockCollector(1_000);
 			vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-				clock += 250;
+				clock.advance(250);
 				vol.writeFileSync(outputPath, "RBXL");
 			});
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
-			const result = await prepareCoverageAsync(config);
+			const result = await prepareCoverageAsync(config, { timing: clock.timing });
 
 			expect(result.stagingMs).toBe(250);
 			// Only the instrumentation: the run reports it as coverage.
@@ -1368,13 +1368,9 @@ describe(prepareCoverageAsync, () => {
 			// The gate re-hashes the cached place to decide, so a reused place
 			// still costs host time. Moving the clock per reading is what makes
 			// that cost visible in a synchronous call.
-			let clock = 1_000;
-			vi.spyOn(Date, "now").mockImplementation(() => {
-				clock += 5;
-				return clock;
+			const result = await prepareCoverageAsync(config, {
+				timing: tickingClockCollector(1_000, 5),
 			});
-
-			const result = await prepareCoverageAsync(config);
 
 			expect(buildWithRojoAsync).not.toHaveBeenCalled();
 			expect(result.stagingMs).toBeGreaterThan(0);
@@ -2716,14 +2712,16 @@ describe(prepareCoverageAsync, () => {
 			// The hook is the stub bake, which a non-coverage run pays too.
 			// Frozen clock apart from the hook, so whatever it costs is the whole
 			// difference between the two phases.
-			let clock = 1_000;
-			vi.spyOn(Date, "now").mockImplementation(() => clock);
+			const clock = movableClockCollector(1_000);
 			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>(() => {
-				clock += 90;
+				clock.advance(90);
 				return false;
 			});
 
-			const result = await prepareCoverageAsync(config, { beforeBuild });
+			const result = await prepareCoverageAsync(config, {
+				beforeBuild,
+				timing: clock.timing,
+			});
 
 			expect(result.instrumentMs).toBe(0);
 			expect(result.stagingMs).toBe(90);

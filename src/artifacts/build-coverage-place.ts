@@ -73,7 +73,12 @@ export async function buildCoveragePlaceAsync(
 	cleanLeftoverStubs(projects, merged.rootDir);
 	generateProjectStubs(projects, merged.rootDir, cacheRoot);
 
-	const { artifacts } = await prepareBakedCoverageAsync(merged, projects, cacheRoot, true);
+	const { artifacts } = await prepareBakedCoverageAsync({
+		bakeStubs: true,
+		cacheRoot,
+		config: merged,
+		projects,
+	});
 
 	// Emit only when the place was rebuilt this run, matching `runJestRoblox`:
 	// the reuse path leaves the prior (still-valid) build manifest in place, and

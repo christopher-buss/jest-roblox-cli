@@ -6,6 +6,7 @@ import process from "node:process";
 import type { Except } from "type-fest";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { movableClockCollector } from "../test/mocks/movable-clock.ts";
 import type {
 	Backend,
 	BackendOptions,
@@ -2952,10 +2953,15 @@ describe(runWorkspaceAsync, () => {
 
 		// Staging is synchronous, so the only way to give it a measurable
 		// duration is to move the clock from inside the rojo build it ends on.
-		let clock = 1_000;
-		vi.spyOn(Date, "now").mockImplementation(() => clock);
+		// Two counters, moved by different amounts: a phase duration comes off
+		// the collector's clock, while `startTime` stamps the wall clock the
+		// "Start at" line renders.
+		const clock = movableClockCollector(0);
+		let wallMs = 1_000;
+		vi.spyOn(Date, "now").mockImplementation(() => wallMs);
 		vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
-			clock += 250;
+			clock.advance(250);
+			wallMs += 900;
 			return { hash: "hash", path: "place.rbxl" };
 		});
 
@@ -2968,6 +2974,7 @@ describe(runWorkspaceAsync, () => {
 			cli: makeCli(),
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
+			timing: clock.timing,
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
@@ -2976,8 +2983,8 @@ describe(runWorkspaceAsync, () => {
 		// No package collected coverage, so nothing is reported under it.
 		expect(output!.coverageMs).toBe(0);
 		// The dispatch window must start after staging, or the reported total
-		// would count those 250ms twice.
-		expect(output!.results[0]!.result.timing.startTime).toBe(1250);
+		// would count the build twice.
+		expect(output!.results[0]!.result.timing.startTime).toBe(1_900);
 	});
 
 	it("should report the coverage bake apart from the staging around it", async () => {
@@ -2995,17 +3002,16 @@ describe(runWorkspaceAsync, () => {
 			[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 		});
 
-		let clock = 1_000;
-		vi.spyOn(Date, "now").mockImplementation(() => clock);
+		const clock = movableClockCollector(1_000);
 
 		const { prepareWorkspaceCoverage } =
 			await import("./coverage-pipeline/workspace-prepare.ts");
 		vi.mocked(prepareWorkspaceCoverage).mockImplementation(() => {
-			clock += 120;
+			clock.advance(120);
 			return [coverageEntry("@halcyon/foo")];
 		});
 		vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
-			clock += 250;
+			clock.advance(250);
 			return { hash: "hash", path: "place.rbxl" };
 		});
 
@@ -3018,6 +3024,7 @@ describe(runWorkspaceAsync, () => {
 			cli: makeCli({ collectCoverage: true }),
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
+			timing: clock.timing,
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});

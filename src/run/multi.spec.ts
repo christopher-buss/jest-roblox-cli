@@ -6,6 +6,7 @@ import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import packageJson from "../../package.json" with { type: "json" };
+import { movableClockCollector } from "../../test/mocks/movable-clock.ts";
 import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { collectProjectRoots, filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
@@ -186,6 +187,14 @@ function recordingTimingCollector() {
 		profileAsync: async (name, func) => {
 			asyncNames.push(name);
 			return func();
+		},
+		profileTimed: (name, func) => {
+			names.push(name);
+			return { elapsedMs: 0, value: func() };
+		},
+		profileTimedAsync: async (name, func) => {
+			asyncNames.push(name);
+			return { elapsedMs: 0, value: await func() };
 		},
 		progress: NOOP_RUN_PROGRESS,
 		record: (name, elapsedMs) => {
@@ -638,7 +647,7 @@ describe(runMultiProjectAsync, () => {
 		const { config } = setupDefaults({ collectCoverage: true });
 		// Frozen: the stub sweep must contribute nothing, so the only staging
 		// left is the place build the coverage bake reports.
-		vi.spyOn(Date, "now").mockReturnValue(1_000);
+		const clock = movableClockCollector(1_000);
 		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
@@ -665,6 +674,7 @@ describe(runMultiProjectAsync, () => {
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
+			timing: clock.timing,
 		});
 
 		expect(result.coverageMs).toBe(120);
@@ -679,16 +689,16 @@ describe(runMultiProjectAsync, () => {
 
 		// Studio backend: no place build, so the stub sweep is the whole of
 		// staging.
-		let clock = 1_000;
-		vi.spyOn(Date, "now").mockImplementation(() => clock);
+		const clock = movableClockCollector(1_000);
 		mocks.generateProjectStubs.mockImplementation(() => {
-			clock += 40;
+			clock.advance(40);
 		});
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
+			timing: clock.timing,
 		});
 
 		expect(result.stagingMs).toBe(40);
@@ -702,11 +712,15 @@ describe(runMultiProjectAsync, () => {
 		seedProjectFiles();
 
 		// The build is synchronous, so the only way to give it a measurable
-		// duration is to move the clock from inside it.
-		let clock = 1_000;
-		vi.spyOn(Date, "now").mockImplementation(() => clock);
+		// duration is to move the clock from inside it. Two counters, moved by
+		// different amounts: a phase duration comes off the collector's clock,
+		// while `startTime` stamps the wall clock the "Start at" line renders.
+		const clock = movableClockCollector(0);
+		let wallMs = 1_000;
+		vi.spyOn(Date, "now").mockImplementation(() => wallMs);
 		mocks.buildWithRojoAsync.mockImplementation(async (_projectPath, outputPath) => {
-			clock += 250;
+			clock.advance(250);
+			wallMs += 900;
 			vol.mkdirSync(path.dirname(outputPath), { recursive: true });
 			vol.writeFileSync(outputPath, "RBXL");
 		});
@@ -714,12 +728,13 @@ describe(runMultiProjectAsync, () => {
 			cli: makeCli(),
 			config,
 			rawProjects: [makeProjectEntry("client")],
+			timing: clock.timing,
 		});
 
 		expect(result.stagingMs).toBe(250);
 		// The dispatch window must open after the build, or the reported total
-		// would count those 250ms twice.
-		expect(mocks.runProjects.mock.calls[0]![0].startTime).toBe(1250);
+		// would count the build twice.
+		expect(mocks.runProjects.mock.calls[0]![0].startTime).toBe(1_900);
 	});
 
 	it("should record the resolved projects in the coverage artifacts", async () => {

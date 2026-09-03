@@ -10,7 +10,7 @@ import {
 } from "../config/stubs.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import type { PackageDescriptor, StubMount } from "../staging/synthesizer.ts";
-import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import type { TimedPhase, TimingCollector } from "../timing/orchestration-collector.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import type { PendingEntry } from "./test-selection.ts";
 
@@ -20,6 +20,11 @@ import type { PendingEntry } from "./test-selection.ts";
  * its `stubMounts` plus, for instrumented packages, the `coverageRoots` that
  * redirect its `$path` entries at the shadow tree and the `coverageSpine` the
  * demote mounts in place of the ones above them.
+ *
+ * Reports what the two phases cost, which the caller charges to staging. The
+ * leftover sweep is a filesystem walk and gets a span of its own, under the
+ * name multi opens for the same work — the `TIMING` waterfall then reads the
+ * same in either mode.
  */
 export function stageWorkspaceStubs({
 	contexts,
@@ -31,22 +36,27 @@ export function stageWorkspaceStubs({
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
 	pending: Array<PendingEntry>;
 	timing: TimingCollector;
-}): Array<PackageDescriptor> {
+}): TimedPhase<Array<PackageDescriptor>> {
 	const liveProjects = liveProjectsByPackage(pending);
-	cleanLeftoverWorkspaceStubs(contexts, liveProjects);
+	const { elapsedMs: cleanMs } = timing.profileTimed("cleanLeftoverStubs", () => {
+		cleanLeftoverWorkspaceStubs(contexts, liveProjects);
+	});
 
-	return timing
-		.profile("buildStubs", () => writeStubsAndBuildDescriptors(contexts, liveProjects))
-		.map((descriptor) => {
-			const coverage = coverageByPackage.get(descriptor.name);
-			return coverage !== undefined
-				? {
-						...descriptor,
-						coverageRoots: coverage.coverageRoots,
-						coverageSpine: coverage.coverageSpine,
-					}
-				: descriptor;
-		});
+	const { elapsedMs: writeMs, value: written } = timing.profileTimed("buildStubs", () => {
+		return writeStubsAndBuildDescriptors(contexts, liveProjects);
+	});
+
+	const descriptors = written.map((descriptor) => {
+		const coverage = coverageByPackage.get(descriptor.name);
+		return coverage !== undefined
+			? {
+					...descriptor,
+					coverageRoots: coverage.coverageRoots,
+					coverageSpine: coverage.coverageSpine,
+				}
+			: descriptor;
+	});
+	return { elapsedMs: cleanMs + writeMs, value: descriptors };
 }
 
 function liveProjectsByPackage(pending: Array<PendingEntry>): Map<string, Set<string>> {

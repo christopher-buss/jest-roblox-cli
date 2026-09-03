@@ -89,7 +89,7 @@ describe(buildCoveragePlaceAsync, () => {
 
 		await buildCoveragePlaceAsync(makeConfig({ collectCoverage: false }));
 
-		expect(mocks.prepareBakedCoverageAsync.mock.calls[0]![0].collectCoverage).toBeTrue();
+		expect(mocks.prepareBakedCoverageAsync.mock.calls[0]![0].config.collectCoverage).toBeTrue();
 	});
 
 	it("should emit the build manifest with the coverage place and no clean place", async () => {
@@ -115,9 +115,9 @@ describe(buildCoveragePlaceAsync, () => {
 
 		expect(mocks.cleanLeftoverStubs).toHaveBeenCalledOnce();
 		expect(mocks.generateProjectStubs).toHaveBeenCalledOnce();
-		// The 4th arg to prepareBakedCoverageAsync is `bakeStubs` — always true
-		// here.
-		expect(mocks.prepareBakedCoverageAsync.mock.calls[0]![3]).toBeTrue();
+		// `bakeStubs` is always true on this path: a place handed to a foreign
+		// runner has to be self-contained.
+		expect(mocks.prepareBakedCoverageAsync.mock.calls[0]![0].bakeStubs).toBeTrue();
 	});
 
 	it("should resolve the implicit project when the config declares no projects", async () => {

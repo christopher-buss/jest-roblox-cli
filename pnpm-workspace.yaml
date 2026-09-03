@@ -14,7 +14,6 @@ minimumReleaseAgeExclude:
   - "@isentinel/eslint-config"
   - "@rolldown/binding-darwin-arm64@1.2.7"
   - "@rolldown/binding-linux-ppc64-gnu@1.2.7"
-  - "@rolldown/binding-linux-x64-gnu@1.2.7"
 
 publicHoistPattern:
   - "*@rbxts*"

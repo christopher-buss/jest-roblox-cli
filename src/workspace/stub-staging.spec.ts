@@ -4,6 +4,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
+import { fakeTimingCollector, phaseNamesOf } from "../../test/mocks/fake-timing-collector.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import {
 	cleanLeftoverStubs,
@@ -12,7 +13,6 @@ import {
 } from "../config/stubs.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
-import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import { stageWorkspaceStubs } from "./stub-staging.ts";
 import type { PendingEntry } from "./test-selection.ts";
@@ -52,14 +52,6 @@ function makePending(packageName: string, project: ResolvedProjectConfig): Pendi
 	return fromAny({ pkg: packageName, project });
 }
 
-function immediateTiming(): TimingCollector {
-	return fromAny({
-		profile: vi.fn<(name: string, operation: () => unknown) => unknown>((_name, operation) => {
-			return operation();
-		}),
-	});
-}
-
 function setupMocks(): void {
 	vi.clearAllMocks();
 	mocks.cleanLeftoverStubs.mockReturnValue([]);
@@ -68,7 +60,7 @@ function setupMocks(): void {
 
 describe(stageWorkspaceStubs, () => {
 	it("should stage only live projects and attach coverage roots to their package", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		setupMocks();
 
@@ -82,9 +74,9 @@ describe(stageWorkspaceStubs, () => {
 		const coverageByPackage = new Map<string, WorkspacePackageCoverage>([
 			["@halcyon/foo", fromAny({ coverageRoots, coverageSpine })],
 		]);
-		const timing = immediateTiming();
+		const timing = fakeTimingCollector(12);
 
-		const descriptors = stageWorkspaceStubs({
+		const { elapsedMs, value: descriptors } = stageWorkspaceStubs({
 			contexts: [foo, bar],
 			coverageByPackage,
 			pending: [makePending("@halcyon/foo", client), makePending("@halcyon/bar", server)],
@@ -121,7 +113,13 @@ describe(stageWorkspaceStubs, () => {
 				],
 			},
 		]);
-		expect(timing.profile).toHaveBeenCalledExactlyOnceWith("buildStubs", expect.any(Function));
+		// Both phases carry the names multi opens for the same work, and the
+		// caller is handed what the two cost together.
+		expect(phaseNamesOf(timing.profileTimed)).toStrictEqual([
+			"cleanLeftoverStubs",
+			"buildStubs",
+		]);
+		expect(elapsedMs).toBe(24);
 	});
 
 	it("should omit only mounts that contain a user-authored config", () => {
@@ -133,11 +131,11 @@ describe(stageWorkspaceStubs, () => {
 		const context = makeContext("@halcyon/foo", [project]);
 		mocks.hasUserAuthoredConfig.mockImplementation((mount) => mount.endsWith("Shared"));
 
-		const descriptors = stageWorkspaceStubs({
+		const { value: descriptors } = stageWorkspaceStubs({
 			contexts: [context],
 			coverageByPackage: new Map(),
 			pending: [makePending("@halcyon/foo", project)],
-			timing: immediateTiming(),
+			timing: fakeTimingCollector(12),
 		});
 
 		expect(mocks.hasUserAuthoredConfig.mock.calls).toStrictEqual([
@@ -166,7 +164,7 @@ describe(stageWorkspaceStubs, () => {
 			contexts: [context],
 			coverageByPackage: new Map(),
 			pending: [makePending("@halcyon/foo", project)],
-			timing: immediateTiming(),
+			timing: fakeTimingCollector(12),
 		});
 
 		expect(stderr).toHaveBeenCalledExactlyOnceWith(
@@ -189,7 +187,7 @@ describe(stageWorkspaceStubs, () => {
 			contexts: [context],
 			coverageByPackage: new Map(),
 			pending: [makePending("@halcyon/foo", project)],
-			timing: immediateTiming(),
+			timing: fakeTimingCollector(12),
 		});
 
 		expect(stderr).not.toHaveBeenCalled();

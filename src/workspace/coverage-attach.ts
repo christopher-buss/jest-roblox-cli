@@ -8,7 +8,7 @@ import {
 	type WorkspacePackageCoverage,
 } from "../coverage-pipeline/workspace-prepare.ts";
 import type { ExecuteResult } from "../executor.ts";
-import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import type { TimedPhase, TimingCollector } from "../timing/orchestration-collector.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import type { PendingEntry } from "./test-selection.ts";
@@ -79,7 +79,7 @@ export function prepareWorkspaceCoverageMap({
 	pending: Array<PendingEntry>;
 	timing: TimingCollector;
 	workspaceRoot: string;
-}): Map<string, WorkspacePackageCoverage> {
+}): TimedPhase<Map<string, WorkspacePackageCoverage>> {
 	const pendingPackageNames = new Set(pending.map((entry) => entry.pkg));
 	const coverageOptIn = new Set(
 		contexts.filter((ctx) => ctx.pkgConfig.collectCoverage).map((ctx) => ctx.info.name),
@@ -91,11 +91,16 @@ export function prepareWorkspaceCoverageMap({
 		.filter((descriptor) => {
 			return pendingPackageNames.has(descriptor.name) && coverageOptIn.has(descriptor.name);
 		});
+	// No span, and so no duration, when nothing opted in: opening
+	// `prepareCoverage` would announce an instrument stage that never
+	// instruments, and put a coverage segment on a run that collected none.
+	// The filtering above is then unmeasured, like any other work no phase
+	// names, and lands in the run's `cli` residual.
 	if (packages.length === 0) {
-		return new Map<string, WorkspacePackageCoverage>();
+		return { elapsedMs: 0, value: new Map<string, WorkspacePackageCoverage>() };
 	}
 
-	return timing.profile("prepareCoverage", () => {
+	return timing.profileTimed("prepareCoverage", () => {
 		return buildCoverageMap(prepareWorkspaceCoverage({ packages, timing, workspaceRoot }));
 	});
 }

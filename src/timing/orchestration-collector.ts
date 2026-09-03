@@ -11,6 +11,16 @@ import {
 	type SpanTree,
 } from "./span-tree.ts";
 
+/**
+ * A phase's value and how long it took, in whole milliseconds. Rounded here
+ * rather than at the caller: every reader is a duration line that renders the
+ * number raw, and summing unrounded phases would put a fraction on it.
+ */
+export interface TimedPhase<T> {
+	elapsedMs: number;
+	value: T;
+}
+
 export interface CreateTimingCollectorOptions {
 	clock?: { now: () => number };
 	enabled?: boolean;
@@ -38,6 +48,20 @@ export interface TimingCollector {
 	profile: <T>(name: string, func: () => T extends Promise<unknown> ? never : T) => T;
 	profileAsync: <T>(name: string, func: () => Promise<T>) => Promise<T>;
 	/**
+	 * {@link TimingCollector.profile}, plus the phase's duration handed back to
+	 * the caller. The one way to read a duration off the collector, and the
+	 * only member that measures on a disabled run: the span tree is written for
+	 * the `TIMING` report and cleared at flush, while the Duration line prints
+	 * on every run and needs the number now. Two clock reads per call is what a
+	 * disabled run pays for that.
+	 */
+	profileTimed: <T>(
+		name: string,
+		func: () => T extends Promise<unknown> ? never : T,
+	) => TimedPhase<T>;
+	/** {@link TimingCollector.profileAsync}, timed as `profileTimed` is. */
+	profileTimedAsync: <T>(name: string, func: () => Promise<T>) => Promise<TimedPhase<T>>;
+	/**
 	 * The run's stage reporter, carried here because the collector is already
 	 * threaded through every layer that has a stage to announce — the run
 	 * header that reveals it, the backend that owns upload and dispatch, the
@@ -52,8 +76,8 @@ export interface TimingCollector {
 	 * phases inside the Roblox VM. Repeated calls with the same `name`
 	 * accumulate, matching `profile`'s behavior.
 	 *
-	 * Stack-empty fallback: when called outside any `profile`/`profileAsync`
-	 * frame the span lands at root and contributes to `TOTAL (host)` like
+	 * Stack-empty fallback: when called outside any `profile*` frame the
+	 * span lands at root and contributes to `TOTAL (host)` like
 	 * any other root. Call inside the relevant frame to keep totals clean
 	 * — recording a value at root that is ALSO captured by a sibling root
 	 * `profile` span would double-count toward the host total.
@@ -70,7 +94,7 @@ export interface TimingCollector {
  * comes out at `flushTimingReport`, followed by the host total.
  * Nesting is tracked with one shared stack, so spans must open and close in
  * LIFO order: profile a phase, and any spans it opens nest under it. It is NOT
- * safe to run two `profile` / `profileAsync` calls concurrently on the same
+ * safe to run two of the four `profile*` calls concurrently on the same
  * collector (e.g. `Promise.all`) — interleaved opens/closes would corrupt the
  * stack. Create one collector per run; `flushTimingReport` empties it so a
  * second flush is a no-op.
@@ -78,16 +102,16 @@ export interface TimingCollector {
 export function createTimingCollector(options: CreateTimingCollectorOptions = {}): TimingCollector {
 	const isEnabled = options.enabled ?? process.env["TIMING"] !== undefined;
 	const { progress } = options;
+	const clock = options.clock ?? { now: () => performance.now() };
 	if (!isEnabled && progress === undefined) {
-		return createNoopTimingCollector();
+		return createNoopTimingCollector(clock);
 	}
 
 	const reporter = progress ?? NOOP_RUN_PROGRESS;
 
-	const clock = options.clock ?? { now: () => performance.now() };
 	const sink = options.sink ?? ((line: string) => void process.stderr.write(`${line}\n`));
 	const spans = createObservedSpanTree({ clock, isEnabled, reporter, sink });
-	const { profile, profileAsync } = createProfilers(spans);
+	const profilers = createProfilers(spans);
 
 	function record(name: string, elapsedMs: number): void {
 		spans.record(name, elapsedMs);
@@ -96,8 +120,7 @@ export function createTimingCollector(options: CreateTimingCollectorOptions = {}
 	return {
 		enabled: isEnabled,
 		flushTimingReport: createFlusher({ isEnabled, sink, spans }),
-		profile,
-		profileAsync,
+		...profilers,
 		progress: reporter,
 		record,
 	};
@@ -207,20 +230,85 @@ async function passthroughProfileAsync<T>(_name: string, func: () => Promise<T>)
 	return func();
 }
 
-function createNoopTimingCollector(): TimingCollector {
+/**
+ * Runs `func`, closing the frame only if it throws. The caller closes the
+ * frame on the way out, so a `finally` here would close it twice; and a
+ * `finally` could not hand the duration over anyway, since it runs after the
+ * return expression is evaluated.
+ */
+function closeOnThrow<T>(
+	close: () => number,
+	func: () => T extends Promise<unknown> ? never : T,
+): T {
+	try {
+		return func();
+	} catch (err) {
+		close();
+		throw err;
+	}
+}
+
+/** {@link closeOnThrow} for a phase that settles rather than returns. */
+async function closeOnThrowAsync<T>(close: () => number, func: () => Promise<T>): Promise<T> {
+	try {
+		return await func();
+	} catch (err) {
+		close();
+		throw err;
+	}
+}
+
+/**
+ * The timed pair, over any way of opening a frame that reports how long it
+ * stayed open. Both collectors have one: the live tree's `open`, and the bare
+ * clock bracket a disabled run stands in for it.
+ */
+function createTimedProfilers(
+	open: (name: string) => () => number,
+): Pick<TimingCollector, "profileTimed" | "profileTimedAsync"> {
+	function profileTimed<T>(
+		name: string,
+		func: () => T extends Promise<unknown> ? never : T,
+	): TimedPhase<T> {
+		const close = open(name);
+		const value = closeOnThrow<T>(close, func);
+		return { elapsedMs: Math.round(close()), value };
+	}
+
+	async function profileTimedAsync<T>(
+		name: string,
+		func: () => Promise<T>,
+	): Promise<TimedPhase<T>> {
+		const close = open(name);
+		const value = await closeOnThrowAsync(close, func);
+		return { elapsedMs: Math.round(close()), value };
+	}
+
+	return { profileTimed, profileTimedAsync };
+}
+
+function createNoopTimingCollector(clock: { now: () => number }): TimingCollector {
+	// A bare clock bracket stands in for the span tree there is none of, so the
+	// timed pair is the same code on both collectors and cannot round or
+	// measure differently between them.
 	return {
 		enabled: false,
 		flushTimingReport: noOp,
 		profile: passthroughProfile,
 		profileAsync: passthroughProfileAsync,
+		...createTimedProfilers((_name: string) => {
+			const start = clock.now();
+			return () => clock.now() - start;
+		}),
 		progress: NOOP_RUN_PROGRESS,
 		record: noOp,
 	};
 }
 
 /**
- * The two span-opening entry points for a live collector. Disabled runs
- * receive the direct-call implementations from `createNoopTimingCollector`.
+ * The four span-opening entry points for a live collector. A disabled run
+ * takes the direct-call `profile` / `profileAsync` from
+ * `createNoopTimingCollector` and shares the timed pair with this one.
  *
  * Every span opens, including the per-file ones instrumentation opens
  * thousands of and no reader ever asks for. Skipping the unnamed ones was
@@ -228,7 +316,9 @@ function createNoopTimingCollector(): TimingCollector {
  * bought that with a branch whose two sides are indistinguishable from
  * outside — nothing reads a disabled tree, so nothing can tell.
  */
-function createProfilers(spans: SpanTree): Pick<TimingCollector, "profile" | "profileAsync"> {
+function createProfilers(
+	spans: SpanTree,
+): Pick<TimingCollector, "profile" | "profileAsync" | "profileTimed" | "profileTimedAsync"> {
 	function profile<T>(name: string, func: () => T extends Promise<unknown> ? never : T): T {
 		const close = spans.open(name);
 		try {
@@ -247,12 +337,14 @@ function createProfilers(spans: SpanTree): Pick<TimingCollector, "profile" | "pr
 		}
 	}
 
-	return { profile, profileAsync };
+	return { profile, profileAsync, ...createTimedProfilers(spans.open) };
 }
 
 /**
  * Shared disabled collector for callers that thread a profiler through their
  * signatures but are invoked outside a profiled workspace run (single-mode
- * coverage, the `instrument` subcommand, tests). Every method is a no-op.
+ * coverage, the `instrument` subcommand, tests). Every method is a no-op bar
+ * the timed pair, which measures on every run because the Duration line it
+ * feeds prints on every run.
  */
 export const NOOP_TIMING_COLLECTOR: TimingCollector = createTimingCollector({ enabled: false });

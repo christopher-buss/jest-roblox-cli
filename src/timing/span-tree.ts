@@ -42,10 +42,12 @@ export interface CreateSpanTreeOptions {
 export interface SpanTree {
 	/**
 	 * Opens a span under the current frame and pushes it; the returned closer
-	 * adds the elapsed time and pops. Opens and closes must be LIFO — see
+	 * adds the elapsed time, pops, and hands that elapsed time back — this
+	 * one frame's, not the node's running total, so a name that runs twice
+	 * reports each run separately. Opens and closes must be LIFO — see
 	 * `createTimingCollector` for the concurrency caveat that follows from it.
 	 */
-	open: (name: string) => () => void;
+	open: (name: string) => () => number;
 	/** Adds `elapsedMs` to a leaf span under the current frame. */
 	record: (name: string, elapsedMs: number) => void;
 	/** Top-level spans in first-seen order. */
@@ -71,7 +73,7 @@ export function createSpanTree(
 		return childOf(top === undefined ? roots : top.children, name);
 	}
 
-	function open(name: string): () => void {
+	function open(name: string): () => number {
 		const node = nodeFor(name);
 		pushSpan({ node, onSpanOpen, stack });
 		return createCloser({ clock, node, onSpanClose, stack });
@@ -123,7 +125,8 @@ export function formatPhaseStart(name: string): string {
 
 /**
  * Starts `node`'s clock and hands back the closer that stops it, pops the
- * frame, and — for a top-level phase — reports the finished subtree.
+ * frame, reports the finished subtree for a top-level phase, and returns how
+ * long this frame took.
  */
 function createCloser({
 	clock,
@@ -135,10 +138,11 @@ function createCloser({
 	node: SpanNode;
 	onSpanClose: (node: SpanNode, isRoot: boolean) => void;
 	stack: Array<SpanNode>;
-}): () => void {
+}): () => number {
 	const start = clock.now();
 	return () => {
-		node.elapsedMs += clock.now() - start;
+		const elapsedMs = clock.now() - start;
+		node.elapsedMs += elapsedMs;
 		node.count += 1;
 		// Both before notifying: a sink that throws (stderr EPIPE) must not
 		// strand this frame and nest every later span under it, nor leave the
@@ -146,6 +150,7 @@ function createCloser({
 		node.closed = true;
 		stack.pop();
 		onSpanClose(node, stack.length === 0);
+		return elapsedMs;
 	};
 }
 

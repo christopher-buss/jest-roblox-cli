@@ -3,13 +3,12 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { fakeTimingCollector } from "../../test/mocks/fake-timing-collector.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import { emitWorkspaceBuildManifests } from "../coverage-pipeline/workspace-prepare.ts";
-import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
-import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { prepareWorkspaceCoverageMap } from "./coverage-attach.ts";
 import { stageWorkspacePlaceAsync } from "./place-staging.ts";
 import { stageWorkspaceStubs } from "./stub-staging.ts";
@@ -32,28 +31,25 @@ describe(stageWorkspacePlaceAsync, () => {
 			manifest: fromAny<CoverageManifest, unknown>({ files: {} }),
 		});
 		const coverageByPackage = new Map([["@scope/package", coverage]]);
-		vi.mocked(prepareWorkspaceCoverageMap).mockReturnValue(coverageByPackage);
-		vi.mocked(stageWorkspaceStubs).mockReturnValue([
-			fromAny<PackageDescriptor, unknown>({
-				name: "package",
-				packageDirectory: "/package",
-				rojoProjectPath: "/package/default.project.json",
-			}),
-		]);
+		vi.mocked(prepareWorkspaceCoverageMap).mockReturnValue({
+			elapsedMs: 30,
+			value: coverageByPackage,
+		});
+		vi.mocked(stageWorkspaceStubs).mockReturnValue({
+			elapsedMs: 25,
+			value: [
+				fromAny<PackageDescriptor, unknown>({
+					name: "package",
+					packageDirectory: "/package",
+					rojoProjectPath: "/package/default.project.json",
+				}),
+			],
+		});
 		const artifact = { hash: "place-hash", path: "built-place.rbxl" };
 		vi.mocked(buildPlaceAsync).mockResolvedValue(artifact);
-		const profileAsync = vi.fn<
-			(label: string, callback: () => Promise<typeof artifact>) => Promise<typeof artifact>
-		>(async (_label, callback) => callback());
-		const timing = fromAny<TimingCollector, unknown>({
-			profileAsync,
-			progress: NOOP_RUN_PROGRESS,
-		});
-		vi.spyOn(Date, "now")
-			.mockReturnValueOnce(100)
-			.mockReturnValueOnce(130)
-			.mockReturnValueOnce(150)
-			.mockReturnValueOnce(210);
+		// The two staging phases each report their own span, and the caller
+		// sums them.
+		const timing = fakeTimingCollector(35);
 
 		const result = await stageWorkspacePlaceAsync({
 			cacheDirectory,
@@ -69,7 +65,7 @@ describe(stageWorkspacePlaceAsync, () => {
 			placeFile: path.join(cacheDirectory, "synthesized.rbxl"),
 			stagingMs: 60,
 		});
-		expect(profileAsync).toHaveBeenCalledWith("rojoBuild", expect.any(Function));
+		expect(timing.profileTimedAsync).toHaveBeenCalledWith("rojoBuild", expect.any(Function));
 		expect(buildPlaceAsync).toHaveBeenCalledWith({
 			packages: [
 				{

@@ -93,12 +93,22 @@ export function collectStubMounts(
  * (stubs land in `cacheRoot`, not `rootDir`), so without it the coverage place
  * would build with no `jest.config` ModuleScripts.
  */
-export async function prepareBakedCoverageAsync(
-	config: ResolvedConfig,
-	projects: Array<ResolvedProjectConfig>,
-	cacheRoot: string,
-	bakeStubs: boolean,
-): Promise<BakedCoverage> {
+export async function prepareBakedCoverageAsync({
+	bakeStubs,
+	cacheRoot,
+	config,
+	projects,
+	timing,
+}: {
+	bakeStubs: boolean;
+	cacheRoot: string;
+	config: ResolvedConfig;
+	projects: Array<ResolvedProjectConfig>;
+	/**
+	 * The run's collector; omitted by the offline build path, which has none.
+	 */
+	timing?: TimingCollector | undefined;
+}): Promise<BakedCoverage> {
 	const coverage = await prepareCoverageAsync(config, {
 		beforeBuild: bakeStubs
 			? (shadow) => syncStubsToShadowDirectory(projects, cacheRoot, shadow)
@@ -106,6 +116,7 @@ export async function prepareBakedCoverageAsync(
 		// The same globs `buildMultiRunResult` reports against, so a file is
 		// probed exactly when this run would render a line for it.
 		coverageInclude: resolveCoverageInclude(config, projects),
+		timing,
 	});
 	return {
 		artifacts: toCoverageArtifacts(coverage, toBuildManifestProjects(projects)),
@@ -131,16 +142,14 @@ export async function stageRunAsync(
 	// `jest.config` ModuleScripts in DataModel from the JSON configs.
 	const cacheRoot = path.resolve(rootConfig.rootDir, ".jest-roblox", "cache");
 
-	// Timed rather than merely elapsed-through: every backend does this work
-	// before the dispatch window opens, so without a measurement it lands
-	// outside every reported phase.
-	const stagingStart = Date.now();
-
-	// Pre-flight cleanup mirrors workspace behaviour: upgraders coming from a
-	// pre-refactor version may have marker-bearing leftover stubs in their
-	// source tree. The synthesizer's `assertNoSourceCollision` and the plugin's
-	// runtime `FindFirstChild` check would both block the run otherwise.
-	const cleaned = timing.profile("cleanLeftoverStubs", () => {
+	// Every backend does this work before the dispatch window opens, so each
+	// phase below is timed: unmeasured, it would land outside every reported
+	// phase. Pre-flight cleanup mirrors workspace behaviour: upgraders coming
+	// from a pre-refactor version may have marker-bearing leftover stubs in
+	// their source tree. The synthesizer's `assertNoSourceCollision` and the
+	// plugin's runtime `FindFirstChild` check would both block the run
+	// otherwise.
+	const { elapsedMs: cleanMs, value: cleaned } = timing.profileTimed("cleanLeftoverStubs", () => {
 		return cleanLeftoverStubs(projects, rootConfig.rootDir);
 	});
 	if (cleaned.length > 0) {
@@ -151,15 +160,17 @@ export async function stageRunAsync(
 		);
 	}
 
-	timing.profile("generateProjectStubs", () => {
+	const { elapsedMs: generateMs } = timing.profileTimed("generateProjectStubs", () => {
 		generateProjectStubs(projects, rootConfig.rootDir, cacheRoot);
 	});
 
-	const stubStagingMs = Date.now() - stagingStart;
+	// Summed, so the stderr notice between the two phases is not charged here:
+	// writing it is not staging.
+	const stubStagingMs = cleanMs + generateMs;
 
 	const { coverageStagingMs, ...coverage } = await timing.profileAsync(
 		"prepareCoverage",
-		async () => prepareMultiCoverageAsync(rootConfig, projects, cacheRoot),
+		async () => prepareMultiCoverageAsync({ cacheRoot, projects, rootConfig, timing }),
 	);
 	return { cacheRoot, ...coverage, stagingMs: stubStagingMs + coverageStagingMs };
 }
@@ -185,11 +196,17 @@ function collectStubMountsForProject(
 	return stubMounts;
 }
 
-async function prepareMultiCoverageAsync(
-	rootConfig: ResolvedConfig,
-	projects: Array<ResolvedProjectConfig>,
-	cacheRoot: string,
-): Promise<StagedCoverageRun> {
+async function prepareMultiCoverageAsync({
+	cacheRoot,
+	projects,
+	rootConfig,
+	timing,
+}: {
+	cacheRoot: string;
+	projects: Array<ResolvedProjectConfig>;
+	rootConfig: ResolvedConfig;
+	timing: TimingCollector;
+}): Promise<StagedCoverageRun> {
 	if (!rootConfig.collectCoverage) {
 		return { coverageMs: 0, coverageStagingMs: 0, effectiveConfig: rootConfig };
 	}
@@ -200,12 +217,13 @@ async function prepareMultiCoverageAsync(
 	// stubs baked in. `auto` never resolves to studio-cli, so the config flag is
 	// the exact, probe-free signal.
 	const isBakeStubs = rootConfig.backend !== "studio-cli";
-	const { artifacts, coverage } = await prepareBakedCoverageAsync(
-		rootConfig,
-		projects,
+	const { artifacts, coverage } = await prepareBakedCoverageAsync({
+		bakeStubs: isBakeStubs,
 		cacheRoot,
-		isBakeStubs,
-	);
+		config: rootConfig,
+		projects,
+		timing,
+	});
 	return {
 		coverageArtifacts: artifacts,
 		coverageMs: coverage.instrumentMs,

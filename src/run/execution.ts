@@ -189,14 +189,13 @@ async function buildPlaceForBackendAsync(
 		return 0;
 	}
 
-	const start = Date.now();
-	await timing.profileAsync("buildOpenCloudPlace", async () => {
+	const { elapsedMs } = await timing.profileTimedAsync("buildOpenCloudPlace", async () => {
 		await buildOpenCloudPlaceAsync(rootConfig, projects, staged.cacheRoot);
 		// Inside the span: closing it closes the stage, and a size handed over
 		// after that arrives too late to reach the line the stage prints.
 		timing.progress.describe("build", describePlaceFile(resolvePlaceFilePath(rootConfig)));
 	});
-	return Date.now() - start;
+	return elapsedMs;
 }
 
 function effectiveParallelForBackend(

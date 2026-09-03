@@ -646,6 +646,100 @@ describe(createTimingCollector, () => {
 		expect(lines).toContain("[TIMING]   (unmeasured): 1ms");
 	});
 
+	it("should hand back a profiled phase's own elapsed time with its value", () => {
+		expect.assertions(2);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 40]),
+			enabled: true,
+			sink,
+		});
+
+		const staged = collector.profileTimed("generateProjectStubs", () => "stubs");
+
+		expect(staged).toStrictEqual({ elapsedMs: 40, value: "stubs" });
+		expect(lines).toStrictEqual([
+			"[TIMING] generateProjectStubs: start",
+			"[TIMING] generateProjectStubs: 40ms",
+		]);
+	});
+
+	it("should hand back the elapsed time of an async profiled phase", async () => {
+		expect.assertions(1);
+
+		const { sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 250]),
+			enabled: true,
+			sink,
+		});
+
+		const built = await collector.profileTimedAsync("rojoBuild", async () => "place.rbxl");
+
+		expect(built).toStrictEqual({ elapsedMs: 250, value: "place.rbxl" });
+	});
+
+	it("should still measure a timed phase on a collector with the report off", async () => {
+		expect.assertions(3);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 40, 40, 90]),
+			enabled: false,
+			sink,
+		});
+
+		expect(collector.profileTimed("buildStubs", () => "stubs")).toStrictEqual({
+			elapsedMs: 40,
+			value: "stubs",
+		});
+		await expect(
+			collector.profileTimedAsync("rojoBuild", async () => "place.rbxl"),
+		).resolves.toStrictEqual({ elapsedMs: 50, value: "place.rbxl" });
+		expect(lines).toStrictEqual([]);
+	});
+
+	it("should round a timed phase to whole milliseconds", () => {
+		expect.assertions(1);
+
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0.25, 40.75]),
+			enabled: false,
+			sink: () => {},
+		});
+
+		expect(collector.profileTimed("buildStubs", () => {}).elapsedMs).toBe(41);
+	});
+
+	it("should close a timed phase that throws and rethrow", () => {
+		expect.assertions(2);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 7, 7, 12]),
+			enabled: true,
+			sink,
+		});
+
+		expect(() => {
+			collector.profileTimed("buildStubs", () => {
+				throw new Error("boom");
+			});
+		}).toThrow("boom");
+
+		collector.profileTimed("rojoBuild", () => {});
+
+		// The frame popped, so the next phase reports as a sibling root rather
+		// than nesting under the one that threw.
+		expect(lines).toStrictEqual([
+			"[TIMING] buildStubs: start",
+			"[TIMING] buildStubs: 7ms",
+			"[TIMING] rojoBuild: start",
+			"[TIMING] rojoBuild: 5ms",
+		]);
+	});
+
 	it("should keep the timing report quiet while only progress is wanted", () => {
 		expect.assertions(1);
 
