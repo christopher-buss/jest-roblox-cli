@@ -1,20 +1,13 @@
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import { execFile, execFileSync } from "node:child_process";
-import {
-	cpSync,
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import nodeProcess from "node:process";
 import { onTestFinished } from "vitest";
 
 import type { JestResult } from "../../../src/types/jest-result.ts";
+import { createSandboxDirectory } from "../sandbox-root.ts";
 
 export interface JestEnvelopePayload {
 	runner: { setup: number };
@@ -195,9 +188,7 @@ function probeRojo(): boolean {
 const FIXTURE_RUN_ARTIFACTS = new Set([".jest-roblox", "coverage"]);
 
 export function createFixtureSandbox(sourcePath: string): string {
-	const sandboxRoot = path.resolve(__dirname, ".tmp");
-	mkdirSync(sandboxRoot, { recursive: true });
-	const directory = mkdtempSync(path.join(sandboxRoot, "jest-roblox-cli-e2e-"));
+	const directory = createSandboxDirectory();
 	const sandboxPath = path.join(directory, path.basename(sourcePath));
 	cpSync(sourcePath, sandboxPath, {
 		filter: (source) => !FIXTURE_RUN_ARTIFACTS.has(path.basename(source)),

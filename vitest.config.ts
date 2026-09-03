@@ -42,6 +42,17 @@ const setupFiles = ["./test/setup/enable-colors.ts", "./test/setup/jest-extended
  */
 const LIVE_DIRECTORY = "test/e2e/live";
 
+/**
+ * The fixture sandbox root (see `test/e2e/sandbox-root.ts`) holds copies of
+ * Roblox fixtures, spec files included, and an interrupted run leaves one
+ * behind. Every project that can glob into it subtracts it.
+ *
+ * Two patterns, because they do different jobs: the deep form is what stops a
+ * file being collected, and the bare directory form is what makes the walker
+ * skip the subtree instead of testing every file inside it.
+ */
+const SANDBOX_EXCLUDE = ["**/.tmp", "**/.tmp/**"];
+
 // This package has fixture configs that import `@isentinel/jest-roblox`.
 // Avoid the broad `source` condition here so those self-imports keep exercising
 // the built package during coverage; alias only the workspace deps that need
@@ -262,6 +273,11 @@ export default defineConfig({
 						GITHUB_ACTIONS: "",
 						JITI_ALIAS: JITI_SOURCE_ALIAS,
 					},
+					// `test/**` reaches the sandbox root as readily as the `e2e`
+					// glob does, and this project builds sandboxes there too. The
+					// `unit` and `live` projects need no such line — one already
+					// subtracts `test/e2e/**` whole, the other globs only `live/`.
+					exclude: [...defaultExclude, ...SANDBOX_EXCLUDE],
 					include: ["test/integration/**/*.spec.ts", "test/**/*.integration.spec.ts"],
 					restoreMocks: true,
 					setupFiles,
@@ -291,13 +307,19 @@ export default defineConfig({
 					},
 					// `*.spec.ts`, not `*.e2e.spec.ts`, so no file under
 					// `test/e2e/` can miss both projects. The price is two
-					// excludes: `fixtures/**` holds Jest-on-Roblox specs, which
-					// are inputs rather than tests, and `defaultExclude` must be
-					// spread back in rather than replaced — the live fixture's
-					// `node_modules` symlinks this package onto itself, so
-					// without `**/node_modules/**` the glob collects every spec
-					// a second time through the loop.
-					exclude: [...defaultExclude, `${LIVE_DIRECTORY}/**`, "test/e2e/fixtures/**"],
+					// excludes of its own: `fixtures/**` holds Jest-on-Roblox
+					// specs, which are inputs rather than tests, and
+					// `defaultExclude` must be spread back in rather than
+					// replaced — the live fixture's `node_modules` symlinks this
+					// package onto itself, so without `**/node_modules/**` the
+					// glob collects every spec a second time through the loop.
+					exclude: [
+						...defaultExclude,
+						...SANDBOX_EXCLUDE,
+						`${LIVE_DIRECTORY}/**`,
+						"test/e2e/fixtures/**",
+					],
+					globalSetup: ["./test/e2e/global-setup.ts"],
 					// `createFixtureSandbox` tears its temp tree down in an
 					// `onTestFinished` hook, and a `--coverage` run leaves a
 					// whole instrumented shadow tree behind. Deleting that many
