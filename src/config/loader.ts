@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
 
+import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { Config, ResolvedConfig } from "./schema.ts";
 import { DEFAULT_CONFIG, validateConfig } from "./schema.ts";
 
@@ -16,6 +17,16 @@ import { DEFAULT_CONFIG, validateConfig } from "./schema.ts";
  */
 interface ConfigModule {
 	readonly default?: unknown;
+}
+
+interface LoadedConfig {
+	config: Config;
+	/**
+	 * Directory of the config file c12 actually resolved — the anchor for a
+	 * declared relative `rootDir`. Falls back to the caller's `cwd` when the
+	 * load found no file at all.
+	 */
+	loadDirectory: string;
 }
 
 interface ExtendsLayerRequest {
@@ -88,28 +99,17 @@ export async function loadRawConfig(
 	configPath?: string,
 	cwd: string = process.cwd(),
 ): Promise<Config> {
-	let result;
-	try {
-		result = await invokeC12(configPath, cwd);
-	} catch (err) {
-		if (configPath !== undefined && isC12NotFoundError(err)) {
-			throw new Error(`Config file not found: ${configPath}`, { cause: err });
-		}
+	const { config } = await loadConfigLayers(configPath, cwd);
 
-		throw err;
-	}
-
-	const mergedConfig = await processExtends(result, new Set());
-
-	return validateConfig(resolveFunctionValues(mergedConfig));
+	return config;
 }
 
 export async function loadConfig(
 	configPath?: string,
 	cwd: string = process.cwd(),
 ): Promise<ResolvedConfig> {
-	const config = await loadRawConfig(configPath, cwd);
-	config.rootDir ??= cwd;
+	const { config, loadDirectory } = await loadConfigLayers(configPath, cwd);
+	config.rootDir = anchorRootDirectory(config.rootDir, loadDirectory, cwd);
 
 	return resolveConfig(config);
 }
@@ -176,6 +176,79 @@ async function invokeC12(configFile: string | undefined, cwd: string) {
 	return isSea()
 		? c12LoadConfig<Config>({ ...options, import: seaImport })
 		: c12LoadConfig<Config>(options);
+}
+
+/**
+ * Load the config layers, reporting the directory c12 resolved the entry file
+ * from alongside the merged result. The directory is the anchor a declared
+ * relative `rootDir` needs, and it survives only here — `processExtends` merges
+ * the layers into one object that no longer records where any of them lived.
+ */
+async function loadConfigLayers(
+	configPath: string | undefined,
+	cwd: string,
+): Promise<LoadedConfig> {
+	let result;
+	try {
+		result = await invokeC12(configPath, cwd);
+	} catch (err) {
+		if (configPath !== undefined && isC12NotFoundError(err)) {
+			throw new Error(`Config file not found: ${configPath}`, { cause: err });
+		}
+
+		throw err;
+	}
+
+	const mergedConfig = await processExtends(result, new Set());
+	const loadedFile = result.configFile;
+
+	return {
+		config: validateConfig(resolveFunctionValues(mergedConfig)),
+		// c12 reports a `configFile` even for a search that matched nothing, so
+		// the existence check is what distinguishes a real load from a miss.
+		loadDirectory:
+			loadedFile !== undefined && existsSync(loadedFile)
+				? path.dirname(path.resolve(loadedFile))
+				: cwd,
+	};
+}
+
+/**
+ * The `rootDir` every consumer anchors on, absolute. A declared relative one
+ * anchors on `loadDirectory` — the directory holding the config that declared
+ * it, which in workspace mode is the package directory. That is what makes
+ * `rootDir: "."` name the package rather than the invocation directory, whether
+ * the package config was found by search or named outright with `--config`.
+ *
+ * An absent `rootDir` still defaults to the invocation directory: a package
+ * that declares nothing is opting into the caller's frame of reference, and
+ * `--config packages/foo/jest.config.ts` from the workspace root has always
+ * meant "run foo's suite from here".
+ *
+ * Absoluteness is the cross-host question, not `path.resolve`'s: that reads
+ * `D:/repo` as a relative filename off Linux and would hang the whole config
+ * under `<cwd>/D:/repo`. An already-absolute `rootDir` is passed through in the
+ * spelling the config wrote, which is what the prefix-comparing consumers
+ * (`resolveUniverseAnchor`, `filter-projects-by-files`) expect to see.
+ */
+function anchorRootDirectory(
+	rootDirectory: string | undefined,
+	loadDirectory: string,
+	cwd: string,
+): string {
+	if (rootDirectory === undefined) {
+		// `cwd` is a caller's string too — `--workspace-root=.` reaches here
+		// verbatim — so this branch resolves rather than passing it on. It needs
+		// no cross-host guard: a `cwd` names a directory on the host doing the
+		// running, while a `rootDir` is committed and read from both.
+		return path.resolve(cwd);
+	}
+
+	if (isAbsolutePath(normalizeWindowsPath(rootDirectory))) {
+		return rootDirectory;
+	}
+
+	return path.resolve(loadDirectory, rootDirectory);
 }
 
 // `workspace.root` is relative in source; anchor it to the directory of the

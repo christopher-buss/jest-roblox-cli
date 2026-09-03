@@ -63,6 +63,10 @@ function writeVendoredMountConfig(sandbox: string, overrides: VendoredMountOverr
 	const config = {
 		...(overrides.luauRoots === undefined ? {} : { luauRoots: overrides.luauRoots }),
 		rojoProject: "test.project.json",
+		// The idiomatic Jest spelling, so the globs below are anchored the way
+		// a real package's are: on the package, not on the workspace root the
+		// run was invoked from.
+		rootDir: ".",
 		test: {
 			passWithNoTests: true,
 			projects: [

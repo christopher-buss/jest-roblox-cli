@@ -6,9 +6,11 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { resolveUniverseAnchor } from "../coverage-pipeline/coverage-universe.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { loadConfig, loadRawConfig, resolveConfig } from "./loader.ts";
 import type { Config } from "./schema.ts";
-import { DEFAULT_CONFIG } from "./schema.ts";
+import { DEFAULT_CONFIG, resolvePlaceFilePath } from "./schema.ts";
 
 /**
  * Hoisted out of the test body — the two-clause check would otherwise be a
@@ -286,6 +288,100 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const result = await loadConfig(configPath, parentDirectory);
 
 		expect(path.normalize(result.rootDir)).toBe(path.normalize(parentDirectory));
+	});
+
+	it("should resolve a relative rootDir against an explicit config path", async () => {
+		expect.assertions(1);
+
+		const workspaceRoot = makeTemporaryDirectory();
+		const packageDirectory = path.join(workspaceRoot, "packages", "core");
+		fs.mkdirSync(packageDirectory, { recursive: true });
+		const configPath = path.join(packageDirectory, "jest.config.mjs");
+		fs.writeFileSync(configPath, 'export default { rootDir: "." };');
+
+		const result = await loadConfig(configPath, workspaceRoot);
+
+		expect(result.rootDir).toBe(packageDirectory);
+	});
+
+	it("should resolve a relative rootDir against the load directory", async () => {
+		expect.assertions(1);
+
+		const packageDirectory = makeTemporaryDirectory();
+		fs.writeFileSync(
+			path.join(packageDirectory, "jest.config.mjs"),
+			'export default { rootDir: "." };',
+		);
+
+		const result = await loadConfig(undefined, packageDirectory);
+
+		expect(result.rootDir).toBe(packageDirectory);
+	});
+
+	it("should anchor the expanded log paths on a relative rootDir", async () => {
+		expect.assertions(2);
+
+		const packageDirectory = makeTemporaryDirectory();
+		fs.writeFileSync(
+			path.join(packageDirectory, "jest.config.mjs"),
+			'export default { gameOutput: true, outputFile: true, rootDir: "." };',
+		);
+
+		const result = await loadConfig(undefined, packageDirectory);
+
+		expect(result.gameOutput).toBe(path.join(packageDirectory, "game-output.log"));
+		expect(result.outputFile).toBe(path.join(packageDirectory, "jest-output.log"));
+	});
+
+	it("should anchor the place file on a relative rootDir", async () => {
+		expect.assertions(1);
+
+		const packageDirectory = makeTemporaryDirectory();
+		fs.writeFileSync(
+			path.join(packageDirectory, "jest.config.mjs"),
+			'export default { placeFile: "build/test.rbxl", rootDir: "." };',
+		);
+
+		const result = await loadConfig(undefined, packageDirectory);
+
+		expect(resolvePlaceFilePath(result)).toBe(path.join(packageDirectory, "build/test.rbxl"));
+	});
+
+	it("should anchor the coverage universe on a relative rootDir", async () => {
+		expect.assertions(1);
+
+		const packageDirectory = makeTemporaryDirectory();
+		fs.writeFileSync(
+			path.join(packageDirectory, "jest.config.mjs"),
+			'export default { rootDir: "." };',
+		);
+
+		const result = await loadConfig(undefined, packageDirectory);
+
+		expect(resolveUniverseAnchor(result.rootDir)).toBe(normalizeWindowsPath(packageDirectory));
+	});
+
+	it("should absolutize a relative cwd when no rootDir is declared", async () => {
+		expect.assertions(1);
+
+		const result = await loadConfig(undefined, ".");
+
+		expect(result.rootDir).toBe(process.cwd());
+	});
+
+	it("should keep a rootDir that is absolute on any host", async () => {
+		expect.assertions(2);
+
+		const packageDirectory = makeTemporaryDirectory();
+		const configPath = path.join(packageDirectory, "jest.config.mjs");
+
+		fs.writeFileSync(configPath, 'export default { rootDir: "D:/repo/foo" };');
+		const windowsRoot = await loadConfig(undefined, packageDirectory);
+		fs.writeFileSync(configPath, 'export default { rootDir: "/repo/foo" };');
+		const posixRoot = await loadConfig(undefined, packageDirectory);
+
+		expect(windowsRoot.rootDir).toBe("D:/repo/foo");
+		expect(posixRoot.rootDir).toBe("/repo/foo");
 	});
 
 	// TODO: rewrite result.setupFiles → result.test.setupFiles

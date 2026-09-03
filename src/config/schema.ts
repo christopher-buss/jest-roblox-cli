@@ -433,7 +433,9 @@ export interface Config {
 	rojoProject?: string;
 	/**
 	 * Base directory for resolving relative paths. Defaults to the current
-	 * working directory.
+	 * working directory. A relative value resolves against the directory the
+	 * config was loaded from, which in workspace mode is the package
+	 * directory — so `rootDir: "."` names the package, not the workspace root.
 	 */
 	rootDir?: string;
 	/**
