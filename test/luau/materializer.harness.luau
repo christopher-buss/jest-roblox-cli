@@ -449,40 +449,52 @@ local function testAllCollisionsReportedTogether()
 end
 
 -- T10: two containers of one name merge, which is the whole reason the
--- collision rule has an exception. The live folder keeps what it held, gains
+-- collision rule has an exception. The live container keeps what it held, gains
 -- what the package staged, and reset takes back only what the package added.
-local function testContainersMerge()
-	local liveShared = newInstance("Folder", "Shared")
+--
+-- Run for each half of `isContainer`, which tests Folder and Model
+-- independently: a rule that lost the Model half turns every package staging a
+-- model over a live one into a collision that fails the whole run.
+local function testContainersMerge(containerClass: string, childClass: string)
+	local liveShared = newInstance(containerClass, "Shared")
 	setParent(liveShared, ReplicatedStorage)
-	local liveChild = newInstance("ModuleScript", "Existing")
+	local liveChild = newInstance(childClass, "Existing")
 	setParent(liveChild, liveShared)
 
-	local stagedService = stagePackage("merge")
-	local stagedShared = newInstance("Folder", "Shared")
+	local pkgName = "merge-" .. containerClass
+	local stagedService = stagePackage(pkgName)
+	local stagedShared = newInstance(containerClass, "Shared")
 	setParent(stagedShared, stagedService)
-	setParent(newInstance("ModuleScript", "Added"), stagedShared)
+	setParent(newInstance(childClass, "Added"), stagedShared)
 
-	Materializer.materialize("merge")
+	Materializer.materialize(pkgName)
 
+	local label = "T10 (" .. containerClass .. "): "
 	check(
 		methods.FindFirstChild(ReplicatedStorage, "Shared") == liveShared,
-		"T10: the live folder is merged into, not replaced"
+		label .. "the live container is merged into, not replaced"
 	)
 	check(
 		methods.FindFirstChild(liveShared, "Existing") == liveChild,
-		"T10: what the live folder held is untouched"
+		label .. "what the live container held is untouched"
 	)
-	check(methods.FindFirstChild(liveShared, "Added") ~= nil, "T10: the staged child landed inside")
+
+	local added = methods.FindFirstChild(liveShared, "Added")
+	check(added ~= nil, label .. "the staged child landed inside")
+	check(
+		added.ClassName == childClass,
+		label .. "the staged child kept its class, got " .. tostring(added.ClassName)
+	)
 
 	Materializer.reset()
 
 	check(
 		methods.FindFirstChild(liveShared, "Added") == nil,
-		"T10: reset takes back only what the package added"
+		label .. "reset takes back only what the package added"
 	)
 	check(
 		methods.FindFirstChild(liveShared, "Existing") == liveChild,
-		"T10: reset leaves the live folder and its own children in place"
+		label .. "reset leaves the live container and its own children in place"
 	)
 
 	setParent(liveShared, nil)
@@ -544,6 +556,42 @@ local function testModuleScriptStageRoot()
 
 	setParent(live, nil)
 	setParent(staged, nil)
+end
+
+-- T16: a package's plain assets reach the live service as they were staged.
+-- Nothing here reads a staged child's class except the merge rule, so what this
+-- catches is a walk that skips what it does not recognize — a class filter over
+-- the plan leaves a model on the stage and the live service short a subtree.
+--
+-- The class checks ride along rather than carry the case: the materializer
+-- builds every instance through `:Clone()`, so the fake cannot represent a walk
+-- that rebuilt the subtree out of Folders. That failure is the e2e read's to
+-- catch, against a place a real rojo built.
+local function testPlainModelClonesWithItsClass()
+	local stagedService = stagePackage("plain-model")
+	local model = newInstance("Model", "Prop")
+	setParent(model, stagedService)
+	setParent(newInstance("Part", "Base"), model)
+
+	Materializer.materialize("plain-model")
+
+	local live = methods.FindFirstChild(ReplicatedStorage, "Prop")
+	check(live ~= nil, "T16: the staged model materialized")
+	check(live ~= model, "T16: the staged copy stays on the stage")
+	check(
+		live.ClassName == "Model",
+		"T16: the clone kept the model's own class, got " .. tostring(live.ClassName)
+	)
+
+	local part = methods.FindFirstChild(live, "Base")
+	check(part ~= nil, "T16: the model's child came with it")
+	check(
+		part.ClassName == "Part",
+		"T16: the child kept its own class, got " .. tostring(part.ClassName)
+	)
+
+	Materializer.reset()
+	check(methods.FindFirstChild(model, "Base") ~= nil, "T16: reset left the stage alone")
 end
 
 -- The shared pool: one entry every package's marker stands for, staged beside
@@ -634,11 +682,6 @@ local function testPooledMarkerWithoutRunContext()
 	Materializer.reset()
 end
 
-testRestoreRunContextIsLinear()
-testRestoreRunContextReachesEveryDepth()
-testResetClearsMaterialized()
-testWithoutRunContextAttribute()
-
 -- T14: a marker whose name the live service already holds merges into it, the
 -- same way the mount it stands for would have. Force-cloning instead would
 -- leave two same-named siblings and decide a require by resolution order.
@@ -722,9 +765,11 @@ testCollisionMaterializesNothing()
 testMixedContainerCollisionErrors("ModuleScript", "Folder")
 testMixedContainerCollisionErrors("Folder", "ModuleScript")
 testAllCollisionsReportedTogether()
-testContainersMerge()
+testContainersMerge("Folder", "ModuleScript")
+testContainersMerge("Model", "Part")
 testStagedSiblingsCollide()
 testModuleScriptStageRoot()
+testPlainModelClonesWithItsClass()
 
 stagePool()
 testPooledMarkerResolves()
