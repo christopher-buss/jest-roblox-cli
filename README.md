@@ -654,6 +654,15 @@ requires `--workspace`. A `--workspace` that selects nothing exits 2 — an empt
 workspace is a configuration problem, while `--affected-since` finding nothing
 is a clean run and exits 0.
 
+A workspace run stages every selected package into one synthesized place, under
+`ServerStorage.__pkg_stage`, one child per package. A `$path` the stage mounts
+twice or more — typically the dependency tree every package shares — is built
+once into a `__shared` pool beside them, and each occurrence becomes a marker
+Folder naming its pooled entry, which the run resolves by cloning that entry.
+Every package still receives its own fresh clone of every dependency, so only
+the size of the place changes. A run outside `--workspace` stages nothing and is
+unaffected.
+
 ### Naming files
 
 A positional file narrows a workspace run the same way it narrows a
