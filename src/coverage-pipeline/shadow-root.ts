@@ -26,7 +26,25 @@ import {
 
 export { isNonInstrumentedFile } from "./discover-files.ts";
 
+/**
+ * Does a `beforeBuild` bake own this shadow path?
+ *
+ * A bake writes into the shadow once the mirror has already run, so what it
+ * writes has no counterpart in the source root and every orphan sweep reads it
+ * as one. Deleting it would only be undone by the bake moments later, with the
+ * delete and the rewrite both reporting a change — a place rebuilt on every
+ * run and a buildId that never settles. So a bake declares what it owns and
+ * sweeps its own stale entries; a run without one declares nothing, and the
+ * sweeps clear whatever an earlier bake left in a shared shadow.
+ */
+export type BakeOwnershipMatcher = (shadowPath: string) => boolean;
+
 export interface PrepareShadowRootOptions {
+	/**
+	 * Shadow entries a `beforeBuild` bake writes and sweeps for itself, which
+	 * the reconcile therefore leaves alone. Absent exempts nothing.
+	 */
+	isBakeOwned?: BakeOwnershipMatcher | undefined;
 	/** Paths this root's shadow never carries, relative to `luauRoot`. */
 	isCopyIgnored: CopyIgnoreMatcher;
 	luauRoot: string;
@@ -57,11 +75,20 @@ interface SyncResult {
 
 interface FullCacheOptions {
 	excluded: Set<string>;
+	isBakeOwned: BakeOwnershipMatcher | undefined;
 	isCopyIgnored: CopyIgnoreMatcher;
 	luauRoot: string;
 	previousManifest: CoverageManifest;
 	shadowDir: string;
 	skipFiles: Set<string>;
+}
+
+/** What the reconcile needs of one root, before it names the shadow tree. */
+interface ReconcileOptions {
+	isBakeOwned: BakeOwnershipMatcher | undefined;
+	isCopyIgnored: CopyIgnoreMatcher;
+	luauRoot: string;
+	shadowDir: string;
 }
 
 interface IncrementalPlan {
@@ -119,8 +146,16 @@ interface MirroredTree {
 	syncPaths: Array<string>;
 }
 
+/** What one entry of an orphaned subtree left behind. */
+interface OrphanSweep {
+	hasDeleted: boolean;
+	/** Whether the entry itself is gone, which is what frees its parent. */
+	wasRemoved: boolean;
+}
+
 /** What the reconcile walk holds constant across the whole tree. */
 interface PruneContext {
+	isBakeOwned: BakeOwnershipMatcher | undefined;
 	isCopyIgnored: CopyIgnoreMatcher;
 	luauRoot: string;
 	/** Shadow root every relative path is keyed from, POSIX-normalized. */
@@ -183,6 +218,7 @@ export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRoot
  */
 function mirrorUntouchedFiles(
 	{
+		isBakeOwned,
 		isCopyIgnored,
 		luauRoot,
 		previousManifest,
@@ -199,7 +235,8 @@ function mirrorUntouchedFiles(
 		shadowDir,
 	});
 	const hasReconciled =
-		useIncremental && reconcileShadowToSource(luauRoot, shadowDir, isCopyIgnored);
+		useIncremental &&
+		reconcileShadowToSource({ isBakeOwned, isCopyIgnored, luauRoot, shadowDir });
 	return { changed: synced.changed || hasReconciled, files: synced.files };
 }
 
@@ -321,18 +358,23 @@ function sourceTwinExists(luauRoot: string, relativePath: string): boolean {
 // mirrors it and rojo makes a Folder — so a directory is judged on whether its
 // source counterpart exists, never on whether it still holds anything.
 //
+// The one exception is a generated `jest.config.luau` on a run whose
+// `beforeBuild` bakes them: those are copied in from the cache root after this
+// walk, so they have no source twin by design and the bake sweeps its own.
+//
 // Returns whether anything was removed, so the caller forces a place rebuild.
 //
 // Both callers run the mirror sync first, and that creates the shadow root
 // before anything else, so the walk below always has a directory to read.
 //
-function reconcileShadowToSource(
-	luauRoot: string,
-	shadowDirectory: string,
-	isCopyIgnored: CopyIgnoreMatcher,
-): boolean {
-	const shadowRoot = normalizeWindowsPath(shadowDirectory);
-	return pruneShadowDirectory({ isCopyIgnored, luauRoot, shadowRoot }, shadowRoot);
+function reconcileShadowToSource({
+	isBakeOwned,
+	isCopyIgnored,
+	luauRoot,
+	shadowDir,
+}: ReconcileOptions): boolean {
+	const shadowRoot = normalizeWindowsPath(shadowDir);
+	return pruneShadowDirectory({ isBakeOwned, isCopyIgnored, luauRoot, shadowRoot }, shadowRoot);
 }
 
 function isInstrumenterOutput(relativePath: string): boolean {
@@ -340,7 +382,7 @@ function isInstrumenterOutput(relativePath: string): boolean {
 }
 
 function pruneOrphanFile(
-	{ isCopyIgnored, luauRoot }: PruneContext,
+	{ isBakeOwned, isCopyIgnored, luauRoot }: PruneContext,
 	relativePath: string,
 	shadowPath: string,
 ): boolean {
@@ -360,6 +402,12 @@ function pruneOrphanFile(
 		(isInstrumenterOutput(relativePath) || !isCopyIgnored(relativePath)) &&
 		sourceTwinExists(luauRoot, relativePath)
 	) {
+		return false;
+	}
+
+	// Asked only of what already reads as an orphan, which is the whole of what
+	// a bake writes. See {@link BakeOwnershipMatcher}.
+	if (isBakeOwned?.(shadowPath) === true) {
 		return false;
 	}
 
@@ -394,26 +442,83 @@ function pruneShadowDirectory(context: PruneContext, directory: string): boolean
 	return hasDeleted;
 }
 
+/** Ownership is the only question an orphaned parent leaves a file. */
+function pruneOrphanLeaf(isBakeOwned: BakeOwnershipMatcher, shadowPath: string): OrphanSweep {
+	if (isBakeOwned(shadowPath)) {
+		return { hasDeleted: false, wasRemoved: false };
+	}
+
+	const wasRemoved = tryRemove(() => {
+		fs.rmSync(shadowPath);
+	});
+	return { hasDeleted: wasRemoved, wasRemoved };
+}
+
+/**
+ * Clear an orphaned directory of everything the bake does not own, and go with
+ * it once nothing is left — so a spared file keeps its whole chain of parents
+ * and nothing else keeps one.
+ *
+ * The two answers part company on a directory that lost children but kept one:
+ * something was removed, so the place still rebuilds, yet the directory stays.
+ */
+function pruneOrphanDirectory(isBakeOwned: BakeOwnershipMatcher, directory: string): OrphanSweep {
+	let hasDeleted = false;
+	let isEmpty = true;
+
+	const entries = fs.readdirSync(directory, { withFileTypes: true });
+	for (const entry of entries) {
+		const shadowPath = normalizeWindowsPath(path.join(directory, entry.name));
+		const child = entry.isDirectory()
+			? pruneOrphanDirectory(isBakeOwned, shadowPath)
+			: pruneOrphanLeaf(isBakeOwned, shadowPath);
+
+		hasDeleted ||= child.hasDeleted;
+		isEmpty &&= child.wasRemoved;
+	}
+
+	if (!isEmpty) {
+		return { hasDeleted, wasRemoved: false };
+	}
+
+	const wasRemoved = tryRemove(() => {
+		fs.rmSync(directory, { recursive: true });
+	});
+	return { hasDeleted: hasDeleted || wasRemoved, wasRemoved };
+}
+
 /**
  * A directory whose source counterpart is gone takes its whole subtree with it,
  * `node_modules`/dot-dir children included: nothing under an orphaned parent
  * can be anything but orphaned, so there is no judgement to withhold. Leaving
  * such a child behind would strand the stale `foo/` this reconcile exists to
  * clear from beside a fresh `foo.luau`.
+ *
+ * A bake is the one thing under there that is not stale, and it can be what put
+ * the directory there: it writes to a mount the mirror never reached, so the
+ * directory it creates has no source twin either. Sweeping the subtree
+ * wholesale would take the bake's own file with it and the bake would write
+ * both back the same run — the churn {@link BakeOwnershipMatcher} exists to
+ * stop. So a run that bakes empties the subtree entry by entry, keeps what the
+ * bake owns, and keeps only the directories still holding it.
  */
 function pruneChildDirectory(
 	context: PruneContext,
 	relativePath: string,
 	shadowPath: string,
 ): boolean {
-	const { isCopyIgnored, luauRoot } = context;
+	const { isBakeOwned, isCopyIgnored, luauRoot } = context;
 	if (!isCopyIgnored(relativePath) && fs.existsSync(path.resolve(luauRoot, relativePath))) {
 		return pruneShadowDirectory(context, shadowPath);
 	}
 
-	return tryRemove(() => {
-		fs.rmSync(shadowPath, { recursive: true });
-	});
+	if (isBakeOwned === undefined) {
+		return tryRemove(() => {
+			fs.rmSync(shadowPath, { recursive: true });
+		});
+	}
+
+	return pruneOrphanDirectory(isBakeOwned, shadowPath).hasDeleted;
 }
 
 /**
@@ -606,6 +711,7 @@ function computeIncrementalState(
 
 function buildFullCacheResult({
 	excluded,
+	isBakeOwned,
 	isCopyIgnored,
 	luauRoot,
 	previousManifest,
@@ -624,7 +730,12 @@ function buildFullCacheResult({
 	});
 	// Call reconcile unconditionally (not inside the `||`) so its cleanup side
 	// effect always runs even when the sync already flagged a change.
-	const hasReconciled = reconcileShadowToSource(luauRoot, shadowDir, isCopyIgnored);
+	const hasReconciled = reconcileShadowToSource({
+		isBakeOwned,
+		isCopyIgnored,
+		luauRoot,
+		shadowDir,
+	});
 
 	return {
 		changed: syncResult.changed || hasReconciled,
@@ -641,6 +752,7 @@ function buildFullCacheResult({
  */
 function planIncremental(
 	{
+		isBakeOwned,
 		isCopyIgnored,
 		luauRoot,
 		previousManifest,
@@ -665,6 +777,7 @@ function planIncremental(
 	return {
 		fullCacheResult: buildFullCacheResult({
 			excluded: rootFiles?.excluded ?? NO_EXCLUSIONS,
+			isBakeOwned,
 			isCopyIgnored,
 			luauRoot,
 			previousManifest,

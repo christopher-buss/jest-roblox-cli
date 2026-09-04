@@ -11,8 +11,10 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { writeAgedFile } from "../../test/mocks/aged-file.ts";
 import { movableClockCollector, tickingClockCollector } from "../../test/mocks/movable-clock.ts";
+import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { createStubBake, generateProjectStubs } from "../config/stubs.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
@@ -38,7 +40,7 @@ import {
 	toCoverageArtifacts,
 } from "./prepare.ts";
 import { computeRojoInputsHashAsync } from "./rojo-inputs.ts";
-import type { ShadowLayout } from "./spine.ts";
+import type { ShadowBake, ShadowLayout } from "./spine.ts";
 import { prepareWorkspaceCoverage } from "./workspace-prepare.ts";
 
 vi.mock(import("node:fs"), async () => {
@@ -141,6 +143,11 @@ function seedFilesystem({
 	vol.mkdirSync(luauRoot, { recursive: true });
 	vol.writeFileSync(`${luauRoot}/init.luau`, "local x = 1");
 	vol.writeFileSync(rojoProject, JSON.stringify(ROJO_PROJECT));
+}
+
+/** A bake that owns nothing, for a test that only cares what the hook does. */
+function makeBake(run: ShadowBake["run"]): ShadowBake {
+	return { isBakeOwned: () => false, run };
 }
 
 function readCoverageManifestFile(filePath: string): CoverageManifest {
@@ -1668,7 +1675,7 @@ describe(prepareCoverageAsync, () => {
 			expect(instrumentRoot).not.toHaveBeenCalled();
 		});
 
-		it("should force rebuild when beforeBuild returns true on incremental run", async () => {
+		it("should force rebuild when the bake reports a write on an incremental run", async () => {
 			expect.assertions(1);
 
 			const { buildWithRojoAsync, instrumentRoot } = await setupMocksAsync();
@@ -1677,14 +1684,14 @@ describe(prepareCoverageAsync, () => {
 			await seedIncrementalScenarioAsync();
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
-			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>().mockReturnValue(true);
+			const run = vi.fn<ShadowBake["run"]>().mockReturnValue(true);
 
-			await prepareCoverageAsync(config, { beforeBuild });
+			await prepareCoverageAsync(config, { bake: makeBake(run) });
 
 			expect(buildWithRojoAsync).toHaveBeenCalledWith(expect.any(String), expect.any(String));
 		});
 
-		it("should not force rebuild when beforeBuild returns false on incremental run", async () => {
+		it("should not force rebuild when the bake writes nothing on an incremental run", async () => {
 			expect.assertions(1);
 
 			const { buildWithRojoAsync, instrumentRoot } = await setupMocksAsync();
@@ -1693,9 +1700,9 @@ describe(prepareCoverageAsync, () => {
 			await seedIncrementalScenarioAsync();
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
-			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>().mockReturnValue(false);
+			const run = vi.fn<ShadowBake["run"]>().mockReturnValue(false);
 
-			await prepareCoverageAsync(config, { beforeBuild });
+			await prepareCoverageAsync(config, { bake: makeBake(run) });
 
 			expect(buildWithRojoAsync).not.toHaveBeenCalled();
 		});
@@ -2686,18 +2693,18 @@ describe(prepareCoverageAsync, () => {
 		});
 	});
 
-	describe("when beforeBuild callback is provided", () => {
-		it("should call beforeBuild with the shadow layout", async () => {
+	describe("when a bake is provided", () => {
+		it("should run the bake against the shadow layout", async () => {
 			expect.assertions(2);
 
 			seedFilesystem();
 			const { buildWithRojoAsync } = await setupMocksAsync();
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
-			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>().mockReturnValue(false);
+			const run = vi.fn<ShadowBake["run"]>().mockReturnValue(false);
 
-			await prepareCoverageAsync(config, { beforeBuild });
+			await prepareCoverageAsync(config, { bake: makeBake(run) });
 
-			expect(beforeBuild).toHaveBeenCalledWith(
+			expect(run).toHaveBeenCalledWith(
 				expect.objectContaining({ root: ".jest-roblox/coverage" }),
 			);
 			expect(buildWithRojoAsync).toHaveBeenCalledWith(expect.any(String), expect.any(String));
@@ -2713,13 +2720,13 @@ describe(prepareCoverageAsync, () => {
 			// Frozen clock apart from the hook, so whatever it costs is the whole
 			// difference between the two phases.
 			const clock = movableClockCollector(1_000);
-			const beforeBuild = vi.fn<(layout: ShadowLayout) => boolean>(() => {
+			const run = vi.fn<ShadowBake["run"]>(() => {
 				clock.advance(90);
 				return false;
 			});
 
 			const result = await prepareCoverageAsync(config, {
-				beforeBuild,
+				bake: makeBake(run),
 				timing: clock.timing,
 			});
 
@@ -3752,10 +3759,10 @@ describe("narrowing to the coverage universe", () => {
 		const layouts: Array<ShadowLayout> = [];
 
 		await prepareCoverageAsync(config, {
-			beforeBuild: (layout) => {
+			bake: makeBake((layout) => {
 				layouts.push(layout);
 				return false;
-			},
+			}),
 		});
 
 		// The place mounts the spine in `out`'s place, so anything baked into
@@ -3789,5 +3796,239 @@ describe("when hashing the rojo build inputs", () => {
 		await prepareCoverageAsync(config);
 
 		expect(readFile).not.toHaveBeenCalledWith("/project/assets/model.txt");
+	});
+});
+
+describe("when a run bakes generated jest.config stubs into the shadow", () => {
+	/** One rojo mount per project, by the directory each one covers. */
+	const mounts = {
+		server: "game.ServerScriptService",
+		shared: "game.ReplicatedStorage",
+	};
+
+	/** Two rojo mounts under one coverage root, neither with a user config. */
+	function seedMultiMountRoot(): void {
+		// Rooted at the invocation directory, which is what `rootDir` is in a
+		// real single-mode run: the mounts the stubs are keyed on have to
+		// resolve to the same directories the shadow walk reads.
+		vol.mkdirSync(process.cwd(), { recursive: true });
+		vol.writeFileSync(
+			"default.project.json",
+			JSON.stringify({
+				name: "test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { $path: "out/shared" },
+					ServerScriptService: { $path: "out/server" },
+				},
+			}),
+		);
+
+		for (const name of Object.keys(mounts)) {
+			vol.mkdirSync(`out/${name}`, { recursive: true });
+			vol.writeFileSync(`out/${name}/init.luau`, `local ${name} = 1`);
+		}
+	}
+
+	function makeStubProjects(
+		config: ResolvedConfig,
+		byName: Record<string, string>,
+	): Array<ResolvedProjectConfig> {
+		return Object.entries(byName).map(([name, dataModelPath]) => {
+			return fromAny({
+				config,
+				displayName: name,
+				include: [`out/${name}/**/*.spec.luau`],
+				projects: [dataModelPath],
+				rojoMounts: [{ dataModelPath, fsPath: `out/${name}` }],
+				testMatch: ["**/*.spec"],
+			});
+		});
+	}
+
+	/**
+	 * The config and the bake `stageRun` pairs it with — through the same
+	 * factory the run path uses, so the spec cannot exercise a bake shape
+	 * production no longer builds. `extraMounts` names mounts the seeded tree
+	 * holds no source directory for.
+	 */
+	function stageBake(extraMounts: Record<string, string> = {}): {
+		bake: ShadowBake;
+		config: ResolvedConfig;
+	} {
+		const config = makeConfig({ luauRoots: ["out"], rootDir: process.cwd() });
+		const projects = makeStubProjects(config, { ...mounts, ...extraMounts });
+		const cacheRoot = path.resolve(".jest-roblox/cache");
+		generateProjectStubs(projects, process.cwd(), cacheRoot);
+
+		return { bake: createStubBake(projects, cacheRoot), config };
+	}
+
+	const sharedStub = ".jest-roblox/coverage/out/shared/jest.config.luau";
+	const absentStub = ".jest-roblox/coverage/out/absent/jest.config.luau";
+
+	/**
+	 * A `rmSync` that refuses one path and passes everything else through, for
+	 * the entry a real shadow loses to a lock or a permission.
+	 */
+	function refuseRemovalOf(suffix: string): typeof nodeFs.rmSync {
+		return fromAny((target: string, options: object) => {
+			if (normalizeWindowsPath(target).endsWith(suffix)) {
+				throw new Error("EBUSY");
+			}
+
+			vol.rmSync(target, options);
+		});
+	}
+
+	it("should reuse the place on a no-change rerun", async () => {
+		expect.assertions(3);
+
+		seedMultiMountRoot();
+		const { buildWithRojoAsync } = await setupMocksAsync();
+		const { bake, config } = stageBake();
+
+		const first = await prepareCoverageAsync(config, { bake });
+		const second = await prepareCoverageAsync(config, { bake });
+
+		expect(second.rebuilt).toBeFalse();
+		expect(buildWithRojoAsync).toHaveBeenCalledOnce();
+		// A buildId that moves on an unchanged rerun is what the mutation
+		// tester reads as a fresh place, so reuse is only half the contract.
+		expect(second.buildId).toBe(first.buildId);
+	});
+
+	it("should reuse the place when a baked mount has no source directory", async () => {
+		expect.assertions(3);
+
+		seedMultiMountRoot();
+		const { buildWithRojoAsync } = await setupMocksAsync();
+		const { bake, config } = stageBake({ absent: "game.Workspace" });
+
+		const first = await prepareCoverageAsync(config, { bake });
+		const second = await prepareCoverageAsync(config, { bake });
+
+		// Nothing but the bake creates `out/absent` in the shadow, so the
+		// orphan sweep meets a directory with no source twin. Clearing it
+		// wholesale takes the stub under it too, and the bake writes both back
+		// the same run — the churn a stub the sweep spares does not have.
+		expect(second.rebuilt).toBeFalse();
+		expect(second.buildId).toBe(first.buildId);
+		expect(buildWithRojoAsync).toHaveBeenCalledOnce();
+	});
+
+	it("should clear an orphan mount directory of all but the baked stub", async () => {
+		expect.assertions(4);
+
+		seedMultiMountRoot();
+		await setupMocksAsync();
+		const { bake, config } = stageBake({ absent: "game.Workspace" });
+		await prepareCoverageAsync(config, { bake });
+
+		// What an earlier run left in the mount the bake creates: a loose file
+		// beside the stub and a directory under it, neither with a source twin
+		// and neither the bake's.
+		vol.mkdirSync(".jest-roblox/coverage/out/absent/stale", { recursive: true });
+		vol.writeFileSync(".jest-roblox/coverage/out/absent/stale/old.luau", "local old = 1");
+		vol.writeFileSync(".jest-roblox/coverage/out/absent/loose.luau", "local loose = 1");
+		const second = await prepareCoverageAsync(config, { bake });
+
+		// Sparing what the bake owns must not spare what sits beside it: a
+		// stale file rojo would still mount is what the sweep exists for, and
+		// the place has to be rebuilt around its absence.
+		expect(vol.existsSync(absentStub)).toBeTrue();
+		expect(vol.existsSync(".jest-roblox/coverage/out/absent/loose.luau")).toBeFalse();
+		expect(vol.existsSync(".jest-roblox/coverage/out/absent/stale")).toBeFalse();
+		expect(second.rebuilt).toBeTrue();
+	});
+
+	it("should rebuild when an empty leftover directory was all there was to sweep", async () => {
+		expect.assertions(3);
+
+		seedMultiMountRoot();
+		await setupMocksAsync();
+		const { bake, config } = stageBake({ absent: "game.Workspace" });
+		await prepareCoverageAsync(config, { bake });
+
+		// Rojo mounts an empty directory as a Folder, so one left in the shadow
+		// is a node in the place — a change the run has to report even though
+		// no file went with it.
+		vol.mkdirSync(".jest-roblox/coverage/out/absent/hollow", { recursive: true });
+		const second = await prepareCoverageAsync(config, { bake });
+
+		expect(second.rebuilt).toBeTrue();
+		expect(vol.existsSync(".jest-roblox/coverage/out/absent/hollow")).toBeFalse();
+		expect(vol.existsSync(absentStub)).toBeTrue();
+	});
+
+	it("should report no rebuild when a leftover directory cannot be removed", async () => {
+		expect.assertions(2);
+
+		seedMultiMountRoot();
+		await setupMocksAsync();
+		const { bake, config } = stageBake({ absent: "game.Workspace" });
+		await prepareCoverageAsync(config, { bake });
+
+		const hollow = ".jest-roblox/coverage/out/absent/hollow";
+		vol.mkdirSync(hollow, { recursive: true });
+		vi.spyOn(nodeFs, "rmSync").mockImplementation(refuseRemovalOf("out/absent/hollow"));
+		const second = await prepareCoverageAsync(config, { bake });
+
+		// An entry that survives the sweep is still in the place the last build
+		// produced, so reporting it gone would rebuild over a lie.
+		expect(second.rebuilt).toBeFalse();
+		expect(vol.existsSync(hollow)).toBeTrue();
+	});
+
+	it("should keep a baked stub nested under an orphan directory", async () => {
+		expect.assertions(3);
+
+		seedMultiMountRoot();
+		const { buildWithRojoAsync } = await setupMocksAsync();
+		// The mount is `out/absent/deep`, so the bake creates two directories
+		// with no source twin and owns something under only the deeper one.
+		const { bake, config } = stageBake({ "absent/deep": "game.Workspace" });
+
+		await prepareCoverageAsync(config, { bake });
+		const second = await prepareCoverageAsync(config, { bake });
+
+		expect(second.rebuilt).toBeFalse();
+		expect(buildWithRojoAsync).toHaveBeenCalledOnce();
+		expect(vol.existsSync(".jest-roblox/coverage/out/absent/deep/jest.config.luau")).toBeTrue();
+	});
+
+	it("should sweep an orphan mount directory on a rerun that does not bake", async () => {
+		expect.assertions(2);
+
+		seedMultiMountRoot();
+		await setupMocksAsync();
+		const { bake, config } = stageBake({ absent: "game.Workspace" });
+
+		await prepareCoverageAsync(config, { bake });
+		const hasBaked = vol.existsSync(absentStub);
+		await prepareCoverageAsync(config);
+
+		// The directory is as stale as the stub in it once nothing bakes, so
+		// sparing owned files must not spare the ones nothing owns.
+		expect(hasBaked).toBeTrue();
+		expect(vol.existsSync(".jest-roblox/coverage/out/absent")).toBeFalse();
+	});
+
+	it("should sweep the stubs on a rerun that does not bake", async () => {
+		expect.assertions(2);
+
+		seedMultiMountRoot();
+		await setupMocksAsync();
+		const { bake, config } = stageBake();
+
+		await prepareCoverageAsync(config, { bake });
+		const hasBaked = vol.existsSync(sharedStub);
+		await prepareCoverageAsync(config);
+
+		// studio-cli's plugin materializes `jest.config` at runtime, so a stub
+		// an earlier coverage run baked into the shared shadow would collide
+		// with it.
+		expect(hasBaked).toBeTrue();
+		expect(vol.existsSync(sharedStub)).toBeFalse();
 	});
 });

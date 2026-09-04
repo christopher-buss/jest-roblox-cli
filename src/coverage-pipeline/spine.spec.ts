@@ -25,6 +25,13 @@ function mounted(level: string): string {
 
 const NO_COPY_IGNORE = createCopyIgnoreMatcher([]);
 
+/** Stands in for the run path's stub bake: one name the mirror never writes. */
+const BAKED_NAME = "jest.config.luau";
+
+function isBakeOwned(shadowPath: string): boolean {
+	return path.basename(shadowPath) === BAKED_NAME;
+}
+
 const OUT = normalizeWindowsPath(path.resolve("/repo/out"));
 
 function at(relativePath: string): string {
@@ -230,5 +237,48 @@ describe(prepareSpine, () => {
 
 		expect(vol.existsSync(`${mounted("out/server")}/loose.luau`)).toBeFalse();
 		expect(result.changed).toBeTrue();
+	});
+
+	describe("when a demoted level carries a file a bake owns", () => {
+		/** The bake's own copy, where the demote makes the place read it. */
+		function bake(level: string): string {
+			const bakedPath = `${mounted(level)}/${BAKED_NAME}`;
+			vol.mkdirSync(mounted(level), { recursive: true });
+			vol.writeFileSync(bakedPath, "return {}\n");
+			return bakedPath;
+		}
+
+		it("should keep it when this run declares the ownership", () => {
+			expect.assertions(2);
+
+			seed({ [at("server/loose.luau")]: "return nil" });
+			const first = spineOf(["out/server"], { isBakeOwned });
+			const bakedPath = bake("out/server");
+
+			// Nothing in the source tree produces this file — the bake writes
+			// it after the mirror — so clearing it would only be undone
+			// moments later, with both halves reporting a change and the place
+			// rebuilding on every run.
+			const second = spineOf(["out/server"], {
+				isBakeOwned,
+				previousNonInstrumented: first.files,
+			});
+
+			expect(vol.existsSync(bakedPath)).toBeTrue();
+			expect(second.changed).toBeFalse();
+		});
+
+		it("should sweep it when this run declares none", () => {
+			expect.assertions(1);
+
+			seed({ [at("server/loose.luau")]: "return nil" });
+			const bakedPath = bake("out/server");
+
+			// A run with no bake wants its place free of what an earlier
+			// baking run left in the shared shadow.
+			spineOf(["out/server"]);
+
+			expect(vol.existsSync(bakedPath)).toBeFalse();
+		});
 	});
 });

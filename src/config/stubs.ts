@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 
-import type { ShadowLayout } from "../coverage-pipeline/spine.ts";
+import type { ShadowBake, ShadowLayout } from "../coverage-pipeline/spine.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import { isString } from "../utils/is-string.ts";
 import { ConfigError } from "./errors.ts";
@@ -43,6 +43,37 @@ export function isGeneratedStub(filePath: string): boolean {
 }
 
 const LEGACY_LUA_FILENAME = "jest.config.lua";
+
+/**
+ * Both names rojo merges into one `jest.config` ModuleScript. The bake writes
+ * only the `.luau`, but every sweep has to see the legacy `.lua` too, or an
+ * upgraded shadow keeps a stub beside the one that replaced it.
+ */
+const STUB_FILENAMES: ReadonlySet<string> = new Set([LEGACY_LUA_FILENAME, STUB_FILENAME]);
+
+/**
+ * The bake half of a coverage prepare: mirror this run's cache stubs into the
+ * shadow, and declare them so the shadow's orphan sweeps leave them be. See
+ * {@link ShadowBake} for why the two travel as one.
+ */
+export function createStubBake(
+	projects: Array<ResolvedProjectConfig>,
+	cacheRoot: string,
+): ShadowBake {
+	return {
+		isBakeOwned: isBakedStub,
+		run: (shadow) => syncStubsToShadowDirectory(projects, cacheRoot, shadow),
+	};
+}
+
+/**
+ * The bake's own writes, as the shadow sees them. A user-authored config is
+ * not one: it reaches the shadow through the mirror, which makes the sweeps
+ * judge it by its source twin like any other copied file.
+ */
+function isBakedStub(shadowPath: string): boolean {
+	return STUB_FILENAMES.has(path.basename(shadowPath)) && isGeneratedStub(shadowPath);
+}
 
 const SKIP_FIELDS: ReadonlySet<string> = new Set(["exclude", "include"]);
 
@@ -400,7 +431,7 @@ function findShadowStubs(directory: string): Array<string> {
 		const fullPath = path.resolve(directory, entry.name);
 		if (entry.isDirectory()) {
 			results.push(...findShadowStubs(fullPath));
-		} else if (entry.name === STUB_FILENAME || entry.name === LEGACY_LUA_FILENAME) {
+		} else if (STUB_FILENAMES.has(entry.name)) {
 			results.push(fullPath);
 		}
 	}

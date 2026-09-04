@@ -7,6 +7,7 @@ import type { NonInstrumentedFileRecord } from "./manifest.ts";
 import type { NarrowedMount } from "./narrow-roots.ts";
 import type { CoverageRoot } from "./redirect-path.ts";
 import { isWithinRoot } from "./redirect-path.ts";
+import type { BakeOwnershipMatcher } from "./shadow-root.ts";
 import { syncOneFile, tryRemove } from "./shadow-root.ts";
 
 /**
@@ -49,6 +50,25 @@ export interface ShadowLayout {
 	root: string;
 }
 
+/**
+ * A bake and the shadow entries it owns, as one value.
+ *
+ * Either half alone is a bug: a bake whose writes nothing declares has them
+ * swept back out and rewritten every run, which is a place that rebuilds
+ * forever, while ownership with no bake exempts an entry nothing rewrites, so
+ * a stale one survives into the place. Pairing them is what stops a caller
+ * supplying one and not the other.
+ */
+export interface ShadowBake {
+	/** @see BakeOwnershipMatcher */
+	isBakeOwned: BakeOwnershipMatcher;
+	/**
+	 * Runs once the shadow tree is populated and before the place is built.
+	 * Answers whether it wrote anything, which forces the rebuild.
+	 */
+	run: (layout: ShadowLayout) => boolean;
+}
+
 /** What the spine pass produced for one shadow tree. */
 export interface PreparedSpine {
 	changed: boolean;
@@ -58,6 +78,12 @@ export interface PreparedSpine {
 }
 
 export interface PrepareSpineOptions {
+	/**
+	 * Shadow entries a `beforeBuild` bake writes and sweeps for itself. A
+	 * demoted mount is served from its spine copy, so that is where its own
+	 * files are baked — and where this prune has to leave them.
+	 */
+	isBakeOwned?: BakeOwnershipMatcher | undefined;
 	/** Paths the shadow never carries, relative to the level's own mount. */
 	isCopyIgnored: CopyIgnoreMatcher;
 	narrowed: ReadonlyArray<NarrowedMount>;
@@ -79,6 +105,7 @@ interface SpineMirrorResult {
 }
 
 interface MirrorSpineOptions {
+	isBakeOwned: BakeOwnershipMatcher | undefined;
 	/** Paths the shadow never carries, relative to `mount`. */
 	isCopyIgnored: CopyIgnoreMatcher;
 	/**
@@ -92,6 +119,14 @@ interface MirrorSpineOptions {
 	 * for.
 	 */
 	spine: ReadonlyMap<string, string>;
+}
+
+/** One spine leaf's prune: the directory, and what may stay in it. */
+interface PruneSpineOptions {
+	isBakeOwned: BakeOwnershipMatcher | undefined;
+	/** Names this pass mirrored, which the walk keeps for that reason alone. */
+	mirrored: ReadonlySet<string>;
+	spineDirectory: string;
 }
 
 /** One level of a spine mirror: where it reads from, and where it writes. */
@@ -143,6 +178,7 @@ export function resolveSpineDirectories(
  * the record shape the manifest carries are all decided once.
  */
 export function prepareSpine({
+	isBakeOwned,
 	isCopyIgnored,
 	narrowed,
 	previousNonInstrumented,
@@ -160,6 +196,7 @@ export function prepareSpine({
 			}),
 		);
 		const mirror = mirrorSpineFiles({
+			isBakeOwned,
 			isCopyIgnored,
 			mount: toSourcePath(entry.luauRoot),
 			previousNonInstrumented,
@@ -245,12 +282,23 @@ function toSpineDirectory(shadowRoot: string, relativePath: string): string {
  * Files are all there is to find: only the mirror and the stub bake write into
  * a spine leaf, and the leaf is where the layout puts a level's loose files
  * precisely so that nothing nests underneath it.
+ *
+ * What the bake writes here the mirror never produces, so it is exempt — see
+ * {@link BakeOwnershipMatcher}.
  */
-function pruneSpineDirectory(spineDirectory: string, mirrored: ReadonlySet<string>): boolean {
+function pruneSpineDirectory({
+	isBakeOwned,
+	mirrored,
+	spineDirectory,
+}: PruneSpineOptions): boolean {
 	let hasDeleted = false;
 	const entries = fs.readdirSync(spineDirectory, { withFileTypes: true });
 	for (const entry of entries) {
 		if (mirrored.has(entry.name)) {
+			continue;
+		}
+
+		if (isBakeOwned?.(`${spineDirectory}/${entry.name}`) === true) {
 			continue;
 		}
 
@@ -267,6 +315,7 @@ function pruneSpineDirectory(spineDirectory: string, mirrored: ReadonlySet<strin
  * One spine directory: its own files copied in, everything else cleared out.
  */
 function mirrorOneLevel({
+	isBakeOwned,
 	isCopyIgnored,
 	mount,
 	previousNonInstrumented,
@@ -293,7 +342,10 @@ function mirrorOneLevel({
 		hasChanged ||= record !== previousRecord;
 	}
 
-	return { changed: pruneSpineDirectory(spineDirectory, mirrored) || hasChanged, files };
+	return {
+		changed: pruneSpineDirectory({ isBakeOwned, mirrored, spineDirectory }) || hasChanged,
+		files,
+	};
 }
 
 /**

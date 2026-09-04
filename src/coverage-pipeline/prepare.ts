@@ -40,9 +40,9 @@ import type { NarrowedMount } from "./narrow-roots.ts";
 import { narrowLuauRoots } from "./narrow-roots.ts";
 import { tryComputeRojoInputsHashAsync } from "./rojo-inputs.ts";
 import { collectRojoMounts, resolveMountWithin } from "./root-reachability.ts";
-import type { ShadowRootResult } from "./shadow-root.ts";
+import type { BakeOwnershipMatcher, ShadowRootResult } from "./shadow-root.ts";
 import { prepareShadowRoot } from "./shadow-root.ts";
-import type { ShadowLayout } from "./spine.ts";
+import type { PreparedSpine, ShadowBake } from "./spine.ts";
 import { createShadowLayout, prepareSpine } from "./spine.ts";
 
 const COVERAGE_DIR = ".jest-roblox/coverage";
@@ -76,7 +76,7 @@ export interface PrepareCoverageResult {
 	rebuilt: boolean;
 	/**
 	 * Host time spent on the part of this call a run reports as staging
-	 * rather than as coverage: the `beforeBuild` stub bake, the reuse gate
+	 * rather than as coverage: the run's stub bake, the reuse gate
 	 * that decides whether the place has to be rebuilt, and the build itself.
 	 * A non-coverage run pays the same work over uninstrumented sources, so
 	 * charging it to coverage would put a coverage segment on a run that
@@ -86,8 +86,8 @@ export interface PrepareCoverageResult {
 }
 
 export interface PrepareCoverageOptions {
-	/** Hook run after the shadow tree is populated, before the place build. */
-	beforeBuild?: ((layout: ShadowLayout) => boolean) | undefined;
+	/** What this run writes into the shadow before the place is built. */
+	bake?: ShadowBake | undefined;
 	/**
 	 * The run's effective coverage include globs, per `resolveCoverageInclude`
 	 * — which is where the `collectCoverageFrom ?? derived` fallback lives. A
@@ -121,6 +121,12 @@ interface WriteManifestOptions {
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 	placeFile: string;
 	rojoInputsHash: string;
+}
+
+/** The two settings every shadow pass of one run reads the same way. */
+interface ShadowPassSettings {
+	isBakeOwned: BakeOwnershipMatcher | undefined;
+	isIncremental: boolean;
 }
 
 interface PriorPlaceReuse {
@@ -318,24 +324,25 @@ export function resolveLuauRoots(config: ResolvedConfig): Array<string> {
 
 export async function prepareCoverageAsync(
 	config: ResolvedConfig,
-	{ beforeBuild, coverageInclude, timing = NOOP_TIMING_COLLECTOR }: PrepareCoverageOptions = {},
+	{ bake, coverageInclude, timing = NOOP_TIMING_COLLECTOR }: PrepareCoverageOptions = {},
 ): Promise<PrepareCoverageResult> {
 	const { elapsedMs: instrumentMs, value: instrumented } = await timing.profileTimedAsync(
 		"instrumentSources",
 		async () => {
 			const inputs = await resolveCoverageInputsAsync(config, coverageInclude);
 			const isIncremental = decideIncremental(config, inputs);
-			return { inputs, isIncremental, shadow: prepareShadowRoots(inputs, isIncremental) };
+			const pass = { isBakeOwned: bake?.isBakeOwned, isIncremental };
+			return { inputs, isIncremental, shadow: prepareShadowRoots(inputs, pass) };
 		},
 	);
 
 	// Coverage pays for the instrumentation and nothing else. The other phase is
-	// the place build and the gate deciding whether to do it — `beforeBuild`
-	// bakes stubs into the shadow tree, and the reuse gate re-hashes the cached
+	// the place build and the gate deciding whether to do it — the bake writes
+	// stubs into the shadow tree, and the reuse gate re-hashes the cached
 	// place. Both are staging: a non-coverage run pays the same work.
 	const { elapsedMs: stagingMs, value: baked } = await timing.profileTimedAsync(
 		"bakeCoveragePlace",
-		async () => bakeCoveragePlaceAsync({ beforeBuild, config, instrumented }),
+		async () => bakeCoveragePlaceAsync({ bake, config, instrumented }),
 	);
 
 	return { ...baked, instrumentMs, stagingMs };
@@ -675,19 +682,18 @@ async function buildPlaceAndManifestAsync(
  * caller reports it as staging rather than as coverage.
  */
 async function bakeCoveragePlaceAsync({
-	beforeBuild,
+	bake,
 	config,
 	instrumented: { inputs, isIncremental, shadow },
 }: {
-	beforeBuild: PrepareCoverageOptions["beforeBuild"];
+	bake: PrepareCoverageOptions["bake"];
 	config: ResolvedConfig;
 	instrumented: InstrumentedCoverage;
 }): Promise<BakedCoveragePlace> {
-	const hasChanges = hasCoverageChanges(inputs, {
-		hasExtraChanges: beforeBuild?.(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true,
-		isIncremental,
-		shadow,
-	});
+	// The layout stays inside the optional call: a run with no bake never
+	// builds one, and it is the only thing that would read it.
+	const hasExtraChanges = bake?.run(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true;
+	const hasChanges = hasCoverageChanges(inputs, { hasExtraChanges, isIncremental, shadow });
 	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
 	const files = toBuildManifestFiles(shadow.files);
 	const reused = await reuseCoverageResultAsync(inputs, files, hasChanges);
@@ -900,9 +906,10 @@ function decideIncremental(
  */
 function instrumentOneRoot(
 	{ isCopyIgnored, previousManifest, universe }: CoverageInputs,
-	{ isIncremental, luauRoot }: { isIncremental: boolean; luauRoot: string },
+	{ isBakeOwned, isIncremental, luauRoot }: ShadowPassSettings & { luauRoot: string },
 ): ShadowRootResult {
 	return prepareShadowRoot({
+		isBakeOwned,
 		isCopyIgnored,
 		luauRoot,
 		previousManifest,
@@ -912,24 +919,35 @@ function instrumentOneRoot(
 	});
 }
 
-/** Instrument every luauRoot into its shadow dir and merge the results. */
-function prepareShadowRoots(inputs: CoverageInputs, isIncremental: boolean): ShadowRootsResult {
-	const files: Record<string, InstrumentedFileRecord> = {};
-	const coverageRoots: Array<CoverageRoot> = [];
-	// Paths here are already the source's own — this mode walks them from the
-	// invocation directory — so a spine level names its own directory.
-	const spine = prepareSpine({
+/**
+ * The spine pass for single mode. The narrowed paths here are already the
+ * source's own — this mode walks them from the invocation directory — so a
+ * spine level names its own directory.
+ */
+function prepareSingleSpine(
+	inputs: CoverageInputs,
+	{ isBakeOwned }: ShadowPassSettings,
+): PreparedSpine {
+	return prepareSpine({
+		isBakeOwned,
 		isCopyIgnored: inputs.isCopyIgnored,
 		narrowed: inputs.narrowed,
 		previousNonInstrumented: inputs.previousManifest?.nonInstrumentedFiles,
 		shadowRoot: COVERAGE_DIR,
 		toSourcePath: (relativePath) => relativePath,
 	});
+}
+
+/** Instrument every luauRoot into its shadow dir and merge the results. */
+function prepareShadowRoots(inputs: CoverageInputs, pass: ShadowPassSettings): ShadowRootsResult {
+	const files: Record<string, InstrumentedFileRecord> = {};
+	const coverageRoots: Array<CoverageRoot> = [];
+	const spine = prepareSingleSpine(inputs, pass);
 	const nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord> = { ...spine.files };
 	let hasChanges = spine.changed;
 
 	for (const luauRoot of inputs.luauRoots) {
-		const result = instrumentOneRoot(inputs, { isIncremental, luauRoot });
+		const result = instrumentOneRoot(inputs, { ...pass, luauRoot });
 		hasChanges ||= result.changed;
 		Object.assign(files, result.files);
 		Object.assign(nonInstrumentedFiles, result.nonInstrumentedFiles);

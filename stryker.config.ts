@@ -55,7 +55,7 @@ export default {
 	// too conservatively, never too high.
 	thresholds: {
 		...sharedConfig.thresholds,
-		break: 94.37,
+		break: 94.43,
 	},
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",

@@ -5,10 +5,10 @@ import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import {
 	cleanLeftoverStubs,
+	createStubBake,
 	generateProjectStubs,
 	hasUserAuthoredConfig,
 	STUB_FILENAME,
-	syncStubsToShadowDirectory,
 } from "../config/stubs.ts";
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
@@ -110,9 +110,7 @@ export async function prepareBakedCoverageAsync({
 	timing?: TimingCollector | undefined;
 }): Promise<BakedCoverage> {
 	const coverage = await prepareCoverageAsync(config, {
-		beforeBuild: bakeStubs
-			? (shadow) => syncStubsToShadowDirectory(projects, cacheRoot, shadow)
-			: undefined,
+		bake: bakeStubs ? createStubBake(projects, cacheRoot) : undefined,
 		// The same globs `buildMultiRunResult` reports against, so a file is
 		// probed exactly when this run would render a line for it.
 		coverageInclude: resolveCoverageInclude(config, projects),

@@ -21,12 +21,13 @@ import {
 import { createSetupResolver } from "../config/setup-resolver.ts";
 import {
 	cleanLeftoverStubs,
+	createStubBake,
 	generateProjectStubs,
 	hasUserAuthoredConfig,
-	syncStubsToShadowDirectory,
 } from "../config/stubs.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import { prepareCoverageAsync, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
+import type { ShadowBake } from "../coverage-pipeline/spine.ts";
 import { type ExecuteResult, runProjectsAsync } from "../executor.ts";
 import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
 import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
@@ -61,6 +62,7 @@ const mocks = {
 	buildWithRojoAsync: vi.mocked(buildWithRojoAsync),
 	cleanLeftoverStubs: vi.mocked(cleanLeftoverStubs),
 	createSetupResolver: vi.mocked(createSetupResolver),
+	createStubBake: vi.mocked(createStubBake),
 	extractStaticRoot: vi.mocked(extractStaticRoot),
 	filterProjectsByFiles: vi.mocked(filterProjectsByFiles),
 	generateProjectStubs: vi.mocked(generateProjectStubs),
@@ -71,7 +73,6 @@ const mocks = {
 	resolveBackend: vi.mocked(resolveBackendAsync),
 	runProjects: vi.mocked(runProjectsAsync),
 	runTypecheck: vi.mocked(runTypecheckAsync),
-	syncStubsToShadowDirectory: vi.mocked(syncStubsToShadowDirectory),
 	synthesize: vi.mocked(synthesize),
 	toCoverageArtifacts: vi.mocked(toCoverageArtifacts),
 };
@@ -780,16 +781,16 @@ describe(runMultiProjectAsync, () => {
 		);
 	});
 
-	it("should sync stubs to shadow directory via beforeBuild callback", async () => {
-		expect.assertions(1);
+	it("should hand coverage both halves of the stub bake", async () => {
+		expect.assertions(2);
 
 		const { config } = setupDefaults({ collectCoverage: true });
-		mocks.syncStubsToShadowDirectory.mockReturnValue(false);
-		mocks.prepareCoverageAsync.mockImplementation(async (_config, options) => {
-			options!.beforeBuild!({
-				mountedDirectory: (relative) => `.jest-roblox/coverage/${relative}`,
-				root: ".jest-roblox/coverage",
-			});
+		const bake = {
+			isBakeOwned: vi.fn<ShadowBake["isBakeOwned"]>(),
+			run: vi.fn<ShadowBake["run"]>().mockReturnValue(false),
+		};
+		mocks.createStubBake.mockReturnValue(bake);
+		mocks.prepareCoverageAsync.mockImplementation(async () => {
 			return {
 				buildId: "test-build-id",
 				coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
@@ -821,10 +822,15 @@ describe(runMultiProjectAsync, () => {
 
 		// Coverage sync source is the cacheRoot, not rootDir. Stubs live
 		// in `.jest-roblox/cache`; the coverage shadow mirrors from there.
-		expect(mocks.syncStubsToShadowDirectory).toHaveBeenCalledWith(
+		expect(mocks.createStubBake).toHaveBeenCalledWith(
 			expect.any(Array),
 			expect.stringMatching(/[\\/]\.jest-roblox[\\/]cache$/),
-			expect.objectContaining({ root: ".jest-roblox/coverage" }),
+		);
+		// Both halves, together: a hook whose writes nothing declares gets
+		// them swept back out by the shadow's own orphan reconcile.
+		expect(mocks.prepareCoverageAsync).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ bake }),
 		);
 	});
 
@@ -879,14 +885,14 @@ describe(runMultiProjectAsync, () => {
 		// `jest.config` ModuleScripts from the payload at runtime. Baking them
 		// into the instrumented place too would make the runner collide with an
 		// already-present `jest.config` ("Structural collision …"). So coverage
-		// prep must skip the stub-sync `beforeBuild` for this backend and let
+		// prep must skip the stub bake for this backend and let
 		// runtime injection be the sole config source.
 		expect.assertions(2);
 
 		const { config } = setupDefaults({ backend: "studio-cli", collectCoverage: true });
 		mocks.prepareCoverageAsync.mockImplementation(async (_config, options) => {
-			// The absent hook *is* the contract: no `beforeBuild`, no stub bake.
-			expect(options!.beforeBuild).toBeUndefined();
+			// The absent bake *is* the contract: no hook, no stub in the place.
+			expect(options!.bake).toBeUndefined();
 
 			return {
 				buildId: "test-build-id",
@@ -917,7 +923,7 @@ describe(runMultiProjectAsync, () => {
 			rawProjects: [makeProjectEntry("client")],
 		});
 
-		expect(mocks.syncStubsToShadowDirectory).not.toHaveBeenCalled();
+		expect(mocks.createStubBake).not.toHaveBeenCalled();
 	});
 
 	it("should return validationExitCode 2 with message when no test files found", async () => {
