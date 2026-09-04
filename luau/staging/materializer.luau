@@ -55,6 +55,15 @@ local function isContainer(instance: Instance): boolean
 	return instance:IsA("Folder") or instance:IsA("Model")
 end
 
+-- Whether the DataModel already holds this instance. A live service and
+-- everything under it, the stage, and the pool beside it are all in it; a clone
+-- the plan has made is not, until the step that lands it runs. Which side an
+-- instance is on decides everything the plan does with it: what is live is
+-- cloned and earns a step, what is not is moved and rides its ancestor's.
+local function isLive(instance: Instance): boolean
+	return instance:IsDescendantOf(game)
+end
+
 -- The entry a marker stands for. The place holds one copy of a mount several
 -- packages share, under `__shared`, and each package's stage holds a Folder
 -- naming it instead of a copy of its own. Everything downstream reads the
@@ -76,36 +85,6 @@ local function pooledEntry(pool: Instance?, source: Instance): Instance?
 	local entry = pool:FindFirstChild(key)
 	assert(entry, "no pooled entry for " .. key)
 	return entry
-end
-
--- Markers below the top of a cloned subtree. A staged child is cloned whole
--- once the plan gives it a landing site, so every marker inside it comes
--- across as the Folder it was; the pass pools at any depth, and
--- `rbxts_include.node_modules.@rbxts.services` is two levels down. Each one is
--- swapped for a clone of the entry it names, in place and under its own name.
---
--- One pass, for the reason `restoreRunContext` gives: `GetDescendants` is
--- already the whole subtree. Nothing recurses into the swapped-in clone,
--- because a pooled entry is built from a `$path` and can hold no marker.
---
--- A marker's own explicit children came across in the same clone, so they move
--- into the resolution rather than being cloned a second time. They stay in the
--- snapshot this walk is reading, which is what resolves a marker nested inside
--- one.
-local function resolveNestedMarkers(root: Instance, pool: Instance)
-	for _, descendant in root:GetDescendants() do
-		local entry = pooledEntry(pool, descendant)
-		if entry then
-			local resolved = entry:Clone()
-			resolved.Name = descendant.Name
-			for _, ownChild in descendant:GetChildren() do
-				ownChild.Parent = resolved
-			end
-
-			resolved.Parent = descendant.Parent
-			descendant:Destroy()
-		end
-	end
 end
 
 -- What one planned clone does: land `clone`, whole, under a live `dest`. A
@@ -143,17 +122,18 @@ type Plan = {
 -- first. What is held is the clone, not the staged source, so a later child of
 -- that name merges into it under the same rule that merges into a live
 -- container. A marker is what makes that reachable: what the pooled mount
--- built and what the marker declared beside it are planned as one list, and a
--- name in both halves has to merge exactly as it would inside a fresh clone.
+-- built and what the marker declared beside it are planned into one
+-- destination, and a name in both halves has to merge exactly as it would
+-- inside a fresh clone.
 local function newPlan(pool: Instance?): Plan
 	local claimed: { [Instance]: { [string]: Instance } } = {}
 	local collisions: { string } = {}
-	-- Every clone this plan has made. A destination among them is not live, so
-	-- a clone landing in it is parented on the spot rather than earning a step
-	-- of its own: nothing starts running, and the ancestor's step carries it
-	-- across whole.
-	local pending: { [Instance]: true } = {}
 	local steps: { Step } = {}
+
+	-- Declared ahead of `add` because the two call each other: a clone the plan
+	-- lands is swept for the markers it carries, and each of those hands itself
+	-- back to the plan.
+	local resolveNestedMarkers: (root: Instance) -> ()
 
 	local function add(children: { Instance }, dest: Instance)
 		local held = claimed[dest]
@@ -162,17 +142,21 @@ local function newPlan(pool: Instance?): Plan
 			claimed[dest] = held
 		end
 
+		-- Asked once: nothing this walk does puts a destination into the
+		-- DataModel, which only a step does, and every step runs after it.
+		local destIsLive = isLive(dest)
+
 		for _, child in children do
 			-- Resolved before anything is decided, so a marker merges, clones
 			-- and collides exactly as the mount it stands for would have.
 			local entry = pooledEntry(pool, child)
 			local source = entry or child
 			-- The one instance already standing where this child would land: a
-			-- clone a staged sibling claimed the name with, or a live child of
-			-- the destination. Never both — a name a live child holds is
-			-- merged into rather than claimed, so nothing is held for it.
-			local sibling = held[child.Name]
-			local occupied = sibling or dest:FindFirstChild(child.Name)
+			-- clone a staged sibling claimed the name with, or a child the
+			-- destination already holds. Never both — a name a child of the
+			-- destination holds is merged into rather than claimed, so nothing
+			-- is held for it.
+			local occupied = held[child.Name] or dest:FindFirstChild(child.Name)
 
 			if occupied ~= nil and not (isContainer(occupied) and isContainer(source)) then
 				table.insert(
@@ -182,42 +166,87 @@ local function newPlan(pool: Instance?): Plan
 						dest:GetFullName(),
 						child.Name,
 						source.ClassName,
-						if sibling ~= nil then "staged " else "live ",
+						if isLive(occupied) then "live " else "staged ",
 						occupied.ClassName
 					)
 				)
 			elseif occupied ~= nil then
 				-- Both halves of a marker: what the pooled mount built, and
 				-- the explicit children the marker declared beside it. One
-				-- list, so a name they both claim is judged like any other
-				-- pair.
-				local planned = source:GetChildren()
+				-- destination, so the one `held` table judges a name they both
+				-- claim like any other pair.
+				add(source:GetChildren(), occupied)
 				if entry ~= nil then
-					local ownChildren = child:GetChildren()
-					table.move(ownChildren, 1, #ownChildren, #planned + 1, planned)
+					add(child:GetChildren(), occupied)
+				end
+			else
+				-- A clone this plan made and has not landed moves into the
+				-- destination rather than being cloned again: re-cloning a
+				-- dependency tree is the cost the pool exists to avoid. A
+				-- marker never moves — what it stands for is in the pool,
+				-- which the DataModel holds.
+				local moved = entry == nil and not isLive(child)
+				local resolved
+				if moved then
+					resolved = child
+				else
+					resolved = source:Clone()
+					resolved.Name = child.Name
 				end
 
-				add(planned, occupied)
-			else
-				local resolved = source:Clone()
-				resolved.Name = child.Name
 				held[child.Name] = resolved
-				pending[resolved] = true
 
 				if entry ~= nil then
 					-- The marker's own children, into the resolution rather
-					-- than beside it. No sweep for markers below: a pooled
-					-- entry is built from a `$path`, so it can hold none.
+					-- than beside it.
 					add(child:GetChildren(), resolved)
-				elseif pool ~= nil then
-					resolveNestedMarkers(resolved, pool)
+				elseif not moved and pool ~= nil and not child:IsDescendantOf(pool) then
+					-- Only the stage holds markers. A pooled entry is mounted
+					-- from a `$path` and can hold none, and what moved is
+					-- already inside the subtree the sweep that handed it over
+					-- is walking.
+					resolveNestedMarkers(resolved)
 				end
 
-				if pending[dest] then
-					resolved.Parent = dest
-				else
+				if destIsLive then
 					table.insert(steps, { clone = resolved, dest = dest })
+				else
+					resolved.Parent = dest
 				end
+			end
+		end
+	end
+
+	-- Markers below the top of a cloned subtree. A staged child is cloned whole
+	-- once the plan gives it a landing site, so every marker inside it comes
+	-- across as the Folder it was; the pass pools at any depth, and
+	-- `rbxts_include.node_modules.@rbxts.services` is two levels down.
+	--
+	-- One pass, for the reason `restoreRunContext` gives: `GetDescendants` is
+	-- already the whole subtree.
+	--
+	-- Each marker goes back through the plan, which is the whole point: a
+	-- marker at this depth is judged by the rule a marker at the top of a stage
+	-- is judged by, rather than by a second resolution that has no collision
+	-- list to report to.
+	--
+	-- The snapshot is read as it was taken, which is what reaches a marker
+	-- carried inside another marker's child: the move keeps it in the tree. One
+	-- the plan resolved itself is in the snapshot too, and is not in the tree —
+	-- `Destroy` takes the Parent off the whole subtree it removes.
+	function resolveNestedMarkers(root: Instance)
+		for _, descendant in root:GetDescendants() do
+			-- The Parent read is the "still in the tree" half: `Destroy` takes
+			-- the Parent off every instance in the subtree it removes.
+			if descendant.Parent ~= nil and pooledEntry(pool, descendant) ~= nil then
+				local host = descendant.Parent
+				-- Out of the way before the plan looks: the marker stands
+				-- exactly where its own resolution has to land.
+				descendant.Parent = nil
+				add({ descendant }, host)
+				-- Whatever is left is whatever did not move: on the abort path,
+				-- the children a collision stopped.
+				descendant:Destroy()
 			end
 		end
 	end

@@ -41,6 +41,11 @@ local SUPERCLASS: { [string]: string } = {
 
 local getDescendantsCalls = 0
 
+-- How many times each Instance has been cloned, counting the copy a clone of
+-- an ancestor brings. A pooled entry is a whole dependency tree, and cloning
+-- one twice for a single marker is the cost the pool exists to avoid.
+local cloneCounts: { [any]: number } = {}
+
 -- What each Instance held the moment it entered a live service. A script
 -- starts running as soon as it is parented, so a clone that lands half built
 -- runs against a tree its own package has not finished handing it.
@@ -68,6 +73,10 @@ end
 
 local function setParent(instance, parent)
 	local entry = state[instance]
+	-- Destroy locks the Parent property. A plan that parents something it
+	-- already destroyed throws on a real DataModel, so it throws here.
+	check(entry.destroyed ~= true, "Parent is locked: " .. entry.fields.Name .. " was destroyed")
+
 	local previous = entry.fields.Parent
 	if previous ~= nil then
 		local siblings = state[previous].children
@@ -126,6 +135,19 @@ function methods.FindFirstChild(instance, name: string)
 	return nil
 end
 
+function methods.IsDescendantOf(instance, ancestor)
+	local cursor = state[instance].fields.Parent
+	while cursor ~= nil do
+		if cursor == ancestor then
+			return true
+		end
+
+		cursor = state[cursor].fields.Parent
+	end
+
+	return false
+end
+
 function methods.IsA(instance, className: string)
 	local current = state[instance].fields.ClassName
 	while current ~= nil do
@@ -140,6 +162,7 @@ function methods.IsA(instance, className: string)
 end
 
 function methods.Clone(instance)
+	cloneCounts[instance] = (cloneCounts[instance] or 0) + 1
 	local entry = state[instance]
 	local copy = newInstance(entry.fields.ClassName, entry.fields.Name)
 	state[copy].fields.RunContext = entry.fields.RunContext
@@ -154,9 +177,14 @@ function methods.Clone(instance)
 	return copy
 end
 
+-- Destroys the whole subtree, which is what the real one does: an instance
+-- moved out of a doomed tree survives, and one left in it does not.
 function methods.Destroy(instance)
 	setParent(instance, nil)
 	state[instance].destroyed = true
+	for _, child in methods.GetChildren(instance) do
+		methods.Destroy(child)
+	end
 end
 
 function methods.GetFullName(instance)
@@ -625,6 +653,7 @@ local MERGE_POOL_KEY = "abcdef0123456789"
 -- Staged only once the pool cases run, so every case above them exercises the
 -- no-pool path a place built before this pass takes.
 local pooledEntry
+local pooledModuleEntry
 
 local function stagePool()
 	local pool = newInstance("Folder", "__shared")
@@ -635,9 +664,9 @@ local function stagePool()
 	setParent(newInstance("ModuleScript", "pooledModule"), pooledEntry)
 	setParent(newInstance("Script", "pooledServer"), pooledEntry)
 
-	local moduleEntry = newInstance("ModuleScript", MODULE_POOL_KEY)
-	setParent(moduleEntry, pool)
-	setParent(newInstance("ModuleScript", "nested"), moduleEntry)
+	pooledModuleEntry = newInstance("ModuleScript", MODULE_POOL_KEY)
+	setParent(pooledModuleEntry, pool)
+	setParent(newInstance("ModuleScript", "nested"), pooledModuleEntry)
 
 	local mergeEntry = newInstance("Folder", MERGE_POOL_KEY)
 	setParent(mergeEntry, pool)
@@ -837,16 +866,21 @@ local function testMarkerChildrenMergeIntoClone()
 	)
 end
 
+-- A staged subtree the live service has no name for is cloned whole, so a
+-- marker inside it resolves in place rather than through the plan. Both
+-- resolutions answer to one rule: a name under one destination belongs to one
+-- instance, two containers merge, and anything else is reported.
+local function stageNestedMarker(pkgName: string, key: string)
+	local vendor = newInstance("Folder", "Vendor")
+	setParent(vendor, stagePackage(pkgName, false))
+	return newMarker("rbxts_include", key, vendor)
+end
+
 -- T17: a nested marker keeps its own children too. It rode into the live
 -- service inside a cloned subtree, so the children are already clones and move
 -- into the resolution rather than being cloned a second time.
 local function testNestedMarkerKeepsItsChildren()
-	local stagedService = stagePackage("nestedChildren", false)
-
-	local vendor = newInstance("Folder", "Vendor")
-	setParent(vendor, stagedService)
-
-	local marker = newMarker("rbxts_include", POOL_KEY, vendor)
+	local marker = stageNestedMarker("nestedChildren", POOL_KEY)
 
 	local modules = newInstance("Folder", "node_modules")
 	setParent(modules, marker)
@@ -878,8 +912,8 @@ end
 
 -- T20: a marker merging into a live container merges its two halves the way a
 -- fresh clone of it would. What the pooled mount built and what the marker
--- declared beside it are planned as one list, so a container both halves hold
--- has to merge rather than read as a staged-sibling collision.
+-- declared beside it are planned into one destination, so a container both
+-- halves hold has to merge rather than read as a staged-sibling collision.
 local function testMarkerHalvesMergeIntoLiveFolder()
 	local live = newInstance("Folder", "rbxts_include")
 	setParent(live, ReplicatedStorage)
@@ -1012,6 +1046,85 @@ local function testPooledCloneGoesLiveWhole()
 	Materializer.reset()
 end
 
+-- T21: a nested marker declaring a child of a name the pooled entry also holds
+-- is a collision, reported like any other. Parenting both leaves two same-name
+-- siblings, and every later FindFirstChild picks whichever was parented first.
+local function testNestedMarkerChildCollides()
+	local marker = stageNestedMarker("nestedCollide", POOL_KEY)
+	setParent(newInstance("Folder", "pooledModule"), marker)
+
+	local ok, message = pcall(function()
+		Materializer.materialize("nestedCollide")
+	end)
+
+	check(not ok, "T21: a nested marker's colliding child must error")
+	check(
+		string.find(
+			tostring(message),
+			"rbxts_include.pooledModule: staged Folder over staged ModuleScript",
+			1,
+			true
+		) ~= nil,
+		"T21: the message names both instances, got: " .. tostring(message)
+	)
+	check(#methods.GetChildren(ReplicatedStorage) == 0, "T21: nothing materialized")
+end
+
+-- T22: and a nested marker declaring a container of a name the entry also
+-- holds merges, exactly as the same pair does at the top of a stage (T20).
+local function testNestedMarkerChildMerges()
+	local marker = stageNestedMarker("nestedMerge", MERGE_POOL_KEY)
+	local modules = newInstance("Folder", "node_modules")
+	setParent(modules, marker)
+	setParent(newInstance("ModuleScript", "ownModule"), modules)
+
+	Materializer.materialize("nestedMerge")
+
+	local vendor = methods.FindFirstChild(ReplicatedStorage, "Vendor")
+	local include = methods.FindFirstChild(vendor, "rbxts_include")
+	check(include ~= nil, "T22: the nested marker materialized under its own name")
+	check(#methods.GetChildren(include) == 1, "T22: the name both halves hold landed once")
+
+	local liveModules = methods.FindFirstChild(include, "node_modules")
+	check(
+		methods.FindFirstChild(liveModules, "entryModule") ~= nil,
+		"T22: what the pooled half held is inside it"
+	)
+	check(
+		methods.FindFirstChild(liveModules, "ownModule") ~= nil,
+		"T22: what the marker's half held is too"
+	)
+
+	Materializer.reset()
+end
+
+-- T23: a marker a nested marker declares beside its own mount resolves once.
+-- The sweep reads a snapshot taken before the marker's children moved, so a
+-- marker that move already swapped out is still in the list it walks.
+local function testMarkerInsideNestedMarkerChildren()
+	local marker = stageNestedMarker("nestedTwice", POOL_KEY)
+	newMarker("services", MODULE_POOL_KEY, marker)
+
+	cloneCounts[pooledModuleEntry] = 0
+	Materializer.materialize("nestedTwice")
+
+	local vendor = methods.FindFirstChild(ReplicatedStorage, "Vendor")
+	local include = methods.FindFirstChild(vendor, "rbxts_include")
+	local services = methods.FindFirstChild(include, "services")
+	check(services ~= nil, "T23: the marker a marker declared resolved under its own name")
+	check(services:IsA("ModuleScript"), "T23: to the entry it names")
+	check(
+		methods.FindFirstChild(services, "nested") ~= nil,
+		"T23: carrying the entry's own children"
+	)
+	check(
+		cloneCounts[pooledModuleEntry] == 1,
+		"T23: the pooled entry was cloned once, got " .. cloneCounts[pooledModuleEntry]
+	)
+
+	Materializer.reset()
+end
+
 testRestoreRunContextIsLinear()
 testRestoreRunContextReachesEveryDepth()
 testResetClearsMaterialized()
@@ -1037,5 +1150,8 @@ testNestedMarkerKeepsItsChildren()
 testPooledModuleScriptResolves()
 testPooledCloneGoesLiveWhole()
 testMarkerHalvesMergeIntoLiveFolder()
+testNestedMarkerChildCollides()
+testNestedMarkerChildMerges()
+testMarkerInsideNestedMarkerChildren()
 
 print("ALL OK")
