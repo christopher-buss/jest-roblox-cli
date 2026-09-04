@@ -254,28 +254,33 @@ describe(createCoverageUniverseMatcher, () => {
 });
 
 describe(resolveUniverseAnchor, () => {
+	/** The anchor as a plain string, so an assertion can name one. */
+	function anchorFor(rootDirectory?: string): string {
+		return resolveUniverseAnchor(rootDirectory);
+	}
+
 	it("should keep a windows absolute rootDir whole on any host", () => {
 		expect.assertions(1);
 
-		expect(resolveUniverseAnchor("D:\\repo\\packages\\foo")).toBe("D:/repo/packages/foo");
+		expect(anchorFor("D:\\repo\\packages\\foo")).toBe("D:/repo/packages/foo");
 	});
 
 	it("should keep a posix absolute rootDir whole", () => {
 		expect.assertions(1);
 
-		expect(resolveUniverseAnchor("/repo/packages/foo")).toBe("/repo/packages/foo");
+		expect(anchorFor("/repo/packages/foo")).toBe("/repo/packages/foo");
 	});
 
 	it("should drop a trailing slash so the anchor is a clean prefix", () => {
 		expect.assertions(1);
 
-		expect(resolveUniverseAnchor("/repo/packages/foo/")).toBe("/repo/packages/foo");
+		expect(anchorFor("/repo/packages/foo/")).toBe("/repo/packages/foo");
 	});
 
 	it("should read a relative rootDir against the cwd", () => {
 		expect.assertions(1);
 
-		expect(resolveUniverseAnchor("packages/foo")).toBe(
+		expect(anchorFor("packages/foo")).toBe(
 			path.posix.join(normalizeWindowsPath(process.cwd()), "packages/foo"),
 		);
 	});

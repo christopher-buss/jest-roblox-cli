@@ -357,8 +357,11 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		);
 
 		const result = await loadConfig(undefined, packageDirectory);
+		// A plain string, so the assertion can name one: the
+		// anchor is a branded PosixRoot.
+		const anchor: string = resolveUniverseAnchor(result.rootDir);
 
-		expect(resolveUniverseAnchor(result.rootDir)).toBe(normalizeWindowsPath(packageDirectory));
+		expect(anchor).toBe(normalizeWindowsPath(packageDirectory));
 	});
 
 	it("should absolutize a relative cwd when no rootDir is declared", async () => {

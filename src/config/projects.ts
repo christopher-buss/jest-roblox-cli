@@ -16,6 +16,7 @@ import type { TsconfigDirectories } from "../executor.ts";
 import { resolveTsconfigDirectories } from "../executor.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import { isString } from "../utils/is-string.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { ConfigError } from "./errors.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
@@ -95,19 +96,18 @@ export function extractStaticRoot(pattern: string): StaticRootPattern {
 
 export { stripTsExtension } from "../utils/extensions.ts";
 
-export function mapFsRootToDataModel(outDirectory: string, rojoTree: RojoTreeNode): string {
-	const normalized = toPosixRoot(outDirectory);
-	const result = findInTree(rojoTree, normalized, "");
+export function mapFsRootToDataModel(outDirectory: PosixRoot, rojoTree: RojoTreeNode): string {
+	const result = findInTree(rojoTree, outDirectory, "");
 	if (result === undefined) {
 		const available: Array<string> = [];
 		collectPaths(rojoTree, available);
 
-		let message = `No Rojo tree mapping found for path: ${normalized}`;
+		let message = `No Rojo tree mapping found for path: ${outDirectory}`;
 		if (available.length > 0) {
 			message += `\n\nAvailable $path entries: ${available.join(", ")}`;
 		}
 
-		const hint = normalized.startsWith("src/")
+		const hint = outDirectory.startsWith("src/")
 			? 'Path starts with "src/" — if using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")'
 			: undefined;
 
@@ -328,8 +328,10 @@ function mergeProjectConfig(
 	return merged;
 }
 
-function joinProjectRoot(relativePath: string, projectRoot: string | undefined): string {
-	return projectRoot !== undefined ? path.posix.join(projectRoot, relativePath) : relativePath;
+function joinProjectRoot(relativePath: string, projectRoot: string | undefined): PosixRoot {
+	return toPosixRoot(
+		projectRoot !== undefined ? path.posix.join(projectRoot, relativePath) : relativePath,
+	);
 }
 
 function pruneAncestorMounts(mounts: Array<Mount>): Array<Mount> {

@@ -8,7 +8,7 @@ import type { MockedFunction } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../config/schema.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { BuildManifest, BuildManifestArtifact } from "./build-manifest.ts";
 import { buildManifestSchema } from "./build-manifest.ts";
 import { hashCopyIgnorePatterns } from "./discover-files.ts";
@@ -180,7 +180,7 @@ describe(prepareWorkspaceCoverage, () => {
 
 		// Only `out` earns a redirect; `vendor` keeps its original mount, which
 		// serves exactly the bytes a shadow of it would have.
-		expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["out"]);
+		expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual(["out"]);
 	});
 
 	it("should instrument the whole package when it names no coverage globs", async () => {
@@ -232,7 +232,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(result).toHaveLength(1);
 		expect(result[0]!.coverageRoots).toStrictEqual([
 			{
-				luauRoot: "out",
+				luauRoot: toPosixRoot("out"),
 				shadowDir: path
 					.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out")
 					.replaceAll("\\", "/"),
@@ -301,7 +301,7 @@ describe(prepareWorkspaceCoverage, () => {
 
 		expect(mocked).toHaveBeenCalledTimes(2);
 
-		const luauRoots = mocked.mock.calls.map(([options]) => options.luauRoot);
+		const luauRoots = mocked.mock.calls.map(([options]): string => options.luauRoot);
 
 		expect(luauRoots).toContain(path.join(FOO_DIR, "out/client").replaceAll("\\", "/"));
 		expect(luauRoots).toContain(path.join(FOO_DIR, "out/server").replaceAll("\\", "/"));
@@ -1092,7 +1092,9 @@ describe(prepareWorkspaceCoverage, () => {
 				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "lua-code")),
 			}),
 		);
-		expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["lua-code"]);
+		expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
+			"lua-code",
+		]);
 	});
 
 	it("should skip directories that only contain spec / test / snap luau files", async () => {
@@ -1215,7 +1217,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect(mocked).toHaveBeenCalledOnce();
 		expect(result[0]!.coverageRoots).toStrictEqual([
 			{
-				luauRoot: "out",
+				luauRoot: toPosixRoot("out"),
 				shadowDir: path
 					.join(WORKSPACE_ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out")
 					.replaceAll("\\", "/"),
@@ -1486,7 +1488,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledOnce();
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
+				"src",
+			]);
 
 			const manifest = manifestSchema.assert(
 				JSON.parse(vol.readFileSync(result!.manifestPath, "utf-8").toString()),
@@ -1517,10 +1521,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledTimes(2);
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot).sort()).toStrictEqual([
-				"src",
-				"vendored-packages",
-			]);
+			expect(
+				result!.coverageRoots.map((entry): string => entry.luauRoot).sort(),
+			).toStrictEqual(["src", "vendored-packages"]);
 		});
 
 		it("should drop off-tree luauRoot entries with a stderr warning", async () => {
@@ -1608,10 +1611,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledTimes(2);
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot).sort()).toStrictEqual([
-				"src",
-				"vendored-packages",
-			]);
+			expect(
+				result!.coverageRoots.map((entry): string => entry.luauRoot).sort(),
+			).toStrictEqual(["src", "vendored-packages"]);
 		});
 
 		it("should honor per-pkg coveragePathIgnorePatterns over the DEFAULT_CONFIG fallback", async () => {
@@ -1637,7 +1639,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledOnce();
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
+				"src",
+			]);
 		});
 
 		it("should honor per-pkg coverageCopyIgnorePatterns over the DEFAULT_CONFIG fallback", async () => {
@@ -1775,10 +1779,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledTimes(2);
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot).sort()).toStrictEqual([
-				"src",
-				"vendored-packages",
-			]);
+			expect(
+				result!.coverageRoots.map((entry): string => entry.luauRoot).sort(),
+			).toStrictEqual(["src", "vendored-packages"]);
 		});
 
 		it("should take a luauRoot nested below the $path mount that covers it", async () => {
@@ -1817,10 +1820,12 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledOnce();
-			expect(result!.coverageRoots.map((root) => root.luauRoot)).toStrictEqual([
+			expect(result!.coverageRoots.map((root): string => root.luauRoot)).toStrictEqual([
 				"src/client",
 			]);
-			expect(result!.coverageSpine.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+			expect(result!.coverageSpine.map((entry): string => entry.luauRoot)).toStrictEqual([
+				"src",
+			]);
 			expect(stderr).not.toHaveBeenCalled();
 		});
 
@@ -1861,7 +1866,7 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(result!.coverageSpine.map((entry) => entry.luauRoot)).toStrictEqual([
+			expect(result!.coverageSpine.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src/client",
 			]);
 		});
@@ -1902,7 +1907,7 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(result!.coverageSpine.map((entry) => entry.luauRoot)).toStrictEqual([
+			expect(result!.coverageSpine.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src/client",
 			]);
 		});
@@ -2019,7 +2024,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledOnce();
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["..cache"]);
+			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
+				"..cache",
+			]);
 		});
 
 		it("should reject an empty luauRoot, which names the package itself", async () => {
@@ -2097,7 +2104,7 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledOnce();
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual([
+			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src/client",
 			]);
 		});
@@ -2138,7 +2145,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledOnce();
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
+				"src",
+			]);
 		});
 
 		it("should deduplicate repeated luauRoots entries", async () => {
@@ -2164,7 +2173,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledOnce();
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
+				"src",
+			]);
 		});
 
 		it("should skip a luauRoot that is on the rojo tree but has no instrumentable files", async () => {
@@ -2206,7 +2217,9 @@ describe(prepareWorkspaceCoverage, () => {
 			});
 
 			expect(mocked).toHaveBeenCalledOnce();
-			expect(result!.coverageRoots.map((entry) => entry.luauRoot)).toStrictEqual(["src"]);
+			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
+				"src",
+			]);
 		});
 
 		it("should cold-rebuild the shadow when luauRoots shrinks between runs", async () => {
@@ -2592,7 +2605,7 @@ describe("narrowing a workspace package to its coverage universe", () => {
 
 		const [result] = prepareNarrowed();
 
-		expect(result!.coverageRoots.map((root) => root.luauRoot)).toStrictEqual([
+		expect(result!.coverageRoots.map((root): string => root.luauRoot)).toStrictEqual([
 			"out/modules/ecs",
 		]);
 	});
@@ -2605,7 +2618,7 @@ describe("narrowing a workspace package to its coverage universe", () => {
 
 		const [result] = prepareNarrowed();
 
-		expect(result!.coverageSpine.map((entry) => entry.luauRoot)).toStrictEqual([
+		expect(result!.coverageSpine.map((entry): string => entry.luauRoot)).toStrictEqual([
 			"out",
 			"out/modules",
 		]);

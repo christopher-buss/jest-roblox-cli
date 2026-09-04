@@ -3,7 +3,11 @@ import { collectPaths, resolveMountPath } from "@isentinel/rojo-utils";
 import process from "node:process";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
-import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
+import {
+	normalizeWindowsPath,
+	relativeToRoot,
+	toPosixRoot,
+} from "../utils/normalize-windows-path.ts";
 import { isWithinRoot } from "./redirect-path.ts";
 
 /** One `luauRoots` entry, weighed against a project's rojo `$path` mounts. */
@@ -102,24 +106,16 @@ export function resolveMountWithin(
 	rawPath: string,
 	{ frame, rojoDirectory }: MountFrame,
 ): string | undefined {
-	// `toPosixRoot`, because `isWithinRoot` reads the separator itself and a
-	// frame that resolves to a filesystem root (`/`, `C:/`) is the one path
-	// that keeps a trailing one — which would weigh every child against `//`
-	// and reject the lot.
 	const base = toPosixRoot(inCwdFrame(frame));
 	// Resolved exactly as {@link collectRojoMounts} resolves the same `$path`:
 	// a root is weighed against that mount set, so a second reading of what
 	// "absolute" means would let a root and the mount it came from disagree.
 	const absolute = toPosixRoot(resolveMountPath(inCwdFrame(rojoDirectory), rawPath));
-	// `isWithinRoot` admits the root itself, hence the inequality: the frame is
-	// what roots are written from, not a root within it.
-	if (absolute === base || !isWithinRoot(absolute, base)) {
-		return undefined;
-	}
-
-	// Sliced rather than relativized: at a filesystem root `base` is the empty
-	// string, which `path.relative` would resolve against the cwd instead.
-	return absolute.slice(base.length + 1);
+	// The frame is what roots are written from, not a root within it, so it
+	// does not name one itself. `relativeToRoot` answers for the rest —
+	// including a frame that is a file-system root, where `path.relative`
+	// would resolve the root against the cwd instead.
+	return absolute === base ? undefined : relativeToRoot(base, absolute);
 }
 
 /**

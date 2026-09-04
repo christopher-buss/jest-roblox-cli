@@ -3,7 +3,12 @@ import * as path from "node:path";
 
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { hashBuffer, hashFile } from "../utils/hash.ts";
-import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import {
+	normalizeWindowsPath,
+	relativeToRoot,
+	underRoot,
+} from "../utils/normalize-windows-path.ts";
 import type { CopyIgnoreMatcher, RootFiles } from "./discover-files.ts";
 import {
 	discoverRootFiles,
@@ -47,7 +52,7 @@ export interface PrepareShadowRootOptions {
 	isBakeOwned?: BakeOwnershipMatcher | undefined;
 	/** Paths this root's shadow never carries, relative to `luauRoot`. */
 	isCopyIgnored: CopyIgnoreMatcher;
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	previousManifest?: CoverageManifest | undefined;
 	shadowDir: string;
 	/** Orchestration profiler forwarded to `instrumentRoot`. */
@@ -63,7 +68,7 @@ export interface PrepareShadowRootOptions {
 export interface ShadowRootResult {
 	changed: boolean;
 	files: Record<string, InstrumentedFileRecord>;
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 	shadowDir: string;
 }
@@ -77,7 +82,7 @@ interface FullCacheOptions {
 	excluded: Set<string>;
 	isBakeOwned: BakeOwnershipMatcher | undefined;
 	isCopyIgnored: CopyIgnoreMatcher;
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	previousManifest: CoverageManifest;
 	shadowDir: string;
 	skipFiles: Set<string>;
@@ -87,7 +92,7 @@ interface FullCacheOptions {
 interface ReconcileOptions {
 	isBakeOwned: BakeOwnershipMatcher | undefined;
 	isCopyIgnored: CopyIgnoreMatcher;
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	shadowDir: string;
 }
 
@@ -112,7 +117,7 @@ interface IncrementalState {
 /** What the incremental decision reads out of `PrepareShadowRootOptions`. */
 interface IncrementalStateInputs {
 	isCopyIgnored: CopyIgnoreMatcher;
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	previousManifest: CoverageManifest;
 }
 
@@ -121,7 +126,7 @@ interface SyncNonInstrumentedOptions {
 	/** Prod files the universe denied probes, keyed relative to the root. */
 	excluded: Set<string>;
 	isCopyIgnored: CopyIgnoreMatcher;
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	previousNonInstrumented: Record<string, NonInstrumentedFileRecord> | undefined;
 	shadowDir: string;
 }
@@ -129,8 +134,7 @@ interface SyncNonInstrumentedOptions {
 /** One root's mirror walk: where it reads from and where it writes to. */
 interface MirrorSourceTreeOptions {
 	isCopyIgnored: CopyIgnoreMatcher;
-	/** Source root, POSIX-normalized, with no trailing separator. */
-	posixRoot: string;
+	luauRoot: PosixRoot;
 	shadowDirectory: string;
 }
 
@@ -157,7 +161,7 @@ interface OrphanSweep {
 interface PruneContext {
 	isBakeOwned: BakeOwnershipMatcher | undefined;
 	isCopyIgnored: CopyIgnoreMatcher;
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	/** Shadow root every relative path is keyed from, POSIX-normalized. */
 	shadowRoot: string;
 }
@@ -325,7 +329,7 @@ export function tryRemove(deleteEntry: () => void): boolean {
  * Does the source file backing a shadow entry still exist? A `.cov-map.json`
  * sidecar has no direct twin — it is keyed to its base `.luau`/`.lua`.
  */
-function sourceTwinExists(luauRoot: string, relativePath: string): boolean {
+function sourceTwinExists(luauRoot: PosixRoot, relativePath: string): boolean {
 	if (relativePath.endsWith(COV_MAP_SUFFIX)) {
 		const base = relativePath.slice(0, -COV_MAP_SUFFIX.length);
 		return (
@@ -538,15 +542,13 @@ function shouldSyncToShadow(name: string): boolean {
 }
 
 function carryForwardRecords(
-	luauRoot: string,
+	luauRoot: PosixRoot,
 	previousManifest: CoverageManifest,
 	allFiles: Record<string, InstrumentedFileRecord>,
 	skipFiles: Set<string>,
 ): void {
-	const posixRoot = toPosixRoot(luauRoot);
-
 	for (const relativePath of skipFiles) {
-		const fileKey = `${posixRoot}/${relativePath}`;
+		const fileKey = underRoot(luauRoot, relativePath);
 		Object.assign(allFiles, { [fileKey]: previousManifest.files[fileKey] });
 	}
 }
@@ -568,15 +570,14 @@ function carryForwardRecords(
  */
 function mirrorSourceTree({
 	isCopyIgnored,
-	posixRoot,
+	luauRoot,
 	shadowDirectory,
 }: MirrorSourceTreeOptions): MirroredTree {
 	const syncPaths: Array<string> = [];
 	let hasCreatedDirectory = createShadowDirectory(shadowDirectory);
 
 	walkLuauDirectory(
-		posixRoot,
-		posixRoot,
+		luauRoot,
 		{
 			accept: shouldSyncToShadow,
 			onDirectory: (relativePath) => {
@@ -599,10 +600,9 @@ function syncNonInstrumentedFiles({
 	previousNonInstrumented,
 	shadowDir,
 }: SyncNonInstrumentedOptions): SyncResult {
-	const posixRoot = toPosixRoot(luauRoot);
 	const { hasCreatedDirectory, syncPaths } = mirrorSourceTree({
 		isCopyIgnored,
-		posixRoot,
+		luauRoot,
 		shadowDirectory: shadowDir,
 	});
 	// Appended one at a time: spreading a set this size into `push` passes one
@@ -617,7 +617,7 @@ function syncNonInstrumentedFiles({
 	let hasChanged = hasCreatedDirectory;
 
 	for (const relativePath of syncPaths) {
-		const sourcePath = `${posixRoot}/${relativePath}`;
+		const sourcePath = underRoot(luauRoot, relativePath);
 		const previousRecord = previousNonInstrumented?.[sourcePath];
 		const record = syncOneFile(sourcePath, `${shadowDir}/${relativePath}`, previousRecord);
 
@@ -630,16 +630,15 @@ function syncNonInstrumentedFiles({
 	return { changed: hasChanged, files };
 }
 
-function computeSkipFiles(luauRoot: string, previousManifest: CoverageManifest): Set<string> {
+function computeSkipFiles(luauRoot: PosixRoot, previousManifest: CoverageManifest): Set<string> {
 	const skipFiles = new Set<string>();
-	const posixRoot = toPosixRoot(luauRoot);
 
 	for (const [fileKey, record] of Object.entries(previousManifest.files)) {
-		if (!fileKey.startsWith(`${posixRoot}/`)) {
+		const relativePath = relativeToRoot(luauRoot, fileKey);
+		if (relativePath === undefined) {
 			continue;
 		}
 
-		const relativePath = fileKey.slice(posixRoot.length + 1);
 		const sourcePath = path.resolve(record.originalLuauPath);
 
 		if (!fs.existsSync(sourcePath)) {
@@ -669,11 +668,13 @@ function computeSkipFiles(luauRoot: string, previousManifest: CoverageManifest):
 	return skipFiles;
 }
 
-function countPreviousFilesForRoot(luauRoot: string, previousManifest: CoverageManifest): number {
-	const posixRoot = toPosixRoot(luauRoot);
+function countPreviousFilesForRoot(
+	luauRoot: PosixRoot,
+	previousManifest: CoverageManifest,
+): number {
 	let count = 0;
 	for (const fileKey of Object.keys(previousManifest.files)) {
-		if (fileKey.startsWith(`${posixRoot}/`)) {
+		if (relativeToRoot(luauRoot, fileKey) !== undefined) {
 			count++;
 		}
 	}

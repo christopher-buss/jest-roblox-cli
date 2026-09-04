@@ -2,7 +2,13 @@ import * as path from "node:path";
 import process from "node:process";
 import picomatch from "picomatch";
 
-import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import {
+	isAbsolutePath,
+	normalizeWindowsPath,
+	rootPrefix,
+	toPosixRoot,
+} from "../utils/normalize-windows-path.ts";
 import type { MappedCoverageResult } from "./mapper.ts";
 
 // cspell:ignore nonegate
@@ -45,12 +51,9 @@ export interface CoverageUniverseFilter {
  * whole universe under `<cwd>/D:/...` — an anchor no candidate path starts
  * with, so nothing matches and the digest names a directory that never existed.
  */
-export function resolveUniverseAnchor(rootDirectory?: string): string {
+export function resolveUniverseAnchor(rootDirectory?: string): PosixRoot {
 	const cwd = normalizeWindowsPath(process.cwd());
-	const anchor = toAnchorNamespace(rootDirectory ?? cwd, cwd);
-	// A trailing slash would double up in `anchorPrefix`; `path.resolve` used to
-	// eat it. Roots keep theirs by way of the prefix the caller rebuilds.
-	return anchor.endsWith("/") ? anchor.slice(0, -1) : anchor;
+	return toPosixRoot(toAnchorNamespace(rootDirectory ?? cwd, cwd));
 }
 
 /**
@@ -82,7 +85,7 @@ export function createCoverageUniverseMatcher(
 	// begins `..` and no glob matches anyway. Worth the split because this runs
 	// once per compiled file across the whole place, and `path.relative`
 	// re-resolves the anchor on every call.
-	const anchorPrefix = `${anchor}/`;
+	const anchorPrefix = rootPrefix(anchor);
 	const cwd = normalizeWindowsPath(process.cwd());
 	return (filePath) => {
 		const absolute = toAnchorNamespace(filePath, cwd);

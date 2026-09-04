@@ -4,7 +4,7 @@ import { vol } from "memfs";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { createCopyIgnoreMatcher } from "./discover-files.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
 import { narrowLuauRoots, narrowRootToUniverse } from "./narrow-roots.ts";
@@ -14,7 +14,7 @@ vi.mock(import("node:fs"), async () => {
 	return fromAny({ ...memfs.fs, default: memfs.fs });
 });
 
-const MOUNT = normalizeWindowsPath(path.resolve("/repo/out/server"));
+const MOUNT = toPosixRoot(path.resolve("/repo/out/server"));
 
 const NO_COPY_IGNORE = createCopyIgnoreMatcher([]);
 
@@ -94,7 +94,7 @@ describe(narrowRootToUniverse, () => {
 		// separator on the end lands each slice a character in and no probe
 		// matches the universe.
 		expect(
-			narrowRootToUniverse(`${MOUNT}/`, {
+			narrowRootToUniverse(toPosixRoot(`${MOUNT}/`), {
 				isCopyIgnored: NO_COPY_IGNORE,
 				universe: universeOf("modules/ecs/world.luau"),
 			}),
@@ -321,8 +321,8 @@ describe(narrowLuauRoots, () => {
 		).toStrictEqual([
 			{
 				luauRoot: MOUNT,
-				roots: [`${MOUNT}/modules/ecs`],
-				spine: [MOUNT, `${MOUNT}/modules`],
+				roots: [toPosixRoot(`${MOUNT}/modules/ecs`)],
+				spine: [MOUNT, toPosixRoot(`${MOUNT}/modules`)],
 			},
 		]);
 	});
@@ -347,7 +347,7 @@ describe(narrowLuauRoots, () => {
 		seed("modules/ecs/world.luau", "client/a.luau", "client/b.luau", "client/c.luau");
 
 		expect(
-			narrowLuauRoots([`${MOUNT}/`], {
+			narrowLuauRoots([toPosixRoot(`${MOUNT}/`)], {
 				isCopyIgnored: NO_COPY_IGNORE,
 				rojoMounts: new Set([MOUNT]),
 				universe: undefined,
@@ -417,11 +417,15 @@ describe(narrowLuauRoots, () => {
 		expect(
 			narrowLuauRoots([MOUNT], {
 				isCopyIgnored: NO_COPY_IGNORE,
-				rojoMounts: new Set([`${MOUNT}/modules`]),
+				rojoMounts: new Set([toPosixRoot(`${MOUNT}/modules`)]),
 				universe: universeOf("modules/ecs/world.luau"),
 			}),
 		).toStrictEqual([
-			{ luauRoot: MOUNT, roots: [`${MOUNT}/modules/ecs`], spine: [`${MOUNT}/modules`] },
+			{
+				luauRoot: MOUNT,
+				roots: [toPosixRoot(`${MOUNT}/modules/ecs`)],
+				spine: [toPosixRoot(`${MOUNT}/modules`)],
+			},
 		]);
 	});
 });

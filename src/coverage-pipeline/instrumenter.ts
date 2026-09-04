@@ -5,7 +5,8 @@ import * as path from "node:path";
 import { luauParser } from "../luau/parser.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { hashBuffer } from "../utils/hash.ts";
-import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, underRoot } from "../utils/normalize-windows-path.ts";
 import type { CollectorResult } from "./coverage-collector.ts";
 import { collectCoverage } from "./coverage-collector.ts";
 import { buildCoverageMap } from "./coverage-map-builder.ts";
@@ -29,7 +30,7 @@ export interface InstrumentRootOptions {
 	 * builds no shadow to keep in step, leaves it out.
 	 */
 	isCopyIgnored?: CopyIgnoreMatcher | undefined;
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	shadowDir: string;
 	/**
 	 * Relative paths the instrumenter must not parse — unchanged files whose
@@ -65,8 +66,8 @@ interface ShadowPathContext {
 
 /** Everything the per-file instrumentation pass captures from its root. */
 interface InstrumentFileContext extends ShadowPathContext {
-	/** POSIX-normalized luauRoot — the first half of every file key. */
-	posixLuauRoot: string;
+	/** The first half of every file key. */
+	luauRoot: PosixRoot;
 	timing: TimingCollector;
 }
 
@@ -85,7 +86,7 @@ export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest
 	const files: CoverageManifest["files"] = {};
 	const context: InstrumentFileContext = {
 		createdDirectories: new Set<string>(),
-		posixLuauRoot: toPosixRoot(luauRoot),
+		luauRoot,
 		shadowDir,
 		timing,
 	};
@@ -110,7 +111,6 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 	const { luauRoot, manifestPath, shadowDir } = options;
 
 	const files = instrumentRoot(options);
-	const posixLuauRoot = toPosixRoot(luauRoot);
 
 	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
@@ -118,7 +118,7 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 		files,
 		generatedAt: generatedAtDate.toISOString(),
 		instrumenterVersion: INSTRUMENTER_VERSION,
-		luauRoots: [posixLuauRoot],
+		luauRoots: [luauRoot],
 		nonInstrumentedFiles: {},
 		shadowDir: normalizeWindowsPath(shadowDir),
 		version: MANIFEST_VERSION,
@@ -206,12 +206,12 @@ function prepareTwinPath(
  */
 function instrumentFile(
 	relativePath: string,
-	{ createdDirectories, posixLuauRoot, shadowDir, timing }: InstrumentFileContext,
+	{ createdDirectories, luauRoot, shadowDir, timing }: InstrumentFileContext,
 ): InstrumentedFileRecord {
 	// The cross-machine join key: the same string is written to the manifest
 	// record below and baked into the instrumented preamble by `insertProbes`,
 	// so the runtime hit map lines up with the static maps byte-for-byte.
-	const fileKey = normalizeWindowsPath(path.join(posixLuauRoot, relativePath));
+	const fileKey = underRoot(luauRoot, relativePath);
 	const shadowFilePath = path.join(shadowDir, relativePath);
 	// LUAU_EXTENSION is end-anchored, so swapping the suffix on the joined path
 	// is the same as joining the swapped relative path.

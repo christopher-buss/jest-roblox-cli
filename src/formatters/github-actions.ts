@@ -3,10 +3,14 @@ import process from "node:process";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { ExecErrorTestFileResult, JestResult } from "../types/jest-result.ts";
 import { execErrorTitle, hasExecError } from "../types/jest-result.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import {
+	normalizeWindowsPath,
+	relativeToRoot,
+	toPosixRoot,
+} from "../utils/normalize-windows-path.ts";
 
 const SEPARATOR = " · ";
-const TRAILING_SLASH = /\/$/;
 
 export interface GitHubActionsFormatterOptions {
 	/**
@@ -82,7 +86,7 @@ interface GitHubActionsOptions {
 	serverUrl?: string | undefined;
 	sha?: string | undefined;
 	sourceMapper?: SourceMapper | undefined;
-	workspace?: string | undefined;
+	workspace?: PosixRoot | undefined;
 }
 
 export function escapeData(value: string): string {
@@ -178,30 +182,26 @@ export function resolveGitHubActionsOptions(
 	sourceMapper: SourceMapper | undefined,
 	environment: Record<string, string | undefined> = process.env,
 ): GitHubActionsOptions {
+	const workspacePath =
+		userOptions.jobSummary?.fileLinks?.workspacePath ?? environment["GITHUB_WORKSPACE"];
 	return {
 		repository:
 			userOptions.jobSummary?.fileLinks?.repository ?? environment["GITHUB_REPOSITORY"],
 		serverUrl: environment["GITHUB_SERVER_URL"],
 		sha: userOptions.jobSummary?.fileLinks?.commitHash ?? environment["GITHUB_SHA"],
 		sourceMapper,
-		workspace:
-			userOptions.jobSummary?.fileLinks?.workspacePath ?? environment["GITHUB_WORKSPACE"],
+		// Canonical once here rather than per annotation: the value is fixed for
+		// the whole run, and every reader of it wants the same spelling.
+		workspace: workspacePath === undefined ? undefined : toPosixRoot(workspacePath),
 	};
 }
 
-function makeRelative(filePath: string, workspace: string | undefined): string {
+function makeRelative(filePath: string, workspace: PosixRoot | undefined): string {
 	if (workspace === undefined) {
 		return filePath;
 	}
 
-	const normalized = normalizeWindowsPath(filePath);
-	const normalizedWorkspace = normalizeWindowsPath(workspace).replace(TRAILING_SLASH, "");
-
-	if (normalized.startsWith(`${normalizedWorkspace}/`)) {
-		return normalized.slice(normalizedWorkspace.length + 1);
-	}
-
-	return filePath;
+	return relativeToRoot(workspace, normalizeWindowsPath(filePath)) ?? filePath;
 }
 
 function collectExecErrorAnnotation(

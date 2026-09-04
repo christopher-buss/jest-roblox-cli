@@ -14,7 +14,7 @@ import type {
 import { MANIFEST_VERSION } from "../../../src/coverage-pipeline/manifest.ts";
 import { mapCoverageToTypeScript } from "../../../src/coverage-pipeline/mapper.ts";
 import type { RawCoverageData } from "../../../src/coverage-pipeline/types.ts";
-import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../../../src/utils/normalize-windows-path.ts";
 import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
 const normalize = normalizeWindowsPath;
@@ -88,7 +88,7 @@ function buildCoverageResult(coverage?: RawCoverageData) {
 	const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 	const fixtureOut = path.join(fixtureRoot, "out");
 	const files = instrumentRoot({
-		luauRoot: fixtureOut,
+		luauRoot: toPosixRoot(fixtureOut),
 		shadowDir: shadowDirectory,
 	});
 	const manifest = buildManifest(files, fixtureOut, shadowDirectory);

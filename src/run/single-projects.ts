@@ -11,7 +11,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { resolveLuauRoots } from "../coverage-pipeline/prepare.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
-import { toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { TYPE_TEST_PATTERN } from "./discovery.ts";
 
 /**
@@ -21,14 +21,12 @@ import { TYPE_TEST_PATTERN } from "./discovery.ts";
  * two roots resolving to the same mount yield one entry.
  */
 export function deriveProjectMounts(
-	luauRoots: ReadonlyArray<string>,
+	luauRoots: ReadonlyArray<PosixRoot>,
 	rojoTree: RojoTreeNode,
 ): Array<Mount> {
-	const mounts = luauRoots.flatMap((luauRoot) => {
-		// `findInTree` does an exact string match. Thus a root written
-		// "out/shared/" or "./out/shared" must first become "out/shared", or
-		// it does not find the mount that it names.
-		const fsPath = toPosixRoot(luauRoot);
+	// `findInTree` does an exact string match, which is why the roots arrive
+	// canonical: "out/shared/" and "./out/shared" find no mount.
+	const mounts = luauRoots.flatMap((fsPath) => {
 		const dataModelPath = findInTree(rojoTree, fsPath, "");
 		return dataModelPath !== undefined ? [{ dataModelPath, fsPath }] : [];
 	});

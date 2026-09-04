@@ -6,6 +6,7 @@ import { ConfigError } from "../config/errors.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
 import { deriveCoverageFromIncludes } from "../coverage-pipeline/derive-coverage-from.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { buildImplicitProject, deriveProjectMounts } from "./single-projects.ts";
 
 vi.mock(import("../coverage-pipeline/prepare.ts"), async (importOriginal) => {
@@ -33,7 +34,9 @@ describe(deriveProjectMounts, () => {
 	it("should map each luau root to its Rojo mount", () => {
 		expect.assertions(1);
 
-		expect(deriveProjectMounts(["out/shared", "out/server"], tree)).toStrictEqual([
+		expect(
+			deriveProjectMounts(["out/shared", "out/server"].map(toPosixRoot), tree),
+		).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" },
 			{ dataModelPath: "ServerScriptService/Server", fsPath: "out/server" },
 		]);
@@ -42,36 +45,17 @@ describe(deriveProjectMounts, () => {
 	it("should skip luau roots that do not map to the rojo tree", () => {
 		expect.assertions(1);
 
-		expect(deriveProjectMounts(["out/shared", "out/missing"], tree)).toStrictEqual([
-			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" },
-		]);
+		expect(
+			deriveProjectMounts(["out/shared", "out/missing"].map(toPosixRoot), tree),
+		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" }]);
 	});
 
 	it("should dedupe roots that resolve to the same DataModel path", () => {
 		expect.assertions(1);
 
-		expect(deriveProjectMounts(["out/shared", "out/shared"], tree)).toStrictEqual([
-			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" },
-		]);
-	});
-
-	it("should strip a trailing separator before the rojo lookup", () => {
-		expect.assertions(1);
-
-		expect(deriveProjectMounts(["out/shared/"], tree)).toStrictEqual([
-			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" },
-		]);
-	});
-
-	// The lookup is an exact match against `$path`. A root that keeps its
-	// leading `./` does not find the mount, and the run then reports that the
-	// rojo project mounts none of its output.
-	it("should strip a leading current-directory prefix before the rojo lookup", () => {
-		expect.assertions(1);
-
-		expect(deriveProjectMounts(["./out/shared"], tree)).toStrictEqual([
-			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" },
-		]);
+		expect(
+			deriveProjectMounts(["out/shared", "out/shared"].map(toPosixRoot), tree),
+		).toStrictEqual([{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/shared" }]);
 	});
 });
 
@@ -79,7 +63,7 @@ describe(buildImplicitProject, () => {
 	it("should build one project from the mapped luau roots", () => {
 		expect.assertions(2);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"].map(toPosixRoot));
 
 		const config = makeConfig({ displayName: "shared" });
 		const { config: projectConfig, ...rest } = buildImplicitProject(config, tree);
@@ -101,7 +85,7 @@ describe(buildImplicitProject, () => {
 	it("should exclude type-test (-d) globs from include so a coverage run does not throw", () => {
 		expect.assertions(3);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"].map(toPosixRoot));
 
 		const project = buildImplicitProject(
 			makeConfig({ testMatch: DEFAULT_CONFIG.testMatch }),
@@ -119,7 +103,7 @@ describe(buildImplicitProject, () => {
 	it("should qualify a bare testMatch glob with **/ so it matches at any depth", () => {
 		expect.assertions(1);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"].map(toPosixRoot));
 
 		expect(
 			buildImplicitProject(makeConfig({ testMatch: ["*.spec.ts"] }), tree).testMatch,
@@ -129,7 +113,7 @@ describe(buildImplicitProject, () => {
 	it("should forward the config's exclude globs", () => {
 		expect.assertions(1);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"].map(toPosixRoot));
 
 		expect(
 			buildImplicitProject(makeConfig({ exclude: ["**/*.gen.spec.ts"] }), tree).exclude,
@@ -139,7 +123,7 @@ describe(buildImplicitProject, () => {
 	it("should leave outDir undefined when the project spans multiple mounts", () => {
 		expect.assertions(2);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared", "out/server"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared", "out/server"].map(toPosixRoot));
 
 		const project = buildImplicitProject(makeConfig({ displayName: "all" }), tree);
 
@@ -153,7 +137,7 @@ describe(buildImplicitProject, () => {
 	it("should derive displayName from rootDir when none is configured", () => {
 		expect.assertions(1);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"].map(toPosixRoot));
 
 		expect(
 			buildImplicitProject(makeConfig({ rootDir: "/path/to/my-pkg/" }), tree).displayName,
@@ -163,7 +147,7 @@ describe(buildImplicitProject, () => {
 	it("should fall back to rootDir for an empty-string displayName", () => {
 		expect.assertions(1);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"].map(toPosixRoot));
 
 		expect(
 			buildImplicitProject(makeConfig({ displayName: "", rootDir: "/x/pkg" }), tree)
@@ -174,7 +158,7 @@ describe(buildImplicitProject, () => {
 	it("should carry the name and color from a DisplayName object", () => {
 		expect.assertions(2);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"].map(toPosixRoot));
 
 		const project = buildImplicitProject(
 			makeConfig({ displayName: { name: "tinted", color: "magenta" } }),
@@ -188,7 +172,7 @@ describe(buildImplicitProject, () => {
 	it("should throw a ConfigError when no luau root maps to the rojo tree", () => {
 		expect.assertions(1);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/missing"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/missing"].map(toPosixRoot));
 
 		expect(() => buildImplicitProject(makeConfig(), tree)).toThrow(ConfigError);
 	});
@@ -243,7 +227,7 @@ describe(buildImplicitProject, () => {
 	it("should leave typecheck unset when testMatch carries no -d globs", () => {
 		expect.assertions(1);
 
-		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"]);
+		vi.mocked(resolveLuauRoots).mockReturnValue(["out/shared"].map(toPosixRoot));
 
 		expect(buildImplicitProject(makeConfig(), tree).typecheck).toBeUndefined();
 	});

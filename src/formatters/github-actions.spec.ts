@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import {
 	EXEC_ERROR_RESULT,
 	FAILING_RESULT,
@@ -284,12 +285,15 @@ describe(collectAnnotations, () => {
 		};
 
 		const annotations = collectAnnotations(result, {
-			workspace: "/home/runner/work/project",
+			workspace: toPosixRoot("/home/runner/work/project"),
 		});
 
 		expect(annotations[0]!.file).toBe("src/test.spec.ts");
 	});
 
+	// The workspace is canonicalized where the options are resolved, so a
+	// trailing slash is answered once for every annotation rather than per
+	// call.
 	it("should normalize a trailing slash in GITHUB_WORKSPACE", () => {
 		expect.assertions(1);
 
@@ -302,10 +306,11 @@ describe(collectAnnotations, () => {
 				},
 			],
 		};
+		const options = resolveGitHubActionsOptions({}, undefined, {
+			GITHUB_WORKSPACE: "/home/runner/work/project/",
+		});
 
-		expect(
-			collectAnnotations(result, { workspace: "/home/runner/work/project/" })[0]!.file,
-		).toBe("src/test.spec.ts");
+		expect(collectAnnotations(result, options)[0]!.file).toBe("src/test.spec.ts");
 	});
 
 	it("should preserve an absolute path when GITHUB_WORKSPACE is unavailable", () => {
@@ -371,7 +376,7 @@ describe(formatJobSummary, () => {
 			repository: "owner/repo",
 			serverUrl: "https://github.com",
 			sha: "abc123",
-			workspace: "/work",
+			workspace: toPosixRoot("/work"),
 		});
 
 		expect(summary).toContain("https://github.com/owner/repo/blob/abc123/src/player.spec.ts");
@@ -579,7 +584,7 @@ describe(resolveGitHubActionsOptions, () => {
 		expect(result.repository).toBe("owner/repo");
 		expect(result.serverUrl).toBe("https://github.com");
 		expect(result.sha).toBe("abc123");
-		expect(result.workspace).toBe("/home/runner/work");
+		expect(result.workspace).toBe(toPosixRoot("/home/runner/work"));
 	});
 
 	it("should override env vars with user options", () => {
@@ -602,7 +607,7 @@ describe(resolveGitHubActionsOptions, () => {
 		);
 
 		expect(result.repository).toBe("custom/repo");
-		expect(result.workspace).toBe("/custom/path");
+		expect(result.workspace).toBe(toPosixRoot("/custom/path"));
 	});
 
 	it("should pass through sourceMapper", () => {

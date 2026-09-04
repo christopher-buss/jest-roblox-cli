@@ -1,9 +1,9 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import picomatch from "picomatch";
 
 import { hashString } from "../utils/hash.ts";
-import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import { underRoot } from "../utils/normalize-windows-path.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
 
 /**
@@ -104,32 +104,16 @@ export function isSkippedDirectory(name: string): boolean {
 /**
  * Shared directory walker. Skips node_modules and dot-prefixed directories,
  * plus anything `filter.skip` claims.
+ *
+ * Every name it reports is built from the entry names it descended through, so
+ * how the caller spelled the root never reaches the answer.
  */
 export function walkLuauDirectory(
 	directory: string,
-	relativeTo: string,
 	filter: WalkFilter,
 	results: Array<string>,
 ): void {
-	const entries = fs.readdirSync(directory, { withFileTypes: true });
-	for (const entry of entries) {
-		const fullPath = normalizeWindowsPath(path.join(directory, entry.name));
-		const relative = fullPath.slice(relativeTo.length + 1);
-		if (filter.skip?.(relative) === true) {
-			continue;
-		}
-
-		if (entry.isDirectory()) {
-			if (isSkippedDirectory(entry.name)) {
-				continue;
-			}
-
-			filter.onDirectory?.(relative);
-			walkLuauDirectory(fullPath, relativeTo, filter, results);
-		} else if (filter.accept(entry.name)) {
-			results.push(relative);
-		}
-	}
+	walkFrom(directory, "", filter, results);
 }
 
 /**
@@ -146,17 +130,11 @@ export function walkLuauDirectory(
  * @returns Discovered files split by instrumentability.
  */
 export function discoverRootFiles(
-	luauRoot: string,
+	luauRoot: PosixRoot,
 	{ isCopyIgnored, universe }: DiscoverRootFilesOptions = {},
 ): RootFiles {
-	const posixRoot = toPosixRoot(luauRoot);
 	const discovered: Array<string> = [];
-	walkLuauDirectory(
-		posixRoot,
-		posixRoot,
-		{ accept: isInstrumentableFile, skip: isCopyIgnored },
-		discovered,
-	);
+	walkLuauDirectory(luauRoot, { accept: isInstrumentableFile, skip: isCopyIgnored }, discovered);
 
 	if (universe === undefined) {
 		return { excluded: new Set(), instrumentable: new Set(discovered) };
@@ -165,9 +143,35 @@ export function discoverRootFiles(
 	const excluded = new Set<string>();
 	const instrumentable = new Set<string>();
 	for (const relativePath of discovered) {
-		const isInUniverse = universe.includes(`${posixRoot}/${relativePath}`);
+		const isInUniverse = universe.includes(underRoot(luauRoot, relativePath));
 		(isInUniverse ? instrumentable : excluded).add(relativePath);
 	}
 
 	return { excluded, instrumentable };
+}
+
+function walkFrom(
+	directory: string,
+	relativePrefix: string,
+	filter: WalkFilter,
+	results: Array<string>,
+): void {
+	const entries = fs.readdirSync(directory, { withFileTypes: true });
+	for (const entry of entries) {
+		const relative = relativePrefix + entry.name;
+		if (filter.skip?.(relative) === true) {
+			continue;
+		}
+
+		if (entry.isDirectory()) {
+			if (isSkippedDirectory(entry.name)) {
+				continue;
+			}
+
+			filter.onDirectory?.(relative);
+			walkFrom(`${directory}/${entry.name}`, `${relative}/`, filter, results);
+		} else if (filter.accept(entry.name)) {
+			results.push(relative);
+		}
+	}
 }

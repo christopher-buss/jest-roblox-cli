@@ -11,7 +11,7 @@ import { buildPlaceAsync } from "../src/staging/place-builder.ts";
 import type { PackageDescriptor } from "../src/staging/synthesizer.ts";
 import { synthesize } from "../src/staging/synthesizer.ts";
 import type { RojoTreeNode } from "../src/types/rojo.ts";
-import { normalizeWindowsPath } from "../src/utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../src/utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../src/utils/rojo-builder.ts";
 
 function rojoOnPath(): boolean {
@@ -432,10 +432,10 @@ describe("synthesizer + rojo build integration", () => {
 				isCopyIgnored: createCopyIgnoreMatcher([]),
 				narrowed: [
 					{
-						luauRoot: "out",
-						roots: ["out/shared/modules/ecs"],
+						luauRoot: toPosixRoot("out"),
+						roots: [toPosixRoot("out/shared/modules/ecs")],
 						spine: resolveSpineDirectories(
-							["out/shared/modules/ecs"],
+							[toPosixRoot("out/shared/modules/ecs")],
 							new Set(["out"]),
 						),
 					},
@@ -452,7 +452,10 @@ describe("synthesizer + rojo build integration", () => {
 					{
 						name: "@halcyon/foo",
 						coverageRoots: [
-							{ luauRoot: "out/shared/modules/ecs", shadowDir: shadowDirectory },
+							{
+								luauRoot: toPosixRoot("out/shared/modules/ecs"),
+								shadowDir: shadowDirectory,
+							},
 						],
 						coverageSpine: spine.directories,
 						packageDirectory,

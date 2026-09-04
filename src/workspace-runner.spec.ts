@@ -28,6 +28,7 @@ import { buildPlaceAsync } from "./staging/place-builder.ts";
 import { createTimingCollector } from "./timing/orchestration-collector.ts";
 import { runTypecheckAsync } from "./typecheck/runner.ts";
 import type { JestResult } from "./types/jest-result.ts";
+import { toPosixRoot } from "./utils/normalize-windows-path.ts";
 import type { WorkspaceProjectResult } from "./workspace-runner.ts";
 import { runWorkspaceAsync } from "./workspace-runner.ts";
 
@@ -178,7 +179,7 @@ async function runWorkspaceResultsAsync(
 
 function coverageEntry(packageName: string): WorkspacePackageCoverage {
 	return {
-		coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+		coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 		coverageSpine: [],
 		manifest: {
 			buildId: "test-build-id",
@@ -2180,7 +2181,7 @@ describe(runWorkspaceAsync, () => {
 				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
-					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
@@ -2249,7 +2250,7 @@ describe(runWorkspaceAsync, () => {
 				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
-					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
@@ -2326,7 +2327,7 @@ describe(runWorkspaceAsync, () => {
 				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
-					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
@@ -2386,7 +2387,7 @@ describe(runWorkspaceAsync, () => {
 				await import("./coverage-pipeline/workspace-prepare.ts");
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
-					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
 					manifest: {
 						buildId: "test-build-id",
@@ -2507,7 +2508,7 @@ describe(runWorkspaceAsync, () => {
 			};
 			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
 				{
-					coverageRoots: [{ luauRoot: "src", shadowDir: "/shadow/src" }],
+					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
 					manifest,
 					manifestPath: "/shadow/coverage-manifest.json",

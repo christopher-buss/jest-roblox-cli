@@ -6,6 +6,7 @@ import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12
 import { assert, describe, expect, it, vi } from "vitest";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { ConfigError } from "./errors.ts";
 import {
 	createFsClassifier,
@@ -259,7 +260,7 @@ describe(mapFsRootToDataModel, () => {
 	it("should map outDir to DataModel path via Rojo tree", () => {
 		expect.assertions(1);
 
-		const result = mapFsRootToDataModel("out/client", simpleRojoTree);
+		const result = mapFsRootToDataModel(toPosixRoot("out/client"), simpleRojoTree);
 
 		expect(result).toBe("ReplicatedStorage/client");
 	});
@@ -267,20 +268,9 @@ describe(mapFsRootToDataModel, () => {
 	it("should map server outDir to DataModel path", () => {
 		expect.assertions(1);
 
-		const result = mapFsRootToDataModel("out/server", simpleRojoTree);
+		const result = mapFsRootToDataModel(toPosixRoot("out/server"), simpleRojoTree);
 
 		expect(result).toBe("ServerScriptService/server");
-	});
-
-	// Multi mode uses this function where single mode uses
-	// `deriveProjectMounts`. Both do an exact match against `$path`, thus both
-	// must accept the same spellings of the same directory.
-	it("should map an outDir written with a ./ prefix", () => {
-		expect.assertions(1);
-
-		const result = mapFsRootToDataModel("./out/client", simpleRojoTree);
-
-		expect(result).toBe("ReplicatedStorage/client");
 	});
 
 	it("should handle nested tree structures", () => {
@@ -295,7 +285,7 @@ describe(mapFsRootToDataModel, () => {
 			},
 		};
 
-		const result = mapFsRootToDataModel("out/shared/lib", nestedTree);
+		const result = mapFsRootToDataModel(toPosixRoot("out/shared/lib"), nestedTree);
 
 		expect(result).toBe("ReplicatedStorage/shared/lib");
 	});
@@ -303,7 +293,7 @@ describe(mapFsRootToDataModel, () => {
 	it("should handle path nested under a $path entry", () => {
 		expect.assertions(1);
 
-		const result = mapFsRootToDataModel("out/client/ui", simpleRojoTree);
+		const result = mapFsRootToDataModel(toPosixRoot("out/client/ui"), simpleRojoTree);
 
 		expect(result).toBe("ReplicatedStorage/client/ui");
 	});
@@ -311,8 +301,10 @@ describe(mapFsRootToDataModel, () => {
 	it("should throw ConfigError when no mapping found", () => {
 		expect.assertions(2);
 
-		expect(() => mapFsRootToDataModel("out/unknown", simpleRojoTree)).toThrow(ConfigError);
-		expect(() => mapFsRootToDataModel("out/unknown", simpleRojoTree)).toThrow(
+		expect(() => mapFsRootToDataModel(toPosixRoot("out/unknown"), simpleRojoTree)).toThrow(
+			ConfigError,
+		);
+		expect(() => mapFsRootToDataModel(toPosixRoot("out/unknown"), simpleRojoTree)).toThrow(
 			/No Rojo tree mapping found for path: out\/unknown\n\nAvailable \$path entries: out\/client, out\/server/,
 		);
 	});
@@ -322,7 +314,7 @@ describe(mapFsRootToDataModel, () => {
 
 		let caught: unknown;
 		try {
-			mapFsRootToDataModel("src/client", simpleRojoTree);
+			mapFsRootToDataModel(toPosixRoot("src/client"), simpleRojoTree);
 		} catch (err) {
 			caught = err;
 		}
@@ -337,7 +329,7 @@ describe(mapFsRootToDataModel, () => {
 
 		let caught: unknown;
 		try {
-			mapFsRootToDataModel("out/unknown", simpleRojoTree);
+			mapFsRootToDataModel(toPosixRoot("out/unknown"), simpleRojoTree);
 		} catch (err) {
 			caught = err;
 		}
@@ -353,14 +345,14 @@ describe(mapFsRootToDataModel, () => {
 		const emptyTree: RojoTreeNode = { $className: "DataModel" };
 
 		expect(() => {
-			mapFsRootToDataModel("out/foo", emptyTree);
+			mapFsRootToDataModel(toPosixRoot("out/foo"), emptyTree);
 		}).toThrowWithMessage(Error, "No Rojo tree mapping found for path: out/foo");
 	});
 
 	it("should strip trailing slash before lookup", () => {
 		expect.assertions(1);
 
-		const result = mapFsRootToDataModel("out/client/", simpleRojoTree);
+		const result = mapFsRootToDataModel(toPosixRoot("out/client/"), simpleRojoTree);
 
 		expect(result).toBe("ReplicatedStorage/client");
 	});
@@ -375,7 +367,7 @@ describe(mapFsRootToDataModel, () => {
 			},
 		};
 
-		const result = mapFsRootToDataModel("shared", tree);
+		const result = mapFsRootToDataModel(toPosixRoot("shared"), tree);
 
 		expect(result).toBe("ReplicatedStorage/shared");
 	});

@@ -13,6 +13,7 @@ import {
 } from "../config/stubs.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import { stageWorkspaceStubs } from "./stub-staging.ts";
 import type { PendingEntry } from "./test-selection.ts";
@@ -69,8 +70,8 @@ describe(stageWorkspaceStubs, () => {
 		const server = makeProject("server");
 		const foo = makeContext("@halcyon/foo", [client, dormant]);
 		const bar = makeContext("@halcyon/bar", [server]);
-		const coverageRoots = [{ luauRoot: "src", shadowDir: "/shadow/foo" }];
-		const coverageSpine = [{ luauRoot: ".", shadowDir: "/shadow/.spine" }];
+		const coverageRoots = [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/foo" }];
+		const coverageSpine = [{ luauRoot: toPosixRoot("."), shadowDir: "/shadow/.spine" }];
 		const coverageByPackage = new Map<string, WorkspacePackageCoverage>([
 			["@halcyon/foo", fromAny({ coverageRoots, coverageSpine })],
 		]);

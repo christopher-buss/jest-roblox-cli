@@ -16,7 +16,7 @@ import { MANIFEST_VERSION } from "../../../src/coverage-pipeline/manifest.ts";
 import { mapCoverageToTypeScript } from "../../../src/coverage-pipeline/mapper.ts";
 import { generateReports } from "../../../src/coverage-pipeline/reporter.ts";
 import type { RawCoverageData } from "../../../src/coverage-pipeline/types.ts";
-import { normalizeWindowsPath } from "../../../src/utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../../../src/utils/normalize-windows-path.ts";
 import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
 const normalize = normalizeWindowsPath;
@@ -118,7 +118,10 @@ describe("coverage pipeline (mapper -> istanbul json reporter)", { timeout: 30_0
 		const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 		const fixtureOut = path.join(fixtureRoot, "out");
 
-		const files = instrumentRoot({ luauRoot: fixtureOut, shadowDir: shadowDirectory });
+		const files = instrumentRoot({
+			luauRoot: toPosixRoot(fixtureOut),
+			shadowDir: shadowDirectory,
+		});
 		const manifest = buildManifest(files, fixtureOut, shadowDirectory);
 		const coverageData = buildSyntheticCoverage(files);
 

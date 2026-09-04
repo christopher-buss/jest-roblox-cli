@@ -1,6 +1,9 @@
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+
+/** One source root and the instrumented shadow tree standing in for it. */
 export interface CoverageRoot {
-	/** Normalized path of the source root (no trailing slash). */
-	luauRoot: string;
+	/** The source root, in the one spelling `toPosixRoot` gives it. */
+	luauRoot: PosixRoot;
 	/**
 	 * Path the shadow directory lives at (caller picks absolute vs relocated).
 	 */

@@ -8,7 +8,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
-import { dropDriveLetter, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import {
+	dropDriveLetter,
+	normalizeWindowsPath,
+	toPosixRoot,
+} from "../utils/normalize-windows-path.ts";
 import { synthesize } from "./synthesizer.ts";
 
 vi.mock(import("node:fs"), async () => {
@@ -2236,7 +2240,7 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					coverageRoots: [{ luauRoot: "out-test", shadowDir: shadowOut }],
+					coverageRoots: [{ luauRoot: toPosixRoot("out-test"), shadowDir: shadowOut }],
 					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 					stubMounts: [
@@ -2379,7 +2383,7 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					coverageRoots: [{ luauRoot: "out", shadowDir: shadowOut }],
+					coverageRoots: [{ luauRoot: toPosixRoot("out"), shadowDir: shadowOut }],
 					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 				},
@@ -2437,7 +2441,7 @@ describe(synthesize, () => {
 				},
 				{
 					name: "@halcyon/foo",
-					coverageRoots: [{ luauRoot: "out", shadowDir: fooShadow }],
+					coverageRoots: [{ luauRoot: toPosixRoot("out"), shadowDir: fooShadow }],
 					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 				},
@@ -2491,7 +2495,7 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					coverageRoots: [{ luauRoot: "out", shadowDir: shadowOut }],
+					coverageRoots: [{ luauRoot: toPosixRoot("out"), shadowDir: shadowOut }],
 					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 				},
@@ -2535,7 +2539,7 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					coverageRoots: [{ luauRoot: "out", shadowDir: shadowOut }],
+					coverageRoots: [{ luauRoot: toPosixRoot("out"), shadowDir: shadowOut }],
 					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 				},
@@ -2580,7 +2584,7 @@ describe(synthesize, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					coverageRoots: [{ luauRoot: "out", shadowDir: shadowOut }],
+					coverageRoots: [{ luauRoot: toPosixRoot("out"), shadowDir: shadowOut }],
 					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 				},
@@ -3029,7 +3033,9 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						coverageRoots: [{ luauRoot: "src", shadowDir: shadowDirectory }],
+						coverageRoots: [
+							{ luauRoot: toPosixRoot("src"), shadowDir: shadowDirectory },
+						],
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -3066,7 +3072,9 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						coverageRoots: [{ luauRoot: "out", shadowDir: shadowDirectory }],
+						coverageRoots: [
+							{ luauRoot: toPosixRoot("out"), shadowDir: shadowDirectory },
+						],
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: subProject,
 					},
@@ -3105,7 +3113,9 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						coverageRoots: [{ luauRoot: "out", shadowDir: shadowDirectory }],
+						coverageRoots: [
+							{ luauRoot: toPosixRoot("out"), shadowDir: shadowDirectory },
+						],
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: subProject,
 					},
@@ -3150,7 +3160,9 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						coverageRoots: [{ luauRoot: "src/server", shadowDir: shadowDirectory }],
+						coverageRoots: [
+							{ luauRoot: toPosixRoot("src/server"), shadowDir: shadowDirectory },
+						],
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -3191,7 +3203,9 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						coverageRoots: [{ luauRoot: "src", shadowDir: shadowDirectory }],
+						coverageRoots: [
+							{ luauRoot: toPosixRoot("src"), shadowDir: shadowDirectory },
+						],
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -3225,11 +3239,11 @@ describe(synthesize, () => {
 						name: "@halcyon/foo",
 						coverageRoots: [
 							{
-								luauRoot: "elsewhere/client",
+								luauRoot: toPosixRoot("elsewhere/client"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/elsewhere/client"),
 							},
 							{
-								luauRoot: "elsewhere/server",
+								luauRoot: toPosixRoot("elsewhere/server"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/elsewhere/server"),
 							},
 						],
@@ -3565,8 +3579,12 @@ describe(synthesize, () => {
 				packages: [
 					{
 						name: "@halcyon/foo",
-						coverageRoots: [{ luauRoot: "src/server", shadowDir: shadowDirectory }],
-						coverageSpine: [{ luauRoot: "src", shadowDir: spineDirectory }],
+						coverageRoots: [
+							{ luauRoot: toPosixRoot("src/server"), shadowDir: shadowDirectory },
+						],
+						coverageSpine: [
+							{ luauRoot: toPosixRoot("src"), shadowDir: spineDirectory },
+						],
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -3610,13 +3628,13 @@ describe(synthesize, () => {
 						name: "@halcyon/foo",
 						coverageRoots: [
 							{
-								luauRoot: "src/server",
+								luauRoot: toPosixRoot("src/server"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/src/server"),
 							},
 						],
 						coverageSpine: [
 							{
-								luauRoot: "src",
+								luauRoot: toPosixRoot("src"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src"),
 							},
 						],
@@ -3658,13 +3676,13 @@ describe(synthesize, () => {
 						name: "@halcyon/foo",
 						coverageRoots: [
 							{
-								luauRoot: "src/server",
+								luauRoot: toPosixRoot("src/server"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/src/server"),
 							},
 						],
 						coverageSpine: [
 							{
-								luauRoot: "src",
+								luauRoot: toPosixRoot("src"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src"),
 							},
 						],
@@ -3701,15 +3719,18 @@ describe(synthesize, () => {
 					{
 						name: "@halcyon/foo",
 						coverageRoots: [
-							{ luauRoot: "src/modules/ecs", shadowDir: shadowDirectory },
+							{
+								luauRoot: toPosixRoot("src/modules/ecs"),
+								shadowDir: shadowDirectory,
+							},
 						],
 						coverageSpine: [
 							{
-								luauRoot: "src",
+								luauRoot: toPosixRoot("src"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src"),
 							},
 							{
-								luauRoot: "src/modules",
+								luauRoot: toPosixRoot("src/modules"),
 								shadowDir: path.join(
 									FOO_DIR,
 									".jest-roblox/coverage/.spine/src/modules",
@@ -3763,13 +3784,13 @@ describe(synthesize, () => {
 						name: "@halcyon/foo",
 						coverageRoots: [
 							{
-								luauRoot: "src/server",
+								luauRoot: toPosixRoot("src/server"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/src/server"),
 							},
 						],
 						coverageSpine: [
 							{
-								luauRoot: "src",
+								luauRoot: toPosixRoot("src"),
 								shadowDir: path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src"),
 							},
 						],

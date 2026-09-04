@@ -10,7 +10,8 @@ import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { atomicWrite } from "../utils/atomic-write.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestArtifact } from "./build-manifest.ts";
 import { BUILD_MANIFEST_FILE, emitBuildManifest, toBuildManifestFiles } from "./build-manifest.ts";
 import type { CopyIgnoreMatcher } from "./discover-files.ts";
@@ -90,7 +91,7 @@ export interface WorkspaceCoverageRoot {
 	/**
 	 * Path relative to the package directory (matches what rojo $path uses).
 	 */
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	/** Absolute, POSIX-normalized path to the instrumented shadow directory. */
 	shadowDir: string;
 }
@@ -158,7 +159,7 @@ interface PackageIncrementalOptions {
 	/** Digest of this package's copy-ignore list, for the incremental gate. */
 	copyIgnoreHash: string;
 	descriptor: WorkspacePackageDescriptor;
-	luauRoots: Array<string>;
+	luauRoots: Array<PosixRoot>;
 	/** Each mount with the roots the universe narrowed it to. */
 	narrowed: Array<NarrowedMount>;
 	packageShadowRoot: string;
@@ -491,15 +492,15 @@ function rejectRoot({ descriptor, mounts, rawRoot }: RootCheck): string | undefi
 function discoverFromLuauRoots(
 	{ descriptor, matchesIgnored, tree }: DiscoverRootsOptions,
 	luauRoots: Array<string>,
-): Array<string> {
+): Array<PosixRoot> {
 	const mounts = collectRojoMounts(tree, path.dirname(descriptor.rojoProjectPath));
 	const seen = new Set<string>();
-	const result: Array<string> = [];
+	const result: Array<PosixRoot> = [];
 	for (const rawRoot of luauRoots) {
 		const absolute = path.resolve(descriptor.packageDirectory, rawRoot);
 		// Canonical, so two spellings of one directory dedupe to one root and
 		// the shadow tree mirrors it at the path the manifest names.
-		const relative = normalizeWindowsPath(path.relative(descriptor.packageDirectory, absolute));
+		const relative = toPosixRoot(path.relative(descriptor.packageDirectory, absolute));
 		if (seen.has(relative)) {
 			continue;
 		}
@@ -584,12 +585,12 @@ function narrowPackageRoots({
 	ignore,
 	universe,
 }: NarrowPackageOptions): Array<NarrowedMount> {
-	function toAbsolute(relative: string): string {
-		return normalizeWindowsPath(path.join(descriptor.packageDirectory, relative));
+	function toAbsolute(relative: string): PosixRoot {
+		return toPosixRoot(path.join(descriptor.packageDirectory, relative));
 	}
 
-	function toRelative(absolute: string): string {
-		return normalizeWindowsPath(path.relative(descriptor.packageDirectory, absolute));
+	function toRelative(absolute: string): PosixRoot {
+		return toPosixRoot(path.relative(descriptor.packageDirectory, absolute));
 	}
 
 	const tree = resolvePackageTree(descriptor);
@@ -717,7 +718,7 @@ function instrumentOneRoot(
 ): ShadowRootResult {
 	return prepareShadowRoot({
 		isCopyIgnored,
-		luauRoot: normalizeWindowsPath(path.join(descriptor.packageDirectory, relativeLuauRoot)),
+		luauRoot: toPosixRoot(path.join(descriptor.packageDirectory, relativeLuauRoot)),
 		previousManifest,
 		shadowDir: normalizeWindowsPath(path.join(packageShadowRoot, relativeLuauRoot)),
 		timing,

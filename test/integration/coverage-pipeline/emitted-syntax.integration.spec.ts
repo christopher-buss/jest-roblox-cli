@@ -6,6 +6,7 @@ import { assert, describe, expect, it, onTestFinished } from "vitest";
 import { readCoverageMap } from "../../../src/coverage-pipeline/coverage-map.ts";
 import { instrumentRoot } from "../../../src/coverage-pipeline/instrumenter.ts";
 import { luauParser } from "../../../src/luau/parser.ts";
+import { toPosixRoot } from "../../../src/utils/normalize-windows-path.ts";
 
 interface InstrumentedSource {
 	/** Arm count per branch, in the order the collector recorded them. */
@@ -40,7 +41,7 @@ function instrumentSource(source: string): InstrumentedSource {
 	const shadowDirectory = createTemporaryDirectory("jest-roblox-emitted-shadow-");
 	writeFileSync(path.join(luauRoot, "module.luau"), source);
 
-	const files = instrumentRoot({ luauRoot, shadowDir: shadowDirectory });
+	const files = instrumentRoot({ luauRoot: toPosixRoot(luauRoot), shadowDir: shadowDirectory });
 	const record = Object.values(files)[0]!;
 
 	const coverageMap = readCoverageMap(record.coverageMapPath);

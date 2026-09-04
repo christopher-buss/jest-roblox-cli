@@ -16,7 +16,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { createStubBake, generateProjectStubs } from "../config/stubs.ts";
 import type { RojoProject } from "../types/rojo.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
 import { BUILD_MANIFEST_VERSION } from "./build-manifest.ts";
 import {
@@ -203,6 +203,38 @@ describe(prepareCoverageAsync, () => {
 			);
 		});
 
+		// `path.isAbsolute` answers for the host it runs on, so a drive-letter
+		// root reads as a plain relative filename on Linux: the same config
+		// throws on a developer's Windows machine and instruments a root
+		// outside the package in CI.
+		it("should throw for a drive-letter root on any host", async () => {
+			expect.assertions(1);
+
+			seedFilesystem({ luauRoot: "D:/abs/out" });
+			await setupMocksAsync();
+			const config = makeConfig({ luauRoots: ["D:/abs/out"] });
+
+			await expect(prepareCoverageAsync(config)).rejects.toThrowWithMessage(
+				Error,
+				"luauRoots must be relative paths, got absolute path. " +
+					"Set a relative outDir in tsconfig or relative luauRoots in config.",
+			);
+		});
+
+		it("should throw for a file-system root", async () => {
+			expect.assertions(1);
+
+			seedFilesystem({ luauRoot: "/" });
+			await setupMocksAsync();
+			const config = makeConfig({ luauRoots: ["/"] });
+
+			await expect(prepareCoverageAsync(config)).rejects.toThrowWithMessage(
+				Error,
+				"luauRoots must be relative paths, got absolute path. " +
+					"Set a relative outDir in tsconfig or relative luauRoots in config.",
+			);
+		});
+
 		it("should throw when luauRoots is not provided and tsconfig has no outDir", async () => {
 			expect.assertions(1);
 
@@ -226,7 +258,7 @@ describe(prepareCoverageAsync, () => {
 			await setupMocksAsync({ outDir: "out" });
 			const config = makeConfig();
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["out"]);
+			expect(resolveLuauRoots(config)).toStrictEqual(["out"].map(toPosixRoot));
 		});
 	});
 
@@ -2827,6 +2859,11 @@ describe(prepareCoverageAsync, () => {
 });
 
 describe(resolveLuauRoots, () => {
+	/** The roots as plain strings, so an assertion can name literals. */
+	function rootsOf(config: ResolvedConfig): Array<string> {
+		return resolveLuauRoots(config);
+	}
+
 	describe("when config.luauRoots is provided", () => {
 		it("should return the explicit array", async () => {
 			expect.assertions(1);
@@ -2836,10 +2873,20 @@ describe(resolveLuauRoots, () => {
 				luauRoots: ["packages/core/out", "packages/test-utils/out"],
 			});
 
-			expect(resolveLuauRoots(config)).toStrictEqual([
-				"packages/core/out",
-				"packages/test-utils/out",
-			]);
+			expect(rootsOf(config)).toStrictEqual(["packages/core/out", "packages/test-utils/out"]);
+		});
+
+		// Canonical is not the same as unique: left as two entries, one
+		// directory is instrumented and mirrored into the same shadow twice.
+		// Workspace mode dedupes in `discoverFromLuauRoots`; single and multi
+		// mode arrive here.
+		it("should reduce two spellings of one root to one entry", async () => {
+			expect.assertions(1);
+
+			await setupMocksAsync();
+			const config = makeConfig({ luauRoots: ["out", "out/./", "./out"] });
+
+			expect(rootsOf(config)).toStrictEqual(["out"]);
 		});
 	});
 
@@ -2870,7 +2917,7 @@ describe(resolveLuauRoots, () => {
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			const roots = resolveLuauRoots(config);
+			const roots = rootsOf(config);
 
 			expect(roots).toStrictEqual(["packages/core/out", "packages/test-utils/out"]);
 		});
@@ -2899,7 +2946,7 @@ describe(resolveLuauRoots, () => {
 			// nothing.
 			const config = makeConfig({ luauRoots: [] });
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["packages/core/out"]);
+			expect(rootsOf(config)).toStrictEqual(["packages/core/out"]);
 		});
 
 		it("should skip $path entries that do not exist on disk", async () => {
@@ -2926,7 +2973,7 @@ describe(resolveLuauRoots, () => {
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["packages/core/out"]);
+			expect(rootsOf(config)).toStrictEqual(["packages/core/out"]);
 		});
 
 		it("should skip $path entries that contain no .luau files", async () => {
@@ -2955,7 +3002,7 @@ describe(resolveLuauRoots, () => {
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["packages/core/out"]);
+			expect(rootsOf(config)).toStrictEqual(["packages/core/out"]);
 		});
 
 		it("should resolve nested .project.json refs before collecting roots", async () => {
@@ -2987,7 +3034,7 @@ describe(resolveLuauRoots, () => {
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["src/Client/Systems"]);
+			expect(rootsOf(config)).toStrictEqual(["src/Client/Systems"]);
 		});
 
 		it("should apply coveragePathIgnorePatterns to filter roots", async () => {
@@ -3021,7 +3068,7 @@ describe(resolveLuauRoots, () => {
 				],
 			});
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["packages/core/out"]);
+			expect(rootsOf(config)).toStrictEqual(["packages/core/out"]);
 		});
 	});
 
@@ -3035,10 +3082,7 @@ describe(resolveLuauRoots, () => {
 			await setupMocksAsync();
 			const config = makeConfig();
 
-			expect(() => resolveLuauRoots(config)).toThrowWithMessage(
-				Error,
-				/Malformed Rojo project JSON/,
-			);
+			expect(() => rootsOf(config)).toThrowWithMessage(Error, /Malformed Rojo project JSON/);
 		});
 	});
 
@@ -3050,7 +3094,7 @@ describe(resolveLuauRoots, () => {
 			await setupMocksAsync({ outDir: "out-tsc/test" });
 			const config = makeConfig();
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["out-tsc/test"]);
+			expect(rootsOf(config)).toStrictEqual(["out-tsc/test"]);
 		});
 
 		it("should normalize a tsconfig outDir written with a ./ prefix", async () => {
@@ -3060,7 +3104,7 @@ describe(resolveLuauRoots, () => {
 			await setupMocksAsync({ outDir: "./out" });
 			const config = makeConfig();
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["out"]);
+			expect(rootsOf(config)).toStrictEqual(["out"]);
 		});
 
 		it("should fall through to tsconfig when no Rojo project exists", async () => {
@@ -3070,7 +3114,7 @@ describe(resolveLuauRoots, () => {
 			await setupMocksAsync({ outDir: "out" });
 			const config = makeConfig();
 
-			expect(resolveLuauRoots(config)).toStrictEqual(["out"]);
+			expect(rootsOf(config)).toStrictEqual(["out"]);
 		});
 	});
 });
@@ -3446,7 +3490,7 @@ describe("cross-mode $path containment", () => {
 		expect({
 			single,
 			workspace: workspace!.coverageRoots.map((root) => root.luauRoot),
-		}).toStrictEqual({ single: roots, workspace: roots });
+		}).toStrictEqual({ single: roots, workspace: roots.map(toPosixRoot) });
 	});
 });
 
@@ -3465,7 +3509,56 @@ describe(discoverRootFiles, () => {
 		vol.writeFileSync("out/init.luau", "");
 		vol.writeFileSync("out/shared/player.luau", "");
 
-		const result = discoverRootFiles("out").instrumentable;
+		const result = discoverRootFiles(toPosixRoot("out")).instrumentable;
+
+		expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
+	});
+
+	// A root reaches the walk however the config spelled it, and every spelling
+	// here names the same directory. A walk that states each file by slicing
+	// the root's own length off the front offsets every name instead, which
+	// surfaces far from the config as an ENOENT on a file that never existed.
+	it.for(["out/../out", "out/.", "out//", "out/./"])(
+		"should name walked files the same for a root spelled %s",
+		async (luauRoot) => {
+			expect.assertions(1);
+
+			setup();
+			vol.mkdirSync("out/shared", { recursive: true });
+			vol.writeFileSync("out/init.luau", "");
+			vol.writeFileSync("out/shared/player.luau", "");
+
+			const result = discoverRootFiles(toPosixRoot(luauRoot)).instrumentable;
+
+			expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
+		},
+	);
+
+	// A file-system root is the one root that already ends in a separator, so
+	// a walk that writes its own doubles it. Reachable in workspace mode,
+	// where roots are absolute and no check refuses this one.
+	it("should walk a file-system root without doubling the separator", async () => {
+		expect.assertions(1);
+
+		setup();
+		vol.mkdirSync("/shared", { recursive: true });
+		vol.writeFileSync("/init.luau", "");
+		vol.writeFileSync("/shared/player.luau", "");
+
+		const result = discoverRootFiles(toPosixRoot("/")).instrumentable;
+
+		expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
+	});
+
+	it("should name walked files relative to a root spelled as the current directory", async () => {
+		expect.assertions(1);
+
+		setup();
+		vol.mkdirSync("shared", { recursive: true });
+		vol.writeFileSync("init.luau", "");
+		vol.writeFileSync("shared/player.luau", "");
+
+		const result = discoverRootFiles(toPosixRoot(".")).instrumentable;
 
 		expect(result).toStrictEqual(new Set(["init.luau", "shared/player.luau"]));
 	});
@@ -3483,7 +3576,7 @@ describe(discoverRootFiles, () => {
 		vol.writeFileSync("out/init.test.lua", "");
 		vol.writeFileSync("out/init.snap.lua", "");
 
-		const result = discoverRootFiles("out").instrumentable;
+		const result = discoverRootFiles(toPosixRoot("out")).instrumentable;
 
 		expect(result).toStrictEqual(new Set(["init.luau"]));
 	});
@@ -3499,7 +3592,7 @@ describe(discoverRootFiles, () => {
 		vol.writeFileSync("out/.hidden/secret.luau", "");
 		vol.writeFileSync("out/.jest-roblox/coverage/cached.luau", "");
 
-		const result = discoverRootFiles("out").instrumentable;
+		const result = discoverRootFiles(toPosixRoot("out")).instrumentable;
 
 		expect(result).toStrictEqual(new Set());
 	});
@@ -3511,7 +3604,7 @@ describe(discoverRootFiles, () => {
 		vol.mkdirSync("out", { recursive: true });
 		vol.writeFileSync("out/init.lua", "");
 
-		const result = discoverRootFiles("out").instrumentable;
+		const result = discoverRootFiles(toPosixRoot("out")).instrumentable;
 
 		expect(result).toStrictEqual(new Set(["init.lua"]));
 	});
@@ -3522,7 +3615,7 @@ describe(discoverRootFiles, () => {
 		setup();
 		vol.mkdirSync("out", { recursive: true });
 
-		const result = discoverRootFiles("out").instrumentable;
+		const result = discoverRootFiles(toPosixRoot("out")).instrumentable;
 
 		expect(result).toStrictEqual(new Set());
 	});
@@ -3534,7 +3627,7 @@ describe(discoverRootFiles, () => {
 		vol.mkdirSync("out", { recursive: true });
 		vol.writeFileSync("out/player.luau", "");
 
-		expect(discoverRootFiles("out").excluded).toStrictEqual(new Set());
+		expect(discoverRootFiles(toPosixRoot("out")).excluded).toStrictEqual(new Set());
 	});
 
 	it("should leave a copy-ignored prod file out of both sets", async () => {
@@ -3547,7 +3640,7 @@ describe(discoverRootFiles, () => {
 
 		// Neither probed nor mirrored: the instrumenter reads this same split,
 		// so a path missing here is a path nothing writes into the shadow.
-		const result = discoverRootFiles("out", {
+		const result = discoverRootFiles(toPosixRoot("out"), {
 			isCopyIgnored: createCopyIgnoreMatcher(["**/vendor/**", "vendor"]),
 		});
 
@@ -3565,7 +3658,28 @@ describe(discoverRootFiles, () => {
 		vol.writeFileSync("out/ui/button.luau", "");
 
 		const universe = createInstrumentUniverse({ include: ["out/ecs/**/*.luau"] });
-		const result = discoverRootFiles("out", { universe });
+		const result = discoverRootFiles(toPosixRoot("out"), { universe });
+
+		expect(result.instrumentable).toStrictEqual(new Set(["ecs/move.luau"]));
+		expect(result.excluded).toStrictEqual(new Set(["ui/button.luau"]));
+	});
+
+	// The universe names files as `path.join` writes them, which for the
+	// current directory is the bare name. A root that pastes its own `.` on
+	// the front asks about a file the universe has never heard of, so every
+	// probe silently demotes to a mirrored copy and the run reports no
+	// coverage at all.
+	it("should split prod files by the universe under a current-directory root", async () => {
+		expect.assertions(2);
+
+		setup();
+		vol.mkdirSync("ecs", { recursive: true });
+		vol.mkdirSync("ui", { recursive: true });
+		vol.writeFileSync("ecs/move.luau", "");
+		vol.writeFileSync("ui/button.luau", "");
+
+		const universe = createInstrumentUniverse({ include: ["ecs/**/*.luau"] });
+		const result = discoverRootFiles(toPosixRoot("."), { universe });
 
 		expect(result.instrumentable).toStrictEqual(new Set(["ecs/move.luau"]));
 		expect(result.excluded).toStrictEqual(new Set(["ui/button.luau"]));

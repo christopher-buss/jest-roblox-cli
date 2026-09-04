@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { instrumentRoot } from "../../../src/coverage-pipeline/instrumenter.ts";
+import { toPosixRoot } from "../../../src/utils/normalize-windows-path.ts";
 import { createRbxtsFixtureSandbox } from "../../e2e/cli/helpers.ts";
 
 const LUAU_FIXTURE_SRC = path.resolve(__dirname, "../../e2e/fixtures/luau-project/src");
@@ -25,7 +26,7 @@ describe("coverage instrumentation", { timeout: 30_000 }, () => {
 			const shadowDirectory = createTemporaryDirectory();
 
 			const files = instrumentRoot({
-				luauRoot: LUAU_FIXTURE_SRC,
+				luauRoot: toPosixRoot(LUAU_FIXTURE_SRC),
 				shadowDir: shadowDirectory,
 			});
 
@@ -50,7 +51,7 @@ describe("coverage instrumentation", { timeout: 30_000 }, () => {
 			const shadowDirectory = createTemporaryDirectory();
 
 			const files = instrumentRoot({
-				luauRoot: LUAU_FIXTURE_SRC,
+				luauRoot: toPosixRoot(LUAU_FIXTURE_SRC),
 				shadowDir: shadowDirectory,
 			});
 
@@ -71,7 +72,7 @@ describe("coverage instrumentation", { timeout: 30_000 }, () => {
 			const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 
 			const files = instrumentRoot({
-				luauRoot: path.join(fixtureRoot, "out"),
+				luauRoot: toPosixRoot(path.join(fixtureRoot, "out")),
 				shadowDir: shadowDirectory,
 			});
 
@@ -92,7 +93,7 @@ describe("coverage instrumentation", { timeout: 30_000 }, () => {
 			const fixtureRoot = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 
 			const files = instrumentRoot({
-				luauRoot: path.join(fixtureRoot, "out"),
+				luauRoot: toPosixRoot(path.join(fixtureRoot, "out")),
 				shadowDir: shadowDirectory,
 			});
 

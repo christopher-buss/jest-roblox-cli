@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createTimingCollector } from "../timing/orchestration-collector.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { createCopyIgnoreMatcher } from "./discover-files.ts";
 import { instrument, instrumentRoot } from "./instrumenter.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";
@@ -15,11 +15,13 @@ vi.mock(import("node:fs"), async () => {
 	return fromAny({ ...memfs.fs, default: memfs.fs });
 });
 
+const LUAU_ROOT = toPosixRoot("/luau-root");
+
 const DEFAULT_FILES = { "init.luau": "local x = 1\n" } satisfies Record<string, string>;
 
 function callInstrumentWithDefaults() {
 	return instrument({
-		luauRoot: "/luau-root",
+		luauRoot: LUAU_ROOT,
 		manifestPath: "/manifest.json",
 		shadowDir: "/shadow",
 	});
@@ -70,7 +72,7 @@ describe(instrumentRoot, () => {
 			});
 
 			const files = instrumentRoot({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 			});
 			const keys = Object.keys(files);
@@ -94,7 +96,7 @@ describe(instrumentRoot, () => {
 
 		setupFilesystem({ files: { "init.luau": "local x = 1\n" } });
 
-		const files = instrumentRoot({ luauRoot: "/luau-root", shadowDir: "/shadow" });
+		const files = instrumentRoot({ luauRoot: LUAU_ROOT, shadowDir: "/shadow" });
 
 		expect(Object.values(files).map((record) => record.sourceMapPath)).toStrictEqual([
 			"/luau-root/init.luau.map",
@@ -110,7 +112,7 @@ describe(instrumentRoot, () => {
 
 		setupFilesystem({ files: { "shared/player.luau": "local x = 1\n" }, luauRoot: "out" });
 
-		const files = instrumentRoot({ luauRoot: "./out", shadowDir: "/shadow" });
+		const files = instrumentRoot({ luauRoot: toPosixRoot("./out"), shadowDir: "/shadow" });
 
 		expect(Object.keys(files)).toStrictEqual(["out/shared/player.luau"]);
 	});
@@ -125,7 +127,7 @@ describe(instrumentRoot, () => {
 
 			const files = instrumentRoot({
 				isCopyIgnored: createCopyIgnoreMatcher(["vendor", "vendor/**"]),
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 			});
 
@@ -142,7 +144,7 @@ describe(instrumentRoot, () => {
 			});
 
 			const files = instrumentRoot({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 				skipFiles: new Set(["shared/player.luau"]),
 			});
@@ -163,7 +165,7 @@ describe(instrumentRoot, () => {
 			});
 
 			const files = instrumentRoot({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 				skipFiles: new Set(["broken.luau"]),
 			});
@@ -179,7 +181,7 @@ describe(instrumentRoot, () => {
 
 		expect(() => {
 			instrumentRoot({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 			});
 		}).toThrowWithMessage(Error, /Failed to parse init\.luau/);
@@ -199,7 +201,7 @@ describe(instrumentRoot, () => {
 			});
 
 			const files = instrumentRoot({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 			});
 
@@ -226,7 +228,7 @@ describe(instrumentRoot, () => {
 			const mkdirSpy = vi.spyOn(fs, "mkdirSync");
 
 			instrumentRoot({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 			});
 
@@ -269,7 +271,7 @@ describe(instrumentRoot, () => {
 			setupFilesystem();
 
 			const files = instrumentRoot({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 			});
 
@@ -294,7 +296,7 @@ describe(instrumentRoot, () => {
 			});
 
 			instrumentRoot({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 				timing,
 			});
@@ -333,7 +335,7 @@ describe(instrumentRoot, () => {
 			vol.mkdirSync("/shadow/init.luau", { recursive: true });
 			vol.writeFileSync("/shadow/init.luau/stale.luau", "-- stale");
 
-			instrumentRoot({ luauRoot: "/luau-root", shadowDir: "/shadow" });
+			instrumentRoot({ luauRoot: LUAU_ROOT, shadowDir: "/shadow" });
 
 			expect(vol.readFileSync("/shadow/init.luau", "utf-8")).toContain("__cov_file_key");
 		});
@@ -345,7 +347,7 @@ describe(instrumentRoot, () => {
 			vol.mkdirSync("/shadow", { recursive: true });
 			vol.writeFileSync("/shadow/nested", "-- stale");
 
-			instrumentRoot({ luauRoot: "/luau-root", shadowDir: "/shadow" });
+			instrumentRoot({ luauRoot: LUAU_ROOT, shadowDir: "/shadow" });
 
 			expect(vol.readFileSync("/shadow/nested/init.luau", "utf-8")).toContain(
 				"__cov_file_key",
@@ -364,7 +366,7 @@ describe(instrument, () => {
 			});
 
 			const result = instrument({
-				luauRoot: "/luau-root",
+				luauRoot: LUAU_ROOT,
 				manifestPath: "/manifest.json",
 				shadowDir: "/shadow",
 			});

@@ -6,13 +6,14 @@ import * as path from "node:path";
 import process from "node:process";
 
 import { ConfigError } from "../config/errors.ts";
+import type { CoverageRoot } from "../coverage-pipeline/redirect-path.ts";
 import { redirectPathToShadow } from "../coverage-pipeline/redirect-path.ts";
 import {
 	collectRojoMounts,
 	unreachableRootWarning,
 } from "../coverage-pipeline/root-reachability.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 import { STAGE_KEY } from "./stage.ts";
 
@@ -21,15 +22,8 @@ export interface StubMount {
 	dataModelPath: string;
 }
 
-export interface CoverageRoot {
-	/**
-	 * Path relative to `packageDirectory` that points at the original luau
-	 * root.
-	 */
-	luauRoot: string;
-	/** Absolute path to the instrumented shadow directory for the same root. */
-	shadowDir: string;
-}
+// Re-exported rather than restated: synthesis and the redirect read the same
+// pairing, and two copies drift apart the moment one gains a field.
 
 export interface PackageDescriptor {
 	name: string;
@@ -117,7 +111,6 @@ interface SynthesizeInput {
 	wrap?: boolean | undefined;
 }
 
-const TRAILING_SLASH = /\/$/;
 const STUB_INJECTION_KEY = "jest.config";
 const COLLIDING_SOURCE_FILES = ["jest.config.lua", "jest.config.luau"];
 
@@ -232,9 +225,9 @@ function readGlobIgnorePaths(raw: JSONObject): Array<string> | undefined {
  * `$path` resolves against the rojo project directory per rojo's convention.
  * `luauRoot` resolves against `coverageBase` (the package directory) because
  * that's the documented contract for coverage roots, and the two diverge
- * whenever a project file lives in a subdirectory of its package. Trailing
- * slash on `luauRoot` is stripped so `$path: "out/"` matches `luauRoot: "out"`
- * exactly.
+ * whenever a project file lives in a subdirectory of its package. The
+ * resolved path goes back through `toPosixRoot`, so `$path: "out/"` and a
+ * root `path.resolve` left with a trailing separator still match `out`.
  */
 function resolveCoverageRoots(
 	coverageBase: string,
@@ -242,10 +235,7 @@ function resolveCoverageRoots(
 ): Array<CoverageRoot> | undefined {
 	return coverageRoots?.map((root) => {
 		return {
-			luauRoot: normalizeWindowsPath(path.resolve(coverageBase, root.luauRoot)).replace(
-				TRAILING_SLASH,
-				"",
-			),
+			luauRoot: toPosixRoot(path.resolve(coverageBase, root.luauRoot)),
 			shadowDir: normalizeWindowsPath(root.shadowDir),
 		};
 	});
@@ -923,3 +913,5 @@ function transformChild(
 
 	return result;
 }
+
+export { type CoverageRoot } from "../coverage-pipeline/redirect-path.ts";

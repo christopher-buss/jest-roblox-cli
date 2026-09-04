@@ -16,7 +16,12 @@ import { NOOP_TIMING_COLLECTOR } from "../timing/orchestration-collector.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { hashFileAsync } from "../utils/hash.ts";
-import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import {
+	isAbsolutePath,
+	normalizeWindowsPath,
+	toPosixRoot,
+} from "../utils/normalize-windows-path.ts";
 import type {
 	BuildManifestArtifact,
 	BuildManifestFileRecord,
@@ -175,7 +180,7 @@ interface CoverageInputs {
 	hasResolvedInputs: boolean;
 	/** The compiled `coverageCopyIgnorePatterns` gate for every root. */
 	isCopyIgnored: CopyIgnoreMatcher;
-	luauRoots: Array<string>;
+	luauRoots: Array<PosixRoot>;
 	manifestPath: string;
 	/**
 	 * Each rojo mount with the roots the universe narrowed it to. Carried
@@ -318,7 +323,7 @@ export function findRojoProject(config: ResolvedConfig): string {
 	);
 }
 
-export function resolveLuauRoots(config: ResolvedConfig): Array<string> {
+export function resolveLuauRoots(config: ResolvedConfig): Array<PosixRoot> {
 	return resolveLuauRootsWithRojo(readRojoContext(config, tryFindRojoProject(config)));
 }
 
@@ -426,9 +431,15 @@ function selectRawLuauRoots({ config, failure, loaded }: RojoContext): Array<str
  * their spelling can differ from the spelling the pipeline needs. The
  * correction is here, and not in each source, so that a new source also gets
  * it.
+ *
+ * Correcting the spelling is what makes the dedupe possible, and the dedupe is
+ * what the correction is for: two spellings of one directory reduce to one
+ * string, and the second is dropped rather than instrumented and mirrored into
+ * a shadow the first already holds. Workspace mode does the same in
+ * `discoverFromLuauRoots`.
  */
-function resolveLuauRootsWithRojo(context: RojoContext): Array<string> {
-	return selectRawLuauRoots(context).map(toPosixRoot);
+function resolveLuauRootsWithRojo(context: RojoContext): Array<PosixRoot> {
+	return [...new Set(selectRawLuauRoots(context).map(toPosixRoot))];
 }
 
 /**
@@ -717,9 +728,16 @@ async function bakeCoveragePlaceAsync({
 	};
 }
 
-function validateRelativeRoots(luauRoots: Array<string>): void {
+/**
+ * `isAbsolutePath`, not `path.isAbsolute`: the latter answers for the host it
+ * runs on, so `D:/repo/out` is an absolute root a developer's machine rejects
+ * and a plain relative filename Linux CI accepts and instruments outside the
+ * package. The roots arrive canonical, so the drive letter reads the same way
+ * on both.
+ */
+function validateRelativeRoots(luauRoots: ReadonlyArray<PosixRoot>): void {
 	for (const root of luauRoots) {
-		if (path.isAbsolute(root)) {
+		if (isAbsolutePath(root)) {
 			throw new Error(
 				"luauRoots must be relative paths, got absolute path. " +
 					"Set a relative outDir in tsconfig or relative luauRoots in config.",
@@ -906,7 +924,7 @@ function decideIncremental(
  */
 function instrumentOneRoot(
 	{ isCopyIgnored, previousManifest, universe }: CoverageInputs,
-	{ isBakeOwned, isIncremental, luauRoot }: ShadowPassSettings & { luauRoot: string },
+	{ isBakeOwned, isIncremental, luauRoot }: ShadowPassSettings & { luauRoot: PosixRoot },
 ): ShadowRootResult {
 	return prepareShadowRoot({
 		isBakeOwned,

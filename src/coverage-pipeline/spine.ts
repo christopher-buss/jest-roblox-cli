@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { CopyIgnoreMatcher } from "./discover-files.ts";
 import type { NonInstrumentedFileRecord } from "./manifest.ts";
 import type { NarrowedMount } from "./narrow-roots.ts";
@@ -151,10 +152,12 @@ interface MirrorLevelOptions extends MirrorSpineOptions {
  * whatever the tree says.
  */
 export function resolveSpineDirectories(
-	roots: ReadonlyArray<string>,
+	roots: ReadonlyArray<PosixRoot>,
 	mounts: ReadonlySet<string>,
-): Array<string> {
-	const spine = new Set<string>();
+): Array<PosixRoot> {
+	// Every level is a prefix of a canonical root, so it is canonical too;
+	// `toPosixRoot` is how that fact is said in the type rather than assumed.
+	const spine = new Set<PosixRoot>();
 	for (const root of roots) {
 		const mount = containingMount(root, mounts);
 		if (mount === undefined) {
@@ -162,7 +165,7 @@ export function resolveSpineDirectories(
 		}
 
 		for (const entry of chainTo(mount, root)) {
-			spine.add(entry);
+			spine.add(toPosixRoot(entry));
 		}
 	}
 
@@ -227,7 +230,10 @@ export function createShadowLayout(
 	const demoted = new Set(narrowed.flatMap((entry) => entry.spine));
 	return {
 		mountedDirectory: (sourceRelative) => {
-			const directory = normalizeWindowsPath(sourceRelative);
+			// Canonical on the way in, because the demoted set is: a caller
+			// spelling one of these directories differently must still be told
+			// its mount moved.
+			const directory = toPosixRoot(sourceRelative);
 			return demoted.has(directory)
 				? toSpineDirectory(shadowRoot, directory)
 				: normalizeWindowsPath(path.join(shadowRoot, directory));

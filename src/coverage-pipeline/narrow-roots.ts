@@ -1,6 +1,7 @@
 import * as path from "node:path";
 
-import { toPosixRoot } from "../utils/normalize-windows-path.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
+import { toPosixRoot, underRoot } from "../utils/normalize-windows-path.ts";
 import type { CopyIgnoreMatcher } from "./discover-files.ts";
 import { isInstrumentableFile, walkLuauDirectory } from "./discover-files.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
@@ -50,18 +51,18 @@ export interface NarrowedMount {
 	 * trailing separator, so it composes with the paths beside it. Not
 	 * necessarily a `$path` mount — a root can sit above the mounts, or below.
 	 */
-	luauRoot: string;
+	luauRoot: PosixRoot;
 	/**
 	 * Directories to instrument, in the mount's own frame. Empty for a mount
 	 * the universe never reaches, which the place then loads unmodified.
 	 */
-	roots: Array<string>;
+	roots: Array<PosixRoot>;
 	/**
 	 * Directories between the mount and the roots, the mount first and the
 	 * roots excluded. The shadow carries their own loose files so the place
 	 * can mount them and hang the roots underneath.
 	 */
-	spine: Array<string>;
+	spine: Array<PosixRoot>;
 }
 
 /** One mount's walk: what the shadow would carry, and what the list refused. */
@@ -87,19 +88,18 @@ interface CarriedFiles {
  * discovery pass this makes is the same one instrumentation would have made.
  */
 export function narrowRootToUniverse(
-	luauRoot: string,
+	luauRoot: PosixRoot,
 	{ isCopyIgnored, universe }: NarrowRootOptions,
 ): Array<string> {
 	if (universe === undefined) {
 		return [...WHOLE_MOUNT];
 	}
 
-	const posixRoot = toPosixRoot(luauRoot);
-	const { carried, hasIgnoredPaths } = carriedFiles(posixRoot, isCopyIgnored);
+	const { carried, hasIgnoredPaths } = carriedFiles(luauRoot, isCopyIgnored);
 	const probed = carried.filter((relativePath) => {
 		return (
 			isInstrumentableFile(path.posix.basename(relativePath)) &&
-			universe.includes(`${posixRoot}/${relativePath}`)
+			universe.includes(underRoot(luauRoot, relativePath))
 		);
 	});
 	// A probe sitting directly in the mount makes the mount its own probe
@@ -135,17 +135,16 @@ export function narrowRootToUniverse(
  * `coverageCopyIgnorePatterns` is written relative to that same directory.
  */
 export function narrowLuauRoots(
-	mounts: ReadonlyArray<string>,
+	mounts: ReadonlyArray<PosixRoot>,
 	options: NarrowMountsOptions,
 ): Array<NarrowedMount> {
 	return mounts.map((mount) => {
-		const frame = toPosixRoot(mount);
 		const narrowed = narrowRootToUniverse(mount, options).map((relative) => {
-			return relative === "" ? frame : `${frame}/${relative}`;
+			return toPosixRoot(underRoot(mount, relative));
 		});
-		const roots = isLoadable(narrowed, options.rojoMounts) ? narrowed : [frame];
+		const roots = isLoadable(narrowed, options.rojoMounts) ? narrowed : [mount];
 		return {
-			luauRoot: frame,
+			luauRoot: mount,
 			roots,
 			spine: resolveSpineDirectories(roots, options.rojoMounts),
 		};
@@ -162,12 +161,11 @@ export function narrowLuauRoots(
  * holds them either way — which is exactly why the walk has to say it saw them.
  * Nothing downstream can tell a mount the list emptied from one that was empty.
  */
-function carriedFiles(posixRoot: string, isCopyIgnored: CopyIgnoreMatcher): CarriedFiles {
+function carriedFiles(luauRoot: PosixRoot, isCopyIgnored: CopyIgnoreMatcher): CarriedFiles {
 	const carried: Array<string> = [];
 	let hasIgnoredPaths = false;
 	walkLuauDirectory(
-		posixRoot,
-		posixRoot,
+		luauRoot,
 		{
 			accept: () => true,
 			skip: (relativePath) => {
