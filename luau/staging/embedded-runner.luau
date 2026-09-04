@@ -601,7 +601,7 @@ local function requeueRead(queue: any, item: QueueItem, ttlSeconds: number): boo
 	return false
 end
 
--- Absent on the single-task path, where there are no siblings to tell.
+-- Absent wherever the run publishes no bail signal to read.
 local function resolveSignalMap(payload: Payload): Bail.SignalMap?
 	local bailMapId = payload.bailMapId
 	if bailMapId == nil or bailMapId == "" then
@@ -685,7 +685,9 @@ function module.runEmbedded(
 	payload: Payload
 ): ({ ResultEntry }, RunOutcome)
 	local run: Run = {
-		-- No queue on this path, so no siblings to tell: the trip stays local.
+		-- The trip stays local: this path publishes no bail signal, so a
+		-- sibling bucket runs its whole share out even once this one has
+		-- stopped.
 		bail = Bail.new({ enabled = payload.bail }),
 		budget = ResultBudget.new(payload.resultBudgetBytes),
 		payload = payload,

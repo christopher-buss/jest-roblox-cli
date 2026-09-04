@@ -1,9 +1,9 @@
 --!strict
 -- OCALE task script for workspace runs. Decodes the injected payload and
 -- dispatches to the shared embedded runner: a `queueId` selects the MemoryStore
--- work-stealing variant (parallel OCALE tasks), otherwise the single-task
--- embedded walk. The Studio plugin's Run-mode runner drives `runEmbedded` from
--- the same module (single-process only).
+-- work-stealing variant (parallel OCALE tasks), otherwise the plain embedded
+-- walk over whatever entries this task carries. The Studio plugin's Run-mode
+-- runner drives `runEmbedded` from the same module (single-process only).
 local HttpService = game:GetService("HttpService")
 
 local EmbeddedRunner = require("./embedded-runner")

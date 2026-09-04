@@ -87,21 +87,26 @@ export interface BackendOptions {
 	 */
 	progress?: RunProgress | undefined;
 	/**
-	 * Workspace mode, non-work-stealing only: rebuilds `scriptOverride` for a
-	 * subset of jobs. A task that fills its return-envelope budget comes back
-	 * having run only some of its entries; with no queue to leave the rest in,
-	 * the backend sends a fresh task carrying exactly what did not run.
+	 * Workspace mode, non-work-stealing only: builds a script for a subset of
+	 * jobs. A task that fills its return-envelope budget comes back having run
+	 * only some of its entries; with no queue to leave the rest in, the
+	 * backend sends a fresh task carrying exactly what did not run.
 	 *
-	 * Its presence is also what tells the backend this is a workspace run:
-	 * every job shares one script, so splitting jobs into buckets would run
-	 * the whole script once per bucket rather than dividing the work.
+	 * Its presence is also what tells the backend this is a workspace run. It
+	 * still buckets by `parallel`, one script per bucket, and answers each
+	 * bucket's deferrals on its own chain.
 	 */
 	scriptFactory?: ((jobs: ReadonlyArray<ProjectJob>) => string) | undefined;
 	/**
-	 * Workspace mode: pre-built Luau script that the backend should send
-	 * verbatim instead of generating one from `jobs`. Used by the staged
-	 * materializer pipeline so the CLI layer chooses the script and the
-	 * backend stays unaware of the difference.
+	 * Pre-built Luau script that the backend should send verbatim instead of
+	 * generating one from `jobs`. Used by the staged materializer pipeline so
+	 * the CLI layer chooses the script and the backend stays unaware of the
+	 * difference.
+	 *
+	 * One script for the whole run: every task it reaches runs all of it, so
+	 * it divides no work by itself. Work-stealing is what makes that pay —
+	 * there the tasks divide the run through the queue. A workspace run
+	 * without the queue takes `scriptFactory` instead and ignores this.
 	 */
 	scriptOverride?: string | undefined;
 	/**

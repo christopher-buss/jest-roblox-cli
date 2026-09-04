@@ -188,7 +188,7 @@ export async function prepareWorkspaceDispatchAsync({
 		}
 	}
 
-	return deferrableDispatch({ bail, inputs, testProgressMapId });
+	return deferrableDispatch({ bail, inputs, parallel, testProgressMapId });
 }
 
 /**
@@ -316,7 +316,7 @@ async function prepareStealingDispatchAsync({
 			: undefined;
 
 	// Enqueued last, so nothing after this point can throw and strand the
-	// items: a caller that falls back to the sequential path would otherwise
+	// items: a caller that falls back to the bucketed path would otherwise
 	// leave a full queue behind until its ten-minute TTL expires.
 	const prepared = await prepareWorkStealingQueueAsync({
 		baseUrl: credentials.baseUrl,
@@ -350,10 +350,11 @@ async function prepareStealingDispatchAsync({
  * The queue needs `memory-store.queue:*` on the API key, which the scopes for
  * an ordinary run do not include — so a key that has always worked starts
  * failing the moment `"auto"` begins to shard. A run that still produces
- * correct results serially is a better answer than a hard failure, so degrade
- * and say why: any queue error lands here, because whatever went wrong
- * (missing scope, network, quota) the sequential path is still available and
- * still right.
+ * correct results is a better answer than a hard failure, so degrade and say
+ * why: any queue error lands here, because whatever went wrong (missing scope,
+ * network, quota) static bucketing is still available and still right. What
+ * the run gives up is rebalancing, not concurrency — the shard count carries
+ * over, so a bucket that finishes early idles instead of stealing.
  */
 async function tryStealingDispatchAsync(
 	input: WorkStealingDispatchInput,
@@ -363,26 +364,33 @@ async function tryStealingDispatchAsync(
 	} catch (err) {
 		process.stderr.write(
 			"Warning: could not set up the work-stealing queue, running packages " +
-				`one task at a time: ${errorMessage(err)}\n` +
-				"Grant the API key memory-store.queue:add/dequeue/discard to run " +
-				"them in parallel.\n",
+				`with no work-stealing: ${errorMessage(err)}\n` +
+				"Grant the API key memory-store.queue:add/dequeue/discard so tasks " +
+				"can rebalance instead of running a fixed share each.\n",
 		);
 		return undefined;
 	}
 }
 
 /**
- * One script carrying every entry, plus a factory the backend uses to re-send
- * only the entries a task left behind when its return envelope filled up.
- * Matched on (pkg, project), the same pair the entries are keyed by.
+ * A factory the backend builds every script from, matched on (pkg, project) —
+ * the same pair the entries are keyed by.
+ *
+ * It answers two questions at once: it carves the run into `parallel` static
+ * buckets, the concurrency this path keeps once the queue is out of reach, and
+ * it re-sends the entries a task left behind when its return envelope filled
+ * up. Nothing is pre-built, because a sharded run would throw a
+ * whole-workspace script away.
  */
 function deferrableDispatch({
 	bail,
 	inputs,
+	parallel,
 	testProgressMapId,
 }: {
 	bail: boolean;
 	inputs: Array<MaterializerInput>;
+	parallel: ParallelOption;
 	testProgressMapId: string | undefined;
 }): WorkspaceDispatchSpec {
 	// One map for every script this dispatch builds, the re-sends included: a
@@ -391,6 +399,7 @@ function deferrableDispatch({
 	const options = { bail, testProgressMapId };
 
 	return {
+		parallel,
 		scriptFactory: (jobs) => {
 			return generateMaterializerScript(
 				inputs.filter((candidate) => {
@@ -401,7 +410,6 @@ function deferrableDispatch({
 				options,
 			);
 		},
-		scriptOverride: generateMaterializerScript(inputs, options),
 		testProgressMapId,
 	};
 }

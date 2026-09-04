@@ -292,6 +292,55 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
+	 * Run one bucket's jobs, re-sending whatever its task left behind, and hand
+	 * back what came in plus whether the bucket bailed.
+	 */
+	private async drainDeferralsAsync({
+		jobs,
+		scriptFactory,
+		timeout,
+		version,
+	}: {
+		jobs: Array<ProjectJob>;
+		scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
+		timeout: number;
+		version: VersionContext;
+	}): Promise<{ bailed: boolean; collected: Map<string, CollectedEntry> }> {
+		const collected = new Map<string, CollectedEntry>();
+		let remaining: Array<ProjectJob> = jobs;
+		let script = scriptFactory(jobs);
+		let hasBailed = false;
+
+		// One attempt per job is the ceiling: a task always runs at least one
+		// entry, so it cannot take more rounds than there are jobs.
+		for (const _attempt of jobs) {
+			const envelope = parseStealingEnvelope(
+				await this.executeGuardedAsync({ script, timeout, version }),
+			);
+			addEntriesToMap(collected, envelope.entries, envelope.gameOutput);
+			hasBailed ||= envelope.bailed;
+			if (!envelope.deferred) {
+				break;
+			}
+
+			// Against `remaining`, not `jobs`: a round that covers nothing new
+			// stops the loop rather than spending the rest of that budget on
+			// tasks that cannot make progress.
+			const outstanding = remaining.filter((job) => {
+				return !collected.has(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
+			});
+			if (outstanding.length === 0 || outstanding.length === remaining.length) {
+				break;
+			}
+
+			remaining = outstanding;
+			script = scriptFactory(remaining);
+		}
+
+		return { bailed: hasBailed, collected };
+	}
+
+	/**
 	 * Optimistic version pinning. Pinned tasks
 	 * (`/versions/{v}/luau-execution-session-tasks`) miss the warm-server pool
 	 * whenever no server holds the freshly-uploaded version yet, costing a cold
@@ -449,65 +498,54 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
-	 * Run a workspace script that carries every entry, re-sending whatever a
-	 * task left behind.
+	 * Bucket a workspace run and drain each bucket's deferrals concurrently.
 	 *
 	 * There is no queue on this path, so a task that fills its return-envelope
-	 * budget cannot hand the rest to a sibling. It reports `deferred` instead
-	 * and the backend builds a fresh script from the jobs that did not come
-	 * back. One task at a time: every job shares the one script, so running it
-	 * concurrently would repeat the whole run per task rather than divide it.
+	 * budget cannot hand the rest to a sibling; the backend answers the
+	 * deferral itself. The factory is what makes the buckets possible — it
+	 * builds a script from any subset of the entries, so `--parallel N` buys
+	 * the same static shard split multi mode gets, and every bucket keeps its
+	 * own chain of re-sends.
 	 *
-	 * A task always runs at least one entry, so N jobs need at most N tasks —
-	 * and a round that covers nothing new stops the loop rather than spending
-	 * the rest of that budget on tasks that cannot make progress.
+	 * Buckets hold disjoint jobs, so the per-bucket maps merge with no winner
+	 * to pick: no key reaches two of them.
 	 */
 	private async runDeferrableAsync({
 		jobs,
+		parallel,
 		primaryConfig,
 		scriptFactory,
-		scriptOverride,
 		version,
 	}: {
 		jobs: Array<ProjectJob>;
+		parallel: BackendOptions["parallel"];
 		primaryConfig: ResolvedConfig;
 		scriptFactory: (jobs: ReadonlyArray<ProjectJob>) => string;
-		scriptOverride: string | undefined;
 		version: VersionContext;
 	}): Promise<DispatchOutcome> {
-		const collected = new Map<string, CollectedEntry>();
-		let remaining: Array<ProjectJob> = jobs;
-		let script = scriptOverride ?? scriptFactory(jobs);
-		let hasBailed = false;
+		const drained = await Promise.all(
+			bucketJobs(jobs, parallel).map(async (bucket) => {
+				return this.drainDeferralsAsync({
+					jobs: bucket.jobs,
+					scriptFactory,
+					timeout: primaryConfig.timeout,
+					version,
+				});
+			}),
+		);
 
-		// One attempt per job is the ceiling: a task always runs at least one
-		// entry, so it cannot take more rounds than there are jobs.
-		for (const _attempt of jobs) {
-			const scriptResult = await this.executeGuardedAsync({
-				script,
-				timeout: primaryConfig.timeout,
-				version,
-			});
-
-			const envelope = decodeEnvelope(requireJestOutput(scriptResult));
-			addEntriesToMap(collected, envelope.entries, scriptResult.outputs[1]);
-			hasBailed ||= envelope.bailed;
-			if (!envelope.deferred) {
-				break;
+		const entryByKey = new Map<string, CollectedEntry>();
+		for (const bucket of drained) {
+			for (const [key, entry] of bucket.collected) {
+				entryByKey.set(key, entry);
 			}
-
-			const outstanding = remaining.filter((job) => {
-				return !collected.has(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
-			});
-			if (outstanding.length === 0 || outstanding.length === remaining.length) {
-				break;
-			}
-
-			remaining = outstanding;
-			script = scriptFactory(remaining);
 		}
 
-		return collectStealingResults({ bailed: hasBailed, entryByKey: collected, jobs });
+		return collectStealingResults({
+			bailed: drained.some((bucket) => bucket.bailed),
+			entryByKey,
+			jobs,
+		});
 	}
 
 	private async runStaticBucketsAsync({
@@ -586,10 +624,13 @@ export class OpenCloudBackend implements Backend {
 	/**
 	 * Pick the execution shape for one run.
 	 *
-	 * Work-stealing fans out over a shared queue. A workspace run without it
-	 * shares one script across every job, so it runs one task at a time and
-	 * re-sends what a task defers. Everything else splits jobs into buckets and
-	 * generates a script per bucket.
+	 * Every shape but the first buckets the jobs; what differs is where a
+	 * bucket's script comes from and whether the run can answer a deferral.
+	 * Work-stealing skips bucketing entirely and fans one script out over a
+	 * shared queue. A workspace run without the queue takes each bucket's
+	 * script from the factory, which is also what lets it re-send whatever a
+	 * task defers. Everything else generates a bucket's script from its jobs
+	 * and has no deferral to answer.
 	 */
 	private async selectDispatchAsync(
 		{
@@ -619,9 +660,9 @@ export class OpenCloudBackend implements Backend {
 		if (scriptFactory !== undefined) {
 			return this.runDeferrableAsync({
 				jobs,
+				parallel,
 				primaryConfig,
 				scriptFactory,
-				scriptOverride,
 				version,
 			});
 		}
@@ -1336,10 +1377,10 @@ function entryLookupKey(packageName: string, project: string | undefined): strin
  *
  * That trade is real — once any task reports a bail, a sibling that lost
  * results some other way is reported as deliberately skipped too. Nothing here
- * can tell the two apart: the queue is drained in no particular order, so
- * "after the failing package" names no set. A task that dies outright still
- * fails the run through the pool's captured error; what this gives up is the
- * narrower case of a task that returns successfully having lost entries.
+ * can tell the two apart: every caller runs its tasks concurrently, so "after
+ * the failing package" names no set. A task that dies outright still fails the
+ * run through the pool's captured error; what this gives up is the narrower
+ * case of a task that returns successfully having lost entries.
  */
 function collectStealingResults({
 	bailed,
@@ -1369,7 +1410,7 @@ function collectStealingResults({
 	if (bailedJobIndices.length > 0) {
 		const names = bailedJobIndices.map((index) => jobs[index]?.displayName).join(", ");
 		throw new Error(
-			`Open Cloud work-stealing returned no entries for ${bailedJobIndices.length.toString()} package(s): ${names}`,
+			`Open Cloud returned no entries for ${bailedJobIndices.length.toString()} package(s): ${names}`,
 		);
 	}
 
@@ -1377,17 +1418,12 @@ function collectStealingResults({
 }
 
 /**
- * Decode one work-stealing task's return envelope. Throws when the task
- * produced no Jest output so a broken task surfaces as a run failure rather
- * than a silently-missing package.
+ * Decode one task's return envelope. Throws when the task produced no Jest
+ * output so a broken task surfaces as a run failure rather than a
+ * silently-missing package.
  */
 function parseStealingEnvelope(result: ScriptResult): StealingEnvelope {
-	const jestOutput = result.outputs[0];
-	if (jestOutput === undefined) {
-		throw new Error(`No test results in output. Got: ${JSON.stringify(result.outputs)}`);
-	}
-
-	return { ...decodeEnvelope(jestOutput), gameOutput: result.outputs[1] };
+	return { ...decodeEnvelope(requireJestOutput(result)), gameOutput: result.outputs[1] };
 }
 
 function addEntriesToMap(

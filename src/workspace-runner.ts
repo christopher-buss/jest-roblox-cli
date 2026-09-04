@@ -86,7 +86,8 @@ export interface RunWorkspaceOptions {
 	 * `cli.parallel > 1`, the workspace runner pushes every (pkg, project)
 	 * onto a per-run UUID queue and the backend fires N tasks all running
 	 * the same materializer script. Without it (or with parallel=1) the
-	 * runner uses the existing single-task embedded-entries path.
+	 * runner uses the embedded-entries path, where the backend buckets the
+	 * entries statically instead.
 	 */
 	workStealingCredentials?:
 		| undefined

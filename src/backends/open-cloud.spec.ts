@@ -178,6 +178,53 @@ function scriptResult(jestOutput: string, gameOutput = "[]"): ScriptResult {
 	return { durationMs: 5, outputs: [jestOutput, gameOutput] };
 }
 
+/** A workspace script factory that spells out the jobs it was handed. */
+function scriptNaming(jobs: ReadonlyArray<ProjectJob>): string {
+	return `entries:${jobs.map((entry) => entry.displayName).join(",")}`;
+}
+
+/**
+ * The packages a {@link scriptNaming} script carries, read back off the
+ * submitted task — the guard prefix an unpinned attempt gains sits
+ * ahead of the marker, so the split survives it.
+ */
+function requestedNames(options: ExecuteScriptOptions): Array<string> {
+	return options.script.split("entries:", 2)[1]!.split(",");
+}
+
+/** An envelope answering exactly the packages a script asked for. */
+function scriptedEntries(options: ExecuteScriptOptions): ScriptResult {
+	return scriptResult(envelope(requestedNames(options).map(packageEntry)));
+}
+
+/**
+ * An execute handler that answers every script with the packages it asked
+ * for, except one carrying more than one entry and leading with
+ * `deferringHead` — that comes back deferred, having run only the head.
+ */
+function deferOnceExecute(deferringHead: string): ExecuteHandler {
+	return (options): ScriptResult => {
+		const requested = requestedNames(options);
+		return requested.length > 1 && requested[0] === deferringHead
+			? scriptResult(envelope([packageEntry(deferringHead)], { deferred: true }))
+			: scriptedEntries(options);
+	};
+}
+
+/**
+ * An execute handler where the bucket whose script leads with `bailingHead`
+ * stops on it: one entry back, flagged bailed and not deferred, so that
+ * bucket's chain ends there and the rest of its share never runs. Every
+ * other bucket answers in full.
+ */
+function bailingBucketExecute(bailingHead: string): ExecuteHandler {
+	return (options): ScriptResult => {
+		return requestedNames(options)[0] === bailingHead
+			? scriptResult(envelope([packageEntry(bailingHead)], { bailed: true }))
+			: scriptedEntries(options);
+	};
+}
+
 /**
  * An execute handler that runs `steps[callIndex]`, repeating the final step
  * once the list is exhausted. Keeps per-call-index dispatch out of `it` bodies.
@@ -1090,13 +1137,83 @@ describe(OpenCloudBackend, () => {
 			expect(stub.executeCalls).toHaveLength(2);
 		});
 
+		it("should shard a workspace run across one task per bucket", async () => {
+			expect.assertions(2);
+
+			// A workspace run knows every entry up front, so the factory can
+			// carve them into one script per bucket. Without the queue that
+			// is the only concurrency left, and multi mode already gets it.
+			const stub = createRunnerStub();
+			stub.setExecute(scriptedEntries);
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const results = await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta"), job("gamma")],
+				parallel: 3,
+				scriptFactory: scriptNaming,
+			});
+
+			expect(results.rawResults).toHaveLength(3);
+			expect(stub.executeCalls.map(requestedNames)).toStrictEqual([
+				["alpha"],
+				["beta"],
+				["gamma"],
+			]);
+		});
+
+		it("should re-send a deferring bucket's leftovers to that bucket alone", async () => {
+			expect.assertions(2);
+
+			// Each bucket owns its own deferral chain: the one that filled its
+			// envelope re-sends only what it left behind, and its sibling is
+			// untouched by the extra round.
+			const stub = createRunnerStub();
+			stub.setExecute(deferOnceExecute("alpha"));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const results = await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
+				parallel: 2,
+				scriptFactory: scriptNaming,
+			});
+
+			expect(results.rawResults).toHaveLength(4);
+			expect(stub.executeCalls.map(requestedNames)).toStrictEqual([
+				["alpha", "gamma"],
+				["beta", "delta"],
+				["gamma"],
+			]);
+		});
+
+		it("should keep a sibling bucket's results when one bucket bails", async () => {
+			expect.assertions(2);
+
+			// A bail is task-local on this path — there is no signal map to
+			// broadcast it — so it stops the bucket that hit it and no other.
+			// The sibling still runs its whole share, and the only jobs
+			// reported skipped are the tail the bailing bucket never reached.
+			const stub = createRunnerStub();
+			stub.setExecute(bailingBucketExecute("alpha"));
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const results = await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
+				parallel: 2,
+				scriptFactory: scriptNaming,
+			});
+
+			// gamma alone: it shared alpha's bucket and never ran, while beta
+			// and delta came back from the sibling that carried on.
+			expect(results.bailedJobIndices).toStrictEqual([2]);
+			expect(results.rawResults).toHaveLength(3);
+		});
+
 		it("should re-send the entries a deferring task left behind", async () => {
 			expect.assertions(3);
 
-			// Workspace runs without work-stealing share one script across every
-			// job, so a task that fills its envelope has no queue to leave the
-			// rest in. The backend has to rebuild a script from what did not
-			// come back, or those packages are lost.
+			// A task that fills its envelope has no queue to leave the rest in
+			// once work-stealing is out of reach. The backend has to rebuild a
+			// script from what did not come back, or those packages are lost.
 			const stub = createRunnerStub();
 			stub.setExecute(
 				stepExecute([
@@ -1107,18 +1224,12 @@ describe(OpenCloudBackend, () => {
 
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			const jobs = [job("alpha"), job("beta"), job("gamma")];
-			const results = await backend.runTestsAsync({
-				jobs,
-				scriptFactory: (remaining) => {
-					return `remaining:${remaining.map((entry) => entry.displayName).join(",")}`;
-				},
-				scriptOverride: "workspace-script",
-			});
+			const results = await backend.runTestsAsync({ jobs, scriptFactory: scriptNaming });
 
 			expect(results.rawResults).toHaveLength(3);
 			expect(stub.executeCalls).toHaveLength(2);
 			// Only the two that did not come back the first time.
-			expect(stub.executeCalls[1]!.script).toContain("remaining:beta,gamma");
+			expect(requestedNames(stub.executeCalls[1]!)).toStrictEqual(["beta", "gamma"]);
 		});
 
 		it("should stop after a non-deferred workspace envelope", async () => {
@@ -1203,14 +1314,13 @@ describe(OpenCloudBackend, () => {
 				backend.runTestsAsync({
 					jobs: [job("alpha"), job("beta")],
 					scriptFactory: () => "retry-script",
-					scriptOverride: "workspace-script",
 				}),
 			).rejects.toThrow("beta");
 
 			expect(stub.executeCalls).toHaveLength(2);
 		});
 
-		it("should build the first script from the factory when no override is given", async () => {
+		it("should build the first script from the factory", async () => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();

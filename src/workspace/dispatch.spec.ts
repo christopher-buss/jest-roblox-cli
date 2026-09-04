@@ -153,7 +153,7 @@ describe(buildWorkspaceJobs, () => {
 });
 
 describe(prepareWorkspaceDispatchAsync, () => {
-	it("should build a retry script from exact package and project matches", async () => {
+	it("should build a script from exact package and project matches", async () => {
 		expect.assertions(3);
 
 		const unitA = makeJob("pkg-a", "unit");
@@ -170,15 +170,12 @@ describe(prepareWorkspaceDispatchAsync, () => {
 			workStealingCredentials: undefined,
 		});
 		assert(spec.scriptFactory !== undefined);
-		assert(spec.scriptOverride !== undefined);
 
-		const retryScript = spec.scriptFactory([unitA]);
-
-		expect(JSON.parse(spec.scriptOverride)).toStrictEqual({
+		expect(JSON.parse(spec.scriptFactory([unitA, unitB, e2eA]))).toStrictEqual({
 			inputs: [materializerInput(unitA), materializerInput(unitB), materializerInput(e2eA)],
 			options: { bail: true },
 		});
-		expect(JSON.parse(retryScript)).toStrictEqual({
+		expect(JSON.parse(spec.scriptFactory([unitA]))).toStrictEqual({
 			inputs: [materializerInput(unitA)],
 			options: { bail: true },
 		});
@@ -321,7 +318,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 	});
 
 	it("should carry one progress map into both the script and the spec", async () => {
-		expect.assertions(3);
+		expect.assertions(2);
 
 		const job = makeJob("pkg-a", "unit");
 		vi.mocked(isShardedParallel).mockReturnValue(false);
@@ -336,18 +333,11 @@ describe(prepareWorkspaceDispatchAsync, () => {
 			workStealingCredentials: { apiKey: "key", universeId: "42" },
 		});
 		assert(spec.scriptFactory !== undefined);
-		assert(spec.scriptOverride !== undefined);
-
-		const options = { bail: false, testProgressMapId: "progress-uuid" };
 
 		expect(spec.testProgressMapId).toBe("progress-uuid");
-		expect(JSON.parse(spec.scriptOverride)).toStrictEqual({
-			inputs: [materializerInput(job)],
-			options,
-		});
 		expect(JSON.parse(spec.scriptFactory([job]))).toStrictEqual({
 			inputs: [materializerInput(job)],
-			options,
+			options: { bail: false, testProgressMapId: "progress-uuid" },
 		});
 	});
 
@@ -359,16 +349,17 @@ describe(prepareWorkspaceDispatchAsync, () => {
 			return JSON.stringify({ inputs, options });
 		});
 
+		const job = makeJob("pkg-a", "unit");
 		const spec = await prepareWorkspaceDispatchAsync({
-			jobs: [makeJob("pkg-a", "unit")],
+			jobs: [job],
 			parallel: 1,
 			workStealingCredentials: undefined,
 		});
-		assert(spec.scriptOverride !== undefined);
+		assert(spec.scriptFactory !== undefined);
 
 		expect(spec.testProgressMapId).toBeUndefined();
-		expect(JSON.parse(spec.scriptOverride)).toStrictEqual({
-			inputs: [materializerInput(makeJob("pkg-a", "unit"))],
+		expect(JSON.parse(spec.scriptFactory([job]))).toStrictEqual({
+			inputs: [materializerInput(job)],
 			options: { bail: false },
 		});
 	});
@@ -417,11 +408,13 @@ describe(prepareWorkspaceDispatchAsync, () => {
 
 		expect(stderr).toHaveBeenCalledExactlyOnceWith(
 			"Warning: could not set up the work-stealing queue, running packages " +
-				"one task at a time: missing scope\n" +
-				"Grant the API key memory-store.queue:add/dequeue/discard to run " +
-				"them in parallel.\n",
+				"with no work-stealing: missing scope\n" +
+				"Grant the API key memory-store.queue:add/dequeue/discard so tasks " +
+				"can rebalance instead of running a fixed share each.\n",
 		);
 		expect(spec.scriptFactory).toBeTypeOf("function");
-		expect(spec.scriptOverride).toBe("sequential-script");
+		// The fallback loses work-stealing, not concurrency: the backend
+		// buckets the entries statically, which needs the count to survive.
+		expect(spec.parallel).toBe(2);
 	});
 });

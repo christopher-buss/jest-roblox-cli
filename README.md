@@ -438,7 +438,8 @@ Always required:
 
 A sharding `--workspace` run — `--parallel auto` or an explicit count above 1 —
 additionally requires the queue scopes for work-stealing across concurrent
-sessions. Without them the run warns and falls back to one task at a time:
+sessions. Without them the run warns and falls back to static bucketing — the
+same shard count, each session holding a fixed share it cannot rebalance:
 
 | Scope                                              | What it's for                                  |
 | -------------------------------------------------- | ---------------------------------------------- |
@@ -721,14 +722,19 @@ caught part-way through is not reported as skipped.
 The exit code is the usual `1` — a bail is a test failure that ended the run
 early, not an error in its own right.
 
-Under `--parallel`, the task that fails announces it through a MemoryStore
-signal map the wave shares, and its siblings stop before taking their next
-package. Open Cloud cannot cancel a task from outside, so a package already
-running finishes and reports; the bail stops the ones after it.
+Under `--parallel` with work-stealing, the task that fails announces it through
+a MemoryStore signal map the wave shares, and its siblings stop before taking
+their next package. Open Cloud cannot cancel a task from outside, so a package
+already running finishes and reports; the bail stops the ones after it.
 
 That map is written and read inside the Roblox session, so it needs no extra
 API-key scopes — the `memory-store.sorted-map` scopes below are for the CLI's
 own streaming reads, which `--bail` does not require.
+
+Without the queue scopes there is no wave to broadcast to: each task holds a
+fixed bucket and bails only its own. The run still stops at the first failing
+package in every bucket and reports the rest as not run, but a sibling bucket
+runs its whole share out first.
 
 Workspace mode and Open Cloud only. `--bail` without `--workspace`, or with a
 Studio backend, is rejected rather than quietly running the whole batch.

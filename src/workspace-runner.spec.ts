@@ -111,6 +111,16 @@ function failingResult(): string {
 	});
 }
 
+/**
+ * The script this run dispatched. A workspace run hands the backend a factory
+ * rather than a script, so the whole run's script is the factory over every
+ * job — what a lone bucket carries.
+ */
+function dispatchedScript(captured: Partial<Record<"options", BackendOptions>>): string {
+	const options = captured.options!;
+	return options.scriptFactory!(options.jobs);
+}
+
 function createStubBackend(
 	entries: Array<BackendStubEntry>,
 	backendOverrides: Partial<BackendResult> = {},
@@ -279,8 +289,8 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain('"testTimeout":1234');
-		expect(captured.options!.scriptOverride).toContain('"testTimeout":5678');
+		expect(dispatchedScript(captured)).toContain('"testTimeout":1234');
+		expect(dispatchedScript(captured)).toContain('"testTimeout":5678');
 	});
 
 	// Workspace mode builds the materializer payload from the pending entries
@@ -315,8 +325,8 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain('"printBasicPrototype":false');
-		expect(captured.options!.scriptOverride).not.toContain('"printBasicPrototype":true');
+		expect(dispatchedScript(captured)).toContain('"printBasicPrototype":false');
+		expect(dispatchedScript(captured)).not.toContain('"printBasicPrototype":true');
 	});
 
 	it("should resolve printBasicPrototype for a luau package before dispatch", async () => {
@@ -346,8 +356,8 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain('"printBasicPrototype":true');
-		expect(captured.options!.scriptOverride).not.toContain('"printBasicPrototype":false');
+		expect(dispatchedScript(captured)).toContain('"printBasicPrototype":true');
+		expect(dispatchedScript(captured)).not.toContain('"printBasicPrototype":false');
 	});
 
 	// The re-send path builds its script from the same entries, so the resolved
@@ -466,10 +476,8 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain(
-			'"testPathPattern":"(Pkg/foo\\\\.spec)"',
-		);
-		expect(captured.options!.scriptOverride).not.toContain('"testPathPattern":"src/foo.spec"');
+		expect(dispatchedScript(captured)).toContain('"testPathPattern":"(Pkg/foo\\\\.spec)"');
+		expect(dispatchedScript(captured)).not.toContain('"testPathPattern":"src/foo.spec"');
 	});
 
 	// Regression: two specs sharing a basename collapse to the same pattern, so
@@ -507,12 +515,8 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain(
-			'"testPathPattern":"(Pkg/a/index\\\\.spec)"',
-		);
-		expect(captured.options!.scriptOverride).not.toContain(
-			'"testPathPattern":"(index\\\\.spec)"',
-		);
+		expect(dispatchedScript(captured)).toContain('"testPathPattern":"(Pkg/a/index\\\\.spec)"');
+		expect(dispatchedScript(captured)).not.toContain('"testPathPattern":"(index\\\\.spec)"');
 	});
 
 	// Parity with multi: both modes narrow against `project.rojoMounts`, so an
@@ -550,9 +554,7 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain(
-			'"testPathPattern":"(deep/thing\\\\.spec)"',
-		);
+		expect(dispatchedScript(captured)).toContain('"testPathPattern":"(deep/thing\\\\.spec)"');
 	});
 
 	it("should pass with no tests in a package the testPathPattern does not match", async () => {
@@ -584,12 +586,10 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain('"passWithNoTests":true');
+		expect(dispatchedScript(captured)).toContain('"passWithNoTests":true');
 		// The zero-matching pattern is intentionally retained (not cleared) so
 		// the Luau side runs nothing instead of falling back to testMatch.
-		expect(captured.options!.scriptOverride).toContain(
-			'"testPathPattern":"src/other-package.spec"',
-		);
+		expect(dispatchedScript(captured)).toContain('"testPathPattern":"src/other-package.spec"');
 	});
 
 	// Regression: a positional file was discarded in workspace mode, so
@@ -636,7 +636,7 @@ describe(runWorkspaceAsync, () => {
 		const staged = vi.mocked(buildPlaceAsync).mock.lastCall![0].packages;
 
 		expect(staged.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
-		expect(captured.options!.scriptOverride).not.toContain("@halcyon/bar");
+		expect(dispatchedScript(captured)).not.toContain("@halcyon/bar");
 	});
 
 	// A positional is typed relative to the directory the CLI was invoked from,
@@ -716,10 +716,8 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain(
-			'"testPathPattern":"(Pkg/a/index\\\\.spec)"',
-		);
-		expect(captured.options!.scriptOverride).not.toContain("b/index");
+		expect(dispatchedScript(captured)).toContain('"testPathPattern":"(Pkg/a/index\\\\.spec)"');
+		expect(dispatchedScript(captured)).not.toContain("b/index");
 	});
 
 	// A positional beats a `--testPathPattern` given alongside it, as in multi:
@@ -760,8 +758,8 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain('"testPathPattern":"(Pkg/a\\\\.spec)"');
-		expect(captured.options!.scriptOverride).not.toContain('"testPathPattern":"src/b.spec"');
+		expect(dispatchedScript(captured)).toContain('"testPathPattern":"(Pkg/a\\\\.spec)"');
+		expect(dispatchedScript(captured)).not.toContain('"testPathPattern":"src/b.spec"');
 	});
 
 	// A file no package owns is a mistake in the argument, not an empty run:
@@ -825,7 +823,7 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain('"project":"@halcyon/foo"');
+		expect(dispatchedScript(captured)).toContain('"project":"@halcyon/foo"');
 		expect(results![0]!.displayName).toBe("@halcyon/foo");
 	});
 
@@ -1049,8 +1047,8 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain('"project":"client"');
-		expect(captured.options!.scriptOverride).toContain('"project":"server"');
+		expect(dispatchedScript(captured)).toContain('"project":"client"');
+		expect(dispatchedScript(captured)).toContain('"project":"server"');
 		expect(results!.map((entry) => entry.displayName)).toStrictEqual(["client", "server"]);
 	});
 
@@ -1477,10 +1475,10 @@ describe(runWorkspaceAsync, () => {
 		// path so the materializer payload carries the resolved setup
 		// location, not the raw source path. Both setupFiles and
 		// setupFilesAfterEnv are resolved.
-		expect(captured.options!.scriptOverride).toContain(
+		expect(dispatchedScript(captured)).toContain(
 			'"setupFiles":["ReplicatedStorage/Pkg/Shared/setup"]',
 		);
-		expect(captured.options!.scriptOverride).toContain(
+		expect(dispatchedScript(captured)).toContain(
 			'"setupFilesAfterEnv":["ReplicatedStorage/Pkg/Shared/setup"]',
 		);
 	});
@@ -1568,10 +1566,10 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain(
+		expect(dispatchedScript(captured)).toContain(
 			'"setupFiles":["ReplicatedStorage/Pkg/Shared/setup"]',
 		);
-		expect(captured.options!.scriptOverride).not.toContain('"setupFilesAfterEnv"');
+		expect(dispatchedScript(captured)).not.toContain('"setupFilesAfterEnv"');
 	});
 
 	it("should resolve a project that declares only setupFilesAfterEnv", async () => {
@@ -1619,10 +1617,10 @@ describe(runWorkspaceAsync, () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(captured.options!.scriptOverride).toContain(
+		expect(dispatchedScript(captured)).toContain(
 			'"setupFilesAfterEnv":["ReplicatedStorage/Pkg/Shared/setup"]',
 		);
-		expect(captured.options!.scriptOverride).not.toContain('"setupFiles":');
+		expect(dispatchedScript(captured)).not.toContain('"setupFiles":');
 	});
 
 	it("should honor per-package rojoProject from each package's own jest.config", async () => {
@@ -1741,9 +1739,7 @@ describe(runWorkspaceAsync, () => {
 		// The "src" include root (package-relative) resolves through the
 		// package's default.project.json into the ServerScriptService/Pkg mount
 		// declared by the subdirectory test project.
-		expect(captured.options!.scriptOverride).toContain(
-			'"projects":["ServerScriptService/Pkg"]',
-		);
+		expect(dispatchedScript(captured)).toContain('"projects":["ServerScriptService/Pkg"]');
 		expect(results![0]!.displayName).toBe("@halcyon/foo");
 	});
 
@@ -2475,7 +2471,7 @@ describe(runWorkspaceAsync, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(captured.options!.scriptOverride).toContain('"runnerCoverage":true');
+			expect(dispatchedScript(captured)).toContain('"runnerCoverage":true');
 		});
 
 		it("should expose per-package coverage descriptors on the workspace result", async () => {
@@ -3297,7 +3293,7 @@ describe(runWorkspaceAsync, () => {
 			});
 
 			expect(captured.options!.workStealing).toBeUndefined();
-			expect(captured.options!.scriptOverride).not.toContain('"queueId"');
+			expect(dispatchedScript(captured)).not.toContain('"queueId"');
 		});
 
 		it("should forward workStealingCredentials.baseUrl into prepareWorkStealingQueue", async () => {

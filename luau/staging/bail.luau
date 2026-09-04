@@ -30,13 +30,13 @@ export type SignalMap = {
 	How one task's bail is set up.
 
 	An options table rather than three optional positionals: two of the three are
-	absent on the single-task path, and `new(nil, nil, 600)` says nothing about
-	which.
+	absent wherever no wave shares a signal map, and `new(nil, nil, 600)` says
+	nothing about which.
 ]=]
 export type Options = {
 	enabled: boolean?,
-	-- The wave's shared signal map. Absent on the single-task path: no siblings
-	-- to tell, so the decision stays local.
+	-- The wave's shared signal map. Absent wherever the run publishes none: no
+	-- sibling can be told, so the decision stays local.
 	map: SignalMap?,
 	ttlSeconds: number?,
 }

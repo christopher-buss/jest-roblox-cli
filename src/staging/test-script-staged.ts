@@ -17,8 +17,8 @@ export interface ScriptOptions {
 	bail?: boolean;
 	/**
 	 * Per-run SortedMap id the parallel wave broadcasts a bail through. Only
-	 * meaningful alongside `bail`; omit on the single-task path, which has no
-	 * siblings to tell.
+	 * meaningful alongside `bail`; omitting it leaves every task's bail local,
+	 * so a sibling runs its whole share out after another has stopped.
 	 */
 	bailMapId?: string | undefined;
 	/**
