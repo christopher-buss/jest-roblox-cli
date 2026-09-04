@@ -3156,12 +3156,13 @@ describe(runProjectsAsync, () => {
 			);
 		});
 
-		it("should fall back to the raw error message when bannerOutput entries are all blank", async () => {
-			expect.assertions(1);
+		it("should fall back to the host's own report when bannerOutput entries are all blank", async () => {
+			expect.assertions(2);
 
 			// Edge case: bannerOutput parses to entries but every message is
 			// whitespace/empty. Don't compose a "(blank)\n\nExited with..."
-			// monstrosity — just use the exit-code message.
+			// monstrosity — report what the host knows and keep the exit code
+			// as the footer.
 			const backendResult: BackendResult = {
 				rawResults: [
 					{
@@ -3186,7 +3187,74 @@ describe(runProjectsAsync, () => {
 				version: "0.0.0-test",
 			});
 
-			expect(results[0]!.result.testResults[0]!.failureMessage).toBe("Exited with code: 1");
+			const failureMessage = results[0]!.result.testResults[0]!.failureMessage!;
+
+			expect(failureMessage).toStartWith(
+				"Jest exited before returning a result, and no cause was captured.",
+			);
+			expect(failureMessage).toEndWith("Exited with code: 1");
+		});
+
+		// The job the host dispatched is the one thing a run that came back
+		// with nothing cannot take away, so the report is built from it.
+		it("should name the package, project and selected test files the host dispatched", async () => {
+			expect.assertions(2);
+
+			const backendResult: BackendResult = {
+				rawResults: [{ entry: { jestOutput: failureEnvelope } }],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjectsAsync({
+				backend: backendReturning(backendResult),
+				deferFormatting: true,
+				projects: [
+					{
+						config: DEFAULT_CONFIG,
+						displayName: "unit",
+						pkg: "@scope/boom",
+						testFiles: ["src/a.spec.ts", "src/b.spec.ts"],
+					},
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			const failureMessage = results[0]!.result.testResults[0]!.failureMessage!;
+
+			expect(failureMessage).toContain("Project      @scope/boom › unit");
+			expect(failureMessage).toContain("Test files   2 selected by the host");
+		});
+
+		it("should carry the runner's phase and capture state into the report", async () => {
+			expect.assertions(2);
+
+			const phasedFailure = JSON.stringify({
+				err: "Exited with code: 1",
+				runner: { captureInstalled: false, phase: "resolveJest" },
+				success: false,
+			});
+			const backendResult: BackendResult = {
+				rawResults: [{ entry: { jestOutput: phasedFailure } }],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjectsAsync({
+				backend: backendReturning(backendResult),
+				deferFormatting: true,
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+				],
+				startTime: Date.now(),
+				version: "0.0.0-test",
+			});
+
+			const failureMessage = results[0]!.result.testResults[0]!.failureMessage!;
+
+			expect(failureMessage).toContain("Phase        resolving the Jest module");
+			expect(failureMessage).toContain(
+				"Capture      stdout/stderr interception could not be installed",
+			);
 		});
 
 		// When Jest's exit(1) fires for "no tests found", the underlying

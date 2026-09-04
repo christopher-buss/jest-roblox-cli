@@ -1831,18 +1831,20 @@ describe("promise trace boundaries", () => {
 	});
 });
 
-describe("abandon reason", () => {
-	function thrownFrom(output: string): LuauScriptError {
-		try {
-			parseJestOutput(output);
-		} catch (err) {
-			assert(err instanceof LuauScriptError);
-			return err;
-		}
-
-		throw new Error("expected the envelope to throw");
+// The failure a `{success:false, err}` envelope throws, for the dimensions
+// that only ever ride on one.
+function thrownFrom(output: string): LuauScriptError {
+	try {
+		parseJestOutput(output);
+	} catch (err) {
+		assert(err instanceof LuauScriptError);
+		return err;
 	}
 
+	throw new Error("expected the envelope to throw");
+}
+
+describe("abandon reason", () => {
 	it("should mark a run the runner abandoned at its budget", () => {
 		expect.assertions(2);
 
@@ -1878,5 +1880,39 @@ describe("abandon reason", () => {
 
 		expect(error.timedOut).toBeUndefined();
 		expect(error.message).toBe("boom");
+	});
+});
+
+describe("the phase and capture state a failed run reports", () => {
+	function failureWith(runner: unknown): string {
+		return JSON.stringify({ err: "Exited with code: 1", runner, success: false });
+	}
+
+	it("should carry the phase the runner named", () => {
+		expect.assertions(1);
+
+		expect(thrownFrom(failureWith({ phase: "runCLI" })).phase).toBe("runCLI");
+	});
+
+	// Same leniency the abandon reason gets: a producer that drifts drops the
+	// dimension rather than reporting a phase spelled as nothing at all.
+	it.for([undefined, "", 7] as const)("should drop a phase of %j", (phase) => {
+		expect.assertions(1);
+
+		expect(thrownFrom(failureWith({ phase })).phase).toBeUndefined();
+	});
+
+	it.for([true, false] as const)("should carry a capture state of %j", (captureInstalled) => {
+		expect.assertions(1);
+
+		expect(thrownFrom(failureWith({ captureInstalled })).captureInstalled).toBe(
+			captureInstalled,
+		);
+	});
+
+	it.for([undefined, "yes"] as const)("should drop a capture state of %j", (captureInstalled) => {
+		expect.assertions(1);
+
+		expect(thrownFrom(failureWith({ captureInstalled })).captureInstalled).toBeUndefined();
 	});
 });
