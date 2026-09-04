@@ -166,3 +166,17 @@ describe(buildExecutionErrorResult, () => {
 		},
 	);
 });
+
+// Characterization of the failure a workspace entry reports when Jest exits
+// without writing a cause anywhere the runner captured. Everything the reader
+// gets is the transport's own exit code: which package failed, how far it got,
+// and whether anything was captured at all are all absent.
+describe("an exit-code-only failure with nothing captured", () => {
+	it("should report only the transport exit code", () => {
+		expect.assertions(1);
+
+		const result = buildResult({ deferFormatting: true, message: "Exited with code: 1" });
+
+		expect(result.result.testResults[0]!.failureMessage).toBe("Exited with code: 1");
+	});
+});
