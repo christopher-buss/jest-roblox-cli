@@ -444,16 +444,23 @@ sessions. Without them the run warns and falls back to one task at a time:
 | -------------------------------------------------- | ---------------------------------------------- |
 | `memory-store.queue:add` / `:dequeue` / `:discard` | Work-stealing queue across concurrent sessions |
 
-A sharding `--workspace` run with a streaming formatter additionally requires:
+Any Open Cloud run uses the sorted-map scopes for two things — streaming live
+per-package results, and the per-test heartbeat that names the test a wedged
+task died in:
 
-| Scope                                     | What it's for                                           |
-| ----------------------------------------- | ------------------------------------------------------- |
-| `memory-store.sorted-map:read` / `:write` | Stream live per-package results back as packages finish |
+| Scope                                     | What it's for                                                     |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| `memory-store.sorted-map:read` / `:write` | Live per-package results, and the wedged-test report on a timeout |
 
 Streaming is enabled by default and disabled only for `--silent`,
 `--formatters json`, and `--formatters agent` (without `--verbose`).
 `--formatters agent --verbose` re-enables streaming and therefore still needs
 the sorted-map scopes; `--formatters github-actions` also streams.
+
+The heartbeat is not a flag and never fails a run: without the scopes the run
+behaves exactly as it did before, and a timeout reports what Roblox reports.
+With them, a task that runs past the Open Cloud cap comes back naming the test
+it had reached instead of an opaque "Execution timed out".
 
 ### Studio (local)
 

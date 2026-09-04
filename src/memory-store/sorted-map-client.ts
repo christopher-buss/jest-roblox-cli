@@ -1,14 +1,10 @@
-import type { OpenCloudClientOptions } from "@bedrock-rbx/ocale";
-import type {
-	CreateSortedMapItemParameters,
-	ListSortedMapItemsParameters,
-} from "@bedrock-rbx/ocale/storage";
-import { StorageClient } from "@bedrock-rbx/ocale/storage";
+import type { CreateSortedMapItemParameters, StorageClient } from "@bedrock-rbx/ocale/storage";
 
 import { type } from "arktype";
 
+import { listSortedMapItemsAsync, resolveStorageClient } from "./sorted-map-page.ts";
+
 const DEFAULT_TTL_SECONDS = 600;
-const LIST_PAGE_SIZE = 100;
 
 const streamingResultSchema = type({
 	elapsedMs: "number",
@@ -83,12 +79,7 @@ export class StreamingResultClient {
 		this.mapId = options.mapId;
 		this.universeId = options.credentials.universeId;
 		this.ttlSeconds = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
-		let clientOptions: OpenCloudClientOptions = { apiKey: options.credentials.apiKey };
-		if (options.baseUrl !== undefined) {
-			clientOptions = { ...clientOptions, baseUrl: options.baseUrl };
-		}
-
-		this.storage = options.storageFactory?.() ?? new StorageClient(clientOptions);
+		this.storage = resolveStorageClient(options);
 	}
 
 	public async deleteAsync(itemId: string): Promise<void> {
@@ -105,34 +96,13 @@ export class StreamingResultClient {
 	}
 
 	public async readAllAsync(): Promise<Array<StreamingResultRecord>> {
-		const records: Array<StreamingResultRecord> = [];
-		let pageToken: string | undefined;
-
-		do {
-			let parameters: ListSortedMapItemsParameters = {
-				mapId: this.mapId,
-				maxPageSize: LIST_PAGE_SIZE,
-				universeId: this.universeId,
-			};
-			if (pageToken !== undefined) {
-				parameters = { ...parameters, pageToken };
-			}
-
-			const result = await this.storage.sortedMaps.list(parameters);
-			if (!result.success) {
-				throw new Error(`Failed to read streaming results: ${result.err.message}`, {
-					cause: result.err,
-				});
-			}
-
-			for (const item of result.data.items) {
-				records.push({ id: item.id, value: decodeStreamingResult(item.value) });
-			}
-
-			pageToken = result.data.nextPageToken;
-		} while (pageToken !== undefined);
-
-		return records;
+		return listSortedMapItemsAsync({
+			decode: (item) => ({ id: item.id, value: decodeStreamingResult(item.value) }),
+			failureLabel: "streaming results",
+			mapId: this.mapId,
+			storage: this.storage,
+			universeId: this.universeId,
+		});
 	}
 
 	public async writeAsync(entry: StreamingResultEntry): Promise<void> {

@@ -10,6 +10,7 @@ local PromiseError = require("./promise-error")
 local RunnerResult = require("./runner-result")
 local SetupTiming = require("./setup-timing")
 local SnapshotPatch = require("./snapshot-patch")
+local TestProgress = require("./test-progress")
 
 type CapturedMessage = InterceptWriteable.CapturedMessage
 
@@ -43,7 +44,11 @@ local module = {}
 	from its own runner, so the host tells an abandoned run from a failed one
 	the same way whichever mode produced the entry.
 ]=]
-function module.run(callingScript: LuaSourceContainer, config: Config): (string, string, string)
+function module.run(
+	callingScript: LuaSourceContainer,
+	config: Config,
+	publishProgress: TestProgress.Publish?
+): (string, string, string)
 	local t0 = os.clock()
 	local timingEnabled = config.runnerTiming
 	local coverageEnabled = config.runnerCoverage
@@ -163,6 +168,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 			coverage = coverageEnabled,
 			perTest = perTestEnabled,
 		})
+		RunnerResult.beginProgress(findValue, publishProgress)
 
 		local t_jestRunCLI0 = os.clock()
 		local runCLIOk, runCLIValue = pcall(function()
@@ -273,7 +279,8 @@ type RunHooks = {
 function module.runProjects(
 	callingScript: LuaSourceContainer,
 	configs: { Config },
-	hooks: RunHooks?
+	hooks: RunHooks?,
+	publishProgress: TestProgress.Publish?
 ): { ProjectEntry }
 	local entries: { ProjectEntry } = {}
 
@@ -291,7 +298,8 @@ function module.runProjects(
 		local ok: boolean, jestOutput: any, gameOutput: any, bannerOutput: any =
 			false, nil, nil, nil
 		if beforeOk then
-			ok, jestOutput, gameOutput, bannerOutput = pcall(module.run, callingScript, cfg)
+			ok, jestOutput, gameOutput, bannerOutput =
+				pcall(module.run, callingScript, cfg, publishProgress)
 		else
 			jestOutput = beforeErr
 		end

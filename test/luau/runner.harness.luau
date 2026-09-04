@@ -233,6 +233,14 @@ local stubs = {
 		end,
 		unpatch = function() end,
 	},
+	-- Same seam, arming the heartbeat: these runs publish nothing, so the run
+	-- only ever reaches the disarm that clears the run before it.
+	["./test-progress"] = {
+		arm = function()
+			return { failure = nil }
+		end,
+		disarmCurrent = function() end,
+	},
 	-- Reached through the shared result seam, which resolves the run's own
 	-- jest-circus / Expect / jest-runtime packages before arming.
 	["./per-test-coverage"] = {

@@ -1,4 +1,4 @@
-import { PermissionError } from "@bedrock-rbx/ocale";
+import { PermissionError, PollTimeoutError } from "@bedrock-rbx/ocale";
 
 export interface ChainEntry {
 	readonly name: string;
@@ -57,6 +57,21 @@ export function errorChain(err: unknown): Array<Error> {
 	}
 
 	return chain;
+}
+
+/**
+ * True when a poll that never settled is somewhere under this failure.
+ *
+ * The one thing that distinguishes a task Roblox never answered for from a
+ * request it refused: a 401 or a 429 says something about the call, and only a
+ * timeout says the task itself never came back. Walks the chain because both
+ * the runner and the backend wrap it.
+ *
+ * @param err - The failure to inspect.
+ * @returns Whether anything in its cause chain is a `PollTimeoutError`.
+ */
+export function isPollTimeout(err: unknown): boolean {
+	return errorChain(err).some((entry) => entry instanceof PollTimeoutError);
 }
 
 export function walkErrorChain(err: unknown): Array<ChainEntry> {

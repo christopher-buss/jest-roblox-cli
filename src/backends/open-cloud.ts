@@ -1,4 +1,4 @@
-import { PermissionError, PollTimeoutError } from "@bedrock-rbx/ocale";
+import { PermissionError } from "@bedrock-rbx/ocale";
 import {
 	OcaleRunner,
 	placeIdentityGuardSource,
@@ -18,10 +18,12 @@ import type { Except } from "type-fest";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import { countLinesThroughLastDirective } from "../luau/directive-header.ts";
+import type { TestProgressReader } from "../memory-store/test-progress.ts";
+import { TestProgressClient } from "../memory-store/test-progress.ts";
 import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
 import { describePlaceFile, describeProjectCount } from "../progress/stages.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
-import { errorChain, formatMissingScopes, walkErrorChain } from "../utils/error-chain.ts";
+import { formatMissingScopes, isPollTimeout, walkErrorChain } from "../utils/error-chain.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
 import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
 import type {
@@ -42,6 +44,7 @@ import {
 	readCachedVersion,
 	writeCachedVersion,
 } from "./upload-cache.ts";
+import { rethrowWedgeAsync } from "./wedge-report.ts";
 
 const PINNED_RETRY_NOTE = "Tasks retried pinned (slower, cold place boot).";
 
@@ -79,6 +82,12 @@ const DEFAULT_STREAM_POLL_MS = 250;
 export type OpenCloudCredentials = RunnerCredentials;
 
 export interface OpenCloudOptions {
+	/**
+	 * Build the reader for a run's progress map. Defaults to a real
+	 * {@link TestProgressClient} on this backend's own credentials; a test
+	 * stands one in rather than reaching the wire.
+	 */
+	progressReaderFactory?: ((mapId: string) => TestProgressReader) | undefined;
 	/**
 	 * Inject a pre-built {@link RemoteRunner}. When provided, the
 	 * `credentials` argument to {@link OpenCloudBackend} is ignored —
@@ -170,6 +179,7 @@ export class OpenCloudBackend implements Backend {
 	 * Kept so the upload cache can key on the universe and place it targets.
 	 */
 	private readonly credentials: OpenCloudCredentials;
+	private readonly progressReaderFactory: (mapId: string) => TestProgressReader;
 	private readonly runner: RemoteRunner;
 
 	/** One-shot per run so parallel raced tasks don't repeat the warning. */
@@ -181,6 +191,9 @@ export class OpenCloudBackend implements Backend {
 
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
 		this.credentials = credentials;
+		this.progressReaderFactory =
+			options?.progressReaderFactory ??
+			((mapId): TestProgressReader => createTestProgressReader(credentials, mapId));
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
 	}
 
@@ -254,41 +267,28 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
-	 * Pick the execution shape for one run.
-	 *
-	 * Work-stealing fans out over a shared queue. A workspace run without it
-	 * shares one script across every job, so it runs one task at a time and
-	 * re-sends what a task defers. Everything else splits jobs into buckets and
-	 * generates a script per bucket.
+	 * Run one dispatch, and turn a wedge into the test it wedged on.
 	 */
 	private async dispatchAsync(
-		{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing }: BackendOptions,
+		options: BackendOptions,
 		primaryConfig: ResolvedConfig,
 		version: VersionContext,
 	): Promise<DispatchOutcome> {
-		if (workStealing === true) {
-			return this.runWorkStealingAsync({
-				jobs,
-				parallel,
-				primaryConfig,
-				// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
-				scriptOverride: scriptOverride!,
-				streaming,
-				version,
-			});
+		const { testProgressMapId } = options;
+		try {
+			return await this.selectDispatchAsync(options, primaryConfig, version);
+		} catch (err) {
+			// A wedge is the one dispatch failure Roblox describes with
+			// nothing at all, so the progress map is the only place left to
+			// look. Read here rather than per path: every shape of dispatch
+			// wedges the same way.
+			return rethrowWedgeAsync(
+				err,
+				testProgressMapId === undefined
+					? undefined
+					: this.progressReaderFactory(testProgressMapId),
+			);
 		}
-
-		if (scriptFactory !== undefined) {
-			return this.runDeferrableAsync({
-				jobs,
-				primaryConfig,
-				scriptFactory,
-				scriptOverride,
-				version,
-			});
-		}
-
-		return this.runStaticBucketsAsync({ jobs, parallel, scriptOverride, version });
 	}
 
 	/**
@@ -408,20 +408,18 @@ export class OpenCloudBackend implements Backend {
 	private async runBucketAsync({
 		bucket: { indices, jobs },
 		scriptOverride,
+		testProgressMapId,
 		version,
 	}: {
 		bucket: JobBucket;
 		scriptOverride: string | undefined;
+		testProgressMapId: string | undefined;
 		version: VersionContext;
 	}): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
 		// A bucket is only created for at least one job, so jobs[0] is defined.
 		// eslint-disable-next-line ts/no-non-null-assertion -- bucket non-empty
 		const primary = jobs[0]!;
-		const inputs: Array<JestArgvInput> = jobs.map((job) => {
-			return { config: job.config, testFiles: job.testFiles };
-		});
-
-		const script = scriptOverride ?? generateTestScript(inputs);
+		const script = scriptOverride ?? bucketScript(jobs, testProgressMapId);
 		const scriptResult = await this.executeGuardedAsync({
 			script,
 			timeout: primary.config.timeout,
@@ -516,16 +514,20 @@ export class OpenCloudBackend implements Backend {
 		jobs,
 		parallel,
 		scriptOverride,
+		testProgressMapId,
 		version,
 	}: {
 		jobs: Array<ProjectJob>;
 		parallel: BackendOptions["parallel"];
 		scriptOverride: string | undefined;
+		testProgressMapId: string | undefined;
 		version: VersionContext;
 	}): Promise<DispatchOutcome> {
 		const buckets = bucketJobs(jobs, parallel);
 		const bucketResults = await Promise.all(
-			buckets.map(async (bucket) => this.runBucketAsync({ bucket, scriptOverride, version })),
+			buckets.map(async (bucket) => {
+				return this.runBucketAsync({ bucket, scriptOverride, testProgressMapId, version });
+			}),
 		);
 
 		// Flatten bucket results in original job order via the indices recorded
@@ -578,6 +580,58 @@ export class OpenCloudBackend implements Backend {
 			bailed: taskEnvelopes.some((envelope) => envelope.bailed),
 			entryByKey: aggregateEntriesByKey(taskEnvelopes),
 			jobs,
+		});
+	}
+
+	/**
+	 * Pick the execution shape for one run.
+	 *
+	 * Work-stealing fans out over a shared queue. A workspace run without it
+	 * shares one script across every job, so it runs one task at a time and
+	 * re-sends what a task defers. Everything else splits jobs into buckets and
+	 * generates a script per bucket.
+	 */
+	private async selectDispatchAsync(
+		{
+			jobs,
+			parallel,
+			scriptFactory,
+			scriptOverride,
+			streaming,
+			testProgressMapId,
+			workStealing,
+		}: BackendOptions,
+		primaryConfig: ResolvedConfig,
+		version: VersionContext,
+	): Promise<DispatchOutcome> {
+		if (workStealing === true) {
+			return this.runWorkStealingAsync({
+				jobs,
+				parallel,
+				primaryConfig,
+				// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
+				scriptOverride: scriptOverride!,
+				streaming,
+				version,
+			});
+		}
+
+		if (scriptFactory !== undefined) {
+			return this.runDeferrableAsync({
+				jobs,
+				primaryConfig,
+				scriptFactory,
+				scriptOverride,
+				version,
+			});
+		}
+
+		return this.runStaticBucketsAsync({
+			jobs,
+			parallel,
+			scriptOverride,
+			testProgressMapId,
+			version,
 		});
 	}
 
@@ -818,6 +872,20 @@ export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenC
 }
 
 /**
+ * The reader for a run's progress map, on this backend's own credentials.
+ *
+ * Its own function so a run reaches the wire only once it has a wedge to
+ * explain: building the client is what a test stands in for, and nothing about
+ * it happens on a run that comes back.
+ */
+function createTestProgressReader(
+	credentials: OpenCloudCredentials,
+	mapId: string,
+): TestProgressReader {
+	return new TestProgressClient({ baseUrl: resolveOpenCloudBaseUrl(), credentials, mapId });
+}
+
+/**
  * Name what went wrong, rather than blaming the one cause the guard cannot
  * distinguish on its own. A booted version ahead of ours means someone else's
  * upload is head — a race against a fresh upload, a stale entry against a
@@ -902,6 +970,19 @@ function toCacheTarget(
  */
 function isMissingVersionError(err: unknown): boolean {
 	return walkErrorChain(err).some((entry) => entry.statusCode === 404);
+}
+
+/**
+ * The script one bucket of jobs runs.
+ *
+ * Only a script this backend generates can carry the progress map: a caller
+ * that handed one over (workspace mode) put its own id in when it built it.
+ */
+function bucketScript(jobs: Array<ProjectJob>, testProgressMapId: string | undefined): string {
+	const inputs: Array<JestArgvInput> = jobs.map((job) => {
+		return { config: job.config, testFiles: job.testFiles };
+	});
+	return generateTestScript(inputs, testProgressMapId);
 }
 
 function resolvePrimaryJob(
@@ -1023,7 +1104,7 @@ function rethrowBootProbeFailure(
 	err: unknown,
 	context: { budget: number; placeFilePath: string; versionNumber: number },
 ): never {
-	if (errorChain(err).every((entry) => !(entry instanceof PollTimeoutError))) {
+	if (!isPollTimeout(err)) {
 		throw err;
 	}
 

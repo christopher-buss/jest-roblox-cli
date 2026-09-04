@@ -232,6 +232,11 @@ end
 local liveRecords: any = nil
 local jestSawConfig: any = nil
 
+-- Every heartbeat a run would have written, and the map it named, plus the
+-- sink the shared result builder armed the run with.
+local publishedProgress: { any } = {}
+local progressSink: any = nil
+
 local function makeInstance(name: string, children: any?): any
 	local instance = { Name = name, children = children or {} }
 
@@ -360,6 +365,21 @@ local stubs = {
 		end,
 		unpatch = function() end,
 	},
+	-- The heartbeat's SortedMap sink needs a live MemoryStore, so the module is
+	-- stood in for and `publishedProgress` records what a run would have
+	-- written.
+	["../test-progress"] = {
+		arm = function(options: any)
+			progressSink = options.publish
+			return { failure = nil }
+		end,
+		disarmCurrent = function() end,
+		sortedMapPublisher = function(mapId: string)
+			return function(entry: any)
+				table.insert(publishedProgress, { entry = entry, mapId = mapId })
+			end
+		end,
+	},
 	-- Reached through the shared runner-result module, which resolves the
 	-- run's own jest-circus / Expect / jest-runtime packages before arming.
 	["./per-test-coverage"] = {
@@ -413,6 +433,7 @@ stubs["./bail"] = __BAIL_MODULE__
 -- multi run does. Its instance-resolver sits at the luau root, not beside the
 -- staging runner, so it asks under a different path than the runner does.
 stubs["./instance-resolver"] = stubs["../instance-resolver"]
+stubs["./test-progress"] = stubs["../test-progress"]
 stubs["../runner-result"] = __RUNNER_RESULT_MODULE__
 -- The real watchdog too: what it does to a package that parks is the subject of
 -- the infinite-yield assertion below.
@@ -718,6 +739,43 @@ local function testCoverageWithoutAttribution()
 	check(runner.perTestCoverage == nil, "T13: no attribution means no field")
 end
 
+-- T15: a task given a progress map arms every package it runs against one
+-- sink, so the record the host reads back is the last test the whole task
+-- reached rather than one per package.
+local function testProgressPublishesUnderOneKeyPerTask()
+	publishedProgress = {}
+	progressSink = nil
+
+	local entries = {}
+	for _, pkg in { "a", "b" } do
+		table.insert(entries, entryFor(pkg))
+	end
+
+	EmbeddedRunner.runEmbedded({}, {
+		entries = entries,
+		progress = { mapId = "progress-uuid", ttlSeconds = 30 },
+	})
+	check(progressSink ~= nil, "T15: the run armed a heartbeat")
+
+	progressSink({ elapsedMs = 1, state = "started", testFilePath = "f", testName = "t" })
+
+	check(#publishedProgress == 1, "T15: the sink writes")
+	check(publishedProgress[1].mapId == "progress-uuid", "T15: into the map the payload named")
+	check(publishedProgress[1].entry.testName == "t", "T15: carrying the record")
+end
+
+-- T16: a run the CLI asked for no map from arms nothing, so an ordinary
+-- workspace run spends no MemoryStore quota on a diagnostic nobody reads.
+local function testNoProgressMapPublishesNothing()
+	publishedProgress = {}
+	progressSink = nil
+
+	run({ "a" })
+
+	check(progressSink == nil, "T16: nothing is armed without a map")
+	check(#publishedProgress == 0, "T16: and nothing is written")
+end
+
 -- T14: a package that parks on a yield nothing will ever resolve fails on its
 -- own and the batch runs on. Unguarded the task holds that thread until Roblox
 -- ends it on the deadline, which names neither the package nor the yield.
@@ -980,5 +1038,7 @@ testReplacementTakesTheDroppedItemFirst()
 testRequeueUsesTheSeededTtl()
 testFailedRequeueLeavesTheReadStanding()
 testRefusedRequeueIsRetried()
+testProgressPublishesUnderOneKeyPerTask()
+testNoProgressMapPublishesNothing()
 
 print("ALL OK")

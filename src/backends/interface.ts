@@ -114,6 +114,17 @@ export interface BackendOptions {
 	 */
 	streaming?: StreamingHooks | undefined;
 	/**
+	 * Per-run SortedMap the Roblox runtime heartbeats the test it is on into.
+	 * Read only after a dispatch failure, to name the test a wedged task never
+	 * came back from; a run without one reports the bare timeout it always did.
+	 *
+	 * The backend bakes it into scripts it generates itself. A caller that
+	 * hands over a `scriptOverride` or a `scriptFactory` builds its own
+	 * script, so it must bake the same id in — passing it here only buys the
+	 * read half.
+	 */
+	testProgressMapId?: string | undefined;
+	/**
 	 * Studio-only, experimental: how many Luau VMs (actor hosts in the plugin
 	 * tree) the run-mode runner splits the configs across. `"auto"` means one
 	 * VM per config. Unset — and any request that resolves to a single VM —

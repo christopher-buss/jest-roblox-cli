@@ -3,6 +3,7 @@ import * as path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend, ParallelOption } from "../backends/interface.ts";
+import { resolveTestProgressMapId } from "../backends/test-progress-map.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
@@ -124,6 +125,7 @@ async function runJobsAsync({
 			parallel,
 			projects: jobs.map(toExecutorProject),
 			startTime: Date.now(),
+			testProgressMapId: resolveTestProgressMapId(backend),
 			timing,
 			version: VERSION,
 			vmParallel,

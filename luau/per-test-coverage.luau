@@ -20,6 +20,8 @@
 -- DataModel. The runner passes `_G.__jest_roblox_cov` as the coverage source.
 
 local Attribution = require("./coverage-attribution")
+local CircusHook = require("./circus-hook")
+local dataModelPath = require("./data-model-path")
 
 type MatcherState = { currentTestName: string?, testPath: Instance? }
 export type Record = { delta: any, testCaseId: string, testFilePath: string }
@@ -55,36 +57,13 @@ export type ArmOptions = {
 	runtimeClass: any,
 }
 
-type ArmedRun = {
-	installation: Installation,
-	-- Runtimes already hooked, weak-keyed so a finished test file's runtime
-	-- stays collectable through a run of any length.
-	installed: { [any]: boolean },
-	options: ArmOptions,
-}
-
 local module = {}
 
 -- The run currently asking for attribution, or nil when none is. Module scope
--- because the patch below outlives the run that installed it: both runners arm
--- immediately before `Jest.runCLI`, so the armed run is always the one whose
--- sink the hook should fill.
-local armedRun: ArmedRun? = nil
-local patchedRuntimeClasses: { [any]: boolean } = setmetatable({}, { __mode = "k" }) :: any
-
--- Service-rooted DataModel path (the `game` root, whose parent is nil, is
--- excluded), slash-joined to match the form jest-roblox-cli's source mapper
--- resolves.
-local function dataModelPath(instance: Instance): string
-	local parts: { string } = {}
-	local current: Instance? = instance
-	while current and current.Parent ~= nil do
-		table.insert(parts, 1, current.Name)
-		current = current.Parent
-	end
-
-	return table.concat(parts, "/")
-end
+-- because the standing per-file hook outlives the run that armed it: both
+-- runners arm immediately before `Jest.runCLI`, so the armed run is always the
+-- one whose sink the hook should fill.
+local armedInstallation: Installation? = nil
 
 --[=[
 	Register the snapshot-and-diff handler on one circus dispatch list.
@@ -133,63 +112,6 @@ function module.install(
 	return accumulated
 end
 
--- Put the hook in this runtime's own circus registry. The state module is
--- asked for through the runtime, not required directly: `requireInternalModule`
--- answers from the registry this test file dispatches through, which is the
--- only list `addEventHandler` can usefully append to.
-local function installInto(runtime: any)
-	local run = armedRun
-	if run == nil or run.installed[runtime] then
-		return
-	end
-
-	run.installed[runtime] = true
-
-	local ok, err = pcall(function()
-		local circusState = runtime:requireInternalModule(run.options.circusState)
-		local addEventHandler = circusState.addEventHandler
-		assert(
-			typeof(addEventHandler) == "function",
-			"jest-circus circus/state exposes no addEventHandler"
-		)
-
-		module.install(
-			addEventHandler,
-			run.options.getMatcherState,
-			run.options.getCoverage,
-			run.installation.records
-		)
-	end)
-
-	if not ok and run.installation.failure == nil then
-		run.installation.failure = tostring(err)
-	end
-end
-
--- `setGlobalsForRuntime` is the one call circus's per-file `initialize` makes
--- back into the runtime, and it fires after that file's registry already holds
--- the circus state module — so it is the earliest point where there is a
--- dispatch list to join, once per test file.
---
--- Patched on the shared class table, the way setup-timing patches
--- `requireModule`, and left patched: the wrapper is inert while no run is
--- armed, and re-patching per run would freeze a previous wrapper as the
--- restoration target.
-local function patchRuntimeClass(runtimeClass: any)
-	if patchedRuntimeClasses[runtimeClass] then
-		return
-	end
-
-	local original = runtimeClass.setGlobalsForRuntime
-	assert(typeof(original) == "function", "JestRuntime exposes no setGlobalsForRuntime")
-	patchedRuntimeClasses[runtimeClass] = true
-
-	runtimeClass.setGlobalsForRuntime = function(self: any, ...: any)
-		original(self, ...)
-		installInto(self)
-	end
-end
-
 --[=[
 	Arm per-test attribution for the run that is about to start, returning the
 	accumulator its test files will fill.
@@ -198,15 +120,28 @@ end
 	only names the run whose sink the per-file hook fills from now on.
 ]=]
 function module.arm(options: ArmOptions): Installation
-	patchRuntimeClass(options.runtimeClass)
+	-- One armed run per VM: the standing per-file hook serves every consumer
+	-- still armed, so a previous run left armed would keep filling a sink
+	-- nobody reads.
+	module.disarm()
 
 	local installation: Installation = { failure = nil, records = {} }
-	armedRun = {
-		installation = installation,
-		installed = setmetatable({}, { __mode = "k" }) :: any,
-		options = options,
-	}
 
+	CircusHook.arm({
+		circusState = options.circusState,
+		install = function(addEventHandler)
+			module.install(
+				addEventHandler,
+				options.getMatcherState,
+				options.getCoverage,
+				installation.records
+			)
+		end,
+		report = installation,
+		runtimeClass = options.runtimeClass,
+	})
+
+	armedInstallation = installation
 	return installation
 end
 
@@ -218,7 +153,10 @@ end
 	run's accumulator, which nobody reads.
 ]=]
 function module.disarm()
-	armedRun = nil
+	if armedInstallation ~= nil then
+		CircusHook.disarm(armedInstallation)
+		armedInstallation = nil
+	end
 end
 
 return module

@@ -37,6 +37,11 @@ local function makeInstance(name: string, children: any?): any
 	return instance
 end
 
+-- What the heartbeat was armed with, so the tests can tell an arm from a skip.
+local progressArmedWith: any = nil
+local progressArms = 0
+local progressDisarms = 0
+
 local JestModule = makeInstance("Jest")
 -- Shaped like the real package: `circus/state` under a `circus` folder.
 local CircusStateModule = makeInstance("state")
@@ -72,6 +77,16 @@ local stubs = {
 		end,
 		disarm = function()
 			disarms += 1
+		end,
+	},
+	["./test-progress"] = {
+		arm = function(options: any)
+			progressArmedWith = options
+			progressArms += 1
+			return { failure = nil }
+		end,
+		disarmCurrent = function()
+			progressDisarms += 1
 		end,
 	},
 }
@@ -118,6 +133,9 @@ local function reset()
 	armedWith = nil
 	disarms = 0
 	nextInstallation = nil
+	progressArmedWith = nil
+	progressArms = 0
+	progressDisarms = 0
 	siblingsResolve = true
 end
 
@@ -252,6 +270,43 @@ local function testFailedInstallFailsTheRun()
 	)
 end
 
+-- T7c: a sink arms the heartbeat against the same circus/state the coverage
+-- hook resolves, so a wedged run publishes which test it reached.
+local function testProgressArmsWithASink()
+	reset()
+	RunnerResult.beginProgress(JestModule, function() end)
+
+	check(progressArms == 1, "T7c: the heartbeat is armed")
+	check(progressArmedWith.circusState == CircusStateModule, "T7c: against circus/state")
+	check(typeof(progressArmedWith.publish) == "function", "T7c: with the run's sink")
+end
+
+-- T7d: no sink means no heartbeat, and the standing patch is stopped either
+-- way — it outlives the run that armed it, so a run that publishes nothing has
+-- to say so or it keeps writing into the last run's map.
+local function testProgressWithoutASinkDisarms()
+	reset()
+	RunnerResult.beginProgress(JestModule, function() end)
+	local armedBefore = progressDisarms
+	RunnerResult.beginProgress(JestModule, nil)
+
+	check(progressArms == 1, "T7d: the second run does not arm")
+	check(progressDisarms == armedBefore + 1, "T7d: and stops the first")
+end
+
+-- T7e: a jest layout the heartbeat cannot hook into costs the run its wedge
+-- report and nothing else. Unlike attribution, nothing downstream reads a
+-- heartbeat back, so failing the run over one would trade a real result for a
+-- diagnostic.
+local function testProgressFailureDoesNotFailTheRun()
+	reset()
+	siblingsResolve = false
+	local ok = pcall(RunnerResult.beginProgress, JestModule, function() end)
+
+	check(ok, "T7e: an unhookable jest does not fail the run")
+	check(progressArms == 0, "T7e: and nothing is armed")
+end
+
 -- T8: setup time is reported only when the patch actually measured some.
 local function testSetupSeconds()
 	reset()
@@ -332,6 +387,9 @@ testPerTestCoverageResolvesCircusState()
 testPerTestCoverageAbsentCases()
 testUnresolvableJestFailsTheRun()
 testFailedInstallFailsTheRun()
+testProgressArmsWithASink()
+testProgressWithoutASinkDisarms()
+testProgressFailureDoesNotFailTheRun()
 testSetupSeconds()
 testSnapshotWrites()
 testTiming()

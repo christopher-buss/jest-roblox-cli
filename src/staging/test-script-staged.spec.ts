@@ -323,6 +323,22 @@ describe("bail payload", () => {
 		expect(script).toContain('"bail":true');
 	});
 
+	// Sharded runs dispatch this script rather than the materializer one. The
+	// map only reaches the runtime through the payload, so a generator that
+	// drops it leaves every sharded timeout as opaque as it was before.
+	it("should embed the progress map in the work-stealing payload", () => {
+		expect.assertions(1);
+
+		const script = generateWorkStealingScript(
+			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
+			"queue-uuid-1",
+			90,
+			{ testProgressMapId: "progress-uuid" },
+		);
+
+		expect(script).toContain('"progress":{"mapId":"progress-uuid"}');
+	});
+
 	it("should embed the bail signal map when one is given", () => {
 		expect.assertions(1);
 

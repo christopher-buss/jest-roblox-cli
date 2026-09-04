@@ -18,9 +18,43 @@
 | "lute is required for instrumentation but was not found on PATH" | Lute not installed                                     | Install lute via mise or rokit                                                                                                                         |
 | "rojo is required for --coverage but was not found on PATH"      | Rojo not installed                                     | Install rojo via mise, rokit, or aftman                                                                                                                |
 | "Rate limited by Open Cloud API after multiple retries"          | API rate limit                                         | Wait and retry; the Open Cloud client backs off automatically                                                                                          |
-| "Execution timed out"                                            | Test exceeded timeout                                  | Increase `--timeout` value                                                                                                                             |
+| "Execution timed out"                                            | Test exceeded timeout                                  | Increase `--timeout` value; on Open Cloud the error also names the last test the runtime reached (see below)                                           |
 | "Execution was cancelled"                                        | Task cancelled externally                              | Check Roblox Open Cloud dashboard                                                                                                                      |
 | "Studio plugin disconnected before sending results"              | Studio closed mid-run                                  | Keep Studio open during test execution                                                                                                                 |
+
+## A run that wedged
+
+A test that never yields is not preempted by Roblox, and it starves every other
+coroutine — Jest's own `testTimeout` included. The task returns no output, no
+error and no state, so Open Cloud has nothing to report and neither did this CLI
+before per-test heartbeats.
+
+Every Open Cloud run now writes one heartbeat record per task into a per-run
+MemoryStore sorted map, naming the test the run had reached. The host reads it
+only after a poll timeout, and appends what it found:
+
+```text
+Execution timed out: Roblox never reported a terminal state ...
+  The task never came back, and the last thing the Roblox VM published was:
+    ReplicatedStorage/shared/wedge.spec › wedges › never returns — started 42.0s in, never completed
+  The runtime publishes about one record a second, so the wedge is that
+  test or one shortly after it in that file: a test that never yields
+  starves every other coroutine, so nothing later could publish.
+```
+
+Writes are throttled to roughly one a second per task, so the _file_ is exact
+while the _test_ is only a lower bound: a test that began just after the last
+record landed leaves none of its own. The banner hedges the same way whether the
+record says `started` or `completed`, because both cases allow a later test in
+that file to be the one that wedged.
+
+A sharded run shares one map across its tasks, so the banner lists a last record
+per task and says only that at least one of them never came back — a task that
+finished normally leaves a record too, and nothing correlates a record back to
+the task that wrote it.
+
+Nothing here fails a run on its own: a key without the `memory-store.sorted-map`
+scopes simply reports the bare timeout.
 
 ## Diagnostic Flags
 

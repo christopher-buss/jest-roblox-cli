@@ -17,6 +17,7 @@
 
 local InstanceResolver = require("./instance-resolver")
 local PerTestCoverage = require("./per-test-coverage")
+local TestProgress = require("./test-progress")
 
 --[=[
 	Where one run's coverage lands, for `build` to read back once Jest returns.
@@ -103,6 +104,42 @@ local function findCircusState(circusModule: Instance): ModuleScript
 end
 
 --[=[
+	The three jest internals a per-test hook needs, resolved against the jest
+	root this run uses.
+
+	Expect's matcher state lives under a globally-registered symbol in `_G`, so
+	this copy reads the same state the per-file copies write. Circus's handler
+	list does not, which is why that one is resolved per test file.
+]=]
+type HookModules = {
+	circusState: ModuleScript,
+	getMatcherState: () -> any,
+	runtimeClass: any,
+}
+
+-- Resolved per call, never memoized: this is three FindFirstChild lookups once
+-- per package, and a cache would answer for a jest clone the run has since
+-- torn down — which is exactly the "attribution silently resolves" failure the
+-- assert below exists to rule out.
+local function resolveHookModules(jestModule: ModuleScript): HookModules
+	local circusModule =
+		InstanceResolver.findSiblingPackage(jestModule, "JestCircus", "jest-circus")
+	local expectModule = InstanceResolver.findSiblingPackage(jestModule, "Expect", "expect")
+	local runtimeModule =
+		InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
+	assert(
+		circusModule and expectModule and runtimeModule,
+		"could not resolve the jest-circus / Expect / jest-runtime packages"
+	)
+
+	return {
+		circusState = findCircusState(circusModule),
+		getMatcherState = (require :: any)(expectModule).getState,
+		runtimeClass = (require :: any)(runtimeModule),
+	}
+end
+
+--[=[
 	Arm per-test attribution against the jest instance this run uses.
 
 	Nothing here is pcall-guarded. A coverage run whose attribution silently
@@ -115,29 +152,51 @@ local function armPerTestCoverage(
 	jestModule: ModuleScript,
 	hits: { [string]: any }
 ): PerTestCoverage.Installation
-	local circusModule =
-		InstanceResolver.findSiblingPackage(jestModule, "JestCircus", "jest-circus")
-	local expectModule = InstanceResolver.findSiblingPackage(jestModule, "Expect", "expect")
-	local runtimeModule =
-		InstanceResolver.findSiblingPackage(jestModule, "JestRuntime", "jest-runtime")
-	assert(
-		circusModule and expectModule and runtimeModule,
-		"could not resolve the jest-circus / Expect / jest-runtime packages"
-	)
-
-	-- Expect's matcher state lives under a globally-registered symbol in `_G`,
-	-- so this copy reads the same state the per-file copies write. Circus's
-	-- handler list does not, which is why that one is resolved per test file.
-	local Expect = (require :: any)(expectModule)
+	local hooks = resolveHookModules(jestModule)
 
 	return PerTestCoverage.arm({
-		circusState = findCircusState(circusModule),
+		circusState = hooks.circusState,
 		getCoverage = function()
 			return hits
 		end,
-		getMatcherState = Expect.getState,
-		runtimeClass = (require :: any)(runtimeModule),
+		getMatcherState = hooks.getMatcherState,
+		runtimeClass = hooks.runtimeClass,
 	})
+end
+
+--[=[
+	Heartbeat which test the run has reached, out of the VM, for as long as it
+	runs.
+
+	pcall-guarded where attribution is not: a heartbeat is a diagnostic the run
+	never reads back, so a jest layout it cannot hook into costs the run its
+	wedge report and nothing else. Attribution fails the run instead, because a
+	silent miss there reads downstream as a real answer.
+
+	@param jestModule -- The jest root this run uses.
+	@param publish -- Where each record goes, or nil to stop heartbeating.
+]=]
+function module.beginProgress(jestModule: ModuleScript, publish: TestProgress.Publish?)
+	-- Unconditionally, and before the early return: the per-file hook rides on
+	-- a patch that outlives the run that armed it, so a run wanting no
+	-- heartbeat has to say so or it keeps writing into the last run's map.
+	-- Which run is armed is TestProgress's own business, so it is asked to
+	-- stop rather than handed a copy of the answer.
+	TestProgress.disarmCurrent()
+
+	if publish == nil then
+		return
+	end
+
+	pcall(function()
+		local hooks = resolveHookModules(jestModule)
+		TestProgress.arm({
+			circusState = hooks.circusState,
+			getMatcherState = hooks.getMatcherState,
+			publish = publish,
+			runtimeClass = hooks.runtimeClass,
+		})
+	end)
 end
 
 --[=[

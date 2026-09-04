@@ -38,6 +38,13 @@ export interface ScriptOptions {
 	 */
 	resultBudgetBytes?: number;
 	streaming?: StreamingOptions;
+	/**
+	 * Per-run SortedMap the Roblox runtime heartbeats which test it reached
+	 * into, so a task that never returns can still be told apart from one that
+	 * hung elsewhere. Its own map, not `streaming`: the CLI drains that one as
+	 * results arrive, and a heartbeat is read once, after a failure.
+	 */
+	testProgressMapId?: string | undefined;
 }
 
 interface StreamingOptions {
@@ -61,16 +68,22 @@ interface StreamingPayloadFields {
 	streamingTtlSeconds?: number | undefined;
 }
 
+interface TestProgressPayloadFields {
+	progress?: { mapId: string };
+}
+
 interface BailPayloadFields {
 	bail?: boolean;
 	bailMapId?: string;
 }
 
-interface MaterializerPayload extends BailPayloadFields, StreamingPayloadFields {
+interface MaterializerPayload
+	extends BailPayloadFields, StreamingPayloadFields, TestProgressPayloadFields {
 	entries: Array<EntryPayload>;
 }
 
-interface WorkStealingPayload extends BailPayloadFields, StreamingPayloadFields {
+interface WorkStealingPayload
+	extends BailPayloadFields, StreamingPayloadFields, TestProgressPayloadFields {
 	entries: Array<EntryPayload>;
 	invisibilityWindowSeconds: number;
 	queueId: string;
@@ -85,6 +98,7 @@ export function generateMaterializerScript(
 	const payload: MaterializerPayload = {
 		...bailFields(options),
 		entries: buildEntries(inputs),
+		...testProgressFields(options.testProgressMapId),
 		...streamingFields(options.streaming),
 	};
 	return substitutePayload(payload);
@@ -120,6 +134,7 @@ export function generateWorkStealingScript(
 			? { resultBudgetBytes: options.resultBudgetBytes }
 			: {}),
 		...streamingFields(options.streaming),
+		...testProgressFields(options.testProgressMapId),
 	};
 	return substitutePayload(payload);
 }
@@ -147,6 +162,12 @@ function streamingFields(streaming: StreamingOptions | undefined): StreamingPayl
 		sortedMapId: streaming.sortedMapId,
 		streamingTtlSeconds: streaming.ttlSeconds,
 	};
+}
+
+// Emitted only when the CLI asked for a map, so an ordinary run generates the
+// byte-for-byte payload it always did and its script stays cache-comparable.
+function testProgressFields(mapId: string | undefined): TestProgressPayloadFields {
+	return mapId === undefined ? {} : { progress: { mapId } };
 }
 
 function buildEntries(inputs: ReadonlyArray<MaterializerInput>): Array<EntryPayload> {

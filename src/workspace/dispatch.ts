@@ -11,7 +11,10 @@ import {
 } from "../executor.ts";
 import type { TsconfigMappingCache } from "../executor/tsconfig-mappings.ts";
 import { StreamingResultClient } from "../memory-store/sorted-map-client.ts";
-import { prepareWorkStealingQueueAsync } from "../memory-store/work-stealing.ts";
+import {
+	type PreparedWorkStealing,
+	prepareWorkStealingQueueAsync,
+} from "../memory-store/work-stealing.ts";
 import {
 	StreamingAggregator,
 	type StreamingAggregatorOnEntry,
@@ -27,7 +30,12 @@ import type { PendingEntry } from "./test-selection.ts";
 
 export type WorkspaceDispatchSpec = Pick<
 	RunProjectsOptions,
-	"parallel" | "scriptFactory" | "scriptOverride" | "streaming" | "workStealing"
+	| "parallel"
+	| "scriptFactory"
+	| "scriptOverride"
+	| "streaming"
+	| "testProgressMapId"
+	| "workStealing"
 >;
 
 /**
@@ -52,6 +60,12 @@ interface WorkspaceDispatchInput {
 	jobs: Array<WorkspaceJob>;
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
 	parallel?: ParallelOption;
+	/**
+	 * The run's progress map, resolved once from the backend by the caller so
+	 * both dispatch modes decide it the same way. Baked into every script this
+	 * dispatch builds, because the backend never sees one it did not generate.
+	 */
+	testProgressMapId?: string | undefined;
 	workStealingCredentials: undefined | WorkStealingCredentials;
 }
 
@@ -62,6 +76,7 @@ interface WorkStealingDispatchInput {
 	inputs: Array<MaterializerInput>;
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
 	parallel: "auto" | number;
+	testProgressMapId: string | undefined;
 }
 
 interface DispatchedProjectsInput {
@@ -142,10 +157,11 @@ export function buildWorkspaceJobs(
 
 export async function prepareWorkspaceDispatchAsync({
 	bail = false,
-	generateUuid,
+	generateUuid = randomUUID,
 	jobs,
 	onStreamingResult,
 	parallel,
+	testProgressMapId,
 	workStealingCredentials,
 }: WorkspaceDispatchInput): Promise<WorkspaceDispatchSpec> {
 	const inputs = buildMaterializerInputs(jobs);
@@ -161,17 +177,18 @@ export async function prepareWorkspaceDispatchAsync({
 		const stealing = await tryStealingDispatchAsync({
 			bail,
 			credentials: workStealingCredentials,
-			generateUuid: generateUuid ?? randomUUID,
+			generateUuid,
 			inputs,
 			onStreamingResult,
 			parallel,
+			testProgressMapId,
 		});
 		if (stealing !== undefined) {
 			return stealing;
 		}
 	}
 
-	return deferrableDispatch(inputs, bail);
+	return deferrableDispatch({ bail, inputs, testProgressMapId });
 }
 
 /**
@@ -243,6 +260,42 @@ function buildStreaming(input: {
 	};
 }
 
+/** The one script every worker on this run's queue boots into. */
+function buildStealingScript({
+	bail,
+	generateUuid,
+	inputs,
+	prepared,
+	streaming,
+	testProgressMapId,
+}: {
+	bail: boolean;
+	generateUuid: () => string;
+	inputs: ReadonlyArray<MaterializerInput>;
+	prepared: PreparedWorkStealing;
+	streaming: BuildStreamingResult | undefined;
+	testProgressMapId: string | undefined;
+}): string {
+	return generateWorkStealingScript(
+		inputs,
+		prepared.queueId,
+		prepared.invisibilityWindowSeconds,
+		{
+			bail,
+			// Its own map rather than a reserved key in the results map: the
+			// CLI polls that one and would have to decode past the signal, and
+			// a bail without a streaming consumer would publish per-package
+			// summaries nobody drains just to keep the channel open.
+			...(bail ? { bailMapId: generateUuid() } : {}),
+			queueTtlSeconds: prepared.ttlSeconds,
+			...(streaming === undefined
+				? {}
+				: { streaming: { sortedMapId: streaming.sortedMapId } }),
+			testProgressMapId,
+		},
+	);
+}
+
 async function prepareStealingDispatchAsync({
 	bail,
 	credentials,
@@ -250,9 +303,8 @@ async function prepareStealingDispatchAsync({
 	inputs,
 	onStreamingResult,
 	parallel,
+	testProgressMapId,
 }: WorkStealingDispatchInput): Promise<WorkspaceDispatchSpec> {
-	const { apiKey, baseUrl, universeId } = credentials;
-
 	// Gate streaming setup on an actual consumer. Without `onStreamingResult`
 	// (JSON/agent/silent runs) the SortedMap polling has no sink — running
 	// it anyway burns HTTP quota and risks the one-shot stderr warning
@@ -263,39 +315,32 @@ async function prepareStealingDispatchAsync({
 			? buildStreaming({ credentials, generateUuid, onStreamingResult })
 			: undefined;
 
-	// Its own map rather than a reserved key in the results map: the CLI polls
-	// that one and would have to decode past the signal, and a bail without a
-	// streaming consumer would publish per-package summaries nobody drains just
-	// to keep the channel open.
-	const bailMapId = bail ? generateUuid() : undefined;
-
 	// Enqueued last, so nothing after this point can throw and strand the
 	// items: a caller that falls back to the sequential path would otherwise
 	// leave a full queue behind until its ten-minute TTL expires.
 	const prepared = await prepareWorkStealingQueueAsync({
-		baseUrl,
-		credentials: { apiKey, universeId },
+		baseUrl: credentials.baseUrl,
+		credentials: { apiKey: credentials.apiKey, universeId: credentials.universeId },
 		packages: inputs.map((entry) => ({ pkg: entry.pkg, project: entry.project })),
 		perPackageTimeoutSeconds: longestPackageSeconds(inputs),
 	});
 
-	const script = generateWorkStealingScript(
+	const script = buildStealingScript({
+		bail,
+		generateUuid,
 		inputs,
-		prepared.queueId,
-		prepared.invisibilityWindowSeconds,
-		{
-			bail,
-			bailMapId,
-			queueTtlSeconds: prepared.ttlSeconds,
-			...(streaming !== undefined
-				? { streaming: { sortedMapId: streaming.sortedMapId } }
-				: {}),
-		},
-	);
+		prepared,
+		streaming,
+		testProgressMapId,
+	});
 
-	return streaming === undefined
-		? { parallel, scriptOverride: script, workStealing: true }
-		: { parallel, scriptOverride: script, streaming: streaming.hooks, workStealing: true };
+	return {
+		parallel,
+		scriptOverride: script,
+		...(streaming === undefined ? {} : { streaming: streaming.hooks }),
+		testProgressMapId,
+		workStealing: true,
+	};
 }
 
 /**
@@ -331,10 +376,20 @@ async function tryStealingDispatchAsync(
  * only the entries a task left behind when its return envelope filled up.
  * Matched on (pkg, project), the same pair the entries are keyed by.
  */
-function deferrableDispatch(
-	inputs: Array<MaterializerInput>,
-	bail: boolean,
-): WorkspaceDispatchSpec {
+function deferrableDispatch({
+	bail,
+	inputs,
+	testProgressMapId,
+}: {
+	bail: boolean;
+	inputs: Array<MaterializerInput>;
+	testProgressMapId: string | undefined;
+}): WorkspaceDispatchSpec {
+	// One map for every script this dispatch builds, the re-sends included: a
+	// task that answers a deferral is the same run continuing, and the host
+	// reads the map once for all of them.
+	const options = { bail, testProgressMapId };
+
 	return {
 		scriptFactory: (jobs) => {
 			return generateMaterializerScript(
@@ -343,10 +398,11 @@ function deferrableDispatch(
 						return job.pkg === candidate.pkg && job.displayName === candidate.project;
 					});
 				}),
-				{ bail },
+				options,
 			);
 		},
-		scriptOverride: generateMaterializerScript(inputs, { bail }),
+		scriptOverride: generateMaterializerScript(inputs, options),
+		testProgressMapId,
 	};
 }
 

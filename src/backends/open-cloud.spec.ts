@@ -21,6 +21,7 @@ import type {
 	StreamingResultReader,
 	StreamingResultRecord,
 } from "../memory-store/sorted-map-client.ts";
+import type { TestProgressEntry } from "../memory-store/test-progress.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { errorMessage } from "../utils/error-message.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
@@ -2692,5 +2693,100 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		expect(stub.probeCalls[0]!.pollBudget).toBe(1000);
 		expect(stub.probeCalls[0]!.timeout).toBe(1000);
+	});
+});
+
+describe("wedge reporting", () => {
+	/** What the runner throws when a task never reaches a terminal state. */
+	function wedgeTimeout(): Error {
+		return new Error("Execution timed out: Roblox never reported a terminal state", {
+			cause: new PollTimeoutError("poll budget exhausted", { timeoutMs: 300_000 }),
+		});
+	}
+
+	function progressEntry(): TestProgressEntry {
+		return {
+			elapsedMs: 42_000,
+			state: "started",
+			testFilePath: "ReplicatedStorage/shared/wedge.spec",
+			testName: "wedges > never returns",
+		};
+	}
+
+	it("should name the last test the runtime reported when a task wedges", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setExecute(() => {
+			throw wedgeTimeout();
+		});
+
+		const mapIds: Array<string> = [];
+		const backend = new OpenCloudBackend(credentials, {
+			progressReaderFactory: (mapId) => {
+				mapIds.push(mapId);
+				return { readAllAsync: async () => [progressEntry()] };
+			},
+			runner: stub.runner,
+		});
+
+		await expect(
+			backend.runTestsAsync({ jobs: [job("alpha")], testProgressMapId: "progress-uuid" }),
+		).rejects.toThrow("wedges > never returns");
+		expect(mapIds).toStrictEqual(["progress-uuid"]);
+	});
+
+	it("should leave the failure alone when the run kept no progress map", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setExecute(() => {
+			throw wedgeTimeout();
+		});
+
+		let built = 0;
+		const backend = new OpenCloudBackend(credentials, {
+			progressReaderFactory: () => {
+				built += 1;
+				return { readAllAsync: async () => [progressEntry()] };
+			},
+			runner: stub.runner,
+		});
+
+		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
+			"Execution timed out",
+		);
+		expect(built).toBe(0);
+	});
+
+	it("should reach for its own reader when none is injected", async () => {
+		expect.assertions(1);
+
+		const stub = probeStub();
+		stub.setExecute(() => {
+			throw new Error("permission denied");
+		});
+
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		// Not a wedge, so the reader is built and never read: the assertion is
+		// that reaching for one costs nothing on a failure it cannot explain.
+		await expect(
+			backend.runTestsAsync({ jobs: [job("alpha")], testProgressMapId: "progress-uuid" }),
+		).rejects.toThrow("permission denied");
+	});
+
+	it("should hand the progress map id to the script it generates", async () => {
+		expect.assertions(1);
+
+		const stub = probeStub();
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await backend.runTestsAsync({
+			jobs: [job("alpha")],
+			testProgressMapId: "progress-uuid",
+		});
+
+		expect(stub.executeCalls[0]!.script).toContain("progress-uuid");
 	});
 });

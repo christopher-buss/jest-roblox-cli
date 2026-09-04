@@ -20,6 +20,7 @@ local ResultBudget = require("./result-budget")
 local RunnerResult = require("../runner-result")
 local SetupTiming = require("../setup-timing")
 local SnapshotPatch = require("../snapshot-patch")
+local TestProgress = require("../test-progress")
 
 type CapturedMessage = InterceptWriteable.CapturedMessage
 
@@ -86,6 +87,11 @@ export type Payload = {
 	resultBudgetBytes: number?,
 	sortedMapId: string?,
 	streamingTtlSeconds: number?,
+	-- Per-run SortedMap the runtime heartbeats which test it reached into, so
+	-- a task that never returns can still be told apart from one that hung
+	-- somewhere else. Its own map, not `sortedMapId`: the CLI drains that one
+	-- as results arrive, and a heartbeat is read once, after a failure.
+	progress: { mapId: string, ttlSeconds: number? }?,
 }
 
 --[=[
@@ -142,6 +148,17 @@ type StreamingSummary = {
 	success: boolean,
 }
 
+-- One publisher per task, built at the top of the loop the task drives and
+-- threaded down: the key it writes under is generated once, so every entry the
+-- task runs heartbeats into the same record and the host reads back one per
+-- task.
+local function progressPublisher(payload: Payload): TestProgress.Publish?
+	local progress = payload.progress
+	return if progress
+		then TestProgress.sortedMapPublisher(progress.mapId, progress.ttlSeconds)
+		else nil
+end
+
 local function resolveSetupPaths(paths: { string }?): { Instance }?
 	if paths == nil or #paths == 0 then
 		return paths :: any
@@ -170,7 +187,8 @@ end
 -- The wider Game Output capture lives in `executeEntry`, around this call.
 local function runEntry(
 	callingScript: LuaSourceContainer,
-	entry: EntryPayload
+	entry: EntryPayload,
+	publishProgress: TestProgress.Publish?
 ): (boolean, string, SnapshotWrites?, string?, boolean)
 	local t0 = os.clock()
 	local timingEnabled = entry.config.runnerTiming == true
@@ -264,6 +282,7 @@ local function runEntry(
 			coverage = entry.config.runnerCoverage,
 			perTest = entry.config.runnerPerTestCoverage,
 		})
+		RunnerResult.beginProgress(JestModule, publishProgress)
 
 		-- Strip before Jest.runCLI, mirroring runner.luau — per-entry config
 		-- table, so this only affects this entry, not siblings in the batch.
@@ -444,7 +463,8 @@ end
 local function executeEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload,
-	prevPkg: string?
+	prevPkg: string?,
+	publishProgress: TestProgress.Publish?
 ): (ResultEntry, string?)
 	local t0 = os.clock()
 	local changingPackage = entry.pkg ~= prevPkg
@@ -488,7 +508,7 @@ local function executeEntry(
 	end
 
 	local pcallOk, jestSuccess, primary, snapshotWrites, bannerOutput, timedOut =
-		pcall(runEntry, callingScript, entry)
+		pcall(runEntry, callingScript, entry, publishProgress)
 	local elapsedMs = math.floor((os.clock() - t0) * 1000)
 
 	-- Torn down here rather than at the next entry's materialize: the run this
@@ -672,6 +692,7 @@ function module.runEmbedded(
 		results = {},
 	}
 	local prevPkg: string? = nil
+	local publishProgress = progressPublisher(payload)
 	local stop: StopReason? = nil
 
 	for _, entry in payload.entries do
@@ -680,7 +701,7 @@ function module.runEmbedded(
 			break
 		end
 
-		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg)
+		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg, publishProgress)
 		prevPkg = stagedPkg
 
 		if not commitEntry(run, result) then
@@ -729,6 +750,7 @@ function module.runWorkStealing(
 		results = {},
 	}
 	local prevPkg: string? = nil
+	local publishProgress = progressPublisher(payload)
 	local stop: StopReason? = nil
 
 	while true do
@@ -769,7 +791,7 @@ function module.runWorkStealing(
 			continue
 		end
 
-		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg)
+		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg, publishProgress)
 		prevPkg = stagedPkg
 
 		if not commitEntry(run, result) then

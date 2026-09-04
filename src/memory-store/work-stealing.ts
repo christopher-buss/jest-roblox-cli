@@ -10,6 +10,20 @@ export interface QueueItem {
 	project: string;
 }
 
+export interface PreparedWorkStealing {
+	/**
+	 * Materializer-side invisibility window = perPackageTimeoutSeconds + 30.
+	 */
+	invisibilityWindowSeconds: number;
+	/** Per-run UUID-keyed queue name. */
+	queueId: string;
+	/**
+	 * TTL the items were pushed with. Travels on to the runner, which names it
+	 * again when it puts back an item it dropped over its return budget.
+	 */
+	ttlSeconds: number;
+}
+
 interface PrepareWorkStealingOptions {
 	/** Override the Open Cloud base URL (default: live Roblox endpoint). */
 	baseUrl?: string | undefined;
@@ -22,20 +36,6 @@ interface PrepareWorkStealingOptions {
 	ttlSeconds?: number;
 	/** Override the UUID generator (default: `crypto.randomUUID`). */
 	uuid?: () => string;
-}
-
-interface PreparedWorkStealing {
-	/**
-	 * Materializer-side invisibility window = perPackageTimeoutSeconds + 30.
-	 */
-	invisibilityWindowSeconds: number;
-	/** Per-run UUID-keyed queue name. */
-	queueId: string;
-	/**
-	 * TTL the items were pushed with. Travels on to the runner, which names it
-	 * again when it puts back an item it dropped over its return budget.
-	 */
-	ttlSeconds: number;
 }
 
 /**
