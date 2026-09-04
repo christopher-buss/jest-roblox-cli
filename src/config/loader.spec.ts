@@ -22,7 +22,9 @@ function isErrorWithoutNotFoundMessage(error: unknown): boolean {
 
 function makeTemporaryDirectory(prefix = "config-test-"): string {
 	const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-	onTestFinished(() => {});
+	onTestFinished(() => {
+		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
+	});
 
 	return temporaryDirectory;
 }
