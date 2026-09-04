@@ -21,6 +21,7 @@ import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import { composeEntryDisplayName } from "../utils/display-name.ts";
 import {
 	runWorkspaceAsync,
 	type WorkspaceProjectResult,
@@ -385,10 +386,6 @@ function resolveReportOptions(
 	};
 }
 
-function composeWorkspaceDisplayName(packageName: string, project: string): string {
-	return packageName === project ? packageName : `${packageName} › ${project}`;
-}
-
 // Counted in packages, not project rows: one package can own several projects,
 // and "after 3 packages" reading as 3 when only one package ran would misreport
 // how far the run got.
@@ -427,7 +424,7 @@ function buildWorkspaceResult({
 
 	const projectResults: Array<ProjectResult> = results.map((entry) => {
 		return {
-			displayName: composeWorkspaceDisplayName(entry.pkg, entry.displayName),
+			displayName: composeEntryDisplayName(entry.pkg, entry.displayName),
 			result: entry.result,
 		};
 	});

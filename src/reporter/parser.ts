@@ -26,11 +26,23 @@ export class LuauScriptError extends Error {
 	 */
 	public bannerOutput: string | undefined;
 	/**
+	 * Whether the runner installed its stdout/stderr interception before the
+	 * run that failed. Set from the envelope's own `runner.captureInstalled`,
+	 * and read by the exec-error report so "nothing was written" reads apart
+	 * from "nobody was listening". Undefined when the runner does not say.
+	 */
+	public captureInstalled: boolean | undefined;
+	/**
 	 * The LogService.MessageOut dump for the failed run. Propagated through
 	 * the exec-error path so `--gameOutput <path>` still receives the full
 	 * log when an entry's envelope decodes to a Luau-level script failure.
 	 */
 	public gameOutput: string | undefined;
+	/**
+	 * How far into the entry the runner got before it failed, as the Luau side
+	 * named the phase. Undefined when the runner names none.
+	 */
+	public phase: string | undefined;
 	/**
 	 * The run this failure came from was abandoned at its `projectTimeout`.
 	 * Set from the envelope's own `runner.abandon` block, and read by the
@@ -77,8 +89,10 @@ type JestEnvelope = typeof jestEnvelopeSchema.infer;
 
 const runnerFieldsSchema = type({
 	"abandon?": "unknown",
+	"captureInstalled?": "unknown",
 	"coverage?": jsonValueSchema,
 	"perTestCoverage?": "unknown",
+	"phase?": "unknown",
 	"setup?": "unknown",
 	"snapshotWrites?": "unknown",
 	"timing?": "unknown",
@@ -365,6 +379,10 @@ function unwrapResult(parsed: JestEnvelope, runner: RunnerFields): JestEnvelope 
 		// so a runner that gives up on a run says so through the shared result
 		// seam rather than through a field of its own on the envelope entry.
 		error.timedOut = runner.abandon === "timeout" ? true : undefined;
+		error.phase =
+			typeof runner.phase === "string" && runner.phase !== "" ? runner.phase : undefined;
+		error.captureInstalled =
+			typeof runner.captureInstalled === "boolean" ? runner.captureInstalled : undefined;
 		throw error;
 	}
 

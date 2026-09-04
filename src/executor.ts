@@ -477,6 +477,14 @@ function processOrRecoverEntry(
 			backendTiming: context.backendTiming,
 			config: job.config,
 			deferFormatting: context.deferFormatting,
+			// Off the job rather than off the entry: the entry is what the run
+			// came back with, and a run that came back with nothing still has
+			// the job the host sent.
+			entry: {
+				pkg: job.pkg,
+				project: job.displayName,
+				testFileCount: job.testFiles.length,
+			},
 			error: err,
 			startTime: context.startTime,
 			version: context.version,

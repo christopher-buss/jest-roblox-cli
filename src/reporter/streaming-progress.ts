@@ -1,6 +1,7 @@
 import color from "tinyrainbow";
 
 import type { StreamingResultEntry } from "../memory-store/sorted-map-client.ts";
+import { composeEntryDisplayName } from "../utils/display-name.ts";
 
 export interface ProgressLineOptions {
 	color: boolean;
@@ -52,5 +53,5 @@ function formatBreakdown(entry: StreamingResultEntry, isColorEnabled: boolean): 
 }
 
 function formatLabel(entry: StreamingResultEntry): string {
-	return entry.pkg === entry.project ? entry.pkg : `${entry.pkg} › ${entry.project}`;
+	return composeEntryDisplayName(entry.pkg, entry.project);
 }

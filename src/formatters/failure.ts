@@ -220,11 +220,14 @@ export function formatExecErrorDetail(
 	const badge =
 		file.timedOut === true ? styles.timeoutBadge(" TIMEOUT ") : styles.failBadge(" FAIL ");
 
+	// Indented line by line rather than as one block: the message can be a
+	// multi-line report, and indenting only its first line would leave the rest
+	// hanging off the left margin the whole failure block is drawn against.
 	const lines: Array<string> = [
 		`  ${badge} ${styles.status.fail(displayPath)}`,
 		`  ${styles.status.fail(execErrorTitle(file))}`,
 		"",
-		`  ${styles.status.fail(errorMessage)}`,
+		...indentMessage(errorMessage, styles),
 	];
 
 	const hint = getExecErrorHint(errorMessage);
@@ -322,4 +325,10 @@ function formatFailureMessage(
 			useColor,
 		}),
 	];
+}
+
+// Two spaces on every content line; a blank one is left alone so the block
+// carries neither trailing whitespace nor colour codes wrapping nothing.
+function indentMessage(message: string, styles: Styles): Array<string> {
+	return message.split("\n").map((line) => (line === "" ? "" : `  ${styles.status.fail(line)}`));
 }
