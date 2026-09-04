@@ -15,6 +15,7 @@ local InstanceResolver = require("../instance-resolver")
 local InterceptWriteable = require("../intercept-writeable")
 local Materializer = require("./materializer")
 local PhaseTiming = require("../phase-timing")
+local ProcessCapture = require("../process-capture")
 local PromiseError = require("../promise-error")
 local ResultBudget = require("./result-budget")
 local RunnerResult = require("../runner-result")
@@ -138,6 +139,20 @@ export type ResultEntry = {
 	bannerOutput: string?,
 }
 
+--[=[
+	What an entry has told us about itself so far.
+
+	Owned by `executeEntry` and written through by `runEntry`, because
+	`runEntry` can error outright and take its own locals with it — which is
+	exactly the failure that has nothing else to say. `captureInstalled` stays
+	nil until the tap is attempted, so a package that failed before then reports
+	no answer rather than a wrong one.
+]=]
+type EntryProgress = {
+	captureInstalled: boolean?,
+	phase: string,
+}
+
 type StreamingSummary = {
 	pkg: string,
 	project: string,
@@ -188,7 +203,8 @@ end
 local function runEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload,
-	publishProgress: TestProgress.Publish?
+	publishProgress: TestProgress.Publish?,
+	progress: EntryProgress
 ): (boolean, string, SnapshotWrites?, string?, boolean)
 	local t0 = os.clock()
 	local timingEnabled = entry.config.runnerTiming == true
@@ -196,6 +212,7 @@ local function runEntry(
 	-- Absent means the host asked for no budget.
 	local budgetMs = entry.config.runnerTimeoutMs
 
+	progress.phase = "resolveJest"
 	local t_findJest0 = os.clock()
 	local JestModule = InstanceResolver.getJest(entry.config)
 	local t_findJest = os.clock()
@@ -219,16 +236,11 @@ local function runEntry(
 	-- (e.g. "No tests found, exiting with code 1") are captured into the
 	-- BANNER OUTPUT buffer. Single-package mode (runner.luau) does the same.
 	local capturedMessages: { CapturedMessage } = {}
-	local restoreStdout: (() -> ())?
-	local restoreStderr: (() -> ())?
-	pcall(function()
-		local nodeModules = JestModule.Parent.Parent.Parent :: any
-		local RobloxShared = (require :: any)(nodeModules["@rbxts-js"].RobloxShared)
-		local process = RobloxShared.nodeUtils.process
-
-		restoreStdout = InterceptWriteable.intercept(process.stdout, capturedMessages, 0)
-		restoreStderr = InterceptWriteable.intercept(process.stderr, capturedMessages, 1)
-	end)
+	local restoreCapture = ProcessCapture.install(JestModule, capturedMessages)
+	-- Recorded either way: an entry that comes back with an exit code and no
+	-- banner output reads differently depending on whether Jest wrote nothing
+	-- or nobody was listening, and only this call knows which.
+	progress.captureInstalled = restoreCapture ~= nil
 
 	-- ALL post-patch work (require, project/setup resolution, runCLI) must
 	-- be inside this guard so SnapshotPatch.unpatch always runs. If require
@@ -247,6 +259,7 @@ local function runEntry(
 		local Jest = (require :: any)(JestModule)
 		local t_requireJest = os.clock()
 
+		progress.phase = "resolveProjects"
 		local t_resolveProjects0 = os.clock()
 		local projectInstances = {}
 		if entry.config.projects then
@@ -274,6 +287,7 @@ local function runEntry(
 			entry.config.setupFilesAfterEnv :: any
 		)
 
+		progress.phase = "run"
 		-- Per-package isolation: the shared helper resets the global probe
 		-- sink here, immediately before Jest.runCLI, so the captured map only
 		-- contains hits from this package's instrumented sources — and installs
@@ -333,11 +347,8 @@ local function runEntry(
 		timeoutMs = budgetMs,
 	})
 
-	if restoreStdout then
-		restoreStdout()
-	end
-	if restoreStderr then
-		restoreStderr()
+	if restoreCapture then
+		restoreCapture()
 	end
 
 	SetupTiming.unpatch(setupTimingState)
@@ -468,6 +479,10 @@ local function executeEntry(
 ): (ResultEntry, string?)
 	local t0 = os.clock()
 	local changingPackage = entry.pkg ~= prevPkg
+	-- Opened here so a failure before `runEntry` is reached still names the
+	-- phase it happened in, and handed on so one that kills `runEntry` outright
+	-- reports how far that call got.
+	local progress: EntryProgress = { phase = "staging" }
 
 	-- Wrap the staging hand-off so a missing/torn-down `__pkg_stage` (or any
 	-- materialize-side assertion) surfaces as a per-pkg envelope failure
@@ -500,7 +515,7 @@ local function executeEntry(
 			project = entry.project,
 			elapsedMs = elapsedMs,
 			jestOutput = HttpService:JSONEncode(
-				RunnerResult.fail(PromiseError.normalize(stageErr))
+				RunnerResult.fail(PromiseError.normalize(stageErr), { phase = progress.phase })
 			),
 			gameOutput = stopCapture(),
 		}
@@ -508,7 +523,7 @@ local function executeEntry(
 	end
 
 	local pcallOk, jestSuccess, primary, snapshotWrites, bannerOutput, timedOut =
-		pcall(runEntry, callingScript, entry, publishProgress)
+		pcall(runEntry, callingScript, entry, publishProgress, progress)
 	local elapsedMs = math.floor((os.clock() - t0) * 1000)
 
 	-- Torn down here rather than at the next entry's materialize: the run this
@@ -534,7 +549,10 @@ local function executeEntry(
 			project = entry.project,
 			elapsedMs = elapsedMs,
 			jestOutput = HttpService:JSONEncode(
-				RunnerResult.fail(PromiseError.normalize(jestSuccess))
+				RunnerResult.fail(PromiseError.normalize(jestSuccess), {
+					captureInstalled = progress.captureInstalled,
+					phase = progress.phase,
+				})
 			),
 			gameOutput = gameOutput,
 		}
@@ -554,7 +572,11 @@ local function executeEntry(
 			project = entry.project,
 			elapsedMs = elapsedMs,
 			jestOutput = HttpService:JSONEncode(
-				RunnerResult.fail(primary, { abandon = if abandoned then "timeout" else nil })
+				RunnerResult.fail(primary, {
+					abandon = if abandoned then "timeout" else nil,
+					captureInstalled = progress.captureInstalled,
+					phase = progress.phase,
+				})
 			),
 			gameOutput = gameOutput,
 			bannerOutput = bannerOutput,

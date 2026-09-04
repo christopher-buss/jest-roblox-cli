@@ -24,6 +24,14 @@ const RUNNER_RESULT_SOURCE = fs.readFileSync(
 	path.join(LUAU_DIRECTORY, "runner-result.luau"),
 	"utf-8",
 );
+const INTERCEPT_WRITEABLE_SOURCE = fs.readFileSync(
+	path.join(LUAU_DIRECTORY, "intercept-writeable.luau"),
+	"utf-8",
+);
+const PROCESS_CAPTURE_SOURCE = fs.readFileSync(
+	path.join(LUAU_DIRECTORY, "process-capture.luau"),
+	"utf-8",
+);
 const HARNESS = fs.readFileSync(path.join(CURRENT_DIRECTORY, "runner.harness.luau"), "utf-8");
 
 describe("multi-mode runner under lute", () => {
@@ -41,6 +49,14 @@ describe("multi-mode runner under lute", () => {
 			.replace(
 				"__RUNNER_RESULT_MODULE__",
 				() => `(function()\n${RUNNER_RESULT_SOURCE}\nend)()`,
+			)
+			.replace(
+				"__INTERCEPT_WRITEABLE_MODULE__",
+				() => `(function()\n${INTERCEPT_WRITEABLE_SOURCE}\nend)()`,
+			)
+			.replace(
+				"__PROCESS_CAPTURE_MODULE__",
+				() => `(function()\n${PROCESS_CAPTURE_SOURCE}\nend)()`,
 			)
 			.replace("__MODULE__", () => `(function()\n${MODULE_SOURCE}\nend)()`);
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "runner-"));

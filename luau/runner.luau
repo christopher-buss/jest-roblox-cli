@@ -6,6 +6,7 @@ local InfiniteYield = require("./infinite-yield")
 local InstanceResolver = require("./instance-resolver")
 local InterceptWriteable = require("./intercept-writeable")
 local PhaseTiming = require("./phase-timing")
+local ProcessCapture = require("./process-capture")
 local PromiseError = require("./promise-error")
 local RunnerResult = require("./runner-result")
 local SetupTiming = require("./setup-timing")
@@ -72,12 +73,19 @@ function module.run(
 		return (if stopCapture then stopCapture() else nil) or "[]"
 	end
 
+	-- How far this run got, for a failure that comes back with nothing else to
+	-- say. Read on every failure path below, and by `runTests` as it passes
+	-- each boundary.
+	local phase = "resolveJest"
+
 	local t_findJest0 = os.clock()
 	local findSuccess, findValue = pcall(InstanceResolver.getJest, config)
 	local t_findJest = os.clock()
 
 	if not findSuccess then
-		return HttpService:JSONEncode(RunnerResult.fail(findValue)), encodeGameOutput(), "[]"
+		return HttpService:JSONEncode(RunnerResult.fail(findValue, { phase = phase })),
+			encodeGameOutput(),
+			"[]"
 	end
 
 	local snapshotWrites: { [string]: string } = {}
@@ -98,26 +106,12 @@ function module.run(
 	-- Game Output above: this narrower buffer is what the CLI's error
 	-- banner reads on Luau errors (see cli.ts:formatLuauErrorBanner).
 	local capturedMessages: { CapturedMessage } = {}
-	local restoreStdout: (() -> ())?
-	local restoreStderr: (() -> ())?
-
-	local interceptOk = pcall(function()
-		local nodeModules = findValue.Parent.Parent.Parent :: any
-		local RobloxShared = (require :: any)(nodeModules["@rbxts-js"].RobloxShared)
-		local process = RobloxShared.nodeUtils.process
-
-		restoreStdout = InterceptWriteable.intercept(process.stdout, capturedMessages, 0)
-		restoreStderr = InterceptWriteable.intercept(process.stderr, capturedMessages, 1)
-	end)
-
-	if not interceptOk then
-		restoreStdout = nil
-		restoreStderr = nil
-	end
+	local restoreCapture = ProcessCapture.install(findValue, capturedMessages)
 
 	local pending: any = nil
 
 	local function runTests()
+		phase = "resolveProjects"
 		local t_resolveProjects0 = os.clock()
 		local projects = {}
 
@@ -164,6 +158,7 @@ function module.run(
 		config.runnerTimeoutMs = nil :: any
 		config.runnerCaptureGameOutput = nil :: any
 
+		phase = "run"
 		local coverage = RunnerResult.beginCoverage(findValue, {
 			coverage = coverageEnabled,
 			perTest = perTestEnabled,
@@ -220,12 +215,8 @@ function module.run(
 		timeoutMs = budgetMs,
 	})
 
-	if restoreStdout then
-		restoreStdout()
-	end
-
-	if restoreStderr then
-		restoreStderr()
+	if restoreCapture then
+		restoreCapture()
 	end
 
 	SnapshotPatch.unpatch(patchState)
@@ -233,7 +224,11 @@ function module.run(
 	local jestResult
 	if not runSuccess then
 		jestResult = HttpService:JSONEncode(
-			RunnerResult.fail(runValue, { abandon = if timedOut then "timeout" else nil })
+			RunnerResult.fail(runValue, {
+				abandon = if timedOut then "timeout" else nil,
+				captureInstalled = restoreCapture ~= nil,
+				phase = phase,
+			})
 		)
 	else
 		jestResult = HttpService:JSONEncode(runValue)

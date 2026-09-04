@@ -132,6 +132,9 @@ local _G = {}
 local jestFails = {}
 local jestParks = {}
 local jestMissing = {}
+-- What a config writes to Jest's own stdout on its way out, the way the real
+-- "No tests found, exiting with code 1" is written.
+local jestBanners = {}
 
 -- The config Jest was last handed, so a test can tell what the runner stripped
 -- before handing it over.
@@ -157,6 +160,25 @@ local CircusModule =
 	makeInstance("JestCircus", { circus = makeInstance("circus", { state = CircusStateModule }) })
 local ExpectModule = makeInstance("Expect")
 local RuntimeModule = makeInstance("JestRuntime")
+local RobloxSharedModule = makeInstance("RobloxShared")
+
+-- Shaped like @rbxts-js/roblox-shared's Writeable: a _writeFn the tap swaps
+-- out, defaulting to the print that puts the same line in Game Output.
+local function makeWriteable(): any
+	local writeable = { _writeFn = print }
+	function writeable:write(data: string)
+		self._writeFn(data)
+	end
+
+	return writeable
+end
+
+local RobloxSharedExports = {
+	nodeUtils = { process = { stderr = makeWriteable(), stdout = makeWriteable() } },
+}
+
+-- Stands the RobloxShared package down, so the output tap cannot be installed.
+local sharedIsMissing = false
 
 local Jest = {
 	runCLI = function(_, config, projects)
@@ -165,6 +187,11 @@ local Jest = {
 			expect = function()
 				jestSawConfig = config
 				emit("jest:" .. project, OUTPUT)
+				local banner = jestBanners[project]
+				if banner then
+					RobloxSharedExports.nodeUtils.process.stdout:write(banner)
+				end
+
 				if jestFails[project] then
 					error("jest exploded in " .. project, 0)
 				end
@@ -195,17 +222,15 @@ local stubs = {
 		findInstance = function(path)
 			return path
 		end,
+		findRobloxShared = function()
+			return if sharedIsMissing then nil else RobloxSharedModule
+		end,
 		findSiblingPackage = function(_module, name)
 			if name == "JestCircus" then
 				return CircusModule
 			end
 
 			return if name == "JestRuntime" then RuntimeModule else ExpectModule
-		end,
-	},
-	["./intercept-writeable"] = {
-		intercept = function()
-			return function() end
 		end,
 	},
 	["./phase-timing"] = {
@@ -264,6 +289,10 @@ local function require(target)
 		return { addEventHandler = function() end }
 	end
 
+	if target == RobloxSharedModule then
+		return RobloxSharedExports
+	end
+
 	if target == ExpectModule then
 		return {
 			getState = function()
@@ -285,6 +314,11 @@ end
 -- production runs: the capture window and the abandon verdict are the subject
 -- of the assertions below, and the seam is where both envelope halves are
 -- decided.
+-- The real tap and the real installer that reaches for it, assigned before
+-- the modules requiring them are inlined below: each of those bodies runs
+-- where it is written.
+stubs["./intercept-writeable"] = __INTERCEPT_WRITEABLE_MODULE__
+stubs["./process-capture"] = __PROCESS_CAPTURE_MODULE__
 stubs["./game-output-capture"] = __CAPTURE_MODULE__
 stubs["./infinite-yield"] = __INFINITE_YIELD_MODULE__
 stubs["./runner-result"] = __RUNNER_RESULT_MODULE__
@@ -295,6 +329,7 @@ local function reset()
 	jestFails = {}
 	jestParks = {}
 	jestMissing = {}
+	jestBanners = {}
 	jestSawConfig = nil
 	armed = {}
 end
@@ -376,7 +411,9 @@ local function testJestRejectionIsAFailureEnvelope()
 		string.find(tostring(failed.err), "jest exploded in alpha", 1, true) ~= nil,
 		"T2: the cause travels with it"
 	)
-	check(failed.runner == nil, "T2: a run that failed on its own names no abandon reason")
+	check(failed.runner.abandon == nil, "T2: a run that failed on its own names no abandon reason")
+	check(failed.runner.phase == "run", "T2: it names the phase it failed in")
+	check(failed.runner.captureInstalled == true, "T2: and says its stdout was being watched")
 	check(outputOf(entries[2]).success == true, "T2: the batch runs on past it")
 end
 
@@ -391,6 +428,32 @@ local function testMissingJestFailsBeforeTheRun()
 	local failed = outputOf(entries[1])
 	check(failed.success == false, "T3: a config with no Jest is a failure")
 	check(has(messagesOf(entries[1]), "missing:alpha"), "T3: the lookup's warning is captured")
+	check(failed.runner.phase == "resolveJest", "T3: it names the phase it never got past")
+	check(failed.runner.captureInstalled == nil, "T3: and answers nothing about an unattempted tap")
+end
+
+-- T3b: what Jest writes to its own stdout reaches Banner Output — that is where
+-- the cause of an exit lives, written through process.stdout rather than
+-- through the print LogService hears. A tree the installer cannot find
+-- RobloxShared in says so, rather than reporting an empty capture as silence.
+local function testJestStdoutReachesBannerOutput()
+	reset()
+	jestBanners.alpha = "No tests found in alpha"
+	jestFails.alpha = true
+	local entries = Runner.runProjects({}, { configFor("alpha") })
+
+	local records = HttpService:JSONDecode(entries[1].bannerOutput)
+	check(#records == 1, "T3b: one record per write")
+	check(records[1].message == "No tests found in alpha", "T3b: carrying what Jest wrote")
+
+	sharedIsMissing = true
+	local unwatched = Runner.runProjects({}, { configFor("alpha") })
+	sharedIsMissing = false
+
+	check(
+		outputOf(unwatched[1]).runner.captureInstalled == false,
+		"T3b: a tap that never went on is reported as such"
+	)
 end
 
 -- T4: a config still running when its budget elapses is abandoned, and the
@@ -516,6 +579,7 @@ end
 testEveryConfigGetsItsOwnEntry()
 testJestRejectionIsAFailureEnvelope()
 testMissingJestFailsBeforeTheRun()
+testJestStdoutReachesBannerOutput()
 testElapsedBudgetAbandonsOnlyItsConfig()
 testWithinBudgetNamesNoReason()
 testRunnerFlagsAreStripped()

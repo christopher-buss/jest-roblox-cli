@@ -378,6 +378,31 @@ local function testFailureWithoutAbandon()
 	check(payload.runner == nil, "T13: an empty dimension set attaches nothing")
 end
 
+-- T14: how far a run got and whether its output was being watched ride in that
+-- same block, so a failure that produced nothing else still says both.
+local function testPhaseAndCaptureState()
+	reset()
+	local payload = RunnerResult.fail("Exited with code: 1", {
+		captureInstalled = false,
+		phase = "run",
+	})
+
+	check(payload.runner.phase == "run", "T14: the phase reaches the wire")
+	check(payload.runner.captureInstalled == false, "T14: so does a tap that never went on")
+	check(payload.runner.abandon == nil, "T14: a run nothing abandoned names no reason")
+end
+
+-- T15: and each rides on its own, so a runner reporting one of them does not
+-- have to invent the others.
+local function testEachDimensionRidesAlone()
+	reset()
+	local phaseOnly = RunnerResult.fail("boom", { phase = "staging" })
+	local captureOnly = RunnerResult.fail("boom", { captureInstalled = true })
+
+	check(phaseOnly.runner.captureInstalled == nil, "T15: a phase alone answers nothing else")
+	check(captureOnly.runner.phase == nil, "T15: a capture state alone names no phase")
+end
+
 testBareRunHasNoRunnerKey()
 testCoverageAttachesTheSink()
 testCoverageOffAttachesNothing()
@@ -396,5 +421,7 @@ testTiming()
 testFailureEnvelope()
 testAbandonReason()
 testFailureWithoutAbandon()
+testPhaseAndCaptureState()
+testEachDimensionRidesAlone()
 
 print("ALL OK")

@@ -212,6 +212,11 @@ local materializeFails = {}
 local jestFails = {}
 local jestRedTests = {}
 local jestMissing = {}
+-- What a package writes to Jest's own stdout on its way out, the way the real
+-- "No tests found, exiting with code 1" is written.
+local jestBanners = {}
+-- Stands the RobloxShared package down, so the output tap cannot be installed.
+local sharedIsMissing = false
 local silent = {}
 local jestHangs = {}
 -- Parks the way a slow package does — no warning, nothing wrong, just still
@@ -258,6 +263,22 @@ local CircusStateModule = makeInstance("state")
 local CircusModule =
 	makeInstance("JestCircus", { circus = makeInstance("circus", { state = CircusStateModule }) })
 local ExpectModule = makeInstance("Expect")
+local RobloxSharedModule = makeInstance("RobloxShared")
+
+-- Shaped like @rbxts-js/roblox-shared's Writeable: a _writeFn the tap swaps
+-- out, defaulting to the print that puts the same line in Game Output.
+local function makeWriteable(): any
+	local writeable = { _writeFn = print }
+	function writeable:write(data: string)
+		self._writeFn(data)
+	end
+
+	return writeable
+end
+
+local RobloxSharedExports = {
+	nodeUtils = { process = { stderr = makeWriteable(), stdout = makeWriteable() } },
+}
 local RuntimeModule = makeInstance("JestRuntime")
 local Jest = {
 	runCLI = function(_, config)
@@ -267,6 +288,11 @@ local Jest = {
 				jestSawConfig = config
 				say(pkg, "jest:" .. pkg, OUTPUT)
 				say(pkg, "warn:" .. pkg, WARNING)
+				local banner = jestBanners[pkg]
+				if banner then
+					RobloxSharedExports.nodeUtils.process.stdout:write(banner)
+				end
+
 				if jestFails[pkg] then
 					error("jest exploded in " .. pkg, 0)
 				end
@@ -316,17 +342,15 @@ local stubs = {
 		findInstance = function(path)
 			return path
 		end,
+		findRobloxShared = function()
+			return if sharedIsMissing then nil else RobloxSharedModule
+		end,
 		findSiblingPackage = function(_module, name)
 			if name == "JestCircus" then
 				return CircusModule
 			end
 
 			return if name == "JestRuntime" then RuntimeModule else ExpectModule
-		end,
-	},
-	["../intercept-writeable"] = {
-		intercept = function()
-			return function() end
 		end,
 	},
 	["./materializer"] = {
@@ -404,6 +428,10 @@ local function require(target)
 		return { addEventHandler = function() end }
 	end
 
+	if target == RobloxSharedModule then
+		return RobloxSharedExports
+	end
+
 	if target == ExpectModule then
 		return {
 			getState = function()
@@ -421,9 +449,17 @@ local function require(target)
 	return stub
 end
 
+-- The real tap and the real installer that reaches for it, so what a package
+-- writes to Jest's stdout here reaches Banner Output the way it does in a run —
+-- and a tree the installer cannot find RobloxShared in fails here the same way.
+-- Assigned before the modules that require it are inlined below: each of those
+-- bodies runs where it is written.
+stubs["../intercept-writeable"] = __INTERCEPT_WRITEABLE_MODULE__
+stubs["./intercept-writeable"] = stubs["../intercept-writeable"]
+stubs["./instance-resolver"] = stubs["../instance-resolver"]
+stubs["../process-capture"] = __PROCESS_CAPTURE_MODULE__
 -- The real capture module, so the window under test is the one production
 -- runs. Its own `require("./intercept-writeable")` only wants the type.
-stubs["./intercept-writeable"] = stubs["../intercept-writeable"]
 stubs["../game-output-capture"] = __CAPTURE_MODULE__
 -- The real bail module too: it decides when a loop stops taking packages,
 -- which is what the bail assertions below are about.
@@ -431,8 +467,8 @@ stubs["./bail"] = __BAIL_MODULE__
 -- The real result builder as well: it is the seam both runners assemble their
 -- `runner` envelope through, so a workspace run must reach the same fields a
 -- multi run does. Its instance-resolver sits at the luau root, not beside the
--- staging runner, so it asks under a different path than the runner does.
-stubs["./instance-resolver"] = stubs["../instance-resolver"]
+-- staging runner, so it asks under the path aliased above rather than the one
+-- the staging runner asks under.
 stubs["./test-progress"] = stubs["../test-progress"]
 stubs["../runner-result"] = __RUNNER_RESULT_MODULE__
 -- The real watchdog too: what it does to a package that parks is the subject of
@@ -540,7 +576,8 @@ end
 -- T1: the capture opens before the package is materialized and spans its run,
 -- and two packages that each print distinct messages get only their own —
 -- including the reset between them, which belongs to neither capture.
-local function testWindowAndNoBleedAcrossPackages()
+local function 
+testWindowAndNoBleedAcrossPackages()
 	local results = run({ "a", "b" })
 	local a = messagesOf(results[1])
 	local b = messagesOf(results[2])
@@ -1011,6 +1048,88 @@ local function testRefusedRequeueIsRetried()
 	check(#removedReads == 3, "T25: the read is settled once the put-back lands")
 	check(#taskWaits == 2, "T25: it waited between attempts rather than hammering")
 	check(taskWaits[2] > taskWaits[1], "T25: and backed off further each time")
+end
+
+-- T26: a failure names the phase it happened in. The three failure paths stop
+-- at three different points, and a report built on an exit code alone cannot
+-- tell them apart.
+local PHASE_CASES = {
+	{ flags = materializeFails, pkg = "c", phase = "staging", label = "stage failure" },
+	{ flags = jestMissing, pkg = "e", phase = "resolveJest", label = "runner failure" },
+	{ flags = jestFails, pkg = "d", phase = "run", label = "Jest rejection" },
+}
+
+local function testFailuresNameTheirPhase()
+	for _, case in PHASE_CASES do
+		case.flags[case.pkg] = true
+		local results = run({ case.pkg })
+		case.flags[case.pkg] = nil
+
+		local decoded = HttpService:JSONDecode(results[1].jestOutput)
+		check(decoded.runner ~= nil, "T26: " .. case.label .. " carries runner fields")
+		check(
+			decoded.runner.phase == case.phase,
+			"T26: " .. case.label .. " reports phase " .. case.phase
+		)
+	end
+end
+
+-- T27: a package that got as far as Jest says whether its stdout was being
+-- watched, so an exit code with no banner attached reads as "Jest wrote
+-- nothing" rather than as "nobody was listening".
+local function testFailureReportsWhetherOutputWasWatched()
+	jestFails.a = true
+	local watched = run({ "a" })
+	sharedIsMissing = true
+	local unwatched = run({ "a" })
+	sharedIsMissing = false
+	jestFails.a = nil
+
+	local watchedRunner = HttpService:JSONDecode(watched[1].jestOutput).runner
+	local unwatchedRunner = HttpService:JSONDecode(unwatched[1].jestOutput).runner
+	check(watchedRunner.captureInstalled == true, "T27: an installed tap is reported")
+	check(unwatchedRunner.captureInstalled == false, "T27: a tap that never went on is too")
+end
+
+-- T28: a failure before Jest is reached answers nothing about the tap, rather
+-- than answering "not installed" for a tap nothing tried to install.
+local function testFailureBeforeTheTapAnswersNothing()
+	jestMissing.e = true
+	local results = run({ "e" })
+	jestMissing.e = nil
+
+	local runner = HttpService:JSONDecode(results[1].jestOutput).runner
+	check(runner.captureInstalled == nil, "T28: an unattempted tap reports no answer")
+end
+
+-- T29: what Jest writes to its own stdout reaches Banner Output. This is where
+-- the cause of an exit lives — "No tests found, exiting with code 1" is written
+-- through process.stdout, not through the print LogService hears.
+local function testJestStdoutReachesBannerOutput()
+	jestBanners.a = "No tests found in a"
+	jestFails.a = true
+	local results = run({ "a" })
+	jestFails.a = nil
+	jestBanners.a = nil
+
+	local banner = results[1].bannerOutput
+	check(banner ~= nil, "T29: a package that wrote to stdout has Banner Output")
+	check(
+		string.find(banner, "No tests found in a", 1, true) ~= nil,
+		"T29: carrying what Jest wrote"
+	)
+end
+
+-- T30: and the tap puts it back where it found it, so the next package's
+-- capture starts empty rather than inheriting this one's.
+local function testTheTapIsPutBack()
+	jestBanners.a = "only a said this"
+	local first = run({ "a" })
+	local second = run({ "b" })
+
+	jestBanners.a = nil
+	check(first[1].bannerOutput ~= nil, "T30: the package that wrote has Banner Output")
+	check(second[1].bannerOutput == nil, "T30: the package that did not write has none")
 end
 
 testWindowAndNoBleedAcrossPackages()

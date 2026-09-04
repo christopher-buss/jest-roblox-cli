@@ -59,17 +59,30 @@ export type Dimensions = {
 ]=]
 export type Abandon = "timeout"
 
+--[=[
+	How far a run got before it failed.
+
+	A string rather than a union of the phases each runner names: the two split
+	their work differently, and the host renders a phase it has no wording for
+	as itself, so a runner naming a new one costs nothing on either side.
+]=]
+export type Phase = string
+
 -- What a runner measured about a run that produced no result. Same
--- empty-is-absent rule as `Dimensions`: a failure the runner did not abandon
+-- empty-is-absent rule as `Dimensions`: a failure that measured none of these
 -- passes nothing and the envelope grows no `runner` block.
 export type FailureDimensions = {
 	abandon: Abandon?,
+	captureInstalled: boolean?,
+	phase: Phase?,
 }
 
 export type RunnerFields = {
 	abandon: Abandon?,
+	captureInstalled: boolean?,
 	coverage: { [string]: any }?,
 	perTestCoverage: { PerTestCoverage.Record }?,
+	phase: Phase?,
 	setup: number?,
 	snapshotWrites: { [string]: string }?,
 	timing: { [string]: number }?,
@@ -295,10 +308,11 @@ end
 	Assemble the envelope a runner returns for a run that produced no result.
 
 	`build`'s other half, and here for the same reason: a dimension only a
-	failed run can carry — why the run was given up on — otherwise has no seam
-	to land on, and gets plumbed per runner and then again across the wire as a
-	field of its own. Kept beside `build` so both halves put a runner's fields
-	under the same `runner` key, and the host reads them in one place.
+	failed run can carry — why the run was given up on, how far it got, whether
+	its output was being watched — otherwise has no seam to land on, and gets
+	plumbed per runner and then again across the wire as a field of its own.
+	Kept beside `build` so both halves put a runner's fields under the same
+	`runner` key, and the host reads them in one place.
 ]=]
 function module.fail(err: any, dimensions: FailureDimensions?): Payload
 	local payload: Payload = {
@@ -306,9 +320,20 @@ function module.fail(err: any, dimensions: FailureDimensions?): Payload
 		success = false,
 	}
 
-	local abandon = if dimensions then dimensions.abandon else nil
-	if abandon ~= nil then
-		payload.runner = { abandon = abandon }
+	if dimensions == nil then
+		return payload
+	end
+
+	-- Built by assignment rather than field by field: a nil in a table
+	-- constructor makes no key, so the same table both carries what the run
+	-- measured and answers whether it measured anything at all.
+	local fields: RunnerFields = {
+		abandon = dimensions.abandon,
+		captureInstalled = dimensions.captureInstalled,
+		phase = dimensions.phase,
+	}
+	if next(fields :: any) then
+		payload.runner = fields
 	end
 
 	return payload
