@@ -1,7 +1,6 @@
 import { type } from "arktype";
 import istanbulCoverage from "istanbul-lib-coverage";
 import istanbulReport from "istanbul-lib-report";
-import istanbulReports from "istanbul-reports";
 import assert from "node:assert";
 import * as path from "node:path";
 import process from "node:process";
@@ -12,6 +11,7 @@ import { isCoverageReporter } from "../config/schema.ts";
 import { type CoverageDisplayPredicate, narrowMappedForAgentTable } from "./agent-table-filter.ts";
 import { filterCoverageUniverse } from "./coverage-universe.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
+import { createReporter } from "./reporter-registry.ts";
 
 export interface CoverageReportOptions {
 	agentMode?: boolean | undefined;
@@ -261,7 +261,7 @@ function runReporters({
 			reporterOptions = { skipFull: agentMode };
 		}
 
-		const report = istanbulReports.create(reporterName, reporterOptions);
+		const report = createReporter(reporterName, reporterOptions);
 		report.execute(reporterName === "text" ? textTable.context : fullContext);
 	}
 }

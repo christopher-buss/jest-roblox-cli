@@ -1,6 +1,5 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import istanbulReports from "istanbul-reports";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -10,6 +9,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { projectRootFilter, sourceTwinFilter } from "./agent-table-filter.ts";
 import type { MappedCoverageResult, MappedFileCoverage } from "./mapper.ts";
+import * as reporterRegistry from "./reporter-registry.ts";
 import { checkThresholds, generateReports, printCoverageHeader } from "./reporter.ts";
 
 function createMappedFile(overrides: Partial<MappedFileCoverage> = {}): MappedFileCoverage {
@@ -510,7 +510,7 @@ describe(generateReports, () => {
 
 			Object.defineProperty(process.stdout, "columns", { configurable: true, value: 200 });
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
-			const createReporter = vi.spyOn(istanbulReports, "create");
+			const createReporter = vi.spyOn(reporterRegistry, "createReporter");
 
 			const result = createResult({
 				"src/deeply/nested/path/to/module/index.ts": createMappedFile({
@@ -545,7 +545,7 @@ describe(generateReports, () => {
 
 			vi.stubEnv("COLUMNS", "200");
 			vi.spyOn(process.stdout, "write").mockReturnValue(true);
-			const createReporter = vi.spyOn(istanbulReports, "create");
+			const createReporter = vi.spyOn(reporterRegistry, "createReporter");
 
 			const result = createResult({
 				"src/deeply/nested/path/to/module/index.ts": createMappedFile({
@@ -579,7 +579,7 @@ describe(generateReports, () => {
 				expect.assertions(2);
 
 				vi.spyOn(process.stdout, "write").mockReturnValue(true);
-				const createReporter = vi.spyOn(istanbulReports, "create");
+				const createReporter = vi.spyOn(reporterRegistry, "createReporter");
 
 				const result = createResult({
 					"src/a/very/long/nested/directory/whose/name/exceeds/the/default/terminal/width/player.ts":

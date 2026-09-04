@@ -4,6 +4,11 @@ import { dirname, resolve } from "node:path";
 import type { TestProjectInlineConfiguration } from "vitest/config";
 import { defaultExclude, defineConfig } from "vitest/config";
 
+import {
+	buildIstanbulHtmlAssetsModule,
+	ISTANBUL_HTML_ASSETS_ID,
+} from "./loaders/istanbul-html-assets.mjs";
+
 const DRIVE_LETTER_START_REGEX = /^[A-Za-z]:\//;
 
 function normalizeWindowsPath(input = ""): string {
@@ -15,6 +20,25 @@ function normalizeWindowsPath(input = ""): string {
 		.replace(/\\/g, "/")
 		.replace(DRIVE_LETTER_START_REGEX, (driveLetterMatch) => driveLetterMatch.toUpperCase());
 }
+
+/**
+ * Serves the bundled copy of istanbul's html assets (see
+ * `loaders/istanbul-html-assets.mjs`), so a spec reaching the html reporters
+ * loads them the way the built CLI does.
+ */
+const istanbulHtmlAssetsPlugin = {
+	name: "istanbul-html-assets",
+	load(id: string) {
+		if (id !== ISTANBUL_HTML_ASSETS_ID) {
+			return;
+		}
+
+		return buildIstanbulHtmlAssetsModule();
+	},
+	resolveId(id: string) {
+		return id === ISTANBUL_HTML_ASSETS_ID ? id : undefined;
+	},
+};
 
 const luauPlugin = {
 	name: "luau-raw",
@@ -178,7 +202,7 @@ const JITI_SOURCE_ALIAS = JSON.stringify({ "@isentinel/jest-roblox": selfSourceE
  * these options from the workspace root.
  */
 export const sharedViteOptions = {
-	plugins: [luauPlugin],
+	plugins: [istanbulHtmlAssetsPlugin, luauPlugin],
 	resolve: { alias: workspaceSourceAliases },
 } satisfies TestProjectInlineConfiguration;
 

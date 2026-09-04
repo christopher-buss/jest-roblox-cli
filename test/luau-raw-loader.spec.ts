@@ -5,6 +5,16 @@ import type { load as LoadFunc, resolve as ResolveFunc } from "../loaders/luau-r
 
 vi.mock<typeof import("node:fs")>(import("node:fs"));
 
+// The generator reads the installed `istanbul-reports` off disk, which the
+// `node:fs` mock above has just taken away. What the loader owes it is a
+// module whose source it emits verbatim, so a stub says that much.
+vi.mock(import("../loaders/istanbul-html-assets.mjs"), () => {
+	return {
+		buildIstanbulHtmlAssetsModule: () => "export default {};",
+		ISTANBUL_HTML_ASSETS_ID: "virtual:istanbul-html-assets" as const,
+	};
+});
+
 const { load, resolve }: { load: typeof LoadFunc; resolve: typeof ResolveFunc } =
 	await import("../loaders/luau-raw.mjs");
 
@@ -35,6 +45,17 @@ describe(resolve, () => {
 		const result = resolve("@rbxts/react-globals", {}, next);
 
 		expect(result.format).toBe("luau-raw");
+	});
+
+	it("should claim the virtual asset module before node resolves it", () => {
+		expect.assertions(2);
+
+		// Nothing on disk answers the specifier, so it never reaches `next`.
+		const next = mockNextResolve("file:///unused");
+		const result = resolve("virtual:istanbul-html-assets", {}, next);
+
+		expect(result.url).toBe("virtual:istanbul-html-assets");
+		expect(next).not.toHaveBeenCalled();
 	});
 
 	it("should pass through non-lua resolved URLs unchanged", () => {
@@ -68,6 +89,18 @@ describe(load, () => {
 		const result = load(
 			"file:///node_modules/@rbxts/react-globals/src/init.lua",
 			{ format: "luau-raw" },
+			mockNextLoad(),
+		);
+
+		expect(result.source).toBe("export default {};");
+	});
+
+	it("should build the virtual asset module", () => {
+		expect.assertions(1);
+
+		const result = load(
+			"virtual:istanbul-html-assets",
+			{ format: "istanbul-html-assets" },
 			mockNextLoad(),
 		);
 

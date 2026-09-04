@@ -52,7 +52,9 @@ words:
   - modf
   - mountless
   - newproxy
+  - normalised
   - ocale
+  - oxlint
   - pcall
   - pnpmfile
   - pnpmfiles

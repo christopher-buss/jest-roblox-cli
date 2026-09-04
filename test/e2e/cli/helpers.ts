@@ -28,6 +28,7 @@ interface RunCliOptions {
 }
 
 const BIN = path.resolve(__dirname, "../../../bin/jest-roblox.js");
+const SEA_BUNDLE = path.resolve(__dirname, "../../../dist/sea/sea-entry.cjs");
 
 const mergedResultSchema = type({ testResults: type({ testFilePath: "string" }).array() });
 
@@ -96,36 +97,23 @@ export async function runCliAsync(
 	args: Array<string>,
 	cwdOrOptions?: RunCliOptions | string,
 ): Promise<ExecResult> {
-	const options = typeof cwdOrOptions === "string" ? { cwd: cwdOrOptions } : (cwdOrOptions ?? {});
+	return execNodeAsync(BIN, args, cwdOrOptions);
+}
 
-	return new Promise((resolve) => {
-		execFile(
-			"node",
-			[BIN, ...withIsolatedBackendPort(args)],
-			{
-				cwd: options.cwd,
-				encoding: "utf-8",
-				env: buildCliEnvironment(options.env),
-				maxBuffer: 16 * 1024 * 1024,
-				timeout: options.timeoutMs ?? 30_000,
-				windowsHide: true,
-			},
-			(error, stdout, stderr) => {
-				if (error === null) {
-					resolve({ exitCode: 0, stderr, stdout });
-					return;
-				}
-
-				const status = "code" in error ? error.code : undefined;
-
-				resolve({
-					exitCode: typeof status === "number" ? status : 1,
-					stderr,
-					stdout,
-				});
-			},
-		);
-	});
+/**
+ * Drives the CJS bundle the SEA executable is built from, rather than
+ * `bin/jest-roblox.js` — which prefers `src/` and so never loads a bundle at
+ * all. Everything the binary carries has to be inside that one file: a
+ * dependency reaching for a sibling module or a data file at run time resolves
+ * beside the bundle here, and beside the executable there, and neither holds
+ * one. Running it under node reproduces that on any machine, in a second,
+ * without building a 100 MB binary first.
+ */
+export async function runSeaBundleAsync(
+	args: Array<string>,
+	cwdOrOptions?: RunCliOptions | string,
+): Promise<ExecResult> {
+	return execNodeAsync(SEA_BUNDLE, args, cwdOrOptions);
 }
 
 export function readJsonSync(filePath: string): JSONValue {
@@ -151,6 +139,43 @@ export function readJsonSync(filePath: string): JSONValue {
 export function rojoOnPath(): boolean {
 	isRojoOnPath ??= probeRojo();
 	return isRojoOnPath;
+}
+
+async function execNodeAsync(
+	entry: string,
+	args: Array<string>,
+	cwdOrOptions?: RunCliOptions | string,
+): Promise<ExecResult> {
+	const options = typeof cwdOrOptions === "string" ? { cwd: cwdOrOptions } : (cwdOrOptions ?? {});
+
+	return new Promise((resolve) => {
+		execFile(
+			"node",
+			[entry, ...withIsolatedBackendPort(args)],
+			{
+				cwd: options.cwd,
+				encoding: "utf-8",
+				env: buildCliEnvironment(options.env),
+				maxBuffer: 16 * 1024 * 1024,
+				timeout: options.timeoutMs ?? 30_000,
+				windowsHide: true,
+			},
+			(error, stdout, stderr) => {
+				if (error === null) {
+					resolve({ exitCode: 0, stderr, stdout });
+					return;
+				}
+
+				const status = "code" in error ? error.code : undefined;
+
+				resolve({
+					exitCode: typeof status === "number" ? status : 1,
+					stderr,
+					stdout,
+				});
+			},
+		);
+	});
 }
 
 let isRojoOnPath: boolean | undefined;
