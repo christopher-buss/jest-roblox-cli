@@ -21,6 +21,7 @@
 | "Execution timed out"                                            | Test exceeded timeout                                  | Increase `--timeout` value; on Open Cloud the error also names the last test the runtime reached (see below)                                           |
 | "Execution was cancelled"                                        | Task cancelled externally                              | Check Roblox Open Cloud dashboard                                                                                                                      |
 | "Studio plugin disconnected before sending results"              | Studio closed mid-run                                  | Keep Studio open during test execution                                                                                                                 |
+| "Jest exited before returning a result"                          | The run exited writing no cause anywhere it was heard  | Read the report under it — see below                                                                                                                   |
 
 ## A run that wedged
 
@@ -55,6 +56,43 @@ the task that wrote it.
 
 Nothing here fails a run on its own: a key without the `memory-store.sorted-map`
 scopes simply reports the bare timeout.
+
+## A run that came back with only an exit code
+
+Jest exits through a shim that raises `Exited with code: N`, and the reason it
+exited is written to `process.stdout` a moment earlier. The runners tap that
+stream into Banner Output and surface it as the failure. When the tap caught
+nothing there is no cause to show, and the failure reports what the host knows
+instead:
+
+```text
+  FAIL  <exec-error>
+Test suite failed to run
+
+Jest exited before returning a result, and no cause was captured.
+
+  Project      @scope/pkg › unit
+  Phase        running Jest
+  Test files   1 selected by the host
+  Capture      stdout/stderr intercepted; Jest wrote nothing
+  Game Output  14 lines captured; the last of them follow
+
+    ...
+
+Exited with code: 1
+```
+
+Read it row by row. **Phase** says how far the run got —
+`staging the package into the DataModel`, `resolving the Jest module`,
+`resolving project and setup-file instances`, or `running Jest`. **Test files**
+is the host's own selection: zero there and an exit of 1 is the
+`passWithNoTests` shape, but the report will not say so, because several other
+failures exit the same way. **Capture** distinguishes a Jest that wrote nothing
+from a tap that never went on; the latter is a fault in this CLI, not in the
+project under test. **Game Output** is the wider LogService dump — an
+intercepted `process.stdout` still delegates to `print`, so the line Jest exited
+on usually appears in its tail even when Banner Output is empty.
+`--gameOutput <path>` writes all of it.
 
 ## Diagnostic Flags
 
