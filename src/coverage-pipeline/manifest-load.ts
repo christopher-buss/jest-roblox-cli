@@ -1,6 +1,8 @@
 import * as path from "node:path";
 import process from "node:process";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { CoverageManifest, ReadManifestResult } from "./manifest.ts";
 import { readManifest } from "./manifest.ts";
 
@@ -14,14 +16,17 @@ type ManifestFailure = Exclude<ReadManifestResult, { kind: "ok" }>;
  * manifest is silent: that is the ordinary "coverage was never instrumented"
  * case, not a fault.
  */
-export function loadCoverageManifest(rootDirectory: string): CoverageManifest | undefined {
+export function loadCoverageManifest(
+	rootDirectory: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): CoverageManifest | undefined {
 	const manifestPath = path.join(
 		rootDirectory,
 		".jest-roblox",
 		"coverage",
 		"coverage-manifest.json",
 	);
-	const result = readManifest(manifestPath);
+	const result = readManifest(manifestPath, fileSystem);
 	if (result.kind === "ok") {
 		return result.manifest;
 	}

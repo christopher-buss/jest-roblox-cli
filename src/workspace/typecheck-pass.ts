@@ -5,6 +5,7 @@ import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/gro
 import { runTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheckAsync } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import type { WorkspaceProjectResult } from "./coverage-attach.ts";
 import { writeTypecheckOnlySinksAsync } from "./output-sinks.ts";
 import type { PackageTypecheck, TypeTestProject } from "./test-selection.ts";
@@ -44,6 +45,8 @@ export interface WorkspaceTypecheckPass {
 }
 
 interface TypecheckOnlyInput {
+	/** Where the sinks are written. Defaults to the real filesystem. */
+	fileSystem?: FileSystem | undefined;
 	runOptions: WorkspaceRunOptions;
 	timing: TimingCollector;
 	typecheckByDirectory: Map<string, PackageTypecheck>;
@@ -117,6 +120,7 @@ export async function runTypecheckOnlyWorkspaceAsync(
 		input.typecheckByDirectory,
 	);
 	await writeTypecheckOnlySinksAsync({
+		fileSystem: input.fileSystem,
 		runOptions: input.runOptions,
 		typecheckByPackage: typecheckPass.byPackage,
 		typecheckResult: typecheckPass.outcome.result,

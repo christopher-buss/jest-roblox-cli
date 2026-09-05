@@ -6,6 +6,8 @@ import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PackageInfo } from "./package-resolver.ts";
 
 const ROJO_PROJECT_DEFAULT = "test.project.json";
@@ -18,10 +20,13 @@ export interface LoadedPackage {
 
 export async function loadWorkspacePackagesAsync({
 	cli,
+	fileSystem = nodeFileSystem,
 	packageInfos,
 	timing,
 }: {
 	cli: CliOptions;
+	/** Where each package's config is read from. Defaults to the real one. */
+	fileSystem?: FileSystem;
 	packageInfos: Array<PackageInfo>;
 	timing: TimingCollector;
 }): Promise<Array<LoadedPackage>> {
@@ -29,7 +34,7 @@ export async function loadWorkspacePackagesAsync({
 
 	for (const info of packageInfos) {
 		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
-			return loadConfig(undefined, info.packageDirectory);
+			return loadConfig(undefined, info.packageDirectory, fileSystem);
 		});
 		// The `--testPathPattern` narrow happens per project in
 		// `selectWorkspaceTests`, where the project's resolved Rojo mounts are

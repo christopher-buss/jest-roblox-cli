@@ -108,7 +108,7 @@ async function resolveProjectsAsync(config: ResolvedConfig): Promise<Array<Resol
 	const rojoTree = loadRojoTree(config);
 	const rawProjects = config.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
-		return resolveAllProjects(rawProjects, config, rojoTree, config.rootDir);
+		return resolveAllProjects(rawProjects, config, { cwd: config.rootDir, rojoTree });
 	}
 
 	return [buildImplicitProject(config, rojoTree)];

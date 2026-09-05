@@ -11,6 +11,8 @@ import {
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import type { PackageDescriptor, StubMount } from "../staging/synthesizer.ts";
 import type { TimedPhase, TimingCollector } from "../timing/orchestration-collector.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import type { PendingEntry } from "./test-selection.ts";
 
@@ -29,21 +31,24 @@ import type { PendingEntry } from "./test-selection.ts";
 export function stageWorkspaceStubs({
 	contexts,
 	coverageByPackage,
+	fileSystem = nodeFileSystem,
 	pending,
 	timing,
 }: {
 	contexts: Array<PackageContext>;
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
+	/** Where stubs are written. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	pending: Array<PendingEntry>;
 	timing: TimingCollector;
 }): TimedPhase<Array<PackageDescriptor>> {
 	const liveProjects = liveProjectsByPackage(pending);
 	const { elapsedMs: cleanMs } = timing.profileTimed("cleanLeftoverStubs", () => {
-		cleanLeftoverWorkspaceStubs(contexts, liveProjects);
+		cleanLeftoverWorkspaceStubs(contexts, liveProjects, fileSystem);
 	});
 
 	const { elapsedMs: writeMs, value: written } = timing.profileTimed("buildStubs", () => {
-		return writeStubsAndBuildDescriptors(contexts, liveProjects);
+		return writeStubsAndBuildDescriptors(contexts, liveProjects, fileSystem);
 	});
 
 	const descriptors = written.map((descriptor) => {
@@ -90,11 +95,13 @@ function liveProjectsFor(
 function cleanLeftoverWorkspaceStubs(
 	contexts: Array<PackageContext>,
 	liveProjects: Map<string, Set<string>>,
+	fileSystem: FileSystem,
 ): void {
 	for (const ctx of contexts) {
 		const cleaned = cleanLeftoverStubs(
 			liveProjectsFor(ctx, liveProjects),
 			ctx.info.packageDirectory,
+			fileSystem,
 		);
 		if (cleaned.length > 0) {
 			process.stderr.write(
@@ -109,11 +116,12 @@ function cleanLeftoverWorkspaceStubs(
 function collectLiveProjectStubMounts(
 	project: ResolvedProjectConfig,
 	ctx: PackageContext,
+	fileSystem: FileSystem,
 ): Array<StubMount> {
 	const stubMounts: Array<StubMount> = [];
 	for (const mount of project.rojoMounts) {
 		const sourceMount = path.resolve(ctx.info.packageDirectory, mount.fsPath);
-		if (hasUserAuthoredConfig(sourceMount)) {
+		if (hasUserAuthoredConfig(sourceMount, fileSystem)) {
 			continue;
 		}
 
@@ -137,6 +145,7 @@ function collectLiveProjectStubMounts(
 function writeStubsAndBuildDescriptors(
 	contexts: Array<PackageContext>,
 	liveProjects: Map<string, Set<string>>,
+	fileSystem: FileSystem,
 ): Array<PackageDescriptor> {
 	return contexts.map((ctx) => {
 		const liveProjectsForPackage = liveProjectsFor(ctx, liveProjects);
@@ -146,11 +155,16 @@ function writeStubsAndBuildDescriptors(
 		// live list. The `stubMounts` loop below applies the same filter
 		// so we only emit `$path` references for mounts that actually got
 		// a cache stub written.
-		generateProjectStubs(liveProjectsForPackage, ctx.info.packageDirectory, ctx.cacheRoot);
+		generateProjectStubs(
+			liveProjectsForPackage,
+			ctx.info.packageDirectory,
+			ctx.cacheRoot,
+			fileSystem,
+		);
 
 		const stubMounts: Array<StubMount> = [];
 		for (const project of liveProjectsForPackage) {
-			stubMounts.push(...collectLiveProjectStubMounts(project, ctx));
+			stubMounts.push(...collectLiveProjectStubMounts(project, ctx, fileSystem));
 		}
 
 		return { ...ctx.descriptor, stubMounts };

@@ -1,4 +1,5 @@
-import * as fs from "node:fs";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 
 /**
  * The shadow's two entry makers: one for a directory, one for the path a file
@@ -29,17 +30,20 @@ import * as fs from "node:fs";
  * One level only. Callers walk parent-first, so the chain above is already
  * judged by the time this reaches any level of it.
  */
-export function createShadowDirectory(shadowPath: string): boolean {
-	const existing = fs.statSync(shadowPath, { throwIfNoEntry: false });
+export function createShadowDirectory(
+	shadowPath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): boolean {
+	const existing = fileSystem.statSync(shadowPath, { throwIfNoEntry: false });
 	if (existing?.isDirectory() === true) {
 		return false;
 	}
 
 	if (existing !== undefined) {
-		fs.rmSync(shadowPath, { force: true });
+		fileSystem.rmSync(shadowPath, { force: true });
 	}
 
-	fs.mkdirSync(shadowPath, { recursive: true });
+	fileSystem.mkdirSync(shadowPath, { recursive: true });
 	return true;
 }
 
@@ -52,9 +56,12 @@ export function createShadowDirectory(shadowPath: string): boolean {
  * has is orphaned by definition, and leaving one behind would only re-block the
  * path. `force` covers the entry going away between the `stat` and the `rm`.
  */
-export function clearDirectoryAtFilePath(shadowPath: string): void {
-	if (fs.statSync(shadowPath, { throwIfNoEntry: false })?.isDirectory() === true) {
-		fs.rmSync(shadowPath, { force: true, recursive: true });
+export function clearDirectoryAtFilePath(
+	shadowPath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): void {
+	if (fileSystem.statSync(shadowPath, { throwIfNoEntry: false })?.isDirectory() === true) {
+		fileSystem.rmSync(shadowPath, { force: true, recursive: true });
 	}
 }
 
@@ -66,6 +73,9 @@ export function clearDirectoryAtFilePath(shadowPath: string): void {
  * record hands rojo a Folder under the name a file should have — silently,
  * because nothing on that path throws.
  */
-export function shadowHoldsFile(shadowPath: string): boolean {
-	return fs.statSync(shadowPath, { throwIfNoEntry: false })?.isFile() === true;
+export function shadowHoldsFile(
+	shadowPath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): boolean {
+	return fileSystem.statSync(shadowPath, { throwIfNoEntry: false })?.isFile() === true;
 }

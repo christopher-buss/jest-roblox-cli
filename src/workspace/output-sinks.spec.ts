@@ -1,9 +1,9 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { vol } from "memfs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { ExecuteResult } from "../executor.ts";
 import { usesAgentFormatter } from "../formatters/utils.ts";
 import { mergeProjectResults, mergeResults, writeResultFileAsync } from "../output.ts";
@@ -19,10 +19,6 @@ import {
 import { writeTypecheckOnlySinksAsync, writeWorkspaceSinksAsync } from "./output-sinks.ts";
 import type { PendingEntry, TypeTestProject } from "./test-selection.ts";
 
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 vi.mock(import("../formatters/utils"));
 vi.mock(import("../output"));
 vi.mock(import("../utils/game-output"));
@@ -54,7 +50,6 @@ function makePending(packageName = "@halcyon/foo", project = "client"): PendingE
 }
 
 function setupMocks(): void {
-	vol.reset();
 	vi.clearAllMocks();
 	mocks.buildGroupedGameOutput.mockReturnValue([]);
 	mocks.countGroupedEntries.mockReturnValue(0);
@@ -74,12 +69,15 @@ describe(writeWorkspaceSinksAsync, () => {
 	it("should write a sanitized per-project result file with recursive directory creation", async () => {
 		expect.assertions(2);
 
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		setupMocks();
 
 		const result = makeJestResult("runtime");
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending("@scope/foo / bar", "unit / client")],
 				results: [makeExecuteResult(result)],
 				runOptions: { workspaceGameOutput: false, workspaceOutputFile: true },
@@ -91,14 +89,17 @@ describe(writeWorkspaceSinksAsync, () => {
 		);
 
 		const directory = path.join("/workspace", ".jest-roblox", "output");
+
 		const resultPath = path.join(directory, "@scope-foo-bar--unit-client.jest-output.log");
 
-		expect(vol.statSync(directory).isDirectory()).toBeTrue();
-		expect(vol.readFileSync(resultPath, "utf8")).toBe(JSON.stringify(result, null, 2));
+		expect(volume.statSync(directory).isDirectory()).toBeTrue();
+		expect(volume.readFileSync(resultPath, "utf8")).toBe(JSON.stringify(result, null, 2));
 	});
 
 	it("should merge the runtime result only when an aggregate output path exists", async () => {
 		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
 
 		setupMocks();
 
@@ -107,6 +108,7 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending()],
 				results,
 				runOptions: {
@@ -126,16 +128,20 @@ describe(writeWorkspaceSinksAsync, () => {
 			"/workspace/all.json",
 			typecheckResult,
 			makeJestResult("merged-runtime"),
+			fileSystem,
 		);
 	});
 
 	it("should avoid merging runtime results when no aggregate output path exists", async () => {
 		expect.assertions(2);
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		setupMocks();
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending()],
 				results: [makeExecuteResult()],
 				runOptions: { workspaceGameOutput: false, workspaceOutputFile: false },
@@ -151,11 +157,14 @@ describe(writeWorkspaceSinksAsync, () => {
 			undefined,
 			undefined,
 			undefined,
+			fileSystem,
 		);
 	});
 
 	it("should prefer the aggregate Game Output notice for human formatting", async () => {
 		expect.assertions(3);
+
+		const { fileSystem } = createMemoryFileSystem();
 
 		setupMocks();
 
@@ -167,6 +176,7 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending()],
 				results: [makeExecuteResult()],
 				runOptions: {
@@ -185,6 +195,7 @@ describe(writeWorkspaceSinksAsync, () => {
 		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledExactlyOnceWith(
 			"/workspace/all-game.json",
 			expect.any(Array),
+			fileSystem,
 		);
 		expect(mocks.writeGameOutput).toHaveBeenCalledExactlyOnceWith(
 			path.join(
@@ -194,12 +205,15 @@ describe(writeWorkspaceSinksAsync, () => {
 				"@halcyon-foo--client.game-output.log",
 			),
 			expect.any(Array),
+			fileSystem,
 		);
 		expect(consoleError).toHaveBeenCalledExactlyOnceWith("notice:/workspace/all-game.json");
 	});
 
 	it("should prefer non-empty per-package notices for agent formatting", async () => {
 		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
 
 		setupMocks();
 		mocks.usesAgentFormatter.mockReturnValue(true);
@@ -212,6 +226,7 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending("@halcyon/foo"), makePending("@halcyon/bar")],
 				results: [makeExecuteResult(), makeExecuteResult()],
 				runOptions: {
@@ -234,6 +249,8 @@ describe(writeWorkspaceSinksAsync, () => {
 	it("should announce per-package output when it is the only active sink", async () => {
 		expect.assertions(1);
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		setupMocks();
 		mocks.parseGameOutput.mockReturnValue(fromAny([{}]));
 		mocks.formatGameOutputNotice.mockReturnValue("package notice");
@@ -241,6 +258,7 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending()],
 				results: [makeExecuteResult()],
 				runOptions: { workspaceGameOutput: true, workspaceOutputFile: false },
@@ -257,11 +275,14 @@ describe(writeWorkspaceSinksAsync, () => {
 	it("should not announce an empty aggregate", async () => {
 		expect.assertions(1);
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		setupMocks();
 		const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending()],
 				results: [makeExecuteResult()],
 				runOptions: {
@@ -282,6 +303,8 @@ describe(writeWorkspaceSinksAsync, () => {
 	it("should suppress every Game Output notice under silent mode", async () => {
 		expect.assertions(1);
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		setupMocks();
 
 		mocks.formatGameOutputNotice.mockReturnValue("notice");
@@ -289,6 +312,7 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending()],
 				results: [makeExecuteResult()],
 				runOptions: {
@@ -310,12 +334,15 @@ describe(writeWorkspaceSinksAsync, () => {
 	it("should stay silent when no Game Output sink is configured", async () => {
 		expect.assertions(1);
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		setupMocks();
 
 		const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
+				fileSystem,
 				pending: [makePending()],
 				results: [makeExecuteResult()],
 				runOptions: { workspaceGameOutput: false, workspaceOutputFile: false },
@@ -358,9 +385,12 @@ describe(writeTypecheckOnlySinksAsync, () => {
 	it("should write one merged result for every type-test project when enabled", async () => {
 		expect.assertions(4);
 
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		setupMocks();
 
 		const typecheckResult = makeJestResult("typecheck");
+
 		const projects: Array<TypeTestProject> = [
 			{ pkg: "@halcyon/foo", project: "types" },
 			{ pkg: "@halcyon/foo", project: "strict" },
@@ -368,6 +398,7 @@ describe(writeTypecheckOnlySinksAsync, () => {
 
 		await writeTypecheckOnlySinksAsync(
 			fromAny({
+				fileSystem,
 				runOptions: { outputFile: "/workspace/all.json", workspaceOutputFile: true },
 				typecheckByPackage: new Map([["@halcyon/foo", typecheckResult]]),
 				typecheckResult,
@@ -380,6 +411,7 @@ describe(writeTypecheckOnlySinksAsync, () => {
 			"/workspace/all.json",
 			typecheckResult,
 			undefined,
+			fileSystem,
 		);
 		expect(mocks.mergeResults.mock.calls).toStrictEqual([
 			[typecheckResult, undefined],
@@ -389,13 +421,13 @@ describe(writeTypecheckOnlySinksAsync, () => {
 		const outputDirectory = path.join("/workspace", ".jest-roblox", "output");
 
 		expect(
-			vol.readdirSync(outputDirectory).map(String).toSorted(collator.compare),
+			volume.readdirSync(outputDirectory).map(String).toSorted(collator.compare),
 		).toStrictEqual([
 			"@halcyon-foo--strict.jest-output.log",
 			"@halcyon-foo--types.jest-output.log",
 		]);
 		expect(
-			vol.readFileSync(
+			volume.readFileSync(
 				path.join(outputDirectory, "@halcyon-foo--types.jest-output.log"),
 				"utf8",
 			),
@@ -405,10 +437,13 @@ describe(writeTypecheckOnlySinksAsync, () => {
 	it("should skip per-project typecheck files when the workspace sink is disabled", async () => {
 		expect.assertions(1);
 
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		setupMocks();
 
 		await writeTypecheckOnlySinksAsync(
 			fromAny({
+				fileSystem,
 				runOptions: { workspaceOutputFile: false },
 				typecheckByPackage: new Map(),
 				typecheckResult: undefined,
@@ -417,6 +452,6 @@ describe(writeTypecheckOnlySinksAsync, () => {
 			}),
 		);
 
-		expect(vol.existsSync(path.join("/workspace", ".jest-roblox", "output"))).toBeFalse();
+		expect(volume.existsSync(path.join("/workspace", ".jest-roblox", "output"))).toBeFalse();
 	});
 });

@@ -9,12 +9,14 @@ import {
 
 import { type } from "arktype";
 import { loadConfig as c12LoadConfig } from "c12";
-import fs from "node:fs";
 import * as path from "node:path";
 
-import type { TsconfigDirectories } from "../executor.ts";
+import type { TsconfigDirectories, TsconfigReader } from "../executor.ts";
 import { resolveTsconfigDirectories } from "../executor.ts";
+import { nodeTsconfigReader } from "../executor/tsconfig-mappings.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { isString } from "../utils/is-string.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
@@ -150,9 +152,12 @@ export function applyProjectRoot(
 	return include.map((pattern) => path.posix.join(projectRoot, pattern));
 }
 
-export function createFsClassifier(rootDirectory: string): PathClassifier {
+export function createFsClassifier(
+	rootDirectory: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): PathClassifier {
 	return function classify(fsPath): PathKind {
-		const stat = fs.statSync(resolveMountPath(rootDirectory, fsPath), {
+		const stat = fileSystem.statSync(resolveMountPath(rootDirectory, fsPath), {
 			throwIfNoEntry: false,
 		});
 		if (stat === undefined) {
@@ -206,6 +211,19 @@ const PROJECT_ONLY_KEYS: ReadonlySet<string> = new Set([
 	"outDir",
 	"root",
 ]);
+
+/**
+ * The frame a project resolves in: its rojo tree, its cwd, and what reads
+ * them.
+ */
+export interface ProjectResolutionFrame {
+	cwd: string;
+	/** Where the project configs are read. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
+	rojoTree: RojoTreeNode;
+	/** How a project's tsconfig is located. Defaults to the real reader. */
+	tsconfigReader?: TsconfigReader;
+}
 
 export function dedupeMounts(mounts: Array<Mount>): Array<Mount> {
 	const seen = new Set<string>();
@@ -261,6 +279,7 @@ export function resolveProjectConfig(
 export async function loadProjectConfigFile(
 	filePath: string,
 	cwd: string,
+	tsconfigReader: TsconfigReader = nodeTsconfigReader,
 ): Promise<ProjectConfigFile> {
 	const luauConfigPath = findLuauConfigFile(filePath, cwd);
 	if (luauConfigPath !== undefined) {
@@ -277,7 +296,7 @@ export async function loadProjectConfigFile(
 	}
 
 	const configDirectory = path.posix.dirname(filePath);
-	const tsconfig = resolveTsconfigDirectories(cwd);
+	const tsconfig = resolveTsconfigDirectories(cwd, tsconfigReader);
 	deriveIncludeFromTestMatch(config, configDirectory, tsconfig);
 
 	return config;
@@ -286,14 +305,18 @@ export async function loadProjectConfigFile(
 export async function resolveAllProjects(
 	entries: Array<ProjectEntry>,
 	rootConfig: ResolvedConfig,
-	rojoTree: RojoTreeNode,
-	cwd: string,
+	{
+		cwd,
+		fileSystem = nodeFileSystem,
+		rojoTree,
+		tsconfigReader = nodeTsconfigReader,
+	}: ProjectResolutionFrame,
 ): Promise<Array<ResolvedProjectConfig>> {
 	const loaded: Array<ProjectConfigFile> = [];
 
 	for (const entry of entries) {
 		if (typeof entry === "string") {
-			loaded.push(await loadProjectConfigFile(entry, cwd));
+			loaded.push(await loadProjectConfigFile(entry, cwd, tsconfigReader));
 		} else {
 			loaded.push(entry.test);
 		}
@@ -301,7 +324,7 @@ export async function resolveAllProjects(
 
 	const projects = validateProjects(loaded);
 
-	const classify = createFsClassifier(cwd);
+	const classify = createFsClassifier(cwd, fileSystem);
 	return projects.map((project) => resolveProjectConfig(project, rootConfig, rojoTree, classify));
 }
 

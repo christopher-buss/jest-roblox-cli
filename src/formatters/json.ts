@@ -1,7 +1,8 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { JestResult } from "../types/jest-result.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 
 export function formatJson(result: JestResult): string {
 	return JSON.stringify(result, null, 2);
@@ -11,9 +12,13 @@ export function formatJson(result: JestResult): string {
 // `node:fs/promises`: every spec that exercises an output sink mocks `node:fs`
 // with memfs, and a second module specifier would slip past those mocks and
 // write to the real disk.
-export async function writeJsonFileAsync(result: JestResult, filePath: string): Promise<void> {
+export async function writeJsonFileAsync(
+	result: JestResult,
+	filePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): Promise<void> {
 	const absolutePath = path.resolve(filePath);
 
-	await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
-	await fs.promises.writeFile(absolutePath, formatJson(result), "utf8");
+	await fileSystem.promises.mkdir(path.dirname(absolutePath), { recursive: true });
+	await fileSystem.promises.writeFile(absolutePath, formatJson(result), "utf8");
 }

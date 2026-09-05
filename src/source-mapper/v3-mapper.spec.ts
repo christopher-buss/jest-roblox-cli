@@ -1,195 +1,157 @@
-import * as fs from "node:fs";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { clearMapCache, getSourceContent, mapFromSourceMap, mapLineStart } from "./v3-mapper.ts";
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { createV3Mapper } from "./v3-mapper.ts";
 
-vi.mock(import("node:fs"));
+/** A map with one segment on line 1 and one on line 2. */
+// cspell:ignore AACA
+const TWO_LINE_MAP = JSON.stringify({
+	file: "output.luau",
+	mappings: "AAAA;AACA",
+	sources: ["../src/input.ts"],
+	version: 3,
+});
 
-describe(mapFromSourceMap, () => {
-	it("should return undefined when no .map file exists", () => {
+/** A map with a single segment on line 1, at generated column 0. */
+const ONE_LINE_MAP = JSON.stringify({
+	file: "output.luau",
+	mappings: "AAAA",
+	sources: ["../src/input.ts"],
+	version: 3,
+});
+
+describe(createV3Mapper, () => {
+	it("should return undefined when no map file sits beside the generated file", () => {
 		expect.assertions(1);
 
-		onTestFinished(clearMapCache);
+		const { fileSystem } = createMemoryFileSystem();
 
-		vi.mocked(fs.existsSync).mockReturnValue(false);
-
-		const result = mapFromSourceMap("output.luau", 1);
-
-		expect(result).toBeUndefined();
+		expect(createV3Mapper(fileSystem).mapFromSourceMap("output.luau", 1)).toBeUndefined();
 	});
 
-	it("should return mapped position from valid V3 sourcemap", () => {
+	it("should return the mapped position from a valid V3 sourcemap", () => {
 		expect.assertions(3);
 
-		onTestFinished(clearMapCache);
+		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": TWO_LINE_MAP });
 
-		const sourceMap = JSON.stringify({
-			file: "output.luau",
-			// cspell:ignore AACA
-			mappings: "AAAA;AACA",
-			sources: ["../src/input.ts"],
-			version: 3,
-		});
-
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
-
-		const result = mapFromSourceMap("output.luau", 1);
+		const result = createV3Mapper(fileSystem).mapFromSourceMap("/output.luau", 1);
 
 		expect(result).toBeDefined();
 		expect(result!.source).toBe("../src/input.ts");
 		expect(result!.line).toBe(1);
 	});
 
-	it("should return undefined for unmapped lines", () => {
+	it("should return undefined for a line the map says nothing about", () => {
 		expect.assertions(1);
 
-		onTestFinished(clearMapCache);
+		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": ONE_LINE_MAP });
 
-		const sourceMap = JSON.stringify({
-			file: "output.luau",
-			mappings: "AAAA",
-			sources: ["../src/input.ts"],
-			version: 3,
-		});
-
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
-
-		const result = mapFromSourceMap("output.luau", 99);
-
-		expect(result).toBeUndefined();
+		expect(createV3Mapper(fileSystem).mapFromSourceMap("/output.luau", 99)).toBeUndefined();
 	});
 
-	it("should cache parsed sourcemaps across calls", () => {
+	it("should parse a sourcemap once however many lookups it answers", () => {
 		expect.assertions(2);
 
-		onTestFinished(clearMapCache);
+		const { fileSystem } = createMemoryFileSystem({ "/cached.luau.map": ONE_LINE_MAP });
+		const readFile = vi.spyOn(fileSystem, "readFileSync");
+		const exists = vi.spyOn(fileSystem, "existsSync");
+		const mapper = createV3Mapper(fileSystem);
 
-		const sourceMap = JSON.stringify({
-			file: "output.luau",
-			mappings: "AAAA",
-			sources: ["../src/input.ts"],
-			version: 3,
-		});
+		mapper.mapFromSourceMap("/cached.luau", 1);
+		mapper.mapFromSourceMap("/cached.luau", 1);
 
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
-
-		mapFromSourceMap("cached.luau", 1);
-		mapFromSourceMap("cached.luau", 1);
-
-		expect(fs.readFileSync).toHaveBeenCalledOnce();
-		expect(fs.existsSync).toHaveBeenCalledOnce();
+		expect(readFile).toHaveBeenCalledOnce();
+		expect(exists).toHaveBeenCalledOnce();
 	});
-});
 
-describe(getSourceContent, () => {
-	it("should return undefined when map file does not exist", () => {
+	// Two mappers must not share a parse cache: one spec file's reads would
+	// otherwise answer the next file's lookups under a shared worker.
+	it("should keep each mapper's parse cache to itself", () => {
 		expect.assertions(1);
 
-		onTestFinished(clearMapCache);
+		const { fileSystem } = createMemoryFileSystem({ "/cached.luau.map": ONE_LINE_MAP });
+		createV3Mapper(fileSystem).mapFromSourceMap("/cached.luau", 1);
+		const readFile = vi.spyOn(fileSystem, "readFileSync");
 
-		vi.mocked(fs.existsSync).mockReturnValue(false);
+		createV3Mapper(fileSystem).mapFromSourceMap("/cached.luau", 1);
 
-		const result = getSourceContent("missing.luau", "source.ts");
+		expect(readFile).toHaveBeenCalledOnce();
+	});
 
-		expect(result).toBeUndefined();
+	it("should return undefined for source content when the map file is missing", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		expect(
+			createV3Mapper(fileSystem).getSourceContent("missing.luau", "source.ts"),
+		).toBeUndefined();
 	});
 
 	it("should return the embedded source content for a mapped source", () => {
 		expect.assertions(1);
 
-		onTestFinished(clearMapCache);
-
-		const sourceMap = JSON.stringify({
-			file: "output.luau",
-			mappings: "AAAA",
-			sources: ["../src/input.ts"],
-			sourcesContent: ["const value = 1;"],
-			version: 3,
+		const { fileSystem } = createMemoryFileSystem({
+			"/output.luau.map": JSON.stringify({
+				file: "output.luau",
+				mappings: "AAAA",
+				sources: ["../src/input.ts"],
+				sourcesContent: ["const value = 1;"],
+				version: 3,
+			}),
 		});
 
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
-
-		const result = getSourceContent("output.luau", "../src/input.ts");
-
-		expect(result).toBe("const value = 1;");
+		expect(createV3Mapper(fileSystem).getSourceContent("/output.luau", "../src/input.ts")).toBe(
+			"const value = 1;",
+		);
 	});
 
 	it("should return null when the map embeds no content for the source", () => {
 		expect.assertions(1);
 
-		onTestFinished(clearMapCache);
+		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": ONE_LINE_MAP });
 
-		const sourceMap = JSON.stringify({
-			file: "output.luau",
-			mappings: "AAAA",
-			sources: ["../src/input.ts"],
-			version: 3,
-		});
-
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
-
-		const result = getSourceContent("output.luau", "../src/input.ts");
-
-		expect(result).toBeNull();
+		expect(
+			createV3Mapper(fileSystem).getSourceContent("/output.luau", "../src/input.ts"),
+		).toBeNull();
 	});
-});
 
-describe(mapLineStart, () => {
-	it("should find the first mapping on an indented line that a column-0 lookup misses", () => {
+	it("should find the first mapping on an indented line a column-0 lookup misses", () => {
 		expect.assertions(2);
 
-		onTestFinished(clearMapCache);
-
 		// cspell:ignore IAAA
-		// One segment on line 1 at generated column 4 (`IAAA`), as a tab-indented
-		// `it(` call compiles to.
-		const sourceMap = JSON.stringify({
-			file: "output.luau",
-			mappings: "IAAA",
-			sources: ["../src/input.ts"],
-			version: 3,
+		// One segment on line 1 at generated column 4 (`IAAA`), as a
+		// tab-indented `it(` call compiles to.
+		const { fileSystem } = createMemoryFileSystem({
+			"/output.luau.map": JSON.stringify({
+				file: "output.luau",
+				mappings: "IAAA",
+				sources: ["../src/input.ts"],
+				version: 3,
+			}),
 		});
+		const mapper = createV3Mapper(fileSystem);
 
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(fs.readFileSync).mockReturnValue(sourceMap);
-
-		expect(mapFromSourceMap("output.luau", 1, 0)).toBeUndefined();
-		expect(mapLineStart("output.luau", 1)).toMatchObject({
+		expect(mapper.mapFromSourceMap("/output.luau", 1, 0)).toBeUndefined();
+		expect(mapper.mapLineStart("/output.luau", 1)).toMatchObject({
 			line: 1,
 			source: "../src/input.ts",
 		});
 	});
 
-	it("should return undefined when the line has no mapping", () => {
+	it("should return no line start when the line has no mapping", () => {
 		expect.assertions(1);
 
-		onTestFinished(clearMapCache);
+		const { fileSystem } = createMemoryFileSystem({ "/output.luau.map": ONE_LINE_MAP });
 
-		vi.mocked(fs.existsSync).mockReturnValue(true);
-		vi.mocked(fs.readFileSync).mockReturnValue(
-			JSON.stringify({
-				file: "output.luau",
-				mappings: "AAAA",
-				sources: ["../src/input.ts"],
-				version: 3,
-			}),
-		);
-
-		expect(mapLineStart("output.luau", 3)).toBeUndefined();
+		expect(createV3Mapper(fileSystem).mapLineStart("/output.luau", 3)).toBeUndefined();
 	});
 
-	it("should return undefined when no .map file exists", () => {
+	it("should return no line start when no map file exists", () => {
 		expect.assertions(1);
 
-		onTestFinished(clearMapCache);
+		const { fileSystem } = createMemoryFileSystem();
 
-		vi.mocked(fs.existsSync).mockReturnValue(false);
-
-		expect(mapLineStart("output.luau", 1)).toBeUndefined();
+		expect(createV3Mapper(fileSystem).mapLineStart("output.luau", 1)).toBeUndefined();
 	});
 });

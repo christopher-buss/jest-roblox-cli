@@ -6,11 +6,12 @@
  * descriptor's `ClassName`. Anything rojo mounts but that cannot declare a
  * class of its own — a `.luau` source, a plain directory — reports nothing.
  */
-
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
-import * as fs from "node:fs";
 import * as path from "node:path";
+
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 
 const BINARY_MAGIC = "<roblox!";
 /**
@@ -68,16 +69,19 @@ export function isModelFile(filePath: string): boolean {
  * read the same bytes, and its own error says far more about what is wrong
  * than a second parser's would.
  */
-export function readDeclaredClasses(filePath: string): Array<string> {
+export function readDeclaredClasses(
+	filePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): Array<string> {
 	try {
-		return readerFor(filePath)?.(filePath) ?? [];
+		return readerFor(filePath)?.(fileSystem, filePath) ?? [];
 	} catch {
 		return [];
 	}
 }
 
-function readXmlClasses(filePath: string): Array<string> {
-	const xml = fs.readFileSync(filePath, "utf-8");
+function readXmlClasses(fileSystem: FileSystem, filePath: string): Array<string> {
+	const xml = fileSystem.readFileSync(filePath, "utf-8");
 	return Array.from(xml.matchAll(XML_CLASS_ATTRIBUTE), ([, declared]) => String(declared));
 }
 
@@ -88,8 +92,8 @@ function readXmlClasses(filePath: string): Array<string> {
  * Schema-checked rather than hand-narrowed: these are consumer-authored config
  * files, and anything else in them is rojo's business, not this reader's.
  */
-function readJsonClasses(filePath: string): Array<string> {
-	const parsed = descriptorSchema(JSON.parse(fs.readFileSync(filePath, "utf-8")));
+function readJsonClasses(fileSystem: FileSystem, filePath: string): Array<string> {
+	const parsed = descriptorSchema(JSON.parse(fileSystem.readFileSync(filePath, "utf-8")));
 	if (parsed instanceof type.errors) {
 		return [];
 	}
@@ -99,9 +103,13 @@ function readJsonClasses(filePath: string): Array<string> {
 	);
 }
 
-function readChunkHeader(handle: number, offset: number): ChunkHeader | undefined {
+function readChunkHeader(
+	fileSystem: FileSystem,
+	handle: number,
+	offset: number,
+): ChunkHeader | undefined {
 	const header = Buffer.alloc(CHUNK_HEADER_BYTES);
-	if (fs.readSync(handle, header, 0, CHUNK_HEADER_BYTES, offset) < CHUNK_HEADER_BYTES) {
+	if (fileSystem.readSync(handle, header, 0, CHUNK_HEADER_BYTES, offset) < CHUNK_HEADER_BYTES) {
 		return undefined;
 	}
 
@@ -201,17 +209,20 @@ function decompressLz4(source: Buffer, decompressedBytes: number): Buffer {
  * A short read is reported rather than decompressed: the partly-zeroed buffer
  * would yield an arbitrary class name instead of merely a missing one.
  */
-function readChunkClass({
-	handle,
-	header,
-	offset,
-}: {
-	handle: number;
-	header: ChunkHeader;
-	offset: number;
-}): string | undefined {
+function readChunkClass(
+	fileSystem: FileSystem,
+	{
+		handle,
+		header,
+		offset,
+	}: {
+		handle: number;
+		header: ChunkHeader;
+		offset: number;
+	},
+): string | undefined {
 	const stored = Buffer.alloc(header.storedBytes);
-	if (fs.readSync(handle, stored, 0, header.storedBytes, offset) < header.storedBytes) {
+	if (fileSystem.readSync(handle, stored, 0, header.storedBytes, offset) < header.storedBytes) {
 		return undefined;
 	}
 
@@ -220,13 +231,13 @@ function readChunkClass({
 	);
 }
 
-function readInstanceChunks(handle: number): Array<string> {
+function readInstanceChunks(fileSystem: FileSystem, handle: number): Array<string> {
 	const classes: Array<string> = [];
 	let offset = BINARY_HEADER_BYTES;
 	let hasClassTable = false;
 
 	for (;;) {
-		const header = readChunkHeader(handle, offset);
+		const header = readChunkHeader(fileSystem, handle, offset);
 		if (header === undefined) {
 			return classes;
 		}
@@ -245,7 +256,7 @@ function readInstanceChunks(handle: number): Array<string> {
 		}
 
 		hasClassTable = true;
-		const declared = readChunkClass({ handle, header, offset });
+		const declared = readChunkClass(fileSystem, { handle, header, offset });
 		if (declared === undefined) {
 			return classes;
 		}
@@ -261,11 +272,11 @@ function readInstanceChunks(handle: number): Array<string> {
  * first `PROP`, so the classes are known well before the property data — the
  * bulk of a game-sized model — has to be read or decompressed at all.
  */
-function readBinaryClasses(filePath: string): Array<string> {
-	const handle = fs.openSync(filePath, "r");
+function readBinaryClasses(fileSystem: FileSystem, filePath: string): Array<string> {
+	const handle = fileSystem.openSync(filePath, "r");
 	try {
 		const header = Buffer.alloc(BINARY_HEADER_BYTES);
-		if (fs.readSync(handle, header, 0, BINARY_HEADER_BYTES, 0) < BINARY_HEADER_BYTES) {
+		if (fileSystem.readSync(handle, header, 0, BINARY_HEADER_BYTES, 0) < BINARY_HEADER_BYTES) {
 			return [];
 		}
 
@@ -273,9 +284,9 @@ function readBinaryClasses(filePath: string): Array<string> {
 			return [];
 		}
 
-		return readInstanceChunks(handle);
+		return readInstanceChunks(fileSystem, handle);
 	} finally {
-		fs.closeSync(handle);
+		fileSystem.closeSync(handle);
 	}
 }
 
@@ -284,7 +295,9 @@ function readBinaryClasses(filePath: string): Array<string> {
  * class. One dispatch, so {@link isModelFile} and {@link readDeclaredClasses}
  * cannot drift on which extensions count.
  */
-function readerFor(filePath: string): ((filePath: string) => Array<string>) | undefined {
+function readerFor(
+	filePath: string,
+): ((fileSystem: FileSystem, filePath: string) => Array<string>) | undefined {
 	const lower = filePath.toLowerCase();
 	if (lower.endsWith(".rbxm")) {
 		return readBinaryClasses;

@@ -1,19 +1,18 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
-import { vol } from "memfs";
 import { Buffer } from "node:buffer";
-import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ageFile } from "../../test/mocks/aged-file.ts";
+import type { MemoryFileSystem, MemoryVolume } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import {
 	poolKeyOf,
 	staged,
 	stagedProject,
 	stagedProjectSchema,
 } from "../../test/mocks/staged-project.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
@@ -24,11 +23,6 @@ import { relativizeProjectPaths } from "./relativize-paths.ts";
 import { SHARED_POOL_PASS_VERSION } from "./shared-pool.ts";
 import type { PackageDescriptor } from "./synthesizer.ts";
 import { synthesize } from "./synthesizer.ts";
-
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 
 vi.mock(import("./synthesizer"));
 vi.mock(import("../utils/rojo-builder"));
@@ -57,8 +51,15 @@ const SHARED_PROJECT_JSON = stagedProject({
 	b: { $className: "Folder", Shared: { $className: "Folder", $path: STAGE_DIR } },
 });
 
-function readPooledProject(): typeof stagedProjectSchema.infer {
-	return stagedProjectSchema.assert(JSON.parse(String(vol.readFileSync(PROJECT_FILE, "utf8"))));
+/**
+ * The project the pooling pass wrote back.
+ *
+ * @param volume - The volume the build staged into.
+ */
+function readPooledProject(volume: MemoryVolume): typeof stagedProjectSchema.infer {
+	return stagedProjectSchema.assert(
+		JSON.parse(String(volume.readFileSync(PROJECT_FILE, "utf8"))),
+	);
 }
 
 function makeDescriptor(): PackageDescriptor {
@@ -73,18 +74,17 @@ describe(buildPlaceAsync, () => {
 	it("should return the built place path and its content hash", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
 			// No mkdir here: buildPlaceAsync creates the output directory before
 			// building.
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
 
 		const result = await buildPlaceAsync({
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
@@ -100,17 +100,16 @@ describe(buildPlaceAsync, () => {
 	it("should stamp the content id into the place and record it on the artifact", async () => {
 		expect.assertions(2);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
 
 		const result = await buildPlaceAsync({
 			contentId: "deadbeef",
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
@@ -126,25 +125,24 @@ describe(buildPlaceAsync, () => {
 	it("should write the synthesized project to projectFile and buildAsync from it", async () => {
 		expect.assertions(2);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
 			// No mkdir here: buildPlaceAsync creates the output directory before
 			// building.
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
 
 		await buildPlaceAsync({
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 			wrap: false,
 		});
 
-		expect(JSON.parse(String(vol.readFileSync(PROJECT_FILE, "utf8")))).toMatchObject({
+		expect(JSON.parse(String(volume.readFileSync(PROJECT_FILE, "utf8")))).toMatchObject({
 			name: "synth",
 		});
 		expect(buildWithRojoAsync).toHaveBeenCalledWith(PROJECT_FILE, PLACE_FILE);
@@ -153,16 +151,15 @@ describe(buildPlaceAsync, () => {
 	it("should write $path entries relative to the project file", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
 
 		await buildPlaceAsync({
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
@@ -171,7 +168,7 @@ describe(buildPlaceAsync, () => {
 
 		// Rojo matches globIgnorePaths against the path as written, so an
 		// absolute mount would leave every ignore pattern inert.
-		expect(JSON.parse(String(vol.readFileSync(PROJECT_FILE, "utf8")))).toMatchObject({
+		expect(JSON.parse(String(volume.readFileSync(PROJECT_FILE, "utf8")))).toMatchObject({
 			tree: { $path: normalizeWindowsPath(path.relative("/cache", MOUNT_DIR)) },
 		});
 	});
@@ -179,17 +176,16 @@ describe(buildPlaceAsync, () => {
 	it("should forward wrap and loadStringEnabled to synthesize", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
 
 		const packages = [makeDescriptor()];
 		await buildPlaceAsync({
+			fileSystem,
 			loadStringEnabled: true,
 			packages,
 			placeFile: PLACE_FILE,
@@ -197,54 +193,57 @@ describe(buildPlaceAsync, () => {
 			wrap: false,
 		});
 
-		expect(synthesize).toHaveBeenCalledWith({ loadStringEnabled: true, packages, wrap: false });
+		expect(synthesize).toHaveBeenCalledWith({
+			fileSystem,
+			loadStringEnabled: true,
+			packages,
+			wrap: false,
+		});
 	});
 
 	it("should create the place file's parent directory before building", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		// Writes straight to the output path with no mkdir — succeeds only
 		// because buildPlaceAsync created the (nested, not-yet-existing)
 		// directory.
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
 
 		await buildPlaceAsync({
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: "/fresh/nested/game.rbxl",
 			projectFile: PROJECT_FILE,
 			wrap: false,
 		});
 
-		expect(vol.existsSync("/fresh/nested/game.rbxl")).toBeTrue();
+		expect(volume.existsSync("/fresh/nested/game.rbxl")).toBeTrue();
 	});
 
 	it("should build a mount two packages share once, under the shared pool", async () => {
 		expect.assertions(3);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		vi.mocked(synthesize).mockReturnValue(SHARED_PROJECT_JSON);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
-		vol.fromJSON({ [`${STAGE_DIR}/shared.luau`]: "return {}" });
+		volume.fromJSON({ [`${STAGE_DIR}/shared.luau`]: "return {}" });
 
 		await buildPlaceAsync({
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 		});
 
-		const project = readPooledProject();
+		const project = readPooledProject(volume);
 		const keys = Object.keys(staged(project, "__shared")!).filter(
 			(key) => key !== "$className",
 		);
@@ -257,9 +256,7 @@ describe(buildPlaceAsync, () => {
 	it("should demote a pinned mount two packages share for both of them", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		// The pool runs first, so the pinned-mount pass meets one node rather
 		// than two and its single stand-in reaches every package. Running it
@@ -267,19 +264,20 @@ describe(buildPlaceAsync, () => {
 		// second package mounting the model the engine rejects.
 		vi.mocked(synthesize).mockReturnValue(SHARED_PROJECT_JSON);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, STAND_IN_XML);
+			volume.writeFileSync(outputPath, STAND_IN_XML);
 		});
-		vol.fromJSON({
+		volume.fromJSON({
 			[`${STAGE_DIR}/Gui.model.json`]: JSON.stringify({ ClassName: "StarterGui" }),
 		});
 
 		await buildPlaceAsync({
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 		});
 
-		const pool = staged(readPooledProject(), "__shared");
+		const pool = staged(readPooledProject(volume), "__shared");
 
 		expect(JSON.stringify(pool)).toContain("pinned-shadow");
 	});
@@ -289,18 +287,20 @@ const CACHE_FILE = "/cache/place-cache.json";
 const DIGEST_CACHE_FILE = "/cache/input-digests";
 
 describe("place reuse", () => {
-	function seedBuild(): void {
+	function seedBuild(): MemoryFileSystem {
+		const memory = createMemoryFileSystem({ [`${MOUNT_DIR}/init.luau`]: "print('hi')" });
 		vi.mocked(synthesize).mockReturnValue(PROJECT_JSON);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			memory.volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
-		vol.fromJSON({ [`${MOUNT_DIR}/init.luau`]: "print('hi')" });
 		// Back-dated so the digest cache is allowed to record a digest for it.
-		ageFile(`${MOUNT_DIR}/init.luau`, 60);
+		ageFile(memory.fileSystem, `${MOUNT_DIR}/init.luau`, 60);
+		return memory;
 	}
 
-	async function buildAsync(): ReturnType<typeof buildPlaceAsync> {
+	async function buildAsync(fileSystem: FileSystem): ReturnType<typeof buildPlaceAsync> {
 		return buildPlaceAsync({
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
@@ -316,15 +316,11 @@ describe("place reuse", () => {
 	it("should not re-read an unchanged mount to decide on reuse", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem } = seedBuild();
+		await buildAsync(fileSystem);
 
-		seedBuild();
-		await buildAsync();
-
-		const readFile = vi.spyOn(nodeFs.promises, "readFile");
-		await buildAsync();
+		const readFile = vi.spyOn(fileSystem.promises, "readFile");
+		await buildAsync(fileSystem);
 
 		expect(readFile).not.toHaveBeenCalledWith(`${MOUNT_DIR}/init.luau`);
 	});
@@ -332,16 +328,12 @@ describe("place reuse", () => {
 	it("should skip the rojo buildAsync when nothing changed", async () => {
 		expect.assertions(3);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
-		seedBuild();
-		const first = await buildAsync();
+		const { fileSystem } = seedBuild();
+		const first = await buildAsync(fileSystem);
 
 		expect(vi.mocked(buildWithRojoAsync)).toHaveBeenCalledOnce();
 
-		const second = await buildAsync();
+		const second = await buildAsync(fileSystem);
 
 		expect(vi.mocked(buildWithRojoAsync)).toHaveBeenCalledOnce();
 		expect(second).toStrictEqual(first);
@@ -350,14 +342,10 @@ describe("place reuse", () => {
 	it("should rebuild when a mounted input changed", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
-		seedBuild();
-		await buildAsync();
-		vol.writeFileSync(`${MOUNT_DIR}/init.luau`, "print('edited')");
-		await buildAsync();
+		const { fileSystem, volume } = seedBuild();
+		await buildAsync(fileSystem);
+		volume.writeFileSync(`${MOUNT_DIR}/init.luau`, "print('edited')");
+		await buildAsync(fileSystem);
 
 		expect(vi.mocked(buildWithRojoAsync)).toHaveBeenCalledTimes(2);
 	});
@@ -365,14 +353,10 @@ describe("place reuse", () => {
 	it("should rebuild when the place file is gone", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
-		seedBuild();
-		await buildAsync();
-		vol.unlinkSync(PLACE_FILE);
-		await buildAsync();
+		const { fileSystem, volume } = seedBuild();
+		await buildAsync(fileSystem);
+		volume.unlinkSync(PLACE_FILE);
+		await buildAsync(fileSystem);
 
 		expect(vi.mocked(buildWithRojoAsync)).toHaveBeenCalledTimes(2);
 	});
@@ -380,16 +364,12 @@ describe("place reuse", () => {
 	it("should rebuild when the place no longer matches its recorded hash", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
-		seedBuild();
-		await buildAsync();
+		const { fileSystem, volume } = seedBuild();
+		await buildAsync(fileSystem);
 		// What an interrupted rojo buildAsync leaves: a place on disk that the
 		// still-current record no longer describes.
-		vol.writeFileSync(PLACE_FILE, "TRUNCATED");
-		await buildAsync();
+		volume.writeFileSync(PLACE_FILE, "TRUNCATED");
+		await buildAsync(fileSystem);
 
 		expect(vi.mocked(buildWithRojoAsync)).toHaveBeenCalledTimes(2);
 	});
@@ -397,20 +377,18 @@ describe("place reuse", () => {
 	it("should rebuild when the inputs cannot be hashed", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		// Valid JSON, but no `tree` — the shape the inputs hash rejects. The
 		// buildAsync itself is mocked, so only the reuse decision is under test.
 		vi.mocked(synthesize).mockReturnValue(String.raw`{"name":"synth"}`);
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, PLACE_BYTES);
+			volume.writeFileSync(outputPath, PLACE_BYTES);
 		});
 
-		await buildAsync();
-		await buildAsync();
+		await buildAsync(fileSystem);
+		await buildAsync(fileSystem);
 
 		expect(vi.mocked(buildWithRojoAsync)).toHaveBeenCalledTimes(2);
 	});
@@ -418,9 +396,7 @@ describe("place reuse", () => {
 	it("should skip the pinned-mount pass when nothing changed", async () => {
 		expect.assertions(2);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		// A staged mount carrying a class the engine pins: the pinned-mount
 		// pass spawns rojo once to buildAsync its Folder-rooted stand-in, on top
@@ -429,17 +405,17 @@ describe("place reuse", () => {
 		// The same bytes for both outputs: only the stand-in is read back, and
 		// nothing here parses the place.
 		vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-			vol.writeFileSync(outputPath, STAND_IN_XML);
+			volume.writeFileSync(outputPath, STAND_IN_XML);
 		});
-		vol.fromJSON({
+		volume.fromJSON({
 			[`${STAGE_DIR}/Gui.model.json`]: JSON.stringify({ ClassName: "StarterGui" }),
 		});
 
-		await buildAsync();
+		await buildAsync(fileSystem);
 
 		expect(vi.mocked(buildWithRojoAsync)).toHaveBeenCalledTimes(2);
 
-		await buildAsync();
+		await buildAsync(fileSystem);
 
 		expect(vi.mocked(buildWithRojoAsync)).toHaveBeenCalledTimes(2);
 	});
@@ -447,13 +423,9 @@ describe("place reuse", () => {
 	it("should fold the shared-pool pass version into the key", async () => {
 		expect.assertions(2);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
-		seedBuild();
-		await buildAsync();
-		const recorded = JSON.parse(String(vol.readFileSync(CACHE_FILE, "utf8")));
+		const { fileSystem, volume } = seedBuild();
+		await buildAsync(fileSystem);
+		const recorded = JSON.parse(String(volume.readFileSync(CACHE_FILE, "utf8")));
 
 		// The build's own inputs, keyed over a chosen set of passes. A pool
 		// pass left out of the key would hand out a place built by its
@@ -461,6 +433,7 @@ describe("place reuse", () => {
 		async function keyOverAsync(stagingVersions: Array<number>): Promise<string | undefined> {
 			return computePlaceInputsKeyAsync({
 				digestCacheFile: DIGEST_CACHE_FILE,
+				fileSystem,
 				manifests: [],
 				projectFile: PROJECT_FILE,
 				projectJson: relativizeProjectPaths(PROJECT_JSON, path.dirname(PROJECT_FILE)),
@@ -480,12 +453,9 @@ describe("place reuse", () => {
 	it("should buildAsync every time when no reuse cache is configured", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
-		seedBuild();
+		const { fileSystem } = seedBuild();
 		const options = {
+			fileSystem,
 			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,

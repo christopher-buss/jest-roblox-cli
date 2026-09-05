@@ -10,6 +10,7 @@ import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
 import { isWorkspaceInvocation } from "./run/workspace-validation.ts";
 import { runWorkspaceModeAsync } from "./run/workspace.ts";
 import { createTimingCollector, type TimingCollector } from "./timing/orchestration-collector.ts";
+import { nodeFileSystem } from "./utils/file-system.ts";
 
 /**
  * Single/multi dispatch shared by `runJestRoblox` and `prepareArtifacts`. Both
@@ -46,7 +47,7 @@ export async function runSingleOrMultiAsync(
 		? undefined
 		: timing.profile("loadRojoTree", () => loadRojoTree(merged));
 	const project = buildImplicitProject(merged, rojoTree);
-	return runResolvedProjectsAsync([project], merged, cli, timing);
+	return runResolvedProjectsAsync([project], merged, { cli, fileSystem: nodeFileSystem, timing });
 }
 
 export async function runJestRobloxAsync(

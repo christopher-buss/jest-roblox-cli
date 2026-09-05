@@ -1,8 +1,9 @@
 import { type } from "arktype";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { atomicWrite } from "../utils/atomic-write.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashFile } from "../utils/hash.ts";
 import { parseVersionedManifest } from "./manifest-parse.ts";
 
@@ -89,6 +90,8 @@ export type ReadBuildManifestResult =
 export interface ReadBuildManifestOptions {
 	/** When set, refuse if the manifest's `buildId` differs from this value. */
 	expectedBuildId?: string;
+	/** Where the artifacts are re-hashed. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/** Base for resolving place paths and `files` keys when re-hashing. */
 	rootDir?: string;
 }
@@ -141,8 +144,16 @@ export interface CoverageArtifacts {
 
 type VerifyResult = { actual: string; kind: "mismatch" } | { kind: "missing" } | { kind: "ok" };
 
-export function writeBuildManifest(filePath: string, manifest: BuildManifest): void {
-	atomicWrite({ contents: JSON.stringify(manifest, undefined, "\t"), targetPath: filePath });
+export function writeBuildManifest(
+	filePath: string,
+	manifest: BuildManifest,
+	fileSystem: FileSystem = nodeFileSystem,
+): void {
+	atomicWrite({
+		contents: JSON.stringify(manifest, undefined, "\t"),
+		fileSystem,
+		targetPath: filePath,
+	});
 }
 
 /**
@@ -169,6 +180,7 @@ export function emitBuildManifest(
 	filePath: string,
 	artifacts: CoverageArtifacts,
 	cleanPlace?: BuildManifestArtifact,
+	fileSystem: FileSystem = nodeFileSystem,
 ): void {
 	let manifest: BuildManifest = {
 		buildId: artifacts.buildId,
@@ -182,14 +194,23 @@ export function emitBuildManifest(
 		manifest = { ...manifest, cleanPlace };
 	}
 
-	writeBuildManifest(filePath, manifest);
+	writeBuildManifest(filePath, manifest, fileSystem);
 }
 
 export function readBuildManifest(
 	filePath: string,
-	{ expectedBuildId, rootDir: rootDirectory }: ReadBuildManifestOptions = {},
+	{
+		expectedBuildId,
+		fileSystem = nodeFileSystem,
+		rootDir: rootDirectory,
+	}: ReadBuildManifestOptions = {},
 ): ReadBuildManifestResult {
-	const parsed = parseVersionedManifest(filePath, buildManifestSchema, BUILD_MANIFEST_VERSION);
+	const parsed = parseVersionedManifest(
+		filePath,
+		buildManifestSchema,
+		BUILD_MANIFEST_VERSION,
+		fileSystem,
+	);
 	if (parsed.kind !== "ok") {
 		return parsed;
 	}
@@ -200,12 +221,12 @@ export function readBuildManifest(
 		return { actual: manifest.buildId, expected: expectedBuildId, kind: "buildid-mismatch" };
 	}
 
-	const placeRefusal = verifyPlaces(manifest, rootDirectory);
+	const placeRefusal = verifyPlaces(fileSystem, manifest, rootDirectory);
 	if (placeRefusal !== undefined) {
 		return placeRefusal;
 	}
 
-	const sourceRefusal = verifySourceFiles(manifest, rootDirectory);
+	const sourceRefusal = verifySourceFiles(fileSystem, manifest, rootDirectory);
 	if (sourceRefusal !== undefined) {
 		return sourceRefusal;
 	}
@@ -214,17 +235,18 @@ export function readBuildManifest(
 }
 
 function verifyArtifact(
+	fileSystem: FileSystem,
 	storedPath: string,
 	expectedHash: string,
 	rootDirectory: string | undefined,
 ): VerifyResult {
 	const diskPath =
 		rootDirectory === undefined ? storedPath : path.join(rootDirectory, storedPath);
-	if (!fs.existsSync(diskPath)) {
+	if (!fileSystem.existsSync(diskPath)) {
 		return { kind: "missing" };
 	}
 
-	const actual = hashFile(diskPath);
+	const actual = hashFile(diskPath, fileSystem);
 	if (actual !== expectedHash) {
 		return { actual, kind: "mismatch" };
 	}
@@ -237,11 +259,12 @@ function verifyArtifact(
  * matching refuse variant. Returns `undefined` when the place is intact.
  */
 function verifyPlace(
+	fileSystem: FileSystem,
 	artifact: BuildManifestArtifact,
 	mismatchKind: "clean-place-hash-mismatch" | "coverage-place-hash-mismatch",
 	rootDirectory: string | undefined,
 ): ReadBuildManifestResult | undefined {
-	const result = verifyArtifact(artifact.path, artifact.hash, rootDirectory);
+	const result = verifyArtifact(fileSystem, artifact.path, artifact.hash, rootDirectory);
 	if (result.kind === "missing") {
 		return { kind: "missing-referenced-artifact", path: artifact.path };
 	}
@@ -265,10 +288,12 @@ function verifyPlace(
  * `prepareArtifacts` emits it), so it is re-hashed only when present.
  */
 function verifyPlaces(
+	fileSystem: FileSystem,
 	manifest: BuildManifest,
 	rootDirectory: string | undefined,
 ): ReadBuildManifestResult | undefined {
 	const coverageRefusal = verifyPlace(
+		fileSystem,
 		manifest.coveragePlace,
 		"coverage-place-hash-mismatch",
 		rootDirectory,
@@ -281,7 +306,7 @@ function verifyPlaces(
 		return undefined;
 	}
 
-	return verifyPlace(manifest.cleanPlace, "clean-place-hash-mismatch", rootDirectory);
+	return verifyPlace(fileSystem, manifest.cleanPlace, "clean-place-hash-mismatch", rootDirectory);
 }
 
 /**
@@ -289,11 +314,12 @@ function verifyPlaces(
  * order keeps "report the first mismatch" deterministic without a comparator.
  */
 function verifySourceFiles(
+	fileSystem: FileSystem,
 	manifest: BuildManifest,
 	rootDirectory: string | undefined,
 ): ReadBuildManifestResult | undefined {
 	for (const [key, record] of Object.entries(manifest.files)) {
-		const result = verifyArtifact(key, record.sourceHash, rootDirectory);
+		const result = verifyArtifact(fileSystem, key, record.sourceHash, rootDirectory);
 		if (result.kind === "missing") {
 			return { kind: "missing-referenced-artifact", path: key };
 		}

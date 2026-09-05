@@ -26,6 +26,7 @@ import {
 } from "../staging/test-script-staged.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { errorMessage } from "../utils/error-message.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import type { PendingEntry } from "./test-selection.ts";
 
 export type WorkspaceDispatchSpec = Pick<
@@ -82,6 +83,8 @@ interface WorkStealingDispatchInput {
 interface DispatchedProjectsInput {
 	backend: Backend | undefined;
 	dispatchSpec: WorkspaceDispatchSpec;
+	/** Where the run reads and writes. Defaults to the real filesystem. */
+	fileSystem?: FileSystem | undefined;
 	jobs: Array<WorkspaceJob>;
 	startTime: number;
 	timing: TimingCollector;
@@ -104,7 +107,7 @@ interface BuildStreamingResult {
 export async function runDispatchedProjectsAsync(
 	input: DispatchedProjectsInput,
 ): Promise<{ ranProjectIndices: Array<number>; results: Array<ExecuteResult> }> {
-	const { dispatchSpec, jobs, startTime, timing, tsconfigCache, version } = input;
+	const { dispatchSpec, fileSystem, jobs, startTime, timing, tsconfigCache, version } = input;
 	const { ranProjectIndices, results } = await timing.profileAsync("runProjects", async () => {
 		return runProjectsAsync({
 			// Defined whenever runtime jobs exist: only `--typecheckOnly`
@@ -113,6 +116,7 @@ export async function runDispatchedProjectsAsync(
 			// eslint-disable-next-line ts/no-non-null-assertion -- backend present for runtime jobs
 			backend: input.backend!,
 			deferFormatting: true,
+			fileSystem,
 			projects: jobs,
 			startTime,
 			timing,

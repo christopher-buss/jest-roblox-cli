@@ -1,8 +1,9 @@
 import assert from "node:assert";
-import { existsSync, readFileSync } from "node:fs";
 
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { JestResult, TestFileResult } from "../types/jest-result.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import type { TestRecord } from "./manifest.ts";
 import { resolveTestFileHash } from "./test-file-hash.ts";
@@ -36,13 +37,14 @@ interface FileSources {
 export function createTestSourceResolver(
 	result: JestResult,
 	sourceMapper: TestSourceMapper | undefined,
+	fileSystem: FileSystem = nodeFileSystem,
 ): TestSourceResolver {
 	const filesByPath = new Map<string, FileSources>();
 
 	return (testFilePath, testCaseId) => {
 		let file = filesByPath.get(testFilePath);
 		if (file === undefined) {
-			file = collectFileSources(result, testFilePath, sourceMapper);
+			file = collectFileSources(fileSystem, result, testFilePath, sourceMapper);
 			filesByPath.set(testFilePath, file);
 		}
 
@@ -116,11 +118,12 @@ function locateTests(
 }
 
 function collectFileSources(
+	fileSystem: FileSystem,
 	result: JestResult,
 	testFilePath: string,
 	sourceMapper: TestSourceMapper | undefined,
 ): FileSources {
-	const testFileSourceHash = resolveTestFileHash(sourceMapper, testFilePath) ?? "";
+	const testFileSourceHash = resolveTestFileHash(sourceMapper, testFilePath, fileSystem) ?? "";
 	const fileOnly: TestSource = { testFileSourceHash };
 	const byTestCaseId = new Map<string, TestSource>();
 
@@ -130,13 +133,16 @@ function collectFileSources(
 		sourceMapper === undefined ||
 		fileResult === undefined ||
 		diskPath === undefined ||
-		!existsSync(diskPath)
+		!fileSystem.existsSync(diskPath)
 	) {
 		return { byTestCaseId, fileOnly };
 	}
 
 	const linesByTestCaseId = locateTests(fileResult, testFilePath, sourceMapper);
-	const rangeHashes = hashTestRanges(readFileSync(diskPath, "utf-8"), linesByTestCaseId.values());
+	const rangeHashes = hashTestRanges(
+		fileSystem.readFileSync(diskPath, "utf-8"),
+		linesByTestCaseId.values(),
+	);
 	for (const [testCaseId, line] of linesByTestCaseId) {
 		const testSourceHash = rangeHashes.get(line);
 		assert(testSourceHash !== undefined, `no range hashed for line ${String(line)}`);

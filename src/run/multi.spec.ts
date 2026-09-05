@@ -1,11 +1,10 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
-import { vol } from "memfs";
 import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import packageJson from "../../package.json" with { type: "json" };
+import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { movableClockCollector } from "../../test/mocks/movable-clock.ts";
 import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
@@ -38,11 +37,6 @@ import type { JestResult } from "../types/jest-result.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import { runMultiProjectAsync } from "./multi.ts";
-
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 
 vi.mock(import("../backends/auto"));
 vi.mock(import("../config/projects"));
@@ -205,13 +199,14 @@ function recordingTimingCollector() {
 	return { asyncNames, names, records, timing };
 }
 
-function writeRojoProject(): void {
+function writeRojoProject(volume: MemoryVolume): void {
 	const tree = { $className: "DataModel" };
-	vol.mkdirSync("/test", { recursive: true });
-	vol.writeFileSync("/test/default.project.json", JSON.stringify({ name: "test", tree }));
+	volume.mkdirSync("/test", { recursive: true });
+	volume.writeFileSync("/test/default.project.json", JSON.stringify({ name: "test", tree }));
 }
 
 function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
+	const { fileSystem, volume } = createMemoryFileSystem();
 	const config = makeConfig(configOverrides);
 
 	mocks.resolveAllProjects.mockResolvedValue([
@@ -237,8 +232,8 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	// The Place Builder hashes the `.rbxl` after building, so the rojo mock
 	// must leave an artifact on disk for `hashFile` to read.
 	mocks.buildWithRojoAsync.mockImplementation(async (_projectPath, outputPath) => {
-		vol.mkdirSync(path.dirname(outputPath), { recursive: true });
-		vol.writeFileSync(outputPath, "RBXL");
+		volume.mkdirSync(path.dirname(outputPath), { recursive: true });
+		volume.writeFileSync(outputPath, "RBXL");
 	});
 	mocks.resolveBackend.mockResolvedValue(makeBackend("studio"));
 	mocks.runProjects.mockImplementation(async (input) => {
@@ -252,42 +247,40 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 		return projectList.map((project) => ({ matchingFiles: [...files], project }));
 	});
 	mocks.resolveAllTsconfigMappings.mockReturnValue([]);
-	writeRojoProject();
-	onTestFinished(() => {
-		vol.reset();
-	});
+	writeRojoProject(volume);
 
-	return { config };
+	return { config, fileSystem, volume };
 }
 
-function seedProjectFiles(): void {
-	vol.mkdirSync("/test/src/client", { recursive: true });
-	vol.writeFileSync("/test/src/client/a.spec.ts", "");
-	vol.mkdirSync("/test/src/server", { recursive: true });
-	vol.writeFileSync("/test/src/server/b.spec.ts", "");
+function seedProjectFiles(volume: MemoryVolume): void {
+	volume.mkdirSync("/test/src/client", { recursive: true });
+	volume.writeFileSync("/test/src/client/a.spec.ts", "");
+	volume.mkdirSync("/test/src/server", { recursive: true });
+	volume.writeFileSync("/test/src/server/b.spec.ts", "");
 }
 
 // Two specs that share the `index.spec` basename, plus the tsconfig mapping
 // that lands their `src/` sources on the `out/client` mount the client project
 // declares.
-function seedIndexNamesakes(): void {
+function seedIndexNamesakes(volume: MemoryVolume): void {
 	mocks.resolveAllTsconfigMappings.mockReturnValue([{ outDir: "out", rootDir: "src" }]);
-	vol.mkdirSync("/test/src/client/a", { recursive: true });
-	vol.writeFileSync("/test/src/client/a/index.spec.ts", "");
-	vol.mkdirSync("/test/src/client/b", { recursive: true });
-	vol.writeFileSync("/test/src/client/b/index.spec.ts", "");
+	volume.mkdirSync("/test/src/client/a", { recursive: true });
+	volume.writeFileSync("/test/src/client/a/index.spec.ts", "");
+	volume.mkdirSync("/test/src/client/b", { recursive: true });
+	volume.writeFileSync("/test/src/client/b/index.spec.ts", "");
 }
 
 describe(runMultiProjectAsync, () => {
 	it("should run all projects when no --project filter is given", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -298,13 +291,14 @@ describe(runMultiProjectAsync, () => {
 	it("should emit the run header to stdout before running jobs", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -314,28 +308,54 @@ describe(runMultiProjectAsync, () => {
 	it("should not emit the run header when there are no runtime jobs", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem } = setupDefaults();
 		// Don't seed any test files — no runtime jobs are produced.
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
 		expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining(" RUN "));
 	});
 
+	// Workspace mode passes its volume down to project resolution, and the two
+	// modes are meant to answer alike. Left off here, `createFsClassifier`
+	// stats the real disk to decide which rojo mounts are directories, so a
+	// project resolves against the developer's checkout rather than the run's.
+	it("should resolve projects against the run's filesystem, not the real one", async () => {
+		expect.assertions(1);
+
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
+
+		await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			fileSystem,
+			rawProjects: [makeProjectEntry("client")],
+		});
+
+		expect(mocks.resolveAllProjects).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ fileSystem }),
+		);
+	});
+
 	it("should filter projects by --project name", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli({ project: ["client"] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -347,12 +367,13 @@ describe(runMultiProjectAsync, () => {
 		it("should expose a source-twin filter for positional files", async () => {
 			expect.assertions(1);
 
-			const { config } = setupDefaults();
-			seedProjectFiles();
+			const { config, fileSystem, volume } = setupDefaults();
+			seedProjectFiles(volume);
 
 			const result = await runMultiProjectAsync({
 				cli: makeCli({ files: ["src/client/a.spec.ts"] }),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 			});
 
@@ -364,12 +385,13 @@ describe(runMultiProjectAsync, () => {
 		it("should twin the matched runtime files for a testPathPattern run", async () => {
 			expect.assertions(1);
 
-			const { config } = setupDefaults({ testPathPattern: "a" });
-			seedProjectFiles();
+			const { config, fileSystem, volume } = setupDefaults({ testPathPattern: "a" });
+			seedProjectFiles(volume);
 
 			const result = await runMultiProjectAsync({
 				cli: makeCli(),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 			});
 
@@ -381,12 +403,13 @@ describe(runMultiProjectAsync, () => {
 		it("should expose a project-scope filter for a --project run", async () => {
 			expect.assertions(1);
 
-			const { config } = setupDefaults();
-			seedProjectFiles();
+			const { config, fileSystem, volume } = setupDefaults();
+			seedProjectFiles(volume);
 
 			const result = await runMultiProjectAsync({
 				cli: makeCli({ project: ["client"] }),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 			});
 
@@ -396,12 +419,13 @@ describe(runMultiProjectAsync, () => {
 		it("should leave the filter undefined on a bare run", async () => {
 			expect.assertions(1);
 
-			const { config } = setupDefaults();
-			seedProjectFiles();
+			const { config, fileSystem, volume } = setupDefaults();
+			seedProjectFiles(volume);
 
 			const result = await runMultiProjectAsync({
 				cli: makeCli(),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 			});
 
@@ -411,8 +435,8 @@ describe(runMultiProjectAsync, () => {
 		it("should leave the filter undefined for --project when no static roots derive", async () => {
 			expect.assertions(1);
 
-			const { config } = setupDefaults();
-			seedProjectFiles();
+			const { config, fileSystem, volume } = setupDefaults();
+			seedProjectFiles(volume);
 			// A project whose include is a bare glob yields no containment root.
 			vi.mocked(collectProjectRoots).mockReturnValue([]);
 			onTestFinished(() => {
@@ -424,6 +448,7 @@ describe(runMultiProjectAsync, () => {
 			const result = await runMultiProjectAsync({
 				cli: makeCli({ project: ["client"] }),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client")],
 			});
 
@@ -434,13 +459,14 @@ describe(runMultiProjectAsync, () => {
 	it("should throw on unknown --project displayName", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		await expect(
 			runMultiProjectAsync({
 				cli: makeCli({ project: ["nonexistent"] }),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client")],
 			}),
 		).rejects.toThrow("Unknown project name(s): nonexistent. Available: client, server");
@@ -449,14 +475,19 @@ describe(runMultiProjectAsync, () => {
 	it("should throw when Rojo project schema is invalid", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
+
 		// Overwrite with an invalid Rojo project (missing required name)
-		vol.writeFileSync("/test/default.project.json", JSON.stringify({ tree: "not-an-object" }));
+		volume.writeFileSync(
+			"/test/default.project.json",
+			JSON.stringify({ tree: "not-an-object" }),
+		);
 
 		await expect(
 			runMultiProjectAsync({
 				cli: makeCli(),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client")],
 			}),
 		).rejects.toThrow(/Invalid Rojo project/);
@@ -465,12 +496,13 @@ describe(runMultiProjectAsync, () => {
 	it("should default rojoProject to default.project.json when not configured", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({ rojoProject: undefined });
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults({ rojoProject: undefined });
+		seedProjectFiles(volume);
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -480,13 +512,14 @@ describe(runMultiProjectAsync, () => {
 	it("should default rojoProject for the open-cloud synthesizer build when unset", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({ rojoProject: undefined });
+		const { config, fileSystem, volume } = setupDefaults({ rojoProject: undefined });
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -501,17 +534,18 @@ describe(runMultiProjectAsync, () => {
 	it("should call buildWithRojoAsync when coverage is disabled and backend is open-cloud", async () => {
 		expect.assertions(5);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		const recorded = recordingTimingCollector();
 		const backend = makeBackend("open-cloud");
 		// Studio skips the place build (it uses the runtime injector).
 		// Place build only runs for open-cloud + no-coverage.
 		mocks.resolveBackend.mockResolvedValueOnce(backend);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 			timing: recorded.timing,
 		});
@@ -558,6 +592,7 @@ describe(runMultiProjectAsync, () => {
 			expect.arrayContaining([expect.objectContaining({ displayName: "client" })]),
 			"/test",
 			expect.any(String),
+			fileSystem,
 		);
 
 		const runInput = mocks.runProjects.mock.calls[0]![0];
@@ -590,14 +625,15 @@ describe(runMultiProjectAsync, () => {
 	it("should skip buildWithRojoAsync entirely when backend is studio", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		// Default backend in setupDefaults is studio; reaffirm explicitly.
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("studio"));
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -608,7 +644,7 @@ describe(runMultiProjectAsync, () => {
 	it("should skip buildWithRojoAsync and prepare coverage when collectCoverage is true", async () => {
 		expect.assertions(3);
 
-		const { config } = setupDefaults({ collectCoverage: true });
+		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
 		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
@@ -629,11 +665,12 @@ describe(runMultiProjectAsync, () => {
 			rebuilt: true,
 			stagingMs: 0,
 		});
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -645,7 +682,7 @@ describe(runMultiProjectAsync, () => {
 	it("should report the coverage place build as staging, not as coverage", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ collectCoverage: true });
+		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
 		// Frozen: the stub sweep must contribute nothing, so the only staging
 		// left is the place build the coverage bake reports.
 		const clock = movableClockCollector(1_000);
@@ -669,11 +706,12 @@ describe(runMultiProjectAsync, () => {
 			rebuilt: true,
 			stagingMs: 250,
 		});
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 			timing: clock.timing,
 		});
@@ -685,8 +723,8 @@ describe(runMultiProjectAsync, () => {
 	it("should measure the stub staging as stagingMs", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		// Studio backend: no place build, so the stub sweep is the whole of
 		// staging.
@@ -698,6 +736,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 			timing: clock.timing,
 		});
@@ -708,9 +747,10 @@ describe(runMultiProjectAsync, () => {
 	it("should measure the open-cloud place build as stagingMs", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
+
 		mocks.resolveBackend.mockResolvedValue(makeBackend("open-cloud"));
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		// The build is synchronous, so the only way to give it a measurable
 		// duration is to move the clock from inside it. Two counters, moved by
@@ -722,12 +762,13 @@ describe(runMultiProjectAsync, () => {
 		mocks.buildWithRojoAsync.mockImplementation(async (_projectPath, outputPath) => {
 			clock.advance(250);
 			wallMs += 900;
-			vol.mkdirSync(path.dirname(outputPath), { recursive: true });
-			vol.writeFileSync(outputPath, "RBXL");
+			volume.mkdirSync(path.dirname(outputPath), { recursive: true });
+			volume.writeFileSync(outputPath, "RBXL");
 		});
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 			timing: clock.timing,
 		});
@@ -741,7 +782,7 @@ describe(runMultiProjectAsync, () => {
 	it("should record the resolved projects in the coverage artifacts", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({ collectCoverage: true });
+		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
 		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
@@ -762,11 +803,12 @@ describe(runMultiProjectAsync, () => {
 			rebuilt: true,
 			stagingMs: 0,
 		});
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -784,7 +826,7 @@ describe(runMultiProjectAsync, () => {
 	it("should hand coverage both halves of the stub bake", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ collectCoverage: true });
+		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
 		const bake = {
 			isBakeOwned: vi.fn<ShadowBake["isBakeOwned"]>(),
 			run: vi.fn<ShadowBake["run"]>().mockReturnValue(false),
@@ -812,11 +854,12 @@ describe(runMultiProjectAsync, () => {
 				stagingMs: 0,
 			};
 		});
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -825,6 +868,7 @@ describe(runMultiProjectAsync, () => {
 		expect(mocks.createStubBake).toHaveBeenCalledWith(
 			expect.any(Array),
 			expect.stringMatching(/[\\/]\.jest-roblox[\\/]cache$/),
+			fileSystem,
 		);
 		// Both halves, together: a hook whose writes nothing declares gets
 		// them swept back out by the shadow's own orphan reconcile.
@@ -837,7 +881,7 @@ describe(runMultiProjectAsync, () => {
 	it("should instrument against the derived universe when no coverage globs are set", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({ collectCoverage: true });
+		const { config, fileSystem, volume } = setupDefaults({ collectCoverage: true });
 		// `config/projects` is auto-mocked here, so the derivation has no static
 		// root to work from unless this one is given back.
 		mocks.extractStaticRoot.mockReturnValue({ glob: "**/*.spec.ts", root: "src/client" });
@@ -861,11 +905,12 @@ describe(runMultiProjectAsync, () => {
 			rebuilt: true,
 			stagingMs: 0,
 		});
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -889,7 +934,10 @@ describe(runMultiProjectAsync, () => {
 		// runtime injection be the sole config source.
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ backend: "studio-cli", collectCoverage: true });
+		const { config, fileSystem, volume } = setupDefaults({
+			backend: "studio-cli",
+			collectCoverage: true,
+		});
 		mocks.prepareCoverageAsync.mockImplementation(async (_config, options) => {
 			// The absent bake *is* the contract: no hook, no stub in the place.
 			expect(options!.bake).toBeUndefined();
@@ -915,11 +963,12 @@ describe(runMultiProjectAsync, () => {
 				stagingMs: 0,
 			};
 		});
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -929,12 +978,13 @@ describe(runMultiProjectAsync, () => {
 	it("should return validationExitCode 2 with message when no test files found", async () => {
 		expect.assertions(3);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem } = setupDefaults();
 		// Don't seed any test files
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -946,12 +996,13 @@ describe(runMultiProjectAsync, () => {
 	it("should return empty projectResults without validation error when passWithNoTests", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ passWithNoTests: true });
+		const { config, fileSystem } = setupDefaults({ passWithNoTests: true });
 		// Don't seed any test files
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -962,7 +1013,7 @@ describe(runMultiProjectAsync, () => {
 	it("should run typecheck across all projects with deduplicated files", async () => {
 		expect.assertions(5);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem, volume } = setupDefaults({
 			timeout: 654_321,
 			typecheck: {
 				enabled: true,
@@ -971,13 +1022,14 @@ describe(runMultiProjectAsync, () => {
 				tsconfig: "tsconfig.root.json",
 			},
 		});
+
 		const recorded = recordingTimingCollector();
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec.ts", "");
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
-		vol.mkdirSync("/test/src/server", { recursive: true });
-		vol.writeFileSync("/test/src/server/b.spec.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.mkdirSync("/test/src/server", { recursive: true });
+		volume.writeFileSync("/test/src/server/b.spec.ts", "");
 
 		// Both projects produce the same type-test file via deduplication.
 		mocks.resolveAllProjects.mockResolvedValue([
@@ -994,6 +1046,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 			timing: recorded.timing,
 		});
@@ -1015,10 +1068,11 @@ describe(runMultiProjectAsync, () => {
 	it("should run the typecheck pass concurrently with the runtime run", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ typecheck: { enabled: true } });
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec.ts", "");
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
+
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1055,6 +1109,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1065,12 +1120,13 @@ describe(runMultiProjectAsync, () => {
 	it("should check projects with distinct typecheck tsconfigs against their own", async () => {
 		expect.assertions(3);
 
-		const { config } = setupDefaults({ typecheck: { enabled: true } });
+		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
+
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
-		vol.mkdirSync("/test/src/server", { recursive: true });
-		vol.writeFileSync("/test/src/server/b.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.mkdirSync("/test/src/server", { recursive: true });
+		volume.writeFileSync("/test/src/server/b.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1089,6 +1145,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1110,11 +1167,12 @@ describe(runMultiProjectAsync, () => {
 	it("should derive spec-d type tests from a runtime-only include", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({ typecheck: { enabled: true } });
+		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
+
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec.ts", "");
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1125,6 +1183,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1138,10 +1197,13 @@ describe(runMultiProjectAsync, () => {
 	it("should run typecheck-only without resolving a backend or runtime jobs", async () => {
 		expect.assertions(3);
 
-		const { config } = setupDefaults({ typecheck: { enabled: true, only: true } });
+		const { config, fileSystem, volume } = setupDefaults({
+			typecheck: { enabled: true, only: true },
+		});
+
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1152,6 +1214,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1165,8 +1228,8 @@ describe(runMultiProjectAsync, () => {
 	it("should keep the runtime path when only one selected project is typecheck-only", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ typecheck: { enabled: true } });
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults({ typecheck: { enabled: true } });
+		seedProjectFiles(volume);
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1182,6 +1245,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1192,13 +1256,14 @@ describe(runMultiProjectAsync, () => {
 	it("should carry the configured timeout into the typecheck-only pass", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem, volume } = setupDefaults({
 			timeout: 900_000,
 			typecheck: { enabled: true, only: true },
 		});
+
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1209,6 +1274,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1220,7 +1286,7 @@ describe(runMultiProjectAsync, () => {
 	it("should return validationExitCode 2 on a typecheck-only run that finds no type tests", async () => {
 		expect.assertions(3);
 
-		const { config } = setupDefaults({ typecheck: { enabled: true, only: true } });
+		const { config, fileSystem } = setupDefaults({ typecheck: { enabled: true, only: true } });
 		// No spec-d files seeded — the project produces no Type Tests.
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
@@ -1232,6 +1298,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1243,7 +1310,7 @@ describe(runMultiProjectAsync, () => {
 	it("should pass with no tests on a typecheck-only run when passWithNoTests is set", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem } = setupDefaults({
 			passWithNoTests: true,
 			typecheck: { enabled: true, only: true },
 		});
@@ -1258,6 +1325,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1268,12 +1336,13 @@ describe(runMultiProjectAsync, () => {
 	it("should forward test.typecheck.ignoreSourceErrors to the typecheck runner", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem, volume } = setupDefaults({
 			typecheck: { enabled: true, ignoreSourceErrors: true, only: true },
 		});
+
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1284,6 +1353,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1295,12 +1365,13 @@ describe(runMultiProjectAsync, () => {
 	it("should not discover type tests when include is set but typecheck is disabled", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem, volume } = setupDefaults({
 			typecheck: { include: ["src/client/**/*.spec-d.ts"] },
 		});
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec.ts", "");
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
@@ -1308,6 +1379,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1317,14 +1389,15 @@ describe(runMultiProjectAsync, () => {
 	it("should use an explicit typecheck include instead of deriving", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem, volume } = setupDefaults({
 			typecheck: { enabled: true, include: ["src/shared/**/*.spec-d.ts"] },
 		});
+
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec.ts", "");
-		vol.mkdirSync("/test/src/shared", { recursive: true });
-		vol.writeFileSync("/test/src/shared/x.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.mkdirSync("/test/src/shared", { recursive: true });
+		volume.writeFileSync("/test/src/shared/x.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
@@ -1332,6 +1405,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1345,14 +1419,15 @@ describe(runMultiProjectAsync, () => {
 	it("should drop type test files matching a typecheck exclude glob", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem, volume } = setupDefaults({
 			typecheck: { enabled: true, exclude: ["src/client/**/*.gen.spec-d.ts"] },
 		});
+
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec.ts", "");
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
-		vol.writeFileSync("/test/src/client/a.gen.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.writeFileSync("/test/src/client/a.gen.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
@@ -1360,6 +1435,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1372,12 +1448,13 @@ describe(runMultiProjectAsync, () => {
 	it("should not apply typecheck exclude to explicitly named positional files", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem, volume } = setupDefaults({
 			typecheck: { enabled: true, exclude: ["src/client/**/*.spec-d.ts"] },
 		});
+
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
@@ -1385,6 +1462,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/client/a.spec-d.ts"] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1398,10 +1476,11 @@ describe(runMultiProjectAsync, () => {
 	it("should drop runtime test files matching a per-project exclude glob", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec.ts", "");
-		vol.writeFileSync("/test/src/client/a.gen.spec.ts", "");
+		const { config, fileSystem, volume } = setupDefaults();
+
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.gen.spec.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				displayName: "client",
@@ -1413,6 +1492,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1428,10 +1508,11 @@ describe(runMultiProjectAsync, () => {
 	it("should run coverage with typecheck enabled without inferring a -d source extension", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({
+		const { config, fileSystem, volume } = setupDefaults({
 			collectCoverage: true,
 			typecheck: { enabled: true },
 		});
+
 		mocks.prepareCoverageAsync.mockResolvedValue({
 			buildId: "test-build-id",
 			coveragePlace: { hash: "cov-hash", path: "/coverage/game.rbxl" },
@@ -1453,9 +1534,9 @@ describe(runMultiProjectAsync, () => {
 			stagingMs: 0,
 		});
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
-		vol.mkdirSync("/test/src/client", { recursive: true });
-		vol.writeFileSync("/test/src/client/a.spec.ts", "");
-		vol.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({ displayName: "client", include: ["src/client/**/*.spec.ts"] }),
 		]);
@@ -1463,6 +1544,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1473,8 +1555,8 @@ describe(runMultiProjectAsync, () => {
 	it("should merge coverage data and source mappers across project results", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		mocks.runProjects.mockImplementation(async (input) => {
 			return {
@@ -1503,6 +1585,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1513,8 +1596,8 @@ describe(runMultiProjectAsync, () => {
 	it("should merge per-test attribution across project results", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		mocks.runProjects.mockImplementation(async (input) => {
 			return {
@@ -1543,6 +1626,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1555,13 +1639,14 @@ describe(runMultiProjectAsync, () => {
 	it("should pass parallel for open-cloud backend and drop it for studio", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults({ parallel: 2 });
+		const { config, fileSystem, volume } = setupDefaults({ parallel: 2 });
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1574,6 +1659,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1585,12 +1671,13 @@ describe(runMultiProjectAsync, () => {
 	it("should pass the experimental VM count through to the backend", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults({ experimentalVmParallel: 2 });
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults({ experimentalVmParallel: 2 });
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1600,14 +1687,15 @@ describe(runMultiProjectAsync, () => {
 	it("should derive coverage paths via collectCoverageFrom passthrough when computing merged data", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		// Without coverageData on any project, merged.coverageData stays
 		// undefined.
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1619,12 +1707,13 @@ describe(runMultiProjectAsync, () => {
 	it("should never resolve a backend when no jobs were produced", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem } = setupDefaults();
 		// No project files seeded — the plan is empty.
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli({ passWithNoTests: true }),
 			config: { ...config, passWithNoTests: true },
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1637,7 +1726,7 @@ describe(runMultiProjectAsync, () => {
 	it("should tolerate a backend without a close hook", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce({
 			kind: "studio",
 			runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
@@ -1645,11 +1734,12 @@ describe(runMultiProjectAsync, () => {
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({ displayName: "client" }),
 		]);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1659,19 +1749,20 @@ describe(runMultiProjectAsync, () => {
 	it("should tolerate a backend without a close hook when the run throws", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce({
 			kind: "studio",
 			runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
 		});
 		const error = new Error("dispatch failed");
 		mocks.runProjects.mockRejectedValueOnce(error);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await expect(
 			runMultiProjectAsync({
 				cli: makeCli(),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client")],
 			}),
 		).rejects.toBe(error);
@@ -1680,7 +1771,7 @@ describe(runMultiProjectAsync, () => {
 	it("should resolve setupFilesAfterEnv paths via the setup resolver", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.createSetupResolver.mockReturnValue((input) => `resolved:${input}`);
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
@@ -1688,11 +1779,12 @@ describe(runMultiProjectAsync, () => {
 				displayName: "client",
 			}),
 		]);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1704,12 +1796,13 @@ describe(runMultiProjectAsync, () => {
 	it("should narrow project config by CLI files for Luau-side execution", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/client/a.spec.ts"] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1724,13 +1817,14 @@ describe(runMultiProjectAsync, () => {
 	it("should narrow to the instance sub-path so a namesake file is left out", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
-		seedIndexNamesakes();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
+		seedIndexNamesakes(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/client/a/index.spec.ts"] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1742,7 +1836,7 @@ describe(runMultiProjectAsync, () => {
 	it("should forward a basename pattern when --testPathPattern is a filesystem path", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				config: makeConfig({ testPathPattern: "src/client/a.spec" }),
@@ -1750,11 +1844,12 @@ describe(runMultiProjectAsync, () => {
 				outDir: "out/client",
 			}),
 		]);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli({ testPathPattern: "src/client/a.spec" }),
 			config: { ...config, testPathPattern: "src/client/a.spec" },
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1766,8 +1861,8 @@ describe(runMultiProjectAsync, () => {
 	it("should call filterProjectsByFiles with cli files when --project is absent", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 		mocks.filterProjectsByFiles.mockImplementation((projectList, files) => {
 			return projectList
 				.filter((project) => project.displayName === "server")
@@ -1777,6 +1872,7 @@ describe(runMultiProjectAsync, () => {
 		const result = await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/server/b.spec.ts"] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1786,8 +1882,8 @@ describe(runMultiProjectAsync, () => {
 	it("should feed each project only the cli files filterProjectsByFiles paired with it", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 		mocks.filterProjectsByFiles.mockImplementation((projectList) => {
 			return projectList.map((project) => {
 				return { matchingFiles: clientOnlyMatches(project.displayName), project };
@@ -1797,6 +1893,7 @@ describe(runMultiProjectAsync, () => {
 		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/client/a.spec.ts", "src/server/b.spec.ts"] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1812,12 +1909,13 @@ describe(runMultiProjectAsync, () => {
 	it("should pass cli files and rootDir through to filterProjectsByFiles", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/server/b.spec.ts"] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1831,8 +1929,8 @@ describe(runMultiProjectAsync, () => {
 	it("should propagate filterProjectsByFiles errors when no project owns the file", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 		mocks.filterProjectsByFiles.mockImplementation(() => {
 			throw new Error("No project contains the requested file(s)");
 		});
@@ -1841,6 +1939,7 @@ describe(runMultiProjectAsync, () => {
 			runMultiProjectAsync({
 				cli: makeCli({ files: ["src/shared/x.spec.ts"] }),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 			}),
 		).rejects.toThrow(/No project contains the requested file/);
@@ -1849,12 +1948,13 @@ describe(runMultiProjectAsync, () => {
 	it("should skip filterProjectsByFiles when --project is set even if files are passed", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		const result = await runMultiProjectAsync({
 			cli: makeCli({ files: ["src/server/b.spec.ts"], project: ["client"] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1865,17 +1965,19 @@ describe(runMultiProjectAsync, () => {
 	it("should skip filterProjectsByFiles when no cli files are passed", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
-		seedProjectFiles();
+		const { config, fileSystem, volume } = setupDefaults();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 		await runMultiProjectAsync({
 			cli: makeCli({ files: [] }),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 		});
 
@@ -1885,7 +1987,7 @@ describe(runMultiProjectAsync, () => {
 	it("should resolve setupFiles per-project via discovery helper", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveAllProjects.mockResolvedValue([
 			makeResolvedProject({
 				config: makeConfig({ setupFiles: ["./setup.ts"] }),
@@ -1894,11 +1996,12 @@ describe(runMultiProjectAsync, () => {
 			}),
 		]);
 		mocks.createSetupResolver.mockReturnValue((input) => `resolved:${input}`);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1910,10 +2013,10 @@ describe(runMultiProjectAsync, () => {
 	it("should preserve backend errors and still close the backend", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		const backend = makeBackend("studio");
 		mocks.resolveBackend.mockResolvedValueOnce(backend);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 		const error = new Error("backend failed");
 		mocks.runProjects.mockRejectedValueOnce(error);
 
@@ -1921,6 +2024,7 @@ describe(runMultiProjectAsync, () => {
 			runMultiProjectAsync({
 				cli: makeCli(),
 				config,
+				fileSystem,
 				rawProjects: [makeProjectEntry("client")],
 			}),
 		).rejects.toBe(error);
@@ -1930,17 +2034,18 @@ describe(runMultiProjectAsync, () => {
 	it("should emit a stderr notice listing the leftover stubs cleaned", async () => {
 		expect.assertions(2);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.cleanLeftoverStubs.mockReturnValueOnce([
 			"/test/src/client/jest.config.luau",
 			"/test/src/server/jest.config.luau",
 		]);
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1959,14 +2064,15 @@ describe(runMultiProjectAsync, () => {
 	it("should not emit a leftover-stub notice when cleanup finds nothing", async () => {
 		expect.assertions(1);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.cleanLeftoverStubs.mockReturnValueOnce([]);
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -1976,15 +2082,16 @@ describe(runMultiProjectAsync, () => {
 	it("should skip stubMounts and runtimeInjectionPaths for mounts with user-authored configs", async () => {
 		expect.assertions(4);
 
-		const { config } = setupDefaults();
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		// Pretend the user authored a config at every mount on disk.
 		mocks.hasUserAuthoredConfig.mockReturnValue(true);
-		seedProjectFiles();
+		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
 			cli: makeCli(),
 			config,
+			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 		});
 
@@ -2004,6 +2111,7 @@ describe(runMultiProjectAsync, () => {
 			expect.any(Array),
 			"/test",
 			expect.any(String),
+			fileSystem,
 		);
 	});
 });

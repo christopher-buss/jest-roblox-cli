@@ -17,6 +17,7 @@ import { resolveAllTsconfigMappings } from "../executor/tsconfig-mappings.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { classifyTestFiles, discoverTestFiles } from "./discovery.ts";
 
 export interface PendingJob {
@@ -59,6 +60,7 @@ export interface TestPlan {
  * `buildTestPlan` adds the place the jobs will execute against.
  */
 export interface RunDiscovery extends DiscoveryFilters {
+	fileSystem: FileSystem;
 	timing: TimingCollector;
 }
 
@@ -88,6 +90,7 @@ interface DiscoveryFilters {
 
 interface DiscoveryInput extends DiscoveryFilters {
 	effectivePlaceFile: string;
+	fileSystem: FileSystem;
 }
 
 interface PlannedProject {
@@ -119,6 +122,7 @@ interface ProjectPlanInput extends DiscoveryInput {
 
 interface ProjectSelectionInput {
 	effectivePlaceFile: string;
+	fileSystem: FileSystem;
 	project: ResolvedProjectConfig;
 	projectCliFiles: Array<string> | undefined;
 	toInstancePath: InstancePathResolver;
@@ -180,13 +184,14 @@ function buildDiscoveryConfig(
 
 function selectProjectFiles({
 	effectivePlaceFile,
+	fileSystem,
 	project,
 	projectCliFiles,
 	toInstancePath,
 	typecheck,
 }: ProjectSelectionInput): ProjectSelection {
 	const discoveryConfig = buildDiscoveryConfig(project, effectivePlaceFile, typecheck);
-	const discovered = discoverTestFiles(discoveryConfig, projectCliFiles);
+	const discovered = discoverTestFiles(discoveryConfig, projectCliFiles, fileSystem);
 	const classified = classifyTestFiles(discovered.files, typecheck);
 
 	// `exclude` globs only match the relative paths glob-discovery returns;
@@ -286,6 +291,7 @@ function planProject(project: ResolvedProjectConfig, input: ProjectPlanInput): P
 	});
 	const selection = selectProjectFiles({
 		effectivePlaceFile: input.effectivePlaceFile,
+		fileSystem: input.fileSystem,
 		project,
 		projectCliFiles,
 		// Each project resolves against its OWN mounts, so one shared resolver
@@ -312,7 +318,11 @@ function collectPendingJobs(input: DiscoveryInput): Pick<TestPlan, "jobs" | "typ
 	// resolves its tsconfigs from the same run root.
 	const planInput: ProjectPlanInput = {
 		...input,
-		tsconfigMappings: resolveAllTsconfigMappings(input.rootConfig.rootDir),
+		tsconfigMappings: resolveAllTsconfigMappings(
+			input.rootConfig.rootDir,
+			undefined,
+			input.fileSystem,
+		),
 	};
 
 	for (const project of input.projects) {

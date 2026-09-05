@@ -1,23 +1,20 @@
-import { fromAny } from "@total-typescript/shoehorn";
+import { describe, expect, it } from "vitest";
 
-import { vol } from "memfs";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
-
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { createCopyIgnoreMatcher } from "./discover-files.ts";
 import { prepareShadowRoot } from "./shadow-root.ts";
 
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
-
 describe(prepareShadowRoot, () => {
-	function seed(files: Record<string, string>): void {
-		onTestFinished(() => {
-			vol.reset();
-		});
-		vol.fromJSON(files);
+	/**
+	 * A volume seeded against the working directory, because this root is
+	 * `.` and every path the walk builds resolves from there.
+	 *
+	 * @param files - What the run should find on disk.
+	 */
+	function seed(files: Record<string, string>): FileSystem {
+		return createMemoryFileSystem(files).fileSystem;
 	}
 
 	// Both halves of the manifest key one file under one root, and the
@@ -28,9 +25,10 @@ describe(prepareShadowRoot, () => {
 	it("should key an instrumented file and a mirrored one alike under a current-directory root", () => {
 		expect.assertions(2);
 
-		seed({ "init.luau": "local x = 1\n", "init.spec.luau": "return nil\n" });
+		const fileSystem = seed({ "init.luau": "local x = 1\n", "init.spec.luau": "return nil\n" });
 
 		const result = prepareShadowRoot({
+			fileSystem,
 			isCopyIgnored: createCopyIgnoreMatcher([]),
 			luauRoot: toPosixRoot("."),
 			shadowDir: "/shadow",

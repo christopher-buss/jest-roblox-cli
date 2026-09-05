@@ -1,6 +1,8 @@
 import type { distill } from "arktype";
 import { type } from "arktype";
-import * as fs from "node:fs";
+
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 
 /**
  * Shared read result for the sibling manifest readers. `BuildManifest`'s reader
@@ -25,10 +27,11 @@ export function parseVersionedManifest<T>(
 	filePath: string,
 	schema: type<T>,
 	expectedVersion: number,
+	fileSystem: FileSystem = nodeFileSystem,
 ): ParsedManifest<distill.Out<T>> {
 	let contents: string;
 	try {
-		contents = fs.readFileSync(filePath, "utf-8");
+		contents = fileSystem.readFileSync(filePath, "utf-8");
 	} catch (err) {
 		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
 			return { kind: "missing" };

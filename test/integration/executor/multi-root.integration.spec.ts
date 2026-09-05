@@ -68,8 +68,7 @@ async function resolveMultiRootProjectAsync() {
 	const resolved = await resolveAllProjects(
 		config.projects ?? [],
 		{ ...config, rootDir: MULTI_ROOT_FIXTURE },
-		rojo.tree,
-		MULTI_ROOT_FIXTURE,
+		{ cwd: MULTI_ROOT_FIXTURE, rojoTree: rojo.tree },
 	);
 
 	const project = resolved[0];

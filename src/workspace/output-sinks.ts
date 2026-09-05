@@ -1,5 +1,4 @@
 import assert from "node:assert";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { WorkspaceRunOptions } from "../config/schema.ts";
@@ -7,6 +6,8 @@ import type { ExecuteResult } from "../executor.ts";
 import { usesAgentFormatter } from "../formatters/utils.ts";
 import { mergeProjectResults, mergeResults, writeResultFileAsync } from "../output.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import {
 	buildGroupedGameOutput,
 	countGroupedEntries,
@@ -27,6 +28,7 @@ interface PerPackageGameOutputFile {
 }
 
 interface EmitWorkspaceGameOutputInput {
+	fileSystem: FileSystem;
 	pending: Array<PendingEntry>;
 	results: Array<ExecuteResult>;
 	runOptions: WorkspaceRunOptions;
@@ -43,6 +45,8 @@ interface PerPackageResultEntry {
 }
 
 interface WorkspaceSinkInput {
+	/** Where the sinks are written. Defaults to the real filesystem. */
+	fileSystem?: FileSystem | undefined;
 	pending: Array<PendingEntry>;
 	results: Array<ExecuteResult>;
 	runOptions: WorkspaceRunOptions;
@@ -58,9 +62,11 @@ interface WorkspaceSinkInput {
 /** Every sink a workspace run with runtime jobs writes. */
 export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promise<void> {
 	const { pending, results, runOptions, typeTestProjects, workspaceRoot } = input;
+	const fileSystem = input.fileSystem ?? nodeFileSystem;
 
 	if (runOptions.workspaceOutputFile) {
 		writePerPackageOutputFiles(
+			fileSystem,
 			workspaceRoot,
 			buildPerPackageResults(pending, results, input.typecheckByPackage, typeTestProjects),
 		);
@@ -74,9 +80,11 @@ export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promi
 		runOptions.outputFile,
 		input.typecheckResult,
 		runOptions.outputFile !== undefined ? mergeProjectResults(results).result : undefined,
+		fileSystem,
 	);
 
 	emitWorkspaceGameOutput({
+		fileSystem,
 		pending,
 		results,
 		runOptions,
@@ -93,6 +101,7 @@ export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promi
 export async function writeTypecheckOnlySinksAsync(
 	input: Pick<
 		WorkspaceSinkInput,
+		| "fileSystem"
 		| "runOptions"
 		| "typecheckByPackage"
 		| "typecheckResult"
@@ -100,11 +109,18 @@ export async function writeTypecheckOnlySinksAsync(
 		| "workspaceRoot"
 	>,
 ): Promise<void> {
-	await writeResultFileAsync(input.runOptions.outputFile, input.typecheckResult, undefined);
+	const { fileSystem = nodeFileSystem } = input;
+	await writeResultFileAsync(
+		input.runOptions.outputFile,
+		input.typecheckResult,
+		undefined,
+		fileSystem,
+	);
 
 	// Per-package files route through the same writer as the runtime path.
 	if (input.runOptions.workspaceOutputFile) {
 		writePerPackageOutputFiles(
+			fileSystem,
 			input.workspaceRoot,
 			buildPerPackageResults([], [], input.typecheckByPackage, input.typeTestProjects),
 		);
@@ -157,17 +173,18 @@ function sanitizePathSegment(segment: string): string {
 }
 
 function writePerPackageOutputFiles(
+	fileSystem: FileSystem,
 	workspaceRoot: string,
 	entries: Array<PerPackageResultEntry>,
 ): void {
 	const directory = path.join(workspaceRoot, PER_PACKAGE_OUTPUT_DIRECTORY);
-	fs.mkdirSync(directory, { recursive: true });
+	fileSystem.mkdirSync(directory, { recursive: true });
 
 	for (const entry of entries) {
 		const filename = `${sanitizePathSegment(entry.pkg)}--${sanitizePathSegment(
 			entry.project,
 		)}.jest-output.log`;
-		fs.writeFileSync(
+		fileSystem.writeFileSync(
 			path.join(directory, filename),
 			JSON.stringify(entry.result, null, 2),
 			"utf8",
@@ -183,6 +200,7 @@ function writePerPackageOutputFiles(
 // Returns each written file's path and entry count so the caller can build
 // notices for the non-empty ones.
 function writePerPackageGameOutputFiles(
+	fileSystem: FileSystem,
 	workspaceRoot: string,
 	pending: Array<PendingEntry>,
 	results: Array<ExecuteResult>,
@@ -197,7 +215,7 @@ function writePerPackageGameOutputFiles(
 		)}.game-output.log`;
 		const filePath = path.join(directory, filename);
 		const entries = parseGameOutput(result.gameOutput);
-		writeGameOutput(filePath, entries);
+		writeGameOutput(filePath, entries, fileSystem);
 		return { count: entries.length, path: filePath };
 	});
 }
@@ -205,6 +223,7 @@ function writePerPackageGameOutputFiles(
 // The single grouped Game Output file (top-level `gameOutput`). Returns the
 // notice announcing it so the caller can pick which sink to advertise.
 function writeAggregateGameOutput(
+	fileSystem: FileSystem,
 	aggregatePath: string,
 	pending: Array<PendingEntry>,
 	results: Array<ExecuteResult>,
@@ -220,45 +239,31 @@ function writeAggregateGameOutput(
 			};
 		}),
 	);
-	writeGroupedGameOutput(aggregatePath, groups);
+	writeGroupedGameOutput(aggregatePath, groups, fileSystem);
 	return formatGameOutputNotice(aggregatePath, countGroupedEntries(groups));
 }
 
-// Writes the configured Game Output sinks for a workspace run and announces
-// exactly one of them. Aggregated (single grouped file, top-level
-// `gameOutput`) and Per-package (`.jest-roblox/output/` files,
-// `workspace.gameOutput`) are independent; either, both, or neither may be
-// active. Humans prefer the single aggregate (one place to look); agents
-// prefer the per-package files (smaller, targeted context).
-function emitWorkspaceGameOutput({
-	pending,
-	results,
-	runOptions,
-	verbose,
-	workspaceRoot,
-}: EmitWorkspaceGameOutputInput): void {
-	const aggregatePath = runOptions.gameOutput;
-	const aggregateNotice =
-		aggregatePath !== undefined
-			? writeAggregateGameOutput(aggregatePath, pending, results)
-			: "";
-
-	let perPackageNotices: Array<string> = [];
-	if (runOptions.workspaceGameOutput) {
-		perPackageNotices = writePerPackageGameOutputFiles(workspaceRoot, pending, results)
-			.map((file) => formatGameOutputNotice(file.path, file.count))
-			.filter((notice) => notice !== "");
-	}
-
-	if (runOptions.silent) {
-		return;
-	}
-
+/**
+ * Names one of the two sinks on stderr. An agent formatter prefers the
+ * per-package files whenever they were written; every other formatter names
+ * them only when there is no aggregate to name instead.
+ */
+function announceGameOutput(
+	{
+		aggregateNotice,
+		aggregatePath,
+		perPackageNotices,
+	}: {
+		aggregateNotice: string;
+		aggregatePath: string | undefined;
+		perPackageNotices: Array<string>;
+	},
+	runOptions: WorkspaceRunOptions,
+	verbose = false,
+): void {
 	const isAggregateActive = aggregatePath !== undefined;
 	const isPerPackageActive = runOptions.workspaceGameOutput;
-	const shouldPreferPerPackage = usesAgentFormatter(runOptions.formatters, verbose);
-
-	const shouldAnnouncePerPackage = shouldPreferPerPackage
+	const shouldAnnouncePerPackage = usesAgentFormatter(runOptions.formatters, verbose)
 		? isPerPackageActive
 		: !isAggregateActive && isPerPackageActive;
 
@@ -268,5 +273,46 @@ function emitWorkspaceGameOutput({
 		}
 	} else if (isAggregateActive && aggregateNotice !== "") {
 		console.error(aggregateNotice);
+	}
+}
+
+// Writes the configured Game Output sinks for a workspace run and announces
+// exactly one of them. Aggregated (single grouped file, top-level
+// `gameOutput`) and Per-package (`.jest-roblox/output/` files,
+// `workspace.gameOutput`) are independent; either, both, or neither may be
+// active. Humans prefer the single aggregate (one place to look); agents
+// prefer the per-package files (smaller, targeted context).
+function emitWorkspaceGameOutput({
+	fileSystem,
+	pending,
+	results,
+	runOptions,
+	verbose,
+	workspaceRoot,
+}: EmitWorkspaceGameOutputInput): void {
+	const aggregatePath = runOptions.gameOutput;
+	const aggregateNotice =
+		aggregatePath !== undefined
+			? writeAggregateGameOutput(fileSystem, aggregatePath, pending, results)
+			: "";
+
+	let perPackageNotices: Array<string> = [];
+	if (runOptions.workspaceGameOutput) {
+		perPackageNotices = writePerPackageGameOutputFiles(
+			fileSystem,
+			workspaceRoot,
+			pending,
+			results,
+		)
+			.map((file) => formatGameOutputNotice(file.path, file.count))
+			.filter((notice) => notice !== "");
+	}
+
+	if (!runOptions.silent) {
+		announceGameOutput(
+			{ aggregateNotice, aggregatePath, perPackageNotices },
+			runOptions,
+			verbose,
+		);
 	}
 }

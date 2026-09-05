@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { ensurePackageDirectories } from "./ensure-paths.ts";
 import type { PackageDescriptor } from "./preflight.ts";
 
@@ -52,7 +53,7 @@ describe(ensurePackageDirectories, () => {
 			fromPartial<PackageDescriptor>({ rojoProjectPath: projectPath }),
 		]);
 
-		expect(loadRojoProject).toHaveBeenCalledExactlyOnceWith(projectPath);
+		expect(loadRojoProject).toHaveBeenCalledExactlyOnceWith(projectPath, nodeFileSystem);
 		expect({
 			file: fs.existsSync(path.join(temporaryRoot, "src/file.luau")),
 			metadata: fs.existsSync(path.join(temporaryRoot, "src/meta.json")),
@@ -84,6 +85,6 @@ describe(ensurePackageDirectories, () => {
 				fromPartial<PackageDescriptor>({ rojoProjectPath: projectPath }),
 			]);
 		}).not.toThrow();
-		expect(loadRojoProject).toHaveBeenCalledExactlyOnceWith(projectPath);
+		expect(loadRojoProject).toHaveBeenCalledExactlyOnceWith(projectPath, nodeFileSystem);
 	});
 });

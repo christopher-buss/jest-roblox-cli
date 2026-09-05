@@ -1,16 +1,27 @@
 import type { ArkErrors } from "arktype";
 import { type, type Type } from "arktype";
-import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+import type { FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
 import { resolveNestedProjects } from "./rojo-tree.ts";
 import type { LoadedRojoProject, RojoProject } from "./types.ts";
 
 let objectSchema: Type<JSONObject> | undefined;
 let fieldsSchema: Type<RojoProject> | undefined;
 
-export function loadRojoProject(projectPath: string): LoadedRojoProject {
-	const raw = readProjectJson(projectPath);
+/**
+ * Read and validate a Rojo project file, inlining every nested project it
+ * names.
+ *
+ * @param projectPath - The project file to read.
+ * @param fileSystem - Where it and its nested projects are read from.
+ */
+export function loadRojoProject(
+	projectPath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): LoadedRojoProject {
+	const raw = readProjectJson(fileSystem, projectPath);
 	const fields = orThrow(getFieldsSchema()(raw), projectPath);
 
 	// Named field by field, not spread: arktype applies no morph here, so
@@ -21,7 +32,7 @@ export function loadRojoProject(projectPath: string): LoadedRojoProject {
 		name: fields.name,
 		raw,
 		servePort: fields.servePort,
-		tree: resolveNestedProjects(fields.tree, dirname(projectPath)),
+		tree: resolveNestedProjects(fields.tree, dirname(projectPath), fileSystem),
 	};
 }
 
@@ -101,10 +112,10 @@ function getObjectSchema(): Type<JSONObject> {
 	return objectSchema;
 }
 
-function readProjectJson(projectPath: string): JSONObject {
+function readProjectJson(fileSystem: FileSystem, projectPath: string): JSONObject {
 	let content: string;
 	try {
-		content = readFileSync(projectPath, "utf-8");
+		content = fileSystem.readFileSync(projectPath, "utf-8");
 	} catch (err) {
 		throw new Error(`Could not read Rojo project: ${projectPath}`, { cause: err });
 	}

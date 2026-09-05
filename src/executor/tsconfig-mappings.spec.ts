@@ -1,9 +1,10 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { vol } from "memfs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { TsconfigReader } from "./tsconfig-mappings.ts";
 import {
 	createTsconfigMappingCache,
 	isLuauProject,
@@ -13,19 +14,13 @@ import {
 } from "./tsconfig-mappings.ts";
 
 // cspell:ignore xtsconfig
-const getTsconfig = vi.hoisted(() => vi.fn<typeof import("get-tsconfig").getTsconfig>());
 const collator = new Intl.Collator("en");
 
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
-
-vi.mock(import("get-tsconfig"), () => ({ getTsconfig }));
-
-function resetTestState(): void {
-	vol.reset();
-	getTsconfig.mockReset();
+/**
+ * A reader recording what it was asked for, for a case that asserts on that.
+ */
+function createReader(): ReturnType<typeof vi.fn<TsconfigReader>> {
+	return vi.fn<TsconfigReader>(() => null);
 }
 
 describe(isLuauProject, () => {
@@ -57,14 +52,15 @@ describe(readTsconfigMapping, () => {
 	it("should treat empty rootDirs as absent", () => {
 		expect.assertions(1);
 
-		resetTestState();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			"/project/tsconfig.json": JSON.stringify({
 				compilerOptions: { outDir: "out-test", rootDir: "test", rootDirs: [] },
 			}),
 		});
 
-		expect(readTsconfigMapping("/project/tsconfig.json")).toStrictEqual({
+		expect(readTsconfigMapping("/project/tsconfig.json", fileSystem)).toStrictEqual({
 			outDir: "out-test",
 			rootDir: "test",
 		});
@@ -73,8 +69,9 @@ describe(readTsconfigMapping, () => {
 	it("should find the common ancestor when one rootDir contains another", () => {
 		expect.assertions(1);
 
-		resetTestState();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			"/project/tsconfig.json": JSON.stringify({
 				compilerOptions: {
 					outDir: "out",
@@ -83,7 +80,7 @@ describe(readTsconfigMapping, () => {
 			}),
 		});
 
-		expect(readTsconfigMapping("/project/tsconfig.json")).toStrictEqual({
+		expect(readTsconfigMapping("/project/tsconfig.json", fileSystem)).toStrictEqual({
 			outDir: "out",
 			rootDir: "packages/core",
 		});
@@ -94,8 +91,10 @@ describe(resolveAllTsconfigMappings, () => {
 	it("should scan only tsconfig JSON files, deduplicate mappings, sort longest first, and cache", () => {
 		expect.assertions(3);
 
-		resetTestState();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+		const getTsconfig = createReader();
+
+		volume.fromJSON({
 			"/project/tsconfig.json": "{}",
 			"/project/tsconfig.json.bak": "{}",
 			"/project/tsconfig.lib.json": "{}",
@@ -114,8 +113,8 @@ describe(resolveAllTsconfigMappings, () => {
 		});
 		const cache = createTsconfigMappingCache();
 
-		const first = resolveAllTsconfigMappings("/project", cache);
-		const second = resolveAllTsconfigMappings("/project", cache);
+		const first = resolveAllTsconfigMappings("/project", cache, fileSystem, getTsconfig);
+		const second = resolveAllTsconfigMappings("/project", cache, fileSystem, getTsconfig);
 
 		expect(first).toStrictEqual([
 			{ outDir: "out/generated", rootDir: "src" },
@@ -134,7 +133,7 @@ describe(resolveTsconfigDirectories, () => {
 	it("should reject a tsconfig in a sibling directory with the same path prefix", () => {
 		expect.assertions(1);
 
-		resetTestState();
+		const getTsconfig = createReader();
 		getTsconfig.mockReturnValue(
 			fromAny({
 				config: { compilerOptions: { outDir: "out", rootDir: "src" } },
@@ -142,7 +141,7 @@ describe(resolveTsconfigDirectories, () => {
 			}),
 		);
 
-		expect(resolveTsconfigDirectories("/project")).toStrictEqual({
+		expect(resolveTsconfigDirectories("/project", getTsconfig)).toStrictEqual({
 			outDir: undefined,
 			rootDir: undefined,
 		});

@@ -1,4 +1,5 @@
-import * as cp from "node:child_process";
+import type { ChildProcessRunner } from "./child-process.ts";
+import { nodeChildProcessRunner } from "./child-process.ts";
 
 /** A child that exited non-zero, paired with what it wrote to stderr. */
 interface RojoFailure {
@@ -13,9 +14,17 @@ interface RojoFailure {
  * the event loop for every one of them — the stage block above it repaints from
  * a timer, so a blocking build reports itself as taking no time at all until
  * the moment it ends.
+ *
+ * @param projectPath - The rojo project to build.
+ * @param outputPath - Where the built place lands.
+ * @param childProcess - What launches rojo.
  */
-export async function buildWithRojoAsync(projectPath: string, outputPath: string): Promise<void> {
-	const failure = await runRojoAsync(projectPath, outputPath);
+export async function buildWithRojoAsync(
+	projectPath: string,
+	outputPath: string,
+	childProcess: ChildProcessRunner = nodeChildProcessRunner,
+): Promise<void> {
+	const failure = await runRojoAsync(childProcess, projectPath, outputPath);
 	if (failure === undefined) {
 		return;
 	}
@@ -38,13 +47,18 @@ export async function buildWithRojoAsync(projectPath: string, outputPath: string
  * replaced hung it off the error object. Rejecting would drop it, and every
  * failed build would then report the same bare line with rojo's own diagnosis
  * of the project thrown away.
+ *
+ * @param childProcess - What launches rojo.
+ * @param projectPath - The rojo project to build.
+ * @param outputPath - Where the built place lands.
  */
 async function runRojoAsync(
+	childProcess: ChildProcessRunner,
 	projectPath: string,
 	outputPath: string,
 ): Promise<RojoFailure | undefined> {
 	return new Promise((resolve) => {
-		cp.execFile(
+		childProcess.execFile(
 			"rojo",
 			["build", projectPath, "-o", outputPath],
 			{ windowsHide: true },

@@ -12,6 +12,7 @@ import type { BailSummary } from "../formatters/shared.ts";
 import type { SourceMapper } from "../source-mapper/index.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 
 export type RunMode = "multi" | "single" | "workspace";
 
@@ -165,6 +166,8 @@ export type RunResult = MultiRunResult | SingleRunResult | WorkspaceRunResult;
 export interface RunOptions {
 	cli: CliOptions;
 	config: ResolvedConfig;
+	/** Where the run reads and writes. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * Span-tree profiler owned by `runJestRoblox`. Optional so direct test
 	 * seams keep working with the existing two-property shape; production

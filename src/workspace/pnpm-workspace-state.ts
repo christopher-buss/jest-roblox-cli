@@ -1,7 +1,8 @@
 import { type } from "arktype";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { PNPM_MARKER } from "./discovery.ts";
 import type { PackageInfo } from "./package-info.ts";
@@ -43,13 +44,16 @@ const workspaceStateSchema = type({
  * guard here is a reason to distrust the snapshot, not evidence about the
  * workspace.
  */
-export function readPnpmWorkspaceProjects(workspaceRoot: string): Array<PackageInfo> | undefined {
-	const state = readState(path.join(workspaceRoot, STATE_PATH));
+export function readPnpmWorkspaceProjects(
+	workspaceRoot: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): Array<PackageInfo> | undefined {
+	const state = readState(fileSystem, path.join(workspaceRoot, STATE_PATH));
 	if (state === undefined) {
 		return undefined;
 	}
 
-	if (!manifestPredatesInstall(workspaceRoot, state.lastValidatedTimestamp)) {
+	if (!manifestPredatesInstall(fileSystem, workspaceRoot, state.lastValidatedTimestamp)) {
 		return undefined;
 	}
 
@@ -80,10 +84,13 @@ export function readPnpmWorkspaceProjects(workspaceRoot: string): Array<PackageI
 	return packages;
 }
 
-function readState(statePath: string): typeof workspaceStateSchema.infer | undefined {
+function readState(
+	fileSystem: FileSystem,
+	statePath: string,
+): typeof workspaceStateSchema.infer | undefined {
 	let parsed: JSONValue;
 	try {
-		parsed = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+		parsed = JSON.parse(fileSystem.readFileSync(statePath, "utf-8"));
 	} catch {
 		// Absent, unreadable, and malformed all earn the same answer: this run
 		// learns nothing from the snapshot and should ask the filesystem.
@@ -102,8 +109,12 @@ function readState(statePath: string): typeof workspaceStateSchema.infer | undef
  * invalidates -- and deliberately so: the cost of a false stale is one walk,
  * while the cost of a false fresh is a package the CLI cannot find.
  */
-function manifestPredatesInstall(workspaceRoot: string, lastValidatedTimestamp: number): boolean {
-	const stat = fs.statSync(path.join(workspaceRoot, PNPM_MARKER), {
+function manifestPredatesInstall(
+	fileSystem: FileSystem,
+	workspaceRoot: string,
+	lastValidatedTimestamp: number,
+): boolean {
+	const stat = fileSystem.statSync(path.join(workspaceRoot, PNPM_MARKER), {
 		throwIfNoEntry: false,
 	});
 	return stat !== undefined && stat.mtimeMs <= lastValidatedTimestamp;

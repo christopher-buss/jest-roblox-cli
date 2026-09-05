@@ -1,6 +1,7 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { CoverageUniverseFilter } from "./coverage-universe.ts";
@@ -46,6 +47,7 @@ export interface InstrumentUniverse {
  */
 export function createInstrumentUniverse(
 	filter: CoverageUniverseFilter,
+	fileSystem: FileSystem = nodeFileSystem,
 ): InstrumentUniverse | undefined {
 	const include = filter.include ?? [];
 	if (include.length === 0) {
@@ -75,7 +77,7 @@ export function createInstrumentUniverse(
 				return wasDecided;
 			}
 
-			const sources = readSourcePaths(luauPath);
+			const sources = readSourcePaths(fileSystem, luauPath);
 			// An unreadable sidecar says nothing about the file's origin, and
 			// the compiled path cannot match a `.ts` glob — so treating it as
 			// its own source would silently drop the file from the report.
@@ -104,12 +106,12 @@ function isFileNotFound(err: unknown): boolean {
  * Every declared source counts, not just the first: a file built from more
  * than one module is in the universe if any of them is.
  */
-function readSourcePaths(luauPath: string): Array<string> | undefined {
+function readSourcePaths(fileSystem: FileSystem, luauPath: string): Array<string> | undefined {
 	const sourceMapPath = `${luauPath}.map`;
 
 	let raw: string;
 	try {
-		raw = fs.readFileSync(sourceMapPath, "utf-8");
+		raw = fileSystem.readFileSync(sourceMapPath, "utf-8");
 	} catch (err) {
 		// Absent is an answer: no compile step to see through, so the file is
 		// its own source. Unreadable is not — a sidecar the run cannot open is

@@ -1,5 +1,4 @@
 import assert from "node:assert";
-import * as fs from "node:fs";
 import process from "node:process";
 
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
@@ -36,6 +35,8 @@ import { combineSourceMappers, type SourceMapper } from "./source-mapper/index.t
 import type { PackageGameOutput } from "./types/game-output.ts";
 import type { JestResult } from "./types/jest-result.ts";
 import type { TimingResult } from "./types/timing.ts";
+import type { FileSystem } from "./utils/file-system.ts";
+import { nodeFileSystem } from "./utils/file-system.ts";
 import {
 	buildBatchGameOutput,
 	buildGroupedGameOutput,
@@ -62,6 +63,15 @@ interface RunStatus {
 	isCoveragePassed: boolean;
 	mergedResult: JestResult;
 	snapshotWriteFailures: number | undefined;
+}
+
+/** What one single-mode run prints, and what its coverage was filtered by. */
+interface SingleRunReport extends Pick<
+	SingleRunResult,
+	"coverageMs" | "runtimeResult" | "stagingMs" | "typecheckResult"
+> {
+	agentTextFilter: SingleRunResult["coverageDisplayFilter"];
+	mergedResult: JestResult;
 }
 
 // Combines a Type Test result with the runtime result into one aggregate (counts
@@ -101,12 +111,13 @@ export async function writeResultFileAsync(
 	outputFile: string | undefined,
 	typecheck: JestResult | undefined,
 	runtime: JestResult | undefined,
+	fileSystem: FileSystem = nodeFileSystem,
 ): Promise<void> {
 	if (outputFile === undefined) {
 		return;
 	}
 
-	await writeJsonFileAsync(mergeResults(typecheck, runtime), outputFile);
+	await writeJsonFileAsync(mergeResults(typecheck, runtime), outputFile, fileSystem);
 }
 
 export async function outputSingleResultAsync(
@@ -118,30 +129,23 @@ export async function outputSingleResultAsync(
 		stagingMs,
 		typecheckResult,
 	}: SingleRunResult,
+	fileSystem: FileSystem = nodeFileSystem,
 ): Promise<number> {
 	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
-	const isCoveragePassed = emitResultsAndCoverage({
-		config,
-		coverageEnabled: config.collectCoverage,
-		printResults: () => {
-			printSingleResults(config, {
-				coverageMs,
-				mergedResult,
-				runtimeResult,
-				stagingMs,
-				typecheckResult,
-			});
-		},
-		runCoverage: () => {
-			return processCoverage({
-				agentTextFilter,
-				config,
-				coverageData: runtimeResult?.coverageData,
-			});
-		},
+	const isCoveragePassed = reportSingleRun(config, {
+		agentTextFilter,
+		coverageMs,
+		mergedResult,
+		runtimeResult,
+		stagingMs,
+		typecheckResult,
 	});
 
-	await writeSingleRunSinksAsync(config, { mergedResult, runtimeResult, typecheckResult });
+	await writeSingleRunSinksAsync(fileSystem, config, {
+		mergedResult,
+		runtimeResult,
+		typecheckResult,
+	});
 
 	return emitFinalStatus(config, {
 		isCoveragePassed,
@@ -183,17 +187,17 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 export async function outputMultiResultAsync(
 	rootConfig: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
+	fileSystem: FileSystem = nodeFileSystem,
 ): Promise<number> {
 	const { coverageMs, mode, projectResults, stagingMs, typecheckResult } = result;
 	const config = buildReportConfig(rootConfig, result);
 
 	if (typecheckResult !== undefined && projectResults.length === 0) {
-		return outputSingleResultAsync(config, {
-			coverageMs,
-			mode: "single",
-			stagingMs,
-			typecheckResult,
-		});
+		return outputSingleResultAsync(
+			config,
+			{ coverageMs, mode: "single", stagingMs, typecheckResult },
+			fileSystem,
+		);
 	}
 
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
@@ -204,93 +208,20 @@ export async function outputMultiResultAsync(
 	// has package identity, the workspace root, and the consensus-resolved
 	// paths); here we only handle the single-config `multi` case.
 	if (mode === "multi") {
-		await writeResultFileAsync(config.outputFile, typecheckResult, merged.result);
+		await writeResultFileAsync(config.outputFile, typecheckResult, merged.result, fileSystem);
 
-		writeAggregatedGameOutput(config, projectResults, {
+		writeAggregatedGameOutput(fileSystem, config, projectResults, {
 			hintsShown: !mergedResult.success,
 		});
 	}
 
-	runGitHubActionsFormatter(config, mergedResult, merged.sourceMapper);
+	runGitHubActionsFormatter(fileSystem, config, mergedResult, merged.sourceMapper);
 
 	return emitFinalStatus(config, {
 		isCoveragePassed,
 		mergedResult,
 		snapshotWriteFailures: merged.snapshotWriteFailures,
 	});
-}
-
-function writeGameOutputIfConfigured(
-	config: ResolvedConfig,
-	gameOutput: string | undefined,
-	options: { hintsShown?: boolean },
-): void {
-	if (config.gameOutput === undefined) {
-		return;
-	}
-
-	const entries = parseGameOutput(gameOutput);
-	writeGameOutput(config.gameOutput, entries);
-
-	if (!config.silent && options.hintsShown !== true) {
-		const notice = formatGameOutputNotice(config.gameOutput, entries.length);
-		if (notice) {
-			console.error(notice);
-		}
-	}
-}
-
-function runGitHubActionsFormatter(
-	config: ResolvedConfig,
-	result: JestResult,
-	sourceMapper: SourceMapper | undefined,
-): void {
-	assert(config.formatters !== undefined);
-	const userOptions = findFormatterOptions(config.formatters, "github-actions");
-	if (userOptions === undefined) {
-		return;
-	}
-
-	const options = resolveGitHubActionsOptions(userOptions, sourceMapper);
-
-	if (userOptions.displayAnnotations !== false) {
-		const annotations = formatAnnotations(result, options);
-		if (annotations !== "") {
-			process.stderr.write(`${annotations}\n`);
-		}
-	}
-
-	const { jobSummary } = userOptions;
-	if (jobSummary?.enabled !== false) {
-		const outputPath = jobSummary?.outputPath ?? process.env["GITHUB_STEP_SUMMARY"];
-		if (outputPath !== undefined) {
-			const summary = formatJobSummary(result, options);
-			fs.appendFileSync(outputPath, summary);
-		}
-	}
-}
-
-/**
- * Every file a single run leaves behind: the result JSON, Game Output,
- * annotations.
- */
-async function writeSingleRunSinksAsync(
-	config: ResolvedConfig,
-	{
-		mergedResult,
-		runtimeResult,
-		typecheckResult,
-	}: Pick<SingleRunResult, "runtimeResult" | "typecheckResult"> & { mergedResult: JestResult },
-): Promise<void> {
-	await writeResultFileAsync(config.outputFile, typecheckResult, runtimeResult?.result);
-
-	if (runtimeResult !== undefined) {
-		writeGameOutputIfConfigured(config, runtimeResult.gameOutput, {
-			hintsShown: !mergedResult.success,
-		});
-	}
-
-	runGitHubActionsFormatter(config, mergedResult, runtimeResult?.sourceMapper);
 }
 
 // In agent mode the run summary must survive an agent trimming the tail of the
@@ -331,6 +262,121 @@ function emitResultsAndCoverage({
 			printResults();
 		}
 	}
+}
+
+/** Prints the run and reports whether its coverage cleared the thresholds. */
+function reportSingleRun(
+	config: ResolvedConfig,
+	{
+		agentTextFilter,
+		coverageMs,
+		mergedResult,
+		runtimeResult,
+		stagingMs,
+		typecheckResult,
+	}: SingleRunReport,
+): boolean {
+	return emitResultsAndCoverage({
+		config,
+		coverageEnabled: config.collectCoverage,
+		printResults: () => {
+			printSingleResults(config, {
+				coverageMs,
+				mergedResult,
+				runtimeResult,
+				stagingMs,
+				typecheckResult,
+			});
+		},
+		runCoverage: () => {
+			return processCoverage({
+				agentTextFilter,
+				config,
+				coverageData: runtimeResult?.coverageData,
+			});
+		},
+	});
+}
+
+function writeGameOutputIfConfigured(
+	fileSystem: FileSystem,
+	config: ResolvedConfig,
+	gameOutput: string | undefined,
+	options: { hintsShown?: boolean },
+): void {
+	if (config.gameOutput === undefined) {
+		return;
+	}
+
+	const entries = parseGameOutput(gameOutput);
+	writeGameOutput(config.gameOutput, entries, fileSystem);
+
+	if (!config.silent && options.hintsShown !== true) {
+		const notice = formatGameOutputNotice(config.gameOutput, entries.length);
+		if (notice) {
+			console.error(notice);
+		}
+	}
+}
+
+function runGitHubActionsFormatter(
+	fileSystem: FileSystem,
+	config: ResolvedConfig,
+	result: JestResult,
+	sourceMapper: SourceMapper | undefined,
+): void {
+	assert(config.formatters !== undefined);
+	const userOptions = findFormatterOptions(config.formatters, "github-actions");
+	if (userOptions === undefined) {
+		return;
+	}
+
+	const options = resolveGitHubActionsOptions(userOptions, sourceMapper);
+
+	if (userOptions.displayAnnotations !== false) {
+		const annotations = formatAnnotations(result, options);
+		if (annotations !== "") {
+			process.stderr.write(`${annotations}\n`);
+		}
+	}
+
+	const { jobSummary } = userOptions;
+	if (jobSummary?.enabled !== false) {
+		const outputPath = jobSummary?.outputPath ?? process.env["GITHUB_STEP_SUMMARY"];
+		if (outputPath !== undefined) {
+			const summary = formatJobSummary(result, options);
+			fileSystem.appendFileSync(outputPath, summary);
+		}
+	}
+}
+
+/**
+ * Every file a single run leaves behind: the result JSON, Game Output,
+ * annotations.
+ */
+async function writeSingleRunSinksAsync(
+	fileSystem: FileSystem,
+	config: ResolvedConfig,
+	{
+		mergedResult,
+		runtimeResult,
+		typecheckResult,
+	}: Pick<SingleRunResult, "runtimeResult" | "typecheckResult"> & { mergedResult: JestResult },
+): Promise<void> {
+	await writeResultFileAsync(
+		config.outputFile,
+		typecheckResult,
+		runtimeResult?.result,
+		fileSystem,
+	);
+
+	if (runtimeResult !== undefined) {
+		writeGameOutputIfConfigured(fileSystem, config, runtimeResult.gameOutput, {
+			hintsShown: !mergedResult.success,
+		});
+	}
+
+	runGitHubActionsFormatter(fileSystem, config, mergedResult, runtimeResult?.sourceMapper);
 }
 
 // The shared pass/fail tail: single and multi judge a run on the same four
@@ -522,6 +568,7 @@ function buildAggregatedGroups(projectResults: Array<ProjectResult>): Array<Pack
 }
 
 function writeAggregatedGameOutput(
+	fileSystem: FileSystem,
 	config: ResolvedConfig,
 	projectResults: Array<ProjectResult>,
 	options: { hintsShown?: boolean },
@@ -531,7 +578,7 @@ function writeAggregatedGameOutput(
 	}
 
 	const groups = buildAggregatedGroups(projectResults);
-	writeGroupedGameOutput(config.gameOutput, groups);
+	writeGroupedGameOutput(config.gameOutput, groups, fileSystem);
 
 	if (!config.silent && options.hintsShown !== true) {
 		const notice = formatGameOutputNotice(config.gameOutput, countGroupedEntries(groups));

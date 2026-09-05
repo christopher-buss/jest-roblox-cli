@@ -1,8 +1,9 @@
 import { type } from "arktype";
 import { createHash } from "node:crypto";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 /**
@@ -35,7 +36,10 @@ export interface UploadCacheTarget {
 	universeId: number | string;
 }
 
-interface CacheEntry {
+/**
+ * What a cached upload records: the inputs it was built from, and its version.
+ */
+export interface CacheEntry {
 	hash: string;
 	versionNumber: number;
 }
@@ -68,9 +72,12 @@ const cacheFileInputSchema = type({
  * fails on the same file with the API's own message — a cache miss must never
  * be the thing that reports a missing place.
  */
-export function hashPlaceFile(placeFilePath: string): string | undefined {
+export function hashPlaceFile(
+	placeFilePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): string | undefined {
 	try {
-		return createHash("sha256").update(fs.readFileSync(placeFilePath)).digest("hex");
+		return createHash("sha256").update(fileSystem.readFileSync(placeFilePath)).digest("hex");
 	} catch {
 		return undefined;
 	}
@@ -84,22 +91,23 @@ export function readCachedVersion(
 	rootDirectory: string,
 	target: UploadCacheTarget,
 	hash: string,
+	fileSystem: FileSystem = nodeFileSystem,
 ): number | undefined {
-	const entry = readCacheFile(rootDirectory).entries[entryKey(target)];
+	const entry = readCacheFile(fileSystem, rootDirectory).entries[entryKey(target)];
 	return entry?.hash === hash ? entry.versionNumber : undefined;
 }
 
 export function writeCachedVersion(
 	rootDirectory: string,
 	target: UploadCacheTarget,
-	hash: string,
-	versionNumber: number,
+	{ hash, versionNumber }: CacheEntry,
+	fileSystem: FileSystem = nodeFileSystem,
 ): void {
-	const cache = readCacheFile(rootDirectory);
+	const cache = readCacheFile(fileSystem, rootDirectory);
 	cache.entries[entryKey(target)] = { hash, versionNumber };
 	try {
-		fs.mkdirSync(path.dirname(cachePath(rootDirectory)), { recursive: true });
-		fs.writeFileSync(cachePath(rootDirectory), JSON.stringify(cache, undefined, "\t"));
+		fileSystem.mkdirSync(path.dirname(cachePath(rootDirectory)), { recursive: true });
+		fileSystem.writeFileSync(cachePath(rootDirectory), JSON.stringify(cache, undefined, "\t"));
 	} catch {
 		// A cache that cannot be written costs speed, never correctness.
 	}
@@ -109,8 +117,12 @@ export function writeCachedVersion(
  * True once the entry is gone. A cache file that cannot be written keeps
  * serving the entry it already holds, so the caller hears no.
  */
-export function invalidateCachedVersion(rootDirectory: string, target: UploadCacheTarget): boolean {
-	const cache = readCacheFile(rootDirectory);
+export function invalidateCachedVersion(
+	rootDirectory: string,
+	target: UploadCacheTarget,
+	fileSystem: FileSystem = nodeFileSystem,
+): boolean {
+	const cache = readCacheFile(fileSystem, rootDirectory);
 	const key = entryKey(target);
 	// `deleteProperty` reports success for an absent key too, so ask first —
 	// otherwise a no-op invalidate rewrites the file for nothing.
@@ -120,7 +132,7 @@ export function invalidateCachedVersion(rootDirectory: string, target: UploadCac
 
 	Reflect.deleteProperty(cache.entries, key);
 	try {
-		fs.writeFileSync(cachePath(rootDirectory), JSON.stringify(cache, undefined, "\t"));
+		fileSystem.writeFileSync(cachePath(rootDirectory), JSON.stringify(cache, undefined, "\t"));
 	} catch {
 		// As above — best effort, and the caller says only what it can stand
 		// behind: an entry that survives the write is still the one in use.
@@ -157,8 +169,9 @@ export function invalidateIfBehindHead(
 	rootDirectory: string,
 	target: UploadCacheTarget,
 	versions: { bootedVersion: number; reusedVersion: number },
+	fileSystem: FileSystem = nodeFileSystem,
 ): boolean {
-	return isBehindHead(versions) && invalidateCachedVersion(rootDirectory, target);
+	return isBehindHead(versions) && invalidateCachedVersion(rootDirectory, target, fileSystem);
 }
 
 /**
@@ -185,11 +198,11 @@ function cachePath(rootDirectory: string): string {
  * format migrates without a migration, and why a corrupt file costs a re-upload
  * rather than a run.
  */
-function readCacheFile(rootDirectory: string): CacheFile {
+function readCacheFile(fileSystem: FileSystem, rootDirectory: string): CacheFile {
 	const entries: Record<string, CacheEntry> = {};
 	try {
 		const parsed = cacheFileInputSchema.assert(
-			JSON.parse(fs.readFileSync(cachePath(rootDirectory), "utf8")),
+			JSON.parse(fileSystem.readFileSync(cachePath(rootDirectory), "utf8")),
 		);
 
 		for (const [key, value] of Object.entries(parsed.entries)) {

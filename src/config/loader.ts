@@ -1,11 +1,12 @@
 import { loadConfig as c12LoadConfig, type LoadConfigOptions } from "c12";
 import { defuFn } from "defu";
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { Config, ResolvedConfig } from "./schema.ts";
 import { DEFAULT_CONFIG, validateConfig } from "./schema.ts";
@@ -36,6 +37,7 @@ interface ExtendsLayerRequest {
 	 */
 	canonicalFile: string;
 	extendList: Array<string>;
+	fileSystem: FileSystem;
 	visited: Set<string>;
 }
 
@@ -98,8 +100,9 @@ export function resolveConfig(config: Config): ResolvedConfig {
 export async function loadRawConfig(
 	configPath?: string,
 	cwd: string = process.cwd(),
+	fileSystem: FileSystem = nodeFileSystem,
 ): Promise<Config> {
-	const { config } = await loadConfigLayers(configPath, cwd);
+	const { config } = await loadConfigLayers(fileSystem, configPath, cwd);
 
 	return config;
 }
@@ -107,8 +110,9 @@ export async function loadRawConfig(
 export async function loadConfig(
 	configPath?: string,
 	cwd: string = process.cwd(),
+	fileSystem: FileSystem = nodeFileSystem,
 ): Promise<ResolvedConfig> {
-	const { config, loadDirectory } = await loadConfigLayers(configPath, cwd);
+	const { config, loadDirectory } = await loadConfigLayers(fileSystem, configPath, cwd);
 	config.rootDir = anchorRootDirectory(config.rootDir, loadDirectory, cwd);
 
 	return resolveConfig(config);
@@ -185,6 +189,7 @@ async function invokeC12(configFile: string | undefined, cwd: string) {
  * the layers into one object that no longer records where any of them lived.
  */
 async function loadConfigLayers(
+	fileSystem: FileSystem,
 	configPath: string | undefined,
 	cwd: string,
 ): Promise<LoadedConfig> {
@@ -199,7 +204,7 @@ async function loadConfigLayers(
 		throw err;
 	}
 
-	const mergedConfig = await processExtends(result, new Set());
+	const mergedConfig = await processExtends(fileSystem, result, new Set());
 	const loadedFile = result.configFile;
 
 	return {
@@ -207,7 +212,7 @@ async function loadConfigLayers(
 		// c12 reports a `configFile` even for a search that matched nothing, so
 		// the existence check is what distinguishes a real load from a miss.
 		loadDirectory:
-			loadedFile !== undefined && existsSync(loadedFile)
+			loadedFile !== undefined && fileSystem.existsSync(loadedFile)
 				? path.dirname(path.resolve(loadedFile))
 				: cwd,
 	};
@@ -280,13 +285,14 @@ function anchorWorkspaceRoot(config: Config, baseDirectory: string): Config {
 // as a false cycle. Config load is one-time at startup; the re-parse cost is
 // negligible.
 async function processExtends(
+	fileSystem: FileSystem,
 	result: Awaited<ReturnType<typeof invokeC12>>,
 	visited: Set<string>,
 ): Promise<Config> {
 	const loadedConfig = result.config;
 	const loadedFile = result.configFile;
 
-	if (loadedFile === undefined || !existsSync(loadedFile)) {
+	if (loadedFile === undefined || !fileSystem.existsSync(loadedFile)) {
 		return loadedConfig;
 	}
 
@@ -305,7 +311,7 @@ async function processExtends(
 	visited.add(canonicalFile);
 	try {
 		const extendList = Array.isArray(extendsValue) ? extendsValue : [extendsValue];
-		const layers = await loadExtendsLayers({ canonicalFile, extendList, visited });
+		const layers = await loadExtendsLayers({ canonicalFile, extendList, fileSystem, visited });
 		return merger(configWithoutExtends, ...layers);
 	} finally {
 		visited.delete(canonicalFile);
@@ -320,6 +326,7 @@ async function processExtends(
 async function loadExtendsLayers({
 	canonicalFile,
 	extendList,
+	fileSystem,
 	visited,
 }: ExtendsLayerRequest): Promise<Array<Config>> {
 	const configFileDirectory = path.dirname(canonicalFile);
@@ -337,7 +344,7 @@ async function loadExtendsLayers({
 			});
 		}
 
-		const extendedConfig = await processExtends(extendedResult, visited);
+		const extendedConfig = await processExtends(fileSystem, extendedResult, visited);
 		layers.push(extendedConfig);
 	}
 

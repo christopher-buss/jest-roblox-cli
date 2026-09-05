@@ -1,8 +1,10 @@
 import type { Buffer } from "node:buffer";
 import { randomBytes } from "node:crypto";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
+
+import type { FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
 
 /**
  * Windows fails a rename with `EPERM`/`EBUSY` when a scanner or indexer holds
@@ -38,6 +40,8 @@ const OWNER_STAMP_REGEX = /^(\d+)\.[\da-f]+$/;
 export interface AtomicWriteOptions {
 	/** The bytes to publish. */
 	readonly contents: Buffer | string;
+	/** Where the bytes land. Defaults to the real filesystem. */
+	readonly fileSystem?: FileSystem;
 	/**
 	 * Whether to collect this target's abandoned temp files first. On by
 	 * default; a publisher that writes a directory's worth of one-shot targets
@@ -74,19 +78,20 @@ export interface AtomicWriteOptions {
  */
 export function atomicWrite({
 	contents,
+	fileSystem = nodeFileSystem,
 	sweepStrays = true,
 	targetPath,
 }: AtomicWriteOptions): void {
 	const directory = path.dirname(targetPath);
-	fs.mkdirSync(directory, { recursive: true });
+	fileSystem.mkdirSync(directory, { recursive: true });
 	const basename = path.basename(targetPath);
 	if (sweepStrays) {
-		sweepAbandonedTemporaries(directory, basename);
+		sweepAbandonedTemporaries(fileSystem, directory, basename);
 	}
 
 	const stamp = `${process.pid}.${randomBytes(NONCE_BYTES).toString("hex")}`;
 	const temporaryPath = path.join(directory, `${basename}${TEMPORARY_INFIX}${stamp}`);
-	fs.writeFileSync(temporaryPath, contents);
+	fileSystem.writeFileSync(temporaryPath, contents);
 
 	let lastError: unknown;
 	for (let attempt = 0; attempt < RENAME_ATTEMPTS; attempt += 1) {
@@ -95,7 +100,7 @@ export function atomicWrite({
 		}
 
 		try {
-			fs.renameSync(temporaryPath, targetPath);
+			fileSystem.renameSync(temporaryPath, targetPath);
 			return;
 		} catch (err) {
 			lastError = err;
@@ -150,15 +155,20 @@ function isProcessAlive(pid: number): boolean {
  * case where a recycled pid can put a live write behind a name this sweep has
  * already judged abandoned.
  *
+ * @param fileSystem - Where the temp files live.
  * @param directory - The target's own directory, where its temp files live.
  * @param basename - The target's filename, which its temp files are prefixed
  *   with.
  */
-function sweepAbandonedTemporaries(directory: string, basename: string): void {
+function sweepAbandonedTemporaries(
+	fileSystem: FileSystem,
+	directory: string,
+	basename: string,
+): void {
 	const prefix = `${basename}${TEMPORARY_INFIX}`;
 	let entries: Array<string>;
 	try {
-		entries = fs.readdirSync(directory);
+		entries = fileSystem.readdirSync(directory);
 	} catch {
 		// Housekeeping, so a directory the platform will not list costs the
 		// sweep rather than the write it precedes.
@@ -176,7 +186,7 @@ function sweepAbandonedTemporaries(directory: string, basename: string): void {
 		}
 
 		try {
-			fs.rmSync(path.join(directory, entry));
+			fileSystem.rmSync(path.join(directory, entry));
 		} catch {
 			// Per entry, not around the loop: one file a Windows scanner holds
 			// open, or one a peer sweeping the same directory took between the

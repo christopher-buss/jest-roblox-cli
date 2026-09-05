@@ -1,11 +1,11 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import { type } from "arktype";
-import { vol } from "memfs";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import type { MemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import {
 	mountOf,
 	seed as seedVolume,
@@ -14,13 +14,9 @@ import {
 	stagedProjectSchema,
 } from "../../test/mocks/staged-project.ts";
 import { ConfigError } from "../config/errors.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import { demotePinnedMountsAsync } from "./pinned-mounts.ts";
-
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 
 vi.mock(import("../utils/rojo-builder"));
 
@@ -62,14 +58,18 @@ function serviceModelXml(rootClass: string): string {
 }
 
 /**
- * Seeds the volume and stands rojo up as a stub that writes the model a real
- * build would have produced, so the class-folding pass has something to read.
+ * A volume of its own, with rojo stood up as a stub that writes the model a
+ * real build would have produced, so the class-folding pass has something to
+ * read.
+ *
+ * @param files - What the pass should find on disk.
  */
-function seed(files: Record<string, string> = {}): void {
-	seedVolume(files);
+function seed(files: Record<string, string> = {}): MemoryFileSystem {
+	const memory = seedVolume(files);
 	vi.mocked(buildWithRojoAsync).mockImplementation(async (_projectPath, outputPath) => {
-		vol.writeFileSync(outputPath, serviceModelXml("StarterPlayerScripts"));
+		memory.volume.writeFileSync(outputPath, serviceModelXml("StarterPlayerScripts"));
 	});
+	return memory;
 }
 
 /**
@@ -87,27 +87,31 @@ function directoryMount(
 	);
 }
 
-async function runAsync(projectJson: string): Promise<string> {
+async function runAsync(fileSystem: FileSystem, projectJson: string): Promise<string> {
 	return demotePinnedMountsAsync({
+		fileSystem,
 		projectDirectory: PROJECT_DIR,
 		projectJson,
 		shadowDirectory: SHADOW_DIR,
 	});
 }
 
-async function demoteAsync(projectJson: string): Promise<typeof demotedProjectSchema.infer> {
-	return demotedProjectSchema.assert(JSON.parse(await runAsync(projectJson)));
+async function demoteAsync(
+	fileSystem: FileSystem,
+	projectJson: string,
+): Promise<typeof demotedProjectSchema.infer> {
+	return demotedProjectSchema.assert(JSON.parse(await runAsync(fileSystem, projectJson)));
 }
 
 describe(demotePinnedMountsAsync, () => {
 	it("should leave a project with no stage untouched", async () => {
 		expect.assertions(1);
 
-		seed();
+		const { fileSystem } = seed();
 		// A no-wrap project keeps every service where the engine wants it.
 		const projectJson = JSON.stringify({ name: "p", tree: { $className: "DataModel" } });
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it.for([
@@ -118,29 +122,30 @@ describe(demotePinnedMountsAsync, () => {
 	] as const)("should leave %s untouched", async ([, projectJson]) => {
 		expect.assertions(1);
 
-		seed();
+		const { fileSystem } = seed();
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should leave a stage whose mounts declare no pinned class untouched", async () => {
 		expect.assertions(1);
 
-		seed({ [path.join(ASSETS, "src/init.luau")]: "" });
+		const { fileSystem } = seed({ [path.join(ASSETS, "src/init.luau")]: "" });
 		const projectJson = stagedProject({
 			pkg: { $className: "Folder", src: { $path: path.join(ASSETS, "src") } },
 		});
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should point a mount that is itself a pinned model at the stand-in", async () => {
 		expect.assertions(2);
 
 		const model = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
-		seed({ [model]: serviceModelXml("StarterPlayerScripts") });
+		const { fileSystem } = seed({ [model]: serviceModelXml("StarterPlayerScripts") });
 
 		const project = await demoteAsync(
+			fileSystem,
 			stagedProject({
 				pkg: {
 					$className: "Folder",
@@ -163,8 +168,9 @@ describe(demotePinnedMountsAsync, () => {
 		expect.assertions(2);
 
 		const model = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
-		seed({ [model]: serviceModelXml("StarterPlayerScripts") });
+		const { fileSystem, volume } = seed({ [model]: serviceModelXml("StarterPlayerScripts") });
 		const project = await demoteAsync(
+			fileSystem,
 			stagedProject({ pkg: { $className: "Folder", Scripts: { $path: model } } }),
 		);
 		const normalizedSource = model.replaceAll("\\", "/");
@@ -183,7 +189,7 @@ describe(demotePinnedMountsAsync, () => {
 		const [projectFile, shadowFile] = vi.mocked(buildWithRojoAsync).mock.calls[0]!;
 
 		expect({
-			project: JSON.parse(String(vol.readFileSync(projectFile, "utf-8"))),
+			project: JSON.parse(String(volume.readFileSync(projectFile, "utf-8"))),
 			shadowFile,
 		}).toStrictEqual({
 			project: {
@@ -198,12 +204,13 @@ describe(demotePinnedMountsAsync, () => {
 	it("should declare a stand-in child and ignore the original it replaces", async () => {
 		expect.assertions(3);
 
-		seed({
+		const { fileSystem } = seed({
 			[path.join(ASSETS, "StarterPlayer/StarterPlayerScripts.rbxmx")]:
 				serviceModelXml("StarterPlayerScripts"),
 		});
 
 		const project = await demoteAsync(
+			fileSystem,
 			directoryMount("StarterPlayer", path.join(ASSETS, "StarterPlayer")),
 		);
 
@@ -218,12 +225,13 @@ describe(demotePinnedMountsAsync, () => {
 	it("should replace a directory entry whose init.meta.json declares a pinned class", async () => {
 		expect.assertions(1);
 
-		seed({
+		const { fileSystem } = seed({
 			[path.join(ASSETS, "StarterPlayer/StarterPlayerScripts/init.meta.json")]:
 				'{"className":"StarterPlayerScripts"}',
 		});
 
 		const project = await demoteAsync(
+			fileSystem,
 			directoryMount("StarterPlayer", path.join(ASSETS, "StarterPlayer")),
 		);
 
@@ -235,12 +243,13 @@ describe(demotePinnedMountsAsync, () => {
 	it("should point a mount whose own init.meta.json declares the class at the stand-in", async () => {
 		expect.assertions(2);
 
-		seed({
+		const { fileSystem } = seed({
 			[path.join(ASSETS, "SPS/init.meta.json")]: '{"className":"StarterPlayerScripts"}',
 			[path.join(ASSETS, "SPS/mod.luau")]: "return 1",
 		});
 
 		const project = await demoteAsync(
+			fileSystem,
 			stagedProject({
 				pkg: {
 					$className: "Folder",
@@ -267,13 +276,14 @@ describe(demotePinnedMountsAsync, () => {
 		expect.assertions(5);
 
 		const model = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
-		seed({ [model]: serviceModelXml("StarterPlayerScripts") });
+		const { fileSystem, volume } = seed({ [model]: serviceModelXml("StarterPlayerScripts") });
 
 		const project = await demoteAsync(
+			fileSystem,
 			stagedProject({ pkg: { $className: "Folder", Scripts: { $path: model } } }),
 		);
 		const shadow = String(
-			vol.readFileSync(String(mountOf(project, "pkg", "Scripts")), "utf-8"),
+			volume.readFileSync(String(mountOf(project, "pkg", "Scripts")), "utf-8"),
 		);
 
 		// This XML is the stand-in Rojo consumes. The digest guards its complete
@@ -292,13 +302,14 @@ describe(demotePinnedMountsAsync, () => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
-		seed({ [model]: serviceModelXml("StarterPlayerScripts") });
+		const { fileSystem, volume } = seed({ [model]: serviceModelXml("StarterPlayerScripts") });
 
 		const project = await demoteAsync(
+			fileSystem,
 			stagedProject({ pkg: { $className: "Folder", Scripts: { $path: model } } }),
 		);
 		const shadow = String(
-			vol.readFileSync(String(mountOf(project, "pkg", "Scripts")), "utf-8"),
+			volume.readFileSync(String(mountOf(project, "pkg", "Scripts")), "utf-8"),
 		);
 
 		// Stripping after the class fold would reach this one too: by then the
@@ -310,7 +321,7 @@ describe(demotePinnedMountsAsync, () => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "Workspace/Terrain.rbxmx");
-		seed({ [model]: serviceModelXml("Terrain") });
+		const { fileSystem } = seed({ [model]: serviceModelXml("Terrain") });
 		const projectJson = stagedProject(
 			{ pkg: { $className: "Folder", Terrain: { $path: model } } },
 			["**/Workspace/Terrain.rbxmx"],
@@ -318,91 +329,94 @@ describe(demotePinnedMountsAsync, () => {
 
 		// A consumer who worked around this bug by ignoring the file must not
 		// have an empty stand-in put back in its place.
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should match an absolute ignore path after removing the Windows drive letter", async () => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "Workspace/Terrain.rbxmx");
-		seed({ [model]: serviceModelXml("Terrain") });
+		const { fileSystem } = seed({ [model]: serviceModelXml("Terrain") });
 		const normalizedWithoutDrive = model.replaceAll("\\", "/").replace(/^[A-Za-z]:/, "");
 		const projectJson = stagedProject(
 			{ pkg: { $className: "Folder", Terrain: { $path: model } } },
 			[normalizedWithoutDrive],
 		);
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should discard non-string globIgnorePaths entries", async () => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "Workspace/Terrain.rbxmx");
-		seed({ [model]: serviceModelXml("Terrain") });
+		const { fileSystem } = seed({ [model]: serviceModelXml("Terrain") });
 		const projectJson = stagedProject(
 			{ pkg: { $className: "Folder", Terrain: { $path: model } } },
 			fromAny([false, 42, "**/Workspace/Terrain.rbxmx"]),
 		);
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should skip a mounted entry the project already ignores", async () => {
 		expect.assertions(1);
 
-		seed({ [path.join(ASSETS, "Workspace/Terrain.rbxmx")]: serviceModelXml("Terrain") });
+		const { fileSystem } = seed({
+			[path.join(ASSETS, "Workspace/Terrain.rbxmx")]: serviceModelXml("Terrain"),
+		});
 		const projectJson = directoryMount("Workspace", path.join(ASSETS, "Workspace"), [
 			"**/Terrain.rbxmx",
 		]);
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should ignore a mount that is not on disk", async () => {
 		expect.assertions(1);
 
-		seed();
+		const { fileSystem } = seed();
 		const projectJson = stagedProject({
 			pkg: { $className: "Folder", src: { $path: path.join(ASSETS, "missing") } },
 		});
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should ignore a mount that is a file rojo reads without a class", async () => {
 		expect.assertions(1);
 
 		const source = path.join(ASSETS, "init.luau");
-		seed({ [source]: "return {}" });
+		const { fileSystem } = seed({ [source]: "return {}" });
 		const projectJson = stagedProject({
 			pkg: { $className: "Folder", src: { $path: source } },
 		});
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should ignore a mounted model whose own root is not pinned", async () => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "pod.rbxmx");
-		seed({ [model]: serviceModelXml("Model") });
+		const { fileSystem } = seed({ [model]: serviceModelXml("Model") });
 		const projectJson = stagedProject({
 			pkg: { $className: "Folder", Pod: { $path: model } },
 		});
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should not report a buried pinned class the project already ignores", async () => {
 		expect.assertions(1);
 
-		seed({
+		const { fileSystem } = seed({
 			[path.join(ASSETS, "Workspace/maps/lobby/Terrain.rbxmx")]: serviceModelXml("Terrain"),
 			[path.join(ASSETS, "Workspace/Terrain.rbxmx")]: serviceModelXml("Terrain"),
 		});
 
 		const project = await demoteAsync(
+			fileSystem,
 			directoryMount("Workspace", path.join(ASSETS, "Workspace"), ["**/lobby/Terrain.rbxmx"]),
 		);
 
@@ -412,18 +426,18 @@ describe(demotePinnedMountsAsync, () => {
 	it("should apply ignore globs to dot-directories", async () => {
 		expect.assertions(1);
 
-		seed({
+		const { fileSystem } = seed({
 			[path.join(ASSETS, "Workspace/.generated/Terrain.rbxmx")]: serviceModelXml("Terrain"),
 		});
 		const projectJson = directoryMount("Workspace", path.join(ASSETS, "Workspace"), ["**/*"]);
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should report a pinned class buried below the mount rather than rebuilding it", async () => {
 		expect.assertions(1);
 
-		seed({
+		const { fileSystem } = seed({
 			[path.join(ASSETS, "Workspace/maps/lobby/Terrain.rbxmx")]: serviceModelXml("Terrain"),
 		});
 
@@ -435,7 +449,7 @@ describe(demotePinnedMountsAsync, () => {
 			.replaceAll("\\", "/");
 
 		await expect(
-			runAsync(directoryMount("Workspace", path.join(ASSETS, "Workspace"))),
+			runAsync(fileSystem, directoryMount("Workspace", path.join(ASSETS, "Workspace"))),
 		).rejects.toThrow(
 			new ConfigError(
 				`"${buried}" declares Terrain, which the engine parents only under one service, but it is nested inside the mount at "${mountRoot}" rather than sitting directly in it. ` +
@@ -447,12 +461,13 @@ describe(demotePinnedMountsAsync, () => {
 	it("should walk past a nested directory that holds no pinned class", async () => {
 		expect.assertions(1);
 
-		seed({
+		const { fileSystem } = seed({
 			[path.join(ASSETS, "Workspace/maps/lobby/pod.rbxmx")]: serviceModelXml("Model"),
 			[path.join(ASSETS, "Workspace/Terrain.rbxmx")]: serviceModelXml("Terrain"),
 		});
 
 		const project = await demoteAsync(
+			fileSystem,
 			directoryMount("Workspace", path.join(ASSETS, "Workspace")),
 		);
 
@@ -462,30 +477,33 @@ describe(demotePinnedMountsAsync, () => {
 	it("should leave an auto-mounted directory of ordinary files unchanged", async () => {
 		expect.assertions(1);
 
-		seed({
+		const { fileSystem } = seed({
 			[path.join(ASSETS, "Workspace/maps/config.model.json")]: '{"ClassName":"Model"}',
 			[path.join(ASSETS, "Workspace/maps/init.luau")]: "return {}",
 		});
 		const projectJson = directoryMount("Workspace", path.join(ASSETS, "Workspace"));
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should not treat an init.meta.json directory as a class descriptor", async () => {
 		expect.assertions(1);
 
-		seed({ [path.join(ASSETS, "src/Child/init.meta.json/value.luau")]: "return 1" });
+		const { fileSystem } = seed({
+			[path.join(ASSETS, "src/Child/init.meta.json/value.luau")]: "return 1",
+		});
 		const projectJson = directoryMount("Workspace", path.join(ASSETS, "src"));
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it("should scan a shared mount path once", async () => {
 		expect.assertions(1);
 
 		const shared = path.join(ASSETS, "StarterPlayerScripts.rbxmx");
-		seed({ [shared]: serviceModelXml("StarterPlayerScripts") });
+		const { fileSystem } = seed({ [shared]: serviceModelXml("StarterPlayerScripts") });
 		await demoteAsync(
+			fileSystem,
 			stagedProject({
 				pkg: {
 					$className: "Folder",
@@ -502,7 +520,7 @@ describe(demotePinnedMountsAsync, () => {
 		expect.assertions(1);
 
 		const model = path.join(ASSETS, "Terrain.rbxmx");
-		seed({ [model]: serviceModelXml("Terrain") });
+		const { fileSystem } = seed({ [model]: serviceModelXml("Terrain") });
 		const projectJson = stagedProject({
 			pkg: {
 				$className: "Folder",
@@ -510,7 +528,7 @@ describe(demotePinnedMountsAsync, () => {
 			},
 		});
 
-		await expect(runAsync(projectJson)).resolves.toBe(projectJson);
+		await expect(runAsync(fileSystem, projectJson)).resolves.toBe(projectJson);
 	});
 
 	it.for([
@@ -526,9 +544,12 @@ describe(demotePinnedMountsAsync, () => {
 		async ([fileName, contents, instanceName]) => {
 			expect.assertions(1);
 
-			seed({ [path.join(ASSETS, "StarterPlayer", fileName)]: contents });
+			const { fileSystem } = seed({
+				[path.join(ASSETS, "StarterPlayer", fileName)]: contents,
+			});
 
 			const project = await demoteAsync(
+				fileSystem,
 				directoryMount("StarterPlayer", path.join(ASSETS, "StarterPlayer")),
 			);
 

@@ -1,6 +1,7 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { CopyIgnoreMatcher } from "./discover-files.ts";
@@ -79,6 +80,8 @@ export interface PreparedSpine {
 }
 
 export interface PrepareSpineOptions {
+	/** Where the mirror reads and writes. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * Shadow entries a `beforeBuild` bake writes and sweeps for itself. A
 	 * demoted mount is served from its spine copy, so that is where its own
@@ -106,6 +109,7 @@ interface SpineMirrorResult {
 }
 
 interface MirrorSpineOptions {
+	fileSystem: FileSystem;
 	isBakeOwned: BakeOwnershipMatcher | undefined;
 	/** Paths the shadow never carries, relative to `mount`. */
 	isCopyIgnored: CopyIgnoreMatcher;
@@ -124,6 +128,7 @@ interface MirrorSpineOptions {
 
 /** One spine leaf's prune: the directory, and what may stay in it. */
 interface PruneSpineOptions {
+	fileSystem: FileSystem;
 	isBakeOwned: BakeOwnershipMatcher | undefined;
 	/** Names this pass mirrored, which the walk keeps for that reason alone. */
 	mirrored: ReadonlySet<string>;
@@ -181,6 +186,7 @@ export function resolveSpineDirectories(
  * the record shape the manifest carries are all decided once.
  */
 export function prepareSpine({
+	fileSystem = nodeFileSystem,
 	isBakeOwned,
 	isCopyIgnored,
 	narrowed,
@@ -199,6 +205,7 @@ export function prepareSpine({
 			}),
 		);
 		const mirror = mirrorSpineFiles({
+			fileSystem,
 			isBakeOwned,
 			isCopyIgnored,
 			mount: toSourcePath(entry.luauRoot),
@@ -293,12 +300,13 @@ function toSpineDirectory(shadowRoot: string, relativePath: string): string {
  * {@link BakeOwnershipMatcher}.
  */
 function pruneSpineDirectory({
+	fileSystem,
 	isBakeOwned,
 	mirrored,
 	spineDirectory,
 }: PruneSpineOptions): boolean {
 	let hasDeleted = false;
-	const entries = fs.readdirSync(spineDirectory, { withFileTypes: true });
+	const entries = fileSystem.readdirSync(spineDirectory, { withFileTypes: true });
 	for (const entry of entries) {
 		if (mirrored.has(entry.name)) {
 			continue;
@@ -310,7 +318,7 @@ function pruneSpineDirectory({
 
 		hasDeleted =
 			tryRemove(() => {
-				fs.rmSync(`${spineDirectory}/${entry.name}`);
+				fileSystem.rmSync(`${spineDirectory}/${entry.name}`);
 			}) || hasDeleted;
 	}
 
@@ -321,6 +329,7 @@ function pruneSpineDirectory({
  * One spine directory: its own files copied in, everything else cleared out.
  */
 function mirrorOneLevel({
+	fileSystem,
 	isBakeOwned,
 	isCopyIgnored,
 	mount,
@@ -328,13 +337,13 @@ function mirrorOneLevel({
 	sourceDirectory,
 	spineDirectory,
 }: MirrorLevelOptions): SpineMirrorResult {
-	fs.mkdirSync(spineDirectory, { recursive: true });
+	fileSystem.mkdirSync(spineDirectory, { recursive: true });
 
 	const files: Record<string, NonInstrumentedFileRecord> = {};
 	const mirrored = new Set<string>();
 	let hasChanged = false;
 
-	const entries = fs.readdirSync(sourceDirectory, { withFileTypes: true });
+	const entries = fileSystem.readdirSync(sourceDirectory, { withFileTypes: true });
 	for (const entry of entries) {
 		const sourcePath = `${sourceDirectory}/${entry.name}`;
 		if (entry.isDirectory() || isCopyIgnored(sourcePath.slice(mount.length + 1))) {
@@ -342,14 +351,21 @@ function mirrorOneLevel({
 		}
 
 		const previousRecord = previousNonInstrumented?.[sourcePath];
-		const record = syncOneFile(sourcePath, `${spineDirectory}/${entry.name}`, previousRecord);
+		const record = syncOneFile(
+			sourcePath,
+			`${spineDirectory}/${entry.name}`,
+			previousRecord,
+			fileSystem,
+		);
 		files[sourcePath] = record;
 		mirrored.add(entry.name);
 		hasChanged ||= record !== previousRecord;
 	}
 
 	return {
-		changed: pruneSpineDirectory({ isBakeOwned, mirrored, spineDirectory }) || hasChanged,
+		changed:
+			pruneSpineDirectory({ fileSystem, isBakeOwned, mirrored, spineDirectory }) ||
+			hasChanged,
 		files,
 	};
 }

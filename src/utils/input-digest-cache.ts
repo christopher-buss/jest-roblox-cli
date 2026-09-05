@@ -1,7 +1,9 @@
 import assert from "node:assert";
-import * as fs from "node:fs";
+import type { Stats } from "node:fs";
 
 import { atomicWrite } from "./atomic-write.ts";
+import type { FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
 import { hashFileAsync } from "./hash.ts";
 
 /**
@@ -76,14 +78,20 @@ const FIELD_COUNT = 4;
  * trip with a per-entry schema costs ~68ms against ~15ms here — a fifth of the
  * time this cache exists to save. Anything that reaches this file has to hold
  * that ratio, which is why the format is checked rather than validated.
+ *
+ * @param cacheFile - Where the record lives between runs.
+ * @param fileSystem - Where the inputs and the record are read and written.
  */
-export function openInputDigestCache(cacheFile: string): InputDigestCache {
+export function openInputDigestCache(
+	cacheFile: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): InputDigestCache {
 	// Read before the walk, so every mtime compared against it belongs to a
 	// write that finished earlier — see the note above. Read synchronously
 	// because it is one file: the async pass below exists for the tens of
 	// thousands this record stands in for, not for the record itself.
 	const openedAtMs = Date.now();
-	const previous = readEntries(cacheFile);
+	const previous = readEntries(cacheFile, fileSystem);
 	const publishable = new Map<string, DigestEntry>();
 	// Whether any file was read this run. Without one, a record identical to
 	// the one on disk would be serialized and rewritten on exactly the run this
@@ -92,10 +100,10 @@ export function openInputDigestCache(cacheFile: string): InputDigestCache {
 
 	return {
 		async hashOfAsync(filePath) {
-			const stats = await fs.promises.stat(filePath);
+			const stats = await fileSystem.promises.stat(filePath);
 			let entry = previous.get(filePath);
 			if (!describes(entry, stats)) {
-				entry = { hash: await hashFileAsync(filePath), ...statOf(stats) };
+				entry = { hash: await hashFileAsync(filePath, fileSystem), ...statOf(stats) };
 				didReread = true;
 			}
 
@@ -117,18 +125,18 @@ export function openInputDigestCache(cacheFile: string): InputDigestCache {
 				return;
 			}
 
-			atomicWrite({ contents: serialize(publishable), targetPath: cacheFile });
+			atomicWrite({ contents: serialize(publishable), fileSystem, targetPath: cacheFile });
 		},
 	};
 }
 
 /** The two stat fields a recorded digest is keyed on. */
-function statOf(stats: fs.Stats): { mtimeMs: number; size: number } {
+function statOf(stats: Stats): { mtimeMs: number; size: number } {
 	return { mtimeMs: stats.mtimeMs, size: stats.size };
 }
 
 /** Whether a recorded entry still answers for the file now on disk. */
-function describes(entry: DigestEntry | undefined, stats: fs.Stats): entry is DigestEntry {
+function describes(entry: DigestEntry | undefined, stats: Stats): entry is DigestEntry {
 	return entry?.size === stats.size && entry.mtimeMs === stats.mtimeMs;
 }
 
@@ -162,13 +170,16 @@ function serialize(entries: Map<string, DigestEntry>): string {
  * Lines are read positionally, so one short of its fields says nothing this
  * reader can act on and is dropped. A corrupt record costs a re-read, never a
  * wrong digest.
+ *
+ * @param cacheFile - Where the record lives between runs.
+ * @param fileSystem - Where to read it from.
  */
-function readEntries(cacheFile: string): Map<string, DigestEntry> {
+function readEntries(cacheFile: string, fileSystem: FileSystem): Map<string, DigestEntry> {
 	const entries = new Map<string, DigestEntry>();
 
 	let raw: string;
 	try {
-		raw = fs.readFileSync(cacheFile, "utf-8");
+		raw = fileSystem.readFileSync(cacheFile, "utf-8");
 	} catch {
 		// No previous run, or its cache was cleaned away. Not a fault.
 		return entries;

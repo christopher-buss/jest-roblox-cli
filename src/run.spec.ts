@@ -137,7 +137,6 @@ describe(runJestRobloxAsync, () => {
 			[undefined],
 			expect.anything(),
 			expect.anything(),
-			expect.anything(),
 		);
 		expect(mocks.loadRojoTree).toHaveBeenCalledOnce();
 		expect(profile).toHaveBeenCalledWith("loadRojoTree", expect.any(Function));

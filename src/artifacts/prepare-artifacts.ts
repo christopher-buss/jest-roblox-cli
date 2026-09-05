@@ -166,7 +166,10 @@ async function buildCleanPlaceAsync(
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		const cacheRoot = path.resolve(config.rootDir, CACHE_DIR);
 		const rojoTree = loadRojoTree(config);
-		const projects = await resolveAllProjects(rawProjects, config, rojoTree, config.rootDir);
+		const projects = await resolveAllProjects(rawProjects, config, {
+			cwd: config.rootDir,
+			rojoTree,
+		});
 		descriptor.stubMounts = collectStubMounts(projects, config.rootDir, cacheRoot);
 	}
 

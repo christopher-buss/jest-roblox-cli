@@ -3,6 +3,7 @@ import { loadRojoProject, rebaseTreePaths } from "@isentinel/rojo-utils";
 import * as path from "node:path";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 
 /**
  * Load a package's Rojo tree with every `$path` expressed relative to the
@@ -18,8 +19,9 @@ import type { RojoTreeNode } from "../types/rojo.ts";
 export function loadPackageRojoTree(
 	rojoProjectPath: string,
 	packageDirectory: string,
+	fileSystem?: FileSystem,
 ): RojoTreeNode {
 	const rojoDirectory = path.dirname(rojoProjectPath);
-	const project = loadRojoProject(rojoProjectPath);
+	const project = loadRojoProject(rojoProjectPath, fileSystem);
 	return rebaseTreePaths(project.tree, rojoDirectory, packageDirectory);
 }

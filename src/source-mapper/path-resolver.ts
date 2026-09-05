@@ -1,9 +1,9 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
 
-import { existsSync } from "node:fs";
-
 import type { RojoProject, RojoTreeNode } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
 const INIT_SEGMENT = /(^|\/)(init)(\.|\/)/;
@@ -20,6 +20,8 @@ interface ResolvedPath {
 }
 
 interface PathResolverConfig {
+	/** Where an unmapped path is probed. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	mappings?: ReadonlyArray<TsconfigMapping>;
 }
 
@@ -30,12 +32,12 @@ export function luauInitToIndex(filePath: string): string {
 
 export function createPathResolver(
 	rojoProject: RojoProject,
-	config?: PathResolverConfig,
+	{ fileSystem = nodeFileSystem, mappings }: PathResolverConfig = {},
 ): PathResolver {
 	const rojoMappings = new Map<string, string>();
 	collectRojoMappings(rojoProject.tree, "", rojoMappings);
 
-	const tsconfigMappings = config?.mappings ?? [];
+	const tsconfigMappings = mappings ?? [];
 	const sortedRojoMappings = [...rojoMappings].sort(([a], [b]) => b.length - a.length);
 
 	return {
@@ -58,7 +60,7 @@ export function createPathResolver(
 					return { filePath: `${luauInitToIndex(mapped)}.ts`, mapping };
 				}
 
-				return { filePath: findLuaFile(result) };
+				return { filePath: findLuaFile(fileSystem, result) };
 			}
 
 			return undefined;
@@ -103,14 +105,14 @@ function convertToFilePath(suffix: string): string {
 	return result.join("/");
 }
 
-function findLuaFile(basePath: string): string {
+function findLuaFile(fileSystem: FileSystem, basePath: string): string {
 	const luauPath = `${basePath}.luau`;
-	if (existsSync(luauPath)) {
+	if (fileSystem.existsSync(luauPath)) {
 		return luauPath;
 	}
 
 	const luaPath = `${basePath}.lua`;
-	if (existsSync(luaPath)) {
+	if (fileSystem.existsSync(luaPath)) {
 		return luaPath;
 	}
 

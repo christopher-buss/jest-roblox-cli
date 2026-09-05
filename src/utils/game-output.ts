@@ -1,8 +1,9 @@
 import { type } from "arktype";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { GameOutputEntry, PackageGameOutput } from "../types/game-output.ts";
+import type { FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
 
 /** One contributor to an Aggregated Game Output file. */
 export interface GameOutputSource {
@@ -45,8 +46,12 @@ export function parseGameOutput(raw: string | undefined): Array<GameOutputEntry>
 	}
 }
 
-export function writeGameOutput(filePath: string, entries: Array<GameOutputEntry>): void {
-	writeJsonFile(filePath, entries);
+export function writeGameOutput(
+	filePath: string,
+	entries: Array<GameOutputEntry>,
+	fileSystem: FileSystem = nodeFileSystem,
+): void {
+	writeJsonFile(fileSystem, filePath, entries);
 }
 
 /**
@@ -84,8 +89,12 @@ export function buildBatchGameOutput(raw: string | undefined): Array<PackageGame
 	return [{ entries: parseGameOutput(raw), project: BATCH_PROJECT_LABEL, scope: "batch" }];
 }
 
-export function writeGroupedGameOutput(filePath: string, groups: Array<PackageGameOutput>): void {
-	writeJsonFile(filePath, groups);
+export function writeGroupedGameOutput(
+	filePath: string,
+	groups: Array<PackageGameOutput>,
+	fileSystem: FileSystem = nodeFileSystem,
+): void {
+	writeJsonFile(fileSystem, filePath, groups);
 }
 
 export function countGroupedEntries(groups: ReadonlyArray<PackageGameOutput>): number {
@@ -93,15 +102,16 @@ export function countGroupedEntries(groups: ReadonlyArray<PackageGameOutput>): n
 }
 
 function writeJsonFile(
+	fileSystem: FileSystem,
 	filePath: string,
 	value: Array<GameOutputEntry> | Array<PackageGameOutput>,
 ): void {
 	const absolutePath = path.resolve(filePath);
 	const directoryPath = path.dirname(absolutePath);
 
-	if (!fs.existsSync(directoryPath)) {
-		fs.mkdirSync(directoryPath, { recursive: true });
+	if (!fileSystem.existsSync(directoryPath)) {
+		fileSystem.mkdirSync(directoryPath, { recursive: true });
 	}
 
-	fs.writeFileSync(absolutePath, JSON.stringify(value, null, 2));
+	fileSystem.writeFileSync(absolutePath, JSON.stringify(value, null, 2));
 }

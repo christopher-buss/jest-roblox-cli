@@ -1,13 +1,16 @@
 import { type } from "arktype";
 import { parseJSONC } from "confbox";
-import { type ChildProcess, execFile, type ExecFileException } from "node:child_process";
-import * as fs from "node:fs";
+import type { ChildProcess, ExecFileException } from "node:child_process";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
 
 import { ConfigError } from "../config/errors.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { nodeChildProcessRunner } from "../utils/child-process.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { collectTestDefinitions } from "./collect.ts";
 import { parseTscOutput } from "./parse.ts";
@@ -42,13 +45,24 @@ const compositeTsconfigSchema = type({
 });
 
 export interface TypecheckOptions {
+	/** What launches tsgo. Defaults to the real launcher. */
+	childProcess?: ChildProcessRunner;
 	files: Array<string>;
+	/**
+	 * Where the type-test sources are read. Defaults to the real filesystem.
+	 */
+	fileSystem?: FileSystem;
 	/**
 	 * When `false` (default), tsgo errors in non-test source files surface as
 	 * source-level failures. When `true`, only errors inside the discovered
 	 * Type Test files are reported.
 	 */
 	ignoreSourceErrors?: boolean | undefined;
+	/**
+	 * How a package specifier becomes a path. Defaults to CJS resolution off
+	 * this module, which is the only thing that reads `node:module` here.
+	 */
+	resolveModule?: (specifier: string) => string;
 	rootDir: string;
 	/**
 	 * Milliseconds to wait for the tsgo process to launch before the pass
@@ -77,6 +91,7 @@ interface PartitionedErrors {
 
 interface ExecuteTsgoOptions {
 	args: Array<string>;
+	childProcess: ChildProcessRunner;
 	cwd: string;
 	reject: (reason: Error) => void;
 	resolve: (value: string) => void;
@@ -152,7 +167,11 @@ export function mapErrorsToTests(
 	};
 }
 
-export function isCompositeProject(rootDirectory: string, tsconfig?: string): boolean {
+export function isCompositeProject(
+	rootDirectory: string,
+	tsconfig?: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): boolean {
 	const tsconfigPath =
 		tsconfig !== undefined
 			? path.resolve(rootDirectory, tsconfig)
@@ -160,7 +179,7 @@ export function isCompositeProject(rootDirectory: string, tsconfig?: string): bo
 
 	try {
 		const raw = compositeTsconfigSchema.assert(
-			parseJSONC(fs.readFileSync(tsconfigPath, "utf-8")),
+			parseJSONC(fileSystem.readFileSync(tsconfigPath, "utf-8")),
 		);
 		return raw.compilerOptions?.composite === true;
 	} catch (err) {
@@ -177,13 +196,14 @@ export function isCompositeProject(rootDirectory: string, tsconfig?: string): bo
 
 // cspell:ignore tsgo
 export async function runTypecheckAsync(options: TypecheckOptions): Promise<JestResult> {
+	const { fileSystem = nodeFileSystem } = options;
 	const startTime = Date.now();
 	const tsgoOutput = await spawnTsgoAsync(options);
 	const errors = parseTscOutput(tsgoOutput);
 
 	const files = new Map<string, FileInfo>();
 	for (const filePath of options.files) {
-		const source = fs.readFileSync(filePath, "utf-8");
+		const source = fileSystem.readFileSync(filePath, "utf-8");
 		const definitions = collectTestDefinitions(source);
 		const resolvedPath = path.resolve(filePath);
 		const key = normalizeWindowsPath(path.relative(options.rootDir, resolvedPath));
@@ -329,14 +349,17 @@ function buildFileResult(
 // tsgo is an optional peer dependency, so its absence is an ordinary state to
 // report rather than a broken install — `require.resolve` only raises a bare
 // `MODULE_NOT_FOUND`, which reads as a fault inside the CLI. `ConfigError`
+/** CJS resolution off this module — the only thing here that needs it. */
+function defaultResolveModule(specifier: string): string {
+	return createRequire(import.meta.url).resolve(specifier);
+}
+
 // matches the sibling guard that rejects `--typecheck` under the standalone
 // binary, and puts the install command in the banner's `Hint:` slot.
-function resolveTsgoScript(): string {
-	const require = createRequire(import.meta.url);
-
+function resolveTsgoScript(resolveModule: (specifier: string) => string): string {
 	let packageJsonPath: string;
 	try {
-		packageJsonPath = require.resolve("@typescript/native-preview/package.json");
+		packageJsonPath = resolveModule("@typescript/native-preview/package.json");
 	} catch (err) {
 		if (err instanceof Error && "code" in err && err.code === "MODULE_NOT_FOUND") {
 			throw new ConfigError(MISSING_TSGO_MESSAGE, MISSING_TSGO_HINT);
@@ -447,6 +470,7 @@ function armLaunchTimer({
 // launch timer) into the caller's promise.
 function executeTsgo({
 	args,
+	childProcess,
 	cwd,
 	reject,
 	resolve,
@@ -475,7 +499,7 @@ function executeTsgo({
 		action();
 	}
 
-	const child = execFile(
+	const child = childProcess.execFile(
 		process.execPath,
 		[tsgoScript, ...args],
 		{ cwd, encoding: "utf-8", timeout: runTimeout, windowsHide: true },
@@ -504,15 +528,17 @@ function executeTsgo({
 // startup, and `execFile`'s own `timeout` (`options.timeout`, the run-level
 // deadline) bounds the compile.
 async function spawnTsgoAsync(options: TypecheckOptions): Promise<string> {
-	const isComposite = isCompositeProject(options.rootDir, options.tsconfig);
+	const { childProcess = nodeChildProcessRunner, fileSystem = nodeFileSystem } = options;
+	const isComposite = isCompositeProject(options.rootDir, options.tsconfig, fileSystem);
 	const args = buildTsgoArgs(options, isComposite);
-	const tsgoScript = resolveTsgoScript();
+	const tsgoScript = resolveTsgoScript(options.resolveModule ?? defaultResolveModule);
 	const spawnTimeout = options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT;
 	const runTimeout = options.timeout ?? DEFAULT_RUN_TIMEOUT;
 
 	return new Promise<string>((resolve, reject) => {
 		executeTsgo({
 			args,
+			childProcess,
 			cwd: options.rootDir,
 			reject,
 			resolve,

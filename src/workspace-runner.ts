@@ -1,4 +1,3 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
@@ -9,7 +8,10 @@ import type { ExecuteResult } from "./executor.ts";
 import { createTsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
 import type { StreamingAggregatorOnEntry } from "./reporter/streaming-aggregator.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
+import type { FileSystem } from "./utils/file-system.ts";
+import { nodeFileSystem } from "./utils/file-system.ts";
 import { attachCoverageManifests } from "./workspace/coverage-attach.ts";
+import type { WorkspaceDispatchSpec, WorkspaceJob } from "./workspace/dispatch.ts";
 import {
 	buildWorkspaceJobs,
 	prepareWorkspaceDispatchAsync,
@@ -54,6 +56,8 @@ export interface RunWorkspaceOptions {
 	 * value they would have passed.
 	 */
 	cwd?: string | undefined;
+	/** Where the run reads and writes. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * When provided, called once per newly-observed streaming result as
 	 * packages complete (work-stealing mode only). The intended consumer is
@@ -94,18 +98,53 @@ export interface RunWorkspaceOptions {
 		| { apiKey: string; baseUrl?: string | undefined; universeId: string };
 }
 
+/**
+ * The options every stage below the entry point reads: the caller's, with the
+ * filesystem seam already resolved. Resolving it once — rather than at each
+ * `?? nodeFileSystem` — is what stops a stage reaching the real disk because
+ * someone forgot the fallback.
+ */
+type ResolvedRunWorkspaceOptions = RunWorkspaceOptions & { fileSystem: FileSystem };
+
 interface WorkspaceRuntimeInput {
 	cacheDirectory: string;
 	loaded: Array<LoadedPackage>;
-	options: RunWorkspaceOptions;
+	options: ResolvedRunWorkspaceOptions;
 	selection: WorkspaceTestSelection;
 	timing: TimingCollector;
 }
 
+/**
+ * What a run has in hand once every package has loaded and passed preflight.
+ */
+type OpenedWorkspace = Pick<WorkspaceRuntimeInput, "cacheDirectory" | "loaded">;
+
 export async function runWorkspaceAsync(
 	options: RunWorkspaceOptions,
 ): Promise<undefined | WorkspaceRunnerOutput> {
-	return runWorkspaceProfiledAsync(options, options.timing ?? NOOP_TIMING_COLLECTOR);
+	const { fileSystem = nodeFileSystem } = options;
+	return runWorkspaceProfiledAsync(
+		{ ...options, fileSystem },
+		options.timing ?? NOOP_TIMING_COLLECTOR,
+	);
+}
+
+/** How this run hands its jobs to the backend, measured under its own span. */
+async function prepareDispatchSpecAsync(
+	options: ResolvedRunWorkspaceOptions,
+	jobs: Array<WorkspaceJob>,
+	timing: TimingCollector,
+): Promise<WorkspaceDispatchSpec> {
+	return timing.profileAsync("prepareDispatch", async () => {
+		return prepareWorkspaceDispatchAsync({
+			bail: options.runOptions.bail,
+			jobs,
+			onStreamingResult: options.onStreamingResult,
+			parallel: options.runOptions.parallel,
+			testProgressMapId: resolveTestProgressMapId(options.backend),
+			workStealingCredentials: options.workStealingCredentials,
+		});
+	});
 }
 
 async function executeWorkspaceRunAsync({
@@ -124,21 +163,13 @@ async function executeWorkspaceRunAsync({
 	// Resolved once, for both the script the runtime executes and the run that
 	// post-processes its results. The cache goes with them, so a package's
 	// tsconfigs are read once for the whole run.
+	const { fileSystem } = options;
 	const tsconfigCache = createTsconfigMappingCache();
 	const jobs = timing.profile("buildJobs", () => {
 		return buildWorkspaceJobs(pending, placeFile, tsconfigCache);
 	});
 
-	const dispatchSpec = await timing.profileAsync("prepareDispatch", async () => {
-		return prepareWorkspaceDispatchAsync({
-			bail: options.runOptions.bail,
-			jobs,
-			onStreamingResult: options.onStreamingResult,
-			parallel: options.runOptions.parallel,
-			testProgressMapId: resolveTestProgressMapId(options.backend),
-			workStealingCredentials: options.workStealingCredentials,
-		});
-	});
+	const dispatchSpec = await prepareDispatchSpecAsync(options, jobs, timing);
 
 	// The grouped tsgo pass depends only on the filesystem (discovery already
 	// ran), so it overlaps the network-bound Open Cloud upload/poll. Await both,
@@ -149,6 +180,7 @@ async function executeWorkspaceRunAsync({
 		runDispatchedProjectsAsync({
 			backend: options.backend,
 			dispatchSpec,
+			fileSystem,
 			jobs,
 			startTime,
 			timing,
@@ -206,9 +238,37 @@ async function stagePlaceForRunAsync({
 }: WorkspaceRuntimeInput): Promise<StagedWorkspacePlace> {
 	return stageWorkspacePlaceAsync({
 		cacheDirectory,
+		fileSystem: options.fileSystem,
 		loaded,
 		selection,
 		timing,
+		workspaceRoot: options.workspaceRoot,
+	});
+}
+
+/** The sinks a run with runtime jobs writes, once the results have landed. */
+async function writeRuntimeSinksAsync(
+	options: ResolvedRunWorkspaceOptions,
+	selection: WorkspaceTestSelection,
+	{
+		pending,
+		results,
+		typecheckPass,
+	}: {
+		pending: Array<PendingEntry>;
+		results: Array<ExecuteResult>;
+		typecheckPass: WorkspaceTypecheckPass;
+	},
+): Promise<void> {
+	await writeWorkspaceSinksAsync({
+		fileSystem: options.fileSystem,
+		pending,
+		results,
+		runOptions: options.runOptions,
+		typecheckByPackage: typecheckPass.byPackage,
+		typecheckResult: typecheckPass.outcome.result,
+		typeTestProjects: selection.typeTestProjects,
+		verbose: options.cli.verbose,
 		workspaceRoot: options.workspaceRoot,
 	});
 }
@@ -230,15 +290,10 @@ async function runWorkspaceRuntimeAsync(
 
 	const { bailedPackages, ran } = splitBailedSelection(selection.pending, ranProjectIndices);
 
-	await writeWorkspaceSinksAsync({
+	await writeRuntimeSinksAsync(options, selection, {
 		pending: ran,
 		results,
-		runOptions: options.runOptions,
-		typecheckByPackage: typecheckPass.byPackage,
-		typecheckResult: typecheckPass.outcome.result,
-		typeTestProjects: selection.typeTestProjects,
-		verbose: options.cli.verbose,
-		workspaceRoot: options.workspaceRoot,
+		typecheckPass,
 	});
 
 	return {
@@ -258,7 +313,7 @@ async function runWorkspaceRuntimeAsync(
 // dispatch entirely — run only the host-side type pass and return it. Without
 // Type Tests, nothing to test.
 async function runWorkspaceNoRuntimeAsync(
-	options: RunWorkspaceOptions,
+	options: ResolvedRunWorkspaceOptions,
 	selection: WorkspaceTestSelection,
 	timing: TimingCollector,
 ): Promise<WorkspaceRunnerOutput> {
@@ -267,6 +322,7 @@ async function runWorkspaceNoRuntimeAsync(
 	}
 
 	return runTypecheckOnlyWorkspaceAsync({
+		fileSystem: options.fileSystem,
 		runOptions: options.runOptions,
 		timing,
 		typecheckByDirectory: selection.typecheckByDirectory,
@@ -283,11 +339,11 @@ function writePreflightErrors(errors: Array<PreflightError>): void {
 	}
 }
 
-function runWorkspacePreflight(loaded: Array<LoadedPackage>): boolean {
+function runWorkspacePreflight(loaded: Array<LoadedPackage>, fileSystem: FileSystem): boolean {
 	const descriptors = loaded.map((entry) => entry.descriptor);
-	ensurePackageDirectories(descriptors);
+	ensurePackageDirectories(descriptors, fileSystem);
 
-	const errors = validatePackages(descriptors);
+	const errors = validatePackages(descriptors, fileSystem);
 	if (errors.length === 0) {
 		return true;
 	}
@@ -296,45 +352,76 @@ function runWorkspacePreflight(loaded: Array<LoadedPackage>): boolean {
 	return false;
 }
 
+function createWorkspaceCacheDirectory(fileSystem: FileSystem, workspaceRoot: string): string {
+	const cacheDirectory = path.join(workspaceRoot, WORKSPACE_CACHE_DIRECTORY);
+	fileSystem.mkdirSync(cacheDirectory, { recursive: true });
+	return cacheDirectory;
+}
+
+/**
+ * Every package loaded, validated, and given somewhere to cache — or
+ * `undefined` when preflight rejected one, which ends the run.
+ */
+async function openWorkspaceAsync(
+	{ cli, fileSystem, packageInfos, workspaceRoot }: ResolvedRunWorkspaceOptions,
+	timing: TimingCollector,
+): Promise<OpenedWorkspace | undefined> {
+	// Load each package's config FIRST so that per-package `rojoProject`
+	// declarations override the workspace default. Building the descriptor
+	// (and the path preflight uses) before loadConfig pinned every package
+	// to the parent's rojo file.
+	const loaded = await timing.profileAsync("loadPackages", async () => {
+		return loadWorkspacePackagesAsync({ cli, fileSystem, packageInfos, timing });
+	});
+
+	if (!runWorkspacePreflight(loaded, fileSystem)) {
+		return undefined;
+	}
+
+	return { cacheDirectory: createWorkspaceCacheDirectory(fileSystem, workspaceRoot), loaded };
+}
+
 function reportTestSelectionErrors(selection: WorkspaceTestSelection): void {
 	for (const error of selection.emptyPackageErrors) {
 		process.stderr.write(`${error}\n`);
 	}
 }
 
-function createWorkspaceCacheDirectory(workspaceRoot: string): string {
-	const cacheDirectory = path.join(workspaceRoot, WORKSPACE_CACHE_DIRECTORY);
-	fs.mkdirSync(cacheDirectory, { recursive: true });
-	return cacheDirectory;
+/**
+ * Resolve each package to its projects, then to the tests those projects own.
+ */
+async function selectTestsAsync(
+	options: ResolvedRunWorkspaceOptions,
+	timing: TimingCollector,
+	{ cacheDirectory, loaded }: OpenedWorkspace,
+): Promise<WorkspaceTestSelection> {
+	const { cli, fileSystem } = options;
+	const contexts = await timing.profileAsync("resolveContexts", async () => {
+		return resolvePackageContextsAsync({ cacheDirectory, fileSystem, loaded });
+	});
+
+	return timing.profile("discoverTests", () => {
+		return selectWorkspaceTests({
+			cli,
+			contexts,
+			cwd: options.cwd ?? process.cwd(),
+			fileSystem,
+		});
+	});
 }
 
 async function runWorkspaceProfiledAsync(
-	options: RunWorkspaceOptions,
+	options: ResolvedRunWorkspaceOptions,
 	timing: TimingCollector,
 ): Promise<undefined | WorkspaceRunnerOutput> {
-	const { cli, packageInfos, workspaceRoot } = options;
-
-	// Load each package's config FIRST so that per-package `rojoProject`
-	// declarations override the workspace default. Building the descriptor
-	// (and the path preflight uses) before loadConfig pinned every package
-	// to the parent's rojo file.
-	const loaded = await timing.profileAsync("loadPackages", async () => {
-		return loadWorkspacePackagesAsync({ cli, packageInfos, timing });
-	});
-
-	if (!runWorkspacePreflight(loaded)) {
+	const opened = await openWorkspaceAsync(options, timing);
+	if (opened === undefined) {
 		return undefined;
 	}
 
-	const cacheDirectory = createWorkspaceCacheDirectory(workspaceRoot);
+	const { cacheDirectory, loaded } = opened;
 
-	const contexts = await timing.profileAsync("resolveContexts", async () => {
-		return resolvePackageContextsAsync({ cacheDirectory, loaded });
-	});
-
-	const selection = timing.profile("discoverTests", () => {
-		return selectWorkspaceTests({ cli, contexts, cwd: options.cwd ?? process.cwd() });
-	});
+	const selection = await selectTestsAsync(options, timing, { cacheDirectory, loaded });
 	if (selection.emptyPackageErrors.length > 0) {
 		reportTestSelectionErrors(selection);
 		return undefined;

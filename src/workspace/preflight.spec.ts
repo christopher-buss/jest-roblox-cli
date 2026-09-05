@@ -1,15 +1,8 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
-import { vol } from "memfs";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { validatePackages } from "./preflight.ts";
-
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 
 const ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(ROOT, "packages/foo");
@@ -22,9 +15,7 @@ describe(validatePackages, () => {
 	it("should return no errors when all files and $path targets resolve", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[path.join(FOO_DIR, "jest.config.ts")]: "export default {}",
 			[path.join(FOO_DIR, "src/init.luau")]: "return {}",
 			[path.join(FOO_DIR, "test.project.json")]: projectJson({
@@ -36,13 +27,16 @@ describe(validatePackages, () => {
 			}),
 		});
 
-		const errors = validatePackages([
-			{
-				name: "@halcyon/foo",
-				packageDirectory: FOO_DIR,
-				rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-			},
-		]);
+		const errors = validatePackages(
+			[
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
+				},
+			],
+			fileSystem,
+		);
 
 		expect(errors).toStrictEqual([]);
 	});
@@ -50,17 +44,20 @@ describe(validatePackages, () => {
 	it("should report when rojoProject file is missing", () => {
 		expect.assertions(3);
 
-		vol.reset();
+		const { fileSystem } = createMemoryFileSystem({
+			[path.join(FOO_DIR, "jest.config.ts")]: "export default {}",
+		});
 
-		vol.fromJSON({ [path.join(FOO_DIR, "jest.config.ts")]: "export default {}" });
-
-		const errors = validatePackages([
-			{
-				name: "@halcyon/foo",
-				packageDirectory: FOO_DIR,
-				rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-			},
-		]);
+		const errors = validatePackages(
+			[
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
+				},
+			],
+			fileSystem,
+		);
 
 		expect(errors).toHaveLength(1);
 		expect(errors[0]!.package).toBe("@halcyon/foo");
@@ -70,19 +67,20 @@ describe(validatePackages, () => {
 	it("should report when rojoProject fails to parse", () => {
 		expect.assertions(3);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[path.join(FOO_DIR, "test.project.json")]: "not json {{",
 		});
 
-		const errors = validatePackages([
-			{
-				name: "@halcyon/foo",
-				packageDirectory: FOO_DIR,
-				rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-			},
-		]);
+		const errors = validatePackages(
+			[
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
+				},
+			],
+			fileSystem,
+		);
 
 		expect(errors).toHaveLength(1);
 		expect(errors[0]!.package).toBe("@halcyon/foo");
@@ -92,9 +90,7 @@ describe(validatePackages, () => {
 	it("should report each missing $path target", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[path.join(FOO_DIR, "src/init.luau")]: "",
 			[path.join(FOO_DIR, "test.project.json")]: projectJson({
 				name: "foo-test",
@@ -106,13 +102,16 @@ describe(validatePackages, () => {
 			}),
 		});
 
-		const errors = validatePackages([
-			{
-				name: "@halcyon/foo",
-				packageDirectory: FOO_DIR,
-				rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-			},
-		]);
+		const errors = validatePackages(
+			[
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
+				},
+			],
+			fileSystem,
+		);
 
 		expect(errors).toStrictEqual([
 			{ package: "@halcyon/foo", reason: "$path target not found: server" },
@@ -122,10 +121,11 @@ describe(validatePackages, () => {
 	it("should validate multiple packages and aggregate errors", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barDirectory = path.join(ROOT, "packages/bar");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[path.join(barDirectory, "test.project.json")]: projectJson({
 				name: "bar-test",
 				tree: {
@@ -139,18 +139,21 @@ describe(validatePackages, () => {
 			}),
 		});
 
-		const errors = validatePackages([
-			{
-				name: "@halcyon/foo",
-				packageDirectory: FOO_DIR,
-				rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
-			},
-			{
-				name: "@halcyon/bar",
-				packageDirectory: barDirectory,
-				rojoProjectPath: path.join(barDirectory, "test.project.json"),
-			},
-		]);
+		const errors = validatePackages(
+			[
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
+				},
+				{
+					name: "@halcyon/bar",
+					packageDirectory: barDirectory,
+					rojoProjectPath: path.join(barDirectory, "test.project.json"),
+				},
+			],
+			fileSystem,
+		);
 
 		expect(errors).toStrictEqual([
 			{ package: "@halcyon/bar", reason: "$path target not found: missing" },

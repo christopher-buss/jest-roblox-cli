@@ -16,6 +16,7 @@ import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheckPassAsync as runGroupedTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheckAsync } from "../typecheck/runner.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { emitRunHeader } from "./run-header.ts";
 import type { StagedRun } from "./staging.ts";
 import { collectStubMounts } from "./staging.ts";
@@ -103,12 +104,14 @@ function toExecutorProject(job: PendingJob): ProjectInput {
 
 async function runJobsAsync({
 	backend,
+	fileSystem,
 	jobs,
 	parallel,
 	timing,
 	vmParallel,
 }: {
 	backend: Backend;
+	fileSystem: FileSystem;
 	jobs: Array<PendingJob>;
 	parallel: ParallelOption;
 	timing: TimingCollector;
@@ -122,6 +125,7 @@ async function runJobsAsync({
 		return runProjectsAsync({
 			backend,
 			deferFormatting: true,
+			fileSystem,
 			parallel,
 			projects: jobs.map(toExecutorProject),
 			startTime: Date.now(),
@@ -148,6 +152,7 @@ async function runJobsAsync({
 }
 
 async function buildOpenCloudPlaceAsync(
+	fileSystem: FileSystem,
 	rootConfig: ResolvedConfig,
 	projects: Array<ResolvedProjectConfig>,
 	cacheRoot: string,
@@ -158,6 +163,7 @@ async function buildOpenCloudPlaceAsync(
 	);
 
 	await buildPlaceAsync({
+		fileSystem,
 		packages: [
 			{
 				name: "multi-project",
@@ -186,16 +192,19 @@ async function buildPlaceForBackendAsync(
 	backend: Backend,
 	{ discovery, staged }: ExecutionInput,
 ): Promise<number> {
-	const { projects, rootConfig, timing } = discovery;
+	const { fileSystem, projects, rootConfig, timing } = discovery;
 	if (rootConfig.collectCoverage || backend.kind !== "open-cloud") {
 		return 0;
 	}
 
 	const { elapsedMs } = await timing.profileTimedAsync("buildOpenCloudPlace", async () => {
-		await buildOpenCloudPlaceAsync(rootConfig, projects, staged.cacheRoot);
+		await buildOpenCloudPlaceAsync(fileSystem, rootConfig, projects, staged.cacheRoot);
 		// Inside the span: closing it closes the stage, and a size handed over
 		// after that arrives too late to reach the line the stage prints.
-		timing.progress.describe("build", describePlaceFile(resolvePlaceFilePath(rootConfig)));
+		timing.progress.describe(
+			"build",
+			describePlaceFile(resolvePlaceFilePath(rootConfig), fileSystem),
+		);
 	});
 	return elapsedMs;
 }
@@ -222,6 +231,20 @@ function resolveConcurrency(
 	};
 }
 
+/** The run header, with every field it prints taken off the resolved config. */
+function emitConfiguredRunHeader(rootConfig: ResolvedConfig, timing: TimingCollector): void {
+	emitRunHeader({
+		collectCoverage: rootConfig.collectCoverage,
+		color: rootConfig.color,
+		formatters: rootConfig.formatters,
+		progress: timing.progress,
+		rootDir: rootConfig.rootDir,
+		silent: rootConfig.silent,
+		verbose: rootConfig.verbose,
+		version: VERSION,
+	});
+}
+
 async function runAgainstBackendAsync(
 	backend: Backend,
 	input: ExecutionInput,
@@ -231,23 +254,20 @@ async function runAgainstBackendAsync(
 	const placeBuildMs = await buildPlaceForBackendAsync(backend, input);
 
 	if (plan.jobs.length > 0) {
-		emitRunHeader({
-			collectCoverage: rootConfig.collectCoverage,
-			color: rootConfig.color,
-			formatters: rootConfig.formatters,
-			progress: timing.progress,
-			rootDir: rootConfig.rootDir,
-			silent: rootConfig.silent,
-			verbose: rootConfig.verbose,
-			version: VERSION,
-		});
+		emitConfiguredRunHeader(rootConfig, timing);
 	}
 
 	// The tsgo pass runs concurrently with the jobs so the local CPU-bound type
 	// checking overlaps the network-bound Open Cloud upload/poll.
 	const concurrency = resolveConcurrency(staged.effectiveConfig, backend);
 	const [projectResults, typecheck] = await Promise.all([
-		runJobsAsync({ backend, jobs: plan.jobs, timing, ...concurrency }),
+		runJobsAsync({
+			backend,
+			fileSystem: discovery.fileSystem,
+			jobs: plan.jobs,
+			timing,
+			...concurrency,
+		}),
 		runTypecheckPassAsync(plan.typeTestEntries, rootConfig, cliTypecheck),
 	]);
 

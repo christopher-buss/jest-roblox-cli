@@ -1,7 +1,6 @@
 import { resolveNestedProjects } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Except } from "type-fest";
 
@@ -31,9 +30,10 @@ import {
 	recordBackendTimingSpans,
 	recordLuauTimingSpans,
 } from "./executor/timing-spans.ts";
-import type { TsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
+import type { TsconfigMappingCache, TsconfigReader } from "./executor/tsconfig-mappings.ts";
 import {
 	createTsconfigMappingCache,
+	nodeTsconfigReader,
 	resolveAllTsconfigMappings,
 } from "./executor/tsconfig-mappings.ts";
 import type { ExecuteResult } from "./executor/types.ts";
@@ -44,6 +44,8 @@ import type { JestResult } from "./types/jest-result.ts";
 import { rojoProjectSchema } from "./types/rojo.ts";
 import type { TimingResult } from "./types/timing.ts";
 import type { TsconfigMapping } from "./types/tsconfig.ts";
+import type { FileSystem } from "./utils/file-system.ts";
+import { nodeFileSystem } from "./utils/file-system.ts";
 
 // `loadCoverageManifest` lives with the rest of the coverage pipeline; it is
 // re-exported here because `output.ts` (and its whole-module automock in
@@ -51,7 +53,7 @@ import type { TsconfigMapping } from "./types/tsconfig.ts";
 export { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
 export { formatExecuteOutput } from "./executor/format-output.ts";
 export type { SnapshotWriteCounts } from "./executor/snapshot-writer.ts";
-export type { TsconfigDirectories } from "./executor/tsconfig-mappings.ts";
+export type { TsconfigDirectories, TsconfigReader } from "./executor/tsconfig-mappings.ts";
 export {
 	isLuauProject,
 	readTsconfigMapping,
@@ -73,6 +75,8 @@ export interface ProjectInput {
 export interface RunProjectsOptions {
 	backend: Backend;
 	deferFormatting?: boolean | undefined;
+	/** Where the run reads and writes. Defaults to the real filesystem. */
+	fileSystem?: FileSystem | undefined;
 	parallel?: ParallelOption;
 	projects: Array<ProjectInput>;
 	scriptFactory?: ((jobs: ReadonlyArray<ProjectJob>) => string) | undefined;
@@ -100,6 +104,8 @@ export interface RunProjectsOptions {
 	 * once there. Omit it and the run reads its own.
 	 */
 	tsconfigCache?: TsconfigMappingCache | undefined;
+	/** How a tsconfig is read. Defaults to the real one. */
+	tsconfigReader?: TsconfigReader | undefined;
 	version: string;
 	/**
 	 * Studio-only, experimental: how many Luau VMs the plugin splits the jobs
@@ -125,6 +131,7 @@ interface ProcessProjectOptions {
 	backendTiming: BackendTiming;
 	config: ResolvedConfig;
 	deferFormatting?: boolean | undefined;
+	fileSystem: FileSystem;
 	startTime: number;
 	/**
 	 * The orchestration collector created by `runJestRoblox`. Required —
@@ -137,6 +144,7 @@ interface ProcessProjectOptions {
 	 * per project.
 	 */
 	tsconfigCache: TsconfigMappingCache;
+	tsconfigReader: TsconfigReader;
 	version: string;
 }
 
@@ -164,9 +172,18 @@ interface ProjectArtifacts {
  * function for that reason: resolve a field anywhere downstream of the payload
  * and it reaches multi mode only.
  */
-export function buildProjectJob(project: ProjectInput, cache: TsconfigMappingCache): ProjectJob {
+export function buildProjectJob(
+	project: ProjectInput,
+	cache: TsconfigMappingCache,
+	fileSystem: FileSystem = nodeFileSystem,
+	tsconfigReader: TsconfigReader = nodeTsconfigReader,
+): ProjectJob {
 	return {
-		config: resolveSnapshotFormat(project.config, project.testFiles, cache),
+		config: resolveSnapshotFormat(project.config, project.testFiles, {
+			cache,
+			fileSystem,
+			tsconfigReader,
+		}),
 		displayColor: project.displayColor,
 		displayName: project.displayName ?? "",
 		pkg: project.pkg,
@@ -191,11 +208,10 @@ export function buildProjectJob(project: ProjectInput, cache: TsconfigMappingCac
  * project's resolved config, and a mismatch post-processes with the wrong one.
  */
 export async function runProjectsAsync(options: RunProjectsOptions): Promise<RunProjectsResult> {
+	const { fileSystem = nodeFileSystem, tsconfigReader = nodeTsconfigReader } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 	const tsconfigCache = options.tsconfigCache ?? createTsconfigMappingCache();
-	const jobs = timing.profile("buildJobs", () => {
-		return options.projects.map((project) => buildProjectJob(project, tsconfigCache));
-	});
+	const jobs = buildRunJobs(options, { fileSystem, timing, tsconfigCache, tsconfigReader });
 
 	const {
 		bailedJobIndices,
@@ -209,9 +225,11 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 	const context: EntryContext = {
 		backendTiming,
 		deferFormatting: options.deferFormatting,
+		fileSystem,
 		startTime: options.startTime,
 		timing,
 		tsconfigCache,
+		tsconfigReader,
 		version: options.version,
 	};
 
@@ -224,6 +242,25 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 	});
 
 	return { backendTiming, ranProjectIndices, results };
+}
+
+/**
+ * One job per input project, resolved against the caches the run will reuse.
+ */
+function buildRunJobs(
+	options: RunProjectsOptions,
+	{
+		fileSystem,
+		timing,
+		tsconfigCache,
+		tsconfigReader,
+	}: Pick<EntryContext, "fileSystem" | "timing" | "tsconfigCache" | "tsconfigReader">,
+): Array<ProjectJob> {
+	return timing.profile("buildJobs", () => {
+		return options.projects.map((project) => {
+			return buildProjectJob(project, tsconfigCache, fileSystem, tsconfigReader);
+		});
+	});
 }
 
 /**
@@ -278,40 +315,53 @@ function assertResultParity(resultCount: number, jobCount: number): void {
 	}
 }
 
-function writeProjectSnapshots(
-	snapshotWrites: SnapshotWrites | undefined,
-	config: ResolvedConfig,
-	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
-	timing: TimingCollector,
-): SnapshotWriteCounts {
+function writeProjectSnapshots({
+	config,
+	fileSystem,
+	snapshotWrites,
+	timing,
+	tsconfigMappings,
+}: {
+	config: ResolvedConfig;
+	fileSystem: FileSystem;
+	snapshotWrites: SnapshotWrites | undefined;
+	timing: TimingCollector;
+	tsconfigMappings: ReadonlyArray<TsconfigMapping>;
+}): SnapshotWriteCounts {
 	if (snapshotWrites === undefined) {
 		return { attempted: 0, failed: 0, written: 0 };
 	}
 
 	return timing.profile("writeSnapshots", () => {
-		return writeSnapshots(snapshotWrites, config, tsconfigMappings);
+		return writeSnapshots(snapshotWrites, config, tsconfigMappings, fileSystem);
 	});
 }
 
 function buildSourceMapper(
+	fileSystem: FileSystem,
 	config: ResolvedConfig,
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
 ): SourceMapper | undefined {
-	const rojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir);
-	if (rojoProjectPath === undefined || !fs.existsSync(rojoProjectPath)) {
+	const rojoProjectPath = config.rojoProject ?? findRojoProject(config.rootDir, fileSystem);
+	if (rojoProjectPath === undefined || !fileSystem.existsSync(rojoProjectPath)) {
 		return undefined;
 	}
 
 	try {
-		const rojoProjectRaw = JSON.parse(fs.readFileSync(rojoProjectPath, "utf-8"));
+		const rojoProjectRaw = JSON.parse(fileSystem.readFileSync(rojoProjectPath, "utf-8"));
 		const rojoResult = rojoProjectSchema(rojoProjectRaw);
 		if (rojoResult instanceof type.errors) {
 			return undefined;
 		}
 
-		const resolvedTree = resolveNestedProjects(rojoResult.tree, path.dirname(rojoProjectPath));
+		const resolvedTree = resolveNestedProjects(
+			rojoResult.tree,
+			path.dirname(rojoProjectPath),
+			fileSystem,
+		);
 
 		return createSourceMapper({
+			fileSystem,
 			mappings: tsconfigMappings,
 			rojoProject: { ...rojoResult, tree: resolvedTree },
 		});
@@ -340,19 +390,27 @@ function resolveTestFilePaths(result: JestResult, sourceMapper: SourceMapper | u
  */
 function collectProjectArtifacts(
 	{ coverageData, perTestCoverage, result, snapshotWrites }: ProjectBackendResult,
-	{ config, timing }: ProcessProjectOptions,
+	{ config, fileSystem, timing }: ProcessProjectOptions,
 	tsconfigMappings: ReadonlyArray<TsconfigMapping>,
 ): ProjectArtifacts {
-	const writeCounts = writeProjectSnapshots(snapshotWrites, config, tsconfigMappings, timing);
+	const writeCounts = writeProjectSnapshots({
+		config,
+		fileSystem,
+		snapshotWrites,
+		timing,
+		tsconfigMappings,
+	});
 
 	const sourceMapper = config.sourceMap
-		? timing.profile("buildSourceMapper", () => buildSourceMapper(config, tsconfigMappings))
+		? timing.profile("buildSourceMapper", () => {
+				return buildSourceMapper(fileSystem, config, tsconfigMappings);
+			})
 		: undefined;
 
 	// Built before the result's paths are rewritten: the resolver joins the
 	// per-test entries to Jest's own test cases on the DataModel path both
 	// report.
-	const resolveTestSource = createTestSourceResolver(result, sourceMapper);
+	const resolveTestSource = createTestSourceResolver(result, sourceMapper, fileSystem);
 	resolveTestFilePaths(result, sourceMapper);
 
 	// Harvest whenever per-test coverage was collected, even if no test credited
@@ -403,6 +461,20 @@ function renderProjectOutput(
 }
 
 /**
+ * This project's tsconfig mappings, measured under the span the run reports.
+ */
+function resolveProjectTsconfigMappings(options: ProcessProjectOptions): Array<TsconfigMapping> {
+	return options.timing.profile("resolveTsconfigMappings", () => {
+		return resolveAllTsconfigMappings(
+			options.config.rootDir,
+			options.tsconfigCache,
+			options.fileSystem,
+			options.tsconfigReader,
+		);
+	});
+}
+
+/**
  * Process a single `ProjectBackendResult` into an `ExecuteResult`: writes
  * snapshots, builds the source mapper, resolves test-file paths, and renders
  * formatter output. Called once per job.
@@ -411,13 +483,9 @@ function processProjectResult(
 	backendResult: ProjectBackendResult,
 	options: ProcessProjectOptions,
 ): ExecuteResult {
-	const { config, timing } = options;
 	const { luauTiming, result } = backendResult;
 
-	const tsconfigMappings = timing.profile("resolveTsconfigMappings", () => {
-		return resolveAllTsconfigMappings(config.rootDir, options.tsconfigCache);
-	});
-
+	const tsconfigMappings = resolveProjectTsconfigMappings(options);
 	const artifacts = collectProjectArtifacts(backendResult, options, tsconfigMappings);
 	const resultTiming = buildResultTiming(backendResult, options);
 	const output = renderProjectOutput(backendResult, options, resultTiming, artifacts);

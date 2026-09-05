@@ -1,5 +1,7 @@
 import * as path from "node:path";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { toPosixRoot, underRoot } from "../utils/normalize-windows-path.ts";
 import type { CopyIgnoreMatcher } from "./discover-files.ts";
@@ -29,6 +31,8 @@ const MAX_RETAINED_SHARE = 0.9;
 const WHOLE_MOUNT: ReadonlyArray<string> = [""];
 
 export interface NarrowRootOptions {
+	/** Where the walk reads. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/** Paths the shadow never carries, relative to the mount. */
 	isCopyIgnored: CopyIgnoreMatcher;
 	/** Absent means the run narrows nothing, so the mount is taken whole. */
@@ -89,13 +93,13 @@ interface CarriedFiles {
  */
 export function narrowRootToUniverse(
 	luauRoot: PosixRoot,
-	{ isCopyIgnored, universe }: NarrowRootOptions,
+	{ fileSystem = nodeFileSystem, isCopyIgnored, universe }: NarrowRootOptions,
 ): Array<string> {
 	if (universe === undefined) {
 		return [...WHOLE_MOUNT];
 	}
 
-	const { carried, hasIgnoredPaths } = carriedFiles(luauRoot, isCopyIgnored);
+	const { carried, hasIgnoredPaths } = carriedFiles(fileSystem, luauRoot, isCopyIgnored);
 	const probed = carried.filter((relativePath) => {
 		return (
 			isInstrumentableFile(path.posix.basename(relativePath)) &&
@@ -161,7 +165,11 @@ export function narrowLuauRoots(
  * holds them either way — which is exactly why the walk has to say it saw them.
  * Nothing downstream can tell a mount the list emptied from one that was empty.
  */
-function carriedFiles(luauRoot: PosixRoot, isCopyIgnored: CopyIgnoreMatcher): CarriedFiles {
+function carriedFiles(
+	fileSystem: FileSystem,
+	luauRoot: PosixRoot,
+	isCopyIgnored: CopyIgnoreMatcher,
+): CarriedFiles {
 	const carried: Array<string> = [];
 	let hasIgnoredPaths = false;
 	walkLuauDirectory(
@@ -178,6 +186,7 @@ function carriedFiles(luauRoot: PosixRoot, isCopyIgnored: CopyIgnoreMatcher): Ca
 			},
 		},
 		carried,
+		fileSystem,
 	);
 	return { carried, hasIgnoredPaths };
 }

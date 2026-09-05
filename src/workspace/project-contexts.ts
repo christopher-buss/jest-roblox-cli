@@ -17,6 +17,8 @@ import {
 } from "../config/setup-resolver.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import type { PackageInfo } from "./package-resolver.ts";
 import { loadPackageRojoTree } from "./package-rojo-tree.ts";
@@ -27,6 +29,17 @@ export interface PackageContext {
 	info: PackageInfo;
 	pkgConfig: ResolvedConfig;
 	projects: Array<ResolvedProjectConfig>;
+}
+
+/**
+ * One package's inputs to project synthesis, in the frame its mounts are in.
+ */
+interface VirtualProjectInput {
+	fileSystem: FileSystem;
+	packageConfig: ResolvedConfig;
+	packageDirectory: string;
+	packageName: string;
+	rojoTree: RojoTreeNode;
 }
 
 /**
@@ -69,9 +82,15 @@ export function applyProjectFilter(
 
 export async function resolvePackageContextsAsync({
 	cacheDirectory,
+	fileSystem = nodeFileSystem,
 	loaded,
 }: {
 	cacheDirectory: string;
+	/**
+	 * Where each package's rojo project is read from. Defaults to the real
+	 * one.
+	 */
+	fileSystem?: FileSystem;
 	loaded: Array<LoadedPackage>;
 }): Promise<Array<PackageContext>> {
 	const contexts: Array<PackageContext> = [];
@@ -81,7 +100,7 @@ export async function resolvePackageContextsAsync({
 	const rojoCache = createRojoResolverCache();
 
 	for (const entry of loaded) {
-		const projects = await resolvePackageProjectsAsync(entry, rojoCache);
+		const projects = await resolvePackageProjectsAsync(entry, rojoCache, fileSystem);
 		contexts.push({
 			cacheRoot: path.join(cacheDirectory, entry.info.name),
 			descriptor: entry.descriptor,
@@ -94,19 +113,20 @@ export async function resolvePackageContextsAsync({
 	return contexts;
 }
 
-function synthesizeVirtualProjectEntry(
-	packageName: string,
-	packageConfig: ResolvedConfig,
-	rojoTree: RojoTreeNode,
-	packageDirectory: string,
-): InlineProjectConfig {
+function synthesizeVirtualProjectEntry({
+	fileSystem,
+	packageConfig,
+	packageDirectory,
+	packageName,
+	rojoTree,
+}: VirtualProjectInput): InlineProjectConfig {
 	const mountPaths: Array<string> = [];
 	collectPaths(rojoTree, mountPaths);
 
 	// Use the FS classifier so dotted-name directories (e.g. `src/has.dot`)
 	// are not mis-classified as files. `path.posix.extname` would treat
 	// `.dot` as an extension and skip the directory entirely.
-	const classify = createFsClassifier(packageDirectory);
+	const classify = createFsClassifier(packageDirectory, fileSystem);
 	const directoryRoots = mountPaths.filter((value) => classify(value) === "directory");
 
 	const include = directoryRoots.flatMap((root) => {
@@ -125,18 +145,13 @@ function synthesizeVirtualProjectEntry(
 	return { test };
 }
 
-function resolveProjectEntries(
-	packageName: string,
-	packageConfig: ResolvedConfig,
-	rojoTree: RojoTreeNode,
-	packageDirectory: string,
-): Array<ProjectEntry> {
-	const rawProjects = packageConfig.projects;
+function resolveProjectEntries(input: VirtualProjectInput): Array<ProjectEntry> {
+	const rawProjects = input.packageConfig.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
 		return rawProjects;
 	}
 
-	return [synthesizeVirtualProjectEntry(packageName, packageConfig, rojoTree, packageDirectory)];
+	return [synthesizeVirtualProjectEntry(input)];
 }
 
 function applySetupResolver(
@@ -189,21 +204,26 @@ function resolvePackageSetupFiles(
 async function resolvePackageProjectsAsync(
 	entry: LoadedPackage,
 	rojoCache: RojoResolverCache,
+	fileSystem: FileSystem,
 ): Promise<Array<ResolvedProjectConfig>> {
 	const { descriptor, info, pkgConfig } = entry;
-	const rojoTree = loadPackageRojoTree(descriptor.rojoProjectPath, descriptor.packageDirectory);
-	const projectEntries = resolveProjectEntries(
-		info.name,
-		pkgConfig,
-		rojoTree,
-		info.packageDirectory,
+	const rojoTree = loadPackageRojoTree(
+		descriptor.rojoProjectPath,
+		descriptor.packageDirectory,
+		fileSystem,
 	);
-	const projects = await resolveAllProjects(
-		projectEntries,
-		pkgConfig,
+	const projectEntries = resolveProjectEntries({
+		fileSystem,
+		packageConfig: pkgConfig,
+		packageDirectory: info.packageDirectory,
+		packageName: info.name,
 		rojoTree,
-		info.packageDirectory,
-	);
+	});
+	const projects = await resolveAllProjects(projectEntries, pkgConfig, {
+		cwd: info.packageDirectory,
+		fileSystem,
+		rojoTree,
+	});
 
 	resolvePackageSetupFiles(projects, entry, rojoCache);
 	return projects;

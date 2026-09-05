@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { fakeTimingCollector } from "../../test/mocks/fake-timing-collector.ts";
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import { emitWorkspaceBuildManifests } from "../coverage-pipeline/workspace-prepare.ts";
@@ -51,8 +52,11 @@ describe(stageWorkspacePlaceAsync, () => {
 		// sums them.
 		const timing = fakeTimingCollector(35);
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		const result = await stageWorkspacePlaceAsync({
 			cacheDirectory,
+			fileSystem,
 			loaded: [],
 			selection: fromAny({ filteredContexts: [], pending: [] }),
 			timing,
@@ -67,6 +71,7 @@ describe(stageWorkspacePlaceAsync, () => {
 		});
 		expect(timing.profileTimedAsync).toHaveBeenCalledWith("rojoBuild", expect.any(Function));
 		expect(buildPlaceAsync).toHaveBeenCalledWith({
+			fileSystem,
 			packages: [
 				{
 					name: "package",

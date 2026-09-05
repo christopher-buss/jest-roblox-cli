@@ -1,9 +1,10 @@
 import * as crypto from "node:crypto";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { luauParser } from "../luau/parser.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { normalizeWindowsPath, underRoot } from "../utils/normalize-windows-path.ts";
@@ -23,6 +24,10 @@ export const INSTRUMENTER_VERSION = 5;
 const LUAU_EXTENSION = /\.luau?$/;
 
 export interface InstrumentRootOptions {
+	/**
+	 * Where the twins are read and written. Defaults to the real filesystem.
+	 */
+	fileSystem?: FileSystem;
 	/**
 	 * Paths the shadow never carries, relative to `luauRoot`. Asked here as
 	 * well as at the copy so an ignored module is never probed into existence
@@ -66,9 +71,18 @@ interface ShadowPathContext {
 
 /** Everything the per-file instrumentation pass captures from its root. */
 interface InstrumentFileContext extends ShadowPathContext {
+	fileSystem: FileSystem;
 	/** The first half of every file key. */
 	luauRoot: PosixRoot;
 	timing: TimingCollector;
+}
+
+/** What one instrumented file leaves in the shadow: the twin and its map. */
+interface TwinOutput {
+	coverageMap: ReturnType<typeof buildCoverageMap>;
+	coverageMapOutputPath: string;
+	instrumentedSource: string;
+	shadowFilePath: string;
 }
 
 /**
@@ -76,16 +90,17 @@ interface InstrumentFileContext extends ShadowPathContext {
  * writing a manifest — used by `prepareCoverage()` to merge multiple roots.
  */
 export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest["files"] {
-	const { isCopyIgnored, luauRoot, shadowDir, skipFiles } = options;
+	const { fileSystem = nodeFileSystem, isCopyIgnored, luauRoot, shadowDir, skipFiles } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 
 	const fileList = timing.profile("discover-files", () => {
-		return [...discoverRootFiles(luauRoot, { isCopyIgnored }).instrumentable];
+		return [...discoverRootFiles(luauRoot, { fileSystem, isCopyIgnored }).instrumentable];
 	});
 
 	const files: CoverageManifest["files"] = {};
 	const context: InstrumentFileContext = {
 		createdDirectories: new Set<string>(),
+		fileSystem,
 		luauRoot,
 		shadowDir,
 		timing,
@@ -108,7 +123,7 @@ export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest
  * Used by the `instrument` subcommand.
  */
 export function instrument(options: InstrumentOptions): CoverageManifest {
-	const { luauRoot, manifestPath, shadowDir } = options;
+	const { fileSystem = nodeFileSystem, luauRoot, manifestPath, shadowDir } = options;
 
 	const files = instrumentRoot(options);
 
@@ -124,27 +139,9 @@ export function instrument(options: InstrumentOptions): CoverageManifest {
 		version: MANIFEST_VERSION,
 	};
 
-	writeManifest(manifestPath, manifest);
+	writeManifest(manifestPath, manifest, fileSystem);
 
 	return manifest;
-}
-
-/** Parse one file and collect its coverage sites, or fail naming the file. */
-function collectFileCoverage({
-	relativePath,
-	source,
-	timing,
-}: {
-	relativePath: string;
-	source: string;
-	timing: TimingCollector;
-}): CollectorResult {
-	const parsed = timing.profile("parse-ast", () => luauParser.parse(source));
-	if (!parsed.ok) {
-		throw new Error(`Failed to parse ${relativePath}: ${parsed.errors.join("; ")}`);
-	}
-
-	return timing.profile("collect-coverage", () => collectCoverage(parsed.root, source));
 }
 
 /**
@@ -152,12 +149,16 @@ function collectFileCoverage({
  * it. The cache holds every level it is given, so each directory costs one
  * `stat` per run rather than one per file written under it.
  */
-function ensureShadowDirectory(directory: string, createdDirectories: Set<string>): void {
+function ensureShadowDirectory(
+	fileSystem: FileSystem,
+	directory: string,
+	createdDirectories: Set<string>,
+): void {
 	if (createdDirectories.has(directory)) {
 		return;
 	}
 
-	createShadowDirectory(directory);
+	createShadowDirectory(directory, fileSystem);
 	createdDirectories.add(directory);
 }
 
@@ -181,23 +182,87 @@ function ensureShadowDirectory(directory: string, createdDirectories: Set<string
  * would trade a loud failure for a shadow that thrashes silently.
  */
 function prepareTwinPath(
+	fileSystem: FileSystem,
 	relativePath: string,
 	shadowFilePath: string,
 	{ createdDirectories, shadowDir }: ShadowPathContext,
 ): void {
 	let directory = shadowDir;
-	ensureShadowDirectory(directory, createdDirectories);
+	ensureShadowDirectory(fileSystem, directory, createdDirectories);
 
 	const parent = path.dirname(relativePath);
 	if (parent !== ".") {
 		// The discovery walk keys every path with "/", whatever the platform.
 		for (const segment of parent.split("/")) {
 			directory = path.join(directory, segment);
-			ensureShadowDirectory(directory, createdDirectories);
+			ensureShadowDirectory(fileSystem, directory, createdDirectories);
 		}
 	}
 
-	clearDirectoryAtFilePath(shadowFilePath);
+	clearDirectoryAtFilePath(shadowFilePath, fileSystem);
+}
+
+function publishTwin(
+	{ coverageMap, coverageMapOutputPath, instrumentedSource, shadowFilePath }: TwinOutput,
+	{
+		createdDirectories,
+		fileSystem,
+		relativePath,
+		shadowDir,
+	}: Pick<InstrumentFileContext, "createdDirectories" | "fileSystem" | "shadowDir"> & {
+		relativePath: string;
+	},
+): void {
+	// Not `atomicWrite` like the package's other publishers: on Windows the
+	// rename it adds per covered file roughly triples the cost of the write it
+	// protects. The atomic cov-map below covers the kill window that leaves.
+	// Re-measure the `write-shadow` span under `TIMING` first.
+	prepareTwinPath(fileSystem, relativePath, shadowFilePath, { createdDirectories, shadowDir });
+	fileSystem.writeFileSync(shadowFilePath, instrumentedSource);
+	// Same directory as the twin, already made above — but `atomicWrite` under
+	// here remakes it per file. Deduping that too would mean a second opt-out on
+	// a helper the package's publishers share, for microseconds; the one
+	// `writeCoverageMap` already takes buys more than that.
+	writeCoverageMap(coverageMapOutputPath, coverageMap, fileSystem);
+}
+
+/** Parse one file and collect its coverage sites, or fail naming the file. */
+function collectFileCoverage({
+	relativePath,
+	source,
+	timing,
+}: {
+	relativePath: string;
+	source: string;
+	timing: TimingCollector;
+}): CollectorResult {
+	const parsed = timing.profile("parse-ast", () => luauParser.parse(source));
+	if (!parsed.ok) {
+		throw new Error(`Failed to parse ${relativePath}: ${parsed.errors.join("; ")}`);
+	}
+
+	return timing.profile("collect-coverage", () => collectCoverage(parsed.root, source));
+}
+
+/**
+ * The probes one file declares, and the twin those probes were inserted into.
+ */
+function buildCollectorResult(
+	sourceBuffer: ReturnType<FileSystem["readFileSync"]>,
+	{
+		fileKey,
+		relativePath,
+		timing,
+	}: { fileKey: string; relativePath: string; timing: TimingCollector },
+): ReturnType<typeof collectFileCoverage> & { instrumentedSource: string } {
+	const source = sourceBuffer.toString("utf-8");
+	const collectorResult = collectFileCoverage({ relativePath, source, timing });
+	return {
+		...collectorResult,
+		instrumentedSource: timing.profile("probe-insert", () => {
+			return insertProbes(source, collectorResult, fileKey);
+		}),
+	};
 }
 
 /**
@@ -206,7 +271,7 @@ function prepareTwinPath(
  */
 function instrumentFile(
 	relativePath: string,
-	{ createdDirectories, luauRoot, shadowDir, timing }: InstrumentFileContext,
+	{ createdDirectories, fileSystem, luauRoot, shadowDir, timing }: InstrumentFileContext,
 ): InstrumentedFileRecord {
 	// The cross-machine join key: the same string is written to the manifest
 	// record below and baked into the instrumented preamble by `insertProbes`,
@@ -218,27 +283,18 @@ function instrumentFile(
 	const coverageMapOutputPath = shadowFilePath.replace(LUAU_EXTENSION, ".cov-map.json");
 
 	const sourceBuffer = timing.profile("read-source", () => {
-		return fs.readFileSync(path.resolve(fileKey));
+		return fileSystem.readFileSync(path.resolve(fileKey));
 	});
-	const source = sourceBuffer.toString("utf-8");
-	const collectorResult = collectFileCoverage({ relativePath, source, timing });
-	const instrumentedSource = timing.profile("probe-insert", () => {
-		return insertProbes(source, collectorResult, fileKey);
-	});
-	const coverageMap = timing.profile("map-build", () => buildCoverageMap(collectorResult));
+	const collectorResult = buildCollectorResult(sourceBuffer, { fileKey, relativePath, timing });
+	const twin = {
+		coverageMap: timing.profile("map-build", () => buildCoverageMap(collectorResult)),
+		coverageMapOutputPath,
+		instrumentedSource: collectorResult.instrumentedSource,
+		shadowFilePath,
+	};
 
 	timing.profile("write-shadow", () => {
-		// Not `atomicWrite` like the package's other publishers: on Windows the
-		// rename it adds per covered file roughly triples the cost of the write
-		// it protects. The atomic cov-map below covers the kill window that
-		// leaves. Re-measure the `write-shadow` span under `TIMING` first.
-		prepareTwinPath(relativePath, shadowFilePath, { createdDirectories, shadowDir });
-		fs.writeFileSync(shadowFilePath, instrumentedSource);
-		// Same directory as the twin, already made above — but `atomicWrite`
-		// under here remakes it per file. Deduping that too would mean a second
-		// opt-out on a helper the package's publishers share, for microseconds;
-		// the one `writeCoverageMap` already takes buys more than that.
-		writeCoverageMap(coverageMapOutputPath, coverageMap);
+		publishTwin(twin, { createdDirectories, fileSystem, relativePath, shadowDir });
 	});
 
 	return {

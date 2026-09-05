@@ -1,9 +1,10 @@
 import { Buffer } from "node:buffer";
-import fs from "node:fs";
 import path from "node:path";
 
 import type { ShadowBake, ShadowLayout } from "../coverage-pipeline/spine.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { isString } from "../utils/is-string.ts";
 import { ConfigError } from "./errors.ts";
 import type { ResolvedProjectConfig } from "./projects.ts";
@@ -25,15 +26,18 @@ export const STUB_FILENAME = "jest.config.luau";
  * file size. Used by workspace pre-flight cleanup and the coverage shadow
  * orphan-sweep to ensure neither ever removes a user's canonical config.
  */
-export function isGeneratedStub(filePath: string): boolean {
+export function isGeneratedStub(
+	filePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): boolean {
 	try {
-		const fd = fs.openSync(filePath, "r");
+		const fd = fileSystem.openSync(filePath, "r");
 		try {
 			const buffer = Buffer.alloc(HEADER.length);
-			fs.readSync(fd, buffer, 0, HEADER.length, 0);
+			fileSystem.readSync(fd, buffer, 0, HEADER.length, 0);
 			return buffer.toString("utf8") === HEADER;
 		} finally {
-			fs.closeSync(fd);
+			fileSystem.closeSync(fd);
 		}
 	} catch {
 		// Defensive catch for unusual FS errors (permission denied,
@@ -59,10 +63,11 @@ const STUB_FILENAMES: ReadonlySet<string> = new Set([LEGACY_LUA_FILENAME, STUB_F
 export function createStubBake(
 	projects: Array<ResolvedProjectConfig>,
 	cacheRoot: string,
+	fileSystem: FileSystem = nodeFileSystem,
 ): ShadowBake {
 	return {
-		isBakeOwned: isBakedStub,
-		run: (shadow) => syncStubsToShadowDirectory(projects, cacheRoot, shadow),
+		isBakeOwned: (shadowPath) => isBakedStub(fileSystem, shadowPath),
+		run: (shadow) => syncStubsToShadowDirectory(projects, cacheRoot, shadow, fileSystem),
 	};
 }
 
@@ -71,8 +76,8 @@ export function createStubBake(
  * not one: it reaches the shadow through the mirror, which makes the sweeps
  * judge it by its source twin like any other copied file.
  */
-function isBakedStub(shadowPath: string): boolean {
-	return STUB_FILENAMES.has(path.basename(shadowPath)) && isGeneratedStub(shadowPath);
+function isBakedStub(fileSystem: FileSystem, shadowPath: string): boolean {
+	return STUB_FILENAMES.has(path.basename(shadowPath)) && isGeneratedStub(shadowPath, fileSystem);
 }
 
 const SKIP_FIELDS: ReadonlySet<string> = new Set(["exclude", "include"]);
@@ -106,19 +111,20 @@ export function serializeToLuau(config: UndefinedTolerant<ProjectTestConfig>): s
 
 export function generateProjectConfigs(
 	projects: Array<{ config: ProjectTestConfig; outputPath: string }>,
+	fileSystem: FileSystem = nodeFileSystem,
 ): void {
 	for (const project of projects) {
 		const directory = path.dirname(project.outputPath);
-		if (hasUserAuthoredConfig(directory)) {
+		if (hasUserAuthoredConfig(directory, fileSystem)) {
 			continue;
 		}
 
 		const content = serializeToLuau(project.config);
-		fs.mkdirSync(directory, { recursive: true });
-		fs.writeFileSync(project.outputPath, content, "utf8");
+		fileSystem.mkdirSync(directory, { recursive: true });
+		fileSystem.writeFileSync(project.outputPath, content, "utf8");
 
 		if (path.basename(project.outputPath) === STUB_FILENAME) {
-			removeLegacyGeneratedStub(directory);
+			removeLegacyGeneratedStub(fileSystem, directory);
 		}
 	}
 }
@@ -136,6 +142,20 @@ const STUB_SKIP_KEYS: ReadonlySet<string> = new Set([
 	"root",
 	"typecheck",
 ]);
+
+/** The two trees a stub pass reads and writes, and what reaches them. */
+interface StubRoots {
+	fileSystem: FileSystem;
+	rootDirectory: string;
+	writeRoot: string;
+}
+
+/** The shadow a stub is synced into, and the source tree it is read from. */
+interface SyncTarget {
+	fileSystem: FileSystem;
+	rootDirectory: string;
+	shadow: ShadowLayout;
+}
 
 /**
  * Refuse to let any downstream write land outside `rootDirectory`. Mount
@@ -171,7 +191,10 @@ export function assertMountContained(
  * `cleanLeftoverStubs`'s callers, and the multi-project + workspace runners
  * when deciding stub-write and runtime-injection eligibility.
  */
-export function hasUserAuthoredConfig(directoryPath: string): boolean {
+export function hasUserAuthoredConfig(
+	directoryPath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): boolean {
 	// A `.luau` or legacy `.lua` may be either our generated stub or a
 	// user-authored config; only the HEADER prefix distinguishes them.
 	// Reuse `isGeneratedStub`'s bounded header-read so this detection
@@ -179,12 +202,12 @@ export function hasUserAuthoredConfig(directoryPath: string): boolean {
 	// downgrade to "not user-authored" rather than throwing out of a
 	// detection helper called from multiple cleanup/build paths.
 	const luauPath = path.join(directoryPath, STUB_FILENAME);
-	if (fs.existsSync(luauPath) && !isGeneratedStub(luauPath)) {
+	if (fileSystem.existsSync(luauPath) && !isGeneratedStub(luauPath, fileSystem)) {
 		return true;
 	}
 
 	const luaPath = path.join(directoryPath, LEGACY_LUA_FILENAME);
-	return fs.existsSync(luaPath) && !isGeneratedStub(luaPath);
+	return fileSystem.existsSync(luaPath) && !isGeneratedStub(luaPath, fileSystem);
 }
 
 /**
@@ -196,6 +219,7 @@ export function hasUserAuthoredConfig(directoryPath: string): boolean {
 export function assertStubCollisionRule(
 	project: ResolvedProjectConfig,
 	rootDirectory: string,
+	fileSystem: FileSystem = nodeFileSystem,
 ): void {
 	const withUser: Array<string> = [];
 	const withoutUser: Array<string> = [];
@@ -204,7 +228,7 @@ export function assertStubCollisionRule(
 		assertMountContained(project, mount.fsPath, rootDirectory);
 
 		const absolute = path.resolve(rootDirectory, mount.fsPath);
-		if (hasUserAuthoredConfig(absolute)) {
+		if (hasUserAuthoredConfig(absolute, fileSystem)) {
 			withUser.push(mount.fsPath);
 		} else {
 			withoutUser.push(mount.fsPath);
@@ -242,16 +266,19 @@ export function assertStubCollisionRule(
 export function cleanLeftoverStubs(
 	projects: Array<ResolvedProjectConfig>,
 	rootDirectory: string,
+	fileSystem: FileSystem = nodeFileSystem,
 ): Array<string> {
 	const cleaned: Array<string> = [];
 	let realRoot: string | undefined;
 	function realRootResolved(): string {
-		realRoot ??= fs.realpathSync(path.resolve(rootDirectory));
+		realRoot ??= fileSystem.realpathSync(path.resolve(rootDirectory));
 		return realRoot;
 	}
 
 	for (const project of projects) {
-		cleaned.push(...cleanLeftoverStubsForProject(project, rootDirectory, realRootResolved));
+		cleaned.push(
+			...cleanLeftoverStubsForProject(fileSystem, project, rootDirectory, realRootResolved),
+		);
 	}
 
 	return cleaned;
@@ -261,12 +288,13 @@ export function generateProjectStubs(
 	projects: Array<ResolvedProjectConfig>,
 	rootDirectory: string,
 	outputRoot?: string,
+	fileSystem: FileSystem = nodeFileSystem,
 ): void {
 	const writeRoot = outputRoot ?? rootDirectory;
 	const entries: Array<{ config: ProjectTestConfig; outputPath: string }> = [];
 
 	for (const project of projects) {
-		assertStubCollisionRule(project, rootDirectory);
+		assertStubCollisionRule(project, rootDirectory, fileSystem);
 
 		const stubConfig: ProjectTestConfig = {
 			...buildStubConfig(project.config),
@@ -275,23 +303,34 @@ export function generateProjectStubs(
 			testMatch: project.testMatch,
 		};
 
-		entries.push(...buildStubEntriesForProject(project, stubConfig, rootDirectory, writeRoot));
+		entries.push(
+			...buildStubEntriesForProject(
+				{ fileSystem, rootDirectory, writeRoot },
+				project,
+				stubConfig,
+			),
+		);
 	}
 
-	generateProjectConfigs(entries);
+	generateProjectConfigs(entries, fileSystem);
 }
 
 export function syncStubsToShadowDirectory(
 	projects: Array<ResolvedProjectConfig>,
 	rootDirectory: string,
 	shadow: ShadowLayout,
+	fileSystem: FileSystem = nodeFileSystem,
 ): boolean {
 	let hasChanged = false;
 	const expectedPaths = new Set<string>();
 
 	for (const project of projects) {
 		for (const mount of project.rojoMounts) {
-			const result = syncMountStub(project, mount.fsPath, rootDirectory, shadow);
+			const result = syncMountStub(
+				{ fileSystem, rootDirectory, shadow },
+				project,
+				mount.fsPath,
+			);
 			if (result.targetPath !== undefined) {
 				expectedPaths.add(result.targetPath);
 			}
@@ -300,7 +339,7 @@ export function syncStubsToShadowDirectory(
 		}
 	}
 
-	for (const existing of findShadowStubs(shadow.root)) {
+	for (const existing of findShadowStubs(fileSystem, shadow.root)) {
 		if (expectedPaths.has(existing)) {
 			continue;
 		}
@@ -311,12 +350,12 @@ export function syncStubsToShadowDirectory(
 		// orphan sweep is only allowed to delete generated stubs we own —
 		// anything bearing the marker. User configs must survive into the
 		// coverage place.
-		if (!isGeneratedStub(existing)) {
+		if (!isGeneratedStub(existing, fileSystem)) {
 			continue;
 		}
 
-		fs.unlinkSync(existing);
-		removeEmptyParents(path.dirname(existing), shadow.root);
+		fileSystem.unlinkSync(existing);
+		removeEmptyParents(fileSystem, path.dirname(existing), shadow.root);
 		hasChanged = true;
 	}
 
@@ -324,6 +363,7 @@ export function syncStubsToShadowDirectory(
 }
 
 function cleanLeftoverStubsForProject(
+	fileSystem: FileSystem,
 	project: ResolvedProjectConfig,
 	rootDirectory: string,
 	realRootResolved: () => string,
@@ -332,11 +372,11 @@ function cleanLeftoverStubsForProject(
 	for (const mount of project.rojoMounts) {
 		assertMountContained(project, mount.fsPath, rootDirectory);
 		const stubPath = path.resolve(rootDirectory, mount.fsPath, STUB_FILENAME);
-		if (!isGeneratedStub(stubPath)) {
+		if (!isGeneratedStub(stubPath, fileSystem)) {
 			continue;
 		}
 
-		const realStubPath = fs.realpathSync(stubPath);
+		const realStubPath = fileSystem.realpathSync(stubPath);
 		const root = realRootResolved();
 		const relativePath = path.relative(root, realStubPath);
 		const isInRoot = !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
@@ -346,7 +386,7 @@ function cleanLeftoverStubsForProject(
 			);
 		}
 
-		fs.unlinkSync(stubPath);
+		fileSystem.unlinkSync(stubPath);
 		cleaned.push(stubPath);
 	}
 
@@ -354,10 +394,9 @@ function cleanLeftoverStubsForProject(
 }
 
 function buildStubEntriesForProject(
+	{ fileSystem, rootDirectory, writeRoot }: StubRoots,
 	project: ResolvedProjectConfig,
 	stubConfig: ProjectTestConfig,
-	rootDirectory: string,
-	writeRoot: string,
 ): Array<{ config: ProjectTestConfig; outputPath: string }> {
 	const entries: Array<{ config: ProjectTestConfig; outputPath: string }> = [];
 	for (const mount of project.rojoMounts) {
@@ -367,7 +406,7 @@ function buildStubEntriesForProject(
 		// not enough: a TS string-entry whose compile hasn't run
 		// yet still needs a generated stub for the mount.
 		const sourceMount = path.resolve(rootDirectory, mount.fsPath);
-		if (hasUserAuthoredConfig(sourceMount)) {
+		if (hasUserAuthoredConfig(sourceMount, fileSystem)) {
 			continue;
 		}
 
@@ -390,15 +429,14 @@ function buildStubConfig(config: ResolvedConfig): Partial<ProjectTestConfig> {
 }
 
 function syncMountStub(
+	{ fileSystem, rootDirectory, shadow }: SyncTarget,
 	project: ResolvedProjectConfig,
 	fsPath: string,
-	rootDirectory: string,
-	shadow: ShadowLayout,
 ): SyncMountStubResult {
 	assertMountContained(project, fsPath, rootDirectory);
 
 	const sourcePath = path.resolve(rootDirectory, fsPath, STUB_FILENAME);
-	if (!fs.existsSync(sourcePath)) {
+	if (!fileSystem.existsSync(sourcePath)) {
 		return { changed: false, targetPath: undefined };
 	}
 
@@ -406,31 +444,31 @@ function syncMountStub(
 	// narrowing demoted is served from its spine copy, and a stub baked into
 	// the mirror beside it would be in a directory the place never mounts.
 	const targetPath = path.resolve(shadow.mountedDirectory(fsPath), STUB_FILENAME);
-	const sourceContent = fs.readFileSync(sourcePath);
+	const sourceContent = fileSystem.readFileSync(sourcePath);
 
-	if (fs.existsSync(targetPath)) {
-		const targetContent = fs.readFileSync(targetPath);
+	if (fileSystem.existsSync(targetPath)) {
+		const targetContent = fileSystem.readFileSync(targetPath);
 		if (Buffer.compare(sourceContent, targetContent) === 0) {
 			return { changed: false, targetPath };
 		}
 	}
 
-	fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-	fs.copyFileSync(sourcePath, targetPath);
+	fileSystem.mkdirSync(path.dirname(targetPath), { recursive: true });
+	fileSystem.copyFileSync(sourcePath, targetPath);
 	return { changed: true, targetPath };
 }
 
-function findShadowStubs(directory: string): Array<string> {
+function findShadowStubs(fileSystem: FileSystem, directory: string): Array<string> {
 	const results: Array<string> = [];
-	if (!fs.existsSync(directory)) {
+	if (!fileSystem.existsSync(directory)) {
 		return results;
 	}
 
-	const entries = fs.readdirSync(directory, { withFileTypes: true });
+	const entries = fileSystem.readdirSync(directory, { withFileTypes: true });
 	for (const entry of entries) {
 		const fullPath = path.resolve(directory, entry.name);
 		if (entry.isDirectory()) {
-			results.push(...findShadowStubs(fullPath));
+			results.push(...findShadowStubs(fileSystem, fullPath));
 		} else if (STUB_FILENAMES.has(entry.name)) {
 			results.push(fullPath);
 		}
@@ -439,7 +477,7 @@ function findShadowStubs(directory: string): Array<string> {
 	return results;
 }
 
-function removeEmptyParents(directory: string, stopAt: string): void {
+function removeEmptyParents(fileSystem: FileSystem, directory: string, stopAt: string): void {
 	const resolved = path.resolve(directory);
 	const resolvedStop = path.resolve(stopAt);
 	if (resolved === resolvedStop || !resolved.startsWith(resolvedStop)) {
@@ -447,10 +485,10 @@ function removeEmptyParents(directory: string, stopAt: string): void {
 	}
 
 	try {
-		const entries = fs.readdirSync(resolved);
+		const entries = fileSystem.readdirSync(resolved);
 		if (entries.length === 0) {
-			fs.rmdirSync(resolved);
-			removeEmptyParents(path.dirname(resolved), stopAt);
+			fileSystem.rmdirSync(resolved);
+			removeEmptyParents(fileSystem, path.dirname(resolved), stopAt);
 		}
 	} catch {
 		// Best-effort cleanup
@@ -462,10 +500,10 @@ function removeEmptyParents(directory: string, stopAt: string): void {
 // new `.luau` would cause a name collision after upgrade. Caller guarantees
 // (via `hasUserAuthoredConfig`) that any `.lua` present here is our own
 // HEADER-prefixed stub, not a user-authored file.
-function removeLegacyGeneratedStub(directoryPath: string): void {
+function removeLegacyGeneratedStub(fileSystem: FileSystem, directoryPath: string): void {
 	const legacyPath = path.join(directoryPath, LEGACY_LUA_FILENAME);
-	if (fs.existsSync(legacyPath)) {
-		fs.unlinkSync(legacyPath);
+	if (fileSystem.existsSync(legacyPath)) {
+		fileSystem.unlinkSync(legacyPath);
 	}
 }
 

@@ -1,7 +1,6 @@
 import { resolveNestedProjects } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
@@ -13,6 +12,8 @@ import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { resolveAllSetupFilePaths } from "./discovery.ts";
 import { executeTestPlanAsync, runTypecheckPassAsync } from "./execution.ts";
 import { buildMultiRunResult } from "./multi-result.ts";
@@ -28,21 +29,35 @@ export interface MultiRunOptions extends RunOptions {
 	rawProjects: Array<ProjectEntry>;
 }
 
+/**
+ * The run-wide inputs discovery and execution share, with the seam already
+ * settled — resolved once at the entry point rather than re-defaulted at each
+ * layer, so no stage below can reach the real disk by omitting it.
+ */
+export interface ResolvedRunInput {
+	cli: RunOptions["cli"];
+	fileSystem: FileSystem;
+	timing: TimingCollector;
+}
+
 interface SelectedProjects {
 	filesByProject?: ReadonlyMap<string, Array<string>> | undefined;
 	projects: Array<ResolvedProjectConfig>;
 }
 
-export function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
+export function loadRojoTree(
+	config: ResolvedConfig,
+	fileSystem: FileSystem = nodeFileSystem,
+): RojoTreeNode {
 	const rojoPath = path.resolve(config.rootDir, config.rojoProject ?? DEFAULT_ROJO_PROJECT);
-	const content = fs.readFileSync(rojoPath, "utf8");
+	const content = fileSystem.readFileSync(rojoPath, "utf8");
 	const parsed = JSON.parse(content);
 	const validated = rojoProjectSchema(parsed);
 	if (validated instanceof type.errors) {
 		throw new Error(`Invalid Rojo project: ${validated.summary}`);
 	}
 
-	return resolveNestedProjects(validated.tree, path.dirname(rojoPath));
+	return resolveNestedProjects(validated.tree, path.dirname(rojoPath), fileSystem);
 }
 
 /**
@@ -56,15 +71,14 @@ export function loadRojoTree(config: ResolvedConfig): RojoTreeNode {
 export async function runResolvedProjectsAsync(
 	allProjects: Array<ResolvedProjectConfig>,
 	rootConfig: ResolvedConfig,
-	cli: RunOptions["cli"],
-	timing: TimingCollector,
+	{ cli, fileSystem, timing }: ResolvedRunInput,
 ): Promise<MultiRunResult> {
-	const discovery = beginRun(allProjects, rootConfig, cli, timing);
+	const discovery = beginRun(allProjects, rootConfig, { cli, fileSystem, timing });
 	if (isTypecheckOnlyRun(discovery)) {
 		return runMultiTypecheckOnlyAsync(discovery);
 	}
 
-	const staged = await stageRunAsync(discovery.projects, rootConfig, timing);
+	const staged = await stageRunAsync(discovery.projects, rootConfig, timing, fileSystem);
 	const plan = buildTestPlan({
 		...discovery,
 		effectivePlaceFile: staged.effectiveConfig.placeFile,
@@ -78,15 +92,19 @@ export async function runResolvedProjectsAsync(
 }
 
 export async function runMultiProjectAsync(options: MultiRunOptions): Promise<MultiRunResult> {
-	const { cli, config: rootConfig, rawProjects } = options;
+	const { cli, config: rootConfig, fileSystem = nodeFileSystem, rawProjects } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
-	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(rootConfig));
+	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(rootConfig, fileSystem));
 
 	const allProjects = await timing.profileAsync("resolveAllProjects", async () => {
-		return resolveAllProjects(rawProjects, rootConfig, rojoTree, rootConfig.rootDir);
+		return resolveAllProjects(rawProjects, rootConfig, {
+			cwd: rootConfig.rootDir,
+			fileSystem,
+			rojoTree,
+		});
 	});
 
-	return runResolvedProjectsAsync(allProjects, rootConfig, cli, timing);
+	return runResolvedProjectsAsync(allProjects, rootConfig, { cli, fileSystem, timing });
 }
 
 function filterProjectsByName(
@@ -135,8 +153,7 @@ function selectProjects(
 function beginRun(
 	allProjects: Array<ResolvedProjectConfig>,
 	rootConfig: ResolvedConfig,
-	cli: RunOptions["cli"],
-	timing: TimingCollector,
+	{ cli, fileSystem, timing }: ResolvedRunInput,
 ): RunDiscovery {
 	const cliTypecheck: TypecheckCliOptions = {
 		enabled: cli.typecheck,
@@ -154,7 +171,15 @@ function beginRun(
 	const { filesByProject, projects } = timing.profile("selectProjects", () => {
 		return selectProjects(allProjects, cli.project, cli.files, rootConfig.rootDir);
 	});
-	return { cliFiles: cli.files, cliTypecheck, filesByProject, projects, rootConfig, timing };
+	return {
+		cliFiles: cli.files,
+		cliTypecheck,
+		filesByProject,
+		fileSystem,
+		projects,
+		rootConfig,
+		timing,
+	};
 }
 
 /**

@@ -1,13 +1,15 @@
 import assert from "node:assert";
-import * as fs from "node:fs";
 
 import type { RojoProject } from "../types/rojo.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { findExpectationColumn } from "./column-finder.ts";
 import { createFrameMapper, createLineMapper, type MappedFrame } from "./frame-mapper.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";
 import { parseStack } from "./stack-parser.ts";
 import type { StackFrame } from "./types.ts";
+import { createV3Mapper } from "./v3-mapper.ts";
 
 export type { RojoProject } from "../types/rojo.ts";
 
@@ -49,6 +51,8 @@ export interface SourceMapper {
 }
 
 export interface SourceMapperConfig {
+	/** Where sources and maps are read. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	mappings: ReadonlyArray<TsconfigMapping>;
 	rojoProject: RojoProject;
 }
@@ -59,13 +63,16 @@ export interface SourceSnippet {
 	lines: Array<{ content: string; num: number }>;
 }
 
-export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
-	const pathResolver = createPathResolver(config.rojoProject, {
-		mappings: config.mappings,
-	});
+export function createSourceMapper({
+	fileSystem = nodeFileSystem,
+	mappings,
+	rojoProject,
+}: SourceMapperConfig): SourceMapper {
+	const pathResolver = createPathResolver(rojoProject, { fileSystem, mappings });
 
-	const mapFrame = createFrameMapper(pathResolver);
-	const mapLine = createLineMapper(pathResolver);
+	const context = { fileSystem, pathResolver, v3Mapper: createV3Mapper(fileSystem) };
+	const mapFrame = createFrameMapper(context);
+	const mapLine = createLineMapper(context);
 
 	return {
 		mapFailureWithLocations(message: string): MappedFailure {
@@ -78,7 +85,7 @@ export function createSourceMapper(config: SourceMapperConfig): SourceMapper {
 
 		resolveDisplayPath(testFilePath: string): string {
 			const resolved = resolveTestFilePath(testFilePath) ?? testFilePath;
-			return config.mappings.length > 0 ? luauInitToIndex(resolved) : resolved;
+			return mappings.length > 0 ? luauInitToIndex(resolved) : resolved;
 		},
 
 		resolveTestFilePath,
@@ -139,17 +146,20 @@ export function getSourceSnippet({
 	column,
 	context = 2,
 	filePath,
+	fileSystem = nodeFileSystem,
 	line,
 	sourceContent,
 }: {
 	column?: number | undefined;
 	context?: number | undefined;
 	filePath: string;
+	fileSystem?: FileSystem;
 	line: number;
 	sourceContent?: string | undefined;
 }): SourceSnippet | undefined {
 	const content =
-		sourceContent ?? (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf-8") : undefined);
+		sourceContent ??
+		(fileSystem.existsSync(filePath) ? fileSystem.readFileSync(filePath, "utf-8") : undefined);
 	if (content === undefined) {
 		return undefined;
 	}

@@ -1,7 +1,8 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
+import type { FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
 import { normalizeWindowsPath } from "./normalize-windows-path.ts";
 
 const LEADING_CURRENT_DIRECTORY = /^\.\//;
@@ -31,6 +32,8 @@ interface GlobOptions {
 	 */
 	cache?: GlobCache | undefined;
 	cwd?: string;
+	/** Where to walk. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 }
 
 /**
@@ -54,6 +57,7 @@ export function matchesGlobPattern(filePath: string, pattern: string): boolean {
 }
 
 export function globSync(pattern: string, options: GlobOptions = {}): Array<string> {
+	const { fileSystem = nodeFileSystem } = options;
 	const cwd = options.cwd ?? process.cwd();
 	const cache = servingCache(options.cache, pattern);
 
@@ -63,7 +67,7 @@ export function globSync(pattern: string, options: GlobOptions = {}): Array<stri
 		// "keep everything", which this pattern's own leaf must not narrow
 		// while later patterns are still to read the same walk.
 		const leaves = cache === undefined ? leafOf(pattern) : cache.leaves;
-		allFiles = walkDirectory(cwd, cwd, compileLeafMatcher(leaves));
+		allFiles = walkDirectory(fileSystem, cwd, cwd, compileLeafMatcher(leaves));
 		cache?.walks.set(cwd, allFiles);
 	}
 
@@ -171,6 +175,7 @@ function compileLeafMatcher(
  * output included.
  */
 function walkDirectory(
+	fileSystem: FileSystem,
 	directoryPath: string,
 	baseDirectory: string,
 	keepBasename?: (basename: string) => boolean,
@@ -178,13 +183,15 @@ function walkDirectory(
 	const results: Array<string> = [];
 
 	try {
-		const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
+		const entries = fileSystem.readdirSync(directoryPath, { withFileTypes: true });
 
 		for (const entry of entries) {
 			if (entry.isDirectory()) {
 				if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
 					const fullPath = path.join(directoryPath, entry.name);
-					results.push(...walkDirectory(fullPath, baseDirectory, keepBasename));
+					results.push(
+						...walkDirectory(fileSystem, fullPath, baseDirectory, keepBasename),
+					);
 				}
 			} else if (keepBasename?.(entry.name) !== false) {
 				const fullPath = path.join(directoryPath, entry.name);

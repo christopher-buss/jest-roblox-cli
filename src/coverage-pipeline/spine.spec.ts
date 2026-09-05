@@ -1,19 +1,14 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
-import { vol } from "memfs";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import type { MemoryFileSystem, MemoryVolume } from "../../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { createCopyIgnoreMatcher } from "./discover-files.ts";
 import type { PreparedSpine, PrepareSpineOptions } from "./spine.ts";
 import { prepareSpine, resolveSpineDirectories } from "./spine.ts";
-
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 
 const REPO = normalizeWindowsPath(path.resolve("/repo"));
 const SHADOW = `${REPO}/.jest-roblox/coverage`;
@@ -104,19 +99,18 @@ describe(resolveSpineDirectories, () => {
 });
 
 describe(prepareSpine, () => {
-	function seed(files: Record<string, string>): void {
-		onTestFinished(() => {
-			vol.reset();
-		});
-		vol.fromJSON(files);
+	function seed(files: Record<string, string>): MemoryFileSystem {
+		return createMemoryFileSystem(files);
 	}
 
 	/** Prepares the listed spine levels under the `out/server` luauRoot. */
 	function spineOf(
+		fileSystem: FileSystem,
 		levels: Array<PosixRoot>,
 		options: Partial<PrepareSpineOptions> = {},
 	): PreparedSpine {
 		return prepareSpine({
+			fileSystem,
 			isCopyIgnored: NO_COPY_IGNORE,
 			narrowed: [{ luauRoot: toPosixRoot("out/server"), roots: [], spine: levels }],
 			previousNonInstrumented: undefined,
@@ -129,28 +123,29 @@ describe(prepareSpine, () => {
 	it("should copy a spine directory's own loose files and nothing below them", () => {
 		expect.assertions(3);
 
-		seed({
+		const { fileSystem, volume } = seed({
 			[at("server/loose.luau")]: "return nil",
 			[at("server/modules/ecs/world.luau")]: "return nil",
 			[at("server/modules/net.luau")]: "return nil",
 		});
 
-		spineOf(["out/server", "out/server/modules"].map(toPosixRoot));
+		spineOf(fileSystem, ["out/server", "out/server/modules"].map(toPosixRoot));
 
-		expect(vol.existsSync(`${mounted("out/server")}/loose.luau`)).toBeTrue();
-		expect(vol.existsSync(`${mounted("out/server/modules")}/net.luau`)).toBeTrue();
-		expect(vol.existsSync(`${mounted("out/server/modules")}/ecs`)).toBeFalse();
+		expect(volume.existsSync(`${mounted("out/server")}/loose.luau`)).toBeTrue();
+		expect(volume.existsSync(`${mounted("out/server/modules")}/net.luau`)).toBeTrue();
+		expect(volume.existsSync(`${mounted("out/server/modules")}/ecs`)).toBeFalse();
 	});
 
 	it("should keep a deeper spine level outside the level above it", () => {
 		expect.assertions(3);
 
-		seed({
+		const { fileSystem, volume } = seed({
 			[at("server/loose.luau")]: "return nil",
 			[at("server/modules/net.luau")]: "return nil",
 		});
 
 		const [above, below] = spineOf(
+			fileSystem,
 			["out/server", "out/server/modules"].map(toPosixRoot),
 		).directories;
 
@@ -159,16 +154,16 @@ describe(prepareSpine, () => {
 		// once through the explicit child the demote hangs beside it — and the
 		// place would carry two Instances of the same name.
 		expect(below!.shadowDir.startsWith(`${above!.shadowDir}/`)).toBeFalse();
-		expect(vol.readdirSync(above!.shadowDir)).toStrictEqual(["loose.luau"]);
-		expect(vol.existsSync(`${below!.shadowDir}/net.luau`)).toBeTrue();
+		expect(volume.readdirSync(above!.shadowDir)).toStrictEqual(["loose.luau"]);
+		expect(volume.existsSync(`${below!.shadowDir}/net.luau`)).toBeTrue();
 	});
 
 	it("should name the copy the place mounts for each demoted level", () => {
 		expect.assertions(1);
 
-		seed({ [at("server/loose.luau")]: "return nil" });
+		const { fileSystem } = seed({ [at("server/loose.luau")]: "return nil" });
 
-		expect(spineOf(["out/server"].map(toPosixRoot)).directories).toStrictEqual([
+		expect(spineOf(fileSystem, ["out/server"].map(toPosixRoot)).directories).toStrictEqual([
 			{ luauRoot: toPosixRoot("out/server"), shadowDir: mounted("out/server") },
 		]);
 	});
@@ -176,17 +171,17 @@ describe(prepareSpine, () => {
 	it("should record each mirrored file against its source hash", () => {
 		expect.assertions(1);
 
-		seed({ [at("server/loose.luau")]: "return nil" });
+		const { fileSystem } = seed({ [at("server/loose.luau")]: "return nil" });
 
-		expect(Object.keys(spineOf(["out/server"].map(toPosixRoot)).files)).toStrictEqual([
-			at("server/loose.luau"),
-		]);
+		expect(
+			Object.keys(spineOf(fileSystem, ["out/server"].map(toPosixRoot)).files),
+		).toStrictEqual([at("server/loose.luau")]);
 	});
 
 	it("should leave a copy-ignored file out of the spine", () => {
 		expect.assertions(2);
 
-		seed({
+		const { fileSystem, volume } = seed({
 			[at("server/keep.luau")]: "return nil",
 			[at("server/skip.luau.map")]: "{}",
 		});
@@ -194,21 +189,21 @@ describe(prepareSpine, () => {
 		// Anchored at the mount, so only a path sliced at exactly that boundary
 		// matches: an absolute one does not, nor one that keeps its leading
 		// separator.
-		const result = spineOf(["out/server"].map(toPosixRoot), {
+		const result = spineOf(fileSystem, ["out/server"].map(toPosixRoot), {
 			isCopyIgnored: createCopyIgnoreMatcher(["skip.luau.map"]),
 		});
 
-		expect(vol.existsSync(`${mounted("out/server")}/skip.luau.map`)).toBeFalse();
+		expect(volume.existsSync(`${mounted("out/server")}/skip.luau.map`)).toBeFalse();
 		expect(Object.keys(result.files)).toStrictEqual([at("server/keep.luau")]);
 	});
 
 	it("should report no change when every record carries forward", () => {
 		expect.assertions(2);
 
-		seed({ [at("server/loose.luau")]: "return nil" });
+		const { fileSystem } = seed({ [at("server/loose.luau")]: "return nil" });
 
-		const first = spineOf(["out/server"].map(toPosixRoot));
-		const second = spineOf(["out/server"].map(toPosixRoot), {
+		const first = spineOf(fileSystem, ["out/server"].map(toPosixRoot));
+		const second = spineOf(fileSystem, ["out/server"].map(toPosixRoot), {
 			previousNonInstrumented: first.files,
 		});
 
@@ -216,76 +211,80 @@ describe(prepareSpine, () => {
 		expect(second.changed).toBeFalse();
 	});
 
-	it("should leave a spine file it cannot delete alone", async () => {
+	it("should leave a spine file it cannot delete alone", () => {
 		expect.assertions(1);
 
-		seed({ [at("server/loose.luau")]: "return nil" });
+		const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });
 
-		spineOf(["out/server"].map(toPosixRoot));
-		vol.unlinkSync(at("server/loose.luau"));
-		const nodeFs = await import("node:fs");
-		vi.spyOn(nodeFs, "rmSync").mockImplementation(() => {
+		spineOf(fileSystem, ["out/server"].map(toPosixRoot));
+		volume.unlinkSync(at("server/loose.luau"));
+		vi.spyOn(fileSystem, "rmSync").mockImplementation(() => {
 			throw new Error("EPERM");
 		});
 
 		// Reporting a file as gone when it is still there would have the caller
 		// rebuild the place over a lie.
-		expect(spineOf(["out/server"].map(toPosixRoot)).changed).toBeFalse();
+		expect(spineOf(fileSystem, ["out/server"].map(toPosixRoot)).changed).toBeFalse();
 	});
 
 	it("should drop a spine file whose source is gone", () => {
 		expect.assertions(2);
 
-		seed({ [at("server/loose.luau")]: "return nil" });
+		const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });
 
-		spineOf(["out/server"].map(toPosixRoot));
-		vol.unlinkSync(at("server/loose.luau"));
-		const result = spineOf(["out/server"].map(toPosixRoot));
+		spineOf(fileSystem, ["out/server"].map(toPosixRoot));
+		volume.unlinkSync(at("server/loose.luau"));
+		const result = spineOf(fileSystem, ["out/server"].map(toPosixRoot));
 
-		expect(vol.existsSync(`${mounted("out/server")}/loose.luau`)).toBeFalse();
+		expect(volume.existsSync(`${mounted("out/server")}/loose.luau`)).toBeFalse();
 		expect(result.changed).toBeTrue();
 	});
 
 	describe("when a demoted level carries a file a bake owns", () => {
-		/** The bake's own copy, where the demote makes the place read it. */
-		function bake(level: string): string {
+		/**
+		 * The bake's own copy, where the demote makes the place read it.
+		 *
+		 * @param volume - The volume the spine hangs off.
+		 * @param level - The demoted level the bake writes into.
+		 */
+		function bake(volume: MemoryVolume, level: string): string {
 			const bakedPath = `${mounted(level)}/${BAKED_NAME}`;
-			vol.mkdirSync(mounted(level), { recursive: true });
-			vol.writeFileSync(bakedPath, "return {}\n");
+			volume.mkdirSync(mounted(level), { recursive: true });
+			volume.writeFileSync(bakedPath, "return {}\n");
 			return bakedPath;
 		}
 
 		it("should keep it when this run declares the ownership", () => {
 			expect.assertions(2);
 
-			seed({ [at("server/loose.luau")]: "return nil" });
-			const first = spineOf(["out/server"].map(toPosixRoot), { isBakeOwned });
-			const bakedPath = bake("out/server");
+			const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });
+			const first = spineOf(fileSystem, ["out/server"].map(toPosixRoot), { isBakeOwned });
+			const bakedPath = bake(volume, "out/server");
 
 			// Nothing in the source tree produces this file — the bake writes
 			// it after the mirror — so clearing it would only be undone
 			// moments later, with both halves reporting a change and the place
 			// rebuilding on every run.
-			const second = spineOf(["out/server"].map(toPosixRoot), {
+			const second = spineOf(fileSystem, ["out/server"].map(toPosixRoot), {
 				isBakeOwned,
 				previousNonInstrumented: first.files,
 			});
 
-			expect(vol.existsSync(bakedPath)).toBeTrue();
+			expect(volume.existsSync(bakedPath)).toBeTrue();
 			expect(second.changed).toBeFalse();
 		});
 
 		it("should sweep it when this run declares none", () => {
 			expect.assertions(1);
 
-			seed({ [at("server/loose.luau")]: "return nil" });
-			const bakedPath = bake("out/server");
+			const { fileSystem, volume } = seed({ [at("server/loose.luau")]: "return nil" });
+			const bakedPath = bake(volume, "out/server");
 
 			// A run with no bake wants its place free of what an earlier
 			// baking run left in the shared shadow.
-			spineOf(["out/server"].map(toPosixRoot));
+			spineOf(fileSystem, ["out/server"].map(toPosixRoot));
 
-			expect(vol.existsSync(bakedPath)).toBeFalse();
+			expect(volume.existsSync(bakedPath)).toBeFalse();
 		});
 	});
 });

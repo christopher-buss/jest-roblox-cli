@@ -1,8 +1,10 @@
 // cspell:ignore LOCALAPPDATA mtimes
-import * as fs from "node:fs";
+import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 export interface StudioDiscoveryOptions {
@@ -11,6 +13,8 @@ export interface StudioDiscoveryOptions {
 	 * Defaults to `process.env`; injectable so tests stub it.
 	 */
 	environment?: NodeJS.ProcessEnv | undefined;
+	/** Where the executable is probed. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * Explicit Studio executable path (from `studioPath` config key, the
 	 * `--studioPath` CLI flag, or `JEST_ROBLOX_STUDIO_PATH`). Takes precedence
@@ -40,11 +44,12 @@ const NOT_FOUND_HINT =
  */
 export function discoverStudioPath({
 	environment = process.env,
+	fileSystem = nodeFileSystem,
 	override,
 	platform = process.platform,
 }: StudioDiscoveryOptions = {}): string {
 	if (override !== undefined) {
-		const stat = fs.statSync(override, { throwIfNoEntry: false });
+		const stat = fileSystem.statSync(override, { throwIfNoEntry: false });
 		if (stat === undefined) {
 			throw new Error(`Roblox Studio not found at studioPath override: ${override}`);
 		}
@@ -59,11 +64,11 @@ export function discoverStudioPath({
 	}
 
 	if (platform === "win32") {
-		return discoverWindows(environment);
+		return discoverWindows(fileSystem, environment);
 	}
 
 	if (platform === "darwin") {
-		return discoverMacOs();
+		return discoverMacOs(fileSystem);
 	}
 
 	throw new Error(
@@ -82,8 +87,9 @@ function notFound(): Error {
  * `Versions` exists but every entry is a stale/partial install.
  */
 function findNewestStudioExecutable(
+	fileSystem: FileSystem,
 	versionsDirectory: string,
-	entries: Array<fs.Dirent>,
+	entries: Array<Dirent>,
 ): string | undefined {
 	let newest: undefined | { mtimeMs: number; path: string };
 	for (const entry of entries) {
@@ -92,7 +98,7 @@ function findNewestStudioExecutable(
 		}
 
 		const executable = path.join(versionsDirectory, entry.name, WINDOWS_STUDIO_EXECUTABLE);
-		const stat = fs.statSync(executable, { throwIfNoEntry: false });
+		const stat = fileSystem.statSync(executable, { throwIfNoEntry: false });
 		if (stat === undefined) {
 			continue;
 		}
@@ -105,21 +111,21 @@ function findNewestStudioExecutable(
 	return newest?.path;
 }
 
-function discoverWindows(environment: NodeJS.ProcessEnv): string {
+function discoverWindows(fileSystem: FileSystem, environment: NodeJS.ProcessEnv): string {
 	const localAppData = environment["LOCALAPPDATA"];
 	if (localAppData === undefined || localAppData === "") {
 		throw new Error(`Cannot locate Roblox Studio: LOCALAPPDATA is not set. ${NOT_FOUND_HINT}`);
 	}
 
 	const versionsDirectory = path.join(localAppData, "Roblox", "Versions");
-	let entries: Array<fs.Dirent>;
+	let entries: Array<Dirent>;
 	try {
-		entries = fs.readdirSync(versionsDirectory, { withFileTypes: true });
+		entries = fileSystem.readdirSync(versionsDirectory, { withFileTypes: true });
 	} catch {
 		throw notFound();
 	}
 
-	const newest = findNewestStudioExecutable(versionsDirectory, entries);
+	const newest = findNewestStudioExecutable(fileSystem, versionsDirectory, entries);
 	if (newest === undefined) {
 		throw notFound();
 	}
@@ -127,8 +133,8 @@ function discoverWindows(environment: NodeJS.ProcessEnv): string {
 	return newest;
 }
 
-function discoverMacOs(): string {
-	if (!fs.existsSync(MACOS_STUDIO_EXECUTABLE)) {
+function discoverMacOs(fileSystem: FileSystem): string {
+	if (!fileSystem.existsSync(MACOS_STUDIO_EXECUTABLE)) {
 		throw notFound();
 	}
 

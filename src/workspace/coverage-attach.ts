@@ -9,6 +9,8 @@ import {
 } from "../coverage-pipeline/workspace-prepare.ts";
 import type { ExecuteResult } from "../executor.ts";
 import type { TimedPhase, TimingCollector } from "../timing/orchestration-collector.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import type { PendingEntry } from "./test-selection.ts";
@@ -69,12 +71,15 @@ export interface WorkspaceProjectResult {
  */
 export function prepareWorkspaceCoverageMap({
 	contexts,
+	fileSystem = nodeFileSystem,
 	loaded,
 	pending,
 	timing,
 	workspaceRoot,
 }: {
 	contexts: Array<PackageContext>;
+	/** Where instrumentation reads and writes. Defaults to the real one. */
+	fileSystem?: FileSystem;
 	loaded: Array<LoadedPackage>;
 	pending: Array<PendingEntry>;
 	timing: TimingCollector;
@@ -101,7 +106,9 @@ export function prepareWorkspaceCoverageMap({
 	}
 
 	return timing.profileTimed("prepareCoverage", () => {
-		return buildCoverageMap(prepareWorkspaceCoverage({ packages, timing, workspaceRoot }));
+		return buildCoverageMap(
+			prepareWorkspaceCoverage({ fileSystem, packages, timing, workspaceRoot }),
+		);
 	});
 }
 

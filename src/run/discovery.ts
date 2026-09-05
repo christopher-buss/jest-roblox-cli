@@ -3,6 +3,8 @@ import * as path from "node:path";
 import type { ResolvedTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { createRojoResolverCache, createSetupResolver } from "../config/setup-resolver.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { createGlobCache, globSync } from "../utils/glob.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
@@ -45,6 +47,7 @@ export function filterByTestPathPattern(
 export function discoverTestFiles(
 	config: ResolvedConfig,
 	cliFiles?: Array<string>,
+	fileSystem: FileSystem = nodeFileSystem,
 ): TestFileDiscovery {
 	if (cliFiles && cliFiles.length > 0) {
 		const files = cliFiles.map((file) => path.resolve(config.rootDir, file));
@@ -58,7 +61,7 @@ export function discoverTestFiles(
 	// than every file under `rootDir` — build output included.
 	const globCache = createGlobCache(config.testMatch);
 	for (const pattern of config.testMatch) {
-		const matches = globSync(pattern, { cache: globCache, cwd: config.rootDir });
+		const matches = globSync(pattern, { cache: globCache, cwd: config.rootDir, fileSystem });
 		allFiles.push(...matches);
 	}
 

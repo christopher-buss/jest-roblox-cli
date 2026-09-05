@@ -3,6 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { loadConfig } from "../config/loader.ts";
 import { mergeCliWithConfig } from "../config/merge.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
@@ -40,7 +41,14 @@ describe(loadWorkspacePackagesAsync, () => {
 		const timing = createTiming();
 		const info = { name: "@halcyon/example", packageDirectory: "/repo/packages/example" };
 
-		const result = await loadWorkspacePackagesAsync({ cli: {}, packageInfos: [info], timing });
+		const { fileSystem } = createMemoryFileSystem();
+
+		const result = await loadWorkspacePackagesAsync({
+			cli: {},
+			fileSystem,
+			packageInfos: [info],
+			timing,
+		});
 
 		expect(result).toStrictEqual([
 			{
@@ -55,7 +63,11 @@ describe(loadWorkspacePackagesAsync, () => {
 				pkgConfig: fileConfig,
 			},
 		]);
-		expect(loadConfig).toHaveBeenCalledExactlyOnceWith(undefined, "/repo/packages/example");
+		expect(loadConfig).toHaveBeenCalledExactlyOnceWith(
+			undefined,
+			"/repo/packages/example",
+			fileSystem,
+		);
 		expect(mergeCliWithConfig).toHaveBeenCalledExactlyOnceWith({}, fileConfig);
 		expect(timing.profileAsync).toHaveBeenCalledOnce();
 	});

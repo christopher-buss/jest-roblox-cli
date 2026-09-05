@@ -824,7 +824,10 @@ export class OpenCloudBackend implements Backend {
 		}
 
 		if (upload.hash !== undefined) {
-			writeCachedVersion(config.rootDir, target, upload.hash, upload.versionNumber);
+			writeCachedVersion(config.rootDir, target, {
+				hash: upload.hash,
+				versionNumber: upload.versionNumber,
+			});
 		}
 
 		return isHeadOurs;

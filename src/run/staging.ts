@@ -16,6 +16,8 @@ import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
 import { prepareCoverageAsync, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import type { StubMount } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { toBuildManifestProjects } from "./manifest-projects.ts";
 
 /**
@@ -97,12 +99,14 @@ export async function prepareBakedCoverageAsync({
 	bakeStubs,
 	cacheRoot,
 	config,
+	fileSystem = nodeFileSystem,
 	projects,
 	timing,
 }: {
 	bakeStubs: boolean;
 	cacheRoot: string;
 	config: ResolvedConfig;
+	fileSystem?: FileSystem;
 	projects: Array<ResolvedProjectConfig>;
 	/**
 	 * The run's collector; omitted by the offline build path, which has none.
@@ -110,10 +114,11 @@ export async function prepareBakedCoverageAsync({
 	timing?: TimingCollector | undefined;
 }): Promise<BakedCoverage> {
 	const coverage = await prepareCoverageAsync(config, {
-		bake: bakeStubs ? createStubBake(projects, cacheRoot) : undefined,
+		bake: bakeStubs ? createStubBake(projects, cacheRoot, fileSystem) : undefined,
 		// The same globs `buildMultiRunResult` reports against, so a file is
 		// probed exactly when this run would render a line for it.
 		coverageInclude: resolveCoverageInclude(config, projects),
+		fileSystem,
 		timing,
 	});
 	return {
@@ -132,6 +137,7 @@ export async function stageRunAsync(
 	projects: Array<ResolvedProjectConfig>,
 	rootConfig: ResolvedConfig,
 	timing: TimingCollector,
+	fileSystem: FileSystem = nodeFileSystem,
 ): Promise<StagedRun> {
 	// Stubs land in `.jest-roblox/cache/` instead of the user's source tree.
 	// Open-cloud builds the place from a synthesizer-produced project that
@@ -148,7 +154,7 @@ export async function stageRunAsync(
 	// plugin's runtime `FindFirstChild` check would both block the run
 	// otherwise.
 	const { elapsedMs: cleanMs, value: cleaned } = timing.profileTimed("cleanLeftoverStubs", () => {
-		return cleanLeftoverStubs(projects, rootConfig.rootDir);
+		return cleanLeftoverStubs(projects, rootConfig.rootDir, fileSystem);
 	});
 	if (cleaned.length > 0) {
 		process.stderr.write(
@@ -159,7 +165,7 @@ export async function stageRunAsync(
 	}
 
 	const { elapsedMs: generateMs } = timing.profileTimed("generateProjectStubs", () => {
-		generateProjectStubs(projects, rootConfig.rootDir, cacheRoot);
+		generateProjectStubs(projects, rootConfig.rootDir, cacheRoot, fileSystem);
 	});
 
 	// Summed, so the stderr notice between the two phases is not charged here:
@@ -168,7 +174,15 @@ export async function stageRunAsync(
 
 	const { coverageStagingMs, ...coverage } = await timing.profileAsync(
 		"prepareCoverage",
-		async () => prepareMultiCoverageAsync({ cacheRoot, projects, rootConfig, timing }),
+		async () => {
+			return prepareMultiCoverageAsync({
+				cacheRoot,
+				fileSystem,
+				projects,
+				rootConfig,
+				timing,
+			});
+		},
 	);
 	return { cacheRoot, ...coverage, stagingMs: stubStagingMs + coverageStagingMs };
 }
@@ -196,11 +210,13 @@ function collectStubMountsForProject(
 
 async function prepareMultiCoverageAsync({
 	cacheRoot,
+	fileSystem,
 	projects,
 	rootConfig,
 	timing,
 }: {
 	cacheRoot: string;
+	fileSystem: FileSystem;
 	projects: Array<ResolvedProjectConfig>;
 	rootConfig: ResolvedConfig;
 	timing: TimingCollector;
@@ -219,6 +235,7 @@ async function prepareMultiCoverageAsync({
 		bakeStubs: isBakeStubs,
 		cacheRoot,
 		config: rootConfig,
+		fileSystem,
 		projects,
 		timing,
 	});

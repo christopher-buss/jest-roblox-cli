@@ -1,9 +1,10 @@
 import { type } from "arktype";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { evalLuauReturnLiterals, type LuauLiteralTable } from "../luau/eval-literals.ts";
 import { luauParser } from "../luau/parser.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 
 const luauConfigTableSchema = type("object").as<LuauLiteralTable>();
 
@@ -13,8 +14,11 @@ const luauConfigTableSchema = type("object").as<LuauLiteralTable>();
  * @param filePath - Path to the config file.
  * @returns The evaluated config table.
  */
-export function loadLuauConfig(filePath: string): LuauLiteralTable {
-	const source = fs.readFileSync(path.resolve(filePath), "utf-8");
+export function loadLuauConfig(
+	filePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): LuauLiteralTable {
+	const source = fileSystem.readFileSync(path.resolve(filePath), "utf-8");
 	const parsed = luauParser.parse(source);
 	if (!parsed.ok) {
 		throw new Error(`Failed to evaluate Luau config ${filePath}: ${parsed.errors.join("; ")}`);
@@ -36,9 +40,13 @@ export function loadLuauConfig(filePath: string): LuauLiteralTable {
  * @param cwd - Base directory for resolution.
  * @returns The resolved config path, or `undefined`.
  */
-export function findLuauConfigFile(directoryOrFile: string, cwd: string): string | undefined {
+export function findLuauConfigFile(
+	directoryOrFile: string,
+	cwd: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): string | undefined {
 	const resolved = path.resolve(cwd, directoryOrFile, "jest.config.luau");
-	if (fs.existsSync(resolved)) {
+	if (fileSystem.existsSync(resolved)) {
 		return resolved;
 	}
 

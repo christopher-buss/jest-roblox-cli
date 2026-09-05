@@ -1,4 +1,5 @@
-import * as fs from "node:fs";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 
 /**
  * The stages a run announces while it works. Each one covers a stretch that
@@ -63,9 +64,12 @@ export const SPAN_STAGES: Record<string, StageId> = {
  * fail on that file with their own message, and a stage detail must not be
  * the thing that reports it.
  */
-export function describePlaceFile(placeFilePath: string): string | undefined {
+export function describePlaceFile(
+	placeFilePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): string | undefined {
 	try {
-		return formatBytes(fs.statSync(placeFilePath).size);
+		return formatBytes(fileSystem.statSync(placeFilePath).size);
 	} catch {
 		return undefined;
 	}

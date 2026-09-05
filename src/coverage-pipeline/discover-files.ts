@@ -1,6 +1,7 @@
-import * as fs from "node:fs";
 import picomatch from "picomatch";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { underRoot } from "../utils/normalize-windows-path.ts";
@@ -39,6 +40,8 @@ export interface RootFiles {
 }
 
 export interface DiscoverRootFilesOptions {
+	/** Where the walk reads. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/** Paths the shadow never carries; absent means the whole root. */
 	isCopyIgnored?: CopyIgnoreMatcher | undefined;
 	/** Narrows which prod files probe; absent means all of them. */
@@ -112,8 +115,9 @@ export function walkLuauDirectory(
 	directory: string,
 	filter: WalkFilter,
 	results: Array<string>,
+	fileSystem: FileSystem = nodeFileSystem,
 ): void {
-	walkFrom(directory, "", filter, results);
+	walkFrom({ fileSystem, filter, results }, directory, "");
 }
 
 /**
@@ -131,10 +135,15 @@ export function walkLuauDirectory(
  */
 export function discoverRootFiles(
 	luauRoot: PosixRoot,
-	{ isCopyIgnored, universe }: DiscoverRootFilesOptions = {},
+	{ fileSystem = nodeFileSystem, isCopyIgnored, universe }: DiscoverRootFilesOptions = {},
 ): RootFiles {
 	const discovered: Array<string> = [];
-	walkLuauDirectory(luauRoot, { accept: isInstrumentableFile, skip: isCopyIgnored }, discovered);
+	walkLuauDirectory(
+		luauRoot,
+		{ accept: isInstrumentableFile, skip: isCopyIgnored },
+		discovered,
+		fileSystem,
+	);
 
 	if (universe === undefined) {
 		return { excluded: new Set(), instrumentable: new Set(discovered) };
@@ -151,12 +160,12 @@ export function discoverRootFiles(
 }
 
 function walkFrom(
+	walk: { fileSystem: FileSystem; filter: WalkFilter; results: Array<string> },
 	directory: string,
 	relativePrefix: string,
-	filter: WalkFilter,
-	results: Array<string>,
 ): void {
-	const entries = fs.readdirSync(directory, { withFileTypes: true });
+	const { fileSystem, filter, results } = walk;
+	const entries = fileSystem.readdirSync(directory, { withFileTypes: true });
 	for (const entry of entries) {
 		const relative = relativePrefix + entry.name;
 		if (filter.skip?.(relative) === true) {
@@ -169,7 +178,7 @@ function walkFrom(
 			}
 
 			filter.onDirectory?.(relative);
-			walkFrom(`${directory}/${entry.name}`, `${relative}/`, filter, results);
+			walkFrom(walk, `${directory}/${entry.name}`, `${relative}/`);
 		} else if (filter.accept(entry.name)) {
 			results.push(relative);
 		}

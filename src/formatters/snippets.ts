@@ -1,5 +1,4 @@
 import assert from "node:assert";
-import * as fs from "node:fs";
 
 import {
 	getSourceSnippet,
@@ -8,6 +7,8 @@ import {
 	type SourceSnippet,
 } from "../source-mapper/index.ts";
 import { highlightCode } from "../utils/colors.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { createStyles, type Styles } from "./styles.ts";
 
 // The path segment is length-bounded so an unanchored `.match` over a long
@@ -90,6 +91,7 @@ export function parseSourceLocation(message: string): SourceLocation | undefined
  */
 export function resolveSourceSnippets({
 	filePath,
+	fileSystem = nodeFileSystem,
 	hasSnapshotDiff,
 	mappedLocations,
 	message,
@@ -99,6 +101,7 @@ export function resolveSourceSnippets({
 	useColor,
 }: {
 	filePath?: string | undefined;
+	fileSystem?: FileSystem;
 	hasSnapshotDiff: boolean;
 	mappedLocations: Array<MappedLocation>;
 	message: string;
@@ -124,7 +127,7 @@ export function resolveSourceSnippets({
 		// file is still `init.*`, so reading would fail and the snippet would
 		// silently disappear.
 		const resolvedPath = sourceMapper?.resolveTestFilePath(filePath) ?? filePath;
-		return formatSnapshotCallSnippet(resolvedPath, styles, useColor);
+		return formatSnapshotCallSnippet(fileSystem, resolvedPath, styles, useColor);
 	}
 
 	return [];
@@ -262,15 +265,16 @@ function formatFallbackSnippet(message: string, styles: Styles, useColor: boolea
 }
 
 function formatSnapshotCallSnippet(
+	fileSystem: FileSystem,
 	filePath: string,
 	styles: Styles,
 	useColor: boolean,
 ): Array<string> {
-	if (!fs.existsSync(filePath)) {
+	if (!fileSystem.existsSync(filePath)) {
 		return [];
 	}
 
-	const content = fs.readFileSync(filePath, "utf-8");
+	const content = fileSystem.readFileSync(filePath, "utf-8");
 	const fileLines = content.split("\n");
 	const snapshotIndices = fileLines.reduce<Array<number>>((accumulator, fileLine, index) => {
 		if (fileLine.includes("toMatchSnapshot")) {

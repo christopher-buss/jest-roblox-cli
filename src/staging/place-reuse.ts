@@ -1,11 +1,12 @@
 import { type } from "arktype";
 import { createHash } from "node:crypto";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
 import { tryComputeRojoInputsHashAsync } from "../coverage-pipeline/rojo-inputs.ts";
 import { atomicWrite } from "../utils/atomic-write.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 
 /**
@@ -24,6 +25,8 @@ const placeReuseSchema = type({ inputsKey: "string", placeHash: "string" });
 export interface PlaceInputsKeyOptions {
 	/** Forwarded to `openInputDigestCache`, which says what it claims. */
 	digestCacheFile: string;
+	/** Where the inputs are read. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * Content hashes for the instrumented trees, folded in instead of walking
 	 * them. Instrumentation already recorded a hash per source file, so
@@ -81,6 +84,7 @@ export async function computePlaceInputsKeyAsync(
 ): Promise<string | undefined> {
 	const rojoHash = await tryComputeRojoInputsHashAsync({
 		digestCacheFile: options.digestCacheFile,
+		fileSystem: options.fileSystem,
 		luauRoots: options.shadowRoots,
 		projectJson: options.projectJson,
 		rojoProjectPath: options.projectFile,
@@ -103,10 +107,13 @@ export async function computePlaceInputsKeyAsync(
 	return digest.digest("hex");
 }
 
-export function readPlaceReuseRecord(cacheFile: string): PlaceReuseRecord | undefined {
+export function readPlaceReuseRecord(
+	cacheFile: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): PlaceReuseRecord | undefined {
 	let raw: string;
 	try {
-		raw = fs.readFileSync(cacheFile, "utf-8");
+		raw = fileSystem.readFileSync(cacheFile, "utf-8");
 	} catch {
 		// No previous build, or it was cleaned away. Not a fault.
 		return undefined;
@@ -121,10 +128,14 @@ export function readPlaceReuseRecord(cacheFile: string): PlaceReuseRecord | unde
 	}
 }
 
-export function writePlaceReuseRecord(cacheFile: string, record: PlaceReuseRecord): void {
+export function writePlaceReuseRecord(
+	cacheFile: string,
+	record: PlaceReuseRecord,
+	fileSystem: FileSystem = nodeFileSystem,
+): void {
 	// Atomic, like the manifests it sits beside: a torn record read back as a
 	// key match would hand out a place that was never built.
-	atomicWrite({ contents: JSON.stringify(record), targetPath: cacheFile });
+	atomicWrite({ contents: JSON.stringify(record), fileSystem, targetPath: cacheFile });
 }
 
 /**

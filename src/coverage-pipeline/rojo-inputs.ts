@@ -2,13 +2,15 @@ import type { RojoTreeNode } from "@isentinel/rojo-utils";
 import { collectPaths, resolveMountPath, resolveNestedProjectSources } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
-import * as fs from "node:fs";
+import type { Stats } from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
 import { rojoProjectSchema } from "../types/rojo.ts";
 import { mapWithLimitAsync } from "../utils/concurrency.ts";
 import { errorMessage } from "../utils/error-message.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import type { InputDigestCache } from "../utils/input-digest-cache.ts";
 import { openInputDigestCache } from "../utils/input-digest-cache.ts";
@@ -21,6 +23,8 @@ export interface RojoInputsOptions {
 	 * what a recorded digest claims and what it gives up.
 	 */
 	digestCacheFile: string;
+	/** Where the inputs are read. Defaults to the real filesystem. */
+	fileSystem?: FileSystem | undefined;
 	/**
 	 * Instrumented roots, excluded because the shadow diff already hashes
 	 * them. Relative to `rootDirectory`.
@@ -47,6 +51,7 @@ const HASH_CONCURRENCY = 32;
 /** What the input walk carries down the tree, unchanged at every level. */
 interface InputWalk {
 	files: Set<string>;
+	fileSystem: FileSystem;
 	/**
 	 * Canonical luauRoot paths, whose subtrees the shadow diff already hashes.
 	 */
@@ -74,6 +79,7 @@ interface ProjectDigest {
  */
 export async function computeRojoInputsHashAsync({
 	digestCacheFile,
+	fileSystem = nodeFileSystem,
 	luauRoots,
 	projectJson,
 	rojoProjectPath,
@@ -81,40 +87,32 @@ export async function computeRojoInputsHashAsync({
 }: RojoInputsOptions): Promise<string> {
 	// Opened before the walk: a digest is only recorded for a file whose mtime
 	// already predates this moment, so the moment has to precede the reads.
-	const digests = openInputDigestCache(digestCacheFile);
+	const digests = openInputDigestCache(digestCacheFile, fileSystem);
 	const projectDirectory = path.dirname(rojoProjectPath);
 	// One read, and the digest is taken from what it returned: parsing one
 	// state of the file and hashing another would fingerprint a tree that was
 	// never walked.
-	const projectText = projectJson ?? (await fs.promises.readFile(rojoProjectPath, "utf-8"));
+	const projectText =
+		projectJson ?? (await fileSystem.promises.readFile(rojoProjectPath, "utf-8"));
 	const project: ProjectDigest = { key: toKey(rojoProjectPath), hash: hashString(projectText) };
 
 	const { projectFiles, tree } = resolveNestedProjectSources(
 		parseRawTree(rojoProjectPath, projectText),
 		projectDirectory,
+		fileSystem,
 	);
-
-	const mounts: Array<string> = [];
-	collectPaths(tree, mounts);
 
 	const files = new Set<string>([project.key]);
 	for (const projectFile of projectFiles) {
 		files.add(toKey(projectFile));
 	}
 
-	const walk: InputWalk = {
+	await walkMountedInputsAsync(tree, projectDirectory, {
 		files,
+		fileSystem,
 		luauRootKeys: luauRoots.map((root) => toKey(path.join(rootDirectory, root))),
 		visitedDirectories: new Set<string>(),
-	};
-	// Deduped: one `$path` can appear at several places in the tree, and each
-	// mention would otherwise be entered — and stat'd — on its own.
-	const distinctMounts = new Set(mounts);
-	for (const mount of distinctMounts) {
-		// Normalized here and nowhere below, so a child path is the parent's
-		// plus a name.
-		await collectInputFilesAsync(toKey(resolveMountPath(projectDirectory, mount)), walk);
-	}
+	});
 
 	const hash = await digestFilesAsync({ digests, files, project, rootDirectory });
 	// After the last read and not before: a file that vanishes mid-walk throws
@@ -143,6 +141,28 @@ export async function tryComputeRojoInputsHashAsync(
 	}
 }
 
+function toKey(filePath: string): string {
+	return normalizeWindowsPath(filePath);
+}
+
+/** Every file the tree's `$path` mounts reach, added to the walk's file set. */
+async function walkMountedInputsAsync(
+	tree: RojoTreeNode,
+	projectDirectory: string,
+	walk: InputWalk,
+): Promise<void> {
+	const mounts: Array<string> = [];
+	collectPaths(tree, mounts);
+	// Deduped: one `$path` can appear at several places in the tree, and each
+	// mention would otherwise be entered — and stat'd — on its own.
+	const distinctMounts = new Set(mounts);
+	for (const mount of distinctMounts) {
+		// Normalized here and nowhere below, so a child path is the parent's
+		// plus a name.
+		await collectInputFilesAsync(toKey(resolveMountPath(projectDirectory, mount)), walk);
+	}
+}
+
 /**
  * Reads the project's tree as the build will see it. `loadRojoProject` hands
  * back a nested-resolved tree, which has already erased the inlined project
@@ -156,10 +176,6 @@ function parseRawTree(rojoProjectPath: string, raw: string): RojoTreeNode {
 	}
 
 	return result.tree;
-}
-
-function toKey(filePath: string): string {
-	return normalizeWindowsPath(filePath);
 }
 
 /**
@@ -204,9 +220,9 @@ function coveredByLuauRoot(directoryKey: string, luauRootKeys: Array<string>): b
  * than as whatever it points at.
  */
 async function collectInputFilesAsync(target: string, walk: InputWalk): Promise<void> {
-	let stats: fs.Stats;
+	let stats: Stats;
 	try {
-		stats = await fs.promises.stat(target);
+		stats = await walk.fileSystem.promises.stat(target);
 	} catch {
 		// Mount declared in the rojo tree but absent on disk.
 		return;
@@ -249,14 +265,14 @@ async function descendAsync({
 
 	// realpath collapses pnpm symlink cycles to a canonical key so a self- or
 	// ancestor-referencing link is walked once rather than forever.
-	const real = inheritedReal ?? toKey(await fs.promises.realpath(directory));
+	const real = inheritedReal ?? toKey(await walk.fileSystem.promises.realpath(directory));
 	if (walk.visitedDirectories.has(real)) {
 		return;
 	}
 
 	walk.visitedDirectories.add(real);
 
-	const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+	const entries = await walk.fileSystem.promises.readdir(directory, { withFileTypes: true });
 	for (const entry of entries) {
 		// Skip .git, .jest-roblox, and other dot entries.
 		if (entry.name.startsWith(".")) {

@@ -5,6 +5,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { ConfigError } from "./errors.ts";
@@ -1614,12 +1615,10 @@ describe(resolveAllProjects, () => {
 			},
 		];
 
-		const result = await resolveAllProjects(
-			entries,
-			DEFAULT_CONFIG,
-			simpleRojoTree,
-			"/project",
-		);
+		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
+			cwd: "/project",
+			rojoTree: simpleRojoTree,
+		});
 
 		expect(result).toHaveLength(1);
 		expect(result[0]!.displayName).toBe("client");
@@ -1643,12 +1642,10 @@ describe(resolveAllProjects, () => {
 
 		const entries = ["./server.config.ts"];
 
-		const result = await resolveAllProjects(
-			entries,
-			DEFAULT_CONFIG,
-			simpleRojoTree,
-			"/project",
-		);
+		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
+			cwd: "/project",
+			rojoTree: simpleRojoTree,
+		});
 
 		expect(result).toHaveLength(1);
 		expect(result[0]!.displayName).toBe("server");
@@ -1681,12 +1678,10 @@ describe(resolveAllProjects, () => {
 			"./server.config.ts",
 		];
 
-		const result = await resolveAllProjects(
-			entries,
-			DEFAULT_CONFIG,
-			simpleRojoTree,
-			"/project",
-		);
+		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
+			cwd: "/project",
+			rojoTree: simpleRojoTree,
+		});
 
 		expect(result).toHaveLength(2);
 		expect(result[0]!.displayName).toBe("client");
@@ -1713,7 +1708,10 @@ describe(resolveAllProjects, () => {
 			},
 		];
 
-		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, tree, "/project");
+		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
+			cwd: "/project",
+			rojoTree: tree,
+		});
 
 		expect(result[0]!.testMatch).toStrictEqual(["**/*.spec"]);
 	});
@@ -1739,72 +1737,56 @@ describe(resolveAllProjects, () => {
 		];
 
 		await expect(
-			resolveAllProjects(entries, DEFAULT_CONFIG, simpleRojoTree, "/project"),
+			resolveAllProjects(entries, DEFAULT_CONFIG, {
+				cwd: "/project",
+				rojoTree: simpleRojoTree,
+			}),
 		).rejects.toThrow("Duplicate project displayName: client");
 	});
 });
 
 describe(createFsClassifier, () => {
-	it("should return 'directory' when statSync reports a directory", async () => {
+	it("should return 'directory' for a path holding a directory", () => {
 		expect.assertions(1);
 
-		const fs = await import("node:fs");
-		vi.spyOn(fs.default, "statSync").mockReturnValueOnce(fromAny({ isDirectory: () => true }));
+		const { fileSystem } = createMemoryFileSystem({ "/root/some/directory/child.luau": "" });
 
-		const classify = createFsClassifier("/root");
-
-		expect(classify("some/directory")).toBe("directory");
+		expect(createFsClassifier("/root", fileSystem)("some/directory")).toBe("directory");
 	});
 
-	it("should return 'file' when statSync reports a non-directory", async () => {
+	it("should return 'file' for a path holding a file", () => {
 		expect.assertions(1);
 
-		const fs = await import("node:fs");
-		vi.spyOn(fs.default, "statSync").mockReturnValueOnce(fromAny({ isDirectory: () => false }));
+		const { fileSystem } = createMemoryFileSystem({ "/root/some/file.txt": "" });
 
-		const classify = createFsClassifier("/root");
-
-		expect(classify("some/file.txt")).toBe("file");
+		expect(createFsClassifier("/root", fileSystem)("some/file.txt")).toBe("file");
 	});
 
-	it("should return 'missing' when statSync returns undefined", async () => {
+	it("should return 'missing' for a path holding nothing", () => {
 		expect.assertions(1);
 
-		const fs = await import("node:fs");
-		vi.spyOn(fs.default, "statSync").mockReturnValueOnce(undefined);
+		const { fileSystem } = createMemoryFileSystem();
 
-		const classify = createFsClassifier("/root");
-
-		expect(classify("missing/path")).toBe("missing");
+		expect(createFsClassifier("/root", fileSystem)("missing/path")).toBe("missing");
 	});
 
-	it("should resolve relative paths against the given root directory", async () => {
+	it("should resolve relative paths against the given root directory", () => {
 		expect.assertions(1);
 
-		const fs = await import("node:fs");
-		const spy = vi
-			.spyOn(fs.default, "statSync")
-			.mockReturnValueOnce(fromAny({ isDirectory: () => true }));
-
-		const classify = createFsClassifier("/workspace/root");
-		classify("src/Client");
-
-		expect(spy).toHaveBeenCalledWith(expect.stringMatching(/src[/\\]Client$/), {
-			throwIfNoEntry: false,
+		const { fileSystem } = createMemoryFileSystem({
+			"/workspace/root/src/Client/init.luau": "",
 		});
+
+		expect(createFsClassifier("/workspace/root", fileSystem)("src/Client")).toBe("directory");
 	});
 
-	it("should pass absolute paths through without resolution", async () => {
+	it("should pass absolute paths through without resolution", () => {
 		expect.assertions(1);
 
-		const fs = await import("node:fs");
-		const spy = vi
-			.spyOn(fs.default, "statSync")
-			.mockReturnValueOnce(fromAny({ isDirectory: () => true }));
+		const { fileSystem } = createMemoryFileSystem({ "/absolute/path/init.luau": "" });
 
-		const classify = createFsClassifier("/workspace/root");
-		classify("/absolute/path");
-
-		expect(spy).toHaveBeenCalledWith("/absolute/path", { throwIfNoEntry: false });
+		expect(createFsClassifier("/workspace/root", fileSystem)("/absolute/path")).toBe(
+			"directory",
+		);
 	});
 });

@@ -1,7 +1,8 @@
 import { type } from "arktype";
-import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
+import type { FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
 import type { RojoTreeNode } from "./types.ts";
 import { isRojoTreeNode } from "./types.ts";
 
@@ -21,6 +22,8 @@ export interface ResolvedNestedProjectSources {
  * resolution.
  */
 interface ResolveContext {
+	/** Where nested project files are read from. */
+	fileSystem: FileSystem;
 	/** Absolute paths of every nested project file inlined so far. */
 	sources: Set<string>;
 	/** Project files on the current chain, for circular-reference detection. */
@@ -36,14 +39,23 @@ interface ResolveContext {
 export function resolveNestedProjectSources(
 	tree: RojoTreeNode,
 	rootDirectory: string,
+	fileSystem: FileSystem = nodeFileSystem,
 ): ResolvedNestedProjectSources {
-	const context: ResolveContext = { sources: new Set<string>(), visited: new Set<string>() };
+	const context: ResolveContext = {
+		fileSystem,
+		sources: new Set<string>(),
+		visited: new Set<string>(),
+	};
 	const resolved = resolveTree(tree, rootDirectory, rootDirectory, context);
 	return { projectFiles: [...context.sources], tree: resolved };
 }
 
-export function resolveNestedProjects(tree: RojoTreeNode, rootDirectory: string): RojoTreeNode {
-	return resolveNestedProjectSources(tree, rootDirectory).tree;
+export function resolveNestedProjects(
+	tree: RojoTreeNode,
+	rootDirectory: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): RojoTreeNode {
+	return resolveNestedProjectSources(tree, rootDirectory, fileSystem).tree;
 }
 
 /**
@@ -145,7 +157,11 @@ function dropTrailingSlash(mountPath: string): string {
 	return stripped === "" || stripped.endsWith(":") ? mountPath : stripped;
 }
 
-function nestedProjectPath(currentDirectory: string, value: string): string | undefined {
+function nestedProjectPath(
+	fileSystem: FileSystem,
+	currentDirectory: string,
+	value: string,
+): string | undefined {
 	// Resolve a `$path` string to the nested project file it should inline, or
 	// undefined when the path is a plain source mount. Rojo treats a `$path`
 	// pointing at a directory containing `default.project.json` as a nested
@@ -158,7 +174,7 @@ function nestedProjectPath(currentDirectory: string, value: string): string | un
 	}
 
 	const directoryDefault = join(mountPath, "default.project.json");
-	return existsSync(directoryDefault) ? directoryDefault : undefined;
+	return fileSystem.existsSync(directoryDefault) ? directoryDefault : undefined;
 }
 
 function parseNestedTree(content: string): RojoTreeNode {
@@ -186,7 +202,7 @@ function inlineNestedProject(
 
 	let content: string;
 	try {
-		content = readFileSync(projectPath, "utf-8");
+		content = context.fileSystem.readFileSync(projectPath, "utf-8");
 	} catch (err) {
 		const relativePath = relative(currentDirectory, projectPath);
 		throw new Error(`Could not read nested Rojo project: ${relativePath}`, { cause: err });
@@ -201,6 +217,7 @@ function inlineNestedProject(
 	}
 
 	return resolveTree(tree, dirname(projectPath), originalRoot, {
+		fileSystem: context.fileSystem,
 		sources: context.sources,
 		visited: chain,
 	});
@@ -233,7 +250,7 @@ function resolveTree(
 
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string") {
-			const projectPath = nestedProjectPath(currentDirectory, value);
+			const projectPath = nestedProjectPath(context.fileSystem, currentDirectory, value);
 			if (projectPath === undefined) {
 				resolved[key] = resolveRootRelativePath(currentDirectory, value, originalRoot);
 				continue;

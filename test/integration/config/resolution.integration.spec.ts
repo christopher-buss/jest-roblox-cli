@@ -77,8 +77,7 @@ describe("config resolution", () => {
 			const projects = await resolveAllProjects(
 				config.projects!,
 				{ ...config, rootDir: RBXTS_FIXTURE },
-				rojo.tree,
-				RBXTS_FIXTURE,
+				{ cwd: RBXTS_FIXTURE, rojoTree: rojo.tree },
 			);
 
 			expect(projects.length).toBeGreaterThan(0);

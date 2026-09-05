@@ -1,14 +1,18 @@
 import { isRojoTreeNode, loadRojoProject, resolveMountPath } from "@isentinel/rojo-utils";
 
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PackageDescriptor } from "./preflight.ts";
 
-export function ensurePackageDirectories(descriptors: Array<PackageDescriptor>): void {
+export function ensurePackageDirectories(
+	descriptors: Array<PackageDescriptor>,
+	fileSystem: FileSystem = nodeFileSystem,
+): void {
 	for (const descriptor of descriptors) {
-		ensurePackageDirectory(descriptor);
+		ensurePackageDirectory(fileSystem, descriptor);
 	}
 }
 
@@ -26,35 +30,39 @@ function isDirectoryPath(node: RojoTreeNode, pathValue: string): boolean {
 	return false;
 }
 
-function collectDirectoryPaths(node: RojoTreeNode, projectDirectory: string): void {
+function collectDirectoryPaths(
+	fileSystem: FileSystem,
+	node: RojoTreeNode,
+	projectDirectory: string,
+): void {
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string" && isDirectoryPath(node, value)) {
 			const absolute = resolveMountPath(projectDirectory, value);
-			if (!fs.existsSync(absolute)) {
-				fs.mkdirSync(absolute, { recursive: true });
+			if (!fileSystem.existsSync(absolute)) {
+				fileSystem.mkdirSync(absolute, { recursive: true });
 			}
 
 			continue;
 		}
 
 		if (isRojoTreeNode(value) && !key.startsWith("$")) {
-			collectDirectoryPaths(value, projectDirectory);
+			collectDirectoryPaths(fileSystem, value, projectDirectory);
 		}
 	}
 }
 
-function ensurePackageDirectory(descriptor: PackageDescriptor): void {
-	if (!fs.existsSync(descriptor.rojoProjectPath)) {
+function ensurePackageDirectory(fileSystem: FileSystem, descriptor: PackageDescriptor): void {
+	if (!fileSystem.existsSync(descriptor.rojoProjectPath)) {
 		return;
 	}
 
 	let project;
 	try {
-		project = loadRojoProject(descriptor.rojoProjectPath);
+		project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
 	} catch {
 		return;
 	}
 
 	const projectDirectory = path.dirname(descriptor.rojoProjectPath);
-	collectDirectoryPaths(project.tree, projectDirectory);
+	collectDirectoryPaths(fileSystem, project.tree, projectDirectory);
 }

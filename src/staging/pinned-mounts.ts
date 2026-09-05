@@ -1,12 +1,14 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
 
 import { Buffer } from "node:buffer";
-import * as fs from "node:fs";
+import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import picomatch from "picomatch";
 
 import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
@@ -20,6 +22,11 @@ import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 import { findStage } from "./stage.ts";
 
 export interface DemotePinnedMountsOptions {
+	/**
+	 * Where the stand-ins are read and written. Defaults to the real
+	 * filesystem.
+	 */
+	fileSystem?: FileSystem;
 	/** The directory the synthesized project file is written to. */
 	projectDirectory: string;
 	projectJson: string;
@@ -48,6 +55,7 @@ interface PinnedMount {
  * with two rojo builds racing on one stand-in file.
  */
 interface Walk {
+	fileSystem: FileSystem;
 	ignored: (absolutePath: string) => boolean;
 	pinned: Array<PinnedMount>;
 	scanned: Set<string>;
@@ -106,6 +114,7 @@ const DRIVE_LETTER = /^[A-Za-z]:/;
  * this pass through that number and through nothing else.
  */
 export async function demotePinnedMountsAsync({
+	fileSystem = nodeFileSystem,
 	projectDirectory,
 	projectJson,
 	shadowDirectory,
@@ -123,6 +132,7 @@ export async function demotePinnedMountsAsync({
 	const declaredIgnores = readGlobIgnorePaths(project);
 	const pinned: Array<PinnedMount> = [];
 	collectPinnedMounts(stage, {
+		fileSystem,
 		ignored: isIgnored(declaredIgnores),
 		pinned,
 		scanned: new Set(),
@@ -131,9 +141,10 @@ export async function demotePinnedMountsAsync({
 		return projectJson;
 	}
 
-	fs.mkdirSync(shadowDirectory, { recursive: true });
+	fileSystem.mkdirSync(shadowDirectory, { recursive: true });
 	const ignores = await buildStandInsAsync(pinned, {
 		declaredIgnores,
+		fileSystem,
 		projectDirectory,
 		shadowDirectory,
 	});
@@ -207,10 +218,12 @@ function foldPinnedClasses(xml: string): string {
  * so a Folder in that position costs the package nothing.
  */
 async function writeFolderShadowAsync({
+	fileSystem,
 	globIgnorePaths,
 	mount,
 	shadowDirectory,
 }: {
+	fileSystem: FileSystem;
 	globIgnorePaths: Array<string>;
 	mount: PinnedMount;
 	shadowDirectory: string;
@@ -225,7 +238,7 @@ async function writeFolderShadowAsync({
 	const projectFile = path.posix.join(directory, `${stem}.project.json`);
 	const shadowFile = path.posix.join(directory, `${stem}.rbxmx`);
 
-	fs.writeFileSync(
+	fileSystem.writeFileSync(
 		projectFile,
 		JSON.stringify({
 			// Rojo names the built root after the project, and the stand-in has
@@ -237,7 +250,10 @@ async function writeFolderShadowAsync({
 	);
 	await buildWithRojoAsync(projectFile, shadowFile);
 
-	fs.writeFileSync(shadowFile, foldPinnedClasses(fs.readFileSync(shadowFile, "utf-8")));
+	fileSystem.writeFileSync(
+		shadowFile,
+		foldPinnedClasses(fileSystem.readFileSync(shadowFile, "utf-8")),
+	);
 	return shadowFile;
 }
 
@@ -251,10 +267,12 @@ async function standInForAsync(
 	mount: PinnedMount,
 	{
 		declaredIgnores,
+		fileSystem,
 		projectDirectory,
 		shadowDirectory,
 	}: {
 		declaredIgnores: Array<string>;
+		fileSystem: FileSystem;
 		projectDirectory: string;
 		shadowDirectory: string;
 	},
@@ -263,6 +281,7 @@ async function standInForAsync(
 	// names a path relative to `projectDirectory`, which resolves against
 	// nothing in a project that lives in `shadowDirectory`.
 	const shadow = await writeFolderShadowAsync({
+		fileSystem,
 		globIgnorePaths: declaredIgnores,
 		mount,
 		shadowDirectory,
@@ -290,6 +309,7 @@ async function buildStandInsAsync(
 	pinned: Array<PinnedMount>,
 	options: {
 		declaredIgnores: Array<string>;
+		fileSystem: FileSystem;
 		projectDirectory: string;
 		shadowDirectory: string;
 	},
@@ -329,8 +349,10 @@ function isIgnored(patterns: ReadonlyArray<string>): (absolutePath: string) => b
 	};
 }
 
-function pinnedClassesOf(filePath: string): Array<string> {
-	return readDeclaredClasses(filePath).filter((declared) => PINNED_PARENT_CLASSES.has(declared));
+function pinnedClassesOf(fileSystem: FileSystem, filePath: string): Array<string> {
+	return readDeclaredClasses(filePath, fileSystem).filter((declared) => {
+		return PINNED_PARENT_CLASSES.has(declared);
+	});
 }
 
 /** A directory entry as an absolute posix path, the frame every scan uses. */
@@ -342,9 +364,15 @@ function entryPathOf(directory: string, entryName: string): string {
  * Whether a directory's own `init.meta.json` gives the instance rojo mounts for
  * it a class the engine pins.
  */
-function declaresPinnedClass(directory: string, entries: ReadonlyArray<fs.Dirent>): boolean {
+function declaresPinnedClass(
+	fileSystem: FileSystem,
+	directory: string,
+	entries: ReadonlyArray<Dirent>,
+): boolean {
 	const hasMeta = entries.some((child) => child.name === META_JSON_FILE && !child.isDirectory());
-	return hasMeta && pinnedClassesOf(entryPathOf(directory, META_JSON_FILE)).length > 0;
+	return (
+		hasMeta && pinnedClassesOf(fileSystem, entryPathOf(directory, META_JSON_FILE)).length > 0
+	);
 }
 
 /**
@@ -362,7 +390,7 @@ function assertNoDeeperPinnedClass({
 	walk,
 }: {
 	directory: string;
-	entries: ReadonlyArray<fs.Dirent>;
+	entries: ReadonlyArray<Dirent>;
 	mountRoot: string;
 	walk: Walk;
 }): void {
@@ -375,14 +403,14 @@ function assertNoDeeperPinnedClass({
 		if (entry.isDirectory()) {
 			assertNoDeeperPinnedClass({
 				directory: entryPath,
-				entries: fs.readdirSync(entryPath, { withFileTypes: true }),
+				entries: walk.fileSystem.readdirSync(entryPath, { withFileTypes: true }),
 				mountRoot,
 				walk,
 			});
 			continue;
 		}
 
-		const [buried] = pinnedClassesOf(entryPath);
+		const [buried] = pinnedClassesOf(walk.fileSystem, entryPath);
 		if (buried !== undefined) {
 			throw new ConfigError(
 				`"${entryPath}" declares ${buried}, which the engine parents only under one service, but it is nested inside the mount at "${mountRoot}" rather than sitting directly in it. ` +
@@ -403,7 +431,7 @@ function collectDirectoryEntry({
 	target,
 	walk,
 }: {
-	entry: fs.Dirent;
+	entry: Dirent;
 	mountPath: string;
 	target: RojoTreeNode;
 	walk: Walk;
@@ -417,7 +445,10 @@ function collectDirectoryEntry({
 		// `init.meta.json` gives the class to the directory holding it, which the
 		// caller has already asked about. Mounting it as a child of its own would
 		// hand rojo a lone descriptor it cannot turn into an Instance.
-		if (entry.name === META_JSON_FILE || pinnedClassesOf(entryPath).length === 0) {
+		if (
+			entry.name === META_JSON_FILE ||
+			pinnedClassesOf(walk.fileSystem, entryPath).length === 0
+		) {
 			return undefined;
 		}
 
@@ -428,8 +459,8 @@ function collectDirectoryEntry({
 	// class of its own, and what a deeper scan would walk. Probing for the meta
 	// file by opening it would miss for nearly every directory in the tree, and
 	// a failed open plus a thrown Error is the expensive way to ask.
-	const entries = fs.readdirSync(entryPath, { withFileTypes: true });
-	if (declaresPinnedClass(entryPath, entries)) {
+	const entries = walk.fileSystem.readdirSync(entryPath, { withFileTypes: true });
+	if (declaresPinnedClass(walk.fileSystem, entryPath, entries)) {
 		return { childName: mountedName(entry.name), source: entryPath, target };
 	}
 
@@ -454,23 +485,23 @@ function collectMountEntries({
 	walk.scanned.add(key);
 
 	if (isModelFile(mountPath)) {
-		if (pinnedClassesOf(mountPath).length > 0) {
+		if (pinnedClassesOf(walk.fileSystem, mountPath).length > 0) {
 			walk.pinned.push({ childName: undefined, source: mountPath, target });
 		}
 
 		return;
 	}
 
-	const stats = fs.statSync(mountPath, { throwIfNoEntry: false });
+	const stats = walk.fileSystem.statSync(mountPath, { throwIfNoEntry: false });
 	if (stats?.isDirectory() !== true) {
 		return;
 	}
 
-	const entries = fs.readdirSync(mountPath, { withFileTypes: true });
+	const entries = walk.fileSystem.readdirSync(mountPath, { withFileTypes: true });
 	// The mount's own `init.meta.json` classes the instance rojo builds for the
 	// whole mount, so a pinned one makes the mount itself the offender — the
 	// node already names it, and no child stands in.
-	if (declaresPinnedClass(mountPath, entries)) {
+	if (declaresPinnedClass(walk.fileSystem, mountPath, entries)) {
 		walk.pinned.push({ childName: undefined, source: mountPath, target });
 		return;
 	}

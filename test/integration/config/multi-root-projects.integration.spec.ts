@@ -16,8 +16,7 @@ async function resolveFixtureProjects() {
 	return resolveAllProjects(
 		config.projects ?? [],
 		{ ...config, rootDir: MULTI_ROOT_FIXTURE },
-		rojo.tree,
-		MULTI_ROOT_FIXTURE,
+		{ cwd: MULTI_ROOT_FIXTURE, rojoTree: rojo.tree },
 	);
 }
 
@@ -71,8 +70,7 @@ describe("multi-root projects", () => {
 				},
 			],
 			{ ...config, rootDir: MULTI_ROOT_FIXTURE },
-			rojo.tree,
-			MULTI_ROOT_FIXTURE,
+			{ cwd: MULTI_ROOT_FIXTURE, rojoTree: rojo.tree },
 		);
 
 		expect(resolved[0]!.rojoMounts).toHaveLength(1);

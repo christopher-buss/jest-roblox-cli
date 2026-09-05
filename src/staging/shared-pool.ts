@@ -1,14 +1,17 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
 
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { findStage } from "./stage.ts";
 
 export interface PoolSharedMountsOptions {
+	/** Where the mounts are probed. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * The directory the synthesized project file is written to. The frame the
 	 * pool key is derived in, so the same relative mount keys the same on every
@@ -89,6 +92,7 @@ const MARKER_SAFE_KEYS = new Set(["$className", "$path"]);
  * this pass through that number and through nothing else.
  */
 export function poolSharedMounts({
+	fileSystem = nodeFileSystem,
 	projectDirectory,
 	projectJson,
 }: PoolSharedMountsOptions): string {
@@ -113,7 +117,7 @@ export function poolSharedMounts({
 	for (const [mountPath, nodes] of mounts) {
 		// A coverage shadow is per package by construction, so it is referenced
 		// once and never reaches the filesystem check.
-		if (nodes.length < 2 || !buildsAnInstance(mountPath)) {
+		if (nodes.length < 2 || !buildsAnInstance(fileSystem, mountPath)) {
 			continue;
 		}
 
@@ -182,8 +186,8 @@ function collectPoolCandidates(node: RojoTreeNode, mounts: Map<string, Array<Roj
  * absent. A directory always builds one; a file builds one only if rojo reads
  * its extension.
  */
-function buildsAnInstance(mountPath: string): boolean {
-	const stats = fs.statSync(mountPath, { throwIfNoEntry: false });
+function buildsAnInstance(fileSystem: FileSystem, mountPath: string): boolean {
+	const stats = fileSystem.statSync(mountPath, { throwIfNoEntry: false });
 	if (stats === undefined) {
 		return false;
 	}

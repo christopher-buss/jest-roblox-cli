@@ -1,13 +1,13 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import * as childProcess from "node:child_process";
-import * as fs from "node:fs";
-import { createRequire } from "node:module";
+import type * as childProcess from "node:child_process";
 import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { ConfigError } from "../config/errors.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import {
 	createLocationsIndexMap,
@@ -16,14 +16,6 @@ import {
 	runTypecheckAsync,
 } from "./runner.ts";
 import type { RawErrorsMap, TestDefinition } from "./types.ts";
-
-vi.mock(import("node:child_process"));
-vi.mock(import("node:fs"));
-
-// `resolveTsgoScript` locates the tsgo binary through `createRequire`. `spy`
-// keeps every export's real implementation, so only the missing-package test
-// overrides it and every other test resolves the installed package.
-vi.mock(import("node:module"), { spy: true });
 
 describe(createLocationsIndexMap, () => {
 	it("should map line:column pairs to character indices", () => {
@@ -426,87 +418,101 @@ describe(mapErrorsToTests, () => {
 	});
 });
 
+/**
+ * A filesystem whose every read answers with `contents`.
+ *
+ * @param contents - What a read returns.
+ */
+function readingText(contents: string): FileSystem {
+	return fromAny({ readFileSync: () => contents });
+}
+
+/**
+ * A filesystem whose every read fails.
+ *
+ * @param failure - What the read throws.
+ */
+function throwingOnRead(failure: unknown): FileSystem {
+	return fromAny({
+		readFileSync: () => {
+			throw failure;
+		},
+	});
+}
+
 describe(isCompositeProject, () => {
 	it("should return true when compilerOptions.composite is true", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue(
-			JSON.stringify({ compilerOptions: { composite: true } }),
-		);
+		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));
 
-		expect(isCompositeProject("/project")).toBeTrue();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeTrue();
 	});
 
 	it("should return false when composite is absent", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue(
-			JSON.stringify({ compilerOptions: { strict: true } }),
-		);
+		const fileSystem = readingText(JSON.stringify({ compilerOptions: { strict: true } }));
 
-		expect(isCompositeProject("/project")).toBeFalse();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
 	});
 
 	it("should return false when compilerOptions is absent", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ include: ["src"] }));
+		const fileSystem = readingText(JSON.stringify({ include: ["src"] }));
 
-		expect(isCompositeProject("/project")).toBeFalse();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
 	});
 
 	it("should return false when compilerOptions is null", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue('{ "compilerOptions": null }');
+		const fileSystem = readingText('{ "compilerOptions": null }');
 
-		expect(isCompositeProject("/project")).toBeFalse();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
 	});
 
 	it("should return false when compilerOptions is an array", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue('{ "compilerOptions": [] }');
+		const fileSystem = readingText('{ "compilerOptions": [] }');
 
-		expect(isCompositeProject("/project")).toBeFalse();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
 	});
 
 	it("should return false when tsconfig does not exist", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockImplementation(() => {
-			throw new Error("ENOENT");
-		});
+		const fileSystem = throwingOnRead(new Error("ENOENT"));
 
-		expect(isCompositeProject("/project")).toBeFalse();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
 	});
 
 	it("should return false on malformed JSON", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue("not json{{{");
+		const fileSystem = readingText("not json{{{");
 
-		expect(isCompositeProject("/project")).toBeFalse();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeFalse();
 	});
 
 	it("should detect composite in tsconfig with comments", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue(
+		const fileSystem = readingText(
 			'// this is a comment\n{ "compilerOptions": { "composite": true } }',
 		);
 
-		expect(isCompositeProject("/project")).toBeTrue();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeTrue();
 	});
 
 	it("should detect composite in tsconfig with trailing commas", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue(
-			'{ "compilerOptions": { "composite": true, }, }',
-		);
+		const fileSystem = readingText('{ "compilerOptions": { "composite": true, }, }');
 
-		expect(isCompositeProject("/project")).toBeTrue();
+		expect(isCompositeProject("/project", undefined, fileSystem)).toBeTrue();
 	});
 
 	it("should warn when custom tsconfig cannot be read", () => {
@@ -514,11 +520,9 @@ describe(isCompositeProject, () => {
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		vi.mocked(fs.readFileSync).mockImplementation(() => {
-			throw new Error("ENOENT");
-		});
+		const fileSystem = throwingOnRead(new Error("ENOENT"));
 
-		const isComposite = isCompositeProject("/project", "tsconfig.build.json");
+		const isComposite = isCompositeProject("/project", "tsconfig.build.json", fileSystem);
 
 		expect(isComposite).toBeFalse();
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("tsconfig.build.json"));
@@ -529,12 +533,9 @@ describe(isCompositeProject, () => {
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		vi.mocked(fs.readFileSync).mockImplementation(() => {
-			// eslint-disable-next-line ts/only-throw-error -- testing non-Error throw
-			throw "raw string error";
-		});
+		const fileSystem = throwingOnRead("raw string error");
 
-		const isComposite = isCompositeProject("/project", "tsconfig.build.json");
+		const isComposite = isCompositeProject("/project", "tsconfig.build.json", fileSystem);
 
 		expect(isComposite).toBeFalse();
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("raw string error"));
@@ -545,11 +546,9 @@ describe(isCompositeProject, () => {
 
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		vi.mocked(fs.readFileSync).mockImplementation(() => {
-			throw new Error("ENOENT");
-		});
+		const fileSystem = throwingOnRead(new Error("ENOENT"));
 
-		const isComposite = isCompositeProject("/project");
+		const isComposite = isCompositeProject("/project", undefined, fileSystem);
 
 		expect(isComposite).toBeFalse();
 		expect(stderrSpy).not.toHaveBeenCalled();
@@ -558,13 +557,12 @@ describe(isCompositeProject, () => {
 	it("should resolve custom tsconfig path against root directory", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue(
-			JSON.stringify({ compilerOptions: { composite: true } }),
-		);
+		const fileSystem = readingText(JSON.stringify({ compilerOptions: { composite: true } }));
+		const readFile = vi.spyOn(fileSystem, "readFileSync");
 
-		isCompositeProject("/project", "tsconfig.build.json");
+		isCompositeProject("/project", "tsconfig.build.json", fileSystem);
 
-		expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledWith(
+		expect(readFile).toHaveBeenCalledWith(
 			path.resolve("/project", "tsconfig.build.json"),
 			"utf-8",
 		);
@@ -619,35 +617,54 @@ describe(runTypecheckAsync, () => {
 				return child;
 			},
 		);
-		vi.mocked(childProcess.execFile).mockImplementation(execFileStub);
-		return { emitSpawn: () => spawnListener?.(), invocations, kill, once };
+		const runner: ChildProcessRunner = fromAny({ execFile: execFileStub });
+		return {
+			childProcess: runner,
+			emitSpawn: () => spawnListener?.(),
+			invocations,
+			kill,
+			once,
+		};
 	}
 
 	function exitWith(code: number): TsgoSpawnError {
 		return Object.assign(new Error(`tsgo exit ${String(code)}`), { code });
 	}
 
-	function mockReadFileSync(tsconfigContent: string, testFileContent: string): void {
-		vi.mocked(fs.readFileSync).mockImplementation((filePath, _encoding) => {
-			const fileString = String(filePath);
-			if (fileString.endsWith("tsconfig.json") || fileString.endsWith("tsconfig.test.json")) {
-				return tsconfigContent;
-			}
-
-			return testFileContent;
+	/**
+	 * A volume answering every tsconfig read with one text and every other read
+	 * with another, which is the only distinction these cases need.
+	 *
+	 * @param tsconfigContent - What a tsconfig read returns.
+	 * @param testFileContent - What every other read returns.
+	 */
+	function readingFiles(tsconfigContent: string, testFileContent: string): FileSystem {
+		return fromAny({
+			readFileSync: (filePath: string) => {
+				const fileString = filePath;
+				return fileString.endsWith("tsconfig.json") ||
+					fileString.endsWith("tsconfig.test.json")
+					? tsconfigContent
+					: testFileContent;
+			},
 		});
 	}
 
 	it("should pass tsconfig option to tsgo for non-composite project", async () => {
 		expect.assertions(4);
 
-		const { invocations } = stubTsgo((callback) => {
+		const { childProcess, invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		const result = await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 			tsconfig: "tsconfig.test.json",
 		});
@@ -675,13 +692,18 @@ describe(runTypecheckAsync, () => {
 	it("should use --noEmit for non-composite projects", async () => {
 		expect.assertions(2);
 
-		const { invocations } = stubTsgo((callback) => {
+		const { childProcess, invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		const result = await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 		});
 
@@ -694,16 +716,18 @@ describe(runTypecheckAsync, () => {
 	it("should use --build --emitDeclarationOnly for composite projects", async () => {
 		expect.assertions(2);
 
-		const { invocations } = stubTsgo((callback) => {
+		const { childProcess, invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
-		mockReadFileSync(
+		const fileSystem = readingFiles(
 			JSON.stringify({ compilerOptions: { composite: true } }),
 			'it("should pass", () => {});',
 		);
 
 		const result = await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 		});
 
@@ -716,16 +740,18 @@ describe(runTypecheckAsync, () => {
 	it("should pass tsconfig as positional arg for composite --build", async () => {
 		expect.assertions(1);
 
-		const { invocations } = stubTsgo((callback) => {
+		const { childProcess, invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
-		mockReadFileSync(
+		const fileSystem = readingFiles(
 			JSON.stringify({ compilerOptions: { composite: true } }),
 			'it("should pass", () => {});',
 		);
 
 		await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 			tsconfig: "tsconfig.test.json",
 		});
@@ -738,13 +764,18 @@ describe(runTypecheckAsync, () => {
 	it("should store testFilePath as relative to rootDir", async () => {
 		expect.assertions(1);
 
-		stubTsgo((callback) => {
+		const { childProcess } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		const result = await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 		});
 
@@ -756,13 +787,18 @@ describe(runTypecheckAsync, () => {
 	it("should bound the tsgo compile with the default run timeout", async () => {
 		expect.assertions(1);
 
-		const { invocations } = stubTsgo((callback) => {
+		const { childProcess, invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 		});
 
@@ -772,13 +808,18 @@ describe(runTypecheckAsync, () => {
 	it("should bound the tsgo compile with a custom run timeout", async () => {
 		expect.assertions(1);
 
-		const { invocations } = stubTsgo((callback) => {
+		const { childProcess, invocations } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 			timeout: 250,
 		});
@@ -789,18 +830,23 @@ describe(runTypecheckAsync, () => {
 	it("should throw when the tsgo compile exceeds the run timeout", async () => {
 		expect.assertions(1);
 
-		stubTsgo((callback) => {
+		const { childProcess } = stubTsgo((callback) => {
 			callback(
 				Object.assign(new Error("killed"), { killed: true, signal: "SIGTERM" }),
 				"",
 				"",
 			);
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		await expect(
 			runTypecheckAsync({
+				childProcess,
 				files: ["src/test.spec.ts"],
+				fileSystem,
 				rootDir: "/project",
 				timeout: 250,
 			}),
@@ -814,14 +860,19 @@ describe(runTypecheckAsync, () => {
 		// process is stuck before launch, so only the launch timer can settle
 		// the promise.
 		let captured: TsgoCallback | undefined;
-		const { kill } = stubTsgo((callback) => {
+		const { childProcess, kill } = stubTsgo((callback) => {
 			captured = callback;
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		await expect(
 			runTypecheckAsync({
+				childProcess,
 				files: ["src/test.spec.ts"],
+				fileSystem,
 				rootDir: "/project",
 				spawnTimeout: 1,
 			}),
@@ -841,15 +892,20 @@ describe(runTypecheckAsync, () => {
 
 		// Defer the exit callback past the synchronous setup so the launch timer
 		// is armed, then `emitSpawn` exercises the clear-on-spawn path.
-		const { emitSpawn, kill } = stubTsgo((callback) => {
+		const { childProcess, emitSpawn, kill } = stubTsgo((callback) => {
 			queueMicrotask(() => {
 				callback(null, "", "");
 			});
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		const promise = runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 			spawnTimeout: 10_000,
 		});
@@ -870,13 +926,18 @@ describe(runTypecheckAsync, () => {
 		});
 
 		let captured: TsgoCallback | undefined;
-		const { emitSpawn, kill, once } = stubTsgo((callback) => {
+		const { childProcess, emitSpawn, kill, once } = stubTsgo((callback) => {
 			captured = callback;
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		const guarded = runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 			spawnTimeout: 5,
 		}).catch((err: unknown) => err);
@@ -900,13 +961,18 @@ describe(runTypecheckAsync, () => {
 			vi.useRealTimers();
 		});
 
-		const { kill } = stubTsgo((callback) => {
+		const { childProcess, kill } = stubTsgo((callback) => {
 			callback(null, "", "");
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 			spawnTimeout: 5,
 		});
@@ -919,13 +985,18 @@ describe(runTypecheckAsync, () => {
 		expect.assertions(2);
 
 		const spawnFailure = Object.assign(new Error("spawn failed"), { code: "ENOENT" });
-		stubTsgo((callback) => {
+		const { childProcess } = stubTsgo((callback) => {
 			callback(spawnFailure, "", "");
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		const error: unknown = await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 		}).catch((err: unknown) => err);
 
@@ -937,18 +1008,13 @@ describe(runTypecheckAsync, () => {
 	it("should name the optional peer dependency when tsgo is not installed", async () => {
 		expect.assertions(1);
 
-		vi.mocked(createRequire).mockReturnValueOnce(
-			fromAny({
-				resolve: () => {
-					throw Object.assign(new Error("Cannot find module"), {
-						code: "MODULE_NOT_FOUND",
-					});
-				},
-			}),
-		);
+		function resolveModule(): string {
+			throw Object.assign(new Error("Cannot find module"), { code: "MODULE_NOT_FOUND" });
+		}
 
 		const error: unknown = await runTypecheckAsync({
 			files: ["src/test.spec.ts"],
+			resolveModule,
 			rootDir: "/project",
 		}).catch((err: unknown) => err);
 
@@ -967,17 +1033,14 @@ describe(runTypecheckAsync, () => {
 	it("should rethrow a resolution failure that is not a missing module", async () => {
 		expect.assertions(1);
 
-		vi.mocked(createRequire).mockReturnValueOnce(
-			fromAny({
-				resolve: () => {
-					throw Object.assign(new Error("permission denied"), { code: "EACCES" });
-				},
-			}),
-		);
+		function resolveModule(): string {
+			throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+		}
 
 		await expect(
 			runTypecheckAsync({
 				files: ["src/test.spec.ts"],
+				resolveModule,
 				rootDir: "/project",
 			}),
 		).rejects.toThrow("permission denied");
@@ -991,20 +1054,22 @@ describe(runTypecheckAsync, () => {
 		const rootDirectory = path.dirname(resolvedFile);
 		const relativePath = path.relative(rootDirectory, resolvedFile);
 
-		stubTsgo((callback) => {
+		const { childProcess } = stubTsgo((callback) => {
 			callback(
 				exitWith(2),
 				`${relativePath}(1,7): error TS2322: Type 'string' is not assignable to type 'number'.`,
 				"",
 			);
 		});
-		mockReadFileSync(
+		const fileSystem = readingFiles(
 			JSON.stringify({ compilerOptions: {} }),
 			'const x: number = "bad";\nit("should fail", () => {});',
 		);
 
 		const result = await runTypecheckAsync({
+			childProcess,
 			files: [filePath],
+			fileSystem,
 			rootDir: rootDirectory,
 		});
 
@@ -1019,20 +1084,22 @@ describe(runTypecheckAsync, () => {
 		const rootDirectory = path.dirname(resolvedFile);
 		const relativePath = path.relative(rootDirectory, resolvedFile);
 
-		stubTsgo((callback) => {
+		const { childProcess } = stubTsgo((callback) => {
 			callback(
 				exitWith(2),
 				"",
 				`${relativePath}(1,7): error TS2322: Type 'string' is not assignable to type 'number'.`,
 			);
 		});
-		mockReadFileSync(
+		const fileSystem = readingFiles(
 			JSON.stringify({ compilerOptions: {} }),
 			'const x: number = "bad";\nit("should fail", () => {});',
 		);
 
 		const result = await runTypecheckAsync({
+			childProcess,
 			files: [filePath],
+			fileSystem,
 			rootDir: rootDirectory,
 		});
 
@@ -1042,13 +1109,18 @@ describe(runTypecheckAsync, () => {
 	it("should treat a non-zero exit with empty output as success", async () => {
 		expect.assertions(1);
 
-		stubTsgo((callback) => {
+		const { childProcess } = stubTsgo((callback) => {
 			callback(exitWith(2), "", "");
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		const result = await runTypecheckAsync({
+			childProcess,
 			files: ["src/test.spec.ts"],
+			fileSystem,
 			rootDir: "/project",
 		});
 
@@ -1062,16 +1134,24 @@ describe(runTypecheckAsync, () => {
 		const resolvedFile = path.resolve(filePath);
 		const rootDirectory = path.dirname(resolvedFile);
 
-		stubTsgo((callback) => {
+		const { childProcess } = stubTsgo((callback) => {
 			callback(
 				exitWith(2),
 				"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
 				"",
 			);
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
-		const result = await runTypecheckAsync({ files: [filePath], rootDir: rootDirectory });
+		const result = await runTypecheckAsync({
+			childProcess,
+			files: [filePath],
+			fileSystem,
+			rootDir: rootDirectory,
+		});
 
 		const sourceResult = result.testResults.find((file) => file.testFilePath === "other.ts");
 
@@ -1086,17 +1166,22 @@ describe(runTypecheckAsync, () => {
 		const resolvedFile = path.resolve(filePath);
 		const rootDirectory = path.dirname(resolvedFile);
 
-		stubTsgo((callback) => {
+		const { childProcess } = stubTsgo((callback) => {
 			callback(
 				exitWith(2),
 				"other.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
 				"",
 			);
 		});
-		mockReadFileSync(JSON.stringify({ compilerOptions: {} }), 'it("should pass", () => {});');
+		const fileSystem = readingFiles(
+			JSON.stringify({ compilerOptions: {} }),
+			'it("should pass", () => {});',
+		);
 
 		const result = await runTypecheckAsync({
+			childProcess,
 			files: [filePath],
+			fileSystem,
 			ignoreSourceErrors: true,
 			rootDir: rootDirectory,
 		});

@@ -1,10 +1,11 @@
 import { isRojoTreeNode } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
-import { vol } from "memfs";
 import { assert } from "vitest";
 
 import type { RojoTreeNode } from "../../src/types/rojo.ts";
+import type { MemoryFileSystem } from "./memory-file-system.ts";
+import { createMemoryFileSystem } from "./memory-file-system.ts";
 
 /**
  * Where synthesis parks each package's tree, mirroring `STAGE_KEY` in
@@ -19,10 +20,13 @@ const STAGE_KEY = "__pkg_stage";
 /** A project a staging pass has rewritten and handed back as JSON. */
 export const stagedProjectSchema = type({ "[string]": "unknown", "tree": "object" });
 
-/** Resets the memfs volume and seeds it with the files a test needs. */
-export function seed(files: Record<string, string> = {}): void {
-	vol.reset();
-	vol.fromJSON(files);
+/**
+ * A volume of its own, holding the files a test needs.
+ *
+ * @param files - What the staging pass should find on disk.
+ */
+export function seed(files: Record<string, string> = {}): MemoryFileSystem {
+	return createMemoryFileSystem(files);
 }
 
 /** A wrapped project whose single stage holds `stage`. */

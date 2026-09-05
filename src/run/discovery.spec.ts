@@ -1,9 +1,7 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
-import { vol } from "memfs";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import {
@@ -13,10 +11,6 @@ import {
 	TYPE_TEST_PATTERN,
 } from "./discovery.ts";
 
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 vi.mock(import("../config/setup-resolver"));
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -27,12 +21,6 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 		testPathIgnorePatterns: [],
 		...overrides,
 	};
-}
-
-function resetVol(): void {
-	onTestFinished(() => {
-		vol.reset();
-	});
 }
 
 describe("tYPE_TEST_PATTERN", () => {
@@ -53,8 +41,10 @@ describe(discoverTestFiles, () => {
 	it("should return CLI files resolved against rootDir when provided", () => {
 		expect.assertions(1);
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		const config = makeConfig();
-		const result = discoverTestFiles(config, ["a.spec.ts", "sub/b.spec.ts"]);
+		const result = discoverTestFiles(config, ["a.spec.ts", "sub/b.spec.ts"], fileSystem);
 
 		expect(result).toStrictEqual({
 			files: [
@@ -68,11 +58,12 @@ describe(discoverTestFiles, () => {
 	it("should treat empty cliFiles as no override", () => {
 		expect.assertions(1);
 
-		resetVol();
-		vol.mkdirSync("/project", { recursive: true });
-		vol.writeFileSync("/project/a.spec.ts", "");
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.mkdirSync("/project", { recursive: true });
+		volume.writeFileSync("/project/a.spec.ts", "");
 		const config = makeConfig();
-		const result = discoverTestFiles(config, []);
+		const result = discoverTestFiles(config, [], fileSystem);
 
 		expect(result.files).toStrictEqual(["a.spec.ts"]);
 	});
@@ -80,13 +71,14 @@ describe(discoverTestFiles, () => {
 	it("should glob testMatch patterns under rootDir", () => {
 		expect.assertions(1);
 
-		resetVol();
-		vol.mkdirSync("/project/src", { recursive: true });
-		vol.writeFileSync("/project/src/a.spec.ts", "");
-		vol.writeFileSync("/project/src/b.spec.ts", "");
-		vol.writeFileSync("/project/src/c.test.ts", "");
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.mkdirSync("/project/src", { recursive: true });
+		volume.writeFileSync("/project/src/a.spec.ts", "");
+		volume.writeFileSync("/project/src/b.spec.ts", "");
+		volume.writeFileSync("/project/src/c.test.ts", "");
 		const config = makeConfig({ testMatch: ["**/*.spec.ts"] });
-		const result = discoverTestFiles(config);
+		const result = discoverTestFiles(config, undefined, fileSystem);
 
 		expect(result.files.toSorted()).toStrictEqual(["src/a.spec.ts", "src/b.spec.ts"]);
 	});
@@ -94,12 +86,13 @@ describe(discoverTestFiles, () => {
 	it("should exclude files matching testPathIgnorePatterns", () => {
 		expect.assertions(2);
 
-		resetVol();
-		vol.mkdirSync("/project/src", { recursive: true });
-		vol.writeFileSync("/project/src/a.spec.ts", "");
-		vol.writeFileSync("/project/src/skip.spec.ts", "");
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.mkdirSync("/project/src", { recursive: true });
+		volume.writeFileSync("/project/src/a.spec.ts", "");
+		volume.writeFileSync("/project/src/skip.spec.ts", "");
 		const config = makeConfig({ testPathIgnorePatterns: ["skip"] });
-		const result = discoverTestFiles(config);
+		const result = discoverTestFiles(config, undefined, fileSystem);
 
 		expect(result.files).toStrictEqual(["src/a.spec.ts"]);
 		expect(result.totalFiles).toBe(1);
@@ -108,12 +101,13 @@ describe(discoverTestFiles, () => {
 	it("should filter by testPathPattern when set", () => {
 		expect.assertions(2);
 
-		resetVol();
-		vol.mkdirSync("/project/src", { recursive: true });
-		vol.writeFileSync("/project/src/keep.spec.ts", "");
-		vol.writeFileSync("/project/src/other.spec.ts", "");
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.mkdirSync("/project/src", { recursive: true });
+		volume.writeFileSync("/project/src/keep.spec.ts", "");
+		volume.writeFileSync("/project/src/other.spec.ts", "");
 		const config = makeConfig({ testPathPattern: "keep" });
-		const result = discoverTestFiles(config);
+		const result = discoverTestFiles(config, undefined, fileSystem);
 
 		expect(result.files).toStrictEqual(["src/keep.spec.ts"]);
 		expect(result.totalFiles).toBe(2);
@@ -122,11 +116,12 @@ describe(discoverTestFiles, () => {
 	it("should dedupe overlapping testMatch matches", () => {
 		expect.assertions(1);
 
-		resetVol();
-		vol.mkdirSync("/project", { recursive: true });
-		vol.writeFileSync("/project/a.spec.ts", "");
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.mkdirSync("/project", { recursive: true });
+		volume.writeFileSync("/project/a.spec.ts", "");
 		const config = makeConfig({ testMatch: ["**/*.spec.ts", "*.spec.ts"] });
-		const result = discoverTestFiles(config);
+		const result = discoverTestFiles(config, undefined, fileSystem);
 
 		expect(result.files).toStrictEqual(["a.spec.ts"]);
 	});

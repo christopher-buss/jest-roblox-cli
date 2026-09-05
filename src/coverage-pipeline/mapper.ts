@@ -1,9 +1,10 @@
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 
 import assert from "node:assert";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { CoverageMap, SourceLocation } from "./coverage-map.ts";
 import { readCoverageMap } from "./coverage-map.ts";
 import type { CoverageManifest } from "./manifest.ts";
@@ -150,6 +151,7 @@ export class CoverageMapMalformedError extends Error {
 export function mapCoverageToTypeScript(
 	coverageData: RawCoverageData,
 	manifest: CoverageManifest,
+	fileSystem: FileSystem = nodeFileSystem,
 ): MappedCoverageResult {
 	const pendingStatements = new Map<string, FileStatements>();
 	const pendingFunctions = new Map<string, Array<PendingFunction>>();
@@ -162,7 +164,7 @@ export function mapCoverageToTypeScript(
 	for (const [fileKey, record] of Object.entries(manifest.files)) {
 		const fileCoverage = coverageData[fileKey] ?? { s: {} };
 
-		const resources = loadFileResources(record);
+		const resources = loadFileResources(fileSystem, record);
 		if (resources === undefined) {
 			continue;
 		}
@@ -189,8 +191,11 @@ export function mapCoverageToTypeScript(
 // --- Luau column → Istanbul column conversion ---
 // Luau columns are 1-based; Istanbul expects 0-based.
 
-function loadFileResources(record: CoverageManifest["files"][string]): FileResources | undefined {
-	const result = readCoverageMap(record.coverageMapPath);
+function loadFileResources(
+	fileSystem: FileSystem,
+	record: CoverageManifest["files"][string],
+): FileResources | undefined {
+	const result = readCoverageMap(record.coverageMapPath, fileSystem);
 	// File missing → silent skip (stale cache, will be regenerated).
 	// File present-but-unreadable → throw, so callers don't compute reports
 	// or enforce thresholds on incomplete data.
@@ -204,7 +209,7 @@ function loadFileResources(record: CoverageManifest["files"][string]): FileResou
 
 	let traceMap: TraceMap | undefined;
 	try {
-		const sourceMapRaw = fs.readFileSync(record.sourceMapPath, "utf-8");
+		const sourceMapRaw = fileSystem.readFileSync(record.sourceMapPath, "utf-8");
 		traceMap = new TraceMap(sourceMapRaw);
 	} catch {
 		// No source map — native Luau file, passthrough mode

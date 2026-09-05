@@ -1,7 +1,8 @@
 import { type } from "arktype";
-import * as fs from "node:fs";
 
 import { atomicWrite } from "../utils/atomic-write.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 
 export interface SourceLocation {
 	end: { column: number; line: number };
@@ -38,9 +39,14 @@ const coverageMapSchema = type({
  * declines to spend microseconds. A stray left here belongs to a tree the next
  * instrumentation run rebuilds.
  */
-export function writeCoverageMap(filePath: string, map: CoverageMap): void {
+export function writeCoverageMap(
+	filePath: string,
+	map: CoverageMap,
+	fileSystem: FileSystem = nodeFileSystem,
+): void {
 	atomicWrite({
 		contents: JSON.stringify(map, undefined, "\t"),
+		fileSystem,
 		sweepStrays: false,
 		targetPath: filePath,
 	});
@@ -53,10 +59,13 @@ export function writeCoverageMap(filePath: string, map: CoverageMap): void {
  * forces a second `existsSync` to recover the distinction, which races against
  * the read.
  */
-export function readCoverageMap(filePath: string): ReadCoverageMapResult {
+export function readCoverageMap(
+	filePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): ReadCoverageMapResult {
 	let contents: string;
 	try {
-		contents = fs.readFileSync(filePath, "utf-8");
+		contents = fileSystem.readFileSync(filePath, "utf-8");
 	} catch (err) {
 		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
 			return { kind: "missing" };

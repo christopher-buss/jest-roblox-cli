@@ -1,11 +1,9 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
 import { type } from "arktype";
-import { vol } from "memfs";
 import * as path from "node:path";
 import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import {
@@ -14,11 +12,6 @@ import {
 	toPosixRoot,
 } from "../utils/normalize-windows-path.ts";
 import { synthesize } from "./synthesizer.ts";
-
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 
 const ROOT = path.resolve("/repo");
 const FOO_DIR = path.join(ROOT, "packages/foo");
@@ -72,9 +65,7 @@ describe(synthesize, () => {
 	it("should nest a single package under ServerStorage.__pkg_stage.<name>", () => {
 		expect.assertions(3);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -86,6 +77,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -127,9 +119,7 @@ describe(synthesize, () => {
 	it("should hardcode LoadStringEnabled at synth root", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: { $className: "DataModel" },
@@ -137,6 +127,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -161,9 +152,7 @@ describe(synthesize, () => {
 	it("should drop $properties entirely when only service-only props remain", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -177,6 +166,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -202,9 +192,7 @@ describe(synthesize, () => {
 	it("should drop TestService-only $properties when rewriting to Folder", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -218,6 +206,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -238,9 +227,7 @@ describe(synthesize, () => {
 	it("should hoist a demoted service's $properties onto the real service", () => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -254,6 +241,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -285,9 +273,7 @@ describe(synthesize, () => {
 	it("should hoist properties rojo would reject on a Folder onto the real service", () => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -301,6 +287,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -323,9 +310,7 @@ describe(synthesize, () => {
 	it("should hoist DataModel root $properties onto the synthesized root", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: { $className: "DataModel", $properties: { Name: "renamed" } },
@@ -333,6 +318,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -348,9 +334,7 @@ describe(synthesize, () => {
 	it("should drop root $properties for a project whose root is not a place", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-model",
 				tree: { $className: "Model", $properties: { Name: "nowhere-to-go" } },
@@ -358,6 +342,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -373,9 +358,7 @@ describe(synthesize, () => {
 	it("should hoist a nested service's $properties onto a nested real service", () => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -392,6 +375,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -411,9 +395,7 @@ describe(synthesize, () => {
 	it("should demote a service outside the name set when it sits at the place root", () => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -427,6 +409,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -450,9 +433,7 @@ describe(synthesize, () => {
 	it("should add $className Folder to a bare node named after a service outside the set", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			// Rojo infers StarterGui from the name at the root; nested under
 			// __pkg_stage it would be rejected as missing required information.
 			[FOO_PROJECT]: projectJson({
@@ -466,6 +447,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -486,9 +468,7 @@ describe(synthesize, () => {
 	it("should leave $properties in place on a node that was never demoted", () => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -505,6 +485,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -532,10 +513,11 @@ describe(synthesize, () => {
 	it("should merge hoisted properties when packages agree on the value", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				tree: {
@@ -559,6 +541,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -582,10 +565,11 @@ describe(synthesize, () => {
 	it("should throw ConfigError when packages disagree on a hoisted property", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				tree: {
@@ -610,6 +594,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -637,9 +622,7 @@ describe(synthesize, () => {
 	it.for([{}, "not-an-object"])("should hoist nothing for $properties %o", (properties) => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -650,6 +633,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -671,9 +655,7 @@ describe(synthesize, () => {
 	it("should mark the stage when a package asks for non-legacy scripts", () => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				emitLegacyScripts: false,
@@ -682,6 +664,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -704,9 +687,7 @@ describe(synthesize, () => {
 	it("should leave the stage unmarked when a package asks for legacy scripts", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				emitLegacyScripts: true,
@@ -715,6 +696,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -734,13 +716,12 @@ describe(synthesize, () => {
 	it("should leave the stage unmarked when a package declares nothing", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({ name: "foo-test", tree: { $className: "DataModel" } }),
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -760,9 +741,7 @@ describe(synthesize, () => {
 	it("should keep a package's own $attributes when marking the stage", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				emitLegacyScripts: false,
@@ -771,6 +750,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -790,10 +770,11 @@ describe(synthesize, () => {
 	it("should carry globIgnorePaths when every declaring package agrees", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			// bar declares nothing, so it has no opinion and does not constrain
 			// foo.
 			[barProject]: projectJson({ name: "bar-test", tree: { $className: "DataModel" } }),
@@ -805,6 +786,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -828,13 +810,12 @@ describe(synthesize, () => {
 	it("should omit globIgnorePaths when no package declares any", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({ name: "foo-test", tree: { $className: "DataModel" } }),
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -850,9 +831,7 @@ describe(synthesize, () => {
 	it("should ignore non-string entries in a declared globIgnorePaths", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				globIgnorePaths: ["**/tsconfig.json", 42],
@@ -861,6 +840,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -876,10 +856,11 @@ describe(synthesize, () => {
 	it("should throw ConfigError when packages declare different globIgnorePaths", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				globIgnorePaths: ["**/out/**"],
@@ -894,6 +875,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -921,10 +903,11 @@ describe(synthesize, () => {
 	it("should accept the same globIgnorePaths listed in a different order", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				globIgnorePaths: ["**/*.cov-map.*", "**/tsconfig.json"],
@@ -938,6 +921,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -961,9 +945,7 @@ describe(synthesize, () => {
 	it("should name the hoisted service after the node when it declares no class", () => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			// Rojo infers Workspace from the node name at the root, so the class
 			// the hoisted service needs has to come from the name too.
 			[FOO_PROJECT]: projectJson({
@@ -976,6 +958,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -994,10 +977,11 @@ describe(synthesize, () => {
 	it("should label a root property conflict against DataModel", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				tree: { $className: "DataModel", $properties: { Name: "bar" } },
@@ -1010,6 +994,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -1029,9 +1014,7 @@ describe(synthesize, () => {
 	it("should merge hoisted properties into a service the synth root already declares", () => {
 		expect.assertions(2);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1045,6 +1028,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1065,9 +1049,7 @@ describe(synthesize, () => {
 	it("should recover a node whose $className is not a string", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1081,6 +1063,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1105,9 +1088,7 @@ describe(synthesize, () => {
 	it("should keep LoadStringEnabled on when a package declares it off", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1121,6 +1102,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1167,9 +1149,7 @@ describe(synthesize, () => {
 	])("should rewrite pinned class %s to Folder when nested", (serviceClass) => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1181,6 +1161,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1207,9 +1188,7 @@ describe(synthesize, () => {
 		([parent, pinned]) => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -1224,6 +1203,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -1249,9 +1229,7 @@ describe(synthesize, () => {
 	it("should add $className Folder to an implicit service node (no $className) when nested", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			// Rojo infers a service from the node name at the DataModel root, so
 			// ServerScriptService carries no $className here (Nevermore layout).
 			// Once relocated under __pkg_stage it needs an explicit one.
@@ -1268,6 +1246,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1293,9 +1272,7 @@ describe(synthesize, () => {
 	it("should not add $className to an implicit service node that already carries a $path", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			// A bare service node with $path and no $className: Rojo mounts the
 			// path, so the synthesizer must not override it with a Folder class.
 			[FOO_PROJECT]: projectJson({
@@ -1309,6 +1286,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1334,10 +1312,11 @@ describe(synthesize, () => {
 	it("should isolate per-package service roots even when packages claim the same service", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				tree: {
@@ -1357,6 +1336,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/bar",
@@ -1396,10 +1376,11 @@ describe(synthesize, () => {
 	it("should inject jest.config child at dataModelPath leaf for stubMounts", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1415,6 +1396,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1445,11 +1427,12 @@ describe(synthesize, () => {
 	it("should inject multiple stubMounts on a single package", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubA = path.join(ROOT, ".cache/foo/a/jest.config.luau");
+
 		const stubB = path.join(ROOT, ".cache/foo/b/jest.config.luau");
-		vol.fromJSON({
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1468,6 +1451,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1498,13 +1482,14 @@ describe(synthesize, () => {
 	it("should keep stubMounts isolated per package", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+
 		const barDirectory = path.join(ROOT, "packages/bar");
 		const stubFoo = path.join(ROOT, ".cache/foo/jest.config.luau");
 		const stubBar = path.join(ROOT, ".cache/bar/jest.config.luau");
-		vol.fromJSON({
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				tree: {
@@ -1532,6 +1517,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/bar",
@@ -1569,11 +1555,12 @@ describe(synthesize, () => {
 		(collidingFile) => {
 			expect.assertions(2);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
+
 			const sourceDirectory = path.join(FOO_DIR, "src");
-			vol.fromJSON({
+			volume.fromJSON({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -1591,6 +1578,7 @@ describe(synthesize, () => {
 
 			function callSynthesize(): string {
 				return synthesize({
+					fileSystem,
 					packages: [
 						{
 							name: "@halcyon/foo",
@@ -1617,11 +1605,12 @@ describe(synthesize, () => {
 	it("should not throw when leaf source dir contains unrelated files", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
+
 		const sourceDirectory = path.join(FOO_DIR, "src");
-		vol.fromJSON({
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1639,6 +1628,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			return synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -1656,9 +1646,7 @@ describe(synthesize, () => {
 	it("should throw ConfigError when stubMount dataModelPath does not resolve in the tree", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1671,6 +1659,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -1694,9 +1683,7 @@ describe(synthesize, () => {
 	it("should skip collision check when stubMount leaf has no $path", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1710,6 +1697,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1731,10 +1719,11 @@ describe(synthesize, () => {
 	it("should virtualize a $path-mounted parent to reach a stubMount child on disk", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1750,6 +1739,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1785,10 +1775,11 @@ describe(synthesize, () => {
 	it("should demote $path-mounted parent so rojo does not auto-mount duplicate siblings", () => {
 		expect.assertions(4);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1805,6 +1796,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1844,10 +1836,11 @@ describe(synthesize, () => {
 	it("should skip non-directory siblings during demotion", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1864,6 +1857,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1897,10 +1891,11 @@ describe(synthesize, () => {
 	it("should preserve existing explicit children during demotion", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1921,6 +1916,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -1956,9 +1952,7 @@ describe(synthesize, () => {
 	it("should throw ConfigError when virtualization target segment starts with $", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -1974,6 +1968,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -1994,10 +1989,11 @@ describe(synthesize, () => {
 	it("should skip dollar-prefixed disk siblings during demotion", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2014,6 +2010,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2047,10 +2044,11 @@ describe(synthesize, () => {
 	it("should virtualize multiple consecutive $path-mounted segments", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2066,6 +2064,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2101,9 +2100,7 @@ describe(synthesize, () => {
 	it("should throw ConfigError when virtualization parent has no $path", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2118,6 +2115,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -2138,9 +2136,7 @@ describe(synthesize, () => {
 	it("should throw ConfigError when virtualization target segment resolves to a file", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2156,6 +2152,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -2176,9 +2173,7 @@ describe(synthesize, () => {
 	it("should throw ConfigError when virtualization target segment is missing on disk", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2194,6 +2189,7 @@ describe(synthesize, () => {
 
 		expect(() => {
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -2214,13 +2210,14 @@ describe(synthesize, () => {
 	it("should propagate coverage shadow dir through a virtualized $path child", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const shadowOut = normalizeWindowsPath(
 			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out-test"),
 		);
+
 		const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
-		vol.fromJSON({
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2237,6 +2234,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2276,11 +2274,12 @@ describe(synthesize, () => {
 		(collidingFile) => {
 			expect.assertions(2);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const stubPath = path.join(ROOT, ".cache/foo/jest.config.luau");
+
 			const sourceDirectory = path.join(FOO_DIR, "out-test/src");
-			vol.fromJSON({
+			volume.fromJSON({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2298,6 +2297,7 @@ describe(synthesize, () => {
 
 			function callSynthesize(): string {
 				return synthesize({
+					fileSystem,
 					packages: [
 						{
 							name: "@halcyon/foo",
@@ -2324,9 +2324,7 @@ describe(synthesize, () => {
 	it("should produce identical output to a stubMounts-less descriptor when stubMounts is an empty array", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2338,6 +2336,7 @@ describe(synthesize, () => {
 		});
 
 		const baseline = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2347,6 +2346,7 @@ describe(synthesize, () => {
 			],
 		});
 		const withEmpty = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2363,12 +2363,13 @@ describe(synthesize, () => {
 	it("should swap $path to the per-package coverage shadow dir when coverageRoots is set", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const shadowOut = normalizeWindowsPath(
 			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
 		);
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2380,6 +2381,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2407,13 +2409,14 @@ describe(synthesize, () => {
 	it("should leave $path untouched for packages that opt out of coverageRoots", () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+
 		const fooShadow = normalizeWindowsPath(
 			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
 		);
-		vol.fromJSON({
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				tree: {
@@ -2433,6 +2436,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/bar",
@@ -2475,12 +2479,13 @@ describe(synthesize, () => {
 	it("should pass nested $path entries through the coverage shadow dir prefix", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const shadowOut = normalizeWindowsPath(
 			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
 		);
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2492,6 +2497,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2519,12 +2525,13 @@ describe(synthesize, () => {
 	it("should normalize trailing slashes on $path before matching coverageRoots", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const shadowOut = normalizeWindowsPath(
 			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
 		);
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2536,6 +2543,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2564,12 +2572,13 @@ describe(synthesize, () => {
 	it("should leave $path entries that don't match any coverageRoot using package-relative resolution", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const shadowOut = normalizeWindowsPath(
 			path.join(ROOT, ".jest-roblox/workspace/@halcyon-foo/coverage/out"),
 		);
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: {
@@ -2581,6 +2590,7 @@ describe(synthesize, () => {
 		});
 
 		const result = synthesize({
+			fileSystem,
 			packages: [
 				{
 					name: "@halcyon/foo",
@@ -2608,10 +2618,11 @@ describe(synthesize, () => {
 	it("should be byte-stable regardless of input package ordering", () => {
 		expect.assertions(1);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const barProject = path.join(ROOT, "packages/bar/test.project.json");
-		vol.fromJSON({
+
+		volume.fromJSON({
 			[barProject]: projectJson({
 				name: "bar-test",
 				tree: { $className: "DataModel" },
@@ -2623,12 +2634,14 @@ describe(synthesize, () => {
 		});
 
 		const ordered = synthesize({
+			fileSystem,
 			packages: [
 				{ name: "@halcyon/bar", packageDirectory: ROOT, rojoProjectPath: barProject },
 				{ name: "@halcyon/foo", packageDirectory: ROOT, rojoProjectPath: FOO_PROJECT },
 			],
 		});
 		const reversed = synthesize({
+			fileSystem,
 			packages: [
 				{ name: "@halcyon/foo", packageDirectory: ROOT, rojoProjectPath: FOO_PROJECT },
 				{ name: "@halcyon/bar", packageDirectory: ROOT, rojoProjectPath: barProject },
@@ -2641,9 +2654,7 @@ describe(synthesize, () => {
 	it("should stamp the place content id in wrap mode too", () => {
 		expect.assertions(1);
 
-		vol.reset();
-
-		vol.fromJSON({
+		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
 				name: "foo-test",
 				tree: { $className: "DataModel" },
@@ -2652,6 +2663,7 @@ describe(synthesize, () => {
 
 		const result = synthesize({
 			contentId: "deadbeef",
+			fileSystem,
 			packages: [
 				{ name: "@halcyon/foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT },
 			],
@@ -2666,9 +2678,7 @@ describe(synthesize, () => {
 		it("should return the package's project tree without ServerStorage.__pkg_stage wrap", () => {
 			expect.assertions(2);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2680,6 +2690,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -2699,9 +2710,7 @@ describe(synthesize, () => {
 		it("should inject ServerScriptService.LoadStringEnabled when loadStringEnabled is set", () => {
 			expect.assertions(2);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2713,6 +2722,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				loadStringEnabled: true,
 				packages: [
 					{
@@ -2734,9 +2744,7 @@ describe(synthesize, () => {
 		it("should merge LoadStringEnabled into an existing ServerScriptService, keeping its $path and props", () => {
 			expect.assertions(3);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2752,6 +2760,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				loadStringEnabled: true,
 				packages: [
 					{
@@ -2774,9 +2783,7 @@ describe(synthesize, () => {
 		it("should stamp the place content id where a booted task can read it", () => {
 			expect.assertions(2);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2789,6 +2796,7 @@ describe(synthesize, () => {
 
 			const result = synthesize({
 				contentId: "deadbeef",
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -2812,9 +2820,7 @@ describe(synthesize, () => {
 		it("should stamp into a ReplicatedStorage the project never declared", () => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: { $className: "DataModel" },
@@ -2823,6 +2829,7 @@ describe(synthesize, () => {
 
 			const result = synthesize({
 				contentId: "deadbeef",
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -2841,8 +2848,7 @@ describe(synthesize, () => {
 		it("should give an implicit existing ServerScriptService its canonical class", () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2853,6 +2859,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				loadStringEnabled: true,
 				packages: [
 					{
@@ -2874,9 +2881,7 @@ describe(synthesize, () => {
 			// treat null as a record and `Object.entries(null)` would throw.
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2892,6 +2897,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				loadStringEnabled: true,
 				packages: [
 					{
@@ -2913,9 +2919,7 @@ describe(synthesize, () => {
 		it("should not inject ServerScriptService when loadStringEnabled is unset", () => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2927,6 +2931,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -2945,9 +2950,7 @@ describe(synthesize, () => {
 		it("should preserve all top-level project fields (gameId, placeId, globIgnorePaths, servePort, name)", () => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					gameId: 99,
@@ -2959,6 +2962,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -2981,9 +2985,7 @@ describe(synthesize, () => {
 		it("should absolutize $path entries against path.dirname(rojoProjectPath)", () => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -2995,6 +2997,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3015,10 +3018,11 @@ describe(synthesize, () => {
 		it("should redirect $path entries under coverageRoots[].luauRoot to the shadow directory", () => {
 			expect.assertions(1);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src");
-			vol.fromJSON({
+
+			volume.fromJSON({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3030,6 +3034,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3053,11 +3058,12 @@ describe(synthesize, () => {
 		it("should redirect coverageRoots[].luauRoot resolved against packageDirectory when rojoProject sits in a subdirectory", () => {
 			expect.assertions(1);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const subProject = path.join(FOO_DIR, "config/dev.project.json");
+
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/out");
-			vol.fromJSON({
+			volume.fromJSON({
 				[path.join(FOO_DIR, "out/init.luau")]: "",
 				[subProject]: projectJson({
 					name: "foo-test",
@@ -3069,6 +3075,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3094,11 +3101,12 @@ describe(synthesize, () => {
 		it("should redirect coverageRoots[].luauRoot resolved against packageDirectory when rojoProject sits in a subdirectory", () => {
 			expect.assertions(1);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const subProject = path.join(FOO_DIR, "config/dev.project.json");
+
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/out");
-			vol.fromJSON({
+			volume.fromJSON({
 				[path.join(FOO_DIR, "out/init.luau")]: "",
 				[subProject]: projectJson({
 					name: "foo-test",
@@ -3110,6 +3118,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3140,10 +3149,11 @@ describe(synthesize, () => {
 		it("should not warn about a coverage root the mount above it can be demoted onto", () => {
 			expect.assertions(2);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src/server");
-			vol.fromJSON({
+
+			volume.fromJSON({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3157,6 +3167,7 @@ describe(synthesize, () => {
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3184,10 +3195,11 @@ describe(synthesize, () => {
 		it("should stay silent when every coverage root backs a $path mount", () => {
 			expect.assertions(1);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src");
-			vol.fromJSON({
+
+			volume.fromJSON({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3200,6 +3212,7 @@ describe(synthesize, () => {
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3219,9 +3232,7 @@ describe(synthesize, () => {
 		it("should warn once per unreachable root in wrap mode", () => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3231,9 +3242,11 @@ describe(synthesize, () => {
 				}),
 				[path.join(FOO_DIR, "src/init.luau")]: "",
 			});
+
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3279,10 +3292,11 @@ describe(synthesize, () => {
 		it("should resolve nested .project.json mounts in no-wrap mode", () => {
 			expect.assertions(1);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const nestedProject = path.join(FOO_DIR, "nested.project.json");
-			vol.fromJSON({
+
+			volume.fromJSON({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3304,6 +3318,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3324,10 +3339,11 @@ describe(synthesize, () => {
 		it("should throw ConfigError when wrap=false with more than one package", () => {
 			expect.assertions(1);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const barProject = path.join(ROOT, "packages/bar/test.project.json");
-			vol.fromJSON({
+
+			volume.fromJSON({
 				[barProject]: projectJson({
 					name: "bar-test",
 					tree: { $className: "DataModel" },
@@ -3340,6 +3356,7 @@ describe(synthesize, () => {
 
 			expect(() => {
 				return synthesize({
+					fileSystem,
 					packages: [
 						{
 							name: "@halcyon/foo",
@@ -3363,9 +3380,7 @@ describe(synthesize, () => {
 		it("should produce a place-ready synthesized project for multi-project + open-cloud shape", () => {
 			expect.assertions(5);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "user-game",
 					gameId: 4242,
@@ -3391,6 +3406,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@user/game",
@@ -3440,9 +3456,7 @@ describe(synthesize, () => {
 		it("should error when user's project tree already declares a jest.config named child at the leaf", () => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3461,6 +3475,7 @@ describe(synthesize, () => {
 
 			expect(() => {
 				return synthesize({
+					fileSystem,
 					packages: [
 						{
 							name: "@halcyon/foo",
@@ -3493,9 +3508,7 @@ describe(synthesize, () => {
 		it("should preserve arbitrary unknown top-level keys and nested unknown fields through stub injection", () => {
 			expect.assertions(4);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					myFutureRojoField: { nested: { deeply: ["a", "b"] } },
@@ -3515,6 +3528,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3557,11 +3571,12 @@ describe(synthesize, () => {
 		it("should demote the containing mount onto the spine and hang the root off it", () => {
 			expect.assertions(4);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src/server");
+
 			const spineDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src");
-			vol.fromJSON({
+			volume.fromJSON({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3576,6 +3591,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3607,9 +3623,7 @@ describe(synthesize, () => {
 		it("should promote directories and nothing else", () => {
 			expect.assertions(2);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3623,6 +3637,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3656,9 +3671,7 @@ describe(synthesize, () => {
 		it("should stay silent about a root the spine reaches", () => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3668,9 +3681,11 @@ describe(synthesize, () => {
 				}),
 				[path.join(FOO_DIR, "src/server/init.luau")]: "",
 			});
+
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3699,10 +3714,11 @@ describe(synthesize, () => {
 		it("should carry the demote down every level of the spine", () => {
 			expect.assertions(3);
 
-			vol.reset();
+			const { fileSystem, volume } = createMemoryFileSystem();
 
 			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src/modules/ecs");
-			vol.fromJSON({
+
+			volume.fromJSON({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3715,6 +3731,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",
@@ -3760,9 +3777,7 @@ describe(synthesize, () => {
 		it("should leave a directory the project already declares to the project", () => {
 			expect.assertions(1);
 
-			vol.reset();
-
-			vol.fromJSON({
+			const { fileSystem } = createMemoryFileSystem({
 				[FOO_PROJECT]: projectJson({
 					name: "foo-test",
 					tree: {
@@ -3779,6 +3794,7 @@ describe(synthesize, () => {
 			});
 
 			const result = synthesize({
+				fileSystem,
 				packages: [
 					{
 						name: "@halcyon/foo",

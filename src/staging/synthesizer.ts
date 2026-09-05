@@ -1,7 +1,6 @@
 import { PLACE_CONTENT_ID_NAME, PLACE_CONTENT_ID_SERVICE } from "@isentinel/roblox-runner";
 import { loadRojoProject, resolveMountPath } from "@isentinel/rojo-utils";
 
-import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 
@@ -13,6 +12,8 @@ import {
 	unreachableRootWarning,
 } from "../coverage-pipeline/root-reachability.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 import { STAGE_KEY } from "./stage.ts";
@@ -93,6 +94,8 @@ interface SynthesizeInput {
 	 * carries no identity beyond its version.
 	 */
 	contentId?: string | undefined;
+	/** Where the tree is probed. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * Force `ServerScriptService.LoadStringEnabled = true` on the synthesized
 	 * place. The wrap (workspace) path always sets it; this flag is for the
@@ -130,6 +133,7 @@ type JsonStringifyValue =
 interface AbsolutizeOptions {
 	/** Each `luauRoot` made absolute, so the walk resolves it once. */
 	coverageRoots: Array<CoverageRoot> | undefined;
+	fileSystem: FileSystem;
 	/**
 	 * Absolute spine directory, by the absolute source directory it stands
 	 * in for.
@@ -177,17 +181,24 @@ interface TransformEntry {
 	value: RojoTreeNode[string];
 }
 
+/** The tree a package is staged into, and what reads the package off disk. */
+interface StagingTarget {
+	fileSystem: FileSystem;
+	stage: RojoTreeNode;
+}
+
 export function synthesize(input: SynthesizeInput): string {
 	if (input.wrap === false) {
 		return synthesizeNoWrap(input);
 	}
 
+	const { fileSystem = nodeFileSystem } = input;
 	const stage: RojoTreeNode = { $className: "Folder" };
 	const hoists: Array<PackageHoist> = [];
 	const globs: Array<DeclaredGlobs> = [];
 
 	for (const descriptor of input.packages) {
-		stagePackage(descriptor, stage, hoists, globs);
+		stagePackage({ fileSystem, stage }, descriptor, hoists, globs);
 	}
 
 	const tree: RojoTreeNode = {
@@ -322,17 +333,26 @@ function absolutizePaths(
 }
 
 /** Both the wrap and no-wrap paths absolutize a package's tree through here. */
-function absolutizePackagePaths(node: RojoTreeNode, descriptor: PackageDescriptor): RojoTreeNode {
+function absolutizePackagePaths(
+	fileSystem: FileSystem,
+	node: RojoTreeNode,
+	descriptor: PackageDescriptor,
+): RojoTreeNode {
 	// Before the walk, while every `$path` still reads as the project wrote it.
 	warnUnreachableCoverageRoots(descriptor, node);
 	return absolutizePaths(node, path.dirname(descriptor.rojoProjectPath), {
 		coverageRoots: resolveCoverageRoots(descriptor.packageDirectory, descriptor.coverageRoots),
+		fileSystem,
 		spine: resolveSpine(descriptor),
 	});
 }
 
-function demoteAutoMountToExplicit(parent: RojoTreeNode, parentPath: string): void {
-	const entries = fs.readdirSync(parentPath, { withFileTypes: true });
+function demoteAutoMountToExplicit(
+	fileSystem: FileSystem,
+	parent: RojoTreeNode,
+	parentPath: string,
+): void {
+	const entries = fileSystem.readdirSync(parentPath, { withFileTypes: true });
 	for (const entry of entries) {
 		if (entry.name.startsWith("$")) {
 			continue;
@@ -359,14 +379,18 @@ function demoteAutoMountToExplicit(parent: RojoTreeNode, parentPath: string): vo
 	parent.$className ??= "Folder";
 }
 
-function virtualizePathChild(parent: RojoTreeNode, segment: string): RojoTreeNode | undefined {
+function virtualizePathChild(
+	fileSystem: FileSystem,
+	parent: RojoTreeNode,
+	segment: string,
+): RojoTreeNode | undefined {
 	const parentPath = parent.$path;
 	if (typeof parentPath !== "string") {
 		return undefined;
 	}
 
 	const childPath = path.posix.join(parentPath, segment);
-	const stat = fs.statSync(childPath, { throwIfNoEntry: false });
+	const stat = fileSystem.statSync(childPath, { throwIfNoEntry: false });
 	if (stat?.isDirectory() !== true) {
 		return undefined;
 	}
@@ -380,18 +404,22 @@ function virtualizePathChild(parent: RojoTreeNode, segment: string): RojoTreeNod
 	// `$path`. The result is the same set of Instances rojo would have built
 	// from the auto-mount, but each child is now reachable by the synthesizer
 	// for stub injection.
-	demoteAutoMountToExplicit(parent, parentPath);
+	demoteAutoMountToExplicit(fileSystem, parent, parentPath);
 
 	const child = parent[segment];
 	return isTreeNode(child) ? child : undefined;
 }
 
-function walkToLeaf(root: RojoTreeNode, dataModelPath: string): RojoTreeNode {
+function walkToLeaf(
+	fileSystem: FileSystem,
+	root: RojoTreeNode,
+	dataModelPath: string,
+): RojoTreeNode {
 	let cursor = root;
 	for (const segment of dataModelPath.split("/")) {
 		let next = cursor[segment];
 		if (!isTreeNode(next)) {
-			const virtualized = virtualizePathChild(cursor, segment);
+			const virtualized = virtualizePathChild(fileSystem, cursor, segment);
 			if (virtualized !== undefined) {
 				cursor[segment] = virtualized;
 				next = virtualized;
@@ -410,17 +438,21 @@ function walkToLeaf(root: RojoTreeNode, dataModelPath: string): RojoTreeNode {
 	return cursor;
 }
 
-function assertNoSourceCollision(leaf: RojoTreeNode, dataModelPath: string): void {
+function assertNoSourceCollision(
+	fileSystem: FileSystem,
+	leaf: RojoTreeNode,
+	dataModelPath: string,
+): void {
 	const leafPath = leaf.$path;
 	if (typeof leafPath !== "string") {
 		return;
 	}
 
 	for (const candidate of COLLIDING_SOURCE_FILES) {
-		// `fs.existsSync` needs the OS-native path; only the rojo $path
+		// `fileSystem.existsSync` needs the OS-native path; only the rojo $path
 		// injection further down needs POSIX normalization.
 		const sourceFile = path.join(leafPath, candidate);
-		if (fs.existsSync(sourceFile)) {
+		if (fileSystem.existsSync(sourceFile)) {
 			throw new ConfigError(
 				`stubMount at "${dataModelPath}" would collide with existing source file "${normalizeWindowsPath(sourceFile)}" (rojo silently duplicates jest.config children)`,
 			);
@@ -428,14 +460,18 @@ function assertNoSourceCollision(leaf: RojoTreeNode, dataModelPath: string): voi
 	}
 }
 
-function injectStubMounts(root: RojoTreeNode, stubMounts: Array<StubMount> | undefined): void {
+function injectStubMounts(
+	fileSystem: FileSystem,
+	root: RojoTreeNode,
+	stubMounts: Array<StubMount> | undefined,
+): void {
 	if (!stubMounts) {
 		return;
 	}
 
 	for (const mount of stubMounts) {
-		const leaf = walkToLeaf(root, mount.dataModelPath);
-		assertNoSourceCollision(leaf, mount.dataModelPath);
+		const leaf = walkToLeaf(fileSystem, root, mount.dataModelPath);
+		assertNoSourceCollision(fileSystem, leaf, mount.dataModelPath);
 		// Structural collision: the user's project tree already declares a
 		// `jest.config` named-child at this leaf (e.g. they mounted a
 		// config explicitly via `$path`). Refusing to overwrite catches
@@ -532,16 +568,16 @@ function markRunContextScripts(root: RojoTreeNode, raw: JSONObject): void {
 }
 
 function stagePackage(
+	{ fileSystem, stage }: StagingTarget,
 	descriptor: PackageDescriptor,
-	stage: RojoTreeNode,
 	hoists: Array<PackageHoist>,
 	globs: Array<DeclaredGlobs>,
 ): void {
-	const project = loadRojoProject(descriptor.rojoProjectPath);
+	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
 	const services: Array<HoistedService> = [];
 	const folder = transformToFolder(project.tree, services);
-	const root = absolutizePackagePaths(folder, descriptor);
-	injectStubMounts(root, descriptor.stubMounts);
+	const root = absolutizePackagePaths(fileSystem, folder, descriptor);
+	injectStubMounts(fileSystem, root, descriptor.stubMounts);
 	markRunContextScripts(root, project.raw);
 	stage[descriptor.name] = root;
 	hoists.push({ packageName: descriptor.name, services });
@@ -661,6 +697,7 @@ function stampPlaceContentId(tree: RojoTreeNode, contentId: string | undefined):
 
 function synthesizeNoWrap({
 	contentId,
+	fileSystem = nodeFileSystem,
 	loadStringEnabled = false,
 	packages,
 }: SynthesizeInput): string {
@@ -672,12 +709,12 @@ function synthesizeNoWrap({
 
 	// eslint-disable-next-line ts/no-non-null-assertion -- length-1 invariant
 	const descriptor = packages[0]!;
-	const project = loadRojoProject(descriptor.rojoProjectPath);
-	const tree = absolutizePackagePaths(project.tree, descriptor);
+	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
+	const tree = absolutizePackagePaths(fileSystem, project.tree, descriptor);
 
 	// Inject in no-wrap mode too so single-package callers (multi-project +
 	// open-cloud) share the same `$path` named-child mounting workspace uses.
-	injectStubMounts(tree, descriptor.stubMounts);
+	injectStubMounts(fileSystem, tree, descriptor.stubMounts);
 
 	if (loadStringEnabled) {
 		enableLoadString(tree);
@@ -830,7 +867,7 @@ function demoteToSpine(
 	}
 
 	node.$path = spineDirectory;
-	const entries = fs.readdirSync(absoluteTarget, { withFileTypes: true });
+	const entries = options.fileSystem.readdirSync(absoluteTarget, { withFileTypes: true });
 	for (const entry of entries) {
 		// A dollar-prefixed disk entry collides with rojo's own reserved keys,
 		// the same reason `demoteAutoMountToExplicit` passes over one.

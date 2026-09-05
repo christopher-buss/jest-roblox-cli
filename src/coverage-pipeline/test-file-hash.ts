@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
-
 import type { SourceMapper } from "../source-mapper/index.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashFile } from "../utils/hash.ts";
 
 /**
@@ -12,7 +12,10 @@ import { hashFile } from "../utils/hash.ts";
 export function resolveTestFileHash(
 	sourceMapper: Pick<SourceMapper, "resolveTestFilePath"> | undefined,
 	testFilePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
 ): string | undefined {
 	const diskPath = sourceMapper?.resolveTestFilePath(testFilePath);
-	return diskPath !== undefined && existsSync(diskPath) ? hashFile(diskPath) : undefined;
+	return diskPath !== undefined && fileSystem.existsSync(diskPath)
+		? hashFile(diskPath, fileSystem)
+		: undefined;
 }

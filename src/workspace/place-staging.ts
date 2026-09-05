@@ -8,6 +8,8 @@ import { describePlaceFile } from "../progress/stages.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { prepareWorkspaceCoverageMap } from "./coverage-attach.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import { stageWorkspaceStubs } from "./stub-staging.ts";
@@ -52,12 +54,15 @@ export interface StagedWorkspacePlace {
  */
 export async function stageWorkspacePlaceAsync({
 	cacheDirectory,
+	fileSystem = nodeFileSystem,
 	loaded,
 	selection,
 	timing,
 	workspaceRoot,
 }: {
 	cacheDirectory: string;
+	/** Where staging reads and writes. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	loaded: Array<LoadedPackage>;
 	selection: WorkspaceTestSelection;
 	timing: TimingCollector;
@@ -66,6 +71,7 @@ export async function stageWorkspacePlaceAsync({
 	const { filteredContexts: contexts, pending } = selection;
 	const { elapsedMs: coverageMs, value: coverageByPackage } = prepareWorkspaceCoverageMap({
 		contexts,
+		fileSystem,
 		loaded,
 		pending,
 		timing,
@@ -75,6 +81,7 @@ export async function stageWorkspacePlaceAsync({
 	const { elapsedMs: stubsMs, value: descriptors } = stageWorkspaceStubs({
 		contexts,
 		coverageByPackage,
+		fileSystem,
 		pending,
 		timing,
 	});
@@ -83,6 +90,7 @@ export async function stageWorkspacePlaceAsync({
 		cacheDirectory,
 		coverageByPackage,
 		descriptors,
+		fileSystem,
 		placeFile,
 		timing,
 	});
@@ -95,12 +103,14 @@ async function buildWorkspacePlaceAsync({
 	cacheDirectory,
 	coverageByPackage,
 	descriptors,
+	fileSystem,
 	placeFile,
 	timing,
 }: {
 	cacheDirectory: string;
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
 	descriptors: Array<PackageDescriptor>;
+	fileSystem: FileSystem;
 	placeFile: string;
 	timing: TimingCollector;
 }): Promise<number> {
@@ -109,6 +119,7 @@ async function buildWorkspacePlaceAsync({
 		"rojoBuild",
 		async () => {
 			const built = await buildPlaceAsync({
+				fileSystem,
 				packages: descriptors,
 				placeFile,
 				projectFile: path.join(cacheDirectory, SYNTHESIZED_PROJECT_FILE),

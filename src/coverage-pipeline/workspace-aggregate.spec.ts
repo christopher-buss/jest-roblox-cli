@@ -1,8 +1,5 @@
-import { fromAny } from "@total-typescript/shoehorn";
-
-import { vol } from "memfs";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { CoverageManifest } from "./manifest.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";
@@ -10,10 +7,6 @@ import type { MappedFileCoverage } from "./mapper.ts";
 import type { RawCoverageData } from "./types.ts";
 import { aggregateWorkspaceCoverage } from "./workspace-aggregate.ts";
 
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
 vi.mock(import("./mapper.ts"));
 
 /**
@@ -50,11 +43,8 @@ describe(aggregateWorkspaceCoverage, () => {
 	it("should call mapCoverageToTypeScript once per package with that package's manifest", async () => {
 		expect.assertions(3);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
 		const fooManifest = manifestStub();
+
 		const barManifest = manifestStub();
 		const fooCoverage: RawCoverageData = { "foo.luau": { s: { "1": 3 } } };
 		const barCoverage: RawCoverageData = { "bar.luau": { s: { "1": 5 } } };
@@ -86,11 +76,8 @@ describe(aggregateWorkspaceCoverage, () => {
 	it("should keep each package's mapped files on its own universe", async () => {
 		expect.assertions(2);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
 		const { mapCoverageToTypeScript } = await import("./mapper.ts");
+
 		const mapped = vi.mocked(mapCoverageToTypeScript);
 
 		mapped.mockImplementation((coverage) => {
@@ -140,11 +127,8 @@ describe(aggregateWorkspaceCoverage, () => {
 	it("should skip packages whose coverageData is undefined", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
 		const { mapCoverageToTypeScript } = await import("./mapper.ts");
+
 		const mapped = vi.mocked(mapCoverageToTypeScript);
 		mapped.mockReturnValue({ files: {} });
 
@@ -163,21 +147,14 @@ describe(aggregateWorkspaceCoverage, () => {
 	it("should be a no-op when given no packages", () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
 		expect(aggregateWorkspaceCoverage([])).toStrictEqual([]);
 	});
 
 	it("should drop files matching that package's own ignore patterns only", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
 		const { mapCoverageToTypeScript } = await import("./mapper.ts");
+
 		const mapped = vi.mocked(mapCoverageToTypeScript);
 		mapped.mockImplementation((coverage) => {
 			const stem = Object.keys(coverage)[0]!.replace(/\.luau$/, "");
@@ -227,14 +204,11 @@ describe(aggregateWorkspaceCoverage, () => {
 	it("should narrow a package to its own collectCoverageFrom globs", async () => {
 		expect.assertions(1);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
 		// The mapper keys a workspace package's files on absolute paths under
 		// the package, and `src/**/*.ts` in that package's config names its own
 		// sources — so the package's own rootDir is what makes the glob land.
 		const keep = path.join(PACKAGE_ROOT, "src/keep.ts");
+
 		const drop = path.join(PACKAGE_ROOT, "tools/drop.ts");
 
 		const { mapCoverageToTypeScript } = await import("./mapper.ts");
@@ -261,11 +235,8 @@ describe(aggregateWorkspaceCoverage, () => {
 	it("should skip a package with no coverageData when listing universes", async () => {
 		expect.assertions(3);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
 		const { mapCoverageToTypeScript } = await import("./mapper.ts");
+
 		const mapped = vi.mocked(mapCoverageToTypeScript);
 		mapped.mockImplementation((coverage) => {
 			const stem = Object.keys(coverage)[0]!.replace(/\.luau$/, "");
@@ -319,11 +290,8 @@ describe(aggregateWorkspaceCoverage, () => {
 	it("should keep mapper outputs disjoint when packages map to the same TS file", async () => {
 		expect.assertions(2);
 
-		onTestFinished(() => {
-			vol.reset();
-		});
-
 		const { mapCoverageToTypeScript } = await import("./mapper.ts");
+
 		const mapped = vi.mocked(mapCoverageToTypeScript);
 
 		// Both packages map to "shared.ts" from different sources. Keeping the

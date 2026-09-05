@@ -1,6 +1,8 @@
 import { type } from "arktype";
 
 import { atomicWrite } from "../utils/atomic-write.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { ParsedManifest } from "./manifest-parse.ts";
 import { parseVersionedManifest } from "./manifest-parse.ts";
 
@@ -174,10 +176,21 @@ export const manifestSchema: type<CoverageManifest> = type({
 	"version": type.unit(MANIFEST_VERSION),
 }).as<CoverageManifest>();
 
-export function writeManifest(filePath: string, manifest: CoverageManifest): void {
-	atomicWrite({ contents: JSON.stringify(manifest, undefined, "\t"), targetPath: filePath });
+export function writeManifest(
+	filePath: string,
+	manifest: CoverageManifest,
+	fileSystem: FileSystem = nodeFileSystem,
+): void {
+	atomicWrite({
+		contents: JSON.stringify(manifest, undefined, "\t"),
+		fileSystem,
+		targetPath: filePath,
+	});
 }
 
-export function readManifest(filePath: string): ReadManifestResult {
-	return parseVersionedManifest(filePath, manifestSchema, MANIFEST_VERSION);
+export function readManifest(
+	filePath: string,
+	fileSystem: FileSystem = nodeFileSystem,
+): ReadManifestResult {
+	return parseVersionedManifest(filePath, manifestSchema, MANIFEST_VERSION, fileSystem);
 }

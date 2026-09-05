@@ -1,7 +1,6 @@
 import { collectPaths, loadRojoProject, resolveNestedProjects } from "@isentinel/rojo-utils";
 
 import * as crypto from "node:crypto";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import picomatch from "picomatch";
@@ -10,6 +9,8 @@ import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "../timing/orchestration-collector.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { atomicWrite } from "../utils/atomic-write.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestArtifact } from "./build-manifest.ts";
@@ -125,6 +126,8 @@ export interface WorkspacePackageCoverage {
 }
 
 export interface PrepareWorkspaceCoverageOptions {
+	/** Where the shadows are built. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	packages: Array<WorkspacePackageDescriptor>;
 	/**
 	 * Orchestration profiler; records the coverage sub-phases per instrumented
@@ -159,6 +162,7 @@ interface PackageIncrementalOptions {
 	/** Digest of this package's copy-ignore list, for the incremental gate. */
 	copyIgnoreHash: string;
 	descriptor: WorkspacePackageDescriptor;
+	fileSystem: FileSystem;
 	luauRoots: Array<PosixRoot>;
 	/** Each mount with the roots the universe narrowed it to. */
 	narrowed: Array<NarrowedMount>;
@@ -184,6 +188,7 @@ interface InstrumentedPackage {
 /** What narrowing one package's roots reads. */
 interface NarrowPackageOptions {
 	descriptor: WorkspacePackageDescriptor;
+	fileSystem: FileSystem;
 	ignore: PackageIgnore;
 	universe: InstrumentUniverse | undefined;
 }
@@ -191,6 +196,7 @@ interface NarrowPackageOptions {
 /** What one package's instrumentation pass resolves for itself. */
 interface InstrumentPackageInputs {
 	descriptor: WorkspacePackageDescriptor;
+	fileSystem: FileSystem;
 	ignore: PackageIgnore;
 	manifestPath: string;
 	packageShadowRoot: string;
@@ -201,6 +207,7 @@ interface InstrumentPackageInputs {
 /** What every root-discovery pass over one package reads. */
 interface DiscoverRootsOptions {
 	descriptor: WorkspacePackageDescriptor;
+	fileSystem: FileSystem;
 	matchesIgnored: (filePath: string) => boolean;
 	/** The package's rojo tree, nested projects already inlined. */
 	tree: RojoTreeNode;
@@ -218,6 +225,7 @@ interface RootCheck {
 /** One package's manifest write, after its roots are instrumented. */
 interface WritePackageManifestOptions {
 	copyIgnoreHash: string;
+	fileSystem: FileSystem;
 	instrumented: InstrumentedPackage;
 	manifestPath: string;
 	packageShadowRoot: string;
@@ -234,7 +242,7 @@ interface WritePackageManifestOptions {
 export function prepareWorkspaceCoverage(
 	options: PrepareWorkspaceCoverageOptions,
 ): Array<WorkspacePackageCoverage> {
-	const { packages, workspaceRoot } = options;
+	const { fileSystem = nodeFileSystem, packages, workspaceRoot } = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 	// Workspace mode reads `coveragePathIgnorePatterns` per-package only.
 	// Hoist the DEFAULT_CONFIG matcher so packages that don't override the
@@ -261,7 +269,7 @@ export function prepareWorkspaceCoverage(
 			patterns:
 				descriptor.coveragePathIgnorePatterns ?? DEFAULT_CONFIG.coveragePathIgnorePatterns,
 		};
-		return prepareForPackage(descriptor, workspaceRoot, ignore, timing);
+		return prepareForPackage({ descriptor, fileSystem, ignore, timing, workspaceRoot });
 	});
 }
 
@@ -276,20 +284,26 @@ export function prepareWorkspaceCoverage(
 export function emitWorkspaceBuildManifests(
 	entries: Array<WorkspacePackageCoverage>,
 	coveragePlace: BuildManifestArtifact,
+	fileSystem: FileSystem = nodeFileSystem,
 ): void {
 	for (const entry of entries) {
 		// The Build Manifest is the Coverage Manifest's sibling — same directory.
 		const buildManifestPath = normalizeWindowsPath(
 			path.join(path.dirname(entry.manifestPath), BUILD_MANIFEST_FILE),
 		);
-		emitBuildManifest(buildManifestPath, {
-			buildId: entry.manifest.buildId,
-			coveragePlace,
-			files: toBuildManifestFiles(entry.manifest.files),
-			generatedAt: entry.manifest.generatedAt,
-			projects: [],
-			rebuilt: true,
-		});
+		emitBuildManifest(
+			buildManifestPath,
+			{
+				buildId: entry.manifest.buildId,
+				coveragePlace,
+				files: toBuildManifestFiles(entry.manifest.files),
+				generatedAt: entry.manifest.generatedAt,
+				projects: [],
+				rebuilt: true,
+			},
+			undefined,
+			fileSystem,
+		);
 	}
 }
 
@@ -318,6 +332,7 @@ function resolvePackagePaths(name: string, workspaceRoot: string): PackagePaths 
 
 function writePackageManifest({
 	copyIgnoreHash,
+	fileSystem,
 	instrumented,
 	manifestPath,
 	packageShadowRoot,
@@ -340,7 +355,11 @@ function writePackageManifest({
 	// atomicWrite creates the manifest's parent directory, so a package with no
 	// instrumentable luau roots (the loop above ran zero times, leaving
 	// packageShadowRoot uncreated) still gets a manifest written.
-	atomicWrite({ contents: JSON.stringify(manifest, undefined, "\t"), targetPath: manifestPath });
+	atomicWrite({
+		contents: JSON.stringify(manifest, undefined, "\t"),
+		fileSystem,
+		targetPath: manifestPath,
+	});
 
 	return manifest;
 }
@@ -368,12 +387,16 @@ function resolvePackageAnchor(descriptor: WorkspacePackageDescriptor): string {
 function resolvePackageUniverse(
 	descriptor: WorkspacePackageDescriptor,
 	ignore: PackageIgnore,
+	fileSystem: FileSystem,
 ): InstrumentUniverse | undefined {
-	return createInstrumentUniverse({
-		ignore: ignore.patterns,
-		include: descriptor.collectCoverageFrom,
-		rootDir: resolvePackageAnchor(descriptor),
-	});
+	return createInstrumentUniverse(
+		{
+			ignore: ignore.patterns,
+			include: descriptor.collectCoverageFrom,
+			rootDir: resolvePackageAnchor(descriptor),
+		},
+		fileSystem,
+	);
 }
 
 /**
@@ -381,9 +404,16 @@ function resolvePackageUniverse(
  * once per package: root discovery and the mount set the demote is judged
  * against have to see the same tree, and a nested mount is a mount.
  */
-function resolvePackageTree(descriptor: WorkspacePackageDescriptor): RojoTreeNode {
-	const project = loadRojoProject(descriptor.rojoProjectPath);
-	return resolveNestedProjects(project.tree, path.dirname(descriptor.rojoProjectPath));
+function resolvePackageTree(
+	descriptor: WorkspacePackageDescriptor,
+	fileSystem: FileSystem,
+): RojoTreeNode {
+	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
+	return resolveNestedProjects(
+		project.tree,
+		path.dirname(descriptor.rojoProjectPath),
+		fileSystem,
+	);
 }
 
 function isInstrumentableLuauFile(filename: string): boolean {
@@ -401,15 +431,15 @@ function isInstrumentableLuauFile(filename: string): boolean {
 	return !isNonInstrumentedFile(filename);
 }
 
-function containsLuauFiles(directoryPath: string): boolean {
-	const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
+function containsLuauFiles(fileSystem: FileSystem, directoryPath: string): boolean {
+	const entries = fileSystem.readdirSync(directoryPath, { withFileTypes: true });
 	return entries.some((entry) => {
 		if (entry.isFile() && isInstrumentableLuauFile(entry.name)) {
 			return true;
 		}
 
 		if (entry.isDirectory()) {
-			return containsLuauFiles(path.join(directoryPath, entry.name));
+			return containsLuauFiles(fileSystem, path.join(directoryPath, entry.name));
 		}
 
 		return false;
@@ -419,10 +449,10 @@ function containsLuauFiles(directoryPath: string): boolean {
 // Mirrors the roblox-ts compiler: it emits `RuntimeLib.lua` (and `Promise.lua`)
 // into the project's rbxts include dir. Instrumenting vendor code wastes work
 // and forces every `TS.import` through cov probes.
-function isRbxtsIncludeRoot(directoryPath: string): boolean {
+function isRbxtsIncludeRoot(fileSystem: FileSystem, directoryPath: string): boolean {
 	return (
-		fs.existsSync(path.join(directoryPath, "RuntimeLib.lua")) ||
-		fs.existsSync(path.join(directoryPath, "RuntimeLib.luau"))
+		fileSystem.existsSync(path.join(directoryPath, "RuntimeLib.lua")) ||
+		fileSystem.existsSync(path.join(directoryPath, "RuntimeLib.luau"))
 	);
 }
 
@@ -436,6 +466,7 @@ function isRbxtsIncludeRoot(directoryPath: string): boolean {
  * walk.
  */
 function isInstrumentableRoot(
+	fileSystem: FileSystem,
 	absolutePath: string,
 	relativePath: string,
 	matchesIgnored: (filePath: string) => boolean,
@@ -444,19 +475,19 @@ function isInstrumentableRoot(
 		return false;
 	}
 
-	if (!fs.existsSync(absolutePath)) {
+	if (!fileSystem.existsSync(absolutePath)) {
 		return false;
 	}
 
-	if (!fs.statSync(absolutePath).isDirectory()) {
+	if (!fileSystem.statSync(absolutePath).isDirectory()) {
 		return false;
 	}
 
-	if (isRbxtsIncludeRoot(absolutePath)) {
+	if (isRbxtsIncludeRoot(fileSystem, absolutePath)) {
 		return false;
 	}
 
-	return containsLuauFiles(absolutePath);
+	return containsLuauFiles(fileSystem, absolutePath);
 }
 
 /**
@@ -490,7 +521,7 @@ function rejectRoot({ descriptor, mounts, rawRoot }: RootCheck): string | undefi
 }
 
 function discoverFromLuauRoots(
-	{ descriptor, matchesIgnored, tree }: DiscoverRootsOptions,
+	{ descriptor, fileSystem, matchesIgnored, tree }: DiscoverRootsOptions,
 	luauRoots: Array<string>,
 ): Array<PosixRoot> {
 	const mounts = collectRojoMounts(tree, path.dirname(descriptor.rojoProjectPath));
@@ -511,7 +542,7 @@ function discoverFromLuauRoots(
 			continue;
 		}
 
-		if (!isInstrumentableRoot(absolute, relative, matchesIgnored)) {
+		if (!isInstrumentableRoot(fileSystem, absolute, relative, matchesIgnored)) {
 			continue;
 		}
 
@@ -530,6 +561,7 @@ function collectRojoMountedPaths(tree: RojoTreeNode): Array<string> {
 
 function discoverFromRojoWalk({
 	descriptor,
+	fileSystem,
 	matchesIgnored,
 	tree,
 }: DiscoverRootsOptions): Array<string> {
@@ -549,7 +581,7 @@ function discoverFromRojoWalk({
 		}
 
 		const absolute = path.resolve(descriptor.packageDirectory, relative);
-		if (!isInstrumentableRoot(absolute, relative, matchesIgnored)) {
+		if (!isInstrumentableRoot(fileSystem, absolute, relative, matchesIgnored)) {
 			continue;
 		}
 
@@ -582,6 +614,7 @@ function discoverPackageLuauRoots(options: DiscoverRootsOptions): Array<string> 
  */
 function narrowPackageRoots({
 	descriptor,
+	fileSystem,
 	ignore,
 	universe,
 }: NarrowPackageOptions): Array<NarrowedMount> {
@@ -593,12 +626,16 @@ function narrowPackageRoots({
 		return toPosixRoot(path.relative(descriptor.packageDirectory, absolute));
 	}
 
-	const tree = resolvePackageTree(descriptor);
+	const tree = resolvePackageTree(descriptor, fileSystem);
 	const narrowed = narrowLuauRoots(
-		discoverPackageLuauRoots({ descriptor, matchesIgnored: ignore.matcher, tree }).map(
-			toAbsolute,
-		),
+		discoverPackageLuauRoots({
+			descriptor,
+			fileSystem,
+			matchesIgnored: ignore.matcher,
+			tree,
+		}).map(toAbsolute),
 		{
+			fileSystem,
 			isCopyIgnored: ignore.copyMatcher,
 			rojoMounts: collectRojoMounts(tree, path.dirname(descriptor.rojoProjectPath)),
 			universe,
@@ -614,8 +651,11 @@ function narrowPackageRoots({
 	});
 }
 
-function loadPackageManifest(manifestPath: string): CoverageManifest | undefined {
-	const result = readManifest(manifestPath);
+function loadPackageManifest(
+	fileSystem: FileSystem,
+	manifestPath: string,
+): CoverageManifest | undefined {
+	const result = readManifest(manifestPath, fileSystem);
 	switch (result.kind) {
 		case "invalid": {
 			process.stderr.write(
@@ -660,6 +700,7 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 function decidePackageIncremental({
 	copyIgnoreHash,
 	descriptor,
+	fileSystem,
 	luauRoots,
 	packageShadowRoot,
 	previousManifest,
@@ -694,8 +735,8 @@ function decidePackageIncremental({
 	// from source between runs don't survive into the redirected `$path`
 	// mount. `prepareShadowRoot`'s cpSync merges; without an explicit rmSync
 	// here a stale `*.spec.luau` could still be discovered at runtime.
-	if (!isIncremental && fs.existsSync(packageShadowRoot)) {
-		fs.rmSync(packageShadowRoot, { recursive: true });
+	if (!isIncremental && fileSystem.existsSync(packageShadowRoot)) {
+		fileSystem.rmSync(packageShadowRoot, { recursive: true });
 	}
 
 	return isIncremental;
@@ -708,6 +749,7 @@ function instrumentOneRoot(
 	relativeLuauRoot: string,
 	{
 		descriptor,
+		fileSystem,
 		isCopyIgnored,
 		isIncremental,
 		packageShadowRoot,
@@ -717,6 +759,7 @@ function instrumentOneRoot(
 	}: InstrumentPackageOptions,
 ): ShadowRootResult {
 	return prepareShadowRoot({
+		fileSystem,
 		isCopyIgnored,
 		luauRoot: toPosixRoot(path.join(descriptor.packageDirectory, relativeLuauRoot)),
 		previousManifest,
@@ -729,7 +772,8 @@ function instrumentOneRoot(
 
 /** Instrument each of the package's luau roots into its shadow tree. */
 function instrumentPackageRoots(options: InstrumentPackageOptions): InstrumentedPackage {
-	const { descriptor, isCopyIgnored, luauRoots, narrowed, packageShadowRoot } = options;
+	const { descriptor, fileSystem, isCopyIgnored, luauRoots, narrowed, packageShadowRoot } =
+		options;
 	const coverageRoots: Array<WorkspaceCoverageRoot> = [];
 	const allFiles: Record<string, InstrumentedFileRecord> = {};
 	// The narrowed paths are package-relative here, so a spine level has to be
@@ -737,6 +781,7 @@ function instrumentPackageRoots(options: InstrumentPackageOptions): Instrumented
 	// is dropped rather than ignored by accident: this mode rebuilds the shared
 	// place on every run, so nothing downstream asks.
 	const spine = prepareSpine({
+		fileSystem,
 		isCopyIgnored,
 		narrowed,
 		previousNonInstrumented: options.previousManifest?.nonInstrumentedFiles,
@@ -771,20 +816,22 @@ function instrumentPackageRoots(options: InstrumentPackageOptions): Instrumented
  */
 function instrumentPackage({
 	descriptor,
+	fileSystem,
 	ignore,
 	manifestPath,
 	packageShadowRoot,
 	timing,
 	universe,
 }: InstrumentPackageInputs): InstrumentedPackage {
-	const narrowed = narrowPackageRoots({ descriptor, ignore, universe });
+	const narrowed = narrowPackageRoots({ descriptor, fileSystem, ignore, universe });
 	const options: PackageIncrementalOptions = {
 		copyIgnoreHash: ignore.copyDigest,
 		descriptor,
+		fileSystem,
 		luauRoots: narrowed.flatMap((entry) => entry.roots),
 		narrowed,
 		packageShadowRoot,
-		previousManifest: loadPackageManifest(manifestPath),
+		previousManifest: loadPackageManifest(fileSystem, manifestPath),
 		universe,
 	};
 
@@ -796,17 +843,25 @@ function instrumentPackage({
 	});
 }
 
-function prepareForPackage(
-	descriptor: WorkspacePackageDescriptor,
-	workspaceRoot: string,
-	ignore: PackageIgnore,
-	timing: TimingCollector,
-): WorkspacePackageCoverage {
+function prepareForPackage({
+	descriptor,
+	fileSystem,
+	ignore,
+	timing,
+	workspaceRoot,
+}: {
+	descriptor: WorkspacePackageDescriptor;
+	fileSystem: FileSystem;
+	ignore: PackageIgnore;
+	timing: TimingCollector;
+	workspaceRoot: string;
+}): WorkspacePackageCoverage {
 	const { manifestPath, packageShadowRoot } = resolvePackagePaths(descriptor.name, workspaceRoot);
 
-	const universe = resolvePackageUniverse(descriptor, ignore);
+	const universe = resolvePackageUniverse(descriptor, ignore, fileSystem);
 	const instrumented = instrumentPackage({
 		descriptor,
+		fileSystem,
 		ignore,
 		manifestPath,
 		packageShadowRoot,
@@ -815,6 +870,7 @@ function prepareForPackage(
 	});
 	const manifest = writePackageManifest({
 		copyIgnoreHash: ignore.copyDigest,
+		fileSystem,
 		instrumented,
 		manifestPath,
 		packageShadowRoot,

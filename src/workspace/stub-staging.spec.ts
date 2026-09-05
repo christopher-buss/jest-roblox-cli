@@ -5,6 +5,7 @@ import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
 import { fakeTimingCollector, phaseNamesOf } from "../../test/mocks/fake-timing-collector.ts";
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import {
 	cleanLeftoverStubs,
@@ -77,20 +78,23 @@ describe(stageWorkspaceStubs, () => {
 		]);
 		const timing = fakeTimingCollector(12);
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		const { elapsedMs, value: descriptors } = stageWorkspaceStubs({
 			contexts: [foo, bar],
 			coverageByPackage,
+			fileSystem,
 			pending: [makePending("@halcyon/foo", client), makePending("@halcyon/bar", server)],
 			timing,
 		});
 
 		expect(mocks.generateProjectStubs.mock.calls).toStrictEqual([
-			[[client], foo.info.packageDirectory, foo.cacheRoot],
-			[[server], bar.info.packageDirectory, bar.cacheRoot],
+			[[client], foo.info.packageDirectory, foo.cacheRoot, fileSystem],
+			[[server], bar.info.packageDirectory, bar.cacheRoot, fileSystem],
 		]);
 		expect(mocks.cleanLeftoverStubs.mock.calls).toStrictEqual([
-			[[client], foo.info.packageDirectory],
-			[[server], bar.info.packageDirectory],
+			[[client], foo.info.packageDirectory, fileSystem],
+			[[server], bar.info.packageDirectory, fileSystem],
 		]);
 		expect(descriptors).toStrictEqual([
 			{
@@ -132,16 +136,19 @@ describe(stageWorkspaceStubs, () => {
 		const context = makeContext("@halcyon/foo", [project]);
 		mocks.hasUserAuthoredConfig.mockImplementation((mount) => mount.endsWith("Shared"));
 
+		const { fileSystem } = createMemoryFileSystem();
+
 		const { value: descriptors } = stageWorkspaceStubs({
 			contexts: [context],
 			coverageByPackage: new Map(),
+			fileSystem,
 			pending: [makePending("@halcyon/foo", project)],
 			timing: fakeTimingCollector(12),
 		});
 
 		expect(mocks.hasUserAuthoredConfig.mock.calls).toStrictEqual([
-			[path.resolve(context.info.packageDirectory, "src/Server")],
-			[path.resolve(context.info.packageDirectory, "src/Shared")],
+			[path.resolve(context.info.packageDirectory, "src/Server"), fileSystem],
+			[path.resolve(context.info.packageDirectory, "src/Shared"), fileSystem],
 		]);
 		expect(descriptors[0]!.stubMounts).toStrictEqual([
 			{

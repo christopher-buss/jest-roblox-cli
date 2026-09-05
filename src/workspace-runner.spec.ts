@@ -1,11 +1,12 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { vol } from "memfs";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import type { MemoryFileSystem } from "../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
 import { movableClockCollector } from "../test/mocks/movable-clock.ts";
 import type {
 	Backend,
@@ -38,11 +39,6 @@ vi.mock(import("./memory-store/work-stealing.ts"), () => {
 	};
 });
 
-vi.mock(import("node:fs"), async () => {
-	const memfs = await vi.importActual<typeof import("memfs")>("memfs");
-	return fromAny({ ...memfs.fs, default: memfs.fs });
-});
-
 vi.mock(import("./staging/place-builder.ts"));
 
 vi.mock(import("./config/loader.ts"), async (importOriginal) => {
@@ -50,11 +46,10 @@ vi.mock(import("./config/loader.ts"), async (importOriginal) => {
 	return { ...actual, loadConfig: vi.fn<typeof actual.loadConfig>(actual.loadConfig) };
 });
 
-// rojo-utils is loaded only transitively (via ./workspace-runner.ts), never as a
-// direct top-level import: this suite mocks node:fs, and loading the bundled
-// rojo-utils module before the async node:fs mock resolves trips a hoisting TDZ.
-// Tests grab RojoResolver via a (cached) dynamic import and spy on fromPath, so
-// the real tree-walking helpers stay real while the filesystem walk is stubbed.
+// RojoResolver walks the project tree through a node:fs binding of its own,
+// which takes no seam. The cases that reach it spy on `fromPath` so the walk is
+// stubbed while the real tree-walking helpers stay real; every other read in
+// this suite goes through the injected volume.
 
 vi.mock(import("./coverage-pipeline/workspace-prepare.ts"));
 
@@ -257,8 +252,9 @@ describe(runWorkspaceAsync, () => {
 	it("should load each package's config independently and embed both in the materializer payload", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -283,6 +279,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -301,8 +298,9 @@ describe(runWorkspaceAsync, () => {
 	it("should resolve printBasicPrototype for a typescript package before dispatch", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.ts")]: "" },
@@ -319,6 +317,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -332,8 +331,9 @@ describe(runWorkspaceAsync, () => {
 	it("should resolve printBasicPrototype for a luau package before dispatch", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(BAR_DIR, {
 				name: "@halcyon/bar",
 				specFiles: { [path.join(BAR_DIR, "src/bar.spec.luau")]: "" },
@@ -350,6 +350,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -366,8 +367,9 @@ describe(runWorkspaceAsync, () => {
 	it("should keep the resolved printBasicPrototype in a rebuilt script", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.ts")]: "" },
@@ -384,6 +386,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -403,8 +406,9 @@ describe(runWorkspaceAsync, () => {
 	it("should supply a factory that rebuilds the script for a subset of jobs", async () => {
 		expect.assertions(3);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -429,6 +433,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -450,8 +455,9 @@ describe(runWorkspaceAsync, () => {
 	it("should forward a basename testPathPattern when --testPathPattern is a filesystem path", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -470,6 +476,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/foo.spec" }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -486,8 +493,9 @@ describe(runWorkspaceAsync, () => {
 	it("should forward the instance sub-path so a namesake spec is left out", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -509,6 +517,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/a/index.spec" }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -525,8 +534,9 @@ describe(runWorkspaceAsync, () => {
 	it("should narrow against the project's pinned mount, not the package tree", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/deep/thing.spec.luau")]: "" },
@@ -548,6 +558,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/deep/thing.spec" }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -560,8 +571,9 @@ describe(runWorkspaceAsync, () => {
 	it("should pass with no tests in a package the testPathPattern does not match", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -580,6 +592,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/other-package.spec" }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -598,8 +611,9 @@ describe(runWorkspaceAsync, () => {
 	it("should dispatch only the package a positional file names", async () => {
 		expect.assertions(3);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -623,6 +637,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/foo.spec.luau")] }),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -646,8 +661,9 @@ describe(runWorkspaceAsync, () => {
 	it("should resolve a relative positional against the invocation directory", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -672,6 +688,7 @@ describe(runWorkspaceAsync, () => {
 			backend,
 			cli: makeCli({ files: ["src/foo.spec.luau"] }),
 			cwd: FOO_DIR,
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -687,8 +704,9 @@ describe(runWorkspaceAsync, () => {
 	it("should narrow to the positional file's instance sub-path", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -710,6 +728,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/a/index.spec.luau")] }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -726,8 +745,9 @@ describe(runWorkspaceAsync, () => {
 	it("should let a positional file override a testPathPattern given with it", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -752,6 +772,7 @@ describe(runWorkspaceAsync, () => {
 				files: [path.join(FOO_DIR, "src/a.spec.luau")],
 				testPathPattern: "src/b.spec",
 			}),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -767,8 +788,9 @@ describe(runWorkspaceAsync, () => {
 	it("should reject a positional file no package owns, naming the roots searched", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -786,6 +808,7 @@ describe(runWorkspaceAsync, () => {
 			runWorkspaceAsync({
 				backend,
 				cli: makeCli({ files: [path.join(ROOT, "elsewhere/nope.spec.luau")] }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -797,8 +820,9 @@ describe(runWorkspaceAsync, () => {
 	it("should synthesize one virtual project named after the package when projects: is absent", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -817,6 +841,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -837,8 +862,9 @@ describe(runWorkspaceAsync, () => {
 			return true;
 		});
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -862,6 +888,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				timing,
@@ -902,8 +929,9 @@ describe(runWorkspaceAsync, () => {
 			return true;
 		});
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -924,6 +952,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			timing: createTimingCollector(),
@@ -954,8 +983,9 @@ describe(runWorkspaceAsync, () => {
 			return true;
 		});
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -984,6 +1014,7 @@ describe(runWorkspaceAsync, () => {
 				runWorkspaceAsync({
 					backend,
 					cli: makeCli(),
+					fileSystem,
 					packageInfos: [FOO_INFO],
 					runOptions: makeRunOptions(),
 					timing,
@@ -1008,8 +1039,9 @@ describe(runWorkspaceAsync, () => {
 	it("should pass through explicit projects when present, not virtual-wrap", async () => {
 		expect.assertions(3);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1041,6 +1073,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1055,8 +1088,9 @@ describe(runWorkspaceAsync, () => {
 	it("should drop runtime test files matching a per-project exclude glob", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1087,6 +1121,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1099,8 +1134,9 @@ describe(runWorkspaceAsync, () => {
 	it("should drop runtime test files matching a package-level test.exclude glob", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1124,6 +1160,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1136,9 +1173,10 @@ describe(runWorkspaceAsync, () => {
 	it("should pre-flight clean marker-bearing leftover stubs from package source and emit a stderr notice", async () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		const leftoverStub = path.join(FOO_DIR, "out/Client/jest.config.luau");
-		vol.fromJSON({
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "out/Client/spec.spec.luau")]: "" },
@@ -1167,13 +1205,14 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
 
-		expect(vol.existsSync(leftoverStub)).toBeFalse();
+		expect(volume.existsSync(leftoverStub)).toBeFalse();
 		expect(stderr).toHaveBeenCalledWith(
 			`jest-roblox: cleaned 1 leftover stub(s) from @halcyon/foo:\n  ${leftoverStub}\n`,
 		);
@@ -1182,9 +1221,10 @@ describe(runWorkspaceAsync, () => {
 	it("should skip stubMounts construction for mounts that already have a user-authored config on disk", async () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		const userConfigPath = path.join(FOO_DIR, "out/Client/jest.config.luau");
-		vol.fromJSON({
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "out/Client/spec.spec.luau")]: "" },
@@ -1214,6 +1254,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1221,7 +1262,7 @@ describe(runWorkspaceAsync, () => {
 		});
 
 		// User file survives the run (cleanLeftoverStubs only touches markers).
-		expect(vol.existsSync(userConfigPath)).toBeTrue();
+		expect(volume.existsSync(userConfigPath)).toBeTrue();
 
 		// And the cache stub was NOT written for that mount because
 		// hasUserAuthoredConfig short-circuited generateProjectStubs.
@@ -1230,14 +1271,15 @@ describe(runWorkspaceAsync, () => {
 			".jest-roblox/workspace/@halcyon/foo/out/Client/jest.config.luau",
 		);
 
-		expect(vol.existsSync(cacheStub)).toBeFalse();
+		expect(volume.existsSync(cacheStub)).toBeFalse();
 	});
 
 	it("should write stubs into the workspace cache, not into package source", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "out/Client/spec.spec.luau")]: "" },
@@ -1263,6 +1305,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1275,15 +1318,16 @@ describe(runWorkspaceAsync, () => {
 		);
 		const sourceStub = path.join(FOO_DIR, "out/Client/jest.config.luau");
 
-		expect(vol.existsSync(cacheStub)).toBeTrue();
-		expect(vol.existsSync(sourceStub)).toBeFalse();
+		expect(volume.existsSync(cacheStub)).toBeTrue();
+		expect(volume.existsSync(sourceStub)).toBeFalse();
 	});
 
 	it("should fan out (P × N) jobs, one per (package, project) pair", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1330,6 +1374,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1343,8 +1388,9 @@ describe(runWorkspaceAsync, () => {
 	it("should keep only filtered project displayNames when --project is set", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1375,6 +1421,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli({ project: ["client"] }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1388,8 +1435,9 @@ describe(runWorkspaceAsync, () => {
 	it("should throw when --project filter names match no project across packages", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -1407,6 +1455,7 @@ describe(runWorkspaceAsync, () => {
 			runWorkspaceAsync({
 				backend,
 				cli: makeCli({ project: ["nonexistent"] }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -1418,8 +1467,9 @@ describe(runWorkspaceAsync, () => {
 	it("should resolve per-project setupFiles and setupFilesAfterEnv against the package's rojo tree", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1465,6 +1515,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1486,8 +1537,9 @@ describe(runWorkspaceAsync, () => {
 	it("should not build a rojo resolver for packages without setup files", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -1509,6 +1561,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1524,8 +1577,9 @@ describe(runWorkspaceAsync, () => {
 	it("should resolve a project that declares only setupFiles", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1560,6 +1614,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1575,8 +1630,9 @@ describe(runWorkspaceAsync, () => {
 	it("should resolve a project that declares only setupFilesAfterEnv", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1611,6 +1667,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1626,8 +1683,9 @@ describe(runWorkspaceAsync, () => {
 	it("should honor per-package rojoProject from each package's own jest.config", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			[path.join(BAR_DIR, "custom.project.json")]: packageJson({
 				name: "bar-test",
 				tree: {
@@ -1673,6 +1731,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1689,8 +1748,9 @@ describe(runWorkspaceAsync, () => {
 	it("should resolve a Nevermore-style subdir rojoProject that mounts the package via '..'", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			// Package manifest maps src to the tree root (standard Wally layout).
 			[path.join(FOO_DIR, "default.project.json")]: packageJson({
 				name: "foo",
@@ -1730,6 +1790,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1751,8 +1812,9 @@ describe(runWorkspaceAsync, () => {
 	it("should NOT fall back to workspace-root config.rojoProject when the package config omits it", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			[path.join(BAR_DIR, "custom.project.json")]: packageJson({
 				name: "bar-test",
 				tree: {
@@ -1783,6 +1845,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1797,8 +1860,9 @@ describe(runWorkspaceAsync, () => {
 	it("should drop empty packages from the materializer payload while keeping packages with specs", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -1822,6 +1886,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1837,8 +1902,9 @@ describe(runWorkspaceAsync, () => {
 	it("should pass with no tests when passWithNoTests is true and zero specs are discovered", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, { name: "@halcyon/foo" }),
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
@@ -1852,6 +1918,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1864,8 +1931,9 @@ describe(runWorkspaceAsync, () => {
 	it("should honor per-package passWithNoTests when the workspace config does not set it", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, { name: "@halcyon/foo" }),
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
@@ -1883,6 +1951,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1895,10 +1964,11 @@ describe(runWorkspaceAsync, () => {
 	it("should error when one package has zero tests and its own passWithNoTests is false even if another package opts in", async () => {
 		expect.assertions(3);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		vol.fromJSON({
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, { name: "@halcyon/foo" }),
 			...seedPackage(BAR_DIR, { name: "@halcyon/bar" }),
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
@@ -1914,6 +1984,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1928,10 +1999,11 @@ describe(runWorkspaceAsync, () => {
 	it("should error 2 with no tests when passWithNoTests is false", async () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		vol.fromJSON({
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, { name: "@halcyon/foo" }),
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
@@ -1945,6 +2017,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -1960,8 +2033,9 @@ describe(runWorkspaceAsync, () => {
 	it("should map each backend result to a WorkspaceProjectResult preserving pkg + project axes", async () => {
 		expect.assertions(4);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -1992,6 +2066,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO, BAZ_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -2011,10 +2086,11 @@ describe(runWorkspaceAsync, () => {
 	it("should surface preflight errors and skip the backend", async () => {
 		expect.assertions(3);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		vol.fromJSON({
+		volume.fromJSON({
 			[path.join(BAR_DIR, "package.json")]: packageJson({ name: "@halcyon/bar" }),
 			[path.join(FOO_DIR, "package.json")]: packageJson({ name: "@halcyon/foo" }),
 			[path.join(FOO_DIR, "test.project.json")]: packageJson({
@@ -2029,6 +2105,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -2043,8 +2120,9 @@ describe(runWorkspaceAsync, () => {
 	it("should auto-create $path directories that have child entries even with extension", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			[path.join(FOO_DIR, "package.json")]: packageJson({ name: "@halcyon/foo" }),
 			// Pre-existing leaf-file mount lets ensure-paths see a $path with
 			// extension and no children — should NOT be created as a directory.
@@ -2077,22 +2155,24 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
 
-		expect(vol.existsSync(path.join(FOO_DIR, "src/has.dot"))).toBeTrue();
+		expect(volume.existsSync(path.join(FOO_DIR, "src/has.dot"))).toBeTrue();
 		// init.luau wasn't directory-created (would clobber the existing file).
-		expect(vol.statSync(path.join(FOO_DIR, "src/init.luau")).isFile()).toBeTrue();
+		expect(volume.statSync(path.join(FOO_DIR, "src/init.luau")).isFile()).toBeTrue();
 	});
 
 	it("should include dotted-name directories as virtual-wrap mounts", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			[path.join(FOO_DIR, "package.json")]: packageJson({ name: "@halcyon/foo" }),
 			[path.join(FOO_DIR, "src/has.dot/spec.spec.luau")]: "",
 			[path.join(FOO_DIR, "test.project.json")]: packageJson({
@@ -2117,6 +2197,7 @@ describe(runWorkspaceAsync, () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -2132,10 +2213,11 @@ describe(runWorkspaceAsync, () => {
 	it("should defer malformed rojo project to preflight without crashing ensure-paths", async () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		vol.fromJSON({
+		volume.fromJSON({
 			[path.join(FOO_DIR, "package.json")]: packageJson({ name: "@halcyon/foo" }),
 			[path.join(FOO_DIR, "test.project.json")]: "not valid json {{",
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
@@ -2146,6 +2228,7 @@ describe(runWorkspaceAsync, () => {
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -2160,8 +2243,9 @@ describe(runWorkspaceAsync, () => {
 		it("should call prepareWorkspaceCoverage with the workspace packages when collectCoverage is set", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2202,6 +2286,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2223,8 +2308,9 @@ describe(runWorkspaceAsync, () => {
 		it("should propagate pkgConfig luauRoots and coveragePathIgnorePatterns onto the descriptor", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2271,6 +2357,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2301,8 +2388,9 @@ describe(runWorkspaceAsync, () => {
 		it("should propagate pkgConfig.coverageCache: false onto the descriptor", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2348,6 +2436,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2363,8 +2452,9 @@ describe(runWorkspaceAsync, () => {
 		it("should leave descriptor.coveragePathIgnorePatterns undefined when the package config defaults", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2408,6 +2498,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2423,8 +2514,9 @@ describe(runWorkspaceAsync, () => {
 		it("should embed runnerCoverage in the materializer config when collectCoverage is set", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2465,6 +2557,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2477,8 +2570,9 @@ describe(runWorkspaceAsync, () => {
 		it("should expose per-package coverage descriptors on the workspace result", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2520,6 +2614,7 @@ describe(runWorkspaceAsync, () => {
 			const results = await runWorkspaceResultsAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2533,8 +2628,9 @@ describe(runWorkspaceAsync, () => {
 		it("should carry the package's own coverage report settings onto the workspace result", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2567,6 +2663,7 @@ describe(runWorkspaceAsync, () => {
 			const results = await runWorkspaceResultsAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2589,8 +2686,9 @@ describe(runWorkspaceAsync, () => {
 		it("should warn when a package declares coverageThreshold without collectCoverage", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2632,6 +2730,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2651,8 +2750,9 @@ describe(runWorkspaceAsync, () => {
 		it("should restrict prepareWorkspaceCoverage to packages with pending test files", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				// foo has a spec file
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
@@ -2687,6 +2787,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2701,8 +2802,9 @@ describe(runWorkspaceAsync, () => {
 		it("should not call prepareWorkspaceCoverage when collectCoverage is false", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2723,6 +2825,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2735,8 +2838,9 @@ describe(runWorkspaceAsync, () => {
 		it("should honor per-package collectCoverage when the workspace config does not set it", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2762,6 +2866,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2776,8 +2881,9 @@ describe(runWorkspaceAsync, () => {
 		it("should restrict prepareWorkspaceCoverage to packages that opted in via per-package collectCoverage", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2806,6 +2912,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2820,8 +2927,9 @@ describe(runWorkspaceAsync, () => {
 		it("should emit per-package build manifests over the built place after a coverage run", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2847,6 +2955,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2859,8 +2968,9 @@ describe(runWorkspaceAsync, () => {
 		it("should not emit a build manifest when the shared place build fails", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2887,6 +2997,7 @@ describe(runWorkspaceAsync, () => {
 				runWorkspaceAsync({
 					backend,
 					cli: makeCli({ collectCoverage: true }),
+					fileSystem,
 					packageInfos: [FOO_INFO],
 					runOptions: makeRunOptions(),
 					version: "0.0.0-test",
@@ -2900,8 +3011,9 @@ describe(runWorkspaceAsync, () => {
 		it("should not emit a build manifest when coverage is disabled", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2923,6 +3035,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -2936,8 +3049,9 @@ describe(runWorkspaceAsync, () => {
 	it("should measure the place staging as stagingMs", async () => {
 		expect.assertions(3);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -2969,6 +3083,7 @@ describe(runWorkspaceAsync, () => {
 		const output = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			timing: clock.timing,
@@ -2987,8 +3102,9 @@ describe(runWorkspaceAsync, () => {
 	it("should report the coverage bake apart from the staging around it", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3019,6 +3135,7 @@ describe(runWorkspaceAsync, () => {
 		const output = await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ collectCoverage: true }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			timing: clock.timing,
@@ -3044,8 +3161,9 @@ describe(runWorkspaceAsync, () => {
 		it("should push every (pkg, project) onto the queue and pass workStealing to backend when parallel>1", async () => {
 			expect.assertions(3);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3071,6 +3189,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
 				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
@@ -3092,8 +3211,9 @@ describe(runWorkspaceAsync, () => {
 		it("should embed the same queueId in the script as the queue pushes", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3112,6 +3232,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
@@ -3128,8 +3249,9 @@ describe(runWorkspaceAsync, () => {
 		it("should carry the resolved printBasicPrototype into the queue script", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.ts")]: "" },
@@ -3148,6 +3270,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
@@ -3161,8 +3284,9 @@ describe(runWorkspaceAsync, () => {
 		it("should shard on parallel auto rather than falling back to one task", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3181,6 +3305,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ parallel: "auto" }),
 				version: "0.0.0-test",
@@ -3195,8 +3320,9 @@ describe(runWorkspaceAsync, () => {
 		it("should fall back to the single-task path when the queue cannot be prepared", async () => {
 			expect.assertions(4);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3218,6 +3344,7 @@ describe(runWorkspaceAsync, () => {
 			const output = await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ parallel: 3 }),
 				version: "0.0.0-test",
@@ -3234,8 +3361,9 @@ describe(runWorkspaceAsync, () => {
 		it("should keep the existing single-task path when parallel is unset", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3253,6 +3381,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -3267,8 +3396,9 @@ describe(runWorkspaceAsync, () => {
 		it("should keep the existing path when workStealingCredentials is not provided even with parallel>1", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3286,6 +3416,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ parallel: 4 }),
 				version: "0.0.0-test",
@@ -3299,8 +3430,9 @@ describe(runWorkspaceAsync, () => {
 		it("should forward workStealingCredentials.baseUrl into prepareWorkStealingQueue", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3319,6 +3451,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				// Exercise the streaming-side baseUrl plumbing on the same call;
 				// keeps the SortedMap client constructor seeing the override
 				// when work-stealing fires.
@@ -3340,8 +3473,9 @@ describe(runWorkspaceAsync, () => {
 		it("should provide a streaming reader and onPackageResult to the backend when onStreamingResult is set", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3358,6 +3492,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				onStreamingResult: () => {
 					/* intentionally inert */
 				},
@@ -3375,8 +3510,9 @@ describe(runWorkspaceAsync, () => {
 		it("should embed a sortedMapId in the work-stealing script when onStreamingResult is set", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3393,6 +3529,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				onStreamingResult: () => {
 					/* intentionally inert */
 				},
@@ -3412,8 +3549,9 @@ describe(runWorkspaceAsync, () => {
 		it("should drop the packages a bailed run never reached", async () => {
 			expect.assertions(3);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3438,6 +3576,7 @@ describe(runWorkspaceAsync, () => {
 			const output = await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
 				runOptions: makeRunOptions({ bail: true, parallel: 2 }),
 				version: "0.0.0-test",
@@ -3456,8 +3595,9 @@ describe(runWorkspaceAsync, () => {
 		it("should not report a partly-run package as one the bail skipped", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: {
@@ -3487,6 +3627,7 @@ describe(runWorkspaceAsync, () => {
 			const output = await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ bail: true, parallel: 2 }),
 				version: "0.0.0-test",
@@ -3501,8 +3642,9 @@ describe(runWorkspaceAsync, () => {
 		it("should embed bail in the work-stealing script when --bail is set", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3519,6 +3661,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ bail: true, parallel: 2 }),
 				version: "0.0.0-test",
@@ -3534,8 +3677,9 @@ describe(runWorkspaceAsync, () => {
 		it("should create a signal map for the bail without a streaming consumer", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3552,6 +3696,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ bail: true, parallel: 2 }),
 				version: "0.0.0-test",
@@ -3565,8 +3710,9 @@ describe(runWorkspaceAsync, () => {
 		it("should skip streaming setup when onStreamingResult is omitted (no SortedMap polling overhead)", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3583,6 +3729,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ parallel: 2 }),
 				version: "0.0.0-test",
@@ -3597,8 +3744,9 @@ describe(runWorkspaceAsync, () => {
 		it("should route streaming entries through the supplied onStreamingResult", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3635,6 +3783,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend: wrappedBackend,
 				cli: makeCli(),
+				fileSystem,
 				onStreamingResult: (entry) => {
 					seen.push(entry.pkg);
 				},
@@ -3653,8 +3802,9 @@ describe(runWorkspaceAsync, () => {
 		it("should write .jest-roblox/output/<pkg>--<project>.jest-output.log under the workspace root from final results", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3670,6 +3820,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceOutputFile: true }),
 				version: "0.0.0-test",
@@ -3683,8 +3834,8 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-foo--@halcyon-foo.jest-output.log",
 			);
 
-			expect(vol.existsSync(file)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toMatchObject({
+			expect(volume.existsSync(file)).toBeTrue();
+			expect(JSON.parse(volume.readFileSync(file, "utf-8").toString())).toMatchObject({
 				numFailedTests: 0,
 				numPassedTests: 1,
 				success: true,
@@ -3694,8 +3845,9 @@ describe(runWorkspaceAsync, () => {
 		it("should sanitize filesystem-unsafe characters in pkg/project segments", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3711,6 +3863,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceOutputFile: true }),
 				version: "0.0.0-test",
@@ -3720,7 +3873,7 @@ describe(runWorkspaceAsync, () => {
 			// `@halcyon/foo` → `@halcyon-foo`; slashes and other unsafe chars
 			// become hyphens so the path component stays a single segment.
 			expect(
-				vol.existsSync(
+				volume.existsSync(
 					path.join(
 						ROOT,
 						".jest-roblox",
@@ -3734,8 +3887,9 @@ describe(runWorkspaceAsync, () => {
 		it("should NOT write per-package result files when workspace.outputFile is disabled", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3751,6 +3905,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
@@ -3758,7 +3913,7 @@ describe(runWorkspaceAsync, () => {
 			});
 
 			expect(
-				vol.existsSync(
+				volume.existsSync(
 					path.join(
 						ROOT,
 						".jest-roblox",
@@ -3774,8 +3929,9 @@ describe(runWorkspaceAsync, () => {
 		it("should write a package's type test result to .jest-roblox/output/<pkg>--<project>.jest-output.log under --typecheckOnly", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: {
@@ -3812,6 +3968,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ typecheckOnly: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceOutputFile: true }),
 				version: "0.0.0-test",
@@ -3825,8 +3982,8 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-foo--@halcyon-foo.jest-output.log",
 			);
 
-			expect(vol.existsSync(file)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toMatchObject({
+			expect(volume.existsSync(file)).toBeTrue();
+			expect(JSON.parse(volume.readFileSync(file, "utf-8").toString())).toMatchObject({
 				success: true,
 				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
 			});
@@ -3835,8 +3992,9 @@ describe(runWorkspaceAsync, () => {
 		it("should merge the type test result into the per-package file alongside runtime results", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: {
@@ -3875,6 +4033,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceOutputFile: true }),
 				version: "0.0.0-test",
@@ -3888,7 +4047,7 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-foo--@halcyon-foo.jest-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toStrictEqual({
+			expect(JSON.parse(volume.readFileSync(file, "utf-8").toString())).toStrictEqual({
 				numFailedTests: 0,
 				numPassedTests: 2,
 				numPendingTests: 0,
@@ -3913,8 +4072,9 @@ describe(runWorkspaceAsync, () => {
 		it("should write parsed entries to .jest-roblox/output/<pkg>--<project>.game-output.log when workspace.gameOutput is enabled", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3933,6 +4093,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceGameOutput: true }),
 				version: "0.0.0-test",
@@ -3946,8 +4107,8 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-foo--@halcyon-foo.game-output.log",
 			);
 
-			expect(vol.existsSync(file)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toStrictEqual([
+			expect(volume.existsSync(file)).toBeTrue();
+			expect(JSON.parse(volume.readFileSync(file, "utf-8").toString())).toStrictEqual([
 				{ message: "hello", messageType: 0, timestamp: 1000 },
 			]);
 		});
@@ -3955,8 +4116,9 @@ describe(runWorkspaceAsync, () => {
 		it("should NOT write per-package gameOutput files when workspace.gameOutput is disabled", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -3975,6 +4137,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceOutputFile: true }),
 				version: "0.0.0-test",
@@ -3986,7 +4149,7 @@ describe(runWorkspaceAsync, () => {
 			// the .game-output.log companion stays absent because
 			// workspace.gameOutput is off.
 			expect(
-				vol.existsSync(
+				volume.existsSync(
 					path.join(
 						ROOT,
 						".jest-roblox",
@@ -3996,7 +4159,7 @@ describe(runWorkspaceAsync, () => {
 				),
 			).toBeTrue();
 			expect(
-				vol.existsSync(
+				volume.existsSync(
 					path.join(
 						ROOT,
 						".jest-roblox",
@@ -4010,8 +4173,9 @@ describe(runWorkspaceAsync, () => {
 		it("should write an empty array when the package's gameOutput is missing", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -4027,6 +4191,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceGameOutput: true }),
 				version: "0.0.0-test",
@@ -4040,14 +4205,15 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-foo--@halcyon-foo.game-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toStrictEqual([]);
+			expect(JSON.parse(volume.readFileSync(file, "utf-8").toString())).toStrictEqual([]);
 		});
 
 		it("should write an empty array when the package's gameOutput is invalid JSON", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -4063,6 +4229,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceGameOutput: true }),
 				version: "0.0.0-test",
@@ -4076,7 +4243,7 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-foo--@halcyon-foo.game-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(file, "utf-8").toString())).toStrictEqual([]);
+			expect(JSON.parse(volume.readFileSync(file, "utf-8").toString())).toStrictEqual([]);
 		});
 
 		// A failure envelope synthesizes an ExecuteResult
@@ -4085,8 +4252,9 @@ describe(runWorkspaceAsync, () => {
 		it("should still write per-package gameOutput files when one entry's envelope is a failure", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -4119,6 +4287,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
 				runOptions: makeRunOptions({ silent: true, workspaceGameOutput: true }),
 				version: "0.0.0-test",
@@ -4138,17 +4307,18 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-bar--@halcyon-bar.game-output.log",
 			);
 
-			expect(JSON.parse(vol.readFileSync(fooFile, "utf-8").toString())).toStrictEqual([
+			expect(JSON.parse(volume.readFileSync(fooFile, "utf-8").toString())).toStrictEqual([
 				{ message: "captured before crash", messageType: 2, timestamp: 5 },
 			]);
-			expect(JSON.parse(vol.readFileSync(barFile, "utf-8").toString())).toStrictEqual([]);
+			expect(JSON.parse(volume.readFileSync(barFile, "utf-8").toString())).toStrictEqual([]);
 		});
 
 		it("should emit a separate gameOutput file per project for multi-project packages", async () => {
 			expect.assertions(4);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: {
@@ -4196,6 +4366,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ workspaceGameOutput: true }),
 				version: "0.0.0-test",
@@ -4215,21 +4386,22 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-foo--server.game-output.log",
 			);
 
-			expect(vol.existsSync(clientFile)).toBeTrue();
-			expect(vol.existsSync(serverFile)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(clientFile, "utf-8").toString())).toStrictEqual([
+			expect(volume.existsSync(clientFile)).toBeTrue();
+			expect(volume.existsSync(serverFile)).toBeTrue();
+			expect(JSON.parse(volume.readFileSync(clientFile, "utf-8").toString())).toStrictEqual([
 				{ message: "client", messageType: 0, timestamp: 1 },
 			]);
-			expect(JSON.parse(vol.readFileSync(serverFile, "utf-8").toString())).toStrictEqual([
+			expect(JSON.parse(volume.readFileSync(serverFile, "utf-8").toString())).toStrictEqual([
 				{ message: "server", messageType: 1, timestamp: 2 },
 			]);
 		});
 	});
 
 	describe("aggregated gameOutput", () => {
-		function seedFoo(): void {
-			vol.reset();
-			vol.fromJSON({
+		function seedFoo(): MemoryFileSystem {
+			const memory = createMemoryFileSystem();
+
+			memory.volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -4237,6 +4409,7 @@ describe(runWorkspaceAsync, () => {
 				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 			});
 			setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+			return memory;
 		}
 
 		const helloRaw = JSON.stringify([{ message: "hello", messageType: 0, timestamp: 1000 }]);
@@ -4251,7 +4424,7 @@ describe(runWorkspaceAsync, () => {
 		it("should write a single grouped aggregate file when runOptions.gameOutput is set", async () => {
 			expect.assertions(1);
 
-			seedFoo();
+			const { fileSystem, volume } = seedFoo();
 			const { backend } = createStubBackend([
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
@@ -4259,13 +4432,16 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ gameOutput: aggregateFile, silent: true }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			expect(JSON.parse(vol.readFileSync(aggregateFile, "utf-8").toString())).toStrictEqual([
+			expect(
+				JSON.parse(volume.readFileSync(aggregateFile, "utf-8").toString()),
+			).toStrictEqual([
 				{
 					entries: [{ message: "hello", messageType: 0, timestamp: 1000 }],
 					package: "@halcyon/foo",
@@ -4277,7 +4453,7 @@ describe(runWorkspaceAsync, () => {
 		it("should write both the aggregate and per-package files when both are enabled", async () => {
 			expect.assertions(2);
 
-			seedFoo();
+			const { fileSystem, volume } = seedFoo();
 			const { backend } = createStubBackend([
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
@@ -4285,6 +4461,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({
 					gameOutput: aggregateFile,
@@ -4295,14 +4472,14 @@ describe(runWorkspaceAsync, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(vol.existsSync(aggregateFile)).toBeTrue();
-			expect(vol.existsSync(perPackageFile)).toBeTrue();
+			expect(volume.existsSync(aggregateFile)).toBeTrue();
+			expect(volume.existsSync(perPackageFile)).toBeTrue();
 		});
 
 		it("should announce only the aggregate to humans when both sinks are active", async () => {
 			expect.assertions(2);
 
-			seedFoo();
+			const { fileSystem } = seedFoo();
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 			const { backend } = createStubBackend([
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
@@ -4311,6 +4488,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({
 					formatters: ["default"],
@@ -4328,7 +4506,7 @@ describe(runWorkspaceAsync, () => {
 		it("should announce per-package files to agents when both sinks are active", async () => {
 			expect.assertions(2);
 
-			seedFoo();
+			const { fileSystem } = seedFoo();
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 			const { backend } = createStubBackend([
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
@@ -4337,6 +4515,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({
 					formatters: ["agent"],
@@ -4354,7 +4533,7 @@ describe(runWorkspaceAsync, () => {
 		it("should announce per-package paths to humans when only per-package is active", async () => {
 			expect.assertions(1);
 
-			seedFoo();
+			const { fileSystem } = seedFoo();
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 			const { backend } = createStubBackend([
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
@@ -4363,6 +4542,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ formatters: ["default"], workspaceGameOutput: true }),
 				version: "0.0.0-test",
@@ -4375,7 +4555,7 @@ describe(runWorkspaceAsync, () => {
 		it("should announce the aggregate to agents when only the aggregate is active", async () => {
 			expect.assertions(1);
 
-			seedFoo();
+			const { fileSystem } = seedFoo();
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 			const { backend } = createStubBackend([
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
@@ -4384,6 +4564,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ formatters: ["agent"], gameOutput: aggregateFile }),
 				version: "0.0.0-test",
@@ -4396,7 +4577,7 @@ describe(runWorkspaceAsync, () => {
 		it("should not announce the aggregate when it captured zero entries", async () => {
 			expect.assertions(2);
 
-			seedFoo();
+			const { fileSystem, volume } = seedFoo();
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
@@ -4405,6 +4586,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ formatters: ["default"], gameOutput: aggregateFile }),
 				version: "0.0.0-test",
@@ -4412,7 +4594,7 @@ describe(runWorkspaceAsync, () => {
 			});
 
 			// File still written (empty group), but no notice for zero entries.
-			expect(vol.existsSync(aggregateFile)).toBeTrue();
+			expect(volume.existsSync(aggregateFile)).toBeTrue();
 			expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining(aggregateFile));
 		});
 	});
@@ -4421,8 +4603,9 @@ describe(runWorkspaceAsync, () => {
 		it("should write the merged result to runOptions.outputFile", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -4439,14 +4622,15 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ outputFile, silent: true }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			expect(vol.existsSync(outputFile)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
+			expect(volume.existsSync(outputFile)).toBeTrue();
+			expect(JSON.parse(volume.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
 				numPassedTests: 1,
 				success: true,
 			});
@@ -4455,8 +4639,9 @@ describe(runWorkspaceAsync, () => {
 		it("should not write a result file when runOptions.outputFile is unset", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -4472,20 +4657,22 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ silent: true }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			expect(vol.existsSync(path.join(ROOT, "jest-output.log"))).toBeFalse();
+			expect(volume.existsSync(path.join(ROOT, "jest-output.log"))).toBeFalse();
 		});
 
 		it("should write the type test result to runOptions.outputFile under --typecheckOnly", async () => {
 			expect.assertions(2);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: {
@@ -4525,14 +4712,15 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli({ typecheckOnly: true }),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ outputFile, silent: true }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			expect(vol.existsSync(outputFile)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
+			expect(volume.existsSync(outputFile)).toBeTrue();
+			expect(JSON.parse(volume.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
 				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
 			});
 		});
@@ -4540,8 +4728,9 @@ describe(runWorkspaceAsync, () => {
 		it("should merge the type test result into runOptions.outputFile alongside runtime results", async () => {
 			expect.assertions(1);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: {
@@ -4581,13 +4770,14 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO],
 				runOptions: makeRunOptions({ outputFile, silent: true }),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			expect(JSON.parse(vol.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
+			expect(JSON.parse(volume.readFileSync(outputFile, "utf-8").toString())).toMatchObject({
 				numPassedTests: 2,
 				testResults: [{ testFilePath: "@halcyon/foo/src/foo.spec-d.ts" }],
 			});
@@ -4598,8 +4788,9 @@ describe(runWorkspaceAsync, () => {
 		it("should route each package's envelope snapshotWrites to its own package directory without cross-package leak", async () => {
 			expect.assertions(4);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -4638,6 +4829,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
 				runOptions: makeRunOptions({ silent: true }),
 				version: "0.0.0-test",
@@ -4647,16 +4839,16 @@ describe(runWorkspaceAsync, () => {
 			const fooSnap = path.join(FOO_DIR, "src/__snapshots__/foo.spec.snap.luau");
 			const barSnap = path.join(BAR_DIR, "src/__snapshots__/bar.spec.snap.luau");
 
-			expect(vol.readFileSync(fooSnap, "utf8")).toBe("foo-snap-content");
-			expect(vol.readFileSync(barSnap, "utf8")).toBe("bar-snap-content");
+			expect(volume.readFileSync(fooSnap, "utf8")).toBe("foo-snap-content");
+			expect(volume.readFileSync(barSnap, "utf8")).toBe("bar-snap-content");
 
 			// No cross-package leak: foo's snapshot path does not appear under
 			// bar's tree, and vice versa.
 			expect(
-				vol.existsSync(path.join(BAR_DIR, "src/__snapshots__/foo.spec.snap.luau")),
+				volume.existsSync(path.join(BAR_DIR, "src/__snapshots__/foo.spec.snap.luau")),
 			).toBeFalse();
 			expect(
-				vol.existsSync(path.join(FOO_DIR, "src/__snapshots__/bar.spec.snap.luau")),
+				volume.existsSync(path.join(FOO_DIR, "src/__snapshots__/bar.spec.snap.luau")),
 			).toBeFalse();
 		});
 
@@ -4671,8 +4863,9 @@ describe(runWorkspaceAsync, () => {
 		it("should still write sibling snapshots and per-package outputs when one entry's envelope is a failure", async () => {
 			expect.assertions(5);
 
-			vol.reset();
-			vol.fromJSON({
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			volume.fromJSON({
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
@@ -4712,6 +4905,7 @@ describe(runWorkspaceAsync, () => {
 			await runWorkspaceAsync({
 				backend,
 				cli: makeCli(),
+				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
 				runOptions: makeRunOptions({ silent: true, workspaceOutputFile: true }),
 				version: "0.0.0-test",
@@ -4720,7 +4914,7 @@ describe(runWorkspaceAsync, () => {
 
 			// bar's snapshot lands even though foo's envelope failed.
 			expect(
-				vol.readFileSync(
+				volume.readFileSync(
 					path.join(BAR_DIR, "src/__snapshots__/bar.spec.snap.luau"),
 					"utf8",
 				),
@@ -4741,12 +4935,12 @@ describe(runWorkspaceAsync, () => {
 				"@halcyon-bar--@halcyon-bar.jest-output.log",
 			);
 
-			expect(vol.existsSync(fooOutput)).toBeTrue();
-			expect(vol.existsSync(barOutput)).toBeTrue();
-			expect(JSON.parse(vol.readFileSync(fooOutput, "utf-8").toString())).toMatchObject({
+			expect(volume.existsSync(fooOutput)).toBeTrue();
+			expect(volume.existsSync(barOutput)).toBeTrue();
+			expect(JSON.parse(volume.readFileSync(fooOutput, "utf-8").toString())).toMatchObject({
 				success: false,
 			});
-			expect(JSON.parse(vol.readFileSync(barOutput, "utf-8").toString())).toMatchObject({
+			expect(JSON.parse(volume.readFileSync(barOutput, "utf-8").toString())).toMatchObject({
 				numPassedTests: 1,
 				success: true,
 			});
@@ -4771,8 +4965,9 @@ describe("workspace type tests", () => {
 	it("should discover a package's -d type tests via the derived include and return a typecheckResult", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -4801,6 +4996,7 @@ describe("workspace type tests", () => {
 		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -4820,8 +5016,9 @@ describe("workspace type tests", () => {
 	it("should check only the type test a positional file names", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -4848,6 +5045,7 @@ describe("workspace type tests", () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/wanted.spec-d.ts")] }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -4868,8 +5066,9 @@ describe("workspace type tests", () => {
 	it("should skip the type pass when a positional file names a runtime spec", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -4896,6 +5095,7 @@ describe("workspace type tests", () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/foo.spec.ts")] }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -4908,8 +5108,9 @@ describe("workspace type tests", () => {
 	it("should use an explicit test.typecheck.include instead of deriving from the runtime include", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -4939,6 +5140,7 @@ describe("workspace type tests", () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -4954,8 +5156,9 @@ describe("workspace type tests", () => {
 	it("should subtract test.typecheck.exclude from the discovered type tests", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -4985,6 +5188,7 @@ describe("workspace type tests", () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -5000,8 +5204,9 @@ describe("workspace type tests", () => {
 	it("should collapse multi-project packages sharing a tsconfig into one tsgo group at the package directory", async () => {
 		expect.assertions(3);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -5042,6 +5247,7 @@ describe("workspace type tests", () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -5059,8 +5265,9 @@ describe("workspace type tests", () => {
 	it("should form distinct groups per package even when they share the same relative tsconfig name", async () => {
 		expect.assertions(3);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -5103,6 +5310,7 @@ describe("workspace type tests", () => {
 		await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -5127,8 +5335,9 @@ describe("workspace type tests", () => {
 	it("should compose package identity onto each merged type test file result", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -5185,6 +5394,7 @@ describe("workspace type tests", () => {
 		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO, BAR_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -5200,8 +5410,9 @@ describe("workspace type tests", () => {
 	it("should run the type pass concurrently with the Open Cloud run", async () => {
 		expect.assertions(1);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -5252,6 +5463,7 @@ describe("workspace type tests", () => {
 		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -5264,8 +5476,9 @@ describe("workspace type tests", () => {
 	it("should short-circuit --typecheckOnly: no place build, no backend dispatch, only the type pass", async () => {
 		expect.assertions(4);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: {
@@ -5289,6 +5502,7 @@ describe("workspace type tests", () => {
 		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli({ typecheckOnly: true }),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -5304,8 +5518,9 @@ describe("workspace type tests", () => {
 	it("should report results for a type-test-only package rather than erroring on no runtime specs", async () => {
 		expect.assertions(2);
 
-		vol.reset();
-		vol.fromJSON({
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, {
 				name: "@halcyon/foo",
 				specFiles: { [path.join(FOO_DIR, "src/foo.spec-d.ts")]: "" },
@@ -5332,6 +5547,7 @@ describe("workspace type tests", () => {
 		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
@@ -5345,10 +5561,11 @@ describe("workspace type tests", () => {
 	it("should still error for a truly empty package even with typecheck enabled", async () => {
 		expect.assertions(2);
 
-		vol.reset();
+		const { fileSystem, volume } = createMemoryFileSystem();
+
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		vol.fromJSON({
+		volume.fromJSON({
 			...seedPackage(FOO_DIR, { name: "@halcyon/foo" }),
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
 		});
@@ -5367,6 +5584,7 @@ describe("workspace type tests", () => {
 		const result = await runWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
 			version: "0.0.0-test",

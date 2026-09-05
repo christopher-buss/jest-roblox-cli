@@ -1,9 +1,7 @@
 import { type } from "arktype";
 import type buffer from "node:buffer";
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import { WebSocketServer } from "ws";
@@ -12,12 +10,17 @@ import type { WebSocket } from "ws";
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import { findRojoProject } from "../coverage-pipeline/prepare.ts";
+import type { RunProgress } from "../progress/reporter.ts";
 import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import { describeProjectCount } from "../progress/stages.ts";
 import {
 	type BuildPlaceOptions,
 	buildPlaceAsync as defaultBuildPlace,
 } from "../staging/place-builder.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { nodeChildProcessRunner } from "../utils/child-process.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { decodeEnvelope } from "./envelope.ts";
 import {
@@ -25,6 +28,7 @@ import {
 	type BackendOptions,
 	type BackendResult,
 	isWorkspaceRun,
+	type ParallelOption,
 	type ProjectJob,
 	type RawBackendEntry,
 } from "./interface.ts";
@@ -148,6 +152,10 @@ const resultMessageSchema = type({
 export interface StudioCliLaunchRequest {
 	/** Full Studio CLI argument vector (already absolute paths). */
 	args: Array<string>;
+	/** What launches Studio. Defaults to the real launcher. */
+	childProcess?: ChildProcessRunner;
+	/** Where the lock file is watched. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * Show the Studio window during the run (`--headed`) instead of the
 	 * default hidden window. Maps to `windowsHide: !headed` in {@link
@@ -197,6 +205,8 @@ export type StudioCliLauncher = (request: StudioCliLaunchRequest) => StudioCliPr
 export interface StudioCliOptions {
 	/** Place Builder seam; defaults to the real {@link defaultBuildPlace}. */
 	buildPlaceAsync?: ((options: BuildPlaceOptions) => Promise<BuildManifestArtifact>) | undefined;
+	/** What launches Studio. Defaults to the real launcher. */
+	childProcess?: ChildProcessRunner;
 	/**
 	 * Result-server factory seam; defaults to an ephemeral-port `ws` server.
 	 *
@@ -212,6 +222,8 @@ export interface StudioCliOptions {
 	 * Studio-executable resolver seam; defaults to {@link discoverStudioPath}.
 	 */
 	discover?: ((override: string | undefined) => string) | undefined;
+	/** Where the run stages its files. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
 	/**
 	 * Backstop for the graceful teardown: hard-kill if `<place>.lock` isn't
 	 * released within this many ms. Defaults to
@@ -242,6 +254,7 @@ interface RunPlace {
 }
 
 interface StudioArgsOptions extends RunPayloadRequest, RunPlace {
+	fileSystem: FileSystem;
 	port: number;
 	requestId: string;
 }
@@ -258,6 +271,7 @@ interface ResultDeadline {
 
 interface StudioCliResultWait {
 	child: StudioCliProcess;
+	fileSystem: FileSystem;
 	/** Where Studio logs, quoted back when the run never answers. */
 	outputFile: string;
 	reject: (error: Error) => void;
@@ -267,12 +281,45 @@ interface StudioCliResultWait {
 	timeout: number;
 }
 
+/**
+ * The one run whose result frame is awaited: the socket, and the child on it.
+ */
+type ResultChannel = Pick<StudioCliResultWait, "child" | "fileSystem" | "server">;
+
+/**
+ * What one dispatch launches and waits on: the place it opens, the jobs it
+ * runs, and the socket the result comes back over.
+ */
+interface StudioCliDispatch {
+	deadline: ResultDeadline;
+	jobs: Array<ProjectJob>;
+	place: RunPlace;
+	progress: RunProgress;
+	runRequest: { runBudgetMs: number; vmParallel: ParallelOption };
+	server: WebSocketServer;
+}
+
+/**
+ * The child a run launched and who owns tearing it down. Mutable because the
+ * caller's `finally` reads what the dispatch had reached when it threw.
+ */
+interface StudioCliSession {
+	child?: StudioCliProcess | undefined;
+	/**
+	 * Set once the background watch owns teardown (result in hand), so the
+	 * `finally` knows not to also hard-kill or re-close.
+	 */
+	wasGracefulTeardownStarted: boolean;
+}
+
 export class StudioCliBackend implements Backend {
 	private readonly buildPlaceAsync: (
 		options: BuildPlaceOptions,
 	) => Promise<BuildManifestArtifact>;
+	private readonly childProcess: ChildProcessRunner;
 	private readonly createServer: () => WebSocketServer;
 	private readonly discover: (override: string | undefined) => string;
+	private readonly fileSystem: FileSystem;
 	private readonly gracefulShutdownTimeout: number;
 	private readonly headed: boolean;
 	private readonly launch: StudioCliLauncher;
@@ -285,11 +332,17 @@ export class StudioCliBackend implements Backend {
 		this.buildPlaceAsync = options.buildPlaceAsync ?? defaultBuildPlace;
 		this.createServer =
 			options.createServer ?? (() => new WebSocketServer({ host: "127.0.0.1", port: 0 }));
+		const fileSystem = options.fileSystem ?? nodeFileSystem;
 		this.discover =
 			options.discover ??
 			((override) => {
-				return discoverStudioPath({ override: override ?? process.env[STUDIO_PATH_ENV] });
+				return discoverStudioPath({
+					fileSystem,
+					override: override ?? process.env[STUDIO_PATH_ENV],
+				});
 			});
+		this.childProcess = options.childProcess ?? nodeChildProcessRunner;
+		this.fileSystem = fileSystem;
 		this.gracefulShutdownTimeout = options.gracefulShutdownTimeout ?? GRACEFUL_SHUTDOWN_CAP_MS;
 		this.headed = options.headed ?? false;
 		this.launch = options.launch ?? spawnStudio;
@@ -306,37 +359,20 @@ export class StudioCliBackend implements Backend {
 	}: BackendOptions): Promise<BackendResult> {
 		assertSerialJobs({ jobs, parallel, workStealing });
 		const place = await this.prepareRunPlaceAsync(jobs);
-		const runRequest = { runBudgetMs: this.timeout, vmParallel };
-		const { placeFile } = place;
-		const deadline = this.deadlineFor(place.workDirectory);
 		const server = this.createServer();
-		let child: StudioCliProcess | undefined;
-		// Set once the background watch owns teardown (result in hand), so the
-		// `finally` knows not to also hard-kill or re-close.
-		let wasGracefulTeardownStarted = false;
+		const session: StudioCliSession = { wasGracefulTeardownStarted: false };
 		try {
-			const port = await serverPortAsync(server);
-			const requestId = randomUUID();
-			const args = buildStudioArgs({ ...place, ...runRequest, jobs, port, requestId });
-			const studioPath = this.discover(this.studioPath);
-			// Announced here rather than in the executor, which wraps every
-			// backend alike: only a backend knows when its own dispatch window
-			// starts.
-			const done = progress.begin("tests", describeProjectCount(jobs.length));
-			const executionStart = Date.now();
-			child = this.launch({ args, headed: this.headed, placeFile, studioPath });
-			const message = await waitForResultAsync(server, child, requestId, deadline);
-			const executionMs = Date.now() - executionStart;
-
-			done();
-
-			startGracefulTeardown(child, server, this.gracefulShutdownTimeout);
-			wasGracefulTeardownStarted = true;
-
-			return buildBackendResult(message, jobs, executionMs);
+			return await this.dispatchRunAsync(session, {
+				deadline: this.deadlineFor(place.workDirectory),
+				jobs,
+				place,
+				progress,
+				runRequest: { runBudgetMs: this.timeout, vmParallel },
+				server,
+			});
 		} finally {
-			if (!wasGracefulTeardownStarted) {
-				hardTeardown(child, server);
+			if (!session.wasGracefulTeardownStarted) {
+				hardTeardown(session.child, server);
 			}
 		}
 	}
@@ -376,6 +412,58 @@ export class StudioCliBackend implements Backend {
 	}
 
 	/**
+	 * Launch Studio against the prepared place and wait for its result frame.
+	 *
+	 * Records the child and the teardown decision on `session` as it goes, so
+	 * the caller's `finally` can clean up after a throw from any point here.
+	 */
+	private async dispatchRunAsync(
+		session: StudioCliSession,
+		{ deadline, jobs, place, progress, runRequest, server }: StudioCliDispatch,
+	): Promise<BackendResult> {
+		const requestId = randomUUID();
+		const args = buildStudioArgs({
+			...place,
+			...runRequest,
+			fileSystem: this.fileSystem,
+			jobs,
+			port: await serverPortAsync(server),
+			requestId,
+		});
+		// Announced here rather than in the executor, which wraps every backend
+		// alike: only a backend knows when its own dispatch window starts.
+		const done = progress.begin("tests", describeProjectCount(jobs.length));
+		const executionStart = Date.now();
+		const child = this.launchStudio(args, place.placeFile);
+		session.child = child;
+		const message = await waitForResultAsync(
+			{ child, fileSystem: this.fileSystem, server },
+			requestId,
+			deadline,
+		);
+
+		done();
+		startGracefulTeardown(child, server, this.gracefulShutdownTimeout);
+		session.wasGracefulTeardownStarted = true;
+
+		return buildBackendResult(message, jobs, Date.now() - executionStart);
+	}
+
+	/**
+	 * The Studio the run was pointed at, launched against the place it built.
+	 */
+	private launchStudio(args: Array<string>, placeFile: string): StudioCliProcess {
+		return this.launch({
+			args,
+			childProcess: this.childProcess,
+			fileSystem: this.fileSystem,
+			headed: this.headed,
+			placeFile,
+			studioPath: this.discover(this.studioPath),
+		});
+	}
+
+	/**
 	 * Resolve the place Studio opens for this run and the scratch directory its
 	 * bootstrap/output files live in, creating both as needed.
 	 */
@@ -386,7 +474,7 @@ export class StudioCliBackend implements Backend {
 
 		const rootDirectory = path.resolve(primary.config.rootDir);
 		const workDirectory = path.join(rootDirectory, WORK_DIR);
-		fs.mkdirSync(workDirectory, { recursive: true });
+		this.fileSystem.mkdirSync(workDirectory, { recursive: true });
 
 		// Which place studio-cli drives, by run shape:
 		// - workspace: the synthesized mega-place the workspace runner already
@@ -532,6 +620,7 @@ function buildBootstrap(payload: StudioCliPayload, port: number, requestId: stri
  * Studio CLI argument vector that opens the place and runs it.
  */
 function buildStudioArgs({
+	fileSystem,
 	jobs,
 	placeFile,
 	port,
@@ -542,7 +631,7 @@ function buildStudioArgs({
 }: StudioArgsOptions): Array<string> {
 	const bootstrapFile = path.join(workDirectory, BOOTSTRAP_FILE);
 	const outputFile = studioOutputFile(workDirectory);
-	fs.writeFileSync(
+	fileSystem.writeFileSync(
 		bootstrapFile,
 		buildBootstrap(buildStudioCliPayload({ jobs, runBudgetMs, vmParallel }), port, requestId),
 	);
@@ -645,10 +734,10 @@ async function serverPortAsync(server: WebSocketServer): Promise<number> {
  * @param outputFile - Path Studio was told to log to.
  * @returns Trailing log lines, oldest first, or an empty array.
  */
-function readStudioLogTail(outputFile: string): Array<string> {
+function readStudioLogTail(fileSystem: FileSystem, outputFile: string): Array<string> {
 	let contents;
 	try {
-		contents = fs.readFileSync(outputFile, "utf-8");
+		contents = fileSystem.readFileSync(outputFile, "utf-8");
 	} catch {
 		return [];
 	}
@@ -676,12 +765,12 @@ function readStudioLogTail(outputFile: string): Array<string> {
  * @param outputFile - Path Studio was told to log to.
  * @returns The error to reject the run with.
  */
-function timedOutError(timeout: number, outputFile: string): Error {
+function timedOutError(fileSystem: FileSystem, timeout: number, outputFile: string): Error {
 	const lines = [
 		`studio-cli: Studio run timed out after ${timeout.toString()}ms and was terminated.`,
 		`  Studio log: ${outputFile}`,
 	];
-	const tail = readStudioLogTail(outputFile);
+	const tail = readStudioLogTail(fileSystem, outputFile);
 	if (tail.length > 0) {
 		lines.push("  Last lines Studio logged:");
 		for (const line of tail) {
@@ -728,6 +817,7 @@ function listenForResultFrame(
  */
 function awaitStudioCliResult({
 	child,
+	fileSystem,
 	outputFile,
 	reject,
 	requestId,
@@ -737,7 +827,7 @@ function awaitStudioCliResult({
 }: StudioCliResultWait): void {
 	let isSettled = false;
 	const timer = setTimeout(() => {
-		bail(timedOutError(timeout, outputFile));
+		bail(timedOutError(fileSystem, timeout, outputFile));
 	}, timeout);
 
 	function settle(action: () => void): void {
@@ -776,14 +866,14 @@ function awaitStudioCliResult({
  * wrong payload.
  */
 async function waitForResultAsync(
-	server: WebSocketServer,
-	child: StudioCliProcess,
+	{ child, fileSystem, server }: ResultChannel,
 	requestId: string,
 	deadline: ResultDeadline,
 ): Promise<ResultMessage> {
 	return new Promise<ResultMessage>((resolve, reject) => {
 		awaitStudioCliResult({
 			child,
+			fileSystem,
 			outputFile: deadline.outputFile,
 			reject,
 			requestId,
@@ -856,12 +946,13 @@ function startGracefulTeardown(
  * `stdout` pipe could backpressure-stall a chatty Studio.
  */
 function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
+	const { childProcess = nodeChildProcessRunner, fileSystem = nodeFileSystem } = request;
 	const lockFile = `${request.placeFile}.lock`;
-	fs.rmSync(lockFile, { force: true });
+	fileSystem.rmSync(lockFile, { force: true });
 
 	// headed mode intentionally shows the Studio window; `!request.headed` is
 	// the deliberate lever, not an accidental terminal popup.
-	const child = spawn(request.studioPath, request.args, {
+	const child = childProcess.spawn(request.studioPath, request.args, {
 		stdio: "ignore",
 		windowsHide: !request.headed,
 	});
@@ -878,7 +969,7 @@ function spawnStudio(request: StudioCliLaunchRequest): StudioCliProcess {
 			// handler.
 			const deadline = Date.now() + graceCapMs;
 			const timer = setInterval(() => {
-				const isHeld = fs.existsSync(lockFile) && Date.now() < deadline;
+				const isHeld = fileSystem.existsSync(lockFile) && Date.now() < deadline;
 				if (isHeld) {
 					return;
 				}
