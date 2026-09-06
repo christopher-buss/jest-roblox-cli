@@ -398,6 +398,62 @@ local function testBudgetCoversWorkBeforeTheFirstYield()
 	check(not isWatching(), "T17: the watch is disconnected")
 end
 
+-- T18: an abandoned run appends what the caller has to say about it, on both
+-- paths, so a report that names a budget or a yield also names the test the run
+-- was in. A run that ends on its own is never asked.
+local function testAbandonNoteIsAppended()
+	local asked = 0
+	local function note()
+		asked += 1
+		return "Last test seen: \"spins\" in ReplicatedStorage/wedge.spec (running for 52.3s)"
+	end
+
+	local warned = guardInThread(parkForever, { abandonNote = note })
+	emit(YIELD_WARNING, WARNING)
+	check(
+		warned.value == ABORT_PREFIX .. YIELD_WARNING .. ". " .. note(),
+		"T18: a warned run appends the note, got " .. tostring(warned.value)
+	)
+
+	local expired = guardInThread(parkForever, { abandonNote = note, timeoutMs = 60_000 })
+	elapse()
+	check(
+		expired.value == "Timed out after 60s, aborting tests. " .. note(),
+		"T18: an elapsed budget appends it too, got " .. tostring(expired.value)
+	)
+
+	asked = 0
+	local finished = guardInThread(function()
+		return "value"
+	end, { abandonNote = note })
+	check(finished.value == "value", "T18: a run that ended keeps its own value")
+	check(asked == 0, "T18: and is never asked for a note")
+end
+
+-- T19: the note is a description, not a verdict — one that throws or says
+-- nothing leaves the abort exactly as it was.
+local function testUselessNoteLeavesTheAbortAlone()
+	local threw = guardInThread(parkForever, {
+		abandonNote = function()
+			error("the record exploded", 0)
+		end,
+	})
+	emit(YIELD_WARNING, WARNING)
+	check(threw.value == ABORT_PREFIX .. YIELD_WARNING, "T19: a throwing note is dropped")
+
+	local empty = guardInThread(parkForever, {
+		abandonNote = function()
+			return ""
+		end,
+		timeoutMs = 60_000,
+	})
+	elapse()
+	check(
+		empty.value == "Timed out after 60s, aborting tests",
+		"T19: an empty note adds no punctuation of its own"
+	)
+end
+
 testReturnedValueIsPassedThrough()
 testThrownErrorIsPassedThrough()
 testWarningWhileParkedAbortsTheRun()
@@ -415,5 +471,7 @@ testWarningDisarmsTheBudget()
 testNoBudgetArmsNoDeadline()
 testRunWithinBudgetKeepsItsResult()
 testBudgetCoversWorkBeforeTheFirstYield()
+testAbandonNoteIsAppended()
+testUselessNoteLeavesTheAbortAlone()
 
 print("ALL OK")

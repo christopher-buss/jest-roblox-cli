@@ -288,17 +288,19 @@ export const EXEC_ERROR_RESULT: JestResult = {
 	],
 };
 
-// The same shape an exec error takes, differing only in what abandoned it —
-// which is the whole of what the formatters are asked to tell apart. It keeps
-// the exec error's own `testFilePath` on purpose: the flag is what a formatter
-// may read, and a rendering that keyed off the path would pass here wrongly.
+// The same shape an exec error takes, differing only in the `timedOut` flag —
+// the whole of what the formatters are asked to tell apart, which is why the
+// exec error's own `testFilePath` stays. The message is a real abandoned run's:
+// its last-seen clause is the only thing naming a test in a report with no test
+// results, so a formatter that trims to the first clause has dropped the answer.
 export const TIMED_OUT_RESULT: JestResult = {
 	...EXEC_ERROR_RESULT,
 	testResults: [
 		{
 			// eslint-disable-next-line ts/no-non-null-assertion -- one file above
 			...EXEC_ERROR_RESULT.testResults[0]!,
-			failureMessage: "Timed out after 60s, aborting tests",
+			failureMessage:
+				'Timed out after 60s, aborting tests. Last test seen: "wedge wedges without yielding" in ReplicatedStorage/PkgShared/wedge.spec (running for 52.3s)',
 			timedOut: true,
 		},
 	],

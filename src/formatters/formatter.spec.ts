@@ -1657,6 +1657,19 @@ describe("formatResult timeouts", () => {
 		expect(output).not.toContain(" FAIL ");
 	});
 
+	it("should keep the test the run was abandoned in", () => {
+		expect.assertions(1);
+
+		const output = formatResult(TIMED_OUT_RESULT, TIMING, {
+			...defaultOptions,
+			color: false,
+		});
+
+		expect(output).toContain(
+			'Last test seen: "wedge wedges without yielding" in ReplicatedStorage/PkgShared/wedge.spec (running for 52.3s)',
+		);
+	});
+
 	it("should paint the timeout badge apart from the fail badge", () => {
 		expect.assertions(2);
 

@@ -198,7 +198,6 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		const spec = await prepareWorkspaceDispatchAsync({
 			jobs: [job],
 			parallel: "auto",
-			testProgressMapId: "progress-uuid",
 			workStealingCredentials: credentials,
 		});
 
@@ -211,7 +210,6 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		expect(spec).toStrictEqual({
 			parallel: "auto",
 			scriptOverride: "stealing-script",
-			testProgressMapId: "progress-uuid",
 			workStealing: true,
 		});
 	});
@@ -317,55 +315,8 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		);
 	});
 
-	it("should carry one progress map into both the script and the spec", async () => {
-		expect.assertions(2);
-
-		const job = makeJob("pkg-a", "unit");
-		vi.mocked(isShardedParallel).mockReturnValue(false);
-		vi.mocked(generateMaterializerScript).mockImplementation((inputs, options) => {
-			return JSON.stringify({ inputs, options });
-		});
-
-		const spec = await prepareWorkspaceDispatchAsync({
-			jobs: [job],
-			parallel: 1,
-			testProgressMapId: "progress-uuid",
-			workStealingCredentials: { apiKey: "key", universeId: "42" },
-		});
-		assert(spec.scriptFactory !== undefined);
-
-		expect(spec.testProgressMapId).toBe("progress-uuid");
-		expect(JSON.parse(spec.scriptFactory([job]))).toStrictEqual({
-			inputs: [materializerInput(job)],
-			options: { bail: false, testProgressMapId: "progress-uuid" },
-		});
-	});
-
-	it("should keep no progress map when the run resolved none", async () => {
-		expect.assertions(2);
-
-		vi.mocked(isShardedParallel).mockReturnValue(false);
-		vi.mocked(generateMaterializerScript).mockImplementation((inputs, options) => {
-			return JSON.stringify({ inputs, options });
-		});
-
-		const job = makeJob("pkg-a", "unit");
-		const spec = await prepareWorkspaceDispatchAsync({
-			jobs: [job],
-			parallel: 1,
-			workStealingCredentials: undefined,
-		});
-		assert(spec.scriptFactory !== undefined);
-
-		expect(spec.testProgressMapId).toBeUndefined();
-		expect(JSON.parse(spec.scriptFactory([job]))).toStrictEqual({
-			inputs: [materializerInput(job)],
-			options: { bail: false },
-		});
-	});
-
-	it("should build a work-stealing script without a map when the run has none", async () => {
-		expect.assertions(2);
+	it("should hand the stealing script the queue TTL the queue was seeded with", async () => {
+		expect.assertions(1);
 
 		vi.mocked(isShardedParallel).mockReturnValue(true);
 		vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
@@ -375,17 +326,15 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		});
 		vi.mocked(generateWorkStealingScript).mockReturnValue("stealing-script");
 
-		const spec = await prepareWorkspaceDispatchAsync({
+		await prepareWorkspaceDispatchAsync({
 			jobs: [makeJob("pkg-a", "unit")],
 			parallel: "auto",
 			workStealingCredentials: { apiKey: "key", universeId: "42" },
 		});
 
-		expect(spec.testProgressMapId).toBeUndefined();
 		expect(vi.mocked(generateWorkStealingScript).mock.calls[0]![3]).toStrictEqual({
 			bail: false,
 			queueTtlSeconds: 600,
-			testProgressMapId: undefined,
 		});
 	});
 

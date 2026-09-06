@@ -84,21 +84,10 @@ export function buildJestArgv(options: JestArgvInput): JestArgv {
  * The Luau task script for one bucket of configs.
  *
  * @param options - The configs to run, and the test files each selects.
- * @param testProgressMapId - Where the runtime heartbeats the test it is on,
- *   so a run that never comes back can still be told which test it died
- *   inside. Omitted rather than nulled when there is none, so a run without
- *   one generates the byte-for-byte script it always did.
  * @returns The script to submit.
  */
-export function generateTestScript(
-	options: Array<JestArgvInput> | JestArgvInput,
-	testProgressMapId?: string,
-): string {
+export function generateTestScript(options: Array<JestArgvInput> | JestArgvInput): string {
 	const inputs = Array.isArray(options) ? options : [options];
 	const configs = inputs.map((input) => buildJestArgv(input));
-	const payload =
-		testProgressMapId === undefined
-			? { configs }
-			: { configs, progress: { mapId: testProgressMapId } };
-	return template.replace("__CONFIG_JSON__", () => JSON.stringify(payload));
+	return template.replace("__CONFIG_JSON__", () => JSON.stringify({ configs }));
 }

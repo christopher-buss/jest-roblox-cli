@@ -26,6 +26,18 @@ const RUNNER_RESULT_SOURCE = fs.readFileSync(
 	path.join(LUAU_DIRECTORY, "runner-result.luau"),
 	"utf-8",
 );
+const CIRCUS_HOOK_SOURCE = fs.readFileSync(path.join(LUAU_DIRECTORY, "circus-hook.luau"), "utf-8");
+const DATA_MODEL_PATH_SOURCE = fs.readFileSync(
+	path.join(LUAU_DIRECTORY, "data-model-path.luau"),
+	"utf-8",
+);
+const LAST_SEEN_SOURCE = fs
+	.readFileSync(path.join(LUAU_DIRECTORY, "last-seen.luau"), "utf-8")
+	.replace('require("./circus-hook")', () => `(function()\n${CIRCUS_HOOK_SOURCE}\nend)()`)
+	.replace(
+		'require("./data-model-path")',
+		() => `(function()\n${DATA_MODEL_PATH_SOURCE}\nend)()`,
+	);
 const INTERCEPT_WRITEABLE_SOURCE = fs.readFileSync(
 	path.join(LUAU_DIRECTORY, "intercept-writeable.luau"),
 	"utf-8",
@@ -60,6 +72,7 @@ describe("multi-mode runner under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () =
 				"__PROCESS_CAPTURE_MODULE__",
 				() => `(function()\n${PROCESS_CAPTURE_SOURCE}\nend)()`,
 			)
+			.replace("__LAST_SEEN_MODULE__", () => `(function()\n${LAST_SEEN_SOURCE}\nend)()`)
 			.replace("__MODULE__", () => `(function()\n${MODULE_SOURCE}\nend)()`);
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "runner-"));
 		onTestFinished(() => {

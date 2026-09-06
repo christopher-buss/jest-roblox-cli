@@ -250,9 +250,10 @@ without raising it for the rest; set it to `0` to turn the budget off.
 A project still running when its budget elapses is abandoned: its Jest run is
 cancelled, anything it staged is torn down, and the run moves on to the next
 project. It is reported as **timed out** rather than as a suite that threw — a
-distinct line in every formatter, naming the budget you can raise. For exit
-codes it counts as a failure (exit `1`): a project that never finished is not a
-pass, and greening on one would ship code no test reached.
+distinct line in every formatter, naming the budget you can raise and the last
+test the run was seen in. For exit codes it counts as a failure (exit `1`): a
+project that never finished is not a pass, and greening on one would ship code
+no test reached.
 
 Without a budget one runaway project holds the whole task until Roblox ends it
 on the root `timeout`, taking every project behind it down with it and reporting
@@ -445,23 +446,17 @@ same shard count, each session holding a fixed share it cannot rebalance:
 | -------------------------------------------------- | ---------------------------------------------- |
 | `memory-store.queue:add` / `:dequeue` / `:discard` | Work-stealing queue across concurrent sessions |
 
-Any Open Cloud run uses the sorted-map scopes for two things — streaming live
-per-package results, and the per-test heartbeat that names the test a wedged
-task died in:
+An Open Cloud run needs the sorted-map scopes only when it streams live
+per-package results:
 
-| Scope                                     | What it's for                                                     |
-| ----------------------------------------- | ----------------------------------------------------------------- |
-| `memory-store.sorted-map:read` / `:write` | Live per-package results, and the wedged-test report on a timeout |
+| Scope                                     | What it's for            |
+| ----------------------------------------- | ------------------------ |
+| `memory-store.sorted-map:read` / `:write` | Live per-package results |
 
 Streaming is enabled by default and disabled only for `--silent`,
 `--formatters json`, and `--formatters agent` (without `--verbose`).
 `--formatters agent --verbose` re-enables streaming and therefore still needs
 the sorted-map scopes; `--formatters github-actions` also streams.
-
-The heartbeat is not a flag and never fails a run: without the scopes the run
-behaves exactly as it did before, and a timeout reports what Roblox reports.
-With them, a task that runs past the Open Cloud cap comes back naming the test
-it had reached instead of an opaque "Execution timed out".
 
 ### Studio (local)
 

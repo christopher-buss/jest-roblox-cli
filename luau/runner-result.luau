@@ -15,9 +15,10 @@
 -- `fail` for one that did not. A dimension only a failed run can carry has the
 -- same seam as any other, rather than a field of its own beside the envelope.
 
+local GameOutputCapture = require("./game-output-capture")
 local InstanceResolver = require("./instance-resolver")
+local LastSeen = require("./last-seen")
 local PerTestCoverage = require("./per-test-coverage")
-local TestProgress = require("./test-progress")
 
 --[=[
 	Where one run's coverage lands, for `build` to read back once Jest returns.
@@ -178,38 +179,47 @@ local function armPerTestCoverage(
 end
 
 --[=[
-	Heartbeat which test the run has reached, out of the VM, for as long as it
-	runs.
+	Arm the last-seen record for one Jest run, returning what an abandoned run
+	reads to name the test it died in.
 
-	pcall-guarded where attribution is not: a heartbeat is a diagnostic the run
-	never reads back, so a jest layout it cannot hook into costs the run its
-	wedge report and nothing else. Attribution fails the run instead, because a
-	silent miss there reads downstream as a real answer.
+	Unconditional: the record costs one table write per circus boundary and
+	answers the one question a wedged run leaves.
 
-	@param jestModule -- The jest root this run uses.
-	@param publish -- Where each record goes, or nil to stop heartbeating.
+	Resolution and arm are both inside the pcall, which `armPerTestCoverage`
+	deliberately is not — a record that cannot arm only leaves the abort with
+	less to say, so it must never be the thing that ends a run. The reason
+	rides on the record instead.
 ]=]
-function module.beginProgress(jestModule: ModuleScript, publish: TestProgress.Publish?)
-	-- Unconditionally, and before the early return: the per-file hook rides on
-	-- a patch that outlives the run that armed it, so a run wanting no
-	-- heartbeat has to say so or it keeps writing into the last run's map.
-	-- Which run is armed is TestProgress's own business, so it is asked to
-	-- stop rather than handed a copy of the answer.
-	TestProgress.disarmCurrent()
-
-	if publish == nil then
-		return
-	end
-
-	pcall(function()
+function module.beginLastSeen(jestModule: ModuleScript): LastSeen.Watch
+	local armed, watch = pcall(function()
 		local hooks = resolveHookModules(jestModule)
-		TestProgress.arm({
+
+		return LastSeen.arm({
 			circusState = hooks.circusState,
 			getMatcherState = hooks.getMatcherState,
-			publish = publish,
+			now = os.clock,
 			runtimeClass = hooks.runtimeClass,
 		})
 	end)
+
+	return if armed then watch else LastSeen.unarmed(tostring(watch))
+end
+
+--[=[
+	The one line an abandoned run appends to what it reports, filed under the
+	capture that run still owns.
+
+	Both runners abandon through here rather than composing the line beside
+	their own watchdog call: the print `note` makes arrives a scheduler turn
+	later, by which time the open capture belongs to whatever ran next.
+
+	@param watch -- The record `beginLastSeen` returned, or nil for a run
+		abandoned before it armed one.
+]=]
+function module.noteAbandon(watch: LastSeen.Watch?): string
+	local note = LastSeen.describe(watch)
+	GameOutputCapture.note(note)
+	return note
 end
 
 --[=[

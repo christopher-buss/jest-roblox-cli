@@ -131,7 +131,11 @@ local _G = {}
 -- Per-project scripted behaviour, keyed by the project path the config names.
 local jestFails = {}
 local jestParks = {}
+local jestHangs = {}
 local jestMissing = {}
+-- The engine warning a `WaitForChild` on an absent instance produces, which is
+-- the other thing that ends a run the engine will not.
+local YIELD_WARNING = "Infinite yield possible on 'ReplicatedStorage.shared:WaitForChild(\"x\")'"
 -- What a config writes to Jest's own stdout on its way out, the way the real
 -- "No tests found, exiting with code 1" is written.
 local jestBanners = {}
@@ -152,6 +156,60 @@ local function makeInstance(name: string, children: any?): any
 	end
 
 	return instance
+end
+
+-- A service-rooted spec file, for the last-seen record to name a test in. The
+-- topmost fake (Parent = nil) stands in for `game` and is left off the path.
+local function makeSpecFile(name: string): any
+	local root = { Name = "game", Parent = nil }
+	local replicatedStorage = { Name = "ReplicatedStorage", Parent = root }
+
+	return { Name = name, Parent = replicatedStorage }
+end
+
+-- Expect's matcher state, which is where both per-file hooks read the running
+-- test's identity from. Shared across the run the way `_G` shares it.
+local matcherState: any = { currentTestName = nil, testPath = nil }
+
+-- jest-runtime's shared class table. Handed back by identity rather than
+-- rebuilt per require, because the circus hook patches `setGlobalsForRuntime`
+-- on it and a fresh table each time would drop the patch.
+local RuntimeClass: any = {}
+
+function RuntimeClass.setGlobalsForRuntime() end
+
+-- One test file's own circus dispatch list, the way jest's per-file module
+-- registry gives each file a list of its own.
+local function makeCircusState()
+	local handlers: { any } = {}
+
+	return {
+		addEventHandler = function(handler: any)
+			table.insert(handlers, handler)
+		end,
+		dispatch = function(name: string)
+			for _, handler in handlers do
+				handler(nil, { name = name })
+			end
+		end,
+	}
+end
+
+-- What jest does around one test file: a fresh runtime whose registry holds
+-- that file's circus state, the `setGlobalsForRuntime` callback circus's
+-- `initialize` makes, then the file's cases.
+local function reachTest(fileName: string, caseName: string)
+	local circusState = makeCircusState()
+	local runtime = {
+		requireInternalModule = function()
+			return circusState
+		end,
+	}
+
+	matcherState.testPath = makeSpecFile(fileName)
+	RuntimeClass.setGlobalsForRuntime(runtime, {})
+	matcherState.currentTestName = caseName
+	circusState.dispatch("test_start")
 end
 
 local JestModule = makeInstance("Jest")
@@ -180,13 +238,42 @@ local RobloxSharedExports = {
 -- Stands the RobloxShared package down, so the output tap cannot be installed.
 local sharedIsMissing = false
 
+-- `print` reaches `MessageOut` deferred: the engine hands the line to the
+-- listeners a scheduler turn later, which for an abandoned config is already
+-- inside the NEXT config's capture window. Queued here and flushed as the next
+-- config's Jest starts, so this file reproduces the ordering that files a real
+-- run's record under the wrong project.
+local writeStdout = print
+local deferredPrints = {}
+local flushedPrints = {}
+
+local function print(message: string)
+	table.insert(deferredPrints, message)
+end
+
+local function flushPrints()
+	local queued = deferredPrints
+	deferredPrints = {}
+	for _, message in queued do
+		table.insert(flushedPrints, message)
+		emit(message, OUTPUT)
+	end
+end
+
 local Jest = {
 	runCLI = function(_, config, projects)
 		local project = projects[1]
 		return {
 			expect = function()
+				-- The scheduler turn the previous config never got: whatever it
+				-- printed on its way out arrives now, inside this capture.
+				flushPrints()
 				jestSawConfig = config
 				emit("jest:" .. project, OUTPUT)
+				-- Stands in for circus reaching a test: the per-file hook goes
+				-- in from the runtime callback, and the record then names the
+				-- case that is running if this config is abandoned.
+				reachTest(project .. ".spec", project .. " wedges")
 				local banner = jestBanners[project]
 				if banner then
 					RobloxSharedExports.nodeUtils.process.stdout:write(banner)
@@ -194,6 +281,15 @@ local Jest = {
 
 				if jestFails[project] then
 					error("jest exploded in " .. project, 0)
+				end
+
+				-- What a `WaitForChild` for an instance the place never had
+				-- does: the engine warns five seconds in, and the thread never
+				-- comes back.
+				if jestHangs[project] then
+					emit(YIELD_WARNING, WARNING)
+					coroutine.yield()
+					fail("the parked project was resumed")
 				end
 
 				if jestParks[project] then
@@ -258,14 +354,6 @@ local stubs = {
 		end,
 		unpatch = function() end,
 	},
-	-- Same seam, arming the heartbeat: these runs publish nothing, so the run
-	-- only ever reaches the disarm that clears the run before it.
-	["./test-progress"] = {
-		arm = function()
-			return { failure = nil }
-		end,
-		disarmCurrent = function() end,
-	},
 	-- Reached through the shared result seam, which resolves the run's own
 	-- jest-circus / Expect / jest-runtime packages before arming.
 	["./per-test-coverage"] = {
@@ -296,13 +384,13 @@ local function require(target)
 	if target == ExpectModule then
 		return {
 			getState = function()
-				return {}
+				return matcherState
 			end,
 		}
 	end
 
 	if target == RuntimeModule then
-		return { setGlobalsForRuntime = function() end }
+		return RuntimeClass
 	end
 
 	local stub = stubs[target]
@@ -321,6 +409,10 @@ stubs["./intercept-writeable"] = __INTERCEPT_WRITEABLE_MODULE__
 stubs["./process-capture"] = __PROCESS_CAPTURE_MODULE__
 stubs["./game-output-capture"] = __CAPTURE_MODULE__
 stubs["./infinite-yield"] = __INFINITE_YIELD_MODULE__
+-- Real too, and reached through the result seam: what the abort says about the
+-- test it died in is the subject of the assertions below, so a stub here would
+-- only assert that a string was concatenated.
+stubs["./last-seen"] = __LAST_SEEN_MODULE__
 stubs["./runner-result"] = __RUNNER_RESULT_MODULE__
 
 local Runner = __MODULE__
@@ -328,10 +420,13 @@ local Runner = __MODULE__
 local function reset()
 	jestFails = {}
 	jestParks = {}
+	jestHangs = {}
 	jestMissing = {}
 	jestBanners = {}
 	jestSawConfig = nil
 	armed = {}
+	deferredPrints = {}
+	flushedPrints = {}
 end
 
 -- A config the way the CLI sends one: the project path is what a test scripts
@@ -363,6 +458,18 @@ end
 local function has(messages, wanted: string): boolean
 	for _, message in messages do
 		if message == wanted then
+			return true
+		end
+	end
+
+	return false
+end
+
+-- The last-seen line carries an elapsed time this file does not fix, so it is
+-- matched on the part that names the test.
+local function hasPart(messages, wanted: string): boolean
+	for _, message in messages do
+		if string.find(message, wanted, 1, true) ~= nil then
 			return true
 		end
 	end
@@ -483,7 +590,95 @@ local function testElapsedBudgetAbandonsOnlyItsConfig()
 		string.find(tostring(abandoned.err), "Timed out after 5s", 1, true) ~= nil,
 		"T4: the failure names the budget"
 	)
+	check(
+		string.find(
+			tostring(abandoned.err),
+			'Last test seen: "alpha wedges" in ReplicatedStorage/alpha.spec (running for',
+			1,
+			true
+		) ~= nil,
+		"T4: and the test it was in, got " .. tostring(abandoned.err)
+	)
 	check(outputOf(entries[2]).success == true, "T4: the next config still runs")
+end
+
+-- T4b: the other way a run is abandoned names the test too — a config parked
+-- on a `WaitForChild` the place cannot satisfy reports the warning and the
+-- test the run had reached, not one or the other.
+local function testInfiniteYieldNamesTheTest()
+	reset()
+	jestHangs.alpha = true
+
+	local entries = Runner.runProjects({}, { configFor("alpha") })
+
+	local abandoned = outputOf(entries[1])
+	check(abandoned.success == false, "T4b: a parked config is a failure")
+	check(abandoned.runner.abandon == nil, "T4b: a yield is not the budget running out")
+	check(
+		string.find(tostring(abandoned.err), "Infinite yield detected", 1, true) ~= nil,
+		"T4b: the failure names the yield"
+	)
+	check(
+		string.find(
+			tostring(abandoned.err),
+			'Last test seen: "alpha wedges" in ReplicatedStorage/alpha.spec (running for',
+			1,
+			true
+		) ~= nil,
+		"T4b: and the test it was in, got " .. tostring(abandoned.err)
+	)
+end
+
+-- T4c: the record is filed under the config it is about. Left to the print
+-- alone it is not: `MessageOut` delivers deferred, so the line arrives after
+-- the abandoned config's capture has closed and inside the next config's, which
+-- is where a real run put it.
+local function testTheRecordLandsInTheAbandonedConfigsOutput()
+	reset()
+	jestParks.alpha = true
+
+	local outcome = runInThread(function()
+		return Runner.runProjects({}, { configFor("alpha", 5000), configFor("beta", 5000) })
+	end)
+
+	elapse()
+	jestParks.alpha = nil
+
+	local entries = outcome.entries
+	local note = 'Last test seen: "alpha wedges" in ReplicatedStorage/alpha.spec'
+	check(hasPart(flushedPrints, note), "T4c: the run still prints the record")
+	check(
+		hasPart(messagesOf(entries[1]), note),
+		"T4c: the abandoned config's own Game Output carries it"
+	)
+	check(
+		not hasPart(messagesOf(entries[2]), note),
+		"T4c: and the config that ran next carries it nowhere"
+	)
+end
+
+-- T4d: a note with no capture open files nothing, so it drops nothing later.
+-- The echo drop is cleared by the deferred `MessageOut` the note's own print
+-- fires; with no capture open there is no listener to clear it, and the slot
+-- would outlive the print and swallow the next capture's first matching line.
+-- Multi mode reaches this whenever a parallel VM host owns the capture.
+local function testNoteWithNoCaptureOpenDropsNothingLater()
+	reset()
+	local Capture = stubs["./game-output-capture"]
+	local line = 'Last test seen: "gamma wedges" in ReplicatedStorage/gamma.spec'
+
+	Capture.note(line)
+	flushPrints()
+
+	local stopCapture = Capture.start()
+	emit(line, OUTPUT)
+	local captured = stopCapture()
+
+	check(captured ~= nil, "T4d: the later capture reported something")
+	check(
+		has(messagesOf({ gameOutput = captured }), line),
+		"T4d: and kept its byte-identical line"
+	)
 end
 
 -- T5: a config that finished inside its budget names no abandon reason, so the
@@ -581,10 +776,13 @@ testJestRejectionIsAFailureEnvelope()
 testMissingJestFailsBeforeTheRun()
 testJestStdoutReachesBannerOutput()
 testElapsedBudgetAbandonsOnlyItsConfig()
+testInfiniteYieldNamesTheTest()
+testTheRecordLandsInTheAbandonedConfigsOutput()
+testNoteWithNoCaptureOpenDropsNothingLater()
 testWithinBudgetNamesNoReason()
 testRunnerFlagsAreStripped()
 testHooksFireAroundEveryConfig()
 testFailedInjectionStillCleansUp()
 testFailedCleanupDoesNotEndTheBatch()
 
-print("ALL OK")
+writeStdout("ALL OK")

@@ -22,9 +22,30 @@ local TIMEOUT_FORMAT = "Timed out after %gs, aborting tests"
 -- Hoisted: the handler runs on every line the run logs.
 local MESSAGE_WARNING = Enum.MessageType.MessageWarning
 
+-- The note is a description of the run, never a verdict on it, so one that
+-- throws or has nothing to say leaves the abort exactly as it was.
+local function withNote(message: string, note: (() -> string)?): string
+	if note == nil then
+		return message
+	end
+
+	local ok, text = pcall(note)
+	if not ok or type(text) ~= "string" or text == "" then
+		return message
+	end
+
+	return message .. ". " .. text
+end
+
 local module = {}
 
 export type Options = {
+	--[=[
+		One line about where the run had got to, appended to the abort message
+		on either abandon path. Asked once, and only when the run is abandoned:
+		a run that ended on its own has its own answer already.
+	]=]
+	abandonNote: (() -> string)?,
 	onAbandon: (() -> ())?,
 	-- Wall-clock budget for `fn`, in the milliseconds the host config and the
 	-- argv both speak. Absent (or zero) means the warning is the only thing
@@ -38,6 +59,10 @@ export type Options = {
 	is still parked — because the warning arrived, or because its budget
 	elapsed. The third value tells those two apart; the caller reports a
 	project that ran out of time apart from one that failed.
+
+	`options.abandonNote` is how the caller says where the run had got to. It
+	is appended to the abort message on both paths, because a report that names
+	only the budget or the yield leaves the reader with no test to open.
 
 	`options.onAbandon` is how the caller ends the work `fn` was waiting on.
 	`fn`'s own thread parks in `Promise:expect()`, one remove from the thread the
@@ -157,11 +182,12 @@ function module.guard(fn: () -> any, options: Options?): (boolean, any, boolean)
 
 		coroutine.close(worker)
 
+		local note = settings.abandonNote
 		if expiredSeconds ~= nil then
-			return false, string.format(TIMEOUT_FORMAT, expiredSeconds), true
+			return false, withNote(string.format(TIMEOUT_FORMAT, expiredSeconds), note), true
 		end
 
-		return false, ABORT_PREFIX .. tostring(warning), false
+		return false, withNote(ABORT_PREFIX .. tostring(warning), note), false
 	end
 
 	return ok, value, false

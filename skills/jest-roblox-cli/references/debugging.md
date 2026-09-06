@@ -18,44 +18,10 @@
 | "lute is required for instrumentation but was not found on PATH" | Lute not installed                                     | Install lute via mise or rokit                                                                                                                         |
 | "rojo is required for --coverage but was not found on PATH"      | Rojo not installed                                     | Install rojo via mise, rokit, or aftman                                                                                                                |
 | "Rate limited by Open Cloud API after multiple retries"          | API rate limit                                         | Wait and retry; the Open Cloud client backs off automatically                                                                                          |
-| "Execution timed out"                                            | Test exceeded timeout                                  | Increase `--timeout` value; on Open Cloud the error also names the last test the runtime reached (see below)                                           |
+| "Execution timed out"                                            | Test exceeded timeout                                  | Increase `--timeout` value                                                                                                                             |
 | "Execution was cancelled"                                        | Task cancelled externally                              | Check Roblox Open Cloud dashboard                                                                                                                      |
 | "Studio plugin disconnected before sending results"              | Studio closed mid-run                                  | Keep Studio open during test execution                                                                                                                 |
 | "Jest exited before returning a result"                          | The run exited writing no cause anywhere it was heard  | Read the report under it — see below                                                                                                                   |
-
-## A run that wedged
-
-A test that never yields is not preempted by Roblox, and it starves every other
-coroutine — Jest's own `testTimeout` included. The task returns no output, no
-error and no state, so Open Cloud has nothing to report and neither did this CLI
-before per-test heartbeats.
-
-Every Open Cloud run now writes one heartbeat record per task into a per-run
-MemoryStore sorted map, naming the test the run had reached. The host reads it
-only after a poll timeout, and appends what it found:
-
-```text
-Execution timed out: Roblox never reported a terminal state ...
-  The task never came back, and the last thing the Roblox VM published was:
-    ReplicatedStorage/shared/wedge.spec › wedges › never returns — started 42.0s in, never completed
-  The runtime publishes about one record a second, so the wedge is that
-  test or one shortly after it in that file: a test that never yields
-  starves every other coroutine, so nothing later could publish.
-```
-
-Writes are throttled to roughly one a second per task, so the _file_ is exact
-while the _test_ is only a lower bound: a test that began just after the last
-record landed leaves none of its own. The banner hedges the same way whether the
-record says `started` or `completed`, because both cases allow a later test in
-that file to be the one that wedged.
-
-A sharded run shares one map across its tasks, so the banner lists a last record
-per task and says only that at least one of them never came back — a task that
-finished normally leaves a record too, and nothing correlates a record back to
-the task that wrote it.
-
-Nothing here fails a run on its own: a key without the `memory-store.sorted-map`
-scopes simply reports the bare timeout.
 
 ## A run that came back with only an exit code
 
@@ -93,6 +59,37 @@ project under test. **Game Output** is the wider LogService dump — an
 intercepted `process.stdout` still delegates to `print`, so the line Jest exited
 on usually appears in its tail even when Banner Output is empty.
 `--gameOutput <path>` writes all of it.
+
+## A run that wedged
+
+A test that never yields is preempted by Roblox after about ten seconds, inside
+Jest's own Promise executor. Jest's `testTimeout` fires into the same broken
+run, circus never recovers, and the project is abandoned at its `projectTimeout`
+— no test results, no error of its own.
+
+The abandoned project reports the test it was in:
+
+```text
+ TIMEOUT  <exec-error>
+Test suite timed out
+
+Timed out after 60s, aborting tests. Last test seen: "wedge wedges without yielding" in ReplicatedStorage/PkgShared/wedge.spec (running for 52.3s)
+```
+
+The record is written on every circus boundary and never leaves the VM, so it
+names the test rather than approximating it: the name Jest built, describe and
+test joined by a space, at the spec's DataModel path rather than its source
+path. The run also prints the sentence, which is where to look when the envelope
+never comes back at all — a task that outran the Open Cloud deadline reports
+`DEADLINE_EXCEEDED` and a tail of what the script printed.
+
+Two other things it can say. `No test was running; the last to finish was …` is
+a run that wedged between tests — a hook, a teardown, or the next file's
+imports, so look just past the test it names. `No test was seen: …` is a run
+that never reached a test file at all, and says why.
+
+Read the wedged test's own last `print` next: it is in `--gameOutput`, ahead of
+this line, and is usually the statement the test never returned from.
 
 ## Diagnostic Flags
 

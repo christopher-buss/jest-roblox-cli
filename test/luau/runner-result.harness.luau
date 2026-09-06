@@ -37,11 +37,6 @@ local function makeInstance(name: string, children: any?): any
 	return instance
 end
 
--- What the heartbeat was armed with, so the tests can tell an arm from a skip.
-local progressArmedWith: any = nil
-local progressArms = 0
-local progressDisarms = 0
-
 local JestModule = makeInstance("Jest")
 -- Shaped like the real package: `circus/state` under a `circus` folder.
 local CircusStateModule = makeInstance("state")
@@ -50,8 +45,11 @@ local CircusModule =
 local ExpectModule = makeInstance("Expect")
 local RuntimeModule = makeInstance("JestRuntime")
 
+local notedMessages: { string } = {}
 local siblingsResolve = true
 local armedWith: any = nil
+local lastSeenArmedWith: any = nil
+local lastSeenArmThrows = false
 local disarms = 0
 local nextInstallation: any = nil
 
@@ -79,14 +77,27 @@ local stubs = {
 			disarms += 1
 		end,
 	},
-	["./test-progress"] = {
+	["./last-seen"] = {
 		arm = function(options: any)
-			progressArmedWith = options
-			progressArms += 1
-			return { failure = nil }
+			if lastSeenArmThrows then
+				-- What the circus hook asserts on a jest-runtime that exposes
+				-- no `setGlobalsForRuntime`.
+				error("JestRuntime exposes no setGlobalsForRuntime", 0)
+			end
+
+			lastSeenArmedWith = options
+			return { failure = nil, now = options.now, sighting = nil }
 		end,
-		disarmCurrent = function()
-			progressDisarms += 1
+		describe = function(watch: any)
+			return "described:" .. tostring(if watch then watch.failure else "no watch")
+		end,
+		unarmed = function(failure: string)
+			return { failure = failure, now = os.clock, sighting = nil }
+		end,
+	},
+	["./game-output-capture"] = {
+		note = function(message: string)
+			table.insert(notedMessages, message)
 		end,
 	},
 }
@@ -131,11 +142,11 @@ local JEST_RESULT = { numPassedTests = 3, success = true }
 local function reset()
 	_G.__jest_roblox_cov = nil
 	armedWith = nil
+	lastSeenArmedWith = nil
+	lastSeenArmThrows = false
 	disarms = 0
 	nextInstallation = nil
-	progressArmedWith = nil
-	progressArms = 0
-	progressDisarms = 0
+	notedMessages = {}
 	siblingsResolve = true
 end
 
@@ -148,6 +159,69 @@ local function testBareRunHasNoRunnerKey()
 	check(payload.success == true, "T1: the payload reports success")
 	check(payload.value == JEST_RESULT, "T1: Jest's own result travels untouched")
 	check(payload.runner == nil, "T1: no dimensions means no runner key")
+end
+
+-- T1b: the last-seen record arms through the same resolution attribution uses,
+-- so both per-file hooks reach the jest clone this run is about to drive.
+local function testLastSeenArmsAgainstThisRunsJest()
+	reset()
+	local watch = RunnerResult.beginLastSeen(JestModule)
+
+	check(watch.failure == nil, "T1b: a resolvable jest arms the record")
+	check(lastSeenArmedWith ~= nil, "T1b: the hook is armed")
+	check(lastSeenArmedWith.circusState == CircusStateModule, "T1b: circus/state is the target")
+	check(lastSeenArmedWith.runtimeClass ~= nil, "T1b: the runtime class to patch is handed over")
+	check(typeof(lastSeenArmedWith.now()) == "number", "T1b: and a clock to time the record with")
+end
+
+-- T1c: a jest whose packages will not resolve leaves a record that says why,
+-- rather than failing the run. Attribution fails a run because a silent zero
+-- reads there as an answer; this one only describes a run that has already
+-- gone wrong, so it must never be the thing that ends one.
+local function testUnresolvableJestStillWatches()
+	reset()
+	siblingsResolve = false
+	local watch = RunnerResult.beginLastSeen(JestModule)
+
+	check(lastSeenArmedWith == nil, "T1c: nothing is armed")
+	check(watch ~= nil, "T1c: the run still gets a record to read")
+	check(
+		string.find(tostring(watch.failure), "could not resolve", 1, true) ~= nil,
+		"T1c: carrying why it will name no test"
+	)
+end
+
+-- T1d: an arm that throws inside the circus hook is the same answer as one
+-- that could not resolve. The hook asserts on the jest-runtime shape it
+-- patches, and that assert fires from inside the run — a record that cannot
+-- go on has to reach the abort as a reason, never as the run's cause of death.
+local function testAThrowingArmStillWatches()
+	reset()
+	lastSeenArmThrows = true
+	local ok, watch = pcall(RunnerResult.beginLastSeen, JestModule)
+
+	check(ok, "T1d: a throwing arm does not fail the run")
+	check(
+		string.find(tostring(watch.failure), "setGlobalsForRuntime", 1, true) ~= nil,
+		"T1d: the throw is carried as the reason instead"
+	)
+end
+
+-- T1e: both runners abandon through one function here rather than each
+-- composing the line beside its own watchdog call. It files the line under the
+-- capture the run still owns AND returns it for the abort message, because the
+-- print `note` makes lands a scheduler turn later, inside the next run's window.
+local function testAbandonNoteIsFiledAndReturned()
+	reset()
+	local note = RunnerResult.noteAbandon({ failure = "nothing armed" })
+
+	check(note == "described:nothing armed", "T1e: the record describes the run, got " .. note)
+	check(#notedMessages == 1, "T1e: filed once")
+	check(notedMessages[1] == note, "T1e: under the capture the run still owns")
+	check(
+		RunnerResult.noteAbandon(nil) == "described:no watch",
+		"T1e: a run abandoned before it armed a record still says so"
+	)
 end
 
 -- T2: coverage attaches the whole sink, even empty — "the run collected
@@ -270,43 +344,6 @@ local function testFailedInstallFailsTheRun()
 	)
 end
 
--- T7c: a sink arms the heartbeat against the same circus/state the coverage
--- hook resolves, so a wedged run publishes which test it reached.
-local function testProgressArmsWithASink()
-	reset()
-	RunnerResult.beginProgress(JestModule, function() end)
-
-	check(progressArms == 1, "T7c: the heartbeat is armed")
-	check(progressArmedWith.circusState == CircusStateModule, "T7c: against circus/state")
-	check(typeof(progressArmedWith.publish) == "function", "T7c: with the run's sink")
-end
-
--- T7d: no sink means no heartbeat, and the standing patch is stopped either
--- way — it outlives the run that armed it, so a run that publishes nothing has
--- to say so or it keeps writing into the last run's map.
-local function testProgressWithoutASinkDisarms()
-	reset()
-	RunnerResult.beginProgress(JestModule, function() end)
-	local armedBefore = progressDisarms
-	RunnerResult.beginProgress(JestModule, nil)
-
-	check(progressArms == 1, "T7d: the second run does not arm")
-	check(progressDisarms == armedBefore + 1, "T7d: and stops the first")
-end
-
--- T7e: a jest layout the heartbeat cannot hook into costs the run its wedge
--- report and nothing else. Unlike attribution, nothing downstream reads a
--- heartbeat back, so failing the run over one would trade a real result for a
--- diagnostic.
-local function testProgressFailureDoesNotFailTheRun()
-	reset()
-	siblingsResolve = false
-	local ok = pcall(RunnerResult.beginProgress, JestModule, function() end)
-
-	check(ok, "T7e: an unhookable jest does not fail the run")
-	check(progressArms == 0, "T7e: and nothing is armed")
-end
-
 -- T8: setup time is reported only when the patch actually measured some.
 local function testSetupSeconds()
 	reset()
@@ -404,6 +441,10 @@ local function testEachDimensionRidesAlone()
 end
 
 testBareRunHasNoRunnerKey()
+testLastSeenArmsAgainstThisRunsJest()
+testUnresolvableJestStillWatches()
+testAThrowingArmStillWatches()
+testAbandonNoteIsFiledAndReturned()
 testCoverageAttachesTheSink()
 testCoverageOffAttachesNothing()
 testBeginCoverageResetsTheSink()
@@ -412,9 +453,6 @@ testPerTestCoverageResolvesCircusState()
 testPerTestCoverageAbsentCases()
 testUnresolvableJestFailsTheRun()
 testFailedInstallFailsTheRun()
-testProgressArmsWithASink()
-testProgressWithoutASinkDisarms()
-testProgressFailureDoesNotFailTheRun()
 testSetupSeconds()
 testSnapshotWrites()
 testTiming()

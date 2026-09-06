@@ -43,23 +43,6 @@ interface ErrorDetails extends Error {
 const MAX_DEPTH = 5;
 
 /**
- * The error and everything it was caused by, nearest first. Kept apart from
- * {@link walkErrorChain}, which renders each link for a human: a caller asking
- * "is there a `FooError` under this?" wants the instances, and `instanceof`
- * answers that where a class-name string only stands in for it.
- */
-export function errorChain(err: unknown): Array<Error> {
-	const chain: Array<Error> = [];
-	let current = err;
-	while (current instanceof Error && chain.length < MAX_DEPTH) {
-		chain.push(current);
-		current = current.cause;
-	}
-
-	return chain;
-}
-
-/**
  * True when a poll that never settled is somewhere under this failure.
  *
  * The one thing that distinguishes a task Roblox never answered for from a
@@ -102,6 +85,23 @@ export function formatMissingScopes(scopes: ReadonlyArray<string>): string {
 
 	const joined = scopes.join(", ");
 	return `API key missing scope${scopes.length === 1 ? "" : "s"} ${joined}. Add via Creator Dashboard.`;
+}
+
+/**
+ * The error and everything it was caused by, nearest first. Kept apart from
+ * {@link walkErrorChain}, which renders each link for a human: a caller asking
+ * "is there a `FooError` under this?" wants the instances, and `instanceof`
+ * answers that where a class-name string only stands in for it.
+ */
+function errorChain(err: unknown): Array<Error> {
+	const chain: Array<Error> = [];
+	let current = err;
+	while (current instanceof Error && chain.length < MAX_DEPTH) {
+		chain.push(current);
+		current = current.cause;
+	}
+
+	return chain;
 }
 
 /**

@@ -2,7 +2,6 @@ import * as path from "node:path";
 import process from "node:process";
 
 import type { Backend } from "./backends/interface.ts";
-import { resolveTestProgressMapId } from "./backends/test-progress-map.ts";
 import type { CliOptions, WorkspaceRunOptions } from "./config/schema.ts";
 import type { ExecuteResult } from "./executor.ts";
 import { createTsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
@@ -141,7 +140,6 @@ async function prepareDispatchSpecAsync(
 			jobs,
 			onStreamingResult: options.onStreamingResult,
 			parallel: options.runOptions.parallel,
-			testProgressMapId: resolveTestProgressMapId(options.backend),
 			workStealingCredentials: options.workStealingCredentials,
 		});
 	});

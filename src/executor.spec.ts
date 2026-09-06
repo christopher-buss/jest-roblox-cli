@@ -3041,33 +3041,6 @@ describe(runProjectsAsync, () => {
 		expect(captured!.streaming).toBe(streaming);
 	});
 
-	it("should forward the test progress map id", async () => {
-		expect.assertions(1);
-
-		const { fileSystem } = memoryFileSystem();
-
-		let captured: BackendOptions | undefined;
-		const backend: Backend = {
-			kind: "open-cloud",
-			runTestsAsync: async (runOptions) => {
-				captured = runOptions;
-				return singleEntryResult({ result: createPassingResult() });
-			},
-		};
-
-		await runProjectsAsync({
-			backend,
-			fileSystem,
-			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
-			startTime: Date.now(),
-			testProgressMapId: "progress-uuid",
-			tsconfigReader: readingVolume(fileSystem),
-			version: "0.0.0-test",
-		});
-
-		expect(captured!.testProgressMapId).toBe("progress-uuid");
-	});
-
 	it("should post-process each result with its own project config", async () => {
 		expect.assertions(2);
 

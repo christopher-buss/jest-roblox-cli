@@ -3,7 +3,6 @@ import * as path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
 import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend, ParallelOption } from "../backends/interface.ts";
-import { resolveTestProgressMapId } from "../backends/test-progress-map.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
@@ -129,7 +128,6 @@ async function runJobsAsync({
 			parallel,
 			projects: jobs.map(toExecutorProject),
 			startTime: Date.now(),
-			testProgressMapId: resolveTestProgressMapId(backend),
 			timing,
 			version: VERSION,
 			vmParallel,
@@ -217,11 +215,11 @@ function effectiveParallelForBackend(
 }
 
 /**
- * The two concurrency knobs a run carries, each already narrowed to the
- * backend that can serve it: `parallel` shards Open Cloud sessions, while
- * `vmParallel` splits one Studio session across Luau VMs.
+ * The per-run knobs a dispatch carries, each already narrowed to the backend
+ * that can serve it: `parallel` shards Open Cloud sessions, and `vmParallel`
+ * splits one Studio session across Luau VMs.
  */
-function resolveConcurrency(
+function resolveDispatchOptions(
 	config: ResolvedConfig,
 	backend: Backend,
 ): { parallel: ParallelOption; vmParallel: ParallelOption } {
@@ -259,14 +257,14 @@ async function runAgainstBackendAsync(
 
 	// The tsgo pass runs concurrently with the jobs so the local CPU-bound type
 	// checking overlaps the network-bound Open Cloud upload/poll.
-	const concurrency = resolveConcurrency(staged.effectiveConfig, backend);
+	const dispatch = resolveDispatchOptions(staged.effectiveConfig, backend);
 	const [projectResults, typecheck] = await Promise.all([
 		runJobsAsync({
 			backend,
 			fileSystem: discovery.fileSystem,
 			jobs: plan.jobs,
 			timing,
-			...concurrency,
+			...dispatch,
 		}),
 		runTypecheckPassAsync(plan.typeTestEntries, rootConfig, cliTypecheck),
 	]);

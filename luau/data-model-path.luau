@@ -1,10 +1,9 @@
 --!strict
 -- The path form every per-test hook reports an Instance in.
 --
--- Its own module because two hooks need it — per-test coverage attribution and
--- the wedge heartbeat — and both are read by the host's source mapper, which
--- resolves exactly this form. A second copy would let one drift from what the
--- mapper resolves while the other still worked.
+-- Its own module because the form is a wire contract: the host's source mapper
+-- resolves exactly this shape, so a hook that spelled it inline would drift
+-- from what the mapper resolves without anything on this side noticing.
 
 --[=[
 	Service-rooted DataModel path, slash-joined.

@@ -8,9 +8,7 @@ const LIST_PAGE_SIZE = 100;
 
 /**
  * The storage client one sorted-map channel reads through, or the one a test
- * stood in. Shared because both channels resolve the same two knobs the same
- * way, and a base URL that reached one but not the other would send a live
- * request from a run pointed at a fake.
+ * stood in.
  *
  * @param options - The run's credentials, an optional base-URL override, and
  *   the test seam that replaces the client outright.
@@ -35,11 +33,8 @@ export function resolveStorageClient(options: {
 /**
  * Walk every page of one SortedMap, decoding each item as it arrives.
  *
- * Shared because both channels the runtime publishes on — the per-package
- * streaming results and the per-test progress heartbeat — are read the same
- * way and differ only in how the item value decodes. `failureLabel` is what
- * the caller calls its own channel, so a key missing `memory-store` scopes
- * names the thing it could not read.
+ * `failureLabel` is what the caller calls its own channel, so a key missing
+ * `memory-store` scopes names the thing it could not read.
  *
  * `decode` folds each page straight into the result rather than the walk
  * handing back raw items for the caller to map a second time: the streaming

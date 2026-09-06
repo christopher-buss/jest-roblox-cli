@@ -84,12 +84,6 @@ export interface RunProjectsOptions {
 	startTime: number;
 	streaming?: StreamingHooks | undefined;
 	/**
-	 * Open-Cloud-only: per-run SortedMap the Roblox runtime heartbeats which
-	 * test it reached into, read back only to name the test a wedged task
-	 * never returned from.
-	 */
-	testProgressMapId?: string | undefined;
-	/**
 	 * Span-tree profiler owned by the top-level run. Optional so existing
 	 * test seams (which exercise the executor directly) keep working without
 	 * threading a collector through; production callers pass one through so
@@ -289,7 +283,6 @@ async function dispatchToBackendAsync(
 			scriptFactory: options.scriptFactory,
 			scriptOverride: options.scriptOverride,
 			streaming: options.streaming,
-			testProgressMapId: options.testProgressMapId,
 			vmParallel: options.vmParallel,
 			workStealing: options.workStealing,
 		});
