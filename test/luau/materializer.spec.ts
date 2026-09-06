@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the workspace materializer under lute against a fake DataModel the
 // harness supplies. Requires `lute` on PATH (mise, in dev and CI).
 const CURRENT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
@@ -16,7 +18,7 @@ const MODULE_SOURCE = fs.readFileSync(
 );
 const HARNESS = fs.readFileSync(path.join(CURRENT_DIRECTORY, "materializer.harness.luau"), "utf-8");
 
-describe("workspace materializer under lute", () => {
+describe("workspace materializer under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the materializer harness assertions", () => {
 		expect.assertions(1);
 

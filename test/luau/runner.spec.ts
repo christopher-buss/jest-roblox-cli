@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the multi-mode runner under lute with the real Game Output capture,
 // watchdog and result seam, and every other sibling stubbed by the harness.
 // Requires `lute` on PATH (mise, in dev and CI).
@@ -34,7 +36,7 @@ const PROCESS_CAPTURE_SOURCE = fs.readFileSync(
 );
 const HARNESS = fs.readFileSync(path.join(CURRENT_DIRECTORY, "runner.harness.luau"), "utf-8");
 
-describe("multi-mode runner under lute", () => {
+describe("multi-mode runner under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the runner harness assertions", () => {
 		expect.assertions(1);
 

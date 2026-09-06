@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the workspace bail signal under lute. Pure module over an injected
 // SortedMap, so nothing Roblox-side has to be stubbed. Requires `lute` on PATH
 // (mise, in dev and CI).
@@ -14,7 +16,7 @@ const LUAU_DIRECTORY = path.join(CURRENT_DIRECTORY, "../../luau");
 const MODULE_SOURCE = fs.readFileSync(path.join(LUAU_DIRECTORY, "staging/bail.luau"), "utf-8");
 const HARNESS = fs.readFileSync(path.join(CURRENT_DIRECTORY, "bail.harness.luau"), "utf-8");
 
-describe("workspace bail signal under lute", () => {
+describe("workspace bail signal under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the bail harness assertions", () => {
 		expect.assertions(1);
 

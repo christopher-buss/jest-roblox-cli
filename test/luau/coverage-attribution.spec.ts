@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the attribution module under the real lute binary, inlining it into the
 // harness the same way the runner welds it. The harness exercises the pure
 // snapshot/diff logic against a hand-built coverage hit table and calls error()
@@ -19,7 +21,7 @@ const MODULE_SOURCE = fs.readFileSync(
 );
 const HARNESS = fs.readFileSync(path.join(HERE, "coverage-attribution.harness.luau"), "utf-8");
 
-describe("coverage attribution under lute", () => {
+describe("coverage attribution under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the attribution harness assertions", () => {
 		expect.assertions(1);
 

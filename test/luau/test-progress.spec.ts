@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the per-test progress heartbeat under lute: what it publishes, when
 // the throttle lets a write through, and that it joins every test file's own
 // circus registry. Its circus-hook dependency is inlined in place of the
@@ -21,7 +23,7 @@ const MODULE_SOURCE = fs
 	.replace('require("./data-model-path")', () => `(function()\n${PATH_SOURCE}\nend)()`);
 const HARNESS = fs.readFileSync(path.join(HERE, "test-progress.harness.luau"), "utf-8");
 
-describe("per-test progress heartbeat under lute", () => {
+describe("per-test progress heartbeat under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the progress harness assertions", () => {
 		expect.assertions(1);
 

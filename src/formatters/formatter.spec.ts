@@ -2582,11 +2582,14 @@ describe("showLuau mapped location snippets", () => {
 });
 
 describe("formatFallbackSnippet via formatFailure", () => {
-	// Reads and renders a real source file; measured ~130ms under full-suite
-	// load, so the suite-wide per-test budget cannot hold it.
+	// Reads and renders a real source file, which the 100ms Stryker budget
+	// cannot hold. The number restates the `unit` project default rather than
+	// picking a tighter one: a site budget here exists only to clear the
+	// mutation floor, and one below the default turns every other run's
+	// headroom into a wall-clock race against the rest of the workspace.
 	it(
 		"should show fallback snippet when message contains a parseable source location",
-		{ timeout: 1000 },
+		{ timeout: 5000 },
 		() => {
 			expect.assertions(2);
 

@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the shared infinite-yield watchdog under lute. Its only dependency is
 // LogService, which the harness fakes. Requires `lute` on PATH (mise, in dev
 // and CI).
@@ -17,7 +19,7 @@ const HARNESS = fs.readFileSync(
 	"utf-8",
 );
 
-describe("infinite-yield watchdog under lute", () => {
+describe("infinite-yield watchdog under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the infinite-yield harness assertions", () => {
 		expect.assertions(1);
 

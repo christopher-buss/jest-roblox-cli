@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the embedded workspace runner under lute with the real Game Output
 // capture module and every other sibling stubbed by the harness. Requires
 // `lute` on PATH (mise, in dev and CI).
@@ -45,7 +47,7 @@ const HARNESS = fs.readFileSync(
 	"utf-8",
 );
 
-describe("embedded workspace runner under lute", () => {
+describe("embedded workspace runner under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the embedded-runner harness assertions", () => {
 		expect.assertions(1);
 

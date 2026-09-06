@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the shared runner-result builder under lute. Its instance-resolver and
 // per-test-coverage dependencies are stubbed by the harness, which the module
 // picks up by being inlined into it. Requires `lute` on PATH (mise, in dev and
@@ -18,7 +20,7 @@ const HARNESS = fs.readFileSync(
 	"utf-8",
 );
 
-describe("shared runner-result builder under lute", () => {
+describe("shared runner-result builder under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the runner-result harness assertions", () => {
 		expect.assertions(1);
 

@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { LUTE_HARNESS_TIMEOUT } from "./lute-timeout.ts";
+
 // Drives the per-test coverage hook under lute. Its coverage-attribution
 // dependency is inlined in place of the relative require, then the whole module
 // is inlined into the harness the same way the runner welds it. Requires `lute`
@@ -28,7 +30,7 @@ const MODULE_SOURCE = fs
 	.replace('require("./data-model-path")', () => `(function()\n${PATH_SOURCE}\nend)()`);
 const HARNESS = fs.readFileSync(path.join(HERE, "per-test-coverage.harness.luau"), "utf-8");
 
-describe("per-test coverage hook under lute", () => {
+describe("per-test coverage hook under lute", { timeout: LUTE_HARNESS_TIMEOUT }, () => {
 	it("should pass the per-test coverage harness assertions", () => {
 		expect.assertions(1);
 
