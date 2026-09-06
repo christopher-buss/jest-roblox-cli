@@ -2,15 +2,29 @@ import * as path from "node:path";
 import process from "node:process";
 
 import type { Backend } from "./backends/interface.ts";
+import { loadConfig } from "./config/loader.ts";
+import type { PackageConfigLoader } from "./config/loader.ts";
 import type { CliOptions, WorkspaceRunOptions } from "./config/schema.ts";
+import { prepareWorkspaceCoverage } from "./coverage-pipeline/workspace-prepare.ts";
 import type { ExecuteResult } from "./executor.ts";
-import { createTsconfigMappingCache } from "./executor/tsconfig-mappings.ts";
+import type { TsconfigReader } from "./executor/tsconfig-mappings.ts";
+import { createTsconfigMappingCache, nodeTsconfigReader } from "./executor/tsconfig-mappings.ts";
 import type { StreamingAggregatorOnEntry } from "./reporter/streaming-aggregator.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
+import { type RunTypecheck, runTypecheckAsync } from "./typecheck/runner.ts";
+import type { ChildProcessRunner } from "./utils/child-process.ts";
+import { nodeChildProcessRunner } from "./utils/child-process.ts";
 import type { FileSystem } from "./utils/file-system.ts";
 import { nodeFileSystem } from "./utils/file-system.ts";
+import type { RojoResolverFactory } from "./utils/rojo-project-reader.ts";
+import { nodeRojoResolverFactory } from "./utils/rojo-project-reader.ts";
+import type { PrepareCoverage } from "./workspace/coverage-attach.ts";
 import { attachCoverageManifests } from "./workspace/coverage-attach.ts";
-import type { WorkspaceDispatchSpec, WorkspaceJob } from "./workspace/dispatch.ts";
+import type {
+	PrepareWorkStealingQueue,
+	WorkspaceDispatchSpec,
+	WorkspaceJob,
+} from "./workspace/dispatch.ts";
 import {
 	buildWorkspaceJobs,
 	prepareWorkspaceDispatchAsync,
@@ -46,7 +60,9 @@ export interface RunWorkspaceOptions {
 	 * runs.
 	 */
 	backend?: Backend | undefined;
+	childProcess?: ChildProcessRunner;
 	cli: CliOptions;
+	createResolver?: RojoResolverFactory;
 	/**
 	 * Directory a relative positional file resolves against — the one the CLI
 	 * was invoked from, which is not the workspace root when the run was
@@ -57,6 +73,7 @@ export interface RunWorkspaceOptions {
 	cwd?: string | undefined;
 	/** Where the run reads and writes. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
+	loadPackageConfig?: PackageConfigLoader;
 	/**
 	 * When provided, called once per newly-observed streaming result as
 	 * packages complete (work-stealing mode only). The intended consumer is
@@ -66,6 +83,8 @@ export interface RunWorkspaceOptions {
 	 */
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
 	packageInfos: Array<PackageInfo>;
+	prepareCoverage?: PrepareCoverage;
+	prepareWorkStealingQueue?: PrepareWorkStealingQueue | undefined;
 	/**
 	 * Per-invocation knobs resolved by `buildWorkspaceRunOptions` —
 	 * CLI > per-package consensus > defaults. The workspace runner does
@@ -73,6 +92,7 @@ export interface RunWorkspaceOptions {
 	 * `loadWorkspacePackages`) is the source of truth for those.
 	 */
 	runOptions: WorkspaceRunOptions;
+	runTypecheck?: RunTypecheck;
 	/**
 	 * Span-tree profiler created at the top of `runJestRoblox`. The
 	 * workspace runner does NOT flush — the caller owns the lifecycle so a
@@ -81,6 +101,7 @@ export interface RunWorkspaceOptions {
 	 * test seams keep working; production callers always pass one.
 	 */
 	timing?: TimingCollector | undefined;
+	tsconfigReader?: TsconfigReader;
 	version: string;
 	workspaceRoot: string;
 	/**
@@ -99,11 +120,19 @@ export interface RunWorkspaceOptions {
 
 /**
  * The options every stage below the entry point reads: the caller's, with the
- * filesystem seam already resolved. Resolving it once — rather than at each
- * `?? nodeFileSystem` — is what stops a stage reaching the real disk because
- * someone forgot the fallback.
+ * collaborator seams already resolved. Resolving them once — rather than at
+ * each `?? nodeFileSystem` — is what stops a stage reaching the real disk (or
+ * launching a real rojo) because someone forgot the fallback.
  */
-type ResolvedRunWorkspaceOptions = RunWorkspaceOptions & { fileSystem: FileSystem };
+type ResolvedRunWorkspaceOptions = RunWorkspaceOptions & {
+	childProcess: ChildProcessRunner;
+	createResolver: RojoResolverFactory;
+	fileSystem: FileSystem;
+	loadPackageConfig: PackageConfigLoader;
+	prepareCoverage: PrepareCoverage;
+	runTypecheck: RunTypecheck;
+	tsconfigReader: TsconfigReader;
+};
 
 interface WorkspaceRuntimeInput {
 	cacheDirectory: string;
@@ -121,9 +150,26 @@ type OpenedWorkspace = Pick<WorkspaceRuntimeInput, "cacheDirectory" | "loaded">;
 export async function runWorkspaceAsync(
 	options: RunWorkspaceOptions,
 ): Promise<undefined | WorkspaceRunnerOutput> {
-	const { fileSystem = nodeFileSystem } = options;
+	const {
+		childProcess = nodeChildProcessRunner,
+		createResolver = nodeRojoResolverFactory,
+		fileSystem = nodeFileSystem,
+		loadPackageConfig = loadConfig,
+		prepareCoverage = prepareWorkspaceCoverage,
+		runTypecheck = runTypecheckAsync,
+		tsconfigReader = nodeTsconfigReader,
+	} = options;
 	return runWorkspaceProfiledAsync(
-		{ ...options, fileSystem },
+		{
+			...options,
+			childProcess,
+			createResolver,
+			fileSystem,
+			loadPackageConfig,
+			prepareCoverage,
+			runTypecheck,
+			tsconfigReader,
+		},
 		options.timing ?? NOOP_TIMING_COLLECTOR,
 	);
 }
@@ -140,6 +186,7 @@ async function prepareDispatchSpecAsync(
 			jobs,
 			onStreamingResult: options.onStreamingResult,
 			parallel: options.runOptions.parallel,
+			prepareWorkStealingQueue: options.prepareWorkStealingQueue,
 			workStealingCredentials: options.workStealingCredentials,
 		});
 	});
@@ -161,10 +208,16 @@ async function executeWorkspaceRunAsync({
 	// Resolved once, for both the script the runtime executes and the run that
 	// post-processes its results. The cache goes with them, so a package's
 	// tsconfigs are read once for the whole run.
-	const { fileSystem } = options;
+	const { fileSystem, tsconfigReader } = options;
 	const tsconfigCache = createTsconfigMappingCache();
 	const jobs = timing.profile("buildJobs", () => {
-		return buildWorkspaceJobs(pending, placeFile, tsconfigCache);
+		return buildWorkspaceJobs({
+			fileSystem,
+			pending,
+			placeFile,
+			tsconfigCache,
+			tsconfigReader,
+		});
 	});
 
 	const dispatchSpec = await prepareDispatchSpecAsync(options, jobs, timing);
@@ -185,7 +238,7 @@ async function executeWorkspaceRunAsync({
 			tsconfigCache,
 			version: options.version,
 		}),
-		runWorkspaceTypecheckPassAsync(typeTestEntries, typecheckByDirectory),
+		runWorkspaceTypecheckPassAsync(typeTestEntries, typecheckByDirectory, options.runTypecheck),
 	]);
 
 	return { ...dispatched, typecheckPass };
@@ -236,8 +289,10 @@ async function stagePlaceForRunAsync({
 }: WorkspaceRuntimeInput): Promise<StagedWorkspacePlace> {
 	return stageWorkspacePlaceAsync({
 		cacheDirectory,
+		childProcess: options.childProcess,
 		fileSystem: options.fileSystem,
 		loaded,
+		prepareCoverage: options.prepareCoverage,
 		selection,
 		timing,
 		workspaceRoot: options.workspaceRoot,
@@ -322,6 +377,7 @@ async function runWorkspaceNoRuntimeAsync(
 	return runTypecheckOnlyWorkspaceAsync({
 		fileSystem: options.fileSystem,
 		runOptions: options.runOptions,
+		runTypecheck: options.runTypecheck,
 		timing,
 		typecheckByDirectory: selection.typecheckByDirectory,
 		typeTestEntries: selection.typeTestEntries,
@@ -361,7 +417,13 @@ function createWorkspaceCacheDirectory(fileSystem: FileSystem, workspaceRoot: st
  * `undefined` when preflight rejected one, which ends the run.
  */
 async function openWorkspaceAsync(
-	{ cli, fileSystem, packageInfos, workspaceRoot }: ResolvedRunWorkspaceOptions,
+	{
+		cli,
+		fileSystem,
+		loadPackageConfig,
+		packageInfos,
+		workspaceRoot,
+	}: ResolvedRunWorkspaceOptions,
 	timing: TimingCollector,
 ): Promise<OpenedWorkspace | undefined> {
 	// Load each package's config FIRST so that per-package `rojoProject`
@@ -369,7 +431,13 @@ async function openWorkspaceAsync(
 	// (and the path preflight uses) before loadConfig pinned every package
 	// to the parent's rojo file.
 	const loaded = await timing.profileAsync("loadPackages", async () => {
-		return loadWorkspacePackagesAsync({ cli, fileSystem, packageInfos, timing });
+		return loadWorkspacePackagesAsync({
+			cli,
+			fileSystem,
+			loadPackageConfig,
+			packageInfos,
+			timing,
+		});
 	});
 
 	if (!runWorkspacePreflight(loaded, fileSystem)) {
@@ -393,9 +461,15 @@ async function selectTestsAsync(
 	timing: TimingCollector,
 	{ cacheDirectory, loaded }: OpenedWorkspace,
 ): Promise<WorkspaceTestSelection> {
-	const { cli, fileSystem } = options;
+	const { cli, createResolver, fileSystem, tsconfigReader } = options;
 	const contexts = await timing.profileAsync("resolveContexts", async () => {
-		return resolvePackageContextsAsync({ cacheDirectory, fileSystem, loaded });
+		return resolvePackageContextsAsync({
+			cacheDirectory,
+			createResolver,
+			fileSystem,
+			loaded,
+			tsconfigReader,
+		});
 	});
 
 	return timing.profile("discoverTests", () => {

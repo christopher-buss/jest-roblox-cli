@@ -1,22 +1,21 @@
 import * as path from "node:path";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { resolveBackendAsync } from "../backends/auto.ts";
 import type { Backend, ParallelOption } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
-import { type ProjectInput, runProjectsAsync } from "../executor.ts";
+import type { ProjectInput } from "../executor.ts";
 import { describePlaceFile } from "../progress/stages.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheckPassAsync as runGroupedTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
-import { runTypecheckAsync } from "../typecheck/runner.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { emitRunHeader } from "./run-header.ts";
+import type { RunSeams } from "./seams.ts";
 import type { StagedRun } from "./staging.ts";
 import { collectStubMounts } from "./staging.ts";
 import type { PendingJob, RunDiscovery, TestPlan } from "./test-plan.ts";
@@ -56,10 +55,11 @@ export async function runTypecheckPassAsync(
 	entries: Array<TypecheckGroupEntry>,
 	rootConfig: ResolvedConfig,
 	cliTypecheck: TypecheckCliOptions,
+	runTypecheck: RunSeams["runTypecheck"],
 ): Promise<TypecheckPassOutcome> {
 	const rootTypecheck = resolveTypecheckConfig({ cli: cliTypecheck, root: rootConfig.typecheck });
 	return runGroupedTypecheckPassAsync(entries, async (group) => {
-		return runTypecheckAsync({
+		return runTypecheck({
 			files: group.files,
 			ignoreSourceErrors: rootTypecheck.ignoreSourceErrors,
 			rootDir: group.cwd,
@@ -81,7 +81,7 @@ export async function runTypecheckPassAsync(
 export async function executeTestPlanAsync(input: ExecutionInput): Promise<ExecutionOutcome> {
 	const { cli, staged } = input;
 	const backend = await input.discovery.timing.profileAsync("resolveBackend", async () => {
-		return resolveBackendAsync(cli, staged.effectiveConfig);
+		return input.discovery.seams.resolveBackend(cli, staged.effectiveConfig);
 	});
 
 	try {
@@ -106,6 +106,7 @@ async function runJobsAsync({
 	fileSystem,
 	jobs,
 	parallel,
+	runProjects,
 	timing,
 	vmParallel,
 }: {
@@ -113,6 +114,7 @@ async function runJobsAsync({
 	fileSystem: FileSystem;
 	jobs: Array<PendingJob>;
 	parallel: ParallelOption;
+	runProjects: RunSeams["runProjects"];
 	timing: TimingCollector;
 	vmParallel: ParallelOption;
 }): Promise<Array<ProjectResult>> {
@@ -121,7 +123,7 @@ async function runJobsAsync({
 	}
 
 	const runResult = await timing.profileAsync("runProjects", async () => {
-		return runProjectsAsync({
+		return runProjects({
 			backend,
 			deferFormatting: true,
 			fileSystem,
@@ -149,25 +151,37 @@ async function runJobsAsync({
 	});
 }
 
-async function buildOpenCloudPlaceAsync(
-	fileSystem: FileSystem,
-	rootConfig: ResolvedConfig,
-	projects: Array<ResolvedProjectConfig>,
-	cacheRoot: string,
-): Promise<void> {
+async function buildOpenCloudPlaceAsync({
+	cacheRoot,
+	discovery,
+	projects,
+	rootConfig,
+}: {
+	cacheRoot: string;
+	discovery: RunDiscovery;
+	projects: Array<ResolvedProjectConfig>;
+	rootConfig: ResolvedConfig;
+}): Promise<void> {
+	const { fileSystem, seams } = discovery;
 	const userRojoProjectPath = path.resolve(
 		rootConfig.rootDir,
 		rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
 	);
 
 	await buildPlaceAsync({
+		childProcess: seams.childProcess,
 		fileSystem,
 		packages: [
 			{
 				name: "multi-project",
 				packageDirectory: rootConfig.rootDir,
 				rojoProjectPath: userRojoProjectPath,
-				stubMounts: collectStubMounts(projects, rootConfig.rootDir, cacheRoot),
+				stubMounts: collectStubMounts({
+					cacheRoot,
+					fileSystem,
+					projects,
+					rootDir: rootConfig.rootDir,
+				}),
 			},
 		],
 		placeFile: resolvePlaceFilePath(rootConfig),
@@ -196,7 +210,12 @@ async function buildPlaceForBackendAsync(
 	}
 
 	const { elapsedMs } = await timing.profileTimedAsync("buildOpenCloudPlace", async () => {
-		await buildOpenCloudPlaceAsync(fileSystem, rootConfig, projects, staged.cacheRoot);
+		await buildOpenCloudPlaceAsync({
+			cacheRoot: staged.cacheRoot,
+			discovery,
+			projects,
+			rootConfig,
+		});
 		// Inside the span: closing it closes the stage, and a size handed over
 		// after that arrives too late to reach the line the stage prints.
 		timing.progress.describe(
@@ -263,10 +282,16 @@ async function runAgainstBackendAsync(
 			backend,
 			fileSystem: discovery.fileSystem,
 			jobs: plan.jobs,
+			runProjects: discovery.seams.runProjects,
 			timing,
 			...dispatch,
 		}),
-		runTypecheckPassAsync(plan.typeTestEntries, rootConfig, cliTypecheck),
+		runTypecheckPassAsync(
+			plan.typeTestEntries,
+			rootConfig,
+			cliTypecheck,
+			discovery.seams.runTypecheck,
+		),
 	]);
 
 	// Record the tsgo span at root once both branches settle — the collector's

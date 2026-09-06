@@ -34,11 +34,14 @@ import {
 	type TestRowCounts,
 } from "./summary.ts";
 
+export type SourceSnippetReader = typeof getSourceSnippet;
+
 export interface AgentOptions {
 	/** Set when `--bail` cut the run short; see {@link BailSummary}. */
 	bail?: BailSummary | undefined;
 	gameOutput?: string | undefined;
 	gameOutputSize?: number | undefined;
+	getSourceSnippet?: SourceSnippetReader;
 	maxFailures: number;
 	outputFile?: string | undefined;
 	outputFileSize?: number | undefined;
@@ -47,6 +50,8 @@ export interface AgentOptions {
 	typeErrorCount?: number | undefined;
 }
 
+type ResolvedAgentOptions = AgentOptions & { getSourceSnippet: SourceSnippetReader };
+
 interface AgentProjectEntry {
 	displayName: string;
 	result: JestResult;
@@ -54,8 +59,14 @@ interface AgentProjectEntry {
 
 type SnippetLevel = "both" | "none" | "ts-only";
 
+interface SnippetContext {
+	getSnippet: SourceSnippetReader;
+	rootDir: string;
+	snippetLevel: SnippetLevel;
+}
+
 interface FormatFailureMessageOptions {
-	agentOptions: AgentOptions;
+	agentOptions: ResolvedAgentOptions;
 	filePath: string;
 	originalMessage: string;
 	snippetLevel: SnippetLevel;
@@ -72,7 +83,8 @@ interface AgentProjectStats {
 // through the no-op palette rather than growing a plain-text twin.
 const PLAIN_STYLES = createStyles(false);
 
-export function formatAgent(result: JestResult, options: AgentOptions): string {
+export function formatAgent(result: JestResult, agentOptions: AgentOptions): string {
+	const options = resolveAgentOptions(agentOptions);
 	const lines: Array<string> = [];
 	const execErrors = result.testResults.filter(hasExecError);
 	const hasFailures = result.numFailedTests > 0 || execErrors.length > 0;
@@ -104,8 +116,9 @@ export function formatAgent(result: JestResult, options: AgentOptions): string {
 
 export function formatAgentMultiProject(
 	projects: Array<AgentProjectEntry>,
-	options: AgentOptions,
+	agentOptions: AgentOptions,
 ): string {
+	const options = resolveAgentOptions(agentOptions);
 	const lines: Array<string> = [];
 
 	for (const { displayName, result } of projects) {
@@ -122,6 +135,10 @@ export function formatAgentMultiProject(
 	lines.push(...formatMultiProjectSummary(stats, options));
 
 	return lines.join("\n");
+}
+
+function resolveAgentOptions(options: AgentOptions): ResolvedAgentOptions {
+	return { getSourceSnippet, ...options };
 }
 
 function formatSummarySection(result: JestResult, options: AgentOptions): Array<string> {
@@ -292,9 +309,7 @@ function findFailureLocation(
 	return parseSourceLocation(message);
 }
 
-function formatSnippetBlock(
-	snippetResult: ReturnType<typeof getSourceSnippet>,
-): string | undefined {
+function formatSnippetBlock(snippetResult: ReturnType<SourceSnippetReader>): string | undefined {
 	if (snippetResult === undefined) {
 		return undefined;
 	}
@@ -310,13 +325,12 @@ function formatSnippetBlock(
 
 function getTsSnippets(
 	loc: MappedLocation & { tsLine: number; tsPath: string },
-	snippetLevel: SnippetLevel,
-	rootDirectory: string,
+	{ getSnippet, rootDir, snippetLevel }: SnippetContext,
 ): Array<string> {
 	const result: Array<string> = [];
 
 	const tsSnippet = formatSnippetBlock(
-		getSourceSnippet({
+		getSnippet({
 			column: loc.tsColumn,
 			context: 1,
 			filePath: loc.tsPath,
@@ -326,18 +340,18 @@ function getTsSnippets(
 	);
 
 	if (tsSnippet !== undefined) {
-		const relativeTsPath = makeRelative(loc.tsPath, rootDirectory);
+		const relativeTsPath = makeRelative(loc.tsPath, rootDir);
 		const label = snippetLevel === "both" ? `TS  ${relativeTsPath}:${loc.tsLine}\n` : "";
 		result.push(`${label}${tsSnippet}`);
 	}
 
 	if (snippetLevel === "both") {
 		const luauSnippet = formatSnippetBlock(
-			getSourceSnippet({ context: 1, filePath: loc.luauPath, line: loc.luauLine }),
+			getSnippet({ context: 1, filePath: loc.luauPath, line: loc.luauLine }),
 		);
 
 		if (luauSnippet !== undefined) {
-			const relativeLuauPath = makeRelative(loc.luauPath, rootDirectory);
+			const relativeLuauPath = makeRelative(loc.luauPath, rootDir);
 			result.push(`Luau  ${relativeLuauPath}:${loc.luauLine}\n${luauSnippet}`);
 		}
 	}
@@ -345,33 +359,28 @@ function getTsSnippets(
 	return result;
 }
 
-function getLuauOnlySnippet(loc: MappedLocation): Array<string> {
+function getLuauOnlySnippet(loc: MappedLocation, getSnippet: SourceSnippetReader): Array<string> {
 	const snippet = formatSnippetBlock(
-		getSourceSnippet({ context: 1, filePath: loc.luauPath, line: loc.luauLine }),
+		getSnippet({ context: 1, filePath: loc.luauPath, line: loc.luauLine }),
 	);
 
 	return snippet !== undefined ? [snippet] : [];
 }
 
-function getMappedSnippets(
-	loc: MappedLocation,
-	snippetLevel: SnippetLevel,
-	rootDirectory: string,
-): Array<string> {
+function getMappedSnippets(loc: MappedLocation, context: SnippetContext): Array<string> {
 	if (loc.tsPath !== undefined && loc.tsLine !== undefined) {
-		return getTsSnippets(
-			{ ...loc, tsLine: loc.tsLine, tsPath: loc.tsPath },
-			snippetLevel,
-			rootDirectory,
-		);
+		return getTsSnippets({ ...loc, tsLine: loc.tsLine, tsPath: loc.tsPath }, context);
 	}
 
-	return getLuauOnlySnippet(loc);
+	return getLuauOnlySnippet(loc, context.getSnippet);
 }
 
-function getFallbackSnippet(location: { line: number; path: string }): Array<string> {
+function getFallbackSnippet(
+	location: { line: number; path: string },
+	getSnippet: SourceSnippetReader,
+): Array<string> {
 	const snippet = formatSnippetBlock(
-		getSourceSnippet({ context: 1, filePath: location.path, line: location.line }),
+		getSnippet({ context: 1, filePath: location.path, line: location.line }),
 	);
 
 	return snippet !== undefined ? [snippet] : [];
@@ -380,20 +389,19 @@ function getFallbackSnippet(location: { line: number; path: string }): Array<str
 function getFailureSnippets(
 	mappedLocations: Array<MappedLocation>,
 	location: undefined | { line: number; path: string },
-	snippetLevel: SnippetLevel,
-	rootDirectory: string,
+	context: SnippetContext,
 ): Array<string> {
-	if (snippetLevel === "none") {
+	if (context.snippetLevel === "none") {
 		return [];
 	}
 
 	const [loc] = mappedLocations;
 	if (loc !== undefined) {
-		return getMappedSnippets(loc, snippetLevel, rootDirectory);
+		return getMappedSnippets(loc, context);
 	}
 
 	if (location !== undefined) {
-		return getFallbackSnippet(location);
+		return getFallbackSnippet(location, context.getSnippet);
 	}
 
 	return [];
@@ -444,12 +452,11 @@ function formatFailureMessage({
 		...buildFailureDetail(parsed),
 	);
 
-	const snippets = getFailureSnippets(
-		mappedLocations,
-		location,
+	const snippets = getFailureSnippets(mappedLocations, location, {
+		getSnippet: agentOptions.getSourceSnippet,
+		rootDir: agentOptions.rootDir,
 		snippetLevel,
-		agentOptions.rootDir,
-	);
+	});
 	for (const snippet of snippets) {
 		lines.push(snippet);
 	}
@@ -461,7 +468,7 @@ function formatFailureMessage({
 function formatAgentFailure(
 	test: TestCaseResult,
 	filePath: string,
-	options: AgentOptions,
+	options: ResolvedAgentOptions,
 	snippetLevel: SnippetLevel,
 ): string {
 	const lines: Array<string> = [];
@@ -484,7 +491,7 @@ function formatAgentFailure(
 function formatFailures(
 	result: JestResult,
 	totalFailures: number,
-	options: AgentOptions,
+	options: ResolvedAgentOptions,
 ): Array<string> {
 	const lines: Array<string> = [];
 	const failures = collectFailedTests(result, options.sourceMapper);
@@ -547,7 +554,7 @@ function collectMultiProjectStats(projects: Array<AgentProjectEntry>): AgentProj
 function formatMultiProjectFailures(
 	projects: Array<AgentProjectEntry>,
 	stats: AgentProjectStats,
-	options: AgentOptions,
+	options: ResolvedAgentOptions,
 ): Array<string> {
 	const totalFailures = stats.tests.counts.failed + stats.allExecErrors.length;
 	const lines: Array<string> = [

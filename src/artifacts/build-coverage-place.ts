@@ -1,7 +1,6 @@
 import * as path from "node:path";
 
 import { mergeCliWithConfig } from "../config/merge.ts";
-import { resolveAllProjects } from "../config/projects.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { cleanLeftoverStubs, generateProjectStubs } from "../config/stubs.ts";
@@ -14,9 +13,11 @@ import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
 } from "../coverage-pipeline/prepare.ts";
-import { loadRojoTree } from "../run/multi.ts";
-import { buildImplicitProject } from "../run/single-projects.ts";
+import type { RunEntryOptions } from "../run.ts";
+import { nodeRunDispatch } from "../run.ts";
+import { nodeRunSeams } from "../run/seams.ts";
 import { prepareBakedCoverageAsync } from "../run/staging.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 
 const CACHE_DIR = path.join(".jest-roblox", "cache");
 
@@ -60,31 +61,38 @@ export interface CoveragePlaceBundle {
  */
 export async function buildCoveragePlaceAsync(
 	config: ResolvedConfig,
+	{
+		dispatch = nodeRunDispatch(),
+		fileSystem = nodeFileSystem,
+		seams = nodeRunSeams(),
+	}: RunEntryOptions = {},
 ): Promise<CoveragePlaceBundle> {
 	const cli: CliOptions = {};
 	const merged = mergeCliWithConfig(cli, { ...config, collectCoverage: true });
 
-	const projects = await resolveProjectsAsync(merged);
+	const projects = await resolveProjectsAsync(merged, { dispatch, fileSystem, seams });
 
 	const cacheRoot = path.resolve(merged.rootDir, CACHE_DIR);
 	// Mirror the run path's pre-flight: drop marker-bearing leftover stubs, then
 	// regenerate the current set into the cache (never the user's source tree) so
 	// `prepareBakedCoverage` can bake them into the place.
-	cleanLeftoverStubs(projects, merged.rootDir);
-	generateProjectStubs(projects, merged.rootDir, cacheRoot);
+	cleanLeftoverStubs(projects, merged.rootDir, fileSystem);
+	generateProjectStubs(projects, merged.rootDir, cacheRoot, fileSystem);
 
 	const { artifacts } = await prepareBakedCoverageAsync({
 		bakeStubs: true,
 		cacheRoot,
 		config: merged,
+		fileSystem,
 		projects,
+		seams,
 	});
 
 	// Emit only when the place was rebuilt this run, matching `runJestRoblox`:
 	// the reuse path leaves the prior (still-valid) build manifest in place, and
 	// `prepareCoverage`'s reuse gate already re-validated it against disk.
 	if (artifacts.rebuilt) {
-		emitBuildManifest(COVERAGE_BUILD_MANIFEST_PATH, artifacts);
+		emitBuildManifest(COVERAGE_BUILD_MANIFEST_PATH, artifacts, { fileSystem });
 	}
 
 	return {
@@ -104,12 +112,25 @@ export async function buildCoveragePlaceAsync(
  * derived from its luau roots. Type-only configs are irrelevant here — a build
  * always instruments.
  */
-async function resolveProjectsAsync(config: ResolvedConfig): Promise<Array<ResolvedProjectConfig>> {
-	const rojoTree = loadRojoTree(config);
+async function resolveProjectsAsync(
+	config: ResolvedConfig,
+	{ dispatch, fileSystem, seams }: Required<RunEntryOptions>,
+): Promise<Array<ResolvedProjectConfig>> {
+	const rojoTree = dispatch.loadRojoTree(config, fileSystem);
 	const rawProjects = config.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
-		return resolveAllProjects(rawProjects, config, { cwd: config.rootDir, rojoTree });
+		return seams.resolveAllProjects(rawProjects, config, {
+			cwd: config.rootDir,
+			fileSystem,
+			rojoTree,
+			tsconfigReader: seams.tsconfigReader,
+		});
 	}
 
-	return [buildImplicitProject(config, rojoTree)];
+	return [
+		dispatch.buildImplicitProject(config, rojoTree, {
+			fileSystem,
+			tsconfigReader: seams.tsconfigReader,
+		}),
+	];
 }

@@ -12,7 +12,6 @@ import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-pr
 import type { PackageDescriptor, StubMount } from "../staging/synthesizer.ts";
 import type { TimedPhase, TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import type { PendingEntry } from "./test-selection.ts";
 
@@ -31,14 +30,13 @@ import type { PendingEntry } from "./test-selection.ts";
 export function stageWorkspaceStubs({
 	contexts,
 	coverageByPackage,
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	pending,
 	timing,
 }: {
 	contexts: Array<PackageContext>;
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
-	/** Where stubs are written. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
+	fileSystem: FileSystem;
 	pending: Array<PendingEntry>;
 	timing: TimingCollector;
 }): TimedPhase<Array<PackageDescriptor>> {

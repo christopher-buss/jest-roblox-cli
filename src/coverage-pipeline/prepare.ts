@@ -15,6 +15,8 @@ import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { NOOP_TIMING_COLLECTOR } from "../timing/orchestration-collector.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import { rojoProjectSchema } from "../types/rojo.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashFileAsync } from "../utils/hash.ts";
@@ -36,7 +38,8 @@ import { createCopyIgnoreMatcher, hashCopyIgnorePatterns } from "./discover-file
 import { canReuseCoverageManifest } from "./incremental-gate.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
 import { createInstrumentUniverse } from "./instrument-universe.ts";
-import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
+import type { Instrumenter } from "./instrumenter.ts";
+import { INSTRUMENTER_VERSION, nodeInstrumenter } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
 	InstrumentedFileRecord,
@@ -96,6 +99,10 @@ export interface PrepareCoverageOptions {
 	/** What this run writes into the shadow before the place is built. */
 	bake?: ShadowBake | undefined;
 	/**
+	 * What launches rojo for the place build. Defaults to the real launcher.
+	 */
+	childProcess?: ChildProcessRunner;
+	/**
 	 * The run's effective coverage include globs, per `resolveCoverageInclude`
 	 * — which is where the `collectCoverageFrom ?? derived` fallback lives. A
 	 * caller that omits it gets the raw config value, so a run that never
@@ -104,6 +111,8 @@ export interface PrepareCoverageOptions {
 	coverageInclude?: Array<string> | undefined;
 	/** Where the shadow is built. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
+	/** What writes the instrumented twins. Defaults to the real one. */
+	instrumenter?: Instrumenter | undefined;
 	/**
 	 * The run's collector, so the two phases this call reports nest under the
 	 * `prepareCoverage` span the caller opened around it. Omitted by the
@@ -135,8 +144,8 @@ interface WriteManifestOptions {
 	rojoInputsHash: string;
 }
 
-/** The two settings every shadow pass of one run reads the same way. */
 interface ShadowPassSettings {
+	instrumenter: Instrumenter;
 	isBakeOwned: BakeOwnershipMatcher | undefined;
 	isIncremental: boolean;
 }
@@ -217,11 +226,33 @@ interface ShadowRootsResult {
 
 /** What the coverage place build reads, once the shadow is populated. */
 interface BuildCoveragePlaceOptions {
+	childProcess: ChildProcessRunner;
 	fileSystem: FileSystem;
 	packageDirectory: string;
 	placeFile: string;
 	rojoProjectPath: string;
 	shadow: Pick<ShadowRootsResult, "coverageRoots" | "coverageSpine">;
+}
+
+interface RebuildCoverageOptions {
+	childProcess: ChildProcessRunner;
+	config: ResolvedConfig;
+	inputs: CoverageInputs;
+	placeFile: string;
+	shadow: ShadowRootsResult;
+}
+
+interface InstrumentedCoverage {
+	inputs: CoverageInputs;
+	isIncremental: boolean;
+	shadow: ShadowRootsResult;
+}
+
+interface BakeCoveragePlaceOptions {
+	bake: PrepareCoverageOptions["bake"];
+	childProcess: ChildProcessRunner;
+	config: ResolvedConfig;
+	instrumented: InstrumentedCoverage;
 }
 
 interface RojoInputsHashResult {
@@ -237,13 +268,6 @@ type BakedCoveragePlace = Pick<
 	PrepareCoverageResult,
 	"buildId" | "coveragePlace" | "files" | "manifest" | "placeFile" | "rebuilt"
 >;
-
-/** What the instrumentation phase leaves behind for the place build. */
-interface InstrumentedCoverage {
-	inputs: CoverageInputs;
-	isIncremental: boolean;
-	shadow: ShadowRootsResult;
-}
 
 /** Project the coverage result down to the record an entry point emits. */
 export function toCoverageArtifacts(
@@ -352,8 +376,10 @@ export async function prepareCoverageAsync(
 	config: ResolvedConfig,
 	{
 		bake,
+		childProcess = nodeChildProcessRunner,
 		coverageInclude,
 		fileSystem = nodeFileSystem,
+		instrumenter = nodeInstrumenter,
 		timing = NOOP_TIMING_COLLECTOR,
 		tsconfigReader = nodeTsconfigReader,
 	}: PrepareCoverageOptions = {},
@@ -368,7 +394,7 @@ export async function prepareCoverageAsync(
 				tsconfigReader,
 			);
 			const isIncremental = decideIncremental(config, inputs);
-			const pass = { isBakeOwned: bake?.isBakeOwned, isIncremental };
+			const pass = { instrumenter, isBakeOwned: bake?.isBakeOwned, isIncremental };
 			return { inputs, isIncremental, shadow: prepareShadowRoots(inputs, pass) };
 		},
 	);
@@ -379,7 +405,7 @@ export async function prepareCoverageAsync(
 	// place. Both are staging: a non-coverage run pays the same work.
 	const { elapsedMs: stagingMs, value: baked } = await timing.profileTimedAsync(
 		"bakeCoveragePlace",
-		async () => bakeCoveragePlaceAsync({ bake, config, instrumented }),
+		async () => bakeCoveragePlaceAsync({ bake, childProcess, config, instrumented }),
 	);
 
 	return { ...baked, instrumentMs, stagingMs };
@@ -646,6 +672,7 @@ async function reuseCoverageResultAsync(
 }
 
 async function buildRojoProjectAsync({
+	childProcess,
 	fileSystem,
 	packageDirectory,
 	placeFile,
@@ -653,6 +680,7 @@ async function buildRojoProjectAsync({
 	shadow,
 }: BuildCoveragePlaceOptions): Promise<BuildManifestArtifact> {
 	return buildPlaceAsync({
+		childProcess,
 		fileSystem,
 		// The coverage place is shared by every backend. studio-cli opens it
 		// directly and drives the plugin's Run-mode runner, which refuses to run
@@ -715,13 +743,17 @@ function buildAndWriteManifest({
  * disk. The caller owns Build Manifest emission (it alone knows the full place
  * set), keeping that write a single atomic operation.
  */
-async function buildPlaceAndManifestAsync(
-	config: ResolvedConfig,
-	inputs: CoverageInputs,
-	shadow: ShadowRootsResult,
-	placeFile: string,
-): Promise<Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest">> {
+async function buildPlaceAndManifestAsync({
+	childProcess,
+	config,
+	inputs,
+	placeFile,
+	shadow,
+}: RebuildCoverageOptions): Promise<
+	Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest">
+> {
 	const coveragePlace = await buildRojoProjectAsync({
+		childProcess,
 		fileSystem: inputs.fileSystem,
 		packageDirectory: config.rootDir,
 		placeFile,
@@ -754,13 +786,10 @@ async function buildPlaceAndManifestAsync(
  */
 async function bakeCoveragePlaceAsync({
 	bake,
+	childProcess,
 	config,
 	instrumented: { inputs, isIncremental, shadow },
-}: {
-	bake: PrepareCoverageOptions["bake"];
-	config: ResolvedConfig;
-	instrumented: InstrumentedCoverage;
-}): Promise<BakedCoveragePlace> {
+}: BakeCoveragePlaceOptions): Promise<BakedCoveragePlace> {
 	// The layout stays inside the optional call: a run with no bake never
 	// builds one, and it is the only thing that would read it.
 	const hasExtraChanges = bake?.run(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true;
@@ -777,7 +806,13 @@ async function bakeCoveragePlaceAsync({
 		return reused;
 	}
 
-	const built = await buildPlaceAndManifestAsync(config, inputs, shadow, placeFile);
+	const built = await buildPlaceAndManifestAsync({
+		childProcess,
+		config,
+		inputs,
+		placeFile,
+		shadow,
+	});
 	return {
 		buildId: built.buildId,
 		coveragePlace: built.coveragePlace,
@@ -1026,10 +1061,16 @@ function decideIncremental(
  */
 function instrumentOneRoot(
 	{ fileSystem, isCopyIgnored, previousManifest, universe }: CoverageInputs,
-	{ isBakeOwned, isIncremental, luauRoot }: ShadowPassSettings & { luauRoot: PosixRoot },
+	{
+		instrumenter,
+		isBakeOwned,
+		isIncremental,
+		luauRoot,
+	}: ShadowPassSettings & { luauRoot: PosixRoot },
 ): ShadowRootResult {
 	return prepareShadowRoot({
 		fileSystem,
+		instrumenter,
 		isBakeOwned,
 		isCopyIgnored,
 		luauRoot,

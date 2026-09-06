@@ -1,8 +1,12 @@
+import { fromPartial } from "@total-typescript/shoehorn";
+
 import EventEmitter from "node:events";
 import type { AddressInfo } from "node:net";
 import type { Mock } from "vitest";
 import { vi } from "vitest";
+import type { WebSocketServer } from "ws";
 
+import type { WebSocketServerOptions } from "../../src/backends/web-socket-server-factory.ts";
 import type { MockWebSocket } from "./mock-web-socket.ts";
 
 const instances: Array<MockWebSocketServer> = [];
@@ -29,6 +33,10 @@ export class MockWebSocketServer extends EventEmitter {
 	public address(): Pick<AddressInfo, "port"> {
 		return { port: this.port };
 	}
+}
+
+export function mockWebSocketServerFactory(options: WebSocketServerOptions): WebSocketServer {
+	return fromPartial(new MockWebSocketServer(options));
 }
 
 export function getLastCreatedServer(): MockWebSocketServer | undefined {

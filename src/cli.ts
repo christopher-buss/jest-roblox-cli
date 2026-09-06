@@ -8,7 +8,7 @@ import color from "tinyrainbow";
 import packageJson from "../package.json" with { type: "json" };
 import type { ParallelOption } from "./backends/interface.ts";
 import { ConfigError } from "./config/errors.ts";
-import { loadConfig } from "./config/loader.ts";
+import { loadConfig, type PackageConfigLoader } from "./config/loader.ts";
 import { mergeCliWithConfig } from "./config/merge.ts";
 import type { Backend, CliOptions, CoverageReporter, ResolvedConfig } from "./config/schema.ts";
 import {
@@ -24,6 +24,8 @@ import { runJestRobloxAsync } from "./run.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
 import { formatBanner } from "./utils/banner.ts";
 import { type ChainEntry, formatMissingScopes, walkErrorChain } from "./utils/error-chain.ts";
+import type { FileSystem } from "./utils/file-system.ts";
+import { nodeFileSystem } from "./utils/file-system.ts";
 import { parseGameOutput } from "./utils/game-output.ts";
 
 const VERSION = packageJson.version;
@@ -161,6 +163,16 @@ const CLI_OPTION_SPEC = {
 	"workspace-root": { type: "string" },
 } as const satisfies ParseArgsOptionsConfig;
 
+/** Everything the invocation reaches the outside world through. */
+export interface CliDependencies {
+	fileSystem?: FileSystem;
+	loadConfig?: PackageConfigLoader;
+	outputMultiResult?: typeof outputMultiResultAsync;
+	runJestRoblox?: typeof runJestRobloxAsync;
+}
+
+type ResolvedCliDependencies = Required<CliDependencies>;
+
 export function parseArgs(args: Array<string>): CliOptions {
 	const { positionals, values } = parseWithOptionSpec(args);
 
@@ -192,17 +204,27 @@ export function parseArgs(args: Array<string>): CliOptions {
 	};
 }
 
-export async function runAsync(args: Array<string>): Promise<number> {
+const NODE_DEPENDENCIES: ResolvedCliDependencies = {
+	fileSystem: nodeFileSystem,
+	loadConfig,
+	outputMultiResult: outputMultiResultAsync,
+	runJestRoblox: runJestRobloxAsync,
+};
+
+export async function runAsync(
+	args: Array<string>,
+	dependencies?: CliDependencies,
+): Promise<number> {
 	try {
-		return await runInnerAsync(args);
+		return await runInnerAsync(args, { ...NODE_DEPENDENCIES, ...dependencies });
 	} catch (err) {
 		printError(err);
 		return 2;
 	}
 }
 
-export async function main(): Promise<void> {
-	const exitCode = await runAsync(process.argv.slice(2));
+export async function main(dependencies?: CliDependencies): Promise<void> {
+	const exitCode = await runAsync(process.argv.slice(2), dependencies);
 	process.exitCode = exitCode;
 }
 
@@ -556,6 +578,7 @@ function printError(err: unknown): void {
 async function dispatchResultAsync(
 	config: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
+	{ fileSystem, outputMultiResult }: ResolvedCliDependencies,
 ): Promise<number> {
 	if (result.validationExitCode !== undefined) {
 		if (result.validationMessage !== undefined) {
@@ -569,10 +592,13 @@ async function dispatchResultAsync(
 		return 0;
 	}
 
-	return outputMultiResultAsync(config, result);
+	return outputMultiResult(config, result, { fileSystem });
 }
 
-async function runInnerAsync(args: Array<string>): Promise<number> {
+async function runInnerAsync(
+	args: Array<string>,
+	dependencies: ResolvedCliDependencies,
+): Promise<number> {
 	const cli = parseArgs(args);
 
 	if (cli.help === true) {
@@ -591,7 +617,10 @@ async function runInnerAsync(args: Array<string>): Promise<number> {
 		);
 	}
 
-	const loadedConfig = await loadConfig(cli.config, cli.workspaceRoot);
+	const { fileSystem } = dependencies;
+	const loadedConfig = await dependencies.loadConfig(cli.config, cli.workspaceRoot, {
+		fileSystem,
+	});
 	const config = mergeCliWithConfig(cli, loadedConfig);
 
 	// The CLI owns the terminal for the whole invocation, so it owns the stage
@@ -600,8 +629,8 @@ async function runInnerAsync(args: Array<string>): Promise<number> {
 	// inside rather than freezing on a spinner.
 	const progress = createStdoutRunProgress();
 	try {
-		const result = await runJestRobloxAsync(cli, config, progress);
-		return await dispatchResultAsync(config, result);
+		const result = await dependencies.runJestRoblox(cli, config, progress, { fileSystem });
+		return await dispatchResultAsync(config, result, dependencies);
 	} finally {
 		progress.finish();
 	}

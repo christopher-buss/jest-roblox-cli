@@ -87,6 +87,12 @@ export type ReadBuildManifestResult =
 	| { kind: "missing-referenced-artifact"; path: string }
 	| { kind: "ok"; manifest: BuildManifest };
 
+export interface EmitBuildManifestOptions {
+	/** The uninstrumented place, when the caller built one. */
+	cleanPlace?: BuildManifestArtifact;
+	fileSystem: FileSystem;
+}
+
 export interface ReadBuildManifestOptions {
 	/** When set, refuse if the manifest's `buildId` differs from this value. */
 	expectedBuildId?: string;
@@ -179,8 +185,7 @@ export function toBuildManifestFiles(
 export function emitBuildManifest(
 	filePath: string,
 	artifacts: CoverageArtifacts,
-	cleanPlace?: BuildManifestArtifact,
-	fileSystem: FileSystem = nodeFileSystem,
+	{ cleanPlace, fileSystem }: EmitBuildManifestOptions,
 ): void {
 	let manifest: BuildManifest = {
 		buildId: artifacts.buildId,

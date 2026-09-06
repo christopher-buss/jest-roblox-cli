@@ -7,41 +7,54 @@ import type { RawBackendEntry } from "../backends/interface.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { printLuauTiming, recordLuauTimingSpans } from "./timing-spans.ts";
 
-type ExtractLuauTimingFromOutput =
-	(typeof import("../reporter/parser.ts"))["extractLuauTimingFromOutput"];
-
-const extractLuauTimingFromOutput = vi.hoisted(() => vi.fn<ExtractLuauTimingFromOutput>());
-
-vi.mock(import("../reporter/parser.ts"), () => ({ extractLuauTimingFromOutput }));
+function runnerOutput(timing: Record<string, number>): string {
+	return `Roblox runner log\n${JSON.stringify({ runner: { timing } })}\n`;
+}
 
 describe(recordLuauTimingSpans, () => {
 	it("should record every Luau phase except its redundant total", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		extractLuauTimingFromOutput.mockReturnValue({ findJest: 0.2, jestRunCLI: 0.3, total: 0.5 });
 		const record = vi.fn<TimingCollector["record"]>();
 		const timing = fromPartial<TimingCollector>({ enabled: true, record });
 		const rawResults = [
-			fromPartial<RawBackendEntry>({ entry: { jestOutput: "runner output" } }),
+			fromPartial<RawBackendEntry>({
+				entry: { jestOutput: runnerOutput({ findJest: 0.2, jestRunCLI: 0.3, total: 0.5 }) },
+			}),
 		];
 
 		recordLuauTimingSpans(timing, rawResults);
 
-		expect(extractLuauTimingFromOutput).toHaveBeenCalledExactlyOnceWith("runner output");
 		expect(record.mock.calls).toStrictEqual([
 			["luau.findJest", 200],
 			["luau.jestRunCLI", 300],
 		]);
 	});
 
+	it("should skip an entry whose output carries no Luau timing", () => {
+		expect.assertions(1);
+
+		const record = vi.fn<TimingCollector["record"]>();
+		const timing = fromPartial<TimingCollector>({ enabled: true, record });
+
+		recordLuauTimingSpans(timing, [
+			fromPartial<RawBackendEntry>({ entry: { jestOutput: "no json here" } }),
+		]);
+
+		expect(record).not.toHaveBeenCalled();
+	});
+
 	it("should avoid parsing output when timing is disabled", () => {
 		expect.assertions(1);
 
+		const entry = { jestOutput: runnerOutput({ findJest: 0.2 }) };
+		const readJestOutput = vi.spyOn(entry, "jestOutput", "get");
+
 		recordLuauTimingSpans(fromPartial<TimingCollector>({ enabled: false }), [
-			fromPartial<RawBackendEntry>({ entry: { jestOutput: "runner output" } }),
+			fromPartial<RawBackendEntry>({ entry }),
 		]);
 
-		expect(extractLuauTimingFromOutput).not.toHaveBeenCalled();
+		expect(readJestOutput).not.toHaveBeenCalled();
 	});
 });
 

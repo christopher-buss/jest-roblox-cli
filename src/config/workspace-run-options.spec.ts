@@ -3,13 +3,10 @@ import { fromAny } from "@total-typescript/shoehorn";
 import * as path from "node:path";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { defaultFormatters } from "./default-formatters.ts";
 import type { CliOptions } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
 import { buildWorkspaceRunOptions, WorkspaceConsensusError } from "./workspace-run-options.ts";
-
-const stdEnvironmentMock = vi.hoisted(() => ({ isAgent: false }));
-
-vi.mock(import("std-env"), () => stdEnvironmentMock);
 
 function emptyCli(): CliOptions {
 	return {};
@@ -202,20 +199,15 @@ describe(buildWorkspaceRunOptions, () => {
 			expect(result.parallel).toBeUndefined();
 		});
 
-		it("should fall back to a non-empty env-detected default formatter list", () => {
-			expect.assertions(2);
+		it("should fall back to the env-detected default formatter list", () => {
+			expect.assertions(1);
 
 			const result = buildWorkspaceRunOptions({
 				cli: emptyCli(),
 				perPackageConfigs: [{ name: "alpha", config: {} }],
 			});
 
-			// Either ["default"] or ["agent"] depending on std-env detection;
-			// CI may also append "github-actions". The contract is "non-empty
-			// with at least one named formatter" — exact values are
-			// env-dependent.
-			expect(result.formatters.length).toBeGreaterThan(0);
-			expect(result.formatters[0]).toMatch(/^(default|agent)$/);
+			expect(result.formatters).toStrictEqual(defaultFormatters());
 		});
 	});
 
@@ -470,21 +462,6 @@ describe(buildWorkspaceRunOptions, () => {
 			});
 
 			expect(result.formatters).toContain("github-actions");
-		});
-
-		it("should pick the agent default when std-env reports an agent runtime", () => {
-			expect.assertions(1);
-
-			stdEnvironmentMock.isAgent = true;
-
-			const result = buildWorkspaceRunOptions({
-				cli: {},
-				perPackageConfigs: [{ name: "alpha", config: {} }],
-			});
-
-			stdEnvironmentMock.isAgent = false;
-
-			expect(result.formatters).toContain("agent");
 		});
 	});
 

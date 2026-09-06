@@ -18,7 +18,8 @@ import {
 	walkLuauDirectory,
 } from "./discover-files.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
-import { instrumentRoot } from "./instrumenter.ts";
+import type { Instrumenter } from "./instrumenter.ts";
+import { nodeInstrumenter } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
 	InstrumentedFileRecord,
@@ -50,6 +51,10 @@ export interface PrepareShadowRootOptions {
 	 * Where the shadow is read and written. Defaults to the real filesystem.
 	 */
 	fileSystem?: FileSystem;
+	/**
+	 * What writes the instrumented twins. Defaults to the real instrumenter.
+	 */
+	instrumenter?: Instrumenter | undefined;
 	/**
 	 * Shadow entries a `beforeBuild` bake writes and sweeps for itself, which
 	 * the reconcile therefore leaves alone. Absent exempts nothing.
@@ -852,6 +857,7 @@ function planIncremental(
 function instrumentChangedFiles(
 	{
 		fileSystem = nodeFileSystem,
+		instrumenter = nodeInstrumenter,
 		isCopyIgnored,
 		luauRoot,
 		previousManifest,
@@ -869,7 +875,7 @@ function instrumentChangedFiles(
 		skipFiles === undefined && excluded.size === 0
 			? undefined
 			: new Set([...(skipFiles ?? []), ...excluded]);
-	const files = instrumentRoot({
+	const files = instrumenter({
 		fileSystem,
 		isCopyIgnored,
 		luauRoot,

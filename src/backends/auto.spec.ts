@@ -3,26 +3,25 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { Buffer } from "node:buffer";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
-import type { WebSocket } from "ws";
-import { WebSocketServer } from "ws";
+import type { WebSocket, WebSocketServer } from "ws";
 
-import type { MockWebSocket as MockWebSocketType } from "../../test/mocks/mock-web-socket.ts";
+import {
+	getLastCreatedServer,
+	MockWebSocketServer,
+	mockWebSocketServerFactory as webSocketServerFactory,
+} from "../../test/mocks/mock-web-socket-server.ts";
+import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
 import { probeStudioPluginAsync, resolveBackendAsync, StudioWithFallback } from "./auto.ts";
-import type { ProbeDetected, ProbeResult } from "./auto.ts";
+import type { ProbeDetected, ProbeResult, StudioProbe } from "./auto.ts";
 import type { Backend } from "./interface.ts";
 import { OpenCloudBackend } from "./open-cloud.ts";
 import { PluginConnectionPool } from "./plugin-connections.ts";
 import { StudioCliBackend } from "./studio-cli.ts";
 import { StudioBackend } from "./studio.ts";
-
-const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.hoisted(
-	async () => import("../../test/mocks/mock-ws"),
-);
-
-vi.mock(import("ws"), async () => fromPartial({ WebSocketServer: MockWebSocketServer }));
+import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return { ...DEFAULT_CONFIG, ...overrides };
@@ -47,7 +46,7 @@ const PROTOCOL_VERSION = 7;
 function connectPlugin(
 	wss: { emit: (event: string, payload: unknown) => void },
 	hello: Record<string, unknown> = {},
-): MockWebSocketType {
+): MockWebSocket {
 	const socket = new MockWebSocket();
 	wss.emit("connection", socket);
 	socket.emit(
@@ -70,7 +69,7 @@ describe(probeStudioPluginAsync, () => {
 		expect.assertions(5);
 
 		useProbeTimers();
-		const promise = probeStudioPluginAsync(4321, 2000);
+		const promise = probeStudioPluginAsync(4321, 2000, webSocketServerFactory);
 
 		const wss = getLastCreatedServer();
 		assert(wss, "expected server to be created");
@@ -92,7 +91,7 @@ describe(probeStudioPluginAsync, () => {
 
 		useProbeTimers();
 
-		const promise = probeStudioPluginAsync(0, 50);
+		const promise = probeStudioPluginAsync(0, 50, webSocketServerFactory);
 		await vi.runAllTimersAsync();
 		const result = await promise;
 
@@ -103,7 +102,7 @@ describe(probeStudioPluginAsync, () => {
 		expect.assertions(3);
 
 		useProbeTimers();
-		const promise = probeStudioPluginAsync(0, 5000);
+		const promise = probeStudioPluginAsync(0, 5000, webSocketServerFactory);
 
 		const wss = getLastCreatedServer();
 		assert(wss, "expected server to be created");
@@ -121,7 +120,7 @@ describe(probeStudioPluginAsync, () => {
 
 		useProbeTimers();
 
-		const promise = probeStudioPluginAsync(0, 50);
+		const promise = probeStudioPluginAsync(0, 50, webSocketServerFactory);
 		await vi.runAllTimersAsync();
 		await promise;
 
@@ -134,7 +133,7 @@ describe(probeStudioPluginAsync, () => {
 		expect.assertions(3);
 
 		useProbeTimers();
-		const promise = probeStudioPluginAsync(0, 5000);
+		const promise = probeStudioPluginAsync(0, 5000, webSocketServerFactory);
 
 		const wss = getLastCreatedServer();
 		assert(wss, "expected server to be created");
@@ -155,7 +154,7 @@ describe(probeStudioPluginAsync, () => {
 		expect.assertions(1);
 
 		useProbeTimers();
-		const promise = probeStudioPluginAsync(0, 5000);
+		const promise = probeStudioPluginAsync(0, 5000, webSocketServerFactory);
 
 		const wss = getLastCreatedServer();
 		assert(wss, "expected server to be created");
@@ -171,7 +170,7 @@ describe(probeStudioPluginAsync, () => {
 });
 
 function mockDetected(): ProbeDetected {
-	const server = new WebSocketServer({ port: 0 });
+	const server = fromPartial<WebSocketServer>(new MockWebSocketServer({ port: 0 }));
 	return {
 		detected: true,
 		pool: new PluginConnectionPool(server),
@@ -205,7 +204,11 @@ describe(resolveBackendAsync, () => {
 		);
 
 		expect(backend).toBeInstanceOf(StudioBackend);
-		expect(probeAsync).toHaveBeenCalledExactlyOnceWith(DEFAULT_CONFIG.port, 500);
+		expect(probeAsync).toHaveBeenCalledExactlyOnceWith(
+			DEFAULT_CONFIG.port,
+			500,
+			nodeWebSocketServerFactory,
+		);
 		expect(stderr).toHaveBeenCalledExactlyOnceWith("Backend: studio (plugin detected)\n");
 	});
 
@@ -332,6 +335,49 @@ describe(resolveBackendAsync, () => {
 		);
 
 		expect(backend).toBeInstanceOf(StudioBackend);
+	});
+
+	it("should hand the server seam to the probe", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "test-key");
+		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
+		vi.stubEnv("ROBLOX_PLACE_ID", "456");
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+		const probeAsync = vi.fn<StudioProbe>(async () => mockNotDetected());
+
+		await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "auto" }),
+			probeAsync,
+			webSocketServerFactory,
+		);
+
+		expect(probeAsync).toHaveBeenCalledExactlyOnceWith(
+			DEFAULT_CONFIG.port,
+			500,
+			webSocketServerFactory,
+		);
+	});
+
+	it("should open an explicit studio backend's server through the same seam", async () => {
+		expect.assertions(2);
+
+		const probe = vi.fn<StudioProbe>();
+		const backend = await resolveBackendAsync(
+			makeCli(),
+			makeConfig({ backend: "studio", timeout: 1 }),
+			probe,
+			webSocketServerFactory,
+		);
+
+		await expect(backend.runTestsAsync({ jobs: [] })).rejects.toThrowWithMessage(
+			Error,
+			"Timed out waiting for Studio plugin connection",
+		);
+
+		expect(getLastCreatedServer()).toBeInstanceOf(MockWebSocketServer);
 	});
 
 	it("should return studio-cli backend for explicit studio-cli config", async () => {

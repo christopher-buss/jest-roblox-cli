@@ -47,13 +47,9 @@ import type { TsconfigMapping } from "./types/tsconfig.ts";
 import type { FileSystem } from "./utils/file-system.ts";
 import { nodeFileSystem } from "./utils/file-system.ts";
 
-// `loadCoverageManifest` lives with the rest of the coverage pipeline; it is
-// re-exported here because `output.ts` (and its whole-module automock in
-// `output.spec.ts`) reaches for it through the executor barrel.
 export { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
 export { formatExecuteOutput } from "./executor/format-output.ts";
-export type { SnapshotWriteCounts } from "./executor/snapshot-writer.ts";
-export type { TsconfigDirectories, TsconfigReader } from "./executor/tsconfig-mappings.ts";
+export type { TsconfigReader } from "./executor/tsconfig-mappings.ts";
 export {
 	isLuauProject,
 	readTsconfigMapping,
@@ -120,6 +116,8 @@ export interface RunProjectsResult {
 	ranProjectIndices: Array<number>;
 	results: Array<ExecuteResult>;
 }
+
+export type RunProjects = typeof runProjectsAsync;
 
 interface ProcessProjectOptions {
 	backendTiming: BackendTiming;

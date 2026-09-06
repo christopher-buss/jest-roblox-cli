@@ -3,12 +3,15 @@ import type { PathClassifier, PathKind } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12";
+import * as path from "node:path";
+import type { Mock } from "vitest";
 import { assert, describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { ConfigError } from "./errors.ts";
+import type { ProjectConfigInput, ProjectConfigSeams } from "./projects.ts";
 import {
 	createFsClassifier,
 	extractProjectRoots,
@@ -23,6 +26,14 @@ import {
 import { DEFAULT_CONFIG } from "./schema.ts";
 import type { ProjectTestConfig, ResolvedConfig } from "./schema.ts";
 
+type SeamOf<K extends keyof ProjectConfigSeams> = NonNullable<ProjectConfigSeams[K]>;
+
+interface ProjectSeamStubs {
+	configLoader: Mock<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>;
+	resolveTsconfigDirectories: Mock<SeamOf<"resolveTsconfigDirectories">>;
+	seams: ProjectConfigInput;
+}
+
 function allDirectories(): PathKind {
 	return "directory";
 }
@@ -35,36 +46,33 @@ function makeClassifier(kinds: Record<string, PathKind>): PathClassifier {
 	return classify;
 }
 
-vi.mock<typeof import("c12")>(import("c12"), async (importOriginal) => {
-	const actual = await importOriginal();
+function createProjectSeams(): ProjectSeamStubs {
+	const configLoader = vi.fn<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>();
+	const resolveTsconfigDirectories = vi.fn<SeamOf<"resolveTsconfigDirectories">>();
+	resolveTsconfigDirectories.mockReturnValue({ outDir: "out", rootDir: "src" });
 
 	return {
-		...actual,
-		loadConfig: fromAny(vi.fn<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>()),
+		configLoader,
+		resolveTsconfigDirectories,
+		seams: {
+			configLoader: fromAny(configLoader),
+			fileSystem: createMemoryFileSystem().fileSystem,
+			resolveTsconfigDirectories,
+		},
 	};
-});
+}
 
-vi.mock<typeof import("../executor.ts")>(import("../executor.ts"), async (importOriginal) => {
-	const actual = await importOriginal();
-	return {
-		...actual,
-		resolveTsconfigDirectories: vi
-			.fn<typeof actual.resolveTsconfigDirectories>()
-			.mockReturnValue({ outDir: "out", rootDir: "src" }),
-	};
-});
+function seedLuauProjectConfig(
+	directoryOrFile: string,
+	source: string,
+	cwd = "/project",
+): ProjectConfigInput {
+	const { fileSystem } = createMemoryFileSystem({
+		[path.resolve(cwd, directoryOrFile, "jest.config.luau")]: source,
+	});
 
-vi.mock<typeof import("./luau-config-loader.ts")>(
-	import("./luau-config-loader.ts"),
-	async (importOriginal) => {
-		const actual = await importOriginal();
-		return {
-			...actual,
-			findLuauConfigFile: vi.fn<typeof actual.findLuauConfigFile>(),
-			loadLuauConfig: vi.fn<typeof actual.loadLuauConfig>(),
-		};
-	},
-);
+	return { fileSystem };
+}
 
 const simpleRojoTree: RojoTreeNode = {
 	$className: "DataModel",
@@ -1046,9 +1054,8 @@ describe(loadProjectConfigFile, () => {
 	it("should load and return project config via c12", async () => {
 		expect.assertions(3);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "client",
 				include: ["src/client/**/*.spec.ts"],
@@ -1058,11 +1065,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./client.config.ts", "/project");
+		const result = await loadProjectConfigFile("./client.config.ts", "/project", seams);
 
 		expect(result.displayName).toBe("client");
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
-		expect(mockLoadConfig).toHaveBeenCalledExactlyOnceWith({
+		expect(configLoader).toHaveBeenCalledExactlyOnceWith({
 			name: "jest-project",
 			configFile: "./client.config.ts",
 			configFileRequired: true,
@@ -1078,9 +1085,8 @@ describe(loadProjectConfigFile, () => {
 	it("should unwrap project configs exported with defineProject shape", async () => {
 		expect.assertions(2);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				test: {
 					displayName: "client",
@@ -1092,7 +1098,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./client.config.ts", "/project");
+		const result = await loadProjectConfigFile("./client.config.ts", "/project", seams);
 
 		expect(result.displayName).toBe("client");
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
@@ -1101,23 +1107,21 @@ describe(loadProjectConfigFile, () => {
 	it("should throw when config file not found", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockRejectedValueOnce(new Error("File not found"));
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockRejectedValueOnce(new Error("File not found"));
 
-		await expect(loadProjectConfigFile("./missing.config.ts", "/project")).rejects.toThrow(
-			"Failed to load project config file ./missing.config.ts: File not found",
-		);
+		await expect(
+			loadProjectConfigFile("./missing.config.ts", "/project", seams),
+		).rejects.toThrow("Failed to load project config file ./missing.config.ts: File not found");
 	});
 
 	it("should stringify non-Error thrown values", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockRejectedValueOnce("raw string rejection");
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockRejectedValueOnce("raw string rejection");
 
-		await expect(loadProjectConfigFile("./bad.config.ts", "/project")).rejects.toThrow(
+		await expect(loadProjectConfigFile("./bad.config.ts", "/project", seams)).rejects.toThrow(
 			"Failed to load project config file ./bad.config.ts: raw string rejection",
 		);
 	});
@@ -1125,26 +1129,24 @@ describe(loadProjectConfigFile, () => {
 	it("should preserve original error message for non-ENOENT errors", async () => {
 		expect.assertions(3);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
+		const { configLoader, seams } = createProjectSeams();
 		const cause = new Error("Syntax error in config");
-		mockLoadConfig.mockRejectedValueOnce(cause);
+		configLoader.mockRejectedValueOnce(cause);
 
-		const promise = loadProjectConfigFile("./broken.config.ts", "/project");
+		const promise = loadProjectConfigFile("./broken.config.ts", "/project", seams);
 
 		await expect(promise).rejects.toThrow(
 			"Failed to load project config file ./broken.config.ts: Syntax error in config",
 		);
 		await expect(promise).rejects.toHaveProperty("cause", cause);
-		expect(mockLoadConfig).toHaveBeenCalledOnce();
+		expect(configLoader).toHaveBeenCalledOnce();
 	});
 
 	it("should extract displayName from object-style displayName", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: { name: "client", color: "cyan" },
 				include: ["src/client/**/*.spec.ts"],
@@ -1154,7 +1156,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./client.config.ts", "/project");
+		const result = await loadProjectConfigFile("./client.config.ts", "/project", seams);
 
 		expect(result.displayName).toStrictEqual({ name: "client", color: "cyan" });
 	});
@@ -1162,9 +1164,8 @@ describe(loadProjectConfigFile, () => {
 	it("should throw when config has no displayName", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "",
 				include: ["src/**/*.spec.ts"],
@@ -1174,41 +1175,39 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		await expect(loadProjectConfigFile("./no-name.config.ts", "/project")).rejects.toThrow(
-			'Project config file "./no-name.config.ts" must have a displayName',
-		);
+		await expect(
+			loadProjectConfigFile("./no-name.config.ts", "/project", seams),
+		).rejects.toThrow('Project config file "./no-name.config.ts" must have a displayName');
 	});
 
 	it("should throw when config omits displayName entirely", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: { include: ["src/**/*.spec.ts"] },
 			configFile: "jest-project.config.ts",
 			cwd: "/project",
 			layers: [],
 		});
 
-		await expect(loadProjectConfigFile("./no-name.config.ts", "/project")).rejects.toThrow(
-			/Invalid project config file "\.\/no-name\.config\.ts"/,
-		);
+		await expect(
+			loadProjectConfigFile("./no-name.config.ts", "/project", seams),
+		).rejects.toThrow(/Invalid project config file "\.\/no-name\.config\.ts"/);
 	});
 
 	it("should reject an unknown key in a project config file", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: { displayName: "client", includ: ["src/**/*.spec.ts"] },
 			configFile: "jest-project.config.ts",
 			cwd: "/project",
 			layers: [],
 		});
 
-		await expect(loadProjectConfigFile("./typo.config.ts", "/project")).rejects.toThrow(
+		await expect(loadProjectConfigFile("./typo.config.ts", "/project", seams)).rejects.toThrow(
 			/Invalid project config file "\.\/typo\.config\.ts".*includ/,
 		);
 	});
@@ -1216,9 +1215,8 @@ describe(loadProjectConfigFile, () => {
 	it("should derive include from testMatch when include is missing", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "shared",
 				testMatch: ["**/__tests__/**/*.test"],
@@ -1228,7 +1226,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./shared/jest.config.ts", "/project");
+		const result = await loadProjectConfigFile("./shared/jest.config.ts", "/project", seams);
 
 		expect(result.include).toStrictEqual([
 			"shared/**/__tests__/**/*.test.ts",
@@ -1239,9 +1237,8 @@ describe(loadProjectConfigFile, () => {
 	it("should leave include undefined when neither include nor testMatch is set", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "minimal",
 			},
@@ -1250,7 +1247,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./minimal.config.ts", "/project");
+		const result = await loadProjectConfigFile("./minimal.config.ts", "/project", seams);
 
 		expect(result).not.toHaveProperty("include");
 	});
@@ -1258,9 +1255,8 @@ describe(loadProjectConfigFile, () => {
 	it("should derive outDir from config path for roblox-ts projects", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "shared",
 				testMatch: ["**/__tests__/**/*.test"],
@@ -1270,7 +1266,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project");
+		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project", seams);
 
 		expect(result.outDir).toBe("out/shared");
 	});
@@ -1278,15 +1274,12 @@ describe(loadProjectConfigFile, () => {
 	it("should not derive outDir when tsconfig has no rootDir/outDir", async () => {
 		expect.assertions(1);
 
-		const { resolveTsconfigDirectories } = await import("../executor.ts");
-		vi.mocked(resolveTsconfigDirectories).mockReturnValueOnce({
+		const { configLoader, resolveTsconfigDirectories, seams } = createProjectSeams();
+		resolveTsconfigDirectories.mockReturnValueOnce({
 			outDir: undefined,
 			rootDir: undefined,
 		});
-
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "luau-only",
 				testMatch: ["**/*.spec"],
@@ -1296,7 +1289,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project");
+		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project", seams);
 
 		expect(result.outDir).toBeUndefined();
 	});
@@ -1309,18 +1302,20 @@ describe(loadProjectConfigFile, () => {
 		async (directories) => {
 			expect.assertions(1);
 
-			const { resolveTsconfigDirectories } = await import("../executor.ts");
-			vi.mocked(resolveTsconfigDirectories).mockReturnValueOnce(directories);
-
-			const { loadConfig } = await import("c12");
-			vi.mocked(loadConfig).mockResolvedValueOnce({
+			const { configLoader, resolveTsconfigDirectories, seams } = createProjectSeams();
+			resolveTsconfigDirectories.mockReturnValueOnce(directories);
+			configLoader.mockResolvedValueOnce({
 				config: { displayName: "partial", testMatch: ["**/*.spec"] },
 				configFile: "jest.config.ts",
 				cwd: "/project",
 				layers: [],
 			});
 
-			const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project");
+			const result = await loadProjectConfigFile(
+				"src/shared/jest.config.ts",
+				"/project",
+				seams,
+			);
 
 			expect(result).not.toHaveProperty("outDir");
 		},
@@ -1329,15 +1324,15 @@ describe(loadProjectConfigFile, () => {
 	it("should preserve an explicit outDir when tsconfig directories are available", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		vi.mocked(loadConfig).mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: { displayName: "custom", outDir: "custom-output", testMatch: ["**/*.spec"] },
 			configFile: "jest.config.ts",
 			cwd: "/project",
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project");
+		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project", seams);
 
 		expect(result.outDir).toBe("custom-output");
 	});
@@ -1345,9 +1340,8 @@ describe(loadProjectConfigFile, () => {
 	it("should not derive outDir when config path is not under src/", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "lib",
 				testMatch: ["**/*.spec"],
@@ -1357,7 +1351,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("packages/lib/jest.config.ts", "/project");
+		const result = await loadProjectConfigFile(
+			"packages/lib/jest.config.ts",
+			"/project",
+			seams,
+		);
 
 		expect(result.outDir).toBeUndefined();
 	});
@@ -1365,9 +1363,8 @@ describe(loadProjectConfigFile, () => {
 	it("should keep testMatch patterns that already have source extensions", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "mixed",
 				testMatch: ["**/*.spec.ts", "**/*.test"],
@@ -1377,7 +1374,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./shared/mixed.config.ts", "/project");
+		const result = await loadProjectConfigFile("./shared/mixed.config.ts", "/project", seams);
 
 		expect(result.include).toStrictEqual([
 			"shared/**/*.spec.ts",
@@ -1389,9 +1386,8 @@ describe(loadProjectConfigFile, () => {
 	it("should keep Lua and Luau testMatch extensions without adding TypeScript variants", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "luau",
 				testMatch: ["**/*.spec.lua", "**/*.test.luau"],
@@ -1401,7 +1397,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./shared/luau.config.ts", "/project");
+		const result = await loadProjectConfigFile("./shared/luau.config.ts", "/project", seams);
 
 		expect(result.include).toStrictEqual(["shared/**/*.spec.lua", "shared/**/*.test.luau"]);
 	});
@@ -1409,9 +1405,8 @@ describe(loadProjectConfigFile, () => {
 	it("should only recognize source extensions at the end of a testMatch pattern", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "suffix",
 				testMatch: ["**/*.spec.ts.fixture"],
@@ -1421,7 +1416,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./shared/suffix.config.ts", "/project");
+		const result = await loadProjectConfigFile("./shared/suffix.config.ts", "/project", seams);
 
 		expect(result.include).toStrictEqual([
 			"shared/**/*.spec.ts.fixture.ts",
@@ -1432,9 +1427,8 @@ describe(loadProjectConfigFile, () => {
 	it("should not override include when already provided", async () => {
 		expect.assertions(1);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "client",
 				include: ["src/client/**/*.spec.ts"],
@@ -1445,7 +1439,7 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./client.config.ts", "/project");
+		const result = await loadProjectConfigFile("./client.config.ts", "/project", seams);
 
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
 	});
@@ -1453,16 +1447,12 @@ describe(loadProjectConfigFile, () => {
 	it("should load Luau config when jest.config.luau exists", async () => {
 		expect.assertions(2);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce(
-			"/project/packages/shared/jest.config.luau",
+		const input = seedLuauProjectConfig(
+			"packages/shared",
+			'return { displayName = "shared-luau", testMatch = { "**/*.spec" } }',
 		);
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({
-			displayName: "shared-luau",
-			testMatch: ["**/*.spec"],
-		});
 
-		const result = await loadProjectConfigFile("packages/shared", "/project");
+		const result = await loadProjectConfigFile("packages/shared", "/project", input);
 
 		expect(result.displayName).toBe("shared-luau");
 		expect(result.include).toContain("packages/shared/**/*.spec.luau");
@@ -1471,11 +1461,9 @@ describe(loadProjectConfigFile, () => {
 	it("should throw when Luau config has empty displayName", async () => {
 		expect.assertions(1);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/lib/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({ displayName: "" });
+		const input = seedLuauProjectConfig("lib", 'return { displayName = "" }');
 
-		await expect(loadProjectConfigFile("lib", "/project")).rejects.toThrowWithMessage(
+		await expect(loadProjectConfigFile("lib", "/project", input)).rejects.toThrowWithMessage(
 			Error,
 			/must have a displayName string/,
 		);
@@ -1484,11 +1472,9 @@ describe(loadProjectConfigFile, () => {
 	it("should throw when Luau config has no displayName", async () => {
 		expect.assertions(1);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/lib/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({});
+		const input = seedLuauProjectConfig("lib", "return {}");
 
-		await expect(loadProjectConfigFile("lib", "/project")).rejects.toThrowWithMessage(
+		await expect(loadProjectConfigFile("lib", "/project", input)).rejects.toThrowWithMessage(
 			Error,
 			/must have a displayName string/,
 		);
@@ -1497,11 +1483,9 @@ describe(loadProjectConfigFile, () => {
 	it("should derive default include pattern when Luau config has no testMatch", async () => {
 		expect.assertions(1);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({ displayName: "shared" });
+		const input = seedLuauProjectConfig("shared", 'return { displayName = "shared" }');
 
-		const result = await loadProjectConfigFile("shared", "/project");
+		const result = await loadProjectConfigFile("shared", "/project", input);
 
 		expect(result.include).toStrictEqual(["shared/**/*.spec.luau"]);
 	});
@@ -1509,14 +1493,12 @@ describe(loadProjectConfigFile, () => {
 	it("should set testMatch on config when Luau config provides testMatch", async () => {
 		expect.assertions(1);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({
-			displayName: "shared",
-			testMatch: ["**/*.spec", "**/*.test"],
-		});
+		const input = seedLuauProjectConfig(
+			"shared",
+			'return { displayName = "shared", testMatch = { "**/*.spec", "**/*.test" } }',
+		);
 
-		const result = await loadProjectConfigFile("shared", "/project");
+		const result = await loadProjectConfigFile("shared", "/project", input);
 
 		expect(result.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
 	});
@@ -1524,15 +1506,12 @@ describe(loadProjectConfigFile, () => {
 	it("should copy boolean optional fields from Luau config", async () => {
 		expect.assertions(2);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({
-			clearMocks: true,
-			displayName: "shared",
-			resetMocks: false,
-		});
+		const input = seedLuauProjectConfig(
+			"shared",
+			'return { clearMocks = true, displayName = "shared", resetMocks = false }',
+		);
 
-		const result = await loadProjectConfigFile("shared", "/project");
+		const result = await loadProjectConfigFile("shared", "/project", input);
 
 		expect(result.clearMocks).toBeTrue();
 		expect(result.resetMocks).toBeFalse();
@@ -1541,14 +1520,12 @@ describe(loadProjectConfigFile, () => {
 	it("should copy number optional fields from Luau config", async () => {
 		expect.assertions(1);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({
-			displayName: "shared",
-			testTimeout: 5000,
-		});
+		const input = seedLuauProjectConfig(
+			"shared",
+			'return { displayName = "shared", testTimeout = 5000 }',
+		);
 
-		const result = await loadProjectConfigFile("shared", "/project");
+		const result = await loadProjectConfigFile("shared", "/project", input);
 
 		expect(result.testTimeout).toBe(5000);
 	});
@@ -1556,14 +1533,12 @@ describe(loadProjectConfigFile, () => {
 	it("should copy string optional fields from Luau config", async () => {
 		expect.assertions(1);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({
-			displayName: "shared",
-			testEnvironment: "jest-environment-jsdom",
-		});
+		const input = seedLuauProjectConfig(
+			"shared",
+			'return { displayName = "shared", testEnvironment = "jest-environment-jsdom" }',
+		);
 
-		const result = await loadProjectConfigFile("shared", "/project");
+		const result = await loadProjectConfigFile("shared", "/project", input);
 
 		expect(result.testEnvironment).toBe("jest-environment-jsdom");
 	});
@@ -1571,14 +1546,12 @@ describe(loadProjectConfigFile, () => {
 	it("should copy string array optional fields from Luau config", async () => {
 		expect.assertions(1);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({
-			displayName: "shared",
-			setupFiles: ["setup.luau"],
-		});
+		const input = seedLuauProjectConfig(
+			"shared",
+			'return { displayName = "shared", setupFiles = { "setup.luau" } }',
+		);
 
-		const result = await loadProjectConfigFile("shared", "/project");
+		const result = await loadProjectConfigFile("shared", "/project", input);
 
 		expect(result.setupFiles).toStrictEqual(["setup.luau"]);
 	});
@@ -1586,16 +1559,15 @@ describe(loadProjectConfigFile, () => {
 	it("should reject fields with wrong types in Luau config", async () => {
 		expect.assertions(1);
 
-		const { findLuauConfigFile, loadLuauConfig } = await import("./luau-config-loader.ts");
-		vi.mocked(findLuauConfigFile).mockReturnValueOnce("/project/shared/jest.config.luau");
-		vi.mocked(loadLuauConfig).mockReturnValueOnce({
-			clearMocks: "yes",
-			displayName: "shared",
-			setupFiles: "not-an-array",
-			testTimeout: "fast",
-		});
+		const input = seedLuauProjectConfig(
+			"shared",
+			[
+				'return { clearMocks = "yes", displayName = "shared",',
+				'setupFiles = "not-an-array", testTimeout = "fast" }',
+			].join(" "),
+		);
 
-		await expect(loadProjectConfigFile("shared", "/project")).rejects.toThrow(
+		await expect(loadProjectConfigFile("shared", "/project", input)).rejects.toThrow(
 			/clearMocks must be boolean.*setupFiles must be an array.*testTimeout must be a number/s,
 		);
 	});
@@ -1627,9 +1599,8 @@ describe(resolveAllProjects, () => {
 	it("should load string entries via c12", async () => {
 		expect.assertions(2);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "server",
 				include: ["src/server/**/*.spec.ts"],
@@ -1645,6 +1616,7 @@ describe(resolveAllProjects, () => {
 		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
 			cwd: "/project",
 			rojoTree: simpleRojoTree,
+			...seams,
 		});
 
 		expect(result).toHaveLength(1);
@@ -1654,9 +1626,8 @@ describe(resolveAllProjects, () => {
 	it("should handle mixed inline and string entries", async () => {
 		expect.assertions(3);
 
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
-		mockLoadConfig.mockResolvedValueOnce({
+		const { configLoader, seams } = createProjectSeams();
+		configLoader.mockResolvedValueOnce({
 			config: {
 				displayName: "server",
 				include: ["src/server/**/*.spec.ts"],
@@ -1681,6 +1652,7 @@ describe(resolveAllProjects, () => {
 		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
 			cwd: "/project",
 			rojoTree: simpleRojoTree,
+			...seams,
 		});
 
 		expect(result).toHaveLength(2);

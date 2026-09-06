@@ -1,6 +1,6 @@
 import * as path from "node:path";
 
-import { loadConfig } from "../config/loader.ts";
+import { loadConfig, type PackageConfigLoader } from "../config/loader.ts";
 import { mergeCliWithConfig } from "../config/merge.ts";
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
@@ -18,23 +18,27 @@ export interface LoadedPackage {
 	pkgConfig: ResolvedConfig;
 }
 
-export async function loadWorkspacePackagesAsync({
-	cli,
-	fileSystem = nodeFileSystem,
-	packageInfos,
-	timing,
-}: {
+export interface LoadWorkspacePackagesOptions {
 	cli: CliOptions;
 	/** Where each package's config is read from. Defaults to the real one. */
 	fileSystem?: FileSystem;
+	loadPackageConfig?: PackageConfigLoader;
 	packageInfos: Array<PackageInfo>;
 	timing: TimingCollector;
-}): Promise<Array<LoadedPackage>> {
+}
+
+export async function loadWorkspacePackagesAsync({
+	cli,
+	fileSystem = nodeFileSystem,
+	loadPackageConfig = loadConfig,
+	packageInfos,
+	timing,
+}: LoadWorkspacePackagesOptions): Promise<Array<LoadedPackage>> {
 	const loaded: Array<LoadedPackage> = [];
 
 	for (const info of packageInfos) {
 		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
-			return loadConfig(undefined, info.packageDirectory, fileSystem);
+			return loadPackageConfig(undefined, info.packageDirectory, { fileSystem });
 		});
 		// The `--testPathPattern` narrow happens per project in
 		// `selectWorkspaceTests`, where the project's resolved Rojo mounts are

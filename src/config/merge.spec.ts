@@ -1,12 +1,8 @@
-import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { defaultFormatters } from "./default-formatters.ts";
 import { mergeCliWithConfig } from "./merge.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
-
-const stdEnvironmentMock = vi.hoisted(() => ({ isAgent: false }));
-
-vi.mock(import("std-env"), () => stdEnvironmentMock);
 
 describe(mergeCliWithConfig, () => {
 	it("should preserve explicit falsy CLI overrides", () => {
@@ -62,19 +58,31 @@ describe(mergeCliWithConfig, () => {
 		});
 	});
 
+	it("should keep explicit formatters over the environment-detected defaults", () => {
+		expect.assertions(2);
+
+		expect(
+			mergeCliWithConfig({ formatters: ["json"] }, DEFAULT_CONFIG).formatters,
+		).toStrictEqual(["json"]);
+		expect(
+			mergeCliWithConfig({}, { ...DEFAULT_CONFIG, formatters: ["junit"] }).formatters,
+		).toStrictEqual(["junit"]);
+	});
+
+	it("should fall back to the environment-detected formatter defaults", () => {
+		expect.assertions(1);
+
+		expect(mergeCliWithConfig({}, DEFAULT_CONFIG).formatters).toStrictEqual(
+			defaultFormatters(),
+		);
+	});
+
 	it("should add the GitHub formatter only inside GitHub Actions", () => {
 		expect.assertions(2);
 
-		const previous = process.env["GITHUB_ACTIONS"];
-		onTestFinished(() => {
-			process.env["GITHUB_ACTIONS"] = previous;
-		});
+		expect(mergeCliWithConfig({}, DEFAULT_CONFIG).formatters).not.toContain("github-actions");
 
-		delete process.env["GITHUB_ACTIONS"];
-
-		expect(mergeCliWithConfig({}, DEFAULT_CONFIG).formatters).toStrictEqual(["default"]);
-
-		process.env["GITHUB_ACTIONS"] = "true";
+		vi.stubEnv("GITHUB_ACTIONS", "true");
 
 		expect(mergeCliWithConfig({}, DEFAULT_CONFIG).formatters).toContain("github-actions");
 	});

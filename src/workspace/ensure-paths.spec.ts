@@ -3,40 +3,28 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
-import { nodeFileSystem } from "../utils/file-system.ts";
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { ensurePackageDirectories } from "./ensure-paths.ts";
 import type { PackageDescriptor } from "./preflight.ts";
 
-type LoadRojoProject = (typeof import("@isentinel/rojo-utils"))["loadRojoProject"];
+const PACKAGE_DIRECTORY = path.resolve("/repo/packages/foo");
+const PROJECT_PATH = path.join(PACKAGE_DIRECTORY, "test.project.json");
 
-const loadRojoProject = vi.hoisted(() => vi.fn<LoadRojoProject>());
-
-vi.mock(import("@isentinel/rojo-utils"), async (importOriginal) => {
-	return { ...(await importOriginal()), loadRojoProject };
-});
-
-function createTemporaryProject(): { projectPath: string; temporaryRoot: string } {
-	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-cli-"));
-	onTestFinished(() => {
-		fs.rmSync(temporaryRoot, { force: true, recursive: true });
-	});
-
-	const projectPath = path.join(temporaryRoot, "default.project.json");
-	fs.writeFileSync(projectPath, "{}");
-	return { projectPath, temporaryRoot };
+function packagePath(relativePath: string): string {
+	return path.join(PACKAGE_DIRECTORY, relativePath);
 }
 
 describe(ensurePackageDirectories, () => {
 	it("should create only directory-shaped Rojo paths recursively", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { projectPath, temporaryRoot } = createTemporaryProject();
-		loadRojoProject.mockReturnValue(
-			fromPartial({
+		const { fileSystem, volume } = createMemoryFileSystem({
+			[PROJECT_PATH]: JSON.stringify({
 				name: "fixture",
 				tree: {
+					$className: "DataModel",
 					FolderByChild: {
 						$path: "src/with.ext",
 						Child: { $className: "Folder" },
@@ -47,19 +35,19 @@ describe(ensurePackageDirectories, () => {
 					SourceFile: { $path: "src/file.luau" },
 				},
 			}),
+		});
+
+		ensurePackageDirectories(
+			[fromPartial<PackageDescriptor>({ rojoProjectPath: PROJECT_PATH })],
+			fileSystem,
 		);
 
-		ensurePackageDirectories([
-			fromPartial<PackageDescriptor>({ rojoProjectPath: projectPath }),
-		]);
-
-		expect(loadRojoProject).toHaveBeenCalledExactlyOnceWith(projectPath, nodeFileSystem);
 		expect({
-			file: fs.existsSync(path.join(temporaryRoot, "src/file.luau")),
-			metadata: fs.existsSync(path.join(temporaryRoot, "src/meta.json")),
-			nested: fs.statSync(path.join(temporaryRoot, "src/nested")).isDirectory(),
-			plain: fs.statSync(path.join(temporaryRoot, "src/plain")).isDirectory(),
-			withExtension: fs.statSync(path.join(temporaryRoot, "src/with.ext")).isDirectory(),
+			file: volume.existsSync(packagePath("src/file.luau")),
+			metadata: volume.existsSync(packagePath("src/meta.json")),
+			nested: volume.statSync(packagePath("src/nested")).isDirectory(),
+			plain: volume.statSync(packagePath("src/plain")).isDirectory(),
+			withExtension: volume.statSync(packagePath("src/with.ext")).isDirectory(),
 		}).toStrictEqual({
 			file: false,
 			metadata: false,
@@ -72,10 +60,15 @@ describe(ensurePackageDirectories, () => {
 	it("should ignore missing and malformed projects", () => {
 		expect.assertions(2);
 
-		const { projectPath, temporaryRoot } = createTemporaryProject();
-		loadRojoProject.mockImplementation(() => {
-			throw new Error("invalid project");
+		const temporaryRoot = fs.realpathSync(
+			fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-cli-")),
+		);
+		onTestFinished(() => {
+			fs.rmSync(temporaryRoot, { force: true, recursive: true });
 		});
+
+		const projectPath = path.join(temporaryRoot, "default.project.json");
+		fs.writeFileSync(projectPath, "{}");
 
 		expect(() => {
 			ensurePackageDirectories([
@@ -85,6 +78,6 @@ describe(ensurePackageDirectories, () => {
 				fromPartial<PackageDescriptor>({ rojoProjectPath: projectPath }),
 			]);
 		}).not.toThrow();
-		expect(loadRojoProject).toHaveBeenCalledExactlyOnceWith(projectPath, nodeFileSystem);
+		expect(fs.readdirSync(temporaryRoot)).toStrictEqual(["default.project.json"]);
 	});
 });

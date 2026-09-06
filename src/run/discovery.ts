@@ -2,7 +2,8 @@ import * as path from "node:path";
 
 import type { ResolvedTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
-import { createRojoResolverCache, createSetupResolver } from "../config/setup-resolver.ts";
+import type { createSetupResolver } from "../config/setup-resolver.ts";
+import { createRojoResolverCache } from "../config/setup-resolver.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { createGlobCache, globSync } from "../utils/glob.ts";
@@ -101,7 +102,10 @@ export function classifyTestFiles(
 // two projects with different `rootDir` values still build different resolvers
 // (each resolves relative paths against its own directory) but now share the
 // one tree walk behind them.
-export function resolveAllSetupFilePaths(configs: Array<ResolvedConfig>): void {
+export function resolveAllSetupFilePaths(
+	configs: Array<ResolvedConfig>,
+	createResolver: typeof createSetupResolver,
+): void {
 	const resolvers = new Map<string, (input: string) => string>();
 	const rojoCache = createRojoResolverCache();
 
@@ -117,7 +121,7 @@ export function resolveAllSetupFilePaths(configs: Array<ResolvedConfig>): void {
 		const key = JSON.stringify([config.rootDir, rojoConfigPath]);
 		let resolve = resolvers.get(key);
 		if (resolve === undefined) {
-			resolve = createSetupResolver({
+			resolve = createResolver({
 				cache: rojoCache,
 				configDirectory: config.rootDir,
 				rojoConfigPath,

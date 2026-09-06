@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
+import type { createSetupResolver } from "../config/setup-resolver.ts";
 import {
 	classifyTestFiles,
 	discoverTestFiles,
@@ -11,7 +12,17 @@ import {
 	TYPE_TEST_PATTERN,
 } from "./discovery.ts";
 
-vi.mock(import("../config/setup-resolver"));
+function makeResolverFactory(rewrite: (input: string) => string = (input) => input) {
+	return vi.fn<typeof createSetupResolver>(() => rewrite);
+}
+
+function resolverTarget(factory: ReturnType<typeof makeResolverFactory>): {
+	configDirectory: string;
+	rojoConfigPath: string;
+} {
+	const [options] = factory.mock.calls[0]!;
+	return { configDirectory: options.configDirectory, rojoConfigPath: options.rojoConfigPath };
+}
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
@@ -159,54 +170,52 @@ describe(classifyTestFiles, () => {
 });
 
 describe(resolveAllSetupFilePaths, () => {
-	it("should be a no-op when no setup files are configured", async () => {
+	it("should be a no-op when no setup files are configured", () => {
 		expect.assertions(1);
 
-		const { createSetupResolver } = await import("../config/setup-resolver");
-		const config = makeConfig();
-		resolveAllSetupFilePaths([config]);
+		const createResolver = makeResolverFactory();
+		resolveAllSetupFilePaths([makeConfig()], createResolver);
 
-		expect(createSetupResolver).not.toHaveBeenCalled();
+		expect(createResolver).not.toHaveBeenCalled();
 	});
 
-	it("should rewrite setupFiles via the resolver", async () => {
+	it("should rewrite setupFiles via the resolver", () => {
 		expect.assertions(2);
 
-		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input) => `resolved:${input}`);
+		const createResolver = makeResolverFactory((input) => `resolved:${input}`);
 		const config = makeConfig({ setupFiles: ["./a.ts"] });
-		resolveAllSetupFilePaths([config]);
+		resolveAllSetupFilePaths([config], createResolver);
 
 		expect(config.setupFiles).toStrictEqual(["resolved:./a.ts"]);
-		expect(createSetupResolver).toHaveBeenCalledWith({
+		expect(resolverTarget(createResolver)).toStrictEqual({
 			configDirectory: "/project",
 			rojoConfigPath: path.resolve("/project", "default.project.json"),
 		});
 	});
 
-	it("should rewrite setupFilesAfterEnv via the resolver", async () => {
+	it("should rewrite setupFilesAfterEnv via the resolver", () => {
 		expect.assertions(1);
 
-		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input) => `r:${input}`);
 		const config = makeConfig({ setupFilesAfterEnv: ["./post.ts"] });
-		resolveAllSetupFilePaths([config]);
+		resolveAllSetupFilePaths(
+			[config],
+			makeResolverFactory((input) => `r:${input}`),
+		);
 
 		expect(config.setupFilesAfterEnv).toStrictEqual(["r:./post.ts"]);
 	});
 
-	it("should use config.rojoProject when supplied", async () => {
+	it("should use config.rojoProject when supplied", () => {
 		expect.assertions(1);
 
-		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input) => input);
+		const createResolver = makeResolverFactory();
 		const config = makeConfig({
 			rojoProject: "custom.project.json",
 			setupFiles: ["./a.ts"],
 		});
-		resolveAllSetupFilePaths([config]);
+		resolveAllSetupFilePaths([config], createResolver);
 
-		expect(createSetupResolver).toHaveBeenCalledWith({
+		expect(resolverTarget(createResolver)).toStrictEqual({
 			configDirectory: "/project",
 			rojoConfigPath: path.resolve("/project", "custom.project.json"),
 		});
@@ -214,56 +223,51 @@ describe(resolveAllSetupFilePaths, () => {
 });
 
 describe(resolveAllSetupFilePaths, () => {
-	it("should be a no-op when no project declares setup files", async () => {
+	it("should be a no-op when no project declares setup files", () => {
 		expect.assertions(1);
 
-		const { createSetupResolver } = await import("../config/setup-resolver");
-		resolveAllSetupFilePaths([makeConfig(), makeConfig()]);
+		const createResolver = makeResolverFactory();
+		resolveAllSetupFilePaths([makeConfig(), makeConfig()], createResolver);
 
-		expect(createSetupResolver).not.toHaveBeenCalled();
+		expect(createResolver).not.toHaveBeenCalled();
 	});
 
-	it("should share one resolver across projects with the same rojo project", async () => {
+	it("should share one resolver across projects with the same rojo project", () => {
 		expect.assertions(2);
 
-		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input) => `r:${input}`);
+		const createResolver = makeResolverFactory((input) => `r:${input}`);
 		const a = makeConfig({ setupFiles: ["./a.ts"] });
 		const b = makeConfig({ setupFilesAfterEnv: ["./b.ts"] });
-		resolveAllSetupFilePaths([a, b]);
+		resolveAllSetupFilePaths([a, b], createResolver);
 
-		expect(createSetupResolver).toHaveBeenCalledOnce();
+		expect(createResolver).toHaveBeenCalledOnce();
 		expect([a.setupFiles, b.setupFilesAfterEnv]).toStrictEqual([["r:./a.ts"], ["r:./b.ts"]]);
 	});
 
-	it("should create one resolver per distinct rojo project", async () => {
+	it("should create one resolver per distinct rojo project", () => {
 		expect.assertions(2);
 
-		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input) => input);
+		const createResolver = makeResolverFactory();
 		const a = makeConfig({ rojoProject: "one.project.json", setupFiles: ["./a.ts"] });
 		const b = makeConfig({ rojoProject: "two.project.json", setupFiles: ["./b.ts"] });
-		resolveAllSetupFilePaths([a, b]);
+		resolveAllSetupFilePaths([a, b], createResolver);
 
-		expect(createSetupResolver).toHaveBeenCalledTimes(2);
-		expect(
-			vi.mocked(createSetupResolver).mock.calls.map((call) => call[0].rojoConfigPath),
-		).toStrictEqual([
+		expect(createResolver).toHaveBeenCalledTimes(2);
+		expect(createResolver.mock.calls.map((call) => call[0].rojoConfigPath)).toStrictEqual([
 			path.resolve("/project", "one.project.json"),
 			path.resolve("/project", "two.project.json"),
 		]);
 	});
 
-	it("should skip projects with no setup files when others have them", async () => {
+	it("should skip projects with no setup files when others have them", () => {
 		expect.assertions(2);
 
-		const { createSetupResolver } = await import("../config/setup-resolver");
-		vi.mocked(createSetupResolver).mockReturnValue((input) => `r:${input}`);
+		const createResolver = makeResolverFactory((input) => `r:${input}`);
 		const empty = makeConfig();
 		const withSetup = makeConfig({ setupFiles: ["./a.ts"] });
-		resolveAllSetupFilePaths([empty, withSetup]);
+		resolveAllSetupFilePaths([empty, withSetup], createResolver);
 
-		expect(createSetupResolver).toHaveBeenCalledOnce();
+		expect(createResolver).toHaveBeenCalledOnce();
 		expect(withSetup.setupFiles).toStrictEqual(["r:./a.ts"]);
 	});
 });

@@ -1,60 +1,47 @@
-/* cspell:words jridgewell */
-import type { originalPositionFor } from "@jridgewell/trace-mapping";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { buildSourceMap } from "../../test/mocks/source-map.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { CoverageMap } from "./coverage-map.ts";
 import type { CoverageManifest } from "./manifest.ts";
 import { MANIFEST_VERSION } from "./manifest.ts";
-import type { MappedFileCoverage } from "./mapper.ts";
+import type {
+	GeneratedPosition,
+	MappedFileCoverage,
+	OriginalPosition,
+	PositionResolver,
+} from "./mapper.ts";
 import { CoverageMapMalformedError, mapCoverageToTypeScript } from "./mapper.ts";
 import type { RawCoverageData } from "./types.ts";
 
-const { mockOriginalPositionFor, MockTraceMap } = vi.hoisted(() => {
-	class MockTraceMapClass {}
+const resolvePosition = vi.fn<PositionResolver>();
 
-	return {
-		mockOriginalPositionFor: vi.fn<typeof originalPositionFor>(),
-		MockTraceMap: MockTraceMapClass,
-	};
-});
-
-vi.mock(import("@jridgewell/trace-mapping"), async (importOriginal) => {
-	return fromAny({
-		...(await importOriginal()),
-		originalPositionFor: mockOriginalPositionFor,
-		TraceMap: MockTraceMap,
-	});
-});
+function traceMapFactory(): PositionResolver {
+	return resolvePosition;
+}
 
 /**
- * `originalPositionFor` stub: the span start (column 0) resolves to a.ts, its
- * end to b.ts. Hoisted to module scope — the split would otherwise be a
- * conditional inside a test body.
+ * Position resolver: the span start (column 0) resolves to a.ts, its end to
+ * b.ts. Hoisted to module scope — the split would otherwise be a conditional
+ * inside a test body.
  */
-function positionSplitByColumn(
-	_map: Parameters<typeof originalPositionFor>[0],
-	position: Parameters<typeof originalPositionFor>[1],
-): ReturnType<typeof originalPositionFor> {
+function positionSplitByColumn(position: GeneratedPosition): OriginalPosition {
 	return position.column === 0
-		? { name: null, column: 0, line: 3, source: "src/a.ts" }
-		: { name: null, column: 25, line: 3, source: "src/b.ts" };
+		? { column: 0, line: 3, source: "src/a.ts" }
+		: { column: 25, line: 3, source: "src/b.ts" };
 }
 
 /**
  * As {@linkcode positionSplitByColumn}, but the first branch arm resolves to
  * a.ts.
  */
-function positionSplitByLine(
-	_map: Parameters<typeof originalPositionFor>[0],
-	position: Parameters<typeof originalPositionFor>[1],
-): ReturnType<typeof originalPositionFor> {
+function positionSplitByLine(position: GeneratedPosition): OriginalPosition {
 	return position.line === 3
-		? { name: null, column: 0, line: 2, source: "src/a.ts" }
-		: { name: null, column: 0, line: 4, source: "src/b.ts" };
+		? { column: 0, line: 2, source: "src/a.ts" }
+		: { column: 0, line: 4, source: "src/b.ts" };
 }
 
 function createManifest(files: CoverageManifest["files"] = {}): CoverageManifest {
@@ -99,15 +86,14 @@ function setupFs(fileContents: Record<string, string>): FileSystem {
 function setupSourceMapMappings(
 	mappings: Record<string, { column: number; line: number; source: string }>,
 ): void {
-	mockOriginalPositionFor.mockImplementation((_map, position) => {
+	resolvePosition.mockImplementation((position) => {
 		const key = `${String(position.line)}:${String(position.column)}`;
 		const mapping = mappings[key];
 		if (mapping === undefined) {
-			return { name: null, column: null, line: null, source: null };
+			return { column: null, line: null, source: null };
 		}
 
 		return {
-			name: null,
 			column: mapping.column,
 			line: mapping.line,
 			source: mapping.source,
@@ -158,7 +144,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files["src/shared/player.ts"]).toBeDefined();
@@ -171,6 +157,69 @@ describe(mapCoverageToTypeScript, () => {
 				start: { column: 0, line: 3 },
 			});
 			expect(file!.s["0"]).toBe(3);
+		});
+	});
+
+	describe("with no injected trace-map factory", () => {
+		it("should resolve positions through the real source map on disk", () => {
+			expect.assertions(2);
+
+			const coverageMap = createCoverageMap({
+				"0": {
+					end: { column: 20, line: 5 },
+					start: { column: 1, line: 5 },
+				},
+			});
+
+			const fileSystem = setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": buildSourceMap({
+					file: "player.luau",
+					segments: [
+						{ generatedColumn: 0, generatedLine: 5, sourceColumn: 0, sourceLine: 3 },
+						{ generatedColumn: 19, generatedLine: 5, sourceColumn: 25, sourceLine: 3 },
+					],
+					source: "src/shared/player.ts",
+				}),
+			});
+
+			const result = mapCoverageToTypeScript(
+				{ "shared/player.luau": { s: { "0": 3 } } },
+				createManifest(createManifestFiles()),
+				{ fileSystem },
+			);
+
+			const file = result.files["src/shared/player.ts"];
+
+			expect(file!.statementMap["0"]).toStrictEqual({
+				end: { column: 25, line: 3 },
+				start: { column: 0, line: 3 },
+			});
+			expect(file!.s["0"]).toBe(3);
+		});
+
+		it("should fall back to passthrough when the source map does not parse", () => {
+			expect.assertions(1);
+
+			const coverageMap = createCoverageMap({
+				"0": {
+					end: { column: 20, line: 5 },
+					start: { column: 1, line: 5 },
+				},
+			});
+
+			const fileSystem = setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": "not a source map",
+			});
+
+			const result = mapCoverageToTypeScript(
+				{ "shared/player.luau": { s: { "0": 3 } } },
+				createManifest(createManifestFiles()),
+				{ fileSystem },
+			);
+
+			expect(Object.keys(result.files)).toStrictEqual(["shared/player.luau"]);
 		});
 	});
 
@@ -216,7 +265,10 @@ describe(mapCoverageToTypeScript, () => {
 				"out/packages/src/player.luau": { s: { "0": 3 } },
 			};
 
-			const result = mapCoverageToTypeScript(coverageData, manifest, fileSystem);
+			const result = mapCoverageToTypeScript(coverageData, manifest, {
+				fileSystem,
+				traceMapFactory,
+			});
 
 			// Should resolve to cwd-relative path, not raw source map relative
 			// path
@@ -262,7 +314,10 @@ describe(mapCoverageToTypeScript, () => {
 				"out/player.luau": { s: { "0": 3 } },
 			};
 
-			const result = mapCoverageToTypeScript(coverageData, manifest, fileSystem);
+			const result = mapCoverageToTypeScript(coverageData, manifest, {
+				fileSystem,
+				traceMapFactory,
+			});
 
 			expect(result.files["src/player.ts"]).toBeDefined();
 			expect(result.files["..\\src\\player.ts"]).toBeUndefined();
@@ -307,7 +362,7 @@ describe(mapCoverageToTypeScript, () => {
 						statementCount: 2,
 					},
 				}),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -357,7 +412,7 @@ describe(mapCoverageToTypeScript, () => {
 						statementCount: 2,
 					},
 				}),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -411,7 +466,7 @@ describe(mapCoverageToTypeScript, () => {
 						statementCount: 2,
 					},
 				}),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -466,7 +521,7 @@ describe(mapCoverageToTypeScript, () => {
 						statementCount: Object.keys(hitCounts).length,
 					},
 				}),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -571,7 +626,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -586,7 +641,10 @@ describe(mapCoverageToTypeScript, () => {
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			const result = mapCoverageToTypeScript({}, createManifest(), fileSystem);
+			const result = mapCoverageToTypeScript({}, createManifest(), {
+				fileSystem,
+				traceMapFactory,
+			});
 
 			expect(result.files).toBeEmptyObject();
 		});
@@ -615,11 +673,10 @@ describe(mapCoverageToTypeScript, () => {
 
 			// Instrumented (in the manifest) but never required by a test, so it
 			// is absent from the runtime hit map.
-			const result = mapCoverageToTypeScript(
-				{},
-				createManifest(createManifestFiles()),
+			const result = mapCoverageToTypeScript({}, createManifest(createManifestFiles()), {
 				fileSystem,
-			);
+				traceMapFactory,
+			});
 
 			const file = result.files["src/shared/player.ts"];
 
@@ -637,7 +694,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				{ "shared/player.luau": { s: { "0": 1 } } },
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -655,7 +712,7 @@ describe(mapCoverageToTypeScript, () => {
 				mapCoverageToTypeScript(
 					{ "shared/player.luau": { s: { "0": 1 } } },
 					createManifest(createManifestFiles()),
-					fileSystem,
+					{ fileSystem, traceMapFactory },
 				);
 			} catch (err) {
 				thrown = err;
@@ -684,12 +741,12 @@ describe(mapCoverageToTypeScript, () => {
 				"out/shared/player.luau.map": '{"version":3}',
 			});
 
-			mockOriginalPositionFor.mockImplementation(positionSplitByColumn);
+			resolvePosition.mockImplementation(positionSplitByColumn);
 
 			const result = mapCoverageToTypeScript(
 				{ "shared/player.luau": { s: { "0": 1 } } },
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -706,7 +763,10 @@ describe(mapCoverageToTypeScript, () => {
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			const result = mapCoverageToTypeScript(coverageData, createManifest(), fileSystem);
+			const result = mapCoverageToTypeScript(coverageData, createManifest(), {
+				fileSystem,
+				traceMapFactory,
+			});
 
 			expect(result.files).toBeEmptyObject();
 		});
@@ -746,7 +806,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"]!;
@@ -796,7 +856,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"]!;
@@ -846,7 +906,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"]!;
@@ -878,11 +938,10 @@ describe(mapCoverageToTypeScript, () => {
 			};
 
 			expect(() => {
-				mapCoverageToTypeScript(
-					coverageData,
-					createManifest(createManifestFiles()),
+				mapCoverageToTypeScript(coverageData, createManifest(createManifestFiles()), {
 					fileSystem,
-				);
+					traceMapFactory,
+				});
 			}).toThrow(CoverageMapMalformedError);
 		});
 
@@ -921,7 +980,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -966,7 +1025,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"]!;
@@ -1026,7 +1085,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"]!;
@@ -1081,7 +1140,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			// Function lands in one of the two TS files (first resolved)
@@ -1124,7 +1183,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -1146,11 +1205,10 @@ describe(mapCoverageToTypeScript, () => {
 			};
 
 			expect(() => {
-				mapCoverageToTypeScript(
-					coverageData,
-					createManifest(createManifestFiles()),
+				mapCoverageToTypeScript(coverageData, createManifest(createManifestFiles()), {
 					fileSystem,
-				);
+					traceMapFactory,
+				});
 			}).toThrow(CoverageMapMalformedError);
 		});
 	});
@@ -1198,7 +1256,7 @@ describe(mapCoverageToTypeScript, () => {
 						statementCount: 2,
 					},
 				}),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -1249,7 +1307,7 @@ describe(mapCoverageToTypeScript, () => {
 						statementCount: 2,
 					},
 				}),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -1293,7 +1351,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"]!;
@@ -1355,7 +1413,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"]!;
@@ -1397,7 +1455,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files["src/shared/player.ts"]!.b["0"]).toStrictEqual([0, 0]);
@@ -1423,11 +1481,10 @@ describe(mapCoverageToTypeScript, () => {
 			};
 
 			expect(() => {
-				mapCoverageToTypeScript(
-					coverageData,
-					createManifest(createManifestFiles()),
+				mapCoverageToTypeScript(coverageData, createManifest(createManifestFiles()), {
 					fileSystem,
-				);
+					traceMapFactory,
+				});
 			}).toThrow(CoverageMapMalformedError);
 		});
 
@@ -1462,7 +1519,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -1493,7 +1550,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -1517,7 +1574,7 @@ describe(mapCoverageToTypeScript, () => {
 				"out/shared/player.luau.map": '{"version":3}',
 			});
 
-			mockOriginalPositionFor.mockImplementation(positionSplitByLine);
+			resolvePosition.mockImplementation(positionSplitByLine);
 
 			const coverageData: RawCoverageData = {
 				"shared/player.luau": { b: { "1": [1, 0] }, s: {} },
@@ -1526,7 +1583,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -1556,7 +1613,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -1579,8 +1636,7 @@ describe(mapCoverageToTypeScript, () => {
 
 			// All positions return null source — mapBranchArmLocations returns
 			// undefined
-			mockOriginalPositionFor.mockReturnValue({
-				name: null,
+			resolvePosition.mockReturnValue({
 				column: null,
 				line: null,
 				source: null,
@@ -1593,7 +1649,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -1626,11 +1682,10 @@ describe(mapCoverageToTypeScript, () => {
 			};
 
 			expect(() => {
-				mapCoverageToTypeScript(
-					coverageData,
-					createManifest(createManifestFiles()),
+				mapCoverageToTypeScript(coverageData, createManifest(createManifestFiles()), {
 					fileSystem,
-				);
+					traceMapFactory,
+				});
 			}).toThrow(CoverageMapMalformedError);
 		});
 
@@ -1668,7 +1723,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"]!;
@@ -1716,7 +1771,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files).toBeEmptyObject();
@@ -1763,7 +1818,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -1814,7 +1869,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["src/shared/player.ts"];
@@ -1847,7 +1902,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["shared/player.luau"];
@@ -1892,7 +1947,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["shared/player.luau"]!;
@@ -1938,7 +1993,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["shared/player.luau"]!;
@@ -1972,7 +2027,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["shared/player.luau"]!;
@@ -2001,7 +2056,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["shared/player.luau"]!;
@@ -2027,7 +2082,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			expect(result.files["shared/player.luau"]!.branchMap).toBeEmptyObject();
@@ -2065,7 +2120,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["shared/player.luau"]!;
@@ -2106,7 +2161,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["shared/player.luau"]!;
@@ -2136,7 +2191,7 @@ describe(mapCoverageToTypeScript, () => {
 			const result = mapCoverageToTypeScript(
 				coverageData,
 				createManifest(createManifestFiles()),
-				fileSystem,
+				{ fileSystem, traceMapFactory },
 			);
 
 			const file = result.files["shared/player.luau"]!;
@@ -2160,11 +2215,10 @@ describe(mapCoverageToTypeScript, () => {
 			});
 
 			// Instrumented but never required by a test → absent from hit map.
-			const result = mapCoverageToTypeScript(
-				{},
-				createManifest(createManifestFiles()),
+			const result = mapCoverageToTypeScript({}, createManifest(createManifestFiles()), {
 				fileSystem,
-			);
+				traceMapFactory,
+			});
 
 			const file = result.files["shared/player.luau"];
 
@@ -2230,7 +2284,10 @@ describe(mapCoverageToTypeScript, () => {
 				},
 			};
 
-			const result = mapCoverageToTypeScript(combinedCoverage, manifest, fileSystem);
+			const result = mapCoverageToTypeScript(combinedCoverage, manifest, {
+				fileSystem,
+				traceMapFactory,
+			});
 
 			const file = result.files["shared/player.luau"]!;
 

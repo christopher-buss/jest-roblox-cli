@@ -1,7 +1,10 @@
-import { RojoResolver } from "@isentinel/rojo-utils";
+import type { RojoResolver } from "@isentinel/rojo-utils";
 
 import { createRequire } from "node:module";
 import * as path from "node:path";
+
+import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
+import { nodeRojoResolverFactory } from "../utils/rojo-project-reader.ts";
 
 /**
  * Resolvers already built, keyed by the rojo project file they were built
@@ -17,6 +20,11 @@ export interface SetupResolverOptions {
 	 */
 	cache?: RojoResolverCache | undefined;
 	configDirectory: string;
+	/**
+	 * Builds the resolver for a rojo project file. `RojoResolver.fromPath`
+	 * reads the tree through a `node:fs` binding of its own.
+	 */
+	createResolver?: RojoResolverFactory;
 	resolveModule?: (specifier: string) => string;
 	rojoConfigPath: string;
 }
@@ -30,11 +38,12 @@ export function createRojoResolverCache(): RojoResolverCache {
 export function createSetupResolver({
 	cache,
 	configDirectory,
+	createResolver = nodeRojoResolverFactory,
 	resolveModule,
 	rojoConfigPath,
 }: SetupResolverOptions): (input: string) => string {
 	const resolve = resolveModule ?? createRequire(path.join(configDirectory, "noop.js")).resolve;
-	const rojoResolver = resolveRojo(rojoConfigPath, cache);
+	const rojoResolver = resolveRojo(rojoConfigPath, cache, createResolver);
 
 	return (input): string => {
 		let absolutePath: string;
@@ -68,13 +77,17 @@ export function createSetupResolver({
 // `out` from a package path where the tree mapper keeps it. That walk dominates
 // the cost of resolving a package's setup files, so a shared cache spares every
 // package after the first that mounts the same project file.
-function resolveRojo(rojoConfigPath: string, cache: RojoResolverCache | undefined): RojoResolver {
+function resolveRojo(
+	rojoConfigPath: string,
+	cache: RojoResolverCache | undefined,
+	createResolver: RojoResolverFactory,
+): RojoResolver {
 	const cached = cache?.get(rojoConfigPath);
 	if (cached !== undefined) {
 		return cached;
 	}
 
-	const resolver = RojoResolver.fromPath(rojoConfigPath);
+	const resolver = createResolver(rojoConfigPath);
 	cache?.set(rojoConfigPath, resolver);
 	return resolver;
 }

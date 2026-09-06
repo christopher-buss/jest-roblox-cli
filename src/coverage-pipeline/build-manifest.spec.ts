@@ -119,7 +119,7 @@ describe(emitBuildManifest, () => {
 
 		seedArtifacts(volume);
 
-		emitBuildManifest(MANIFEST_PATH, exampleArtifacts(), undefined, fileSystem);
+		emitBuildManifest(MANIFEST_PATH, exampleArtifacts(), { fileSystem });
 
 		const manifest = expectOk(readBuildManifest(MANIFEST_PATH, { fileSystem }));
 
@@ -134,12 +134,10 @@ describe(emitBuildManifest, () => {
 
 		seedArtifacts(volume);
 
-		emitBuildManifest(
-			MANIFEST_PATH,
-			exampleArtifacts(),
-			{ hash: hashBuffer(Buffer.from(CLEAN_PLACE_CONTENT)), path: CLEAN_PLACE },
+		emitBuildManifest(MANIFEST_PATH, exampleArtifacts(), {
+			cleanPlace: { hash: hashBuffer(Buffer.from(CLEAN_PLACE_CONTENT)), path: CLEAN_PLACE },
 			fileSystem,
-		);
+		});
 
 		expect(expectOk(readBuildManifest(MANIFEST_PATH, { fileSystem })).cleanPlace!.path).toBe(
 			CLEAN_PLACE,
@@ -163,8 +161,7 @@ describe(emitBuildManifest, () => {
 		emitBuildManifest(
 			MANIFEST_PATH,
 			{ ...exampleArtifacts(), projects: [project] },
-			undefined,
-			fileSystem,
+			{ fileSystem },
 		);
 
 		expect(expectOk(readBuildManifest(MANIFEST_PATH, { fileSystem })).projects).toStrictEqual([

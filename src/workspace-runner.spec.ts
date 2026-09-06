@@ -15,6 +15,7 @@ import type {
 	EnvelopeEntry,
 } from "./backends/interface.ts";
 import { loadConfig } from "./config/loader.ts";
+import type { PackageConfigLoader } from "./config/loader.ts";
 import type {
 	CliOptions,
 	ProjectEntry,
@@ -24,41 +25,32 @@ import type {
 import { DEFAULT_CONFIG } from "./config/schema.ts";
 import { MANIFEST_VERSION } from "./coverage-pipeline/manifest.ts";
 import type { WorkspacePackageCoverage } from "./coverage-pipeline/workspace-prepare.ts";
-import { prepareWorkStealingQueueAsync } from "./memory-store/work-stealing.ts";
-import { buildPlaceAsync } from "./staging/place-builder.ts";
+import type { prepareWorkStealingQueueAsync } from "./memory-store/work-stealing.ts";
 import { createTimingCollector } from "./timing/orchestration-collector.ts";
-import { runTypecheckAsync } from "./typecheck/runner.ts";
+import type { runTypecheckAsync } from "./typecheck/runner.ts";
 import type { JestResult } from "./types/jest-result.ts";
+import type { ChildProcessRunner } from "./utils/child-process.ts";
+import type { FileSystem } from "./utils/file-system.ts";
 import { toPosixRoot } from "./utils/normalize-windows-path.ts";
-import type { WorkspaceProjectResult } from "./workspace-runner.ts";
+import type { RojoResolverFactory } from "./utils/rojo-project-reader.ts";
+import type { WorkspaceProjectResult, WorkspaceRunnerOutput } from "./workspace-runner.ts";
 import { runWorkspaceAsync } from "./workspace-runner.ts";
+import type { PrepareCoverage } from "./workspace/coverage-attach.ts";
 
-vi.mock(import("./memory-store/work-stealing.ts"), () => {
-	return {
-		prepareWorkStealingQueueAsync: vi.fn<typeof prepareWorkStealingQueueAsync>(),
+function resolverReturning(mapping: Record<string, Array<string>>): RojoResolverFactory {
+	return () => {
+		return fromAny({
+			getRbxPathFromFilePath(filePath: string) {
+				return mapping[filePath];
+			},
+		});
 	};
-});
-
-vi.mock(import("./staging/place-builder.ts"));
-
-vi.mock(import("./config/loader.ts"), async (importOriginal) => {
-	const actual = await importOriginal();
-	return { ...actual, loadConfig: vi.fn<typeof actual.loadConfig>(actual.loadConfig) };
-});
-
-// RojoResolver walks the project tree through a node:fs binding of its own,
-// which takes no seam. The cases that reach it spy on `fromPath` so the walk is
-// stubbed while the real tree-walking helpers stay real; every other read in
-// this suite goes through the injected volume.
-
-vi.mock(import("./coverage-pipeline/workspace-prepare.ts"));
-
-// The host-side Type Test pass spawns tsgo; mock the runner so the suite drives
-// attribution off fixture output rather than a real compile. The real
-// `groupTypecheckByTsconfig` still groups entries and calls this mock per group.
-vi.mock(import("./typecheck/runner.ts"));
+}
 
 const ROOT = path.resolve("/repo");
+const WORKSPACE_CACHE = path.join(ROOT, ".jest-roblox", "workspace");
+const SYNTHESIZED_PROJECT = path.join(WORKSPACE_CACHE, "synthesized.project.json");
+const PLACE_BYTES = "RBXL-BYTES";
 const FOO_DIR = path.join(ROOT, "packages/foo");
 const BAR_DIR = path.join(ROOT, "packages/bar");
 const BAZ_DIR = path.join(ROOT, "packages/baz");
@@ -172,13 +164,82 @@ function makeCli(overrides: Partial<CliOptions> = {}): CliOptions {
 	return { ...overrides };
 }
 
+function timedRojo(fileSystem: FileSystem, onBuild: () => void): ChildProcessRunner {
+	return fromAny({
+		execFile: (
+			_file: string,
+			args: Array<string>,
+			_options: object,
+			callback: (cause: Error | null, stdout: string, stderr: string) => void,
+		) => {
+			onBuild();
+			fileSystem.writeFileSync(String(args[3]), PLACE_BYTES);
+			callback(null, "", "");
+		},
+	});
+}
+
+function stubRojo(fileSystem: FileSystem): ChildProcessRunner {
+	return timedRojo(fileSystem, () => {});
+}
+
+function failingRojo(stderr: string): ChildProcessRunner {
+	return fromAny({
+		execFile: (
+			_file: string,
+			_args: Array<string>,
+			_options: object,
+			callback: (cause: Error | null, stdout: string, stderr: string) => void,
+		) => {
+			callback(new Error("rojo exited with 1"), "", stderr);
+		},
+	});
+}
+
+function stagedPackages(fileSystem: FileSystem): Array<string> {
+	const project = fromAny<{ tree: Record<string, Record<string, object>> }, JSONValue>(
+		JSON.parse(fileSystem.readFileSync(SYNTHESIZED_PROJECT, "utf-8")),
+	);
+	const stage = project.tree["ServerStorage"]?.["__pkg_stage"] ?? {};
+	return Object.keys(stage).filter((key) => !key.startsWith("$"));
+}
+
+function buildManifestPath(manifestPath: string): string {
+	return path.join(path.dirname(manifestPath), "build-manifest.json");
+}
+
+function buildManifestAt(
+	fileSystem: FileSystem,
+	manifestPath: string,
+): { coveragePlace: { path: string } } {
+	return fromAny(JSON.parse(fileSystem.readFileSync(buildManifestPath(manifestPath), "utf-8")));
+}
+
+const loadPackageConfig = vi.fn<PackageConfigLoader>(loadConfig);
+
+const runTypecheck = vi.fn<typeof runTypecheckAsync>();
+
+async function runStagedWorkspaceAsync(
+	options: Parameters<typeof runWorkspaceAsync>[0],
+): Promise<undefined | WorkspaceRunnerOutput> {
+	const { fileSystem } = options;
+	assert(fileSystem !== undefined);
+
+	return runWorkspaceAsync({
+		childProcess: stubRojo(fileSystem),
+		loadPackageConfig,
+		runTypecheck,
+		...options,
+	});
+}
+
 // Most specs assert only on the runtime results array; unwrap it from the
 // runner output so they stay focused on the per-(package, project) entries.
 // Preserves the `undefined` preflight sentinel.
 async function runWorkspaceResultsAsync(
 	options: Parameters<typeof runWorkspaceAsync>[0],
 ): Promise<Array<WorkspaceProjectResult> | undefined> {
-	const output = await runWorkspaceAsync(options);
+	const output = await runStagedWorkspaceAsync(options);
 	return output?.results;
 }
 
@@ -213,7 +274,7 @@ function makeProjectEntries(entries: Array<ProjectEntry>): Array<ProjectEntry> {
 }
 
 function setLoadedConfigPerPackage(map: Readonly<Record<string, PreResolutionConfig>>): void {
-	vi.mocked(loadConfig).mockImplementation(async (_path, cwd) => {
+	loadPackageConfig.mockImplementation(async (_path, cwd) => {
 		const config = map[cwd ?? ""];
 		if (config === undefined) {
 			throw new Error(`No mocked config for cwd: ${cwd ?? "<undefined>"}`);
@@ -276,7 +337,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -314,7 +375,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -347,7 +408,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -383,7 +444,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -430,7 +491,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -473,7 +534,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/foo.spec" }),
 			fileSystem,
@@ -514,7 +575,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/a/index.spec" }),
 			fileSystem,
@@ -555,7 +616,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "main" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/deep/thing.spec" }),
 			fileSystem,
@@ -589,7 +650,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ testPathPattern: "src/other-package.spec" }),
 			fileSystem,
@@ -634,7 +695,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/foo.spec.luau")] }),
 			fileSystem,
@@ -648,9 +709,7 @@ describe(runWorkspaceAsync, () => {
 
 		// The place carries only the named package, so the build shrinks with
 		// the selection rather than staging the whole workspace anyway.
-		const staged = vi.mocked(buildPlaceAsync).mock.lastCall![0].packages;
-
-		expect(staged.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
+		expect(stagedPackages(fileSystem)).toStrictEqual(["@halcyon/foo"]);
 		expect(dispatchedScript(captured)).not.toContain("@halcyon/bar");
 	});
 
@@ -684,7 +743,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: ["src/foo.spec.luau"] }),
 			cwd: FOO_DIR,
@@ -725,7 +784,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/a/index.spec.luau")] }),
 			fileSystem,
@@ -766,7 +825,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({
 				files: [path.join(FOO_DIR, "src/a.spec.luau")],
@@ -805,7 +864,7 @@ describe(runWorkspaceAsync, () => {
 		const { backend } = createStubBackend([]);
 
 		await expect(
-			runWorkspaceAsync({
+			runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ files: [path.join(ROOT, "elsewhere/nope.spec.luau")] }),
 				fileSystem,
@@ -885,7 +944,7 @@ describe(runWorkspaceAsync, () => {
 		// `runWorkspace` directly must own that lifecycle themselves.
 		const timing = createTimingCollector();
 		try {
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -949,7 +1008,7 @@ describe(runWorkspaceAsync, () => {
 
 		// Deliberately no flush: every line asserted here must have been
 		// written while the run was still in progress.
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -997,10 +1056,6 @@ describe(runWorkspaceAsync, () => {
 			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 		});
 
-		vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
-			throw new Error("rojo boom");
-		});
-
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
@@ -1011,8 +1066,9 @@ describe(runWorkspaceAsync, () => {
 		const timing = createTimingCollector();
 		try {
 			await expect(
-				runWorkspaceAsync({
+				runStagedWorkspaceAsync({
 					backend,
+					childProcess: failingRojo("rojo boom"),
 					cli: makeCli(),
 					fileSystem,
 					packageInfos: [FOO_INFO],
@@ -1118,7 +1174,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "main" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -1157,7 +1213,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -1202,7 +1258,7 @@ describe(runWorkspaceAsync, () => {
 
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -1251,7 +1307,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -1302,7 +1358,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -1452,7 +1508,7 @@ describe(runWorkspaceAsync, () => {
 		const { backend } = createStubBackend([]);
 
 		await expect(
-			runWorkspaceAsync({
+			runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ project: ["nonexistent"] }),
 				fileSystem,
@@ -1489,32 +1545,21 @@ describe(runWorkspaceAsync, () => {
 			},
 		});
 
-		// Mock the RojoResolver so the resolver's filesystem walk is skipped and
-		// these tests stay focused on workspace orchestration.
-		const mapping = {
-			[path.resolve(FOO_DIR, "./src/Shared/setup.luau")]: [
-				"ReplicatedStorage",
-				"Pkg",
-				"Shared",
-				"setup",
-			],
-		} satisfies Record<string, Array<string>>;
-		const { RojoResolver } = await import("@isentinel/rojo-utils");
-		vi.spyOn(RojoResolver, "fromPath").mockReturnValue(
-			fromAny({
-				getRbxPathFromFilePath(filePath: string) {
-					return mapping[filePath];
-				},
-			}),
-		);
-
 		const { backend, captured } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			createResolver: resolverReturning({
+				[path.resolve(FOO_DIR, "./src/Shared/setup.luau")]: [
+					"ReplicatedStorage",
+					"Pkg",
+					"Shared",
+					"setup",
+				],
+			}),
 			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
@@ -1551,16 +1596,16 @@ describe(runWorkspaceAsync, () => {
 			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 		});
 
-		const { RojoResolver } = await import("@isentinel/rojo-utils");
-		const fromPathSpy = vi.spyOn(RojoResolver, "fromPath");
+		const createResolver = vi.fn<RojoResolverFactory>();
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			createResolver,
 			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
@@ -1571,7 +1616,7 @@ describe(runWorkspaceAsync, () => {
 		// No project declares setupFiles/setupFilesAfterEnv, so the costly
 		// RojoResolver tree walk must be skipped entirely — it is the dominant
 		// resolveContexts cost and resolves nothing here.
-		expect(fromPathSpy).not.toHaveBeenCalled();
+		expect(createResolver).not.toHaveBeenCalled();
 	});
 
 	it("should resolve a project that declares only setupFiles", async () => {
@@ -1598,22 +1643,21 @@ describe(runWorkspaceAsync, () => {
 			},
 		});
 
-		const { RojoResolver } = await import("@isentinel/rojo-utils");
-		vi.spyOn(RojoResolver, "fromPath").mockReturnValue(
-			fromAny({
-				getRbxPathFromFilePath() {
-					return ["ReplicatedStorage", "Pkg", "Shared", "setup"];
-				},
-			}),
-		);
-
 		const { backend, captured } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			createResolver: resolverReturning({
+				[path.resolve(FOO_DIR, "./src/Shared/setup.luau")]: [
+					"ReplicatedStorage",
+					"Pkg",
+					"Shared",
+					"setup",
+				],
+			}),
 			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
@@ -1651,22 +1695,21 @@ describe(runWorkspaceAsync, () => {
 			},
 		});
 
-		const { RojoResolver } = await import("@isentinel/rojo-utils");
-		vi.spyOn(RojoResolver, "fromPath").mockReturnValue(
-			fromAny({
-				getRbxPathFromFilePath() {
-					return ["ReplicatedStorage", "Pkg", "Shared", "setup"];
-				},
-			}),
-		);
-
 		const { backend, captured } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
+			createResolver: resolverReturning({
+				[path.resolve(FOO_DIR, "./src/Shared/setup.luau")]: [
+					"ReplicatedStorage",
+					"Pkg",
+					"Shared",
+					"setup",
+				],
+			}),
 			fileSystem,
 			packageInfos: [FOO_INFO],
 			runOptions: makeRunOptions(),
@@ -2152,7 +2195,7 @@ describe(runWorkspaceAsync, () => {
 
 		const { backend } = createStubBackend([]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -2194,7 +2237,7 @@ describe(runWorkspaceAsync, () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -2257,9 +2300,7 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [
 				{
 					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
@@ -2283,19 +2324,20 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			expect(prepareWorkspaceCoverage).toHaveBeenCalledOnce();
+			expect(prepareCoverage).toHaveBeenCalledOnce();
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const callArgs = prepareCoverage.mock.calls[0]![0];
 
 			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
 		});
@@ -2328,9 +2370,7 @@ describe(runWorkspaceAsync, () => {
 				},
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [
 				{
 					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
@@ -2354,17 +2394,18 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const callArgs = prepareCoverage.mock.calls[0]![0];
 			const descriptor = callArgs.packages[0]!;
 
 			expect(descriptor.luauRoots).toStrictEqual(["src"]);
@@ -2407,9 +2448,7 @@ describe(runWorkspaceAsync, () => {
 				},
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [
 				{
 					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
@@ -2433,17 +2472,18 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const callArgs = prepareCoverage.mock.calls[0]![0];
 			const descriptor = callArgs.packages[0]!;
 
 			expect(descriptor.coverageCache).toBeFalse();
@@ -2469,9 +2509,7 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [
 				{
 					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
@@ -2495,17 +2533,18 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const callArgs = prepareCoverage.mock.calls[0]![0];
 			const descriptor = callArgs.packages[0]!;
 
 			expect(descriptor.coveragePathIgnorePatterns).toBeUndefined();
@@ -2528,9 +2567,7 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [
 				{
 					coverageRoots: [],
 					coverageSpine: [],
@@ -2554,11 +2591,12 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
@@ -2584,8 +2622,6 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
 			const manifest = {
 				buildId: "test-build-id",
 				files: {},
@@ -2596,7 +2632,7 @@ describe(runWorkspaceAsync, () => {
 				shadowDir: "/shadow",
 				version: MANIFEST_VERSION,
 			};
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [
 				{
 					coverageRoots: [{ luauRoot: toPosixRoot("src"), shadowDir: "/shadow/src" }],
 					coverageSpine: [],
@@ -2616,6 +2652,7 @@ describe(runWorkspaceAsync, () => {
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
@@ -2650,9 +2687,7 @@ describe(runWorkspaceAsync, () => {
 				},
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [
 				{ ...coverageEntry("@halcyon/foo"), coveragePathIgnorePatterns: ["**/vendor/**"] },
 			]);
 
@@ -2665,6 +2700,7 @@ describe(runWorkspaceAsync, () => {
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
@@ -2716,9 +2752,7 @@ describe(runWorkspaceAsync, () => {
 				},
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([coverageEntry("@halcyon/bar")]);
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [coverageEntry("@halcyon/bar")]);
 
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
@@ -2727,11 +2761,12 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
@@ -2776,25 +2811,24 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => []);
 
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const callArgs = prepareCoverage.mock.calls[0]![0];
 
 			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
 		});
@@ -2816,23 +2850,23 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => []);
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			expect(prepareWorkspaceCoverage).not.toHaveBeenCalled();
+			expect(prepareCoverage).not.toHaveBeenCalled();
 		});
 
 		it("should honor per-package collectCoverage when the workspace config does not set it", async () => {
@@ -2855,25 +2889,24 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => []);
 
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const callArgs = prepareCoverage.mock.calls[0]![0];
 
 			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
 		});
@@ -2900,26 +2933,25 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([]);
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => []);
 
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
 				packageInfos: [FOO_INFO, BAR_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			const callArgs = vi.mocked(prepareWorkspaceCoverage).mock.calls[0]![0];
+			const callArgs = prepareCoverage.mock.calls[0]![0];
 
 			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
 		});
@@ -2942,27 +2974,26 @@ describe(runWorkspaceAsync, () => {
 			});
 
 			const entry = coverageEntry("@halcyon/foo");
-			const { emitWorkspaceBuildManifests, prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([entry]);
-			const place = { hash: "place-hash", path: "synthesized.rbxl" };
-			vi.mocked(buildPlaceAsync).mockResolvedValue(place);
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [entry]);
 
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ collectCoverage: true }),
 				fileSystem,
 				packageInfos: [FOO_INFO],
+				prepareCoverage,
 				runOptions: makeRunOptions(),
 				version: "0.0.0-test",
 				workspaceRoot: ROOT,
 			});
 
-			expect(vi.mocked(emitWorkspaceBuildManifests)).toHaveBeenCalledWith([entry], place);
+			expect(buildManifestAt(fileSystem, entry.manifestPath).coveragePlace.path).toBe(
+				path.join(WORKSPACE_CACHE, "synthesized.rbxl"),
+			);
 		});
 
 		it("should not emit a build manifest when the shared place build fails", async () => {
@@ -2982,30 +3013,28 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, collectCoverage: true, rootDir: FOO_DIR },
 			});
 
-			const { emitWorkspaceBuildManifests, prepareWorkspaceCoverage } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-			vi.mocked(prepareWorkspaceCoverage).mockReturnValue([coverageEntry("@halcyon/foo")]);
-			vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
-				throw new Error("rojo boom");
-			});
+			const entry = coverageEntry("@halcyon/foo");
+			const prepareCoverage = vi.fn<PrepareCoverage>(() => [entry]);
 
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
 			await expect(
-				runWorkspaceAsync({
+				runStagedWorkspaceAsync({
 					backend,
+					childProcess: failingRojo("rojo boom"),
 					cli: makeCli({ collectCoverage: true }),
 					fileSystem,
 					packageInfos: [FOO_INFO],
+					prepareCoverage,
 					runOptions: makeRunOptions(),
 					version: "0.0.0-test",
 					workspaceRoot: ROOT,
 				}),
 			).rejects.toThrow("rojo boom");
 
-			expect(vi.mocked(emitWorkspaceBuildManifests)).not.toHaveBeenCalled();
+			expect(fileSystem.existsSync(buildManifestPath(entry.manifestPath))).toBeFalse();
 		});
 
 		it("should not emit a build manifest when coverage is disabled", async () => {
@@ -3025,14 +3054,11 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 			});
 
-			const { emitWorkspaceBuildManifests } =
-				await import("./coverage-pipeline/workspace-prepare.ts");
-
 			const { backend } = createStubBackend([
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3042,7 +3068,11 @@ describe(runWorkspaceAsync, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(vi.mocked(emitWorkspaceBuildManifests)).not.toHaveBeenCalled();
+			expect(
+				fileSystem.existsSync(
+					buildManifestPath(coverageEntry("@halcyon/foo").manifestPath),
+				),
+			).toBeFalse();
 		});
 	});
 
@@ -3070,18 +3100,17 @@ describe(runWorkspaceAsync, () => {
 		const clock = movableClockCollector(0);
 		let wallMs = 1_000;
 		vi.spyOn(Date, "now").mockImplementation(() => wallMs);
-		vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
-			clock.advance(250);
-			wallMs += 900;
-			return { hash: "hash", path: "place.rbxl" };
-		});
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 		]);
 
-		const output = await runWorkspaceAsync({
+		const output = await runStagedWorkspaceAsync({
 			backend,
+			childProcess: timedRojo(fileSystem, () => {
+				clock.advance(250);
+				wallMs += 900;
+			}),
 			cli: makeCli(),
 			fileSystem,
 			packageInfos: [FOO_INFO],
@@ -3117,26 +3146,22 @@ describe(runWorkspaceAsync, () => {
 
 		const clock = movableClockCollector(1_000);
 
-		const { prepareWorkspaceCoverage } =
-			await import("./coverage-pipeline/workspace-prepare.ts");
-		vi.mocked(prepareWorkspaceCoverage).mockImplementation(() => {
-			clock.advance(120);
-			return [coverageEntry("@halcyon/foo")];
-		});
-		vi.mocked(buildPlaceAsync).mockImplementationOnce(async () => {
-			clock.advance(250);
-			return { hash: "hash", path: "place.rbxl" };
-		});
-
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 		]);
 
-		const output = await runWorkspaceAsync({
+		const output = await runStagedWorkspaceAsync({
 			backend,
+			childProcess: timedRojo(fileSystem, () => {
+				clock.advance(250);
+			}),
 			cli: makeCli({ collectCoverage: true }),
 			fileSystem,
 			packageInfos: [FOO_INFO],
+			prepareCoverage: vi.fn<PrepareCoverage>(() => {
+				clock.advance(120);
+				return [coverageEntry("@halcyon/foo")];
+			}),
 			runOptions: makeRunOptions(),
 			timing: clock.timing,
 			version: "0.0.0-test",
@@ -3149,9 +3174,16 @@ describe(runWorkspaceAsync, () => {
 
 	describe("work-stealing", () => {
 		const testCredentials = { apiKey: "test-key", universeId: "u-123" };
+		const prepareWorkStealingQueue = vi.fn<typeof prepareWorkStealingQueueAsync>();
+
+		async function runStealingWorkspaceAsync(
+			options: Parameters<typeof runWorkspaceAsync>[0],
+		): Promise<undefined | WorkspaceRunnerOutput> {
+			return runStagedWorkspaceAsync({ prepareWorkStealingQueue, ...options });
+		}
 
 		function mockPreparedQueue(queueId: string): void {
-			vi.mocked(prepareWorkStealingQueueAsync).mockResolvedValue({
+			prepareWorkStealingQueue.mockResolvedValue({
 				invisibilityWindowSeconds: 90,
 				queueId,
 				ttlSeconds: 600,
@@ -3186,7 +3218,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3200,7 +3232,7 @@ describe(runWorkspaceAsync, () => {
 			expect(captured.options!.workStealing).toBeTrue();
 			expect(captured.options!.parallel).toBe(2);
 
-			const prepareCall = vi.mocked(prepareWorkStealingQueueAsync).mock.calls[0]![0];
+			const prepareCall = prepareWorkStealingQueue.mock.calls[0]![0];
 
 			expect(prepareCall.packages).toIncludeAllMembers([
 				{ pkg: "@halcyon/foo", project: "@halcyon/foo" },
@@ -3229,7 +3261,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3267,7 +3299,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3302,7 +3334,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3333,7 +3365,7 @@ describe(runWorkspaceAsync, () => {
 				[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR },
 			});
 
-			vi.mocked(prepareWorkStealingQueueAsync).mockRejectedValue(
+			prepareWorkStealingQueue.mockRejectedValue(
 				new Error("Failed to enqueue work item: insufficient scope"),
 			);
 			const warn = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -3341,7 +3373,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			const output = await runWorkspaceAsync({
+			const output = await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3378,7 +3410,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3390,7 +3422,7 @@ describe(runWorkspaceAsync, () => {
 			});
 
 			expect(captured.options!.workStealing).toBeUndefined();
-			expect(vi.mocked(prepareWorkStealingQueueAsync)).not.toHaveBeenCalled();
+			expect(prepareWorkStealingQueue).not.toHaveBeenCalled();
 		});
 
 		it("should keep the existing path when workStealingCredentials is not provided even with parallel>1", async () => {
@@ -3413,7 +3445,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3448,7 +3480,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3465,7 +3497,7 @@ describe(runWorkspaceAsync, () => {
 				workStealingCredentials: { ...testCredentials, baseUrl: "http://127.0.0.1:4010" },
 			});
 
-			expect(vi.mocked(prepareWorkStealingQueueAsync).mock.calls[0]![0].baseUrl).toBe(
+			expect(prepareWorkStealingQueue.mock.calls[0]![0].baseUrl).toBe(
 				"http://127.0.0.1:4010",
 			);
 		});
@@ -3489,7 +3521,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3526,7 +3558,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3573,7 +3605,7 @@ describe(runWorkspaceAsync, () => {
 				{ bailedJobIndices: [0] },
 			);
 
-			const output = await runWorkspaceAsync({
+			const output = await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3601,8 +3633,13 @@ describe(runWorkspaceAsync, () => {
 				...seedPackage(FOO_DIR, {
 					name: "@halcyon/foo",
 					specFiles: {
-						[path.join(FOO_DIR, "src/a.spec.luau")]: "",
-						[path.join(FOO_DIR, "src/b.spec.luau")]: "",
+						[path.join(FOO_DIR, "out/Client/a.spec.luau")]: "",
+						[path.join(FOO_DIR, "out/Server/b.spec.luau")]: "",
+					},
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { Client: { $path: "out/Client" } },
+						ServerScriptService: { Server: { $path: "out/Server" } },
 					},
 				}),
 				[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
@@ -3610,10 +3647,10 @@ describe(runWorkspaceAsync, () => {
 			setLoadedConfigPerPackage({
 				[FOO_DIR]: {
 					...DEFAULT_CONFIG,
-					projects: [
-						{ test: { displayName: "client", include: ["src/a.spec.luau"] } },
-						{ test: { displayName: "server", include: ["src/b.spec.luau"] } },
-					],
+					projects: makeProjectEntries([
+						{ test: { displayName: "client", include: ["out/Client/**/*.spec.luau"] } },
+						{ test: { displayName: "server", include: ["out/Server/**/*.spec.luau"] } },
+					]),
 					rootDir: FOO_DIR,
 				},
 			});
@@ -3624,7 +3661,7 @@ describe(runWorkspaceAsync, () => {
 				{ bailedJobIndices: [1] },
 			);
 
-			const output = await runWorkspaceAsync({
+			const output = await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3658,7 +3695,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3693,7 +3730,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3726,7 +3763,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3780,7 +3817,7 @@ describe(runWorkspaceAsync, () => {
 				},
 			};
 
-			await runWorkspaceAsync({
+			await runStealingWorkspaceAsync({
 				backend: wrappedBackend,
 				cli: makeCli(),
 				fileSystem,
@@ -3817,7 +3854,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3860,7 +3897,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3902,7 +3939,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -3949,7 +3986,7 @@ describe(runWorkspaceAsync, () => {
 					typecheck: { enabled: true },
 				},
 			});
-			vi.mocked(runTypecheckAsync).mockResolvedValue(
+			runTypecheck.mockResolvedValue(
 				makeTypeResult({
 					testResults: [
 						{
@@ -3965,7 +4002,7 @@ describe(runWorkspaceAsync, () => {
 
 			const { backend } = createStubBackend([]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ typecheckOnly: true }),
 				fileSystem,
@@ -4012,7 +4049,7 @@ describe(runWorkspaceAsync, () => {
 					typecheck: { enabled: true },
 				},
 			});
-			vi.mocked(runTypecheckAsync).mockResolvedValue(
+			runTypecheck.mockResolvedValue(
 				makeTypeResult({
 					testResults: [
 						{
@@ -4030,7 +4067,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4090,7 +4127,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: gameOutputRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4134,7 +4171,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: gameOutputRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4188,7 +4225,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4226,7 +4263,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: "not-json", jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4284,7 +4321,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/bar" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4363,7 +4400,7 @@ describe(runWorkspaceAsync, () => {
 				},
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4429,7 +4466,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4458,7 +4495,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4485,7 +4522,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4512,7 +4549,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4539,7 +4576,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4561,7 +4598,7 @@ describe(runWorkspaceAsync, () => {
 				{ gameOutput: helloRaw, jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4583,7 +4620,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4619,7 +4656,7 @@ describe(runWorkspaceAsync, () => {
 			]);
 			const outputFile = path.join(ROOT, "jest-output.log");
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4654,7 +4691,7 @@ describe(runWorkspaceAsync, () => {
 				{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4690,7 +4727,7 @@ describe(runWorkspaceAsync, () => {
 					typecheck: { enabled: true },
 				},
 			});
-			vi.mocked(runTypecheckAsync).mockResolvedValue(
+			runTypecheck.mockResolvedValue(
 				makeTypeResult({
 					testResults: [
 						{
@@ -4709,7 +4746,7 @@ describe(runWorkspaceAsync, () => {
 			]);
 			const outputFile = path.join(ROOT, "jest-output.log");
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli({ typecheckOnly: true }),
 				fileSystem,
@@ -4748,7 +4785,7 @@ describe(runWorkspaceAsync, () => {
 					typecheck: { enabled: true },
 				},
 			});
-			vi.mocked(runTypecheckAsync).mockResolvedValue(
+			runTypecheck.mockResolvedValue(
 				makeTypeResult({
 					testResults: [
 						{
@@ -4767,7 +4804,7 @@ describe(runWorkspaceAsync, () => {
 			]);
 			const outputFile = path.join(ROOT, "jest-output.log");
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4826,7 +4863,7 @@ describe(runWorkspaceAsync, () => {
 				},
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4902,7 +4939,7 @@ describe(runWorkspaceAsync, () => {
 				},
 			]);
 
-			await runWorkspaceAsync({
+			await runStagedWorkspaceAsync({
 				backend,
 				cli: makeCli(),
 				fileSystem,
@@ -4987,13 +5024,13 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+		runTypecheck.mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const result = await runWorkspaceAsync({
+		const result = await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -5003,7 +5040,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(vi.mocked(runTypecheckAsync)).toHaveBeenCalledWith(
+		expect(runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({
 				files: expect.arrayContaining([expect.stringMatching(/foo\.spec-d\.ts$/)]),
 			}),
@@ -5038,11 +5075,11 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+		runTypecheck.mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/wanted.spec-d.ts")] }),
 			fileSystem,
@@ -5052,7 +5089,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		const { files } = vi.mocked(runTypecheckAsync).mock.calls[0]![0];
+		const { files } = runTypecheck.mock.calls[0]![0];
 
 		// Absolute and platform-native, the same shape the glob half produces —
 		// the two feed one tsgo group, and the ownership match that selected
@@ -5092,7 +5129,7 @@ describe("workspace type tests", () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ files: [path.join(FOO_DIR, "src/foo.spec.ts")] }),
 			fileSystem,
@@ -5102,7 +5139,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(vi.mocked(runTypecheckAsync)).not.toHaveBeenCalled();
+		expect(runTypecheck).not.toHaveBeenCalled();
 	});
 
 	it("should use an explicit test.typecheck.include instead of deriving from the runtime include", async () => {
@@ -5131,13 +5168,13 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+		runTypecheck.mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -5147,7 +5184,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		const { files } = vi.mocked(runTypecheckAsync).mock.calls[0]![0];
+		const { files } = runTypecheck.mock.calls[0]![0];
 
 		expect(files.some((file) => file.endsWith("x.spec-d.ts"))).toBeTrue();
 		expect(files.some((file) => file.endsWith("foo.spec-d.ts"))).toBeFalse();
@@ -5179,13 +5216,13 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+		runTypecheck.mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -5195,7 +5232,7 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		const { files } = vi.mocked(runTypecheckAsync).mock.calls[0]![0];
+		const { files } = runTypecheck.mock.calls[0]![0];
 
 		expect(files.some((file) => file.endsWith("a.spec-d.ts"))).toBeTrue();
 		expect(files.some((file) => file.endsWith("a.gen.spec-d.ts"))).toBeFalse();
@@ -5237,14 +5274,14 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+		runTypecheck.mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "client" },
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "server" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -5254,9 +5291,9 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(vi.mocked(runTypecheckAsync)).toHaveBeenCalledOnce();
+		expect(runTypecheck).toHaveBeenCalledOnce();
 
-		const call = vi.mocked(runTypecheckAsync).mock.calls[0]![0];
+		const call = runTypecheck.mock.calls[0]![0];
 
 		expect(call.rootDir).toBe(FOO_DIR);
 		expect(call.files).toHaveLength(2);
@@ -5300,14 +5337,14 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+		runTypecheck.mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "@halcyon/bar" },
 		]);
 
-		await runWorkspaceAsync({
+		await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -5317,18 +5354,13 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(vi.mocked(runTypecheckAsync)).toHaveBeenCalledTimes(2);
+		expect(runTypecheck).toHaveBeenCalledTimes(2);
 
-		const rootDirectories = vi
-			.mocked(runTypecheckAsync)
-			.mock.calls.map((call) => call[0].rootDir)
-			.sort();
+		const rootDirectories = runTypecheck.mock.calls.map((call) => call[0].rootDir).sort();
 
 		expect(rootDirectories).toStrictEqual([BAR_DIR, FOO_DIR].sort());
 		expect(
-			vi
-				.mocked(runTypecheckAsync)
-				.mock.calls.every((call) => call[0].tsconfig === "tsconfig.types.json"),
+			runTypecheck.mock.calls.every((call) => call[0].tsconfig === "tsconfig.types.json"),
 		).toBeTrue();
 	});
 
@@ -5372,7 +5404,7 @@ describe("workspace type tests", () => {
 
 		// Each group's tsgo returns the SAME package-relative file path; identity
 		// composition must keep the two packages' results distinguishable.
-		vi.mocked(runTypecheckAsync).mockResolvedValue(
+		runTypecheck.mockResolvedValue(
 			makeTypeResult({
 				testResults: [
 					{
@@ -5391,7 +5423,7 @@ describe("workspace type tests", () => {
 			{ jestOutput: passingResult(), pkg: "@halcyon/bar", project: "@halcyon/bar" },
 		]);
 
-		const result = await runWorkspaceAsync({
+		const result = await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -5454,13 +5486,13 @@ describe("workspace type tests", () => {
 				};
 			},
 		};
-		vi.mocked(runTypecheckAsync).mockImplementation(async () => {
+		runTypecheck.mockImplementation(async () => {
 			signalTypecheckStarted();
 			await runtimeStarted;
 			return makeTypeResult();
 		});
 
-		const result = await runWorkspaceAsync({
+		const result = await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -5493,13 +5525,13 @@ describe("workspace type tests", () => {
 			[FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR, testMatch: ["**/*.spec.ts"] },
 		});
 
-		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+		runTypecheck.mockResolvedValue(makeTypeResult());
 
 		const { backend, captured } = createStubBackend([
 			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
 		]);
 
-		const result = await runWorkspaceAsync({
+		const result = await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli({ typecheckOnly: true }),
 			fileSystem,
@@ -5510,7 +5542,7 @@ describe("workspace type tests", () => {
 		});
 
 		expect(captured.options).toBeUndefined();
-		expect(vi.mocked(buildPlaceAsync)).not.toHaveBeenCalled();
+		expect(fileSystem.existsSync(SYNTHESIZED_PROJECT)).toBeFalse();
 		expect(result!.typecheckResult).toBeDefined();
 		expect(result!.results).toHaveLength(0);
 	});
@@ -5540,11 +5572,11 @@ describe("workspace type tests", () => {
 			},
 		});
 
-		vi.mocked(runTypecheckAsync).mockResolvedValue(makeTypeResult());
+		runTypecheck.mockResolvedValue(makeTypeResult());
 
 		const { backend } = createStubBackend([]);
 
-		const result = await runWorkspaceAsync({
+		const result = await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
@@ -5581,7 +5613,7 @@ describe("workspace type tests", () => {
 
 		const { backend } = createStubBackend([]);
 
-		const result = await runWorkspaceAsync({
+		const result = await runStagedWorkspaceAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,

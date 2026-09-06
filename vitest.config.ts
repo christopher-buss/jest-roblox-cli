@@ -206,26 +206,7 @@ export const sharedViteOptions = {
 	resolve: { alias: workspaceSourceAliases },
 } satisfies TestProjectInlineConfiguration;
 
-/**
- * The coverage-measured suite. Exported so `vitest.stryker.config.ts` can run
- * exactly this project — and only this one — without restating its settings.
- *
- * `isolate` stays at its default, and may only be turned off once no spec in
- * this project calls `vi.mock` at all.
- *
- * Vitest clears the mock registry and the module cache between files only when
- * `isolate` is true (`mocker.reset()` / `resetModules()` in
- * `runtime/runBaseTests.ts`). Without it a `vi.mock` registration outlives the
- * file that declared it, so whichever spec a worker loads first decides what
- * every later spec sees — and since Vitest schedules files onto workers freely,
- * the suite fails a different file each run rather than failing honestly. This
- * is true of every mocked module, not only a node builtin.
- *
- * The temptation is real: the flag is worth roughly 40% of this project's wall
- * clock, and nothing anywhere else in the workspace. Measure again before
- * quoting that, and count the `vi.mock` calls before believing the flag is
- * safe.
- */
+/** The coverage-measured suite, which `vitest.stryker.config.ts` also runs. */
 export const unitProject = {
 	test: {
 		name: "unit",
@@ -255,6 +236,9 @@ export const unitProject = {
 			"**/*.luau",
 		],
 		include: ["src/**/*.spec.ts", "test/**/*.spec.ts", "scripts/**/*.spec.ts"],
+		// Vitest clears the mock registry and the module cache between files
+		// only when `isolate` is true.
+		isolate: false,
 		restoreMocks: true,
 		setupFiles,
 		typecheck: {

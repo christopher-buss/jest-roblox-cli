@@ -5,11 +5,6 @@ import { randomUUID } from "node:crypto";
 const DEFAULT_TTL_SECONDS = 600;
 const INVISIBILITY_BUFFER_SECONDS = 30;
 
-export interface QueueItem {
-	pkg: string;
-	project: string;
-}
-
 export interface PreparedWorkStealing {
 	/**
 	 * Materializer-side invisibility window = perPackageTimeoutSeconds + 30.
@@ -22,6 +17,11 @@ export interface PreparedWorkStealing {
 	 * again when it puts back an item it dropped over its return budget.
 	 */
 	ttlSeconds: number;
+}
+
+interface QueueItem {
+	pkg: string;
+	project: string;
 }
 
 interface PrepareWorkStealingOptions {

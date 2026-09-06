@@ -1,8 +1,8 @@
 import * as path from "node:path";
 import process from "node:process";
-import { isAgent } from "std-env";
 
 import { omitUndefined } from "../utils/omit-undefined.ts";
+import { defaultFormatters } from "./default-formatters.ts";
 import type { CliOptions, FormatterEntry, WorkspaceRunOptions } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
 import type {
@@ -177,16 +177,6 @@ function resolveConsensusOnlyFields(
 		workspaceGameOutput: isWorkspaceGameOutputEnabled,
 		workspaceOutputFile: isWorkspaceOutputFileEnabled,
 	};
-}
-
-function defaultFormatters(): Array<FormatterEntry> {
-	const defaults: Array<FormatterEntry> = isAgent ? ["agent"] : ["default"];
-
-	if (process.env["GITHUB_ACTIONS"] === "true") {
-		defaults.push("github-actions");
-	}
-
-	return defaults;
 }
 
 function resolveFormatters(

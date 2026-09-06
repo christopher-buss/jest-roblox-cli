@@ -6,10 +6,11 @@ import { isShardedParallel } from "../backends/interface.ts";
 import {
 	buildProjectJob,
 	type ExecuteResult,
+	type RunProjects,
 	runProjectsAsync,
 	type RunProjectsOptions,
 } from "../executor.ts";
-import type { TsconfigMappingCache } from "../executor/tsconfig-mappings.ts";
+import type { TsconfigMappingCache, TsconfigReader } from "../executor/tsconfig-mappings.ts";
 import { StreamingResultClient } from "../memory-store/sorted-map-client.ts";
 import {
 	type PreparedWorkStealing,
@@ -34,6 +35,8 @@ export type WorkspaceDispatchSpec = Pick<
 	"parallel" | "scriptFactory" | "scriptOverride" | "streaming" | "workStealing"
 >;
 
+export type PrepareWorkStealingQueue = typeof prepareWorkStealingQueueAsync;
+
 /**
  * A dispatch job carrying the package it belongs to. `ProjectJob.pkg` is
  * optional because multi mode has no packages; every workspace job has one,
@@ -56,6 +59,7 @@ interface WorkspaceDispatchInput {
 	jobs: Array<WorkspaceJob>;
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
 	parallel?: ParallelOption;
+	prepareWorkStealingQueue?: PrepareWorkStealingQueue | undefined;
 	workStealingCredentials: undefined | WorkStealingCredentials;
 }
 
@@ -66,6 +70,15 @@ interface WorkStealingDispatchInput {
 	inputs: Array<MaterializerInput>;
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
 	parallel: "auto" | number;
+	prepareWorkStealingQueue: PrepareWorkStealingQueue;
+}
+
+interface WorkspaceJobsInput {
+	fileSystem: FileSystem;
+	pending: Array<PendingEntry>;
+	placeFile: string;
+	tsconfigCache: TsconfigMappingCache;
+	tsconfigReader: TsconfigReader;
 }
 
 interface DispatchedProjectsInput {
@@ -74,6 +87,7 @@ interface DispatchedProjectsInput {
 	/** Where the run reads and writes. Defaults to the real filesystem. */
 	fileSystem?: FileSystem | undefined;
 	jobs: Array<WorkspaceJob>;
+	runProjects?: RunProjects | undefined;
 	startTime: number;
 	timing: TimingCollector;
 	tsconfigCache: TsconfigMappingCache;
@@ -95,9 +109,18 @@ interface BuildStreamingResult {
 export async function runDispatchedProjectsAsync(
 	input: DispatchedProjectsInput,
 ): Promise<{ ranProjectIndices: Array<number>; results: Array<ExecuteResult> }> {
-	const { dispatchSpec, fileSystem, jobs, startTime, timing, tsconfigCache, version } = input;
+	const {
+		dispatchSpec,
+		fileSystem,
+		jobs,
+		runProjects = runProjectsAsync,
+		startTime,
+		timing,
+		tsconfigCache,
+		version,
+	} = input;
 	const { ranProjectIndices, results } = await timing.profileAsync("runProjects", async () => {
-		return runProjectsAsync({
+		return runProjects({
 			// Defined whenever runtime jobs exist: only `--typecheckOnly`
 			// omits the backend, and that path short-circuits before
 			// reaching any runtime dispatch.
@@ -126,11 +149,13 @@ export async function runDispatchedProjectsAsync(
  * `tsconfigCache` travels with them for the same reason: passed on to
  * `runProjectsAsync`, it keeps result post-processing on the scan taken here.
  */
-export function buildWorkspaceJobs(
-	pending: Array<PendingEntry>,
-	placeFile: string,
-	tsconfigCache: TsconfigMappingCache,
-): Array<WorkspaceJob> {
+export function buildWorkspaceJobs({
+	fileSystem,
+	pending,
+	placeFile,
+	tsconfigCache,
+	tsconfigReader,
+}: WorkspaceJobsInput): Array<WorkspaceJob> {
 	return pending.map((entry) => {
 		const job = buildProjectJob(
 			{
@@ -141,6 +166,8 @@ export function buildWorkspaceJobs(
 				testFiles: entry.testFiles,
 			},
 			tsconfigCache,
+			fileSystem,
+			tsconfigReader,
 		);
 
 		return { ...job, pkg: entry.pkg };
@@ -153,6 +180,7 @@ export async function prepareWorkspaceDispatchAsync({
 	jobs,
 	onStreamingResult,
 	parallel,
+	prepareWorkStealingQueue = prepareWorkStealingQueueAsync,
 	workStealingCredentials,
 }: WorkspaceDispatchInput): Promise<WorkspaceDispatchSpec> {
 	const inputs = buildMaterializerInputs(jobs);
@@ -172,6 +200,7 @@ export async function prepareWorkspaceDispatchAsync({
 			inputs,
 			onStreamingResult,
 			parallel,
+			prepareWorkStealingQueue,
 		});
 		if (stealing !== undefined) {
 			return stealing;
@@ -290,6 +319,7 @@ async function prepareStealingDispatchAsync({
 	inputs,
 	onStreamingResult,
 	parallel,
+	prepareWorkStealingQueue,
 }: WorkStealingDispatchInput): Promise<WorkspaceDispatchSpec> {
 	// Gate streaming setup on an actual consumer. Without `onStreamingResult`
 	// (JSON/agent/silent runs) the SortedMap polling has no sink — running
@@ -304,7 +334,7 @@ async function prepareStealingDispatchAsync({
 	// Enqueued last, so nothing after this point can throw and strand the
 	// items: a caller that falls back to the bucketed path would otherwise
 	// leave a full queue behind until its ten-minute TTL expires.
-	const prepared = await prepareWorkStealingQueueAsync({
+	const prepared = await prepareWorkStealingQueue({
 		baseUrl: credentials.baseUrl,
 		credentials: { apiKey: credentials.apiKey, universeId: credentials.universeId },
 		packages: inputs.map((entry) => ({ pkg: entry.pkg, project: entry.project })),

@@ -4,65 +4,46 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import type { ExecuteResult } from "../executor.ts";
-import { usesAgentFormatter } from "../formatters/utils.ts";
-import { mergeProjectResults, mergeResults, writeResultFileAsync } from "../output.ts";
+import type { ExecuteResult } from "../executor/types.ts";
+import type { GameOutputEntry } from "../types/game-output.ts";
 import type { JestResult } from "../types/jest-result.ts";
-import {
-	buildGroupedGameOutput,
-	countGroupedEntries,
-	formatGameOutputNotice,
-	parseGameOutput,
-	writeGameOutput,
-	writeGroupedGameOutput,
-} from "../utils/game-output.ts";
 import { writeTypecheckOnlySinksAsync, writeWorkspaceSinksAsync } from "./output-sinks.ts";
 import type { PendingEntry, TypeTestProject } from "./test-selection.ts";
 
-vi.mock(import("../formatters/utils"));
-vi.mock(import("../output"));
-vi.mock(import("../utils/game-output"));
-
-const mocks = {
-	buildGroupedGameOutput: vi.mocked(buildGroupedGameOutput),
-	countGroupedEntries: vi.mocked(countGroupedEntries),
-	formatGameOutputNotice: vi.mocked(formatGameOutputNotice),
-	mergeProjectResults: vi.mocked(mergeProjectResults),
-	mergeResults: vi.mocked(mergeResults),
-	parseGameOutput: vi.mocked(parseGameOutput),
-	usesAgentFormatter: vi.mocked(usesAgentFormatter),
-	writeGameOutput: vi.mocked(writeGameOutput),
-	writeGroupedGameOutput: vi.mocked(writeGroupedGameOutput),
-	writeResultFileAsync: vi.mocked(writeResultFileAsync),
-};
 const collator = new Intl.Collator("en");
+const OUTPUT_DIRECTORY = path.join("/workspace", ".jest-roblox", "output");
+const GAME_OUTPUT_ENTRY: GameOutputEntry = { message: "hi", messageType: 0, timestamp: 0 };
+const RAW_GAME_OUTPUT = JSON.stringify([GAME_OUTPUT_ENTRY]);
 
-function makeJestResult(label: string): JestResult {
-	return fromAny({ label, success: true });
+function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
+	return {
+		numFailedTests: 0,
+		numPassedTests: 1,
+		numPendingTests: 0,
+		numTodoTests: 0,
+		numTotalTests: 1,
+		startTime: 1000,
+		success: true,
+		testResults: [],
+		...overrides,
+	};
 }
 
-function makeExecuteResult(result = makeJestResult("runtime")): ExecuteResult {
-	return fromAny({ gameOutput: "raw-game-output", result });
+function makeExecuteResult(result = makeJestResult(), gameOutput?: string): ExecuteResult {
+	return fromAny({ gameOutput, result });
 }
 
 function makePending(packageName = "@halcyon/foo", project = "client"): PendingEntry {
 	return fromAny({ pkg: packageName, project: { displayName: project } });
 }
 
-function setupMocks(): void {
-	vi.clearAllMocks();
-	mocks.buildGroupedGameOutput.mockReturnValue([]);
-	mocks.countGroupedEntries.mockReturnValue(0);
-	mocks.formatGameOutputNotice.mockReturnValue("");
-	mocks.mergeProjectResults.mockReturnValue(
-		fromAny({ result: makeJestResult("merged-runtime") }),
-	);
-	mocks.mergeResults.mockImplementation(
-		(typeResult, runtimeResult) => runtimeResult ?? typeResult!,
-	);
-	mocks.parseGameOutput.mockReturnValue([]);
-	mocks.usesAgentFormatter.mockReturnValue(false);
-	mocks.writeResultFileAsync.mockResolvedValue();
+// memfs keys a path as written, so on Windows "/workspace/x" and its resolved
+// form are two different volume keys.
+function readSink(
+	volume: ReturnType<typeof createMemoryFileSystem>["volume"],
+	file: string,
+): string {
+	return String(volume.readFileSync(path.resolve(file), "utf8"));
 }
 
 describe(writeWorkspaceSinksAsync, () => {
@@ -71,9 +52,7 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		setupMocks();
-
-		const result = makeJestResult("runtime");
+		const result = makeJestResult({ numPassedTests: 7, numTotalTests: 7 });
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
@@ -88,29 +67,28 @@ describe(writeWorkspaceSinksAsync, () => {
 			}),
 		);
 
-		const directory = path.join("/workspace", ".jest-roblox", "output");
+		const resultPath = path.join(
+			OUTPUT_DIRECTORY,
+			"@scope-foo-bar--unit-client.jest-output.log",
+		);
 
-		const resultPath = path.join(directory, "@scope-foo-bar--unit-client.jest-output.log");
-
-		expect(volume.statSync(directory).isDirectory()).toBeTrue();
+		expect(volume.statSync(OUTPUT_DIRECTORY).isDirectory()).toBeTrue();
 		expect(volume.readFileSync(resultPath, "utf8")).toBe(JSON.stringify(result, null, 2));
 	});
 
 	it("should merge the runtime result only when an aggregate output path exists", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
-		setupMocks();
-
-		const typecheckResult = makeJestResult("typecheck");
-		const results = [makeExecuteResult()];
+		const typecheckResult = makeJestResult({ numPassedTests: 1, numTotalTests: 1 });
+		const runtime = makeJestResult({ numPassedTests: 2, numTotalTests: 2 });
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
 				fileSystem,
 				pending: [makePending()],
-				results,
+				results: [makeExecuteResult(runtime)],
 				runOptions: {
 					outputFile: "/workspace/all.json",
 					workspaceGameOutput: false,
@@ -123,27 +101,28 @@ describe(writeWorkspaceSinksAsync, () => {
 			}),
 		);
 
-		expect(mocks.mergeProjectResults).toHaveBeenCalledExactlyOnceWith(results);
-		expect(mocks.writeResultFileAsync).toHaveBeenCalledExactlyOnceWith(
-			"/workspace/all.json",
-			typecheckResult,
-			makeJestResult("merged-runtime"),
-			fileSystem,
-		);
+		expect(JSON.parse(readSink(volume, "/workspace/all.json"))).toStrictEqual({
+			numFailedTests: 0,
+			numPassedTests: 3,
+			numPendingTests: 0,
+			numTodoTests: 0,
+			numTotalTests: 3,
+			startTime: 1000,
+			success: true,
+			testResults: [],
+		});
 	});
 
 	it("should avoid merging runtime results when no aggregate output path exists", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupMocks();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
 				fileSystem,
-				pending: [makePending()],
-				results: [makeExecuteResult()],
+				pending: [],
+				results: [],
 				runOptions: { workspaceGameOutput: false, workspaceOutputFile: false },
 				typecheckByPackage: new Map(),
 				typecheckResult: undefined,
@@ -152,33 +131,21 @@ describe(writeWorkspaceSinksAsync, () => {
 			}),
 		);
 
-		expect(mocks.mergeProjectResults).not.toHaveBeenCalled();
-		expect(mocks.writeResultFileAsync).toHaveBeenCalledExactlyOnceWith(
-			undefined,
-			undefined,
-			undefined,
-			fileSystem,
-		);
+		expect(volume.toJSON()).toStrictEqual({});
 	});
 
 	it("should prefer the aggregate Game Output notice for human formatting", async () => {
 		expect.assertions(3);
 
-		const { fileSystem } = createMemoryFileSystem();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
-		setupMocks();
-
-		mocks.buildGroupedGameOutput.mockReturnValue(fromAny([{ entries: [{}] }]));
-		mocks.countGroupedEntries.mockReturnValue(1);
-		mocks.formatGameOutputNotice.mockImplementation((outputPath) => `notice:${outputPath}`);
-		mocks.parseGameOutput.mockReturnValue(fromAny([{}]));
 		const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
 				fileSystem,
 				pending: [makePending()],
-				results: [makeExecuteResult()],
+				results: [makeExecuteResult(makeJestResult(), RAW_GAME_OUTPUT)],
 				runOptions: {
 					formatters: ["default"],
 					gameOutput: "/workspace/all-game.json",
@@ -192,43 +159,32 @@ describe(writeWorkspaceSinksAsync, () => {
 			}),
 		);
 
-		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledExactlyOnceWith(
-			"/workspace/all-game.json",
-			expect.any(Array),
-			fileSystem,
+		const perPackagePath = path.join(OUTPUT_DIRECTORY, "@halcyon-foo--client.game-output.log");
+
+		expect(JSON.parse(readSink(volume, "/workspace/all-game.json"))).toStrictEqual([
+			{ entries: [GAME_OUTPUT_ENTRY], package: "@halcyon/foo", project: "client" },
+		]);
+		expect(JSON.parse(readSink(volume, perPackagePath))).toStrictEqual([GAME_OUTPUT_ENTRY]);
+		expect(consoleError).toHaveBeenCalledExactlyOnceWith(
+			"Game output (1 entries) written to /workspace/all-game.json",
 		);
-		expect(mocks.writeGameOutput).toHaveBeenCalledExactlyOnceWith(
-			path.join(
-				"/workspace",
-				".jest-roblox",
-				"output",
-				"@halcyon-foo--client.game-output.log",
-			),
-			expect.any(Array),
-			fileSystem,
-		);
-		expect(consoleError).toHaveBeenCalledExactlyOnceWith("notice:/workspace/all-game.json");
 	});
 
 	it("should prefer non-empty per-package notices for agent formatting", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
-		setupMocks();
-		mocks.usesAgentFormatter.mockReturnValue(true);
-		mocks.parseGameOutput.mockReturnValueOnce(fromAny([{}])).mockReturnValueOnce([]);
-		mocks.formatGameOutputNotice
-			.mockReturnValueOnce("")
-			.mockReturnValueOnce("notice:1")
-			.mockReturnValueOnce("");
 		const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
 				fileSystem,
 				pending: [makePending("@halcyon/foo"), makePending("@halcyon/bar")],
-				results: [makeExecuteResult(), makeExecuteResult()],
+				results: [
+					makeExecuteResult(makeJestResult(), RAW_GAME_OUTPUT),
+					makeExecuteResult(),
+				],
 				runOptions: {
 					formatters: ["agent"],
 					gameOutput: "/workspace/all-game.json",
@@ -242,8 +198,10 @@ describe(writeWorkspaceSinksAsync, () => {
 			}),
 		);
 
-		expect(mocks.formatGameOutputNotice).toHaveBeenCalledTimes(3);
-		expect(consoleError).toHaveBeenCalledExactlyOnceWith("notice:1");
+		expect(volume.existsSync(path.resolve("/workspace/all-game.json"))).toBeTrue();
+		expect(consoleError).toHaveBeenCalledExactlyOnceWith(
+			`Game output (1 entries) written to ${path.join(OUTPUT_DIRECTORY, "@halcyon-foo--client.game-output.log")}`,
+		);
 	});
 
 	it("should announce per-package output when it is the only active sink", async () => {
@@ -251,16 +209,13 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		setupMocks();
-		mocks.parseGameOutput.mockReturnValue(fromAny([{}]));
-		mocks.formatGameOutputNotice.mockReturnValue("package notice");
 		const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
 				fileSystem,
 				pending: [makePending()],
-				results: [makeExecuteResult()],
+				results: [makeExecuteResult(makeJestResult(), RAW_GAME_OUTPUT)],
 				runOptions: { workspaceGameOutput: true, workspaceOutputFile: false },
 				typecheckByPackage: new Map(),
 				typecheckResult: undefined,
@@ -269,7 +224,9 @@ describe(writeWorkspaceSinksAsync, () => {
 			}),
 		);
 
-		expect(consoleError).toHaveBeenCalledExactlyOnceWith("package notice");
+		expect(consoleError).toHaveBeenCalledExactlyOnceWith(
+			`Game output (1 entries) written to ${path.join(OUTPUT_DIRECTORY, "@halcyon-foo--client.game-output.log")}`,
+		);
 	});
 
 	it("should not announce an empty aggregate", async () => {
@@ -277,7 +234,6 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		setupMocks();
 		const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
 
 		await writeWorkspaceSinksAsync(
@@ -305,16 +261,13 @@ describe(writeWorkspaceSinksAsync, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		setupMocks();
-
-		mocks.formatGameOutputNotice.mockReturnValue("notice");
 		const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
 
 		await writeWorkspaceSinksAsync(
 			fromAny({
 				fileSystem,
 				pending: [makePending()],
-				results: [makeExecuteResult()],
+				results: [makeExecuteResult(makeJestResult(), RAW_GAME_OUTPUT)],
 				runOptions: {
 					gameOutput: "/workspace/all-game.json",
 					silent: true,
@@ -335,8 +288,6 @@ describe(writeWorkspaceSinksAsync, () => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
-
-		setupMocks();
 
 		const consoleError = vi.spyOn(console, "error").mockReturnValue(undefined);
 
@@ -359,11 +310,12 @@ describe(writeWorkspaceSinksAsync, () => {
 	it("should reject a workspace result without its matching pending entry", async () => {
 		expect.assertions(1);
 
-		setupMocks();
+		const { fileSystem } = createMemoryFileSystem();
 
 		await expect(
 			writeWorkspaceSinksAsync(
 				fromAny({
+					fileSystem,
 					pending: [],
 					results: [makeExecuteResult()],
 					runOptions: {
@@ -379,17 +331,33 @@ describe(writeWorkspaceSinksAsync, () => {
 			),
 		).rejects.toThrow("Pending entry missing for workspace result");
 	});
+
+	it("should reach the real filesystem when no seam is handed in", async () => {
+		expect.assertions(1);
+
+		await expect(
+			writeWorkspaceSinksAsync(
+				fromAny({
+					pending: [makePending()],
+					results: [makeExecuteResult()],
+					runOptions: { workspaceGameOutput: false, workspaceOutputFile: false },
+					typecheckByPackage: new Map(),
+					typecheckResult: undefined,
+					typeTestProjects: [],
+					workspaceRoot: "/workspace",
+				}),
+			),
+		).resolves.toBeUndefined();
+	});
 });
 
 describe(writeTypecheckOnlySinksAsync, () => {
 	it("should write one merged result for every type-test project when enabled", async () => {
-		expect.assertions(4);
+		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
-		setupMocks();
-
-		const typecheckResult = makeJestResult("typecheck");
+		const typecheckResult = makeJestResult({ numPassedTests: 4, numTotalTests: 4 });
 
 		const projects: Array<TypeTestProject> = [
 			{ pkg: "@halcyon/foo", project: "types" },
@@ -407,28 +375,18 @@ describe(writeTypecheckOnlySinksAsync, () => {
 			}),
 		);
 
-		expect(mocks.writeResultFileAsync).toHaveBeenCalledExactlyOnceWith(
-			"/workspace/all.json",
-			typecheckResult,
-			undefined,
-			fileSystem,
+		expect(readSink(volume, "/workspace/all.json")).toBe(
+			JSON.stringify(typecheckResult, null, 2),
 		);
-		expect(mocks.mergeResults.mock.calls).toStrictEqual([
-			[typecheckResult, undefined],
-			[typecheckResult, undefined],
-		]);
-
-		const outputDirectory = path.join("/workspace", ".jest-roblox", "output");
-
 		expect(
-			volume.readdirSync(outputDirectory).map(String).toSorted(collator.compare),
+			volume.readdirSync(OUTPUT_DIRECTORY).map(String).toSorted(collator.compare),
 		).toStrictEqual([
 			"@halcyon-foo--strict.jest-output.log",
 			"@halcyon-foo--types.jest-output.log",
 		]);
 		expect(
 			volume.readFileSync(
-				path.join(outputDirectory, "@halcyon-foo--types.jest-output.log"),
+				path.join(OUTPUT_DIRECTORY, "@halcyon-foo--types.jest-output.log"),
 				"utf8",
 			),
 		).toBe(JSON.stringify(typecheckResult, null, 2));
@@ -438,8 +396,6 @@ describe(writeTypecheckOnlySinksAsync, () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-
-		setupMocks();
 
 		await writeTypecheckOnlySinksAsync(
 			fromAny({
@@ -452,6 +408,6 @@ describe(writeTypecheckOnlySinksAsync, () => {
 			}),
 		);
 
-		expect(volume.existsSync(path.join("/workspace", ".jest-roblox", "output"))).toBeFalse();
+		expect(volume.existsSync(OUTPUT_DIRECTORY)).toBeFalse();
 	});
 });

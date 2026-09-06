@@ -4,8 +4,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import * as path from "node:path";
 import process from "node:process";
-import { WebSocketServer } from "ws";
-import type { WebSocket } from "ws";
+import type { WebSocket, WebSocketServer } from "ws";
 
 import { resolvePlaceFilePath } from "../config/schema.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
@@ -34,6 +33,8 @@ import {
 } from "./interface.ts";
 import { buildRunPayload, type RunPayload, type RunPayloadRequest } from "./plugin-payload.ts";
 import { discoverStudioPath } from "./studio-discovery.ts";
+import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
+import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
 
@@ -149,28 +150,6 @@ const resultMessageSchema = type({
 	"type": "'results'",
 });
 
-export interface StudioCliLaunchRequest {
-	/** Full Studio CLI argument vector (already absolute paths). */
-	args: Array<string>;
-	/** What launches Studio. Defaults to the real launcher. */
-	childProcess?: ChildProcessRunner;
-	/** Where the lock file is watched. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
-	/**
-	 * Show the Studio window during the run (`--headed`) instead of the
-	 * default hidden window. Maps to `windowsHide: !headed` in {@link
-	 * spawnStudio}.
-	 */
-	headed: boolean;
-	/**
-	 * Absolute path of the place Studio opens. Used only to clear a stale
-	 * `<place>.lock` a previously killed Studio could not remove itself.
-	 */
-	placeFile: string;
-	/** Absolute path to the Studio executable. */
-	studioPath: string;
-}
-
 /**
  * A launched Studio the host can kill once the result arrives (or on timeout).
  * The injected seam: unit tests return a fake that drives a canned result
@@ -208,17 +187,6 @@ export interface StudioCliOptions {
 	/** What launches Studio. Defaults to the real launcher. */
 	childProcess?: ChildProcessRunner;
 	/**
-	 * Result-server factory seam; defaults to an ephemeral-port `ws` server.
-	 *
-	 * This is the run's result channel: a loopback WebSocket the bootstrap
-	 * pushes the envelope back over the instant the run finishes (no file, no
-	 * polling, no ~100k print cap). The default binds 127.0.0.1 so it is never
-	 * exposed to the network, on port 0 so the OS picks a free port and
-	 * concurrent CLI processes never collide; that port is baked into the
-	 * bootstrap each run writes.
-	 */
-	createServer?: (() => WebSocketServer) | undefined;
-	/**
 	 * Studio-executable resolver seam; defaults to {@link discoverStudioPath}.
 	 */
 	discover?: ((override: string | undefined) => string) | undefined;
@@ -241,6 +209,29 @@ export interface StudioCliOptions {
 	studioPath?: string | undefined;
 	/** Run timeout in milliseconds. Defaults to 300000. */
 	timeout?: number | undefined;
+	webSocketServerFactory?: undefined | WebSocketServerFactory;
+}
+
+interface StudioCliLaunchRequest {
+	/** Full Studio CLI argument vector (already absolute paths). */
+	args: Array<string>;
+	/** What launches Studio. Defaults to the real launcher. */
+	childProcess?: ChildProcessRunner;
+	/** Where the lock file is watched. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
+	/**
+	 * Show the Studio window during the run (`--headed`) instead of the
+	 * default hidden window. Maps to `windowsHide: !headed` in {@link
+	 * spawnStudio}.
+	 */
+	headed: boolean;
+	/**
+	 * Absolute path of the place Studio opens. Used only to clear a stale
+	 * `<place>.lock` a previously killed Studio could not remove itself.
+	 */
+	placeFile: string;
+	/** Absolute path to the Studio executable. */
+	studioPath: string;
 }
 
 /** The place a run opens, plus where its scratch files are written. */
@@ -317,7 +308,6 @@ export class StudioCliBackend implements Backend {
 		options: BuildPlaceOptions,
 	) => Promise<BuildManifestArtifact>;
 	private readonly childProcess: ChildProcessRunner;
-	private readonly createServer: () => WebSocketServer;
 	private readonly discover: (override: string | undefined) => string;
 	private readonly fileSystem: FileSystem;
 	private readonly gracefulShutdownTimeout: number;
@@ -325,13 +315,12 @@ export class StudioCliBackend implements Backend {
 	private readonly launch: StudioCliLauncher;
 	private readonly studioPath: string | undefined;
 	private readonly timeout: number;
+	private readonly webSocketServerFactory: WebSocketServerFactory;
 
 	public readonly kind = "studio-cli" as const;
 
 	constructor(options: StudioCliOptions = {}) {
 		this.buildPlaceAsync = options.buildPlaceAsync ?? defaultBuildPlace;
-		this.createServer =
-			options.createServer ?? (() => new WebSocketServer({ host: "127.0.0.1", port: 0 }));
 		const fileSystem = options.fileSystem ?? nodeFileSystem;
 		this.discover =
 			options.discover ??
@@ -348,6 +337,7 @@ export class StudioCliBackend implements Backend {
 		this.launch = options.launch ?? spawnStudio;
 		this.studioPath = options.studioPath;
 		this.timeout = options.timeout ?? DEFAULT_STUDIO_CLI_TIMEOUT;
+		this.webSocketServerFactory = options.webSocketServerFactory ?? nodeWebSocketServerFactory;
 	}
 
 	public async runTestsAsync({
@@ -359,7 +349,7 @@ export class StudioCliBackend implements Backend {
 	}: BackendOptions): Promise<BackendResult> {
 		assertSerialJobs({ jobs, parallel, workStealing });
 		const place = await this.prepareRunPlaceAsync(jobs);
-		const server = this.createServer();
+		const server = this.webSocketServerFactory({ host: "127.0.0.1", port: 0 });
 		const session: StudioCliSession = { wasGracefulTeardownStarted: false };
 		try {
 			return await this.dispatchRunAsync(session, {

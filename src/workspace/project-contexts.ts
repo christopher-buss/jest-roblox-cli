@@ -15,10 +15,14 @@ import {
 	createSetupResolver,
 	type RojoResolverCache,
 } from "../config/setup-resolver.ts";
+import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
+import { nodeTsconfigReader } from "../executor/tsconfig-mappings.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
+import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
+import { nodeRojoResolverFactory } from "../utils/rojo-project-reader.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import type { PackageInfo } from "./package-resolver.ts";
 import { loadPackageRojoTree } from "./package-rojo-tree.ts";
@@ -29,6 +33,13 @@ export interface PackageContext {
 	info: PackageInfo;
 	pkgConfig: ResolvedConfig;
 	projects: Array<ResolvedProjectConfig>;
+}
+
+interface PackageReaders {
+	createResolver: RojoResolverFactory;
+	fileSystem: FileSystem;
+	rojoCache: RojoResolverCache;
+	tsconfigReader: TsconfigReader;
 }
 
 /**
@@ -82,25 +93,30 @@ export function applyProjectFilter(
 
 export async function resolvePackageContextsAsync({
 	cacheDirectory,
+	createResolver = nodeRojoResolverFactory,
 	fileSystem = nodeFileSystem,
 	loaded,
+	tsconfigReader = nodeTsconfigReader,
 }: {
 	cacheDirectory: string;
+	createResolver?: RojoResolverFactory;
 	/**
 	 * Where each package's rojo project is read from. Defaults to the real
 	 * one.
 	 */
 	fileSystem?: FileSystem;
 	loaded: Array<LoadedPackage>;
+	tsconfigReader?: TsconfigReader;
 }): Promise<Array<PackageContext>> {
 	const contexts: Array<PackageContext> = [];
 	// Packages commonly mount the same rojo project (a shared test project at
 	// the workspace root, or one package extending another's). Sharing the
 	// cache across the loop walks each distinct project file once.
 	const rojoCache = createRojoResolverCache();
+	const readers: PackageReaders = { createResolver, fileSystem, rojoCache, tsconfigReader };
 
 	for (const entry of loaded) {
-		const projects = await resolvePackageProjectsAsync(entry, rojoCache, fileSystem);
+		const projects = await resolvePackageProjectsAsync(entry, readers);
 		contexts.push({
 			cacheRoot: path.join(cacheDirectory, entry.info.name),
 			descriptor: entry.descriptor,
@@ -179,7 +195,7 @@ function applySetupResolver(
 function resolvePackageSetupFiles(
 	projects: Array<ResolvedProjectConfig>,
 	entry: LoadedPackage,
-	rojoCache: RojoResolverCache,
+	{ createResolver, rojoCache }: PackageReaders,
 ): void {
 	const hasSetupFiles = projects.some((project) => {
 		return (
@@ -194,6 +210,7 @@ function resolvePackageSetupFiles(
 	const resolveSetup = createSetupResolver({
 		cache: rojoCache,
 		configDirectory: entry.info.packageDirectory,
+		createResolver,
 		rojoConfigPath: entry.descriptor.rojoProjectPath,
 	});
 	for (const project of projects) {
@@ -203,9 +220,9 @@ function resolvePackageSetupFiles(
 
 async function resolvePackageProjectsAsync(
 	entry: LoadedPackage,
-	rojoCache: RojoResolverCache,
-	fileSystem: FileSystem,
+	readers: PackageReaders,
 ): Promise<Array<ResolvedProjectConfig>> {
+	const { fileSystem, tsconfigReader } = readers;
 	const { descriptor, info, pkgConfig } = entry;
 	const rojoTree = loadPackageRojoTree(
 		descriptor.rojoProjectPath,
@@ -223,8 +240,9 @@ async function resolvePackageProjectsAsync(
 		cwd: info.packageDirectory,
 		fileSystem,
 		rojoTree,
+		tsconfigReader,
 	});
 
-	resolvePackageSetupFiles(projects, entry, rojoCache);
+	resolvePackageSetupFiles(projects, entry, readers);
 	return projects;
 }

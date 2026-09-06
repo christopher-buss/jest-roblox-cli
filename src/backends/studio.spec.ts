@@ -4,8 +4,12 @@ import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import type { MockWebSocketServer as MockWebSocketServerType } from "../../test/mocks/mock-web-socket-server.ts";
-import type { MockWebSocket as MockWebSocketType } from "../../test/mocks/mock-web-socket.ts";
+import {
+	getLastCreatedServer,
+	MockWebSocketServer,
+	mockWebSocketServerFactory as webSocketServerFactory,
+} from "../../test/mocks/mock-web-socket-server.ts";
+import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { JestResult } from "../types/jest-result.ts";
@@ -15,12 +19,6 @@ import { StudioBackend } from "./studio.ts";
 // The backend's own default run timeout, which is what a run that does not
 // override it must tell the plugin to finish inside.
 const DEFAULT_STUDIO_TIMEOUT = 300_000;
-
-const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.hoisted(
-	async () => import("../../test/mocks/mock-ws"),
-);
-
-vi.mock(import("ws"), async () => fromPartial({ WebSocketServer: MockWebSocketServer }));
 
 // Mirrors the wire format StudioBackend emits in `attachSocket` — used by the
 // send-mock to assert the backend keeps sending the handshake fields.
@@ -43,10 +41,10 @@ const PROTOCOL_VERSION = 7;
  * never asked to run anything.
  */
 function connectPlugin(
-	wss: MockWebSocketServerType,
-	socket: MockWebSocketType = new MockWebSocket(),
+	wss: MockWebSocketServer,
+	socket: MockWebSocket = new MockWebSocket(),
 	hello: Record<string, unknown> = {},
-): MockWebSocketType {
+): MockWebSocket {
 	wss.emit("connection", socket);
 	socket.emit(
 		"message",
@@ -132,7 +130,7 @@ async function captureVmRequestAsync(
 	jobCount: number,
 	vmParallel: "auto" | number | undefined,
 ): Promise<typeof vmRequestSchema.infer> {
-	const backend = new StudioBackend({ port: 0 });
+	const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 	const jobs = Array.from({ length: jobCount }, (_unused, index) => job(`job-${String(index)}`));
 	const promise = backend.runTestsAsync({ jobs, vmParallel });
 
@@ -164,7 +162,7 @@ async function captureVmRequestAsync(
 	return captured!;
 }
 
-function connectAndReply(wss: MockWebSocketServerType, reply: ReplyOptions): MockWebSocketType {
+function connectAndReply(wss: MockWebSocketServer, reply: ReplyOptions): MockWebSocket {
 	const socket = new MockWebSocket();
 
 	socket.send.mockImplementation((data) => {
@@ -197,7 +195,7 @@ describe("protocol version handshake", () => {
 	it("should include protocolVersion in the run_tests payload", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -236,7 +234,7 @@ describe("protocol version handshake", () => {
 		// that ignored the request-side `protocolVersion`. Schema rejection on
 		// the response surfaces this as the standard "Invalid plugin message"
 		// error rather than running with no runtime injection.
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -271,7 +269,7 @@ describe("protocol version handshake", () => {
 		// stale runtime semantics.
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -307,7 +305,7 @@ describe("protocol version handshake", () => {
 		// suite — so asking all of them means the refusal decides the run.
 		expect.assertions(3);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -333,7 +331,7 @@ describe("protocol version handshake", () => {
 		// Fake timers: the grace window the CLI holds open for announcements is
 		// the only thing this waits on, and it is a real 750ms otherwise.
 		useSelectionTimers();
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 
 		const wss = getLastCreatedServer()!;
@@ -367,7 +365,7 @@ describe("protocol version handshake", () => {
 		expect.assertions(1);
 
 		useSelectionTimers();
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 
 		const wss = getLastCreatedServer()!;
@@ -383,7 +381,7 @@ describe("protocol version handshake", () => {
 	it("should throw a clear upgrade error on version_mismatch response", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -416,7 +414,7 @@ describe(StudioBackend, () => {
 	it("should send one envelope carrying a configs array with one entry per job", async () => {
 		expect.assertions(4);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync({
 			jobs: [
 				job("alpha", { testNamePattern: "alpha-pattern" }),
@@ -515,7 +513,7 @@ describe(StudioBackend, () => {
 		// shape.
 		expect.assertions(3);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync({
 			jobs: [wsJob("@scope/a", "a"), wsJob("@scope/b", "b")],
 		});
@@ -566,7 +564,7 @@ describe(StudioBackend, () => {
 		// `pkg`-less entry that would fail opaquely inside Studio.
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 
 		await expect(
 			backend.runTestsAsync({ jobs: [wsJob("@scope/a", "a"), job("b")] }),
@@ -576,7 +574,7 @@ describe(StudioBackend, () => {
 	it("should return rawResults in the same order as the submitted jobs", async () => {
 		expect.assertions(2);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync({ jobs: [job("alpha"), job("beta"), job("gamma")] });
 
 		const wss = getLastCreatedServer()!;
@@ -597,7 +595,7 @@ describe(StudioBackend, () => {
 	it("should populate timing.executionMs on the BackendResult", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -613,7 +611,7 @@ describe(StudioBackend, () => {
 
 		const fallback = JSON.stringify([{ message: "fallback", messageType: 0, timestamp: 0 }]);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -634,7 +632,7 @@ describe(StudioBackend, () => {
 			success: false,
 		});
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -646,7 +644,7 @@ describe(StudioBackend, () => {
 	it("should rethrow syntax errors when jestOutput is not valid JSON", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -659,7 +657,7 @@ describe(StudioBackend, () => {
 		expect.assertions(1);
 
 		useSelectionTimers();
-		const backend = new StudioBackend({ port: 0, timeout: 100 });
+		const backend = new StudioBackend({ port: 0, timeout: 100, webSocketServerFactory });
 
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 		await vi.runAllTimersAsync();
@@ -677,7 +675,7 @@ describe(StudioBackend, () => {
 		expect.assertions(1);
 
 		useSelectionTimers();
-		const backend = new StudioBackend({ port: 0, timeout: 100 });
+		const backend = new StudioBackend({ port: 0, timeout: 100, webSocketServerFactory });
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 
 		connectPlugin(getLastCreatedServer()!);
@@ -692,7 +690,7 @@ describe(StudioBackend, () => {
 	it("should throw when the plugin disconnects before sending results", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -755,7 +753,7 @@ describe(StudioBackend, () => {
 	it("should reject when the plugin sends a malformed message", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -775,7 +773,7 @@ describe(StudioBackend, () => {
 	it("should reject when the websocket emits an error", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -793,7 +791,7 @@ describe(StudioBackend, () => {
 	it("should reject when the server emits an error", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -808,7 +806,7 @@ describe(StudioBackend, () => {
 	it("should ignore messages whose requestId does not match", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -852,7 +850,7 @@ describe(StudioBackend, () => {
 	it("should reuse the same WebSocketServer across successive runTests calls", async () => {
 		expect.assertions(2);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 
 		const firstPromise = backend.runTestsAsync(singleJobOptions);
 		const firstWss = getLastCreatedServer()!;
@@ -871,7 +869,7 @@ describe(StudioBackend, () => {
 	it("should throw when the runtime returns more entries than jobs", async () => {
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
@@ -890,7 +888,7 @@ describe(StudioBackend, () => {
 		// partial run. Length check must be symmetric.
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync({ jobs: [job("alpha"), job("beta")] });
 
 		const wss = getLastCreatedServer()!;
@@ -910,7 +908,7 @@ describe(StudioBackend, () => {
 		// "returned 1 entries but request had N jobs". The error must win.
 		expect.assertions(2);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync({ jobs: [job("alpha"), job("beta")] });
 
 		const wss = getLastCreatedServer()!;
@@ -930,7 +928,7 @@ describe(StudioBackend, () => {
 	it("should terminate the underlying WebSocketServer via close()", async () => {
 		expect.assertions(2);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 		const wss = getLastCreatedServer()!;
 		connectAndReply(wss, {});
@@ -952,7 +950,7 @@ describe(StudioBackend, () => {
 		// CLI's process.exitCode-based shutdown whenever a Studio was detected.
 		expect.assertions(1);
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 		const wss = getLastCreatedServer()!;
 		const socket = connectAndReply(wss, {});
@@ -974,7 +972,7 @@ describe(StudioBackend, () => {
 			vi.useRealTimers();
 		});
 
-		const backend = new StudioBackend({ port: 0 });
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 		backend.closeAsync();
 

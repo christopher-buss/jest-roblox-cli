@@ -22,6 +22,9 @@ export default defineConfig({
 			"test/luau/**",
 			"test/coverage-pipeline/instrument-luau.spec.ts",
 		],
+		// Stryker activates one mutant per run through module state, so a
+		// worker cannot carry a module registry between files.
+		isolate: true,
 		// Threads over the vitest default (forks): no process spawn per worker.
 		// Safe since oxc-parser 0.146.0 — at 0.123.0 its native bindings hit a
 		// segfault (0xC0000005) in worker threads, which forced `forks` here.

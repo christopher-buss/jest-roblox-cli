@@ -2,7 +2,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { SourceSnippet } from "../source-mapper/index.ts";
+import { getSourceSnippet, type SourceSnippet } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult } from "../types/jest-result.ts";
 import {
 	EXEC_ERROR_RESULT,
@@ -15,21 +15,10 @@ import {
 	SNAPSHOT_FAILING_RESULT,
 	TIMED_OUT_RESULT,
 } from "./__fixtures__/results.ts";
+import type { SourceSnippetReader } from "./agent.ts";
 import { type AgentOptions, formatAgent, formatAgentMultiProject } from "./agent.ts";
 
-vi.mock(
-	import("../source-mapper"),
-	async (importOriginal: () => Promise<typeof import("../source-mapper")>) => {
-		const original = await importOriginal();
-		return {
-			...original,
-			getSourceSnippet: vi.fn<typeof original.getSourceSnippet>(original.getSourceSnippet),
-		};
-	},
-);
-
-const { getSourceSnippet } = await import("../source-mapper");
-const mockedGetSourceSnippet = vi.mocked(getSourceSnippet);
+const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>(getSourceSnippet);
 
 function createTestCase(overrides: Partial<TestCaseResult> = {}): TestCaseResult {
 	return {
@@ -643,6 +632,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		const output = formatAgent(result, {
+			getSourceSnippet: mockedGetSourceSnippet,
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -718,6 +708,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		const output = formatAgent(result, {
+			getSourceSnippet: mockedGetSourceSnippet,
 			maxFailures: 10,
 			rootDir: "D:\\project",
 			sourceMapper: fromPartial({
@@ -788,6 +779,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		const output = formatAgent(result, {
+			getSourceSnippet: mockedGetSourceSnippet,
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -853,6 +845,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		const output = formatAgent(result, {
+			getSourceSnippet: mockedGetSourceSnippet,
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -915,6 +908,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		const output = formatAgent(result, {
+			getSourceSnippet: mockedGetSourceSnippet,
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -964,6 +958,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		const output = formatAgent(result, {
+			getSourceSnippet: mockedGetSourceSnippet,
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -1014,6 +1009,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		const output = formatAgent(result, {
+			getSourceSnippet: mockedGetSourceSnippet,
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({
@@ -1063,6 +1059,7 @@ describe("formatAgent snippets", () => {
 		});
 
 		const output = formatAgent(result, {
+			getSourceSnippet: mockedGetSourceSnippet,
 			maxFailures: 10,
 			rootDir: "/project",
 			sourceMapper: fromPartial({

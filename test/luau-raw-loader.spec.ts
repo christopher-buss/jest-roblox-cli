@@ -1,30 +1,30 @@
 import * as fs from "node:fs";
-import { describe, expect, it, vi } from "vitest";
+import * as os from "node:os";
+import * as path from "node:path";
+import { pathToFileURL } from "node:url";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import type { load as LoadFunc, resolve as ResolveFunc } from "../loaders/luau-raw.mjs";
+import { buildIstanbulHtmlAssetsModule } from "../loaders/istanbul-html-assets.mjs";
+import { load, resolve } from "../loaders/luau-raw.mjs";
 
-vi.mock<typeof import("node:fs")>(import("node:fs"));
+function temporaryLuauUrl(content: string): string {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "luau-raw-"));
+	const luauPath = path.join(directory, "runner.luau");
+	fs.writeFileSync(luauPath, content, "utf-8");
+	onTestFinished(() => {
+		fs.rmSync(directory, { force: true, recursive: true });
+	});
 
-// The generator reads the installed `istanbul-reports` off disk, which the
-// `node:fs` mock above has just taken away. What the loader owes it is a
-// module whose source it emits verbatim, so a stub says that much.
-vi.mock(import("../loaders/istanbul-html-assets.mjs"), () => {
-	return {
-		buildIstanbulHtmlAssetsModule: () => "export default {};",
-		ISTANBUL_HTML_ASSETS_ID: "virtual:istanbul-html-assets" as const,
-	};
-});
-
-const { load, resolve }: { load: typeof LoadFunc; resolve: typeof ResolveFunc } =
-	await import("../loaders/luau-raw.mjs");
+	return pathToFileURL(luauPath).href;
+}
 
 function mockNextResolve(url: string) {
-	return vi.fn<Parameters<typeof ResolveFunc>[2]>().mockReturnValue({ url });
+	return vi.fn<Parameters<typeof resolve>[2]>().mockReturnValue({ url });
 }
 
 function mockNextLoad() {
 	return vi
-		.fn<Parameters<typeof LoadFunc>[2]>()
+		.fn<Parameters<typeof load>[2]>()
 		.mockReturnValue({ format: "module", source: "// original" });
 }
 
@@ -72,10 +72,8 @@ describe(load, () => {
 	it("should export file content as string for .luau files", () => {
 		expect.assertions(1);
 
-		vi.mocked(fs.readFileSync).mockReturnValue("print('hello')");
-
 		const result = load(
-			"file:///D:/project/src/runner.luau",
+			temporaryLuauUrl("print('hello')"),
 			{ format: "luau-raw" },
 			mockNextLoad(),
 		);
@@ -104,7 +102,7 @@ describe(load, () => {
 			mockNextLoad(),
 		);
 
-		expect(result.source).toBe("export default {};");
+		expect(result.source).toBe(buildIstanbulHtmlAssetsModule());
 	});
 
 	it("should delegate to nextLoad for other formats", () => {

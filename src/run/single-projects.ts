@@ -9,10 +9,17 @@ import { dedupeMounts } from "../config/projects.ts";
 import type { TypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolveLuauRoots } from "../coverage-pipeline/prepare.ts";
+import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { TYPE_TEST_PATTERN } from "./discovery.ts";
+
+export interface ImplicitProjectSeams {
+	fileSystem: FileSystem;
+	tsconfigReader: TsconfigReader;
+}
 
 /**
  * Map each compiled-Luau root to its Rojo mount (FS path ↔ DataModel path) via
@@ -56,9 +63,12 @@ export function deriveProjectMounts(
 export function buildImplicitProject(
 	config: ResolvedConfig,
 	rojoTree: RojoTreeNode | undefined,
+	{ fileSystem, tsconfigReader }: ImplicitProjectSeams,
 ): ResolvedProjectConfig {
 	const mounts =
-		rojoTree === undefined ? [] : deriveProjectMounts(resolveLuauRoots(config), rojoTree);
+		rojoTree === undefined
+			? []
+			: deriveProjectMounts(resolveLuauRoots(config, fileSystem, tsconfigReader), rojoTree);
 	if (rojoTree !== undefined && mounts.length === 0) {
 		throw new ConfigError(
 			"No test projects could be derived: none of the resolved luauRoots map to a $path mount in your Rojo project.",

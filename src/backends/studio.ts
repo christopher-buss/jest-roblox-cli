@@ -1,8 +1,7 @@
 import { type } from "arktype";
 import type buffer from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { WebSocketServer } from "ws";
-import type { WebSocket } from "ws";
+import type { WebSocket, WebSocketServer } from "ws";
 
 import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import { describeProjectCount } from "../progress/stages.ts";
@@ -15,6 +14,8 @@ import {
 } from "./plugin-connections.ts";
 import { buildRunPayload, type RunPayloadRequest } from "./plugin-payload.ts";
 import type { RunPayload } from "./plugin-payload.ts";
+import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
+import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 const DEFAULT_STUDIO_TIMEOUT = 300_000;
 
@@ -27,10 +28,10 @@ interface PreConnected {
 }
 
 interface StudioOptions {
-	createServer?: ((port: number) => WebSocketServer) | undefined;
 	port: number;
 	preConnected?: PreConnected | undefined;
 	timeout?: number | undefined;
+	webSocketServerFactory?: undefined | WebSocketServerFactory;
 }
 
 /**
@@ -94,9 +95,9 @@ interface PluginSocketAttachment {
 }
 
 export class StudioBackend implements Backend {
-	private readonly createServer: (port: number) => WebSocketServer;
 	private readonly port: number;
 	private readonly timeout: number;
+	private readonly webSocketServerFactory: WebSocketServerFactory;
 
 	private pool: PluginConnectionPool | undefined;
 	private preConnected: PreConnected | undefined;
@@ -107,7 +108,7 @@ export class StudioBackend implements Backend {
 	constructor(options: StudioOptions) {
 		this.port = options.port;
 		this.timeout = options.timeout ?? DEFAULT_STUDIO_TIMEOUT;
-		this.createServer = options.createServer ?? ((port) => new WebSocketServer({ port }));
+		this.webSocketServerFactory = options.webSocketServerFactory ?? nodeWebSocketServerFactory;
 		this.preConnected = options.preConnected;
 		// Adopted rather than rebuilt: an announcement is sent once per socket,
 		// so a pool built after the probe would see the probe's connections
@@ -139,7 +140,7 @@ export class StudioBackend implements Backend {
 		const pre = this.preConnected;
 		this.preConnected = undefined;
 
-		this.wss ??= pre?.server ?? this.createServer(this.port);
+		this.wss ??= pre?.server ?? this.webSocketServerFactory({ port: this.port });
 
 		// Announced here rather than in the executor, which wraps every backend
 		// alike and so would open the stage around the upload too: only a

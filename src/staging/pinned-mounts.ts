@@ -7,6 +7,8 @@ import picomatch from "picomatch";
 
 import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashBuffer } from "../utils/hash.ts";
@@ -22,6 +24,7 @@ import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 import { findStage } from "./stage.ts";
 
 export interface DemotePinnedMountsOptions {
+	childProcess?: ChildProcessRunner;
 	/**
 	 * Where the stand-ins are read and written. Defaults to the real
 	 * filesystem.
@@ -114,6 +117,7 @@ const DRIVE_LETTER = /^[A-Za-z]:/;
  * this pass through that number and through nothing else.
  */
 export async function demotePinnedMountsAsync({
+	childProcess = nodeChildProcessRunner,
 	fileSystem = nodeFileSystem,
 	projectDirectory,
 	projectJson,
@@ -131,18 +135,15 @@ export async function demotePinnedMountsAsync({
 
 	const declaredIgnores = readGlobIgnorePaths(project);
 	const pinned: Array<PinnedMount> = [];
-	collectPinnedMounts(stage, {
-		fileSystem,
-		ignored: isIgnored(declaredIgnores),
-		pinned,
-		scanned: new Set(),
-	});
+	const ignored = isIgnored(declaredIgnores);
+	collectPinnedMounts(stage, { fileSystem, ignored, pinned, scanned: new Set() });
 	if (pinned.length === 0) {
 		return projectJson;
 	}
 
 	fileSystem.mkdirSync(shadowDirectory, { recursive: true });
 	const ignores = await buildStandInsAsync(pinned, {
+		childProcess,
 		declaredIgnores,
 		fileSystem,
 		projectDirectory,
@@ -218,11 +219,13 @@ function foldPinnedClasses(xml: string): string {
  * so a Folder in that position costs the package nothing.
  */
 async function writeFolderShadowAsync({
+	childProcess,
 	fileSystem,
 	globIgnorePaths,
 	mount,
 	shadowDirectory,
 }: {
+	childProcess: ChildProcessRunner;
 	fileSystem: FileSystem;
 	globIgnorePaths: Array<string>;
 	mount: PinnedMount;
@@ -248,7 +251,7 @@ async function writeFolderShadowAsync({
 			tree: { $path: normalizeWindowsPath(mount.source) },
 		}),
 	);
-	await buildWithRojoAsync(projectFile, shadowFile);
+	await buildWithRojoAsync(projectFile, shadowFile, childProcess);
 
 	fileSystem.writeFileSync(
 		shadowFile,
@@ -266,11 +269,13 @@ async function writeFolderShadowAsync({
 async function standInForAsync(
 	mount: PinnedMount,
 	{
+		childProcess,
 		declaredIgnores,
 		fileSystem,
 		projectDirectory,
 		shadowDirectory,
 	}: {
+		childProcess: ChildProcessRunner;
 		declaredIgnores: Array<string>;
 		fileSystem: FileSystem;
 		projectDirectory: string;
@@ -281,6 +286,7 @@ async function standInForAsync(
 	// names a path relative to `projectDirectory`, which resolves against
 	// nothing in a project that lives in `shadowDirectory`.
 	const shadow = await writeFolderShadowAsync({
+		childProcess,
 		fileSystem,
 		globIgnorePaths: declaredIgnores,
 		mount,
@@ -308,6 +314,7 @@ async function standInForAsync(
 async function buildStandInsAsync(
 	pinned: Array<PinnedMount>,
 	options: {
+		childProcess: ChildProcessRunner;
 		declaredIgnores: Array<string>;
 		fileSystem: FileSystem;
 		projectDirectory: string;

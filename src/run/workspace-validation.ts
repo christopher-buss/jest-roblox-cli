@@ -4,6 +4,8 @@ import assert from "node:assert";
 
 import { isExplicitMultiShard } from "../backends/interface.ts";
 import type { Backend, CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import type { FileSystem } from "../utils/file-system.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
 import {
 	enumerateWorkspacePackages,
@@ -12,6 +14,12 @@ import {
 	type PackageInfo,
 	resolvePackages,
 } from "../workspace/package-resolver.ts";
+
+/** {@link EnumerationOptions} plus what `--affected-since` launches. */
+export interface WorkspacePackageSelection extends EnumerationOptions {
+	childProcess: ChildProcessRunner;
+	fileSystem: FileSystem;
+}
 
 interface WorkspaceValidationOk {
 	ok: true;
@@ -148,18 +156,18 @@ export function assertWorkspaceRunOptions({
 export function resolveWorkspacePackages(
 	cli: CliOptions,
 	workspaceRoot: string,
-	{ exclude, patterns }: EnumerationOptions = {},
+	{ childProcess, exclude, fileSystem, patterns }: WorkspacePackageSelection,
 ): Array<PackageInfo> {
 	if (cli.affectedSince !== undefined) {
 		return excludePackages(
-			getAffectedPackages(workspaceRoot, cli.affectedSince),
+			getAffectedPackages(workspaceRoot, cli.affectedSince, { childProcess, fileSystem }),
 			workspaceRoot,
 			exclude,
 		);
 	}
 
 	if (cli.packages === undefined) {
-		return enumerateWorkspacePackages(workspaceRoot, { exclude, patterns });
+		return enumerateWorkspacePackages(workspaceRoot, { exclude, fileSystem, patterns });
 	}
 
 	// One enumeration for the whole flag rather than one per name, which is what
@@ -167,7 +175,10 @@ export function resolveWorkspacePackages(
 	//
 	// No exclude here. Naming a package is asking for it, whatever a
 	// workspace-wide default says.
-	return resolvePackages(workspaceRoot, splitPackageNames(cli.packages), { patterns });
+	return resolvePackages(workspaceRoot, splitPackageNames(cli.packages), {
+		fileSystem,
+		patterns,
+	});
 }
 
 export function buildWorkspaceCredentials(

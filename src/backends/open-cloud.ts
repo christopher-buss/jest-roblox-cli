@@ -834,30 +834,6 @@ export function resolveOcaleMaxRetries(): number | undefined {
 	return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
-/**
- * Poll the streaming SortedMap until `isDone()` returns true, then perform
- * one final drain. Each newly-observed entry is forwarded to
- * `onPackageResult` and deleted from the map. Errors are swallowed so a
- * transient HTTP failure doesn't take down the test run — the final task
- * envelope still carries authoritative results.
- */
-export async function pollStreamingResultsAsync(
-	hooks: StreamingHooks,
-	isDone: () => boolean,
-): Promise<void> {
-	const pollMs = hooks.pollMs ?? DEFAULT_STREAM_POLL_MS;
-	const state: PollState = { warned: false };
-
-	while (!isDone()) {
-		await drainOnceAsync(hooks, state);
-		await sleepAsync(pollMs);
-	}
-
-	// Final pass to catch any entries written between the last drain and
-	// tasksDone.
-	await drainOnceAsync(hooks, state);
-}
-
 export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenCloudBackend {
 	return new OpenCloudBackend(credentials);
 }
@@ -1088,6 +1064,30 @@ function rethrowBootProbeFailure(
 		"--backend=studio-cli, to see why it will not load.",
 	];
 	throw new Error(lines.join("\n"), { cause: err });
+}
+
+/**
+ * Poll the streaming SortedMap until `isDone()` returns true, then perform
+ * one final drain. Each newly-observed entry is forwarded to
+ * `onPackageResult` and deleted from the map. Errors are swallowed so a
+ * transient HTTP failure doesn't take down the test run — the final task
+ * envelope still carries authoritative results.
+ */
+async function pollStreamingResultsAsync(
+	hooks: StreamingHooks,
+	isDone: () => boolean,
+): Promise<void> {
+	const pollMs = hooks.pollMs ?? DEFAULT_STREAM_POLL_MS;
+	const state: PollState = { warned: false };
+
+	while (!isDone()) {
+		await drainOnceAsync(hooks, state);
+		await sleepAsync(pollMs);
+	}
+
+	// Final pass to catch any entries written between the last drain and
+	// tasksDone.
+	await drainOnceAsync(hooks, state);
 }
 
 // Open Cloud's wording when a task's return value exceeds its 4 MiB cap. It

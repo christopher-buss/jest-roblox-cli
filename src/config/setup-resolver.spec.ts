@@ -1,35 +1,20 @@
-import { RojoResolver } from "@isentinel/rojo-utils";
 import { fromAny } from "@total-typescript/shoehorn";
 
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
 import { createRojoResolverCache, createSetupResolver } from "./setup-resolver.ts";
-
-// Explicit factory, not automock: rojo-utils' barrel re-exports RojoResolver, and
-// vitest automock can't mock through re-export barrels when resolving source
-// (vitest #4092). Keep the real exports, replace only RojoResolver.fromPath.
-// The coercion helper is imported inside the factory: vi.mock is hoisted above
-// the file's imports, so it loads lazily rather than using the top-level binding
-// (also avoids shadowing the `fromAny` the tests below use).
-vi.mock(import("@isentinel/rojo-utils"), async () => {
-	const { fromAny: coerce } = await import("@total-typescript/shoehorn");
-	// `importOriginal()` types every re-export as possibly-undefined, which
-	// `exactOptionalPropertyTypes` refuses to spread into the module shape.
-	// `importActual` hands back the full module type instead.
-	const actual =
-		await vi.importActual<typeof import("@isentinel/rojo-utils")>("@isentinel/rojo-utils");
-	return {
-		...actual,
-		RojoResolver: coerce({ fromPath: vi.fn<typeof RojoResolver.fromPath>() }),
-	} satisfies typeof import("@isentinel/rojo-utils");
-});
 
 const CONFIG_DIRECTORY = "/project";
 const ROJO_CONFIG_PATH = "/project/default.project.json";
 
-function mockRojoResolver(mapping: Record<string, Array<string>>) {
-	vi.mocked(RojoResolver.fromPath).mockReturnValue(
+const createResolver = vi.fn<RojoResolverFactory>();
+
+function stubRojoResolver(mapping: Record<string, Array<string>>) {
+	createResolver.mockReturnValue(
 		fromAny({
 			getRbxPathFromFilePath(filePath: string) {
 				return mapping[filePath];
@@ -41,6 +26,7 @@ function mockRojoResolver(mapping: Record<string, Array<string>>) {
 function makeResolver(overrides: Partial<Parameters<typeof createSetupResolver>[0]> = {}) {
 	return createSetupResolver({
 		configDirectory: CONFIG_DIRECTORY,
+		createResolver,
 		rojoConfigPath: ROJO_CONFIG_PATH,
 		...overrides,
 	});
@@ -65,12 +51,27 @@ function logicalNodeModulesPath(specifier: string): string {
 	return path.resolve(CONFIG_DIRECTORY, "node_modules", specifier);
 }
 
+function writeRealProject(files: Record<string, string>): string {
+	const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "setup-resolver-")));
+	onTestFinished(() => {
+		fs.rmSync(directory, { force: true, recursive: true });
+	});
+
+	for (const [relativePath, contents] of Object.entries(files)) {
+		const full = path.join(directory, relativePath);
+		fs.mkdirSync(path.dirname(full), { recursive: true });
+		fs.writeFileSync(full, contents);
+	}
+
+	return directory;
+}
+
 describe(createSetupResolver, () => {
 	describe("relative paths", () => {
 		it("should resolve a relative path with .ts extension", () => {
 			expect.assertions(1);
 
-			mockRojoResolver({
+			stubRojoResolver({
 				[path.resolve(CONFIG_DIRECTORY, "./src/client/test-setup.ts")]: [
 					"ReplicatedStorage",
 					"client",
@@ -87,7 +88,7 @@ describe(createSetupResolver, () => {
 		it("should resolve a relative path without extension", () => {
 			expect.assertions(1);
 
-			mockRojoResolver({
+			stubRojoResolver({
 				[path.resolve(CONFIG_DIRECTORY, "./src/client/test-setup")]: [
 					"ReplicatedStorage",
 					"client",
@@ -105,7 +106,7 @@ describe(createSetupResolver, () => {
 			expect.assertions(1);
 
 			const nestedConfigDirectory = "/project/config";
-			mockRojoResolver({
+			stubRojoResolver({
 				[path.resolve(nestedConfigDirectory, "../src/client/test-setup")]: [
 					"ReplicatedStorage",
 					"client",
@@ -122,7 +123,7 @@ describe(createSetupResolver, () => {
 		it("should resolve paths in server directory", () => {
 			expect.assertions(1);
 
-			mockRojoResolver({
+			stubRojoResolver({
 				[path.resolve(CONFIG_DIRECTORY, "./src/server/bootstrap")]: [
 					"ServerScriptService",
 					"server",
@@ -139,7 +140,7 @@ describe(createSetupResolver, () => {
 		it("should throw when relative path has no rojo tree match", () => {
 			expect.assertions(1);
 
-			mockRojoResolver({});
+			stubRojoResolver({});
 			const resolve = makeResolver();
 
 			expect(() => resolve("./src/unknown/test-setup")).toThrowWithMessage(
@@ -153,7 +154,7 @@ describe(createSetupResolver, () => {
 		it("should resolve a scoped package specifier", () => {
 			expect.assertions(1);
 
-			mockRojoResolver({
+			stubRojoResolver({
 				[logicalNodeModulesPath("@rbxts/test-utils/out/setup")]: [
 					"ReplicatedStorage",
 					"rbxts_include",
@@ -179,7 +180,7 @@ describe(createSetupResolver, () => {
 		it("should resolve package specifier with extension probing", () => {
 			expect.assertions(1);
 
-			mockRojoResolver({
+			stubRojoResolver({
 				[logicalNodeModulesPath("@shared/test-utils/out/setup")]: [
 					"ReplicatedStorage",
 					"rbxts_include",
@@ -205,7 +206,7 @@ describe(createSetupResolver, () => {
 		it("should throw when package cannot be resolved", () => {
 			expect.assertions(1);
 
-			mockRojoResolver({});
+			stubRojoResolver({});
 			const resolve = makeResolver({
 				resolveModule: fakeModuleResolver({}),
 			});
@@ -219,7 +220,7 @@ describe(createSetupResolver, () => {
 		it("should throw when resolved package path has no rojo tree match", () => {
 			expect.assertions(1);
 
-			mockRojoResolver({});
+			stubRojoResolver({});
 			const resolve = makeResolver({
 				resolveModule: fakeModuleResolver({
 					"@some/unknown-pkg/setup": "/resolved/path/irrelevant.lua",
@@ -232,13 +233,35 @@ describe(createSetupResolver, () => {
 			);
 		});
 	});
+
+	it("should walk the real rojo project when no factory is given", () => {
+		expect.assertions(1);
+
+		const directory = writeRealProject({
+			"default.project.json": JSON.stringify({
+				name: "Game",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { $path: "src" },
+				},
+			}),
+			"src/test-setup.luau": "return {}",
+		});
+
+		const resolve = createSetupResolver({
+			configDirectory: directory,
+			rojoConfigPath: path.join(directory, "default.project.json"),
+		});
+
+		expect(resolve("./src/test-setup.luau")).toBe("ReplicatedStorage/test-setup");
+	});
 });
 
 describe("resolver caching", () => {
 	it("should build one resolver per rojo config path when a cache is shared", () => {
 		expect.assertions(3);
 
-		mockRojoResolver({
+		stubRojoResolver({
 			[path.resolve(CONFIG_DIRECTORY, "./setup.luau")]: ["ReplicatedStorage", "setup"],
 		});
 		const cache = createRojoResolverCache();
@@ -246,7 +269,7 @@ describe("resolver caching", () => {
 		const first = makeResolver({ cache });
 		const second = makeResolver({ cache });
 
-		expect(RojoResolver.fromPath).toHaveBeenCalledOnce();
+		expect(createResolver).toHaveBeenCalledOnce();
 		expect(first("./setup.luau")).toBe("ReplicatedStorage/setup");
 		expect(second("./setup.luau")).toBe("ReplicatedStorage/setup");
 	});
@@ -254,23 +277,23 @@ describe("resolver caching", () => {
 	it("should build a resolver per call when no cache is given", () => {
 		expect.assertions(1);
 
-		mockRojoResolver({});
+		stubRojoResolver({});
 
 		makeResolver();
 		makeResolver();
 
-		expect(RojoResolver.fromPath).toHaveBeenCalledTimes(2);
+		expect(createResolver).toHaveBeenCalledTimes(2);
 	});
 
 	it("should key the cache by rojo config path", () => {
 		expect.assertions(1);
 
-		mockRojoResolver({});
+		stubRojoResolver({});
 		const cache = createRojoResolverCache();
 
 		makeResolver({ cache });
 		makeResolver({ cache, rojoConfigPath: "/project/other.project.json" });
 
-		expect(RojoResolver.fromPath).toHaveBeenCalledTimes(2);
+		expect(createResolver).toHaveBeenCalledTimes(2);
 	});
 });

@@ -2,8 +2,7 @@ import { resolveCredentials } from "@isentinel/roblox-runner";
 import type { RunnerCredentials } from "@isentinel/roblox-runner";
 
 import process from "node:process";
-import { WebSocketServer } from "ws";
-import type { WebSocket } from "ws";
+import type { WebSocket, WebSocketServer } from "ws";
 
 import type { CliOptions, ResolvedConfig } from "../config/schema.ts";
 import { LuauScriptError } from "../reporter/parser.ts";
@@ -24,6 +23,8 @@ import {
 import { createStudioCliBackend } from "./studio-cli.ts";
 import { createStudioBackend, STUDIO_PROTOCOL_VERSION } from "./studio.ts";
 import { VM_HOST_POOL_SIZE } from "./vm-parallel.ts";
+import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
+import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 const ENV_PREFIX = "JEST_";
 
@@ -50,17 +51,30 @@ export interface ProbeDetected {
 	socket: WebSocket;
 }
 
+export type ProbeOutcome = ProbeDetected | ProbeIncompatible | ProbeResult;
+
+export type StudioProbe = (
+	port: number,
+	timeoutMs: number,
+	webSocketServerFactory: WebSocketServerFactory,
+) => Promise<ProbeOutcome>;
+
 /**
  * Studio is listening, but nothing on the port speaks this CLI's protocol —
  * typically several installed plugin copies, all of them stale.
  */
-export interface ProbeIncompatible {
+interface ProbeIncompatible {
 	candidates: Array<PluginCandidate>;
 	detected: "incompatible";
 	server: WebSocketServer;
 }
 
-export type ProbeOutcome = ProbeDetected | ProbeIncompatible | ProbeResult;
+interface BackendResolutionInput {
+	cli: CliOptions;
+	config: ResolvedConfig;
+	probe: StudioProbe;
+	webSocketServerFactory: WebSocketServerFactory;
+}
 
 export class StudioWithFallback implements Backend {
 	private readonly credentials: RunnerCredentials;
@@ -106,12 +120,10 @@ export class StudioWithFallback implements Backend {
 export async function probeStudioPluginAsync(
 	port: number,
 	timeoutMs: number,
-	createServer: (port: number) => WebSocketServer = (wsPort) => {
-		return new WebSocketServer({ port: wsPort });
-	},
+	webSocketServerFactory: WebSocketServerFactory,
 ): Promise<ProbeOutcome> {
 	return new Promise((resolve) => {
-		const wss = createServer(port);
+		const wss = webSocketServerFactory({ port });
 		const pool = new PluginConnectionPool(wss);
 
 		// A server that failed to bind will never see a plugin. Abort the wait
@@ -148,9 +160,10 @@ export async function probeStudioPluginAsync(
 export async function resolveBackendAsync(
 	cli: CliOptions,
 	config: ResolvedConfig,
-	probe: (port: number, timeoutMs: number) => Promise<ProbeOutcome> = probeStudioPluginAsync,
+	probe: StudioProbe = probeStudioPluginAsync,
+	webSocketServerFactory: WebSocketServerFactory = nodeWebSocketServerFactory,
 ): Promise<Backend> {
-	const backend = await resolveBackendKindAsync(cli, config, probe);
+	const backend = await resolveBackendKindAsync({ cli, config, probe, webSocketServerFactory });
 	assertVmParallel(backend, config.experimentalVmParallel);
 	return backend;
 }
@@ -178,9 +191,17 @@ function buildCredentials(cli: CliOptions, config: ResolvedConfig): RunnerCreden
  * The backend an explicit `backend:` setting selects, or undefined when the
  * config leaves the choice to auto-detection.
  */
-function createExplicitBackend(cli: CliOptions, config: ResolvedConfig): Backend | undefined {
+function createExplicitBackend(
+	cli: CliOptions,
+	config: ResolvedConfig,
+	webSocketServerFactory: WebSocketServerFactory,
+): Backend | undefined {
 	if (config.backend === "studio") {
-		return createStudioBackend({ port: config.port, timeout: config.timeout });
+		return createStudioBackend({
+			port: config.port,
+			timeout: config.timeout,
+			webSocketServerFactory,
+		});
 	}
 
 	if (config.backend === "studio-cli") {
@@ -205,7 +226,11 @@ function createExplicitBackend(cli: CliOptions, config: ResolvedConfig): Backend
  * probe's server, socket and pool rather than opening its own, so the plugin is
  * not asked to connect a second time.
  */
-function attachStudioBackend(probeResult: ProbeDetected, config: ResolvedConfig): Backend {
+function attachStudioBackend(
+	probeResult: ProbeDetected,
+	config: ResolvedConfig,
+	webSocketServerFactory: WebSocketServerFactory,
+): Backend {
 	return createStudioBackend({
 		port: config.port,
 		preConnected: {
@@ -214,6 +239,7 @@ function attachStudioBackend(probeResult: ProbeDetected, config: ResolvedConfig)
 			socket: probeResult.socket,
 		},
 		timeout: config.timeout,
+		webSocketServerFactory,
 	});
 }
 
@@ -254,13 +280,10 @@ async function resolveAutoBackendAsync({
 	cli,
 	config,
 	probe,
-}: {
-	cli: CliOptions;
-	config: ResolvedConfig;
-	probe: (port: number, timeoutMs: number) => Promise<ProbeOutcome>;
-}): Promise<Backend> {
+	webSocketServerFactory,
+}: BackendResolutionInput): Promise<Backend> {
 	const credentials = tryBuildCredentials(cli, config);
-	const probeResult = await probe(config.port, 500);
+	const probeResult = await probe(config.port, 500, webSocketServerFactory);
 
 	if (probeResult.detected === "incompatible") {
 		throw incompatiblePluginError(probeResult);
@@ -268,7 +291,7 @@ async function resolveAutoBackendAsync({
 
 	if (probeResult.detected) {
 		process.stderr.write("Backend: studio (plugin detected)\n");
-		const studio = attachStudioBackend(probeResult, config);
+		const studio = attachStudioBackend(probeResult, config, webSocketServerFactory);
 		return credentials === undefined ? studio : new StudioWithFallback(studio, credentials);
 	}
 
@@ -287,17 +310,14 @@ async function resolveAutoBackendAsync({
 	throw new Error(NO_BACKEND_MESSAGE);
 }
 
-async function resolveBackendKindAsync(
-	cli: CliOptions,
-	config: ResolvedConfig,
-	probe: (port: number, timeoutMs: number) => Promise<ProbeOutcome>,
-): Promise<Backend> {
-	const explicit = createExplicitBackend(cli, config);
+async function resolveBackendKindAsync(input: BackendResolutionInput): Promise<Backend> {
+	const { cli, config, webSocketServerFactory } = input;
+	const explicit = createExplicitBackend(cli, config, webSocketServerFactory);
 	if (explicit !== undefined) {
 		return explicit;
 	}
 
-	return resolveAutoBackendAsync({ cli, config, probe });
+	return resolveAutoBackendAsync(input);
 }
 
 /**

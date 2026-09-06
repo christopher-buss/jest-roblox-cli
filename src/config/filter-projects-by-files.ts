@@ -14,17 +14,6 @@ export interface ProjectFileMatch {
 	project: ResolvedProjectConfig;
 }
 
-/** One cli file a set of include roots owns, in both forms a caller needs. */
-export interface MatchedFile {
-	/** Absolute and posix-normalized, ready to hand straight to discovery. */
-	absolute: string;
-	/**
-	 * The cli argument as typed. Multi mode re-resolves it against each
-	 * project's own `rootDir`, which is not always the base it matched against.
-	 */
-	original: string;
-}
-
 /**
  * A project together with the directory its include patterns resolve against.
  *
@@ -52,6 +41,17 @@ export interface ProjectFileMatching {
 	fileBase: string;
 	files: ReadonlyArray<string>;
 	scopes: ReadonlyArray<ProjectScope>;
+}
+
+/** One cli file a set of include roots owns, in both forms a caller needs. */
+interface MatchedFile {
+	/** Absolute and posix-normalized, ready to hand straight to discovery. */
+	absolute: string;
+	/**
+	 * The cli argument as typed. Multi mode re-resolves it against each
+	 * project's own `rootDir`, which is not always the base it matched against.
+	 */
+	original: string;
 }
 
 export function collectProjectRoots(

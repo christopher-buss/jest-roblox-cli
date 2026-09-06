@@ -4,7 +4,7 @@ import process from "node:process";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
 import type { RawCoverageData } from "./coverage-pipeline/types.ts";
-import type { ExecuteResult } from "./executor.ts";
+import type { ExecuteResult } from "./executor/types.ts";
 import { mergeSnapshotSummaries } from "./formatters/formatter.ts";
 import {
 	formatAnnotations,
@@ -14,15 +14,19 @@ import {
 import { writeJsonFileAsync } from "./formatters/json.ts";
 import { findFormatterOptions, usesAgentFormatter } from "./formatters/utils.ts";
 import {
+	type CoveragePipeline,
+	defaultCoveragePipeline,
 	extractCoverageDisplayFilter,
 	extractCoveragePackages,
 	printFinalStatus,
 	processCoverage,
 } from "./reporting/coverage-report.ts";
 import {
+	defaultResultRenderer,
 	type MultiOutputContext,
 	printMultiResults,
 	printSingleResults,
+	type ResultRenderer,
 } from "./reporting/print.ts";
 import { mergeJestTotals } from "./results/merge.ts";
 import type {
@@ -47,6 +51,21 @@ import {
 	writeGroupedGameOutput,
 } from "./utils/game-output.ts";
 
+/** The collaborators an output run reaches the disk and the screen through. */
+export interface OutputDependencies {
+	coveragePipeline?: CoveragePipeline;
+	fileSystem?: FileSystem;
+	renderer?: ResultRenderer;
+}
+
+type ResolvedDependencies = Required<OutputDependencies>;
+
+const NODE_OUTPUT_DEPENDENCIES: ResolvedDependencies = {
+	coveragePipeline: defaultCoveragePipeline,
+	fileSystem: nodeFileSystem,
+	renderer: defaultResultRenderer,
+};
+
 /**
  * Per-project fields the shared Jest merge doesn't know about — the timing
  * splits, the snapshot-write tally, and the raw coverage fold.
@@ -56,6 +75,13 @@ interface ProjectExtras {
 	setupMs: number;
 	snapshotWriteFailures: number;
 	testsMs: number;
+}
+
+interface MultiRunSinks {
+	hintsShown: boolean;
+	merged: ExecuteResult;
+	projectResults: Array<ProjectResult>;
+	typecheckResult: JestResult | undefined;
 }
 
 /** The pass/fail inputs shared by the single- and multi-run tails. */
@@ -122,36 +148,10 @@ export async function writeResultFileAsync(
 
 export async function outputSingleResultAsync(
 	config: ResolvedConfig,
-	{
-		coverageDisplayFilter: agentTextFilter,
-		coverageMs,
-		runtimeResult,
-		stagingMs,
-		typecheckResult,
-	}: SingleRunResult,
-	fileSystem: FileSystem = nodeFileSystem,
+	result: SingleRunResult,
+	dependencies: OutputDependencies = {},
 ): Promise<number> {
-	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
-	const isCoveragePassed = reportSingleRun(config, {
-		agentTextFilter,
-		coverageMs,
-		mergedResult,
-		runtimeResult,
-		stagingMs,
-		typecheckResult,
-	});
-
-	await writeSingleRunSinksAsync(fileSystem, config, {
-		mergedResult,
-		runtimeResult,
-		typecheckResult,
-	});
-
-	return emitFinalStatus(config, {
-		isCoveragePassed,
-		mergedResult,
-		snapshotWriteFailures: runtimeResult?.snapshotWriteFailures,
-	});
+	return emitSingleResultAsync(config, result, resolveDependencies(dependencies));
 }
 
 export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResult {
@@ -187,41 +187,25 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 export async function outputMultiResultAsync(
 	rootConfig: ResolvedConfig,
 	result: MultiRunResult | WorkspaceRunResult,
-	fileSystem: FileSystem = nodeFileSystem,
+	dependencies: OutputDependencies = {},
 ): Promise<number> {
-	const { coverageMs, mode, projectResults, stagingMs, typecheckResult } = result;
+	const resolved = resolveDependencies(dependencies);
+	const { coverageMs, projectResults, stagingMs, typecheckResult } = result;
 	const config = buildReportConfig(rootConfig, result);
 
 	if (typecheckResult !== undefined && projectResults.length === 0) {
-		return outputSingleResultAsync(
+		return emitSingleResultAsync(
 			config,
 			{ coverageMs, mode: "single", stagingMs, typecheckResult },
-			fileSystem,
+			resolved,
 		);
 	}
 
-	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
-	const mergedResult = mergeResults(typecheckResult, merged.result);
-	const isCoveragePassed = emitMultiResults(toMultiOutputContext(config, result, merged), result);
+	return emitMultiResultAsync(config, result, resolved);
+}
 
-	// Workspace runs write their own result + Game Output sinks (the runner
-	// has package identity, the workspace root, and the consensus-resolved
-	// paths); here we only handle the single-config `multi` case.
-	if (mode === "multi") {
-		await writeResultFileAsync(config.outputFile, typecheckResult, merged.result, fileSystem);
-
-		writeAggregatedGameOutput(fileSystem, config, projectResults, {
-			hintsShown: !mergedResult.success,
-		});
-	}
-
-	runGitHubActionsFormatter(fileSystem, config, mergedResult, merged.sourceMapper);
-
-	return emitFinalStatus(config, {
-		isCoveragePassed,
-		mergedResult,
-		snapshotWriteFailures: merged.snapshotWriteFailures,
-	});
+function resolveDependencies(dependencies: OutputDependencies): ResolvedDependencies {
+	return { ...NODE_OUTPUT_DEPENDENCIES, ...dependencies };
 }
 
 // In agent mode the run summary must survive an agent trimming the tail of the
@@ -275,6 +259,7 @@ function reportSingleRun(
 		stagingMs,
 		typecheckResult,
 	}: SingleRunReport,
+	{ coveragePipeline, renderer }: ResolvedDependencies,
 ): boolean {
 	return emitResultsAndCoverage({
 		config,
@@ -283,6 +268,7 @@ function reportSingleRun(
 			printSingleResults(config, {
 				coverageMs,
 				mergedResult,
+				renderer,
 				runtimeResult,
 				stagingMs,
 				typecheckResult,
@@ -293,6 +279,7 @@ function reportSingleRun(
 				agentTextFilter,
 				config,
 				coverageData: runtimeResult?.coverageData,
+				pipeline: coveragePipeline,
 			});
 		},
 	});
@@ -398,6 +385,37 @@ function emitFinalStatus(
 	return isPassed ? 0 : 1;
 }
 
+async function emitSingleResultAsync(
+	config: ResolvedConfig,
+	{
+		coverageDisplayFilter: agentTextFilter,
+		coverageMs,
+		runtimeResult,
+		stagingMs,
+		typecheckResult,
+	}: SingleRunResult,
+	dependencies: ResolvedDependencies,
+): Promise<number> {
+	const mergedResult = mergeResults(typecheckResult, runtimeResult?.result);
+	const isCoveragePassed = reportSingleRun(
+		config,
+		{ agentTextFilter, coverageMs, mergedResult, runtimeResult, stagingMs, typecheckResult },
+		dependencies,
+	);
+
+	await writeSingleRunSinksAsync(dependencies.fileSystem, config, {
+		mergedResult,
+		runtimeResult,
+		typecheckResult,
+	});
+
+	return emitFinalStatus(config, {
+		isCoveragePassed,
+		mergedResult,
+		snapshotWriteFailures: runtimeResult?.snapshotWriteFailures,
+	});
+}
+
 function mergeProjectExtras(results: Array<ExecuteResult>): ProjectExtras {
 	let coverageData: RawCoverageData | undefined;
 	let setupMs = 0;
@@ -433,115 +451,6 @@ function mergeProjectTiming(
 		totalMs: Math.max(...results.map((entry) => entry.timing.totalMs)),
 		uploadMs: firstResult.timing.uploadMs,
 	};
-}
-
-// Derives the config the reporter and print layer run under for
-// multi/workspace.
-//
-// A workspace run has no config of its own: the file at cwd is bootstrap only,
-// read for `workspace.root` / `workspace.packages` and nothing else, so passing
-// it through here made the report universe, the formatters, the sink paths and
-// the exit code depend on whichever config happened to sit at the invocation
-// directory. Workspace therefore renders off the defaults plus the runner's
-// consensus-resolved `reportOptions`, and `collectCoverage` follows whether a
-// package actually produced coverage — the opt-in is per package, so there is
-// no run-level flag to read.
-//
-// `reportOptions` is absent on every result that never reached the runner: a
-// validation bail, no affected packages, and a run that tested nothing. Dispatch
-// returns all three before the output layer sees them — the bail on its
-// `validationExitCode`, the other two on having neither project results nor a
-// Type Test result. The defaults keep those unreachable cases honest instead of
-// reopening the fallback.
-function buildReportConfig(
-	rootConfig: ResolvedConfig,
-	result: MultiRunResult | WorkspaceRunResult,
-): ResolvedConfig {
-	if (result.mode === "workspace") {
-		return {
-			...DEFAULT_CONFIG,
-			// Only drives the PASS/FAIL badge and the agent-mode print ordering:
-			// the reports themselves come off the per-package gates, each with
-			// its own reporters, directory, and universe.
-			collectCoverage: (result.coveragePackages?.length ?? 0) > 0,
-			formatters: ["default"],
-			...result.reportOptions,
-		};
-	}
-
-	const config: ResolvedConfig = { ...rootConfig };
-	if (result.collectCoverageFrom !== undefined) {
-		config.collectCoverageFrom = result.collectCoverageFrom;
-	}
-
-	return config;
-}
-
-// Only workspace runs can bail: multi dispatches through static buckets, which
-// have no per-package stop point (see `run/workspace-validation.ts`). The
-// render layer itself is mode-agnostic — `FormatOptions.bail` means the same
-// thing whoever sets it — so only this lookup knows the difference.
-function resolveBailSummary(
-	result: MultiRunResult | WorkspaceRunResult,
-): Pick<MultiOutputContext, "bail"> {
-	return result.mode === "workspace" && result.bail !== undefined ? { bail: result.bail } : {};
-}
-
-// Workspace sinks are consensus-resolved by the runner (not from the
-// workspace-root config), so "View …" hints must point at those resolved
-// paths; single/multi use the resolved config values.
-function resolveSinkHints(
-	result: MultiRunResult | WorkspaceRunResult,
-	config: ResolvedConfig,
-): Pick<MultiOutputContext, "gameOutputHint" | "outputFileHint"> {
-	const gameOutput = result.mode === "workspace" ? result.gameOutput : config.gameOutput;
-	const outputFile = result.mode === "workspace" ? result.outputFile : config.outputFile;
-
-	return {
-		gameOutputHint: gameOutput,
-		outputFileHint: outputFile,
-	};
-}
-
-function toMultiOutputContext(
-	config: ResolvedConfig,
-	result: MultiRunResult | WorkspaceRunResult,
-	merged: ExecuteResult,
-): MultiOutputContext {
-	return {
-		...resolveBailSummary(result),
-		config,
-		...resolveSinkHints(result, config),
-		coverageMs: result.coverageMs,
-		merged,
-		projectResults: result.projectResults,
-		stagingMs: result.stagingMs,
-		typecheckResult: result.typecheckResult,
-	};
-}
-
-function emitMultiResults(
-	context: MultiOutputContext,
-	result: MultiRunResult | WorkspaceRunResult,
-): boolean {
-	const { config, merged } = context;
-	const displayFilter = extractCoverageDisplayFilter(result);
-
-	return emitResultsAndCoverage({
-		config,
-		coverageEnabled: config.collectCoverage,
-		printResults: () => {
-			printMultiResults(context);
-		},
-		runCoverage: () => {
-			return processCoverage({
-				agentTextFilter: displayFilter,
-				config,
-				coverageData: merged.coverageData,
-				packageGates: extractCoveragePackages(result),
-			});
-		},
-	});
 }
 
 /**
@@ -586,4 +495,130 @@ function writeAggregatedGameOutput(
 			console.error(notice);
 		}
 	}
+}
+
+async function writeMultiRunSinksAsync(
+	fileSystem: FileSystem,
+	config: ResolvedConfig,
+	{ hintsShown, merged, projectResults, typecheckResult }: MultiRunSinks,
+): Promise<void> {
+	await writeResultFileAsync(config.outputFile, typecheckResult, merged.result, fileSystem);
+	writeAggregatedGameOutput(fileSystem, config, projectResults, { hintsShown });
+}
+
+function resolveBailSummary(
+	result: MultiRunResult | WorkspaceRunResult,
+): Pick<MultiOutputContext, "bail"> {
+	return result.mode === "workspace" && result.bail !== undefined ? { bail: result.bail } : {};
+}
+
+function resolveSinkHints(
+	result: MultiRunResult | WorkspaceRunResult,
+	config: ResolvedConfig,
+): Pick<MultiOutputContext, "gameOutputHint" | "outputFileHint"> {
+	const gameOutput = result.mode === "workspace" ? result.gameOutput : config.gameOutput;
+	const outputFile = result.mode === "workspace" ? result.outputFile : config.outputFile;
+
+	return {
+		gameOutputHint: gameOutput,
+		outputFileHint: outputFile,
+	};
+}
+
+function toMultiOutputContext(
+	config: ResolvedConfig,
+	result: MultiRunResult | WorkspaceRunResult,
+	merged: ExecuteResult,
+	renderer: ResultRenderer,
+): MultiOutputContext {
+	return {
+		...resolveBailSummary(result),
+		config,
+		...resolveSinkHints(result, config),
+		coverageMs: result.coverageMs,
+		merged,
+		projectResults: result.projectResults,
+		renderer,
+		stagingMs: result.stagingMs,
+		typecheckResult: result.typecheckResult,
+	};
+}
+
+function reportMultiRun(
+	context: MultiOutputContext,
+	result: MultiRunResult | WorkspaceRunResult,
+	pipeline: CoveragePipeline,
+): boolean {
+	const { config, merged } = context;
+	const displayFilter = extractCoverageDisplayFilter(result);
+
+	return emitResultsAndCoverage({
+		config,
+		coverageEnabled: config.collectCoverage,
+		printResults: () => {
+			printMultiResults(context);
+		},
+		runCoverage: () => {
+			return processCoverage({
+				agentTextFilter: displayFilter,
+				config,
+				coverageData: merged.coverageData,
+				packageGates: extractCoveragePackages(result),
+				pipeline,
+			});
+		},
+	});
+}
+
+async function emitMultiResultAsync(
+	config: ResolvedConfig,
+	result: MultiRunResult | WorkspaceRunResult,
+	{ coveragePipeline, fileSystem, renderer }: ResolvedDependencies,
+): Promise<number> {
+	const { mode, projectResults, typecheckResult } = result;
+	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
+	const mergedResult = mergeResults(typecheckResult, merged.result);
+	const isCoveragePassed = reportMultiRun(
+		toMultiOutputContext(config, result, merged, renderer),
+		result,
+		coveragePipeline,
+	);
+
+	if (mode === "multi") {
+		await writeMultiRunSinksAsync(fileSystem, config, {
+			hintsShown: !mergedResult.success,
+			merged,
+			projectResults,
+			typecheckResult,
+		});
+	}
+
+	runGitHubActionsFormatter(fileSystem, config, mergedResult, merged.sourceMapper);
+
+	return emitFinalStatus(config, {
+		isCoveragePassed,
+		mergedResult,
+		snapshotWriteFailures: merged.snapshotWriteFailures,
+	});
+}
+
+function buildReportConfig(
+	rootConfig: ResolvedConfig,
+	result: MultiRunResult | WorkspaceRunResult,
+): ResolvedConfig {
+	if (result.mode === "workspace") {
+		return {
+			...DEFAULT_CONFIG,
+			collectCoverage: (result.coveragePackages?.length ?? 0) > 0,
+			formatters: ["default"],
+			...result.reportOptions,
+		};
+	}
+
+	const config: ResolvedConfig = { ...rootConfig };
+	if (result.collectCoverageFrom !== undefined) {
+		config.collectCoverageFrom = result.collectCoverageFrom;
+	}
+
+	return config;
 }

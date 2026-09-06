@@ -2,6 +2,8 @@ import * as path from "node:path";
 
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashFileAsync } from "../utils/hash.ts";
@@ -41,6 +43,7 @@ export interface PlaceReuseOptions {
 }
 
 export interface BuildPlaceOptions {
+	childProcess?: ChildProcessRunner;
 	/**
 	 * The Place Content Id to stamp into the built place and record on the
 	 * artifact. Forwarded verbatim to {@link synthesize}, so it lands in the
@@ -83,6 +86,7 @@ interface ReusePlan {
  * descriptors carry `coverageRoots`.
  */
 export async function buildPlaceAsync({
+	childProcess = nodeChildProcessRunner,
 	contentId,
 	fileSystem = nodeFileSystem,
 	loadStringEnabled,
@@ -98,12 +102,8 @@ export async function buildPlaceAsync({
 	// Planned before anything is written or built, so a reused place pays for
 	// neither of the two passes below — see `PlaceInputsKeyOptions.projectJson`
 	// for why a key over the synthesized project can answer for what they write.
-	const plan = await planReuseAsync({
-		fileSystem,
-		projectFile,
-		projectJson: relativizeProjectPaths(projectJson, projectDirectory),
-		reuse,
-	});
+	const relative = relativizeProjectPaths(projectJson, projectDirectory);
+	const plan = await planReuseAsync({ fileSystem, projectFile, projectJson: relative, reuse });
 	const reused =
 		plan === undefined ? undefined : await tryReuseAsync(fileSystem, plan, placeFile);
 	if (reused !== undefined) {
@@ -111,6 +111,7 @@ export async function buildPlaceAsync({
 	}
 
 	const artifact = await stageAndBuildAsync({
+		childProcess,
 		fileSystem,
 		placeFile,
 		projectDirectory,
@@ -143,12 +144,14 @@ export async function buildPlaceAsync({
  * one per package.
  */
 async function stageAndBuildAsync({
+	childProcess,
 	fileSystem,
 	placeFile,
 	projectDirectory,
 	projectFile,
 	projectJson,
 }: {
+	childProcess: ChildProcessRunner;
 	fileSystem: FileSystem;
 	placeFile: string;
 	projectDirectory: string;
@@ -157,6 +160,7 @@ async function stageAndBuildAsync({
 }): Promise<BuildManifestArtifact> {
 	const staged = relativizeProjectPaths(
 		await demotePinnedMountsAsync({
+			childProcess,
 			fileSystem,
 			projectDirectory,
 			projectJson: poolSharedMounts({ fileSystem, projectDirectory, projectJson }),
@@ -170,7 +174,7 @@ async function stageAndBuildAsync({
 	// exists for every caller rather than relying on each one to pre-create it.
 	fileSystem.mkdirSync(path.dirname(placeFile), { recursive: true });
 
-	await buildWithRojoAsync(projectFile, placeFile);
+	await buildWithRojoAsync(projectFile, placeFile, childProcess);
 	return { hash: await hashFileAsync(placeFile, fileSystem), path: placeFile };
 }
 

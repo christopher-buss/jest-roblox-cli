@@ -25,14 +25,14 @@ export interface EnumerationOptions {
 	 */
 	exclude?: Array<string> | undefined;
 	/** Where the walk reads. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
+	fileSystem?: FileSystem | undefined;
 	/** `workspace.packages`; omit to read `pnpm-workspace.yaml` instead. */
 	patterns?: Array<string> | undefined;
 }
 
 export interface ResolvePackagesOptions {
 	/** Where the walk reads. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
+	fileSystem?: FileSystem | undefined;
 	/**
 	 * `workspace.packages` globs. Their presence is what selects the
 	 * jest-config-glob source over the pnpm workspace.

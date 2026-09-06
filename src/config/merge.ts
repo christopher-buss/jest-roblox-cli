@@ -1,6 +1,4 @@
-import process from "node:process";
-import { isAgent } from "std-env";
-
+import { defaultFormatters } from "./default-formatters.ts";
 import type { CliOptions, FormatterEntry, ResolvedConfig } from "./schema.ts";
 
 type CoverageKey =
@@ -53,16 +51,5 @@ function resolveCoverage(
 }
 
 function resolveFormatters(cli: CliOptions, config: ResolvedConfig): Array<FormatterEntry> {
-	const explicit = cli.formatters ?? config.formatters;
-	if (explicit !== undefined) {
-		return explicit;
-	}
-
-	const defaults: Array<FormatterEntry> = isAgent ? ["agent"] : ["default"];
-
-	if (process.env["GITHUB_ACTIONS"] === "true") {
-		defaults.push("github-actions");
-	}
-
-	return defaults;
+	return cli.formatters ?? config.formatters ?? defaultFormatters();
 }

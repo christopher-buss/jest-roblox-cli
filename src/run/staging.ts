@@ -13,12 +13,12 @@ import {
 import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
 import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
-import { prepareCoverageAsync, toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
+import { toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
 import type { StubMount } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import { toBuildManifestProjects } from "./manifest-projects.ts";
+import type { RunSeams } from "./seams.ts";
 
 /**
  * Everything the run path needs on disk before a backend exists: where the
@@ -40,6 +40,21 @@ export interface StagedRun extends StagedCoverage {
 export interface BakedCoverage {
 	artifacts: CoverageArtifacts;
 	coverage: PrepareCoverageResult;
+}
+
+export interface StageRunOptions {
+	fileSystem: FileSystem;
+	projects: Array<ResolvedProjectConfig>;
+	rootConfig: ResolvedConfig;
+	seams: RunSeams;
+	timing: TimingCollector;
+}
+
+export interface StubMountOptions {
+	cacheRoot: string;
+	fileSystem: FileSystem;
+	projects: Array<ResolvedProjectConfig>;
+	rootDir: string;
 }
 
 /**
@@ -66,20 +81,28 @@ interface StagedCoverageRun extends StagedCoverage {
  * stub. Shared by the open-cloud place build and `prepareArtifacts`'s Clean
  * Place.
  */
-export function collectStubMounts(
-	projects: Array<ResolvedProjectConfig>,
-	rootDirectory: string,
-	cacheRoot: string,
-): Array<StubMount> {
+export function collectStubMounts({
+	cacheRoot,
+	fileSystem,
+	projects,
+	rootDir: rootDirectory,
+}: StubMountOptions): Array<StubMount> {
 	// Per-mount FS check decides whether to inject. A TS string-entry may or may
 	// not have a compiled `.luau` at the mount yet — trust the filesystem rather
 	// than the entry shape.
-	const stubMounts: Array<StubMount> = [];
-	for (const project of projects) {
-		stubMounts.push(...collectStubMountsForProject(project, rootDirectory, cacheRoot));
-	}
-
-	return stubMounts;
+	return projects.flatMap((project) => {
+		return project.rojoMounts
+			.filter((mount) => {
+				const sourceMount = path.resolve(rootDirectory, mount.fsPath);
+				return !hasUserAuthoredConfig(sourceMount, fileSystem);
+			})
+			.map((mount) => {
+				return {
+					absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
+					dataModelPath: mount.dataModelPath,
+				};
+			});
+	});
 }
 
 /**
@@ -99,22 +122,25 @@ export async function prepareBakedCoverageAsync({
 	bakeStubs,
 	cacheRoot,
 	config,
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	projects,
+	seams,
 	timing,
 }: {
 	bakeStubs: boolean;
 	cacheRoot: string;
 	config: ResolvedConfig;
-	fileSystem?: FileSystem;
+	fileSystem: FileSystem;
 	projects: Array<ResolvedProjectConfig>;
+	seams: RunSeams;
 	/**
 	 * The run's collector; omitted by the offline build path, which has none.
 	 */
 	timing?: TimingCollector | undefined;
 }): Promise<BakedCoverage> {
-	const coverage = await prepareCoverageAsync(config, {
+	const coverage = await seams.prepareCoverage(config, {
 		bake: bakeStubs ? createStubBake(projects, cacheRoot, fileSystem) : undefined,
+		childProcess: seams.childProcess,
 		// The same globs `buildMultiRunResult` reports against, so a file is
 		// probed exactly when this run would render a line for it.
 		coverageInclude: resolveCoverageInclude(config, projects),
@@ -133,12 +159,13 @@ export async function prepareBakedCoverageAsync({
  * `--coverage` is on. Runs before any backend exists, so nothing here can leak
  * one.
  */
-export async function stageRunAsync(
-	projects: Array<ResolvedProjectConfig>,
-	rootConfig: ResolvedConfig,
-	timing: TimingCollector,
-	fileSystem: FileSystem = nodeFileSystem,
-): Promise<StagedRun> {
+export async function stageRunAsync({
+	fileSystem,
+	projects,
+	rootConfig,
+	seams,
+	timing,
+}: StageRunOptions): Promise<StagedRun> {
 	// Stubs land in `.jest-roblox/cache/` instead of the user's source tree.
 	// Open-cloud builds the place from a synthesizer-produced project that
 	// mounts those cache stubs via `$path` named-children; studio skips the
@@ -156,13 +183,7 @@ export async function stageRunAsync(
 	const { elapsedMs: cleanMs, value: cleaned } = timing.profileTimed("cleanLeftoverStubs", () => {
 		return cleanLeftoverStubs(projects, rootConfig.rootDir, fileSystem);
 	});
-	if (cleaned.length > 0) {
-		process.stderr.write(
-			`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s):\n${cleaned
-				.map((stubPath) => `  ${stubPath}\n`)
-				.join("")}`,
-		);
-	}
+	reportCleanedStubs(cleaned);
 
 	const { elapsedMs: generateMs } = timing.profileTimed("generateProjectStubs", () => {
 		generateProjectStubs(projects, rootConfig.rootDir, cacheRoot, fileSystem);
@@ -180,6 +201,7 @@ export async function stageRunAsync(
 				fileSystem,
 				projects,
 				rootConfig,
+				seams,
 				timing,
 			});
 		},
@@ -187,25 +209,16 @@ export async function stageRunAsync(
 	return { cacheRoot, ...coverage, stagingMs: stubStagingMs + coverageStagingMs };
 }
 
-function collectStubMountsForProject(
-	project: ResolvedProjectConfig,
-	rootDirectory: string,
-	cacheRoot: string,
-): Array<StubMount> {
-	const stubMounts: Array<StubMount> = [];
-	for (const mount of project.rojoMounts) {
-		const sourceMount = path.resolve(rootDirectory, mount.fsPath);
-		if (hasUserAuthoredConfig(sourceMount)) {
-			continue;
-		}
-
-		stubMounts.push({
-			absStubPath: path.resolve(cacheRoot, mount.fsPath, STUB_FILENAME),
-			dataModelPath: mount.dataModelPath,
-		});
+function reportCleanedStubs(cleaned: Array<string>): void {
+	if (cleaned.length === 0) {
+		return;
 	}
 
-	return stubMounts;
+	process.stderr.write(
+		`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s):\n${cleaned
+			.map((stubPath) => `  ${stubPath}\n`)
+			.join("")}`,
+	);
 }
 
 async function prepareMultiCoverageAsync({
@@ -213,14 +226,9 @@ async function prepareMultiCoverageAsync({
 	fileSystem,
 	projects,
 	rootConfig,
+	seams,
 	timing,
-}: {
-	cacheRoot: string;
-	fileSystem: FileSystem;
-	projects: Array<ResolvedProjectConfig>;
-	rootConfig: ResolvedConfig;
-	timing: TimingCollector;
-}): Promise<StagedCoverageRun> {
+}: StageRunOptions & { cacheRoot: string }): Promise<StagedCoverageRun> {
 	if (!rootConfig.collectCoverage) {
 		return { coverageMs: 0, coverageStagingMs: 0, effectiveConfig: rootConfig };
 	}
@@ -237,6 +245,7 @@ async function prepareMultiCoverageAsync({
 		config: rootConfig,
 		fileSystem,
 		projects,
+		seams,
 		timing,
 	});
 	return {

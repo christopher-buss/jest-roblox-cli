@@ -1,39 +1,39 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12";
+import type { Mock } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import type { ConfigLoadOptions } from "./loader.ts";
 import { loadRawConfig } from "./loader.ts";
 
-vi.mock<typeof import("c12")>(import("c12"), async (importOriginal) => {
-	const actual = await importOriginal();
+type C12Loader = (options: LoadConfigOptions) => Promise<C12ResolvedConfig>;
 
-	return {
-		...actual,
-		loadConfig: fromAny(vi.fn<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>()),
-	};
-});
+function emptyConfigLoader(): Mock<C12Loader> {
+	const configLoader = vi.fn<C12Loader>();
+	configLoader.mockResolvedValue({ config: {}, cwd: "/repo", layers: [] });
 
-async function mockEmptyConfig(): Promise<void> {
-	const { loadConfig } = await import("c12");
-	vi.mocked(loadConfig).mockResolvedValue({
-		config: {},
-		cwd: "/repo",
-		layers: [],
-	});
+	return configLoader;
+}
+
+function seamsFor(configLoader: Mock<C12Loader>, fileSystem: FileSystem): ConfigLoadOptions {
+	return { configLoader: fromAny(configLoader), fileSystem };
 }
 
 describe("c12 loader boundary", () => {
 	it("should isolate implicit config discovery from ambient configuration sources", async () => {
 		expect.assertions(3);
 
-		await mockEmptyConfig();
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
+		const configLoader = emptyConfigLoader();
+		const { fileSystem } = createMemoryFileSystem();
 
-		await expect(loadRawConfig(undefined, "/repo")).resolves.toStrictEqual({});
+		await expect(
+			loadRawConfig(undefined, "/repo", seamsFor(configLoader, fileSystem)),
+		).resolves.toStrictEqual({});
 
-		const [options] = mockLoadConfig.mock.calls[0]!;
+		const [options] = configLoader.mock.calls[0]!;
 		const { merger, ...plainOptions } = options;
 
 		expect(merger).toBeTypeOf("function");
@@ -53,13 +53,12 @@ describe("c12 loader boundary", () => {
 	it("should require and name an explicitly requested config file", async () => {
 		expect.assertions(2);
 
-		await mockEmptyConfig();
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
+		const configLoader = emptyConfigLoader();
+		const { fileSystem } = createMemoryFileSystem();
 
-		await loadRawConfig("configs/jest.config.ts", "/repo");
+		await loadRawConfig("configs/jest.config.ts", "/repo", seamsFor(configLoader, fileSystem));
 
-		const [options] = mockLoadConfig.mock.calls[0]!;
+		const [options] = configLoader.mock.calls[0]!;
 		const { merger, ...plainOptions } = options;
 
 		expect(merger).toBeTypeOf("function");
@@ -80,17 +79,16 @@ describe("c12 loader boundary", () => {
 	it("should provide the filesystem importer only in SEA mode", async () => {
 		expect.assertions(3);
 
-		await mockEmptyConfig();
+		const configLoader = emptyConfigLoader();
+		const { fileSystem } = createMemoryFileSystem();
 		onTestFinished(() => {
 			vi.unstubAllEnvs();
 		});
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
-		const { loadConfig } = await import("c12");
-		const mockLoadConfig = vi.mocked(loadConfig);
 
-		await loadRawConfig("jest.config.json", "/repo");
+		await loadRawConfig("jest.config.json", "/repo", seamsFor(configLoader, fileSystem));
 
-		const [options] = mockLoadConfig.mock.calls[0]!;
+		const [options] = configLoader.mock.calls[0]!;
 		const { import: importConfig, merger, ...plainOptions } = options;
 
 		expect(importConfig).toBeTypeOf("function");

@@ -5,11 +5,13 @@ import {
 	type WorkspacePackageCoverage,
 } from "../coverage-pipeline/workspace-prepare.ts";
 import { describePlaceFile } from "../progress/stages.ts";
+import type { PlaceReuseOptions } from "../staging/place-builder.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
+import type { PrepareCoverage } from "./coverage-attach.ts";
 import { prepareWorkspaceCoverageMap } from "./coverage-attach.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import { stageWorkspaceStubs } from "./stub-staging.ts";
@@ -54,16 +56,19 @@ export interface StagedWorkspacePlace {
  */
 export async function stageWorkspacePlaceAsync({
 	cacheDirectory,
-	fileSystem = nodeFileSystem,
+	childProcess,
+	fileSystem,
 	loaded,
+	prepareCoverage,
 	selection,
 	timing,
 	workspaceRoot,
 }: {
 	cacheDirectory: string;
-	/** Where staging reads and writes. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
+	childProcess: ChildProcessRunner;
+	fileSystem: FileSystem;
 	loaded: Array<LoadedPackage>;
+	prepareCoverage: PrepareCoverage;
 	selection: WorkspaceTestSelection;
 	timing: TimingCollector;
 	workspaceRoot: string;
@@ -74,6 +79,7 @@ export async function stageWorkspacePlaceAsync({
 		fileSystem,
 		loaded,
 		pending,
+		prepareCoverage,
 		timing,
 		workspaceRoot,
 	});
@@ -88,6 +94,7 @@ export async function stageWorkspacePlaceAsync({
 	const placeFile = path.join(cacheDirectory, SYNTHESIZED_PLACE_FILE);
 	const buildMs = await buildWorkspacePlaceAsync({
 		cacheDirectory,
+		childProcess,
 		coverageByPackage,
 		descriptors,
 		fileSystem,
@@ -98,9 +105,36 @@ export async function stageWorkspacePlaceAsync({
 	return { coverageByPackage, coverageMs, placeFile, stagingMs: stubsMs + buildMs };
 }
 
+/**
+ * Workspace always synthesizes its own place, so unlike multi's coverage path
+ * there is no upstream gate to defer to: a re-run with nothing edited would
+ * otherwise rebuild it from scratch.
+ */
+function placeReuseOptions(
+	cacheDirectory: string,
+	coverage: Array<WorkspacePackageCoverage>,
+): PlaceReuseOptions {
+	return {
+		cacheFile: path.join(cacheDirectory, PLACE_REUSE_FILE),
+		digestCacheFile: path.join(cacheDirectory, INPUT_DIGEST_FILE),
+		manifests: coverage.map((entry) => entry.manifest),
+		// Relative: the hash resolves each root against the project directory,
+		// the frame every other path in the key is expressed in, and
+		// `shadowDir` is absolute.
+		shadowRoots: coverage.flatMap((entry) => {
+			// Spine copies included: they are what a demoted mount serves, so a
+			// change there changes the place.
+			return [...entry.coverageRoots, ...entry.coverageSpine].map((root) => {
+				return path.relative(cacheDirectory, root.shadowDir);
+			});
+		}),
+	};
+}
+
 /** Builds the shared place and reports how long the rojo build took. */
 async function buildWorkspacePlaceAsync({
 	cacheDirectory,
+	childProcess,
 	coverageByPackage,
 	descriptors,
 	fileSystem,
@@ -108,6 +142,7 @@ async function buildWorkspacePlaceAsync({
 	timing,
 }: {
 	cacheDirectory: string;
+	childProcess: ChildProcessRunner;
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
 	descriptors: Array<PackageDescriptor>;
 	fileSystem: FileSystem;
@@ -119,28 +154,12 @@ async function buildWorkspacePlaceAsync({
 		"rojoBuild",
 		async () => {
 			const built = await buildPlaceAsync({
+				childProcess,
 				fileSystem,
 				packages: descriptors,
 				placeFile,
 				projectFile: path.join(cacheDirectory, SYNTHESIZED_PROJECT_FILE),
-				// Workspace always synthesizes its own place, so unlike multi's
-				// coverage path there is no upstream gate to defer to: a re-run
-				// with nothing edited would otherwise rebuild it from scratch.
-				reuse: {
-					cacheFile: path.join(cacheDirectory, PLACE_REUSE_FILE),
-					digestCacheFile: path.join(cacheDirectory, INPUT_DIGEST_FILE),
-					manifests: coverage.map((entry) => entry.manifest),
-					// Relative: the hash resolves each root against the project
-					// directory, the frame every other path in the key is
-					// expressed in, and `shadowDir` is absolute.
-					shadowRoots: coverage.flatMap((entry) => {
-						// Spine copies included: they are what a demoted mount
-						// serves, so a change there changes the place.
-						return [...entry.coverageRoots, ...entry.coverageSpine].map((root) => {
-							return path.relative(cacheDirectory, root.shadowDir);
-						});
-					}),
-				},
+				reuse: placeReuseOptions(cacheDirectory, coverage),
 			});
 			// Inside the span: closing it closes the stage, and a size handed
 			// over after that arrives too late to reach the line the stage
@@ -155,7 +174,7 @@ async function buildWorkspacePlaceAsync({
 	// that isn't on disk. Every coverage package records the one shared
 	// instrumented place as its coverage place.
 	if (coverage.length > 0) {
-		emitWorkspaceBuildManifests(coverage, coveragePlace);
+		emitWorkspaceBuildManifests(coverage, coveragePlace, fileSystem);
 	}
 
 	return elapsedMs;

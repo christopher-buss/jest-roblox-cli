@@ -3,7 +3,7 @@ import { mergeResults } from "../output.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { TypecheckGroupEntry, TypecheckPassOutcome } from "../typecheck/group-by-tsconfig.ts";
 import { runTypecheckPassAsync } from "../typecheck/group-by-tsconfig.ts";
-import { runTypecheckAsync } from "../typecheck/runner.ts";
+import type { RunTypecheck } from "../typecheck/runner.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import type { WorkspaceProjectResult } from "./coverage-attach.ts";
@@ -48,6 +48,7 @@ interface TypecheckOnlyInput {
 	/** Where the sinks are written. Defaults to the real filesystem. */
 	fileSystem?: FileSystem | undefined;
 	runOptions: WorkspaceRunOptions;
+	runTypecheck: RunTypecheck;
 	timing: TimingCollector;
 	typecheckByDirectory: Map<string, PackageTypecheck>;
 	typeTestEntries: Array<TypecheckGroupEntry>;
@@ -63,6 +64,7 @@ interface TypecheckOnlyInput {
 export async function runWorkspaceTypecheckPassAsync(
 	entries: Array<TypecheckGroupEntry>,
 	typecheckByDirectory: Map<string, PackageTypecheck>,
+	runTypecheck: RunTypecheck,
 ): Promise<WorkspaceTypecheckPass> {
 	const byPackage = new Map<string, JestResult>();
 	const outcome = await runTypecheckPassAsync(entries, async (group) => {
@@ -71,7 +73,7 @@ export async function runWorkspaceTypecheckPassAsync(
 		// entry, so the lookup is always present.
 		// eslint-disable-next-line ts/no-non-null-assertion -- invariant: cwd ∈ typecheckByDirectory
 		const policy = typecheckByDirectory.get(group.cwd)!;
-		const raw = await runTypecheckAsync({
+		const raw = await runTypecheck({
 			files: group.files,
 			ignoreSourceErrors: policy.ignoreSourceErrors,
 			rootDir: group.cwd,
@@ -118,6 +120,7 @@ export async function runTypecheckOnlyWorkspaceAsync(
 	const typecheckPass = await runWorkspaceTypecheckPassAsync(
 		input.typeTestEntries,
 		input.typecheckByDirectory,
+		input.runTypecheck,
 	);
 	await writeTypecheckOnlySinksAsync({
 		fileSystem: input.fileSystem,

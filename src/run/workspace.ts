@@ -21,7 +21,13 @@ import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
 import type { StreamingAggregatorOnEntry } from "../reporter/streaming-aggregator.ts";
 import { formatStreamingProgressLine } from "../reporter/streaming-progress.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
+import { runTypecheckAsync } from "../typecheck/runner.ts";
+import type { RunTypecheck } from "../typecheck/runner.ts";
+import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { nodeChildProcessRunner } from "../utils/child-process.ts";
 import { composeEntryDisplayName } from "../utils/display-name.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import {
 	runWorkspaceAsync,
 	type WorkspaceProjectResult,
@@ -45,6 +51,33 @@ import {
 } from "./workspace-validation.ts";
 
 const VERSION = packageJson.version;
+
+/** Everything workspace mode reaches the outside world through. */
+export interface WorkspaceModeDependencies {
+	aggregateCoverage?: typeof aggregateWorkspaceCoverage;
+	childProcess?: ChildProcessRunner;
+	fileSystem?: FileSystem;
+	loadPackageConfig?: typeof loadRawConfig;
+	openCloudBackend?: typeof createOpenCloudBackend;
+	runTypecheck?: RunTypecheck;
+	runWorkspace?: typeof runWorkspaceAsync;
+	studioBackend?: typeof createStudioBackend;
+	studioCliBackend?: typeof createStudioCliBackend;
+}
+
+type ResolvedDependencies = Required<WorkspaceModeDependencies>;
+
+const NODE_DEPENDENCIES: ResolvedDependencies = {
+	aggregateCoverage: aggregateWorkspaceCoverage,
+	childProcess: nodeChildProcessRunner,
+	fileSystem: nodeFileSystem,
+	loadPackageConfig: loadRawConfig,
+	openCloudBackend: createOpenCloudBackend,
+	runTypecheck: runTypecheckAsync,
+	runWorkspace: runWorkspaceAsync,
+	studioBackend: createStudioBackend,
+	studioCliBackend: createStudioCliBackend,
+};
 
 const EMPTY_RESULT = {
 	coverageMs: 0,
@@ -88,11 +121,18 @@ interface PackageEntry {
 
 interface ExecuteWorkspaceRunOptions {
 	cli: CliOptions;
+	dependencies: ResolvedDependencies;
 	packageInfos: Array<PackageInfo>;
 	runOptions: WorkspaceRunOptions;
 	timing?: TimingCollector | undefined;
 	workspaceRoot: string;
 }
+
+type DriveWorkspaceRunOptions = ExecuteWorkspaceRunOptions & {
+	backend: Backend | undefined;
+	progress: RunProgress;
+	workStealingCredentials: WorkspaceBackendResolution["workStealingCredentials"];
+};
 
 interface AggregatePerPackageCoverageResult {
 	settingsByPackage: Map<string, PackageCoverageSettings>;
@@ -109,13 +149,16 @@ export async function runWorkspaceModeAsync(
 	cli: CliOptions,
 	workspace?: WorkspaceConfig,
 	timing?: TimingCollector,
+	dependencies?: WorkspaceModeDependencies,
 ): Promise<WorkspaceRunResult> {
+	const settled = { ...NODE_DEPENDENCIES, ...dependencies };
+
 	const basicValidation = validateBasicWorkspaceFlags(cli);
 	if (!basicValidation.ok) {
 		return bail(basicValidation.exitCode, basicValidation.message);
 	}
 
-	const resolved = resolvePackages(cli, workspace);
+	const resolved = resolvePackages(cli, settled, workspace);
 	if (resolved.error !== undefined) {
 		return bail(resolved.error.exitCode, resolved.error.message);
 	}
@@ -125,26 +168,7 @@ export async function runWorkspaceModeAsync(
 		return EMPTY_RESULT;
 	}
 
-	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
-	const packageInfos = resolved.packageInfos!;
-	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
-	const workspaceRoot = resolved.workspaceRoot!;
-
-	const optionsResolution = await resolveWorkspaceOptionsAsync(cli, packageInfos, workspaceRoot);
-	if (optionsResolution.error !== undefined) {
-		return bail(optionsResolution.error.exitCode, optionsResolution.error.message);
-	}
-
-	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when there is no error
-	const runOptions = optionsResolution.runOptions!;
-
-	return executeWorkspaceRunAsync({
-		cli,
-		packageInfos,
-		runOptions,
-		timing,
-		workspaceRoot,
-	});
+	return runSelectedPackagesAsync({ cli, dependencies: settled, resolved, timing });
 }
 
 // Every validation failure reports through the same empty result, so the
@@ -163,17 +187,27 @@ function bail(validationExitCode: 2, validationMessage?: string): WorkspaceRunRe
 // WorkspaceRunOptions, and check the resolved-value invariants. A config that
 // fails to load and a consensus conflict both surface as the same validation
 // error the caller bails on.
-async function resolveWorkspaceOptionsAsync(
-	cli: CliOptions,
-	packageInfos: Array<PackageInfo>,
-	workspaceRoot: string,
-): Promise<WorkspaceRunOptionsResolution> {
+async function resolveWorkspaceOptionsAsync({
+	cli,
+	fileSystem,
+	loadPackageConfig,
+	packageInfos,
+	workspaceRoot,
+}: {
+	cli: CliOptions;
+	fileSystem: FileSystem;
+	loadPackageConfig: typeof loadRawConfig;
+	packageInfos: Array<PackageInfo>;
+	workspaceRoot: string;
+}): Promise<WorkspaceRunOptionsResolution> {
 	try {
 		const perPackageConfigs = await Promise.all(
 			packageInfos.map(async (info) => {
 				return {
 					name: info.name,
-					config: await loadRawConfig(undefined, info.packageDirectory),
+					config: await loadPackageConfig(undefined, info.packageDirectory, {
+						fileSystem,
+					}),
 				};
 			}),
 		);
@@ -190,41 +224,17 @@ async function resolveWorkspaceOptionsAsync(
 	}
 }
 
-// `collectCoverage` is intentionally omitted: workspace coverage is per-package
-// (driven by each package's manifest), so there is no workspace-level flag to
-// surface the "Coverage enabled" subtitle.
-function emitWorkspaceRunHeader({
-	cli,
-	progress,
-	runOptions,
-	workspaceRoot,
-}: {
-	cli: CliOptions;
-	progress: RunProgress;
-	runOptions: WorkspaceRunOptions;
-	workspaceRoot: string;
-}): void {
-	emitRunHeader({
-		color: runOptions.color,
-		formatters: runOptions.formatters,
-		progress,
-		rootDir: workspaceRoot,
-		silent: runOptions.silent,
-		verbose: cli.verbose,
-		version: VERSION,
-	});
-}
-
 // Credential resolution is the only failing step here, so the whole Open Cloud
 // branch is a try/catch that converts a missing/invalid secret into the
 // validation error the caller bails on.
 function resolveOpenCloudBackendFor(
 	cli: CliOptions,
 	runOptions: WorkspaceRunOptions,
+	openCloudBackend: typeof createOpenCloudBackend,
 ): WorkspaceBackendResolution {
 	try {
 		const credentials = buildWorkspaceCredentials(cli, runOptions);
-		const backend = createOpenCloudBackend(credentials);
+		const backend = openCloudBackend(credentials);
 		const baseUrl = resolveOpenCloudBaseUrl();
 		return {
 			backend,
@@ -253,6 +263,7 @@ function resolveOpenCloudBackendFor(
 function resolveWorkspaceBackend(
 	cli: CliOptions,
 	runOptions: WorkspaceRunOptions,
+	dependencies: ResolvedDependencies,
 ): WorkspaceBackendResolution {
 	if (cli.typecheckOnly === true) {
 		return {};
@@ -260,7 +271,7 @@ function resolveWorkspaceBackend(
 
 	if (runOptions.backend === "studio-cli") {
 		return {
-			backend: createStudioCliBackend({
+			backend: dependencies.studioCliBackend({
 				// `headed` is CLI-only — read straight from `cli`, not the
 				// consensus-resolved run options.
 				headed: cli.headed,
@@ -270,14 +281,15 @@ function resolveWorkspaceBackend(
 	}
 
 	if (runOptions.backend === "studio") {
-		return { backend: createStudioBackend({ port: runOptions.port }) };
+		return { backend: dependencies.studioBackend({ port: runOptions.port }) };
 	}
 
-	return resolveOpenCloudBackendFor(cli, runOptions);
+	return resolveOpenCloudBackendFor(cli, runOptions, dependencies.openCloudBackend);
 }
 
 function aggregatePerPackageCoverage(
 	runtimeResults: Array<WorkspaceProjectResult>,
+	aggregateCoverage: typeof aggregateWorkspaceCoverage,
 ): AggregatePerPackageCoverageResult {
 	// A package with multiple projects emits one entry per project. Each
 	// project runs Jest with its own `_G.__jest_roblox_cov` reset, so the
@@ -312,7 +324,7 @@ function aggregatePerPackageCoverage(
 
 	return {
 		settingsByPackage,
-		universes: aggregateWorkspaceCoverage([...byPackage.values()]),
+		universes: aggregateCoverage([...byPackage.values()]),
 	};
 }
 
@@ -324,13 +336,17 @@ function aggregatePerPackageCoverage(
 // package's own directory, from that package's own config.
 function resolveWorkspaceCoverage(
 	runtimeResults: Array<WorkspaceProjectResult>,
+	aggregateCoverage: typeof aggregateWorkspaceCoverage,
 ): Pick<WorkspaceRunResult, "coveragePackages"> {
 	const hasCoverage = runtimeResults.some((entry) => entry.coverageManifest !== undefined);
 	if (!hasCoverage) {
 		return {};
 	}
 
-	const { settingsByPackage, universes } = aggregatePerPackageCoverage(runtimeResults);
+	const { settingsByPackage, universes } = aggregatePerPackageCoverage(
+		runtimeResults,
+		aggregateCoverage,
+	);
 	const coveragePackages = universes.map(({ pkg, universe }) => {
 		// `universes` is derived from the same map `settingsByPackage` is keyed
 		// by, so every entry has settings.
@@ -405,11 +421,13 @@ function bailSummary(
 // project results plus (when present) the merged Type Test result.
 function buildWorkspaceResult({
 	cli,
+	dependencies,
 	output: { bailedPackages, coverageMs, results, stagingMs, typecheckResult },
 	runOptions,
 	workspaceRoot,
 }: {
 	cli: CliOptions;
+	dependencies: ResolvedDependencies;
 	output: WorkspaceRunnerOutput;
 	runOptions: WorkspaceRunOptions;
 	workspaceRoot: string;
@@ -430,7 +448,7 @@ function buildWorkspaceResult({
 	});
 
 	return {
-		...resolveWorkspaceCoverage(results),
+		...resolveWorkspaceCoverage(results, dependencies.aggregateCoverage),
 		...bailSummary(bailedPackages, results),
 		// A typecheck-only run stages nothing, so the runner reports neither.
 		coverageMs: coverageMs ?? 0,
@@ -442,6 +460,31 @@ function buildWorkspaceResult({
 		typecheckResult,
 		...resolvedSinkPaths(runOptions),
 	};
+}
+
+// `collectCoverage` is intentionally omitted: workspace coverage is per-package
+// (driven by each package's manifest), so there is no workspace-level flag to
+// surface the "Coverage enabled" subtitle.
+function emitWorkspaceRunHeader({
+	cli,
+	progress,
+	runOptions,
+	workspaceRoot,
+}: {
+	cli: CliOptions;
+	progress: RunProgress;
+	runOptions: WorkspaceRunOptions;
+	workspaceRoot: string;
+}): void {
+	emitRunHeader({
+		color: runOptions.color,
+		formatters: runOptions.formatters,
+		progress,
+		rootDir: workspaceRoot,
+		silent: runOptions.silent,
+		verbose: cli.verbose,
+		version: VERSION,
+	});
 }
 
 /**
@@ -480,35 +523,31 @@ function resolveStreamingProgressSink({
 	};
 }
 
-// Resolve the backend, emit the run header, and drive the workspace runner,
-// always closing the backend afterwards.
-async function executeWorkspaceRunAsync({
+async function driveWorkspaceRunAsync({
+	backend,
 	cli,
+	dependencies,
 	packageInfos,
+	progress,
 	runOptions,
 	timing,
 	workspaceRoot,
-}: ExecuteWorkspaceRunOptions): Promise<WorkspaceRunResult> {
-	const resolution = resolveWorkspaceBackend(cli, runOptions);
-	if (resolution.error !== undefined) {
-		return bail(resolution.error.exitCode, resolution.error.message);
-	}
-
-	const { backend, workStealingCredentials } = resolution;
-	const progress = timing?.progress ?? NOOP_RUN_PROGRESS;
-
-	let output;
+	workStealingCredentials,
+}: DriveWorkspaceRunOptions): Promise<undefined | WorkspaceRunnerOutput> {
 	try {
 		emitWorkspaceRunHeader({ cli, progress, runOptions, workspaceRoot });
-		output = await runWorkspaceAsync({
+		return await dependencies.runWorkspace({
 			backend,
+			childProcess: dependencies.childProcess,
 			cli,
 			// Read here, the layer that already reads it to discover the
 			// workspace root above it.
 			cwd: process.cwd(),
+			fileSystem: dependencies.fileSystem,
 			onStreamingResult: resolveStreamingProgressSink({ cli, progress, runOptions }),
 			packageInfos,
 			runOptions,
+			runTypecheck: dependencies.runTypecheck,
 			timing,
 			version: VERSION,
 			workspaceRoot,
@@ -517,18 +556,78 @@ async function executeWorkspaceRunAsync({
 	} finally {
 		await backend?.closeAsync?.();
 	}
+}
+
+async function executeWorkspaceRunAsync(
+	input: ExecuteWorkspaceRunOptions,
+): Promise<WorkspaceRunResult> {
+	const { cli, dependencies, runOptions, timing, workspaceRoot } = input;
+	const resolution = resolveWorkspaceBackend(cli, runOptions, dependencies);
+	if (resolution.error !== undefined) {
+		return bail(resolution.error.exitCode, resolution.error.message);
+	}
+
+	const output = await driveWorkspaceRunAsync({
+		...input,
+		backend: resolution.backend,
+		progress: timing?.progress ?? NOOP_RUN_PROGRESS,
+		workStealingCredentials: resolution.workStealingCredentials,
+	});
 
 	if (output === undefined) {
 		return bail(2);
 	}
 
-	return buildWorkspaceResult({ cli, output, runOptions, workspaceRoot });
+	return buildWorkspaceResult({ cli, dependencies, output, runOptions, workspaceRoot });
+}
+
+async function runSelectedPackagesAsync({
+	cli,
+	dependencies,
+	resolved,
+	timing,
+}: {
+	cli: CliOptions;
+	dependencies: ResolvedDependencies;
+	resolved: ResolvedPackages;
+	timing?: TimingCollector | undefined;
+}): Promise<WorkspaceRunResult> {
+	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
+	const packageInfos = resolved.packageInfos!;
+	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
+	const workspaceRoot = resolved.workspaceRoot!;
+
+	const optionsResolution = await resolveWorkspaceOptionsAsync({
+		cli,
+		fileSystem: dependencies.fileSystem,
+		loadPackageConfig: dependencies.loadPackageConfig,
+		packageInfos,
+		workspaceRoot,
+	});
+	if (optionsResolution.error !== undefined) {
+		return bail(optionsResolution.error.exitCode, optionsResolution.error.message);
+	}
+
+	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when there is no error
+	const runOptions = optionsResolution.runOptions!;
+
+	return executeWorkspaceRunAsync({
+		cli,
+		dependencies,
+		packageInfos,
+		runOptions,
+		timing,
+		workspaceRoot,
+	});
 }
 
 // `workspace.packages` (declared in a shared config, anchored absolute root)
 // enumerates packages by globbing for jest configs — no package-manager
 // workspace file required. Falls back to discovering a pnpm/turbo/nx root.
-function resolveEnumerationRoot(workspace?: WorkspaceConfig): EnumerationRoot {
+function resolveEnumerationRoot(
+	fileSystem: FileSystem,
+	workspace?: WorkspaceConfig,
+): EnumerationRoot {
 	if (workspace?.packages !== undefined) {
 		// The schema's co-requirement check guarantees `root` is present, and
 		// the loader resolved it to an absolute path at config load.
@@ -542,7 +641,10 @@ function resolveEnumerationRoot(workspace?: WorkspaceConfig): EnumerationRoot {
 
 	// `exclude` stands alone: it narrows the pnpm source too, where the root
 	// comes from discovery rather than from config.
-	return { exclude: workspace?.exclude, workspaceRoot: discoverWorkspaceRoot(process.cwd()) };
+	return {
+		exclude: workspace?.exclude,
+		workspaceRoot: discoverWorkspaceRoot(process.cwd(), fileSystem),
+	};
 }
 
 /**
@@ -561,10 +663,19 @@ function emptyWorkspaceMessage(patterns: Array<string> | undefined): string {
 	);
 }
 
-function resolvePackages(cli: CliOptions, workspace?: WorkspaceConfig): ResolvedPackages {
+function resolvePackages(
+	cli: CliOptions,
+	{ childProcess, fileSystem }: ResolvedDependencies,
+	workspace?: WorkspaceConfig,
+): ResolvedPackages {
 	try {
-		const { exclude, patterns, workspaceRoot } = resolveEnumerationRoot(workspace);
-		const packageInfos = resolveWorkspacePackages(cli, workspaceRoot, { exclude, patterns });
+		const { exclude, patterns, workspaceRoot } = resolveEnumerationRoot(fileSystem, workspace);
+		const packageInfos = resolveWorkspacePackages(cli, workspaceRoot, {
+			childProcess,
+			exclude,
+			fileSystem,
+			patterns,
+		});
 
 		if (packageInfos.length === 0) {
 			// Two ways to select nothing, and they mean opposite things. A

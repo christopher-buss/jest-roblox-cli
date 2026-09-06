@@ -58,6 +58,8 @@ export interface InstrumentOptions extends InstrumentRootOptions {
 	manifestPath: string;
 }
 
+export type Instrumenter = typeof instrumentRoot;
+
 /** Where a twin's path is rooted, and which levels of it are already judged. */
 interface ShadowPathContext {
 	/**
@@ -117,6 +119,8 @@ export function instrumentRoot(options: InstrumentRootOptions): CoverageManifest
 
 	return files;
 }
+
+export const nodeInstrumenter: Instrumenter = instrumentRoot;
 
 /**
  * Instrument a single luauRoot and write a standalone manifest.

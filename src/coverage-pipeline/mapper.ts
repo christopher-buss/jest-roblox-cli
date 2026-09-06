@@ -47,6 +47,30 @@ export interface MappedCoverageResult {
 	files: Record<string, MappedFileCoverage>;
 }
 
+/** The original position a generated one came from, or all-null. */
+export type OriginalPosition =
+	| { column: null; line: null; source: null }
+	| { column: number; line: number; source: null | string };
+
+/** A generated position; source maps are queried on 1-based lines. */
+export interface GeneratedPosition {
+	column: number;
+	line: number;
+}
+
+export type PositionResolver = (position: GeneratedPosition) => OriginalPosition;
+
+export interface CoverageMappingOptions {
+	fileSystem?: FileSystem;
+	traceMapFactory?: TraceMapFactory;
+}
+
+export type CoverageMapper = typeof mapCoverageToTypeScript;
+
+// No real source map can express a span whose end resolves to nothing:
+// trace-mapping snaps a column at or after a segment onto that segment.
+type TraceMapFactory = (rawSourceMap: string) => PositionResolver;
+
 interface PendingStatement {
 	end: { column: number; line: number };
 	hitCount: number;
@@ -79,6 +103,27 @@ interface PendingBranch {
 	type: string;
 }
 
+interface FileResources {
+	coverageMap: CoverageMap;
+	resolvePosition: PositionResolver | undefined;
+	sourceKey: string;
+	sourceMapDirectory: string;
+}
+
+interface PushPendingBranchOptions {
+	armHitCounts: Array<number>;
+	emptyMessage: string;
+	entry: { locations: ReadonlyArray<SourceLocation>; type: string };
+	fileBranches: Array<PendingBranch>;
+	locations: PendingBranch["locations"];
+}
+
+interface SourceMapped {
+	coverageMap: FileResources["coverageMap"];
+	resolvePosition: PositionResolver;
+	sourceMapDirectory: string;
+}
+
 interface MappedPosition {
 	column: number;
 	line: number;
@@ -97,38 +142,12 @@ interface AddOrCoalesceOptions {
 	span: MappedSpan;
 }
 
-interface FileResources {
-	coverageMap: CoverageMap;
-	sourceKey: string;
-	/**
-	 * Directory containing the source map, used to resolve relative source
-	 * paths.
-	 */
-	sourceMapDirectory: string;
-	traceMap: TraceMap | undefined;
-}
-
 interface MappedArmLocations {
 	locations: Array<{
 		end: { column: number; line: number };
 		start: { column: number; line: number };
 	}>;
 	tsPath: string;
-}
-
-interface PushPendingBranchOptions {
-	armHitCounts: Array<number>;
-	/** Names the caller's own "locations are non-empty here" invariant. */
-	emptyMessage: string;
-	entry: { locations: ReadonlyArray<SourceLocation>; type: string };
-	fileBranches: Array<PendingBranch>;
-	locations: PendingBranch["locations"];
-}
-
-interface SourceMapped {
-	coverageMap: FileResources["coverageMap"];
-	sourceMapDirectory: string;
-	traceMap: TraceMap;
 }
 
 /**
@@ -151,7 +170,10 @@ export class CoverageMapMalformedError extends Error {
 export function mapCoverageToTypeScript(
 	coverageData: RawCoverageData,
 	manifest: CoverageManifest,
-	fileSystem: FileSystem = nodeFileSystem,
+	{
+		fileSystem = nodeFileSystem,
+		traceMapFactory = traceMappingFactory,
+	}: CoverageMappingOptions = {},
 ): MappedCoverageResult {
 	const pendingStatements = new Map<string, FileStatements>();
 	const pendingFunctions = new Map<string, Array<PendingFunction>>();
@@ -164,20 +186,20 @@ export function mapCoverageToTypeScript(
 	for (const [fileKey, record] of Object.entries(manifest.files)) {
 		const fileCoverage = coverageData[fileKey] ?? { s: {} };
 
-		const resources = loadFileResources(fileSystem, record);
+		const resources = loadFileResources(fileSystem, traceMapFactory, record);
 		if (resources === undefined) {
 			continue;
 		}
 
-		if (resources.traceMap === undefined) {
+		if (resources.resolvePosition === undefined) {
 			passthroughFileStatements(resources, fileCoverage, pendingStatements);
 			passthroughFileFunctions(resources, fileCoverage, pendingFunctions);
 			passthroughFileBranches(resources, fileCoverage, pendingBranches);
 		} else {
 			const mapped = {
 				coverageMap: resources.coverageMap,
+				resolvePosition: resources.resolvePosition,
 				sourceMapDirectory: resources.sourceMapDirectory,
-				traceMap: resources.traceMap,
 			};
 			const resolvedTsPaths = mapFileStatements(mapped, fileCoverage, pendingStatements);
 			mapFileFunctions(mapped, fileCoverage, pendingFunctions, resolvedTsPaths);
@@ -188,11 +210,17 @@ export function mapCoverageToTypeScript(
 	return buildResult(pendingStatements, pendingFunctions, pendingBranches);
 }
 
+function traceMappingFactory(rawSourceMap: string): PositionResolver {
+	const traceMap = new TraceMap(rawSourceMap);
+	return (position) => originalPositionFor(traceMap, position);
+}
+
 // --- Luau column → Istanbul column conversion ---
 // Luau columns are 1-based; Istanbul expects 0-based.
 
 function loadFileResources(
 	fileSystem: FileSystem,
+	traceMapFactory: TraceMapFactory,
 	record: CoverageManifest["files"][string],
 ): FileResources | undefined {
 	const result = readCoverageMap(record.coverageMapPath, fileSystem);
@@ -207,10 +235,10 @@ function loadFileResources(
 		throw new CoverageMapMalformedError(record.coverageMapPath);
 	}
 
-	let traceMap: TraceMap | undefined;
+	let resolvePosition: PositionResolver | undefined;
 	try {
 		const sourceMapRaw = fileSystem.readFileSync(record.sourceMapPath, "utf-8");
-		traceMap = new TraceMap(sourceMapRaw);
+		resolvePosition = traceMapFactory(sourceMapRaw);
 	} catch {
 		// No source map — native Luau file, passthrough mode
 	}
@@ -219,9 +247,9 @@ function loadFileResources(
 
 	return {
 		coverageMap: result.map,
+		resolvePosition,
 		sourceKey: record.key,
 		sourceMapDirectory,
-		traceMap,
 	};
 }
 
@@ -366,17 +394,17 @@ function passthroughFileBranches(
  * Paths that are already cwd-relative (no `..` prefix) pass through unchanged.
  */
 function mapStatement(
-	traceMap: TraceMap,
+	resolvePosition: PositionResolver,
 	span: { end: { column: number; line: number }; start: { column: number; line: number } },
 	sourceMapDirectory: string,
 ): MappedSpan | undefined {
 	// Luau columns are 1-based, source maps expect 0-based
-	const mappedStart = originalPositionFor(traceMap, {
+	const mappedStart = resolvePosition({
 		column: Math.max(0, span.start.column - 1),
 		line: span.start.line,
 	});
 
-	const mappedEnd = originalPositionFor(traceMap, {
+	const mappedEnd = resolvePosition({
 		column: Math.max(0, span.end.column - 1),
 		line: span.end.line,
 	});
@@ -495,7 +523,7 @@ function mapFileStatements(
 	for (const [statementId, span] of Object.entries(resources.coverageMap.statementMap)) {
 		const hitCount = fileCoverage.s[statementId] ?? 0;
 
-		const mapped = mapStatement(resources.traceMap, span, resources.sourceMapDirectory);
+		const mapped = mapStatement(resources.resolvePosition, span, resources.sourceMapDirectory);
 		if (mapped === undefined) {
 			continue;
 		}
@@ -550,7 +578,7 @@ function mapFileFunctions(
 		const hitCount = fileCoverage.f?.[functionId] ?? 0;
 
 		const mapped = mapStatement(
-			resources.traceMap,
+			resources.resolvePosition,
 			entry.location,
 			resources.sourceMapDirectory,
 		);
@@ -572,7 +600,7 @@ function mapFileFunctions(
 }
 
 function mapBranchArmLocations(
-	traceMap: TraceMap,
+	resolvePosition: PositionResolver,
 	locations: ReadonlyArray<SourceLocation>,
 	sourceMapDirectory: string,
 ): MappedArmLocations | undefined {
@@ -580,7 +608,7 @@ function mapBranchArmLocations(
 	let tsPath: string | undefined;
 
 	for (const location of locations) {
-		const mapped = mapStatement(traceMap, location, sourceMapDirectory);
+		const mapped = mapStatement(resolvePosition, location, sourceMapDirectory);
 		if (mapped === undefined) {
 			return undefined;
 		}
@@ -648,7 +676,7 @@ function mapFileBranches(
 		const armHitCounts = fileCoverage.b?.[branchId] ?? [];
 
 		const result = mapBranchArmLocations(
-			resources.traceMap,
+			resources.resolvePosition,
 			entry.locations,
 			resources.sourceMapDirectory,
 		);

@@ -20,7 +20,8 @@ import { createCopyIgnoreMatcher, hashCopyIgnorePatterns } from "./discover-file
 import { canReuseCoverageManifest } from "./incremental-gate.ts";
 import type { InstrumentUniverse } from "./instrument-universe.ts";
 import { createInstrumentUniverse } from "./instrument-universe.ts";
-import { INSTRUMENTER_VERSION } from "./instrumenter.ts";
+import type { Instrumenter } from "./instrumenter.ts";
+import { INSTRUMENTER_VERSION, nodeInstrumenter } from "./instrumenter.ts";
 import type {
 	CoverageManifest,
 	InstrumentedFileRecord,
@@ -41,7 +42,58 @@ import { prepareSpine } from "./spine.ts";
 
 const WORKSPACE_COVERAGE_DIR = ".jest-roblox/workspace";
 
-export interface WorkspacePackageDescriptor {
+export interface WorkspacePackageCoverage {
+	/**
+	 * This package's effective `coveragePathIgnorePatterns` (per-package
+	 * override or the `DEFAULT_CONFIG` fallback). Always populated by
+	 * `prepareForPackage`; optional only so test stubs need not restate it.
+	 * Carried so report-time aggregation applies the same patterns per-package
+	 * that instrumentation used for roots.
+	 */
+	coveragePathIgnorePatterns?: Array<string> | undefined;
+	coverageRoots: Array<WorkspaceCoverageRoot>;
+	/**
+	 * The directories between each `coverageRoots` entry and the `$path` mount
+	 * above it, paired with the shadow copy of that directory's own loose
+	 * files. Synthesis demotes each one so the roots below it can be swapped.
+	 */
+	coverageSpine: Array<WorkspaceCoverageRoot>;
+	manifest: CoverageManifest;
+	manifestPath: string;
+	pkg: string;
+	/**
+	 * The anchor this package's coverage globs were resolved against. Carried
+	 * for the same reason as `coveragePathIgnorePatterns`: the report has to
+	 * judge on exactly what instrumentation judged on, and re-deriving the
+	 * anchor from a config downstream is how the two would drift apart.
+	 */
+	rootDir: string;
+}
+
+export interface PrepareWorkspaceCoverageOptions {
+	/** Where the shadows are built. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
+	/** What writes the instrumented twins. Defaults to the real one. */
+	instrumenter?: Instrumenter | undefined;
+	packages: Array<WorkspacePackageDescriptor>;
+	/**
+	 * Orchestration profiler; records the coverage sub-phases per instrumented
+	 * root.
+	 */
+	timing?: TimingCollector | undefined;
+	workspaceRoot: string;
+}
+
+interface WorkspaceCoverageRoot {
+	/**
+	 * Path relative to the package directory (matches what rojo $path uses).
+	 */
+	luauRoot: PosixRoot;
+	/** Absolute, POSIX-normalized path to the instrumented shadow directory. */
+	shadowDir: string;
+}
+
+interface WorkspacePackageDescriptor {
 	name: string;
 	/**
 	 * Per-package `collectCoverageFrom`. Narrows instrumentation to the files
@@ -88,55 +140,6 @@ export interface WorkspacePackageDescriptor {
 	rootDir?: string | undefined;
 }
 
-export interface WorkspaceCoverageRoot {
-	/**
-	 * Path relative to the package directory (matches what rojo $path uses).
-	 */
-	luauRoot: PosixRoot;
-	/** Absolute, POSIX-normalized path to the instrumented shadow directory. */
-	shadowDir: string;
-}
-
-export interface WorkspacePackageCoverage {
-	/**
-	 * This package's effective `coveragePathIgnorePatterns` (per-package
-	 * override or the `DEFAULT_CONFIG` fallback). Always populated by
-	 * `prepareForPackage`; optional only so test stubs need not restate it.
-	 * Carried so report-time aggregation applies the same patterns per-package
-	 * that instrumentation used for roots.
-	 */
-	coveragePathIgnorePatterns?: Array<string> | undefined;
-	coverageRoots: Array<WorkspaceCoverageRoot>;
-	/**
-	 * The directories between each `coverageRoots` entry and the `$path` mount
-	 * above it, paired with the shadow copy of that directory's own loose
-	 * files. Synthesis demotes each one so the roots below it can be swapped.
-	 */
-	coverageSpine: Array<WorkspaceCoverageRoot>;
-	manifest: CoverageManifest;
-	manifestPath: string;
-	pkg: string;
-	/**
-	 * The anchor this package's coverage globs were resolved against. Carried
-	 * for the same reason as `coveragePathIgnorePatterns`: the report has to
-	 * judge on exactly what instrumentation judged on, and re-deriving the
-	 * anchor from a config downstream is how the two would drift apart.
-	 */
-	rootDir: string;
-}
-
-export interface PrepareWorkspaceCoverageOptions {
-	/** Where the shadows are built. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
-	packages: Array<WorkspacePackageDescriptor>;
-	/**
-	 * Orchestration profiler; records the coverage sub-phases per instrumented
-	 * root.
-	 */
-	timing?: TimingCollector | undefined;
-	workspaceRoot: string;
-}
-
 /**
  * A package's effective `coveragePathIgnorePatterns`, as both the compiled
  * root-matcher (used to skip instrumenting ignored directories) and the raw
@@ -172,6 +175,7 @@ interface PackageIncrementalOptions {
 }
 
 interface InstrumentPackageOptions extends PackageIncrementalOptions {
+	instrumenter: Instrumenter;
 	isCopyIgnored: CopyIgnoreMatcher;
 	isIncremental: boolean;
 	timing: TimingCollector;
@@ -198,10 +202,21 @@ interface InstrumentPackageInputs {
 	descriptor: WorkspacePackageDescriptor;
 	fileSystem: FileSystem;
 	ignore: PackageIgnore;
+	instrumenter: Instrumenter;
 	manifestPath: string;
 	packageShadowRoot: string;
 	timing: TimingCollector;
 	universe: InstrumentUniverse | undefined;
+}
+
+/** What one package's whole coverage pass reads. */
+interface PreparePackageOptions {
+	descriptor: WorkspacePackageDescriptor;
+	fileSystem: FileSystem;
+	ignore: PackageIgnore;
+	instrumenter: Instrumenter;
+	timing: TimingCollector;
+	workspaceRoot: string;
 }
 
 /** What every root-discovery pass over one package reads. */
@@ -242,7 +257,12 @@ interface WritePackageManifestOptions {
 export function prepareWorkspaceCoverage(
 	options: PrepareWorkspaceCoverageOptions,
 ): Array<WorkspacePackageCoverage> {
-	const { fileSystem = nodeFileSystem, packages, workspaceRoot } = options;
+	const {
+		fileSystem = nodeFileSystem,
+		instrumenter = nodeInstrumenter,
+		packages,
+		workspaceRoot,
+	} = options;
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 	// Workspace mode reads `coveragePathIgnorePatterns` per-package only.
 	// Hoist the DEFAULT_CONFIG matcher so packages that don't override the
@@ -254,22 +274,14 @@ export function prepareWorkspaceCoverage(
 	const defaultCopyMatcher = createCopyIgnoreMatcher(DEFAULT_CONFIG.coverageCopyIgnorePatterns);
 
 	return packages.map((descriptor) => {
-		const copyPatterns =
-			descriptor.coverageCopyIgnorePatterns ?? DEFAULT_CONFIG.coverageCopyIgnorePatterns;
-		const ignore: PackageIgnore = {
-			copyDigest: hashCopyIgnorePatterns(copyPatterns),
-			copyMatcher:
-				descriptor.coverageCopyIgnorePatterns !== undefined
-					? createCopyIgnoreMatcher(descriptor.coverageCopyIgnorePatterns)
-					: defaultCopyMatcher,
-			matcher:
-				descriptor.coveragePathIgnorePatterns !== undefined
-					? createIgnoreMatcher(descriptor.coveragePathIgnorePatterns)
-					: defaultMatcher,
-			patterns:
-				descriptor.coveragePathIgnorePatterns ?? DEFAULT_CONFIG.coveragePathIgnorePatterns,
-		};
-		return prepareForPackage({ descriptor, fileSystem, ignore, timing, workspaceRoot });
+		return prepareForPackage({
+			descriptor,
+			fileSystem,
+			ignore: resolvePackageIgnore(descriptor, defaultMatcher, defaultCopyMatcher),
+			instrumenter,
+			timing,
+			workspaceRoot,
+		});
 	});
 }
 
@@ -301,8 +313,7 @@ export function emitWorkspaceBuildManifests(
 				projects: [],
 				rebuilt: true,
 			},
-			undefined,
-			fileSystem,
+			{ fileSystem },
 		);
 	}
 }
@@ -750,6 +761,7 @@ function instrumentOneRoot(
 	{
 		descriptor,
 		fileSystem,
+		instrumenter,
 		isCopyIgnored,
 		isIncremental,
 		packageShadowRoot,
@@ -760,6 +772,7 @@ function instrumentOneRoot(
 ): ShadowRootResult {
 	return prepareShadowRoot({
 		fileSystem,
+		instrumenter,
 		isCopyIgnored,
 		luauRoot: toPosixRoot(path.join(descriptor.packageDirectory, relativeLuauRoot)),
 		previousManifest,
@@ -818,6 +831,7 @@ function instrumentPackage({
 	descriptor,
 	fileSystem,
 	ignore,
+	instrumenter,
 	manifestPath,
 	packageShadowRoot,
 	timing,
@@ -837,35 +851,22 @@ function instrumentPackage({
 
 	return instrumentPackageRoots({
 		...options,
+		instrumenter,
 		isCopyIgnored: ignore.copyMatcher,
 		isIncremental: decidePackageIncremental(options),
 		timing,
 	});
 }
 
-function prepareForPackage({
-	descriptor,
-	fileSystem,
-	ignore,
-	timing,
-	workspaceRoot,
-}: {
-	descriptor: WorkspacePackageDescriptor;
-	fileSystem: FileSystem;
-	ignore: PackageIgnore;
-	timing: TimingCollector;
-	workspaceRoot: string;
-}): WorkspacePackageCoverage {
+function prepareForPackage(options: PreparePackageOptions): WorkspacePackageCoverage {
+	const { descriptor, fileSystem, ignore, workspaceRoot } = options;
 	const { manifestPath, packageShadowRoot } = resolvePackagePaths(descriptor.name, workspaceRoot);
 
 	const universe = resolvePackageUniverse(descriptor, ignore, fileSystem);
 	const instrumented = instrumentPackage({
-		descriptor,
-		fileSystem,
-		ignore,
+		...options,
 		manifestPath,
 		packageShadowRoot,
-		timing,
 		universe,
 	});
 	const manifest = writePackageManifest({
@@ -890,4 +891,26 @@ function prepareForPackage({
 
 function createIgnoreMatcher(patterns: Array<string>): (filePath: string) => boolean {
 	return picomatch(patterns, { contains: true });
+}
+
+function resolvePackageIgnore(
+	descriptor: WorkspacePackageDescriptor,
+	defaultMatcher: (filePath: string) => boolean,
+	defaultCopyMatcher: CopyIgnoreMatcher,
+): PackageIgnore {
+	const copyPatterns =
+		descriptor.coverageCopyIgnorePatterns ?? DEFAULT_CONFIG.coverageCopyIgnorePatterns;
+	return {
+		copyDigest: hashCopyIgnorePatterns(copyPatterns),
+		copyMatcher:
+			descriptor.coverageCopyIgnorePatterns !== undefined
+				? createCopyIgnoreMatcher(descriptor.coverageCopyIgnorePatterns)
+				: defaultCopyMatcher,
+		matcher:
+			descriptor.coveragePathIgnorePatterns !== undefined
+				? createIgnoreMatcher(descriptor.coveragePathIgnorePatterns)
+				: defaultMatcher,
+		patterns:
+			descriptor.coveragePathIgnorePatterns ?? DEFAULT_CONFIG.coveragePathIgnorePatterns,
+	};
 }

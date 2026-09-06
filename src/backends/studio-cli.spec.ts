@@ -5,9 +5,14 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import { assert, describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
-import type { WebSocketServer } from "ws";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import {
+	getLastCreatedServer,
+	MockWebSocketServer,
+	mockWebSocketServerFactory as webSocketServerFactory,
+} from "../../test/mocks/mock-web-socket-server.ts";
+import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
@@ -20,12 +25,7 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import { createStudioCliBackend, StudioCliBackend } from "./studio-cli.ts";
 import type { StudioCliLauncher, StudioCliProcess } from "./studio-cli.ts";
-
-const { getLastCreatedServer, MockWebSocket, MockWebSocketServer } = await vi.hoisted(
-	async () => import("../../test/mocks/mock-ws"),
-);
-
-vi.mock(import("ws"), async () => fromPartial({ WebSocketServer: MockWebSocketServer }));
+import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 /**
  * A launched Studio the backend can kill. `onError` mirrors the real seam (a
@@ -191,6 +191,7 @@ function makeBackend(
 		discover: () => "C:/Studio/RobloxStudioBeta.exe",
 		fileSystem,
 		launch,
+		webSocketServerFactory,
 		...extra,
 	});
 }
@@ -255,6 +256,19 @@ describe(StudioCliBackend, () => {
 
 		expect(rawResults).toHaveLength(2);
 		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([11, 22]);
+	});
+
+	it("should bind the run server to loopback on an OS-assigned port", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const factory = vi.fn<WebSocketServerFactory>(webSocketServerFactory);
+
+		await makeBackend(fileSystem, replyWith(fileSystem).launch, {
+			webSocketServerFactory: factory,
+		}).runTestsAsync(singleJob);
+
+		expect(factory).toHaveBeenCalledExactlyOnceWith({ host: "127.0.0.1", port: 0 });
 	});
 
 	it("should surface the frame gameOutput as the fallback on each rawResult", async () => {
@@ -357,6 +371,7 @@ describe(StudioCliBackend, () => {
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
 			launch: replyWith(fileSystem).launch,
+			webSocketServerFactory,
 		});
 
 		await backend.runTestsAsync(singleJob);
@@ -554,6 +569,7 @@ describe(StudioCliBackend, () => {
 				return process;
 			},
 			timeout: 40,
+			webSocketServerFactory,
 		});
 
 		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
@@ -593,6 +609,7 @@ describe(StudioCliBackend, () => {
 					[
 						"discarded oldest line",
 						"  ",
+						webSocketServerFactory,
 						...Array.from({ length: 12 }, (_, index) => `line ${String(index + 1)}`),
 						"x".repeat(300),
 						"x".repeat(301),
@@ -727,6 +744,7 @@ describe(StudioCliBackend, () => {
 			fileSystem,
 			launch: replyWith(fileSystem).launch,
 			studioPath: "C:/override/RobloxStudioBeta.exe",
+			webSocketServerFactory,
 		});
 
 		await backend.runTestsAsync(singleJob);
@@ -835,6 +853,7 @@ describe(StudioCliBackend, () => {
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
 			launch,
+			webSocketServerFactory,
 		});
 
 		await backend.runTestsAsync({ jobs: [workspaceJob("@scope/a", "a")] });
@@ -918,6 +937,7 @@ describe(StudioCliBackend, () => {
 			fileSystem,
 			launch,
 			studioPath: "C:/seeded/RobloxStudioBeta.exe",
+			webSocketServerFactory,
 		});
 
 		await backend.runTestsAsync(singleJob);
@@ -940,6 +960,7 @@ describe(StudioCliBackend, () => {
 			buildPlaceAsync: fakeBuildPlace(),
 			fileSystem,
 			launch,
+			webSocketServerFactory,
 		});
 
 		await backend.runTestsAsync(singleJob);
@@ -952,23 +973,23 @@ describe(StudioCliBackend, () => {
 		// asynchronously, so the backend waits for `listening` then reads the
 		// assigned port. These drive that path with a fake server (the mock
 		// reports its port up front and is returned without waiting).
-		function pendingServer(boundPort: number | undefined): WebSocketServer {
-			const server = new MockWebSocketServer({ port: 0 });
-			// Report "not yet bound" until `listening` fires, then the assigned
-			// port. State on an object so the lazy implementation re-reads it.
-			const state = { listening: false };
-			vi.spyOn(server, "address").mockImplementation(() => {
-				if (boundPort !== undefined && state.listening) {
-					return { port: boundPort };
-				}
+		function pendingServerFactory(boundPort: number | undefined): WebSocketServerFactory {
+			return (options) => {
+				const server = new MockWebSocketServer(options);
+				const state = { listening: false };
+				vi.spyOn(server, "address").mockImplementation(() => {
+					if (boundPort !== undefined && state.listening) {
+						return { port: boundPort };
+					}
 
-				return fromAny(null);
-			});
-			queueMicrotask(() => {
-				state.listening = true;
-				server.emit("listening");
-			});
-			return fromAny(server);
+					return fromAny(null);
+				});
+				queueMicrotask(() => {
+					state.listening = true;
+					server.emit("listening");
+				});
+				return fromPartial(server);
+			};
 		}
 
 		it("should wait for `listening` and bake the assigned ephemeral port", async () => {
@@ -985,10 +1006,10 @@ describe(StudioCliBackend, () => {
 			});
 			const backend = new StudioCliBackend({
 				buildPlaceAsync: fakeBuildPlace(),
-				createServer: () => pendingServer(54_321),
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
 				launch,
+				webSocketServerFactory: pendingServerFactory(54_321),
 			});
 
 			await backend.runTestsAsync(singleJob);
@@ -1003,10 +1024,10 @@ describe(StudioCliBackend, () => {
 
 			const backend = new StudioCliBackend({
 				buildPlaceAsync: fakeBuildPlace(),
-				createServer: () => pendingServer(undefined),
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
 				launch: replyWith(fileSystem).launch,
+				webSocketServerFactory: pendingServerFactory(undefined),
 			});
 
 			await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(/failed to bind a port/);
@@ -1043,6 +1064,7 @@ describe(StudioCliBackend, () => {
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
 				launch,
+				webSocketServerFactory,
 			});
 
 			await backend.runTestsAsync({ jobs: [coverageJob()] });
@@ -1166,6 +1188,7 @@ describe(StudioCliBackend, () => {
 				childProcess,
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
+				webSocketServerFactory,
 				...extra,
 			});
 		}

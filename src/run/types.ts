@@ -13,6 +13,7 @@ import type { SourceMapper } from "../source-mapper/index.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { FileSystem } from "../utils/file-system.ts";
+import type { RunSeams } from "./seams.ts";
 
 export type RunMode = "multi" | "single" | "workspace";
 
@@ -168,6 +169,8 @@ export interface RunOptions {
 	config: ResolvedConfig;
 	/** Where the run reads and writes. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
+	/** Everything the run reaches outside itself through. */
+	seams?: RunSeams | undefined;
 	/**
 	 * Span-tree profiler owned by `runJestRoblox`. Optional so direct test
 	 * seams keep working with the existing two-property shape; production

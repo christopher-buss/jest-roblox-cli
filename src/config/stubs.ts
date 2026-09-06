@@ -158,33 +158,6 @@ interface SyncTarget {
 }
 
 /**
- * Refuse to let any downstream write land outside `rootDirectory`. Mount
- * fsPaths originate from the rojo tree and `resolveNestedProjects` can emit
- * values with `..` segments (nested projects relocate paths); combined with
- * `path.resolve` on Windows, a permissive fsPath could send stub writes to
- * `D:\outside\...`. Guard at every write-site.
- */
-export function assertMountContained(
-	project: ResolvedProjectConfig,
-	fsPath: string,
-	rootDirectory: string,
-): void {
-	if (path.isAbsolute(fsPath)) {
-		throw new Error(
-			`Project "${project.displayName}" mount fsPath must be relative, got: ${fsPath}`,
-		);
-	}
-
-	const rootResolved = path.resolve(rootDirectory);
-	const mountResolved = path.resolve(rootDirectory, fsPath);
-	if (mountResolved !== rootResolved && !mountResolved.startsWith(rootResolved + path.sep)) {
-		throw new Error(
-			`Project "${project.displayName}" mount fsPath escapes root directory: ${fsPath}`,
-		);
-	}
-}
-
-/**
  * True when the mount directory contains a non-marker `jest.config.luau` —
  * i.e. a user-authored config Rojo will sync. Source of truth for whether
  * to skip generating a stub at that mount. Used by `generateProjectStubs`,
@@ -360,6 +333,33 @@ export function syncStubsToShadowDirectory(
 	}
 
 	return hasChanged;
+}
+
+/**
+ * Refuse to let any downstream write land outside `rootDirectory`. Mount
+ * fsPaths originate from the rojo tree and `resolveNestedProjects` can emit
+ * values with `..` segments (nested projects relocate paths); combined with
+ * `path.resolve` on Windows, a permissive fsPath could send stub writes to
+ * `D:\outside\...`. Guard at every write-site.
+ */
+function assertMountContained(
+	project: ResolvedProjectConfig,
+	fsPath: string,
+	rootDirectory: string,
+): void {
+	if (path.isAbsolute(fsPath)) {
+		throw new Error(
+			`Project "${project.displayName}" mount fsPath must be relative, got: ${fsPath}`,
+		);
+	}
+
+	const rootResolved = path.resolve(rootDirectory);
+	const mountResolved = path.resolve(rootDirectory, fsPath);
+	if (mountResolved !== rootResolved && !mountResolved.startsWith(rootResolved + path.sep)) {
+		throw new Error(
+			`Project "${project.displayName}" mount fsPath escapes root directory: ${fsPath}`,
+		);
+	}
 }
 
 function cleanLeftoverStubsForProject(

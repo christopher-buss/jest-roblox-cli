@@ -1,6 +1,10 @@
 import { filterCoverageUniverse } from "./coverage-universe.ts";
 import type { CoverageManifest } from "./manifest.ts";
-import { mapCoverageToTypeScript, type MappedCoverageResult } from "./mapper.ts";
+import {
+	type CoverageMapper,
+	mapCoverageToTypeScript,
+	type MappedCoverageResult,
+} from "./mapper.ts";
 import type { RawCoverageData } from "./types.ts";
 
 export interface WorkspacePackageCoverageEntry {
@@ -48,6 +52,7 @@ export interface WorkspacePackageUniverse {
  */
 export function aggregateWorkspaceCoverage(
 	entries: ReadonlyArray<WorkspacePackageCoverageEntry>,
+	mapCoverage: CoverageMapper = mapCoverageToTypeScript,
 ): Array<WorkspacePackageUniverse> {
 	const perPackage: Array<WorkspacePackageUniverse> = [];
 
@@ -56,7 +61,7 @@ export function aggregateWorkspaceCoverage(
 			continue;
 		}
 
-		const mapped = mapCoverageToTypeScript(entry.coverageData, entry.manifest);
+		const mapped = mapCoverage(entry.coverageData, entry.manifest);
 		perPackage.push({
 			pkg: entry.pkg,
 			universe: filterCoverageUniverse(mapped, {

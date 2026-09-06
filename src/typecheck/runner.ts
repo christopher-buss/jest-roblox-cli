@@ -78,6 +78,9 @@ export interface TypecheckOptions {
 	tsconfig?: string | undefined;
 }
 
+// cspell:ignore tsgo
+export type RunTypecheck = typeof runTypecheckAsync;
+
 interface FileInfo {
 	definitions: Array<TestDefinition>;
 	source: string;
@@ -194,7 +197,6 @@ export function isCompositeProject(
 	}
 }
 
-// cspell:ignore tsgo
 export async function runTypecheckAsync(options: TypecheckOptions): Promise<JestResult> {
 	const { fileSystem = nodeFileSystem } = options;
 	const startTime = Date.now();

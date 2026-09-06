@@ -5,7 +5,6 @@ import * as path from "node:path";
 
 import { filterProjectsByFiles } from "../config/filter-projects-by-files.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
-import { resolveAllProjects } from "../config/projects.ts";
 import type { TypecheckCliOptions } from "../config/resolve-typecheck-config.ts";
 import { resolveTypecheckConfig } from "../config/resolve-typecheck-config.ts";
 import type { ProjectEntry, ResolvedConfig } from "../config/schema.ts";
@@ -17,6 +16,8 @@ import { nodeFileSystem } from "../utils/file-system.ts";
 import { resolveAllSetupFilePaths } from "./discovery.ts";
 import { executeTestPlanAsync, runTypecheckPassAsync } from "./execution.ts";
 import { buildMultiRunResult } from "./multi-result.ts";
+import type { RunSeams } from "./seams.ts";
+import { nodeRunSeams } from "./seams.ts";
 import type { StagedRun } from "./staging.ts";
 import { stageRunAsync } from "./staging.ts";
 import type { EmptyRunPolicy, RunDiscovery } from "./test-plan.ts";
@@ -37,6 +38,7 @@ export interface MultiRunOptions extends RunOptions {
 export interface ResolvedRunInput {
 	cli: RunOptions["cli"];
 	fileSystem: FileSystem;
+	seams: RunSeams;
 	timing: TimingCollector;
 }
 
@@ -71,14 +73,20 @@ export function loadRojoTree(
 export async function runResolvedProjectsAsync(
 	allProjects: Array<ResolvedProjectConfig>,
 	rootConfig: ResolvedConfig,
-	{ cli, fileSystem, timing }: ResolvedRunInput,
+	{ cli, fileSystem, seams, timing }: ResolvedRunInput,
 ): Promise<MultiRunResult> {
-	const discovery = beginRun(allProjects, rootConfig, { cli, fileSystem, timing });
+	const discovery = beginRun(allProjects, rootConfig, { cli, fileSystem, seams, timing });
 	if (isTypecheckOnlyRun(discovery)) {
 		return runMultiTypecheckOnlyAsync(discovery);
 	}
 
-	const staged = await stageRunAsync(discovery.projects, rootConfig, timing, fileSystem);
+	const staged = await stageRunAsync({
+		fileSystem,
+		projects: discovery.projects,
+		rootConfig,
+		seams,
+		timing,
+	});
 	const plan = buildTestPlan({
 		...discovery,
 		effectivePlaceFile: staged.effectiveConfig.placeFile,
@@ -93,18 +101,20 @@ export async function runResolvedProjectsAsync(
 
 export async function runMultiProjectAsync(options: MultiRunOptions): Promise<MultiRunResult> {
 	const { cli, config: rootConfig, fileSystem = nodeFileSystem, rawProjects } = options;
+	const seams = { ...nodeRunSeams(), ...options.seams };
 	const timing = options.timing ?? NOOP_TIMING_COLLECTOR;
 	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(rootConfig, fileSystem));
 
 	const allProjects = await timing.profileAsync("resolveAllProjects", async () => {
-		return resolveAllProjects(rawProjects, rootConfig, {
+		return seams.resolveAllProjects(rawProjects, rootConfig, {
 			cwd: rootConfig.rootDir,
 			fileSystem,
 			rojoTree,
+			tsconfigReader: seams.tsconfigReader,
 		});
 	});
 
-	return runResolvedProjectsAsync(allProjects, rootConfig, { cli, fileSystem, timing });
+	return runResolvedProjectsAsync(allProjects, rootConfig, { cli, fileSystem, seams, timing });
 }
 
 function filterProjectsByName(
@@ -153,7 +163,7 @@ function selectProjects(
 function beginRun(
 	allProjects: Array<ResolvedProjectConfig>,
 	rootConfig: ResolvedConfig,
-	{ cli, fileSystem, timing }: ResolvedRunInput,
+	{ cli, fileSystem, seams, timing }: ResolvedRunInput,
 ): RunDiscovery {
 	const cliTypecheck: TypecheckCliOptions = {
 		enabled: cli.typecheck,
@@ -165,7 +175,10 @@ function beginRun(
 	// staging: `toBuildManifestProjects` bakes the resolved paths into the Build
 	// Manifest the coverage place is published with.
 	timing.profile("resolveSetupFilePaths", () => {
-		resolveAllSetupFilePaths(allProjects.map((project) => project.config));
+		resolveAllSetupFilePaths(
+			allProjects.map((project) => project.config),
+			seams.createSetupResolver,
+		);
 	});
 
 	const { filesByProject, projects } = timing.profile("selectProjects", () => {
@@ -178,6 +191,7 @@ function beginRun(
 		fileSystem,
 		projects,
 		rootConfig,
+		seams,
 		timing,
 	};
 }
@@ -230,6 +244,7 @@ async function runMultiTypecheckOnlyAsync(discovery: RunDiscovery): Promise<Mult
 		plan.typeTestEntries,
 		discovery.rootConfig,
 		discovery.cliTypecheck,
+		discovery.seams.runTypecheck,
 	);
 	discovery.timing.record("runTypecheck", typecheck.elapsedMs);
 	return { ...empty, typecheckResult: typecheck.result };

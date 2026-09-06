@@ -3,9 +3,9 @@
  * summaries, detailed failures and totals produced by the sibling modules into
  * the single-project and multi-project reports.
  *
- * It also stays the barrel every consumer imports from — `output.spec.ts`
- * whole-module-automocks this file, and `index.ts` re-exports its public API —
- * so anything that moved to a sibling is re-exported here.
+ * It also stays the barrel every consumer imports from, and `index.ts`
+ * re-exports its public API, so anything that moved to a sibling is re-exported
+ * here.
  */
 
 import { mergeJestTotals, mergeSnapshotSummaries } from "../results/merge.ts";
@@ -28,8 +28,7 @@ import {
 } from "./summary.ts";
 
 // Re-exported from its home in `results/merge.ts` so the formatter stays the
-// import site every consumer already knows (and `output.spec.ts`'s whole-module
-// automock of this file keeps covering it).
+// import site every consumer already knows.
 export { mergeSnapshotSummaries } from "../results/merge.ts";
 export {
 	cleanExecErrorMessage,

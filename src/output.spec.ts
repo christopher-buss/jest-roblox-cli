@@ -1,38 +1,36 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
+import * as path from "node:path";
 import process from "node:process";
 import type { MockInstance } from "vitest";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
+import { createMemoryFileSystem, type MemoryVolume } from "../test/mocks/memory-file-system.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
+import type { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
+import type { mapCoverageToTypeScript } from "./coverage-pipeline/mapper.ts";
 import {
 	CoverageMapMalformedError,
-	mapCoverageToTypeScript,
 	type MappedCoverageResult,
 } from "./coverage-pipeline/mapper.ts";
-import {
-	checkThresholds,
-	generateReports,
-	printCoverageHeader,
-} from "./coverage-pipeline/reporter.ts";
-import { type ExecuteResult, formatExecuteOutput, loadCoverageManifest } from "./executor.ts";
-import { formatAgentMultiProject } from "./formatters/agent.ts";
-import {
+import type { checkThresholds, generateReports } from "./coverage-pipeline/reporter.ts";
+import type { formatExecuteOutput } from "./executor/format-output.ts";
+import type { ExecuteResult } from "./executor/types.ts";
+import type { formatAgentMultiProject } from "./formatters/agent.ts";
+import type {
 	formatMultiProjectResult,
 	formatResult,
 	formatTypecheckReport,
-	mergeSnapshotSummaries,
 } from "./formatters/formatter.ts";
-import { formatAnnotations, formatJobSummary } from "./formatters/github-actions.ts";
-import { writeJsonFileAsync } from "./formatters/json.ts";
 import {
 	mergeProjectResults,
 	mergeResults,
+	type OutputDependencies,
 	outputMultiResultAsync,
 	outputSingleResultAsync,
 	writeResultFileAsync,
 } from "./output.ts";
+import { mergeSnapshotSummaries } from "./results/merge.ts";
 import type {
 	MultiRunResult,
 	ProjectResult,
@@ -41,24 +39,9 @@ import type {
 	WorkspaceReportOptions,
 	WorkspaceRunResult,
 } from "./run/types.ts";
+import type { GameOutputEntry } from "./types/game-output.ts";
 import type { JestResult, TestFileResult } from "./types/jest-result.ts";
-import {
-	buildBatchGameOutput,
-	buildGroupedGameOutput,
-	formatGameOutputNotice,
-	parseGameOutput,
-	writeGameOutput,
-	writeGroupedGameOutput,
-} from "./utils/game-output.ts";
-
-vi.mock(import("./executor"));
-vi.mock(import("./coverage-pipeline/mapper"));
-vi.mock(import("./coverage-pipeline/reporter"));
-vi.mock(import("./formatters/formatter"));
-vi.mock(import("./formatters/agent"));
-vi.mock(import("./formatters/github-actions"));
-vi.mock(import("./formatters/json"));
-vi.mock(import("./utils/game-output"));
+import type { FileSystem } from "./utils/file-system.ts";
 
 type MockedWrite = MockInstance<typeof process.stderr.write>;
 type MockedConsole = MockInstance<typeof console.log>;
@@ -70,34 +53,30 @@ interface OutputSpies {
 	stdout: MockedWrite;
 }
 
-const mocks = {
-	buildBatchGameOutput: vi.mocked(buildBatchGameOutput),
-	buildGroupedGameOutput: vi.mocked(buildGroupedGameOutput),
-	checkThresholds: vi.mocked(checkThresholds),
-	formatAgentMultiProject: vi.mocked(formatAgentMultiProject),
-	formatAnnotations: vi.mocked(formatAnnotations),
-	formatExecuteOutput: vi.mocked(formatExecuteOutput),
-	formatGameOutputNotice: vi.mocked(formatGameOutputNotice),
-	formatJobSummary: vi.mocked(formatJobSummary),
-	formatMultiProjectResult: vi.mocked(formatMultiProjectResult),
-	formatResult: vi.mocked(formatResult),
-	formatTypecheckReport: vi.mocked(formatTypecheckReport),
-	generateReports: vi.mocked(generateReports),
-	loadCoverageManifest: vi.mocked(loadCoverageManifest),
-	mapCoverageToTypeScript: vi.mocked(mapCoverageToTypeScript),
-	mergeSnapshotSummaries: vi.mocked(mergeSnapshotSummaries),
-	parseGameOutput: vi.mocked(parseGameOutput),
-	printCoverageHeader: vi.mocked(printCoverageHeader),
-	writeGameOutput: vi.mocked(writeGameOutput),
-	writeGroupedGameOutput: vi.mocked(writeGroupedGameOutput),
-	writeJsonFile: vi.mocked(writeJsonFileAsync),
+interface OutputHarness {
+	dependencies: OutputDependencies;
+	fileSystem: FileSystem;
+	volume: MemoryVolume;
+}
+
+const GAME_OUTPUT_ENTRY: GameOutputEntry = { message: "hi", messageType: 0, timestamp: 0 };
+const RAW_GAME_OUTPUT = JSON.stringify([GAME_OUTPUT_ENTRY]);
+const COVERAGE_HEADER = "Coverage report from";
+
+const pipeline = {
+	checkThresholds: vi.fn<typeof checkThresholds>(),
+	generateReports: vi.fn<typeof generateReports>(),
+	loadCoverageManifest: vi.fn<typeof loadCoverageManifest>(),
+	mapCoverageToTypeScript: vi.fn<typeof mapCoverageToTypeScript>(),
 };
 
-function setupCleanup(): void {
-	onTestFinished(() => {
-		delete process.env["GITHUB_STEP_SUMMARY"];
-	});
-}
+const renderer = {
+	formatAgentMultiProject: vi.fn<typeof formatAgentMultiProject>(),
+	formatExecuteOutput: vi.fn<typeof formatExecuteOutput>(),
+	formatMultiProjectResult: vi.fn<typeof formatMultiProjectResult>(),
+	formatResult: vi.fn<typeof formatResult>(),
+	formatTypecheckReport: vi.fn<typeof formatTypecheckReport>(),
+};
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
@@ -122,6 +101,32 @@ function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
 		testResults: [],
 		...overrides,
 	};
+}
+
+function makeFailingResult(): JestResult {
+	return makeJestResult({
+		numFailedTests: 1,
+		numPassedTests: 0,
+		success: false,
+		testResults: [
+			{
+				numFailingTests: 1,
+				numPassingTests: 0,
+				numPendingTests: 0,
+				testFilePath: "src/client/player.spec.ts",
+				testResults: [
+					{
+						ancestorTitles: ["player"],
+						duration: 1,
+						failureMessages: ["boom"],
+						fullName: "player explodes",
+						status: "failed",
+						title: "explodes",
+					},
+				],
+			},
+		],
+	});
 }
 
 function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResult {
@@ -214,33 +219,46 @@ function setupOutputSpies(): OutputSpies {
 	};
 }
 
-function setupDefaults(): void {
-	setupCleanup();
-	mocks.formatResult.mockReturnValue("formatted-result");
-	mocks.formatMultiProjectResult.mockReturnValue("formatted-multi");
-	mocks.formatAgentMultiProject.mockReturnValue("formatted-agent");
-	mocks.formatExecuteOutput.mockReturnValue("formatted-execute");
-	mocks.formatTypecheckReport.mockReturnValue("typecheck-summary");
-	mocks.formatAnnotations.mockReturnValue("");
-	mocks.formatJobSummary.mockReturnValue("job-summary");
-	mocks.formatGameOutputNotice.mockReturnValue("");
-	mocks.parseGameOutput.mockReturnValue([]);
-	mocks.loadCoverageManifest.mockReturnValue(undefined);
-	mocks.checkThresholds.mockReturnValue({ failures: [], passed: true });
-	mocks.writeJsonFile.mockResolvedValue(undefined);
+// On Windows a bare "/tmp/x" and its resolved form are two different volume keys.
+function readSink(volume: MemoryVolume, filePath: string): string {
+	return String(volume.readFileSync(path.resolve(filePath), "utf8"));
+}
+
+function hasSink(volume: MemoryVolume, filePath: string): boolean {
+	return volume.existsSync(path.resolve(filePath));
+}
+
+function setupOutput(): OutputHarness {
+	onTestFinished(() => {
+		delete process.env["GITHUB_STEP_SUMMARY"];
+	});
+
+	renderer.formatResult.mockReturnValue("formatted-result");
+	renderer.formatMultiProjectResult.mockReturnValue("formatted-multi");
+	renderer.formatAgentMultiProject.mockReturnValue("formatted-agent");
+	renderer.formatExecuteOutput.mockReturnValue("formatted-execute");
+	renderer.formatTypecheckReport.mockReturnValue("typecheck-summary");
+	pipeline.loadCoverageManifest.mockReturnValue(undefined);
+	pipeline.checkThresholds.mockReturnValue({ failures: [], passed: true });
+
+	const { fileSystem, volume } = createMemoryFileSystem();
+
+	return {
+		dependencies: { coveragePipeline: pipeline, fileSystem, renderer },
+		fileSystem,
+		volume,
+	};
 }
 
 describe(outputSingleResultAsync, () => {
 	it("should print formatted runtime output and return 0 when runtime succeeds", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 		const config = makeConfig();
 
-		const code = await outputSingleResultAsync(config, makeSingleResult(), fileSystem);
+		const code = await outputSingleResultAsync(config, makeSingleResult(), dependencies);
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
@@ -249,9 +267,7 @@ describe(outputSingleResultAsync, () => {
 	it("should return 1 when runtime fails", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputSingleResultAsync(
@@ -259,7 +275,7 @@ describe(outputSingleResultAsync, () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeJestResult({ success: false }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -268,9 +284,7 @@ describe(outputSingleResultAsync, () => {
 	it("should return 1 when snapshot writes failed even if tests passed", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputSingleResultAsync(
@@ -278,7 +292,7 @@ describe(outputSingleResultAsync, () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 2 }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -287,9 +301,7 @@ describe(outputSingleResultAsync, () => {
 	it("should return 1 when obsolete snapshots are present even if tests passed", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputSingleResultAsync(
@@ -308,7 +320,7 @@ describe(outputSingleResultAsync, () => {
 					}),
 				}),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -317,9 +329,7 @@ describe(outputSingleResultAsync, () => {
 	it("should propagate snapshotWriteFailures into deferred runtime output", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -327,10 +337,10 @@ describe(outputSingleResultAsync, () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ snapshotWriteFailures: 3 }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatExecuteOutput).toHaveBeenCalledWith(
+		expect(renderer.formatExecuteOutput).toHaveBeenCalledWith(
 			expect.objectContaining({ snapshotWriteFailures: 3 }),
 		);
 	});
@@ -340,9 +350,7 @@ describe(outputSingleResultAsync, () => {
 	it("should return 1 when a bail stopped the run on a failing package", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync(
@@ -355,7 +363,7 @@ describe(outputSingleResultAsync, () => {
 					}),
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -364,9 +372,7 @@ describe(outputSingleResultAsync, () => {
 	it("should propagate a workspace bail summary to the agent formatter", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -375,10 +381,10 @@ describe(outputSingleResultAsync, () => {
 				bail: { notRun: 2, ran: 1 },
 				reportOptions: { ...makeReportOptions(), formatters: ["agent"] },
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatAgentMultiProject).toHaveBeenCalledWith(
+		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ bail: { notRun: 2, ran: 1 } }),
 		);
@@ -387,18 +393,16 @@ describe(outputSingleResultAsync, () => {
 	it("should fold workspace staging time into the reported timing", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig(),
 			makeWorkspaceResult({ stagingMs: 400 }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ coverageMs: 0, stagingMs: 400, totalMs: 600 }),
 			expect.anything(),
@@ -408,18 +412,16 @@ describe(outputSingleResultAsync, () => {
 	it("should report staging and coverage as separate phases", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig(),
 			makeMultiResult({ coverageMs: 120, stagingMs: 300 }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ coverageMs: 120, stagingMs: 300, totalMs: 620 }),
 			expect.anything(),
@@ -429,18 +431,16 @@ describe(outputSingleResultAsync, () => {
 	it("should propagate a workspace bail summary to the multi formatter", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig(),
 			makeWorkspaceResult({ bail: { notRun: 2, ran: 1 } }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.anything(),
 			expect.objectContaining({ bail: { notRun: 2, ran: 1 } }),
@@ -450,12 +450,14 @@ describe(outputSingleResultAsync, () => {
 	it("should suppress output when config.silent is true", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(makeConfig({ silent: true }), makeSingleResult(), fileSystem);
+		await outputSingleResultAsync(
+			makeConfig({ silent: true }),
+			makeSingleResult(),
+			dependencies,
+		);
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -463,15 +465,13 @@ describe(outputSingleResultAsync, () => {
 	it("should suppress the final coverage status when silent", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true, silent: true }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stdout).not.toHaveBeenCalled();
@@ -480,57 +480,46 @@ describe(outputSingleResultAsync, () => {
 	it("should write JSON output when config.outputFile is set", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ outputFile: "/tmp/results.json" }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.writeJsonFile).toHaveBeenCalledWith(
-			expect.any(Object),
-			"/tmp/results.json",
-			fileSystem,
+		expect(readSink(volume, "/tmp/results.json")).toBe(
+			JSON.stringify(makeJestResult(), null, 2),
 		);
 	});
 
 	it("should write game output when config.gameOutput is set and runtime present", async () => {
-		expect.assertions(3);
+		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		const entries = [{ message: "hi", messageType: 0, timestamp: 0 }];
-		mocks.parseGameOutput.mockReturnValue(entries);
-		setupOutputSpies();
+		const { dependencies, volume } = setupOutput();
+		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeSingleResult({
-				runtimeResult: makeExecuteResult({ gameOutput: "raw" }),
+				runtimeResult: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.parseGameOutput).toHaveBeenCalledExactlyOnceWith("raw");
-		expect(mocks.writeGameOutput).toHaveBeenCalledExactlyOnceWith(
-			"/tmp/game.json",
-			entries,
-			fileSystem,
+		expect(readSink(volume, "/tmp/game.json")).toBe(
+			JSON.stringify([GAME_OUTPUT_ENTRY], null, 2),
 		);
-		expect(mocks.formatGameOutputNotice).toHaveBeenCalledExactlyOnceWith("/tmp/game.json", 1);
+		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith(
+			"Game output (1 entries) written to /tmp/game.json",
+		);
 	});
 
 	it("should print typecheck-only when typecheckResult is present and runtime is undefined", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -539,18 +528,36 @@ describe(outputSingleResultAsync, () => {
 				runtimeResult: undefined,
 				typecheckResult: makeJestResult(),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stdout).toHaveBeenCalledWith("typecheck-summary");
 	});
 
+	it("should render the typecheck-only report without color when color is off", async () => {
+		expect.assertions(1);
+
+		const { dependencies } = setupOutput();
+		setupOutputSpies();
+
+		await outputSingleResultAsync(
+			makeConfig({ color: false }),
+			makeSingleResult({
+				runtimeResult: undefined,
+				typecheckResult: makeJestResult(),
+			}),
+			dependencies,
+		);
+
+		expect(renderer.formatTypecheckReport).toHaveBeenCalledWith(expect.anything(), {
+			useColor: false,
+		});
+	});
+
 	it("should merge typecheck + runtime via default formatter", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -558,7 +565,7 @@ describe(outputSingleResultAsync, () => {
 			makeSingleResult({
 				typecheckResult: makeJestResult({ numFailedTests: 1, success: false }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-result");
@@ -567,15 +574,13 @@ describe(outputSingleResultAsync, () => {
 	it("should print runtime + typecheck-summary separately for non-default formatter", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ formatters: ["json"] }),
 			makeSingleResult({ typecheckResult: makeJestResult() }),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
@@ -585,9 +590,7 @@ describe(outputSingleResultAsync, () => {
 	it("should route the type error count through the agent formatter", async () => {
 		expect.assertions(3);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -595,14 +598,14 @@ describe(outputSingleResultAsync, () => {
 			makeSingleResult({
 				typecheckResult: makeJestResult({ numFailedTests: 2, success: false }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatExecuteOutput).toHaveBeenCalledWith(
+		expect(renderer.formatExecuteOutput).toHaveBeenCalledWith(
 			expect.objectContaining({ typeErrorCount: 2 }),
 		);
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
-		expect(mocks.formatTypecheckReport).toHaveBeenCalledWith(
+		expect(renderer.formatTypecheckReport).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ includeSummaryRows: false }),
 		);
@@ -611,15 +614,13 @@ describe(outputSingleResultAsync, () => {
 	it("should print final PASS status when coverage enabled and passed", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("PASS"));
@@ -628,9 +629,7 @@ describe(outputSingleResultAsync, () => {
 	it("should print final FAIL status when coverage enabled and failed", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -638,7 +637,7 @@ describe(outputSingleResultAsync, () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ result: makeJestResult({ success: false }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining("FAIL"));
@@ -649,24 +648,20 @@ describe(outputMultiResultAsync, () => {
 	it("should print formatted multi-project output and return 0 when all succeed", async () => {
 		expect.assertions(3);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		const code = await outputMultiResultAsync(makeConfig(), makeMultiResult(), fileSystem);
+		const code = await outputMultiResultAsync(makeConfig(), makeMultiResult(), dependencies);
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
-		expect(mocks.formatMultiProjectResult).toHaveBeenCalledOnce();
+		expect(renderer.formatMultiProjectResult).toHaveBeenCalledOnce();
 	});
 
 	it("should return 1 when any project result fails", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync(
@@ -679,7 +674,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -688,9 +683,7 @@ describe(outputMultiResultAsync, () => {
 	it("should return 1 when any project had snapshot write failures", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync(
@@ -707,7 +700,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -716,17 +709,7 @@ describe(outputMultiResultAsync, () => {
 	it("should return 1 when any project had obsolete snapshots", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.mergeSnapshotSummaries.mockReturnValue({
-			added: 0,
-			matched: 0,
-			total: 0,
-			unchecked: 1,
-			unmatched: 0,
-			updated: 0,
-		});
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync(
@@ -754,7 +737,7 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -763,9 +746,7 @@ describe(outputMultiResultAsync, () => {
 	it("should propagate aggregated snapshotWriteFailures to multi formatter", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -782,10 +763,10 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.anything(),
 			expect.objectContaining({ snapshotWriteFailures: 5 }),
@@ -795,9 +776,7 @@ describe(outputMultiResultAsync, () => {
 	it("should hand each project its own raw game output to the multi formatter", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -814,10 +793,10 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatMultiProjectResult).toHaveBeenCalledWith(
+		expect(renderer.formatMultiProjectResult).toHaveBeenCalledWith(
 			[
 				expect.objectContaining({ displayName: "client", gameOutput: "client-raw" }),
 				expect.objectContaining({ displayName: "server", gameOutput: "server-raw" }),
@@ -830,12 +809,10 @@ describe(outputMultiResultAsync, () => {
 	it("should suppress output when config.silent is true", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		await outputMultiResultAsync(makeConfig({ silent: true }), makeMultiResult(), fileSystem);
+		await outputMultiResultAsync(makeConfig({ silent: true }), makeMultiResult(), dependencies);
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -843,75 +820,58 @@ describe(outputMultiResultAsync, () => {
 	it("should write JSON output when config.outputFile is set", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ outputFile: "/tmp/results.json" }),
 			makeMultiResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.writeJsonFile).toHaveBeenCalledWith(
-			expect.any(Object),
-			"/tmp/results.json",
-			fileSystem,
+		expect(readSink(volume, "/tmp/results.json")).toBe(
+			JSON.stringify(makeJestResult(), null, 2),
 		);
 	});
 
 	it("should NOT write the result file for workspace results (the runner handles it)", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ outputFile: "/tmp/results.json" }),
 			makeWorkspaceResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.writeJsonFile).not.toHaveBeenCalled();
+		expect(hasSink(volume, "/tmp/results.json")).toBeFalse();
 	});
 
 	it("should write a grouped aggregated game output file for multi results when config.gameOutput is set", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		const groups = [
-			{ entries: [{ message: "hi", messageType: 0, timestamp: 0 }], project: "client" },
-		];
-		mocks.buildGroupedGameOutput.mockReturnValue(groups);
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeMultiResult(),
-			fileSystem,
+			makeMultiResult({
+				projectResults: [makeProjectResult("client", { gameOutput: RAW_GAME_OUTPUT })],
+			}),
+			dependencies,
 		);
 
-		expect(mocks.buildGroupedGameOutput).toHaveBeenCalledExactlyOnceWith([
-			{ project: "client", raw: undefined },
-		]);
-		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledExactlyOnceWith(
-			"/tmp/game.json",
-			groups,
-			fileSystem,
+		expect(readSink(volume, "/tmp/game.json")).toBe(
+			JSON.stringify([{ entries: [GAME_OUTPUT_ENTRY], project: "client" }], null, 2),
 		);
 	});
 
 	it("should keep per-project groups when a vm-parallel request fell back to sequential", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		// The plugin runs the sequential path when no VM host is ready, and
@@ -920,29 +880,30 @@ describe(outputMultiResultAsync, () => {
 		await outputMultiResultAsync(
 			makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
 			makeMultiResult({
-				projectResults: [makeProjectResult("client"), makeProjectResult("server")],
+				projectResults: [
+					makeProjectResult("client", { gameOutput: RAW_GAME_OUTPUT }),
+					makeProjectResult("server"),
+				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.buildBatchGameOutput).not.toHaveBeenCalled();
-		expect(mocks.buildGroupedGameOutput).toHaveBeenCalledOnce();
+		expect(readSink(volume, "/tmp/game.json")).toBe(
+			JSON.stringify(
+				[
+					{ entries: [GAME_OUTPUT_ENTRY], project: "client" },
+					{ entries: [], project: "server" },
+				],
+				null,
+				2,
+			),
+		);
 	});
 
 	it("should write one batch-scoped game output group for a vm-parallel run", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		const batchGroups = [
-			{
-				entries: [{ message: "hi", messageType: 0, timestamp: 0 }],
-				project: "(all projects)",
-				scope: "batch" as const,
-			},
-		];
-		mocks.buildBatchGameOutput.mockReturnValue(batchGroups);
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		// `gameOutputScope` is the runner's own report of what it did: the
@@ -951,27 +912,35 @@ describe(outputMultiResultAsync, () => {
 			makeConfig({ experimentalVmParallel: 2, gameOutput: "/tmp/game.json" }),
 			makeMultiResult({
 				projectResults: [
-					makeProjectResult("client", { gameOutputScope: "batch" }),
+					makeProjectResult("client", {
+						gameOutput: RAW_GAME_OUTPUT,
+						gameOutputScope: "batch",
+					}),
 					makeProjectResult("server", { gameOutputScope: "batch" }),
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.buildGroupedGameOutput).not.toHaveBeenCalled();
-		expect(mocks.writeGroupedGameOutput).toHaveBeenCalledWith(
-			"/tmp/game.json",
-			batchGroups,
-			fileSystem,
+		expect(readSink(volume, "/tmp/game.json")).toBe(
+			JSON.stringify(
+				[
+					{
+						entries: [GAME_OUTPUT_ENTRY],
+						project: "(all projects)",
+						scope: "batch",
+					},
+				],
+				null,
+				2,
+			),
 		);
 	});
 
 	it("should keep per-project game output groups when the VM request collapses to one", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -979,36 +948,40 @@ describe(outputMultiResultAsync, () => {
 			makeMultiResult({
 				projectResults: [makeProjectResult("client"), makeProjectResult("server")],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.buildBatchGameOutput).not.toHaveBeenCalled();
-		expect(mocks.buildGroupedGameOutput).toHaveBeenCalledOnce();
+		expect(readSink(volume, "/tmp/game.json")).toBe(
+			JSON.stringify(
+				[
+					{ entries: [], project: "client" },
+					{ entries: [], project: "server" },
+				],
+				null,
+				2,
+			),
+		);
 	});
 
 	it("should NOT write aggregated game output for workspace results (the runner handles it)", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeWorkspaceResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.writeGroupedGameOutput).not.toHaveBeenCalled();
+		expect(hasSink(volume, "/tmp/game.json")).toBeFalse();
 	});
 
 	it("should fall back to outputSingleResult when no project results but typecheck present", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1017,7 +990,7 @@ describe(outputMultiResultAsync, () => {
 				projectResults: [],
 				typecheckResult: makeJestResult(),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stdout).toHaveBeenCalledWith("typecheck-summary");
@@ -1026,15 +999,13 @@ describe(outputMultiResultAsync, () => {
 	it("should use agent formatter when configured", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ formatters: ["agent"] }),
 			makeMultiResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-agent");
@@ -1043,18 +1014,16 @@ describe(outputMultiResultAsync, () => {
 	it("should use agent formatter with maxFailures option", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ formatters: [["agent", { maxFailures: 5 }]] }),
 			makeMultiResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatAgentMultiProject).toHaveBeenCalledWith(
+		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.any(Array),
 			expect.objectContaining({ maxFailures: 5 }),
 		);
@@ -1063,9 +1032,7 @@ describe(outputMultiResultAsync, () => {
 	it("should point agent hints at the workspace-resolved sink paths, not config", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1078,10 +1045,10 @@ describe(outputMultiResultAsync, () => {
 				outputFile: "/ws/jest-output.log",
 				reportOptions: makeReportOptions({ formatters: ["agent"] }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatAgentMultiProject).toHaveBeenCalledWith(
+		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.any(Array),
 			expect.objectContaining({
 				gameOutput: "/ws/game-output.log",
@@ -1093,9 +1060,7 @@ describe(outputMultiResultAsync, () => {
 	it("should point agent hints at config paths for multi (non-workspace) runs", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1105,10 +1070,10 @@ describe(outputMultiResultAsync, () => {
 				outputFile: "/root/cfg.json",
 			}),
 			makeMultiResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatAgentMultiProject).toHaveBeenCalledWith(
+		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.any(Array),
 			expect.objectContaining({ gameOutput: "/root/cfg.log", outputFile: "/root/cfg.json" }),
 		);
@@ -1117,15 +1082,13 @@ describe(outputMultiResultAsync, () => {
 	it("should use json formatter when configured", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ formatters: ["json"] }),
 			makeMultiResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
@@ -1134,15 +1097,13 @@ describe(outputMultiResultAsync, () => {
 	it("should print typecheck-summary to stderr for non-default formatter when typecheck present", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ formatters: ["json"] }),
 			makeMultiResult({ typecheckResult: makeJestResult() }),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
@@ -1151,9 +1112,7 @@ describe(outputMultiResultAsync, () => {
 	it("should print type failures without repeating the row for the agent formatter", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1161,11 +1120,11 @@ describe(outputMultiResultAsync, () => {
 			makeMultiResult({
 				typecheckResult: makeJestResult({ numFailedTests: 2, success: false }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stderr).toHaveBeenCalledWith("typecheck-summary");
-		expect(mocks.formatTypecheckReport).toHaveBeenCalledWith(
+		expect(renderer.formatTypecheckReport).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ includeSummaryRows: false }),
 		);
@@ -1174,16 +1133,14 @@ describe(outputMultiResultAsync, () => {
 	it("should write nothing when a clean type pass leaves the agent report empty", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.formatTypecheckReport.mockReturnValue("");
+		const { dependencies } = setupOutput();
+		renderer.formatTypecheckReport.mockReturnValue("");
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ formatters: ["agent"] }),
 			makeMultiResult({ typecheckResult: makeJestResult() }),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stderr).not.toHaveBeenCalled();
@@ -1192,11 +1149,9 @@ describe(outputMultiResultAsync, () => {
 	it("should apply collectCoverageFrom override from result onto config", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1210,10 +1165,36 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.generateReports).toHaveBeenCalledWith(
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
+			expect.objectContaining({ collectCoverageFrom: ["src/**/*.ts"] }),
+		);
+	});
+
+	it("should keep the config's collectCoverageFrom when the result narrows nothing", async () => {
+		expect.assertions(1);
+
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig({ collectCoverage: true, collectCoverageFrom: ["src/**/*.ts"] }),
+			makeMultiResult({
+				projectResults: [
+					{
+						displayName: "client",
+						result: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
+					},
+				],
+			}),
+			dependencies,
+		);
+
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ collectCoverageFrom: ["src/**/*.ts"] }),
 		);
 	});
@@ -1221,12 +1202,14 @@ describe(outputMultiResultAsync, () => {
 	it("should accept WorkspaceRunResult", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
-		const code = await outputMultiResultAsync(makeConfig(), makeWorkspaceResult(), fileSystem);
+		const code = await outputMultiResultAsync(
+			makeConfig(),
+			makeWorkspaceResult(),
+			dependencies,
+		);
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
@@ -1235,11 +1218,9 @@ describe(outputMultiResultAsync, () => {
 	it("should forward the result's coverage display filter to the reporter", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
 		function displayFilter(): boolean {
@@ -1257,10 +1238,10 @@ describe(outputMultiResultAsync, () => {
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.generateReports).toHaveBeenCalledWith(
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ agentTextFilter: displayFilter }),
 		);
 	});
@@ -1274,33 +1255,29 @@ describe("workspace output ignores the bootstrap config", () => {
 	it("should render with the runner's formatters, not the bootstrap config's", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ formatters: ["agent"] }),
 			makeWorkspaceResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
-		expect(mocks.formatAgentMultiProject).not.toHaveBeenCalled();
+		expect(renderer.formatAgentMultiProject).not.toHaveBeenCalled();
 	});
 
 	it("should print when the runner resolved silent false and the bootstrap config says true", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ silent: true }),
 			makeWorkspaceResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
@@ -1309,18 +1286,16 @@ describe("workspace output ignores the bootstrap config", () => {
 	it("should report agent paths against the workspace root, not the bootstrap rootDir", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ rootDir: "/bootstrap" }),
 			makeWorkspaceResult({ reportOptions: makeReportOptions({ formatters: ["agent"] }) }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatAgentMultiProject).toHaveBeenCalledWith(
+		expect(renderer.formatAgentMultiProject).toHaveBeenCalledWith(
 			expect.any(Array),
 			expect.objectContaining({ rootDir: "/workspace" }),
 		);
@@ -1329,44 +1304,41 @@ describe("workspace output ignores the bootstrap config", () => {
 	it("should not write the bootstrap outputFile on a typecheck-only workspace run", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ outputFile: "/root/cfg.json" }),
 			makeWorkspaceResult({ projectResults: [], typecheckResult: makeJestResult() }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.writeJsonFile).not.toHaveBeenCalled();
+		expect(hasSink(volume, "/root/cfg.json")).toBeFalse();
 	});
 
 	it("should not run the GitHub Actions formatter the bootstrap config asked for", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.formatAnnotations.mockReturnValue("::error::boom");
-		setupOutputSpies();
+		const { dependencies } = setupOutput();
+		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeWorkspaceResult(),
-			fileSystem,
+			makeWorkspaceResult({
+				projectResults: [
+					makeProjectResult("@halcyon/foo", { result: makeFailingResult() }),
+				],
+			}),
+			dependencies,
 		);
 
-		expect(mocks.formatAnnotations).not.toHaveBeenCalled();
+		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("::error"));
 	});
 
 	it("should keep the bootstrap coverage settings out of the report", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1378,10 +1350,10 @@ describe("workspace output ignores the bootstrap config", () => {
 				rootDir: "/bootstrap",
 			}),
 			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.generateReports).toHaveBeenCalledWith(
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({
 				collectCoverageFrom: undefined,
 				coverageDirectory: "/workspace/packages/foo/coverage",
@@ -1393,29 +1365,25 @@ describe("workspace output ignores the bootstrap config", () => {
 	it("should not gate a workspace package on the bootstrap coverageThreshold", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync(
 			makeConfig({ collectCoverage: true, coverageThreshold: { lines: 80 } }),
 			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.checkThresholds).not.toHaveBeenCalled();
+		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
 		expect(code).toBe(0);
 	});
 
 	it("should not map coverage through the bootstrap rootDir manifest", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1428,11 +1396,11 @@ describe("workspace output ignores the bootstrap config", () => {
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.loadCoverageManifest).not.toHaveBeenCalled();
-		expect(mocks.generateReports).not.toHaveBeenCalled();
+		expect(pipeline.loadCoverageManifest).not.toHaveBeenCalled();
+		expect(pipeline.generateReports).not.toHaveBeenCalled();
 	});
 });
 
@@ -1440,28 +1408,24 @@ describe("processCoverage via outputSingleResult", () => {
 	it("should be a no-op when collectCoverage is false", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
-		await outputSingleResultAsync(makeConfig(), makeSingleResult(), fileSystem);
+		await outputSingleResultAsync(makeConfig(), makeSingleResult(), dependencies);
 
-		expect(mocks.generateReports).not.toHaveBeenCalled();
+		expect(pipeline.generateReports).not.toHaveBeenCalled();
 	});
 
 	it("should warn when coverage data is undefined", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stderr).toHaveBeenCalledWith(
@@ -1472,15 +1436,13 @@ describe("processCoverage via outputSingleResult", () => {
 	it("should suppress empty-coverage warning under silent", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true, silent: true }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stderr).not.toHaveBeenCalled();
@@ -1489,9 +1451,7 @@ describe("processCoverage via outputSingleResult", () => {
 	it("should warn when manifest is missing", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -1499,7 +1459,7 @@ describe("processCoverage via outputSingleResult", () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stderr).toHaveBeenCalledWith(
@@ -1510,9 +1470,7 @@ describe("processCoverage via outputSingleResult", () => {
 	it("should suppress missing-manifest warning under silent", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -1520,7 +1478,7 @@ describe("processCoverage via outputSingleResult", () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stderr).not.toHaveBeenCalled();
@@ -1529,56 +1487,50 @@ describe("processCoverage via outputSingleResult", () => {
 	it("should generate reports when manifest present", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		setupOutputSpies();
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.printCoverageHeader).toHaveBeenCalledOnce();
-		expect(mocks.generateReports).toHaveBeenCalledOnce();
+		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
+		expect(pipeline.generateReports).toHaveBeenCalledOnce();
 	});
 
 	it("should suppress coverage header under silent", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		setupOutputSpies();
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ collectCoverage: true, silent: true }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.printCoverageHeader).not.toHaveBeenCalled();
-		expect(mocks.generateReports).toHaveBeenCalledOnce();
+		expect(spies.stdout).not.toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
+		expect(pipeline.generateReports).toHaveBeenCalledOnce();
 	});
 
 	it("should fail when coverage threshold not met", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		mocks.checkThresholds.mockReturnValue({
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		pipeline.checkThresholds.mockReturnValue({
 			failures: [{ actual: 50, metric: "lines", threshold: 100 }],
 			passed: false,
 		});
@@ -1592,7 +1544,7 @@ describe("processCoverage via outputSingleResult", () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -1604,11 +1556,9 @@ describe("processCoverage via outputSingleResult", () => {
 	it("should not generate reports or check thresholds when mapper throws on malformed coverage map", async () => {
 		expect.assertions(3);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockImplementation(() => {
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockImplementation(() => {
 			throw new CoverageMapMalformedError("out/foo.luau.cov-map.json");
 		});
 		setupOutputSpies();
@@ -1622,12 +1572,12 @@ describe("processCoverage via outputSingleResult", () => {
 				makeSingleResult({
 					runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 				}),
-				fileSystem,
+				dependencies,
 			),
 		).rejects.toThrow(CoverageMapMalformedError);
 
-		expect(mocks.generateReports).not.toHaveBeenCalled();
-		expect(mocks.checkThresholds).not.toHaveBeenCalled();
+		expect(pipeline.generateReports).not.toHaveBeenCalled();
+		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
 	});
 });
 
@@ -1635,11 +1585,9 @@ describe("agent-mode summary ordering vs coverage", () => {
 	it("should print coverage before the single-project agent summary so trimming keeps it", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -1647,12 +1595,12 @@ describe("agent-mode summary ordering vs coverage", () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 
-		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
+		const coverageOrder = pipeline.generateReports.mock.invocationCallOrder[0]!;
 		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
 
 		expect(coverageOrder).toBeLessThan(summaryOrder);
@@ -1661,11 +1609,9 @@ describe("agent-mode summary ordering vs coverage", () => {
 	it("should keep the summary before coverage for the default formatter", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -1673,12 +1619,12 @@ describe("agent-mode summary ordering vs coverage", () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledExactlyOnceWith("formatted-execute");
 
-		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
+		const coverageOrder = pipeline.generateReports.mock.invocationCallOrder[0]!;
 		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
 
 		expect(summaryOrder).toBeLessThan(coverageOrder);
@@ -1687,11 +1633,9 @@ describe("agent-mode summary ordering vs coverage", () => {
 	it("should keep the summary before coverage when verbose opts out of the agent formatter", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -1699,12 +1643,12 @@ describe("agent-mode summary ordering vs coverage", () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 
-		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
+		const coverageOrder = pipeline.generateReports.mock.invocationCallOrder[0]!;
 		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
 
 		expect(summaryOrder).toBeLessThan(coverageOrder);
@@ -1713,11 +1657,9 @@ describe("agent-mode summary ordering vs coverage", () => {
 	it("should defer the multi-project agent summary until after the coverage report", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1727,12 +1669,12 @@ describe("agent-mode summary ordering vs coverage", () => {
 					makeProjectResult("client", { coverageData: fromAny({ "x.luau": {} }) }),
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-agent");
 
-		const coverageOrder = mocks.generateReports.mock.invocationCallOrder[0]!;
+		const coverageOrder = pipeline.generateReports.mock.invocationCallOrder[0]!;
 		const summaryOrder = spies.consoleLog.mock.invocationCallOrder[0]!;
 
 		expect(coverageOrder).toBeLessThan(summaryOrder);
@@ -1741,29 +1683,25 @@ describe("agent-mode summary ordering vs coverage", () => {
 	it("should keep the agent summary inline when coverage is disabled", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ formatters: ["agent"] }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
-		expect(mocks.generateReports).not.toHaveBeenCalled();
+		expect(pipeline.generateReports).not.toHaveBeenCalled();
 	});
 
 	it("should still print the deferred agent summary when coverage mapping throws", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockImplementation(() => {
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockImplementation(() => {
 			throw new CoverageMapMalformedError("out/foo.luau.cov-map.json");
 		});
 		const spies = setupOutputSpies();
@@ -1774,7 +1712,7 @@ describe("agent-mode summary ordering vs coverage", () => {
 				makeSingleResult({
 					runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 				}),
-				fileSystem,
+				dependencies,
 			),
 		).rejects.toThrow(CoverageMapMalformedError);
 
@@ -1786,9 +1724,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 	it("should report each package's own universe without consulting the single-pkg manifest", async () => {
 		expect.assertions(3);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
@@ -1797,12 +1733,12 @@ describe("per-package coverage reports via outputMultiResult", () => {
 			makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ universe: fooUniverse })],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.loadCoverageManifest).not.toHaveBeenCalled();
-		expect(mocks.mapCoverageToTypeScript).not.toHaveBeenCalled();
-		expect(mocks.generateReports).toHaveBeenCalledWith(
+		expect(pipeline.loadCoverageManifest).not.toHaveBeenCalled();
+		expect(pipeline.mapCoverageToTypeScript).not.toHaveBeenCalled();
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ mapped: fooUniverse }),
 		);
 	});
@@ -1810,9 +1746,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 	it("should generate reports for per-pkg opt-in even when workspace collectCoverage is false", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
@@ -1821,10 +1755,10 @@ describe("per-package coverage reports via outputMultiResult", () => {
 			makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ universe: fooUniverse })],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.generateReports).toHaveBeenCalledWith(
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ mapped: fooUniverse }),
 		);
 	});
@@ -1832,9 +1766,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 	it("should emit one report per package, each into its own directory with its own reporters", async () => {
 		expect.assertions(3);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -1852,17 +1784,17 @@ describe("per-package coverage reports via outputMultiResult", () => {
 					}),
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.generateReports).toHaveBeenCalledTimes(2);
-		expect(mocks.generateReports).toHaveBeenCalledWith(
+		expect(pipeline.generateReports).toHaveBeenCalledTimes(2);
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({
 				coverageDirectory: "/ws/packages/foo/coverage",
 				reporters: ["text"],
 			}),
 		);
-		expect(mocks.generateReports).toHaveBeenCalledWith(
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({
 				coverageDirectory: "/ws/packages/bar/cov",
 				reporters: ["lcov"],
@@ -1873,18 +1805,16 @@ describe("per-package coverage reports via outputMultiResult", () => {
 	it("should not re-filter a package universe that aggregation already narrowed", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig(),
 			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.generateReports).toHaveBeenCalledWith(
+		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({
 				collectCoverageFrom: undefined,
 				coveragePathIgnorePatterns: undefined,
@@ -1895,15 +1825,13 @@ describe("per-package coverage reports via outputMultiResult", () => {
 	it("should head each package report with the package name", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig(),
 			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stdout).toHaveBeenCalledWith("\n@halcyon/foo\n");
@@ -1912,28 +1840,24 @@ describe("per-package coverage reports via outputMultiResult", () => {
 	it("should emit no report and no header when no package produced coverage", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		setupOutputSpies();
+		const { dependencies } = setupOutput();
+		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ collectCoverage: true }),
 			makeWorkspaceResult({ coveragePackages: [] }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.printCoverageHeader).not.toHaveBeenCalled();
-		expect(mocks.generateReports).not.toHaveBeenCalled();
+		expect(spies.stdout).not.toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
+		expect(pipeline.generateReports).not.toHaveBeenCalled();
 	});
 
 	it("should enforce a package's own threshold when workspace collectCoverage is false", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.checkThresholds.mockReturnValue({
+		const { dependencies } = setupOutput();
+		pipeline.checkThresholds.mockReturnValue({
 			failures: [{ actual: 50, metric: "lines", threshold: 100 }],
 			passed: false,
 		});
@@ -1944,7 +1868,7 @@ describe("per-package coverage reports via outputMultiResult", () => {
 			makeWorkspaceResult({
 				coveragePackages: [makeCoverageGate({ coverageThreshold: { lines: 100 } })],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -1958,9 +1882,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 	it("should gate each package against its own universe and its own threshold", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
@@ -1971,12 +1893,12 @@ describe("per-package threshold gates via outputMultiResult", () => {
 					makeCoverageGate({ coverageThreshold: { lines: 70 }, universe: fooUniverse }),
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		// One call only: the pooled merged-universe check is replaced by the
 		// per-package gates.
-		expect(mocks.checkThresholds).toHaveBeenCalledExactlyOnceWith(
+		expect(pipeline.checkThresholds).toHaveBeenCalledExactlyOnceWith(
 			fooUniverse,
 			{ lines: 70 },
 			undefined,
@@ -1988,9 +1910,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 	it("should gate only the metrics the package itself declared", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const fooUniverse: MappedCoverageResult = fromAny({ files: { "foo.ts": {} } });
@@ -2004,10 +1924,10 @@ describe("per-package threshold gates via outputMultiResult", () => {
 					}),
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.checkThresholds).toHaveBeenCalledWith(
+		expect(pipeline.checkThresholds).toHaveBeenCalledWith(
 			fooUniverse,
 			{ statements: 70 },
 			undefined,
@@ -2018,28 +1938,24 @@ describe("per-package threshold gates via outputMultiResult", () => {
 	it("should not gate a package that declared no threshold", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputMultiResultAsync(
 			makeConfig(),
 			makeWorkspaceResult({ coveragePackages: [makeCoverageGate()] }),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.checkThresholds).not.toHaveBeenCalled();
+		expect(pipeline.checkThresholds).not.toHaveBeenCalled();
 		expect(code).toBe(0);
 	});
 
 	it("should print package-prefixed failures and exit 1 when a package misses its threshold", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.checkThresholds
+		const { dependencies } = setupOutput();
+		pipeline.checkThresholds
 			.mockReturnValueOnce({ failures: [], passed: true })
 			.mockReturnValueOnce({
 				failures: [{ actual: 75, metric: "lines", threshold: 80 }],
@@ -2055,7 +1971,7 @@ describe("per-package threshold gates via outputMultiResult", () => {
 					makeCoverageGate({ coverageThreshold: { lines: 80 }, pkg: "@halcyon/bar" }),
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(1);
@@ -2065,90 +1981,93 @@ describe("per-package threshold gates via outputMultiResult", () => {
 	});
 });
 
+// `GITHUB_WORKSPACE` is set on CI and rewrites an annotation's `file=` path.
+const FAILURE_ANNOTATION = "title=player explodes::boom\n";
+
 describe("runGitHubActionsFormatter via outputSingleResult", () => {
 	it("should be a no-op when formatter not configured", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
+		const { dependencies, volume } = setupOutput();
+		const spies = setupOutputSpies();
+		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
+		volume.mkdirSync("/tmp", { recursive: true });
 
-		setupDefaults();
-		setupOutputSpies();
+		await outputSingleResultAsync(
+			makeConfig(),
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ result: makeFailingResult() }),
+			}),
+			dependencies,
+		);
 
-		await outputSingleResultAsync(makeConfig(), makeSingleResult(), fileSystem);
-
-		expect(mocks.formatAnnotations).not.toHaveBeenCalled();
-		expect(mocks.formatJobSummary).not.toHaveBeenCalled();
+		expect(spies.stderr).not.toHaveBeenCalled();
+		expect(volume.existsSync("/tmp/summary.md")).toBeFalse();
 	});
 
 	it("should write annotations to stderr", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.formatAnnotations.mockReturnValue("Stryker was here!");
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeSingleResult(),
-			fileSystem,
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ result: makeFailingResult() }),
+			}),
+			dependencies,
 		);
 
-		expect(spies.stderr).toHaveBeenCalledWith("Stryker was here!\n");
+		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(FAILURE_ANNOTATION));
 	});
 
 	it("should run the GitHub Actions formatter for multi-project results", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.formatAnnotations.mockReturnValue("::error::multi");
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
-			makeMultiResult(),
-			fileSystem,
+			makeMultiResult({
+				projectResults: [makeProjectResult("client", { result: makeFailingResult() })],
+			}),
+			dependencies,
 		);
 
-		expect(mocks.formatAnnotations).toHaveBeenCalledOnce();
-		expect(spies.stderr).toHaveBeenCalledWith("::error::multi\n");
+		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining(FAILURE_ANNOTATION));
 	});
 
 	it("should skip annotations when displayAnnotations is false", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		setupOutputSpies();
+		const { dependencies } = setupOutput();
+		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({
 				formatters: ["default", ["github-actions", { displayAnnotations: false }]],
 			}),
-			makeSingleResult(),
-			fileSystem,
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ result: makeFailingResult() }),
+			}),
+			dependencies,
 		);
 
-		expect(mocks.formatAnnotations).not.toHaveBeenCalled();
+		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("::error"));
 	});
 
 	it("should skip annotations when content is empty string", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.formatAnnotations.mockReturnValue("");
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(spies.stderr).not.toHaveBeenCalled();
@@ -2157,34 +2076,29 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 	it("should write job summary to GITHUB_STEP_SUMMARY env path", async () => {
 		expect.assertions(1);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 
 		setupOutputSpies();
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
 		volume.mkdirSync("/tmp", { recursive: true });
-		volume.writeFileSync("/tmp/summary.md", "");
 
 		await outputSingleResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(volume.readFileSync("/tmp/summary.md", "utf8")).toBe("job-summary");
+		expect(volume.readFileSync("/tmp/summary.md", "utf8")).toContain("## Test Results");
 	});
 
 	it("should write job summary to explicit outputPath", async () => {
 		expect.assertions(1);
 
-		const { fileSystem, volume } = createMemoryFileSystem();
+		const { dependencies, volume } = setupOutput();
 
-		setupDefaults();
+		volume.mkdirSync("/tmp", { recursive: true });
 
 		setupOutputSpies();
-		volume.mkdirSync("/tmp", { recursive: true });
-		volume.writeFileSync("/tmp/explicit.md", "");
 
 		await outputSingleResultAsync(
 			makeConfig({
@@ -2194,143 +2108,127 @@ describe("runGitHubActionsFormatter via outputSingleResult", () => {
 				],
 			}),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(volume.readFileSync("/tmp/explicit.md", "utf8")).toBe("job-summary");
+		expect(volume.readFileSync("/tmp/explicit.md", "utf8")).toContain("## Test Results");
 	});
 
 	it("should skip job summary when jobSummary.enabled is false", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 		process.env["GITHUB_STEP_SUMMARY"] = "/tmp/summary.md";
+		volume.mkdirSync("/tmp", { recursive: true });
 
 		await outputSingleResultAsync(
 			makeConfig({
 				formatters: ["default", ["github-actions", { jobSummary: { enabled: false } }]],
 			}),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatJobSummary).not.toHaveBeenCalled();
+		expect(volume.existsSync("/tmp/summary.md")).toBeFalse();
 	});
 
 	it("should skip job summary when no outputPath available", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ formatters: ["default", "github-actions"] }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatJobSummary).not.toHaveBeenCalled();
+		expect(volume.toJSON()).toStrictEqual({});
 	});
 });
 
 describe("writeGameOutput integration", () => {
 	it("should print notice when game output written and not under silent", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
-		mocks.formatGameOutputNotice.mockReturnValue("Game output written to ...");
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeSingleResult(),
-			fileSystem,
+			makeSingleResult({
+				runtimeResult: makeExecuteResult({ gameOutput: RAW_GAME_OUTPUT }),
+			}),
+			dependencies,
 		);
 
-		expect(mocks.formatGameOutputNotice).toHaveBeenCalledExactlyOnceWith("/tmp/game.json", 1);
-		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith("Game output written to ...");
+		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith(
+			"Game output (1 entries) written to /tmp/game.json",
+		);
 	});
 
 	it("should suppress notice when run failed (hintsShown true)", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
+		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({
-					gameOutput: "raw",
+					gameOutput: RAW_GAME_OUTPUT,
 					result: makeJestResult({ success: false }),
 				}),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatGameOutputNotice).not.toHaveBeenCalled();
+		expect(hasSink(volume, "/tmp/game.json")).toBeTrue();
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
 	it("should suppress notice when notice string is empty", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.parseGameOutput.mockReturnValue([]);
-		mocks.formatGameOutputNotice.mockReturnValue("");
+		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeSingleResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatGameOutputNotice).toHaveBeenCalledExactlyOnceWith("/tmp/game.json", 0);
+		expect(readSink(volume, "/tmp/game.json")).toBe("[]");
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
 	it("should print aggregated notice for multi-project mode", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
-		mocks.formatGameOutputNotice.mockReturnValue("Game output written to ...");
+		const { dependencies } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
-			makeMultiResult(),
-			fileSystem,
+			makeMultiResult({
+				projectResults: [makeProjectResult("client", { gameOutput: RAW_GAME_OUTPUT })],
+			}),
+			dependencies,
 		);
 
-		expect(mocks.formatGameOutputNotice).toHaveBeenCalledOnce();
-		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith("Game output written to ...");
+		expect(spies.consoleError).toHaveBeenCalledExactlyOnceWith(
+			"Game output (1 entries) written to /tmp/game.json",
+		);
 	});
 
 	it("should suppress aggregated notice on failure", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.parseGameOutput.mockReturnValue([{ message: "hi", messageType: 0, timestamp: 0 }]);
-		mocks.formatGameOutputNotice.mockReturnValue("notice");
+		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
@@ -2339,33 +2237,35 @@ describe("writeGameOutput integration", () => {
 				projectResults: [
 					{
 						displayName: "client",
-						result: makeExecuteResult({ result: makeJestResult({ success: false }) }),
+						result: makeExecuteResult({
+							gameOutput: RAW_GAME_OUTPUT,
+							result: makeJestResult({ success: false }),
+						}),
 					},
 				],
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatGameOutputNotice).not.toHaveBeenCalled();
+		expect(hasSink(volume, "/tmp/game.json")).toBeTrue();
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 
 	it("should suppress aggregated notice when empty", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.formatGameOutputNotice.mockReturnValue("");
+		const { dependencies, volume } = setupOutput();
 		const spies = setupOutputSpies();
 
 		await outputMultiResultAsync(
 			makeConfig({ gameOutput: "/tmp/game.json" }),
 			makeMultiResult(),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.formatGameOutputNotice).toHaveBeenCalledOnce();
+		expect(readSink(volume, "/tmp/game.json")).toBe(
+			JSON.stringify([{ entries: [], project: "client" }], null, 2),
+		);
 		expect(spies.consoleError).not.toHaveBeenCalled();
 	});
 });
@@ -2434,9 +2334,7 @@ describe(writeResultFileAsync, () => {
 	it("should serialize the shared mergeResults output to the given path", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { fileSystem, volume } = setupOutput();
 		setupOutputSpies();
 
 		const typecheck = makeJestResult({ numPassedTests: 1, numTotalTests: 1 });
@@ -2444,43 +2342,33 @@ describe(writeResultFileAsync, () => {
 
 		await writeResultFileAsync("/tmp/results.json", typecheck, runtime, fileSystem);
 
-		expect(mocks.writeJsonFile).toHaveBeenCalledWith(
-			mergeResults(typecheck, runtime),
-			"/tmp/results.json",
-			fileSystem,
+		expect(readSink(volume, "/tmp/results.json")).toBe(
+			JSON.stringify(mergeResults(typecheck, runtime), null, 2),
 		);
 	});
 
 	it("should be a no-op when outputFile is undefined", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { fileSystem, volume } = setupOutput();
 		setupOutputSpies();
 
 		await writeResultFileAsync(undefined, makeJestResult(), makeJestResult(), fileSystem);
 
-		expect(mocks.writeJsonFile).not.toHaveBeenCalled();
+		expect(volume.toJSON()).toStrictEqual({});
 	});
 
 	it("should collapse to the present side when only one result is given", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { fileSystem, volume } = setupOutput();
 		setupOutputSpies();
 
 		const typecheck = makeJestResult({ numFailedTests: 1, success: false });
 
 		await writeResultFileAsync("/tmp/results.json", typecheck, undefined, fileSystem);
 
-		expect(mocks.writeJsonFile).toHaveBeenCalledWith(
-			typecheck,
-			"/tmp/results.json",
-			fileSystem,
-		);
+		expect(readSink(volume, "/tmp/results.json")).toBe(JSON.stringify(typecheck, null, 2));
 	});
 
 	// Single AND multi serialize *exactly* the shared `mergeResults` output, so a
@@ -2491,9 +2379,7 @@ describe(writeResultFileAsync, () => {
 	it("should write exactly the shared mergeResults output for single mode", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
@@ -2505,22 +2391,18 @@ describe(writeResultFileAsync, () => {
 				runtimeResult: makeExecuteResult({ result: runtime }),
 				typecheckResult,
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.writeJsonFile).toHaveBeenCalledWith(
-			mergeResults(typecheckResult, runtime),
-			"/tmp/results.json",
-			fileSystem,
+		expect(readSink(volume, "/tmp/results.json")).toBe(
+			JSON.stringify(mergeResults(typecheckResult, runtime), null, 2),
 		);
 	});
 
 	it("should write exactly the shared mergeResults output for multi mode", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies, volume } = setupOutput();
 		setupOutputSpies();
 
 		const typecheckResult = makeJestResult({ numFailedTests: 1, success: false });
@@ -2532,13 +2414,11 @@ describe(writeResultFileAsync, () => {
 				projectResults: [makeProjectResult("client", { result: runtime })],
 				typecheckResult,
 			}),
-			fileSystem,
+			dependencies,
 		);
 
-		expect(mocks.writeJsonFile).toHaveBeenCalledWith(
-			mergeResults(typecheckResult, runtime),
-			"/tmp/results.json",
-			fileSystem,
+		expect(readSink(volume, "/tmp/results.json")).toBe(
+			JSON.stringify(mergeResults(typecheckResult, runtime), null, 2),
 		);
 	});
 });
@@ -2580,7 +2460,6 @@ describe(mergeProjectResults, () => {
 		expect.assertions(1);
 
 		const snapshot = { added: 1, matched: 2, total: 4, unmatched: 1, updated: 0 };
-		mocks.mergeSnapshotSummaries.mockReturnValue(snapshot);
 		const first = makeExecuteResult({
 			result: makeJestResult({
 				numFailedTests: 1,
@@ -2588,6 +2467,7 @@ describe(mergeProjectResults, () => {
 				numPendingTests: 3,
 				numTodoTests: 4,
 				numTotalTests: 10,
+				snapshot,
 				startTime: 3000,
 				success: true,
 			}),
@@ -2824,28 +2704,17 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([a, b]).result.numTodoTests).toBe(0);
 	});
 
-	it("should pass each project's snapshot summary to mergeSnapshotSummaries", () => {
+	it("should fold every project's snapshot summary into the merged one", () => {
 		expect.assertions(1);
 
-		const a = makeExecuteResult({
-			result: {
-				...makeJestResult(),
-				snapshot: { added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 },
-			},
-		});
-		const b = makeExecuteResult({
-			result: {
-				...makeJestResult(),
-				snapshot: { added: 0, matched: 4, total: 5, unmatched: 1, updated: 0 },
-			},
-		});
+		const first = { added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 };
+		const second = { added: 0, matched: 4, total: 5, unmatched: 1, updated: 0 };
+		const a = makeExecuteResult({ result: { ...makeJestResult(), snapshot: first } });
+		const b = makeExecuteResult({ result: { ...makeJestResult(), snapshot: second } });
 
-		mergeProjectResults([a, b]);
-
-		expect(mocks.mergeSnapshotSummaries).toHaveBeenCalledWith([
-			{ added: 1, matched: 2, total: 3, unmatched: 0, updated: 0 },
-			{ added: 0, matched: 4, total: 5, unmatched: 1, updated: 0 },
-		]);
+		expect(mergeProjectResults([a, b]).result.snapshot).toStrictEqual(
+			mergeSnapshotSummaries([first, second]),
+		);
 	});
 });
 
@@ -2853,9 +2722,7 @@ describe("merged typecheck + runtime branches", () => {
 	it("should default numTodoTests to 0 when typecheck and runtime both lack it", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
+		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		const code = await outputSingleResultAsync(
@@ -2866,7 +2733,7 @@ describe("merged typecheck + runtime branches", () => {
 				}),
 				typecheckResult: { ...makeJestResult(), numTodoTests: undefined },
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(0);
@@ -2877,13 +2744,11 @@ describe("printOutput empty branch", () => {
 	it("should not call console.log when formatter returns empty string", async () => {
 		expect.assertions(1);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.formatExecuteOutput.mockReturnValue("");
+		const { dependencies } = setupOutput();
+		renderer.formatExecuteOutput.mockReturnValue("");
 		const spies = setupOutputSpies();
 
-		await outputSingleResultAsync(makeConfig(), makeSingleResult(), fileSystem);
+		await outputSingleResultAsync(makeConfig(), makeSingleResult(), dependencies);
 
 		expect(spies.consoleLog).not.toHaveBeenCalled();
 	});
@@ -2893,12 +2758,10 @@ describe("processCoverage threshold passed branch", () => {
 	it("should not write threshold-failed lines when threshold passes", async () => {
 		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
-
-		setupDefaults();
-		mocks.loadCoverageManifest.mockReturnValue(fromAny({}));
-		mocks.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
-		mocks.checkThresholds.mockReturnValue({ failures: [], passed: true });
+		const { dependencies } = setupOutput();
+		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
+		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		pipeline.checkThresholds.mockReturnValue({ failures: [], passed: true });
 		const spies = setupOutputSpies();
 
 		const code = await outputSingleResultAsync(
@@ -2909,7 +2772,7 @@ describe("processCoverage threshold passed branch", () => {
 			makeSingleResult({
 				runtimeResult: makeExecuteResult({ coverageData: fromAny({ "x.luau": {} }) }),
 			}),
-			fileSystem,
+			dependencies,
 		);
 
 		expect(code).toBe(0);

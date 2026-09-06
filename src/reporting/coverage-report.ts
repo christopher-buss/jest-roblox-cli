@@ -4,20 +4,31 @@ import color from "tinyrainbow";
 
 import type { CoverageReporter, ResolvedConfig } from "../config/schema.ts";
 import type { CoverageDisplayPredicate } from "../coverage-pipeline/agent-table-filter.ts";
-import { mapCoverageToTypeScript, type MappedCoverageResult } from "../coverage-pipeline/mapper.ts";
+import { loadCoverageManifest } from "../coverage-pipeline/manifest-load.ts";
+import {
+	type CoverageMapper,
+	mapCoverageToTypeScript,
+	type MappedCoverageResult,
+} from "../coverage-pipeline/mapper.ts";
 import {
 	checkThresholds,
 	generateReports,
 	printCoverageHeader,
 } from "../coverage-pipeline/reporter.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
-import { loadCoverageManifest } from "../executor.ts";
 import { usesAgentFormatter } from "../formatters/utils.ts";
 import type {
 	MultiRunResult,
 	WorkspacePackageCoverageGate,
 	WorkspaceRunResult,
 } from "../run/types.ts";
+
+export interface CoveragePipeline {
+	checkThresholds: typeof checkThresholds;
+	generateReports: typeof generateReports;
+	loadCoverageManifest: typeof loadCoverageManifest;
+	mapCoverageToTypeScript: CoverageMapper;
+}
 
 /**
  * One coverage report and the gate over the same universe. Single and multi
@@ -51,19 +62,28 @@ interface ProcessCoverageOptions {
 	config: ResolvedConfig;
 	coverageData: RawCoverageData | undefined;
 	packageGates?: Array<WorkspacePackageCoverageGate> | undefined;
+	pipeline: CoveragePipeline;
 }
+
+export const defaultCoveragePipeline: CoveragePipeline = {
+	checkThresholds,
+	generateReports,
+	loadCoverageManifest,
+	mapCoverageToTypeScript,
+};
 
 export function processCoverage({
 	agentTextFilter,
 	config,
 	coverageData,
 	packageGates,
+	pipeline,
 }: ProcessCoverageOptions): boolean {
 	// Workspace coverage is opted into per package, so the gates decide whether
 	// anything runs — there is no run-level `collectCoverage` to consult.
 	const units =
 		packageGates === undefined
-			? resolveSingleUnit(config, coverageData)
+			? resolveSingleUnit(config, coverageData, pipeline)
 			: packageGates.map(toPackageUnit);
 	if (units.length === 0) {
 		return true;
@@ -80,7 +100,7 @@ export function processCoverage({
 			process.stdout.write(`\n${unit.label}\n`);
 		}
 
-		generateReports({
+		pipeline.generateReports({
 			agentMode: isAgentMode,
 			agentTextFilter,
 			collectCoverageFrom: unit.collectCoverageFrom,
@@ -90,7 +110,7 @@ export function processCoverage({
 			reporters: unit.reporters,
 		});
 
-		isPassed = enforceUnitThreshold(unit) && isPassed;
+		isPassed = enforceUnitThreshold(unit, pipeline.checkThresholds) && isPassed;
 	}
 
 	return isPassed;
@@ -140,6 +160,7 @@ function toPackageUnit(gate: WorkspacePackageCoverageGate): CoverageReportUnit {
 function resolveSingleUnit(
 	config: ResolvedConfig,
 	coverageData: RawCoverageData | undefined,
+	pipeline: CoveragePipeline,
 ): Array<CoverageReportUnit> {
 	if (!config.collectCoverage) {
 		return [];
@@ -155,7 +176,7 @@ function resolveSingleUnit(
 		return [];
 	}
 
-	const manifest = loadCoverageManifest(config.rootDir);
+	const manifest = pipeline.loadCoverageManifest(config.rootDir);
 	if (manifest === undefined) {
 		if (!config.silent) {
 			process.stderr.write("Warning: Coverage manifest not found, skipping TS mapping\n");
@@ -171,7 +192,7 @@ function resolveSingleUnit(
 			coveragePathIgnorePatterns: config.coveragePathIgnorePatterns,
 			coverageThreshold: config.coverageThreshold,
 			reporters: config.coverageReporters,
-			universe: mapCoverageToTypeScript(coverageData, manifest),
+			universe: pipeline.mapCoverageToTypeScript(coverageData, manifest),
 		},
 	];
 }
@@ -182,12 +203,15 @@ function resolveSingleUnit(
 // invocation directory, which would make the same package pass or fail
 // depending on where the CLI was run), and no pooled cross-package check either
 // — a cross-package average could mask a failing package.
-function enforceUnitThreshold(unit: CoverageReportUnit): boolean {
+function enforceUnitThreshold(
+	unit: CoverageReportUnit,
+	checkUnitThresholds: CoveragePipeline["checkThresholds"],
+): boolean {
 	if (unit.coverageThreshold === undefined) {
 		return true;
 	}
 
-	const result = checkThresholds(
+	const result = checkUnitThresholds(
 		unit.universe,
 		unit.coverageThreshold,
 		unit.collectCoverageFrom,

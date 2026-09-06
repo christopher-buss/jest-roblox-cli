@@ -8,12 +8,10 @@ import {
 } from "@isentinel/rojo-utils";
 
 import { type } from "arktype";
-import { loadConfig as c12LoadConfig } from "c12";
 import * as path from "node:path";
 
-import type { TsconfigDirectories, TsconfigReader } from "../executor.ts";
-import { resolveTsconfigDirectories } from "../executor.ts";
-import { nodeTsconfigReader } from "../executor/tsconfig-mappings.ts";
+import type { TsconfigDirectories, TsconfigReader } from "../executor/tsconfig-mappings.ts";
+import { nodeTsconfigReader, resolveTsconfigDirectories } from "../executor/tsconfig-mappings.ts";
 import { stripTsExtension } from "../utils/extensions.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
@@ -21,6 +19,8 @@ import { isString } from "../utils/is-string.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { ConfigError } from "./errors.ts";
+import type { ConfigLoader } from "./loader.ts";
+import { nodeConfigLoader } from "./loader.ts";
 import { findLuauConfigFile, loadLuauConfig } from "./luau-config-loader.ts";
 import type { TypecheckConfig } from "./resolve-typecheck-config.ts";
 import type {
@@ -141,17 +141,6 @@ export function extractProjectRoots(
 	return Array.from(rootMap, ([root, testMatch]) => ({ root, testMatch }));
 }
 
-export function applyProjectRoot(
-	include: Array<string>,
-	projectRoot: string | undefined,
-): Array<string> {
-	if (projectRoot === undefined) {
-		return include;
-	}
-
-	return include.map((pattern) => path.posix.join(projectRoot, pattern));
-}
-
 export function createFsClassifier(
 	rootDirectory: string,
 	fileSystem: FileSystem = nodeFileSystem,
@@ -204,6 +193,14 @@ export function validateProjects(projects: Array<ProjectConfigFile>): Array<Proj
 	return validated;
 }
 
+function applyProjectRoot(include: Array<string>, projectRoot: string | undefined): Array<string> {
+	if (projectRoot === undefined) {
+		return include;
+	}
+
+	return include.map((pattern) => path.posix.join(projectRoot, pattern));
+}
+
 const PROJECT_ONLY_KEYS: ReadonlySet<string> = new Set([
 	"displayName",
 	"exclude",
@@ -212,17 +209,35 @@ const PROJECT_ONLY_KEYS: ReadonlySet<string> = new Set([
 	"root",
 ]);
 
+/** The collaborators that open handles of their own, past `fileSystem`. */
+export interface ProjectConfigSeams {
+	/** How a project config file is loaded. Defaults to the real c12. */
+	configLoader?: ConfigLoader;
+	/** How the `outDir`/`rootDir` a project compiles to are resolved. */
+	resolveTsconfigDirectories?: typeof resolveTsconfigDirectories;
+	/** How a project's tsconfig is located. Defaults to the real reader. */
+	tsconfigReader?: TsconfigReader;
+}
+
+export interface ProjectConfigInput extends ProjectConfigSeams {
+	/** Where the project configs are read. Defaults to the real filesystem. */
+	fileSystem?: FileSystem;
+}
+
+const NODE_PROJECT_CONFIG_INPUT: Required<ProjectConfigInput> = {
+	configLoader: nodeConfigLoader,
+	fileSystem: nodeFileSystem,
+	resolveTsconfigDirectories,
+	tsconfigReader: nodeTsconfigReader,
+};
+
 /**
  * The frame a project resolves in: its rojo tree, its cwd, and what reads
  * them.
  */
-export interface ProjectResolutionFrame {
+export interface ProjectResolutionFrame extends ProjectConfigInput {
 	cwd: string;
-	/** Where the project configs are read. Defaults to the real filesystem. */
-	fileSystem?: FileSystem;
 	rojoTree: RojoTreeNode;
-	/** How a project's tsconfig is located. Defaults to the real reader. */
-	tsconfigReader?: TsconfigReader;
 }
 
 export function dedupeMounts(mounts: Array<Mount>): Array<Mount> {
@@ -279,14 +294,19 @@ export function resolveProjectConfig(
 export async function loadProjectConfigFile(
 	filePath: string,
 	cwd: string,
-	tsconfigReader: TsconfigReader = nodeTsconfigReader,
+	input?: ProjectConfigInput,
 ): Promise<ProjectConfigFile> {
-	const luauConfigPath = findLuauConfigFile(filePath, cwd);
+	const settled = { ...NODE_PROJECT_CONFIG_INPUT, ...input };
+
+	const luauConfigPath = findLuauConfigFile(filePath, cwd, settled.fileSystem);
 	if (luauConfigPath !== undefined) {
-		return buildProjectConfigFromLuau(luauConfigPath, filePath);
+		return buildProjectConfigFromLuau(luauConfigPath, filePath, settled.fileSystem);
 	}
 
-	const config = parseProjectConfigFile(await loadProjectConfigViaC12(filePath, cwd), filePath);
+	const config = parseProjectConfigFile(
+		await loadProjectConfigViaC12(settled.configLoader, filePath, cwd),
+		filePath,
+	);
 
 	const name =
 		typeof config.displayName === "string" ? config.displayName : config.displayName.name;
@@ -296,7 +316,7 @@ export async function loadProjectConfigFile(
 	}
 
 	const configDirectory = path.posix.dirname(filePath);
-	const tsconfig = resolveTsconfigDirectories(cwd, tsconfigReader);
+	const tsconfig = settled.resolveTsconfigDirectories(cwd, settled.tsconfigReader);
 	deriveIncludeFromTestMatch(config, configDirectory, tsconfig);
 
 	return config;
@@ -305,18 +325,14 @@ export async function loadProjectConfigFile(
 export async function resolveAllProjects(
 	entries: Array<ProjectEntry>,
 	rootConfig: ResolvedConfig,
-	{
-		cwd,
-		fileSystem = nodeFileSystem,
-		rojoTree,
-		tsconfigReader = nodeTsconfigReader,
-	}: ProjectResolutionFrame,
+	{ cwd, fileSystem = nodeFileSystem, rojoTree, ...seams }: ProjectResolutionFrame,
 ): Promise<Array<ResolvedProjectConfig>> {
 	const loaded: Array<ProjectConfigFile> = [];
+	const input: ProjectConfigInput = { ...seams, fileSystem };
 
 	for (const entry of entries) {
 		if (typeof entry === "string") {
-			loaded.push(await loadProjectConfigFile(entry, cwd, tsconfigReader));
+			loaded.push(await loadProjectConfigFile(entry, cwd, input));
 		} else {
 			loaded.push(entry.test);
 		}
@@ -430,9 +446,13 @@ function resolveMounts(
 
 // c12 surfaces a resolution failure as a bare loader error; re-throw it naming
 // the config file so the user knows which project entry to fix.
-async function loadProjectConfigViaC12(filePath: string, cwd: string): Promise<unknown> {
+async function loadProjectConfigViaC12(
+	configLoader: ConfigLoader,
+	filePath: string,
+	cwd: string,
+): Promise<unknown> {
 	try {
-		const result = await c12LoadConfig({
+		const result = await configLoader({
 			name: "jest-project",
 			configFile: filePath,
 			configFileRequired: true,
@@ -482,8 +502,9 @@ const luauProjectConfigSchema = type({
 function buildProjectConfigFromLuau(
 	luauConfigPath: string,
 	directoryPath: string,
+	fileSystem: FileSystem,
 ): ProjectTestConfig {
-	const raw = loadLuauConfig(luauConfigPath);
+	const raw = loadLuauConfig(luauConfigPath, fileSystem);
 
 	const { displayName } = raw;
 	if (typeof displayName !== "string" || displayName === "") {

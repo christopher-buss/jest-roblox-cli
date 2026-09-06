@@ -3,17 +3,18 @@ import process from "node:process";
 
 import type { CoverageReporter, ResolvedConfig } from "../config/schema.ts";
 import type { CoverageManifest } from "../coverage-pipeline/manifest.ts";
-import {
+import type {
 	prepareWorkspaceCoverage,
-	type WorkspacePackageCoverage,
+	WorkspacePackageCoverage,
 } from "../coverage-pipeline/workspace-prepare.ts";
 import type { ExecuteResult } from "../executor.ts";
 import type { TimedPhase, TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
-import { nodeFileSystem } from "../utils/file-system.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import type { PackageContext } from "./project-contexts.ts";
 import type { PendingEntry } from "./test-selection.ts";
+
+export type PrepareCoverage = typeof prepareWorkspaceCoverage;
 
 /**
  * Everything a package's coverage report and gate are built from, read off that
@@ -71,17 +72,18 @@ export interface WorkspaceProjectResult {
  */
 export function prepareWorkspaceCoverageMap({
 	contexts,
-	fileSystem = nodeFileSystem,
+	fileSystem,
 	loaded,
 	pending,
+	prepareCoverage,
 	timing,
 	workspaceRoot,
 }: {
 	contexts: Array<PackageContext>;
-	/** Where instrumentation reads and writes. Defaults to the real one. */
-	fileSystem?: FileSystem;
+	fileSystem: FileSystem;
 	loaded: Array<LoadedPackage>;
 	pending: Array<PendingEntry>;
+	prepareCoverage: PrepareCoverage;
 	timing: TimingCollector;
 	workspaceRoot: string;
 }): TimedPhase<Map<string, WorkspacePackageCoverage>> {
@@ -106,9 +108,7 @@ export function prepareWorkspaceCoverageMap({
 	}
 
 	return timing.profileTimed("prepareCoverage", () => {
-		return buildCoverageMap(
-			prepareWorkspaceCoverage({ fileSystem, packages, timing, workspaceRoot }),
-		);
+		return buildCoverageMap(prepareCoverage({ fileSystem, packages, timing, workspaceRoot }));
 	});
 }
 

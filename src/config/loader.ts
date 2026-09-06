@@ -11,14 +11,30 @@ import { isAbsolutePath, normalizeWindowsPath } from "../utils/normalize-windows
 import type { Config, ResolvedConfig } from "./schema.ts";
 import { DEFAULT_CONFIG, validateConfig } from "./schema.ts";
 
-/**
- * A config module as `require` hands it back. An ESM config arrives with the
- * config under `default`; c12's `resolveModule` unwraps it, and
- * `validateConfig` parses the result.
- */
-interface ConfigModule {
-	readonly default?: unknown;
+// c12 resolves and evaluates a config file through handles of its own, so a
+// `FileSystem` does not reach it.
+export type ConfigLoader = typeof c12LoadConfig;
+
+export const nodeConfigLoader: ConfigLoader = c12LoadConfig;
+
+/** The collaborators a config load reaches c12 and the disk through. */
+export interface ConfigLoadOptions {
+	/** How the c12 layers are loaded. Defaults to the real `loadConfig`. */
+	configLoader?: ConfigLoader;
+	/**
+	 * Where a resolved config file is looked for. Defaults to the real disk.
+	 */
+	fileSystem?: FileSystem;
 }
+
+const NODE_CONFIG_LOAD_OPTIONS: Required<ConfigLoadOptions> = {
+	configLoader: nodeConfigLoader,
+	fileSystem: nodeFileSystem,
+};
+
+export type PackageConfigLoader = typeof loadConfig;
+
+type ConfigLoadContext = Required<ConfigLoadOptions>;
 
 interface LoadedConfig {
 	config: Config;
@@ -30,14 +46,23 @@ interface LoadedConfig {
 	loadDirectory: string;
 }
 
+/**
+ * A config module as `require` hands it back. An ESM config arrives with the
+ * config under `default`; c12's `resolveModule` unwraps it, and
+ * `validateConfig` parses the result.
+ */
+interface ConfigModule {
+	readonly default?: unknown;
+}
+
 interface ExtendsLayerRequest {
 	/**
 	 * Absolute path of the config declaring `extends`; entries resolve against
 	 * its directory.
 	 */
 	canonicalFile: string;
+	context: ConfigLoadContext;
 	extendList: Array<string>;
-	fileSystem: FileSystem;
 	visited: Set<string>;
 }
 
@@ -87,6 +112,21 @@ export function resolveConfig(config: Config): ResolvedConfig {
 	return resolved;
 }
 
+export async function loadConfig(
+	configPath?: string,
+	cwd: string = process.cwd(),
+	options?: ConfigLoadOptions,
+): Promise<ResolvedConfig> {
+	const { config, loadDirectory } = await loadConfigLayers(
+		{ ...NODE_CONFIG_LOAD_OPTIONS, ...options },
+		configPath,
+		cwd,
+	);
+	config.rootDir = anchorRootDirectory(config.rootDir, loadDirectory, cwd);
+
+	return resolveConfig(config);
+}
+
 /**
  * Load the user-declared config without merging `DEFAULT_CONFIG`. Returned
  * fields are exactly what the user wrote — omitted fields stay `undefined`.
@@ -100,22 +140,15 @@ export function resolveConfig(config: Config): ResolvedConfig {
 export async function loadRawConfig(
 	configPath?: string,
 	cwd: string = process.cwd(),
-	fileSystem: FileSystem = nodeFileSystem,
+	options?: ConfigLoadOptions,
 ): Promise<Config> {
-	const { config } = await loadConfigLayers(fileSystem, configPath, cwd);
+	const { config } = await loadConfigLayers(
+		{ ...NODE_CONFIG_LOAD_OPTIONS, ...options },
+		configPath,
+		cwd,
+	);
 
 	return config;
-}
-
-export async function loadConfig(
-	configPath?: string,
-	cwd: string = process.cwd(),
-	fileSystem: FileSystem = nodeFileSystem,
-): Promise<ResolvedConfig> {
-	const { config, loadDirectory } = await loadConfigLayers(fileSystem, configPath, cwd);
-	config.rootDir = anchorRootDirectory(config.rootDir, loadDirectory, cwd);
-
-	return resolveConfig(config);
 }
 
 // c12 signals an unresolvable required config file with this message shape.
@@ -157,7 +190,7 @@ function merger(...sources: Array<Config | null | undefined>): Config {
 	return defuFn({}, ...sources);
 }
 
-async function invokeC12(configFile: string | undefined, cwd: string) {
+async function invokeC12(configLoader: ConfigLoader, configFile: string | undefined, cwd: string) {
 	let options: LoadConfigOptions<Config> = {
 		name: "jest",
 		configFileRequired: configFile !== undefined,
@@ -178,8 +211,8 @@ async function invokeC12(configFile: string | undefined, cwd: string) {
 	// single-executable archive. Bypass jiti entirely by providing a
 	// custom import function.
 	return isSea()
-		? c12LoadConfig<Config>({ ...options, import: seaImport })
-		: c12LoadConfig<Config>(options);
+		? configLoader<Config>({ ...options, import: seaImport })
+		: configLoader<Config>(options);
 }
 
 /**
@@ -189,13 +222,15 @@ async function invokeC12(configFile: string | undefined, cwd: string) {
  * the layers into one object that no longer records where any of them lived.
  */
 async function loadConfigLayers(
-	fileSystem: FileSystem,
+	context: ConfigLoadContext,
 	configPath: string | undefined,
 	cwd: string,
 ): Promise<LoadedConfig> {
+	const { fileSystem } = context;
+
 	let result;
 	try {
-		result = await invokeC12(configPath, cwd);
+		result = await invokeC12(context.configLoader, configPath, cwd);
 	} catch (err) {
 		if (configPath !== undefined && isC12NotFoundError(err)) {
 			throw new Error(`Config file not found: ${configPath}`, { cause: err });
@@ -204,7 +239,7 @@ async function loadConfigLayers(
 		throw err;
 	}
 
-	const mergedConfig = await processExtends(fileSystem, result, new Set());
+	const mergedConfig = await processExtends(context, result, new Set());
 	const loadedFile = result.configFile;
 
 	return {
@@ -285,10 +320,11 @@ function anchorWorkspaceRoot(config: Config, baseDirectory: string): Config {
 // as a false cycle. Config load is one-time at startup; the re-parse cost is
 // negligible.
 async function processExtends(
-	fileSystem: FileSystem,
+	context: ConfigLoadContext,
 	result: Awaited<ReturnType<typeof invokeC12>>,
 	visited: Set<string>,
 ): Promise<Config> {
+	const { fileSystem } = context;
 	const loadedConfig = result.config;
 	const loadedFile = result.configFile;
 
@@ -311,7 +347,7 @@ async function processExtends(
 	visited.add(canonicalFile);
 	try {
 		const extendList = Array.isArray(extendsValue) ? extendsValue : [extendsValue];
-		const layers = await loadExtendsLayers({ canonicalFile, extendList, fileSystem, visited });
+		const layers = await loadExtendsLayers({ canonicalFile, context, extendList, visited });
 		return merger(configWithoutExtends, ...layers);
 	} finally {
 		visited.delete(canonicalFile);
@@ -325,8 +361,8 @@ async function processExtends(
  */
 async function loadExtendsLayers({
 	canonicalFile,
+	context,
 	extendList,
-	fileSystem,
 	visited,
 }: ExtendsLayerRequest): Promise<Array<Config>> {
 	const configFileDirectory = path.dirname(canonicalFile);
@@ -337,14 +373,14 @@ async function loadExtendsLayers({
 
 		let extendedResult;
 		try {
-			extendedResult = await invokeC12(target, path.dirname(target));
+			extendedResult = await invokeC12(context.configLoader, target, path.dirname(target));
 		} catch (err) {
 			throw new Error(`Failed to resolve extends "${entry}" from "${canonicalFile}".`, {
 				cause: err,
 			});
 		}
 
-		const extendedConfig = await processExtends(fileSystem, extendedResult, visited);
+		const extendedConfig = await processExtends(context, extendedResult, visited);
 		layers.push(extendedConfig);
 	}
 

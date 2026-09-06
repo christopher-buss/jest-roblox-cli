@@ -19,6 +19,7 @@ import type { TypecheckGroupEntry } from "../typecheck/group-by-tsconfig.ts";
 import type { TsconfigMapping } from "../types/tsconfig.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { classifyTestFiles, discoverTestFiles } from "./discovery.ts";
+import type { RunSeams } from "./seams.ts";
 
 export interface PendingJob {
 	config: ResolvedConfig;
@@ -61,6 +62,7 @@ export interface TestPlan {
  */
 export interface RunDiscovery extends DiscoveryFilters {
 	fileSystem: FileSystem;
+	seams: RunSeams;
 	timing: TimingCollector;
 }
 
@@ -91,6 +93,7 @@ interface DiscoveryFilters {
 interface DiscoveryInput extends DiscoveryFilters {
 	effectivePlaceFile: string;
 	fileSystem: FileSystem;
+	seams: RunSeams;
 }
 
 interface PlannedProject {
@@ -105,6 +108,7 @@ interface ProjectSelection {
 }
 
 interface PlannedProjectInput {
+	fileSystem: FileSystem;
 	project: ResolvedProjectConfig;
 	rootConfig: ResolvedConfig;
 	selection: ProjectSelection;
@@ -230,11 +234,12 @@ function selectProjectFiles({
 function collectRuntimeInjectionPaths(
 	project: ResolvedProjectConfig,
 	rootDirectory: string,
+	fileSystem: FileSystem,
 ): Array<string> {
 	const runtimeInjectionPaths: Array<string> = [];
 	for (const mount of project.rojoMounts) {
 		const sourceMount = path.resolve(rootDirectory, mount.fsPath);
-		if (hasUserAuthoredConfig(sourceMount)) {
+		if (hasUserAuthoredConfig(sourceMount, fileSystem)) {
 			continue;
 		}
 
@@ -252,6 +257,7 @@ function collectRuntimeInjectionPaths(
 // tsconfigs separately. cwd is always the workspace root in projects mode (all
 // projects build from one tree).
 function toPlannedProject({
+	fileSystem,
 	project,
 	rootConfig,
 	selection,
@@ -272,7 +278,11 @@ function toPlannedProject({
 			displayColor: project.displayColor,
 			displayName: project.displayName,
 			runtimeFiles: selection.runtimeFiles,
-			runtimeInjectionPaths: collectRuntimeInjectionPaths(project, rootConfig.rootDir),
+			runtimeInjectionPaths: collectRuntimeInjectionPaths(
+				project,
+				rootConfig.rootDir,
+				fileSystem,
+			),
 		};
 	}
 
@@ -308,7 +318,13 @@ function planProject(project: ResolvedProjectConfig, input: ProjectPlanInput): P
 		typecheck,
 	});
 
-	return toPlannedProject({ project, rootConfig: input.rootConfig, selection, typecheck });
+	return toPlannedProject({
+		fileSystem: input.fileSystem,
+		project,
+		rootConfig: input.rootConfig,
+		selection,
+		typecheck,
+	});
 }
 
 function collectPendingJobs(input: DiscoveryInput): Pick<TestPlan, "jobs" | "typeTestEntries"> {
@@ -322,6 +338,7 @@ function collectPendingJobs(input: DiscoveryInput): Pick<TestPlan, "jobs" | "typ
 			input.rootConfig.rootDir,
 			undefined,
 			input.fileSystem,
+			input.seams.tsconfigReader,
 		),
 	};
 
