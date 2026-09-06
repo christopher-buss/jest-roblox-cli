@@ -7,7 +7,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
 import type { CliDependencies } from "./cli.ts";
-import { main, parseArgs, runAsync } from "./cli.ts";
+import { main, parseArgs, REPEATABLE_FLAGS, runAsync } from "./cli.ts";
 import { defaultFormatters } from "./config/default-formatters.ts";
 import { ConfigError } from "./config/errors.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
@@ -104,12 +104,6 @@ function setupOutputSpies(): OutputSpies {
 	};
 }
 
-function renderedStderr(spies: OutputSpies): string {
-	return stripVTControlCharacters(
-		spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join(""),
-	);
-}
-
 function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	const { fileSystem } = createMemoryFileSystem();
 	const loadConfig = vi
@@ -129,6 +123,34 @@ function setupDefaults(configOverrides: Partial<ResolvedConfig> = {}) {
 	};
 
 	return { dependencies, fileSystem, loadConfig, outputMultiResult, runJestRoblox };
+}
+
+async function captureHelpAsync(): Promise<string> {
+	const spies = setupOutputSpies();
+	setupDefaults();
+
+	await runAsync(["--help"]);
+
+	return String(spies.consoleLog.mock.calls[0]?.[0]);
+}
+
+const HELP_WRAP_REGEX = /\n {20,}/g;
+
+/**
+ * One help entry, unwrapped onto a single line. The help text folds a long
+ * description onto indented continuation lines, so a trailing note reads the
+ * same whichever line it landed on.
+ */
+function helpEntry(help: string, flag: string): string {
+	const entries = help.replaceAll(HELP_WRAP_REGEX, " ").split("\n");
+
+	return String(entries.find((line) => line.trimStart().startsWith(`${flag} `)));
+}
+
+function renderedStderr(spies: OutputSpies): string {
+	return stripVTControlCharacters(
+		spies.stderr.mock.calls.map(([chunk]) => String(chunk)).join(""),
+	);
 }
 
 describe(parseArgs, () => {
@@ -465,6 +487,14 @@ describe(parseArgs, () => {
 		const result = parseArgs(["--project", "client", "--project", "server"]);
 
 		expect(result.project).toStrictEqual(["client", "server"]);
+	});
+
+	it("should keep a positional file alongside --project", () => {
+		expect.assertions(1);
+
+		const result = parseArgs(["--project", "client", "src/player.spec.ts"]);
+
+		expect(result).toMatchObject({ files: ["src/player.spec.ts"], project: ["client"] });
 	});
 
 	it("should parse --passWithNoTests flag", () => {
@@ -1254,6 +1284,28 @@ describe("runInner orchestration", () => {
 			expect.stringContaining("Usage: jest-roblox"),
 		);
 		expect(cli.loadConfig).not.toHaveBeenCalled();
+	});
+
+	it.for(REPEATABLE_FLAGS)(
+		"should mark %s as a repeatable flag, not a variadic one",
+		async (flag) => {
+			expect.assertions(1);
+
+			const entry = helpEntry(await captureHelpAsync(), flag);
+
+			expect(entry).toContain("(repeatable)");
+		},
+	);
+
+	it("should document no option value as variadic", async () => {
+		expect.assertions(1);
+
+		// parseArgs collects a repeated flag; it never takes several values
+		// after one flag. A `<name...>` entry invited `--project a b`, which
+		// silently turned `b` into a positional file filter.
+		const help = await captureHelpAsync();
+
+		expect(help).not.toMatch(/<[^>]*\.\.\.>/);
 	});
 
 	it("should print VERSION and return 0 when --version is passed", async () => {

@@ -57,8 +57,9 @@ Options:
   --no-coverage                     Disable coverage for this run (overrides config)
   --collectCoverageFrom <glob>      Globs for files to include in coverage (repeatable)
   --coverageDirectory <path>        Directory for coverage output (default: coverage)
-  --coverageReporters <r...>        Coverage reporters (default: text, lcov)
-  --formatters <name...>            Output formatters (default, agent, json, github-actions)
+  --coverageReporters <name>        Coverage reporter, default text and lcov (repeatable)
+  --formatters <name>               Output formatter: default, agent, json, or
+                                    github-actions (repeatable)
   --bail                            Workspace mode: stop after the first failing package
   --workspace                       Run tests across all workspace packages
   --packages <names>                Comma-separated package names (narrows a workspace run)
@@ -73,9 +74,11 @@ Options:
                                     n Luau VMs in one Studio session (default: one
                                     VM per config; max 4, the hosts the plugin
                                     ships). Game output becomes batch-scoped
-  --project <name...>               Filter which named projects to run
-  --setupFiles <path...>            Setup scripts (package specifiers or relative paths)
-  --setupFilesAfterEnv <path...>    Post-env setup scripts (package specifiers or relative paths)
+  --project <name>                  Filter which named projects to run (repeatable)
+  --setupFiles <path>               Setup script, a package specifier or relative path
+                                    (repeatable)
+  --setupFilesAfterEnv <path>       Post-env setup script, a package specifier or
+                                    relative path (repeatable)
   --no-show-luau                    Hide Luau code in failure output
   --typecheck                       Enable type testing (*.test-d.ts, *.spec-d.ts)
   --typecheckOnly                   Run only type tests, skip runtime tests
@@ -162,6 +165,20 @@ const CLI_OPTION_SPEC = {
 	"workspace": { type: "boolean" },
 	"workspace-root": { type: "string" },
 } as const satisfies ParseArgsOptionsConfig;
+
+// A widened view of the spec: the `as const` literals carry no value type a
+// keyed read can use. `type` is named only so the values are not weak types.
+const OPTIONS_BY_NAME: Readonly<Record<string, { multiple?: boolean; type: string }>> =
+	CLI_OPTION_SPEC;
+
+/**
+ * The flags `parseArgs` collects by repetition. `multiple` takes one value per
+ * occurrence, never several after one flag, so the help text has to say so —
+ * the cli help spec reads this list to hold the two in step.
+ */
+export const REPEATABLE_FLAGS: ReadonlyArray<string> = Object.keys(OPTIONS_BY_NAME)
+	.filter((name) => OPTIONS_BY_NAME[name]?.multiple === true)
+	.map((name) => `--${name}`);
 
 /** Everything the invocation reaches the outside world through. */
 export interface CliDependencies {

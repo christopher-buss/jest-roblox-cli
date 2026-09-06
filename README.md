@@ -119,8 +119,9 @@ jest-roblox --coverage
 # Save game output (print/warn/error) to file
 jest-roblox --gameOutput game-logs.txt
 
-# Run only specific named projects
+# Run only specific named projects (repeat the flag per project)
 jest-roblox --project client
+jest-roblox --project client --project server
 ```
 
 ## Configuration
@@ -840,13 +841,13 @@ project) under `.jest-roblox/output/`.
 | `--config <path>`                | Path to config file                                                                                                                                       |
 | `--testPathPattern <regex>`      | Filter test files by path                                                                                                                                 |
 | `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                                                                      |
-| `--formatters <name...>`         | Output formatters (`default`, `agent`, `json`, `github-actions`)                                                                                          |
+| `--formatters <name>`            | Output formatter: `default`, `agent`, `json`, or `github-actions` (repeatable)                                                                            |
 | `--outputFile <path>`            | Write results to a file                                                                                                                                   |
 | `--gameOutput <path>`            | Write game print/warn/error to a file                                                                                                                     |
 | `--coverage`                     | Collect coverage                                                                                                                                          |
 | `--no-coverage`                  | Disable coverage for this run, even when enabled in config                                                                                                |
 | `--coverageDirectory <path>`     | Where to put coverage reports                                                                                                                             |
-| `--coverageReporters <r...>`     | Which report formats to use                                                                                                                               |
+| `--coverageReporters <name>`     | Which report format to use (repeatable)                                                                                                                   |
 | `--collectCoverageFrom <glob>`   | Globs for files to include in coverage (repeatable)                                                                                                       |
 | `--no-show-luau`                 | Hide Luau code in failure output                                                                                                                          |
 | `-u, --updateSnapshot`           | Update snapshot files                                                                                                                                     |
@@ -861,9 +862,9 @@ project) under `.jest-roblox/output/`.
 | `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                |
 | `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one session on studio-cli                                                                   |
 | `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism)) |
-| `--project <name...>`            | Filter which named projects to run                                                                                                                        |
-| `--setupFiles <path...>`         | Scripts to run before env                                                                                                                                 |
-| `--setupFilesAfterEnv <path...>` | Scripts to run after env                                                                                                                                  |
+| `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                           |
+| `--setupFiles <path>`            | Script to run before env (repeatable)                                                                                                                     |
+| `--setupFilesAfterEnv <path>`    | Script to run after env (repeatable)                                                                                                                      |
 | `--typecheck`                    | Run type tests too                                                                                                                                        |
 | `--typecheckOnly`                | Run only type tests                                                                                                                                       |
 | `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                                                                   |
