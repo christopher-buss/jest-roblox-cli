@@ -482,7 +482,7 @@ describe("timed-out entries", () => {
 			buildProjectResult(
 				entry({
 					jestOutput: JSON.stringify({
-						err: "Timed out after 60s, aborting tests",
+						err: "Timed out after 60s, aborting tests. Raise test.projectTimeout",
 						runner: { abandon: "timeout" },
 						success: false,
 					}),
@@ -495,7 +495,9 @@ describe("timed-out entries", () => {
 		assert(thrown instanceof LuauScriptError);
 
 		expect(thrown.timedOut).toBeTrue();
-		expect(thrown.message).toBe("Timed out after 60s, aborting tests");
+		expect(thrown.message).toBe(
+			"Timed out after 60s, aborting tests. Raise test.projectTimeout",
+		);
 	});
 
 	it("should leave an ordinary script failure unmarked", () => {

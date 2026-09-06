@@ -1850,14 +1850,16 @@ describe("abandon reason", () => {
 
 		const error = thrownFrom(
 			JSON.stringify({
-				err: "Timed out after 60s, aborting tests",
+				err: "Timed out after 60s, aborting tests. Raise test.projectTimeout",
 				runner: { abandon: "timeout" },
 				success: false,
 			}),
 		);
 
 		expect(error.timedOut).toBeTrue();
-		expect(error.message).toBe("Timed out after 60s, aborting tests");
+		expect(error.message).toBe(
+			"Timed out after 60s, aborting tests. Raise test.projectTimeout",
+		);
 	});
 
 	it("should leave a failure the runner did not abandon unmarked", () => {

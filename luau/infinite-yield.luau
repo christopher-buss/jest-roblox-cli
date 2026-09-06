@@ -18,7 +18,12 @@ local WARNING_NEEDLE = "Infinite yield possible"
 local ABORT_PREFIX = "Infinite yield detected, aborting tests: "
 -- The whole of what the report says about an abandoned run, so it names the
 -- budget rather than the machinery: the reader raises a number, not a watchdog.
-local TIMEOUT_FORMAT = "Timed out after %gs, aborting tests"
+--
+-- Naming the knob is the point of the second sentence. This budget is
+-- `test.projectTimeout`, which has no CLI flag and does not follow the root
+-- `timeout`, so a reader given only the seconds reaches for `--timeout` and
+-- moves nothing here.
+local TIMEOUT_FORMAT = "Timed out after %gs, aborting tests. Raise test.projectTimeout"
 -- Hoisted: the handler runs on every line the run logs.
 local MESSAGE_WARNING = Enum.MessageType.MessageWarning
 

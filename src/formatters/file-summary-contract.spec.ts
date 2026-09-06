@@ -50,7 +50,7 @@ describe(formatFileSummary, () => {
 		expect.assertions(1);
 
 		const file = makeFile({
-			failureMessage: "Timed out after 60s, aborting tests",
+			failureMessage: "Timed out after 60s, aborting tests. Raise test.projectTimeout",
 			testFilePath: "<exec-error>",
 			timedOut: true,
 		});

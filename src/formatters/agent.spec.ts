@@ -1483,7 +1483,7 @@ describe("formatAgent snapshots", () => {
 			⎯⎯⎯ Failed Tests 1 ⎯⎯⎯
 
 			 TIMEOUT shared/react/features/windows/__tests__/unit-menu-app.test
-			Timed out after 60s, aborting tests. Last test seen: "wedge wedges without yielding" in ReplicatedStorage/PkgShared/wedge.spec (running for 52.3s)
+			Timed out after 60s, aborting tests. Raise test.projectTimeout. Last test seen: "wedge wedges without yielding" in ReplicatedStorage/PkgShared/wedge.spec (running for 52.3s)
 
 			 Test Files  1 failed (1)
 			      Tests   (0)"

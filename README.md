@@ -244,9 +244,12 @@ Put these under `test: { ... }`.
 
 Three budgets nest, from the inside out: `test.testTimeout` bounds a single
 test, `test.projectTimeout` bounds everything one project does in the runtime,
-and the root `timeout` bounds the whole Open Cloud task. Set `projectTimeout` on
-a single project (under its `projects[N].test`) to give a slow one more room
-without raising it for the rest; set it to `0` to turn the budget off.
+and the root `timeout` bounds the whole Open Cloud task. Each is set on its own:
+`projectTimeout` lives in the config, has no CLI flag, and holds its default
+whatever `--timeout` says, so raising the task deadline gives a slow project
+nothing. Set `projectTimeout` on a single project (under its `projects[N].test`)
+to give a slow one more room without raising it for the rest; set it to `0` to
+turn the budget off.
 
 A project still running when its budget elapses is abandoned: its Jest run is
 cancelled, anything it staged is torn down, and the run moves on to the next

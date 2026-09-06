@@ -1652,7 +1652,7 @@ describe("formatResult timeouts", () => {
 
 		expect(output).toContain("Test suite timed out");
 		expect(output).not.toContain("Test suite failed to run");
-		expect(output).toContain("Timed out after 60s, aborting tests");
+		expect(output).toContain("Timed out after 60s, aborting tests. Raise test.projectTimeout");
 		expect(output).toContain(" TIMEOUT ");
 		expect(output).not.toContain(" FAIL ");
 	});
