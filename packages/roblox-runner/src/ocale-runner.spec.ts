@@ -390,6 +390,50 @@ describe(OcaleRunner, () => {
 			).rejects.toThrow("Timeout must be a positive number");
 		});
 
+		it("should fail a budgeted submit that never answers", async () => {
+			expect.assertions(1);
+
+			// Nothing queued and nothing returned: the shape of a submit parked
+			// in rate-limit backoff, which is what the budget exists to end.
+			const stalled = createFakeHttpClient();
+			vi.spyOn(stalled, "request").mockImplementation(async () => new Promise(() => {}));
+			const runner = makeRunner(stalled);
+
+			await expect(
+				runner.executeScriptAsync({
+					script: "return 1",
+					submitBudget: 1000,
+					timeout: 30_000,
+				}),
+			).rejects.toThrow("Open Cloud did not accept the task within 1s");
+		});
+
+		it("should ride out more rate limits than the attempt default when budgeted", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			// Six 429s outlast ocale's create default (maxRetries 3), so only a
+			// budget-bounded submit reaches the response behind them.
+			for (let index = 0; index < 6; index += 1) {
+				http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
+			}
+
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
+				status: 200,
+			});
+
+			const runner = makeRunner(http);
+			const result = await runner.executeScriptAsync({
+				script: "return 1",
+				submitBudget: 60_000,
+				timeout: 30_000,
+			});
+
+			expect(result.outputs).toStrictEqual(["ok"]);
+		});
+
 		it("should submit, poll, and return string outputs", async () => {
 			expect.assertions(2);
 

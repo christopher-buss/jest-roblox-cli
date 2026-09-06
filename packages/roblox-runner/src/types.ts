@@ -56,6 +56,24 @@ export interface ExecuteScriptOptions {
 	 */
 	pollBudget?: number;
 	script: string;
+	/**
+	 * Wall-clock cap on the submit, in milliseconds, covering every rate-limit
+	 * retry inside it. Omitted ⇒ the submit runs to the client's retry budget,
+	 * however long that takes.
+	 *
+	 * A task create is the one call that answers a 429 by sleeping: Open Cloud
+	 * meters creates per key, so a key several runs share refuses on a window
+	 * this run did not fill and cannot shorten. The retry that waits it out is
+	 * what a caller wants — but counted in attempts rather than seconds it has
+	 * no upper bound in time, and the stage sits silent for as long as the
+	 * server keeps saying "later". A budget converts that into a failure with
+	 * a number on it.
+	 *
+	 * The trade is a submit abandoned in flight: the request may still land and
+	 * consume a task slot nobody polls. Set it only where a duplicate task is
+	 * cheaper than a stage that never returns.
+	 */
+	submitBudget?: number;
 	timeout: number;
 }
 

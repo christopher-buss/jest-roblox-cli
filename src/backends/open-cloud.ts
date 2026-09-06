@@ -652,6 +652,14 @@ export class OpenCloudBackend implements Backend {
 				// different one — it would only delay the verdict.
 				pollBudget: budget,
 				script: isOwnedProbe ? OWNED_BOOT_PROBE_SCRIPT : BOOT_PROBE_SCRIPT,
+				// The probe is the one task create outside the pool, so it is
+				// the one that meets a per-key 429 with nothing but the
+				// client's retry loop — which waits in attempts, not seconds.
+				// The same number that bounds the poll bounds the wait, so a
+				// throttled key ends the stage with a verdict instead of
+				// holding it open. A probe abandoned mid-submit costs a
+				// `return 1` task nobody reads.
+				submitBudget: budget,
 				timeout: Math.min(BOOT_PROBE_TASK_TIMEOUT_MS, budget),
 			});
 			return result.outputs[0];

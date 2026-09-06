@@ -25,6 +25,7 @@ import { PlacesClient } from "@bedrock-rbx/ocale/places";
 import type buffer from "node:buffer";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { PollContext } from "./poll-diagnosis.ts";
 import { describeTaskRef, TASK_DEADLINE_GRACE_MS, toPollError } from "./poll-diagnosis.ts";
@@ -36,6 +37,9 @@ import type {
 	UploadPlaceOptions,
 	UploadPlaceResult,
 } from "./types.ts";
+
+/** What a task submit settles on, success or failure, before it is read. */
+type SubmitResult = Awaited<ReturnType<LuauExecutionClient["tasks"]["submit"]>>;
 
 interface TaskParametersInput {
 	readonly credentials: RunnerCredentials;
@@ -66,6 +70,21 @@ const FAILURE_LOG_MESSAGE_LIMIT = 400;
  * attempt.
  */
 const UPLOAD_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+
+/**
+ * Attempts a submit under an {@link ExecuteScriptOptions.submitBudget} is
+ * allowed. High on purpose: the budget is the bound, and a count that bites
+ * first would fail a submit the caller still had seconds to spend. Roblox's
+ * `retry-after` on a metered create runs a few seconds, so this outlasts any
+ * budget a caller would set.
+ */
+const BUDGETED_SUBMIT_MAX_RETRIES = 32;
+
+/**
+ * Race marker for a submit that outlived its
+ * {@link ExecuteScriptOptions.submitBudget}.
+ */
+const SUBMIT_EXPIRED = "submit-budget-expired";
 
 /**
  * Transport codes the task poll retries, wider than the submit's list by
@@ -132,6 +151,7 @@ export class OcaleRunner implements RemoteRunner {
 		placeVersion,
 		pollBudget,
 		script,
+		submitBudget,
 		timeout,
 	}: ExecuteScriptOptions): Promise<ScriptResult> {
 		if (timeout <= 0) {
@@ -148,10 +168,7 @@ export class OcaleRunner implements RemoteRunner {
 			script,
 			timeoutSeconds,
 		});
-		const submitted = await this.luau.tasks.submit(taskParameters, {
-			retryableTransportCodes: TRANSIENT_TRANSPORT_CODES,
-			timeout,
-		});
+		const submitted = await this.submitTaskAsync(taskParameters, { submitBudget, timeout });
 		if (!submitted.success) {
 			throw toSubmitError(submitted.err);
 		}
@@ -225,6 +242,34 @@ export class OcaleRunner implements RemoteRunner {
 		}
 
 		return page.data.messages.slice(-FAILURE_LOG_TAIL).map(formatLogMessage);
+	}
+
+	/**
+	 * Create the task, and say how long the create may spend being refused.
+	 *
+	 * A `submitBudget` moves the limit on a rate-limited create from attempts
+	 * to seconds. The two do not compose: an attempt count that bites first
+	 * would end the wait early and at a point the caller never chose, so a
+	 * budgeted submit is given a count high enough that the clock is what runs
+	 * out. Unbudgeted, the client's own count is the only bound and the call
+	 * takes as long as it takes.
+	 *
+	 * @param taskParameters - The task to create.
+	 * @param budgets - The submit's wall clock, if any, and its request timeout.
+	 * @returns The submit's result, unread.
+	 */
+	private async submitTaskAsync(
+		taskParameters: SubmitAtHeadParameters | SubmitAtVersionParameters,
+		{ submitBudget, timeout }: { submitBudget: number | undefined; timeout: number },
+	): Promise<SubmitResult> {
+		const submitting = this.luau.tasks.submit(taskParameters, {
+			...(submitBudget === undefined ? {} : { maxRetries: BUDGETED_SUBMIT_MAX_RETRIES }),
+			retryableTransportCodes: TRANSIENT_TRANSPORT_CODES,
+			timeout,
+		});
+		return submitBudget === undefined
+			? submitting
+			: withSubmitBudgetAsync(submitting, submitBudget);
 	}
 
 	/**
@@ -384,6 +429,63 @@ function buildTaskParameters({
 		universeId: credentials.universeId,
 	};
 	return placeVersion === undefined ? base : { ...base, versionId: String(placeVersion) };
+}
+
+function describeSeconds(ms: number): string {
+	return `${String(Math.round(ms / 1000))}s`;
+}
+
+/**
+ * Give the submit a deadline, and say what running past it means.
+ *
+ * A submit that has not answered in this long is not slow, it is waiting: the
+ * only thing the client sleeps on is a `retry-after` from a metered create, and
+ * the meter is on the key rather than on this run. So the remedy is about the
+ * key, and the message says so — nothing the caller can do to its own request
+ * moves a quota window someone else filled.
+ *
+ * The pending submit is left to settle unread. It is a create, so it may still
+ * take a slot; the alternative is a caller that never returns, which is the
+ * failure this exists to end.
+ *
+ * @param submitting - The in-flight submit, retries and all.
+ * @param budgetMs - Wall clock the submit may spend before it is given up on.
+ * @returns What the submit returned, when it returned in time.
+ */
+async function withSubmitBudgetAsync<T>(submitting: Promise<T>, budgetMs: number): Promise<T> {
+	const abort = new AbortController();
+	// The type argument is spelled out because inference widens the marker to
+	// `string`, which the race's union would then swallow.
+	const expiry = delay<typeof SUBMIT_EXPIRED>(budgetMs, SUBMIT_EXPIRED, {
+		ref: false,
+		signal: abort.signal,
+	}).catch(
+		// The `finally` abort is this promise's only rejection, and the race has
+		// settled by the time it fires, so nothing reads what it resolves with.
+		(): typeof SUBMIT_EXPIRED => SUBMIT_EXPIRED,
+	);
+
+	try {
+		// The winner is boxed rather than compared by value: a submit result is
+		// opaque here, so only a wrapper tells the two branches apart.
+		const outcome: typeof SUBMIT_EXPIRED | { value: T } = await Promise.race([
+			submitting.then((value) => ({ value })),
+			expiry,
+		]);
+		if (outcome === SUBMIT_EXPIRED) {
+			throw new Error(
+				`Open Cloud did not accept the task within ${describeSeconds(budgetMs)}. ` +
+					"Task creates are metered per API key, so a key several runs " +
+					"share is refused on a window this run cannot shorten.\n" +
+					"  Re-run when fewer runs share the key, or raise the budget if " +
+					"this one is genuinely too tight.",
+			);
+		}
+
+		return outcome.value;
+	} finally {
+		abort.abort();
+	}
 }
 
 /**
