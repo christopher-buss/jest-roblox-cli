@@ -5,14 +5,8 @@ import type {
 	Result,
 	SleepFunc,
 } from "@bedrock-rbx/ocale";
-import {
-	ApiError,
-	NetworkError,
-	RESPONSE_UNPARSEABLE,
-	TRANSIENT_TRANSPORT_CODES,
-} from "@bedrock-rbx/ocale";
+import { RESPONSE_UNPARSEABLE, TRANSIENT_TRANSPORT_CODES } from "@bedrock-rbx/ocale";
 import type {
-	FailedTask,
 	LuauExecutionTask,
 	LuauExecutionTaskRef,
 	SubmitAtHeadParameters,
@@ -28,12 +22,23 @@ import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { PollContext } from "./poll-diagnosis.ts";
-import { describeTaskRef, TASK_DEADLINE_GRACE_MS, toPollError } from "./poll-diagnosis.ts";
+import {
+	describeStatus,
+	describeTaskFailure,
+	describeUploadFailure,
+	FAILURE_LOG_TAIL,
+	formatLogMessage,
+	TASK_DEADLINE_GRACE_MS,
+	toPollError,
+} from "./poll-diagnosis.ts";
 import type {
+	BinaryInputUploader,
 	ExecuteScriptOptions,
 	RemoteRunner,
 	RunnerCredentials,
 	ScriptResult,
+	UploadBinaryInputOptions,
+	UploadBinaryInputResult,
 	UploadPlaceOptions,
 	UploadPlaceResult,
 } from "./types.ts";
@@ -42,6 +47,7 @@ import type {
 type SubmitResult = Awaited<ReturnType<LuauExecutionClient["tasks"]["submit"]>>;
 
 interface TaskParametersInput {
+	readonly binaryInput: string | undefined;
 	readonly credentials: RunnerCredentials;
 	readonly placeVersion: number | undefined;
 	readonly script: string;
@@ -49,16 +55,6 @@ interface TaskParametersInput {
 }
 
 const MAX_TASK_TIMEOUT_SECONDS = 300;
-
-/**
- * Task log messages carried on a failure, counted from the end. The tail is
- * what explains the failure; a full Jest run's output is megabytes and the
- * error banner is not where anyone reads it.
- */
-const FAILURE_LOG_TAIL = 20;
-
-/** Per-message cap on the failure log tail, in characters. */
-const FAILURE_LOG_MESSAGE_LIMIT = 400;
 
 /**
  * Statuses a place upload retries. Wider than ocale's upload default of `[429]`
@@ -103,6 +99,12 @@ const POLL_RETRYABLE_TRANSPORT_CODES = [...TRANSIENT_TRANSPORT_CODES, RESPONSE_U
 
 export interface OcaleRunnerOptions {
 	baseUrl?: string | undefined;
+	/**
+	 * The `fetch` a binary input's PUT goes over. The presigned upload URI is
+	 * on a host the Open Cloud client does not own, so the client's transport
+	 * cannot carry it; this is that call's own seam, defaulting to the global.
+	 */
+	fetch?: typeof globalThis.fetch;
 	httpClient?: HttpClient;
 	/**
 	 * Max retry attempts the underlying Open Cloud client makes per request.
@@ -116,8 +118,9 @@ export interface OcaleRunnerOptions {
 	sleep?: SleepFunc;
 }
 
-export class OcaleRunner implements RemoteRunner {
+export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 	private readonly credentials: RunnerCredentials;
+	private readonly fetchFn: typeof globalThis.fetch;
 	private readonly luau: LuauExecutionClient;
 	private readonly places: PlacesClient;
 	private readonly readFileFn: (filePath: string) => buffer.Buffer;
@@ -144,9 +147,11 @@ export class OcaleRunner implements RemoteRunner {
 		this.luau = new LuauExecutionClient(clientOptions);
 		this.places = new PlacesClient(clientOptions);
 		this.readFileFn = options?.readFile ?? ((filePath) => fs.readFileSync(filePath));
+		this.fetchFn = options?.fetch ?? globalThis.fetch;
 	}
 
 	public async executeScriptAsync({
+		binaryInput,
 		bootProven = false,
 		placeVersion,
 		pollBudget,
@@ -163,6 +168,7 @@ export class OcaleRunner implements RemoteRunner {
 		const { pollBudgetMs, timeoutSeconds } = budgets;
 
 		const taskParameters = buildTaskParameters({
+			binaryInput,
 			credentials: this.credentials,
 			placeVersion,
 			script,
@@ -182,6 +188,41 @@ export class OcaleRunner implements RemoteRunner {
 		});
 
 		return this.toScriptResultAsync(result, { ...budgets, bootProven, ref, startTime });
+	}
+
+	/**
+	 * Two calls: the client allocates a slot sized for the payload, then the
+	 * bytes go straight to the presigned URI it returned. The allocation rides
+	 * the client's pacer and retry, because `binaryInputs.create` is metered
+	 * per key (five a minute) and a 429 there is the ordinary case for several
+	 * runs sharing one key; the PUT is a plain upload to storage.
+	 */
+	public async uploadBinaryInputAsync({
+		payload,
+	}: UploadBinaryInputOptions): Promise<UploadBinaryInputResult> {
+		const uploadStart = Date.now();
+		const created = await this.luau.binaryInputs.create({
+			size: payload.byteLength,
+			universeId: this.credentials.universeId,
+		});
+		if (!created.success) {
+			throw new Error(
+				`Failed to allocate a binary input slot${describeStatus(created.err)}: ${created.err.message}`,
+				{ cause: created.err },
+			);
+		}
+
+		const response = await this.fetchFn(created.data.uploadUri, {
+			body: payload,
+			method: "PUT",
+		});
+		if (!response.ok) {
+			throw new Error(
+				`Failed to PUT the binary input (HTTP ${String(response.status)}): ${await response.text()}`,
+			);
+		}
+
+		return { path: created.data.path, uploadMs: Date.now() - uploadStart };
 	}
 
 	public async uploadPlaceAsync(options: UploadPlaceOptions): Promise<UploadPlaceResult> {
@@ -309,29 +350,6 @@ export class OcaleRunner implements RemoteRunner {
 	}
 }
 
-/**
- * Expands an upload failure into one diagnostic line. An `ApiError` carries
- * the failing call and how long it was in flight, and a bare `err.message`
- * throws all of that away: `HTTP 502: Request Context Failure` alone says
- * nothing about which request died, or whether it died on the wire or after
- * 30 seconds of upload.
- *
- * @param err - The Open Cloud error the upload returned.
- * @returns The error message, followed by the request context ocale captured.
- */
-function describeUploadFailure(err: OpenCloudError): string {
-	if (!(err instanceof ApiError) && !(err instanceof NetworkError)) {
-		return err.message;
-	}
-
-	const target = err.url === undefined ? "" : ` on ${err.method} ${err.url}`;
-	const elapsed =
-		err instanceof ApiError && err.elapsedMs !== undefined
-			? ` after ${(err.elapsedMs / 1000).toFixed(1)}s`
-			: "";
-	return `${err.message}${target}${elapsed}`;
-}
-
 function coerceOutputToString(value: JSONValue): string {
 	if (typeof value === "string") {
 		return value;
@@ -340,57 +358,6 @@ function coerceOutputToString(value: JSONValue): string {
 	// Bedrock's wire-parsed output.results is JSONValue (no undefined, function,
 	// or symbol entries), so JSON.stringify always returns a string here.
 	return JSON.stringify(value);
-}
-
-/**
- * One log line, prefixed by the severity Roblox assigned it so an `ERROR`
- * stands out from the `print` above it, and truncated so one runaway line
- * cannot push the rest of the tail off the banner.
- *
- * @param message - A structured log message from the task's log page.
- * @returns The formatted, length-capped line.
- */
-function formatLogMessage({
-	message,
-	messageType,
-}: {
-	message: string;
-	messageType: string;
-}): string {
-	const body =
-		message.length > FAILURE_LOG_MESSAGE_LIMIT
-			? `${message.slice(0, FAILURE_LOG_MESSAGE_LIMIT)}…`
-			: message;
-	return `[${messageType}] ${body}`;
-}
-
-/**
- * Names a terminal Roblox failure in full: the category code, Roblox's own
- * message, the task the run can be looked up by, and what the script printed
- * before it died.
- *
- * The code is not decoration. `DEADLINE_EXCEEDED` means the script outran its
- * budget and the log tail is where it was stuck; `SCRIPT_ERROR` means it threw
- * and the tail holds the traceback. Reporting `error.message` alone loses that
- * split, and loses the task id entirely.
- *
- * @param task - The `FAILED` task Roblox returned.
- * @param logTail - Formatted log lines, newest last; may be empty.
- * @returns The multi-line failure description.
- */
-function describeTaskFailure(task: FailedTask, logTail: ReadonlyArray<string>): string {
-	const lines = [
-		`Roblox task failed (${task.error.code}): ${task.error.message}`,
-		`  task: ${describeTaskRef(task.ref)}`,
-	];
-	if (logTail.length > 0) {
-		lines.push("  Roblox output before the failure:");
-		for (const line of logTail) {
-			lines.push(`    ${line}`);
-		}
-	}
-
-	return lines.join("\n");
 }
 
 /**
@@ -413,16 +380,19 @@ function resolveBudgets(
 }
 
 /**
- * The task a submit describes. `versionId` is present or the key is absent —
- * the parameters never carry it as `undefined`, which the client would send.
+ * The task a submit describes. `versionId` and `binaryInput` are each present
+ * or the key is absent — the parameters never carry one as `undefined`, which
+ * the client would send.
  */
 function buildTaskParameters({
+	binaryInput,
 	credentials,
 	placeVersion,
 	script,
 	timeoutSeconds,
 }: TaskParametersInput): SubmitAtHeadParameters | SubmitAtVersionParameters {
 	const base = {
+		...(binaryInput === undefined ? {} : { binaryInput }),
 		placeId: credentials.placeId,
 		script,
 		timeoutSeconds,

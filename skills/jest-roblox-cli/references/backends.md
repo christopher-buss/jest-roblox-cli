@@ -31,6 +31,14 @@ unchanged build reuses it — an upload is the only thing measured to precede a
 cold place boot (~22s against ~3s), so skipping it keeps the fast path.
 `--no-upload-cache` forces the upload.
 
+The place it uploads holds no code. The run's compiled directories are split out
+of the synthesized project and sent to each task as a binary input, rebuilt
+in-session above the generated runner, so the place changes only when a
+dependency or an asset does and the upload cache hits on a code-only edit. A
+mount holding anything a task cannot construct — an `.rbxm`, a descriptor, a
+nested project — stays in the place and is named once. `--no-binary-input`
+builds the whole place instead.
+
 Execution tasks then run _unpinned_ so they can land on a warm server holding
 the latest saved version; an injected guard compares `game.PlaceVersion` against
 the version this run uploaded or reused, and bails with a sentinel naming the

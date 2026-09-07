@@ -99,6 +99,7 @@ this line, and is usually the statement the test never returned from.
 | `--gameOutput <path>` | Capture all Luau print/warn/error to a file                           |
 | `--no-coverage-cache` | Force a clean coverage re-instrumentation (skip incremental cache)    |
 | `--no-upload-cache`   | Always upload the place, even when its bytes are unchanged            |
+| `--no-binary-input`   | Build the run's code into the place instead of sending it to a task   |
 | `--no-show-luau`      | Hide Luau code snippets in failure output (useful for AI consumption) |
 | `--formatters agent`  | Token-efficient output format for AI agents                           |
 | `--no-color`          | Disable colored output (useful for CI logs)                           |

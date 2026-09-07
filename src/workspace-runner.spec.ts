@@ -50,6 +50,8 @@ function resolverReturning(mapping: Record<string, Array<string>>): RojoResolver
 const ROOT = path.resolve("/repo");
 const WORKSPACE_CACHE = path.join(ROOT, ".jest-roblox", "workspace");
 const SYNTHESIZED_PROJECT = path.join(WORKSPACE_CACHE, "synthesized.project.json");
+/** Beside the place the run builds, named after it. */
+const CODE_BUNDLE = path.join(WORKSPACE_CACHE, "synthesized.code-bundle.json");
 const PLACE_BYTES = "RBXL-BYTES";
 const FOO_DIR = path.join(ROOT, "packages/foo");
 const BAR_DIR = path.join(ROOT, "packages/bar");
@@ -150,6 +152,7 @@ function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): Workspace
 	return {
 		backend: DEFAULT_CONFIG.backend,
 		bail: false,
+		binaryInput: DEFAULT_CONFIG.binaryInput,
 		color: DEFAULT_CONFIG.color,
 		formatters: [],
 		port: DEFAULT_CONFIG.port,
@@ -308,6 +311,90 @@ function seedPackage(
 		...options.extras,
 	};
 }
+
+describe("the code bundle a workspace run ships", () => {
+	/** One passing package, run with the `binaryInput` the caller names. */
+	async function runWithBinaryInputAsync(
+		binaryInput: boolean,
+		backendKind: Backend["kind"] = "open-cloud",
+	): Promise<MemoryFileSystem> {
+		const memory = createMemoryFileSystem();
+
+		memory.volume.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+		setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+		]);
+
+		await runStagedWorkspaceAsync({
+			backend: { ...backend, kind: backendKind },
+			cli: makeCli(),
+			fileSystem: memory.fileSystem,
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions({ binaryInput }),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+		return memory;
+	}
+
+	/** Where each mount the bundle carries lands in the DataModel. */
+	function bundledMounts({ fileSystem }: MemoryFileSystem): Array<string> {
+		const bundle = fromAny<{ mounts: Array<{ dataModelPath: Array<string> }> }, JSONValue>(
+			JSON.parse(fileSystem.readFileSync(CODE_BUNDLE, "utf-8")),
+		);
+		return bundle.mounts.map((mount) => mount.dataModelPath.join("/"));
+	}
+
+	it("should split one out of the shared place by default", async () => {
+		expect.assertions(2);
+
+		const memory = await runWithBinaryInputAsync(true);
+
+		// Both Code Roots are represented: the package's own compiled
+		// directory, and the workspace cache the generated stubs mount from.
+		expect(bundledMounts(memory)).toStrictEqual([
+			"ServerStorage/__pkg_stage/@halcyon/foo/ReplicatedStorage/Pkg",
+			"ServerStorage/__pkg_stage/@halcyon/foo/ReplicatedStorage/Pkg/jest.config",
+		]);
+		// What travels is gone from the harness the place was built from.
+		expect(
+			JSON.stringify(
+				JSON.parse(memory.fileSystem.readFileSync(SYNTHESIZED_PROJECT, "utf-8")),
+			),
+		).not.toContain("Pkg");
+	});
+
+	it("should build the whole place when the packages agreed against it", async () => {
+		expect.assertions(2);
+
+		const memory = await runWithBinaryInputAsync(false);
+
+		expect(memory.volume.existsSync(CODE_BUNDLE)).toBeFalse();
+		expect(
+			JSON.stringify(
+				JSON.parse(memory.fileSystem.readFileSync(SYNTHESIZED_PROJECT, "utf-8")),
+			),
+		).toContain("Pkg");
+	});
+
+	it("should build the whole place for a Studio backend", async () => {
+		expect.assertions(1);
+
+		// Studio is served the place a caller opens, so code taken out of it
+		// would be code that never arrives.
+		const memory = await runWithBinaryInputAsync(true, "studio");
+
+		expect(memory.volume.existsSync(CODE_BUNDLE)).toBeFalse();
+	});
+});
 
 describe(runWorkspaceAsync, () => {
 	it("should load each package's config independently and embed both in the materializer payload", async () => {

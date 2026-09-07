@@ -3,6 +3,7 @@ import {
 	createFakeHttpClient,
 	createFakeSleep,
 	type FakeHttpClient,
+	validBinaryInputBody,
 } from "@bedrock-rbx/ocale/testing";
 import { fromAny } from "@total-typescript/shoehorn";
 
@@ -55,6 +56,36 @@ function taskBody(overrides: TaskBodyOverrides = {}): TaskBody {
 }
 
 const submitBodySchema = type({ timeout: "string" });
+const binaryInputSubmitSchema = type({ "binaryInput?": "string" });
+const createBodySchema = type({ size: "number" });
+
+const INPUT_PATH = "universes/123/luau-execution-session-task-binary-inputs/input-1";
+const UPLOAD_URI = "https://upload.example/slot-1";
+
+/** One PUT the runner would issue, as the fake `fetch` saw it. */
+interface FetchCall {
+	body: Uint8Array;
+	method: string;
+	url: string;
+}
+
+/**
+ * A `fetch` that answers every call with one status and records what it was
+ * handed, so a spec can assert on the presigned PUT without a server.
+ */
+function makeFakeFetch(
+	status: number,
+	text = "",
+): { calls: Array<FetchCall>; fetchFn: typeof globalThis.fetch } {
+	const calls: Array<FetchCall> = [];
+	return {
+		calls,
+		fetchFn: fromAny(async (url: string, init: { body: Uint8Array; method: string }) => {
+			calls.push({ body: init.body, method: init.method, url });
+			return new Response(text, { status });
+		}),
+	};
+}
 
 /**
  * Poll cadence ocale applies below 20s elapsed. The specs below queue poll
@@ -116,10 +147,15 @@ function makeAdvancingRunner(http: FakeHttpClient): OcaleRunner {
 	);
 }
 
-function makeRunner(httpClient: FakeHttpClient, readData: buffer.Buffer = rbxlBuffer()) {
+function makeRunner(
+	httpClient: FakeHttpClient,
+	readData: buffer.Buffer = rbxlBuffer(),
+	fetchFunc?: typeof globalThis.fetch,
+) {
 	return new OcaleRunner(
 		{ apiKey: "test-key", placeId: "456", universeId: "123" },
 		{
+			...(fetchFunc === undefined ? {} : { fetch: fetchFunc }),
 			httpClient,
 			readFile: () => readData,
 			sleep: createFakeSleep(),
@@ -937,6 +973,158 @@ describe(OcaleRunner, () => {
 			const submitBody = http.requests[0]!.request.body!;
 
 			expect(submitBodySchema.assert(submitBody).timeout).toBe("300s");
+		});
+	});
+
+	describe("binary input", () => {
+		it("should name the binary input on a head submit", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
+				status: 200,
+			});
+
+			const runner = makeRunner(http);
+			await runner.executeScriptAsync({
+				binaryInput: INPUT_PATH,
+				script: "return 1",
+				timeout: 30_000,
+			});
+
+			expect(binaryInputSubmitSchema.assert(http.requests[0]!.request.body).binaryInput).toBe(
+				INPUT_PATH,
+			);
+		});
+
+		it("should name the binary input on a pinned submit", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
+				status: 200,
+			});
+
+			const runner = makeRunner(http);
+			await runner.executeScriptAsync({
+				binaryInput: INPUT_PATH,
+				placeVersion: 99,
+				script: "return 1",
+				timeout: 30_000,
+			});
+
+			const { request } = http.requests[0]!;
+
+			expect(request.url).toContain("/versions/99/");
+			expect(binaryInputSubmitSchema.assert(request.body).binaryInput).toBe(INPUT_PATH);
+		});
+
+		it("should send no binaryInput key when the caller names none", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
+			http.mockResponse({
+				body: taskBody({ output: { results: ["ok"] }, state: "COMPLETE" }),
+				status: 200,
+			});
+
+			const runner = makeRunner(http);
+			await runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
+
+			expect(
+				binaryInputSubmitSchema.assert(http.requests[0]!.request.body),
+			).not.toHaveProperty("binaryInput");
+		});
+
+		it("should allocate a slot for the payload's size and PUT the bytes at it", async () => {
+			expect.assertions(5);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({
+				body: validBinaryInputBody({ path: INPUT_PATH, uploadUri: UPLOAD_URI }),
+				status: 200,
+			});
+			const { calls, fetchFn } = makeFakeFetch(200);
+			const payload = new Uint8Array([1, 2, 3, 4, 5]);
+
+			const runner = makeRunner(http, rbxlBuffer(), fetchFn);
+			const result = await runner.uploadBinaryInputAsync({ payload });
+
+			expect(http.requests[0]!.request.url).toContain(
+				"/universes/123/luau-execution-session-task-binary-inputs",
+			);
+			expect(createBodySchema.assert(http.requests[0]!.request.body).size).toBe(5);
+			expect(calls).toStrictEqual([{ body: payload, method: "PUT", url: UPLOAD_URI }]);
+			expect(result.path).toBe(INPUT_PATH);
+			expect(result.uploadMs).toBeGreaterThanOrEqual(0);
+		});
+
+		it("should name the slot allocation and its status when the create fails", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockError(new ApiError("quota", { statusCode: 400 }));
+			const { calls, fetchFn } = makeFakeFetch(200);
+
+			const runner = makeRunner(http, rbxlBuffer(), fetchFn);
+
+			await expect(
+				runner.uploadBinaryInputAsync({ payload: new Uint8Array([1]) }),
+			).rejects.toThrow("Failed to allocate a binary input slot (HTTP 400): quota");
+			expect(calls).toStrictEqual([]);
+		});
+
+		it("should name the slot allocation alone when the create never reached a response", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockError(new NetworkError("socket hang up"));
+			const { fetchFn } = makeFakeFetch(200);
+
+			const runner = makeRunner(http, rbxlBuffer(), fetchFn);
+
+			await expect(
+				runner.uploadBinaryInputAsync({ payload: new Uint8Array([1]) }),
+			).rejects.toThrow("Failed to allocate a binary input slot: socket hang up");
+		});
+
+		it("should name the PUT and its status when the upload is refused", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({
+				body: validBinaryInputBody({ path: INPUT_PATH, uploadUri: UPLOAD_URI }),
+				status: 200,
+			});
+			const { fetchFn } = makeFakeFetch(403, "denied");
+
+			const runner = makeRunner(http, rbxlBuffer(), fetchFn);
+
+			await expect(
+				runner.uploadBinaryInputAsync({ payload: new Uint8Array([1]) }),
+			).rejects.toThrow("Failed to PUT the binary input (HTTP 403): denied");
+		});
+
+		it("should carry the create error as the cause", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			const failure = new ApiError("quota", { statusCode: 400 });
+			http.mockError(failure);
+
+			const runner = makeRunner(http, rbxlBuffer(), makeFakeFetch(200).fetchFn);
+			const thrown: unknown = await runner
+				.uploadBinaryInputAsync({ payload: new Uint8Array([1]) })
+				.catch((err: unknown) => err);
+
+			assert(thrown instanceof Error);
+
+			expect(thrown.cause).toBe(failure);
 		});
 	});
 

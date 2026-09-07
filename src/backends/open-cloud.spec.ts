@@ -1,26 +1,37 @@
 import { PollTimeoutError } from "@bedrock-rbx/ocale";
 import { placeIdentityGuardSource } from "@isentinel/roblox-runner";
 import type {
+	BinaryInputUploader,
 	ExecuteScriptOptions,
 	RemoteRunner,
 	ScriptResult,
+	UploadBinaryInputOptions,
+	UploadBinaryInputResult,
 	UploadPlaceOptions,
 	UploadPlaceResult,
 } from "@isentinel/roblox-runner";
 import { formatPlaceMismatch, PLACE_MISMATCH } from "@isentinel/roblox-runner/testing";
 
+import { Buffer } from "node:buffer";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { ConfigError } from "../config/errors.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
+import { CODE_BUNDLE_REBUILD_SOURCE } from "../luau/code-bundle-rebuild.ts";
+import { composeTaskScript } from "../luau/task-script.ts";
 import type {
 	StreamingResultReader,
 	StreamingResultRecord,
 } from "../memory-store/sorted-map-client.ts";
+import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
+import type { StageId } from "../progress/stages.ts";
+import type { CodeBundleArtifact } from "../staging/place-builder.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import { errorMessage } from "../utils/error-message.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
@@ -39,6 +50,14 @@ interface StubStreamReader extends StreamingResultReader {
 }
 
 interface RunnerStubOptions {
+	binaryInputError?: Error;
+	/**
+	 * The path each create hands back, one per call. A run that refreshes its
+	 * input reads the second, so the spec can tell the two submits apart.
+	 */
+	binaryInputPaths?: Array<string>;
+	/** What the runner reports the upload cost, which the run adds on. */
+	binaryInputUploadMs?: number;
 	uploadError?: Error;
 	uploadResult?: UploadPlaceResult;
 }
@@ -48,10 +67,12 @@ type ExecuteHandler = (options: ExecuteScriptOptions) => Promise<ScriptResult> |
 type ExecuteStep = () => Promise<ScriptResult> | ScriptResult;
 
 interface RunnerStub {
+	/** One entry per binary-input create, carrying the bytes it was handed. */
+	binaryInputCalls: Array<UploadBinaryInputOptions>;
 	executeCalls: Array<ExecuteScriptOptions>;
 	/** Boot-probe submits, kept apart so a test counts only its own tasks. */
 	probeCalls: Array<ExecuteScriptOptions>;
-	runner: RemoteRunner;
+	runner: BinaryInputUploader & RemoteRunner;
 	setExecute: (handler: ExecuteHandler) => void;
 	setProbe: (handler: ExecuteHandler) => void;
 	uploadCalls: Array<UploadPlaceOptions>;
@@ -75,12 +96,16 @@ function createStreamReader(pages: Array<Array<StreamingResultRecord>>): StubStr
 
 const DEFAULT_UPLOAD: UploadPlaceResult = { uploadMs: 12, versionNumber: 1 };
 
+/** The resource path a create hands back unless a spec names its own. */
+const DEFAULT_BINARY_INPUT_PATH = "universes/123/luau-execution-session-task-binary-inputs/input-1";
+
 interface StderrCapture {
 	restore: () => void;
 	writes: Array<string>;
 }
 
 function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
+	const binaryInputCalls: Array<UploadBinaryInputOptions> = [];
 	const executeCalls: Array<ExecuteScriptOptions> = [];
 	const probeCalls: Array<ExecuteScriptOptions> = [];
 	const uploadCalls: Array<UploadPlaceOptions> = [];
@@ -116,6 +141,21 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 		return executeHandler(executeOptions);
 	}
 
+	async function uploadBinaryInputAsync(
+		binaryOptions: UploadBinaryInputOptions,
+	): Promise<UploadBinaryInputResult> {
+		binaryInputCalls.push(binaryOptions);
+		if (options.binaryInputError !== undefined) {
+			throw options.binaryInputError;
+		}
+
+		const paths = options.binaryInputPaths ?? [DEFAULT_BINARY_INPUT_PATH];
+		// The last path answers every later create, so a spec naming one path
+		// gets it back however many times the run asks.
+		const index = Math.min(binaryInputCalls.length - 1, paths.length - 1);
+		return { path: paths[index]!, uploadMs: options.binaryInputUploadMs ?? 7 };
+	}
+
 	async function uploadPlaceAsync(uploadOptions: UploadPlaceOptions) {
 		uploadCalls.push(uploadOptions);
 		if (options.uploadError !== undefined) {
@@ -134,9 +174,10 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 	}
 
 	return {
+		binaryInputCalls,
 		executeCalls,
 		probeCalls,
-		runner: { executeScriptAsync, uploadPlaceAsync },
+		runner: { executeScriptAsync, uploadBinaryInputAsync, uploadPlaceAsync },
 		setExecute,
 		setProbe,
 		uploadCalls,
@@ -695,6 +736,38 @@ describe(OpenCloudBackend, () => {
 
 			expect(stub.executeCalls[0]!.script).toBe(`${guardPrefix(1)}${customScript}`);
 			expect(stub.executeCalls[0]!.script).not.toContain("Jest.runCLI");
+		});
+
+		/**
+		 * A static split sends one script to every bucket, and the composition
+		 * depends on nothing that varies between them — so it happens once for
+		 * the wave rather than once per bucket, over a script that carries the
+		 * whole test harness.
+		 */
+		it("should compose one script for every bucket of a static split", async () => {
+			expect.assertions(2);
+
+			const stub = createRunnerStub();
+			stub.setExecute(() => {
+				return scriptResult(envelope([{ jestOutput: successJest(), pkg: "@halcyon/foo" }]));
+			});
+			// Wrapped rather than replaced: every other assertion reads the
+			// script the real composer produced, and only the call count says
+			// whether the run composed it once or once per bucket.
+			const composeScript = vi.fn<typeof composeTaskScript>(composeTaskScript);
+
+			const backend = new OpenCloudBackend(credentials, {
+				composeScript,
+				runner: stub.runner,
+			});
+			await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta"), job("gamma")],
+				parallel: 3,
+				scriptOverride: "-- shared\nreturn nil",
+			});
+
+			expect(stub.executeCalls).toHaveLength(3);
+			expect(composeScript).toHaveBeenCalledOnce();
 		});
 	});
 
@@ -2802,5 +2875,346 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		expect(stub.probeCalls[0]!.pollBudget).toBe(1000);
 		expect(stub.probeCalls[0]!.timeout).toBe(1000);
+	});
+});
+
+const BUNDLE_FILE = "/cache/code-bundle.json";
+const BUNDLE_JSON = '{"mounts":[],"version":1}';
+const REFRESHED_PATH = "universes/123/luau-execution-session-task-binary-inputs/input-2";
+const REFRESH_STEP_MS = 14 * 60_000;
+
+/**
+ * A Code Bundle is the run's compiled code, taken out of the place and sent as
+ * a binary input instead. Every assertion here is about what reached the wire:
+ * the input the create returned, the script each submit carried, and the number
+ * of creates a run made.
+ */
+describe("code bundle", () => {
+	function bundleArtifact(overrides: Partial<CodeBundleArtifact> = {}): CodeBundleArtifact {
+		return {
+			byteLength: BUNDLE_JSON.length,
+			fileCount: 3,
+			path: BUNDLE_FILE,
+			stayedMounts: [],
+			...overrides,
+		};
+	}
+
+	/** A backend reading its bundle out of a volume of this test's own. */
+	function bundleBackend(stub: RunnerStub, now?: () => number): OpenCloudBackend {
+		const { fileSystem } = createMemoryFileSystem({ [BUNDLE_FILE]: BUNDLE_JSON });
+		return new OpenCloudBackend(credentials, { fileSystem, now, runner: stub.runner });
+	}
+
+	/** A stub whose every task passes, whatever script it was handed. */
+	function passingStub(stubOptions: RunnerStubOptions = {}): RunnerStub {
+		const stub = createRunnerStub(stubOptions);
+		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+		return stub;
+	}
+
+	/** One passing run that ships a bundle, returning the stub it drove. */
+	async function runBundledAsync(options: Partial<BackendOptions> = {}): Promise<RunnerStub> {
+		const stub = passingStub();
+		await bundleBackend(stub).runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha")],
+			...options,
+		});
+		return stub;
+	}
+
+	it("should upload the bundle once and name the input on the submit", async () => {
+		expect.assertions(3);
+
+		const stub = await runBundledAsync();
+
+		expect(stub.binaryInputCalls).toHaveLength(1);
+		expect(Buffer.from(stub.binaryInputCalls[0]!.payload).toString("utf-8")).toBe(BUNDLE_JSON);
+		expect(stub.executeCalls[0]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
+	});
+
+	it("should upload the bundle once for a run that shards", async () => {
+		expect.assertions(2);
+
+		const stub = await runBundledAsync({
+			jobs: [job("alpha"), job("beta"), job("gamma")],
+			parallel: 3,
+		});
+
+		expect(stub.executeCalls).toHaveLength(3);
+		expect(stub.binaryInputCalls).toHaveLength(1);
+	});
+
+	it("should put the rebuild below the version guard", async () => {
+		expect.assertions(3);
+
+		const stub = await runBundledAsync();
+		const { script } = stub.executeCalls[0]!;
+		const guard = placeIdentityGuardSource({ placeVersion: 1 });
+
+		expect(script).toContain(CODE_BUNDLE_REBUILD_SOURCE);
+		expect(script.indexOf(guard)).toBeLessThan(script.indexOf(CODE_BUNDLE_REBUILD_SOURCE));
+		// Behind the directives either way — a preamble above them would turn
+		// every `--!` line the script wrote into an ordinary comment.
+		expect(script.startsWith(guard)).toBeTrue();
+	});
+
+	/**
+	 * The workspace materializer clones each package's stage into its live
+	 * services, so a stage rebuilt after that clone would ship the previous
+	 * run's code. The rebuild leads the whole script, which is what makes the
+	 * ordering hold for any script a caller hands over rather than this one.
+	 */
+	it("should put the rebuild above the script it was handed", async () => {
+		expect.assertions(2);
+
+		const stub = await runBundledAsync({ scriptOverride: "--!strict\nmaterialize()" });
+		const { script } = stub.executeCalls[0]!;
+
+		expect(script.startsWith("--!strict\n")).toBeTrue();
+		expect(script.indexOf(CODE_BUNDLE_REBUILD_SOURCE)).toBeLessThan(
+			script.indexOf("materialize()"),
+		);
+	});
+
+	it("should carry the rebuild and the input on the pinned retry", async () => {
+		expect.assertions(4);
+
+		const stub = createRunnerStub();
+		stub.setExecute(raceUnpinnedExecute(1));
+		const capture = captureStderr();
+		onTestFinished(capture.restore);
+		await bundleBackend(stub).runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha")],
+		});
+
+		const retry = stub.executeCalls[1]!;
+
+		expect(retry.placeVersion).toBe(1);
+		expect(retry.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
+		expect(retry.script).toContain(CODE_BUNDLE_REBUILD_SOURCE);
+		// The guard is what a pinned submit drops; the rebuild is not.
+		expect(retry.script).not.toContain(PLACE_MISMATCH);
+	});
+
+	it("should carry the rebuild with no guard on an owned place", async () => {
+		expect.assertions(3);
+
+		const stub = await runBundledAsync({ jobs: [job("alpha", { ownedPlace: true })] });
+		const { script } = stub.executeCalls[0]!;
+
+		expect(stub.executeCalls[0]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
+		expect(script.startsWith(CODE_BUNDLE_REBUILD_SOURCE)).toBeTrue();
+		expect(script).not.toContain(PLACE_MISMATCH);
+	});
+
+	it("should neither upload nor rebuild without a bundle", async () => {
+		expect.assertions(3);
+
+		const stub = passingStub();
+		await bundleBackend(stub).runTestsAsync({ jobs: [job("alpha")] });
+
+		expect(stub.binaryInputCalls).toHaveLength(0);
+		expect(stub.executeCalls[0]!.binaryInput).toBeUndefined();
+		expect(stub.executeCalls[0]!.script).not.toContain(CODE_BUNDLE_REBUILD_SOURCE);
+	});
+
+	/**
+	 * The composed script is cached on the caller's script and the guard it
+	 * carries, which are run-constant. A second run on the same instance sends
+	 * the same two and can be shipping its code the other way, so a cache that
+	 * outlived its run would hand it a script rebuilding from an input nothing
+	 * created — and the task would fail on its first line.
+	 */
+	it("should compose a second run's script without the first run's cache", async () => {
+		expect.assertions(2);
+
+		const stub = passingStub();
+		const { fileSystem } = createMemoryFileSystem({ [BUNDLE_FILE]: BUNDLE_JSON });
+		const backend = new OpenCloudBackend(credentials, { fileSystem, runner: stub.runner });
+
+		await backend.runTestsAsync({ codeBundle: bundleArtifact(), jobs: [job("alpha")] });
+		await backend.runTestsAsync({ jobs: [job("alpha")] });
+
+		expect(stub.executeCalls[0]!.script).toContain(CODE_BUNDLE_REBUILD_SOURCE);
+		expect(stub.executeCalls[1]!.script).not.toContain(CODE_BUNDLE_REBUILD_SOURCE);
+	});
+
+	/**
+	 * One run, two submits: the head attempt races and the retry follows it,
+	 * with `elapseMs` of the run's clock spent in between. Two submits far
+	 * enough apart is what a long run looks like from an input's point of view.
+	 */
+	async function runAcrossElapsedAsync(elapseMs: number): Promise<RunnerStub> {
+		const stub = createRunnerStub({
+			binaryInputPaths: [DEFAULT_BINARY_INPUT_PATH, REFRESHED_PATH],
+		});
+		let now = 0;
+		stub.setExecute((executeOptions) => {
+			now += elapseMs;
+			return executeOptions.placeVersion === undefined ? racedOnce() : oneSuccessEntry();
+		});
+		const capture = captureStderr();
+		onTestFinished(capture.restore);
+		await bundleBackend(stub, () => now).runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha")],
+		});
+		return stub;
+	}
+
+	it("should create the input again once it is too old for the next submit", async () => {
+		expect.assertions(3);
+
+		const stub = await runAcrossElapsedAsync(REFRESH_STEP_MS);
+
+		expect(stub.binaryInputCalls).toHaveLength(2);
+		expect(stub.executeCalls[0]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
+		expect(stub.executeCalls[1]!.binaryInput).toBe(REFRESHED_PATH);
+	});
+
+	it("should create the input again at the refresh threshold itself", async () => {
+		expect.assertions(1);
+
+		// The threshold is the margin, not the expiry: an input reaching it is
+		// one whose next submit could be read after Open Cloud's fifteen
+		// minutes are up.
+		const stub = await runAcrossElapsedAsync(13 * 60_000);
+
+		expect(stub.binaryInputCalls).toHaveLength(2);
+	});
+
+	it("should keep an input the refresh threshold has not reached", async () => {
+		expect.assertions(2);
+
+		const stub = await runAcrossElapsedAsync(60_000);
+
+		expect(stub.binaryInputCalls).toHaveLength(1);
+		expect(stub.executeCalls[1]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
+	});
+
+	it("should charge the bundle's create and PUT to uploadMs", async () => {
+		expect.assertions(1);
+
+		const stub = passingStub({ binaryInputUploadMs: 4321 });
+
+		const result = await bundleBackend(stub).runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha")],
+		});
+
+		// The runner's own figure, not a second measurement around it: it spans
+		// the create — the pacer's wait for the per-key quota included — and the
+		// PUT, which is the whole of what the bundle cost.
+		expect(result.timing.uploadMs).toBeGreaterThanOrEqual(4321);
+	});
+
+	it("should announce the bundle stage with its size and file count", async () => {
+		expect.assertions(1);
+
+		const opened: Array<{ detail: string | undefined; id: StageId }> = [];
+		const stub = passingStub();
+		await bundleBackend(stub).runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha")],
+			progress: {
+				...NOOP_RUN_PROGRESS,
+				begin: (id, detail) => {
+					opened.push({ id, detail });
+					return () => {};
+				},
+			},
+		});
+
+		expect(opened).toContainEqual({ id: "bundle", detail: "25 B, 3 files" });
+	});
+
+	it("should name the mounts that stayed once, on stderr", async () => {
+		expect.assertions(2);
+
+		const capture = captureStderr();
+		onTestFinished(capture.restore);
+		const stub = passingStub();
+		await bundleBackend(stub).runTestsAsync({
+			codeBundle: bundleArtifact({ stayedMounts: ["ServerStorage/__pkg_stage/pkg/assets"] }),
+			jobs: [job("alpha")],
+		});
+
+		const notices = capture.writes.filter((line) => line.startsWith("Note: 1 code mount"));
+
+		expect(notices).toHaveLength(1);
+		expect(notices[0]).toContain("ServerStorage/__pkg_stage/pkg/assets");
+	});
+
+	it("should say nothing when every code mount travels", async () => {
+		expect.assertions(1);
+
+		const capture = captureStderr();
+		onTestFinished(capture.restore);
+		await runBundledAsync();
+
+		expect(capture.writes.filter((line) => line.includes("code mount"))).toHaveLength(0);
+	});
+
+	/**
+	 * Every submit of a sharded run crosses the refresh threshold at the same
+	 * moment, so without a hold on the upload in flight each one fires its own
+	 * create — N against a five-a-minute quota, N PUTs of the same bytes.
+	 */
+	it("should make one create for concurrent submits that all want a fresh input", async () => {
+		expect.assertions(2);
+
+		const stub = passingStub({
+			binaryInputPaths: [DEFAULT_BINARY_INPUT_PATH, REFRESHED_PATH],
+		});
+		// The run's first upload happens before any task dispatches and dates
+		// its input at zero; every reading after that is past the refresh
+		// threshold, so both shards want a new input at once.
+		let clock = 0;
+		function now(): number {
+			const reading = clock;
+			clock = REFRESH_STEP_MS;
+			return reading;
+		}
+
+		await bundleBackend(stub, now).runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha"), job("beta")],
+			parallel: 2,
+		});
+
+		// One refresh behind the first upload rather than one per shard.
+		expect(stub.binaryInputCalls).toHaveLength(2);
+		expect(stub.executeCalls.map((call) => call.binaryInput)).toStrictEqual([
+			REFRESHED_PATH,
+			REFRESHED_PATH,
+		]);
+	});
+
+	it("should fail a create the client cannot complete, naming the quota and the flag", async () => {
+		expect.assertions(2);
+
+		const stub = passingStub({
+			binaryInputError: new Error("Failed to allocate a binary input slot: 429"),
+		});
+
+		const failure = await bundleBackend(stub)
+			.runTestsAsync({ codeBundle: bundleArtifact(), jobs: [job("alpha")] })
+			.catch((err: unknown) => err);
+		assert(failure instanceof ConfigError, "expected a ConfigError");
+
+		expect(failure.message).toContain("Failed to allocate a binary input slot: 429");
+		// The quota is the cause a reader can act on — several agents on one
+		// key — and the flag is the way out. Asserted whole rather than by
+		// keyword: each clause is one of the three things a reader needs, and
+		// a hint that lost one still contains the others.
+		expect(failure.hint).toBe(
+			"`binaryInputs.create` is metered at five a minute per API key, and the " +
+				"client has already retried inside that budget — so several runs " +
+				"sharing one key is the usual cause.\n" +
+				"Run with `--no-binary-input` to upload the code inside the place instead.",
+		);
 	});
 });

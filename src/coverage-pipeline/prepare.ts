@@ -9,7 +9,9 @@ import picomatch from "picomatch";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
 import { nodeTsconfigReader } from "../executor/tsconfig-mappings.ts";
-import { buildPlaceAsync } from "../staging/place-builder.ts";
+import { CODE_SPLIT_PASS_VERSION } from "../staging/code-split.ts";
+import type { BuildPlaceOptions, CodeBundleArtifact } from "../staging/place-builder.ts";
+import { buildCodeBundle, buildPlaceAsync } from "../staging/place-builder.ts";
 import type { CoverageRoot } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { NOOP_TIMING_COLLECTOR } from "../timing/orchestration-collector.ts";
@@ -59,6 +61,10 @@ const COVERAGE_DIR = ".jest-roblox/coverage";
 /** Framed on `rootDir`, and outside the directory a cold rebuild wipes. */
 const INPUT_DIGEST_PATH = ".jest-roblox/input-digests";
 const COVERAGE_MANIFEST = "coverage-manifest.json";
+/**
+ * The place this pipeline builds, and the bundle a harness build splits out.
+ */
+const COVERAGE_PLACE_FILE = path.join(COVERAGE_DIR, "game.rbxl");
 
 /** Where the coverage path publishes its sibling manifests (cwd-relative). */
 export const COVERAGE_MANIFEST_PATH: string = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
@@ -67,6 +73,11 @@ export const COVERAGE_BUILD_MANIFEST_PATH: string = path.join(COVERAGE_DIR, BUIL
 export interface PrepareCoverageResult {
 	/** Shared UUID for the sibling Build + Coverage manifests. */
 	buildId: string;
+	/**
+	 * The Code Bundle beside the place, present only when the caller asked for
+	 * a harness. Written on every run, reused place or not.
+	 */
+	codeBundle?: CodeBundleArtifact | undefined;
 	/** The instrumented place this run resolved (built fresh or reused). */
 	coveragePlace: BuildManifestArtifact;
 	/** SHA-256 of each compiled `.luau`, for the caller's Build Manifest. */
@@ -103,6 +114,12 @@ export interface PrepareCoverageOptions {
 	 */
 	childProcess?: ChildProcessRunner;
 	/**
+	 * Build a Harness Place: split the mounts inside these Code Roots out of
+	 * the project and write them beside the place as a Code Bundle instead.
+	 * Omit to build the whole place.
+	 */
+	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
+	/**
 	 * The run's effective coverage include globs, per `resolveCoverageInclude`
 	 * — which is where the `collectCoverageFrom ?? derived` fallback lives. A
 	 * caller that omits it gets the raw config value, so a run that never
@@ -134,6 +151,7 @@ export interface RojoProjectInFrame {
 interface WriteManifestOptions {
 	allFiles: Record<string, InstrumentedFileRecord>;
 	buildId: string;
+	codeSplitKey: string | undefined;
 	copyIgnoreHash: string;
 	coverageUniverseHash: string | undefined;
 	fileSystem: FileSystem;
@@ -179,10 +197,20 @@ interface RojoProjectRead {
 	loaded: RojoProjectInFrame | undefined;
 }
 
-/** The rojo project a run reads, parsed once and shared by everything. */
-interface RojoContext extends RojoProjectRead {
+/** The rojo project a run reads, read at most once and shared by everything. */
+interface RojoContext {
 	config: ResolvedConfig;
 	fileSystem: FileSystem;
+	/**
+	 * The project, read on the first ask and remembered.
+	 *
+	 * Lazy rather than eager: a config that names its own `luauRoots` never
+	 * looks at the tree, and reading it costs a parse of the project plus a
+	 * parse of every project it nests. Multi asks this question once per
+	 * project config, so the eager read spent N of those on an answer the first
+	 * branch already had.
+	 */
+	read: () => RojoProjectRead;
 	tsconfigReader: TsconfigReader;
 }
 
@@ -227,32 +255,12 @@ interface ShadowRootsResult {
 /** What the coverage place build reads, once the shadow is populated. */
 interface BuildCoveragePlaceOptions {
 	childProcess: ChildProcessRunner;
+	/** Present for a Harness Place; absent builds the whole place. */
+	codeRoots: ReadonlyArray<PosixRoot> | undefined;
 	fileSystem: FileSystem;
 	packageDirectory: string;
-	placeFile: string;
 	rojoProjectPath: string;
 	shadow: Pick<ShadowRootsResult, "coverageRoots" | "coverageSpine">;
-}
-
-interface RebuildCoverageOptions {
-	childProcess: ChildProcessRunner;
-	config: ResolvedConfig;
-	inputs: CoverageInputs;
-	placeFile: string;
-	shadow: ShadowRootsResult;
-}
-
-interface InstrumentedCoverage {
-	inputs: CoverageInputs;
-	isIncremental: boolean;
-	shadow: ShadowRootsResult;
-}
-
-interface BakeCoveragePlaceOptions {
-	bake: PrepareCoverageOptions["bake"];
-	childProcess: ChildProcessRunner;
-	config: ResolvedConfig;
-	instrumented: InstrumentedCoverage;
 }
 
 interface RojoInputsHashResult {
@@ -266,8 +274,23 @@ interface RojoInputsHashResult {
  */
 type BakedCoveragePlace = Pick<
 	PrepareCoverageResult,
-	"buildId" | "coveragePlace" | "files" | "manifest" | "placeFile" | "rebuilt"
+	"buildId" | "codeBundle" | "coveragePlace" | "files" | "manifest" | "placeFile" | "rebuilt"
 >;
+
+/** What the instrumentation phase leaves behind for the place build. */
+interface InstrumentedCoverage {
+	inputs: CoverageInputs;
+	isIncremental: boolean;
+	shadow: ShadowRootsResult;
+}
+
+interface BakeCoveragePlaceOptions {
+	bake: PrepareCoverageOptions["bake"];
+	childProcess: ChildProcessRunner;
+	codeRoots: ReadonlyArray<PosixRoot> | undefined;
+	config: ResolvedConfig;
+	instrumented: InstrumentedCoverage;
+}
 
 /** Project the coverage result down to the record an entry point emits. */
 export function toCoverageArtifacts(
@@ -372,11 +395,40 @@ export function resolveLuauRoots(
 	);
 }
 
+/**
+ * {@link resolveLuauRoots}, answering none where no source says what the roots
+ * are rather than refusing the run.
+ *
+ * That case is a run the coverage pipeline cannot serve and a Code Bundle can:
+ * nothing travels, the place holds every mount, and the run costs what it
+ * always did. A malformed rojo project is not that case and still throws —
+ * catching it here would trade a diagnosable failure for a run that silently
+ * ships no code.
+ */
+export function tryResolveLuauRoots({
+	config,
+	fileSystem = nodeFileSystem,
+	tsconfigReader = nodeTsconfigReader,
+}: {
+	config: ResolvedConfig;
+	fileSystem?: FileSystem;
+	tsconfigReader?: TsconfigReader | undefined;
+}): Array<PosixRoot> {
+	const context = readRojoContext(
+		config,
+		tryFindRojoProject(config, fileSystem),
+		fileSystem,
+		tsconfigReader,
+	);
+	return dedupeRoots(findRawLuauRoots(context) ?? []);
+}
+
 export async function prepareCoverageAsync(
 	config: ResolvedConfig,
 	{
 		bake,
 		childProcess = nodeChildProcessRunner,
+		codeRoots,
 		coverageInclude,
 		fileSystem = nodeFileSystem,
 		instrumenter = nodeInstrumenter,
@@ -405,7 +457,7 @@ export async function prepareCoverageAsync(
 	// place. Both are staging: a non-coverage run pays the same work.
 	const { elapsedMs: stagingMs, value: baked } = await timing.profileTimedAsync(
 		"bakeCoveragePlace",
-		async () => bakeCoveragePlaceAsync({ bake, childProcess, config, instrumented }),
+		async () => bakeCoveragePlaceAsync({ bake, childProcess, codeRoots, config, instrumented }),
 	);
 
 	return { ...baked, instrumentMs, stagingMs };
@@ -458,18 +510,22 @@ function detectRootsFromRojo(
  * `luauRoots`, the rojo mounts, then the tsconfig `outDir`. Each root keeps
  * the spelling of its source. Use {@link resolveLuauRootsWithRojo} to get
  * corrected roots.
+ *
+ * `undefined` where no source supplies any — which is a run the pipeline
+ * refuses and a Code Bundle merely does without, so the two verdicts are the
+ * caller's to give rather than this one's.
  */
-function selectRawLuauRoots({
+function findRawLuauRoots({
 	config,
-	failure,
 	fileSystem,
-	loaded,
+	read,
 	tsconfigReader,
-}: RojoContext): Array<string> {
+}: RojoContext): Array<string> | undefined {
 	if (config.luauRoots !== undefined && config.luauRoots.length > 0) {
 		return config.luauRoots;
 	}
 
+	const { failure, loaded } = read();
 	if (failure !== undefined) {
 		throw failure;
 	}
@@ -480,14 +536,26 @@ function selectRawLuauRoots({
 	}
 
 	const tsconfig = tsconfigReader(config.rootDir) ?? undefined;
-	const outDirectory = tsconfig?.config.compilerOptions?.outDir;
-	if (outDirectory !== undefined) {
-		return [outDirectory];
+	return tsconfig?.config.compilerOptions?.outDir === undefined
+		? undefined
+		: [tsconfig.config.compilerOptions.outDir];
+}
+
+/** {@link findRawLuauRoots}, refusing a run that supplies none. */
+function selectRawLuauRoots(context: RojoContext): Array<string> {
+	const roots = findRawLuauRoots(context);
+	if (roots === undefined) {
+		throw new Error(
+			"Could not determine luauRoots. Set luauRoots in config or ensure tsconfig has outDir.",
+		);
 	}
 
-	throw new Error(
-		"Could not determine luauRoots. Set luauRoots in config or ensure tsconfig has outDir.",
-	);
+	return roots;
+}
+
+/** Roots in one spelling, so two spellings of one directory reduce to one. */
+function dedupeRoots(roots: ReadonlyArray<string>): Array<PosixRoot> {
+	return [...new Set(roots.map(toPosixRoot))];
 }
 
 /**
@@ -504,7 +572,7 @@ function selectRawLuauRoots({
  * `discoverFromLuauRoots`.
  */
 function resolveLuauRootsWithRojo(context: RojoContext): Array<PosixRoot> {
-	return [...new Set(selectRawLuauRoots(context).map(toPosixRoot))];
+	return dedupeRoots(selectRawLuauRoots(context));
 }
 
 /**
@@ -547,25 +615,36 @@ function loadResolvedRojoProject(fileSystem: FileSystem, resolvedPath: string): 
 	}
 }
 
-/** {@link loadResolvedRojoProject}, with the parse failure held for later. */
+/** The same read every time, however many callers ask this context for it. */
+function readOnce(read: () => RojoProjectRead): () => RojoProjectRead {
+	let cached: RojoProjectRead | undefined;
+	return () => {
+		cached ??= read();
+		return cached;
+	};
+}
+
+/** What a run with no rojo project on disk reads instead of one. */
+function readNoRojoProject(): RojoProjectRead {
+	return { failure: undefined, loaded: undefined };
+}
+
+/**
+ * {@link loadResolvedRojoProject}, read once and the failure held for later.
+ */
 function readRojoContext(
 	config: ResolvedConfig,
 	rojoProjectPath: string | undefined,
 	fileSystem: FileSystem,
 	tsconfigReader: TsconfigReader,
 ): RojoContext {
-	if (rojoProjectPath === undefined) {
-		// No project file at all: the caller falls through to tsconfig's outDir,
-		// and there are no mounts to judge a demote against.
-		return { config, failure: undefined, fileSystem, loaded: undefined, tsconfigReader };
-	}
-
-	return {
-		...loadResolvedRojoProject(fileSystem, rojoProjectPath),
-		config,
-		fileSystem,
-		tsconfigReader,
-	};
+	// No project file at all: the caller falls through to tsconfig's outDir,
+	// and there are no mounts to judge a demote against.
+	const read =
+		rojoProjectPath === undefined
+			? readNoRojoProject
+			: () => loadResolvedRojoProject(fileSystem, rojoProjectPath);
+	return { config, fileSystem, read: readOnce(read), tsconfigReader };
 }
 
 /**
@@ -656,6 +735,10 @@ async function reuseCoverageResultAsync(
 		return undefined;
 	}
 
+	// Nothing was built, but the gate that decided so re-hashed the cached
+	// place, so this phase still carries what the decision cost.
+	process.stderr.write(`Reusing cached coverage place (built ${previousManifest.generatedAt})\n`);
+
 	return {
 		buildId,
 		// Reuse the hash `readBuildManifest` already computed; only a
@@ -671,16 +754,45 @@ async function reuseCoverageResultAsync(
 	};
 }
 
-async function buildRojoProjectAsync({
+/**
+ * What the split would emit, as the one string the cached place has to still
+ * answer for: the pass version and the Code Roots it ran over, or nothing at
+ * all for a run that builds the whole place.
+ *
+ * The place-reuse key folds these for every other build, and reaches no build
+ * on this path — the gate below is this pipeline's own. Without them a bumped
+ * pass version or a moved Code Root hands back a harness the old rule built,
+ * and a run that changed its mind about `binaryInput` is handed the other
+ * answer's place: a harness holds none of the run's code, so every test goes
+ * missing rather than fails.
+ *
+ * The roots go in as they are rather than hashed: the manifest already records
+ * `luauRoots` the same way, and a reader comparing two runs wants to see which
+ * root moved.
+ */
+function describeCodeSplit(codeRoots: ReadonlyArray<PosixRoot> | undefined): string | undefined {
+	return codeRoots === undefined
+		? undefined
+		: [String(CODE_SPLIT_PASS_VERSION), ...codeRoots].join("\n");
+}
+
+/**
+ * The synthesizer input the coverage place and its Code Bundle share.
+ *
+ * One object for both, because a bundle split from a different project than the
+ * place was built from would carry mounts the harness still holds.
+ */
+function coveragePlaceOptions({
 	childProcess,
+	codeRoots,
 	fileSystem,
 	packageDirectory,
-	placeFile,
 	rojoProjectPath,
 	shadow,
-}: BuildCoveragePlaceOptions): Promise<BuildManifestArtifact> {
-	return buildPlaceAsync({
+}: BuildCoveragePlaceOptions): BuildPlaceOptions {
+	return {
 		childProcess,
+		codeRoots,
 		fileSystem,
 		// The coverage place is shared by every backend. studio-cli opens it
 		// directly and drives the plugin's Run-mode runner, which refuses to run
@@ -697,15 +809,16 @@ async function buildRojoProjectAsync({
 				rojoProjectPath: path.resolve(rojoProjectPath),
 			},
 		],
-		placeFile,
+		placeFile: COVERAGE_PLACE_FILE,
 		projectFile: path.join(COVERAGE_DIR, path.basename(rojoProjectPath)),
 		wrap: false,
-	});
+	};
 }
 
 function buildAndWriteManifest({
 	allFiles,
 	buildId,
+	codeSplitKey,
 	copyIgnoreHash,
 	coverageUniverseHash,
 	fileSystem,
@@ -718,6 +831,7 @@ function buildAndWriteManifest({
 	const generatedAtDate = new Date();
 	const manifest: CoverageManifest = {
 		buildId,
+		codeSplitKey,
 		copyIgnoreHash,
 		coverageUniverseHash,
 		files: allFiles,
@@ -744,38 +858,64 @@ function buildAndWriteManifest({
  * set), keeping that write a single atomic operation.
  */
 async function buildPlaceAndManifestAsync({
-	childProcess,
-	config,
+	build,
 	inputs,
-	placeFile,
 	shadow,
-}: RebuildCoverageOptions): Promise<
-	Pick<PrepareCoverageResult, "buildId" | "coveragePlace" | "manifest">
-> {
-	const coveragePlace = await buildRojoProjectAsync({
-		childProcess,
-		fileSystem: inputs.fileSystem,
-		packageDirectory: config.rootDir,
-		placeFile,
-		rojoProjectPath: inputs.rojoProjectPath,
-		shadow,
-	});
+}: {
+	build: BuildCoveragePlaceOptions;
+	inputs: CoverageInputs;
+	shadow: ShadowRootsResult;
+}): Promise<Pick<PrepareCoverageResult, "buildId" | "codeBundle" | "coveragePlace" | "manifest">> {
+	const coveragePlace = await buildPlaceAsync(coveragePlaceOptions(build));
 
 	const buildId = crypto.randomUUID();
 	const manifest = buildAndWriteManifest({
 		allFiles: shadow.files,
 		buildId,
+		codeSplitKey: describeCodeSplit(build.codeRoots),
 		copyIgnoreHash: inputs.copyIgnoreHash,
 		coverageUniverseHash: inputs.universe?.digest,
 		fileSystem: inputs.fileSystem,
 		luauRoots: inputs.luauRoots,
 		manifestPath: inputs.manifestPath,
 		nonInstrumentedFiles: shadow.nonInstrumentedFiles,
-		placeFile,
+		placeFile: COVERAGE_PLACE_FILE,
 		rojoInputsHash: inputs.rojoInputsHash,
 	});
 
-	return { buildId, coveragePlace, manifest };
+	return { buildId, codeBundle: coveragePlace.codeBundle, coveragePlace, manifest };
+}
+
+/** Everything the place build and the bundle split both read. */
+function toBuildOptions({
+	childProcess,
+	codeRoots,
+	config,
+	inputs,
+	shadow,
+}: {
+	childProcess: ChildProcessRunner;
+	codeRoots: ReadonlyArray<PosixRoot> | undefined;
+	config: ResolvedConfig;
+	inputs: CoverageInputs;
+	shadow: ShadowRootsResult;
+}): BuildCoveragePlaceOptions {
+	return {
+		childProcess,
+		codeRoots,
+		fileSystem: inputs.fileSystem,
+		packageDirectory: config.rootDir,
+		rojoProjectPath: inputs.rojoProjectPath,
+		shadow,
+	};
+}
+
+/** The bundle for a place this run reused rather than built. */
+function reuseCodeBundle(build: BuildCoveragePlaceOptions): CodeBundleArtifact | undefined {
+	const { codeRoots } = build;
+	return codeRoots === undefined
+		? undefined
+		: buildCodeBundle({ ...coveragePlaceOptions(build), codeRoots });
 }
 
 /**
@@ -787,38 +927,37 @@ async function buildPlaceAndManifestAsync({
 async function bakeCoveragePlaceAsync({
 	bake,
 	childProcess,
+	codeRoots,
 	config,
 	instrumented: { inputs, isIncremental, shadow },
 }: BakeCoveragePlaceOptions): Promise<BakedCoveragePlace> {
+	const build = toBuildOptions({ childProcess, codeRoots, config, inputs, shadow });
 	// The layout stays inside the optional call: a run with no bake never
 	// builds one, and it is the only thing that would read it.
-	const hasExtraChanges = bake?.run(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true;
-	const hasChanges = hasCoverageChanges(inputs, { hasExtraChanges, isIncremental, shadow });
-	const placeFile = path.join(COVERAGE_DIR, "game.rbxl");
-	const files = toBuildManifestFiles(shadow.files);
-	const reused = await reuseCoverageResultAsync(inputs, files, hasChanges);
-	if (reused !== undefined) {
-		// Nothing was built, but the gate that decided so re-hashed the cached
-		// place, so this phase still carries what the decision cost.
-		process.stderr.write(
-			`Reusing cached coverage place (built ${reused.manifest.generatedAt})\n`,
-		);
-		return reused;
-	}
-
-	const built = await buildPlaceAndManifestAsync({
-		childProcess,
-		config,
-		inputs,
-		placeFile,
+	const hasBakeChanges = bake?.run(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true;
+	const hasChanges = hasCoverageChanges(inputs, {
+		hasExtraChanges:
+			hasBakeChanges ||
+			inputs.previousManifest?.codeSplitKey !== describeCodeSplit(codeRoots),
+		isIncremental,
 		shadow,
 	});
+	const files = toBuildManifestFiles(shadow.files);
+	const reused = await reuseCoverageResultAsync(inputs, files, hasChanges);
+	// The bundle is written either way: the reused place never held this run's
+	// code, and the gate above only proved the harness itself is still current.
+	if (reused !== undefined) {
+		return { ...reused, codeBundle: reuseCodeBundle(build) };
+	}
+
+	const built = await buildPlaceAndManifestAsync({ build, inputs, shadow });
 	return {
 		buildId: built.buildId,
+		codeBundle: built.codeBundle,
 		coveragePlace: built.coveragePlace,
 		files,
 		manifest: built.manifest,
-		placeFile,
+		placeFile: COVERAGE_PLACE_FILE,
 		rebuilt: true,
 	};
 }
@@ -928,7 +1067,8 @@ function validateRelativeRoots(luauRoots: ReadonlyArray<PosixRoot>): void {
  * coverage root against, so a mount and a root agree here exactly when they
  * agree there.
  */
-function resolveRojoMounts({ config, loaded }: RojoContext): ReadonlySet<string> {
+function resolveRojoMounts({ config, read }: RojoContext): ReadonlySet<string> {
+	const { loaded } = read();
 	if (loaded === undefined) {
 		return new Set();
 	}

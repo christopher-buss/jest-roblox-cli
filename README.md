@@ -158,6 +158,7 @@ per-package declarations error loudly.
 | Field                  | What it does                                                                                                                                                        | Default       |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                             | `"auto"`      |
+| `binaryInput`          | Open Cloud: send the run's code to each task instead of building it into the place (see [Code as a binary input](#code-as-a-binary-input))                          | `true`        |
 | `color`                | Use ANSI colors in console output                                                                                                                                   | `true`        |
 | `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                            | `["default"]` |
 | `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package | —             |
@@ -461,6 +462,28 @@ Streaming is enabled by default and disabled only for `--silent`,
 `--formatters json`, and `--formatters agent` (without `--verbose`).
 `--formatters agent --verbose` re-enables streaming and therefore still needs
 the sorted-map scopes; `--formatters github-actions` also streams.
+
+#### Code as a binary input
+
+By default an Open Cloud run does not build its code into the place. The place
+holds the assets, `rbxts_include` and the vendored dependency tree — everything
+rojo builds from outside a directory the run compiled into — and the compiled
+code travels beside it as a binary input, rebuilt inside each task before Jest
+resolves anything. The place then changes only when a dependency or an asset
+does, so a code-only edit skips the rojo build and, through `uploadCache`, the
+upload as well.
+
+A directory travels only when every instance rojo builds from it is a script a
+task can construct: `.luau`, `.lua`, and `.json` modules. One holding an
+`.rbxm`, an `.rbxmx`, a `.meta.json`, a nested `.project.json`, a `.toml`, a
+`.txt` or a `.csv` stays in the place whole, and the run names it once so you
+know what to move. A file rojo builds nothing from rides along instead, so the
+`.d.ts` and `.luau.map` files a roblox-ts `out/` holds beside every script cost
+you nothing and need no `globIgnorePaths` entry.
+
+`binaryInput: false` or `--no-binary-input` builds the whole place as before.
+Reach for it when a run does something you cannot explain; the Studio backends
+ignore the setting, because they never upload a place at all.
 
 ### Studio (local)
 
@@ -863,6 +886,8 @@ project) under `.jest-roblox/output/`.
 | `--no-color`                     | Turn off colors                                                                                                                                           |
 | `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                                                                 |
 | `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                |
+| `--binary-input`                 | Send the run's code to each task as a binary input (the default; see [Code as a binary input](#code-as-a-binary-input))                                   |
+| `--no-binary-input`              | Build the run's code into the place instead of sending it to each task (see [Code as a binary input](#code-as-a-binary-input))                            |
 | `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one session on studio-cli                                                                   |
 | `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism)) |
 | `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                           |

@@ -290,6 +290,20 @@ describe(parseArgs, () => {
 		expect(parseArgs([]).uploadCache).toBeUndefined();
 	});
 
+	it("should parse binary-input flags and prefer --no-binary-input", () => {
+		expect.assertions(3);
+
+		expect(parseArgs(["--no-binary-input"]).binaryInput).toBeFalse();
+		expect(parseArgs(["--binary-input"]).binaryInput).toBeTrue();
+		expect(parseArgs(["--binary-input", "--no-binary-input"]).binaryInput).toBeFalse();
+	});
+
+	it("should leave binaryInput unset when neither flag is given", () => {
+		expect.assertions(1);
+
+		expect(parseArgs([]).binaryInput).toBeUndefined();
+	});
+
 	it("should parse color flags and prefer --no-color", () => {
 		expect.assertions(3);
 

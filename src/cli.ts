@@ -68,6 +68,8 @@ Options:
   --affected-since <ref>            Run only packages affected since git ref via turbo/nx
   --no-coverage-cache               Force a clean coverage re-instrumentation (skip incremental cache)
   --no-upload-cache                 Always upload the place, even when its bytes are unchanged
+  --no-binary-input                 Build the run's code into the place instead of sending it
+                                    to each task as a binary input
   --parallel [n]                    Open-Cloud-only: number of concurrent sessions
                                     (or "auto" = min(jobs, 3); default: 1 session)
   --experimental-vm-parallel [n]    Studio-only, experimental: run the configs across
@@ -120,6 +122,7 @@ const CLI_OPTION_SPEC = {
 	"apiKey": { type: "string" },
 	"backend": { type: "string" },
 	"bail": { type: "boolean" },
+	"binary-input": { type: "boolean" },
 	"collectCoverageFrom": { multiple: true, type: "string" },
 	"color": { type: "boolean" },
 	"config": { type: "string" },
@@ -132,6 +135,7 @@ const CLI_OPTION_SPEC = {
 	"gameOutput": { type: "string" },
 	"headed": { type: "boolean" },
 	"help": { default: false, type: "boolean" },
+	"no-binary-input": { type: "boolean" },
 	"no-color": { type: "boolean" },
 	"no-coverage": { type: "boolean" },
 	"no-coverage-cache": { type: "boolean" },
@@ -204,6 +208,7 @@ export function parseArgs(args: Array<string>): CliOptions {
 		...toTypecheckOptions(values),
 		affectedSince: values["affected-since"],
 		bail: values.bail,
+		binaryInput: values["no-binary-input"] === true ? false : values["binary-input"],
 		config: values.config,
 		experimentalVmParallel: parseVmParallelValue(values["experimental-vm-parallel"]),
 		help: values.help,

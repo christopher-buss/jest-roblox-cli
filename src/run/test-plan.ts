@@ -66,14 +66,12 @@ export interface RunDiscovery extends DiscoveryFilters {
 	timing: TimingCollector;
 }
 
-export interface TestPlanInput extends RunDiscovery {
-	/**
-	 * The place the runtime jobs execute against — the coverage-instrumented
-	 * place when `--coverage` rebuilt one, the root config's place otherwise. A
-	 * type-only plan never runs a job, so it may pass the root config's value.
-	 */
-	effectivePlaceFile: string;
-}
+/**
+ * What a plan is built from. The place its jobs execute against is not among
+ * them: a coverage run has yet to build the one they will use, so
+ * {@link bindTestPlanToPlace} aims them at it once it exists.
+ */
+export type TestPlanInput = RunDiscovery;
 
 /** Everything discovery needs except the profiler and the target place. */
 interface DiscoveryFilters {
@@ -91,7 +89,6 @@ interface DiscoveryFilters {
 }
 
 interface DiscoveryInput extends DiscoveryFilters {
-	effectivePlaceFile: string;
 	fileSystem: FileSystem;
 	seams: RunSeams;
 }
@@ -125,7 +122,6 @@ interface ProjectPlanInput extends DiscoveryInput {
 }
 
 interface ProjectSelectionInput {
-	effectivePlaceFile: string;
 	fileSystem: FileSystem;
 	project: ResolvedProjectConfig;
 	projectCliFiles: Array<string> | undefined;
@@ -166,13 +162,29 @@ export function buildTestPlan({ timing, ...discovery }: TestPlanInput): TestPlan
 	};
 }
 
+/**
+ * The same plan, aimed at the place its jobs will actually execute against.
+ *
+ * A plan is built before the run stages anything, so that one selecting nothing
+ * stops the run before a backend is resolved or a place is built. The
+ * instrumented place a coverage run puts in the way does not exist yet at that
+ * point, and the place reaches a job through its config and nowhere else — so
+ * this is the only writer of it, and aiming the jobs afterwards is the whole of
+ * the difference.
+ */
+export function bindTestPlanToPlace(plan: TestPlan, placeFile: string): TestPlan {
+	return {
+		...plan,
+		jobs: plan.jobs.map((job) => ({ ...job, config: { ...job.config, placeFile } })),
+	};
+}
+
 // Type Tests are discovered by `-d` globs derived from the Runtime `include`
 // (or an explicit `test.typecheck.include`). These stay in the local discovery
 // `testMatch` only — never folded into `project.include` — so coverage-source
 // derivation (which reads `project.include`) never sees a `-d` glob.
 function buildDiscoveryConfig(
 	project: ResolvedProjectConfig,
-	effectivePlaceFile: string,
 	typecheck: ResolvedTypecheckConfig,
 ): ResolvedConfig {
 	const typecheckInclude = typecheck.enabled
@@ -180,21 +192,19 @@ function buildDiscoveryConfig(
 		: [];
 	return {
 		...project.config,
-		placeFile: effectivePlaceFile,
 		projects: project.projects,
 		testMatch: [...project.include, ...typecheckInclude],
 	};
 }
 
 function selectProjectFiles({
-	effectivePlaceFile,
 	fileSystem,
 	project,
 	projectCliFiles,
 	toInstancePath,
 	typecheck,
 }: ProjectSelectionInput): ProjectSelection {
-	const discoveryConfig = buildDiscoveryConfig(project, effectivePlaceFile, typecheck);
+	const discoveryConfig = buildDiscoveryConfig(project, typecheck);
 	const discovered = discoverTestFiles(discoveryConfig, projectCliFiles, fileSystem);
 	const classified = classifyTestFiles(discovered.files, typecheck);
 
@@ -300,7 +310,6 @@ function planProject(project: ResolvedProjectConfig, input: ProjectPlanInput): P
 		root: input.rootConfig.typecheck,
 	});
 	const selection = selectProjectFiles({
-		effectivePlaceFile: input.effectivePlaceFile,
 		fileSystem: input.fileSystem,
 		project,
 		projectCliFiles,

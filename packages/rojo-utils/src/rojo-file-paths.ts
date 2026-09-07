@@ -2,7 +2,13 @@ import path from "node:path";
 
 const LUA_EXT = ".lua";
 const LUAU_EXT = ".luau";
-const JSON_EXT = ".json";
+/**
+ * Exported because rojo reads a plain `.json` as a module and every other
+ * `.json` as a description of an instance built elsewhere, so a consumer
+ * splitting the two spells this out and would otherwise spell it alone.
+ */
+export const JSON_EXT = ".json";
+
 const TOML_EXT = ".toml";
 
 export const ROJO_MODULE_EXTS: ReadonlySet<string> = new Set([JSON_EXT, LUAU_EXT, TOML_EXT]);

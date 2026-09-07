@@ -15,6 +15,7 @@ import type { RojoTreeNode } from "../types/rojo.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
+import { readGlobIgnorePaths } from "./glob-ignore.ts";
 import { PINNED_PARENT_CLASSES } from "./pinned-parent-classes.ts";
 import { STAGE_KEY } from "./stage.ts";
 
@@ -225,11 +226,13 @@ export function synthesize(input: SynthesizeInput): string {
 	});
 }
 
-function readGlobIgnorePaths(raw: JSONObject): Array<string> | undefined {
-	const value = raw["globIgnorePaths"];
-	return Array.isArray(value)
-		? value.filter((entry): entry is string => typeof entry === "string")
-		: undefined;
+/**
+ * {@link readGlobIgnorePaths}, telling a package that declared none apart from
+ * one that declared an empty list: only a declaration takes part in the
+ * consensus every package's list has to agree on.
+ */
+function readDeclaredGlobIgnorePaths(raw: JSONObject): Array<string> | undefined {
+	return Array.isArray(raw["globIgnorePaths"]) ? readGlobIgnorePaths(raw) : undefined;
 }
 
 /**
@@ -582,7 +585,7 @@ function stagePackage(
 	stage[descriptor.name] = root;
 	hoists.push({ packageName: descriptor.name, services });
 
-	const patterns = readGlobIgnorePaths(project.raw);
+	const patterns = readDeclaredGlobIgnorePaths(project.raw);
 	if (patterns !== undefined) {
 		globs.push({ packageName: descriptor.name, patterns });
 	}

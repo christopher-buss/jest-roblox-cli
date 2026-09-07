@@ -20,10 +20,13 @@ export type { ProgressMapOptions } from "./progress-map.ts";
 export { runTaskPoolAsync as runTaskPool } from "./task-pool.ts";
 export type { TaskPoolBackoff, TaskPoolOptions, TaskPoolPlace } from "./task-pool.ts";
 export type {
+	BinaryInputUploader,
 	ExecuteScriptOptions,
 	RemoteRunner,
 	RunnerCredentials,
 	ScriptResult,
+	UploadBinaryInputOptions,
+	UploadBinaryInputResult,
 	UploadPlaceOptions,
 	UploadPlaceResult,
 } from "./types.ts";

@@ -5,12 +5,13 @@ import {
 	type WorkspacePackageCoverage,
 } from "../coverage-pipeline/workspace-prepare.ts";
 import { describePlaceFile } from "../progress/stages.ts";
-import type { PlaceReuseOptions } from "../staging/place-builder.ts";
+import type { CodeBundleArtifact, PlaceReuseOptions } from "../staging/place-builder.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
 import type { PackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import type { PrepareCoverage } from "./coverage-attach.ts";
 import { prepareWorkspaceCoverageMap } from "./coverage-attach.ts";
 import type { LoadedPackage } from "./package-loader.ts";
@@ -28,6 +29,11 @@ const PLACE_REUSE_FILE = "synthesized.place-cache.json";
 const INPUT_DIGEST_FILE = "synthesized.input-digests";
 
 export interface StagedWorkspacePlace {
+	/**
+	 * The Code Bundle split out of the place, present only when the caller
+	 * asked for a harness. Written on every run, reused place or not.
+	 */
+	codeBundle?: CodeBundleArtifact | undefined;
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
 	/**
 	 * Host time spent instrumenting the packages that opted into coverage — the
@@ -41,6 +47,24 @@ export interface StagedWorkspacePlace {
 	 * which a run pays whether or not it collects coverage.
 	 */
 	stagingMs: number;
+}
+
+/** What one workspace run's staging reads, and where it writes. */
+export interface StageWorkspacePlaceOptions {
+	cacheDirectory: string;
+	childProcess: ChildProcessRunner;
+	/**
+	 * Build a Harness Place, splitting the mounts inside these Code Roots into
+	 * a Code Bundle beside it. Set only for an Open Cloud run whose packages
+	 * agreed on `binaryInput`.
+	 */
+	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
+	fileSystem: FileSystem;
+	loaded: Array<LoadedPackage>;
+	prepareCoverage: PrepareCoverage;
+	selection: WorkspaceTestSelection;
+	timing: TimingCollector;
+	workspaceRoot: string;
 }
 
 /**
@@ -57,44 +81,36 @@ export interface StagedWorkspacePlace {
 export async function stageWorkspacePlaceAsync({
 	cacheDirectory,
 	childProcess,
+	codeRoots,
 	fileSystem,
 	loaded,
 	prepareCoverage,
 	selection,
 	timing,
 	workspaceRoot,
-}: {
-	cacheDirectory: string;
-	childProcess: ChildProcessRunner;
-	fileSystem: FileSystem;
-	loaded: Array<LoadedPackage>;
-	prepareCoverage: PrepareCoverage;
-	selection: WorkspaceTestSelection;
-	timing: TimingCollector;
-	workspaceRoot: string;
-}): Promise<StagedWorkspacePlace> {
-	const { filteredContexts: contexts, pending } = selection;
+}: StageWorkspacePlaceOptions): Promise<StagedWorkspacePlace> {
 	const { elapsedMs: coverageMs, value: coverageByPackage } = prepareWorkspaceCoverageMap({
-		contexts,
+		contexts: selection.filteredContexts,
 		fileSystem,
 		loaded,
-		pending,
+		pending: selection.pending,
 		prepareCoverage,
 		timing,
 		workspaceRoot,
 	});
 
 	const { elapsedMs: stubsMs, value: descriptors } = stageWorkspaceStubs({
-		contexts,
+		contexts: selection.filteredContexts,
 		coverageByPackage,
 		fileSystem,
-		pending,
+		pending: selection.pending,
 		timing,
 	});
 	const placeFile = path.join(cacheDirectory, SYNTHESIZED_PLACE_FILE);
-	const buildMs = await buildWorkspacePlaceAsync({
+	const { codeBundle, elapsedMs } = await buildWorkspacePlaceAsync({
 		cacheDirectory,
 		childProcess,
+		codeRoots,
 		coverageByPackage,
 		descriptors,
 		fileSystem,
@@ -102,7 +118,7 @@ export async function stageWorkspacePlaceAsync({
 		timing,
 	});
 
-	return { coverageByPackage, coverageMs, placeFile, stagingMs: stubsMs + buildMs };
+	return { codeBundle, coverageByPackage, coverageMs, placeFile, stagingMs: stubsMs + elapsedMs };
 }
 
 /**
@@ -135,6 +151,7 @@ function placeReuseOptions(
 async function buildWorkspacePlaceAsync({
 	cacheDirectory,
 	childProcess,
+	codeRoots,
 	coverageByPackage,
 	descriptors,
 	fileSystem,
@@ -143,18 +160,20 @@ async function buildWorkspacePlaceAsync({
 }: {
 	cacheDirectory: string;
 	childProcess: ChildProcessRunner;
+	codeRoots: ReadonlyArray<PosixRoot> | undefined;
 	coverageByPackage: Map<string, WorkspacePackageCoverage>;
 	descriptors: Array<PackageDescriptor>;
 	fileSystem: FileSystem;
 	placeFile: string;
 	timing: TimingCollector;
-}): Promise<number> {
+}): Promise<{ codeBundle?: CodeBundleArtifact | undefined; elapsedMs: number }> {
 	const coverage = [...coverageByPackage.values()];
 	const { elapsedMs, value: coveragePlace } = await timing.profileTimedAsync(
 		"rojoBuild",
 		async () => {
 			const built = await buildPlaceAsync({
 				childProcess,
+				codeRoots,
 				fileSystem,
 				packages: descriptors,
 				placeFile,
@@ -177,5 +196,5 @@ async function buildWorkspacePlaceAsync({
 		emitWorkspaceBuildManifests(coverage, coveragePlace, fileSystem);
 	}
 
-	return elapsedMs;
+	return { codeBundle: coveragePlace.codeBundle, elapsedMs };
 }

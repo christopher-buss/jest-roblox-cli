@@ -59,6 +59,38 @@ const gameOutputSchema = type({
 	"project": "string",
 }).array();
 
+/**
+ * Where a coverage run leaves the harness's project and the bundle beside it.
+ */
+const COVERAGE_DIR = ".jest-roblox/coverage";
+const harnessProjectSchema = type({
+	tree: { ReplicatedStorage: { "PkgShared?": "object" } },
+});
+const codeBundleSchema = type({
+	mounts: type({ entries: type({ path: "string" }).array() }).array(),
+	version: "number",
+});
+
+/**
+ * The node the harness serves the shared mount at, if it serves one at all.
+ *
+ * A coverage run bakes each project's generated `jest.config` into the shadow
+ * tree rather than hanging it off the mount as an explicit child, so the mount
+ * travels whole and its node leaves the harness with it.
+ */
+function readHarnessMount(sandbox: string): object | undefined {
+	const projectFile = path.join(sandbox, COVERAGE_DIR, "default.project.json");
+	return harnessProjectSchema.assert(JSON.parse(fs.readFileSync(projectFile, "utf-8"))).tree
+		.ReplicatedStorage.PkgShared;
+}
+
+/** Every instance path the Code Bundle carries, across every mount. */
+function readBundledEntries(sandbox: string): Array<string> {
+	const bundleFile = path.join(sandbox, COVERAGE_DIR, "game.code-bundle.json");
+	const bundle = codeBundleSchema.assert(JSON.parse(fs.readFileSync(bundleFile, "utf-8")));
+	return bundle.mounts.flatMap((mount) => mount.entries.map((entry) => entry.path));
+}
+
 describe("live pipeline", () => {
 	// One invocation, four regressions. Each was its own live test until the
 	// wall-clock made the case for merging: all four drive the same fixture
@@ -79,7 +111,7 @@ describe("live pipeline", () => {
 	it.runIf(IS_LIVE)(
 		"should run both mounts, capture game output, and report coverage in one run",
 		async () => {
-			expect.assertions(10);
+			expect.assertions(12);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
 			const gameOutputPath = path.join(sandbox, "game-output.json");
@@ -148,6 +180,14 @@ describe("live pipeline", () => {
 			);
 			expect(Object.values(report), "coverage counted an executed statement").toSatisfyAny(
 				(entry) => Object.values(entry.s).some((count) => count > 0),
+			);
+
+			// The eight tests above passed against a place that never held
+			// them: the harness does not serve the shared mount at all, and the
+			// spec that ran arrived as the binary input built beside it.
+			expect(readHarnessMount(sandbox), "the harness mounts no code").toBeUndefined();
+			expect(readBundledEntries(sandbox), "the bundle carries the spec").toContain(
+				"example.spec",
 			);
 		},
 		RUN_TIMEOUT_MS + 5000,

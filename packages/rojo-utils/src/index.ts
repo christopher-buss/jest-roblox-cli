@@ -5,6 +5,15 @@ export type { Mount, PathClassifier, PathKind } from "./mount-collector.ts";
 export { mapFsPathToDataModel, mapFsRootToDataModel } from "./path-mapper.ts";
 export { RbxPathParent } from "./rbx-path.ts";
 export type { PartitionInfo, RbxPath, RelativeRbxPath } from "./rbx-path.ts";
+export {
+	CLIENT_SUB_EXTENSION,
+	convertToLuau,
+	INIT_NAME,
+	JSON_EXT,
+	ROJO_SCRIPT_EXTS,
+	SERVER_SUB_EXTENSION,
+	stripRojoExtensions,
+} from "./rojo-file-paths.ts";
 export { FileRelation, NetworkType, RbxType, RojoResolver } from "./rojo-resolver.ts";
 export type { RojoConfigFileResult, RojoResolverState } from "./rojo-resolver.ts";
 export {

@@ -39,6 +39,7 @@ import {
 import type { ExecuteResult } from "./executor/types.ts";
 import { LuauScriptError, type SnapshotWrites } from "./reporter/parser.ts";
 import { createSourceMapper, type SourceMapper } from "./source-mapper/index.ts";
+import type { CodeBundleArtifact } from "./staging/place-builder.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
 import type { JestResult } from "./types/jest-result.ts";
 import { rojoProjectSchema } from "./types/rojo.ts";
@@ -70,6 +71,11 @@ export interface ProjectInput {
 
 export interface RunProjectsOptions {
 	backend: Backend;
+	/**
+	 * The Code Bundle the run's place was split from, forwarded to the backend
+	 * as-is. Absent for a run that built the whole place.
+	 */
+	codeBundle?: CodeBundleArtifact | undefined;
 	deferFormatting?: boolean | undefined;
 	/** Where the run reads and writes. Defaults to the real filesystem. */
 	fileSystem?: FileSystem | undefined;
@@ -275,6 +281,7 @@ async function dispatchToBackendAsync(
 ): Promise<BackendResult> {
 	return timing.profileAsync("backend.runTests", async () => {
 		const result = await options.backend.runTestsAsync({
+			codeBundle: options.codeBundle,
 			jobs,
 			parallel: options.parallel,
 			progress: timing.progress,

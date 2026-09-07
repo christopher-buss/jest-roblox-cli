@@ -1,11 +1,7 @@
 import { PermissionError } from "@bedrock-rbx/ocale";
-import {
-	OcaleRunner,
-	placeIdentityGuardSource,
-	readRefusedPlaceVersion,
-	runTaskPool,
-} from "@isentinel/roblox-runner";
+import { OcaleRunner, readRefusedPlaceVersion, runTaskPool } from "@isentinel/roblox-runner";
 import type {
+	BinaryInputUploader,
 	OcaleRunnerOptions,
 	RemoteRunner,
 	RunnerCredentials,
@@ -15,13 +11,17 @@ import type {
 import process from "node:process";
 import type { Except } from "type-fest";
 
+import { ConfigError } from "../config/errors.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
-import { countLinesThroughLastDirective } from "../luau/directive-header.ts";
+import { composeTaskScript } from "../luau/task-script.ts";
 import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
-import { describePlaceFile, describeProjectCount } from "../progress/stages.ts";
+import { describeCodeBundle, describePlaceFile, describeProjectCount } from "../progress/stages.ts";
+import type { CodeBundleArtifact } from "../staging/place-builder.ts";
 import { generateTestScript, type JestArgvInput } from "../test-script.ts";
 import { formatMissingScopes, isPollTimeout, walkErrorChain } from "../utils/error-chain.ts";
+import type { FileSystem } from "../utils/file-system.ts";
+import { nodeFileSystem } from "../utils/file-system.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
 import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
 import type {
@@ -71,6 +71,16 @@ export const OWNED_BOOT_PROBE_SCRIPT = "return tostring(game.PlaceVersion)";
  */
 const BOOT_PROBE_TASK_TIMEOUT_MS = 10_000;
 
+/**
+ * How long a binary input is used before it is created again.
+ *
+ * Open Cloud gives one fifteen minutes, measured from the create. A run whose
+ * last shard submits at fourteen minutes would be inside that window when it
+ * asks and outside it when Roblox reads the input, so the margin buys the
+ * submit that is already in flight rather than the one being composed.
+ */
+const BINARY_INPUT_REFRESH_MS = 13 * 60_000;
+
 const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
 const MAX_RETRIES_ENV = "JEST_ROBLOX_OCALE_MAX_RETRIES";
@@ -80,12 +90,55 @@ export type OpenCloudCredentials = RunnerCredentials;
 
 export interface OpenCloudOptions {
 	/**
-	 * Inject a pre-built {@link RemoteRunner}. When provided, the
-	 * `credentials` argument to {@link OpenCloudBackend} is ignored —
-	 * the injected runner already owns its own credentials. Intended
-	 * primarily as a test seam.
+	 * What gives a task script its preamble. Defaults to the real composer;
+	 * a spec injects a counting wrapper around it, because the memo below is
+	 * a saving the composed script itself cannot show.
 	 */
-	runner?: RemoteRunner | undefined;
+	composeScript?: typeof composeTaskScript | undefined;
+	/** Where the Code Bundle is read from. Defaults to the real filesystem. */
+	fileSystem?: FileSystem | undefined;
+	/**
+	 * The clock a binary input's age is measured on. Defaults to the wall
+	 * clock; a spec hands one that can reach past the refresh threshold
+	 * without waiting thirteen minutes for it.
+	 */
+	now?: (() => number) | undefined;
+	/**
+	 * Inject a pre-built runner. When provided, the `credentials` argument to
+	 * {@link OpenCloudBackend} is ignored — the injected runner already owns
+	 * its own credentials. Intended primarily as a test seam.
+	 *
+	 * Both interfaces, not just {@link RemoteRunner}: this backend is the one
+	 * that ships a run's code out of band, so the transport it needs is part of
+	 * what a runner has to supply to serve it.
+	 */
+	runner?: (BinaryInputUploader & RemoteRunner) | undefined;
+}
+
+/**
+ * The Code Bundle this run ships, and the input it has been uploaded as.
+ *
+ * One per run, held on the backend rather than threaded through every dispatch
+ * shape: the input is created once and then named by every submit, several of
+ * them layers below the call that made it.
+ */
+interface BundleRun {
+	artifact: CodeBundleArtifact;
+	/**
+	 * Absent until the bundle has been uploaded, which is after the boot
+	 * probe.
+	 */
+	input: undefined | { createdAt: number; path: string };
+	/**
+	 * The upload in flight, so submits that all cross the refresh threshold at
+	 * once wait on one create rather than each making its own — N creates
+	 * against a five-a-minute quota, N PUTs of the same tens of megabytes, and
+	 * N stage lines for one upload.
+	 */
+	pending: Promise<string> | undefined;
+	progress: RunProgress;
+	/** Create and PUT time, this run's refreshes included. */
+	uploadMs: number;
 }
 
 interface JobBucket {
@@ -165,13 +218,32 @@ interface StealingEnvelope extends DecodedEnvelope {
 /** What one dispatch produced, minus the timing the caller measures itself. */
 type DispatchOutcome = Except<BackendResult, "timing">;
 
+/**
+ * Which of the three submits a task is: unguarded on head (an owned place),
+ * guarded on head, or pinned to the run's own version (the guard fired).
+ */
+type SubmitShape = "guarded" | "head" | "pinned";
+
 export class OpenCloudBackend implements Backend {
 	/**
 	 * Kept so the upload cache can key on the universe and place it targets.
 	 */
+	private readonly composeScript: typeof composeTaskScript;
 	private readonly credentials: OpenCloudCredentials;
-	private readonly runner: RemoteRunner;
+	private readonly fileSystem: FileSystem;
+	private readonly now: () => number;
+	private readonly runner: BinaryInputUploader & RemoteRunner;
 
+	/** This run's Code Bundle, absent for a run that ships the whole place. */
+	private bundle!: BundleRun | undefined;
+	/**
+	 * Composed task scripts, keyed by the caller's own script and the guard it
+	 * carries. Work-stealing sends one script to every task in the pool and a
+	 * static split sends one to every bucket, so without this the same
+	 * split/splice/join runs once per task over a script that is megabytes on a
+	 * real run.
+	 */
+	private composed!: Map<string, string>;
 	/** One-shot per run so parallel raced tasks don't repeat the warning. */
 	private raceWarned!: boolean;
 	/** Tracked apart, so a drop still gets said once a lesser cause warned. */
@@ -180,19 +252,22 @@ export class OpenCloudBackend implements Backend {
 	public readonly kind = "open-cloud" as const;
 
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
+		this.composeScript = options?.composeScript ?? composeTaskScript;
 		this.credentials = credentials;
+		this.fileSystem = options?.fileSystem ?? nodeFileSystem;
+		this.now = options?.now ?? Date.now;
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
 	}
 
 	public async runTestsAsync(options: BackendOptions): Promise<BackendResult> {
 		const {
+			codeBundle,
 			jobs,
 			progress = NOOP_RUN_PROGRESS,
 			scriptOverride,
 			workStealing: isStealing,
 		} = options;
-		this.raceWarned = false;
-		this.staleCacheWarned = false;
+		this.beginRun(codeBundle, progress);
 		const primary = resolvePrimaryJob(jobs, scriptOverride, isStealing);
 		// timeout and bootProbeTimeout are picked from the first job — both are
 		// per-run knobs, and one run boots one version of one place.
@@ -211,10 +286,28 @@ export class OpenCloudBackend implements Backend {
 
 		return splitUploadAndExecution({
 			executionStart,
-			extraUploadMs,
+			// The bundle's create and PUT sit inside the execution window the
+			// same way a self-heal re-upload does, so they come out of
+			// `executionMs` and land on `uploadMs` with it.
+			extraUploadMs: extraUploadMs + (this.bundle?.uploadMs ?? 0),
 			outcome,
 			uploadMs: upload.uploadMs,
 		});
+	}
+
+	/**
+	 * Clear everything one run holds, and say what its split left behind.
+	 *
+	 * Every field here is per-run rather than per-backend, and a second run on
+	 * one instance must not inherit the first's bundle, composed scripts or
+	 * spent warnings.
+	 */
+	private beginRun(codeBundle: CodeBundleArtifact | undefined, progress: RunProgress): void {
+		noteStayedMounts(codeBundle);
+		this.bundle = toBundleRun(codeBundle, progress);
+		this.composed = new Map();
+		this.raceWarned = false;
+		this.staleCacheWarned = false;
 	}
 
 	/**
@@ -241,6 +334,10 @@ export class OpenCloudBackend implements Backend {
 			target,
 			upload,
 		});
+		// After the boot probe, and never before it: the probe proves the place
+		// starts, and a bundle uploaded ahead of a place Roblox cannot load is
+		// a slot spent on a run that was never going to dispatch.
+		await this.ensureBinaryInputAsync();
 		// Closed on success only: a dispatch that throws leaves the stage open,
 		// and the reporter then names it as the step the run died inside.
 		const done = progress.begin("tests", describeProjectCount(options.jobs.length));
@@ -251,6 +348,33 @@ export class OpenCloudBackend implements Backend {
 		);
 		done();
 		return outcome;
+	}
+
+	/** {@link composeTaskScript}, once per script per shape. See `composed`. */
+	private composeOnce({
+		guardVersion,
+		hasRebuild,
+		script,
+	}: {
+		guardVersion: number | undefined;
+		hasRebuild: boolean;
+		script: string;
+	}): string {
+		// The separator is an escape rather than the byte itself: a source file
+		// holding a raw NUL is one grep and ripgrep skip as binary.
+		//
+		// `hasRebuild` is not in the key. A run either carries a bundle for
+		// every submit or for none, and the map is cleared per run, so it
+		// cannot differ between two entries this could hand the wrong one of.
+		const key = `${String(guardVersion ?? "")}\u0000${script}`;
+		const cached = this.composed.get(key);
+		if (cached !== undefined) {
+			return cached;
+		}
+
+		const composed = this.composeScript({ hasRebuild, placeVersion: guardVersion, script });
+		this.composed.set(key, composed);
+		return composed;
 	}
 
 	/**
@@ -303,6 +427,36 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
+	 * The input every submit names, or `undefined` for a run that ships the
+	 * whole place.
+	 *
+	 * Uploaded on the first ask and created again once the one in hand is too
+	 * old to survive the next task. Asked before every submit rather than once
+	 * per run, because an input is Open Cloud's to expire and a long run
+	 * outlives one: a late shard would otherwise fail on an input that was
+	 * valid when the run started.
+	 */
+	private async ensureBinaryInputAsync(): Promise<string | undefined> {
+		const { bundle } = this;
+		if (bundle === undefined) {
+			return undefined;
+		}
+
+		const { input } = bundle;
+		if (input !== undefined && this.now() - input.createdAt < BINARY_INPUT_REFRESH_MS) {
+			return input.path;
+		}
+
+		bundle.pending ??= this.uploadBundleAsync(bundle).finally(() => {
+			// Cleared on settle rather than kept: the next ask past the
+			// threshold has to make a real create, and a rejected one must not
+			// be handed to every later submit as the answer.
+			bundle.pending = undefined;
+		});
+		return bundle.pending;
+	}
+
+	/**
 	 * Optimistic version pinning. Pinned tasks
 	 * (`/versions/{v}/luau-execution-session-tasks`) miss the warm-server pool
 	 * whenever no server holds the freshly-uploaded version yet, costing a cold
@@ -328,15 +482,10 @@ export class OpenCloudBackend implements Backend {
 		// version: the guard could only ever pass, and the retry it exists to
 		// trigger could never fire. Skipping both keeps every submit on head.
 		if (version.isOwned) {
-			return this.runner
-				.executeScriptAsync({ bootProven: version.bootProven, script, timeout })
-				.catch(rethrowOversizedResult);
+			return this.submitAsync({ script, shape: "head", timeout, version });
 		}
 
-		const guarded = injectPlaceGuard(script, version.versionNumber);
-		const first = await this.runner
-			.executeScriptAsync({ bootProven: version.bootProven, script: guarded, timeout })
-			.catch(rethrowOversizedResult);
+		const first = await this.submitAsync({ script, shape: "guarded", timeout, version });
 		const bootedVersion = readRefusedPlaceVersion(first.outputs[0]);
 		return bootedVersion === undefined
 			? first
@@ -406,14 +555,10 @@ export class OpenCloudBackend implements Backend {
 				reusedVersion: versionNumber,
 			});
 		this.warnRace({ bootedVersion, isStaleCache, versionNumber });
-		return this.runner
-			.executeScriptAsync({
-				bootProven: version.bootProven,
-				placeVersion: versionNumber,
-				script,
-				timeout,
-			})
-			.catch(rethrowOversizedResult);
+		// A second submit rather than a re-send of the first: the input is
+		// asked for again inside it, because a task that raced may have waited
+		// out the one the head attempt named.
+		return this.submitAsync({ script, shape: "pinned", timeout, version });
 	}
 
 	private async runBucketAsync({
@@ -624,6 +769,44 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
+	 * One submit, in whichever of the three shapes the caller is in.
+	 *
+	 * The one place a task reaches Open Cloud from, so the input a submit names
+	 * and the rebuild its script carries are decided together and cannot come
+	 * apart: a script that rebuilds without an input fails on its first line,
+	 * and an input no script reads is a slot spent for nothing.
+	 */
+	private async submitAsync({
+		script,
+		shape,
+		timeout,
+		version,
+	}: {
+		script: string;
+		shape: SubmitShape;
+		timeout: number;
+		version: VersionContext;
+	}): Promise<ScriptResult> {
+		const binaryInput = await this.ensureBinaryInputAsync();
+		const isPinned = shape === "pinned";
+		return this.runner
+			.executeScriptAsync({
+				binaryInput,
+				bootProven: version.bootProven,
+				...(isPinned ? { placeVersion: version.versionNumber } : {}),
+				script: this.composeOnce({
+					// No guard on a pinned submit — it is the answer to one
+					// that already fired — and none on an owned place.
+					guardVersion: shape === "guarded" ? version.versionNumber : undefined,
+					hasRebuild: binaryInput !== undefined,
+					script,
+				}),
+				timeout,
+			})
+			.catch(rethrowOversizedResult);
+	}
+
+	/**
 	 * Send the probe and hand back what it printed, or fail naming the version
 	 * Roblox could not start.
 	 */
@@ -670,6 +853,30 @@ export class OpenCloudBackend implements Backend {
 				versionNumber: upload.versionNumber,
 			});
 		}
+	}
+
+	/**
+	 * Send the Code Bundle and record the input it became.
+	 *
+	 * The runner reports what the upload cost and that figure is the one the
+	 * run carries: it spans the create and the PUT, the pacer's wait for the
+	 * per-key quota included, which is exactly the slice this backend would
+	 * otherwise be re-measuring around it. A refresh adds onto the same number.
+	 */
+	private async uploadBundleAsync(bundle: BundleRun): Promise<string> {
+		const { artifact, progress } = bundle;
+		const done = progress.begin("bundle", describeCodeBundle(artifact));
+		// Read before the create, and the only clock this keeps: Open Cloud's
+		// fifteen minutes run from the create, so dating the input at the end
+		// of the upload would read it as younger than Roblox does.
+		const createdAt = this.now();
+		const created = await this.runner
+			.uploadBinaryInputAsync({ payload: this.fileSystem.readFileSync(artifact.path) })
+			.catch(rethrowBinaryInputFailure);
+		done();
+		bundle.uploadMs += created.uploadMs;
+		bundle.input = { createdAt, path: created.path };
+		return created.path;
 	}
 
 	/**
@@ -959,23 +1166,53 @@ function resolvePrimaryJob(
 }
 
 /**
- * Insert the place guard behind the script's header block — Luau honors
- * `--!strict`/`--!native`/etc only while nothing else has opened the file, so
- * a plain line-1 prepend would silently disable a caller's directives.
+ * Name the Code Mounts that could not travel, once per run.
  *
- * The version is the identity available here: this backend runs a place a
- * caller handed it rather than one it built, so there is no Place Content Id it
- * could hold the other half of.
+ * A mount that stayed is a finding rather than a fault — the place still
+ * serves it and the run is correct either way — so it is said where the split
+ * result reaches the backend, and never raised.
  */
-function injectPlaceGuard(script: string, placeVersion: number): string {
-	const lines = script.split("\n");
+function noteStayedMounts(artifact: CodeBundleArtifact | undefined): void {
+	const stayedMounts = artifact?.stayedMounts ?? [];
+	if (stayedMounts.length === 0) {
+		return;
+	}
 
-	lines.splice(
-		countLinesThroughLastDirective(lines),
-		0,
-		placeIdentityGuardSource({ placeVersion }),
+	process.stderr.write(
+		`Note: ${String(stayedMounts.length)} code mount(s) stayed in the place, ` +
+			`each holding a file a task cannot rebuild:\n${stayedMounts
+				.map((mount) => `  ${mount}\n`)
+				.join("")}`,
 	);
-	return lines.join("\n");
+}
+
+/** This run's bundle state, before anything has been uploaded. */
+function toBundleRun(
+	artifact: CodeBundleArtifact | undefined,
+	progress: RunProgress,
+): BundleRun | undefined {
+	return artifact === undefined
+		? undefined
+		: { artifact, input: undefined, pending: undefined, progress, uploadMs: 0 };
+}
+
+/**
+ * Fail on a bundle that never reached Roblox, naming the cause and the way out.
+ *
+ * `binaryInputs.create` is metered per key — five a minute, and the owner of a
+ * key may be running several agents on it — so the client has already retried
+ * by the time this fires. Past that the run cannot ship its code at all, and
+ * the transport's own message names neither what was being sent nor the flag
+ * that stops sending it.
+ */
+function rethrowBinaryInputFailure(err: unknown): never {
+	throw new ConfigError(
+		`The run's code could not be sent to Open Cloud as a binary input: ${describeError(err)}`,
+		"`binaryInputs.create` is metered at five a minute per API key, and the " +
+			"client has already retried inside that budget — so several runs " +
+			"sharing one key is the usual cause.\n" +
+			"Run with `--no-binary-input` to upload the code inside the place instead.",
+	);
 }
 
 /**

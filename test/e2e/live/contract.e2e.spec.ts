@@ -42,6 +42,7 @@ const PLACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place/game.
 
 const versionResponseSchema = type({ versionNumber: "number" });
 const taskCreateResponseSchema = type({ path: "string" });
+const binaryInputResponseSchema = type({ path: "string", uploadUri: "string" });
 const taskStatusResponseSchema = type({
 	"error?": { "message?": "string" },
 	"output?": { "results?": "string[]" },
@@ -102,6 +103,31 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 		assertResponseOk(response, "Place upload");
 
 		expect(versionResponseSchema(response.body)).not.toBeInstanceOf(type.errors);
+	});
+
+	// One create, and only one: the operation is metered at five a minute per
+	// API key owner, and the live pipeline suite spends more of that same
+	// allowance on the runs it makes.
+	it("should return a slot path and an upload uri from a binary-input create", async () => {
+		expect.assertions(2);
+
+		const { baseUrl, universeId } = await testCase.resolve([]);
+		const http = createHttpClient(testCase.apiKey);
+		const url = `${baseUrl}/cloud/v2/universes/${universeId}/luau-execution-session-task-binary-inputs`;
+
+		const response = await http.request("POST", url, {
+			body: { size: 64 },
+			headers: { "Content-Type": "application/json" },
+		});
+		assertResponseOk(response, "Binary input create");
+		const parsed = binaryInputResponseSchema.assert(response.body);
+
+		// The client refuses a path it cannot read a universe and a slot out
+		// of, so the shape of the string is as load-bearing as its presence.
+		expect(parsed.path).toMatch(
+			/^universes\/\d+\/luau-execution-session-task-binary-inputs\/[^/]+$/,
+		);
+		expect(parsed.uploadUri).toMatch(/^https?:\/\//);
 	});
 
 	it(

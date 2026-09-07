@@ -88,6 +88,16 @@ export interface CoverageManifest {
 	/** Shared UUID linking this manifest to its sibling `BuildManifest`. */
 	buildId: string;
 	/**
+	 * What the Code Mount split would emit for the place beside this manifest:
+	 * its pass version and the Code Roots it ran over, or absent for a place
+	 * built whole. The incremental cache rebuilds on a mismatch, which is what
+	 * keeps a harness built by an older split rule — or by a run that shipped
+	 * its code differently — from being handed out as current. Absent on
+	 * manifests written before this field existed, which reads as a whole-place
+	 * build and so rebuilds for the first harness run.
+	 */
+	codeSplitKey?: string | undefined;
+	/**
 	 * Digest of the `coverageCopyIgnorePatterns` that decided what this shadow
 	 * carries, per `hashCopyIgnorePatterns`. The incremental cache rebuilds on
 	 * a mismatch: a widened list demotes a file the shadow already holds while
@@ -162,6 +172,7 @@ const nonInstrumentedRecordSchema = type({
 
 export const manifestSchema: type<CoverageManifest> = type({
 	"buildId": "string",
+	"codeSplitKey?": "string",
 	"copyIgnoreHash?": "string",
 	"coverageUniverseHash?": "string",
 	"files": type({ "[string]": instrumentedFileRecordSchema }),

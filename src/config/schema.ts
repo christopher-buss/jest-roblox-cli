@@ -362,6 +362,17 @@ export interface Config {
 	 */
 	backend?: Backend;
 	/**
+	 * Open Cloud only: send the run's compiled code to each task as a binary
+	 * input instead of building it into the place. Default `true`.
+	 *
+	 * The place then holds the assets, the dependency tree and everything else
+	 * rojo builds from outside a Code Root, and changes only when one of those
+	 * does — so a code-only edit skips both the rojo build and the upload, and
+	 * every task rebuilds this run's code in-session before Jest resolves
+	 * anything. `false` builds the whole place as it always was.
+	 */
+	binaryInput?: boolean;
+	/**
 	 * How long the Open Cloud backend gives its boot probe — one trivial
 	 * pinned task run against a freshly uploaded place version — to complete,
 	 * in milliseconds. Default `90000`.
@@ -515,6 +526,7 @@ export interface ResolvedConfig
 		UndefinedTolerant<Except<Config, "test">>,
 		UndefinedTolerant<Except<GlobalTestConfig, "projects">> {
 	backend: Backend;
+	binaryInput: boolean;
 	bootProbeTimeout: number;
 	collectCoverage: boolean;
 	collectPerTestCoverage?: boolean | undefined;
@@ -593,6 +605,12 @@ export interface WorkspaceRunOptions {
 	 * counterpart, so a package cannot opt its workspace into failing fast.
 	 */
 	bail: boolean;
+	/**
+	 * Whether an Open Cloud run ships its code as a binary input. One answer
+	 * for the whole run: every package shares the one synthesized place, so two
+	 * of them disagreeing would be one place asked to be built both ways.
+	 */
+	binaryInput: boolean;
 	color: boolean;
 	formatters: Array<FormatterEntry>;
 	/** Absolute path for the Aggregated Game Output file; undefined = off. */
@@ -666,6 +684,7 @@ export function resolvePlaceFilePath(config: ResolvedConfig): string {
 
 export const DEFAULT_CONFIG: ResolvedConfig = {
 	backend: "auto",
+	binaryInput: true,
 	bootProbeTimeout: 90_000,
 	collectCoverage: false,
 	color: true,
@@ -724,6 +743,7 @@ export interface CliOptions {
 	 * failing test suites inside a single package.
 	 */
 	bail?: boolean | undefined;
+	binaryInput?: boolean | undefined;
 	collectCoverage?: boolean | undefined;
 	collectCoverageFrom?: Array<string> | undefined;
 	color?: boolean | undefined;
@@ -942,6 +962,7 @@ const globalTestConfigSchema = type({
 export const configSchema: Type<Config> = type({
 	"+": "reject",
 	"backend?": type("'auto'|'open-cloud'|'studio'|'studio-cli'"),
+	"binaryInput?": "boolean",
 	"bootProbeTimeout?": "number",
 	"color?": "boolean",
 	"config?": "string",
@@ -1014,6 +1035,7 @@ type SharedKey = keyof SharedTestConfig;
 
 export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"backend",
+	"binaryInput",
 	"bootProbeTimeout",
 	"color",
 	"coverageCache",

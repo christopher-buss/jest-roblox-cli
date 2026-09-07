@@ -4,7 +4,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { describePlaceFile, describeProjectCount, LAST_STAGE, STAGE_IDS } from "./stages.ts";
+import {
+	describeCodeBundle,
+	describePlaceFile,
+	describeProjectCount,
+	LAST_STAGE,
+	STAGE_IDS,
+} from "./stages.ts";
 
 describe("the stage the block settles on", () => {
 	it("should be the last stage a run passes through", () => {
@@ -65,6 +71,22 @@ describe(describePlaceFile, () => {
 		expect.assertions(1);
 
 		expect(describePlaceFile(path.join(os.tmpdir(), "no-such-place.rbxl"))).toBeUndefined();
+	});
+});
+
+describe(describeCodeBundle, () => {
+	it("should report the bundle's size and file count", () => {
+		expect.assertions(1);
+
+		expect(describeCodeBundle({ byteLength: 13_002_342, fileCount: 2548 })).toBe(
+			"12.4 MB, 2548 files",
+		);
+	});
+
+	it("should count a lone file in the singular", () => {
+		expect.assertions(1);
+
+		expect(describeCodeBundle({ byteLength: 512, fileCount: 1 })).toBe("512 B, 1 file");
 	});
 });
 

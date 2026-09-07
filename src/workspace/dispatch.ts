@@ -20,6 +20,7 @@ import {
 	StreamingAggregator,
 	type StreamingAggregatorOnEntry,
 } from "../reporter/streaming-aggregator.ts";
+import type { CodeBundleArtifact } from "../staging/place-builder.ts";
 import {
 	generateMaterializerScript,
 	generateWorkStealingScript,
@@ -83,6 +84,10 @@ interface WorkspaceJobsInput {
 
 interface DispatchedProjectsInput {
 	backend: Backend | undefined;
+	/**
+	 * Forwarded to the backend, which uploads it as this run's binary input.
+	 */
+	codeBundle: CodeBundleArtifact | undefined;
 	dispatchSpec: WorkspaceDispatchSpec;
 	/** Where the run reads and writes. Defaults to the real filesystem. */
 	fileSystem?: FileSystem | undefined;
@@ -126,6 +131,7 @@ export async function runDispatchedProjectsAsync(
 			// reaching any runtime dispatch.
 			// eslint-disable-next-line ts/no-non-null-assertion -- backend present for runtime jobs
 			backend: input.backend!,
+			codeBundle: input.codeBundle,
 			deferFormatting: true,
 			fileSystem,
 			projects: jobs,

@@ -23,7 +23,35 @@ export interface UploadPlaceResult {
 	versionNumber: number;
 }
 
+export interface UploadBinaryInputOptions {
+	/**
+	 * The bytes the task will read back as a `buffer` from its first argument.
+	 */
+	payload: Uint8Array;
+}
+
+export interface UploadBinaryInputResult {
+	/**
+	 * Resource path of the input, as `binaryInputs.create` named it. Pass it
+	 * verbatim as {@link ExecuteScriptOptions.binaryInput}.
+	 */
+	path: string;
+	/** Wall time of the slot allocation and the PUT together. */
+	uploadMs: number;
+}
+
 export interface ExecuteScriptOptions {
+	/**
+	 * Resource path an uploader returned (see {@link BinaryInputUploader}),
+	 * which hands the task a payload it reads as a `buffer` rather than one
+	 * baked into its script. One input is valid for fifteen minutes and can
+	 * back every task of a run, whichever version each task binds.
+	 *
+	 * Explicitly `undefined` as well as absent: a caller that ships no bundle
+	 * holds the value rather than the key, and the submit body omits the field
+	 * either way — so no caller has to strip it back out before spreading.
+	 */
+	binaryInput?: string | undefined;
 	/**
 	 * Tell the poll that this place version is already known to boot, so a
 	 * task that never settles is not read as a place Roblox cannot load.
@@ -85,4 +113,14 @@ export interface ScriptResult {
 export interface RemoteRunner {
 	executeScriptAsync(options: ExecuteScriptOptions): Promise<ScriptResult>;
 	uploadPlaceAsync(options: UploadPlaceOptions): Promise<UploadPlaceResult>;
+}
+
+/**
+ * A runner that can hand a task a payload out of band. Kept apart from
+ * {@link RemoteRunner} because a consumer that only boots whole places has no
+ * use for it, and the transport it names — a presigned PUT at a slot the
+ * client allocates — is Open Cloud's, not a property of every runner.
+ */
+export interface BinaryInputUploader {
+	uploadBinaryInputAsync(options: UploadBinaryInputOptions): Promise<UploadBinaryInputResult>;
 }

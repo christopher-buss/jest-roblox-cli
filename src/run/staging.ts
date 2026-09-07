@@ -14,9 +14,11 @@ import type { CoverageArtifacts } from "../coverage-pipeline/build-manifest.ts";
 import { resolveCoverageInclude } from "../coverage-pipeline/derive-coverage-from.ts";
 import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
 import { toCoverageArtifacts } from "../coverage-pipeline/prepare.ts";
+import type { CodeBundleArtifact } from "../staging/place-builder.ts";
 import type { StubMount } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { toBuildManifestProjects } from "./manifest-projects.ts";
 import type { RunSeams } from "./seams.ts";
 
@@ -43,6 +45,12 @@ export interface BakedCoverage {
 }
 
 export interface StageRunOptions {
+	/**
+	 * Build a Harness Place, splitting the mounts inside these Code Roots into
+	 * a Code Bundle beside it. Set only for an Open Cloud run that resolved
+	 * `binaryInput` true, which is why the backend is resolved before this.
+	 */
+	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
 	fileSystem: FileSystem;
 	projects: Array<ResolvedProjectConfig>;
 	rootConfig: ResolvedConfig;
@@ -61,6 +69,12 @@ export interface StubMountOptions {
  * The `--coverage` half of a staged run; absent fields when coverage is off.
  */
 interface StagedCoverage {
+	/**
+	 * The Code Bundle the coverage build split out, when this run asked for a
+	 * harness. A non-coverage run builds its place after the backend is in
+	 * hand, so its bundle comes back from there instead.
+	 */
+	codeBundle?: CodeBundleArtifact | undefined;
 	coverageArtifacts?: CoverageArtifacts | undefined;
 	coverageMs: number;
 	effectiveConfig: ResolvedConfig;
@@ -121,6 +135,7 @@ export function collectStubMounts({
 export async function prepareBakedCoverageAsync({
 	bakeStubs,
 	cacheRoot,
+	codeRoots,
 	config,
 	fileSystem,
 	projects,
@@ -129,6 +144,12 @@ export async function prepareBakedCoverageAsync({
 }: {
 	bakeStubs: boolean;
 	cacheRoot: string;
+	/**
+	 * Build a Harness Place instead of a whole one. Omitted by the offline
+	 * build path, whose place is opened by a foreign runner and so has to hold
+	 * the code itself.
+	 */
+	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
 	config: ResolvedConfig;
 	fileSystem: FileSystem;
 	projects: Array<ResolvedProjectConfig>;
@@ -141,6 +162,7 @@ export async function prepareBakedCoverageAsync({
 	const coverage = await seams.prepareCoverage(config, {
 		bake: bakeStubs ? createStubBake(projects, cacheRoot, fileSystem) : undefined,
 		childProcess: seams.childProcess,
+		codeRoots,
 		// The same globs `buildMultiRunResult` reports against, so a file is
 		// probed exactly when this run would render a line for it.
 		coverageInclude: resolveCoverageInclude(config, projects),
@@ -160,6 +182,7 @@ export async function prepareBakedCoverageAsync({
  * one.
  */
 export async function stageRunAsync({
+	codeRoots,
 	fileSystem,
 	projects,
 	rootConfig,
@@ -198,6 +221,7 @@ export async function stageRunAsync({
 		async () => {
 			return prepareMultiCoverageAsync({
 				cacheRoot,
+				codeRoots,
 				fileSystem,
 				projects,
 				rootConfig,
@@ -223,6 +247,7 @@ function reportCleanedStubs(cleaned: Array<string>): void {
 
 async function prepareMultiCoverageAsync({
 	cacheRoot,
+	codeRoots,
 	fileSystem,
 	projects,
 	rootConfig,
@@ -242,6 +267,7 @@ async function prepareMultiCoverageAsync({
 	const { artifacts, coverage } = await prepareBakedCoverageAsync({
 		bakeStubs: isBakeStubs,
 		cacheRoot,
+		codeRoots,
 		config: rootConfig,
 		fileSystem,
 		projects,
@@ -249,6 +275,7 @@ async function prepareMultiCoverageAsync({
 		timing,
 	});
 	return {
+		codeBundle: coverage.codeBundle,
 		coverageArtifacts: artifacts,
 		coverageMs: coverage.instrumentMs,
 		coverageStagingMs: coverage.stagingMs,

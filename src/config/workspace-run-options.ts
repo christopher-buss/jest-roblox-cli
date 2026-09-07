@@ -45,6 +45,12 @@ const DEFAULTED_FIELD_SPECS = {
 		readCli: (entry) => entry.backend,
 		readConfig: (entry) => entry.backend,
 	},
+	binaryInput: {
+		name: "binaryInput",
+		default: DEFAULT_CONFIG.binaryInput,
+		readCli: (entry) => entry.binaryInput,
+		readConfig: (entry) => entry.binaryInput,
+	},
 	color: {
 		name: "color",
 		default: DEFAULT_CONFIG.color,
@@ -148,13 +154,14 @@ export function buildWorkspaceRunOptions({
 function resolveDefaultedFields(
 	cli: CliOptions,
 	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
-): Pick<WorkspaceRunOptions, "backend" | "bail" | "color" | "port" | "silent"> {
+): Pick<WorkspaceRunOptions, "backend" | "bail" | "binaryInput" | "color" | "port" | "silent"> {
 	return {
 		backend: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.backend),
 		// Straight off the CLI rather than through the consensus table: there
 		// is no config key to reach consensus on. `test.bail` is already Jest's
 		// suite-level bail, so reading it here would give one word two jobs.
 		bail: cli.bail === true,
+		binaryInput: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.binaryInput),
 		color: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.color),
 		port: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.port),
 		silent: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.silent),

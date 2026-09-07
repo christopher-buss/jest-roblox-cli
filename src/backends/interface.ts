@@ -6,6 +6,7 @@ import type {
 } from "../memory-store/sorted-map-client.ts";
 import type { RunProgress } from "../progress/reporter.ts";
 import type { SnapshotWrites } from "../reporter/parser.ts";
+import type { CodeBundleArtifact } from "../staging/place-builder.ts";
 import type { JestResult } from "../types/jest-result.ts";
 
 /**
@@ -70,6 +71,16 @@ export interface StreamingHooks {
 }
 
 export interface BackendOptions {
+	/**
+	 * Open-Cloud-only: the Code Bundle this run's place was split from, which
+	 * the backend uploads once as a binary input and every task rebuilds from.
+	 *
+	 * Present only when the backend is Open Cloud and `binaryInput` resolved
+	 * true, because only then is the place a Harness Place with the code taken
+	 * out of it. The Studio backends never see one, and a run without it built
+	 * the whole place and needs no rebuild.
+	 */
+	codeBundle?: CodeBundleArtifact | undefined;
 	jobs: Array<ProjectJob>;
 	/**
 	 * Open-Cloud-only: number of concurrent Open Cloud Luau execution sessions

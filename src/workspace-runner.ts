@@ -10,12 +10,15 @@ import type { ExecuteResult } from "./executor.ts";
 import type { TsconfigReader } from "./executor/tsconfig-mappings.ts";
 import { createTsconfigMappingCache, nodeTsconfigReader } from "./executor/tsconfig-mappings.ts";
 import type { StreamingAggregatorOnEntry } from "./reporter/streaming-aggregator.ts";
+import { resolveCodeRoots } from "./staging/code-roots.ts";
+import type { CodeBundleArtifact } from "./staging/place-builder.ts";
 import { NOOP_TIMING_COLLECTOR, type TimingCollector } from "./timing/orchestration-collector.ts";
 import { type RunTypecheck, runTypecheckAsync } from "./typecheck/runner.ts";
 import type { ChildProcessRunner } from "./utils/child-process.ts";
 import { nodeChildProcessRunner } from "./utils/child-process.ts";
 import type { FileSystem } from "./utils/file-system.ts";
 import { nodeFileSystem } from "./utils/file-system.ts";
+import type { PosixRoot } from "./utils/normalize-windows-path.ts";
 import type { RojoResolverFactory } from "./utils/rojo-project-reader.ts";
 import { nodeRojoResolverFactory } from "./utils/rojo-project-reader.ts";
 import type { PrepareCoverage } from "./workspace/coverage-attach.ts";
@@ -193,12 +196,17 @@ async function prepareDispatchSpecAsync(
 }
 
 async function executeWorkspaceRunAsync({
+	codeBundle,
 	options,
 	placeFile,
 	selection,
 	startTime,
 	timing,
-}: WorkspaceRuntimeInput & { placeFile: string; startTime: number }): Promise<{
+}: WorkspaceRuntimeInput & {
+	codeBundle: CodeBundleArtifact | undefined;
+	placeFile: string;
+	startTime: number;
+}): Promise<{
 	ranProjectIndices: Array<number>;
 	results: Array<ExecuteResult>;
 	typecheckPass: WorkspaceTypecheckPass;
@@ -230,6 +238,7 @@ async function executeWorkspaceRunAsync({
 	const [dispatched, typecheckPass] = await Promise.all([
 		runDispatchedProjectsAsync({
 			backend: options.backend,
+			codeBundle,
 			dispatchSpec,
 			fileSystem,
 			jobs,
@@ -278,6 +287,33 @@ function splitBailedSelection(
 	};
 }
 
+/**
+ * The Code Roots this run's Code Bundle is split against, or none when it ships
+ * the whole place.
+ *
+ * Every package's compiled directories plus the workspace cache, which is where
+ * the coverage shadow, the spine copies and each package's `jest.config` stub
+ * are mounted from.
+ */
+function resolveWorkspaceCodeRoots({
+	cacheDirectory,
+	loaded,
+	options,
+}: {
+	cacheDirectory: string;
+	loaded: Array<LoadedPackage>;
+	options: ResolvedRunWorkspaceOptions;
+}): Array<PosixRoot> | undefined {
+	return resolveCodeRoots({
+		backendKind: options.backend?.kind,
+		binaryInput: options.runOptions.binaryInput,
+		configs: loaded.map((entry) => entry.pkgConfig),
+		fileSystem: options.fileSystem,
+		stagingDirectory: cacheDirectory,
+		tsconfigReader: options.tsconfigReader,
+	});
+}
+
 // Argument shuffle only: `stageWorkspacePlaceAsync` owns the phase measurements
 // this run reports.
 async function stagePlaceForRunAsync({
@@ -290,6 +326,7 @@ async function stagePlaceForRunAsync({
 	return stageWorkspacePlaceAsync({
 		cacheDirectory,
 		childProcess: options.childProcess,
+		codeRoots: resolveWorkspaceCodeRoots({ cacheDirectory, loaded, options }),
 		fileSystem: options.fileSystem,
 		loaded,
 		prepareCoverage: options.prepareCoverage,
@@ -334,6 +371,7 @@ async function runWorkspaceRuntimeAsync(
 
 	const { ranProjectIndices, results, typecheckPass } = await executeWorkspaceRunAsync({
 		...input,
+		codeBundle: staged.codeBundle,
 		placeFile: staged.placeFile,
 		// The window opens only now, after staging: staging measured itself and
 		// the print layer adds that onto the total, so opening it any earlier

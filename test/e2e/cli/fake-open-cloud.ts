@@ -1,4 +1,5 @@
 import {
+	validBinaryInputBody,
 	validDequeueBody,
 	validInProgressTaskBody,
 	validPublishResponseBody,
@@ -18,10 +19,22 @@ import { onTestFinished } from "vitest";
 
 import { BOOT_PROBE_SCRIPT } from "../../../src/backends/open-cloud.ts";
 
-const createTaskRequestSchema = type({ script: "string", timeout: "string" });
+const createTaskRequestSchema = type({
+	"binaryInput?": "string",
+	"script": "string",
+	"timeout": "string",
+});
 const JSON_CONTENT_TYPE = "application/json";
 const QUEUE_PATH_PATTERN = /\/memory-store\/queues\/([^/]+)(\/items(?::read|:discard)?)?$/;
 const LOGS_SUFFIX_PATTERN = /\/logs$/;
+const BINARY_INPUT_SUFFIX = "/luau-execution-session-task-binary-inputs";
+/**
+ * Where the fake serves the presigned PUT it hands out. Live Open Cloud names a
+ * storage host the API does not own, and the client PUTs there over a plain
+ * `fetch` rather than through its own transport — so the fake has to answer at
+ * a real URL of its own for a spec to see the bytes at all.
+ */
+const BINARY_INPUT_UPLOAD_PATH = "/fake-binary-input-upload/";
 
 export interface FakeOpenCloudTask {
 	elapsedMs?: number;
@@ -90,6 +103,15 @@ export interface FakeOpenCloudOptions {
 	bootProbe?: "complete" | "stall";
 }
 
+/** One binary input the fake allocated, and the bytes that were PUT to it. */
+interface FakeBinaryInput {
+	/**
+	 * Absent until the PUT lands, which is a create the run never followed up.
+	 */
+	body?: string | undefined;
+	path: string;
+}
+
 interface FakeOpenCloudCall {
 	apiKey: string | undefined;
 	method: string;
@@ -103,6 +125,8 @@ interface QueuedItem {
 
 interface FakeOpenCloudServer {
 	baseUrl: string;
+	/** Every binary input this server allocated, in create order. */
+	binaryInputs: Array<FakeBinaryInput>;
 	calls: Array<FakeOpenCloudCall>;
 	queueAdds: Array<{ queue: string; value: Exclude<JSONValue, null> }>;
 	queueDiscards: Array<{ id: string; queue: string }>;
@@ -116,6 +140,11 @@ interface FakeOpenCloudServer {
  * they must stay one shared object rather than copied numbers.
  */
 interface FakeOpenCloudState {
+	/**
+	 * Filled in once the server is listening; the create route hands it out.
+	 */
+	baseUrl: string;
+	binaryInputs: FakeOpenCloudServer["binaryInputs"];
 	bootProbe: NonNullable<FakeOpenCloudOptions["bootProbe"]>;
 	calls: FakeOpenCloudServer["calls"];
 	counters: { itemSeq: number; taskIndex: number; uploadCount: number };
@@ -132,7 +161,32 @@ export async function startFakeOpenCloudServerAsync(
 	tasks: Array<FakeOpenCloudTask>,
 	options: FakeOpenCloudOptions = {},
 ): Promise<FakeOpenCloudServer> {
-	const state: FakeOpenCloudState = {
+	const state = createState(tasks, options);
+	const server = createServer(createRequestListener(state));
+	await listenOnEphemeralPortAsync(server);
+	closeServerWhenTestFinishes(server);
+	state.baseUrl = resolveBaseUrl(server);
+
+	return {
+		baseUrl: state.baseUrl,
+		binaryInputs: state.binaryInputs,
+		calls: state.calls,
+		queueAdds: state.queueAdds,
+		queueDiscards: state.queueDiscards,
+		requests: state.requests,
+		get uploadCount() {
+			return state.counters.uploadCount;
+		},
+	};
+}
+
+function createState(
+	tasks: Array<FakeOpenCloudTask>,
+	options: FakeOpenCloudOptions,
+): FakeOpenCloudState {
+	return {
+		baseUrl: "",
+		binaryInputs: [],
 		bootProbe: options.bootProbe ?? "complete",
 		calls: [],
 		counters: { itemSeq: 0, taskIndex: 0, uploadCount: 0 },
@@ -144,21 +198,6 @@ export async function startFakeOpenCloudServerAsync(
 		taskQueue: [...tasks],
 		taskResults: new Map(),
 	};
-
-	const server = createServer(createRequestListener(state));
-	await listenOnEphemeralPortAsync(server);
-	closeServerWhenTestFinishes(server);
-
-	return {
-		baseUrl: resolveBaseUrl(server),
-		calls: state.calls,
-		queueAdds: state.queueAdds,
-		queueDiscards: state.queueDiscards,
-		requests: state.requests,
-		get uploadCount() {
-			return state.counters.uploadCount;
-		},
-	};
 }
 
 async function readBodyAsync(request: IncomingMessage): Promise<string> {
@@ -168,120 +207,6 @@ async function readBodyAsync(request: IncomingMessage): Promise<string> {
 	}
 
 	return Buffer.concat(chunks).toString("utf-8");
-}
-
-/**
- * Serve a task's structured log page. Live Open Cloud writes these only once a
- * task is terminal, so a task the fake never completes has nothing to return —
- * the same empty page the live endpoint gives while a task is still running.
- */
-function handleListLogs({
-	response,
-	state,
-	url,
-}: {
-	response: ServerResponse;
-	state: FakeOpenCloudState;
-	url: URL;
-}): void {
-	const taskPath = url.pathname.replace("/cloud/v2/", "").replace(LOGS_SUFFIX_PATTERN, "");
-	const queuedTask = state.taskResults.get(taskPath);
-	const messages = queuedTask?.logs ?? [];
-
-	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-	response.end(
-		JSON.stringify({
-			luauExecutionSessionTaskLogs: [
-				{
-					path: `${taskPath}/logs/1`,
-					structuredMessages: messages.map((entry) => {
-						return { ...entry, createTime: "2026-01-01T00:00:00Z" };
-					}),
-				},
-			],
-		}),
-	);
-}
-
-/** The auto-wrapped envelope entry returned when no `rawOutput` is supplied. */
-function buildJestEnvelope(queuedTask: FakeOpenCloudTask): string {
-	return JSON.stringify({
-		entries: [
-			{
-				elapsedMs: queuedTask.elapsedMs ?? 25,
-				gameOutput: queuedTask.gameOutput,
-				jestOutput: queuedTask.jestOutput ?? "",
-				pkg: queuedTask.pkg,
-				project: queuedTask.project,
-				snapshotWrites: queuedTask.snapshotWrites,
-			},
-		],
-	});
-}
-
-function buildCompletedTaskBody({
-	queuedTask,
-	taskPath,
-}: {
-	queuedTask: FakeOpenCloudTask;
-	taskPath: string;
-}): ReturnType<typeof validInProgressTaskBody> {
-	if (queuedTask.state === "FAILED") {
-		return validInProgressTaskBody({
-			error: {
-				code: "SCRIPT_ERROR",
-				message: queuedTask.errorMessage ?? "Execution failed",
-			},
-			path: taskPath,
-			state: "FAILED",
-		});
-	}
-
-	if (queuedTask.rawOutput !== undefined) {
-		return validInProgressTaskBody({
-			output: { results: [queuedTask.rawOutput] },
-			path: taskPath,
-			state: "COMPLETE",
-		});
-	}
-
-	return validInProgressTaskBody({
-		output: { results: [buildJestEnvelope(queuedTask)] },
-		path: taskPath,
-		state: "COMPLETE",
-	});
-}
-
-function handlePoll({
-	response,
-	state,
-	url,
-}: {
-	response: ServerResponse;
-	state: FakeOpenCloudState;
-	url: URL;
-}): void {
-	const taskPath = url.pathname.replace("/cloud/v2/", "");
-	const remainingPolls = state.pollCounts.get(taskPath);
-	const queuedTask = state.taskResults.get(taskPath);
-
-	if (queuedTask === undefined || remainingPolls === undefined) {
-		response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
-		response.end(JSON.stringify({ error: { message: "Unknown fake task" } }));
-		return;
-	}
-
-	if (remainingPolls > 0) {
-		state.pollCounts.set(taskPath, remainingPolls - 1);
-		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-		response.end(
-			JSON.stringify(validInProgressTaskBody({ path: taskPath, state: "PROCESSING" })),
-		);
-		return;
-	}
-
-	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
-	response.end(JSON.stringify(buildCompletedTaskBody({ queuedTask, taskPath })));
 }
 
 function parseQueuePath(pathname: string): undefined | { queue: string; suffix: string } {
@@ -441,6 +366,56 @@ function handlePublishVersion({
 	);
 }
 
+/**
+ * Allocate a binary-input slot and hand back a presigned PUT the fake serves
+ * itself, so the bytes a run sends are observable without a second fake.
+ */
+function handleCreateBinaryInput({
+	response,
+	state,
+}: {
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+}): void {
+	const index = String(state.binaryInputs.length + 1);
+	const inputPath = `universes/123/luau-execution-session-task-binary-inputs/input-${index}`;
+	state.binaryInputs.push({ path: inputPath });
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(
+		JSON.stringify(
+			validBinaryInputBody({
+				path: inputPath,
+				uploadUri: `${state.baseUrl}${BINARY_INPUT_UPLOAD_PATH}${index}`,
+			}),
+		),
+	);
+}
+
+/** Record what the run PUT at a slot this server handed out. */
+function handleUploadBinaryInput({
+	body,
+	response,
+	state,
+	url,
+}: {
+	body: string;
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+	url: URL;
+}): void {
+	const index = Number(url.pathname.slice(BINARY_INPUT_UPLOAD_PATH.length));
+	const input = state.binaryInputs[index - 1];
+	if (input === undefined) {
+		response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
+		response.end(JSON.stringify({ error: { message: "Unknown binary input slot" } }));
+		return;
+	}
+
+	input.body = body;
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end("{}");
+}
+
 /** Register a task under a fresh path and answer the submit with it. */
 function acceptTask({
 	queuedTask,
@@ -504,6 +479,146 @@ function handleCreateTask({
 	acceptTask({ queuedTask: nextTask, response, state });
 }
 
+/**
+ * Serve a task's structured log page. Live Open Cloud writes these only once a
+ * task is terminal, so a task the fake never completes has nothing to return —
+ * the same empty page the live endpoint gives while a task is still running.
+ */
+function handleListLogs({
+	response,
+	state,
+	url,
+}: {
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+	url: URL;
+}): void {
+	const taskPath = url.pathname.replace("/cloud/v2/", "").replace(LOGS_SUFFIX_PATTERN, "");
+	const queuedTask = state.taskResults.get(taskPath);
+	const messages = queuedTask?.logs ?? [];
+
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(
+		JSON.stringify({
+			luauExecutionSessionTaskLogs: [
+				{
+					path: `${taskPath}/logs/1`,
+					structuredMessages: messages.map((entry) => {
+						return { ...entry, createTime: "2026-01-01T00:00:00Z" };
+					}),
+				},
+			],
+		}),
+	);
+}
+
+/** The auto-wrapped envelope entry returned when no `rawOutput` is supplied. */
+function buildJestEnvelope(queuedTask: FakeOpenCloudTask): string {
+	return JSON.stringify({
+		entries: [
+			{
+				elapsedMs: queuedTask.elapsedMs ?? 25,
+				gameOutput: queuedTask.gameOutput,
+				jestOutput: queuedTask.jestOutput ?? "",
+				pkg: queuedTask.pkg,
+				project: queuedTask.project,
+				snapshotWrites: queuedTask.snapshotWrites,
+			},
+		],
+	});
+}
+
+function buildCompletedTaskBody({
+	queuedTask,
+	taskPath,
+}: {
+	queuedTask: FakeOpenCloudTask;
+	taskPath: string;
+}): ReturnType<typeof validInProgressTaskBody> {
+	if (queuedTask.state === "FAILED") {
+		return validInProgressTaskBody({
+			error: {
+				code: "SCRIPT_ERROR",
+				message: queuedTask.errorMessage ?? "Execution failed",
+			},
+			path: taskPath,
+			state: "FAILED",
+		});
+	}
+
+	if (queuedTask.rawOutput !== undefined) {
+		return validInProgressTaskBody({
+			output: { results: [queuedTask.rawOutput] },
+			path: taskPath,
+			state: "COMPLETE",
+		});
+	}
+
+	return validInProgressTaskBody({
+		output: { results: [buildJestEnvelope(queuedTask)] },
+		path: taskPath,
+		state: "COMPLETE",
+	});
+}
+
+function handlePoll({
+	response,
+	state,
+	url,
+}: {
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+	url: URL;
+}): void {
+	const taskPath = url.pathname.replace("/cloud/v2/", "");
+	const remainingPolls = state.pollCounts.get(taskPath);
+	const queuedTask = state.taskResults.get(taskPath);
+
+	if (queuedTask === undefined || remainingPolls === undefined) {
+		response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
+		response.end(JSON.stringify({ error: { message: "Unknown fake task" } }));
+		return;
+	}
+
+	if (remainingPolls > 0) {
+		state.pollCounts.set(taskPath, remainingPolls - 1);
+		response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+		response.end(
+			JSON.stringify(validInProgressTaskBody({ path: taskPath, state: "PROCESSING" })),
+		);
+		return;
+	}
+
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(JSON.stringify(buildCompletedTaskBody({ queuedTask, taskPath })));
+}
+
+/** The routes a run only ever reads from, plus the unhandled-route answer. */
+function handleReadRequest({
+	method,
+	response,
+	state,
+	url,
+}: {
+	method: string;
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+	url: URL;
+}): void {
+	if (method === "GET" && url.pathname.endsWith("/logs")) {
+		handleListLogs({ response, state, url });
+		return;
+	}
+
+	if (method === "GET" && url.pathname.startsWith("/cloud/v2/universes/")) {
+		handlePoll({ response, state, url });
+		return;
+	}
+
+	response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
+	response.end(JSON.stringify({ error: { message: `Unhandled route: ${url.pathname}` } }));
+}
+
 async function handleRequestAsync({
 	request,
 	response,
@@ -526,23 +641,22 @@ async function handleRequestAsync({
 		return;
 	}
 
+	if (request.method === "POST" && url.pathname.endsWith(BINARY_INPUT_SUFFIX)) {
+		handleCreateBinaryInput({ response, state });
+		return;
+	}
+
+	if (request.method === "PUT" && url.pathname.startsWith(BINARY_INPUT_UPLOAD_PATH)) {
+		handleUploadBinaryInput({ body: await readBodyAsync(request), response, state, url });
+		return;
+	}
+
 	if (request.method === "POST" && url.pathname.endsWith("/luau-execution-session-tasks")) {
 		handleCreateTask({ body: await readBodyAsync(request), response, state });
 		return;
 	}
 
-	if (request.method === "GET" && url.pathname.endsWith("/logs")) {
-		handleListLogs({ response, state, url });
-		return;
-	}
-
-	if (request.method === "GET" && url.pathname.startsWith("/cloud/v2/universes/")) {
-		handlePoll({ response, state, url });
-		return;
-	}
-
-	response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
-	response.end(JSON.stringify({ error: { message: `Unhandled route: ${url.pathname}` } }));
+	handleReadRequest({ method: request.method ?? "", response, state, url });
 }
 
 function createRequestListener(state: FakeOpenCloudState): RequestListener {

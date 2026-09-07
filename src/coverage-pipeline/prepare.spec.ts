@@ -5,7 +5,7 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import process from "node:process";
 import type { Except } from "type-fest";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import { writeAgedFile } from "../../test/mocks/aged-file.ts";
 import type { MemoryFileSystem, MemoryVolume } from "../../test/mocks/memory-file-system.ts";
@@ -16,9 +16,11 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { createStubBake, generateProjectStubs } from "../config/stubs.ts";
 import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
+import { CODE_SPLIT_PASS_VERSION } from "../staging/code-split.ts";
 import type { RojoProject } from "../types/rojo.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
+import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { BuildManifestProject } from "./build-manifest.ts";
 import { BUILD_MANIFEST_VERSION } from "./build-manifest.ts";
@@ -48,6 +50,10 @@ import type { ShadowBake, ShadowLayout } from "./spine.ts";
 import { prepareWorkspaceCoverage } from "./workspace-prepare.ts";
 
 const DEFAULT_COPY_IGNORE_HASH = hashCopyIgnorePatterns(DEFAULT_CONFIG.coverageCopyIgnorePatterns);
+
+/** The Code Root a bundle run splits against, and the mount inside it. */
+const CODE_ROOT = path.resolve("/project/out-tsc");
+const MOUNTED_FILE = "/project/out-tsc/assets/thing.luau";
 
 const COVERED_FILE = "out-tsc/test/init.luau";
 const UNCOVERED_FILE = "out-tsc/test/ui/button.luau";
@@ -3647,6 +3653,157 @@ describe(prepareCoverageAsync, () => {
 				"packages/core/out",
 				"packages/test-utils/out",
 			]);
+		});
+	});
+
+	describe("when the run asks for a code bundle", () => {
+		/** A seeded volume with the seams every run against it is handed. */
+		type BundleHarness = MemoryFileSystem & ReturnType<typeof setupMocks>;
+
+		/**
+		 * A volume whose rojo project mounts a directory of code a task can
+		 * rebuild, from outside the coverage root — so the mount reaches the
+		 * split as its own directory rather than as the shadow a covered mount
+		 * is redirected to.
+		 */
+		function seedBundleRun(): BundleHarness {
+			const memory = seedFilesystem();
+			memory.volume.mkdirSync(path.dirname(MOUNTED_FILE), { recursive: true });
+			memory.volume.writeFileSync(MOUNTED_FILE, "return 1");
+			memory.volume.writeFileSync(
+				"/project/default.project.json",
+				JSON.stringify({
+					name: "test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: { $path: "out-tsc/test/client" },
+						ServerStorage: { $path: "out-tsc/assets" },
+					},
+				}),
+			);
+			return { ...memory, ...setupMocks(memory.volume) };
+		}
+
+		async function runAsync(
+			harness: BundleHarness,
+			codeRoots?: Array<PosixRoot>,
+		): Promise<PrepareCoverageResult> {
+			return prepareCoverageAsync(makeConfig({ luauRoots: ["out-tsc/test"] }), {
+				childProcess: harness.childProcess,
+				codeRoots,
+				fileSystem: harness.fileSystem,
+				instrumenter: harness.instrumenter,
+				tsconfigReader: noTsconfig,
+			});
+		}
+
+		it("should write the bundle beside the place it was split from", async () => {
+			expect.assertions(2);
+
+			const harness = seedBundleRun();
+			const { volume } = harness;
+
+			const result = await runAsync(harness, [toPosixRoot(CODE_ROOT)]);
+			assert(result.codeBundle !== undefined, "expected a code bundle");
+
+			expect(volume.existsSync(result.codeBundle.path)).toBeTrue();
+			// The mount the rojo project makes of the compiled output, split
+			// out because it resolves inside the Code Root the caller named.
+			expect(volume.readFileSync(result.codeBundle.path, "utf-8").toString()).toContain(
+				'"dataModelPath":["ServerStorage"]',
+			);
+		});
+
+		it("should write no bundle for a run that builds the whole place", async () => {
+			expect.assertions(1);
+
+			const harness = seedBundleRun();
+
+			const whole = await runAsync(harness);
+
+			expect(whole.codeBundle).toBeUndefined();
+		});
+
+		it("should write the bundle again for a place it reused", async () => {
+			expect.assertions(2);
+
+			const harness = seedBundleRun();
+			const { volume } = harness;
+			const first = await runAsync(harness, [toPosixRoot(CODE_ROOT)]);
+			assert(first.codeBundle !== undefined, "expected a code bundle");
+			volume.writeFileSync(first.codeBundle.path, "stale");
+
+			const second = await runAsync(harness, [toPosixRoot(CODE_ROOT)]);
+			assert(second.codeBundle !== undefined, "expected a code bundle");
+
+			// A reused harness never held this run's code, so the bundle is
+			// written from disk whether or not the place was.
+			expect(second.rebuilt).toBeFalse();
+			expect(volume.readFileSync(second.codeBundle.path, "utf-8").toString()).toContain(
+				'"version":1',
+			);
+		});
+
+		it("should rebuild the place when the run changed its mind about the bundle", async () => {
+			expect.assertions(2);
+
+			const harness = seedBundleRun();
+			const bundled = await runAsync(harness, [toPosixRoot(CODE_ROOT)]);
+			assert(bundled.codeBundle !== undefined, "expected a code bundle");
+
+			// The cached place is a harness, and this run wants the code in it.
+			// Reusing it would run the tests against a place holding none.
+			const whole = await runAsync(harness);
+
+			expect(whole.rebuilt).toBeTrue();
+			await expect(runAsync(harness, [toPosixRoot(CODE_ROOT)])).resolves.toHaveProperty(
+				"rebuilt",
+				true,
+			);
+		});
+
+		/**
+		 * The gate every other build gets from the place-reuse key, which never
+		 * reaches a build on this path. Without it a harness built by an older
+		 * split rule reads as current and is handed straight back.
+		 */
+		it("should rebuild the place when the split rule that built it moved", async () => {
+			expect.assertions(2);
+
+			const harness = seedBundleRun();
+			const { volume } = harness;
+			await runAsync(harness, [toPosixRoot(CODE_ROOT)]);
+			// What a bumped `CODE_SPLIT_PASS_VERSION` leaves behind: a place
+			// built by a rule this run no longer runs.
+			const manifestPath = ".jest-roblox/coverage/coverage-manifest.json";
+			const stale = manifestSchema.assert(
+				JSON.parse(String(volume.readFileSync(manifestPath, "utf-8"))),
+			);
+			volume.writeFileSync(
+				manifestPath,
+				JSON.stringify({ ...stale, codeSplitKey: `0\n${CODE_ROOT}` }),
+			);
+
+			const next = await runAsync(harness, [toPosixRoot(CODE_ROOT)]);
+
+			expect(next.rebuilt).toBeTrue();
+			expect(next.manifest.codeSplitKey).toBe(
+				`${String(CODE_SPLIT_PASS_VERSION)}\n${toPosixRoot(CODE_ROOT)}`,
+			);
+		});
+
+		it("should reuse the harness the same split rule built", async () => {
+			expect.assertions(1);
+
+			const harness = seedBundleRun();
+			await runAsync(harness, [toPosixRoot(CODE_ROOT)]);
+
+			// The other half of the gate above: the split identity is a reason
+			// to rebuild only when it moved, so an unchanged one costs nothing.
+			await expect(runAsync(harness, [toPosixRoot(CODE_ROOT)])).resolves.toHaveProperty(
+				"rebuilt",
+				false,
+			);
 		});
 	});
 });

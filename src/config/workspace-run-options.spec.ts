@@ -15,6 +15,7 @@ function emptyCli(): CliOptions {
 describe(buildWorkspaceRunOptions, () => {
 	it.for([
 		["backend", { backend: "open-cloud" }, { backend: "studio" }],
+		["binaryInput", { binaryInput: true }, { binaryInput: false }],
 		["color", { color: true }, { color: false }],
 		["port", { port: 1 }, { port: 2 }],
 		["silent", { test: { silent: true } }, { test: { silent: false } }],
@@ -170,7 +171,7 @@ describe(buildWorkspaceRunOptions, () => {
 
 	describe("default-config fallback", () => {
 		it("should fall back to DEFAULT_CONFIG when no package declares the field", () => {
-			expect.assertions(4);
+			expect.assertions(5);
 
 			const result = buildWorkspaceRunOptions({
 				cli: emptyCli(),
@@ -181,6 +182,7 @@ describe(buildWorkspaceRunOptions, () => {
 			});
 
 			expect(result.backend).toBe(DEFAULT_CONFIG.backend);
+			expect(result.binaryInput).toBe(DEFAULT_CONFIG.binaryInput);
 			expect(result.color).toBe(DEFAULT_CONFIG.color);
 			expect(result.silent).toBe(DEFAULT_CONFIG.silent);
 			expect(result.port).toBe(DEFAULT_CONFIG.port);
@@ -352,6 +354,34 @@ describe(buildWorkspaceRunOptions, () => {
 			});
 
 			expect(result.backend).toBe("open-cloud");
+		});
+
+		it("should let --no-binary-input beat per-package disagreement", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: { binaryInput: false },
+				perPackageConfigs: [
+					{ name: "alpha", config: { binaryInput: true } },
+					{ name: "beta", config: {} },
+				],
+			});
+
+			expect(result.binaryInput).toBeFalse();
+		});
+
+		it("should take binaryInput from a per-package consensus", () => {
+			expect.assertions(1);
+
+			const result = buildWorkspaceRunOptions({
+				cli: emptyCli(),
+				perPackageConfigs: [
+					{ name: "alpha", config: { binaryInput: false } },
+					{ name: "beta", config: { binaryInput: false } },
+				],
+			});
+
+			expect(result.binaryInput).toBeFalse();
 		});
 
 		it("should let a CLI silent override beat per-package disagreement", () => {

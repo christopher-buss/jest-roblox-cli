@@ -72,6 +72,7 @@ function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): Workspace
 	return {
 		backend: DEFAULT_CONFIG.backend,
 		bail: false,
+		binaryInput: DEFAULT_CONFIG.binaryInput,
 		color: DEFAULT_CONFIG.color,
 		formatters: [],
 		port: DEFAULT_CONFIG.port,

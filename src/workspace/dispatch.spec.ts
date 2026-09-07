@@ -95,6 +95,7 @@ describe(runDispatchedProjectsAsync, () => {
 
 		const result = await runDispatchedProjectsAsync({
 			backend,
+			codeBundle: undefined,
 			dispatchSpec: { parallel: 2, scriptFactory, scriptOverride: "initial-script" },
 			jobs,
 			runProjects,

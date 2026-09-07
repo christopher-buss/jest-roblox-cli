@@ -1,6 +1,7 @@
 import { PLACE_CONTENT_ID_NAME, PLACE_CONTENT_ID_SERVICE } from "@isentinel/roblox-runner";
 import { fromAny } from "@total-typescript/shoehorn";
 
+import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
 import process from "node:process";
@@ -10,12 +11,18 @@ import { describe, expect, it, vi } from "vitest";
 import { ageFile } from "../../test/mocks/aged-file.ts";
 import type { MemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import { poolKeyOf, staged, stagedProjectSchema } from "../../test/mocks/staged-project.ts";
+import {
+	mountOf,
+	poolKeyOf,
+	staged,
+	stagedProjectSchema,
+} from "../../test/mocks/staged-project.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import { hashBuffer } from "../utils/hash.ts";
-import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
+import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
+import { CODE_SPLIT_PASS_VERSION, splitCodeMounts } from "./code-split.ts";
 import { PINNED_MOUNT_PASS_VERSION } from "./pinned-mounts.ts";
-import { buildPlaceAsync } from "./place-builder.ts";
+import { buildCodeBundle, buildPlaceAsync } from "./place-builder.ts";
 import { computePlaceInputsKeyAsync } from "./place-reuse.ts";
 import { relativizeProjectPaths } from "./relativize-paths.ts";
 import { SHARED_POOL_PASS_VERSION } from "./shared-pool.ts";
@@ -467,4 +474,260 @@ describe("place reuse", () => {
 
 		expect(rojo.execFile).toHaveBeenCalledTimes(2);
 	});
+});
+
+const CODE_DIR = "/repo/code";
+const OUT_DIR = `${CODE_DIR}/out`;
+const MIXED_DIR = `${CODE_DIR}/mixed`;
+/** Beside the place, named after it: `place-builder` derives this. */
+const BUNDLE_FILE = path.join(path.dirname(PLACE_FILE), "game.code-bundle.json");
+const bundleSchema = type({
+	mounts: type({ dataModelPath: "string[]", root: { "source?": "string" } }).array(),
+	version: "number",
+});
+/**
+ * One package staging its compiled output, a directory inside the same Code
+ * Root that holds something no task can construct, and a vendored tree outside
+ * every Code Root.
+ */
+const BUNDLE_PACKAGE_PROJECT = JSON.stringify({
+	name: "pkg",
+	tree: {
+		$className: "Folder",
+		Include: { $path: "/repo/include" },
+		Mixed: { $path: MIXED_DIR },
+		Out: { $path: OUT_DIR },
+	},
+});
+
+describe("code bundle", () => {
+	function seedBundleBuild(): Harness {
+		const rojo = seed({
+			"/repo/include/runtime.luau": "return {}",
+			[`${MIXED_DIR}/keep.luau`]: "return 'keep'",
+			[`${MIXED_DIR}/notes.txt`]: "hello",
+			[`${OUT_DIR}/init.luau`]: "return 1",
+			[PACKAGE_PROJECT]: BUNDLE_PACKAGE_PROJECT,
+		});
+		// Back-dated so the digest cache is allowed to record a digest for them.
+		for (const file of [
+			"/repo/include/runtime.luau",
+			`${MIXED_DIR}/keep.luau`,
+			`${MIXED_DIR}/notes.txt`,
+			`${OUT_DIR}/init.luau`,
+		]) {
+			ageFile(rojo.fileSystem, file, 60);
+		}
+
+		return rojo;
+	}
+
+	async function buildHarnessAsync(rojo: Harness): ReturnType<typeof buildPlaceAsync> {
+		return buildPlaceAsync({
+			childProcess: rojo.childProcess,
+			codeRoots: [toPosixRoot(CODE_DIR)],
+			fileSystem: rojo.fileSystem,
+			packages: [makeDescriptor()],
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+			reuse: {
+				cacheFile: CACHE_FILE,
+				digestCacheFile: DIGEST_CACHE_FILE,
+				manifests: [],
+				shadowRoots: [],
+			},
+		});
+	}
+
+	/** The Code Bundle the build wrote, parsed. */
+	function readBundle({ volume }: Harness): typeof bundleSchema.infer {
+		return bundleSchema.assert(JSON.parse(String(volume.readFileSync(BUNDLE_FILE, "utf8"))));
+	}
+
+	it("should build a place that no longer mounts what the bundle carries", async () => {
+		expect.assertions(3);
+
+		const rojo = seedBundleBuild();
+		await buildHarnessAsync(rojo);
+		const project = writtenProject(rojo);
+
+		expect(staged(project, "pkg", "Out")).toBeUndefined();
+		// The two that could not travel are untouched, mount and all.
+		expect(mountOf(project, "pkg", "Mixed")).toBe(
+			normalizeWindowsPath(path.relative("/cache", MIXED_DIR)),
+		);
+		expect(mountOf(project, "pkg", "Include")).toBeDefined();
+	});
+
+	it("should write the bundle the harness no longer holds", async () => {
+		expect.assertions(2);
+
+		const rojo = seedBundleBuild();
+		await buildHarnessAsync(rojo);
+		const bundle = readBundle(rojo);
+
+		expect(bundle.version).toBe(1);
+		expect(bundle.mounts.map((mount) => mount.dataModelPath)).toStrictEqual([
+			["ServerStorage", "__pkg_stage", "pkg", "Out"],
+		]);
+	});
+
+	it("should report the bundle and the mounts that stayed to its caller", async () => {
+		expect.assertions(1);
+
+		const rojo = seedBundleBuild();
+		const result = await buildHarnessAsync(rojo);
+
+		expect(result.codeBundle).toStrictEqual({
+			byteLength: Buffer.byteLength(
+				String(rojo.volume.readFileSync(BUNDLE_FILE, "utf8")),
+				"utf-8",
+			),
+			fileCount: 1,
+			path: BUNDLE_FILE,
+			// `Include` is not on the list: nothing about it was ever going to
+			// travel, so naming it would be noise rather than a finding.
+			stayedMounts: ["ServerStorage/__pkg_stage/pkg/Mixed"],
+		});
+	});
+
+	it("should write the bundle on its own for a caller that built no place", async () => {
+		expect.assertions(3);
+
+		const rojo = seedBundleBuild();
+
+		const bundle = buildCodeBundle({
+			codeRoots: [toPosixRoot(CODE_DIR)],
+			fileSystem: rojo.fileSystem,
+			packages: [makeDescriptor()],
+			// Named but never built at: it is what says where the bundle goes.
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+		});
+
+		expect(bundle.fileCount).toBe(1);
+		expect(readBundle(rojo).mounts.map((mount) => mount.dataModelPath)).toStrictEqual([
+			["ServerStorage", "__pkg_stage", "pkg", "Out"],
+		]);
+		// The place is the caller's business: this writes the bundle and
+		// nothing else, which is what lets a reused place still ship its code.
+		expect(rojo.execFile).not.toHaveBeenCalled();
+	});
+
+	it("should reuse the harness across a code-only edit and rewrite the bundle", async () => {
+		expect.assertions(2);
+
+		const rojo = seedBundleBuild();
+		await buildHarnessAsync(rojo);
+		rojo.volume.writeFileSync(`${OUT_DIR}/init.luau`, "return 2");
+		await buildHarnessAsync(rojo);
+
+		// The harness never held that file, so its key cannot have moved — and
+		// the bundle is written from disk either way, reuse or no reuse.
+		expect(rojo.execFile).toHaveBeenCalledOnce();
+		// `out/init.luau` promotes the mount itself, so the edit lands on the
+		// mount root rather than on an entry beneath it.
+		expect(readBundle(rojo).mounts[0]!.root.source).toBe("return 2");
+	});
+
+	it("should rebuild the harness when a mount that stayed changed", async () => {
+		expect.assertions(1);
+
+		const rojo = seedBundleBuild();
+		await buildHarnessAsync(rojo);
+		rojo.volume.writeFileSync(`${MIXED_DIR}/keep.luau`, "return 'edited'");
+		await buildHarnessAsync(rojo);
+
+		expect(rojo.execFile).toHaveBeenCalledTimes(2);
+	});
+
+	it("should fold the split pass version into the key", async () => {
+		expect.assertions(2);
+
+		const rojo = seedBundleBuild();
+		await buildHarnessAsync(rojo);
+		const recorded = JSON.parse(String(rojo.volume.readFileSync(CACHE_FILE, "utf8")));
+		const { harnessProjectJson } = splitCodeMounts({
+			codeRoots: [toPosixRoot(CODE_DIR)],
+			fileSystem: rojo.fileSystem,
+			projectDirectory: "/cache",
+			projectJson: synthesize({
+				fileSystem: rojo.fileSystem,
+				packages: [makeDescriptor()],
+			}),
+		});
+
+		// The harness's own inputs, keyed over a chosen set of passes. A split
+		// left out of the key would hand out a harness hollowed by the
+		// previous rule.
+		async function keyOverAsync(stagingVersions: Array<number>): Promise<string | undefined> {
+			return computePlaceInputsKeyAsync({
+				digestCacheFile: DIGEST_CACHE_FILE,
+				fileSystem: rojo.fileSystem,
+				manifests: [],
+				projectFile: PROJECT_FILE,
+				projectJson: relativizeProjectPaths(harnessProjectJson, "/cache"),
+				shadowRoots: [],
+				stagingVersions,
+			});
+		}
+
+		expect(recorded).not.toMatchObject({
+			inputsKey: await keyOverAsync([PINNED_MOUNT_PASS_VERSION, SHARED_POOL_PASS_VERSION]),
+		});
+		expect(recorded).toMatchObject({
+			inputsKey: await keyOverAsync([
+				PINNED_MOUNT_PASS_VERSION,
+				SHARED_POOL_PASS_VERSION,
+				CODE_SPLIT_PASS_VERSION,
+			]),
+		});
+	});
+
+	it("should leave the code in the place when no bundle is asked for", async () => {
+		expect.assertions(2);
+
+		const rojo = seedBundleBuild();
+		await buildPlaceAsync({
+			childProcess: rojo.childProcess,
+			fileSystem: rojo.fileSystem,
+			packages: [makeDescriptor()],
+			placeFile: PLACE_FILE,
+			projectFile: PROJECT_FILE,
+		});
+
+		expect(mountOf(writtenProject(rojo), "pkg", "Out")).toBe(
+			normalizeWindowsPath(path.relative("/cache", OUT_DIR)),
+		);
+		expect(rojo.volume.existsSync(BUNDLE_FILE)).toBeFalse();
+	});
+
+	// Over the mutation run's 100ms budget by design: the only honest way to
+	// prove a hundred-megabyte refusal is a hundred megabytes.
+	it(
+		"should refuse a bundle over the binary-input cap before building",
+		{ timeout: 5000 },
+		async () => {
+			expect.assertions(2);
+
+			const rojo = seedBundleBuild();
+			// A sixth of the cap in control characters, which JSON escapes to six
+			// bytes each: the smallest source that puts the payload over, and a
+			// sixth of the bytes to move around getting there.
+			rojo.fileSystem.writeFileSync(
+				`${OUT_DIR}/huge.luau`,
+				"\u0001".repeat(17 * 1024 * 1024),
+			);
+
+			await expect(buildHarnessAsync(rojo)).rejects.toMatchObject({
+				// The way out rides with the refusal: a run that cannot ship
+				// its code this way can still ship it inside the place.
+				hint: expect.stringContaining("--no-binary-input"),
+				message: expect.stringContaining(
+					"over the 100.0 MB cap Open Cloud puts on a binary input",
+				),
+			});
+			expect(rojo.execFile).not.toHaveBeenCalled();
+		},
+	);
 });

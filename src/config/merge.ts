@@ -13,6 +13,7 @@ export function mergeCliWithConfig(cli: CliOptions, config: ResolvedConfig): Res
 		...config,
 		...resolveCoverage(cli, config),
 		backend: cli.backend ?? config.backend,
+		binaryInput: cli.binaryInput ?? config.binaryInput,
 		color: cli.color ?? config.color,
 		experimentalVmParallel: cli.experimentalVmParallel,
 		formatters: resolveFormatters(cli, config),

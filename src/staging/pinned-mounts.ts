@@ -3,7 +3,6 @@ import { isRojoTreeNode } from "@isentinel/rojo-utils";
 import { Buffer } from "node:buffer";
 import type { Dirent } from "node:fs";
 import * as path from "node:path";
-import picomatch from "picomatch";
 
 import { ConfigError } from "../config/errors.ts";
 import type { RojoTreeNode } from "../types/rojo.ts";
@@ -14,6 +13,7 @@ import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
+import { createIgnoreMatcher, readGlobIgnorePaths } from "./glob-ignore.ts";
 import {
 	isModelFile,
 	META_JSON_FILE,
@@ -94,7 +94,6 @@ const XML_PROPERTY = /<(\w+) name="([^"]+)"[^>]*>[\s\S]*?<\/\1>/g;
  * into the place as a property no Folder has.
  */
 const INSTANCE_PROPERTIES = new Set(["AttributesSerialize", "Name", "Tags"]);
-const DRIVE_LETTER = /^[A-Za-z]:/;
 
 /**
  * Replace every staged mount that would bring a parent-pinned class into the
@@ -135,7 +134,7 @@ export async function demotePinnedMountsAsync({
 
 	const declaredIgnores = readGlobIgnorePaths(project);
 	const pinned: Array<PinnedMount> = [];
-	const ignored = isIgnored(declaredIgnores);
+	const ignored = createIgnoreMatcher(declaredIgnores);
 	collectPinnedMounts(stage, { fileSystem, ignored, pinned, scanned: new Set() });
 	if (pinned.length === 0) {
 		return projectJson;
@@ -330,30 +329,6 @@ async function buildStandInsAsync(
 	}
 
 	return ignores;
-}
-
-function readGlobIgnorePaths({ globIgnorePaths: value }: RojoTreeNode): Array<string> {
-	return Array.isArray(value)
-		? value.filter((entry): entry is string => typeof entry === "string")
-		: [];
-}
-
-/**
- * Whether the project already drops a path, so a stand-in must not resurrect
- * it. A consumer who hit this bug before the pipeline handled it worked around
- * it by ignoring the offending file; rebuilding it as a Folder would undo that
- * and put an empty stand-in back in the place.
- *
- * Matched with and without the drive letter, because a declared pattern is
- * written against whatever frame the consumer's project expresses its mounts
- * in, and a leading globstar has to reach either one.
- */
-function isIgnored(patterns: ReadonlyArray<string>): (absolutePath: string) => boolean {
-	const match = picomatch([...patterns], { dot: true });
-	return (absolutePath: string) => {
-		const normalized = normalizeWindowsPath(absolutePath);
-		return match(normalized) || match(normalized.replace(DRIVE_LETTER, ""));
-	};
 }
 
 function pinnedClassesOf(fileSystem: FileSystem, filePath: string): Array<string> {

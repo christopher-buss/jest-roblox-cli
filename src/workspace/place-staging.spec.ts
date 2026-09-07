@@ -11,10 +11,11 @@ import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import { prepareWorkspaceCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import { stageWorkspacePlaceAsync } from "./place-staging.ts";
 import type { PackageContext } from "./project-contexts.ts";
-import type { PendingEntry } from "./test-selection.ts";
+import type { PendingEntry, WorkspaceTestSelection } from "./test-selection.ts";
 
 const WORKSPACE_ROOT = path.resolve("/workspace");
 const CACHE_DIRECTORY = path.resolve("/cache");
@@ -25,6 +26,8 @@ const PLACE_BYTES = "RBXL-BYTES";
 // memfs keys its volume by the POSIX spelling with the drive letter stripped.
 const CACHE_KEY = "/cache";
 const SHADOW_KEY = "/workspace/.jest-roblox/workspace/@scope-package/coverage";
+/** Beside the place the run builds, named after it. */
+const CODE_BUNDLE_KEY = `${CACHE_KEY}/synthesized.code-bundle.json`;
 
 type ExecCallback = (cause: Error | null, stdout: string, stderr: string) => void;
 type RojoExec = (
@@ -71,6 +74,32 @@ function makeContext(project: ResolvedProjectConfig): PackageContext {
 	});
 }
 
+function makeLoaded(context: PackageContext): Array<LoadedPackage> {
+	return [
+		fromAny<LoadedPackage, unknown>({
+			descriptor: context.descriptor,
+			info: context.info,
+			pkgConfig: context.pkgConfig,
+		}),
+	];
+}
+
+function makeSelection(
+	context: PackageContext,
+	project: ResolvedProjectConfig,
+): WorkspaceTestSelection {
+	return fromAny({
+		filteredContexts: [context],
+		pending: [
+			fromAny<PendingEntry, unknown>({
+				pkg: PACKAGE_NAME,
+				project,
+				projectConfig: context.pkgConfig,
+			}),
+		],
+	});
+}
+
 function seed(): Harness {
 	const memory = createMemoryFileSystem({
 		[PACKAGE_PROJECT]: PROJECT_JSON,
@@ -103,29 +132,17 @@ describe(stageWorkspacePlaceAsync, () => {
 			cacheDirectory: CACHE_DIRECTORY,
 			childProcess,
 			fileSystem,
-			loaded: [
-				fromAny<LoadedPackage, unknown>({
-					descriptor: context.descriptor,
-					info: context.info,
-					pkgConfig: context.pkgConfig,
-				}),
-			],
+			loaded: makeLoaded(context),
 			prepareCoverage: prepareWorkspaceCoverage,
-			selection: fromAny({
-				filteredContexts: [context],
-				pending: [
-					fromAny<PendingEntry, unknown>({
-						pkg: PACKAGE_NAME,
-						project,
-						projectConfig: context.pkgConfig,
-					}),
-				],
-			}),
+			selection: makeSelection(context, project),
 			timing,
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
 		expect(result).toStrictEqual({
+			// No Code Roots were asked for, so the place holds the code and
+			// there is no bundle beside it.
+			codeBundle: undefined,
 			coverageByPackage: new Map([[PACKAGE_NAME, expect.objectContaining({})]]),
 			coverageMs: 35,
 			placeFile: path.join(CACHE_DIRECTORY, "synthesized.rbxl"),
@@ -145,5 +162,35 @@ describe(stageWorkspacePlaceAsync, () => {
 			`${SHADOW_KEY}/coverage-manifest.json`,
 			`${SHADOW_KEY}/build-manifest.json`,
 		]);
+	});
+
+	it("should write a bundle beside the place when given Code Roots", async () => {
+		expect.assertions(2);
+
+		const { childProcess, fileSystem, volume } = seed();
+		const project = makeProject();
+		const context = makeContext(project);
+
+		const result = await stageWorkspacePlaceAsync({
+			cacheDirectory: CACHE_DIRECTORY,
+			childProcess,
+			// Everything a coverage run mounts sits under the workspace root —
+			// the shadow the mounts were redirected onto included — so one root
+			// covers the lot and nothing stays behind.
+			codeRoots: [toPosixRoot(WORKSPACE_ROOT)],
+			fileSystem,
+			loaded: makeLoaded(context),
+			prepareCoverage: prepareWorkspaceCoverage,
+			selection: makeSelection(context, project),
+			timing: fakeTimingCollector(0),
+			workspaceRoot: WORKSPACE_ROOT,
+		});
+
+		expect(volume.toJSON()).toContainKey(CODE_BUNDLE_KEY);
+		// Carried back out, because only the run knows to hand it to a backend.
+		expect(result.codeBundle).toMatchObject({
+			path: path.join(CACHE_DIRECTORY, "synthesized.code-bundle.json"),
+			stayedMounts: [],
+		});
 	});
 });

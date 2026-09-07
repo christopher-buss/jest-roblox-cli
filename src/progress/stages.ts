@@ -11,7 +11,7 @@ import { nodeFileSystem } from "../utils/file-system.ts";
  * and the istanbul report out of the second, so a stage over the top of them
  * only says a second time what that output already says.
  */
-export type StageId = "boot" | "build" | "instrument" | "tests" | "upload";
+export type StageId = "boot" | "build" | "bundle" | "instrument" | "tests" | "upload";
 
 /**
  * Every stage, in the order a run that hits all of them passes through.
@@ -19,7 +19,14 @@ export type StageId = "boot" | "build" | "instrument" | "tests" | "upload";
  * first opened — so the list exists to size the label column from the longest
  * label, and to say where `LAST_STAGE` sits.
  */
-export const STAGE_IDS: ReadonlyArray<StageId> = ["instrument", "build", "upload", "boot", "tests"];
+export const STAGE_IDS: ReadonlyArray<StageId> = [
+	"instrument",
+	"build",
+	"upload",
+	"boot",
+	"bundle",
+	"tests",
+];
 
 /**
  * The stage a run's own output takes over from, and where the block therefore
@@ -35,6 +42,9 @@ export const LAST_STAGE: StageId = "tests";
 export const STAGE_LABELS: Record<StageId, string> = {
 	boot: "boot probe",
 	build: "build place",
+	// Short enough to leave the label column where it was: the width is the
+	// longest label, so a longer one re-indents every other stage's line.
+	bundle: "bundle",
 	instrument: "instrument",
 	tests: "run tests",
 	upload: "upload",
@@ -75,6 +85,23 @@ export function describePlaceFile(
 	}
 }
 
+/**
+ * What the `bundle` stage says it is about to send. Both numbers are already
+ * in hand when the split writes the bundle, so neither costs a stat the way a
+ * place file does — and the file count is what separates a bundle that grew
+ * from one that picked up a directory it should not have.
+ */
+export function describeCodeBundle({
+	byteLength,
+	fileCount,
+}: {
+	byteLength: number;
+	fileCount: number;
+}): string {
+	const files = fileCount === 1 ? "1 file" : `${fileCount.toString()} files`;
+	return `${formatBytes(byteLength)}, ${files}`;
+}
+
 /** What the `tests` stage says it is about to run, in every backend. */
 export function describeProjectCount(projectCount: number): string {
 	return projectCount === 1 ? "1 project" : `${projectCount.toString()} projects`;
@@ -91,8 +118,12 @@ const BYTES_PER_MEGABYTE = BYTES_PER_KILOBYTE * 1024;
  * The ladder stops at megabytes. Open Cloud caps a place well below a gigabyte,
  * so the next rung would be a unit no run can reach and a branch no test can
  * honestly reach either.
+ *
+ * Exported because a run says a size in two places — the stage line and the
+ * cap refusal the Code Bundle can earn — and two spellings of one number read
+ * as two different numbers.
  */
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
 	if (bytes < BYTES_PER_KILOBYTE) {
 		return `${bytes.toFixed(0)} B`;
 	}
