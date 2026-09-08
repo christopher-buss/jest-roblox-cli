@@ -149,12 +149,21 @@ export interface TokenBounds {
 }
 
 export interface CstWalker {
+	/** Called after the children of each node `onNode` did not claim. */
+	onExit?: (node: CstNode) => void;
 	/**
 	 * Called on each node before its children; return `true` to claim the
 	 * node and skip them.
 	 */
 	onNode?: (node: CstNode) => boolean | undefined;
 	onToken?: (token: Token) => void;
+	/** Whether to leave one of a node's slots closed. */
+	skipSlot?: (node: CstNode, slot: string) => boolean;
+}
+
+interface WalkHooks extends CstWalker {
+	/** Checked before every value; `true` ends the walk. */
+	isDone?: () => boolean;
 }
 
 /**
@@ -187,38 +196,34 @@ export function isCstNode(value: unknown): value is CstNode {
 
 /**
  * Pre-order walk over every value under a tree in lexical order. A node's
- * `location` is its span, not a slot, so it is the one key skipped.
+ * `location` is its span, not a slot, so it is the one key always skipped.
  *
  * @param value - The tree, subtree, or slot to walk.
  * @param walker - The hooks to call.
  */
 export function walkCst(value: unknown, walker: CstWalker): void {
-	if (isToken(value)) {
-		walker.onToken?.(value);
-		return;
-	}
+	walk(value, walker);
+}
 
-	if (Array.isArray(value)) {
-		for (const element of value) {
-			walkCst(element, walker);
-		}
+/**
+ * Whether any node under a tree satisfies a predicate. The walk stops at the
+ * first match.
+ *
+ * @param value - The tree, subtree, or slot to walk.
+ * @param predicate - Tested against every node, the root included.
+ * @returns Whether any node matched.
+ */
+export function someCstNode(value: unknown, predicate: (node: CstNode) => boolean): boolean {
+	let isFound = false;
+	walk(value, {
+		isDone: () => isFound,
+		onNode: (node) => {
+			isFound = predicate(node);
+			return isFound;
+		},
+	});
 
-		return;
-	}
-
-	if (!isRecord(value)) {
-		return;
-	}
-
-	if (isCstNode(value) && walker.onNode?.(value) === true) {
-		return;
-	}
-
-	for (const key in value) {
-		if (key !== "location") {
-			walkCst(value[key], walker);
-		}
-	}
+	return isFound;
 }
 
 /**
@@ -263,4 +268,46 @@ export function forEachCstNode(value: unknown, visit: (node: CstNode) => void): 
 			visit(node);
 		},
 	});
+}
+
+function isSkippedSlot(node: CstNode | undefined, slot: string, hooks: WalkHooks): boolean {
+	return node !== undefined && hooks.skipSlot?.(node, slot) === true;
+}
+
+function walk(value: unknown, hooks: WalkHooks): void {
+	if (hooks.isDone?.() === true) {
+		return;
+	}
+
+	if (isToken(value)) {
+		hooks.onToken?.(value);
+		return;
+	}
+
+	if (Array.isArray(value)) {
+		for (const element of value) {
+			walk(element, hooks);
+		}
+
+		return;
+	}
+
+	if (!isRecord(value)) {
+		return;
+	}
+
+	const node = isCstNode(value) ? value : undefined;
+	if (node !== undefined && hooks.onNode?.(node) === true) {
+		return;
+	}
+
+	for (const key in value) {
+		if (key !== "location" && !isSkippedSlot(node, key, hooks)) {
+			walk(value[key], hooks);
+		}
+	}
+
+	if (node !== undefined) {
+		hooks.onExit?.(node);
+	}
 }
