@@ -95,9 +95,6 @@ export {
 	indexSourceBytes,
 } from "./source-bytes.ts";
 
-// Span identity
-export { bindingKey } from "./span-identity.ts";
-
 // String literals
 export { decodeLuauString } from "./string-literal.ts";
 
