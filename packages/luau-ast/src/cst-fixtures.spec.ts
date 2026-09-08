@@ -4,14 +4,16 @@ import { describe, expect, it } from "vitest";
 
 import { createCstEdits } from "./cst-edit.ts";
 import { printCst, printCstMapped } from "./cst-print.ts";
+import { CST_NODE_KINDS, forEachCstNode } from "./cst.ts";
 import type { CstRoot } from "./cst.ts";
 import { loadLuauParser } from "./parser.ts";
 import { indexSourceBytes } from "./source-bytes.ts";
 
 // Handwritten Luau covering comments, tabs, trailing whitespace, CRLF, every
 // number and string spelling, parentheses, semicolons, interpolated strings,
-// and type annotations. Byte identity on a zero-edit pass is the whole claim;
-// a fixture that breaks it names the construct the serializer mishandles.
+// type annotations, attributes, declarations, and type functions. Byte
+// identity on a zero-edit pass is the whole claim; a fixture that breaks it
+// names the construct the serializer mishandles.
 const FIXTURE_DIRECTORY = path.join(import.meta.dirname, "..", "test", "fixtures", "cst");
 
 const fixtures = fs
@@ -25,6 +27,11 @@ const fixtures = fs
 		};
 	});
 
+// Luau 0.731's own AST JSON encoder emits malformed JSON for explicit type
+// instantiation, so `parse_to_json` cannot re-parse that fixture; a test
+// below fails when upstream fixes it, so this list retires with the bug.
+const UPSTREAM_JSON_BROKEN = new Set(["instantiation.luau"]);
+
 function parseFixture(fileName: string, source: string): CstRoot {
 	const result = loadLuauParser().parseCst({ fileName, source });
 	if (!result.ok) {
@@ -32,6 +39,19 @@ function parseFixture(fileName: string, source: string): CstRoot {
 	}
 
 	return result.root;
+}
+
+/** The upstream bug surfaces as malformed JSON, so only that reads as false. */
+function parsesAgain(source: string): boolean {
+	try {
+		return loadLuauParser().parse(source).ok;
+	} catch (err) {
+		if (err instanceof SyntaxError) {
+			return false;
+		}
+
+		throw err;
+	}
 }
 
 describe("fidelity fixtures", () => {
@@ -43,6 +63,19 @@ describe("fidelity fixtures", () => {
 		expect(crlf!.source).toContain("\r\n");
 	});
 
+	it("should exercise every node kind the serializer emits", () => {
+		expect.assertions(1);
+
+		const seen = new Set<string>();
+		for (const { fileName, source } of fixtures) {
+			forEachCstNode(parseFixture(fileName, source), (node) => {
+				seen.add(node.type);
+			});
+		}
+
+		expect(seen).toStrictEqual(new Set(CST_NODE_KINDS));
+	});
+
 	it.for(fixtures)("should print $fileName byte-identical", ({ fileName, source }) => {
 		expect.assertions(1);
 
@@ -51,12 +84,23 @@ describe("fidelity fixtures", () => {
 		expect(printed).toBe(source);
 	});
 
-	it.for(fixtures)("should re-parse printed $fileName", ({ fileName, source }) => {
+	it.for(fixtures.filter((fixture) => !UPSTREAM_JSON_BROKEN.has(fixture.fileName)))(
+		"should re-parse printed $fileName",
+		({ fileName, source }) => {
+			expect.assertions(1);
+
+			const printed = printCst(parseFixture(fileName, source));
+
+			expect(parsesAgain(printed)).toBe(true);
+		},
+	);
+
+	it.for([...UPSTREAM_JSON_BROKEN])("should still fail to encode %s upstream", (fileName) => {
 		expect.assertions(1);
 
-		const printed = printCst(parseFixture(fileName, source));
+		const fixture = fixtures.find((entry) => entry.fileName === fileName);
 
-		expect(loadLuauParser().parse(printed).ok).toBe(true);
+		expect(parsesAgain(fixture!.source)).toBe(false);
 	});
 });
 

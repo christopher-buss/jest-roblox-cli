@@ -3,35 +3,52 @@
  * `cst-materialize.ts` has sliced token text and trivia from the source.
  * Every node's slots sit in lexical order, so a walk over a node's values
  * visits its tokens in source order; the printer and the gap detector both
- * rely on that.
- *
- * Type annotations, generics, and attributes are opaque `CstRaw` slices for
- * now.
+ * rely on that. Every node kind at the pinned Luau version is modelled; a
+ * slot is never named `type`, which is the kind.
  */
 
 import type {
 	CstElseIfExpr,
 	CstExpr,
 	CstFunctionBody,
-	CstGenerics,
 	CstLocalDeclaration,
 	CstTableItem,
 	CstTypeArguments,
 } from "./cst-expressions.ts";
-import type { CstBlock, CstElseIf, CstRoot, CstStat } from "./cst-statements.ts";
+import type {
+	CstBlock,
+	CstElseIf,
+	CstExternTypeMethod,
+	CstRoot,
+	CstStat,
+} from "./cst-statements.ts";
 import { isToken } from "./cst-token.ts";
 import type { Token } from "./cst-token.ts";
+import type {
+	CstAttribute,
+	CstAttributeList,
+	CstFunctionTypeArgument,
+	CstGenerics,
+	CstGenericType,
+	CstGenericTypePack,
+	CstType,
+	CstTypePack,
+	CstTypeTableItem,
+} from "./cst-types.ts";
 
 export type * from "./cst-expressions.ts";
 export type * from "./cst-statements.ts";
 export type { Token, Trivia } from "./cst-token.ts";
 export { isToken } from "./cst-token.ts";
+export type * from "./cst-types.ts";
 
 /**
  * Every node kind the serializer emits; `cst-kinds.spec.ts` keeps it in step.
  */
 export const CST_NODE_KINDS = [
 	"Assign",
+	"Attribute",
+	"AttributeList",
 	"Binary",
 	"Block",
 	"Bool",
@@ -39,16 +56,23 @@ export const CST_NODE_KINDS = [
 	"Call",
 	"CompoundAssign",
 	"Continue",
+	"DeclareExternType",
+	"DeclareFunction",
+	"DeclareGlobal",
 	"Do",
 	"ElseIf",
 	"ElseIfExpr",
 	"ExprStat",
+	"ExternTypeMethod",
 	"For",
 	"ForIn",
 	"FunctionBody",
 	"FunctionExpr",
 	"FunctionStat",
+	"FunctionTypeArgument",
 	"Generics",
+	"GenericType",
+	"GenericTypePack",
 	"Global",
 	"Group",
 	"If",
@@ -63,7 +87,6 @@ export const CST_NODE_KINDS = [
 	"LocalRef",
 	"Nil",
 	"Number",
-	"Raw",
 	"Repeat",
 	"Return",
 	"Root",
@@ -73,6 +96,21 @@ export const CST_NODE_KINDS = [
 	"TypeAlias",
 	"TypeArguments",
 	"TypeAssertion",
+	"TypeFunction",
+	"TypeFunctionStat",
+	"TypeGroup",
+	"TypeIntersection",
+	"TypeOptional",
+	"TypePackExplicit",
+	"TypePackGeneric",
+	"TypePackVariadic",
+	"TypeReference",
+	"TypeSingletonBool",
+	"TypeSingletonString",
+	"TypeTable",
+	"TypeTableItem",
+	"TypeTypeof",
+	"TypeUnion",
 	"Unary",
 	"Varargs",
 	"While",
@@ -81,17 +119,26 @@ export const CST_NODE_KINDS = [
 export type CstNodeKind = (typeof CST_NODE_KINDS)[number];
 
 export type CstNode =
+	| CstAttribute
+	| CstAttributeList
 	| CstBlock
 	| CstElseIf
 	| CstElseIfExpr
 	| CstExpr
+	| CstExternTypeMethod
 	| CstFunctionBody
+	| CstFunctionTypeArgument
 	| CstGenerics
+	| CstGenericType
+	| CstGenericTypePack
 	| CstLocalDeclaration
 	| CstRoot
 	| CstStat
 	| CstTableItem
-	| CstTypeArguments;
+	| CstType
+	| CstTypeArguments
+	| CstTypePack
+	| CstTypeTableItem;
 
 const kindSet: ReadonlySet<string> = new Set(CST_NODE_KINDS);
 

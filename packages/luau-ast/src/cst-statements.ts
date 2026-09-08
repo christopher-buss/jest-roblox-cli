@@ -1,20 +1,25 @@
 /**
  * Statement nodes of the concrete syntax tree. Every statement may end in a
- * `semicolon` token; a statement the serializer does not model yet is a
- * {@link CstRaw}.
+ * `semicolon` token.
  */
 
 import type {
 	CstExpr,
 	CstFunctionBody,
-	CstGenerics,
 	CstLocalDeclaration,
 	CstNodeBase,
-	CstRaw,
+	CstSignature,
 	CstTokenNode,
 	Punctuated,
 } from "./cst-expressions.ts";
 import type { Token } from "./cst-token.ts";
+import type {
+	CstAttributes,
+	CstFunctionTypeArgument,
+	CstGenerics,
+	CstType,
+	CstTypeTableItem,
+} from "./cst-types.ts";
 
 export interface CstStatBase<Kind extends string> extends CstNodeBase<Kind> {
 	semicolon?: Token;
@@ -123,7 +128,7 @@ export interface CstCompoundAssign extends CstStatBase<"CompoundAssign"> {
 
 export interface CstFunctionStat extends CstStatBase<"FunctionStat"> {
 	name: CstExpr;
-	attributes?: Array<CstRaw>;
+	attributes?: CstAttributes;
 	body: CstFunctionBody;
 	keyword: Token;
 }
@@ -133,7 +138,7 @@ export interface CstFunctionStat extends CstStatBase<"FunctionStat"> {
  */
 export interface CstLocalFunction extends CstStatBase<"LocalFunction"> {
 	name: CstLocalDeclaration;
-	attributes?: Array<CstRaw>;
+	attributes?: CstAttributes;
 	body: CstFunctionBody;
 	export?: Token;
 	keyword: Token;
@@ -146,7 +151,54 @@ export interface CstTypeAlias extends CstStatBase<"TypeAlias"> {
 	export?: Token;
 	generics?: CstGenerics;
 	keyword: Token;
-	value: CstRaw;
+	value: CstType;
+}
+
+/** `type function Name(...) ... end` */
+export interface CstTypeFunctionStat extends CstStatBase<"TypeFunctionStat"> {
+	name: Token;
+	body: CstFunctionBody;
+	export?: Token;
+	function: Token;
+	keyword: Token;
+}
+
+/** `declare name: T` */
+export interface CstDeclareGlobal extends CstStatBase<"DeclareGlobal"> {
+	name: Token;
+	annotation: CstType;
+	colon: Token;
+	declare: Token;
+}
+
+export interface CstDeclareFunction
+	extends CstSignature<CstFunctionTypeArgument>, CstStatBase<"DeclareFunction"> {
+	name: Token;
+	attributes?: CstAttributes;
+	declare: Token;
+	function: Token;
+	generics?: CstGenerics;
+}
+
+/** A method's `self` is its first parameter. */
+export interface CstExternTypeMethod
+	extends CstNodeBase<"ExternTypeMethod">, CstSignature<CstFunctionTypeArgument> {
+	name: Token;
+	attributes?: CstAttributes;
+	function: Token;
+}
+
+/** `declare extern type Name [extends Super] with ... end` */
+export interface CstDeclareExternType extends CstStatBase<"DeclareExternType"> {
+	name: Token;
+	declare: Token;
+	end: Token;
+	extends?: Token;
+	extern: Token;
+	keyword: Token;
+	members: Array<CstExternTypeMethod | CstTypeTableItem>;
+	super?: Token;
+	with: Token;
 }
 
 export type CstStat =
@@ -154,6 +206,9 @@ export type CstStat =
 	| CstBreak
 	| CstCompoundAssign
 	| CstContinue
+	| CstDeclareExternType
+	| CstDeclareFunction
+	| CstDeclareGlobal
 	| CstDo
 	| CstExprStat
 	| CstFor
@@ -162,10 +217,10 @@ export type CstStat =
 	| CstIf
 	| CstLocal
 	| CstLocalFunction
-	| CstRaw
 	| CstRepeat
 	| CstReturn
 	| CstTypeAlias
+	| CstTypeFunctionStat
 	| CstWhile;
 
 /**

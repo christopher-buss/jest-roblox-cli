@@ -38,17 +38,6 @@ describe("parseCst", () => {
 		expect(printCst(parseCst(source))).toBe(source);
 	});
 
-	it("should print explicit type instantiation byte-identical", () => {
-		expect.assertions(1);
-
-		// Kept out of the fixture set: Luau 0.731's own JSON encoder emits
-		// malformed JSON for this construct, so it cannot re-parse via
-		// parse_to_json.
-		const source = "local a = f<<number, string>>(1)\nlocal b = f<< number >>\n";
-
-		expect(printCst(parseCst(source))).toBe(source);
-	});
-
 	it("should report parse errors as an error result", () => {
 		expect.assertions(1);
 
@@ -91,5 +80,15 @@ describe("binding identity", () => {
 
 		expect([parameterRef, outerRef]).toStrictEqual([parameter, outer]);
 		expect(parameter).not.toBe(outer);
+	});
+
+	it("should bind a local referenced inside a typeof annotation to its declaration", () => {
+		expect.assertions(1);
+
+		const root = parseCst("local v = 1\nlocal w: typeof(v) = v\nreturn w\n");
+
+		const [declaration, ...references] = bindingsNamed(root, "v");
+
+		expect(references).toStrictEqual([declaration!, declaration!]);
 	});
 });

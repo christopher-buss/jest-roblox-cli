@@ -7,6 +7,7 @@
 import type { LuauSpan } from "./ast.ts";
 import type { CstBlock } from "./cst-statements.ts";
 import type { Token } from "./cst-token.ts";
+import type { CstAttributes, CstGenerics, CstType, CstTypePack } from "./cst-types.ts";
 
 /** One entry of a separated list; the separator is absent on the last one. */
 export interface Punctuated<T> {
@@ -25,36 +26,21 @@ export interface CstTokenNode<Kind extends string> extends CstNodeBase<Kind> {
 }
 
 /**
- * A construct the serializer does not model yet: one token over its span.
- * `kind` names the Luau node behind the slice, for diagnostics only.
- */
-export interface CstRaw extends CstNodeBase<"Raw"> {
-	kind: string;
-	token: Token;
-}
-
-/**
  * A binding declaration. `binding` is shared with every {@link CstLocalRef}
  * of the same local and unique to the declaration site.
  */
 export interface CstLocalDeclaration extends CstNodeBase<"LocalDecl"> {
 	name: Token;
-	annotation?: CstRaw;
+	annotation?: CstType;
 	binding: number;
 	colon?: Token;
-}
-
-export interface CstGenerics extends CstNodeBase<"Generics"> {
-	close: Token;
-	items: Array<Punctuated<CstRaw>>;
-	open: Token;
 }
 
 /** `<<A, B>>` on a call or a bare instantiation. */
 export interface CstTypeArguments extends CstNodeBase<"TypeArguments"> {
 	close1: Token;
 	close2: Token;
-	items: Array<Punctuated<CstRaw>>;
+	items: Array<Punctuated<CstType | CstTypePack>>;
 	open1: Token;
 	open2: Token;
 }
@@ -103,23 +89,28 @@ export interface CstIndexExpr extends CstNodeBase<"IndexExpr"> {
 	open: Token;
 }
 
-/** Everything after `function` (and, for statements, the name). */
-export interface CstFunctionBody extends CstNodeBase<"FunctionBody"> {
-	block: CstBlock;
+/** `(a, ...: T): R`; a function body, a `declare function`, or a method. */
+export interface CstSignature<Parameter> {
 	close: Token;
-	end: Token;
-	generics?: CstGenerics;
 	open: Token;
-	parameters: Array<Punctuated<CstLocalDeclaration>>;
+	parameters: Array<Punctuated<Parameter>>;
 	returnColon?: Token;
-	returnType?: CstRaw;
+	returnType?: CstTypePack;
 	vararg?: Token;
-	varargAnnotation?: CstRaw;
+	varargAnnotation?: CstTypePack;
 	varargColon?: Token;
 }
 
+/** Everything after `function` (and, for statements, the name). */
+export interface CstFunctionBody
+	extends CstNodeBase<"FunctionBody">, CstSignature<CstLocalDeclaration> {
+	block: CstBlock;
+	end: Token;
+	generics?: CstGenerics;
+}
+
 export interface CstFunctionExpr extends CstNodeBase<"FunctionExpr"> {
-	attributes?: Array<CstRaw>;
+	attributes?: CstAttributes;
 	body: CstFunctionBody;
 	keyword: Token;
 }
@@ -151,7 +142,7 @@ export interface CstBinary extends CstNodeBase<"Binary"> {
 }
 
 export interface CstTypeAssertion extends CstNodeBase<"TypeAssertion"> {
-	annotation: CstRaw;
+	annotation: CstType;
 	expr: CstExpr;
 	operator: Token;
 }
