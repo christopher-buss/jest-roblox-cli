@@ -44,11 +44,30 @@ export type {
 	UnaryOp,
 } from "./ast.ts";
 
+// Edit surface: replacements the printer consults, and binding renames
+export type {
+	CstEdits,
+	RemoveOptions,
+	RenameOptions,
+	ReplaceOptions,
+	Replacement,
+	TextReplacement,
+} from "./cst-edit.ts";
+export { createCstEdits, renameBinding } from "./cst-edit.ts";
 export type { CstFailure, CstParseResult, CstSuccess } from "./cst-materialize.ts";
-export { printCst } from "./cst-print.ts";
+export type { CstPosition, CstSourcemapSegment, PrintedCst, PrintOptions } from "./cst-print.ts";
+export { printCst, printCstMapped } from "./cst-print.ts";
 // Concrete syntax tree (lossless; see ./cst.ts)
 export type * from "./cst.ts";
-export { CST_NODE_KINDS, forEachCstNode, forEachToken, isCstNode, isToken } from "./cst.ts";
+export {
+	CST_NODE_KINDS,
+	forEachCstNode,
+	forEachToken,
+	isCstNode,
+	isToken,
+	tokenBounds,
+	walkCst,
+} from "./cst.ts";
 
 // Lute spawner (for running Luau scripts; parsing is in-process via ./parser.ts)
 export type { LuteSpawnOptions } from "./lute-spawner.ts";

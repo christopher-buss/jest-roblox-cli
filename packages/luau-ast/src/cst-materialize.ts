@@ -168,13 +168,13 @@ function splitTrivia(items: Array<Trivia>, previous: Token | undefined, token: T
 	token.leading = items.slice(newline + 1);
 }
 
-function describeToken(token: Token | undefined): string {
-	if (token === undefined) {
+function describeToken(placed: PlacedToken | undefined, bytes: SourceBytes): string {
+	if (placed === undefined) {
 		return "the start of the file";
 	}
 
-	const { origin } = token;
-	return `token ${JSON.stringify(token.text)} at ${String(origin.beginLine)}:${String(origin.beginColumn)}`;
+	const origin = bytes.rangeToSpan(placed.range);
+	return `token ${JSON.stringify(placed.token.text)} at ${String(origin.beginLine)}:${String(origin.beginColumn)}`;
 }
 
 /**
@@ -184,23 +184,24 @@ function describeToken(token: Token | undefined): string {
  * @returns The first defect found, if any.
  */
 function attachTrivia(placed: Array<PlacedToken>, bytes: SourceBytes): string | undefined {
-	let previous: Token | undefined;
+	let previous: PlacedToken | undefined;
 	let previousEnd = 0;
-	for (const { range, token } of placed) {
+	for (const current of placed) {
+		const { range, token } = current;
 		if (range.start < previousEnd) {
-			return `${describeToken(token)} overlaps ${describeToken(previous)}`;
+			return `${describeToken(current, bytes)} overlaps ${describeToken(previous, bytes)}`;
 		}
 
 		if (range.start > previousEnd) {
 			const scanned = scanTrivia(bytes.slice(previousEnd, range.start));
 			if (scanned.offending !== undefined) {
-				return `bytes ${JSON.stringify(scanned.offending)} between ${describeToken(previous)} and ${describeToken(token)} are not whitespace or a comment`;
+				return `bytes ${JSON.stringify(scanned.offending)} between ${describeToken(previous, bytes)} and ${describeToken(current, bytes)} are not whitespace or a comment`;
 			}
 
-			splitTrivia(scanned.items, previous, token);
+			splitTrivia(scanned.items, previous?.token, token);
 		}
 
-		previous = token;
+		previous = current;
 		previousEnd = range.end;
 	}
 

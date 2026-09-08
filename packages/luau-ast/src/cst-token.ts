@@ -9,8 +9,11 @@ export interface Trivia {
 export interface Token {
 	/** Trivia between the previous token's trailing trivia and this token. */
 	leading: Array<Trivia>;
-	/** Where the token sat: 1-based, exclusive end, UTF-8 byte columns. */
-	origin: LuauSpan;
+	/**
+	 * Where the token sat: 1-based, exclusive end, UTF-8 byte columns. Absent
+	 * on a token that came from node construction rather than the source.
+	 */
+	origin?: LuauSpan;
 	/** Mutable; the printer emits whatever is here. */
 	text: string;
 	/** Trivia after the token up to and including the first newline. */
@@ -41,8 +44,6 @@ export function isToken(value: unknown): value is Token {
 		value !== null &&
 		"text" in value &&
 		typeof value.text === "string" &&
-		"origin" in value &&
-		typeof value.origin === "object" &&
 		"leading" in value &&
 		Array.isArray(value.leading) &&
 		"trailing" in value &&

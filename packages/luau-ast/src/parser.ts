@@ -1,8 +1,10 @@
 import assert from "node:assert";
 
 import type { AstStatBlock, LuauSpan } from "./ast.ts";
+import { constructExpression, constructStatements } from "./cst-construct.ts";
 import { materializeCst } from "./cst-materialize.ts";
 import type { CstParseResult } from "./cst-materialize.ts";
+import type { CstBlock, CstExpr } from "./cst.ts";
 import { createWasmRuntime, DEFECT_MARKER, PARSE_ERROR_MARKER } from "./wasm-runtime.ts";
 
 /** A comment's span; the encoder gives no text, only where it sits. */
@@ -33,6 +35,14 @@ export interface CstParseOptions {
 
 /** In-process Luau parser. Load once via {@link loadLuauParser}. */
 export interface LuauParser {
+	/**
+	 * Parse one expression into a subtree ready to splice over a node. Its
+	 * tokens carry no origin. Throws: a snippet is authored by the caller,
+	 * so a snippet that does not parse is a defect there.
+	 */
+	constructExpression: (snippet: string) => CstExpr;
+	/** Parse a statement list into a block ready to splice over a statement. */
+	constructStatements: (snippet: string) => CstBlock;
 	parse: (source: string) => ParseResult;
 	/**
 	 * Parse into the lossless concrete syntax tree: tokens carry their text
@@ -54,25 +64,30 @@ let cachedParser: LuauParser | undefined;
 export function loadLuauParser(): LuauParser {
 	if (cachedParser === undefined) {
 		const runtime = createWasmRuntime();
+
+		function parseCst({ fileName, source }: CstParseOptions): CstParseResult {
+			const raw = runtime.parseToCstJson(source);
+			if (raw.startsWith(PARSE_ERROR_MARKER)) {
+				return { errors: decodeErrors(raw), ok: false };
+			}
+
+			// A defect names the file once, here, whether the serializer
+			// or the gap detector found it.
+			const result = raw.startsWith(DEFECT_MARKER)
+				? { errors: [raw.slice(DEFECT_MARKER.length)], ok: false as const }
+				: materializeCst({ json: raw, source });
+			return result.ok
+				? result
+				: { errors: result.errors.map((error) => `${fileName}: ${error}`), ok: false };
+		}
+
 		cachedParser = {
+			constructExpression: (snippet) => constructExpression(parseCst, snippet),
+			constructStatements: (snippet) => constructStatements(parseCst, snippet),
 			parse(source) {
 				return decodeResult(runtime.parseToJson(source));
 			},
-			parseCst({ fileName, source }) {
-				const raw = runtime.parseToCstJson(source);
-				if (raw.startsWith(PARSE_ERROR_MARKER)) {
-					return { errors: decodeErrors(raw), ok: false };
-				}
-
-				// A defect names the file once, here, whether the serializer
-				// or the gap detector found it.
-				const result = raw.startsWith(DEFECT_MARKER)
-					? { errors: [raw.slice(DEFECT_MARKER.length)], ok: false as const }
-					: materializeCst({ json: raw, source });
-				return result.ok
-					? result
-					: { errors: result.errors.map((error) => `${fileName}: ${error}`), ok: false };
-			},
+			parseCst,
 		};
 	}
 

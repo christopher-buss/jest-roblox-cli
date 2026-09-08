@@ -2,9 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { printCst } from "./cst-print.ts";
+import { createCstEdits } from "./cst-edit.ts";
+import { printCst, printCstMapped } from "./cst-print.ts";
 import type { CstRoot } from "./cst.ts";
 import { loadLuauParser } from "./parser.ts";
+import { indexSourceBytes } from "./source-bytes.ts";
 
 // Handwritten Luau covering comments, tabs, trailing whitespace, CRLF, every
 // number and string spelling, parentheses, semicolons, interpolated strings,
@@ -56,4 +58,20 @@ describe("fidelity fixtures", () => {
 
 		expect(loadLuauParser().parse(printed).ok).toBe(true);
 	});
+});
+
+describe("fidelity fixtures through the edit printer", () => {
+	it.for(fixtures)(
+		"should print $fileName byte-identical with an empty edit ledger and a map",
+		({ fileName, source }) => {
+			expect.assertions(1);
+
+			const printed = printCstMapped(parseFixture(fileName, source), {
+				edits: createCstEdits(),
+				source: indexSourceBytes(source),
+			});
+
+			expect(printed.code).toBe(source);
+		},
+	);
 });

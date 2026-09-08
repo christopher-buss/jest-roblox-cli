@@ -95,6 +95,21 @@ export type CstNode =
 
 const kindSet: ReadonlySet<string> = new Set(CST_NODE_KINDS);
 
+/** The first and last token under a node. */
+export interface TokenBounds {
+	first: Token;
+	last: Token;
+}
+
+export interface CstWalker {
+	/**
+	 * Called on each node before its children; return `true` to claim the
+	 * node and skip them.
+	 */
+	onNode?: (node: CstNode) => boolean | undefined;
+	onToken?: (token: Token) => void;
+}
+
 /**
  * Whether a value is a plain object whose slots can be walked: a node, a
  * punctuated entry, or a span.
@@ -124,42 +139,21 @@ export function isCstNode(value: unknown): value is CstNode {
 }
 
 /**
- * Visit every token under a tree, in source order.
- *
- * @param value - The tree, subtree, or slot to walk.
- * @param visit - Called on each token.
- */
-export function forEachToken(value: unknown, visit: (token: Token) => void): void {
-	walk(value, visit, ignore);
-}
-
-/**
- * Visit every node under a tree, each before its children.
- *
- * @param value - The tree, subtree, or slot to walk.
- * @param visit - Called on each node.
- */
-export function forEachCstNode(value: unknown, visit: (node: CstNode) => void): void {
-	walk(value, ignore, visit);
-}
-
-/**
  * Pre-order walk over every value under a tree in lexical order. A node's
  * `location` is its span, not a slot, so it is the one key skipped.
+ *
+ * @param value - The tree, subtree, or slot to walk.
+ * @param walker - The hooks to call.
  */
-function walk(
-	value: unknown,
-	onToken: (token: Token) => void,
-	onNode: (node: CstNode) => void,
-): void {
+export function walkCst(value: unknown, walker: CstWalker): void {
 	if (isToken(value)) {
-		onToken(value);
+		walker.onToken?.(value);
 		return;
 	}
 
 	if (Array.isArray(value)) {
 		for (const element of value) {
-			walk(element, onToken, onNode);
+			walkCst(element, walker);
 		}
 
 		return;
@@ -169,17 +163,57 @@ function walk(
 		return;
 	}
 
-	if (isCstNode(value)) {
-		onNode(value);
+	if (isCstNode(value) && walker.onNode?.(value) === true) {
+		return;
 	}
 
 	for (const key in value) {
 		if (key !== "location") {
-			walk(value[key], onToken, onNode);
+			walkCst(value[key], walker);
 		}
 	}
 }
 
-function ignore(): void {
-	// A walk that only wants the other kind of value.
+/**
+ * Visit every token under a tree, in source order.
+ *
+ * @param value - The tree, subtree, or slot to walk.
+ * @param visit - Called on each token.
+ */
+export function forEachToken(value: unknown, visit: (token: Token) => void): void {
+	walkCst(value, { onToken: visit });
+}
+
+/**
+ * The first and last token under a node, or `undefined` for a node with no
+ * tokens, such as an empty block.
+ *
+ * @param node - The node.
+ * @returns Its outermost tokens.
+ */
+export function tokenBounds(node: CstNode): TokenBounds | undefined {
+	let bounds: TokenBounds | undefined;
+	forEachToken(node, (token) => {
+		if (bounds === undefined) {
+			bounds = { first: token, last: token };
+		} else {
+			bounds.last = token;
+		}
+	});
+
+	return bounds;
+}
+
+/**
+ * Visit every node under a tree, each before its children.
+ *
+ * @param value - The tree, subtree, or slot to walk.
+ * @param visit - Called on each node.
+ */
+export function forEachCstNode(value: unknown, visit: (node: CstNode) => void): void {
+	walkCst(value, {
+		onNode: (node) => {
+			visit(node);
+		},
+	});
 }
