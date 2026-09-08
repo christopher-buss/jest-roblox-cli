@@ -4,10 +4,13 @@ import { loadLuauParser } from "./parser.ts";
 
 // Fakes the wasm runtime so the wrapper can return shapes the real parser
 // never produces; the decode layer must fail loudly rather than mis-brand.
-vi.mock(import("./wasm-runtime.ts"), () => {
+vi.mock(import("./wasm-runtime.ts"), async (importOriginal) => {
 	return {
+		...(await importOriginal()),
 		createWasmRuntime: () => {
 			return {
+				injectCstFault: () => {},
+				parseToCstJson: (source: string) => source,
 				// Echo the source back so each test drives the decoder with a
 				// hand-crafted payload.
 				parseToJson: (source: string) => source,

@@ -112,7 +112,7 @@ function compile(luauSource: string): void {
 			// Parse and JSON-encode recursion on deeply nested sources
 			// outgrows the 64 KB default.
 			"-sSTACK_SIZE=1048576",
-			"-sEXPORTED_FUNCTIONS=_parse_to_json,_free_result,_malloc,_free",
+			"-sEXPORTED_FUNCTIONS=_parse_to_json,_parse_to_cst_json,_inject_cst_fault,_free_result,_malloc,_free",
 			"-o",
 			WASM_ARTIFACT,
 		],

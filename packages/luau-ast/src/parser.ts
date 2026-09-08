@@ -1,7 +1,9 @@
 import assert from "node:assert";
 
 import type { AstStatBlock, LuauSpan } from "./ast.ts";
-import { createWasmRuntime } from "./wasm-runtime.ts";
+import { materializeCst } from "./cst-materialize.ts";
+import type { CstParseResult } from "./cst-materialize.ts";
+import { createWasmRuntime, DEFECT_MARKER, PARSE_ERROR_MARKER } from "./wasm-runtime.ts";
 
 /** A comment's span; the encoder gives no text, only where it sits. */
 export interface CommentSpan {
@@ -23,9 +25,21 @@ export interface ParseSuccess {
 
 export type ParseResult = ParseFailure | ParseSuccess;
 
+export interface CstParseOptions {
+	/** Names the file in a defect message. */
+	fileName: string;
+	source: string;
+}
+
 /** In-process Luau parser. Load once via {@link loadLuauParser}. */
 export interface LuauParser {
 	parse: (source: string) => ParseResult;
+	/**
+	 * Parse into the lossless concrete syntax tree: tokens carry their text
+	 * and trivia, and printing an unedited tree reproduces the source byte
+	 * for byte. A serializer defect comes back as an error, not a throw.
+	 */
+	parseCst: (options: CstParseOptions) => CstParseResult;
 }
 
 let cachedParser: LuauParser | undefined;
@@ -44,13 +58,33 @@ export function loadLuauParser(): LuauParser {
 			parse(source) {
 				return decodeResult(runtime.parseToJson(source));
 			},
+			parseCst({ fileName, source }) {
+				const raw = runtime.parseToCstJson(source);
+				if (raw.startsWith(PARSE_ERROR_MARKER)) {
+					return { errors: decodeErrors(raw), ok: false };
+				}
+
+				// A defect names the file once, here, whether the serializer
+				// or the gap detector found it.
+				const result = raw.startsWith(DEFECT_MARKER)
+					? { errors: [raw.slice(DEFECT_MARKER.length)], ok: false as const }
+					: materializeCst({ json: raw, source });
+				return result.ok
+					? result
+					: { errors: result.errors.map((error) => `${fileName}: ${error}`), ok: false };
+			},
 		};
 	}
 
 	return cachedParser;
 }
 
-const ERROR_MARKER = "";
+function decodeErrors(raw: string): Array<string> {
+	return raw
+		.slice(PARSE_ERROR_MARKER.length)
+		.split("\n")
+		.filter((line) => line.length > 0);
+}
 
 /**
  * The encoder prints non-finite doubles as bare `Infinity` / `-Infinity`,
@@ -115,12 +149,8 @@ function isRawParseOutput(
 }
 
 function decodeResult(raw: string): ParseResult {
-	if (raw.startsWith(ERROR_MARKER)) {
-		const errors = raw
-			.slice(ERROR_MARKER.length)
-			.split("\n")
-			.filter((line) => line.length > 0);
-		return { errors, ok: false };
+	if (raw.startsWith(PARSE_ERROR_MARKER)) {
+		return { errors: decodeErrors(raw), ok: false };
 	}
 
 	const parsed = JSON.parse(sanitizeNonFinite(raw));

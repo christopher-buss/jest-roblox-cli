@@ -1,0 +1,3 @@
+# Fidelity fixtures are byte-exact inputs: keep CRLF, tabs, and trailing
+# whitespace as committed.
+*.luau -text

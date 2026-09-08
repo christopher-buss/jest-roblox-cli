@@ -44,12 +44,25 @@ export type {
 	UnaryOp,
 } from "./ast.ts";
 
+export type { CstFailure, CstParseResult, CstSuccess } from "./cst-materialize.ts";
+export { printCst } from "./cst-print.ts";
+// Concrete syntax tree (lossless; see ./cst.ts)
+export type * from "./cst.ts";
+export { CST_NODE_KINDS, forEachCstNode, forEachToken, isCstNode, isToken } from "./cst.ts";
+
 // Lute spawner (for running Luau scripts; parsing is in-process via ./parser.ts)
 export type { LuteSpawnOptions } from "./lute-spawner.ts";
 export { spawnLute, writeTemporaryLuauScript } from "./lute-spawner.ts";
 
 // Parser
-export type { CommentSpan, LuauParser, ParseFailure, ParseResult, ParseSuccess } from "./parser.ts";
+export type {
+	CommentSpan,
+	CstParseOptions,
+	LuauParser,
+	ParseFailure,
+	ParseResult,
+	ParseSuccess,
+} from "./parser.ts";
 export { loadLuauParser } from "./parser.ts";
 
 // Byte offsets and span math

@@ -86,6 +86,7 @@ export const BYTE_TAB = 0x09;
 export function indexSourceBytes(source: string): SourceBytes {
 	const buffer = Buffer.from(source, "utf-8");
 	const lineStarts = scanLineStarts(buffer);
+	const slice = createSlicer(buffer, source);
 
 	function lineStartOffset(line: number): number {
 		const start = lineStarts[line - 1];
@@ -103,8 +104,11 @@ export function indexSourceBytes(source: string): SourceBytes {
 		lineEndOffset,
 		lineStartOffset,
 		rangeToSpan: (range) => byteRangeToSpan(range, lineStarts),
-		slice: (start, end) => decode(buffer, { end, start }),
-		sliceSpan: (span) => decode(buffer, spanToByteRange(span, lineStartOffset)),
+		slice,
+		sliceSpan: (span) => {
+			const range = spanToByteRange(span, lineStartOffset);
+			return slice(range.start, range.end);
+		},
 		spanToRange: (span) => spanToByteRange(span, lineStartOffset),
 		text: source,
 		toUtf16Column: createColumnConverter((line) => {
@@ -161,6 +165,22 @@ function createColumnConverter(
  */
 function decode(buffer: Buffer, range: ByteRange): string {
 	return buffer.subarray(range.start, range.end).toString("utf-8");
+}
+
+/**
+ * Byte offsets index the string directly when the source is ASCII, which
+ * spares a decode per slice.
+ *
+ * @param buffer - The UTF-8 encoded source.
+ * @param source - The source text.
+ * @returns The slicer for {@link SourceBytes.slice}.
+ */
+function createSlicer(buffer: Buffer, source: string): SourceBytes["slice"] {
+	if (buffer.length === source.length) {
+		return (start, end) => source.slice(start, end);
+	}
+
+	return (start, end) => decode(buffer, { end, start });
 }
 
 /**

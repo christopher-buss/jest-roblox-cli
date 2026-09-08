@@ -24,6 +24,11 @@
 			"types": "./dist/ast.d.mts",
 			"default": "./dist/ast.mjs"
 		},
+		"./cst": {
+			"source": "./src/cst.ts",
+			"types": "./dist/cst.d.mts",
+			"default": "./dist/cst.mjs"
+		},
 		"./package.json": "./package.json",
 		"./parser": {
 			"source": "./src/parser.ts",
