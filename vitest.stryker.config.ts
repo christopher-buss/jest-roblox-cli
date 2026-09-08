@@ -29,6 +29,9 @@ export default defineConfig({
 		// Safe since oxc-parser 0.146.0 — at 0.123.0 its native bindings hit a
 		// segfault (0xC0000005) in worker threads, which forced `forks` here.
 		pool: "threads",
+		// Reaches the mutant runs only — `test/setup/stryker-dry-run-budget.ts`
+		// hands the dry run the suite's ordinary budget back.
+		setupFiles: [...unitProject.test.setupFiles, "./test/setup/stryker-dry-run-budget.ts"],
 		// A mutant that slips a busy async loop past Stryker's run budget is
 		// the pathology; a healthy unit test finishes far inside 100ms. Tests
 		// doing legitimately heavier work declare their own `{ timeout }` at
