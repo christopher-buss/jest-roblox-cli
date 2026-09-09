@@ -1,8 +1,8 @@
 import assert from "node:assert";
 
-import type { CstEdits, Replacement } from "./cst-edit.ts";
+import type { CstEdits, Removal, Replacement } from "./cst-edit.ts";
 import { isCstNode, tokenBounds, walkCst } from "./cst.ts";
-import type { CstNode, CstRoot, Token, Trivia } from "./cst.ts";
+import type { CstNode, CstRoot, Token, TokenBounds, Trivia } from "./cst.ts";
 import type { SourceBytes } from "./source-bytes.ts";
 
 /**
@@ -147,10 +147,44 @@ function walk(printer: Printer, value: unknown): void {
 	});
 }
 
+function isNewlineWhitespace(trivia: Trivia): boolean {
+	return trivia.kind === "whitespace" && trivia.text.includes("\n");
+}
+
+/**
+ * Print a removal. The node held a whole line when nothing but indentation
+ * precedes it on its line and a newline follows it; then the indentation
+ * and the newline go with it. Otherwise the whitespace on both sides stays,
+ * so what shared the line with it keeps its spacing.
+ */
+function printRemoval(printer: Printer, removal: Removal, { first, last }: TokenBounds): void {
+	const leading = removal.preserveLeading ? first.leading : [];
+	const lineStart = leading.findLastIndex(isNewlineWhitespace) + 1;
+	const indentation = leading.slice(lineStart);
+	writeTrivia(printer, leading.slice(0, lineStart));
+
+	const [firstTrailing] = last.trailing;
+	const isWholeLine =
+		printer.writer.position().column === 0 &&
+		indentation.every((trivia) => trivia.kind === "whitespace") &&
+		(firstTrailing === undefined || isNewlineWhitespace(firstTrailing));
+	if (isWholeLine) {
+		return;
+	}
+
+	writeTrivia(printer, indentation);
+	writeTrivia(printer, last.trailing);
+}
+
 function printReplacement(printer: Printer, { replacement, target }: Replaced): void {
 	const bounds = tokenBounds(target);
 	assert(bounds !== undefined, "a replaced node has no tokens");
 	const { first, last } = bounds;
+	if ("remove" in replacement) {
+		printRemoval(printer, replacement, bounds);
+		return;
+	}
+
 	if (isCstNode(replacement)) {
 		writeTrivia(printer, first.leading);
 		walk(printer, replacement);

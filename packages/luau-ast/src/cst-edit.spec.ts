@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import { createCstEdits, renameBinding } from "./cst-edit.ts";
 import { printCst, printCstMapped } from "./cst-print.ts";
@@ -134,6 +134,80 @@ describe(createCstEdits, () => {
 		});
 
 		expect(printCst(root, edits)).toBe("local a = 1\n\nlocal b = a -- call\nreturn b\n");
+	});
+
+	it("should remove an indented line with its indentation and keep the comment above", () => {
+		expect.assertions(1);
+
+		const root = parseCst("do\n\t-- c\n\tlocal x = 1\n\tprint(x)\nend\n");
+		const edits = createCstEdits();
+		const block = root.body.body[0]!;
+		assert(block.type === "Do");
+
+		edits.remove({ caller: "alias", preserveLeading: true, statement: block.body.body[0]! });
+
+		expect(printCst(root, edits)).toBe("do\n\t-- c\n\tprint(x)\nend\n");
+	});
+
+	it("should keep the whitespace on both sides of a removed mid-line statement", () => {
+		expect.assertions(1);
+
+		const root = parseCst("do local x = 1 end\n");
+		const edits = createCstEdits();
+		const block = root.body.body[0]!;
+		assert(block.type === "Do");
+
+		edits.remove({ caller: "alias", preserveLeading: true, statement: block.body.body[0]! });
+
+		expect(printCst(root, edits)).toBe("do  end\n");
+	});
+
+	it("should keep a block comment that shares the removed statement's line", () => {
+		expect.assertions(1);
+
+		const root = parseCst("--[[c]] local x = 1\nlocal y = 2\n");
+		const edits = createCstEdits();
+
+		edits.remove({ caller: "alias", preserveLeading: true, statement: root.body.body[0]! });
+
+		expect(printCst(root, edits)).toBe("--[[c]] \nlocal y = 2\n");
+	});
+
+	it("should remove the last statement of a file that has no trailing newline", () => {
+		expect.assertions(1);
+
+		const root = parseCst("local y = 2\nlocal x = 1");
+		const edits = createCstEdits();
+
+		edits.remove({ caller: "alias", preserveLeading: true, statement: root.body.body[1]! });
+
+		expect(printCst(root, edits)).toBe("local y = 2\n");
+	});
+
+	it("should keep a trailing comment on a removed statement's line", () => {
+		expect.assertions(1);
+
+		const root = parseCst("local x = 1 -- keep\nlocal y = 2\n");
+		const edits = createCstEdits();
+
+		edits.remove({ caller: "alias", preserveLeading: true, statement: root.body.body[0]! });
+
+		expect(printCst(root, edits)).toBe(" -- keep\nlocal y = 2\n");
+	});
+
+	it("should drop both sides' trivia around replacement text when asked", () => {
+		expect.assertions(1);
+
+		const root = parseCst("-- above\nlocal dep = f(1) -- import\n");
+		const edits = createCstEdits();
+
+		edits.replace({
+			caller: "imports",
+			replacement: { preserveLeading: false, preserveTrailing: false, text: "return 1" },
+			target: root.body.body[0]!,
+		});
+
+		expect(printCst(root, edits)).toBe("return 1");
 	});
 
 	it("should drop the comment above a statement removed with leading trivia dropped", () => {

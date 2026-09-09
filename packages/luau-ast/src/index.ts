@@ -47,6 +47,7 @@ export type {
 // Edit surface: replacements the printer consults, and binding renames
 export type {
 	CstEdits,
+	Removal,
 	RemoveOptions,
 	RenameOptions,
 	ReplaceOptions,

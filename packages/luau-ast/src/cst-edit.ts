@@ -1,6 +1,6 @@
 import type { LuauSpan } from "./ast.ts";
 import { forEachCstNode, isCstNode, tokenBounds, walkCst } from "./cst.ts";
-import type { CstNode, CstStat } from "./cst.ts";
+import type { CstNode } from "./cst.ts";
 
 /**
  * Text printed in a node's place. The node's outer trivia stays on both
@@ -13,11 +13,23 @@ export interface TextReplacement {
 }
 
 /**
- * What prints in a node's place: a subtree, or text. A subtree keeps the
- * node's outer trivia on both sides, and its origin-less tokens take the
- * origin of the node's first token so the sourcemap traces them there.
+ * Nothing prints in the node's place. When the node held a whole line, its
+ * indentation and newline go with it so no blank line is left; the comments
+ * above it stay unless `preserveLeading` is off. A node sharing its line
+ * keeps the whitespace on both sides.
  */
-export type Replacement = CstNode | TextReplacement;
+export interface Removal {
+	preserveLeading: boolean;
+	remove: true;
+}
+
+/**
+ * What prints in a node's place: a subtree, text, or nothing. A subtree
+ * keeps the node's outer trivia on both sides, and its origin-less tokens
+ * take the origin of the node's first token so the sourcemap traces them
+ * there.
+ */
+export type Replacement = CstNode | Removal | TextReplacement;
 
 export interface ReplaceOptions {
 	/** Named in the error when a second caller replaces the same node. */
@@ -28,9 +40,10 @@ export interface ReplaceOptions {
 
 export interface RemoveOptions {
 	caller: string;
-	/** Whether the comments and blank lines above the statement survive. */
+	/** Whether the comments above the node survive. */
 	preserveLeading: boolean;
-	statement: CstStat;
+	/** A statement, or a list item that goes with its separator. */
+	statement: CstNode;
 }
 
 export interface RenameOptions {
@@ -45,7 +58,7 @@ export interface RenameOptions {
  * that replace the same node are a conflict, reported by both names.
  */
 export interface CstEdits {
-	/** Print nothing in the statement's place; its trailing trivia goes too. */
+	/** Print nothing in the statement's place; see {@link Removal}. */
 	remove: (options: RemoveOptions) => void;
 	replace: (options: ReplaceOptions) => void;
 	replacementFor: (node: CstNode) => Replacement | undefined;
@@ -93,11 +106,7 @@ export function createCstEdits(): CstEdits {
 
 	return {
 		remove: ({ caller, preserveLeading, statement }) => {
-			replace({
-				caller,
-				replacement: { preserveLeading, preserveTrailing: false, text: "" },
-				target: statement,
-			});
+			replace({ caller, replacement: { preserveLeading, remove: true }, target: statement });
 		},
 		replace,
 		replacementFor: (node) => replacements.get(node)?.replacement,
