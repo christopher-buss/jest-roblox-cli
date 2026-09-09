@@ -37,7 +37,14 @@ function makeDeferred(): Deferred {
 }
 
 function makeScriptResult(outputs: Array<string> = ["[]"]): ScriptResult {
-	return { durationMs: 1, outputs };
+	return {
+		durationMs: 1,
+		outputs,
+		terminalTask: {
+			ref: { sessionId: "session-1", taskId: "task-1" },
+			state: "COMPLETE",
+		},
+	};
 }
 
 /** Flush the microtask queue so settled-task continuations run. */

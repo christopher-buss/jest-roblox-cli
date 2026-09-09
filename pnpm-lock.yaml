@@ -3623,8 +3623,8 @@ packages:
     resolution: {integrity: sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==}
     engines: {node: '>= 4'}
 
-  ignore@7.0.8:
-    resolution: {integrity: sha512-YYNsSlXBjMk92SKnkwvB5LOVSa6OznlFUGcsvrFgNJbJCd0M1XKeFVRc8ZByeCqz32FivYNHJVooLmdqrmvp/Q==}
+  ignore@7.0.9:
+    resolution: {integrity: sha512-brTTsvFRt5C1gGHtPst/281UjPD5t9fBqbgoMPlVWy11ZLTPfu7HxK4ZYqO9H7o/yC9rSTCI85EaQ4OoY12qYw==}
     engines: {node: '>= 4'}
 
   import-fresh@4.0.0:
@@ -5537,7 +5537,7 @@ snapshots:
     dependencies:
       escape-string-regexp: 4.0.0
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
-      ignore: 7.0.8
+      ignore: 7.0.9
 
   '@eslint-community/eslint-utils@4.10.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))':
     dependencies:
@@ -6976,7 +6976,7 @@ snapshots:
       '@typescript-eslint/utils': 8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.62.1
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
-      ignore: 7.0.8
+      ignore: 7.0.9
       natural-compare: 1.4.0
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
@@ -7810,7 +7810,7 @@ snapshots:
     dependencies:
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
       generate-differences: 0.1.1
-      ignore: 7.0.8
+      ignore: 7.0.9
       load-oxfmt-config: 0.19.0(oxfmt@0.63.0)
       oxfmt: 0.63.0
       picomatch: 4.0.5
@@ -8245,7 +8245,7 @@ snapshots:
 
   ignore@7.0.6: {}
 
-  ignore@7.0.8: {}
+  ignore@7.0.9: {}
 
   import-fresh@4.0.0: {}
 
@@ -8433,7 +8433,7 @@ snapshots:
     dependencies:
       '@ntnyq/utils': 0.21.1
       editorconfig: 3.0.2
-      ignore: 7.0.8
+      ignore: 7.0.9
       jiti: 2.7.0
       jsonc-parser: 3.3.1
       oxfmt: 0.63.0
@@ -8975,7 +8975,7 @@ snapshots:
   oxlint-plugin-oxlint-comments@0.1.0:
     dependencies:
       escape-string-regexp: 4.0.0
-      ignore: 7.0.8
+      ignore: 7.0.9
       oxlint: 1.82.0
     transitivePeerDependencies:
       - oxlint-tsgolint

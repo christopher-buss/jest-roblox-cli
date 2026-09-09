@@ -25,6 +25,7 @@ export type {
 	RemoteRunner,
 	RunnerCredentials,
 	ScriptResult,
+	TerminalTaskEvidence,
 	UploadBinaryInputOptions,
 	UploadBinaryInputResult,
 	UploadPlaceOptions,
@@ -32,9 +33,14 @@ export type {
 } from "./types.ts";
 export { createWorkQueueReader } from "./work-queue-reader.ts";
 export type { ClaimedBatch, WorkQueueReader, WorkQueueReaderOptions } from "./work-queue-reader.ts";
-export { createJsonWorkQueueWriter, createWorkQueueWriter } from "./work-queue-writer.ts";
+export {
+	createJsonWorkQueueWriter,
+	createWorkQueueHost,
+	createWorkQueueWriter,
+} from "./work-queue-writer.ts";
 export type {
 	JsonWorkQueueWriterOptions,
+	WorkQueueHost,
 	WorkQueueWriter,
 	WorkQueueWriterOptions,
 } from "./work-queue-writer.ts";

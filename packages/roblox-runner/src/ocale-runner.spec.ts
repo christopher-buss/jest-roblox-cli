@@ -471,7 +471,7 @@ describe(OcaleRunner, () => {
 		});
 
 		it("should submit, poll, and return string outputs", async () => {
-			expect.assertions(2);
+			expect.assertions(3);
 
 			const http = createFakeHttpClient();
 			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
@@ -488,6 +488,10 @@ describe(OcaleRunner, () => {
 
 			expect(result.outputs).toStrictEqual(["hello", "world"]);
 			expect(result.durationMs).toBeGreaterThanOrEqual(0);
+			expect(result.terminalTask).toMatchObject({
+				ref: { sessionId: "session-1", taskId: "task-1" },
+				state: "COMPLETE",
+			});
 		});
 
 		it("should re-read a poll body the edge cut short", async () => {

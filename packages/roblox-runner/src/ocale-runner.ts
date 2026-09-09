@@ -338,6 +338,10 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			return {
 				durationMs: Date.now() - context.startTime,
 				outputs: task.output.results.map(coerceOutputToString),
+				terminalTask: {
+					ref: { sessionId: task.ref.sessionId, taskId: task.ref.taskId },
+					state: task.state,
+				},
 			};
 		}
 

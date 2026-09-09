@@ -27,6 +27,11 @@ export interface WorkQueueWriter<T> {
 	enqueueAsync(items: ReadonlyArray<T>, options?: { readonly ttlMs?: number }): Promise<void>;
 }
 
+/** Host-side queue control used by protocols that settle worker receipts. */
+export interface WorkQueueHost<T> extends WorkQueueWriter<T> {
+	acknowledgeAsync(receipt: string): Promise<void>;
+}
+
 type JsonCompatible<T> = T extends boolean | null | number | string
 	? T
 	: T extends (...arguments_: Array<never>) => void
@@ -37,7 +42,7 @@ type JsonCompatible<T> = T extends boolean | null | number | string
 
 type NonNullJsonCompatible<T> = Exclude<JsonCompatible<T>, null | undefined>;
 
-class OpenCloudWorkQueueWriter<T> implements WorkQueueWriter<T> {
+class OpenCloudWorkQueueWriter<T> implements WorkQueueHost<T> {
 	private readonly encode: (item: T) => QueueData;
 	private readonly queueId: string;
 	private readonly storage: StorageClient;
@@ -48,6 +53,17 @@ class OpenCloudWorkQueueWriter<T> implements WorkQueueWriter<T> {
 		this.queueId = options.queueId;
 		this.storage = createWorkQueueStorage(options);
 		this.universeId = options.universeId;
+	}
+
+	public async acknowledgeAsync(receipt: string): Promise<void> {
+		const result = await this.storage.queues.discard({
+			queueId: this.queueId,
+			readId: receipt,
+			universeId: this.universeId,
+		});
+		if (!result.success) {
+			throw new Error(`Failed to acknowledge work batch: ${result.err.message}`);
+		}
 	}
 
 	public async enqueueAsync(
@@ -77,6 +93,10 @@ export function createJsonWorkQueueWriter<T>(
 	options: JsonWorkQueueWriterOptions,
 ): WorkQueueWriter<NonNullJsonCompatible<T>> {
 	return new OpenCloudWorkQueueWriter({ ...options, encode: (item) => item });
+}
+
+export function createWorkQueueHost<T>(options: WorkQueueWriterOptions<T>): WorkQueueHost<T> {
+	return new OpenCloudWorkQueueWriter(options);
 }
 
 export function createWorkQueueWriter<T>(options: WorkQueueWriterOptions<T>): WorkQueueWriter<T> {

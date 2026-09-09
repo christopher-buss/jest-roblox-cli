@@ -105,9 +105,19 @@ export interface ExecuteScriptOptions {
 	timeout: number;
 }
 
+/** Authoritative evidence that the task which produced a result has stopped. */
+export interface TerminalTaskEvidence {
+	ref: {
+		sessionId: string | undefined;
+		taskId: string;
+	};
+	state: "COMPLETE";
+}
+
 export interface ScriptResult {
 	durationMs: number;
 	outputs: Array<string>;
+	terminalTask?: TerminalTaskEvidence;
 }
 
 export interface RemoteRunner {

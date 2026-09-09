@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { createWorkQueueReader, type WorkQueueReader } from "./work-queue-reader.ts";
 import {
 	createJsonWorkQueueWriter,
+	createWorkQueueHost,
 	createWorkQueueWriter,
 	type WorkQueueWriter,
 	type WorkQueueWriterOptions,
@@ -65,6 +66,41 @@ function validQueueItemBody(data: JSONValue): QueueItemBody {
 }
 
 describe("work queue capabilities", () => {
+	it("should let a host acknowledge an opaque worker receipt", async () => {
+		expect.assertions(2);
+
+		const http = createFakeHttpClient();
+		http.mockResponse({ body: {}, status: 200 });
+		const queue = createWorkQueueHost<Job>({
+			apiKey: "test-key",
+			encode: (job) => ({ ...job }),
+			httpClient: http,
+			queueId: "test-queue",
+			universeId: "123",
+		});
+
+		await queue.acknowledgeAsync("read-worker-1");
+
+		expect(http.requests[0]!.request.url).toContain("/items:discard");
+		expect(http.requests[0]!.request.body).toStrictEqual({ readId: "read-worker-1" });
+	});
+
+	it("should surface a rejected host acknowledgement", async () => {
+		expect.assertions(1);
+
+		const http = createFakeHttpClient();
+		http.mockApiError({ message: "receipt expired", statusCode: 409 });
+		const queue = createWorkQueueHost<Job>({
+			apiKey: "test-key",
+			encode: (job) => ({ ...job }),
+			httpClient: http,
+			queueId: "test-queue",
+			universeId: "123",
+		});
+
+		await expect(queue.acknowledgeAsync("read-worker-1")).rejects.toThrow(/receipt expired/);
+	});
+
 	describe("enqueue", () => {
 		it("should POST one item per call", async () => {
 			expect.assertions(2);
