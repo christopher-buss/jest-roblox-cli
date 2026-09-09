@@ -114,6 +114,20 @@ export function createCstEdits(): CstEdits {
 }
 
 /**
+ * {@link renameBinding} for many bindings in one walk.
+ *
+ * @param root - The tree, or the subtree, to rename within.
+ * @param names - The new name of each binding to rename.
+ */
+export function renameBindings(root: CstNode, names: ReadonlyMap<number, string>): void {
+	forEachCstNode(root, (node) => {
+		if (node.type === "LocalDecl" || node.type === "LocalRef") {
+			node.name.text = names.get(node.binding) ?? node.name.text;
+		}
+	});
+}
+
+/**
  * Rename a binding: every declaration and reference sharing the binding gets
  * the new name. Identity, not text, selects the tokens, so a shadowing local
  * of the same name is untouched.
@@ -122,11 +136,7 @@ export function createCstEdits(): CstEdits {
  * @param options - The binding and its new name.
  */
 export function renameBinding(root: CstNode, { name, binding }: RenameOptions): void {
-	forEachCstNode(root, (node) => {
-		if ((node.type === "LocalDecl" || node.type === "LocalRef") && node.binding === binding) {
-			node.name.text = name;
-		}
-	});
+	renameBindings(root, new Map([[binding, name]]));
 }
 
 /**

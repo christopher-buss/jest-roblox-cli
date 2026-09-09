@@ -1,6 +1,6 @@
 import { assert, describe, expect, it } from "vitest";
 
-import { createCstEdits, renameBinding } from "./cst-edit.ts";
+import { createCstEdits, renameBinding, renameBindings } from "./cst-edit.ts";
 import { printCst, printCstMapped } from "./cst-print.ts";
 import type { CstPosition, CstSourcemapSegment } from "./cst-print.ts";
 import { forEachCstNode } from "./cst.ts";
@@ -102,6 +102,24 @@ describe(printCstMapped, () => {
 			{ column: source.indexOf("x = 1"), line: 1 },
 			{ column: "return ".length, line: 2 },
 		]);
+	});
+});
+
+describe(renameBindings, () => {
+	it("should rename each listed binding and leave the rest", () => {
+		expect.assertions(1);
+
+		const root = parseCst("local x = 1\nlocal y = x\nlocal z = y\nreturn z\n");
+
+		renameBindings(
+			root,
+			new Map([
+				[bindingOf(root, "x"), "a_x"],
+				[bindingOf(root, "z"), "a_z"],
+			]),
+		);
+
+		expect(printCst(root)).toBe("local a_x = 1\nlocal y = a_x\nlocal a_z = y\nreturn a_z\n");
 	});
 });
 
@@ -223,6 +241,40 @@ describe(createCstEdits, () => {
 		});
 
 		expect(printCst(root, edits)).toBe("local a = 1\nreturn a\n");
+	});
+
+	it("should take the indentation with an indented statement it removes, keeping what is above", () => {
+		expect.assertions(1);
+
+		const root = parseCst("do\n\n\t-- about b\n\tlocal b = 2\n\treturn 1\nend\n");
+		const edits = createCstEdits();
+		const block = findNode(root, (node) => isKind(node, "Do"));
+
+		edits.remove({ caller: "inline", preserveLeading: true, statement: block.body.body[0]! });
+
+		expect(printCst(root, edits)).toBe("do\n\n\t-- about b\n\treturn 1\nend\n");
+	});
+
+	it("should remove a statement that opens the file, which has no leading trivia", () => {
+		expect.assertions(1);
+
+		const root = parseCst("local a = 1\nreturn 2\n");
+		const edits = createCstEdits();
+
+		edits.remove({ caller: "inline", preserveLeading: true, statement: root.body.body[0]! });
+
+		expect(printCst(root, edits)).toBe("return 2\n");
+	});
+
+	it("should drop indentation that follows a comment on the line above a removed statement", () => {
+		expect.assertions(1);
+
+		const root = parseCst("local a = 1 -- one\n\tlocal b = 2\nreturn a\n");
+		const edits = createCstEdits();
+
+		edits.remove({ caller: "inline", preserveLeading: true, statement: root.body.body[1]! });
+
+		expect(printCst(root, edits)).toBe("local a = 1 -- one\nreturn a\n");
 	});
 });
 
