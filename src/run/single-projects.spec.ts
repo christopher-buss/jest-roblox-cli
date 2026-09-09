@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
@@ -19,6 +19,18 @@ const tree: RojoTreeNode = fromAny({
 
 function emptySeams(): ImplicitProjectSeams {
 	return { fileSystem: createMemoryFileSystem().fileSystem, tsconfigReader: () => null };
+}
+
+function captureConfigError(action: () => void): ConfigError {
+	let captured: unknown;
+	try {
+		action();
+	} catch (err) {
+		captured = err;
+	}
+
+	assert(captured instanceof ConfigError);
+	return captured;
 }
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -166,15 +178,18 @@ describe(buildImplicitProject, () => {
 	});
 
 	it("should throw a ConfigError when no luau root maps to the rojo tree", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
-		expect(() => {
-			return buildImplicitProject(
-				makeConfig({ luauRoots: ["out/missing"] }),
-				tree,
-				emptySeams(),
-			);
-		}).toThrow(ConfigError);
+		const error = captureConfigError(() => {
+			buildImplicitProject(makeConfig({ luauRoots: ["out/missing"] }), tree, emptySeams());
+		});
+
+		expect(error.message).toBe(
+			"No test projects could be derived: none of the resolved luauRoots map to a $path mount in your Rojo project.",
+		);
+		expect(error.hint).toBe(
+			'Set "projects" in your test config (e.g. ["ReplicatedStorage/shared"]), or point "luauRoots" at a compiled-output directory your Rojo project mounts.',
+		);
 	});
 
 	// `--typecheckOnly` is host-local tsgo, so the collapse hands over no Rojo
@@ -225,7 +240,10 @@ describe(buildImplicitProject, () => {
 			emptySeams(),
 		);
 
-		expect(project.typecheck!.include).toStrictEqual(["types/**/*.spec-d.ts"]);
+		expect(project.typecheck).toStrictEqual({
+			enabled: true,
+			include: ["types/**/*.spec-d.ts"],
+		});
 	});
 
 	it("should leave typecheck unset when testMatch carries no -d globs", () => {

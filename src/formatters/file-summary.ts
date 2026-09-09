@@ -33,7 +33,7 @@ export function formatFileSummary(
 	}
 
 	if (hasExecError(file)) {
-		return formatExecErrorFileSummary(file, formattedPath, styles).join("\n");
+		return formatExecErrorFileSummary(file, formattedPath, styles);
 	}
 
 	if (file.numPassingTests === 0 && file.numPendingTests > 0) {
@@ -191,11 +191,11 @@ function formatExecErrorFileSummary(
 	file: TestFileResult,
 	formattedPath: string,
 	styles: Styles,
-): Array<string> {
+): string {
 	// A clock rather than a cross: the file line is the first thing read, and a
 	// run that ran out of time is acted on differently from one that threw.
 	const symbol = file.timedOut === true ? styles.status.pending("⏱") : styles.status.fail("✗");
-	return [` ${symbol} ${formattedPath}`];
+	return ` ${symbol} ${formattedPath}`;
 }
 
 function formatPass(test: TestCaseResult, styles: Styles): string {

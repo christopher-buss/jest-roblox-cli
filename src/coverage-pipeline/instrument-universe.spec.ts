@@ -158,6 +158,26 @@ describe(createInstrumentUniverse, () => {
 		).toBeTrue();
 	});
 
+	it("should keep the first decision when a source map changes during a run", () => {
+		expect.assertions(2);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		const luauPath = writeCompiled(volume, "out/ecs/systems/move.luau", [
+			under("src/ecs/systems/move.ts"),
+		]);
+		const universe = universeFor(fileSystem, { include: ["src/ecs/**/*.ts"] });
+
+		expect(universe.includes(luauPath)).toBeTrue();
+
+		writeSourceMap(
+			volume,
+			luauPath,
+			JSON.stringify({ mappings: "", sources: [under("src/ui/button.ts")], version: 3 }),
+		);
+
+		expect(universe.includes(luauPath)).toBeTrue();
+	});
+
 	it("should match the Luau path itself when no source map exists", () => {
 		expect.assertions(2);
 
@@ -303,6 +323,19 @@ describe(createInstrumentUniverse, () => {
 		const without = universeFor(fileSystem, { include: ["src/**/*.ts"] });
 
 		expect(withIgnore.digest).not.toBe(without.digest);
+	});
+
+	it("should give absent and empty ignore lists the same digest", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const withoutIgnore = universeFor(fileSystem, { include: ["src/**/*.ts"] });
+		const withEmptyIgnore = universeFor(fileSystem, {
+			ignore: [],
+			include: ["src/**/*.ts"],
+		});
+
+		expect(withoutIgnore.digest).toBe(withEmptyIgnore.digest);
 	});
 
 	it("should digest the rootDir the globs are anchored to", () => {

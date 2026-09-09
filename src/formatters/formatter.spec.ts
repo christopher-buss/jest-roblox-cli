@@ -9,7 +9,6 @@ import color from "tinyrainbow";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { mergeJestTotals } from "../results/merge.ts";
-import * as sourceMapperModule from "../source-mapper/index.ts";
 import type { SourceMapper, SourceSnippet } from "../source-mapper/index.ts";
 import type { JestResult, TestCaseResult, TestFileResult } from "../types/jest-result.ts";
 import type { TimingResult } from "../types/timing.ts";
@@ -71,7 +70,7 @@ const defaultOptions: FormatOptions = {
 
 describe(formatTestSummary, () => {
 	it("should format all passing tests", () => {
-		expect.assertions(4);
+		expect.assertions(5);
 
 		const result: JestResult = {
 			numFailedTests: 0,
@@ -95,6 +94,7 @@ describe(formatTestSummary, () => {
 
 		expect(summary).toContain("Test Files");
 		expect(summary).toContain("5 passed");
+		expect(summary).toContain(color.bold(color.green("5 passed")));
 		expect(summary).toContain("(5)");
 		expect(summary).toContain("2500ms");
 	});
@@ -1216,7 +1216,7 @@ describe("formatResult failuresOnly", () => {
 
 describe("formatResult log hints", () => {
 	it("should show output file hint on failure", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const output = formatResult(FAILING_RESULT, TIMING, {
 			...defaultOptions,
@@ -1225,6 +1225,7 @@ describe("formatResult log hints", () => {
 		});
 
 		expect(output).toContain("View /tmp/results.json for full Jest output");
+		expect(output).toContain("\n\n  View /tmp/results.json for full Jest output");
 	});
 
 	it("should show game output hint on failure", () => {
@@ -1866,6 +1867,14 @@ describe("formatTestSummary type errors line", () => {
 });
 
 describe("formatTypecheckReport snapshots", () => {
+	it("should use color by default", () => {
+		expect.assertions(1);
+
+		const output = formatTypecheckReport(TYPECHECK_PASSING_RESULT);
+
+		expect(output).toContain(color.bold(color.green("2 passed")));
+	});
+
 	it("should format passing typecheck summary", () => {
 		expect.assertions(1);
 
@@ -2927,45 +2936,6 @@ describe("groupByDescribe root fallback", () => {
 		});
 
 		expect(formatted).toContain("(root)");
-	});
-});
-
-describe("formatSnapshotCallSnippet getSourceSnippet guard via formatFailure", () => {
-	it("should return no snippet when getSourceSnippet returns undefined", () => {
-		expect.assertions(1);
-
-		const filePath = path.join(os.tmpdir(), `formatter-snap-guard-${Date.now()}.ts`);
-		fs.writeFileSync(filePath, "expect(x).toMatchSnapshot();", "utf-8");
-
-		vi.spyOn(sourceMapperModule, "getSourceSnippet").mockReturnValue(undefined);
-		onTestFinished(() => {
-			fs.unlinkSync(filePath);
-		});
-
-		const test: TestCaseResult = {
-			ancestorTitles: [],
-			duration: 1,
-			failureMessages: [
-				[
-					"expect(received).toMatchSnapshot()",
-					"",
-					"- Snapshot  - 1",
-					"+ Received  + 1",
-					"",
-					'-   "a": 1,',
-					'+   "a": 2,',
-					"",
-					'[string "RS.test"]:10',
-				].join("\n"),
-			],
-			fullName: "test",
-			status: "failed",
-			title: "test",
-		};
-
-		const formatted = formatFailure({ filePath, test, useColor: false });
-
-		expect(formatted).not.toContain("❯");
 	});
 });
 

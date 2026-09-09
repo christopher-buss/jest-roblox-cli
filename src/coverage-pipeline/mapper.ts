@@ -112,7 +112,6 @@ interface FileResources {
 
 interface PushPendingBranchOptions {
 	armHitCounts: Array<number>;
-	emptyMessage: string;
 	entry: { locations: ReadonlyArray<SourceLocation>; type: string };
 	fileBranches: Array<PendingBranch>;
 	locations: PendingBranch["locations"];
@@ -331,19 +330,17 @@ function toIstanbulLocations(locations: ReadonlyArray<SourceLocation>): PendingB
 
 /**
  * Record one branch, spanning its arms from the first arm's start to the last
- * arm's end. `emptyMessage` names the caller's own invariant, since the two
- * callers reach a non-empty `locations` by different routes.
+ * arm's end.
  */
 function pushPendingBranch({
 	armHitCounts,
-	emptyMessage,
 	entry,
 	fileBranches,
 	locations,
 }: PushPendingBranchOptions): void {
 	const firstLocation = locations[0];
 	const lastLocation = locations.at(-1);
-	assert(firstLocation !== undefined && lastLocation !== undefined, emptyMessage);
+	assert(firstLocation !== undefined && lastLocation !== undefined);
 
 	fileBranches.push({
 		armHitCounts: entry.locations.map((_, index) => armHitCounts[index] ?? 0),
@@ -378,7 +375,6 @@ function passthroughFileBranches(
 
 		pushPendingBranch({
 			armHitCounts,
-			emptyMessage: "Branch locations must not be empty after filtering",
 			entry,
 			fileBranches,
 			locations,
@@ -409,11 +405,7 @@ function mapStatement(
 		line: span.end.line,
 	});
 
-	if (
-		mappedStart.source === null ||
-		mappedEnd.source === null ||
-		mappedStart.source !== mappedEnd.source
-	) {
+	if (mappedStart.source === null || mappedStart.source !== mappedEnd.source) {
 		return undefined;
 	}
 
@@ -625,7 +617,7 @@ function mapBranchArmLocations(
 		});
 	}
 
-	if (tsPath === undefined || mappedLocations.length === 0) {
+	if (tsPath === undefined) {
 		return undefined;
 	}
 
@@ -648,18 +640,17 @@ function mapBranchArmLocations(
  */
 function hasCollapsedPhantomArm(locations: MappedArmLocations["locations"]): boolean {
 	return locations.some((arm, index) => {
-		const isZeroWidth = arm.start.line === arm.end.line && arm.start.column === arm.end.column;
-		if (!isZeroWidth) {
-			return false;
-		}
-
-		return locations.some((other, otherIndex) => {
-			return (
-				otherIndex !== index &&
-				other.start.line === arm.start.line &&
-				other.start.column === arm.start.column
-			);
-		});
+		return (
+			arm.start.line === arm.end.line &&
+			arm.start.column === arm.end.column &&
+			locations.some((other, otherIndex) => {
+				return (
+					otherIndex !== index &&
+					other.start.line === arm.start.line &&
+					other.start.column === arm.start.column
+				);
+			})
+		);
 	});
 }
 
@@ -693,7 +684,6 @@ function mapFileBranches(
 
 		pushPendingBranch({
 			armHitCounts,
-			emptyMessage: "Branch locations must not be empty after successful mapping",
 			entry,
 			fileBranches: pendingListFor(pendingBranches, result.tsPath),
 			locations: result.locations,

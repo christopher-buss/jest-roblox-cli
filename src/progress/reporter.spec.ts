@@ -1,7 +1,7 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import process from "node:process";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import {
 	createRunProgress,
@@ -55,6 +55,51 @@ function pretendTerminal(): void {
 }
 
 describe(createRunProgress, () => {
+	it.for([false, true])("should preserve a guarded stream's %s write result", (accepted) => {
+		expect.assertions(2);
+
+		const stream = { write: () => accepted };
+		const { progress } = createHarness({ guarded: [stream], live: true });
+		onTestFinished(() => {
+			progress.finish();
+		});
+		progress.reveal({ color: false });
+
+		expect(stream.write()).toBe(accepted);
+
+		progress.begin("tests");
+
+		expect(stream.write()).toBe(accepted);
+	});
+
+	it("should leave settled live output untouched when finishing", () => {
+		expect.assertions(1);
+
+		const { progress, writes } = createHarness({ live: true });
+		progress.reveal({ color: false });
+		progress.begin("tests")();
+		const settled = [...writes];
+		progress.finish();
+
+		expect(writes).toStrictEqual(settled);
+	});
+
+	it("should let the process exit while its animation timer is active", () => {
+		expect.assertions(1);
+
+		const intervals = vi.spyOn(globalThis, "setInterval");
+		const { progress } = createHarness({ live: true });
+		onTestFinished(() => {
+			progress.finish();
+		});
+		progress.reveal({ color: false });
+		const created = intervals.mock.results[0];
+		assert(created !== undefined);
+		assert(created.type === "return");
+
+		expect(created.value.hasRef()).toBeFalse();
+	});
+
 	it("should write nothing until the run header has been shown", () => {
 		expect.assertions(1);
 
@@ -85,6 +130,18 @@ describe(createRunProgress, () => {
 		progress.reveal({ color: false });
 
 		expect(writes).toHaveLength(1);
+	});
+
+	it("should settle completed append-only output when the header arrives", () => {
+		expect.assertions(1);
+
+		const { progress, writes } = createHarness();
+		progress.begin("tests")();
+		progress.reveal({ color: false });
+		const settled = [...writes];
+		progress.begin("build")();
+
+		expect(writes).toStrictEqual(settled);
 	});
 
 	it("should announce a stage as it opens and again as it closes", () => {

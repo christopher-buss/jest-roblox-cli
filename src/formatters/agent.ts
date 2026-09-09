@@ -514,17 +514,11 @@ function formatAgentProjectHeader(
 	result: JestResult,
 	options: AgentOptions,
 ): Array<string> {
-	const execErrors = result.testResults.filter(hasExecError);
-	const hasFailures = result.numFailedTests > 0 || execErrors.length > 0;
-
 	const fileParts = formatSummaryParts(countFileBuckets(result), PLAIN_STYLES);
-	const lines = [`▶ ${displayName}  ${fileParts.join(" | ")} (${result.numTotalTests} tests)`];
-
-	if (hasFailures) {
-		lines.push(...formatFileHeaders(result, options));
-	}
-
-	return lines;
+	return [
+		`▶ ${displayName}  ${fileParts.join(" | ")} (${result.numTotalTests} tests)`,
+		...formatFileHeaders(result, options),
+	];
 }
 
 function addCounts(running: SummaryCounts, next: SummaryCounts): void {
@@ -564,9 +558,7 @@ function formatMultiProjectFailures(
 	];
 
 	for (const { result } of projects) {
-		if (result.numFailedTests > 0) {
-			lines.push(...formatFailures(result, totalFailures, options));
-		}
+		lines.push(...formatFailures(result, totalFailures, options));
 	}
 
 	for (const file of stats.allExecErrors) {

@@ -701,9 +701,10 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			expect.assertions(3);
 
 			const temporaryDirectory = makeTemporaryDirectory();
+			fs.writeFileSync(path.join(temporaryDirectory, "leaf.mjs"), "export default {};");
 			fs.writeFileSync(
 				path.join(temporaryDirectory, "base.mjs"),
-				'export default { backend: "open-cloud" };',
+				'export default { extends: "./leaf.mjs", backend: "open-cloud" };',
 			);
 			fs.writeFileSync(
 				path.join(temporaryDirectory, "left.mjs"),
@@ -778,7 +779,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		});
 
 		it("should surface parent parse errors with extends context, not as 'not found'", async () => {
-			expect.assertions(3);
+			expect.assertions(4);
 
 			const temporaryDirectory = makeTemporaryDirectory();
 			fs.writeFileSync(
@@ -798,6 +799,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			expect(message).toContain("Failed to resolve extends");
 			expect(message).not.toContain("Config file not found");
 			expect(message).toMatch(/jest\.shared\.mjs/);
+			expect(error.cause).toBeInstanceOf(Error);
 		});
 
 		it("should surface explicit-path parse errors without wrapping as 'not found'", async () => {
@@ -812,6 +814,17 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			assert(error instanceof Error);
 
 			expect(error.message).not.toContain("Config file not found");
+		});
+
+		it("should pass through auto-discovery loader failures", async () => {
+			expect.assertions(1);
+
+			const error = new Error("dependency cannot be resolved");
+			async function configLoader(): Promise<never> {
+				throw error;
+			}
+
+			await expect(loadRawConfig(undefined, "/repo", { configLoader })).rejects.toBe(error);
 		});
 
 		it("should anchor a relative workspace.root to the declaring shared config dir", async () => {
@@ -900,7 +913,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 	});
 
 	it("should load JSON config in SEA mode", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
 
@@ -908,9 +921,12 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(temporaryDirectory, "jest.config.json");
 		fs.writeFileSync(configPath, JSON.stringify({ test: { verbose: true } }));
 
-		const result = await loadConfig(configPath, temporaryDirectory);
+		const first = await loadConfig(configPath, temporaryDirectory);
+		fs.writeFileSync(configPath, JSON.stringify({ test: { verbose: false } }));
+		const second = await loadConfig(configPath, temporaryDirectory);
 
-		expect(result.verbose).toBeTrue();
+		expect(first.verbose).toBeTrue();
+		expect(second.verbose).toBeFalse();
 	});
 
 	it("should load ESM config in SEA mode", async () => {

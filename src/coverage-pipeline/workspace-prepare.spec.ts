@@ -1247,7 +1247,7 @@ describe(prepareWorkspaceCoverage, () => {
 		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seedPackage(volume, FOO_DIR, { luauRoots: ["Stryker was here"] });
+		seedPackage(volume, FOO_DIR, { luauRoots: ["unmounted"] });
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const instrumenter = createInstrumenter();
 
@@ -1257,7 +1257,7 @@ describe(prepareWorkspaceCoverage, () => {
 			packages: [
 				{
 					name: "@halcyon/foo",
-					luauRoots: ["Stryker was here"],
+					luauRoots: ["unmounted"],
 					packageDirectory: FOO_DIR,
 					rojoProjectPath: FOO_PROJECT,
 				},
@@ -1267,7 +1267,7 @@ describe(prepareWorkspaceCoverage, () => {
 
 		expect(instrumenter).not.toHaveBeenCalled();
 		expect(stderr).toHaveBeenCalledExactlyOnceWith(
-			'Warning: luauRoot "Stryker was here" in @halcyon/foo does not correspond to any rojo $path mount, so it reports no coverage.\n',
+			'Warning: luauRoot "unmounted" in @halcyon/foo does not correspond to any rojo $path mount, so it reports no coverage.\n',
 		);
 	});
 
@@ -1378,7 +1378,7 @@ describe(prepareWorkspaceCoverage, () => {
 	});
 
 	it("should skip packages whose rojo tree has no instrumentable luau roots", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 		// Package whose tree has no $path entries → nothing to instrument
@@ -1389,6 +1389,7 @@ describe(prepareWorkspaceCoverage, () => {
 			}),
 		});
 		const instrumenter = createInstrumenter();
+		const exists = vi.spyOn(fileSystem, "existsSync");
 
 		const result = prepareWorkspaceCoverage({
 			fileSystem,
@@ -1399,6 +1400,9 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
+		expect(exists).toHaveBeenCalledExactlyOnceWith(
+			path.join(WORKSPACE_ROOT, ".jest-roblox/workspace", "@halcyon-foo", "coverage"),
+		);
 		expect(instrumenter).not.toHaveBeenCalled();
 		expect(result[0]!.coverageRoots).toStrictEqual([]);
 	});

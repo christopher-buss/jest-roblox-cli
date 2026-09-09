@@ -8,10 +8,6 @@ export function mergeRawCoverage(
 	target: RawCoverageData | undefined,
 	source: RawCoverageData | undefined,
 ): RawCoverageData | undefined {
-	if (target === undefined) {
-		return source;
-	}
-
 	if (source === undefined) {
 		return target;
 	}

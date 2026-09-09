@@ -1,6 +1,9 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { WebSocket, WebSocketServer } from "ws";
@@ -394,6 +397,35 @@ describe(resolveBackendAsync, () => {
 		expect(backend).toBeInstanceOf(StudioCliBackend);
 	});
 
+	it("should forward the configured Studio path to the studio-cli backend", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "jest-roblox-auto-"));
+		onTestFinished(() => {
+			fs.rmSync(rootDirectory, { force: true, recursive: true });
+		});
+		const configuredPath = path.join(rootDirectory, "configured-studio.exe");
+		vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", path.join(rootDirectory, "environment-studio.exe"));
+
+		const config = makeConfig({
+			backend: "studio-cli",
+			collectCoverage: true,
+			placeFile: path.join(rootDirectory, "place.rbxl"),
+			rootDir: rootDirectory,
+			studioPath: configuredPath,
+		});
+		const backend = await resolveBackendAsync(makeCli(), config, vi.fn<StudioProbe>());
+
+		await expect(
+			backend.runTestsAsync({
+				jobs: [{ config, displayName: "project", testFiles: ["test.spec.ts"] }],
+			}),
+		).rejects.toThrowWithMessage(
+			Error,
+			`Roblox Studio not found at studioPath override: ${configuredPath}`,
+		);
+	});
+
 	it("should never select studio-cli from the auto probe chain", async () => {
 		expect.assertions(1);
 
@@ -459,7 +491,12 @@ describe(resolveBackendAsync, () => {
 				makeConfig({ backend: "open-cloud", experimentalVmParallel: 2 }),
 				probe,
 			),
-		).rejects.toThrow(/--experimental-vm-parallel is Studio-only/);
+		).rejects.toThrowWithMessage(
+			Error,
+			"--experimental-vm-parallel is Studio-only: an Open Cloud session has no " +
+				"second Luau VM to run a project in. Use --parallel to shard the run " +
+				"across Open Cloud sessions instead.",
+		);
 	});
 
 	it("should accept --experimental-vm-parallel on the studio backend", async () => {
@@ -489,7 +526,12 @@ describe(resolveBackendAsync, () => {
 				makeConfig({ backend: "studio", experimentalVmParallel: 8 }),
 				probe,
 			),
-		).rejects.toThrow(/ships 4 VM hosts/);
+		).rejects.toThrowWithMessage(
+			Error,
+			"--experimental-vm-parallel 8 is more than the Studio plugin " +
+				"ships 4 VM hosts. Pass at most 4, or pass the flag bare for one VM per project " +
+				"up to that cap.",
+		);
 	});
 
 	it("should accept a VM count equal to the host pool", async () => {
@@ -510,15 +552,18 @@ describe(resolveBackendAsync, () => {
 	it("should return open-cloud backend for explicit open-cloud config", async () => {
 		expect.assertions(1);
 
-		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "test-key");
-		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
-		vi.stubEnv("ROBLOX_PLACE_ID", "456");
+		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", undefined);
+		vi.stubEnv("ROBLOX_UNIVERSE_ID", undefined);
+		vi.stubEnv("ROBLOX_PLACE_ID", undefined);
+		vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_API_KEY", undefined);
+		vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", undefined);
+		vi.stubEnv("JEST_ROBLOX_PLACE_ID", undefined);
 
 		const probe =
 			vi.fn<(port: number, timeoutMs: number) => Promise<ProbeDetected | ProbeResult>>();
 		const backend = await resolveBackendAsync(
-			makeCli(),
-			makeConfig({ backend: "open-cloud" }),
+			makeCli({ apiKey: "test-key" }),
+			makeConfig({ backend: "open-cloud", placeId: "456", universeId: "123" }),
 			probe,
 		);
 
@@ -601,7 +646,7 @@ describe(resolveBackendAsync, () => {
 
 describe(StudioWithFallback, () => {
 	it("should fall back to open-cloud on EADDRINUSE", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		vi.stubEnv("ROBLOX_OPEN_CLOUD_API_KEY", "test-key");
 		vi.stubEnv("ROBLOX_UNIVERSE_ID", "123");
@@ -621,6 +666,7 @@ describe(StudioWithFallback, () => {
 			placeId: "456",
 			universeId: "123",
 		});
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		// Will throw because OC env vars are stubs, but it proves the fallback
 		// path runs
@@ -635,6 +681,7 @@ describe(StudioWithFallback, () => {
 				],
 			}),
 		).rejects.toThrow(/game\.rbxl/);
+		expect(stderr).toHaveBeenCalledExactlyOnceWith("Studio busy, falling back to Open Cloud\n");
 	});
 
 	it("should fall back to open-cloud when StudioTestService is busy", async () => {
@@ -695,13 +742,15 @@ describe(StudioWithFallback, () => {
 	});
 
 	it("should rethrow non-busy errors", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const studioBackend: Backend = {
 			kind: "studio",
 			runTestsAsync: vi
 				.fn<Backend["runTestsAsync"]>()
-				.mockRejectedValue(new Error("some other error")),
+				.mockRejectedValue(
+					Object.assign(new Error("some other error"), { code: "EACCES" }),
+				),
 		};
 
 		const fallback = new StudioWithFallback(studioBackend, {
@@ -709,6 +758,7 @@ describe(StudioWithFallback, () => {
 			placeId: "456",
 			universeId: "123",
 		});
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		await expect(
 			fallback.runTestsAsync({
@@ -721,5 +771,6 @@ describe(StudioWithFallback, () => {
 				],
 			}),
 		).rejects.toThrowWithMessage(Error, "some other error");
+		expect(stderr).not.toHaveBeenCalled();
 	});
 });

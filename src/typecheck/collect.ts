@@ -36,8 +36,8 @@ export function collectTestDefinitions(source: string): Array<TestDefinition> {
 	});
 
 	visitor.visit(result.program);
-	raw.sort((a, b) => a.start - b.start);
 
+	// The visitor enters calls in source order, before their nested calls.
 	return buildAncestorChain(raw);
 }
 
@@ -96,7 +96,7 @@ function isIdentifier(node: Expression): node is IdentifierReference {
 }
 
 function isStaticMemberExpression(node: Expression): node is StaticMemberExpression {
-	return node.type === "MemberExpression" && "computed" in node && !node.computed;
+	return node.type === "MemberExpression" && !node.computed;
 }
 
 function getCalleeName(callee: Expression): string | undefined {

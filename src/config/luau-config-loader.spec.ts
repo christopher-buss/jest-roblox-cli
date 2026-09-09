@@ -44,6 +44,17 @@ describe(loadLuauConfig, () => {
 		);
 	});
 
+	it("should separate every parser error in the contextual message", () => {
+		expect.assertions(1);
+
+		const { filePath, fileSystem } = seedConfig("return { foo =, bar = }");
+
+		expect(() => loadLuauConfig(filePath, fileSystem)).toThrowWithMessage(
+			Error,
+			"Failed to evaluate Luau config /project/jest.config.luau: Expected identifier when parsing expression, got ','; Expected identifier when parsing expression, got '}'",
+		);
+	});
+
 	it("should throw when config returns a non-table value", () => {
 		expect.assertions(1);
 

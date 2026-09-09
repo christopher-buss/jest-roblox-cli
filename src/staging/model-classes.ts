@@ -190,7 +190,7 @@ function decompressLz4(source: Buffer, decompressedBytes: number): Buffer {
 	const destination = Buffer.alloc(decompressedBytes);
 	const cursor: Cursor = { offset: 0, written: 0 };
 
-	while (cursor.offset < source.length && cursor.written < decompressedBytes) {
+	while (cursor.offset < source.length) {
 		const token = source.readUInt8(cursor.offset);
 		cursor.offset += 1;
 		copyLiterals({ cursor, destination, source, token });
@@ -199,6 +199,10 @@ function decompressLz4(source: Buffer, decompressedBytes: number): Buffer {
 		}
 
 		copyMatch({ cursor, destination, source, token });
+	}
+
+	if (cursor.written !== decompressedBytes) {
+		throw new RangeError();
 	}
 
 	return destination;
@@ -276,9 +280,7 @@ function readBinaryClasses(fileSystem: FileSystem, filePath: string): Array<stri
 	const handle = fileSystem.openSync(filePath, "r");
 	try {
 		const header = Buffer.alloc(BINARY_HEADER_BYTES);
-		if (fileSystem.readSync(handle, header, 0, BINARY_HEADER_BYTES, 0) < BINARY_HEADER_BYTES) {
-			return [];
-		}
+		fileSystem.readSync(handle, header, 0, BINARY_HEADER_BYTES, 0);
 
 		if (header.toString("ascii", 0, BINARY_MAGIC.length) !== BINARY_MAGIC) {
 			return [];

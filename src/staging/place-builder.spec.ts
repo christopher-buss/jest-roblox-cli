@@ -22,11 +22,15 @@ import { hashBuffer } from "../utils/hash.ts";
 import { normalizeWindowsPath, toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { CODE_SPLIT_PASS_VERSION, splitCodeMounts } from "./code-split.ts";
 import { PINNED_MOUNT_PASS_VERSION } from "./pinned-mounts.ts";
-import { buildCodeBundle, buildPlaceAsync } from "./place-builder.ts";
+import {
+	buildCodeBundle,
+	buildPlaceAsync,
+	type UnwrappedBuildPlaceOptions,
+} from "./place-builder.ts";
 import { computePlaceInputsKeyAsync } from "./place-reuse.ts";
 import { relativizeProjectPaths } from "./relativize-paths.ts";
 import { SHARED_POOL_PASS_VERSION } from "./shared-pool.ts";
-import type { PackageDescriptor } from "./synthesizer.ts";
+import type { PackageDescriptor, UnwrappedPackageDescriptor } from "./synthesizer.ts";
 import { synthesize } from "./synthesizer.ts";
 
 const PROJECT_FILE = "/cache/synth.project.json";
@@ -80,11 +84,17 @@ function writtenProject({ volume }: Harness): typeof stagedProjectSchema.infer {
 	);
 }
 
+function makeUnwrappedDescriptor(): UnwrappedPackageDescriptor {
+	return {
+		packageDirectory: PACKAGE_DIR,
+		rojoProjectPath: PACKAGE_PROJECT,
+	};
+}
+
 function makeDescriptor(): PackageDescriptor {
 	return {
 		name: "pkg",
-		packageDirectory: PACKAGE_DIR,
-		rojoProjectPath: PACKAGE_PROJECT,
+		...makeUnwrappedDescriptor(),
 	};
 }
 
@@ -116,7 +126,7 @@ describe(buildPlaceAsync, () => {
 		const result = await buildPlaceAsync({
 			childProcess: rojo.childProcess,
 			fileSystem: rojo.fileSystem,
-			packages: [makeDescriptor()],
+			packages: [makeUnwrappedDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 			wrap: false,
@@ -137,7 +147,7 @@ describe(buildPlaceAsync, () => {
 			childProcess: rojo.childProcess,
 			contentId: "deadbeef",
 			fileSystem: rojo.fileSystem,
-			packages: [makeDescriptor()],
+			packages: [makeUnwrappedDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 			wrap: false,
@@ -163,7 +173,7 @@ describe(buildPlaceAsync, () => {
 		await buildPlaceAsync({
 			childProcess: rojo.childProcess,
 			fileSystem: rojo.fileSystem,
-			packages: [makeDescriptor()],
+			packages: [makeUnwrappedDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 			wrap: false,
@@ -186,7 +196,7 @@ describe(buildPlaceAsync, () => {
 		await buildPlaceAsync({
 			childProcess: rojo.childProcess,
 			fileSystem: rojo.fileSystem,
-			packages: [makeDescriptor()],
+			packages: [makeUnwrappedDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 			wrap: false,
@@ -208,7 +218,7 @@ describe(buildPlaceAsync, () => {
 			childProcess: rojo.childProcess,
 			fileSystem: rojo.fileSystem,
 			loadStringEnabled: true,
-			packages: [makeDescriptor()],
+			packages: [makeUnwrappedDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 			wrap: false,
@@ -230,7 +240,7 @@ describe(buildPlaceAsync, () => {
 		await buildPlaceAsync({
 			childProcess: rojo.childProcess,
 			fileSystem: rojo.fileSystem,
-			packages: [makeDescriptor()],
+			packages: [makeUnwrappedDescriptor()],
 			placeFile: "/fresh/nested/game.rbxl",
 			projectFile: PROJECT_FILE,
 			wrap: false,
@@ -303,10 +313,9 @@ describe("place reuse", () => {
 	}
 
 	async function buildAsync(rojo: Harness, wrap = false): ReturnType<typeof buildPlaceAsync> {
-		return buildPlaceAsync({
+		const options = {
 			childProcess: rojo.childProcess,
 			fileSystem: rojo.fileSystem,
-			packages: [makeDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 			reuse: {
@@ -315,8 +324,11 @@ describe("place reuse", () => {
 				manifests: [],
 				shadowRoots: [],
 			},
-			wrap,
-		});
+		};
+
+		return wrap
+			? buildPlaceAsync({ ...options, packages: [makeDescriptor()], wrap })
+			: buildPlaceAsync({ ...options, packages: [makeUnwrappedDescriptor()], wrap });
 	}
 
 	it("should not re-read an unchanged mount to decide on reuse", async () => {
@@ -430,7 +442,7 @@ describe("place reuse", () => {
 		const recorded = JSON.parse(String(rojo.volume.readFileSync(CACHE_FILE, "utf8")));
 		const projectJson = synthesize({
 			fileSystem: rojo.fileSystem,
-			packages: [makeDescriptor()],
+			packages: [makeUnwrappedDescriptor()],
 			wrap: false,
 		});
 
@@ -464,11 +476,11 @@ describe("place reuse", () => {
 		const options = {
 			childProcess: rojo.childProcess,
 			fileSystem: rojo.fileSystem,
-			packages: [makeDescriptor()],
+			packages: [makeUnwrappedDescriptor()],
 			placeFile: PLACE_FILE,
 			projectFile: PROJECT_FILE,
 			wrap: false,
-		};
+		} satisfies UnwrappedBuildPlaceOptions;
 		await buildPlaceAsync(options);
 		await buildPlaceAsync(options);
 
@@ -700,6 +712,23 @@ describe("code bundle", () => {
 			normalizeWindowsPath(path.relative("/cache", OUT_DIR)),
 		);
 		expect(rojo.volume.existsSync(BUNDLE_FILE)).toBeFalse();
+	});
+
+	it("should accept a bundle exactly at the binary-input cap", { timeout: 10_000 }, async () => {
+		expect.assertions(2);
+
+		const rojo = seedBundleBuild();
+		const sourcePath = `${OUT_DIR}/boundary.luau`;
+		rojo.fileSystem.writeFileSync(sourcePath, "");
+		await buildHarnessAsync(rojo);
+		const overhead = rojo.fileSystem.statSync(BUNDLE_FILE).size;
+		const cap = 100 * 1024 * 1024;
+		rojo.fileSystem.writeFileSync(sourcePath, `--${" ".repeat(cap - overhead - 2)}`);
+
+		const result = await buildHarnessAsync(rojo);
+
+		expect(result.codeBundle).toBeDefined();
+		expect(rojo.fileSystem.statSync(BUNDLE_FILE).size).toBe(cap);
 	});
 
 	// Over the mutation run's 100ms budget by design: the only honest way to

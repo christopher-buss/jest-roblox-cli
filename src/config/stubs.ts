@@ -82,7 +82,9 @@ function isBakedStub(fileSystem: FileSystem, shadowPath: string): boolean {
 
 const SKIP_FIELDS: ReadonlySet<string> = new Set(["exclude", "include"]);
 
-export function serializeToLuau(config: UndefinedTolerant<ProjectTestConfig>): string {
+type StubConfig = Partial<UndefinedTolerant<ProjectTestConfig>>;
+
+export function serializeToLuau(config: StubConfig): string {
 	let output = `${HEADER}return {\n`;
 
 	for (const [key, value] of Object.entries(config)) {
@@ -110,7 +112,7 @@ export function serializeToLuau(config: UndefinedTolerant<ProjectTestConfig>): s
 }
 
 export function generateProjectConfigs(
-	projects: Array<{ config: ProjectTestConfig; outputPath: string }>,
+	projects: Array<{ config: StubConfig; outputPath: string }>,
 	fileSystem: FileSystem = nodeFileSystem,
 ): void {
 	for (const project of projects) {
@@ -264,15 +266,14 @@ export function generateProjectStubs(
 	fileSystem: FileSystem = nodeFileSystem,
 ): void {
 	const writeRoot = outputRoot ?? rootDirectory;
-	const entries: Array<{ config: ProjectTestConfig; outputPath: string }> = [];
+	const entries: Array<{ config: StubConfig; outputPath: string }> = [];
 
 	for (const project of projects) {
 		assertStubCollisionRule(project, rootDirectory, fileSystem);
 
-		const stubConfig: ProjectTestConfig = {
+		const stubConfig: StubConfig = {
 			...buildStubConfig(project.config),
 			displayName: project.displayName,
-			include: [],
 			testMatch: project.testMatch,
 		};
 
@@ -396,9 +397,9 @@ function cleanLeftoverStubsForProject(
 function buildStubEntriesForProject(
 	{ fileSystem, rootDirectory, writeRoot }: StubRoots,
 	project: ResolvedProjectConfig,
-	stubConfig: ProjectTestConfig,
-): Array<{ config: ProjectTestConfig; outputPath: string }> {
-	const entries: Array<{ config: ProjectTestConfig; outputPath: string }> = [];
+	stubConfig: StubConfig,
+): Array<{ config: StubConfig; outputPath: string }> {
+	const entries: Array<{ config: StubConfig; outputPath: string }> = [];
 	for (const mount of project.rojoMounts) {
 		// Per-mount FS check — skip generation when a non-marker
 		// `jest.config.luau` already exists at the mount on disk.
@@ -420,7 +421,7 @@ function buildStubEntriesForProject(
 function buildStubConfig(config: ResolvedConfig): Partial<ProjectTestConfig> {
 	const result: Partial<ProjectTestConfig> = {};
 	for (const [key, value] of Object.entries(config)) {
-		if (value !== undefined && PROJECT_TEST_KEYS.has(key) && !STUB_SKIP_KEYS.has(key)) {
+		if (PROJECT_TEST_KEYS.has(key) && !STUB_SKIP_KEYS.has(key)) {
 			Reflect.set(result, key, value);
 		}
 	}
@@ -458,23 +459,20 @@ function syncMountStub(
 	return { changed: true, targetPath };
 }
 
-function findShadowStubs(fileSystem: FileSystem, directory: string): Array<string> {
-	const results: Array<string> = [];
+function* findShadowStubs(fileSystem: FileSystem, directory: string): Generator<string, void> {
 	if (!fileSystem.existsSync(directory)) {
-		return results;
+		return;
 	}
 
 	const entries = fileSystem.readdirSync(directory, { withFileTypes: true });
 	for (const entry of entries) {
 		const fullPath = path.resolve(directory, entry.name);
 		if (entry.isDirectory()) {
-			results.push(...findShadowStubs(fileSystem, fullPath));
+			yield* findShadowStubs(fileSystem, fullPath);
 		} else if (STUB_FILENAMES.has(entry.name)) {
-			results.push(fullPath);
+			yield fullPath;
 		}
 	}
-
-	return results;
 }
 
 function removeEmptyParents(fileSystem: FileSystem, directory: string, stopAt: string): void {
@@ -485,11 +483,8 @@ function removeEmptyParents(fileSystem: FileSystem, directory: string, stopAt: s
 	}
 
 	try {
-		const entries = fileSystem.readdirSync(resolved);
-		if (entries.length === 0) {
-			fileSystem.rmdirSync(resolved);
-			removeEmptyParents(fileSystem, path.dirname(resolved), stopAt);
-		}
+		fileSystem.rmdirSync(resolved);
+		removeEmptyParents(fileSystem, path.dirname(resolved), stopAt);
 	} catch {
 		// Best-effort cleanup
 	}

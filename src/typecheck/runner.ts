@@ -481,8 +481,8 @@ function executeTsgo({
 	tsgoScript,
 }: ExecuteTsgoOptions): void {
 	let launchTimer: ReturnType<typeof setTimeout> | undefined;
-	// `finish` settles the promise exactly once, guarding the two kill sources
-	// (launch timer + `execFile` run-timeout) from racing. A holder object, not
+	// The Promise settles once; this flag prevents arming a launch timer after
+	// a synchronous completion. A holder object, not
 	// a bare `let settled = false`: typescript-eslint's
 	// `no-unnecessary-condition` narrows a bare boolean to literal `false` at
 	// the `!state.settled` arming guard below (the closure that flips it has not
@@ -491,10 +491,6 @@ function executeTsgo({
 	const state = { settled: false };
 
 	function finish(action: () => void): void {
-		if (state.settled) {
-			return;
-		}
-
 		state.settled = true;
 		clearTimeout(launchTimer);
 

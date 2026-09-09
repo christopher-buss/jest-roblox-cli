@@ -24,7 +24,7 @@ import { nodeRunDispatch, runSingleOrMultiAsync } from "../run.ts";
 import { nodeRunSeams } from "../run/seams.ts";
 import { collectStubMounts } from "../run/staging.ts";
 import { buildPlaceAsync } from "../staging/place-builder.ts";
-import type { PackageDescriptor, StubMount } from "../staging/synthesizer.ts";
+import type { StubMount, UnwrappedPackageDescriptor } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import { createTimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -162,16 +162,11 @@ async function buildCleanPlaceAsync(
 	entry: Required<RunEntryOptions>,
 ): Promise<BuildManifestArtifact> {
 	const { fileSystem, seams } = entry;
-	const descriptor: PackageDescriptor = {
-		name: "jest-roblox-clean",
+	const descriptor: UnwrappedPackageDescriptor = {
 		packageDirectory: path.resolve(config.rootDir),
 		rojoProjectPath: path.resolve(findRojoProject(config, fileSystem)),
+		stubMounts: await resolveCleanStubMountsAsync(config, entry),
 	};
-
-	const stubMounts = await resolveCleanStubMountsAsync(config, entry);
-	if (stubMounts !== undefined) {
-		descriptor.stubMounts = stubMounts;
-	}
 
 	return buildPlaceAsync({
 		childProcess: seams.childProcess,

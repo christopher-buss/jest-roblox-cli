@@ -135,7 +135,8 @@ export function mergeAttribution(a: AttributionResult, b: AttributionResult): At
 /**
  * A statement is static iff it was hit in the run (`count > 0`) but never
  * credited to a per-test window — i.e. its id is not a key in `coveringTestIds`
- * for that file. Ids are sorted numerically so the manifest stays stable.
+ * for that file. Numeric object keys enumerate in ascending order, so the
+ * manifest stays stable without another sort.
  */
 function deriveStatic(
 	cumulative: RawCoverageData,
@@ -148,8 +149,7 @@ function deriveStatic(
 			.filter(
 				([statementId, hitCount]) => hitCount > 0 && credited?.[statementId] === undefined,
 			)
-			.map(([statementId]) => statementId)
-			.sort((a, b) => Number(a) - Number(b));
+			.map(([statementId]) => statementId);
 		if (ids.length > 0) {
 			staticStatementIds[fileKey] = ids;
 		}

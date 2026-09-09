@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
 	poolKeyOf,
@@ -111,6 +111,18 @@ describe(poolSharedMounts, () => {
 		});
 	});
 
+	it("should traverse an ordinary instance name ending in a dollar sign", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
+		const project = pooledProject(
+			fileSystem,
+			twoPackagesStaging({ $className: "Folder", Cash$: folderMount(INCLUDE) }),
+		);
+
+		expect(poolKeyOf(staged(project, "a", "Include", "Cash$"))).toBe(digestOf(INCLUDE));
+	});
+
 	it("should declare a class on both halves of what it writes", () => {
 		expect.assertions(2);
 
@@ -140,6 +152,23 @@ describe(poolSharedMounts, () => {
 		const project = pooledProject(fileSystem, twoPackagesStaging(node));
 
 		expect(staged(project, "__shared", digestOf(INCLUDE))!.$className).toBe(expected);
+	});
+
+	it("should preserve Folder when only one duplicate mount declares it", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = seed({ [path.join(INCLUDE, "runtime.luau")]: "" });
+		const project = pooledProject(
+			fileSystem,
+			stagedProject({
+				a: { $className: "Folder", Include: folderMount(INCLUDE) },
+				b: { $className: "Folder", Include: { $path: INCLUDE } },
+			}),
+		);
+		const entry = staged(project, "__shared", digestOf(INCLUDE));
+		assert(entry !== undefined);
+
+		expect(entry.$className).toBe("Folder");
 	});
 
 	it("should pool a mount that declares no class of its own", () => {

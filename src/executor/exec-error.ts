@@ -95,10 +95,6 @@ const LABEL_WIDTH = 13;
  */
 function bannerCause(error: LuauScriptError): string | undefined {
 	const entries = parseGameOutput(error.bannerOutput);
-	if (entries.length === 0) {
-		return undefined;
-	}
-
 	const lines = entries
 		.map((banner) => banner.message)
 		.join("\n")

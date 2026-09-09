@@ -5,6 +5,84 @@ import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { createPathResolver, luauInitToIndex } from "./path-resolver.ts";
 
 describe(createPathResolver, () => {
+	it.for(["lua", "luau"])("should preserve a directly mounted %s file", (extension) => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const filePath = `out/suite.spec.${extension}`;
+		const resolver = createPathResolver(
+			{ name: "test", tree: { Suite: { $path: filePath } } },
+			{ fileSystem },
+		);
+
+		expect(resolver.resolve("Suite")).toStrictEqual({ filePath });
+	});
+
+	it("should map a directly mounted init script back to its TypeScript source", () => {
+		expect.assertions(1);
+
+		const mapping = { outDir: "out", rootDir: "src" };
+		const resolver = createPathResolver(
+			{ name: "test", tree: { Module: { $path: "out/module/init.luau" } } },
+			{ mappings: [mapping] },
+		);
+
+		expect(resolver.resolve("Module")).toStrictEqual({
+			filePath: "src/module/index.ts",
+			mapping,
+		});
+	});
+
+	it("should resolve a mount whose instance name ends with a dollar sign", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const resolver = createPathResolver(
+			{ name: "test", tree: { Cash$: { $path: "out/cash" } } },
+			{ fileSystem },
+		);
+
+		expect(resolver.resolve("Cash$.wallet")).toStrictEqual({
+			filePath: "out/cash/wallet.luau",
+		});
+	});
+
+	it("should resolve through the deepest mount when its parent is also mounted", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const resolver = createPathResolver(
+			{
+				name: "test",
+				tree: {
+					ReplicatedStorage: {
+						$path: "out/shared",
+						Feature: { $path: "out/feature" },
+					},
+				},
+			},
+			{ fileSystem },
+		);
+
+		expect(resolver.resolve("ReplicatedStorage.Feature.foo")!.filePath).toBe(
+			"out/feature/foo.luau",
+		);
+	});
+
+	it("should preserve the final test suffix in a source filename", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const resolver = createPathResolver(
+			{ name: "test", tree: { ReplicatedStorage: { $path: "out/shared" } } },
+			{ fileSystem },
+		);
+
+		expect(resolver.resolve("ReplicatedStorage.foo.test")!.filePath).toBe(
+			"out/shared/foo.test.luau",
+		);
+	});
+
 	it("should parse simple rojo tree", () => {
 		expect.assertions(1);
 

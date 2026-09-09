@@ -144,11 +144,8 @@ export function formatProjectSection({
 			useColor: options.color,
 		}),
 		...formatFileSummaries(result, options, resolved),
+		...formatDetailedFailures(result, options, resolved, failureCtx),
 	];
-
-	if (countDetailedFailures(result) > 0) {
-		lines.push(...formatDetailedFailures(result, options, resolved, failureCtx));
-	}
 
 	// Only a failing project earns its Game Output inline: on a pass the
 	// reader has nothing to debug, and the file sinks still hold the full dump.

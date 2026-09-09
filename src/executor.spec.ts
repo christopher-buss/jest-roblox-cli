@@ -513,10 +513,8 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingleAsync(options);
 
-		// verbose cancels agent — uses the default formatter (Test Files
-		// summary). The RUN header is emitted at the start of the run, not by
-		// the formatter.
-		expect(result.output).not.toContain("RUN");
+		// Verbose output includes the human timing summary.
+		expect(result.output).toContain("Duration");
 		expect(result.output).toContain("Test Files");
 	});
 
@@ -611,9 +609,20 @@ describe("execute single-project helper", () => {
 	});
 
 	it("should profile each orchestration boundary by its stable name", async () => {
-		expect.assertions(4);
+		expect.assertions(1);
 
 		const { fileSystem } = memoryFileSystem();
+		const backend: Backend = {
+			kind: "studio",
+			runTestsAsync: async () => {
+				return singleEntryResult({
+					result: createPassingResult(),
+					snapshotWrites: {
+						"ReplicatedStorage/shared/__snapshots__/test.snap.luau": "snapshot content",
+					},
+				});
+			},
+		};
 
 		const profileNames: Array<string> = [];
 		const timing: TimingCollector = fromAny({
@@ -631,11 +640,11 @@ describe("execute single-project helper", () => {
 		});
 
 		await runProjectsAsync({
-			backend: createMockBackend(createPassingResult()),
+			backend,
 			fileSystem,
 			projects: [
 				{
-					config: { ...DEFAULT_CONFIG, sourceMap: false },
+					config: { ...DEFAULT_CONFIG, sourceMap: true },
 					testFiles: ["src/test.spec.ts"],
 				},
 			],
@@ -645,10 +654,16 @@ describe("execute single-project helper", () => {
 			version: "0.0.0-test",
 		});
 
-		expect(profileNames).toContain("buildJobs");
-		expect(profileNames).toContain("backend.runTests");
-		expect(profileNames).toContain("processResults");
-		expect(profileNames).toContain("resolveTsconfigMappings");
+		expect(profileNames).toStrictEqual(
+			expect.arrayContaining([
+				"buildJobs",
+				"backend.runTests",
+				"processResults",
+				"resolveTsconfigMappings",
+				"buildSourceMapper",
+				"writeSnapshots",
+			]),
+		);
 	});
 
 	it("should record uploadMs / executionMs spans under backend.runTests when timing is provided", async () => {
@@ -1206,9 +1221,9 @@ describe("execute single-project helper", () => {
 
 		const result = await executeSingleAsync(options);
 
-		// Agent format uses PASS/FAIL prefix per file, no verbose headers
+		// Agent output omits the human timing summary.
 		expect(result.output).toContain("FAIL");
-		expect(result.output).not.toContain("RUN");
+		expect(result.output).not.toContain("Duration");
 	});
 
 	it("should respect maxFailures from agent formatter options tuple", async () => {

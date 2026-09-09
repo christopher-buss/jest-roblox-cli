@@ -173,6 +173,23 @@ describe(generateReports, () => {
 
 			expect(fs.existsSync(jsonPath)).toBeTrue();
 		});
+
+		it("should generate json when the agent text filter matches no file", () => {
+			expect.assertions(1);
+
+			const temporaryDirectory = createTemporaryDirectory();
+			generateReports({
+				agentMode: true,
+				agentTextFilter: sourceTwinFilter(["src/missing.test.ts"], process.cwd()),
+				coverageDirectory: temporaryDirectory,
+				mapped: createResult({
+					"src/shared/player.ts": createMappedFile(),
+				}),
+				reporters: ["json"],
+			});
+
+			expect(fs.existsSync(path.join(temporaryDirectory, "coverage-final.json"))).toBeTrue();
+		});
 	});
 
 	describe("text reporter snapshot", () => {
@@ -1078,7 +1095,7 @@ describe(generateReports, () => {
 
 describe(printCoverageHeader, () => {
 	it("should match header output", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
@@ -1091,6 +1108,7 @@ describe(printCoverageHeader, () => {
 			 % Coverage report from istanbul
 			"
 		`);
+		expect(output).not.toBe(stripVTControlCharacters(output));
 	});
 
 	it("should render the header without ANSI color in agent mode", () => {

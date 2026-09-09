@@ -1,7 +1,7 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { WebSocket, WebSocketServer } from "ws";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -23,6 +23,13 @@ const REQUEST = { connectTimeoutMs: 40, expectedVersion: EXPECTED_VERSION, grace
 function makePool(): { pool: PluginConnectionPool; wss: MockWebSocketServer } {
 	const wss = new MockWebSocketServer({ port: 0 });
 	return { pool: new PluginConnectionPool(fromPartial<WebSocketServer>(wss)), wss };
+}
+
+function useFakeTimers(): void {
+	vi.useFakeTimers();
+	onTestFinished(() => {
+		vi.useRealTimers();
+	});
 }
 
 /** Connect without announcing — every plugin predating the handshake. */
@@ -152,6 +159,26 @@ describe(PluginConnectionPool, () => {
 		const selection = await selecting;
 
 		expect(selection.kind).toBe("incompatible");
+	});
+
+	it("should not restart the grace window when another stale plugin connects", async () => {
+		expect.assertions(2);
+
+		useFakeTimers();
+		const { pool, wss } = makePool();
+		const selecting = pool.selectAsync({ ...REQUEST, connectTimeoutMs: 600_000, graceMs: 10 });
+		const settled = vi.fn<(selection: unknown) => void>();
+		void selecting.then(settled);
+		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 1 });
+
+		await vi.advanceTimersByTimeAsync(9);
+		connectPlugin(wss, { protocolVersion: EXPECTED_VERSION - 2 });
+
+		expect(vi.getTimerCount()).toBe(1);
+
+		await vi.advanceTimersByTimeAsync(1);
+
+		expect(settled).toHaveBeenCalledOnce();
 	});
 
 	it("should give a late plugin the whole grace window past the connect timeout", async () => {

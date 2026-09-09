@@ -239,25 +239,33 @@ function matchUnderPatterns(
 	// Subtracted from the matches rather than globbed a second time: an
 	// exclusion only ever removes what a positive pattern already selected, so
 	// it costs a pass over those few paths instead of over the whole walk.
-	const excludeGlobs = named
-		.filter((pattern) => pattern.startsWith("!"))
-		.map((pattern) => pattern.slice(1))
-		// A bare `!` leaves nothing to exclude, and joining the leaf onto an
-		// empty body yields the leaf itself — which is the workspace root's own
-		// manifest, so the entry would delete the root rather than no-op.
-		.filter((body) => body !== "")
-		.map((body) => path.posix.join(body, leaf));
-	const matches = named
-		.filter((pattern) => !pattern.startsWith("!"))
-		.flatMap((pattern) => {
-			return globSync(path.posix.join(pattern, leaf), {
-				cache: globCache,
-				cwd: workspaceRoot,
-				fileSystem,
-			});
-		});
+	const excludeGlobs = new Set<string>();
+	const matches = new Set<string>();
+	for (const pattern of named) {
+		if (pattern.startsWith("!")) {
+			const body = pattern.slice(1);
+			// A bare `!` leaves nothing to exclude, and joining the leaf onto
+			// an empty body yields the leaf itself — the workspace root's own
+			// manifest, so the entry would delete the root rather than
+			// no-op.
+			if (body !== "") {
+				excludeGlobs.add(path.posix.join(body, leaf));
+			}
 
-	return applyExcludes(matches, excludeGlobs);
+			continue;
+		}
+
+		const included = globSync(path.posix.join(pattern, leaf), {
+			cache: globCache,
+			cwd: workspaceRoot,
+			fileSystem,
+		});
+		for (const match of included) {
+			matches.add(match);
+		}
+	}
+
+	return applyExcludes([...matches], [...excludeGlobs]);
 }
 
 /** @returns The path to the workspace manifest, which is known to exist. */
@@ -290,17 +298,22 @@ function walkPnpmPackages(
 ): Array<PackageInfo> {
 	const yamlPath = assertPnpmWorkspace(fileSystem, workspaceRoot);
 	const yaml = parseYAML<PnpmWorkspace>(fileSystem.readFileSync(yamlPath, "utf-8"));
-	const patterns = yaml.packages ?? [];
-
 	const packages: Array<PackageInfo> = [];
 	const seenDirectories = new Set<string>();
 	// pnpm reads the root manifest as a workspace project whether or not
 	// `packages:` lists `.`, and does not subject it to the exclusions, so the
 	// root leads the list rather than waiting on a pattern to select it.
-	const matches = [
-		PACKAGE_JSON_LEAF,
-		...matchUnderPatterns({ fileSystem, workspaceRoot }, patterns, PACKAGE_JSON_LEAF, cache),
-	];
+	const matches = [PACKAGE_JSON_LEAF];
+	if (yaml.packages !== undefined) {
+		matches.push(
+			...matchUnderPatterns(
+				{ fileSystem, workspaceRoot },
+				yaml.packages,
+				PACKAGE_JSON_LEAF,
+				cache,
+			),
+		);
+	}
 
 	for (const match of matches) {
 		const packageJsonPath = path.join(workspaceRoot, match);
@@ -347,11 +360,8 @@ function pnpmPackages(
 	cache?: GlobCache,
 ): Array<PackageInfo> {
 	const snapshot = readPnpmWorkspaceProjects(workspaceRoot, fileSystem);
-	if (snapshot !== undefined) {
-		assertNoDuplicateNames(snapshot, workspaceRoot);
-		if (names.every((name) => findByName(snapshot, name) !== undefined)) {
-			return snapshot;
-		}
+	if (snapshot !== undefined && names.every((name) => findByName(snapshot, name) !== undefined)) {
+		return snapshot;
 	}
 
 	return walkPnpmPackages(fileSystem, workspaceRoot, cache);

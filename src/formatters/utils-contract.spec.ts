@@ -11,6 +11,12 @@ import {
 } from "./utils.ts";
 
 describe(findFormatterOptions, () => {
+	it("should return undefined when the formatter list is absent", () => {
+		expect.assertions(1);
+
+		expect(findFormatterOptions(undefined, "agent")).toBeUndefined();
+	});
+
 	it("should return empty options for a bare formatter name", () => {
 		expect.assertions(1);
 

@@ -128,7 +128,7 @@ export interface CoverageManifest {
 	 * it drifts. Absent on manifests written before this field existed; a
 	 * missing value is treated as changed so the next run repopulates it.
 	 */
-	rojoInputsHash?: string;
+	rojoInputsHash?: string | undefined;
 	shadowDir: string;
 	/**
 	 * Per-test attribution records, one per Jest test case that covered at

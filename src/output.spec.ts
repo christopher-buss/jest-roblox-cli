@@ -534,14 +534,14 @@ describe(outputSingleResultAsync, () => {
 		expect(spies.stdout).toHaveBeenCalledWith("typecheck-summary");
 	});
 
-	it("should render the typecheck-only report without color when color is off", async () => {
+	it.for([false, true])("should render typecheck-only with color=%s", async (color) => {
 		expect.assertions(1);
 
 		const { dependencies } = setupOutput();
 		setupOutputSpies();
 
 		await outputSingleResultAsync(
-			makeConfig({ color: false }),
+			makeConfig({ color }),
 			makeSingleResult({
 				runtimeResult: undefined,
 				typecheckResult: makeJestResult(),
@@ -550,7 +550,7 @@ describe(outputSingleResultAsync, () => {
 		);
 
 		expect(renderer.formatTypecheckReport).toHaveBeenCalledWith(expect.anything(), {
-			useColor: false,
+			useColor: color,
 		});
 	});
 
@@ -1485,7 +1485,7 @@ describe("processCoverage via outputSingleResult", () => {
 	});
 
 	it("should generate reports when manifest present", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const { dependencies } = setupOutput();
 		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
@@ -1501,6 +1501,7 @@ describe("processCoverage via outputSingleResult", () => {
 		);
 
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
+		expect(spies.stdout).not.toHaveBeenCalledWith("\nundefined\n");
 		expect(pipeline.generateReports).toHaveBeenCalledOnce();
 	});
 
@@ -1549,7 +1550,7 @@ describe("processCoverage via outputSingleResult", () => {
 
 		expect(code).toBe(1);
 		expect(spies.stderr).toHaveBeenCalledWith(
-			expect.stringContaining("Coverage threshold not met"),
+			"Coverage threshold not met for lines: 50.00% < 100%\n",
 		);
 	});
 
@@ -1761,6 +1762,25 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		expect(pipeline.generateReports).toHaveBeenCalledWith(
 			expect.objectContaining({ mapped: fooUniverse }),
 		);
+	});
+
+	it("should suppress package coverage labels when workspace output is silent", async () => {
+		expect.assertions(2);
+
+		const { dependencies } = setupOutput();
+		const spies = setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig(),
+			makeWorkspaceResult({
+				coveragePackages: [makeCoverageGate()],
+				reportOptions: makeReportOptions({ silent: true }),
+			}),
+			dependencies,
+		);
+
+		expect(spies.stdout).not.toHaveBeenCalled();
+		expect(pipeline.generateReports).toHaveBeenCalledOnce();
 	});
 
 	it("should emit one report per package, each into its own directory with its own reporters", async () => {

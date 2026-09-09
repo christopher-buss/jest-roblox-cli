@@ -12,6 +12,7 @@ import {
 import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
+import type { RunProgress } from "../progress/reporter.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import { StudioBackend } from "./studio.ts";
@@ -227,7 +228,9 @@ describe("protocol version handshake", () => {
 	});
 
 	it("should reject a response that omits the protocolVersion echo", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
+
+		useSelectionTimers();
 
 		// A plugin that announces a protocol it does not actually serve:
 		// selected on its announcement, then answering like a pre-v2 plugin
@@ -261,6 +264,7 @@ describe("protocol version handshake", () => {
 		connectPlugin(wss, socket);
 
 		await expect(promise).rejects.toThrow(/invalid plugin message/i);
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("should reject an echo from a protocol older than the current one", async () => {
@@ -406,7 +410,11 @@ describe("protocol version handshake", () => {
 
 		connectPlugin(wss, socket);
 
-		await expect(promise).rejects.toThrow(/protocol version mismatch/i);
+		await expect(promise).rejects.toThrowWithMessage(
+			Error,
+			"Studio plugin protocol version mismatch: plugin reported v1, CLI expected v2. " +
+				"Update the jest-roblox Studio plugin to match this CLI version.",
+		);
 	});
 });
 
@@ -595,6 +603,11 @@ describe(StudioBackend, () => {
 	it("should populate timing.executionMs on the BackendResult", async () => {
 		expect.assertions(1);
 
+		const now = vi.spyOn(Date, "now").mockReturnValueOnce(100).mockReturnValueOnce(145);
+		onTestFinished(() => {
+			now.mockRestore();
+		});
+
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
 
@@ -603,7 +616,28 @@ describe(StudioBackend, () => {
 
 		const result = await promise;
 
-		expect(result.timing.executionMs).toBeGreaterThanOrEqual(0);
+		expect(result.timing.executionMs).toBe(45);
+	});
+
+	it("should close the tests progress stage after results arrive", async () => {
+		expect.assertions(3);
+
+		useSelectionTimers();
+
+		const done = vi.fn<() => void>();
+		const begin = vi.fn<RunProgress["begin"]>(() => done);
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const promise = backend.runTestsAsync({
+			...singleJobOptions,
+			progress: fromPartial({ begin }),
+		});
+		connectAndReply(getLastCreatedServer()!, {});
+
+		await promise;
+
+		expect(begin).toHaveBeenCalledExactlyOnceWith("tests", "1 project");
+		expect(done).toHaveBeenCalledOnce();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("should surface the fallback gameOutput on each rawResult", async () => {
@@ -688,7 +722,9 @@ describe(StudioBackend, () => {
 	});
 
 	it("should throw when the plugin disconnects before sending results", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
+
+		useSelectionTimers();
 
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
@@ -706,6 +742,7 @@ describe(StudioBackend, () => {
 			Error,
 			"Studio plugin disconnected before sending results",
 		);
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("should use a pre-connected socket without waiting for a new connection", async () => {
@@ -771,7 +808,9 @@ describe(StudioBackend, () => {
 	});
 
 	it("should reject when the websocket emits an error", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
+
+		useSelectionTimers();
 
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync(singleJobOptions);
@@ -786,6 +825,7 @@ describe(StudioBackend, () => {
 		connectPlugin(wss, socket);
 
 		await expect(promise).rejects.toThrowWithMessage(Error, "socket error");
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("should reject when the server emits an error", async () => {

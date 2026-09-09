@@ -251,27 +251,22 @@ function writeAggregateGameOutput(
 function announceGameOutput(
 	{
 		aggregateNotice,
-		aggregatePath,
 		perPackageNotices,
 	}: {
-		aggregateNotice: string;
-		aggregatePath: string | undefined;
-		perPackageNotices: Array<string>;
+		aggregateNotice: string | undefined;
+		perPackageNotices: Array<string> | undefined;
 	},
 	runOptions: WorkspaceRunOptions,
 	verbose = false,
 ): void {
-	const isAggregateActive = aggregatePath !== undefined;
-	const isPerPackageActive = runOptions.workspaceGameOutput;
-	const shouldAnnouncePerPackage = usesAgentFormatter(runOptions.formatters, verbose)
-		? isPerPackageActive
-		: !isAggregateActive && isPerPackageActive;
-
-	if (shouldAnnouncePerPackage) {
+	if (
+		perPackageNotices !== undefined &&
+		(aggregateNotice === undefined || usesAgentFormatter(runOptions.formatters, verbose))
+	) {
 		for (const notice of perPackageNotices) {
 			console.error(notice);
 		}
-	} else if (isAggregateActive && aggregateNotice !== "") {
+	} else if (aggregateNotice !== undefined && aggregateNotice !== "") {
 		console.error(aggregateNotice);
 	}
 }
@@ -294,9 +289,9 @@ function emitWorkspaceGameOutput({
 	const aggregateNotice =
 		aggregatePath !== undefined
 			? writeAggregateGameOutput(fileSystem, aggregatePath, pending, results)
-			: "";
+			: undefined;
 
-	let perPackageNotices: Array<string> = [];
+	let perPackageNotices: Array<string> | undefined;
 	if (runOptions.workspaceGameOutput) {
 		perPackageNotices = writePerPackageGameOutputFiles(
 			fileSystem,
@@ -309,10 +304,6 @@ function emitWorkspaceGameOutput({
 	}
 
 	if (!runOptions.silent) {
-		announceGameOutput(
-			{ aggregateNotice, aggregatePath, perPackageNotices },
-			runOptions,
-			verbose,
-		);
+		announceGameOutput({ aggregateNotice, perPackageNotices }, runOptions, verbose);
 	}
 }

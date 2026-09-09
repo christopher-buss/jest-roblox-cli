@@ -96,6 +96,18 @@ describe(countLinesThroughLastDirective, () => {
 		expect(countFor("--!strict\n--[[ note ]] local x = 1")).toBe(1);
 	});
 
+	it("should leave trailing whitespace below the last directive", () => {
+		expect.assertions(1);
+
+		expect(countFor("--!strict\n \t \nlocal x = 1")).toBe(1);
+	});
+
+	it("should scan consecutive block comments before a directive", () => {
+		expect.assertions(1);
+
+		expect(countFor("--[[first]] --[=[second]=] --!native\nlocal x = 1")).toBe(1);
+	});
+
 	it("should read a long-bracket comment to its own closer", () => {
 		expect.assertions(2);
 

@@ -78,6 +78,25 @@ describe(narrowRootToUniverse, () => {
 		).toStrictEqual([""]);
 	});
 
+	it("should still narrow when ignored paths leave a probe elsewhere", () => {
+		expect.assertions(1);
+
+		const fileSystem = seed(
+			"modules/ecs/world.luau",
+			"modules/generated/init.luau",
+			"modules/ui/button.luau",
+			"server/init.luau",
+		);
+
+		expect(
+			narrowRootToUniverse(MOUNT, {
+				fileSystem,
+				isCopyIgnored: createCopyIgnoreMatcher(["**/generated/**"]),
+				universe: universeOf("modules/ecs/world.luau"),
+			}),
+		).toStrictEqual(["modules/ecs"]);
+	});
+
 	it("should read a mount written with a trailing separator", () => {
 		expect.assertions(1);
 

@@ -132,18 +132,16 @@ const perTestCoverageSchema = type({
 export function extractJsonFromOutput(output: string): string | undefined {
 	const lines = output.split("\n");
 	let braceCount = 0;
-	let isCollecting = false;
-	const jsonLines: Array<string> = [];
+	let jsonLines: Array<string> | undefined;
 
 	for (const line of lines) {
-		if (!isCollecting && line.trimStart().startsWith("{")) {
-			isCollecting = true;
-			braceCount = 0;
-			jsonLines.length = 0;
-		}
+		if (jsonLines === undefined) {
+			if (!line.trimStart().startsWith("{")) {
+				continue;
+			}
 
-		if (!isCollecting) {
-			continue;
+			braceCount = 0;
+			jsonLines = [];
 		}
 
 		jsonLines.push(line);
@@ -158,7 +156,7 @@ export function extractJsonFromOutput(output: string): string | undefined {
 			return candidate;
 		}
 
-		isCollecting = false;
+		jsonLines = undefined;
 	}
 
 	return undefined;

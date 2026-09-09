@@ -5,6 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -756,9 +757,15 @@ describe(runTypecheckAsync, () => {
 			tsconfig: "tsconfig.test.json",
 		});
 
-		const callArgs = invocations[0]!.arguments;
+		const [, ...callArgs] = invocations[0]!.arguments;
 
-		expect(callArgs.at(-1)).toBe(path.resolve("/project", "tsconfig.test.json"));
+		expect(callArgs).toStrictEqual([
+			"--build",
+			"--emitDeclarationOnly",
+			"--pretty",
+			"false",
+			path.resolve("/project", "tsconfig.test.json"),
+		]);
 	});
 
 	it("should store testFilePath as relative to rootDir", async () => {
@@ -914,6 +921,40 @@ describe(runTypecheckAsync, () => {
 		const result = await promise;
 
 		expect(result.success).toBeTrue();
+		expect(kill).not.toHaveBeenCalled();
+	});
+
+	it("should cancel the launch deadline when execution completes before spawn", async () => {
+		expect.assertions(2);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		let completed: TsgoCallback | undefined;
+		const { childProcess, kill } = stubTsgo((callback) => {
+			completed = callback;
+		});
+		const { fileSystem } = createMemoryFileSystem({
+			"/project/src/test.spec.ts": 'it("passes", () => {});',
+			"/project/tsconfig.json": "{}",
+		});
+		const pending = runTypecheckAsync({
+			childProcess,
+			files: ["/project/src/test.spec.ts"],
+			fileSystem,
+			rootDir: "/project",
+			spawnTimeout: 5,
+		});
+		assert(completed !== undefined);
+		completed(null, "", "");
+
+		await pending;
+
+		expect(vi.getTimerCount()).toBe(0);
+
+		await vi.advanceTimersByTimeAsync(10);
+
 		expect(kill).not.toHaveBeenCalled();
 	});
 

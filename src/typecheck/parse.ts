@@ -61,7 +61,7 @@ function parseTscErrorDetail(afterParen: string): TscErrorDetail | undefined {
 	const groups = TSC_ERROR_DETAIL.exec(afterParen)?.groups;
 	const errorCodeString = groups?.["errorCode"];
 	const errorMessage = groups?.["errorMessage"];
-	if (errorCodeString === undefined || errorMessage === undefined) {
+	if (errorMessage === undefined) {
 		return undefined;
 	}
 
@@ -70,10 +70,6 @@ function parseTscErrorDetail(afterParen: string): TscErrorDetail | undefined {
 
 function parseTscErrorLine(line: string): TscErrorInfo | undefined {
 	const parenIndex = line.lastIndexOf("(", line.indexOf("): error TS"));
-	if (parenIndex === -1) {
-		return undefined;
-	}
-
 	const filePath = line.slice(0, parenIndex);
 	const rest = line.slice(parenIndex);
 	const closeParenIndex = rest.indexOf(")");

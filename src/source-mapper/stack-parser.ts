@@ -7,7 +7,7 @@ export function parseStack(input: string): ParsedStack {
 	let firstMatchIndex = input.length;
 
 	for (const match of input.matchAll(FRAME_REGEX)) {
-		if (match.index < firstMatchIndex) {
+		if (frames.length === 0) {
 			firstMatchIndex = match.index;
 		}
 

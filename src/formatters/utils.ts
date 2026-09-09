@@ -40,17 +40,21 @@ const ghFormatterOptionsSchema = type({
  * absent.
  */
 export function findFormatterOptions(
-	formatters: Array<FormatterEntry>,
+	formatters: Array<FormatterEntry> | undefined,
 	name: "agent",
 ): AgentFormatterOptions | undefined;
 export function findFormatterOptions(
-	formatters: Array<FormatterEntry>,
+	formatters: Array<FormatterEntry> | undefined,
 	name: "github-actions",
 ): GitHubActionsFormatterOptions | undefined;
 export function findFormatterOptions(
-	formatters: Array<FormatterEntry>,
+	formatters: Array<FormatterEntry> | undefined,
 	name: FormatterNameWithOptions,
 ): AgentFormatterOptions | GitHubActionsFormatterOptions | undefined {
+	if (formatters === undefined) {
+		return undefined;
+	}
+
 	for (const entry of formatters) {
 		if (entry === name) {
 			return validateFormatterOptions(name, {});

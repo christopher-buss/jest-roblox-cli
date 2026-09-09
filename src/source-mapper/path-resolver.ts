@@ -8,6 +8,7 @@ import { findMapping, replacePrefix } from "../utils/tsconfig-mapping.ts";
 
 const INIT_SEGMENT = /(^|\/)(init)(\.|\/)/;
 const LEADING_DOT_SLASH = /^\.\//;
+const LUA_EXTENSION = /\.luau?$/;
 
 export interface PathResolver {
 	/** Probes disk (`.luau` then `.lua`) for paths with no tsconfig mapping. */
@@ -48,16 +49,12 @@ export function createPathResolver(
 				}
 
 				const suffix = dataModelPath.slice(prefix.length + 1);
-				const filePath = convertToFilePath(suffix);
-				const result = `${basePath}/${filePath}`;
+				const result =
+					suffix === "" ? basePath : `${basePath}/${convertToFilePath(suffix)}`;
 
 				const mapping = findMapping(result, tsconfigMappings);
 				if (mapping !== undefined) {
-					const mapped = replacePrefix(result, mapping.outDir, mapping.rootDir).replace(
-						LEADING_DOT_SLASH,
-						"",
-					);
-					return { filePath: `${luauInitToIndex(mapped)}.ts`, mapping };
+					return { filePath: mapTypeScriptPath(result, mapping), mapping };
 				}
 
 				return { filePath: findLuaFile(fileSystem, result) };
@@ -66,6 +63,13 @@ export function createPathResolver(
 			return undefined;
 		},
 	};
+}
+
+function mapTypeScriptPath(filePath: string, mapping: TsconfigMapping): string {
+	const mapped = replacePrefix(filePath, mapping.outDir, mapping.rootDir)
+		.replace(LEADING_DOT_SLASH, "")
+		.replace(LUA_EXTENSION, "");
+	return luauInitToIndex(`${mapped}.ts`);
 }
 
 function collectRojoMappings(tree: RojoTreeNode, prefix: string, into: Map<string, string>): void {
@@ -106,6 +110,10 @@ function convertToFilePath(suffix: string): string {
 }
 
 function findLuaFile(fileSystem: FileSystem, basePath: string): string {
+	if (LUA_EXTENSION.test(basePath)) {
+		return basePath;
+	}
+
 	const luauPath = `${basePath}.luau`;
 	if (fileSystem.existsSync(luauPath)) {
 		return luauPath;

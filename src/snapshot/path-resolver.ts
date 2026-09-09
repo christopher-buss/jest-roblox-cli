@@ -36,8 +36,8 @@ export function createSnapshotPathResolver(
 					continue;
 				}
 
-				const suffix = normalized.slice(prefix.length + 1);
-				const result = `${basePath}/${suffix}`;
+				const suffix = normalized.slice(prefix.length);
+				const result = `${basePath}${suffix}`;
 
 				const mapping = findMapping(result, tsconfigMappings);
 				if (mapping !== undefined) {

@@ -58,6 +58,46 @@ function createRecordingProgress() {
 }
 
 describe(createTimingCollector, () => {
+	it("should avoid reading the clock for disabled operations without durations", async () => {
+		expect.assertions(1);
+
+		const now = vi.fn<() => number>().mockReturnValue(0);
+		const collector = createTimingCollector({ clock: { now }, enabled: false });
+
+		collector.profile("prepareCoverage", () => {});
+		await collector.profileAsync("runProjects", async () => {});
+		collector.record("uploadMs", 10);
+		collector.flushTimingReport();
+
+		expect(now).not.toHaveBeenCalled();
+	});
+
+	it("should close a rejecting timed async phase before opening another", async () => {
+		expect.assertions(2);
+
+		const { lines, sink } = createCapturingSink();
+		const collector = createTimingCollector({
+			clock: createScriptedClock([0, 7, 7, 12]),
+			enabled: true,
+			sink,
+		});
+
+		await expect(
+			collector.profileTimedAsync("buildStubs", async () => {
+				throw new Error("boom");
+			}),
+		).rejects.toThrow("boom");
+
+		await collector.profileTimedAsync("rojoBuild", async () => {});
+
+		expect(lines).toStrictEqual([
+			"[TIMING] buildStubs: start",
+			"[TIMING] buildStubs: 7ms",
+			"[TIMING] rojoBuild: start",
+			"[TIMING] rojoBuild: 5ms",
+		]);
+	});
+
 	it("should indent nested spans and total only the top level", () => {
 		expect.assertions(1);
 

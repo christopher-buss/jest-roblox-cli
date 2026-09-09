@@ -109,9 +109,7 @@ function writeJsonFile(
 	const absolutePath = path.resolve(filePath);
 	const directoryPath = path.dirname(absolutePath);
 
-	if (!fileSystem.existsSync(directoryPath)) {
-		fileSystem.mkdirSync(directoryPath, { recursive: true });
-	}
+	fileSystem.mkdirSync(directoryPath, { recursive: true });
 
 	fileSystem.writeFileSync(absolutePath, JSON.stringify(value, null, 2));
 }

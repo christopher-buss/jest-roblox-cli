@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { CoverageReporter } from "../config/schema.ts";
 import { isCoverageReporter, VALID_COVERAGE_REPORTERS } from "../config/schema.ts";
@@ -125,6 +125,29 @@ describe(writeIstanbulHtmlAssets, { timeout: 2000 }, () => {
 			expect(readWrittenAssets(directory)).toStrictEqual(readSourceAssets(group));
 		},
 	);
+
+	it("should close every asset writer after publishing", () => {
+		expect.assertions(1);
+
+		const directory = createTemporaryDirectory();
+		const writer = createWriter(directory);
+		const writeFile = writer.writeFile.bind(writer);
+		const closed: Array<string> = [];
+		vi.spyOn(writer, "writeFile").mockImplementation((name) => {
+			assert(name !== null);
+			const contentWriter = writeFile(name);
+			const close = contentWriter.close.bind(contentWriter);
+			vi.spyOn(contentWriter, "close").mockImplementation(() => {
+				closed.push(name);
+				close();
+			});
+			return contentWriter;
+		});
+
+		writeIstanbulHtmlAssets(writer, "html");
+
+		expect(closed.sort()).toStrictEqual([...readSourceAssets("html").keys()].sort());
+	});
 });
 
 // Each html-writing reporter reaches its assets through a hook of its own, and

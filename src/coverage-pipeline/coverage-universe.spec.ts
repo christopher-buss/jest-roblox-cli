@@ -144,6 +144,16 @@ describe(filterCoverageUniverse, () => {
 		expect(keys(filtered)).toStrictEqual(["src/a.ts"]);
 	});
 
+	it("should treat bangs after the first include negation literally", () => {
+		expect.assertions(1);
+
+		const filtered = filterCoverageUniverse(resultFor("src/!generated.ts", "src/main.ts"), {
+			include: ["**/*.ts", "!!generated.ts"],
+		});
+
+		expect(keys(filtered)).toStrictEqual(["src/main.ts"]);
+	});
+
 	it("should drop a file that is included but also ignored", () => {
 		expect.assertions(1);
 
@@ -199,15 +209,30 @@ describe(filterCoverageUniverse, () => {
 		expect.assertions(1);
 
 		const filtered = filterCoverageUniverse(
-			resultFor("src/a.ts", "src/b.ts", "src/Stryker was here"),
+			resultFor("src/a.ts", "src/b.ts", "src/unlisted.ts"),
 			{},
 		);
 
-		expect(keys(filtered)).toStrictEqual(["src/Stryker was here", "src/a.ts", "src/b.ts"]);
+		expect(keys(filtered)).toStrictEqual(["src/a.ts", "src/b.ts", "src/unlisted.ts"]);
 	});
 });
 
 describe(createCoverageUniverseMatcher, () => {
+	it("should make absent and empty ignore lists select the same files", () => {
+		expect.assertions(1);
+
+		const withoutIgnore = createCoverageUniverseMatcher({ include: ["src/**/*.ts"] });
+		const withEmptyIgnore = createCoverageUniverseMatcher({
+			ignore: [],
+			include: ["src/**/*.ts"],
+		});
+
+		expect([withoutIgnore("src/a.ts"), withEmptyIgnore("src/a.ts")]).toStrictEqual([
+			true,
+			true,
+		]);
+	});
+
 	it("should apply empty, path, basename, negated, and ignore patterns exactly", () => {
 		expect.assertions(1);
 

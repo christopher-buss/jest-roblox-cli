@@ -228,7 +228,7 @@ function namePresentWorkspaceFlag(cli: CliOptions): string {
 	const present = WORKSPACE_ONLY_FLAGS.find((flag) => flag.isPresent(cli));
 	// `isWorkspaceInvocation` is what routed the run here, and `--workspace` is
 	// absent, so one of these is set — a miss means the two have drifted apart.
-	assert(present !== undefined, "a workspace-only flag routed this invocation");
+	assert(present !== undefined);
 	return present.name;
 }
 

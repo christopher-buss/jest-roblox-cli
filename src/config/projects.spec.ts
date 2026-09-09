@@ -859,7 +859,7 @@ describe(resolveProjectConfig, () => {
 
 		const project = makeProject({
 			displayName: "client",
-			include: ["src/Client/**/*.spec.luau"],
+			include: ["src/Client/**/*.spec.luau", "src/Client/Systems/**/*.spec.luau"],
 		});
 
 		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
@@ -1033,6 +1033,26 @@ describe(resolveProjectConfig, () => {
 		expect(caught.hint).toBe(
 			'Path starts with "src/" — if using roblox-ts, set "outDir" in your project config to the compiled output directory (e.g. "out/client")',
 		);
+	});
+
+	it("should omit the outDir hint when an unmappable root is outside src", () => {
+		expect.assertions(1);
+
+		const project = makeProject({
+			displayName: "no-hint",
+			include: ["packages/ghost/**/*.spec.ts"],
+		});
+
+		let caught: unknown;
+		try {
+			resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		} catch (err) {
+			caught = err;
+		}
+
+		assert(caught instanceof ConfigError);
+
+		expect(caught.hint).toBeUndefined();
 	});
 
 	it("should resolve includes from cwd when root is not set", () => {
@@ -1320,6 +1340,27 @@ describe(loadProjectConfigFile, () => {
 			expect(result).not.toHaveProperty("outDir");
 		},
 	);
+
+	it("should not infer a missing rootDir from a literal undefined directory", async () => {
+		expect.assertions(1);
+
+		const { configLoader, resolveTsconfigDirectories, seams } = createProjectSeams();
+		resolveTsconfigDirectories.mockReturnValueOnce({ outDir: "out", rootDir: undefined });
+		configLoader.mockResolvedValueOnce({
+			config: { displayName: "partial", testMatch: ["**/*.spec"] },
+			configFile: "jest.config.ts",
+			cwd: "/project",
+			layers: [],
+		});
+
+		const result = await loadProjectConfigFile(
+			"undefined/shared/jest.config.ts",
+			"/project",
+			seams,
+		);
+
+		expect(result).not.toHaveProperty("outDir");
+	});
 
 	it("should preserve an explicit outDir when tsconfig directories are available", async () => {
 		expect.assertions(1);

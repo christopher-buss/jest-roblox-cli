@@ -27,9 +27,9 @@ function expectOk(result: ReadCoverageMapResult): CoverageMap {
 
 describe(writeCoverageMap, () => {
 	it("should round-trip statement-only map through readCoverageMap", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const map = exampleCoverageMap();
 
@@ -38,6 +38,9 @@ describe(writeCoverageMap, () => {
 		expect(
 			expectOk(readCoverageMap("/coverage/out/init.cov-map.json", fileSystem)),
 		).toStrictEqual(map);
+		expect(volume.readFileSync("/coverage/out/init.cov-map.json", "utf8")).toStartWith(
+			'{\n\t"statementMap"',
+		);
 	});
 
 	it("should round-trip a map with functionMap and branchMap", () => {

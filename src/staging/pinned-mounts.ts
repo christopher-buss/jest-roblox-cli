@@ -351,10 +351,12 @@ function declaresPinnedClass(
 	directory: string,
 	entries: ReadonlyArray<Dirent>,
 ): boolean {
-	const hasMeta = entries.some((child) => child.name === META_JSON_FILE && !child.isDirectory());
-	return (
-		hasMeta && pinnedClassesOf(fileSystem, entryPathOf(directory, META_JSON_FILE)).length > 0
-	);
+	const meta = entries.find((child) => child.name === META_JSON_FILE);
+	if (meta === undefined || meta.isDirectory()) {
+		return false;
+	}
+
+	return pinnedClassesOf(fileSystem, entryPathOf(directory, META_JSON_FILE)).length > 0;
 }
 
 /**

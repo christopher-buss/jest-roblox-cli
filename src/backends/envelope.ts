@@ -3,14 +3,6 @@ import { type } from "arktype";
 import { LuauScriptError, parseJestOutput } from "../reporter/parser.ts";
 import type { EnvelopeEntry, ProjectBackendResult, ProjectJob } from "./interface.ts";
 
-// Mirrors parser.ts `unwrapResult`: a top-level {success:false, err} payload is
-// a wholesale failure, not an envelope. `err: unknown` requires the key to be
-// present; `success: false` pins the literal.
-const wholeRunErrorSchema = type({
-	err: "unknown",
-	success: "false",
-});
-
 const envelopeSchema = type({
 	// Set by a task that stopped on a failing package under `--bail`: the
 	// packages it never reached have no entry, and that gap is expected rather
@@ -71,10 +63,9 @@ export function decodeEnvelope(jestOutput: string): DecodedEnvelope {
 		// LuauScriptError (leaf-cause message), so the caller surfaces the real
 		// cause instead of masking it behind the entries-vs-jobs count guard.
 		// Anything else is a legacy bare jest result — rewrap it as one entry so
-		// buildProjectResult parses it like any other.
-		if (!(wholeRunErrorSchema(raw) instanceof type.errors)) {
-			parseJestOutput(jestOutput);
-		}
+		// buildProjectResult parses it like any other. Parsing also throws the
+		// clean LuauScriptError for the whole-run failure above.
+		parseJestOutput(jestOutput);
 
 		return { bailed: false, deferred: false, entries: [{ jestOutput }] };
 	}

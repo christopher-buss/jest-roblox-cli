@@ -167,6 +167,25 @@ describe(createTestSourceResolver, () => {
 		);
 	});
 
+	it("should keep a file's first source decision for the whole result", () => {
+		expect.assertions(2);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.mkdirSync("/src", { recursive: true });
+		volume.writeFileSync("/src/m.spec.ts", SOURCE);
+		const result = jestResult("ReplicatedStorage/m.spec", [testCase("a", 3)]);
+		const resolve = createTestSourceResolver(result, mapperFor("/src/m.spec.ts"), fileSystem);
+
+		const first = resolve("ReplicatedStorage/m.spec", "a");
+
+		expect(first.testSourceHash).toBeDefined();
+
+		result.testResults = [];
+		volume.writeFileSync("/src/m.spec.ts", "changed");
+
+		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual(first);
+	});
+
 	it("should fall back to the file hash alone when the line has no source mapping", () => {
 		expect.assertions(1);
 
@@ -199,6 +218,32 @@ describe(createTestSourceResolver, () => {
 		const resolve = createTestSourceResolver(
 			jestResult("ReplicatedStorage/m.spec", [testCase("a")]),
 			mapperFor("/src/m.spec.ts"),
+			fileSystem,
+		);
+
+		expect(resolve("ReplicatedStorage/m.spec", "a")).toStrictEqual({
+			testFileSourceHash: hashFile("/src/m.spec.ts", fileSystem),
+		});
+	});
+
+	it("should use the file hash alone when the Jest result has no matching file", () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.mkdirSync("/src", { recursive: true });
+		volume.writeFileSync("/src/m.spec.ts", SOURCE);
+
+		const diskPaths = new Map([
+			["ReplicatedStorage/m.spec", "/src/m.spec.ts"],
+			["ReplicatedStorage/other.spec", "/src/other.spec.ts"],
+		]);
+		const mapper = {
+			mapTestFileLine: (_testFilePath: string, luauLine: number) => luauLine,
+			resolveTestFilePath: (testFilePath: string) => diskPaths.get(testFilePath),
+		};
+		const resolve = createTestSourceResolver(
+			jestResult("ReplicatedStorage/other.spec", [testCase("a", 1)]),
+			mapper,
 			fileSystem,
 		);
 

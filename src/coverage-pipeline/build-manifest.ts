@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import * as path from "node:path";
+import type { Except } from "type-fest";
 
 import { atomicWrite } from "../utils/atomic-write.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -184,7 +185,7 @@ export function toBuildManifestFiles(
  */
 export function emitBuildManifest(
 	filePath: string,
-	artifacts: CoverageArtifacts,
+	artifacts: Except<CoverageArtifacts, "rebuilt">,
 	{ cleanPlace, fileSystem }: EmitBuildManifestOptions,
 ): void {
 	let manifest: BuildManifest = {

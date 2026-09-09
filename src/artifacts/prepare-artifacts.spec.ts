@@ -2,6 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
+import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
@@ -285,7 +286,7 @@ describe(prepareArtifactsAsync, () => {
 	});
 
 	it("should build the clean place without stub mounts in no-projects mode", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const harness = seed(manifestWithFile());
 
@@ -293,6 +294,12 @@ describe(prepareArtifactsAsync, () => {
 
 		expect(harness.seams.resolveAllProjects).not.toHaveBeenCalled();
 		expect(writtenCleanProject(harness)).not.toContain("jest.config");
+		expect(JSON.parse(writtenCleanProject(harness))).toHaveProperty([
+			"tree",
+			"ReplicatedStorage",
+			"shared",
+			"$path",
+		]);
 	});
 
 	it("should build the clean place without stub mounts for an empty projects list", async () => {
@@ -397,5 +404,17 @@ describe(prepareArtifactsAsync, () => {
 		const harness = seed(manifestWithFile(), multiResult());
 
 		await expect(prepareArtifactsAsync(makeConfig(), harness)).rejects.toThrow(/no artifacts/);
+	});
+
+	it("should flush the timing report when artifact production fails", async () => {
+		expect.assertions(2);
+
+		vi.stubEnv("TIMING", "1");
+		const write = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const harness = seed(manifestWithFile(), multiResult());
+
+		await expect(prepareArtifactsAsync(makeConfig(), harness)).rejects.toThrow(/no artifacts/);
+
+		expect(write.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain("TOTAL (host)");
 	});
 });

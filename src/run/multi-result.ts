@@ -111,9 +111,7 @@ function mergeForMultiResult(projectResults: Array<ProjectResult>): MultiProject
 	const mappers: Array<SourceMapper> = [];
 
 	for (const { result } of projectResults) {
-		if (result.coverageData !== undefined) {
-			mergedCoverage = mergeRawCoverage(mergedCoverage, result.coverageData);
-		}
+		mergedCoverage = mergeRawCoverage(mergedCoverage, result.coverageData);
 
 		if (result.attribution !== undefined) {
 			mergedAttribution =

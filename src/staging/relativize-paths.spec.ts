@@ -81,7 +81,7 @@ describe(relativizeProjectPaths, () => {
 		const result = parse(
 			relativizeProjectPaths(
 				JSON.stringify({
-					name: "jest-roblox-workspace",
+					name: OUT_DIR,
 					globIgnorePaths: ["**/tsconfig.json"],
 					tree: { $className: "DataModel", $properties: { StreamingEnabled: true } },
 				}),
@@ -90,7 +90,7 @@ describe(relativizeProjectPaths, () => {
 		);
 
 		expect(result).toStrictEqual({
-			name: "jest-roblox-workspace",
+			name: OUT_DIR,
 			globIgnorePaths: ["**/tsconfig.json"],
 			tree: { $className: "DataModel", $properties: { StreamingEnabled: true } },
 		});

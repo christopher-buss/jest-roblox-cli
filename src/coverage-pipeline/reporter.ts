@@ -117,7 +117,7 @@ export function checkThresholds(
 	const summary = coverageMap.getCoverageSummary();
 
 	const summaryData = summarySchema(summary.toJSON());
-	assert(!(summaryData instanceof type.errors), "Istanbul summary produced invalid data");
+	assert(!(summaryData instanceof type.errors));
 
 	const failures = collectThresholdFailures(summaryData, thresholds);
 
@@ -238,6 +238,9 @@ function runReporters({
 	terminalColumns: number | undefined;
 	textTable: TextTableView;
 }): void {
+	const optionsByReporter: Partial<Record<CoverageReporter, object>> = {
+		text: { maxCols: terminalColumns, skipFull: agentMode },
+	};
 	for (const reporterName of reporters) {
 		if (!isCoverageReporter(reporterName)) {
 			// The declared element type makes this branch `never`, but the value
@@ -254,14 +257,7 @@ function runReporters({
 			continue;
 		}
 
-		let reporterOptions = {};
-		if (reporterName === "text") {
-			reporterOptions = { maxCols: terminalColumns, skipFull: agentMode };
-		} else if (TEXT_REPORTERS.has(reporterName)) {
-			reporterOptions = { skipFull: agentMode };
-		}
-
-		const report = createReporter(reporterName, reporterOptions);
+		const report = createReporter(reporterName, optionsByReporter[reporterName] ?? {});
 		report.execute(reporterName === "text" ? textTable.context : fullContext);
 	}
 }
@@ -273,10 +269,6 @@ function printCompactFullSummary(coverageMap: CoverageMap): void {
 }
 
 function formatTotalsPart(label: string, totals: istanbulCoverage.Totals): string {
-	// Istanbul's blank summary (empty map) sets pct to the string "Unknown"
-	// despite the numeric type. Callers guard against the empty map, so fail
-	// loudly if a non-numeric pct ever slips through instead of printing garbage.
-	assert(typeof totals.pct === "number", "coverage summary pct must be numeric");
 	return `${totals.pct}% ${label} (${totals.covered}/${totals.total})`;
 }
 

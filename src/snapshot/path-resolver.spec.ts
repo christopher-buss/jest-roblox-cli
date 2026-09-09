@@ -3,6 +3,33 @@ import { describe, expect, it } from "vitest";
 import { createSnapshotPathResolver } from "./path-resolver.ts";
 
 describe(createSnapshotPathResolver, () => {
+	it("should preserve a directly mounted snapshot filename", () => {
+		expect.assertions(1);
+
+		const resolver = createSnapshotPathResolver({
+			rojoProject: {
+				name: "test",
+				tree: { Snapshot: { $path: "src/__snapshots__/suite.snap.luau" } },
+			},
+		});
+
+		expect(resolver.resolve("Snapshot")).toStrictEqual({
+			filePath: "src/__snapshots__/suite.snap.luau",
+		});
+	});
+
+	it("should resolve a mount whose instance name ends with a dollar sign", () => {
+		expect.assertions(1);
+
+		const resolver = createSnapshotPathResolver({
+			rojoProject: { name: "test", tree: { Cash$: { $path: "out/cash" } } },
+		});
+
+		expect(resolver.resolve("Cash$/__snapshots__/wallet.snap.luau")).toStrictEqual({
+			filePath: "out/cash/__snapshots__/wallet.snap.luau",
+		});
+	});
+
 	it("should resolve virtual path to filesystem path", () => {
 		expect.assertions(1);
 

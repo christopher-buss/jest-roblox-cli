@@ -276,7 +276,6 @@ async function buildOpenCloudPlaceAsync({
 		fileSystem,
 		packages: [
 			{
-				name: "multi-project",
 				packageDirectory: rootConfig.rootDir,
 				rojoProjectPath: userRojoProjectPath,
 				stubMounts: collectStubMounts({

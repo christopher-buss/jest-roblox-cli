@@ -70,12 +70,13 @@ describe(formatStreamingProgressLine, () => {
 	});
 
 	it("should colorize when color option is true", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const out = formatStreamingProgressLine(entry(), { color: true });
 
 		// At least one ANSI escape should be present when color is on.
 		expect(out).toMatch(/\[/);
+		expect(out).toContain("▶");
 	});
 
 	it("should colorize each breakdown segment when color option is true", () => {

@@ -42,7 +42,49 @@ async function hashOfAsync(
 	});
 }
 
+async function hashWithDelayedReadAsync(delayedPath: string): Promise<string> {
+	const { fileSystem, volume } = writeProject({
+		$className: "DataModel",
+		Inc: { $path: "include" },
+	});
+	volume.mkdirSync("/project/include", { recursive: true });
+	volume.writeFileSync("/project/include/a.lua", "a");
+	volume.writeFileSync("/project/include/b.lua", "b");
+
+	const releasePath =
+		delayedPath === "/project/include/a.lua"
+			? "/project/include/b.lua"
+			: "/project/include/a.lua";
+	const { promise: delayed, resolve: releaseDelayed } = Promise.withResolvers<void>();
+	const readFile = fileSystem.promises.readFile.bind(fileSystem.promises);
+	vi.spyOn(fileSystem.promises, "readFile").mockImplementation(async (filePath) => {
+		if (typeof filePath === "string" && filePath === delayedPath) {
+			await delayed;
+		}
+
+		const contents = await readFile(filePath);
+		if (typeof filePath === "string" && filePath === releasePath) {
+			setImmediate(releaseDelayed);
+		}
+
+		return contents;
+	});
+
+	return hashOfAsync(fileSystem);
+}
+
 describe(computeRojoInputsHashAsync, () => {
+	it("should not probe mount paths when the project declares none", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = writeProject({ $className: "DataModel" });
+		const stat = vi.spyOn(fileSystem.promises, "stat");
+
+		await hashOfAsync(fileSystem);
+
+		expect(stat).not.toHaveBeenCalled();
+	});
+
 	it("should reuse recorded digests rather than re-read an unchanged mount", async () => {
 		expect.assertions(2);
 
@@ -148,6 +190,14 @@ describe(computeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.toBe(await hashOfAsync(fileSystem));
 	});
 
+	it("should be stable when input reads finish in different orders", async () => {
+		expect.assertions(1);
+
+		await expect(hashWithDelayedReadAsync("/project/include/a.lua")).resolves.toBe(
+			await hashWithDelayedReadAsync("/project/include/b.lua"),
+		);
+	});
+
 	it("should change when a mounted directory's file content changes", async () => {
 		expect.assertions(1);
 
@@ -178,6 +228,26 @@ describe(computeRojoInputsHashAsync, () => {
 		volume.writeFileSync("/project/include/RuntimeLib.lua", "-- v2");
 
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
+	});
+
+	it("should read ordinary file stats once while walking a mounted directory", async () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = writeProject({
+			$className: "DataModel",
+			Inc: { $path: "include" },
+		});
+		volume.mkdirSync("/project/include", { recursive: true });
+		volume.writeFileSync("/project/include/a.lua", "a");
+		const stat = vi.spyOn(fileSystem.promises, "stat");
+
+		await hashOfAsync(fileSystem);
+
+		const fileStats = stat.mock.calls.filter(([filePath]) => {
+			return filePath === "/project/include/a.lua";
+		});
+
+		expect(fileStats).toHaveLength(1);
 	});
 
 	it("should change when the rojo project file itself changes", async () => {

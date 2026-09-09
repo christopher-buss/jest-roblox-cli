@@ -444,7 +444,7 @@ describe(runWorkspaceAsync, () => {
 	// own default and a roblox-ts package's snapshots come back in `Table {`
 	// form while multi mode writes `{`.
 	it("should resolve printBasicPrototype for a typescript package before dispatch", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -474,6 +474,7 @@ describe(runWorkspaceAsync, () => {
 
 		expect(dispatchedScript(captured)).toContain('"printBasicPrototype":false');
 		expect(dispatchedScript(captured)).not.toContain('"printBasicPrototype":true');
+		expect(dispatchedScript(captured)).not.toContain('"testPathPattern":');
 	});
 
 	it("should resolve printBasicPrototype for a luau package before dispatch", async () => {
@@ -2030,7 +2031,7 @@ describe(runWorkspaceAsync, () => {
 	});
 
 	it("should pass with no tests when passWithNoTests is true and zero specs are discovered", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -2044,18 +2045,23 @@ describe(runWorkspaceAsync, () => {
 		});
 
 		const { backend } = createStubBackend([]);
+		const mkdir = vi.spyOn(fileSystem, "mkdirSync");
 
 		const results = await runWorkspaceResultsAsync({
 			backend,
 			cli: makeCli(),
 			fileSystem,
 			packageInfos: [FOO_INFO],
-			runOptions: makeRunOptions(),
+			runOptions: makeRunOptions({ workspaceOutputFile: true }),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
 
 		expect(results).toStrictEqual([]);
+		expect(mkdir).not.toHaveBeenCalledWith(
+			path.join(ROOT, ".jest-roblox", "output"),
+			expect.anything(),
+		);
 	});
 
 	it("should honor per-package passWithNoTests when the workspace config does not set it", async () => {
@@ -5107,7 +5113,7 @@ describe("workspace type tests", () => {
 				...DEFAULT_CONFIG,
 				rootDir: FOO_DIR,
 				testMatch: ["**/*.spec.ts"],
-				typecheck: { enabled: true },
+				typecheck: { enabled: true, ignoreSourceErrors: false, spawnTimeout: 4321 },
 			},
 		});
 
@@ -5130,9 +5136,59 @@ describe("workspace type tests", () => {
 		expect(runTypecheck).toHaveBeenCalledWith(
 			expect.objectContaining({
 				files: expect.arrayContaining([expect.stringMatching(/foo\.spec-d\.ts$/)]),
+				ignoreSourceErrors: false,
+				spawnTimeout: 4321,
 			}),
 		);
 		expect(result!.typecheckResult).toBeDefined();
+	});
+
+	it("should skip discovered type test files when typechecking is disabled", async () => {
+		expect.assertions(2);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: {
+					[path.join(FOO_DIR, "src/foo.spec-d.ts")]: "",
+					[path.join(FOO_DIR, "src/foo.spec.ts")]: "",
+				},
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+
+		setLoadedConfigPerPackage({
+			[FOO_DIR]: {
+				...DEFAULT_CONFIG,
+				rootDir: FOO_DIR,
+				testMatch: ["**/*.spec.ts"],
+				typecheck: { enabled: false },
+			},
+		});
+
+		runTypecheck.mockResolvedValue(makeTypeResult());
+
+		const { backend } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo", project: "@halcyon/foo" },
+		]);
+
+		const result = await runStagedWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			fileSystem,
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions(),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		assert(result !== undefined);
+
+		expect(runTypecheck).not.toHaveBeenCalled();
+
+		expect(result.typecheckResult).toBeUndefined();
 	});
 
 	// The positional selects the type pass as well, so naming one type test

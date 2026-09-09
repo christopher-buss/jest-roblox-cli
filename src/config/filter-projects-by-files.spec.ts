@@ -227,6 +227,19 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
+	it("should select a project when the requested path is its include root", () => {
+		expect.assertions(1);
+
+		const client = makeProject({
+			displayName: "client",
+			include: ["src/client/**/*.spec.ts"],
+		});
+
+		const result = filterProjectsByFiles([client], ["src/client"], "/repo");
+
+		expect(result).toHaveLength(1);
+	});
+
 	it("should accept absolute POSIX cli file paths under rootDirectory", () => {
 		expect.assertions(1);
 
@@ -257,7 +270,7 @@ describe(filterProjectsByFiles, () => {
 		expect(result).toHaveLength(1);
 	});
 
-	it("should throw with a clear message listing files and roots when nothing matches", () => {
+	it("should throw with a clear message listing every file and root when nothing matches", () => {
 		expect.assertions(1);
 
 		const client = makeProject({
@@ -270,8 +283,22 @@ describe(filterProjectsByFiles, () => {
 		});
 
 		expect(() => {
-			return filterProjectsByFiles([client, server], ["src/shared/foo.spec.ts"], "/repo");
-		}).toThrow(/src\/shared\/foo\.spec\.ts[\s\S]*src\/client[\s\S]*src\/server/);
+			return filterProjectsByFiles(
+				[client, server],
+				["src/shared/foo.spec.ts", "src/common/bar.spec.ts"],
+				"/repo",
+			);
+		}).toThrow(
+			[
+				"No project contains the requested file(s):",
+				"  - src/shared/foo.spec.ts",
+				"  - src/common/bar.spec.ts",
+				"",
+				"Project roots searched:",
+				"  - /repo/src/client",
+				"  - /repo/src/server",
+			].join("\n"),
+		);
 	});
 
 	it("should skip projects whose includes have no static root and still throw on overall no-match", () => {

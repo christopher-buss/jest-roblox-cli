@@ -74,8 +74,8 @@ interface WorkStealingPayload extends BailPayloadFields, StreamingPayloadFields 
 	entries: Array<EntryPayload>;
 	invisibilityWindowSeconds: number;
 	queueId: string;
-	queueTtlSeconds?: number;
-	resultBudgetBytes?: number;
+	queueTtlSeconds?: number | undefined;
+	resultBudgetBytes?: number | undefined;
 }
 
 export function generateMaterializerScript(
@@ -113,12 +113,8 @@ export function generateWorkStealingScript(
 		entries: buildEntries(inputs),
 		invisibilityWindowSeconds,
 		queueId,
-		...(options.queueTtlSeconds !== undefined
-			? { queueTtlSeconds: options.queueTtlSeconds }
-			: {}),
-		...(options.resultBudgetBytes !== undefined
-			? { resultBudgetBytes: options.resultBudgetBytes }
-			: {}),
+		queueTtlSeconds: options.queueTtlSeconds,
+		resultBudgetBytes: options.resultBudgetBytes,
 		...streamingFields(options.streaming),
 	};
 	return substitutePayload(payload);

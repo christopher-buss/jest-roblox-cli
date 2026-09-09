@@ -182,7 +182,7 @@ describe(groupTypecheckByTsconfig, () => {
 
 		await groupTypecheckByTsconfig(
 			[
-				{ cwd: "/r", files: [], tsconfig: "t.json" },
+				{ cwd: "/r", files: [], tsconfig: "unused.json" },
 				{ cwd: "/r", files: ["a.spec-d.ts"], tsconfig: "t.json" },
 			],
 			run,

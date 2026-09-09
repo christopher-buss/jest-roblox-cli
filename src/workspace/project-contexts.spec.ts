@@ -1,12 +1,13 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
 import type { LoadedPackage } from "./package-loader.ts";
 import {
@@ -96,6 +97,48 @@ describe(applyProjectFilter, () => {
 });
 
 describe(resolvePackageContextsAsync, () => {
+	it("should synthesize one project from only the directory mounts in the Rojo tree", async () => {
+		expect.assertions(3);
+
+		const { fileSystem } = createMemoryFileSystem({
+			[path.join(PACKAGE_DIRECTORY, "src/shared/pkg.spec.luau")]: "",
+			[path.join(PACKAGE_DIRECTORY, "src/source.luau")]: "",
+			[ROJO_PROJECT_PATH]: JSON.stringify({
+				name: "pkg",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						Shared: { $path: "src/shared" },
+						Source: { $path: "src/source.luau" },
+					},
+				},
+			}),
+		});
+		const statSync = vi.spyOn(fileSystem, "statSync");
+
+		const contexts = await resolvePackageContextsAsync({
+			cacheDirectory: CACHE_DIRECTORY,
+			fileSystem,
+			loaded: [loadedPackage({ projects: [] })],
+		});
+		const context = contexts[0];
+		assert(context !== undefined);
+		const { projects } = context;
+		const firstProject = projects[0];
+		assert(firstProject !== undefined);
+		const packageDirectory = normalizeWindowsPath(PACKAGE_DIRECTORY);
+		const probedPaths = statSync.mock.calls.map(([file]) => file);
+
+		expect(projects).toHaveLength(1);
+		expect(firstProject.include).toStrictEqual(
+			DEFAULT_CONFIG.testMatch.map((pattern) => path.posix.join("src/shared", pattern)),
+		);
+		expect(probedPaths).toStrictEqual([
+			path.posix.join(packageDirectory, "src/shared"),
+			path.posix.join(packageDirectory, "src/source.luau"),
+		]);
+	});
+
 	it("should read a project's jest.config.luau through the injected filesystem", async () => {
 		expect.assertions(2);
 
@@ -138,7 +181,25 @@ describe(resolvePackageContextsAsync, () => {
 			cacheDirectory: CACHE_DIRECTORY,
 			createResolver,
 			fileSystem,
-			loaded: [loadedPackage({ setupFiles: ["./src/setup.luau"] })],
+			loaded: [
+				loadedPackage({
+					projects: [
+						{
+							test: {
+								displayName: "with-setup",
+								include: ["src/**/*.spec.luau"],
+								setupFiles: ["./src/setup.luau"],
+							},
+						},
+						{
+							test: {
+								displayName: "without-setup",
+								include: ["src/**/*.spec.luau"],
+							},
+						},
+					],
+				}),
+			],
 		});
 
 		expect(createResolver).toHaveBeenCalledWith(ROJO_PROJECT_PATH);

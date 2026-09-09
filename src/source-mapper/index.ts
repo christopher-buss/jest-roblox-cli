@@ -24,11 +24,6 @@ export interface MappedLocation {
 	tsPath?: string | undefined;
 }
 
-export interface MappedFailure {
-	locations: Array<MappedLocation>;
-	message: string;
-}
-
 /**
  * Rewrites Luau stack frames to the sources they came from.
  *
@@ -61,6 +56,11 @@ export interface SourceSnippet {
 	column?: number | undefined;
 	failureLine: number;
 	lines: Array<{ content: string; num: number }>;
+}
+
+interface MappedFailure {
+	locations: Array<MappedLocation>;
+	message: string;
 }
 
 export function createSourceMapper({
@@ -172,11 +172,11 @@ export function getSourceSnippet({
 	const lines: Array<{ content: string; num: number }> = [];
 	for (let index = startLine; index <= endLine; index++) {
 		const lineContent = allLines[index - 1];
-		assert(lineContent !== undefined, `index ${index} out of bounds`);
+		assert(lineContent !== undefined);
 		lines.push({ content: lineContent, num: index });
 	}
 
-	const failureLineContent = allLines[line - 1] ?? "";
+	const failureLineContent = allLines[line - 1];
 	const computedColumn = column ?? findExpectationColumn(failureLineContent);
 
 	return {

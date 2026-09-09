@@ -350,6 +350,25 @@ describe(formatAnnotations, () => {
 });
 
 describe(formatJobSummary, () => {
+	it("should pluralize file and skipped-test counts", () => {
+		expect.assertions(1);
+
+		const summary = formatJobSummary(
+			{
+				...MIXED_RESULT,
+				numPendingTests: 2,
+				testResults: [...MIXED_RESULT.testResults, ...MIXED_RESULT.testResults],
+			},
+			{},
+		);
+
+		expect(summary).toContain(
+			"- **Test Files**: ❌ **2 failures** · ✅ **2 passes** · 4 total\n" +
+				"- **Test Results**: ❌ **1 failure** · ✅ **4 passes** · 5 total\n" +
+				"- **Other**: 2 skips · 2 total",
+		);
+	});
+
 	it("should render pass/fail/skip counts in stats section", () => {
 		expect.assertions(3);
 
@@ -383,11 +402,12 @@ describe(formatJobSummary, () => {
 	});
 
 	it("should work without file links", () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const summary = formatJobSummary(FAILING_RESULT, {});
 
 		expect(summary).toContain("Player should have health");
+		expect(summary).toContain("- **Player should have health** in src/player.spec.ts");
 		expect(summary).not.toContain("https://");
 	});
 
@@ -398,7 +418,9 @@ describe(formatJobSummary, () => {
 	])("should omit file links when any permalink field is missing", (options) => {
 		expect.assertions(1);
 
-		expect(formatJobSummary(FAILING_RESULT, options)).not.toContain("](https://");
+		expect(formatJobSummary(FAILING_RESULT, options)).toContain(
+			"- **Player should have health** in src/player.spec.ts",
+		);
 	});
 
 	it("should include exec-error files in failure list", () => {

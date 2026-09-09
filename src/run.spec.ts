@@ -10,6 +10,7 @@ import type { ResolvedProjectConfig } from "./config/projects.ts";
 import { type CliOptions, DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import type { CoverageArtifacts } from "./coverage-pipeline/build-manifest.ts";
 import { COVERAGE_BUILD_MANIFEST_PATH } from "./coverage-pipeline/prepare.ts";
+import { NOOP_RUN_PROGRESS } from "./progress/reporter.ts";
 import type { RunDispatch } from "./run.ts";
 import { runJestRobloxAsync } from "./run.ts";
 import type { RunSeams } from "./run/seams.ts";
@@ -92,18 +93,27 @@ describe(runJestRobloxAsync, () => {
 		expect.assertions(2);
 
 		const dispatch = makeDispatch();
+		const progress = {
+			...NOOP_RUN_PROGRESS,
+			begin: vi.fn<typeof NOOP_RUN_PROGRESS.begin>(NOOP_RUN_PROGRESS.begin),
+		};
 
 		const result = await runJestRobloxAsync(
 			makeCli({ workspace: true }),
 			makeConfig(),
-			undefined,
+			progress,
 			{
 				dispatch,
 			},
 		);
 
 		expect(result).toBe(WORKSPACE);
-		expect(dispatch.runWorkspaceMode).toHaveBeenCalledOnce();
+		expect(dispatch.runWorkspaceMode).toHaveBeenCalledExactlyOnceWith(
+			expect.anything(),
+			undefined,
+			expect.objectContaining({ progress }),
+			expect.anything(),
+		);
 	});
 
 	it("should dispatch to runWorkspaceMode when --packages is set", async () => {

@@ -672,7 +672,7 @@ describe(runWorkspaceModeAsync, () => {
 		// One package can own several projects, so the bail summary counts
 		// packages on both sides rather than the project rows on show.
 		it("should report how far a bailed run got, by package", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const harness = setupHappyPath();
 			harness.runWorkspace.mockResolvedValue({
@@ -688,6 +688,11 @@ describe(runWorkspaceModeAsync, () => {
 						pkg: "@halcyon/foo",
 						result: makeExecuteResult(),
 					},
+					{
+						displayName: "shared",
+						pkg: "@halcyon/qux",
+						result: makeExecuteResult(),
+					},
 				],
 			});
 
@@ -698,7 +703,22 @@ describe(runWorkspaceModeAsync, () => {
 				harness.dependencies,
 			);
 
-			expect(result.bail).toStrictEqual({ notRun: 2, ran: 1 });
+			expect(result.bail).toStrictEqual({ notRun: 2, ran: 2 });
+
+			harness.runWorkspace.mockResolvedValue({
+				bailedPackages: [],
+				results: [
+					{ displayName: "unit", pkg: "@halcyon/foo", result: makeExecuteResult() },
+				],
+			});
+			const complete = await runWorkspaceModeAsync(
+				makeCli({ bail: true, packages: "@halcyon/foo", workspace: true }),
+				undefined,
+				undefined,
+				harness.dependencies,
+			);
+
+			expect(complete.bail).toBeUndefined();
 		});
 
 		it("should leave the bail summary off a run that reached every package", async () => {
@@ -1344,7 +1364,7 @@ describe(runWorkspaceModeAsync, () => {
 
 	describe("empty results", () => {
 		it("should return empty projectResults when runWorkspace returns []", async () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const harness = setupHappyPath();
 
@@ -1355,8 +1375,13 @@ describe(runWorkspaceModeAsync, () => {
 				harness.dependencies,
 			);
 
-			expect(result.validationExitCode).toBeUndefined();
-			expect(result.projectResults).toStrictEqual([]);
+			expect(result).toStrictEqual({
+				coverageMs: 0,
+				merged: {},
+				mode: "workspace",
+				projectResults: [],
+				stagingMs: 0,
+			});
 		});
 	});
 

@@ -96,10 +96,7 @@ function collectGroups(entries: ReadonlyArray<TypecheckGroupEntry>): Array<Group
 		const key = JSON.stringify([entry.cwd, entry.tsconfig ?? null]);
 		let group = groups.get(key);
 		if (group === undefined) {
-			group = { cwd: entry.cwd, files: new Set() };
-			if (entry.tsconfig !== undefined) {
-				group.tsconfig = entry.tsconfig;
-			}
+			group = { cwd: entry.cwd, files: new Set(), tsconfig: entry.tsconfig };
 
 			groups.set(key, group);
 		}

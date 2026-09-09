@@ -86,7 +86,7 @@ function seedManifest(volume: MemoryVolume, json: string): void {
 
 describe(writeBuildManifest, () => {
 	it("should round-trip through readBuildManifest when artifacts match on disk", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -96,6 +96,7 @@ describe(writeBuildManifest, () => {
 		writeBuildManifest(MANIFEST_PATH, manifest, fileSystem);
 
 		expect(expectOk(readBuildManifest(MANIFEST_PATH, { fileSystem }))).toStrictEqual(manifest);
+		expect(volume.readFileSync(MANIFEST_PATH, "utf8")).toStartWith('{\n\t"buildId"');
 	});
 
 	it("should create parent directories before writing", () => {

@@ -22,7 +22,7 @@ export function formatExecuteOutput(options: FormatOutputOptions): string {
 
 	const paths = resolveOutputPaths(config);
 
-	const agentOptions = findFormatterOptions(config.formatters ?? [], "agent");
+	const agentOptions = findFormatterOptions(config.formatters, "agent");
 
 	if (agentOptions !== undefined && !config.verbose) {
 		return formatAgent(result, {

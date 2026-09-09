@@ -12,6 +12,7 @@ import { DEFAULT_CONFIG } from "./schema.ts";
 import {
 	assertStubCollisionRule,
 	cleanLeftoverStubs,
+	createStubBake,
 	generateProjectConfigs,
 	generateProjectStubs,
 	isGeneratedStub,
@@ -367,6 +368,19 @@ function shadowAt(root: string): ShadowLayout {
 }
 
 describe(syncStubsToShadowDirectory, () => {
+	it("should preserve the shadow root when removing its last orphan stub", () => {
+		expect.assertions(2);
+
+		const { fileSystem, volume } = createMemoryFileSystem({
+			"/shadow/orphan/jest.config.luau": serializeToLuau(minimalConfig()),
+		});
+
+		syncStubsToShadowDirectory([], "/root", shadowAt("/shadow"), fileSystem);
+
+		expect(volume.existsSync("/shadow")).toBeTrue();
+		expect(volume.existsSync("/shadow/orphan")).toBeFalse();
+	});
+
 	it("should copy stub files from original dirs to shadow dir", () => {
 		expect.assertions(1);
 
@@ -730,6 +744,25 @@ describe(syncStubsToShadowDirectory, () => {
 
 		expect(volume.existsSync("/shadow/src/Client/jest.config.luau")).toBeTrue();
 		expect(volume.existsSync("/shadow/src/Removed/jest.config.luau")).toBeFalse();
+	});
+});
+
+describe(createStubBake, () => {
+	it("should only own marked files with a recognized stub name", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			"/shadow/custom.luau": serializeToLuau(minimalConfig()),
+			"/shadow/jest.config.lua": serializeToLuau(minimalConfig()),
+			"/shadow/jest.config.luau": "return {}",
+		});
+		const bake = createStubBake([], "/cache", fileSystem);
+
+		expect([
+			bake.isBakeOwned("/shadow/jest.config.luau"),
+			bake.isBakeOwned("/shadow/custom.luau"),
+			bake.isBakeOwned("/shadow/jest.config.lua"),
+		]).toStrictEqual([false, false, true]);
 	});
 });
 

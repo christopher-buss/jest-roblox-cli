@@ -24,7 +24,7 @@ import {
 } from "./place-reuse.ts";
 import { relativizeProjectPaths } from "./relativize-paths.ts";
 import { poolSharedMounts, SHARED_POOL_PASS_VERSION } from "./shared-pool.ts";
-import type { PackageDescriptor } from "./synthesizer.ts";
+import type { PackageSynthesisInput, UnwrappedPackageSynthesisInput } from "./synthesizer.ts";
 import { synthesize } from "./synthesizer.ts";
 
 /** Where {@link demotePinnedMountsAsync} parks its Folder-rooted stand-ins. */
@@ -83,7 +83,12 @@ export interface PlaceBuildResult extends BuildManifestArtifact {
 	codeBundle?: CodeBundleArtifact;
 }
 
-export interface BuildPlaceOptions {
+export type BuildPlaceOptions = BuildPlaceOptionsBase & PackageSynthesisInput;
+
+export type UnwrappedBuildPlaceOptions = BuildPlaceOptionsBase & UnwrappedPackageSynthesisInput;
+export type BuildCodeBundleOptions = BuildCodeBundleOptionsBase & PackageSynthesisInput;
+
+interface BuildPlaceOptionsBase {
 	childProcess?: ChildProcessRunner;
 	/**
 	 * Build a Harness Place and write the Code Bundle beside it, rather than a
@@ -115,7 +120,6 @@ export interface BuildPlaceOptions {
 	 * LoadString. Forwarded verbatim to {@link synthesize}.
 	 */
 	loadStringEnabled?: boolean | undefined;
-	packages: Array<PackageDescriptor>;
 	placeFile: string;
 	projectFile: string;
 	/**
@@ -124,7 +128,6 @@ export interface BuildPlaceOptions {
 	 * coverage path) would only be double-gating.
 	 */
 	reuse?: PlaceReuseOptions | undefined;
-	wrap?: boolean | undefined;
 }
 
 /**
@@ -134,7 +137,7 @@ export interface BuildPlaceOptions {
  * bundle goes, and a bundle written anywhere else is one the reused place has
  * no relationship to.
  */
-export interface BuildCodeBundleOptions extends Except<BuildPlaceOptions, "codeRoots" | "reuse"> {
+interface BuildCodeBundleOptionsBase extends Except<BuildPlaceOptionsBase, "codeRoots" | "reuse"> {
 	codeRoots: ReadonlyArray<PosixRoot>;
 }
 
@@ -142,6 +145,13 @@ export interface BuildCodeBundleOptions extends Except<BuildPlaceOptions, "codeR
 interface HarnessInput {
 	fileSystem: FileSystem;
 	placeFile: string;
+	projectDirectory: string;
+	projectJson: string;
+}
+
+/** The synthesized project and optional bundle prepared for a place build. */
+interface PreparedPlaceProject {
+	codeBundle: CodeBundleArtifact | undefined;
 	projectDirectory: string;
 	projectJson: string;
 }
@@ -170,33 +180,16 @@ interface PlaceArtifactOptions {
  * Clean Place and a Coverage-Instrumented Place differ only in whether the
  * descriptors carry `coverageRoots`.
  */
-export async function buildPlaceAsync({
-	childProcess = nodeChildProcessRunner,
-	codeRoots,
-	contentId,
-	fileSystem = nodeFileSystem,
-	loadStringEnabled,
-	packages,
-	placeFile,
-	projectFile,
-	reuse,
-	wrap,
-}: BuildPlaceOptions): Promise<PlaceBuildResult> {
-	const projectDirectory = path.dirname(projectFile);
-	const synthesized = synthesize({ contentId, fileSystem, loadStringEnabled, packages, wrap });
-
-	// Split first, so everything below sees the harness rather than the whole
-	// place: the reuse key then covers what stays, and a code-only edit reuses
-	// it. The bundle is written either way, because a reused harness never
-	// held this run's code.
-	const input: HarnessInput = {
-		fileSystem,
+export async function buildPlaceAsync(options: BuildPlaceOptions): Promise<PlaceBuildResult> {
+	const {
+		childProcess = nodeChildProcessRunner,
+		contentId,
+		fileSystem = nodeFileSystem,
 		placeFile,
-		projectDirectory,
-		projectJson: synthesized,
-	};
-	const harness = codeRoots === undefined ? undefined : buildHarness({ ...input, codeRoots });
-	const projectJson = harness?.projectJson ?? synthesized;
+		projectFile,
+		reuse,
+	} = options;
+	const { codeBundle, projectDirectory, projectJson } = preparePlaceProject(options, fileSystem);
 
 	// Planned before anything is built, so a reused place pays for neither of
 	// the two passes below — see `PlaceInputsKeyOptions.projectJson` for why a
@@ -206,7 +199,7 @@ export async function buildPlaceAsync({
 		projectFile,
 		projectJson: relativizeProjectPaths(projectJson, projectDirectory),
 		reuse,
-		stagingVersions: stagingVersionsFor(harness !== undefined),
+		stagingVersions: stagingVersionsFor(codeBundle !== undefined),
 	});
 	const artifact = await reuseOrBuildPlaceAsync({
 		childProcess,
@@ -217,7 +210,7 @@ export async function buildPlaceAsync({
 		projectFile,
 		projectJson,
 	});
-	return omitUndefined({ ...artifact, codeBundle: harness?.bundle, contentId });
+	return omitUndefined({ ...artifact, codeBundle, contentId });
 }
 
 /**
@@ -229,35 +222,15 @@ export async function buildPlaceAsync({
  * the two cannot disagree about which mounts travel — the harness project it
  * also produces is what a build would have used, and is dropped here.
  */
-export function buildCodeBundle({
-	codeRoots,
-	contentId,
-	fileSystem = nodeFileSystem,
-	loadStringEnabled,
-	packages,
-	placeFile,
-	projectFile,
-	wrap,
-}: BuildCodeBundleOptions): CodeBundleArtifact {
+export function buildCodeBundle(options: BuildCodeBundleOptions): CodeBundleArtifact {
+	const { codeRoots, fileSystem = nodeFileSystem, placeFile, projectFile } = options;
 	return buildHarness({
 		codeRoots,
 		fileSystem,
 		placeFile,
 		projectDirectory: path.dirname(projectFile),
-		projectJson: synthesize({ contentId, fileSystem, loadStringEnabled, packages, wrap }),
+		projectJson: synthesize(options),
 	}).bundle;
-}
-
-/**
- * The pass versions this build's key folds.
- *
- * The split joins them only for a harness. It runs before the key rather than
- * after it, so the project text the key covers is already its output — but a
- * rule that changed which files the bundle carries out of a mount that travels
- * would move neither, and this is what stands for that half.
- */
-function stagingVersionsFor(isHarness: boolean): ReadonlyArray<number> {
-	return isHarness ? [...STAGING_PASS_VERSIONS, CODE_SPLIT_PASS_VERSION] : STAGING_PASS_VERSIONS;
 }
 
 /**
@@ -335,6 +308,44 @@ function buildHarness({
 		}),
 		projectJson: split.harnessProjectJson,
 	};
+}
+
+function preparePlaceProject(
+	options: BuildPlaceOptions,
+	fileSystem: FileSystem,
+): PreparedPlaceProject {
+	const { codeRoots, placeFile, projectFile } = options;
+	const projectDirectory = path.dirname(projectFile);
+	const synthesized = synthesize(options);
+
+	// Split first, so reuse sees the harness and a code-only edit can reuse it.
+	// The bundle is still written because a reused harness never held this run's
+	// code.
+	const input: HarnessInput = {
+		fileSystem,
+		placeFile,
+		projectDirectory,
+		projectJson: synthesized,
+	};
+	const harness = codeRoots === undefined ? undefined : buildHarness({ ...input, codeRoots });
+
+	return {
+		codeBundle: harness?.bundle,
+		projectDirectory,
+		projectJson: harness?.projectJson ?? synthesized,
+	};
+}
+
+/**
+ * The pass versions this build's key folds.
+ *
+ * The split joins them only for a harness. It runs before the key rather than
+ * after it, so the project text the key covers is already its output — but a
+ * rule that changed which files the bundle carries out of a mount that travels
+ * would move neither, and this is what stands for that half.
+ */
+function stagingVersionsFor(isHarness: boolean): ReadonlyArray<number> {
+	return isHarness ? [...STAGING_PASS_VERSIONS, CODE_SPLIT_PASS_VERSION] : STAGING_PASS_VERSIONS;
 }
 
 /**

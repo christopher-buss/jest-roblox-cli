@@ -41,6 +41,7 @@ import { MANIFEST_VERSION, manifestSchema } from "./manifest.ts";
 import type { PrepareCoverageResult } from "./prepare.ts";
 import {
 	collectLuauRootsFromRojo,
+	findRojoProject,
 	prepareCoverageAsync,
 	resolveLuauRoots,
 	toCoverageArtifacts,
@@ -168,7 +169,7 @@ function seedInto(
 }
 
 /**
- * A volume holding one instrumentable root and the rojo project that mounts it.
+ * One instrumentable root and its Rojo project.
  *
  * @param options - Where the root and the project file sit.
  */
@@ -910,14 +911,38 @@ describe(prepareCoverageAsync, () => {
 			expect(result.rebuilt).toBeTrue();
 		});
 
-		it("should report the place build apart from the instrumentation", async () => {
+		it("should omit an unavailable input digest from a rebuilt manifest", async () => {
 			expect.assertions(2);
+
+			const { fileSystem, volume } = seedFilesystem();
+			const { childProcess, instrumenter } = setupMocks(volume);
+			vi.spyOn(fileSystem.promises, "readFile").mockRejectedValueOnce(
+				new Error("temporary read failure"),
+			);
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			const result = await prepareCoverageAsync(config, {
+				childProcess,
+				fileSystem,
+				instrumenter,
+				tsconfigReader: noTsconfig,
+			});
+
+			expect(result.rebuilt).toBeTrue();
+			expect(
+				readCoverageManifestFile(volume, ".jest-roblox/coverage/coverage-manifest.json"),
+			).not.toHaveProperty("rojoInputsHash");
+		});
+
+		it("should report the place build apart from the instrumentation", async () => {
+			expect.assertions(3);
 
 			const { fileSystem, volume } = seedFilesystem();
 			const { childProcess, execFile, instrumenter } = setupMocks(volume);
 			// Synchronous work, so the clock has to move from inside the build
 			// for the two phases to be told apart at all.
 			const clock = movableClockCollector(1_000);
+			const profile = vi.spyOn(clock.timing, "profileTimedAsync");
 			execFile.mockImplementation((_file, args, _options, callback) => {
 				clock.advance(250);
 				volume.writeFileSync(String(args[3]), "RBXL");
@@ -935,6 +960,10 @@ describe(prepareCoverageAsync, () => {
 			expect(result.stagingMs).toBe(250);
 			// Only the instrumentation: the run reports it as coverage.
 			expect(result.instrumentMs).toBe(0);
+			expect(profile.mock.calls.map(([name]) => name)).toIncludeAllMembers([
+				"instrumentSources",
+				"bakeCoveragePlace",
+			]);
 		});
 
 		it("should share the buildId with the coverage manifest it wrote", async () => {
@@ -1703,7 +1732,7 @@ describe(prepareCoverageAsync, () => {
 		});
 
 		it("should rebuild when no files changed but the prior place hash drifted", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -1728,6 +1757,7 @@ describe(prepareCoverageAsync, () => {
 			);
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			await prepareCoverageAsync(config, {
 				childProcess,
@@ -1737,6 +1767,9 @@ describe(prepareCoverageAsync, () => {
 			});
 
 			expect(execFile).toHaveBeenCalledOnce();
+			expect(stderr).toHaveBeenCalledWith(
+				"Warning: Previous build manifest is unusable (coverage-place-hash-mismatch); rebuilding place.\n",
+			);
 		});
 
 		it("should reuse the prior place when the build manifest validates", async () => {
@@ -2345,7 +2378,7 @@ describe(prepareCoverageAsync, () => {
 			});
 
 			it("should warn and skip the inputs check when they cannot be hashed", async () => {
-				expect.assertions(2);
+				expect.assertions(3);
 
 				const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -2353,6 +2386,10 @@ describe(prepareCoverageAsync, () => {
 				const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 				await seedIncludeScenarioAsync(fileSystem, volume, "-- v1");
 				seedValidBuildManifest(volume);
+				const previousHash = readCoverageManifestFile(
+					volume,
+					".jest-roblox/coverage/coverage-manifest.json",
+				).rojoInputsHash;
 				// config.luauRoots is set, so resolveLuauRootsWithRojo skips
 				// parsing and the run reaches the inputs hash with a
 				// now-malformed project. The reuse path never re-parses it, so
@@ -2362,13 +2399,14 @@ describe(prepareCoverageAsync, () => {
 
 				const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
-				await prepareCoverageAsync(config, {
+				const result = await prepareCoverageAsync(config, {
 					childProcess,
 					fileSystem,
 					instrumenter,
 					tsconfigReader: noTsconfig,
 				});
 
+				expect(result.manifest.rojoInputsHash).toBe(previousHash);
 				expect(execFile).not.toHaveBeenCalled();
 				expect(stderr).toHaveBeenCalledWith(
 					expect.stringContaining("could not hash rojo build inputs"),
@@ -3763,9 +3801,7 @@ describe(prepareCoverageAsync, () => {
 		});
 
 		/**
-		 * The gate every other build gets from the place-reuse key, which never
-		 * reaches a build on this path. Without it a harness built by an older
-		 * split rule reads as current and is handed straight back.
+		 * Bundled builds also invalidate harnesses made by an older split rule.
 		 */
 		it("should rebuild the place when the split rule that built it moved", async () => {
 			expect.assertions(2);
@@ -4042,7 +4078,7 @@ describe(resolveLuauRoots, () => {
 
 	describe("when Rojo project JSON is malformed", () => {
 		it("should throw with a descriptive error", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -4051,10 +4087,17 @@ describe(resolveLuauRoots, () => {
 
 			const config = makeConfig();
 
-			expect(() => rootsOf(fileSystem, config)).toThrowWithMessage(
-				Error,
-				/Malformed Rojo project JSON/,
-			);
+			let caught: unknown;
+			try {
+				rootsOf(fileSystem, config);
+			} catch (err) {
+				caught = err;
+			}
+
+			assert(caught instanceof Error);
+
+			expect(caught.cause).toBeInstanceOf(SyntaxError);
+			expect(caught.message).toContain("Malformed Rojo project JSON");
 		});
 	});
 
@@ -4099,6 +4142,21 @@ describe(resolveLuauRoots, () => {
 	});
 });
 
+describe(findRojoProject, () => {
+	it("should prefer the default project over an alphabetically earlier project", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			"/project/aaa.project.json": "{}",
+			"/project/default.project.json": "{}",
+		});
+
+		expect(findRojoProject(makeConfig(), fileSystem)).toBe(
+			path.join("/project", "default.project.json"),
+		);
+	});
+});
+
 describe(collectLuauRootsFromRojo, () => {
 	// Every case here sites the project at `rootDir`, which is the common
 	// shape: the frame a root is written in and the frame a `$path` resolves
@@ -4107,7 +4165,7 @@ describe(collectLuauRootsFromRojo, () => {
 
 	describe("when collecting paths from nested tree nodes", () => {
 		it("should find $path values in deeply nested nodes", async () => {
-			expect.assertions(1);
+			expect.assertions(2);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -4132,10 +4190,15 @@ describe(collectLuauRootsFromRojo, () => {
 			volume.writeFileSync("/project/packages/test-utils/out/init.luau", "");
 
 			const config = makeConfig();
+			const exists = vi.spyOn(fileSystem, "existsSync");
 
 			expect(
 				collectLuauRootsFromRojo({ project, rojoDirectory }, config, fileSystem),
 			).toStrictEqual(["packages/core/out", "packages/test-utils/out"]);
+			expect(exists.mock.calls.map(([file]) => file)).toStrictEqual([
+				path.resolve("/project/packages/core/out"),
+				path.resolve("/project/packages/test-utils/out"),
+			]);
 		});
 	});
 
@@ -4784,7 +4847,7 @@ describe("narrowing to the coverage universe", () => {
 	});
 
 	it("should carry each demoted level's loose files onto the spine", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -4796,7 +4859,7 @@ describe("narrowing to the coverage universe", () => {
 			rootDir: process.cwd(),
 		});
 
-		await prepareCoverageAsync(config, {
+		const result = await prepareCoverageAsync(config, {
 			childProcess,
 			fileSystem,
 			instrumenter,
@@ -4807,6 +4870,10 @@ describe("narrowing to the coverage universe", () => {
 		expect(
 			volume.existsSync(".jest-roblox/coverage/.spine/out/modules/.self/net.luau"),
 		).toBeTrue();
+		expect(Object.keys(result.manifest.nonInstrumentedFiles)).toIncludeAllMembers([
+			"out/loose.luau",
+			"out/modules/net.luau",
+		]);
 	});
 
 	it("should refill a spine leaf a warm run recorded elsewhere", async () => {

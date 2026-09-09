@@ -151,6 +151,28 @@ describe(createSetupResolver, () => {
 	});
 
 	describe("package specifiers", () => {
+		it("should resolve packages relative to the config directory by default", () => {
+			expect.assertions(1);
+
+			const directory = writeRealProject({
+				"node_modules/example/package.json": JSON.stringify({ main: "setup.luau" }),
+				"node_modules/example/setup.luau": "return {}",
+			});
+			stubRojoResolver({
+				[path.resolve(directory, "node_modules", "example")]: [
+					"ReplicatedStorage",
+					"example",
+				],
+			});
+			const resolve = createSetupResolver({
+				configDirectory: directory,
+				createResolver,
+				rojoConfigPath: path.join(directory, "default.project.json"),
+			});
+
+			expect(resolve("example")).toBe("ReplicatedStorage/example");
+		});
+
 		it("should resolve a scoped package specifier", () => {
 			expect.assertions(1);
 

@@ -21,7 +21,7 @@ import {
 import { STUB_FILENAME } from "../config/stubs.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import type { ShadowLayout } from "../coverage-pipeline/spine.ts";
-import type { ExecuteResult } from "../executor.ts";
+import type { ExecuteResult, ProjectInput } from "../executor.ts";
 import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
 import type { JestResult } from "../types/jest-result.ts";
@@ -126,6 +126,14 @@ function makeJestResult(overrides: Partial<JestResult> = {}): JestResult {
 // stated once rather than in each mock body.
 function allProjectIndices(input: { projects: ReadonlyArray<unknown> }): Array<number> {
 	return input.projects.map((_project, index) => index);
+}
+
+function firstDispatchedProject(): ProjectInput {
+	const call = mocks.runProjects.mock.calls[0]?.[0];
+	assert(call !== undefined);
+	const project = call.projects[0];
+	assert(project !== undefined);
+	return project;
 }
 
 function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResult {
@@ -384,10 +392,14 @@ describe(runMultiProjectAsync, () => {
 	});
 
 	it("should not emit the run header when there are no runtime jobs", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
-		const { config, fileSystem } = setupDefaults();
-		// Don't seed any test files — no runtime jobs are produced.
+		const { config, fileSystem, volume } = setupDefaults({
+			typecheck: { enabled: true },
+		});
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
 		const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
 		await runMultiProjectAsync({
@@ -399,6 +411,7 @@ describe(runMultiProjectAsync, () => {
 		});
 
 		expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining(" RUN "));
+		expect(mocks.runProjects).not.toHaveBeenCalled();
 	});
 
 	// Workspace mode passes its volume down to project resolution, and the two
@@ -500,8 +513,8 @@ describe(runMultiProjectAsync, () => {
 			expect(result.coverageDisplayFilter).toBeTypeOf("function");
 		});
 
-		it("should leave the filter undefined on a bare run", async () => {
-			expect.assertions(1);
+		it("should leave the filter and Luau pattern undefined on a bare run", async () => {
+			expect.assertions(2);
 
 			const { config, fileSystem, volume } = setupDefaults();
 			seedProjectFiles(volume);
@@ -515,6 +528,7 @@ describe(runMultiProjectAsync, () => {
 			});
 
 			expect(result.coverageDisplayFilter).toBeUndefined();
+			expect(firstDispatchedProject().config.testPathPattern).toBeUndefined();
 		});
 
 		it("should leave the filter undefined for --project when no static roots derive", async () => {
@@ -546,13 +560,15 @@ describe(runMultiProjectAsync, () => {
 
 		await expect(
 			runMultiProjectAsync({
-				cli: makeCli({ project: ["nonexistent"] }),
+				cli: makeCli({ project: ["missing-client", "missing-server"] }),
 				config,
 				fileSystem,
 				rawProjects: [makeProjectEntry("client")],
 				seams,
 			}),
-		).rejects.toThrow("Unknown project name(s): nonexistent. Available: client, server");
+		).rejects.toThrow(
+			"Unknown project name(s): missing-client, missing-server. Available: client, server",
+		);
 	});
 
 	it("should throw when Rojo project schema is invalid", async () => {
@@ -1352,14 +1368,41 @@ describe(runMultiProjectAsync, () => {
 		);
 	});
 
+	it("should apply CLI typecheck options to discovery and the typecheck runner", async () => {
+		expect.assertions(2);
+
+		const { config, fileSystem, volume } = setupDefaults();
+		volume.mkdirSync("/test/src/client", { recursive: true });
+		volume.writeFileSync("/test/src/client/a.spec.ts", "");
+		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
+		mocks.runTypecheck.mockResolvedValue(makeJestResult());
+
+		await runMultiProjectAsync({
+			cli: makeCli({ typecheck: true, typecheckTsconfig: "tsconfig.cli.json" }),
+			config,
+			fileSystem,
+			rawProjects: [makeProjectEntry("client")],
+			seams,
+		});
+
+		expect(mocks.runTypecheck).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				files: ["src/client/a.spec-d.ts"],
+				tsconfig: "tsconfig.cli.json",
+			}),
+		);
+		expect(mocks.runProjects).toHaveBeenCalledOnce();
+	});
+
 	it("should run typecheck-only without resolving a backend or runtime jobs", async () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const { config, fileSystem, volume } = setupDefaults({
 			typecheck: { enabled: true, only: true },
 		});
 
 		mocks.runTypecheck.mockResolvedValue(makeJestResult());
+		const recorded = recordingTimingCollector();
 		volume.mkdirSync("/test/src/client", { recursive: true });
 		volume.writeFileSync("/test/src/client/a.spec-d.ts", "");
 		mocks.resolveAllProjects.mockResolvedValue([
@@ -1375,6 +1418,7 @@ describe(runMultiProjectAsync, () => {
 			fileSystem,
 			rawProjects: [makeProjectEntry("client")],
 			seams,
+			timing: recorded.timing,
 		});
 
 		// The type-only short-circuit runs pure-local tsgo: no backend resolved,
@@ -1382,6 +1426,7 @@ describe(runMultiProjectAsync, () => {
 		expect(mocks.resolveBackend).not.toHaveBeenCalled();
 		expect(mocks.runProjects).not.toHaveBeenCalled();
 		expect(result.typecheckResult).toBeDefined();
+		expect(recorded.records.map((record) => record.name)).toStrictEqual(["runTypecheck"]);
 	});
 
 	it("should keep the runtime path when only one selected project is typecheck-only", async () => {

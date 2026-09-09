@@ -191,7 +191,7 @@ describe(instrumentRoot, () => {
 	it("should throw a contextual error for an unparseable file", () => {
 		expect.assertions(1);
 
-		const { fileSystem } = setupFilesystem({ files: { "init.luau": "local = = =\n" } });
+		const { fileSystem } = setupFilesystem({ files: { "init.luau": "local =\nlocal =\n" } });
 
 		expect(() => {
 			instrumentRoot({
@@ -199,7 +199,14 @@ describe(instrumentRoot, () => {
 				luauRoot: LUAU_ROOT,
 				shadowDir: "/shadow",
 			});
-		}).toThrowWithMessage(Error, /Failed to parse init\.luau/);
+		}).toThrowWithMessage(
+			Error,
+			"Failed to parse init.luau: " +
+				"Expected identifier when parsing variable name, got '='; " +
+				"Expected identifier when parsing expression, got 'local'; " +
+				"Expected identifier when parsing variable name, got '='; " +
+				"Expected identifier when parsing expression, got <eof>",
+		);
 	});
 
 	describe("when the root includes spec, test, and snapshot files", () => {
@@ -230,7 +237,7 @@ describe(instrumentRoot, () => {
 	// the previous sibling already made — thousands of them over a real root.
 	describe("when several files share a shadow directory", () => {
 		it("should create each directory once for the twin, not once per file", () => {
-			expect.assertions(2);
+			expect.assertions(3);
 
 			const { fileSystem, volume } = setupFilesystem({
 				files: {
@@ -242,6 +249,7 @@ describe(instrumentRoot, () => {
 			});
 
 			const mkdirSpy = vi.spyOn(fileSystem, "mkdirSync");
+			const statSpy = vi.spyOn(fileSystem, "statSync");
 
 			instrumentRoot({
 				fileSystem,
@@ -270,6 +278,17 @@ describe(instrumentRoot, () => {
 				"/shadow/shared",
 				"/shadow/shared",
 				"/shadow/shared/deep",
+				"/shadow/shared/deep",
+			]);
+
+			const shadowDirectories = new Set(["/shadow", "/shadow/shared", "/shadow/shared/deep"]);
+			const directoryStats = statSpy.mock.calls
+				.map(([directory]) => normalizeWindowsPath(String(directory)))
+				.filter((directory) => shadowDirectories.has(directory));
+
+			expect(directoryStats.toSorted()).toStrictEqual([
+				"/shadow",
+				"/shadow/shared",
 				"/shadow/shared/deep",
 			]);
 			// Every file still landed, so the skipped calls really were repeats.
@@ -415,15 +434,18 @@ describe(instrument, () => {
 		});
 
 		it("should emit manifest JSON with correct top-level fields", () => {
-			expect.assertions(3);
+			expect.assertions(4);
 
-			const { fileSystem } = setupFilesystem();
+			const { fileSystem, volume } = setupFilesystem();
 
 			const result = callInstrumentWithDefaults(fileSystem);
 
 			expect(result.version).toBe(MANIFEST_VERSION);
 			expect(result.shadowDir).toBeDefined();
 			expect(result.generatedAt).toBeDefined();
+			expect(
+				JSON.parse(volume.readFileSync("/manifest.json", "utf-8").toString()),
+			).toStrictEqual(result);
 		});
 
 		it("should include sourceHash in each file record", () => {

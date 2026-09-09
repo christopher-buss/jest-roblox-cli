@@ -85,7 +85,7 @@ function regroupByPackage(
 
 	for (const { files, scope } of matches) {
 		const ctx = packageByProject.get(scope.project);
-		assert(ctx !== undefined, "every scope was built from a package context");
+		assert(ctx !== undefined);
 
 		filesByProject.set(
 			projectKey(ctx.info.name, scope.project.displayName),

@@ -115,7 +115,7 @@ function collectStatIfBranch(
 	// Locate `end` via the last then-block's end position rather than the if
 	// statement's own location, which can extend past a trailing `;`.
 	const lastBlock = blocks.at(-1);
-	assert(lastBlock !== undefined, "a chain always holds its own then-block");
+	assert(lastBlock !== undefined);
 	context.accumulator.addStatementBranch(arms, {
 		ifStart: { column: node.location.beginColumn, line: node.location.beginLine },
 		probeEnd: { column: lastBlock.location.endColumn, line: lastBlock.location.endLine },

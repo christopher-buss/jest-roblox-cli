@@ -101,7 +101,7 @@ function convertHljsToAnsi(html: string): string {
 	// second time: '&amp;lt;' has to come back out as '&lt;', not '<'.
 	return result.replace(HTML_ENTITY_REGEX, (entity) => {
 		const char = HTML_ENTITY_TO_CHAR.get(entity);
-		assert(char !== undefined, "regex only matches mapped entities");
+		assert(char !== undefined);
 		return char;
 	});
 }

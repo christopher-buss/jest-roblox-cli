@@ -202,8 +202,9 @@ describe(getAffectedPackages, () => {
 
 		const childProcess = createRunner();
 		const { fileSystem } = createMemoryFileSystem({ [path.join(ROOT, "nx.json")]: "{}" });
+		const invalidOutput = `not-json-${"x".repeat(250)}`;
 
-		vi.mocked(childProcess.execFileSync).mockReturnValue("not-json");
+		vi.mocked(childProcess.execFileSync).mockReturnValue(invalidOutput);
 
 		let caught: unknown;
 		try {
@@ -214,7 +215,7 @@ describe(getAffectedPackages, () => {
 
 		assert(caught instanceof Error);
 
-		expect(caught.message).toBe("nx returned non-JSON output: not-json");
+		expect(caught.message).toBe(`nx returned non-JSON output: ${invalidOutput.slice(0, 200)}`);
 		expect(caught.cause).toBeInstanceOf(SyntaxError);
 	});
 
@@ -424,7 +425,9 @@ describe(getAffectedPackages, () => {
 		// `ExecFileSyncOptions` does not declare the flag, so it cannot go in
 		// the literal above.
 		expect(options).toHaveProperty("windowsVerbatimArguments", true);
-		expect(options!.env!["PATH"]).toStartWith(`${binDirectory}${path.delimiter}`);
+		expect(options!.env!["PATH"]).toBe(
+			`${binDirectory}${path.delimiter}${process.env["PATH"]}`,
+		);
 	});
 
 	// cspell:words PATHEXT
@@ -494,7 +497,7 @@ describe(getAffectedPackages, () => {
 		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledWith(
 			shimPath,
 			["show", "projects", "--affected", "--base=develop", "--json"],
-			expect.objectContaining({ cwd: ROOT, shell: false }),
+			expect.objectContaining({ cwd: ROOT, shell: false, windowsHide: true }),
 		);
 	});
 
@@ -718,7 +721,7 @@ describe(getAffectedPackages, () => {
 		// nx's own stderr already mentions the name on failure, but
 		// parseJson's error doesn't know about names — wrap so the name is
 		// in the message regardless of failure mode.
-		expect.assertions(1);
+		expect.assertions(3);
 
 		const childProcess = createRunner();
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -728,9 +731,24 @@ describe(getAffectedPackages, () => {
 		volume.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
 		mockNxResponses(childProcess, ["weird"], { weird: "non-json" });
 
-		expect(() => getAffectedPackages(ROOT, "develop", { childProcess, fileSystem })).toThrow(
-			/nx show project "weird"/,
+		let caught: unknown;
+		try {
+			getAffectedPackages(ROOT, "develop", { childProcess, fileSystem });
+		} catch (err) {
+			caught = err;
+		}
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toBe(
+			'nx show project "weird": nx returned non-JSON output: Welcome to nx!\nnot-json-at-all',
 		);
+
+		expect(caught.cause).toBeInstanceOf(Error);
+
+		assert(caught.cause instanceof Error);
+
+		expect(caught.cause.cause).toBeInstanceOf(SyntaxError);
 	});
 
 	it("should route per-project 'nx show project' calls through cmd.exe on Windows", () => {

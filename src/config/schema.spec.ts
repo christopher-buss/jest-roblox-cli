@@ -878,11 +878,13 @@ describe(validateConfig, () => {
 		expect.assertions(1);
 
 		expect(() => {
-			return validateConfig({
-				coverageThreshold: { lines: 80 },
-				setupFiles: ["./global.ts"],
-				testMatch: ["**/*.spec.ts"],
-			});
+			return validateConfig(
+				Object.fromEntries([
+					["testMatch", ["**/*.spec.ts"]],
+					["setupFiles", ["./global.ts"]],
+					["coverageThreshold", { lines: 80 }],
+				]),
+			);
 		}).toThrow(
 			"jest options must be wrapped in a `test:` block. Move these keys under `test:`: coverageThreshold, setupFiles, testMatch",
 		);
@@ -900,11 +902,13 @@ describe(validateConfig, () => {
 		expect.assertions(1);
 
 		expect(() => {
-			return validateConfig({
-				typecheck: true,
-				typecheckOnly: true,
-				typecheckTsconfig: "tsconfig.test.json",
-			});
+			return validateConfig(
+				Object.fromEntries([
+					["typecheckTsconfig", "tsconfig.test.json"],
+					["typecheckOnly", true],
+					["typecheck", true],
+				]),
+			);
 		}).toThrow(
 			"`typecheck` options have moved under `test.typecheck`. Replace these keys: typecheck → test.typecheck.enabled, typecheckOnly → test.typecheck.only, typecheckTsconfig → test.typecheck.tsconfig",
 		);

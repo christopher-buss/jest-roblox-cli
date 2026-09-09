@@ -178,7 +178,8 @@ describe(StreamingResultClient, () => {
 		it("should throw when sortedMaps.create returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ createError: new OpenCloudError("rate limited") });
+			const cause = new OpenCloudError("rate limited");
+			const stub = createSortedMapStub({ createError: cause });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",
@@ -186,7 +187,10 @@ describe(StreamingResultClient, () => {
 			});
 
 			await expect(client.writeAsync(makeEntry())).rejects.toThrow(
-				"Failed to write streaming result: rate limited",
+				expect.objectContaining({
+					cause,
+					message: "Failed to write streaming result: rate limited",
+				}),
 			);
 		});
 	});
@@ -290,7 +294,8 @@ describe(StreamingResultClient, () => {
 		it("should throw when sortedMaps.list returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ listError: new OpenCloudError("auth failed") });
+			const cause = new OpenCloudError("auth failed");
+			const stub = createSortedMapStub({ listError: cause });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",
@@ -298,7 +303,10 @@ describe(StreamingResultClient, () => {
 			});
 
 			await expect(client.readAllAsync()).rejects.toThrow(
-				"Failed to read streaming results: auth failed",
+				expect.objectContaining({
+					cause,
+					message: "Failed to read streaming results: auth failed",
+				}),
 			);
 		});
 
@@ -346,7 +354,8 @@ describe(StreamingResultClient, () => {
 		it("should throw when sortedMaps.delete returns a failure Result", async () => {
 			expect.assertions(1);
 
-			const stub = createSortedMapStub({ deleteError: new OpenCloudError("not found") });
+			const cause = new OpenCloudError("not found");
+			const stub = createSortedMapStub({ deleteError: cause });
 			const client = new StreamingResultClient({
 				credentials: CREDENTIALS,
 				mapId: "m",
@@ -354,7 +363,10 @@ describe(StreamingResultClient, () => {
 			});
 
 			await expect(client.deleteAsync("a::p")).rejects.toThrow(
-				"Failed to delete streaming result: not found",
+				expect.objectContaining({
+					cause,
+					message: "Failed to delete streaming result: not found",
+				}),
 			);
 		});
 	});

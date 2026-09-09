@@ -383,7 +383,6 @@ export class StudioCliBackend implements Backend {
 			loadStringEnabled: true,
 			packages: [
 				{
-					name: BACKEND_NAME,
 					packageDirectory: rootDirectory,
 					rojoProjectPath: path.resolve(findRojoProject(primary.config)),
 				},
@@ -791,7 +790,11 @@ function listenForResultFrame(
 			}
 
 			const message = resultMessageSchema(raw);
-			if (message instanceof type.errors || message.requestId !== requestId) {
+			if (message instanceof type.errors) {
+				return;
+			}
+
+			if (message.requestId !== requestId) {
 				return;
 			}
 
@@ -801,9 +804,8 @@ function listenForResultFrame(
 }
 
 /**
- * Wire the run's settle sources onto one one-shot gate: the timeout, a Studio
- * spawn failure, the correlated `results` frame, and a server error. Whichever
- * fires first wins and the rest become no-ops.
+ * Wire every settle source onto the Promise's one-shot resolve/reject pair and
+ * clear the deadline before forwarding it.
  */
 function awaitStudioCliResult({
 	child,
@@ -815,17 +817,11 @@ function awaitStudioCliResult({
 	server,
 	timeout,
 }: StudioCliResultWait): void {
-	let isSettled = false;
 	const timer = setTimeout(() => {
 		bail(timedOutError(fileSystem, timeout, outputFile));
 	}, timeout);
 
 	function settle(action: () => void): void {
-		if (isSettled) {
-			return;
-		}
-
-		isSettled = true;
 		clearTimeout(timer);
 		action();
 	}

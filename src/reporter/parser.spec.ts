@@ -179,11 +179,30 @@ describe(extractLuauTimingFromOutput, () => {
 			},
 		});
 
-		expect(extractLuauTimingFromOutput(output)).toStrictEqual({ findJest: 0.1 });
+		expect(extractLuauTimingFromOutput(`\n  ${output}\n`)).toStrictEqual({ findJest: 0.1 });
 	});
 });
 
 describe(parseJestOutput, () => {
+	it("should use the outer Jest result when the nested result is null", () => {
+		expect.assertions(1);
+
+		const parsed = parseJestOutput(
+			JSON.stringify({
+				numFailedTests: 0,
+				numPassedTests: 1,
+				numPendingTests: 0,
+				numTotalTests: 1,
+				results: null,
+				startTime: 0,
+				success: true,
+				testResults: [],
+			}),
+		);
+
+		expect(parsed.result.success).toBeTrue();
+	});
+
 	it("should parse valid Jest result JSON", () => {
 		expect.assertions(3);
 

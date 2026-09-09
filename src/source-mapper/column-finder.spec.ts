@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { findExpectationColumn } from "./column-finder.ts";
 
 describe(findExpectationColumn, () => {
+	it("should return undefined for a missing source line", () => {
+		expect.assertions(1);
+
+		expect(findExpectationColumn(undefined)).toBeUndefined();
+	});
+
 	it("should return undefined for empty line", () => {
 		expect.assertions(1);
 
@@ -63,6 +69,12 @@ describe(findExpectationColumn, () => {
 		const line = "expect(something)";
 
 		expect(findExpectationColumn(line)).toBeUndefined();
+	});
+
+	it("should ignore an expectation property that is not called", () => {
+		expect.assertions(1);
+
+		expect(findExpectationColumn("expect(value).toBe")).toBeUndefined();
 	});
 
 	it("should find column of :toBe matcher in Luau colon syntax", () => {

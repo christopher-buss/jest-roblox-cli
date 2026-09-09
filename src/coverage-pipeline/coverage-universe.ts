@@ -65,18 +65,22 @@ export function createCoverageUniverseMatcher(
 	filter: CoverageUniverseFilter,
 ): (filePath: string) => boolean {
 	const include = filter.include ?? [];
-	const ignore = filter.ignore ?? [];
 
-	const includePatterns = include.filter((pattern) => !pattern.startsWith("!"));
-	const excludePatterns = include
-		.filter((pattern) => pattern.startsWith("!"))
-		.map((pattern) => pattern.slice(1));
+	const includePatterns: Array<string> = [];
+	const excludePatterns: Array<string> = [];
+	for (const pattern of include) {
+		if (pattern.startsWith("!")) {
+			excludePatterns.push(pattern.slice(1));
+		} else {
+			includePatterns.push(pattern);
+		}
+	}
 
 	const isIncluded = includePatterns.length > 0 ? createGlobMatcher(includePatterns) : undefined;
 	const isExcluded = createGlobMatcher(excludePatterns);
 	// `contains: true` so a bare `index.ts` matches `src/foo/index.ts`, the same
 	// way the instrument-time root matcher treats `coveragePathIgnorePatterns`.
-	const isIgnored = picomatch(ignore, { contains: true, nonegate: true });
+	const isIgnored = createIgnoreMatcher(filter.ignore);
 
 	const anchor = resolveUniverseAnchor(filter.rootDir);
 	// Both sides are canonical POSIX by here, so a file under the anchor — the
@@ -95,7 +99,7 @@ export function createCoverageUniverseMatcher(
 		return (
 			(isIncluded === undefined || isIncluded(relativePath)) &&
 			!isExcluded(relativePath) &&
-			!isIgnored(relativePath)
+			isIgnored?.(relativePath) !== true
 		);
 	};
 }
@@ -140,16 +144,16 @@ function toAnchorNamespace(filePath: string, cwd: string): string {
 	);
 }
 
+function createIgnoreMatcher(
+	patterns?: Array<string>,
+): ((filePath: string) => boolean) | undefined {
+	return patterns === undefined
+		? undefined
+		: picomatch(patterns, { contains: true, nonegate: true });
+}
+
 function createGlobMatcher(patterns: Array<string>): (filePath: string) => boolean {
-	// Split by whether the pattern is path-anchored. A slash-free pattern like
-	// `player.ts` must match at any depth, which needs picomatch's `matchBase`;
-	// a path-containing glob like `src/**/*.ts` is matched as-is (`matchBase`
-	// would be a no-op there, and applying it could mask an over-broad basename
-	// match).
-	const withPath = patterns.filter((pattern) => pattern.includes("/"));
-	const withoutPath = patterns.filter((pattern) => !pattern.includes("/"));
-
-	const matchers = [picomatch(withPath), picomatch(withoutPath, { matchBase: true })];
-
-	return (filePath) => matchers.some((matcher) => matcher(filePath));
+	const matchPath = picomatch(patterns, { nonegate: true });
+	const matchBase = picomatch(patterns, { matchBase: true, nonegate: true });
+	return (filePath) => matchPath(filePath) || matchBase(filePath);
 }

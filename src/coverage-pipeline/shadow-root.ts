@@ -108,17 +108,25 @@ interface ReconcileOptions {
 	shadowDir: string;
 }
 
-interface IncrementalPlan {
-	/**
-	 * Populated only on a full cache hit — every file in this root was
-	 * unchanged, so the caller returns this verbatim without instrumenting.
-	 */
-	fullCacheResult?: ShadowRootResult | undefined;
+interface FullCachePlan {
+	fullCacheResult: ShadowRootResult;
+}
+
+interface IncrementalFiles {
 	/** Previously-instrumented files were deleted or modified. */
 	hasChanged: boolean;
-	/** Relative paths the instrumenter can skip; undefined on a cold run. */
-	skipFiles: Set<string> | undefined;
+	manifest: CoverageManifest;
+	skipFiles: Set<string>;
 }
+
+interface InstrumentationPlan {
+	/**
+	 * Cached records the instrumenter carries forward; undefined on a cold run.
+	 */
+	incrementalFiles: IncrementalFiles | undefined;
+}
+
+type IncrementalPlan = FullCachePlan | InstrumentationPlan;
 
 interface IncrementalState {
 	allCached: boolean;
@@ -206,7 +214,7 @@ export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRoot
 
 	const rootFiles = splitRootFiles(options);
 	const plan = planIncremental(options, rootFiles);
-	if (plan.fullCacheResult !== undefined) {
+	if ("fullCacheResult" in plan) {
 		return plan.fullCacheResult;
 	}
 
@@ -214,13 +222,13 @@ export function prepareShadowRoot(options: PrepareShadowRootOptions): ShadowRoot
 	const { allFiles, changed: hasInstrumented } = instrumentChangedFiles(
 		options,
 		excluded,
-		plan.skipFiles,
+		plan.incrementalFiles,
 		timing,
 	);
 	const mirror = mirrorUntouchedFiles(options, excluded);
 
 	return {
-		changed: plan.hasChanged || hasInstrumented || mirror.changed,
+		changed: plan.incrementalFiles?.hasChanged === true || hasInstrumented || mirror.changed,
 		files: allFiles,
 		luauRoot,
 		nonInstrumentedFiles: mirror.files,
@@ -819,19 +827,21 @@ function planIncremental(
 	rootFiles: RootFiles | undefined,
 ): IncrementalPlan {
 	if (!shouldUseIncremental || previousManifest === undefined) {
-		return { hasChanged: false, skipFiles: undefined };
+		return { incrementalFiles: undefined };
 	}
 
-	const {
-		allCached: isFullyCached,
-		changed: hasChanged,
-		skipFiles,
-	} = computeIncrementalState(
+	const state = computeIncrementalState(
 		{ fileSystem, isCopyIgnored, luauRoot, previousManifest },
 		rootFiles,
 	);
-	if (!isFullyCached) {
-		return { hasChanged, skipFiles };
+	if (!state.allCached) {
+		return {
+			incrementalFiles: {
+				hasChanged: state.changed,
+				manifest: previousManifest,
+				skipFiles: state.skipFiles,
+			},
+		};
 	}
 
 	return {
@@ -843,10 +853,8 @@ function planIncremental(
 			luauRoot,
 			previousManifest,
 			shadowDir,
-			skipFiles,
+			skipFiles: state.skipFiles,
 		}),
-		hasChanged,
-		skipFiles,
 	};
 }
 
@@ -860,14 +868,13 @@ function instrumentChangedFiles(
 		instrumenter = nodeInstrumenter,
 		isCopyIgnored,
 		luauRoot,
-		previousManifest,
 		shadowDir,
-		useIncremental: shouldUseIncremental,
 	}: PrepareShadowRootOptions,
 	excluded: Set<string>,
-	skipFiles: Set<string> | undefined,
+	incrementalFiles: IncrementalFiles | undefined,
 	timing: TimingCollector,
 ): InstrumentedFiles {
+	const skipFiles = incrementalFiles?.skipFiles;
 	// One list for lute: a file it never parses is a file it never pays for.
 	// The two halves stay apart up here because only `skipFiles` has a record
 	// worth carrying forward — an excluded file has none and must gain none.
@@ -885,8 +892,13 @@ function instrumentChangedFiles(
 	});
 	const allFiles = { ...files };
 
-	if (shouldUseIncremental && previousManifest !== undefined && skipFiles !== undefined) {
-		carryForwardRecords(luauRoot, previousManifest, allFiles, skipFiles);
+	if (incrementalFiles !== undefined) {
+		carryForwardRecords(
+			luauRoot,
+			incrementalFiles.manifest,
+			allFiles,
+			incrementalFiles.skipFiles,
+		);
 	}
 
 	return { allFiles, changed: Object.keys(files).length > 0 };

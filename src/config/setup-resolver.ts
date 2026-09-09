@@ -2,6 +2,7 @@ import type { RojoResolver } from "@isentinel/rojo-utils";
 
 import { createRequire } from "node:module";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import type { RojoResolverFactory } from "../utils/rojo-project-reader.ts";
 import { nodeRojoResolverFactory } from "../utils/rojo-project-reader.ts";
@@ -42,7 +43,8 @@ export function createSetupResolver({
 	resolveModule,
 	rojoConfigPath,
 }: SetupResolverOptions): (input: string) => string {
-	const resolve = resolveModule ?? createRequire(path.join(configDirectory, "noop.js")).resolve;
+	const resolve =
+		resolveModule ?? createRequire(pathToFileURL(configDirectory + path.sep)).resolve;
 	const rojoResolver = resolveRojo(rojoConfigPath, cache, createResolver);
 
 	return (input): string => {

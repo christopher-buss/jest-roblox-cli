@@ -258,7 +258,7 @@ function printFormattedOutput({
 		return;
 	}
 
-	assert(runtimeResult !== undefined && timing !== undefined, "runtime result required");
+	assert(runtimeResult !== undefined && timing !== undefined);
 	printOutput(formatRuntimeOutput(config, { renderer, runtimeResult, timing }));
 }
 
@@ -274,7 +274,6 @@ function toProjectEntries(projectResults: Array<ProjectResult>): Array<Formatter
 }
 
 function getAgentMaxFailures(config: ResolvedConfig): number {
-	assert(config.formatters !== undefined, "formatters is set by resolveFormatters");
 	const options = findFormatterOptions(config.formatters, "agent");
 	if (options !== undefined && typeof options.maxFailures === "number") {
 		return options.maxFailures;

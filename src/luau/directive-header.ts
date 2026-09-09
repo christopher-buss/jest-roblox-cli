@@ -1,4 +1,4 @@
-const BLOCK_COMMENT_OPEN = /^--(\[=*\[)/;
+const BLOCK_COMMENT_OPEN = /^--\[=*\[/;
 const CARRIAGE_RETURN = "\r";
 const COMMENT_OPEN = "--";
 const DIRECTIVE_OPEN = "--!";
@@ -24,12 +24,14 @@ interface HeaderAdvance {
 }
 
 /** What the text at one column is, read from outside any comment. */
-interface CodeStep {
-	closer: string | undefined;
-	hasEnded: boolean;
-	isDirective: boolean;
-	width: number | undefined;
-}
+type CodeStep =
+	| {
+			closer: string | undefined;
+			hasEnded: false;
+			isDirective: boolean;
+			width: number | undefined;
+	  }
+	| { hasEnded: true };
 
 /**
  * How many lines a caller must leave above code it injects into a Luau file,
@@ -83,14 +85,14 @@ function stepFromCode(rest: string): CodeStep {
 	}
 
 	if (!rest.startsWith(COMMENT_OPEN)) {
-		return { closer: undefined, hasEnded: true, isDirective: false, width: undefined };
+		return { hasEnded: true };
 	}
 
 	// `[==[` closes on `]==]` alone, so the level rides along in the closer.
-	const [, bracket] = BLOCK_COMMENT_OPEN.exec(rest) ?? [];
-	if (bracket !== undefined) {
-		const closer = bracket.replaceAll("[", "]");
-		const width = COMMENT_OPEN.length + bracket.length;
+	const opener = BLOCK_COMMENT_OPEN.exec(rest)?.[0];
+	if (opener !== undefined) {
+		const closer = opener.slice(COMMENT_OPEN.length).replaceAll("[", "]");
+		const width = opener.length;
 		return { closer, hasEnded: false, isDirective: false, width };
 	}
 

@@ -351,7 +351,7 @@ function resolveWorkspaceCoverage(
 		// `universes` is derived from the same map `settingsByPackage` is keyed
 		// by, so every entry has settings.
 		const settings = settingsByPackage.get(pkg);
-		assert(settings !== undefined, `missing coverage settings for ${pkg}`);
+		assert(settings !== undefined);
 
 		let coveragePackage: WorkspacePackageCoverageGate = {
 			coverageDirectory: settings.coverageDirectory,
@@ -631,7 +631,7 @@ function resolveEnumerationRoot(
 	if (workspace?.packages !== undefined) {
 		// The schema's co-requirement check guarantees `root` is present, and
 		// the loader resolved it to an absolute path at config load.
-		assert(workspace.root !== undefined, "workspace.root is required with workspace.packages");
+		assert(workspace.root !== undefined);
 		return {
 			exclude: workspace.exclude,
 			patterns: workspace.packages,

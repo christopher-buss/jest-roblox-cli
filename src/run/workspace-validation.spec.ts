@@ -333,6 +333,16 @@ describe(assertWorkspaceRunOptions, () => {
 		expect(result).toStrictEqual({ ok: true });
 	});
 
+	it("should accept sharded open-cloud runs", () => {
+		expect.assertions(1);
+
+		const result = assertWorkspaceRunOptions(
+			makeRunOptions({ backend: "open-cloud", parallel: 3 }),
+		);
+
+		expect(result).toStrictEqual({ ok: true });
+	});
+
 	it("should accept auto backend", () => {
 		expect.assertions(1);
 

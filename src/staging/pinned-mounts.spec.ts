@@ -16,6 +16,7 @@ import {
 } from "../../test/mocks/staged-project.ts";
 import { ConfigError } from "../config/errors.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
+import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { demotePinnedMountsAsync } from "./pinned-mounts.ts";
 
 type ExecCallback = (cause: Error | null, stdout: string, stderr: string) => void;
@@ -233,23 +234,27 @@ describe(demotePinnedMountsAsync, () => {
 		expect(project.globIgnorePaths![0]).toContain("StarterPlayerScripts.rbxmx");
 	});
 
-	it("should replace a directory entry whose init.meta.json declares a pinned class", async () => {
-		expect.assertions(1);
+	it.for(["aaa.luau", "aaa/init.luau"])(
+		"should read pinned metadata after sibling %s",
+		async (sibling) => {
+			expect.assertions(1);
 
-		const rojo = seed({
-			[path.join(ASSETS, "StarterPlayer/StarterPlayerScripts/init.meta.json")]:
-				'{"className":"StarterPlayerScripts"}',
-		});
+			const rojo = seed({
+				[path.join(ASSETS, "StarterPlayer/StarterPlayerScripts", sibling)]: "return 1",
+				[path.join(ASSETS, "StarterPlayer/StarterPlayerScripts/init.meta.json")]:
+					'{"className":"StarterPlayerScripts"}',
+			});
 
-		const project = await demoteAsync(
-			rojo,
-			directoryMount("StarterPlayer", path.join(ASSETS, "StarterPlayer")),
-		);
+			const project = await demoteAsync(
+				rojo,
+				directoryMount("StarterPlayer", path.join(ASSETS, "StarterPlayer")),
+			);
 
-		expect(mountOf(project, "pkg", "StarterPlayer", "StarterPlayerScripts")).toContain(
-			"pinned-shadow",
-		);
-	});
+			expect(mountOf(project, "pkg", "StarterPlayer", "StarterPlayerScripts")).toContain(
+				"pinned-shadow",
+			);
+		},
+	);
 
 	it("should point a mount whose own init.meta.json declares the class at the stand-in", async () => {
 		expect.assertions(2);
@@ -498,15 +503,39 @@ describe(demotePinnedMountsAsync, () => {
 	});
 
 	it("should not treat an init.meta.json directory as a class descriptor", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const rojo = seed({
 			[path.join(ASSETS, "src/Child/init.meta.json/value.luau")]: "return 1",
 		});
+		const readFile = vi.spyOn(rojo.fileSystem, "readFileSync");
 		const projectJson = directoryMount("Workspace", path.join(ASSETS, "src"));
 
 		await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
+		expect(readFile).not.toHaveBeenCalled();
 	});
+
+	it.for([
+		["at the mount root", "src/init.meta.json", "src/value.luau", 1],
+		["in a nested directory", "src/Child/init.meta.json", "src/Child/value.luau", 2],
+	] as const)(
+		"should read non-pinned metadata %s only while classifying it",
+		async ([, meta, value, reads]) => {
+			expect.assertions(3);
+
+			const metaPath = path.join(ASSETS, meta);
+			const rojo = seed({
+				[metaPath]: '{"className":"Folder"}',
+				[path.join(ASSETS, value)]: "return 1",
+			});
+			const readFile = vi.spyOn(rojo.fileSystem, "readFileSync");
+			const projectJson = directoryMount("Workspace", path.join(ASSETS, "src"));
+
+			await expect(runAsync(rojo, projectJson)).resolves.toBe(projectJson);
+			expect(readFile).toHaveBeenCalledTimes(reads);
+			expect(readFile).toHaveBeenCalledWith(normalizeWindowsPath(metaPath), "utf-8");
+		},
+	);
 
 	it("should scan a shared mount path once", async () => {
 		expect.assertions(1);

@@ -19,6 +19,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { startFakeOpenCloudServerAsync } from "../../test/e2e/cli/fake-open-cloud.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
@@ -378,6 +379,29 @@ function temporaryRoot(): string {
 	});
 
 	return directory;
+}
+
+/**
+ * Forward fixture traffic while rejecting a default production URL locally.
+ */
+function localOnlyFetch(
+	baseUrl: string,
+	fetchAsync: typeof globalThis.fetch,
+): typeof globalThis.fetch {
+	return async (input, init) => {
+		const url = input instanceof Request ? input.url : String(input);
+		if (url.startsWith(baseUrl)) {
+			return fetchAsync(input, init);
+		}
+
+		return new Response(
+			JSON.stringify({ error: { message: "Unexpected non-local request" } }),
+			{
+				headers: { "content-type": "application/json" },
+				status: 401,
+			},
+		);
+	};
 }
 
 function cacheJob(rootDirectory: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
@@ -1384,10 +1408,10 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha"), job("beta")],
+					jobs: [job("alpha"), job("beta"), job("gamma")],
 					scriptFactory: () => "retry-script",
 				}),
-			).rejects.toThrow("beta");
+			).rejects.toThrow("beta, gamma");
 
 			expect(stub.executeCalls).toHaveLength(2);
 		});
@@ -1644,12 +1668,12 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha"), job("beta")],
+					jobs: [job("alpha"), job("beta"), job("gamma")],
 					parallel: 1,
 					scriptOverride: "stealing-script",
 					workStealing: true,
 				}),
-			).rejects.toThrow(/no entries for 1 package\(s\): beta/);
+			).rejects.toThrow(/no entries for 2 package\(s\): beta, gamma/);
 		});
 
 		// --bail stops the run on the first failing package, so the packages
@@ -2234,14 +2258,28 @@ describe(createOpenCloudBackend, () => {
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
 
-	it("should honor JEST_ROBLOX_OPEN_CLOUD_BASE_URL env override for the default runner", () => {
-		expect.assertions(1);
+	it("should run through the configured Open Cloud base URL", { timeout: 1000 }, async () => {
+		expect.assertions(2);
 
-		vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", "http://127.0.0.1:4010/custom/");
+		const server = await startFakeOpenCloudServerAsync([{ jestOutput: successJest() }]);
+		const fetchAsync = globalThis.fetch;
+		const fetch = vi
+			.spyOn(globalThis, "fetch")
+			.mockImplementation(localOnlyFetch(server.baseUrl, fetchAsync));
+		onTestFinished(() => {
+			fetch.mockRestore();
+		});
+		vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", server.baseUrl);
+		const rootDirectory = temporaryRoot();
+		fs.writeFileSync(path.join(rootDirectory, "place.rbxlx"), '<roblox version="4"></roblox>');
 
 		const backend = new OpenCloudBackend(credentials);
+		const result = await backend.runTestsAsync({
+			jobs: [cacheJob(rootDirectory, { bootProbeTimeout: 0, placeFile: "place.rbxlx" })],
+		});
 
-		expect(backend).toBeInstanceOf(OpenCloudBackend);
+		expect(result.rawResults).toHaveLength(1);
+		expect(server.calls).not.toBeEmpty();
 	});
 
 	it("should construct the default runner with JEST_ROBLOX_OCALE_MAX_RETRIES set", () => {
@@ -2380,6 +2418,28 @@ describe("upload cache", { timeout: 1000 }, () => {
 		expect(second).toBe(0);
 	});
 
+	it("should announce the cached version without opening an upload stage", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		const stub = probeStub();
+		const notes: Array<{ detail: string; id: StageId }> = [];
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await backend.runTestsAsync({
+			jobs: [cacheJob(rootDirectory)],
+			progress: {
+				...NOOP_RUN_PROGRESS,
+				note: (id, detail) => {
+					notes.push({ id, detail });
+				},
+			},
+		});
+
+		expect(notes).toStrictEqual([{ id: "upload", detail: "cache hit, version 42" }]);
+	});
+
 	it("should guard the reused version so a stale entry can only race", async () => {
 		expect.assertions(1);
 
@@ -2463,8 +2523,10 @@ describe("upload cache", { timeout: 1000 }, () => {
 		await runOnceAsync(rootDirectory);
 		const { capture } = await raceCachedRunAsync(rootDirectory, [99]);
 
-		expect(capture.writes.join("")).toContain(
-			"cached place version 42 is no longer head — a task booted 99",
+		expect(capture.writes.join("")).toBe(
+			"Warning: cached place version 42 is no longer head — a task booted 99. " +
+				"Cache entry dropped, so the next run re-uploads. " +
+				"Tasks retried pinned (slower, cold place boot).\n",
 		);
 	});
 
@@ -2620,7 +2682,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 	 * the run must not record that its own bytes booted when they never ran.
 	 */
 	it("should keep the guard and skip the cache when an owned head is not ours", async () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const stub = probeStub();
 		stub.setProbe(() => ({ durationMs: 0, outputs: [String(PROBED_VERSION + 1)] }));
@@ -2635,7 +2697,12 @@ describe("boot probe", { timeout: 1000 }, () => {
 		expect(stub.executeCalls[0]!.script).toContain(
 			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
 		);
-		expect(capture.writes.join("")).toContain("another run wrote this place");
+		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
+		expect(capture.writes.join("")).toBe(
+			"Warning: ownedPlace was set, but head is 43 rather than the uploaded version 42 — " +
+				"another run wrote this place.\n" +
+				"  Falling back to the version guard for this run; check the lease that set the flag.\n",
+		);
 
 		// A second run must upload again: nothing was cached, because the bytes
 		// this run uploaded are not the bytes that booted.
@@ -2650,7 +2717,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 	 * needs, so it is treated the same way.
 	 */
 	it("should keep the guard when an owned probe reports no version", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const stub = probeStub();
 		stub.setProbe(() => ({ durationMs: 0, outputs: [] }));
@@ -2663,7 +2730,12 @@ describe("boot probe", { timeout: 1000 }, () => {
 		expect(stub.executeCalls[0]!.script).toContain(
 			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
 		);
-		expect(capture.writes.join("")).toContain("head is unreadable");
+		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
+		expect(capture.writes.join("")).toBe(
+			"Warning: ownedPlace was set, but head is unreadable rather than the uploaded version 42 — " +
+				"another run wrote this place.\n" +
+				"  Falling back to the version guard for this run; check the lease that set the flag.\n",
+		);
 	});
 
 	/**
@@ -2711,7 +2783,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 	 * entry: an entry means "these bytes boot", and nothing proved it.
 	 */
 	it("should skip the probe, and cache nothing, when the budget is zero", async () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const rootDirectory = temporaryRoot();
 		const first = await runProbedRunAsync(rootDirectory, { bootProbeTimeout: 0 });
@@ -2720,6 +2792,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		expect(first.probeCalls).toHaveLength(0);
 		expect(second.probeCalls).toHaveLength(0);
 		expect(second.uploadCalls).toHaveLength(1);
+		expect(second.executeCalls[0]!.bootProven).toBeFalse();
 	});
 
 	/**
@@ -2750,11 +2823,11 @@ describe("boot probe", { timeout: 1000 }, () => {
 		await runProbedRunAsync(rootDirectory);
 		const second = await runProbedRunAsync(rootDirectory);
 
-		expect(second.executeCalls[0]!.bootProven).not.toBeTrue();
+		expect(second.executeCalls[0]!.bootProven).toBeFalse();
 	});
 
 	it("should fail the run at once when the probe never completes", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const stub = probeStub();
 		stub.setProbe(() => {
@@ -2775,6 +2848,10 @@ describe("boot probe", { timeout: 1000 }, () => {
 				"--backend=studio-cli, to see why it will not load.",
 			].join("\n"),
 		);
+
+		assert(caught instanceof Error);
+
+		expect(caught.cause).toBeInstanceOf(Error);
 		expect(stub.executeCalls).toHaveLength(0);
 	});
 
@@ -3112,9 +3189,10 @@ describe("code bundle", () => {
 	});
 
 	it("should announce the bundle stage with its size and file count", async () => {
-		expect.assertions(1);
+		expect.assertions(3);
 
 		const opened: Array<{ detail: string | undefined; id: StageId }> = [];
+		const closed: Array<{ detail: string | undefined; id: StageId }> = [];
 		const stub = passingStub();
 		await bundleBackend(stub).runTestsAsync({
 			codeBundle: bundleArtifact(),
@@ -3123,29 +3201,44 @@ describe("code bundle", () => {
 				...NOOP_RUN_PROGRESS,
 				begin: (id, detail) => {
 					opened.push({ id, detail });
-					return () => {};
+					return (closingDetail) => {
+						closed.push({ id, detail: closingDetail });
+					};
 				},
 			},
 		});
 
 		expect(opened).toContainEqual({ id: "bundle", detail: "25 B, 3 files" });
+		expect(opened).toContainEqual({ id: "boot", detail: "version 1" });
+		expect(closed).toStrictEqual([
+			{ id: "upload", detail: "version 1" },
+			{ id: "boot", detail: undefined },
+			{ id: "bundle", detail: undefined },
+			{ id: "tests", detail: undefined },
+		]);
 	});
 
 	it("should name the mounts that stayed once, on stderr", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const capture = captureStderr();
 		onTestFinished(capture.restore);
 		const stub = passingStub();
 		await bundleBackend(stub).runTestsAsync({
-			codeBundle: bundleArtifact({ stayedMounts: ["ServerStorage/__pkg_stage/pkg/assets"] }),
+			codeBundle: bundleArtifact({
+				stayedMounts: [
+					"ServerStorage/__pkg_stage/pkg/assets",
+					"ReplicatedStorage/__pkg_stage/shared/config",
+				],
+			}),
 			jobs: [job("alpha")],
 		});
 
-		const notices = capture.writes.filter((line) => line.startsWith("Note: 1 code mount"));
-
-		expect(notices).toHaveLength(1);
-		expect(notices[0]).toContain("ServerStorage/__pkg_stage/pkg/assets");
+		expect(capture.writes).toStrictEqual([
+			"Note: 2 code mount(s) stayed in the place, each holding a file a task cannot rebuild:\n" +
+				"  ServerStorage/__pkg_stage/pkg/assets\n" +
+				"  ReplicatedStorage/__pkg_stage/shared/config\n",
+		]);
 	});
 
 	it("should say nothing when every code mount travels", async () => {

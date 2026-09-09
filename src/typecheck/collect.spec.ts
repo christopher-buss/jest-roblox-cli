@@ -4,6 +4,36 @@ import { collectTestDefinitions } from "./collect.ts";
 import type { TestDefinition } from "./types.ts";
 
 describe(collectTestDefinitions, () => {
+	it("should ignore indirect calls returned by another function", () => {
+		expect.assertions(1);
+
+		const definitions = collectTestDefinitions('makeTest()("indirect", () => {});');
+
+		expect(definitions).toStrictEqual([]);
+	});
+
+	it("should normalize carriage returns in a template literal name", () => {
+		expect.assertions(1);
+
+		expect(collectTestDefinitions("it(`first\r\nsecond`, () => {});")[0]!.name).toBe(
+			"first\nsecond",
+		);
+	});
+
+	it("should only credit suites as ancestors of nested calls", () => {
+		expect.assertions(1);
+
+		const definitions = collectTestDefinitions(
+			'describe("suite", () => { it("outer", () => { it("inner", () => {}); }); });',
+		);
+
+		expect(definitions.map(({ ancestorNames }) => ancestorNames)).toStrictEqual([
+			[],
+			["suite"],
+			["suite"],
+		]);
+	});
+
 	it("should collect a single it block", () => {
 		expect.assertions(2);
 

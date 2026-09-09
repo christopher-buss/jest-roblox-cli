@@ -194,16 +194,20 @@ describe(generateWorkStealingScript, () => {
 	// A worker that drops an entry over budget puts its queue item back, and
 	// the put-back has to name a TTL. Only the CLI knows which one the queue
 	// was seeded with, so it has to travel in the payload.
-	it("should embed the queue TTL the items were seeded with", () => {
-		expect.assertions(1);
+	it("should embed the queue TTL only when one is given", () => {
+		expect.assertions(2);
 
-		const script = generateWorkStealingScript(
-			[{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] }],
-			"queue-uuid-1",
-			90,
-			{ queueTtlSeconds: 120 },
+		const inputs = [
+			{ config: DEFAULT_CONFIG, pkg: "@halcyon/foo", project: "core", testFiles: [] },
+		];
+
+		const script = generateWorkStealingScript(inputs, "queue-uuid-1", 90, {
+			queueTtlSeconds: 120,
+		});
+
+		expect(generateWorkStealingScript(inputs, "queue-uuid-1", 90)).not.toContain(
+			'"queueTtlSeconds":',
 		);
-
 		expect(script).toContain('"queueTtlSeconds":120');
 	});
 

@@ -5,11 +5,25 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { RawBackendEntry } from "../backends/interface.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
-import { printLuauTiming, recordLuauTimingSpans } from "./timing-spans.ts";
+import type { TestFileResult } from "../types/jest-result.ts";
+import { calculateTestsMs, printLuauTiming, recordLuauTimingSpans } from "./timing-spans.ts";
 
 function runnerOutput(timing: Record<string, number>): string {
 	return `Roblox runner log\n${JSON.stringify({ runner: { timing } })}\n`;
 }
+
+describe(calculateTestsMs, () => {
+	it("should sum available durations across every file", () => {
+		expect.assertions(1);
+
+		const files = [
+			fromPartial<TestFileResult>({ testResults: [{ duration: 12 }, {}] }),
+			fromPartial<TestFileResult>({ testResults: [{ duration: 0 }, { duration: 8 }] }),
+		];
+
+		expect(calculateTestsMs(files)).toBe(20);
+	});
+});
 
 describe(recordLuauTimingSpans, () => {
 	it("should record every Luau phase except its redundant total", () => {

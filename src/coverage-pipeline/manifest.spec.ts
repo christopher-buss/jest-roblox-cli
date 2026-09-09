@@ -54,9 +54,9 @@ function expectVersionMismatch(result: ReadManifestResult) {
 
 describe(writeManifest, () => {
 	it("should round-trip through readManifest", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
-		const { fileSystem } = createMemoryFileSystem();
+		const { fileSystem, volume } = createMemoryFileSystem();
 
 		const manifest = exampleManifest();
 
@@ -64,6 +64,9 @@ describe(writeManifest, () => {
 
 		expect(expectOk(readManifest("/coverage/manifest.json", fileSystem))).toStrictEqual(
 			manifest,
+		);
+		expect(volume.readFileSync("/coverage/manifest.json", "utf8")).toStartWith(
+			'{\n\t"buildId"',
 		);
 	});
 

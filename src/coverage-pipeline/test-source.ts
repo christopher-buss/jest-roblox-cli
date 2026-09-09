@@ -78,18 +78,13 @@ function hashTestRanges(sourceText: string, startLines: Iterable<number>): Map<n
 
 function findFileResult(
 	result: JestResult,
-	testFilePath: string,
-	diskPath: string | undefined,
-	sourceMapper: TestSourceMapper | undefined,
+	diskPath: string,
+	sourceMapper: TestSourceMapper,
 ): TestFileResult | undefined {
 	return result.testResults.find((fileResult) => {
-		if (fileResult.testFilePath === testFilePath) {
-			return true;
-		}
-
 		const fileDiskPath =
-			sourceMapper?.resolveTestFilePath(fileResult.testFilePath) ?? fileResult.testFilePath;
-		return diskPath !== undefined && fileDiskPath === diskPath;
+			sourceMapper.resolveTestFilePath(fileResult.testFilePath) ?? fileResult.testFilePath;
+		return fileDiskPath === diskPath;
 	});
 }
 
@@ -128,13 +123,12 @@ function collectFileSources(
 	const byTestCaseId = new Map<string, TestSource>();
 
 	const diskPath = sourceMapper?.resolveTestFilePath(testFilePath);
-	const fileResult = findFileResult(result, testFilePath, diskPath, sourceMapper);
-	if (
-		sourceMapper === undefined ||
-		fileResult === undefined ||
-		diskPath === undefined ||
-		!fileSystem.existsSync(diskPath)
-	) {
+	if (sourceMapper === undefined || diskPath === undefined || !fileSystem.existsSync(diskPath)) {
+		return { byTestCaseId, fileOnly };
+	}
+
+	const fileResult = findFileResult(result, diskPath, sourceMapper);
+	if (fileResult === undefined) {
 		return { byTestCaseId, fileOnly };
 	}
 
@@ -145,7 +139,7 @@ function collectFileSources(
 	);
 	for (const [testCaseId, line] of linesByTestCaseId) {
 		const testSourceHash = rangeHashes.get(line);
-		assert(testSourceHash !== undefined, `no range hashed for line ${String(line)}`);
+		assert(testSourceHash !== undefined);
 		byTestCaseId.set(testCaseId, {
 			location: { column: 0, line },
 			testFileSourceHash,

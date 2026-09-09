@@ -62,7 +62,7 @@ function evalTable(items: Array<AstExprTableItem>): LuauLiteral {
 
 	const result: LuauLiteralTable = {};
 	for (const item of items) {
-		if (item.kind !== "record" || item.key?.type !== "AstExprConstantString") {
+		if (item.key?.type !== "AstExprConstantString") {
 			continue;
 		}
 

@@ -165,16 +165,19 @@ describe(buildCoveragePlaceAsync, () => {
 		expect(vi.mocked(harness.seams.prepareCoverage).mock.calls[0]![1]!.bake).toBeDefined();
 	});
 
-	it("should resolve the implicit project when the config declares no projects", async () => {
-		expect.assertions(2);
+	it.for([undefined, []])(
+		"should resolve the implicit project for projects=%j",
+		async (projects) => {
+			expect.assertions(2);
 
-		const harness = seed();
+			const harness = seed();
 
-		await buildCoveragePlaceAsync(makeConfig(), harness);
+			await buildCoveragePlaceAsync(makeConfig({ projects }), harness);
 
-		expect(harness.dispatch.buildImplicitProject).toHaveBeenCalledOnce();
-		expect(harness.seams.resolveAllProjects).not.toHaveBeenCalled();
-	});
+			expect(harness.dispatch.buildImplicitProject).toHaveBeenCalledOnce();
+			expect(harness.seams.resolveAllProjects).not.toHaveBeenCalled();
+		},
+	);
 
 	it("should resolve declared projects in multi mode", async () => {
 		expect.assertions(2);

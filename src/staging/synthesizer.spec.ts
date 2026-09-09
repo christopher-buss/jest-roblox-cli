@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import * as path from "node:path";
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
@@ -62,6 +62,27 @@ function descend(node: RojoTreeNode | undefined, ...keys: Array<string>): RojoTr
 }
 
 describe(synthesize, () => {
+	it("should ignore null properties while hoisting a service", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					Workspace: { $className: "Workspace", $properties: null },
+				},
+			}),
+		});
+
+		const result = synthesize({
+			fileSystem,
+			packages: [{ name: "foo", packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT }],
+		});
+
+		expect(child(parseFixture(result).tree, "Workspace")).toBeUndefined();
+	});
+
 	it("should nest a single package under ServerStorage.__pkg_stage.<name>", () => {
 		expect.assertions(3);
 
@@ -331,6 +352,30 @@ describe(synthesize, () => {
 		expect(parseFixture(result).tree.$properties).toStrictEqual({ Name: "renamed" });
 	});
 
+	it("should ignore an array supplied as malformed $properties", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: { $className: "DataModel", $properties: ["not", "properties"] },
+			}),
+		});
+
+		const result = synthesize({
+			fileSystem,
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+
+		expect(parseFixture(result).tree.$properties).toBeUndefined();
+	});
+
 	it("should drop root $properties for a project whose root is not a place", () => {
 		expect.assertions(1);
 
@@ -356,7 +401,7 @@ describe(synthesize, () => {
 	});
 
 	it("should hoist a nested service's $properties onto a nested real service", () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
@@ -365,7 +410,7 @@ describe(synthesize, () => {
 					$className: "DataModel",
 					StarterPlayer: {
 						$className: "StarterPlayer",
-						StarterPlayerScripts: {
+						Scripts: {
 							$className: "StarterPlayerScripts",
 							$properties: { LoadCharacterAppearance: false },
 						},
@@ -386,9 +431,10 @@ describe(synthesize, () => {
 		});
 
 		const parsed = parseFixture(result);
-		const scripts = descend(parsed.tree, "StarterPlayer", "StarterPlayerScripts")!;
+		const scripts = descend(parsed.tree, "StarterPlayer", "Scripts")!;
 
 		expect(child(parsed.tree, "StarterPlayer")!.$className).toBe("StarterPlayer");
+		expect(scripts.$className).toBe("StarterPlayerScripts");
 		expect(scripts.$properties).toStrictEqual({ LoadCharacterAppearance: false });
 	});
 
@@ -510,7 +556,7 @@ describe(synthesize, () => {
 		expect(config.$properties).toStrictEqual({ AutoRuns: true, Name: "Config" });
 	});
 
-	it("should merge hoisted properties when packages agree on the value", () => {
+	it("should merge hoisted properties from different packages", () => {
 		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
@@ -524,7 +570,7 @@ describe(synthesize, () => {
 					$className: "DataModel",
 					Workspace: {
 						$className: "Workspace",
-						$properties: { SignalBehavior: "Deferred", StreamingEnabled: true },
+						$properties: { StreamingEnabled: true },
 					},
 				},
 			}),
@@ -560,6 +606,88 @@ describe(synthesize, () => {
 			SignalBehavior: "Deferred",
 			StreamingEnabled: true,
 		});
+	});
+
+	it("should keep the first class when packages alias one hoisted path differently", () => {
+		expect.assertions(2);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		const barProject = path.join(ROOT, "packages/bar/test.project.json");
+
+		volume.fromJSON({
+			[barProject]: projectJson({
+				name: "bar-test",
+				tree: {
+					$className: "DataModel",
+					Shared: { $className: "Terrain", $properties: { Name: "shared" } },
+				},
+			}),
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					Shared: { $className: "Workspace", $properties: { Name: "shared" } },
+				},
+			}),
+		});
+
+		const result = synthesize({
+			fileSystem,
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+				{
+					name: "@halcyon/bar",
+					packageDirectory: path.dirname(barProject),
+					rojoProjectPath: barProject,
+				},
+			],
+		});
+		const shared = child(parseFixture(result).tree, "Shared")!;
+
+		expect(shared.$className).toBe("Workspace");
+		expect(shared.$properties).toStrictEqual({ Name: "shared" });
+	});
+
+	it("should keep distinct service paths whose segments concatenate alike", () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					A: {
+						BC: { $className: "Terrain", $properties: { Name: "first" } },
+					},
+					AB: {
+						C: { $className: "Terrain", $properties: { Name: "second" } },
+					},
+				},
+			}),
+		});
+
+		const result = synthesize({
+			fileSystem,
+			packages: [
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: FOO_PROJECT,
+				},
+			],
+		});
+		const { tree } = parseFixture(result);
+		const first = descend(tree, "A", "BC");
+		const second = descend(tree, "AB", "C");
+		assert(first !== undefined);
+		assert(second !== undefined);
+
+		expect(first.$properties).toStrictEqual({ Name: "first" });
+		expect(second.$properties).toStrictEqual({ Name: "second" });
 	});
 
 	it("should throw ConfigError when packages disagree on a hoisted property", () => {
@@ -2133,8 +2261,44 @@ describe(synthesize, () => {
 		}).toThrow(ConfigError);
 	});
 
-	it("should throw ConfigError when virtualization target segment resolves to a file", () => {
+	it("should not treat an optional path value as a tree node", () => {
 		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			[FOO_PROJECT]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$className: "ReplicatedStorage",
+						Maybe: { optional: "out-test" },
+					},
+				},
+			}),
+		});
+
+		expect(() => {
+			synthesize({
+				fileSystem,
+				packages: [
+					{
+						name: "@halcyon/foo",
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+						stubMounts: [
+							{
+								absStubPath: "/cache/stub.lua",
+								dataModelPath: "ReplicatedStorage/Maybe",
+							},
+						],
+					},
+				],
+			});
+		}).toThrow(ConfigError);
+	});
+
+	it("should throw ConfigError when virtualization target segment resolves to a file", () => {
+		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
@@ -2149,6 +2313,8 @@ describe(synthesize, () => {
 			}),
 			[path.join(FOO_DIR, "out-test/leaf.luau")]: "",
 		});
+
+		const readdir = vi.spyOn(fileSystem, "readdirSync");
 
 		expect(() => {
 			synthesize({
@@ -2168,10 +2334,11 @@ describe(synthesize, () => {
 				],
 			});
 		}).toThrow(ConfigError);
+		expect(readdir).not.toHaveBeenCalled();
 	});
 
 	it("should throw ConfigError when virtualization target segment is missing on disk", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem({
 			[FOO_PROJECT]: projectJson({
@@ -2186,6 +2353,8 @@ describe(synthesize, () => {
 			}),
 			[path.join(FOO_DIR, "out-test/init.luau")]: "",
 		});
+
+		const readdir = vi.spyOn(fileSystem, "readdirSync");
 
 		expect(() => {
 			synthesize({
@@ -2205,6 +2374,7 @@ describe(synthesize, () => {
 				],
 			});
 		}).toThrow(ConfigError);
+		expect(readdir).not.toHaveBeenCalled();
 	});
 
 	it("should propagate coverage shadow dir through a virtualized $path child", () => {
@@ -2693,7 +2863,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -2726,7 +2895,6 @@ describe(synthesize, () => {
 				loadStringEnabled: true,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -2764,7 +2932,6 @@ describe(synthesize, () => {
 				loadStringEnabled: true,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -2799,7 +2966,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -2832,7 +2998,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -2863,7 +3028,6 @@ describe(synthesize, () => {
 				loadStringEnabled: true,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -2901,7 +3065,6 @@ describe(synthesize, () => {
 				loadStringEnabled: true,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -2934,7 +3097,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -2965,7 +3127,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -3000,7 +3161,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -3037,7 +3197,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{ luauRoot: toPosixRoot("src"), shadowDir: shadowDirectory },
 						],
@@ -3078,7 +3237,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{ luauRoot: toPosixRoot("out"), shadowDir: shadowDirectory },
 						],
@@ -3170,7 +3328,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{ luauRoot: toPosixRoot("src/server"), shadowDir: shadowDirectory },
 						],
@@ -3215,7 +3372,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{ luauRoot: toPosixRoot("src"), shadowDir: shadowDirectory },
 						],
@@ -3321,7 +3477,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 					},
@@ -3359,12 +3514,10 @@ describe(synthesize, () => {
 					fileSystem,
 					packages: [
 						{
-							name: "@halcyon/foo",
 							packageDirectory: FOO_DIR,
 							rojoProjectPath: FOO_PROJECT,
 						},
 						{
-							name: "@halcyon/bar",
 							packageDirectory: path.join(ROOT, "packages/bar"),
 							rojoProjectPath: barProject,
 						},
@@ -3409,7 +3562,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@user/game",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 						stubMounts: [
@@ -3478,7 +3630,6 @@ describe(synthesize, () => {
 					fileSystem,
 					packages: [
 						{
-							name: "@halcyon/foo",
 							packageDirectory: FOO_DIR,
 							rojoProjectPath: FOO_PROJECT,
 							stubMounts: [
@@ -3531,7 +3682,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						packageDirectory: FOO_DIR,
 						rojoProjectPath: FOO_PROJECT,
 						stubMounts: [
@@ -3594,7 +3744,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{ luauRoot: toPosixRoot("src/server"), shadowDir: shadowDirectory },
 						],
@@ -3640,7 +3789,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{
 								luauRoot: toPosixRoot("src/server"),
@@ -3688,7 +3836,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{
 								luauRoot: toPosixRoot("src/server"),
@@ -3734,7 +3881,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{
 								luauRoot: toPosixRoot("src/modules/ecs"),
@@ -3797,7 +3943,6 @@ describe(synthesize, () => {
 				fileSystem,
 				packages: [
 					{
-						name: "@halcyon/foo",
 						coverageRoots: [
 							{
 								luauRoot: toPosixRoot("src/server"),

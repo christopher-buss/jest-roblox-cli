@@ -549,7 +549,7 @@ describe("formatAgent failure details", () => {
 
 		const output = formatAgent(result, { maxFailures: 2, rootDir: "/project" });
 
-		expect(output).toContain("... 3 more failures omitted");
+		expect(output).toContain("... 3 more failures omitted\n\n Test Files");
 		expect(output.match(/ FAIL /g)!).toHaveLength(2);
 	});
 
@@ -578,6 +578,41 @@ describe("formatAgent failure details", () => {
 });
 
 describe("formatAgent snippets", () => {
+	it("should omit an unavailable Luau snippet after a mapped TypeScript snippet", () => {
+		expect.assertions(2);
+
+		mockedGetSourceSnippet.mockImplementation((options): SourceSnippet | undefined => {
+			return snippetByExtension(options.filePath, {
+				ts: { failureLine: 10, lines: [{ content: "expect(value).toBe(1);", num: 10 }] },
+			});
+		});
+		const output = formatAgent(FAILING_RESULT, {
+			getSourceSnippet: mockedGetSourceSnippet,
+			maxFailures: 10,
+			rootDir: "/project",
+			sourceMapper: fromPartial({
+				mapFailureWithLocations: () => {
+					return {
+						locations: [
+							{
+								luauLine: 15,
+								luauPath: "out/player.spec.luau",
+								tsLine: 10,
+								tsPath: "src/player.spec.ts",
+							},
+						],
+						message: "src/player.spec.ts:10",
+					};
+				},
+				resolveDisplayPath: (testFilePath: string) => testFilePath,
+				resolveTestFilePath: () => {},
+			}),
+		});
+
+		expect(output).toContain("TS  src/player.spec.ts:10");
+		expect(output).not.toContain("Luau  out/player.spec.luau:15");
+	});
+
 	it("should show TS and Luau snippets when 1-2 failures", () => {
 		expect.assertions(5);
 
@@ -932,7 +967,7 @@ describe("formatAgent snippets", () => {
 	});
 
 	it("should show no snippet when luau-only source file is unreadable", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		mockedGetSourceSnippet.mockReturnValue(undefined);
 
@@ -978,12 +1013,11 @@ describe("formatAgent snippets", () => {
 			}),
 		});
 
-		expect(output).not.toMatch(/> \d+\|/);
-		expect(output).not.toContain("Stryker");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should show no snippet when fallback source file is unreadable", () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		mockedGetSourceSnippet.mockReturnValue(undefined);
 
@@ -1019,8 +1053,7 @@ describe("formatAgent snippets", () => {
 			}),
 		});
 
-		expect(output).not.toMatch(/> \d+\|/);
-		expect(output).not.toContain("Stryker");
+		expect(output).toMatchSnapshot();
 	});
 
 	it("should show snippet from parsed location when no sourceMapper", () => {

@@ -176,7 +176,8 @@ describe(deriveCoverageFromIncludes, () => {
 		const projects = [{ include: ["src/**/*"] }];
 
 		expect(() => deriveCoverageFromIncludes(projects)).toThrow(
-			/cannot infer source extension/i,
+			'Cannot infer source extension from include pattern "src/**/*". ' +
+				"Patterns must end with .spec.<ext> or .test.<ext> (e.g. **/*.spec.ts, **/*.test.luau).",
 		);
 	});
 });

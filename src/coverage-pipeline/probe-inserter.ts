@@ -57,7 +57,7 @@ export function insertProbes(source: string, result: CollectorResult, fileKey: s
 	const firstLineParts = buildPreamble(fileKey, result);
 	const [originalFirstLine] = lines;
 	// A site sits on a line, so the strip above cannot have taken the last one.
-	assert(originalFirstLine !== undefined, "Coverage sites with no line to hold them");
+	assert(originalFirstLine !== undefined);
 	firstLineParts.push(originalFirstLine);
 
 	lines[0] = firstLineParts.join("; ");
@@ -67,15 +67,11 @@ export function insertProbes(source: string, result: CollectorResult, fileKey: s
 
 /**
  * Apply right-to-left (later insertion lands further left), so sort descending
- * by (line, column). At a shared position, order by kind and then by the wrap's
- * opposite end so nested wraps surround inner ones; point probes keep their
- * (stable) insertion order.
+ * by column. Insertions on different lines commute. At a shared position,
+ * order by kind and then by the wrap's opposite end so nested wraps surround
+ * inner ones; point probes keep their (stable) insertion order.
  */
 function compareProbes(left: ProbeInfo, right: ProbeInfo): number {
-	if (left.line !== right.line) {
-		return right.line - left.line;
-	}
-
 	if (left.column !== right.column) {
 		return right.column - left.column;
 	}
@@ -219,7 +215,7 @@ function applyProbes(mutableLines: Array<string>, probes: Array<ProbeInfo>): voi
 	for (const { column, kind, line: probeLine, text } of probes) {
 		const lineIndex = probeLine - 1;
 		const line = mutableLines[lineIndex];
-		assert(line !== undefined, `Invalid probe line number: ${probeLine}`);
+		assert(line !== undefined);
 		const before = line.slice(0, column - 1);
 		const after = line.slice(column - 1);
 		const shouldInsertSeparator =
@@ -251,7 +247,7 @@ function splitLines(source: string): Array<string> {
 		const nlPosition = source.indexOf("\n", position);
 		if (nlPosition !== -1) {
 			let lineEnd = nlPosition;
-			if (lineEnd > position && source[lineEnd - 1] === "\r") {
+			if (source[lineEnd - 1] === "\r") {
 				lineEnd--;
 			}
 

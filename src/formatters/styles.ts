@@ -159,6 +159,6 @@ function resolveBadgeColor(displayName: string, displayColor?: string): ColorFun
 	}
 
 	const hashed = PROJECT_BADGE_COLORS[hashProjectName(displayName)];
-	assert(hashed !== undefined, "hash always returns valid index");
+	assert(hashed !== undefined);
 	return hashed;
 }

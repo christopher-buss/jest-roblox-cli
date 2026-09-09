@@ -49,6 +49,17 @@ describe(evalLuauReturnLiterals, () => {
 		});
 	});
 
+	it("should evaluate literal string keys written in brackets", () => {
+		expect.assertions(1);
+
+		expect(
+			evalSource('return { ["displayName"] = "suite", ["test-timeout"] = 5 }'),
+		).toStrictEqual({
+			"displayName": "suite",
+			"test-timeout": 5,
+		});
+	});
+
 	it("should evaluate list table to array", () => {
 		expect.assertions(1);
 

@@ -306,7 +306,7 @@ function formatSnapshotLine(
 
 function formatStartAtLine(startTime: number, styles: Styles): string {
 	const startDate = new Date(startTime);
-	const startAtStr = startDate.toLocaleTimeString("en-GB", { hour12: false });
+	const startAtStr = startDate.toLocaleTimeString("en-GB");
 	return `${styles.dim("   Start at")}  ${startAtStr}`;
 }
 

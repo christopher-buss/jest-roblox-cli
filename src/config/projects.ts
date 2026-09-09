@@ -15,7 +15,6 @@ import { nodeTsconfigReader, resolveTsconfigDirectories } from "../executor/tsco
 import { stripTsExtension } from "../utils/extensions.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
-import { isString } from "../utils/is-string.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
 import { toPosixRoot } from "../utils/normalize-windows-path.ts";
 import { ConfigError } from "./errors.ts";
@@ -401,9 +400,7 @@ function unmappableRootError(
 }
 
 function filterMountsForRoot(allMounts: Array<Mount>, root: string): Array<Mount> {
-	return allMounts.filter(
-		(mount) => mount.fsPath === root || mount.fsPath.startsWith(`${root}/`),
-	);
+	return allMounts.filter((mount) => mount.fsPath.startsWith(`${root}/`));
 }
 
 function resolveMounts(
@@ -547,7 +544,7 @@ function deriveIncludeFromTestMatch(
 		return;
 	}
 
-	config.include = config.testMatch.filter(isString).flatMap((pattern) => {
+	config.include = config.testMatch.flatMap((pattern) => {
 		const withExtensions = TS_OR_LUAU_EXTENSION.test(pattern)
 			? [pattern]
 			: [`${pattern}.ts`, `${pattern}.tsx`];
@@ -557,10 +554,12 @@ function deriveIncludeFromTestMatch(
 
 	// Derive outDir from tsconfig rootDir/outDir mapping so the Rojo tree
 	// mapping resolves correctly (e.g. src/shared → out/shared).
-	if (rootDir !== undefined && outDir !== undefined && config.outDir === undefined) {
-		const rootPrefix = `${rootDir}/`;
-		if (configDirectory.startsWith(rootPrefix)) {
-			config.outDir = `${outDir}/${configDirectory.slice(rootPrefix.length)}`;
-		}
+	if (rootDir === undefined || outDir === undefined || config.outDir !== undefined) {
+		return;
+	}
+
+	const rootPrefix = `${rootDir}/`;
+	if (configDirectory.startsWith(rootPrefix)) {
+		config.outDir = `${outDir}/${configDirectory.slice(rootPrefix.length)}`;
 	}
 }

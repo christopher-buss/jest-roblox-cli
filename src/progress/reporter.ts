@@ -1,4 +1,3 @@
-import assert from "node:assert";
 import process from "node:process";
 
 import { getTerminalWidth } from "../formatters/shared.ts";
@@ -211,15 +210,7 @@ class RunProgressReporter implements RunProgress {
 	}
 
 	public interleave(write: () => void): void {
-		if (this.paintedRows === 0) {
-			write();
-			return;
-		}
-
-		this.options.sink(this.eraseBlock());
-		this.paintedRows = 0;
-		write();
-		this.repaint();
+		this.interleaveValue(write);
 	}
 
 	public note(id: StageId, detail: string): void {
@@ -310,11 +301,7 @@ class RunProgressReporter implements RunProgress {
 			const own = stream.write;
 			const invoke = own.bind(stream);
 			stream.write = (...args: Array<never>): boolean => {
-				let wasAccepted = true;
-				this.interleave(() => {
-					wasAccepted = invoke(...args);
-				});
-				return wasAccepted;
+				return this.interleaveValue(() => invoke(...args));
 			};
 
 			this.released.push(() => {
@@ -325,6 +312,18 @@ class RunProgressReporter implements RunProgress {
 
 	private hasActiveStage(): boolean {
 		return this.records.values().some((record) => record.state === "active");
+	}
+
+	private interleaveValue<T>(write: () => T): T {
+		if (this.paintedRows === 0) {
+			return write();
+		}
+
+		this.options.sink(this.eraseBlock());
+		this.paintedRows = 0;
+		const result = write();
+		this.repaint();
+		return result;
 	}
 
 	/**
@@ -347,13 +346,12 @@ class RunProgressReporter implements RunProgress {
 	}
 
 	private repaint(): void {
-		const erase = this.eraseBlock();
-		if (erase === "" && this.records.size === 0) {
+		if (this.records.size === 0) {
 			return;
 		}
 
+		const erase = this.eraseBlock();
 		const frame = SPINNER_FRAMES[this.frameIndex % SPINNER_FRAMES.length];
-		assert(frame !== undefined, "frame index is taken modulo the frame count");
 		const rows = Array.from(this.records.values(), (record) => {
 			return `${formatStage(this.toView(record), { frame, styles: this.styles })}\n`;
 		});
@@ -383,10 +381,8 @@ class RunProgressReporter implements RunProgress {
 
 	/** Drops the timer and the stream guards, so nothing repaints unasked. */
 	private stopAnimating(): void {
-		if (this.timer !== undefined) {
-			clearInterval(this.timer);
-			this.timer = undefined;
-		}
+		clearInterval(this.timer);
+		this.timer = undefined;
 
 		for (const release of this.released.splice(0)) {
 			release();

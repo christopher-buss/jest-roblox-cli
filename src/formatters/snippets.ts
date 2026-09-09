@@ -74,8 +74,8 @@ export function parseSourceLocation(message: string): SourceLocation | undefined
 	}
 
 	const [, filePath, lineStr, columnStr] = match;
-	assert(filePath !== undefined, "regex group 1 matched");
-	assert(lineStr !== undefined, "regex group 2 matched");
+	assert(filePath !== undefined);
+	assert(lineStr !== undefined);
 
 	return {
 		column: columnStr !== undefined ? Number.parseInt(columnStr, 10) : undefined,
@@ -290,9 +290,7 @@ function formatSnapshotCallSnippet(
 	// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
 	const line = snapshotIndices[0]! + 1;
 	const snippet = getSourceSnippet({ context: 2, filePath, line, sourceContent: content });
-	if (snippet === undefined) {
-		return [];
-	}
+	assert(snippet !== undefined);
 
 	return ["", formatSourceSnippet(snippet, filePath, { styles, useColor })];
 }

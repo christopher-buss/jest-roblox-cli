@@ -187,6 +187,9 @@ interface VersionContext {
 	versionNumber: number;
 }
 
+/** What this run's probe proved about the version it will dispatch. */
+type BootVerification = Pick<VersionContext, "bootProven" | "isOwned">;
+
 interface UploadOutcome {
 	/** True when the version came from the cache instead of a fresh upload. */
 	fromCache: boolean;
@@ -243,7 +246,7 @@ export class OpenCloudBackend implements Backend {
 	 * split/splice/join runs once per task over a script that is megabytes on a
 	 * real run.
 	 */
-	private composed!: Map<string, string>;
+	private composed!: Map<number | undefined, Map<string, string>>;
 	/** One-shot per run so parallel raced tasks don't repeat the warning. */
 	private raceWarned!: boolean;
 	/** Tracked apart, so a drop still gets said once a lesser cause warned. */
@@ -328,7 +331,7 @@ export class OpenCloudBackend implements Backend {
 		target: UploadCacheTarget;
 		upload: UploadOutcome;
 	}): Promise<DispatchOutcome> {
-		const isHeadOurs = await this.verifyBootAsync({
+		const verification = await this.verifyBootAsync({
 			config: primary.config,
 			progress,
 			target,
@@ -344,7 +347,7 @@ export class OpenCloudBackend implements Backend {
 		const outcome = await this.selectDispatchAsync(
 			options,
 			primary.config,
-			toVersionContext(primary.config.rootDir, target, upload, isHeadOurs),
+			toVersionContext(primary.config.rootDir, target, upload, verification),
 		);
 		done();
 		return outcome;
@@ -360,20 +363,22 @@ export class OpenCloudBackend implements Backend {
 		hasRebuild: boolean;
 		script: string;
 	}): string {
-		// The separator is an escape rather than the byte itself: a source file
-		// holding a raw NUL is one grep and ripgrep skip as binary.
-		//
 		// `hasRebuild` is not in the key. A run either carries a bundle for
 		// every submit or for none, and the map is cleared per run, so it
 		// cannot differ between two entries this could hand the wrong one of.
-		const key = `${String(guardVersion ?? "")}\u0000${script}`;
-		const cached = this.composed.get(key);
+		let scripts = this.composed.get(guardVersion);
+		if (scripts === undefined) {
+			scripts = new Map();
+			this.composed.set(guardVersion, scripts);
+		}
+
+		const cached = scripts.get(script);
 		if (cached !== undefined) {
 			return cached;
 		}
 
 		const composed = this.composeScript({ hasRebuild, placeVersion: guardVersion, script });
-		this.composed.set(key, composed);
+		scripts.set(script, composed);
 		return composed;
 	}
 
@@ -962,10 +967,10 @@ export class OpenCloudBackend implements Backend {
 		progress: RunProgress;
 		target: UploadCacheTarget;
 		upload: UploadOutcome;
-	}): Promise<boolean> {
+	}): Promise<BootVerification> {
 		const budget = config.bootProbeTimeout;
 		if (budget === 0 || upload.fromCache) {
-			return false;
+			return { bootProven: false, isOwned: false };
 		}
 
 		// Only a version this run uploaded can be head by its own doing, so a
@@ -982,7 +987,7 @@ export class OpenCloudBackend implements Backend {
 		const isHeadOurs = isOwnedProbe && booted === String(upload.versionNumber);
 		if (isOwnedProbe && !isHeadOurs) {
 			warnOwnershipBroken(upload.versionNumber, booted);
-			return false;
+			return { bootProven: false, isOwned: false };
 		}
 
 		if (upload.hash !== undefined) {
@@ -992,7 +997,7 @@ export class OpenCloudBackend implements Backend {
 			});
 		}
 
-		return isHeadOurs;
+		return { bootProven: true, isOwned: isHeadOurs };
 	}
 
 	/**
@@ -1023,7 +1028,7 @@ export function resolveOpenCloudBaseUrl(): string | undefined {
 	}
 
 	let end = override.length;
-	while (end > 0 && override.charAt(end - 1) === "/") {
+	while (override.charAt(end - 1) === "/") {
 		end -= 1;
 	}
 
@@ -1039,7 +1044,7 @@ export function resolveOpenCloudBaseUrl(): string | undefined {
  */
 export function resolveOcaleMaxRetries(): number | undefined {
 	const raw = process.env[MAX_RETRIES_ENV]?.trim();
-	if (raw === undefined || raw === "") {
+	if (raw === "") {
 		return undefined;
 	}
 
@@ -1109,12 +1114,11 @@ function toVersionContext(
 	rootDirectory: string,
 	target: UploadCacheTarget,
 	upload: UploadOutcome,
-	isHeadOurs: boolean,
+	verification: BootVerification,
 ): VersionContext {
 	return {
-		bootProven: !upload.fromCache,
+		...verification,
 		cacheEntry: upload.fromCache ? { rootDirectory, target } : undefined,
-		isOwned: isHeadOurs,
 		versionNumber: upload.versionNumber,
 	};
 }
@@ -1483,7 +1487,7 @@ async function runStealingTasksAsync(
 				runTask: async () => {
 					// Claim the deferral this launch answers, so two launches
 					// never settle the same one.
-					if (launched >= taskCount && pendingDeferrals > 0) {
+					if (pendingDeferrals > 0) {
 						pendingDeferrals -= 1;
 					}
 
@@ -1568,11 +1572,13 @@ function collectStealingResults({
 	jobs: Array<ProjectJob>;
 }): DispatchOutcome {
 	const bailedJobIndices: Array<number> = [];
+	const missingJobNames: Array<string> = [];
 	const rawResults: Array<RawBackendEntry> = [];
 	for (const [index, job] of jobs.entries()) {
 		const found = entryByKey.get(entryLookupKey(job.pkg ?? job.displayName, job.displayName));
 		if (found === undefined) {
 			bailedJobIndices.push(index);
+			missingJobNames.push(job.displayName);
 			continue;
 		}
 
@@ -1584,9 +1590,8 @@ function collectStealingResults({
 	}
 
 	if (bailedJobIndices.length > 0) {
-		const names = bailedJobIndices.map((index) => jobs[index]?.displayName).join(", ");
 		throw new Error(
-			`Open Cloud returned no entries for ${bailedJobIndices.length.toString()} package(s): ${names}`,
+			`Open Cloud returned no entries for ${bailedJobIndices.length.toString()} package(s): ${missingJobNames.join(", ")}`,
 		);
 	}
 

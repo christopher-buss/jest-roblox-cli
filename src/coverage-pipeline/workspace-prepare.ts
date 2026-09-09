@@ -311,7 +311,6 @@ export function emitWorkspaceBuildManifests(
 				files: toBuildManifestFiles(entry.manifest.files),
 				generatedAt: entry.manifest.generatedAt,
 				projects: [],
-				rebuilt: true,
 			},
 			{ fileSystem },
 		);

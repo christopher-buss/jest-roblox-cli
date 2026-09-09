@@ -3,6 +3,7 @@ import { loadRojoProject, resolveMountPath } from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import process from "node:process";
+import type { Except } from "type-fest";
 
 import { ConfigError } from "../config/errors.ts";
 import type { CoverageRoot } from "../coverage-pipeline/redirect-path.ts";
@@ -85,7 +86,23 @@ export interface PackageDescriptor {
 	stubMounts?: Array<StubMount> | undefined;
 }
 
-interface SynthesizeInput {
+export type UnwrappedPackageDescriptor = Except<PackageDescriptor, "name">;
+
+/** One package emitted at the project root without a staging name. */
+export interface UnwrappedPackageSynthesisInput {
+	packages: Array<UnwrappedPackageDescriptor>;
+	wrap: false;
+}
+
+export type PackageSynthesisInput = UnwrappedPackageSynthesisInput | WrappedPackageSynthesisInput;
+
+/** Packages staged below `ServerStorage.__pkg_stage.<name>`. */
+interface WrappedPackageSynthesisInput {
+	packages: Array<PackageDescriptor>;
+	wrap?: true | undefined;
+}
+
+interface SynthesizeOptions {
 	/**
 	 * The Place Content Id to stamp into the synthesized place, as a
 	 * `StringValue` at `ReplicatedStorage.__place_content_id`. A task that
@@ -105,15 +122,10 @@ interface SynthesizeInput {
 	 * its `$path`/children/other properties.
 	 */
 	loadStringEnabled?: boolean | undefined;
-	packages: Array<PackageDescriptor>;
-	/**
-	 * Default `true`: wrap each package under
-	 * `ServerStorage.__pkg_stage.<name>` (multi-package workspace mode). Set to
-	 * `false` for single-package coverage — the package's project tree is
-	 * emitted verbatim so the runtime layout matches a direct `rojo build`.
-	 */
-	wrap?: boolean | undefined;
 }
+
+type SynthesizeInput = PackageSynthesisInput & SynthesizeOptions;
+type UnwrappedSynthesizeInput = SynthesizeOptions & UnwrappedPackageSynthesisInput;
 
 const STUB_INJECTION_KEY = "jest.config";
 const COLLIDING_SOURCE_FILES = ["jest.config.lua", "jest.config.luau"];
@@ -142,6 +154,11 @@ interface AbsolutizeOptions {
 	spine: Map<string, string> | undefined;
 }
 
+interface HoistedServiceSegment {
+	name: string;
+	serviceClass: string;
+}
+
 /**
  * A service whose `$properties` were lifted out of a package's staged tree.
  *
@@ -153,14 +170,12 @@ interface AbsolutizeOptions {
  * is running, so no amount of runtime materializing could set them.
  */
 interface HoistedService {
-	/**
-	 * Path from the place root, e.g. `["StarterPlayer",
-	 * "StarterPlayerScripts"]`.
-	 */
-	path: Array<string>;
 	properties: JSONObject;
-	/** Declared `$className`, or the node name for a service rojo infers. */
-	serviceClass: string;
+	/**
+	 * Path from the place root. Empty names the DataModel itself; every other
+	 * segment carries the class its synthesized node needs.
+	 */
+	segments: Array<HoistedServiceSegment>;
 }
 
 interface DeclaredGlobs {
@@ -259,7 +274,7 @@ function resolveCoverageRoots(
  * The spine directory for each source directory it stands in for, resolved the
  * same way `resolveCoverageRoots` resolves a root.
  */
-function resolveSpine(descriptor: PackageDescriptor): Map<string, string> | undefined {
+function resolveSpine(descriptor: UnwrappedPackageDescriptor): Map<string, string> | undefined {
 	const resolved = resolveCoverageRoots(descriptor.packageDirectory, descriptor.coverageSpine);
 	return resolved === undefined
 		? undefined
@@ -277,7 +292,10 @@ function resolveSpine(descriptor: PackageDescriptor): Map<string, string> | unde
  * straight from the config with no mount check of its own. No `subject`: the
  * descriptor there names a synthetic package the user never wrote.
  */
-function warnUnreachableCoverageRoots(descriptor: PackageDescriptor, tree: RojoTreeNode): void {
+function warnUnreachableCoverageRoots(
+	descriptor: UnwrappedPackageDescriptor,
+	tree: RojoTreeNode,
+): void {
 	const { coverageRoots } = descriptor;
 	if (coverageRoots === undefined) {
 		return;
@@ -339,7 +357,7 @@ function absolutizePaths(
 function absolutizePackagePaths(
 	fileSystem: FileSystem,
 	node: RojoTreeNode,
-	descriptor: PackageDescriptor,
+	descriptor: UnwrappedPackageDescriptor,
 ): RojoTreeNode {
 	// Before the walk, while every `$path` still reads as the project wrote it.
 	warnUnreachableCoverageRoots(descriptor, node);
@@ -422,11 +440,7 @@ function walkToLeaf(
 	for (const segment of dataModelPath.split("/")) {
 		let next = cursor[segment];
 		if (!isTreeNode(next)) {
-			const virtualized = virtualizePathChild(fileSystem, cursor, segment);
-			if (virtualized !== undefined) {
-				cursor[segment] = virtualized;
-				next = virtualized;
-			}
+			next = virtualizePathChild(fileSystem, cursor, segment);
 		}
 
 		if (!isTreeNode(next)) {
@@ -504,15 +518,14 @@ function isProperties(value: RojoTreeNode[string]): value is JSONObject {
 
 function recordHoistedProperties(
 	hoisted: Array<HoistedService>,
-	serviceClass: string,
-	nodePath: Array<string>,
+	segments: Array<HoistedServiceSegment>,
 	value: RojoTreeNode[string],
 ): void {
 	if (!isProperties(value) || Object.keys(value).length === 0) {
 		return;
 	}
 
-	hoisted.push({ path: nodePath, properties: value, serviceClass });
+	hoisted.push({ properties: value, segments });
 }
 
 function transformToFolder(node: RojoTreeNode, hoisted: Array<HoistedService>): RojoTreeNode {
@@ -534,7 +547,7 @@ function transformToFolder(node: RojoTreeNode, hoisted: Array<HoistedService>): 
 			// its properties are dropped as before rather than moved onto a
 			// Folder where rojo would reject them.
 			if (isPlace) {
-				recordHoistedProperties(hoisted, "DataModel", [], value);
+				recordHoistedProperties(hoisted, [], value);
 			}
 
 			continue;
@@ -657,7 +670,7 @@ function stableStringify(value: JsonStringifyValue): string {
 function openService(tree: RojoTreeNode, name: string): RojoTreeNode {
 	const existing = tree[name];
 	// Rojo names a service by its class, so the tree key is the class name.
-	const service = isTreeNode(existing) ? existing : { $className: name };
+	const service = isTreeNode(existing) ? existing : {};
 	service.$className ??= name;
 	tree[name] = service;
 	return service;
@@ -703,7 +716,7 @@ function synthesizeNoWrap({
 	fileSystem = nodeFileSystem,
 	loadStringEnabled = false,
 	packages,
-}: SynthesizeInput): string {
+}: UnwrappedSynthesizeInput): string {
 	if (packages.length !== 1) {
 		throw new ConfigError(
 			`synthesize wrap:false requires exactly one package, got ${String(packages.length)}`,
@@ -759,14 +772,15 @@ function mergeServiceProperties(
 	packageName: string,
 	owners: Map<string, { packageName: string; value: JSONValue }>,
 ): void {
-	const pathKey = service.path.join("/");
+	const pathNames = service.segments.map((segment) => segment.name);
+	const pathKey = pathNames.join("/");
 
 	for (const [property, value] of Object.entries(service.properties)) {
 		const ownerKey = `${pathKey}.${property}`;
 		const owner = owners.get(ownerKey);
 		if (owner !== undefined && !isSameValue(owner.value, value)) {
 			throw new ConfigError(
-				formatPropertyConflict(propertyLabel(service.path, property), owner, {
+				formatPropertyConflict(propertyLabel(pathNames, property), owner, {
 					packageName,
 					value,
 				}),
@@ -790,13 +804,12 @@ function mergeHoistedServices(hoists: ReadonlyArray<PackageHoist>): Array<Hoiste
 
 	for (const { packageName, services } of hoists) {
 		for (const service of services) {
-			const pathKey = service.path.join("/");
+			const pathKey = service.segments.map((segment) => segment.name).join("/");
 			let target = merged.get(pathKey);
 			if (target === undefined) {
 				target = {
-					path: service.path,
 					properties: {},
-					serviceClass: service.serviceClass,
+					segments: service.segments,
 				};
 				merged.set(pathKey, target);
 			}
@@ -817,13 +830,11 @@ function mergeHoistedServices(hoists: ReadonlyArray<PackageHoist>): Array<Hoiste
 function applyHoistedServices(tree: RojoTreeNode, hoisted: ReadonlyArray<HoistedService>): void {
 	for (const service of hoisted) {
 		let cursor = tree;
-		for (const [index, segment] of service.path.entries()) {
-			const existing = cursor[segment];
+		for (const segment of service.segments) {
+			const existing = cursor[segment.name];
 			const node = isTreeNode(existing) ? existing : {};
-			// An intermediate segment is a service rojo would infer from its own
-			// name; only the leaf carries a class the package declared.
-			node.$className ??= index === service.path.length - 1 ? service.serviceClass : segment;
-			cursor[segment] = node;
+			node.$className ??= segment.serviceClass;
+			cursor[segment.name] = node;
 			cursor = node;
 		}
 
@@ -912,6 +923,16 @@ function recoverBareNodeClass(node: RojoTreeNode): void {
 	}
 }
 
+function hoistedServicePath(
+	nodePath: Array<string>,
+	declaredClass: string | undefined,
+): Array<HoistedServiceSegment> {
+	// eslint-disable-next-line ts/no-non-null-assertion -- only non-root nodes call this helper
+	const leafName = nodePath.at(-1)!;
+	const parents = nodePath.slice(0, -1).map((name) => ({ name, serviceClass: name }));
+	return [...parents, { name: leafName, serviceClass: declaredClass ?? leafName }];
+}
+
 function transformChild(
 	node: RojoTreeNode,
 	nodePath: Array<string>,
@@ -935,8 +956,7 @@ function transformChild(
 		}
 
 		if (key === "$properties" && isDemoted) {
-			// eslint-disable-next-line ts/no-non-null-assertion -- non-root nodes always have a name
-			recordHoistedProperties(hoisted, declaredClass ?? nodePath.at(-1)!, nodePath, value);
+			recordHoistedProperties(hoisted, hoistedServicePath(nodePath, declaredClass), value);
 			continue;
 		}
 

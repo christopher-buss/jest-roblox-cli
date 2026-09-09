@@ -10,7 +10,7 @@ import type { ResolvedConfig } from "../config/schema.ts";
 import type { TsconfigReader } from "../executor/tsconfig-mappings.ts";
 import { nodeTsconfigReader } from "../executor/tsconfig-mappings.ts";
 import { CODE_SPLIT_PASS_VERSION } from "../staging/code-split.ts";
-import type { BuildPlaceOptions, CodeBundleArtifact } from "../staging/place-builder.ts";
+import type { CodeBundleArtifact, UnwrappedBuildPlaceOptions } from "../staging/place-builder.ts";
 import { buildCodeBundle, buildPlaceAsync } from "../staging/place-builder.ts";
 import type { CoverageRoot } from "../staging/synthesizer.ts";
 import type { TimingCollector } from "../timing/orchestration-collector.ts";
@@ -159,7 +159,7 @@ interface WriteManifestOptions {
 	manifestPath: string;
 	nonInstrumentedFiles: Record<string, NonInstrumentedFileRecord>;
 	placeFile: string;
-	rojoInputsHash: string;
+	rojoInputsHash: string | undefined;
 }
 
 interface ShadowPassSettings {
@@ -220,11 +220,6 @@ interface CoverageInputs {
 	/** Digest of the copy-ignore list, for the incremental gate. */
 	copyIgnoreHash: string;
 	fileSystem: FileSystem;
-	/**
-	 * `false` when the rojo inputs could not be hashed, which turns the
-	 * inputs-drift check off rather than forcing a rebuild.
-	 */
-	hasResolvedInputs: boolean;
 	/** The compiled `coverageCopyIgnorePatterns` gate for every root. */
 	isCopyIgnored: CopyIgnoreMatcher;
 	luauRoots: Array<PosixRoot>;
@@ -236,7 +231,7 @@ interface CoverageInputs {
 	 */
 	narrowed: Array<NarrowedMount>;
 	previousManifest: CoverageManifest | undefined;
-	rojoInputsHash: string;
+	rojoInputsHash: string | undefined;
 	rojoProjectPath: string;
 	/** Absent when the config narrows nothing — the whole root is probed. */
 	universe: InstrumentUniverse | undefined;
@@ -261,11 +256,6 @@ interface BuildCoveragePlaceOptions {
 	packageDirectory: string;
 	rojoProjectPath: string;
 	shadow: Pick<ShadowRootsResult, "coverageRoots" | "coverageSpine">;
-}
-
-interface RojoInputsHashResult {
-	hash: string;
-	resolved: boolean;
 }
 
 /**
@@ -656,11 +646,13 @@ function readRojoContext(
  * hard failure.
  */
 function hasRojoInputDrift(
-	{ hasResolvedInputs, previousManifest, rojoInputsHash }: CoverageInputs,
+	{ previousManifest, rojoInputsHash }: CoverageInputs,
 	isIncremental: boolean,
 ): boolean {
 	return (
-		isIncremental && hasResolvedInputs && previousManifest?.rojoInputsHash !== rojoInputsHash
+		isIncremental &&
+		rojoInputsHash !== undefined &&
+		previousManifest?.rojoInputsHash !== rojoInputsHash
 	);
 }
 
@@ -789,7 +781,7 @@ function coveragePlaceOptions({
 	packageDirectory,
 	rojoProjectPath,
 	shadow,
-}: BuildCoveragePlaceOptions): BuildPlaceOptions {
+}: BuildCoveragePlaceOptions): UnwrappedBuildPlaceOptions {
 	return {
 		childProcess,
 		codeRoots,
@@ -802,7 +794,6 @@ function coveragePlaceOptions({
 		loadStringEnabled: true,
 		packages: [
 			{
-				name: "jest-roblox-coverage",
 				coverageRoots: shadow.coverageRoots,
 				coverageSpine: shadow.coverageSpine,
 				packageDirectory: path.resolve(packageDirectory),
@@ -966,7 +957,7 @@ async function bakeCoveragePlaceAsync({
  * Hash the rojo build inputs the per-luauRoot shadow diff never sees
  * (include/, vendored @rbxts, assets, the project files). Runs regardless of
  * how luauRoots resolved. A malformed/circular project throws; degrade to
- * `resolved: false` so the caller skips the inputs check (a project too broken
+ * `undefined` so the caller skips the inputs check (a project too broken
  * to hash would also fail the rebuild's own parse) rather than hard-failing a
  * working run.
  */
@@ -975,15 +966,14 @@ async function resolveRojoInputsHashAsync(
 	rojoProjectPath: string,
 	luauRoots: Array<string>,
 	fileSystem: FileSystem,
-): Promise<RojoInputsHashResult> {
-	const hash = await tryComputeRojoInputsHashAsync({
+): Promise<string | undefined> {
+	return tryComputeRojoInputsHashAsync({
 		digestCacheFile: path.join(config.rootDir, INPUT_DIGEST_PATH),
 		fileSystem,
 		luauRoots,
 		rojoProjectPath,
 		rootDirectory: config.rootDir,
 	});
-	return hash === undefined ? { hash: "", resolved: false } : { hash, resolved: true };
 }
 
 function loadCoverageManifest(
@@ -1138,20 +1128,19 @@ async function resolveCoverageInputsAsync(
 		universe,
 	});
 	const luauRoots = narrowed.flatMap((entry) => entry.roots);
-	const inputs = await resolveRojoInputsHashAsync(config, rojoProjectPath, luauRoots, fileSystem);
+	const hash = await resolveRojoInputsHashAsync(config, rojoProjectPath, luauRoots, fileSystem);
 	const manifestPath = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
 
 	return {
 		buildManifestPath: path.join(COVERAGE_DIR, BUILD_MANIFEST_FILE),
 		copyIgnoreHash: hashCopyIgnorePatterns(config.coverageCopyIgnorePatterns),
 		fileSystem,
-		hasResolvedInputs: inputs.resolved,
 		isCopyIgnored,
 		luauRoots,
 		manifestPath,
 		narrowed,
 		previousManifest: loadCoverageManifest(fileSystem, manifestPath),
-		rojoInputsHash: inputs.hash,
+		rojoInputsHash: hash,
 		rojoProjectPath,
 		universe,
 	};
@@ -1170,24 +1159,17 @@ function decideIncremental(
 	config: ResolvedConfig,
 	{ copyIgnoreHash, fileSystem, luauRoots, previousManifest, universe }: CoverageInputs,
 ): boolean {
-	let isIncremental = canReuseCoverageManifest(previousManifest, {
-		copyIgnoreHash,
-		coverageCache: config.coverageCache,
-		universe,
-	});
-
 	// A dropped luauRoot is invisible to the per-root reconcile — it only walks
 	// the current roots — so the dropped root's instrumented shadow subtree and
 	// its stale manifest entries would survive a reuse. Force a cold rebuild so
 	// the rmSync below wipes them. An *added* root needs no cold rebuild: the
 	// existing roots stay cached and the new one is instrumented normally.
-	if (
-		isIncremental &&
-		previousManifest !== undefined &&
-		hasDroppedLuauRoot(previousManifest.luauRoots, luauRoots)
-	) {
-		isIncremental = false;
-	}
+	const isIncremental =
+		canReuseCoverageManifest(previousManifest, {
+			copyIgnoreHash,
+			coverageCache: config.coverageCache,
+			universe,
+		}) && !hasDroppedLuauRoot(previousManifest.luauRoots, luauRoots);
 
 	if (!isIncremental && fileSystem.existsSync(COVERAGE_DIR)) {
 		fileSystem.rmSync(COVERAGE_DIR, { recursive: true });

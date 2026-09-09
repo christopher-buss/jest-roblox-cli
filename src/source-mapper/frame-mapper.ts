@@ -122,10 +122,7 @@ function mapToSource(
 		(fileSystem.existsSync(resolvedTsPath)
 			? fileSystem.readFileSync(resolvedTsPath, "utf-8")
 			: undefined);
-	const tsColumn =
-		tsContent !== undefined
-			? findExpectationColumn(tsContent.split("\n")[tsLine - 1] ?? "")
-			: undefined;
+	const tsColumn = findExpectationColumn(tsContent?.split("\n")[tsLine - 1]);
 
 	return {
 		column: tsColumn,

@@ -44,7 +44,7 @@ export function getExecErrorHint(message: string): string | undefined {
 export function parseErrorMessage(message: string): ParsedError {
 	const lines = message.split("\n");
 	const firstLine = lines[0];
-	assert(firstLine !== undefined, "split always returns ≥1 element");
+	assert(firstLine !== undefined);
 
 	const snapshotHeaderIndex = lines.findIndex((line) => SNAPSHOT_HEADER.test(line));
 	if (snapshotHeaderIndex !== -1) {
@@ -80,10 +80,6 @@ export function parseErrorMessage(message: string): ParsedError {
  * chains, and stack trace lines.
  */
 export function cleanExecErrorMessage(raw: string): string {
-	if (raw === "") {
-		return "";
-	}
-
 	const lines = raw.split("\n");
 
 	// Find the first content line after the "● Test suite failed to run" header
@@ -210,7 +206,7 @@ export function formatExecErrorDetail(
 	const index = failureCtx.currentIndex;
 	failureCtx.currentIndex++;
 
-	assert(file.failureMessage !== undefined, "exec error files have failureMessage");
+	assert(file.failureMessage !== undefined);
 	const displayPath = resolveDisplayPath(file.testFilePath, sourceMapper);
 	const errorMessage = cleanExecErrorMessage(file.failureMessage);
 	const separator = styles.dim(

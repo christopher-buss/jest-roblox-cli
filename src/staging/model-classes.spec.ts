@@ -4,8 +4,9 @@ import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import { isModelFile, readDeclaredClasses } from "./model-classes.ts";
 
@@ -171,6 +172,37 @@ describe(isModelFile, () => {
 });
 
 describe(readDeclaredClasses, () => {
+	it.for([
+		{
+			classes: ["Folder"],
+			kind: "valid",
+			model: Buffer.concat([binaryHeader(), chunk("INST", instancePayload("Folder"))]),
+		},
+		{ classes: [], kind: "malformed", model: Buffer.alloc(8) },
+	])("should close the file after reading a $kind binary", ({ classes, model }) => {
+		expect.assertions(2);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.writeFileSync("/model.rbxm", model);
+		const opened = vi.spyOn(fileSystem, "openSync");
+
+		expect(readDeclaredClasses("/model.rbxm", fileSystem)).toStrictEqual(classes);
+
+		const handle: unknown = opened.mock.results[0]!.value;
+		assert(typeof handle === "number");
+
+		expect(() => fileSystem.readSync(handle, Buffer.alloc(1), 0, 1, 0)).toThrow("EBADF");
+	});
+
+	it("should report no classes when the file ends before its first chunk", () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+		volume.writeFileSync("/empty.rbxm", binaryHeader());
+
+		expect(readDeclaredClasses("/empty.rbxm", fileSystem)).toStrictEqual([]);
+	});
+
 	it.skipIf(!rojoOnPath())(
 		"should read every class out of a binary model, LZ4 chunks included",
 		// A real rojo spawn, so the suite-wide per-test budget cannot hold it.
@@ -320,6 +352,42 @@ describe(readDeclaredClasses, () => {
 			expect(readDeclaredClasses(writeTemporary("a.rbxm", model))).toStrictEqual([declared]);
 		},
 	);
+
+	it("should reject compressed data that ends before its declared output length", () => {
+		expect.assertions(1);
+
+		const declared = "A".repeat(8);
+		const model = Buffer.concat([
+			binaryHeader(),
+			compressedChunk({
+				name: "INST",
+				compressed: repeatedClassLz4(declared.length),
+				decompressedBytes: instancePayload(declared).length + 1,
+			}),
+		]);
+
+		expect(readDeclaredClasses(writeTemporary("a.rbxm", model))).toStrictEqual([]);
+	});
+
+	it("should reject compressed data that continues past its declared output length", () => {
+		expect.assertions(1);
+
+		const declared = "A".repeat(8);
+		const compressed = Buffer.concat([
+			repeatedClassLz4(declared.length),
+			Buffer.from([0, 1, 0]),
+		]);
+		const model = Buffer.concat([
+			binaryHeader(),
+			compressedChunk({
+				name: "INST",
+				compressed,
+				decompressedBytes: instancePayload(declared).length,
+			}),
+		]);
+
+		expect(readDeclaredClasses(writeTemporary("a.rbxm", model))).toStrictEqual([]);
+	});
 
 	it("should stop at the first chunk after the class table", () => {
 		expect.assertions(1);

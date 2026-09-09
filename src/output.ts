@@ -193,7 +193,7 @@ export async function outputMultiResultAsync(
 	const { coverageMs, projectResults, stagingMs, typecheckResult } = result;
 	const config = buildReportConfig(rootConfig, result);
 
-	if (typecheckResult !== undefined && projectResults.length === 0) {
+	if (projectResults.length === 0) {
 		return emitSingleResultAsync(
 			config,
 			{ coverageMs, mode: "single", stagingMs, typecheckResult },
@@ -312,7 +312,6 @@ function runGitHubActionsFormatter(
 	result: JestResult,
 	sourceMapper: SourceMapper | undefined,
 ): void {
-	assert(config.formatters !== undefined);
 	const userOptions = findFormatterOptions(config.formatters, "github-actions");
 	if (userOptions === undefined) {
 		return;
@@ -427,9 +426,7 @@ function mergeProjectExtras(results: Array<ExecuteResult>): ProjectExtras {
 		snapshotWriteFailures += entry.snapshotWriteFailures ?? 0;
 		testsMs += entry.timing.testsMs;
 
-		if (entry.coverageData !== undefined) {
-			coverageData = mergeRawCoverage(coverageData, entry.coverageData);
-		}
+		coverageData = mergeRawCoverage(coverageData, entry.coverageData);
 	}
 
 	return { coverageData, setupMs, snapshotWriteFailures, testsMs };
@@ -509,7 +506,7 @@ async function writeMultiRunSinksAsync(
 function resolveBailSummary(
 	result: MultiRunResult | WorkspaceRunResult,
 ): Pick<MultiOutputContext, "bail"> {
-	return result.mode === "workspace" && result.bail !== undefined ? { bail: result.bail } : {};
+	return result.mode === "workspace" ? { bail: result.bail } : {};
 }
 
 function resolveSinkHints(
@@ -575,7 +572,7 @@ async function emitMultiResultAsync(
 	result: MultiRunResult | WorkspaceRunResult,
 	{ coveragePipeline, fileSystem, renderer }: ResolvedDependencies,
 ): Promise<number> {
-	const { mode, projectResults, typecheckResult } = result;
+	const { projectResults, typecheckResult } = result;
 	const merged = mergeProjectResults(projectResults.map((entry) => entry.result));
 	const mergedResult = mergeResults(typecheckResult, merged.result);
 	const isCoveragePassed = reportMultiRun(
@@ -584,14 +581,12 @@ async function emitMultiResultAsync(
 		coveragePipeline,
 	);
 
-	if (mode === "multi") {
-		await writeMultiRunSinksAsync(fileSystem, config, {
-			hintsShown: !mergedResult.success,
-			merged,
-			projectResults,
-			typecheckResult,
-		});
-	}
+	await writeMultiRunSinksAsync(fileSystem, config, {
+		hintsShown: !mergedResult.success,
+		merged,
+		projectResults,
+		typecheckResult,
+	});
 
 	runGitHubActionsFormatter(fileSystem, config, mergedResult, merged.sourceMapper);
 
@@ -610,7 +605,6 @@ function buildReportConfig(
 		return {
 			...DEFAULT_CONFIG,
 			collectCoverage: (result.coveragePackages?.length ?? 0) > 0,
-			formatters: ["default"],
 			...result.reportOptions,
 		};
 	}

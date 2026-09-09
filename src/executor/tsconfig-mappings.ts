@@ -147,16 +147,16 @@ function parseTsconfigMappings(options: TsconfigCompilerOptions): Array<Tsconfig
 		const commonAncestor = normalized.reduce((ancestor, directory) => {
 			const parts = ancestor.split("/");
 			const directoryParts = directory.split("/");
-			let common = 0;
-			while (
-				common < parts.length &&
-				common < directoryParts.length &&
-				parts[common] === directoryParts[common]
-			) {
-				common++;
+			const common: Array<string> = [];
+			for (const [index, part] of parts.entries()) {
+				if (part !== directoryParts[index]) {
+					break;
+				}
+
+				common.push(part);
 			}
 
-			return parts.slice(0, common).join("/");
+			return common.join("/");
 		});
 		return [{ outDir: outDirectory, rootDir: commonAncestor || "." }];
 	}

@@ -17,6 +17,7 @@ import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import type { BuildManifestArtifact } from "../coverage-pipeline/build-manifest.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
+import type { RunProgress } from "../progress/reporter.ts";
 import type { BuildPlaceOptions } from "../staging/place-builder.ts";
 import type { JestResult } from "../types/jest-result.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
@@ -240,6 +241,22 @@ describe(StudioCliBackend, () => {
 		expect(timing).toStrictEqual({ executionMs: 45 });
 	});
 
+	it("should close the tests progress stage after the result arrives", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const done = vi.fn<() => void>();
+		const begin = vi.fn<RunProgress["begin"]>(() => done);
+
+		await backendReplying(fileSystem).runTestsAsync({
+			...singleJob,
+			progress: fromPartial({ begin }),
+		});
+
+		expect(begin).toHaveBeenCalledExactlyOnceWith("tests", "1 project");
+		expect(done).toHaveBeenCalledOnce();
+	});
+
 	it("should return one rawResult per job, in submitted order, for a multi-project run", async () => {
 		expect.assertions(2);
 
@@ -460,7 +477,12 @@ describe(StudioCliBackend, () => {
 
 		const backend = backendReplying(fileSystem, { omitProtocolVersion: true });
 
-		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(/protocol.*mismatch/i);
+		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
+			Error,
+			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
+				"(plugin reported no version, CLI expects v7). " +
+				"Update the jest-roblox Studio plugin to match this CLI version.",
+		);
 	});
 
 	it("should surface a version-mismatch error when the plugin echoes a different protocolVersion", async () => {
@@ -470,7 +492,12 @@ describe(StudioCliBackend, () => {
 
 		const backend = backendReplying(fileSystem, { protocolVersion: 2 });
 
-		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(/protocol.*mismatch/i);
+		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
+			Error,
+			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
+				"(plugin reported v2, CLI expects v7). " +
+				"Update the jest-roblox Studio plugin to match this CLI version.",
+		);
 	});
 
 	it("should name the release the answering plugin came from", async () => {
@@ -485,8 +512,11 @@ describe(StudioCliBackend, () => {
 			protocolVersion: 5,
 		});
 
-		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(
-			/plugin from jest-roblox 0\.3\.18 reported v5/,
+		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
+			Error,
+			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
+				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v7). " +
+				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
 
@@ -523,21 +553,30 @@ describe(StudioCliBackend, () => {
 	it("should ignore non-result frames and resolve on the matching result", async () => {
 		// The server can see engine/plugin chatter and stray frames; only a
 		// well-formed `results` frame for THIS requestId resolves the run.
-		expect.assertions(1);
+		expect.assertions(5);
 
 		const { fileSystem } = createMemoryFileSystem();
+		useResultDeadlineTimers();
 
 		const process = makeFakeProcess();
+		let socket: MockWebSocket | undefined;
 		const { rawResults } = await makeBackend(fileSystem, (request) => {
 			queueMicrotask(() => {
 				const server = getLastCreatedServer()!;
-				const socket = new MockWebSocket();
+				socket = new MockWebSocket();
 				server.emit("connection", socket);
 				// Non-JSON noise, a non-results frame, and a result for a
 				// different request — each ignored — then the real one.
 				socket.emit("message", Buffer.from("not json {{"));
 				socket.emit("message", Buffer.from(JSON.stringify({ hello: 1, type: "log" })));
-				socket.emit("message", Buffer.from(resultFrame("a-different-request", {})));
+				socket.emit(
+					"message",
+					Buffer.from(
+						resultFrame("a-different-request", {
+							entries: [{ jestOutput: successResult({ numPassedTests: 99 }) }],
+						}),
+					),
+				);
 				const frame = Buffer.from(resultFrame(readRequestId(fileSystem, request.args), {}));
 				socket.emit("message", frame);
 				// A duplicate frame after the first resolves must be ignored, not
@@ -548,10 +587,14 @@ describe(StudioCliBackend, () => {
 		}).runTestsAsync(singleJob);
 
 		expect(rawResults).toHaveLength(1);
+		expect(rawResults[0]!.entry.jestOutput).toBe(successResult());
+		expect(vi.getTimerCount()).toBe(0);
+		expect(socket!.terminate).toHaveBeenCalledOnce();
+		expect(getLastCreatedServer()!.close).toHaveBeenCalledOnce();
 	});
 
 	it("should reject with a timeout when no result frame arrives", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
 
@@ -586,6 +629,7 @@ describe(StudioCliBackend, () => {
 		);
 		// The run kills Studio on the way out even on the timeout path.
 		expect(process.kill).toHaveBeenCalledOnce();
+		expect(getLastCreatedServer()!.close).toHaveBeenCalledOnce();
 	});
 
 	it("should quote Studio's own log when no result frame arrives", async () => {
@@ -608,9 +652,9 @@ describe(StudioCliBackend, () => {
 					outputFile,
 					[
 						"discarded oldest line",
+						..."line 1\nline 2\nline 3\nline 4\nline 5\n  line 6  ".split("\n"),
 						"  ",
-						webSocketServerFactory,
-						...Array.from({ length: 12 }, (_, index) => `line ${String(index + 1)}`),
+						..."line 7\nline 8\nline 9\nline 10\nline 11\nline 12".split("\n"),
 						"x".repeat(300),
 						"x".repeat(301),
 						"final line",
@@ -641,7 +685,7 @@ describe(StudioCliBackend, () => {
 	});
 
 	it("should reject when the result server errors", async () => {
-		expect.assertions(1);
+		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
 
@@ -655,23 +699,31 @@ describe(StudioCliBackend, () => {
 				return process;
 			}).runTestsAsync(singleJob),
 		).rejects.toThrow(/EADDRINUSE/);
+		expect(process.kill).toHaveBeenCalledOnce();
+		expect(getLastCreatedServer()!.close).toHaveBeenCalledOnce();
 	});
 
 	it("should reject when Studio fails to spawn", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const { fileSystem } = createMemoryFileSystem();
 
 		const process = makeFakeProcess();
 
-		await expect(
-			makeBackend(fileSystem, () => {
-				queueMicrotask(() => {
-					process.emitError(new Error("spawn ENOENT"));
-				});
-				return process;
-			}).runTestsAsync(singleJob),
-		).rejects.toThrow(/spawn ENOENT/);
+		const cause = new Error("spawn ENOENT");
+		const caught = await makeBackend(fileSystem, () => {
+			queueMicrotask(() => {
+				process.emitError(cause);
+			});
+			return process;
+		})
+			.runTestsAsync(singleJob)
+			.catch((err: unknown) => err);
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toBe("spawn ENOENT");
+		expect(caught.cause).toBe(cause);
 	});
 
 	it("should launch Studio with the RunScript task argument set", async () => {

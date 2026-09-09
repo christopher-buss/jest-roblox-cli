@@ -15,12 +15,7 @@ import type { RawCoverageData, RawFileCoverage } from "./types.ts";
 export function normalizeRawCoverage(coverage: JSONValue | undefined): RawCoverageData | undefined {
 	// The table is keyed by fileKey, so a JSON array is never a coverage table
 	// — an empty Luau table serializes as `[]` and carries no file either way.
-	if (
-		coverage === undefined ||
-		coverage === null ||
-		typeof coverage !== "object" ||
-		Array.isArray(coverage)
-	) {
+	if (coverage === null || typeof coverage !== "object" || Array.isArray(coverage)) {
 		return undefined;
 	}
 
@@ -49,7 +44,7 @@ export function normalizeRawCoverage(coverage: JSONValue | undefined): RawCovera
  */
 export function parseCoverageEnvelope(output: JSONValue): RawCoverageData | undefined {
 	const parsed = typeof output === "string" ? parseJson(output) : output;
-	if (parsed === null || parsed === undefined || typeof parsed !== "object") {
+	if (parsed === null || typeof parsed !== "object") {
 		return undefined;
 	}
 

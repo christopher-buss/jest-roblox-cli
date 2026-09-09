@@ -36,6 +36,14 @@ function makeFile(overrides: Partial<TestFileResult>): TestFileResult {
 }
 
 describe(formatFileSummary, () => {
+	it("should render a collected file with no tests as passed", () => {
+		expect.assertions(1);
+
+		expect(formatFileSummary(makeFile({}), options, createTaggedStyles())).toBe(
+			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(0 tests</dim><dim>)</dim>",
+		);
+	});
+
 	it("should render an all-pending file through the pending style", () => {
 		expect.assertions(1);
 
@@ -105,6 +113,17 @@ describe(formatFileSummary, () => {
 
 		expect(formatFileSummary(file, options, createTaggedStyles())).toBe(
 			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(1 tests</dim><dim>)</dim>",
+		);
+	});
+
+	it("should omit durations from verbose test rows when they are not reported", () => {
+		expect.assertions(1);
+
+		const file = makeFile({ numPassingTests: 1, testResults: [makeTest({})] });
+
+		expect(formatFileSummary(file, { ...options, verbose: true }, createTaggedStyles())).toBe(
+			" <pass>✓</pass> <dir>src/</dir><file>example.spec.ts</file> <dim>(1 tests</dim><dim>)</dim>\n" +
+				"<pass>  ✓ suite test</pass>",
 		);
 	});
 });

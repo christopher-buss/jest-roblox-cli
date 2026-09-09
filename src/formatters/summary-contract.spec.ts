@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { JestResult, SnapshotSummary, TestFileResult } from "../types/jest-result.ts";
 import type { TimingResult } from "../types/timing.ts";
 import { createTaggedStyles } from "./__fixtures__/tagged-styles.ts";
-import { formatLogHints, formatTestSummary } from "./summary.ts";
+import { countFileBuckets, formatLogHints, formatTestSummary } from "./summary.ts";
 
 function makeFile(overrides: Partial<TestFileResult>): TestFileResult {
 	return {
@@ -106,5 +106,31 @@ describe(formatTestSummary, () => {
 				typeErrors: 1,
 			}),
 		).toMatchSnapshot();
+	});
+});
+
+describe(countFileBuckets, () => {
+	it("should count a file with both passing and pending tests as passed", () => {
+		expect.assertions(1);
+
+		expect(
+			countFileBuckets(
+				fromAny({
+					testResults: [makeFile({ numPassingTests: 1, numPendingTests: 1 })],
+				}),
+			),
+		).toStrictEqual({ failed: 0, passed: 1, skipped: 0 });
+	});
+
+	it("should count collected files with no tests as passed", () => {
+		expect.assertions(1);
+
+		expect(
+			countFileBuckets(
+				fromAny({
+					testResults: [makeFile({}), makeFile({ numPassingTests: 1 })],
+				}),
+			),
+		).toStrictEqual({ failed: 0, passed: 2, skipped: 0 });
 	});
 });

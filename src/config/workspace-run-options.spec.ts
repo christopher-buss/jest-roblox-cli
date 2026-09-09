@@ -17,6 +17,7 @@ describe(buildWorkspaceRunOptions, () => {
 		["backend", { backend: "open-cloud" }, { backend: "studio" }],
 		["binaryInput", { binaryInput: true }, { binaryInput: false }],
 		["color", { color: true }, { color: false }],
+		["formatters", { formatters: ["json"] }, { formatters: ["agent"] }],
 		["port", { port: 1 }, { port: 2 }],
 		["silent", { test: { silent: true } }, { test: { silent: false } }],
 		["gameOutput", { gameOutput: "a.log" }, { gameOutput: "b.log" }],
@@ -54,6 +55,17 @@ describe(buildWorkspaceRunOptions, () => {
 		assert(captured instanceof WorkspaceConsensusError);
 
 		expect(captured.field).toBe(field);
+	});
+
+	it("should enable workspace bail only when the CLI flag is true", () => {
+		expect.assertions(1);
+
+		expect(
+			buildWorkspaceRunOptions({
+				cli: { bail: true },
+				perPackageConfigs: [{ name: "alpha", config: {} }],
+			}).bail,
+		).toBeTrue();
 	});
 
 	describe("happy path: per-package consensus", () => {

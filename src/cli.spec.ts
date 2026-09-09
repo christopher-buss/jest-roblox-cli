@@ -3,7 +3,7 @@ import { ApiError, NetworkError, PermissionError } from "@bedrock-rbx/ocale";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import type { MockInstance } from "vitest";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
 import type { CliDependencies } from "./cli.ts";
@@ -517,6 +517,17 @@ describe(parseArgs, () => {
 		expect(parseArgs(["--passWithNoTests"]).passWithNoTests).toBeTrue();
 	});
 
+	it.for(["--parallel", "--experimental-vm-parallel"])(
+		"should leave a positional test path after bare %s",
+		(flag) => {
+			expect.assertions(1);
+
+			expect(parseArgs([flag, "src/example.spec.ts"]).files).toStrictEqual([
+				"src/example.spec.ts",
+			]);
+		},
+	);
+
 	it("should parse --parallel with integer value", () => {
 		expect.assertions(2);
 
@@ -594,9 +605,10 @@ describe(parseArgs, () => {
 	);
 
 	it("should parse --experimental-vm-parallel with integer value", () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		expect(parseArgs(["--experimental-vm-parallel", "3"]).experimentalVmParallel).toBe(3);
+		expect(parseArgs(["--experimental-vm-parallel", "1"]).experimentalVmParallel).toBe(1);
 	});
 
 	it('should treat bare --experimental-vm-parallel as "auto"', () => {
@@ -741,6 +753,26 @@ describe(parseArgs, () => {
 });
 
 describe(runAsync, () => {
+	it("should settle the active progress stage when execution throws", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		const cli = setupDefaults();
+		cli.runJestRoblox.mockImplementation((_options, _config, progress) => {
+			assert(progress !== undefined);
+			progress.reveal({ color: false });
+			progress.begin("boot", "version 88");
+			throw new Error("boot failed");
+		});
+
+		const code = await runAsync([], cli.dependencies);
+
+		expect(code).toBe(2);
+		expect(spies.stdout.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
+			" · boot probe   version 88\n",
+		);
+	});
+
 	it("should return 2 and print banner for ConfigError with hint", async () => {
 		expect.assertions(4);
 
@@ -796,7 +828,16 @@ describe(runAsync, () => {
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(2);
-		expect(spies.stderr).not.toHaveBeenCalledWith(expect.stringContaining("Hint:"));
+		expect(renderedStderr(spies)).toMatchInlineSnapshot(`
+			"
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Luau Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+			Some unrelated runtime error
+
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+			"
+		`);
 	});
 
 	it("should lead the banner with captured banner output when the message is just an exit code", async () => {
@@ -970,7 +1011,7 @@ describe(runAsync, () => {
 	});
 
 	it("should include the cause chain entries inside the Backend Error banner", async () => {
-		expect.assertions(5);
+		expect.assertions(2);
 
 		const spies = setupOutputSpies();
 		const cli = setupDefaults();
@@ -987,14 +1028,20 @@ describe(runAsync, () => {
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(2);
-		expect(spies.stderr).toHaveBeenCalledWith(
-			expect.stringContaining("NetworkError: Network request failed"),
-		);
-		expect(spies.stderr).toHaveBeenCalledWith(expect.stringContaining("ECONNRESET"));
-		expect(renderedStderr(spies)).toContain(
-			"    [1] TypeError: fetch failed (code=ECONNRESET errno=-54 syscall=connect)",
-		);
-		expect(renderedStderr(spies)).not.toContain(" ()");
+		expect(renderedStderr(spies)).toMatchInlineSnapshot(`
+			"
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Backend Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+			Failed to upload place: Network request failed
+
+			  Caused by:
+			    [0] NetworkError: Network request failed
+			    [1] TypeError: fetch failed (code=ECONNRESET errno=-54 syscall=connect)
+
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+			"
+		`);
 	});
 
 	it("should name the failing request, status, and body head for a parse failure", async () => {
@@ -1130,7 +1177,7 @@ describe(runAsync, () => {
 	});
 
 	it("should render the url alone when the error names no method", async () => {
-		expect.assertions(3);
+		expect.assertions(2);
 
 		const spies = setupOutputSpies();
 		const cli = setupDefaults();
@@ -1148,8 +1195,20 @@ describe(runAsync, () => {
 
 		const rendered = renderedStderr(spies);
 
-		expect(rendered).toContain("https://apis.roblox.com/cloud/v2/universes/1/places/2");
-		expect(rendered).not.toContain("undefined");
+		expect(rendered).toMatchInlineSnapshot(`
+			"
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Backend Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+			HTTP 503: Service Unavailable
+
+			  Caused by:
+			    [0] ApiError: HTTP 503: Service Unavailable (status=503)
+			        https://apis.roblox.com/cloud/v2/universes/1/places/2
+
+			⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+			"
+		`);
 	});
 
 	it("should name the missing scope in the Backend Error banner for a PermissionError cause", async () => {

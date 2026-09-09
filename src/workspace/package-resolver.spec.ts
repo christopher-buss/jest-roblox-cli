@@ -396,6 +396,22 @@ describe(resolvePackages, () => {
 			});
 		});
 
+		it("should enumerate a testable snapshot package whose manifest is unavailable", () => {
+			expect.assertions(1);
+
+			const fileSystem = writeInstalledWorkspace(
+				{ [path.join(ROOT, "packages/ghost/jest.config.ts")]: "" },
+				{ [path.join(ROOT, "packages/ghost")]: { name: "@halcyon/ghost" } },
+			);
+
+			expect(enumerateWorkspacePackages(ROOT, { fileSystem })).toStrictEqual([
+				{
+					name: "@halcyon/ghost",
+					packageDirectory: path.join(ROOT, "packages/ghost"),
+				},
+			]);
+		});
+
 		it("should list from the walk when no snapshot exists", () => {
 			expect.assertions(1);
 
@@ -508,6 +524,24 @@ describe(resolvePackages, () => {
 	});
 
 	describe("workspace.packages globs", () => {
+		it("should treat a leading wildcard pattern as an inclusion", () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem({
+				[path.join(ROOT, "spaces/foo/jest.config.ts")]: "",
+				[path.join(ROOT, "workspaces/bar/jest.config.ts")]: "",
+			});
+
+			const names = enumerateWorkspacePackages(ROOT, {
+				fileSystem,
+				patterns: ["*spaces/*"],
+			})
+				.map((info) => info.name)
+				.toSorted();
+
+			expect(names).toStrictEqual(["bar", "foo"]);
+		});
+
 		it("should enumerate packages via patterns when no PM file exists", () => {
 			expect.assertions(1);
 

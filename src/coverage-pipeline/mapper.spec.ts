@@ -44,6 +44,18 @@ function positionSplitByLine(position: GeneratedPosition): OriginalPosition {
 		: { column: 0, line: 4, source: "src/b.ts" };
 }
 
+/** Resolve one endpoint and leave the other source-less. */
+function resolverWithoutEndpoint(unmappedEndpoint: "end" | "start"): PositionResolver {
+	return (position) => {
+		const isStart = position.column === 0;
+		if ((unmappedEndpoint === "start") === isStart) {
+			return { column: null, line: null, source: null };
+		}
+
+		return { column: 5, line: 3, source: "src/shared/player.ts" };
+	};
+}
+
 function createManifest(files: CoverageManifest["files"] = {}): CoverageManifest {
 	return {
 		buildId: "test-build-id",
@@ -593,7 +605,7 @@ describe(mapCoverageToTypeScript, () => {
 
 			const file = runFile(fileSystem, { "0": 1, "1": 1 });
 
-			expect(Object.keys(file.statementMap)).toHaveLength(2);
+			expect(Object.keys(file.statementMap)).toStrictEqual(["0", "1"]);
 		});
 	});
 
@@ -701,7 +713,7 @@ describe(mapCoverageToTypeScript, () => {
 		});
 
 		it("should throw CoverageMapMalformedError when coverage map file exists but is malformed", () => {
-			expect.assertions(2);
+			expect.assertions(3);
 
 			const fileSystem = setupFs({
 				"out/shared/player.luau.cov-map.json": "not valid json",
@@ -719,6 +731,10 @@ describe(mapCoverageToTypeScript, () => {
 			}
 
 			expect(thrown).toBeInstanceOf(CoverageMapMalformedError);
+			expect(thrown).toHaveProperty(
+				"message",
+				expect.stringContaining("re-run `jest-roblox instrument`"),
+			);
 			expect(thrown).toMatchObject({
 				coverageMapPath: "out/shared/player.luau.cov-map.json",
 			});
@@ -751,6 +767,33 @@ describe(mapCoverageToTypeScript, () => {
 
 			expect(result.files).toBeEmptyObject();
 		});
+
+		it.for(["start", "end"] as const)(
+			"should drop a statement when its %s endpoint has no source",
+			(unmappedEndpoint) => {
+				expect.assertions(1);
+
+				const coverageMap = createCoverageMap({
+					"0": {
+						end: { column: 20, line: 5 },
+						start: { column: 1, line: 5 },
+					},
+				});
+				const fileSystem = setupFs({
+					"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+					"out/shared/player.luau.map": '{"version":3}',
+				});
+				resolvePosition.mockImplementation(resolverWithoutEndpoint(unmappedEndpoint));
+
+				const result = mapCoverageToTypeScript(
+					{ "shared/player.luau": { s: { "0": 1 } } },
+					createManifest(createManifestFiles()),
+					{ fileSystem, traceMapFactory },
+				);
+
+				expect(result.files).toBeEmptyObject();
+			},
+		);
 	});
 
 	describe("with missing manifest record", () => {
@@ -1325,8 +1368,9 @@ describe(mapCoverageToTypeScript, () => {
 			const coverageMap = createCoverageMap({}, undefined, {
 				"1": {
 					locations: [
-						{ end: { column: 10, line: 3 }, start: { column: 1, line: 3 } },
+						{ end: { column: 10, line: 3 }, start: { column: 4, line: 3 } },
 						{ end: { column: 10, line: 5 }, start: { column: 1, line: 5 } },
+						{ end: { column: 10, line: 7 }, start: { column: 1, line: 7 } },
 					],
 					type: "if",
 				},
@@ -1338,14 +1382,16 @@ describe(mapCoverageToTypeScript, () => {
 			});
 
 			setupSourceMapMappings({
-				"3:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"3:3": { column: 2, line: 2, source: "src/shared/player.ts" },
 				"3:9": { column: 15, line: 2, source: "src/shared/player.ts" },
 				"5:0": { column: 0, line: 4, source: "src/shared/player.ts" },
 				"5:9": { column: 15, line: 4, source: "src/shared/player.ts" },
+				"7:0": { column: 0, line: 6, source: "src/shared/player.ts" },
+				"7:9": { column: 15, line: 6, source: "src/shared/player.ts" },
 			});
 
 			const coverageData: RawCoverageData = {
-				"shared/player.luau": { b: { "1": [3, 0] }, s: {} },
+				"shared/player.luau": { b: { "1": [3, 0, 2] }, s: {} },
 			};
 
 			const result = mapCoverageToTypeScript(
@@ -1358,14 +1404,15 @@ describe(mapCoverageToTypeScript, () => {
 
 			expect(file).toBeDefined();
 			expect(file.branchMap["0"]).toStrictEqual({
-				loc: { end: { column: 15, line: 4 }, start: { column: 0, line: 2 } },
+				loc: { end: { column: 15, line: 6 }, start: { column: 2, line: 2 } },
 				locations: [
-					{ end: { column: 15, line: 2 }, start: { column: 0, line: 2 } },
+					{ end: { column: 15, line: 2 }, start: { column: 2, line: 2 } },
 					{ end: { column: 15, line: 4 }, start: { column: 0, line: 4 } },
+					{ end: { column: 15, line: 6 }, start: { column: 0, line: 6 } },
 				],
 				type: "if",
 			});
-			expect(file.b["0"]).toStrictEqual([3, 0]);
+			expect(file.b["0"]).toStrictEqual([3, 0, 2]);
 			expect(Object.keys(file.branchMap)).toHaveLength(1);
 			expect(Object.keys(file.b)).toHaveLength(1);
 		});
@@ -1731,6 +1778,69 @@ describe(mapCoverageToTypeScript, () => {
 			expect(file).toBeDefined();
 			expect(file.b["0"]).toStrictEqual([3, 0]);
 			expect(file.branchMap["0"]!.locations).toHaveLength(2);
+		});
+
+		it("should keep arms that share a start when neither arm is zero-width", () => {
+			expect.assertions(1);
+
+			const coverageMap = createCoverageMap({}, undefined, {
+				"1": {
+					locations: [
+						{ end: { column: 1, line: 4 }, start: { column: 1, line: 3 } },
+						{ end: { column: 10, line: 5 }, start: { column: 1, line: 5 } },
+					],
+					type: "if",
+				},
+			});
+			const fileSystem = setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+			setupSourceMapMappings({
+				"3:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"4:0": { column: 0, line: 3, source: "src/shared/player.ts" },
+				"5:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"5:9": { column: 10, line: 2, source: "src/shared/player.ts" },
+			});
+
+			const result = mapCoverageToTypeScript(
+				{ "shared/player.luau": { b: { "1": [2, 3] }, s: {} } },
+				createManifest(createManifestFiles()),
+				{ fileSystem, traceMapFactory },
+			);
+
+			expect(result.files["src/shared/player.ts"]!.b["0"]).toStrictEqual([2, 3]);
+		});
+
+		it("should keep a zero-width arm beside an arm at another column", () => {
+			expect.assertions(1);
+
+			const coverageMap = createCoverageMap({}, undefined, {
+				"1": {
+					locations: [
+						{ end: { column: 10, line: 3 }, start: { column: 1, line: 3 } },
+						{ end: { column: 1, line: 5 }, start: { column: 1, line: 5 } },
+					],
+					type: "if",
+				},
+			});
+			const fileSystem = setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+			setupSourceMapMappings({
+				"3:0": { column: 5, line: 2, source: "src/shared/player.ts" },
+				"3:9": { column: 10, line: 2, source: "src/shared/player.ts" },
+				"5:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+			});
+
+			const result = mapCoverageToTypeScript(
+				{ "shared/player.luau": { b: { "1": [2, 0] }, s: {} } },
+				createManifest(createManifestFiles()),
+				{ fileSystem, traceMapFactory },
+			);
+
+			expect(result.files["src/shared/player.ts"]!.b["0"]).toStrictEqual([2, 0]);
 		});
 
 		it("should drop phantom branch whose arm collapses onto another arm's start", () => {
