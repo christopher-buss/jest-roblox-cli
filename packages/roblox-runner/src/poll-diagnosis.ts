@@ -43,7 +43,23 @@ export const FAILURE_LOG_TAIL = 20;
 /** Per-message cap on the failure log tail, in characters. */
 const FAILURE_LOG_MESSAGE_LIMIT = 400;
 
-export const TASK_DEADLINE_GRACE_MS = 45_000;
+const TASK_DEADLINE_GRACE_MS = 45_000;
+
+const MAX_TASK_TIMEOUT_SECONDS = 300;
+
+/** The default poll budget outlasts the task deadline and place startup. */
+export function resolveBudgets(
+	timeout: number,
+	pollBudget: number | undefined,
+): { hasDefaultBudget: boolean; pollBudgetMs: number; timeoutSeconds: number } {
+	const timeoutSeconds = Math.min(Math.floor(timeout / 1000), MAX_TASK_TIMEOUT_SECONDS);
+	return {
+		hasDefaultBudget: pollBudget === undefined,
+		pollBudgetMs:
+			pollBudget ?? Math.max(timeout, timeoutSeconds * 1000 + TASK_DEADLINE_GRACE_MS),
+		timeoutSeconds,
+	};
+}
 
 /**
  * Expands a poll that never settled into something actionable. Reaching here
@@ -189,41 +205,15 @@ function describeBudgetOrigin(context: PollContext): string {
 	);
 }
 
-/**
- * What is left to suspect once the poll has run out.
- *
- * Roblox fails a task that merely outran its deadline — `DEADLINE_EXCEEDED`
- * lands a boot lag after the deadline elapsed, which is what
- * {@link TASK_DEADLINE_GRACE_MS} waits for. A task still running past both has
- * not overrun; it was never scheduled, and the usual reason is a place version
- * Roblox cannot load. Measured against one, the task sat `PROCESSING` for ten
- * minutes on a 30s deadline and Roblox reported no state, no error, and no
- * logs, ever.
- *
- * A caller that proved the boot has ruled that out already, and repeating the
- * guess would send the reader to Studio to inspect a place that loads.
- *
- * @param context - The task polled and what the caller knows about its place.
- * @returns Lines naming the suspects, indented to sit under the first.
- */
+/** A poll timeout establishes neither script startup nor place-load failure. */
 function describeSuspects(context: PollContext): Array<string> {
-	if (context.bootProven) {
-		return [
-			"  This place version is known to boot — a script ran against it just " +
-				"before this task was submitted — so a place Roblox cannot load " +
-				"is ruled out.",
-			"  What is left is a task Open Cloud never scheduled: retry, and if " +
-				"it repeats, the fault is outside this run.",
-		];
-	}
-
+	const evidence = context.bootProven
+		? "  This place version is known to boot; another task ran against it."
+		: "  Place loading, execution, or result delivery may have stalled.";
 	return [
-		"  A script that merely outran its deadline is failed by Roblox, so this " +
-			"is most likely a place version Roblox could not start — such a task " +
-			"is never scheduled and never reports anything. Open the place file " +
-			"in Studio to see why it will not load.",
-		"  The other reading is an unusually slow cold boot, which the next run " +
-			"avoids by reusing the now-warm server.",
+		evidence,
+		"  PROCESSING does not establish whether the script started or finished. " +
+			"A timeout alone cannot authorize running it again; recovery requires an execution claim.",
 	];
 }
 

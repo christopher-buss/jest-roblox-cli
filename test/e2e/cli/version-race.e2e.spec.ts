@@ -47,11 +47,9 @@ describe("optimistic place-version pinning", () => {
 
 		const taskPosts = server.calls.filter(isTaskCreatePost);
 
-		// Three submits: the boot probe, pinned, then the run's first attempt
-		// unpinned (warm-pool route) and its retry pinned to the version the
-		// upload returned (the fake's first upload is v1).
+		// Probe and first test attempt use head; only the refused test pins.
 		expect(taskPosts).toHaveLength(3);
-		expect(taskPosts[0]!.url).toContain("/versions/1/");
+		expect(taskPosts[0]!.url).not.toContain("/versions/");
 		expect(taskPosts[1]!.url).not.toContain("/versions/");
 		expect(taskPosts[2]!.url).toContain("/versions/1/");
 		// The retry re-sends the original script with the guard stripped.

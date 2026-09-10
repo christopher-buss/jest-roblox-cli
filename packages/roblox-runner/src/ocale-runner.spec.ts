@@ -11,7 +11,9 @@ import { type } from "arktype";
 import buffer from "node:buffer";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import { ExecutionTimeoutError } from "./execution-timeout.ts";
 import { OcaleRunner } from "./ocale-runner.ts";
+import type { ScriptResult } from "./types.ts";
 
 const RBXL_SIGNATURE = new Uint8Array([
 	0x3c, 0x72, 0x6f, 0x62, 0x6c, 0x6f, 0x78, 0x21, 0x89, 0xff, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -792,13 +794,9 @@ describe(OcaleRunner, () => {
 			expect(caught.message).toContain("last observed state: PROCESSING");
 		});
 
-		it("should name a place that will not start as the likely cause", async () => {
-			expect.assertions(1);
+		it("should leave execution and boot status unknown after a timeout", async () => {
+			expect.assertions(2);
 
-			// Roblox fails a task that outran its deadline, so one that never
-			// reports anything was never scheduled — measured against a place
-			// Roblox cannot load, the task sat PROCESSING for ten minutes on a
-			// 30s deadline with no state, error, or logs.
 			const http = createFakeHttpClient();
 			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
 			mockProcessing(http, POLLS_PER_GRACE);
@@ -809,7 +807,103 @@ describe(OcaleRunner, () => {
 
 			assert(caught instanceof Error);
 
-			expect(caught.message).toContain("place version Roblox could not start");
+			expect(caught.message).toContain("does not establish whether the script started");
+			expect(caught.message).toContain(
+				"Place loading, execution, or result delivery may have stalled",
+			);
+		});
+
+		it.for([
+			{
+				body: { output: { results: ["original result", 42] }, state: "COMPLETE" },
+				expected: {
+					durationMs: 500,
+					outputs: ["original result", "42"],
+					terminalTask: {
+						ref: { sessionId: "session-1", taskId: "task-1" },
+						state: "COMPLETE",
+					},
+				},
+			},
+			{ body: { state: "PROCESSING" }, expected: undefined },
+			{ body: { state: "QUEUED" }, expected: undefined },
+		] satisfies Array<{ body: TaskBodyOverrides; expected: ScriptResult | undefined }>)(
+			"should read the original task after timeout: $body.state",
+			async ({ body, expected }) => {
+				expect.assertions(3);
+
+				const http = createFakeHttpClient();
+				http.mockResponse({ body: taskBody(), status: 200 });
+				mockProcessing(http, 1);
+				const runner = makeAdvancingRunner(http);
+				const caught: unknown = await runner
+					.executeScriptAsync({ pollBudget: 1, script: "return 1", timeout: 1000 })
+					.catch((err: unknown) => err);
+				assert(caught instanceof ExecutionTimeoutError);
+				http.mockResponse({ body: taskBody(body), status: 200 });
+				const result = await caught.readResultAsync();
+
+				expect(result).toStrictEqual(expected);
+				expect(http.requests.map(({ request }) => request.method)).toStrictEqual([
+					"POST",
+					"GET",
+					"GET",
+				]);
+				expect(http.requests[2]!.request.url).toBe(
+					"/cloud/v2/universes/123/places/456/versions/1/luau-execution-sessions/session-1/tasks/task-1",
+				);
+			},
+		);
+
+		it("should report the original terminal failure when re-reading after timeout", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody(), status: 200 });
+			mockProcessing(http, 1);
+			const caught: unknown = await makeAdvancingRunner(http)
+				.executeScriptAsync({ pollBudget: 1, script: "return 1", timeout: 1000 })
+				.catch((err: unknown) => err);
+			assert(caught instanceof ExecutionTimeoutError);
+			http.mockResponse({
+				body: taskBody({
+					error: { code: "SCRIPT_ERROR", message: "Original failed" },
+					state: "FAILED",
+				}),
+				status: 200,
+			});
+			http.mockResponse({
+				body: logPageBody([{ message: "original traceback", messageType: "ERROR" }]),
+				status: 200,
+			});
+
+			await expect(caught.readResultAsync()).rejects.toThrow("original traceback");
+			expect(http.requests.map(({ request }) => request.method)).toStrictEqual([
+				"POST",
+				"GET",
+				"GET",
+				"GET",
+			]);
+		});
+
+		it("should report an original-task read failure without creating another task", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody(), status: 200 });
+			mockProcessing(http, 1);
+			const caught: unknown = await makeAdvancingRunner(http)
+				.executeScriptAsync({ pollBudget: 1, script: "return 1", timeout: 1000 })
+				.catch((err: unknown) => err);
+			assert(caught instanceof ExecutionTimeoutError);
+			http.mockApiError({ message: "Forbidden", statusCode: 403 });
+
+			await expect(caught.readResultAsync()).rejects.toThrow("Forbidden");
+			expect(http.requests.map(({ request }) => request.method)).toStrictEqual([
+				"POST",
+				"GET",
+				"GET",
+			]);
 		});
 
 		it("should say the state is unknown when the budget outran the first poll", async () => {

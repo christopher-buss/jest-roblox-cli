@@ -53,14 +53,8 @@ export interface ExecuteScriptOptions {
 	 */
 	binaryInput?: string | undefined;
 	/**
-	 * Tell the poll that this place version is already known to boot, so a
-	 * task that never settles is not read as a place Roblox cannot load.
-	 *
-	 * That reading is the runner's fallback diagnosis, and it is the right one
-	 * only while nothing better is known. A caller that has just run a script
-	 * against this same version knows better, and leaving the guess in place
-	 * would send the reader to Studio to inspect a place that demonstrably
-	 * loads.
+	 * Include a successful same-version probe in timeout diagnostics. This
+	 * proves that probe ran, not whether the current task started or finished.
 	 */
 	bootProven?: boolean;
 	/**

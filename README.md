@@ -215,18 +215,47 @@ for Roblox's verdict, and reports the error Roblox gives rather than a poll
 timeout.
 
 `bootProbeTimeout` covers the Open Cloud backend's boot probe: after uploading a
-place, it runs one trivial script against that version before dispatching any
-tests. Roblox reports no state, no error and no log for a place version it
-cannot start, so without the probe such a run only ends when its budget does. A
-probe that does not finish in time fails the run at once, naming the place file
-and the version. This is wall clock, so it must comfortably exceed a cold place
-boot (10-45 s); the probe script gets its own short deadline on top, so a place
-that boots late still gets to run. A version that passes is recorded in
+place, it runs one trivial script on head and reads `game.PlaceVersion` before
+dispatching tests. This avoids a version-pinned probe when head already holds
+the uploaded version. A matching response records the version in
 `.jest-roblox/upload-cache.json`, so re-running the same place bytes skips the
-probe (see `uploadCache`). Set it to `0` to turn the probe off — a suite that
-proves the boot elsewhere, say once per CI job, need not pay for it on every
-run. Nothing is then cached either: an entry means "these bytes boot", and with
-no probe nothing has proved that.
+probe (see `uploadCache`). Tests on a shared place still check their version
+before rebuilding the code bundle and retry pinned if another upload moved head.
+
+A probe timeout is inconclusive: Open Cloud can stall a task even when that
+place version loads successfully. The runner warns and continues with guarded
+tests, without caching the unverified version. A different or unreadable version
+also leaves the cache untouched; a foreign version produces a warning. If the
+probe, initial test task and recovery task all stall, the run can consume three
+budgets: 90 s + 345 s + 345 s (13 minutes) with the defaults, before HTTP pacing
+or a version-guard fallback. A timeout cannot establish that a place is
+unbootable. The probe's default budget is 90 s, with a separate short script
+deadline. Set `bootProbeTimeout` to `0` to skip the probe; no new upload-cache
+entry is written in that case.
+
+If a test task never reaches a terminal state, the backend makes one recovery
+attempt. Each attempt may submit a guarded head task followed by an
+exact-version task if head has changed. All submissions share an atomic
+MemoryStore execution claim, acquired after the place-version guard and before
+bundle reconstruction. Only one attempt can start the tests; an abandoned task
+that starts late cannot run them again. Healthy tasks perform one MemoryStore
+update with no added sleep. Transient claim errors receive short bounded
+retries; persistent claim errors fail the task. Retention covers the startup
+deadline using Roblox's clock, including client clock skew. An expired startup
+window fails with a clock/queue diagnosis.
+
+Test failures and terminal task errors are never retried. If execution was
+already claimed, or the recovery attempt fails, the backend reads the original
+task once more and uses its result if it has completed. If neither attempt
+provides test results, the run fails with the original task's details. This
+final read does not add another polling budget. Recovery can consume a second
+task poll budget, but adds no place upload or boot probe. A started execution
+whose results Roblox never delivers cannot be recovered by rerunning tests
+safely.
+
+A 404 during a run using a cached upload clears that cache entry for the next
+invocation. It does not restart the current wave, whose other tasks may already
+have executed.
 
 ### Test fields
 

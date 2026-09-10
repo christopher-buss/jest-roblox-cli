@@ -96,9 +96,8 @@ export interface FakeOpenCloudTask {
  */
 export interface FakeOpenCloudOptions {
 	/**
-	 * `"complete"` (the default) says the place version boots. `"stall"`
-	 * leaves the task PROCESSING for good, which is everything Roblox reports
-	 * for a place version it cannot start.
+	 * `"complete"` returns the uploaded version. `"stall"` leaves only the
+	 * probe PROCESSING indefinitely; queued test tasks answer independently.
 	 */
 	bootProbe?: "complete" | "stall";
 }
@@ -456,10 +455,9 @@ function handleCreateTask({
 	if (parsed.script === BOOT_PROBE_SCRIPT) {
 		acceptTask({
 			queuedTask: {
-				// A place version that will not start leaves its task
-				// PROCESSING for good, so the stall never runs out of polls.
+				// A stalled task never reaches a terminal state.
 				pollsBeforeComplete: state.bootProbe === "stall" ? Number.MAX_SAFE_INTEGER : 0,
-				rawOutput: "1",
+				rawOutput: String(state.counters.uploadCount),
 			},
 			response,
 			state,

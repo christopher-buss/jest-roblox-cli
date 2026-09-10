@@ -19,13 +19,14 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import claimSource from "../../luau/execution-claim.luau";
 import { startFakeOpenCloudServerAsync } from "../../test/e2e/cli/fake-open-cloud.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { CODE_BUNDLE_REBUILD_SOURCE } from "../luau/code-bundle-rebuild.ts";
-import { composeTaskScript } from "../luau/task-script.ts";
+import { prepareTaskScript } from "../luau/task-script.ts";
 import type {
 	StreamingResultReader,
 	StreamingResultRecord,
@@ -34,13 +35,11 @@ import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import type { StageId } from "../progress/stages.ts";
 import type { CodeBundleArtifact } from "../staging/place-builder.ts";
 import type { JestResult } from "../types/jest-result.ts";
-import { errorMessage } from "../utils/error-message.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import {
 	BOOT_PROBE_SCRIPT,
 	createOpenCloudBackend,
 	OpenCloudBackend,
-	OWNED_BOOT_PROBE_SCRIPT,
 	resolveOcaleMaxRetries,
 	resolveOpenCloudBaseUrl,
 } from "./open-cloud.ts";
@@ -79,6 +78,31 @@ interface RunnerStub {
 	uploadCalls: Array<UploadPlaceOptions>;
 }
 
+/**
+ * Verify the entire claim, then compare the task's remaining preambles and
+ * body.
+ */
+function claimParameters(script: string): string {
+	const parameters = /local key, startBefore, retention, notClaimed, startExpired = (.+)/.exec(
+		script,
+	)?.[1];
+	if (parameters === undefined) {
+		throw new Error("Missing execution claim parameters");
+	}
+
+	return parameters;
+}
+
+function withoutClaim(script: string): string {
+	const parameters = claimParameters(script);
+	const claim = `${claimSource.replace("__EXECUTION_CLAIM_PARAMETERS__", () => parameters)}\n`;
+	if (!script.includes(claim)) {
+		throw new Error("Incomplete execution claim");
+	}
+
+	return script.replace(claim, "");
+}
+
 function createStreamReader(pages: Array<Array<StreamingResultRecord>>): StubStreamReader {
 	const reader: StubStreamReader = {
 		deleteAsync: async (itemId): Promise<void> => {
@@ -114,13 +138,9 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 		return { durationMs: 0, outputs: ["{}"] };
 	}
 
-	// An owned probe reads head back, so the default has to answer as a place
-	// holding the version this stub just "uploaded" — otherwise every owned
-	// test would look like a broken lease.
-	async function defaultProbeAsync(probeOptions: ExecuteScriptOptions): Promise<ScriptResult> {
+	async function defaultProbeAsync(): Promise<ScriptResult> {
 		const uploaded = (options.uploadResult ?? DEFAULT_UPLOAD).versionNumber;
-		const output = probeOptions.script === OWNED_BOOT_PROBE_SCRIPT ? String(uploaded) : "1";
-		return { durationMs: 0, outputs: [output] };
+		return { durationMs: 0, outputs: [String(uploaded)] };
 	}
 
 	let executeHandler: ExecuteHandler = defaultHandlerAsync;
@@ -130,10 +150,7 @@ function createRunnerStub(options: RunnerStubOptions = {}): RunnerStub {
 	// its own list and its own handler keeps every other test written as
 	// though it did not exist.
 	async function executeScriptAsync(executeOptions: ExecuteScriptOptions): Promise<ScriptResult> {
-		if (
-			executeOptions.script === BOOT_PROBE_SCRIPT ||
-			executeOptions.script === OWNED_BOOT_PROBE_SCRIPT
-		) {
+		if (executeOptions.script === BOOT_PROBE_SCRIPT) {
 			probeCalls.push(executeOptions);
 			return probeHandler(executeOptions);
 		}
@@ -268,7 +285,8 @@ function bailingBucketExecute(bailingHead: string): ExecuteHandler {
 
 /**
  * An execute handler that runs `steps[callIndex]`, repeating the final step
- * once the list is exhausted. Keeps per-call-index dispatch out of `it` bodies.
+ * once the list is exhausted. Keeps per-call-index dispatch out of `it`
+ * bodies.
  */
 function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 	let callIndex = 0;
@@ -571,6 +589,7 @@ describe(OpenCloudBackend, () => {
 				.mockReturnValueOnce(100)
 				.mockReturnValueOnce(112)
 				.mockReturnValueOnce(200)
+				.mockReturnValueOnce(200)
 				.mockReturnValueOnce(245);
 			onTestFinished(() => {
 				now.mockRestore();
@@ -758,7 +777,9 @@ describe(OpenCloudBackend, () => {
 			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 			await backend.runTestsAsync({ jobs: [job("alpha")], scriptOverride: customScript });
 
-			expect(stub.executeCalls[0]!.script).toBe(`${guardPrefix(1)}${customScript}`);
+			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
+				`${guardPrefix(1)}${customScript}`,
+			);
 			expect(stub.executeCalls[0]!.script).not.toContain("Jest.runCLI");
 		});
 
@@ -769,7 +790,7 @@ describe(OpenCloudBackend, () => {
 		 * whole test harness.
 		 */
 		it("should compose one script for every bucket of a static split", async () => {
-			expect.assertions(2);
+			expect.assertions(3);
 
 			const stub = createRunnerStub();
 			stub.setExecute(() => {
@@ -778,10 +799,10 @@ describe(OpenCloudBackend, () => {
 			// Wrapped rather than replaced: every other assertion reads the
 			// script the real composer produced, and only the call count says
 			// whether the run composed it once or once per bucket.
-			const composeScript = vi.fn<typeof composeTaskScript>(composeTaskScript);
+			const prepareScript = vi.fn<typeof prepareTaskScript>(prepareTaskScript);
 
 			const backend = new OpenCloudBackend(credentials, {
-				composeScript,
+				prepareScript,
 				runner: stub.runner,
 			});
 			await backend.runTestsAsync({
@@ -789,9 +810,11 @@ describe(OpenCloudBackend, () => {
 				parallel: 3,
 				scriptOverride: "-- shared\nreturn nil",
 			});
+			const scripts = new Set(stub.executeCalls.map((call) => call.script));
 
 			expect(stub.executeCalls).toHaveLength(3);
-			expect(composeScript).toHaveBeenCalledOnce();
+			expect(prepareScript).toHaveBeenCalledOnce();
+			expect(scripts.size).toBe(3);
 		});
 	});
 
@@ -903,14 +926,13 @@ describe(OpenCloudBackend, () => {
 			// work-stealing over 1 job with default parallel ⇒ exactly 1 task.
 			expect(stub.executeCalls).toHaveLength(1);
 			expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
-			expect(stub.executeCalls[0]!.script).toBe(`${guardPrefix(7)}stealing-script`);
+			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
+				`${guardPrefix(7)}stealing-script`,
+			);
 		});
 
 		/**
-		 * One writer means head already holds this run's version, so the guard
-		 * could only ever pass. Leaving it in would cost nothing at runtime but
-		 * would keep a race branch alive that cannot be reached, and the script
-		 * the runtime sees would no longer be the script the caller wrote.
+		 * An owned place omits the version guard only after a matching probe.
 		 */
 		it("should run unguarded and unpinned when the place is owned", async () => {
 			expect.assertions(2);
@@ -928,7 +950,7 @@ describe(OpenCloudBackend, () => {
 			});
 
 			expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
-			expect(stub.executeCalls[0]!.script).toBe("stealing-script");
+			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe("stealing-script");
 		});
 
 		it("should inject the guard after leading Luau directives", async () => {
@@ -945,7 +967,7 @@ describe(OpenCloudBackend, () => {
 
 			// Luau honors `--!` directives only in the leading comment block —
 			// a plain line-1 prepend would silently disable them.
-			expect(stub.executeCalls[0]!.script).toBe(
+			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
 				`--!strict\n--!optimize 2\n${guardPrefix(1)}return nil`,
 			);
 		});
@@ -964,7 +986,7 @@ describe(OpenCloudBackend, () => {
 
 			// The comment is no token, so the `--!native` behind it is still a
 			// directive — and the guard ahead of it would end that.
-			expect(stub.executeCalls[0]!.script).toBe(
+			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
 				`-- boot notes\n--!native\n${guardPrefix(1)}return nil`,
 			);
 		});
@@ -983,7 +1005,7 @@ describe(OpenCloudBackend, () => {
 
 			// `--!Native` is a hot comment Luau ignores, not the end of the
 			// block, so the guard goes behind the `--!strict` it shields.
-			expect(stub.executeCalls[0]!.script).toBe(
+			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
 				`--!Native\n--!strict\n${guardPrefix(1)}return nil`,
 			);
 		});
@@ -1012,7 +1034,9 @@ describe(OpenCloudBackend, () => {
 			expect(retried!.placeVersion).toBe(42);
 			// The pinned retry re-runs the original script, guard stripped — a
 			// pinned task can't race, so the guard would only be dead weight.
-			expect(`${guardPrefix(42)}${retried!.script}`).toBe(raced!.script);
+			expect(`${guardPrefix(42)}${withoutClaim(retried!.script)}`).toBe(
+				withoutClaim(raced!.script),
+			);
 			expect(rawResults[0]!.entry.elapsedMs).toBe(55);
 		});
 
@@ -1135,8 +1159,8 @@ describe(OpenCloudBackend, () => {
 		});
 
 		/**
-		 * A booted version *behind* the upload is the opposite problem: nothing
-		 * raced, the save has yet to reach the boot pool.
+		 * A booted version *behind* the upload is the opposite problem:
+		 * nothing raced, the save has yet to reach the boot pool.
 		 */
 		it("should report a version the boot pool has not picked up yet", async () => {
 			expect.assertions(1);
@@ -1194,7 +1218,7 @@ describe(OpenCloudBackend, () => {
 
 			const guardedStealingScript = `${guardPrefix(1)}${stealingScript}`;
 
-			expect(stub.executeCalls.map((call) => call.script)).toStrictEqual([
+			expect(stub.executeCalls.map((call) => withoutClaim(call.script))).toStrictEqual([
 				guardedStealingScript,
 				guardedStealingScript,
 				guardedStealingScript,
@@ -2470,11 +2494,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 	});
 
 	/**
-	 * The guard proving the head moved on is the only evidence available that a
-	 * reused version is stale — Open Cloud exposes no way to ask. Dropping the
-	 * entry there is what stops the slow path from becoming permanent: a cache
-	 * hit never uploads, so without this the entry can never become head again
-	 * and every later run pays a pinned cold boot.
+	 * A cached version is evicted only when the guard proves head moved ahead.
 	 */
 	it("should drop a cached version once the guard proves it is behind head", async () => {
 		expect.assertions(1);
@@ -2487,11 +2507,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 	});
 
 	/**
-	 * The ordinary warning is one-shot per run; the drop must not be. The task
-	 * that booted an older version reports first here, and only the second task
-	 * carries the proof that head moved on — discarding that proof along with
-	 * the duplicate warning would leave the stale entry in place for good, and
-	 * leave the next run's upload unexplained.
+	 * Cache eviction still applies after the one-shot race warning is spent.
 	 */
 	it("should drop a stale cached version proved after the first warning", async () => {
 		expect.assertions(3);
@@ -2578,46 +2594,31 @@ describe("upload cache", { timeout: 1000 }, () => {
 		).toBeFalse();
 	});
 
-	it("should re-upload and retry when the cached version is gone", async () => {
+	it("should clear a suspect cache without restarting dispatched tests", async () => {
 		expect.assertions(4);
 
 		const rootDirectory = temporaryRoot();
 		await runOnceAsync(rootDirectory);
-		const now = vi
-			.spyOn(Date, "now")
-			.mockReturnValueOnce(100)
-			.mockReturnValueOnce(101)
-			.mockReturnValueOnce(200)
-			.mockReturnValueOnce(210)
-			.mockReturnValueOnce(222)
-			.mockReturnValueOnce(260);
-		onTestFinished(() => {
-			now.mockRestore();
-		});
-
 		const capture = captureStderr();
-		const stub = createRunnerStub({ uploadResult: { uploadMs: 12, versionNumber: 43 } });
-		stub.setExecute(
-			stepExecute([
-				() => {
-					throw apiError(404);
-				},
-				() => scriptResult(envelope([{ jestOutput: successJest() }])),
-			]),
-		);
-
+		const failure = apiError(404);
+		const stub = createRunnerStub();
+		stub.setExecute(() => {
+			throw failure;
+		});
 		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-		const { timing } = await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
-		capture.restore();
 
-		expect(stub.uploadCalls).toHaveLength(1);
-		expect(stub.executeCalls[1]!.script.startsWith(guardPrefix(43))).toBeTrue();
-		expect(capture.writes.join("")).toContain("cached place version is gone");
-		expect(timing).toStrictEqual({ executionMs: 48, uploadMs: 13 });
+		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toBe(
+			failure,
+		);
+		expect(stub.executeCalls).toHaveLength(1);
+		expect(capture.writes.join("")).toContain(
+			"clearing the upload cache without restarting dispatched tests",
+		);
+		await expect(runOnceAsync(rootDirectory)).resolves.toBe(1);
 	});
 
 	it("should not re-upload for a failure that is not a missing version", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const rootDirectory = temporaryRoot();
 		await runOnceAsync(rootDirectory);
@@ -2633,10 +2634,230 @@ describe("upload cache", { timeout: 1000 }, () => {
 			"execute failed",
 		);
 		expect(stub.uploadCalls).toHaveLength(0);
+		await expect(runOnceAsync(rootDirectory)).resolves.toBe(0);
+	});
+
+	it("should report cache lookup time separately from execution", async () => {
+		expect.assertions(1);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		vi.spyOn(Date, "now")
+			.mockReturnValueOnce(100)
+			.mockReturnValueOnce(101)
+			.mockReturnValueOnce(200)
+			.mockReturnValueOnce(200)
+			.mockReturnValue(222);
+		const stub = createRunnerStub();
+		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const result = await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
+
+		expect(result.timing).toStrictEqual({ executionMs: 22, uploadMs: 1 });
+	});
+
+	it("should not restart a cached run when a timeout recovery encounters a missing version", async () => {
+		expect.assertions(2);
+
+		const rootDirectory = temporaryRoot();
+		await runOnceAsync(rootDirectory);
+		const stub = createRunnerStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(
+					new PollTimeoutError("Still PROCESSING", { timeoutMs: 75_000 }),
+				)
+				.mockRejectedValueOnce(apiError(404))
+				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
+		);
+		captureStderr();
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toThrow(
+			"Open Cloud recovery failed: PollTimeoutError: Still PROCESSING\nError: execute failed",
+		);
+		expect(stub.uploadCalls).toHaveLength(0);
 	});
 });
 
 describe("boot probe", { timeout: 1000 }, () => {
+	it("should not retry malformed results from a recovered pinned task", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockReturnValueOnce(racedOnce())
+				.mockRejectedValueOnce(probeTimeout())
+				.mockReturnValueOnce(racedOnce())
+				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
+		);
+		captureStderr();
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toBeInstanceOf(
+			SyntaxError,
+		);
+		expect(stub.executeCalls).toHaveLength(3);
+	});
+
+	it("should retry a timed-out pinned task without returning to head", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockReturnValueOnce(racedOnce())
+				.mockRejectedValueOnce(probeTimeout())
+				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
+		);
+		captureStderr();
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
+			undefined,
+			PROBED_VERSION,
+			PROBED_VERSION,
+		]);
+		expect(stub.executeCalls[2]!.script).toBe(stub.executeCalls[1]!.script);
+	});
+
+	it("should preserve the claim when timeout recovery falls back to an exact version", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(probeTimeout())
+				.mockReturnValueOnce(racedOnce())
+				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
+		);
+		captureStderr();
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		const claims = stub.executeCalls.map((call) => claimParameters(call.script));
+
+		expect(claims).toStrictEqual([claims[0]!, claims[0]!, claims[0]!]);
+		expect(stub.executeCalls[2]!.placeVersion).toBe(PROBED_VERSION);
+	});
+
+	it("should recover when a test task stays PROCESSING after the probe passes", async () => {
+		expect.assertions(3);
+
+		const stub = probeStub();
+		const execute = vi
+			.fn<ExecuteHandler>()
+			.mockRejectedValueOnce(probeTimeout())
+			.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }])));
+		stub.setExecute(execute);
+		captureStderr();
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.executeCalls).toHaveLength(2);
+		expect(stub.uploadCalls).toHaveLength(1);
+		expect(stub.executeCalls[1]!.script).toBe(stub.executeCalls[0]!.script);
+	});
+
+	function headOnlyProbe(options: ExecuteScriptOptions): ScriptResult {
+		if (options.placeVersion !== undefined) {
+			throw probeTimeout();
+		}
+
+		return { durationMs: 0, outputs: [String(PROBED_VERSION)] };
+	}
+
+	it("should avoid a stuck pinned probe when head holds the uploaded version", async () => {
+		expect.assertions(3);
+
+		const stub = probeStub();
+		stub.setProbe(headOnlyProbe);
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.probeCalls).toHaveLength(1);
+		expect(stub.executeCalls[0]!.bootProven).toBeTrue();
+		expect(stub.executeCalls[0]!.script).toContain(
+			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
+		);
+	});
+
+	it.for([["43"], []])(
+		"should leave a shared version unverified when head returns %j",
+		async (outputs) => {
+			expect.assertions(4);
+
+			const rootDirectory = temporaryRoot();
+			const stub = probeStub();
+			stub.setProbe(() => ({ durationMs: 0, outputs }));
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+			await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
+			const next = await runProbedRunAsync(rootDirectory);
+
+			expect(stub.probeCalls).toHaveLength(1);
+			expect(stub.executeCalls[0]!.bootProven).toBeFalse();
+			expect(stub.executeCalls[0]!.script).toContain(
+				placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
+			);
+			expect(next.uploadCalls).toHaveLength(1);
+		},
+	);
+
+	it("should run guarded tests after an inconclusive probe timeout", async () => {
+		expect.assertions(3);
+
+		const stub = probeStub();
+		stub.setProbe(() => {
+			throw probeTimeout();
+		});
+		const capture = captureStderr();
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		capture.restore();
+
+		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
+		expect(stub.executeCalls[0]!.script).toContain(
+			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
+		);
+		expect(capture.writes.join("")).toBe(
+			"Warning: boot probe for place version 42 is inconclusive after 90s; continuing with guarded tests.\n" +
+				"  Open Cloud may have stalled the probe; this does not prove the place cannot load.\n",
+		);
+	});
+
+	it.for([
+		{ detail: undefined, outputs: ["42"] },
+		{ detail: "inconclusive", outputs: ["43"] },
+	])("should report the probe outcome %j", async ({ detail, outputs }) => {
+		expect.assertions(1);
+
+		const stub = probeStub();
+		stub.setProbe(() => ({ durationMs: 0, outputs }));
+		const completed: Array<{ detail: string | undefined; id: StageId }> = [];
+		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+
+		await backend.runTestsAsync({
+			jobs: [job("alpha")],
+			progress: {
+				...NOOP_RUN_PROGRESS,
+				begin: (id) => (result) => {
+					completed.push({ id, detail: result });
+				},
+			},
+		});
+
+		expect(completed).toContainEqual({ id: "boot", detail });
+	});
+
 	/** What the runner throws when a task never reaches a terminal state. */
 	function probeTimeout(): Error {
 		return new Error("Execution timed out: Roblox never reported a terminal state", {
@@ -2644,43 +2865,41 @@ describe("boot probe", { timeout: 1000 }, () => {
 		});
 	}
 
-	it("should probe a freshly uploaded version with a trivial pinned task", async () => {
+	it.for([false, true])(
+		"should probe a fresh upload on head with ownedPlace=%s",
+		async (ownedPlace) => {
+			expect.assertions(3);
+
+			const stub = probeStub();
+
+			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace })]));
+
+			expect(stub.probeCalls).toHaveLength(1);
+			expect(stub.probeCalls[0]!.script).toBe(BOOT_PROBE_SCRIPT);
+			expect(stub.probeCalls[0]!.placeVersion).toBeUndefined();
+		},
+	);
+
+	it("should warn and leave a shared upload uncached when the probe reads a foreign head", async () => {
 		expect.assertions(3);
 
 		const stub = probeStub();
-
+		stub.setProbe(() => ({ durationMs: 0, outputs: ["43"] }));
+		const capture = captureStderr();
+		const rootDirectory = temporaryRoot();
 		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
+		const second = await runProbedRunAsync(rootDirectory);
 
-		expect(stub.probeCalls).toHaveLength(1);
-		expect(stub.probeCalls[0]!.script).toBe(BOOT_PROBE_SCRIPT);
-		expect(stub.probeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
+		expect(capture.writes.join("")).toBe(
+			"Warning: boot probe read head version 43, but this run uploaded 42.\n  Continuing with guarded tests; the unverified upload is not cached.\n",
+		);
+		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
+		expect(second.probeCalls).toHaveLength(1);
 	});
 
-	/**
-	 * The pin is what makes the probe expensive, and on an owned place it buys
-	 * nothing: head is this run's version, so an unpinned probe proves the same
-	 * thing without missing the warm pool.
-	 */
-	it("should probe on head when the place is owned", async () => {
-		expect.assertions(3);
-
-		const stub = probeStub();
-
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace: true })]));
-
-		expect(stub.probeCalls).toHaveLength(1);
-		expect(stub.probeCalls[0]!.script).toBe(OWNED_BOOT_PROBE_SCRIPT);
-		expect(stub.probeCalls[0]!.placeVersion).toBeUndefined();
-	});
-
-	/**
-	 * `ownedPlace` is a claim the CLI cannot verify from config alone, so the
-	 * probe checks it instead of trusting it. Head answering with someone
-	 * else's version means the lease is broken: the guard has to come back, and
-	 * the run must not record that its own bytes booted when they never ran.
-	 */
+	/** An owned place with a mismatched probe still needs its version guard. */
 	it("should keep the guard and skip the cache when an owned head is not ours", async () => {
 		expect.assertions(4);
 
@@ -2813,8 +3032,8 @@ describe("boot probe", { timeout: 1000 }, () => {
 	});
 
 	/**
-	 * A cache entry says the bytes booted when it was written, which is not the
-	 * same claim, so a reused version leaves the runner its own reading.
+	 * A cache entry says the bytes booted when it was written, which is not
+	 * the same claim, so a reused version leaves the runner its own reading.
 	 */
 	it("should leave the runner to guess when the version came from the cache", async () => {
 		expect.assertions(1);
@@ -2826,42 +3045,31 @@ describe("boot probe", { timeout: 1000 }, () => {
 		expect(second.executeCalls[0]!.bootProven).toBeFalse();
 	});
 
-	it("should fail the run at once when the probe never completes", async () => {
-		expect.assertions(3);
+	it("should propagate a test timeout after an inconclusive probe", async () => {
+		expect.assertions(2);
 
 		const stub = probeStub();
 		stub.setProbe(() => {
 			throw probeTimeout();
 		});
+		const testFailure = probeTimeout();
+		stub.setExecute(() => {
+			throw testFailure;
+		});
+		captureStderr();
 
 		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
 		const caught = await backend
 			.runTestsAsync(jobsOptions([job("alpha")]))
 			.catch((err: unknown) => err);
 
-		expect(errorMessage(caught)).toBe(
-			[
-				`Place version ${String(PROBED_VERSION)} cannot be started by Open Cloud.`,
-				"A trivial script against it also never ran (90s).",
-				"Roblox reports no state, no error, and no log for a place it cannot load.",
-				`Open ${path.resolve(DEFAULT_CONFIG.rootDir, "./test.rbxl")} in Studio, or run with`,
-				"--backend=studio-cli, to see why it will not load.",
-			].join("\n"),
-		);
-
-		assert(caught instanceof Error);
-
-		expect(caught.cause).toBeInstanceOf(Error);
-		expect(stub.executeCalls).toHaveLength(0);
+		expect(caught).toHaveProperty("cause", testFailure);
+		expect(stub.executeCalls).toHaveLength(2);
 	});
 
-	/**
-	 * A version that failed its probe must never be recorded as verified —
-	 * a hit skips the probe, so caching it would hand every later run of the
-	 * same bytes the full-budget hang the probe exists to prevent.
-	 */
+	/** An inconclusive probe cannot verify a version for later runs. */
 	it("should not cache a version whose probe never completed", async () => {
-		expect.assertions(3);
+		expect.assertions(2);
 
 		const rootDirectory = temporaryRoot();
 		const failing = probeStub();
@@ -2871,9 +3079,8 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		const backend = new OpenCloudBackend(credentials, { runner: failing.runner });
 
-		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toThrow(
-			"cannot be started by Open Cloud",
-		);
+		captureStderr();
+		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
 
 		const next = await runProbedRunAsync(rootDirectory);
 
@@ -2963,8 +3170,8 @@ const REFRESH_STEP_MS = 14 * 60_000;
 /**
  * A Code Bundle is the run's compiled code, taken out of the place and sent as
  * a binary input instead. Every assertion here is about what reached the wire:
- * the input the create returned, the script each submit carried, and the number
- * of creates a run made.
+ * the input the create returned, the script each submit carried, and the
+ * number of creates a run made.
  */
 describe("code bundle", () => {
 	function bundleArtifact(overrides: Partial<CodeBundleArtifact> = {}): CodeBundleArtifact {
@@ -3083,7 +3290,7 @@ describe("code bundle", () => {
 		const { script } = stub.executeCalls[0]!;
 
 		expect(stub.executeCalls[0]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
-		expect(script.startsWith(CODE_BUNDLE_REBUILD_SOURCE)).toBeTrue();
+		expect(withoutClaim(script).startsWith(CODE_BUNDLE_REBUILD_SOURCE)).toBeTrue();
 		expect(script).not.toContain(PLACE_MISMATCH);
 	});
 
@@ -3120,9 +3327,8 @@ describe("code bundle", () => {
 	});
 
 	/**
-	 * One run, two submits: the head attempt races and the retry follows it,
-	 * with `elapseMs` of the run's clock spent in between. Two submits far
-	 * enough apart is what a long run looks like from an input's point of view.
+	 * A pinned retry must refresh a binary input that expired after the head
+	 * attempt.
 	 */
 	async function runAcrossElapsedAsync(elapseMs: number): Promise<RunnerStub> {
 		const stub = createRunnerStub({
@@ -3173,9 +3379,15 @@ describe("code bundle", () => {
 	});
 
 	it("should charge the bundle's create and PUT to uploadMs", async () => {
-		expect.assertions(1);
+		expect.assertions(2);
 
 		const stub = passingStub({ binaryInputUploadMs: 4321 });
+		let now = 10_000;
+		vi.spyOn(Date, "now").mockImplementation(() => now);
+		stub.setExecute(() => {
+			now = 20_000;
+			return oneSuccessEntry();
+		});
 
 		const result = await bundleBackend(stub).runTestsAsync({
 			codeBundle: bundleArtifact(),
@@ -3186,6 +3398,7 @@ describe("code bundle", () => {
 		// the create — the pacer's wait for the per-key quota included — and the
 		// PUT, which is the whole of what the bundle cost.
 		expect(result.timing.uploadMs).toBeGreaterThanOrEqual(4321);
+		expect(result.timing.executionMs).toBe(5679);
 	});
 
 	it("should announce the bundle stage with its size and file count", async () => {

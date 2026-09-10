@@ -21,6 +21,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { toExecutionError } from "./execution-timeout.ts";
 import type { PollContext } from "./poll-diagnosis.ts";
 import {
 	describeStatus,
@@ -28,8 +29,7 @@ import {
 	describeUploadFailure,
 	FAILURE_LOG_TAIL,
 	formatLogMessage,
-	TASK_DEADLINE_GRACE_MS,
-	toPollError,
+	resolveBudgets,
 } from "./poll-diagnosis.ts";
 import type {
 	BinaryInputUploader,
@@ -53,8 +53,6 @@ interface TaskParametersInput {
 	readonly script: string;
 	readonly timeoutSeconds: number;
 }
-
-const MAX_TASK_TIMEOUT_SECONDS = 300;
 
 /**
  * Statuses a place upload retries. Wider than ocale's upload default of `[429]`
@@ -330,7 +328,12 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		context: PollContext & { startTime: number },
 	): Promise<ScriptResult> {
 		if (!result.success) {
-			throw toPollError(result.err, context);
+			throw toExecutionError({
+				context,
+				error: result.err,
+				readAsync: async () => this.luau.tasks.get({ ref: context.ref }),
+				resolveAsync: async (observed) => this.toScriptResultAsync(observed, context),
+			});
 		}
 
 		const task = result.data;
@@ -362,25 +365,6 @@ function coerceOutputToString(value: JSONValue): string {
 	// Bedrock's wire-parsed output.results is JSONValue (no undefined, function,
 	// or symbol entries), so JSON.stringify always returns a string here.
 	return JSON.stringify(value);
-}
-
-/**
- * The server-side deadline and the wall clock the poll is given.
- *
- * The default budget is never below the caller's `timeout`: one past the
- * server's 300s ceiling already outlasts the deadline and needs no grace.
- */
-function resolveBudgets(
-	timeout: number,
-	pollBudget: number | undefined,
-): { hasDefaultBudget: boolean; pollBudgetMs: number; timeoutSeconds: number } {
-	const timeoutSeconds = Math.min(Math.floor(timeout / 1000), MAX_TASK_TIMEOUT_SECONDS);
-	return {
-		hasDefaultBudget: pollBudget === undefined,
-		pollBudgetMs:
-			pollBudget ?? Math.max(timeout, timeoutSeconds * 1000 + TASK_DEADLINE_GRACE_MS),
-		timeoutSeconds,
-	};
 }
 
 /**

@@ -373,16 +373,10 @@ export interface Config {
 	 */
 	binaryInput?: boolean;
 	/**
-	 * How long the Open Cloud backend gives its boot probe — one trivial
-	 * pinned task run against a freshly uploaded place version — to complete,
-	 * in milliseconds. Default `90000`.
-	 *
-	 * Roblox reports nothing at all for a place version it cannot start: the
-	 * task stays `PROCESSING` past every deadline, with no error and no log.
-	 * The probe is how that is caught, so this must comfortably exceed the
-	 * worst cold place boot (10-45s) or a healthy run fails for being slow.
-	 * Zero turns the probe off, and with it the upload cache: an entry means
-	 * "these bytes boot", which nothing has proved.
+	 * Budget in milliseconds for a head probe after uploading. Default `90000`.
+	 * Only a matching version earns an upload-cache entry. A timeout is
+	 * inconclusive and tests continue with the version guard. Zero skips the
+	 * probe and prevents new cache entries.
 	 */
 	bootProbeTimeout?: number;
 	/** Force ANSI colour in output. Default `true`. */
@@ -557,12 +551,8 @@ export interface ResolvedConfig
 	 * Declare this run the only writer of its place, which lets every submit
 	 * stay on head.
 	 *
-	 * A pinned submit misses the warm-server pool and pays a cold place boot
-	 * (measured: 12.2s median against 3.0s for the same bytes on head). Two
-	 * submits pin today — the boot probe always, and the version guard's retry
-	 * when a concurrent upload moves head. Both go away once this run has
-	 * uploaded: head is then its own version, so the probe proves the same
-	 * thing unpinned and the guard has no race to catch.
+	 * A matching head probe lets an owned run omit the version guard and its
+	 * pinned fallback. Shared runs retain both even after a matching probe.
 	 *
 	 * Resolved-only, with no config key and no flag behind it. The claim is
 	 * true of a place a lease handed out and false of one a person guessed at,

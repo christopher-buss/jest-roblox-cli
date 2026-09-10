@@ -85,23 +85,12 @@ describe("cli error paths", () => {
 			);
 		});
 
-		// A poll that never settles used to be tested here too, at 48s of real
-		// wall-clock: the runner keeps polling for a fixed 45s boot-lag grace
-		// after the task deadline, and the grace does not scale with
-		// `--timeout`. It bought nothing that was not already covered twice
-		// over. `libs/roblox-runner/src/ocale-runner.spec.ts` asserts the whole
-		// message — task path, `last observed state: PROCESSING`, the
-		// deadline-plus-allowance phrasing — under fake timers, instantly. And
-		// every backend error reaches the same `printError` + exit 2 boundary in
-		// `cli.ts`, which the task-failure case below already drives in about a
-		// second.
+		// CLI recovery is covered through the real backend and HTTP runner in
+		// cli-recovery.integration.spec.ts, with an exhausted observer budget.
 
-		it("should exit non-zero naming a place version Open Cloud cannot start", async () => {
+		it("should report passing tests when only the boot probe stalls", async () => {
 			expect.assertions(4);
 
-			// A place version Roblox cannot boot leaves every task PROCESSING
-			// with no error and no log, so the probe timing out is the only
-			// signal there is. Nothing may be dispatched against it.
 			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 			writeBootProbeTimeout(sandbox, 2000);
 			const server = await startFakeOpenCloudServerAsync(
@@ -114,10 +103,12 @@ describe("cli error paths", () => {
 				env: createOpenCloudEnvironment(server.baseUrl),
 			});
 
-			expect(result.exitCode).toBeGreaterThan(0);
-			expect(result.stderr).toContain("Place version 1 cannot be started by Open Cloud.");
-			expect(result.stderr).toContain("A trivial script against it also never ran (2s).");
-			expect(server.requests).toHaveLength(0);
+			expect(result.exitCode).toBe(0);
+			expect(result.stderr).toContain(
+				"boot probe for place version 1 is inconclusive after 2s",
+			);
+			expect(result.stdout).toContain("passed");
+			expect(server.requests).toHaveLength(1);
 		});
 
 		it("should surface the Roblox error code and log tail when a task fails", async () => {

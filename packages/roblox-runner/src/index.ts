@@ -1,5 +1,6 @@
 export { resolveCredentials } from "./credentials.ts";
 export type { ResolveCredentialsInput } from "./credentials.ts";
+export { ExecutionTimeoutError } from "./execution-timeout.ts";
 export { flushMemoryStoreAsync } from "./memory-store-flush.ts";
 export type { FlushMemoryStoreOptions } from "./memory-store-flush.ts";
 export { createMemoryStoreJanitor } from "./memory-store-janitor.ts";
