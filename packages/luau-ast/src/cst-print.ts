@@ -60,7 +60,7 @@ interface Replaced {
  * @param edits - Replacements to print in place of nodes.
  * @returns The printed source.
  */
-export function printCst(root: CstRoot, edits?: CstEdits): string {
+export function printCst(root: CstNode, edits?: CstEdits): string {
 	return print(root, { edits }).code;
 }
 
@@ -100,7 +100,7 @@ function createWriter(): Writer {
 	};
 }
 
-function print(root: CstRoot, options: PrintOptions): PrintedCst {
+function print(root: CstNode, options: PrintOptions): PrintedCst {
 	const printer = { ...options, segments: [], writer: createWriter() } satisfies Printer;
 	walk(printer, root);
 	return { code: printer.writer.code(), segments: printer.segments };
