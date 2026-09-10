@@ -18,6 +18,7 @@ import type {
 	AstExprIfElse,
 	AstExprIndexExpr,
 	AstExprIndexName,
+	AstExprInstantiate,
 	AstExprInterpString,
 	AstExprLocal,
 	AstExprTable,
@@ -60,6 +61,7 @@ export interface LuauVisitor {
 	visitExprIfElse?: (node: AstExprIfElse) => boolean;
 	visitExprIndexExpr?: (node: AstExprIndexExpr) => boolean;
 	visitExprIndexName?: (node: AstExprIndexName) => boolean;
+	visitExprInstantiate?: (node: AstExprInstantiate) => boolean;
 	visitExprInterpString?: (node: AstExprInterpString) => boolean;
 	visitExprLocal?: (node: AstExprLocal) => boolean;
 	visitExprTable?: (node: AstExprTable) => boolean;
@@ -145,6 +147,10 @@ export function visitExpression(expression: AstExpr, visitor: LuauVisitor): void
 		}
 		case "AstExprIndexName": {
 			visitExprIndexName(expression, visitor);
+			break;
+		}
+		case "AstExprInstantiate": {
+			visitExprInstantiate(expression, visitor);
 			break;
 		}
 		case "AstExprInterpString": {
@@ -364,6 +370,14 @@ function visitExprIndexExpr(node: AstExprIndexExpr, visitor: LuauVisitor): void 
 
 function visitExprIndexName(node: AstExprIndexName, visitor: LuauVisitor): void {
 	if (visitor.visitExprIndexName?.(node) === false) {
+		return;
+	}
+
+	visitExpression(node.expr, visitor);
+}
+
+function visitExprInstantiate(node: AstExprInstantiate, visitor: LuauVisitor): void {
+	if (visitor.visitExprInstantiate?.(node) === false) {
 		return;
 	}
 

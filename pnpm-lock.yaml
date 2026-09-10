@@ -88,7 +88,7 @@ importers:
         version: 2.0.0(typescript@6.0.3)
       '@isentinel/weld':
         specifier: 0.2.1
-        version: 0.2.1(jiti@2.7.0)(magicast@0.5.4)(typescript@6.0.3)(zod@4.6.0)
+        version: 0.2.1(jiti@2.7.0)(magicast@0.5.4)(typescript@6.0.3)(zod@4.6.1)
       '@oxc-project/types':
         specifier: 0.146.0
         version: 0.146.0
@@ -4916,8 +4916,8 @@ packages:
   yuku-parser@0.8.7:
     resolution: {integrity: sha512-vRD9nwt4L3aYpxNqeSC4WqLv58xrXef0Ong1Mc45CTXTIpvLafx7JO05sczmQZwdLEZvywrLOGdNC5+Rp5N1BQ==}
 
-  zod@4.6.0:
-    resolution: {integrity: sha512-iIvwyDnebKYpww2ta0DjaNOL8RnVLmPMhgWyOzlW9y0EIIxv5gl+H6Y0ONpt83HqjGqkk78uWp6xWtpxzZdPbw==}
+  zod@4.6.1:
+    resolution: {integrity: sha512-341aRWQsve0rvronKNTqZpjmzdbUDlFuzHaI/XLg/Ej82qffDJRRfBTCuv7+9q/rMjB6LSLyEBnW4InJeMtt/Q==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -5602,7 +5602,7 @@ snapshots:
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
       ts-pattern: 5.9.0
       typescript: 6.0.3
-      zod: 4.6.0
+      zod: 4.6.1
     transitivePeerDependencies:
       - supports-color
 
@@ -5900,10 +5900,10 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  '@isentinel/weld@0.2.1(jiti@2.7.0)(magicast@0.5.4)(typescript@6.0.3)(zod@4.6.0)':
+  '@isentinel/weld@0.2.1(jiti@2.7.0)(magicast@0.5.4)(typescript@6.0.3)(zod@4.6.1)':
     dependencies:
       '@jridgewell/gen-mapping': 0.3.13
-      '@t3-oss/env-core': 0.13.11(arktype@2.2.3)(typescript@6.0.3)(zod@4.6.0)
+      '@t3-oss/env-core': 0.13.11(arktype@2.2.3)(typescript@6.0.3)(zod@4.6.1)
       arktype: 2.2.3
       c12: 4.0.0-beta.5(jiti@2.7.0)(magicast@0.5.4)
       defu: 6.1.7
@@ -6892,11 +6892,11 @@ snapshots:
       estraverse: 5.3.0
       picomatch: 4.0.5
 
-  '@t3-oss/env-core@0.13.11(arktype@2.2.3)(typescript@6.0.3)(zod@4.6.0)':
+  '@t3-oss/env-core@0.13.11(arktype@2.2.3)(typescript@6.0.3)(zod@4.6.1)':
     optionalDependencies:
       arktype: 2.2.3
       typescript: 6.0.3
-      zod: 4.6.0
+      zod: 4.6.1
 
   '@total-typescript/shoehorn@0.1.2': {}
 
@@ -8853,7 +8853,7 @@ snapshots:
 
   mutation-server-protocol@0.4.1:
     dependencies:
-      zod: 4.6.0
+      zod: 4.6.1
 
   mutation-testing-elements@3.8.4: {}
 
@@ -9688,6 +9688,6 @@ snapshots:
       '@yuku-parser/binding-win32-arm64': 0.8.7
       '@yuku-parser/binding-win32-x64': 0.8.7
 
-  zod@4.6.0: {}
+  zod@4.6.1: {}
 
   zwitch@2.0.4: {}

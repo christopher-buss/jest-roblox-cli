@@ -13,6 +13,7 @@ export type {
 	AstExprIfElse,
 	AstExprIndexExpr,
 	AstExprIndexName,
+	AstExprInstantiate,
 	AstExprInterpString,
 	AstExprLocal,
 	AstExprTable,

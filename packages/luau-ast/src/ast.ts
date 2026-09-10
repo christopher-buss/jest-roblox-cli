@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- The official AST shape is inherently verbose. */
 /**
  * TypeScript types mirroring the official Luau parser's AST JSON, as emitted
  * by wasm/wrapper.cpp (Luau's AstJsonEncoder at the pinned version). Node
@@ -88,6 +89,7 @@ export type AstExpr =
 	| AstExprIfElse
 	| AstExprIndexExpr
 	| AstExprIndexName
+	| AstExprInstantiate
 	| AstExprInterpString
 	| AstExprLocal
 	| AstExprTable
@@ -221,6 +223,13 @@ export interface AstExprIndexName {
 	location: LuauSpan;
 	op: "." | ":";
 	type: "AstExprIndexName";
+}
+
+export interface AstExprInstantiate {
+	expr: AstExpr;
+	location: LuauSpan;
+	type: "AstExprInstantiate";
+	typeArguments: Array<unknown>;
 }
 
 export interface AstExprInterpString {

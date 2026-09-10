@@ -141,6 +141,18 @@ describe("parse", () => {
 		expect(numberValue.value).toBe(Infinity);
 	});
 
+	it("should parse explicit type instantiations", () => {
+		expect.assertions(1);
+
+		const parser = loadLuauParser();
+
+		const result = parser.parse("f<<T>>()");
+
+		assert(result.ok);
+
+		expect(result.root.body).toHaveLength(1);
+	});
+
 	it("should survive a parse whose output outgrows the initial wasm heap", () => {
 		expect.assertions(1);
 

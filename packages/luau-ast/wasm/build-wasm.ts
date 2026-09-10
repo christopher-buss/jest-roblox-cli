@@ -27,6 +27,28 @@ const WASM_DIRECTORY = import.meta.dirname;
 const WASM_ARTIFACT = "luau-parser.wasm";
 const EMBEDDED_MODULE = path.join(WASM_DIRECTORY, "..", "src", "luau-parser-wasm.ts");
 
+const AST_EXPR_INSTANTIATE_WRITER = `    void write(class AstExprInstantiate* node)
+    {
+        writeNode(
+            node,
+            "AstExprInstantiate",
+            [&]()
+            {
+                PROP(expr);
+                PROP(typeArguments);
+            }
+        );
+    }
+
+`;
+const AST_EXPR_INSTANTIATE_VISITOR = `    bool visit(class AstExprInstantiate* node) override
+    {
+        write(node);
+        return false;
+    }
+
+`;
+
 const EMXX = process.env["EMXX"] ?? "em++";
 
 interface LuauCheckout {
@@ -86,38 +108,77 @@ function astSources(luauSource: string): Array<string> {
 		.map((entry) => path.join(astSource, entry));
 }
 
-function compile(luauSource: string): void {
-	execFileSync(
-		EMXX,
-		[
-			// -fwasm-exceptions: the parser reports errors by throwing
-			// ParseError; native wasm EH needs Node 24+, which the workspace
-			// already requires.
-			"-O2",
-			"-std=c++17",
-			"-DNDEBUG",
-			"-fwasm-exceptions",
-			`-I${path.join(luauSource, "Ast", "include")}`,
-			`-I${path.join(luauSource, "Common", "include")}`,
-			`-I${path.join(luauSource, "Analysis", "include")}`,
-			...astSources(luauSource),
-			path.join(luauSource, "Analysis", "src", "AstJsonEncoder.cpp"),
-			path.join(luauSource, "Common", "src", "StringUtils.cpp"),
-			"wrapper.cpp",
-			// --no-entry + .wasm output: wasm-only build, no JS glue — the
-			// TypeScript loader in src/parser.ts provides the two runtime
-			// imports itself.
-			"--no-entry",
-			"-sALLOW_MEMORY_GROWTH=1",
-			// Parse and JSON-encode recursion on deeply nested sources
-			// outgrows the 64 KB default.
-			"-sSTACK_SIZE=1048576",
-			"-sEXPORTED_FUNCTIONS=_parse_to_json,_parse_to_cst_json,_inject_cst_fault,_free_result,_malloc,_free",
-			"-o",
-			WASM_ARTIFACT,
-		],
-		{ cwd: WASM_DIRECTORY, stdio: "inherit", windowsHide: true },
+function insertBefore(source: string, anchor: string, insertion: string): string {
+	const index = source.indexOf(anchor);
+	if (!source.includes(anchor) || source.slice(index + anchor.length).includes(anchor)) {
+		throw new Error(`expected one AstJsonEncoder anchor: ${anchor.trim()}`);
+	}
+
+	return `${source.slice(0, index)}${insertion}${source.slice(index)}`;
+}
+
+// Luau 0.731 has no AstExprInstantiate encoder override, so its generic visitor
+// concatenates that node's children into invalid JSON.
+function patchAstJsonEncoder(luauSource: string): { filePath: string; temporaryRoot: string } {
+	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "luau-ast-json-"));
+	const filePath = path.join(temporaryRoot, "AstJsonEncoder.cpp");
+	const upstream = fs.readFileSync(
+		path.join(luauSource, "Analysis", "src", "AstJsonEncoder.cpp"),
+		"utf8",
 	);
+
+	const withWriter = insertBefore(
+		upstream,
+		"    void write(class AstExprIndexName* node)",
+		AST_EXPR_INSTANTIATE_WRITER,
+	);
+	const patched = insertBefore(
+		withWriter,
+		"    bool visit(class AstExprIndexName* node) override",
+		AST_EXPR_INSTANTIATE_VISITOR,
+	);
+
+	fs.writeFileSync(filePath, patched);
+	return { filePath, temporaryRoot };
+}
+
+function compile(luauSource: string): void {
+	const encoder = patchAstJsonEncoder(luauSource);
+	try {
+		execFileSync(
+			EMXX,
+			[
+				// -fwasm-exceptions: the parser reports errors by throwing
+				// ParseError; native wasm EH needs Node 24+, which the workspace
+				// already requires.
+				"-O2",
+				"-std=c++17",
+				"-DNDEBUG",
+				"-fwasm-exceptions",
+				`-I${path.join(luauSource, "Ast", "include")}`,
+				`-I${path.join(luauSource, "Common", "include")}`,
+				`-I${path.join(luauSource, "Analysis", "include")}`,
+				...astSources(luauSource),
+				encoder.filePath,
+				path.join(luauSource, "Common", "src", "StringUtils.cpp"),
+				"wrapper.cpp",
+				// --no-entry + .wasm output: wasm-only build, no JS glue — the
+				// TypeScript loader in src/parser.ts provides the two runtime
+				// imports itself.
+				"--no-entry",
+				"-sALLOW_MEMORY_GROWTH=1",
+				// Parse and JSON-encode recursion on deeply nested sources
+				// outgrows the 64 KB default.
+				"-sSTACK_SIZE=1048576",
+				"-sEXPORTED_FUNCTIONS=_parse_to_json,_parse_to_cst_json,_inject_cst_fault,_free_result,_malloc,_free",
+				"-o",
+				WASM_ARTIFACT,
+			],
+			{ cwd: WASM_DIRECTORY, stdio: "inherit", windowsHide: true },
+		);
+	} finally {
+		fs.rmSync(encoder.temporaryRoot, { force: true, recursive: true });
+	}
 }
 
 function embed(wasmPath: string): void {

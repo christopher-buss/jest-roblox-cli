@@ -27,11 +27,6 @@ const fixtures = fs
 		};
 	});
 
-// Luau 0.731's own AST JSON encoder emits malformed JSON for explicit type
-// instantiation, so `parse_to_json` cannot re-parse that fixture; a test
-// below fails when upstream fixes it, so this list retires with the bug.
-const UPSTREAM_JSON_BROKEN = new Set(["instantiation.luau"]);
-
 function parseFixture(fileName: string, source: string): CstRoot {
 	const result = loadLuauParser().parseCst({ fileName, source });
 	if (!result.ok) {
@@ -39,19 +34,6 @@ function parseFixture(fileName: string, source: string): CstRoot {
 	}
 
 	return result.root;
-}
-
-/** The upstream bug surfaces as malformed JSON, so only that reads as false. */
-function parsesAgain(source: string): boolean {
-	try {
-		return loadLuauParser().parse(source).ok;
-	} catch (err) {
-		if (err instanceof SyntaxError) {
-			return false;
-		}
-
-		throw err;
-	}
 }
 
 describe("fidelity fixtures", () => {
@@ -84,23 +66,12 @@ describe("fidelity fixtures", () => {
 		expect(printed).toBe(source);
 	});
 
-	it.for(fixtures.filter((fixture) => !UPSTREAM_JSON_BROKEN.has(fixture.fileName)))(
-		"should re-parse printed $fileName",
-		({ fileName, source }) => {
-			expect.assertions(1);
-
-			const printed = printCst(parseFixture(fileName, source));
-
-			expect(parsesAgain(printed)).toBe(true);
-		},
-	);
-
-	it.for([...UPSTREAM_JSON_BROKEN])("should still fail to encode %s upstream", (fileName) => {
+	it.for(fixtures)("should re-parse printed $fileName", ({ fileName, source }) => {
 		expect.assertions(1);
 
-		const fixture = fixtures.find((entry) => entry.fileName === fileName);
+		const printed = printCst(parseFixture(fileName, source));
 
-		expect(parsesAgain(fixture!.source)).toBe(false);
+		expect(loadLuauParser().parse(printed).ok).toBe(true);
 	});
 });
 
