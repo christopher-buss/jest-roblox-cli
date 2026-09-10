@@ -4,7 +4,7 @@ export default defineConfig({
 	test: {
 		clearMocks: true,
 		coverage: {
-			exclude: ["src/luau-parser-wasm.ts"],
+			exclude: ["src/luau-compiler-wasm.ts", "src/luau-parser-wasm.ts"],
 			thresholds: {
 				branches: 100,
 				functions: 100,

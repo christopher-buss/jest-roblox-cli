@@ -1,11 +1,12 @@
-// Build the official Luau parser to wasm and embed it as a base64 TypeScript
-// module (src/luau-parser-wasm.ts) so every consumer bundle — ESM, CJS, SEA
-// executable — carries the parser without runtime asset resolution.
+// cspell:ignore protoflags upvals
+// Build the official Luau parser and compiler as separate wasm artifacts, then
+// embed each as a base64 TypeScript module. Parser consumers therefore keep
+// loading only the parser while compiler consumers opt into the larger binary.
 //
 // Reproducibility contract: with the pinned emsdk and Luau versions below, the
 // output is byte-identical across machines. CI rebuilds and fails on any diff
-// against the committed module (see wasm-verify in ci.yaml), so a Luau or
-// emsdk bump must rerun this script and commit the result.
+// against the committed modules (see wasm-verify in ci.yaml), so a Luau or
+// emsdk bump must rerun this script and commit the results.
 //
 // Requirements: `em++` on PATH (or $EMXX pointing at it) and `git`.
 // Usage: node build-wasm.ts [luau-source-dir]
@@ -24,8 +25,11 @@ const EMSDK_VERSION = "6.0.8";
 const EMCC_VERSION = /^emcc \D*(\d+\.\d+\.\d+)/;
 
 const WASM_DIRECTORY = import.meta.dirname;
-const WASM_ARTIFACT = "luau-parser.wasm";
-const EMBEDDED_MODULE = path.join(WASM_DIRECTORY, "..", "src", "luau-parser-wasm.ts");
+const PARSER_WASM_ARTIFACT = "luau-parser.wasm";
+const COMPILER_WASM_ARTIFACT = "luau-compiler.wasm";
+const PARSER_EMBEDDED_MODULE = path.join(WASM_DIRECTORY, "..", "src", "luau-parser-wasm.ts");
+const COMPILER_EMBEDDED_MODULE = path.join(WASM_DIRECTORY, "..", "src", "luau-compiler-wasm.ts");
+const COMPILER_SOURCE_NAME = "Compiler.cpp";
 
 const AST_EXPR_INSTANTIATE_WRITER = `    void write(class AstExprInstantiate* node)
     {
@@ -59,6 +63,51 @@ interface LuauCheckout {
 	 */
 	temporaryRoot: string | undefined;
 }
+
+interface EmbeddedArtifact {
+	artifact: string;
+	description: Array<string>;
+	exportName: string;
+	modulePath: string;
+}
+
+interface WasmBuild {
+	artifact: string;
+	exportedFunctions: string;
+	includeDirectories: Array<string>;
+	sources: Array<string>;
+}
+
+const COMPILER_INSTRUMENTATION = [
+	{
+		needle: "namespace Luau\n{\n",
+		replacement: [
+			"namespace Luau",
+			"{",
+			"void recordFrameStart(const Location& location);",
+			"void recordPeakLocals(size_t localCount);",
+			"void recordFrameEnd(unsigned int maxRegisters, size_t upvalueCount);",
+			"",
+		].join("\n"),
+	},
+	{
+		needle: "        RegScope rs(this);\n\n        bool self",
+		replacement:
+			"        RegScope rs(this);\n        recordFrameStart(func->location);\n\n        bool self",
+	},
+	{
+		needle: "        localStack.push_back(local);\n",
+		replacement:
+			"        localStack.push_back(local);\n        recordPeakLocals(localStack.size());\n",
+	},
+	{
+		needle: "        bytecode.endFunction(uint8_t(stackSize), uint8_t(upvals.size()), protoflags, costModel);",
+		replacement: [
+			"        recordFrameEnd(stackSize, upvals.size());",
+			"        bytecode.endFunction(uint8_t(stackSize), uint8_t(upvals.size()), protoflags, costModel);",
+		].join("\n"),
+	},
+] satisfies Array<{ needle: string; replacement: string }>;
 
 function capture(command: string, args: Array<string>): string {
 	return execFileSync(command, args, { encoding: "utf8", windowsHide: true });
@@ -99,13 +148,12 @@ function checkoutLuau(): LuauCheckout {
 
 // readdir order is filesystem-dependent, and link order decides the layout of
 // the wasm. Sorting is what keeps the output byte-identical across machines.
-function astSources(luauSource: string): Array<string> {
-	const astSource = path.join(luauSource, "Ast", "src");
+function cppSources(sourceDirectory: string): Array<string> {
 	return fs
-		.readdirSync(astSource)
+		.readdirSync(sourceDirectory)
 		.filter((entry) => entry.endsWith(".cpp"))
 		.sort()
-		.map((entry) => path.join(astSource, entry));
+		.map((entry) => path.join(sourceDirectory, entry));
 }
 
 function insertBefore(source: string, anchor: string, insertion: string): string {
@@ -119,13 +167,10 @@ function insertBefore(source: string, anchor: string, insertion: string): string
 
 // Luau 0.731 has no AstExprInstantiate encoder override, so its generic visitor
 // concatenates that node's children into invalid JSON.
-function patchAstJsonEncoder(luauSource: string): { filePath: string; temporaryRoot: string } {
-	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "luau-ast-json-"));
+function patchAstJsonEncoder(luauSource: string, temporaryRoot: string): string {
 	const filePath = path.join(temporaryRoot, "AstJsonEncoder.cpp");
-	const upstream = fs.readFileSync(
-		path.join(luauSource, "Analysis", "src", "AstJsonEncoder.cpp"),
-		"utf8",
-	);
+	const encoderPath = path.join(luauSource, "Analysis/src/AstJsonEncoder.cpp");
+	const upstream = fs.readFileSync(encoderPath, "utf8");
 
 	const withWriter = insertBefore(
 		upstream,
@@ -139,59 +184,102 @@ function patchAstJsonEncoder(luauSource: string): { filePath: string; temporaryR
 	);
 
 	fs.writeFileSync(filePath, patched);
-	return { filePath, temporaryRoot };
+	return filePath;
 }
 
-function compile(luauSource: string): void {
-	const encoder = patchAstJsonEncoder(luauSource);
-	try {
-		execFileSync(
-			EMXX,
-			[
-				// -fwasm-exceptions: the parser reports errors by throwing
-				// ParseError; native wasm EH needs Node 24+, which the workspace
-				// already requires.
-				"-O2",
-				"-std=c++17",
-				"-DNDEBUG",
-				"-fwasm-exceptions",
-				`-I${path.join(luauSource, "Ast", "include")}`,
-				`-I${path.join(luauSource, "Common", "include")}`,
-				`-I${path.join(luauSource, "Analysis", "include")}`,
-				...astSources(luauSource),
-				encoder.filePath,
-				path.join(luauSource, "Common", "src", "StringUtils.cpp"),
-				"wrapper.cpp",
-				// --no-entry + .wasm output: wasm-only build, no JS glue — the
-				// TypeScript loader in src/parser.ts provides the two runtime
-				// imports itself.
-				"--no-entry",
-				"-sALLOW_MEMORY_GROWTH=1",
-				// Parse and JSON-encode recursion on deeply nested sources
-				// outgrows the 64 KB default.
-				"-sSTACK_SIZE=1048576",
-				"-sEXPORTED_FUNCTIONS=_parse_to_json,_parse_to_cst_json,_inject_cst_fault,_free_result,_malloc,_free",
-				"-o",
-				WASM_ARTIFACT,
-			],
-			{ cwd: WASM_DIRECTORY, stdio: "inherit", windowsHide: true },
+function compileWasm(wasmBuild: WasmBuild): void {
+	execFileSync(
+		EMXX,
+		[
+			"-O2",
+			"-std=c++17",
+			"-DNDEBUG",
+			"-fwasm-exceptions",
+			...wasmBuild.includeDirectories.map((directory) => `-I${directory}`),
+			...wasmBuild.sources,
+			"--no-entry",
+			"-sALLOW_MEMORY_GROWTH=1",
+			"-sSTACK_SIZE=1048576",
+			`-sEXPORTED_FUNCTIONS=${wasmBuild.exportedFunctions}`,
+			"-o",
+			wasmBuild.artifact,
+		],
+		{ cwd: WASM_DIRECTORY, stdio: "inherit", windowsHide: true },
+	);
+}
+
+function compileParser(luauSource: string, astJsonEncoder: string): void {
+	compileWasm({
+		artifact: PARSER_WASM_ARTIFACT,
+		exportedFunctions:
+			"_parse_to_json,_parse_to_cst_json,_inject_cst_fault,_free_result,_malloc,_free",
+		includeDirectories: ["Ast", "Common", "Analysis"].map((part) => {
+			return path.join(luauSource, part, "include");
+		}),
+		sources: [
+			...cppSources(path.join(luauSource, "Ast", "src")),
+			astJsonEncoder,
+			path.join(luauSource, "Common", "src", "StringUtils.cpp"),
+			"wrapper.cpp",
+		],
+	});
+}
+
+function replaceExactlyOnce(source: string, needle: string, replacement: string): string {
+	const first = source.indexOf(needle);
+	if (first === -1 || source.includes(needle, first + needle.length)) {
+		throw new Error(
+			`expected one compiler instrumentation point for ${JSON.stringify(needle)}`,
 		);
-	} finally {
-		fs.rmSync(encoder.temporaryRoot, { force: true, recursive: true });
 	}
+
+	return source.slice(0, first) + replacement + source.slice(first + needle.length);
 }
 
-function embed(wasmPath: string): void {
+function instrumentCompiler(luauSource: string, temporaryRoot: string): string {
+	const upstreamPath = path.join(luauSource, "Compiler", "src", COMPILER_SOURCE_NAME);
+	let source = fs.readFileSync(upstreamPath, "utf8");
+	for (const { needle, replacement } of COMPILER_INSTRUMENTATION) {
+		source = replaceExactlyOnce(source, needle, replacement);
+	}
+
+	const instrumentedPath = path.join(temporaryRoot, COMPILER_SOURCE_NAME);
+	fs.writeFileSync(instrumentedPath, source);
+	return instrumentedPath;
+}
+
+function compileCompiler(luauSource: string, instrumentedCompiler: string): void {
+	const compilerSources = cppSources(path.join(luauSource, "Compiler", "src")).filter(
+		(source) => path.basename(source) !== COMPILER_SOURCE_NAME,
+	);
+	compileWasm({
+		artifact: COMPILER_WASM_ARTIFACT,
+		exportedFunctions: "_compile_with_statistics,_free_result,_malloc,_free",
+		includeDirectories: ["Ast", "Bytecode", "Common", "Compiler"].flatMap((part) => [
+			path.join(luauSource, part, "include"),
+			...(part === "Compiler" ? [path.join(luauSource, part, "src")] : []),
+		]),
+		sources: [
+			...cppSources(path.join(luauSource, "Ast", "src")),
+			...cppSources(path.join(luauSource, "Bytecode", "src")),
+			...cppSources(path.join(luauSource, "Common", "src")),
+			...compilerSources,
+			instrumentedCompiler,
+			"compiler-wrapper.cpp",
+		],
+	});
+}
+
+function embed({ artifact, description, exportName, modulePath }: EmbeddedArtifact): void {
 	const header = [
 		"// Generated by wasm/build-wasm.ts — do not edit.",
-		"// The official Luau parser (see wasm/wrapper.cpp), embedded so every",
-		"// consumer bundle carries it without runtime asset resolution.",
+		...description.map((line) => `// ${line}`),
 		"",
-		"export const luauParserWasmBase64 =",
+		`export const ${exportName} =`,
 	].join("\n");
 
-	const base64 = fs.readFileSync(wasmPath).toString("base64");
-	fs.writeFileSync(EMBEDDED_MODULE, `${header}\n\t"${base64}";\n`);
+	const base64 = fs.readFileSync(artifact).toString("base64");
+	fs.writeFileSync(modulePath, `${header}\n\t"${base64}";\n`);
 }
 
 function reportDigest(filePath: string, label: string): void {
@@ -199,28 +287,66 @@ function reportDigest(filePath: string, label: string): void {
 	process.stdout.write(`${digest}  ${label}\n`);
 }
 
+function embedArtifacts(): void {
+	embed({
+		artifact: path.join(WASM_DIRECTORY, PARSER_WASM_ARTIFACT),
+		description: [
+			"The official Luau parser (see wasm/wrapper.cpp), embedded so every",
+			"consumer bundle carries it without runtime asset resolution.",
+		],
+		exportName: "luauParserWasmBase64",
+		modulePath: PARSER_EMBEDDED_MODULE,
+	});
+	embed({
+		artifact: path.join(WASM_DIRECTORY, COMPILER_WASM_ARTIFACT),
+		description: [
+			"The official Luau compiler (see wasm/compiler-wrapper.cpp), kept",
+			"separate so parser consumers do not load compiler code.",
+		],
+		exportName: "luauCompilerWasmBase64",
+		modulePath: COMPILER_EMBEDDED_MODULE,
+	});
+}
+
+function reportArtifacts(): void {
+	for (const [artifact, modulePath] of [
+		[PARSER_WASM_ARTIFACT, PARSER_EMBEDDED_MODULE],
+		[COMPILER_WASM_ARTIFACT, COMPILER_EMBEDDED_MODULE],
+	] satisfies Array<[string, string]>) {
+		const artifactPath = path.join(WASM_DIRECTORY, artifact);
+		reportDigest(artifactPath, artifact);
+		reportDigest(modulePath, path.relative(WASM_DIRECTORY, modulePath));
+	}
+}
+
+function buildAll(luauSource: string, patchedSourceRoot: string): void {
+	const tag = capture("git", ["-C", luauSource, "describe", "--tags"]).trim();
+	if (tag !== LUAU_TAG) {
+		throw new Error(`Luau checkout is ${tag}, pin is ${LUAU_TAG}`);
+	}
+
+	compileParser(luauSource, patchAstJsonEncoder(luauSource, patchedSourceRoot));
+	compileCompiler(luauSource, instrumentCompiler(luauSource, patchedSourceRoot));
+	embedArtifacts();
+	reportArtifacts();
+}
+
 function build(): void {
 	assertEmscriptenVersion();
-
 	const luau = checkoutLuau();
+	const patchedSourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "luau-wasm-sources-"));
 	try {
-		const tag = capture("git", ["-C", luau.directory, "describe", "--tags"]).trim();
-		if (tag !== LUAU_TAG) {
-			throw new Error(`Luau checkout is ${tag}, pin is ${LUAU_TAG}`);
-		}
-
-		compile(luau.directory);
+		buildAll(luau.directory, patchedSourceRoot);
 	} finally {
+		fs.rmSync(patchedSourceRoot, { force: true, recursive: true });
 		if (luau.temporaryRoot !== undefined) {
 			fs.rmSync(luau.temporaryRoot, { force: true, recursive: true });
 		}
-	}
 
-	const wasmPath = path.join(WASM_DIRECTORY, WASM_ARTIFACT);
-	embed(wasmPath);
-	reportDigest(wasmPath, WASM_ARTIFACT);
-	reportDigest(EMBEDDED_MODULE, "../src/luau-parser-wasm.ts");
-	fs.rmSync(wasmPath);
+		for (const artifact of [PARSER_WASM_ARTIFACT, COMPILER_WASM_ARTIFACT]) {
+			fs.rmSync(path.join(WASM_DIRECTORY, artifact), { force: true });
+		}
+	}
 }
 
 try {

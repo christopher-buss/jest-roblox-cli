@@ -10,6 +10,7 @@ export default defineConfig({
 	entry: [
 		"src/index.ts",
 		"src/ast.ts",
+		"src/compiler.ts",
 		"src/cst.ts",
 		"src/parser.ts",
 		"src/visit.ts",

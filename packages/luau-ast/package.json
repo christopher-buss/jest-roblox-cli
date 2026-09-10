@@ -2,7 +2,7 @@
 	"name": "@isentinel/luau-ast",
 	"version": "0.1.0",
 	"private": true,
-	"description": "Shared Luau AST types, visitor, and Lute spawning utilities",
+	"description": "In-process Luau parser and compiler utilities",
 	"keywords": [
 		"roblox",
 		"luau",
@@ -23,6 +23,11 @@
 			"source": "./src/ast.ts",
 			"types": "./dist/ast.d.mts",
 			"default": "./dist/ast.mjs"
+		},
+		"./compiler": {
+			"source": "./src/compiler.ts",
+			"types": "./dist/compiler.d.mts",
+			"default": "./dist/compiler.mjs"
 		},
 		"./cst": {
 			"source": "./src/cst.ts",
