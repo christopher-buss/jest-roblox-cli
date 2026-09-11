@@ -1,7 +1,8 @@
 do
 	local key, startBefore, retention, notClaimed, startExpired = __EXECUTION_CLAIM_PARAMETERS__
 	local owner = game:GetService("HttpService"):GenerateGUID(false)
-	local claims = game:GetService("MemoryStoreService"):GetHashMap("jest-roblox-execution-v1")
+	local claim = { owner = owner, claimedAt = DateTime.now().UnixTimestampMillis }
+	local claims = game:GetService("MemoryStoreService"):GetSortedMap("jest-roblox-execution-v1")
 	local success, result
 	for attempt = 1, 3 do
 		success, result = pcall(function()
@@ -12,10 +13,10 @@ do
 				if DateTime.now().UnixTimestampMillis >= startBefore then
 					return nil
 				end
-				if current ~= nil and current ~= owner then
+				if current ~= nil and current.owner ~= owner then
 					return nil
 				end
-				return owner
+				return claim
 			end, math.max(retention, remaining + 60))
 		end)
 		if success then
@@ -28,7 +29,7 @@ do
 	if not success then
 		error("Could not claim test execution: " .. tostring(result))
 	end
-	if result ~= owner then
+	if result == nil or result.owner ~= owner then
 		if DateTime.now().UnixTimestampMillis >= startBefore then
 			return startExpired
 		end

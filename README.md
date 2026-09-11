@@ -226,32 +226,39 @@ A probe timeout is inconclusive: Open Cloud can stall a task even when that
 place version loads successfully. The runner warns and continues with guarded
 tests, without caching the unverified version. A different or unreadable version
 also leaves the cache untouched; a foreign version produces a warning. If the
-probe, initial test task and recovery task all stall, the run can consume three
-budgets: 90 s + 345 s + 345 s (13 minutes) with the defaults, before HTTP pacing
-or a version-guard fallback. A timeout cannot establish that a place is
-unbootable. The probe's default budget is 90 s, with a separate short script
-deadline. Set `bootProbeTimeout` to `0` to skip the probe; no new upload-cache
-entry is written in that case.
+probe and both test tasks all stall without acquiring an execution claim, the
+recovery task starts after 45 s and overlaps the original. The run then consumes
+about 90 s + 45 s + 345 s (8 minutes) with the defaults, before HTTP pacing or a
+version-guard fallback. A timeout cannot establish that a place is unbootable.
+The probe's default budget is 90 s, with a separate short script deadline. Set
+`bootProbeTimeout` to `0` to skip the probe; no new upload-cache entry is
+written in that case.
 
 If a test task never reaches a terminal state, the backend makes one recovery
 attempt. Each attempt may submit a guarded head task followed by an
 exact-version task if head has changed. All submissions share an atomic
 MemoryStore execution claim, acquired after the place-version guard and before
 bundle reconstruction. Only one attempt can start the tests; an abandoned task
-that starts late cannot run them again. Healthy tasks perform one MemoryStore
-update with no added sleep. Transient claim errors receive short bounded
-retries; persistent claim errors fail the task. Retention covers the startup
-deadline using Roblox's clock, including client clock skew. An expired startup
-window fails with a clock/queue diagnosis.
+that starts late cannot run them again. The claim lives in a SortedMap and
+records its owner and Roblox start time. After 45 s, the backend reads that
+item: a missing item starts the recovery task immediately, while a present item
+keeps the original task's poller. Tasks finishing sooner make no extra request,
+and a failed observer read is inconclusive rather than permission to start
+another task. Healthy tasks perform one MemoryStore update with no added sleep.
+Transient claim errors receive short bounded retries; persistent claim errors
+fail the task. Retention covers the startup deadline using Roblox's clock,
+including client clock skew. An expired startup window fails with a clock/queue
+diagnosis.
 
 Test failures and terminal task errors are never retried. If execution was
 already claimed, or the recovery attempt fails, the backend reads the original
 task once more and uses its result if it has completed. If neither attempt
 provides test results, the run fails with the original task's details. This
-final read does not add another polling budget. Recovery can consume a second
-task poll budget, but adds no place upload or boot probe. A started execution
-whose results Roblox never delivers cannot be recovered by rerunning tests
-safely.
+final read does not add another polling budget. When the initial claim is
+missing, both pollers overlap and the first claimed result wins; a `NOT_CLAIMED`
+loser is ignored. Recovery adds no place upload or boot probe. A started
+execution whose results Roblox never delivers cannot be recovered by rerunning
+tests safely.
 
 A 404 during a run using a cached upload clears that cache entry for the next
 invocation. It does not restart the current wave, whose other tasks may already

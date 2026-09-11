@@ -9,10 +9,58 @@ import process from "node:process";
 import { assert, describe, expect, it, vi } from "vitest";
 
 import { executeWithRecoveryAsync } from "../../../src/backends/execution-recovery.ts";
-import { EXECUTION_NOT_CLAIMED } from "../../../src/luau/execution-claim.ts";
+import {
+	EXECUTION_NOT_CLAIMED,
+	ExecutionClaimObserver,
+} from "../../../src/luau/execution-claim.ts";
 import { IS_LIVE } from "./live-gate.ts";
 
 describe("execution claim", () => {
+	it.skipIf(!IS_LIVE)(
+		"should replace a task that never reaches its execution claim",
+		{
+			retry: 0,
+			timeout: 120_000,
+		},
+		async () => {
+			expect.assertions(3);
+
+			const credentials = {
+				apiKey: process.env["ROBLOX_OPEN_CLOUD_API_KEY"]!,
+				placeId: process.env["ROBLOX_PLACE_ID"]!,
+				universeId: process.env["ROBLOX_UNIVERSE_ID"]!,
+			};
+			const runner = new OcaleRunner(credentials);
+			const executeAsync = vi
+				.fn<(claim: string) => Promise<ScriptResult>>()
+				.mockImplementationOnce(async (claim) => {
+					return runner.executeScriptAsync({
+						pollBudget: 75_000,
+						script: `task.wait(200)\n${claim}\nreturn "ORIGINAL"`,
+						timeout: 300_000,
+					});
+				})
+				.mockImplementation(async (claim) => {
+					return runner.executeScriptAsync({
+						script: `${claim}\nreturn "EXECUTED"`,
+						timeout: 30_000,
+					});
+				});
+			const observer = new ExecutionClaimObserver({ credentials });
+			const startedAt = performance.now();
+			const recovered = await executeWithRecoveryAsync({
+				executeAsync,
+				readClaimAsync: observer.readAsync.bind(observer),
+				timeout: 30_000,
+			});
+			const elapsedMs = performance.now() - startedAt;
+
+			expect(recovered.outputs).toStrictEqual(["EXECUTED"]);
+			expect(elapsedMs).toBeWithin(45_000, 100_000);
+			expect(executeAsync).toHaveBeenCalledTimes(2);
+		},
+	);
+
 	it.skipIf(!IS_LIVE)(
 		"should recover a pending task and refuse its delayed original on Roblox",
 		{

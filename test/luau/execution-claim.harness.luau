@@ -25,7 +25,7 @@ function map:UpdateAsync(key, transform, retention)
 	local value = transform(values[key])
 	if contender then
 		contender = false
-		values[key] = "other-server"
+		values[key] = { owner = "other-server", claimedAt = clock }
 		value = transform(values[key])
 	end
 	if crossDeadline then
@@ -52,7 +52,7 @@ function game:GetService(name)
 		end }
 	end
 	assert(name == "MemoryStoreService", "Unexpected service")
-	return { GetHashMap = function(_, name)
+	return { GetSortedMap = function(_, name)
 		assert(name == "jest-roblox-execution-v1", "Unexpected claim map")
 		return map
 	end }
@@ -66,7 +66,7 @@ game.PlaceVersion = 41
 assert(guarded("guarded") == "ROBLOX_RUNNER_PLACE_MISMATCH:41")
 assert(calls == 0 and owners == 0, "Wrong versions return before any claim or rebuild")
 game.PlaceVersion = 42
-values.guarded = "other-server"
+values.guarded = { owner = "other-server", claimedAt = clock }
 assert(guarded("guarded") == declined,
 	"A denied claim returns before reading the missing BinaryInput")
 calls = 0
@@ -78,13 +78,15 @@ end
 
 assert(run("first") == "EXECUTED")
 assert(calls == 1 and #waits == 0, "Healthy execution has no retry or sleep")
+assert(values.first.owner == "2" and values.first.claimedAt == 1000,
+	"Claim value carries the owner and claim timestamp")
 assert(run("first") == declined, "A late original or replacement cannot execute twice")
 assert(bodies == 1)
 assert(run("independent") == "EXECUTED", "Independent tasks must not contend")
 
 contender = true
 assert(run("race") == declined, "A replayed transform cannot retain a stale successful claim")
-assert(values.race == "other-server")
+assert(values.race.owner == "other-server")
 
 lostResponse = true
 assert(run("lost-response") == "EXECUTED", "An uncertain commit can be retried by its owner")

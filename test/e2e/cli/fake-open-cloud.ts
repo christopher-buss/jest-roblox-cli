@@ -15,7 +15,7 @@ import {
 	type Server,
 	type ServerResponse,
 } from "node:http";
-import { onTestFinished } from "vitest";
+import { assert, onTestFinished } from "vitest";
 
 import { BOOT_PROBE_SCRIPT } from "../../../src/backends/open-cloud.ts";
 
@@ -27,6 +27,8 @@ const createTaskRequestSchema = type({
 const JSON_CONTENT_TYPE = "application/json";
 const QUEUE_PATH_PATTERN = /\/memory-store\/queues\/([^/]+)(\/items(?::read|:discard)?)?$/;
 const LOGS_SUFFIX_PATTERN = /\/logs$/;
+const EXECUTION_CLAIM_PATH_PATTERN =
+	/\/memory-store\/sorted-maps\/jest-roblox-execution-v1\/items\/([^/]+)$/;
 const BINARY_INPUT_SUFFIX = "/luau-execution-session-task-binary-inputs";
 /**
  * Where the fake serves the presigned PUT it hands out. Live Open Cloud names a
@@ -100,6 +102,7 @@ export interface FakeOpenCloudOptions {
 	 * probe PROCESSING indefinitely; queued test tasks answer independently.
 	 */
 	bootProbe?: "complete" | "stall";
+	executionClaim?: "missing" | { claimedAt: number; owner: string };
 }
 
 /** One binary input the fake allocated, and the bytes that were PUT to it. */
@@ -147,6 +150,7 @@ interface FakeOpenCloudState {
 	bootProbe: NonNullable<FakeOpenCloudOptions["bootProbe"]>;
 	calls: FakeOpenCloudServer["calls"];
 	counters: { itemSeq: number; taskIndex: number; uploadCount: number };
+	executionClaim: NonNullable<FakeOpenCloudOptions["executionClaim"]>;
 	pollCounts: Map<string, number>;
 	queueAdds: FakeOpenCloudServer["queueAdds"];
 	queueDiscards: FakeOpenCloudServer["queueDiscards"];
@@ -189,6 +193,7 @@ function createState(
 		bootProbe: options.bootProbe ?? "complete",
 		calls: [],
 		counters: { itemSeq: 0, taskIndex: 0, uploadCount: 0 },
+		executionClaim: options.executionClaim ?? { claimedAt: 0, owner: "fake-server" },
 		pollCounts: new Map(),
 		queueAdds: [],
 		queueDiscards: [],
@@ -591,6 +596,41 @@ function handlePoll({
 	response.end(JSON.stringify(buildCompletedTaskBody({ queuedTask, taskPath })));
 }
 
+function handleExecutionClaimRead({
+	response,
+	state,
+	url,
+}: {
+	response: ServerResponse;
+	state: FakeOpenCloudState;
+	url: URL;
+}): boolean {
+	const claimMatch = EXECUTION_CLAIM_PATH_PATTERN.exec(url.pathname);
+	if (claimMatch === null) {
+		return false;
+	}
+
+	if (state.executionClaim === "missing") {
+		response.writeHead(404, { "content-type": JSON_CONTENT_TYPE });
+		response.end(JSON.stringify({ error: { message: "Claim not found" } }));
+		return true;
+	}
+
+	const encodedItemId = claimMatch[1];
+	assert(encodedItemId !== undefined, "execution claim route must capture an item ID");
+	const itemId = decodeURIComponent(encodedItemId);
+	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
+	response.end(
+		JSON.stringify({
+			etag: "claim-etag",
+			expireTime: "2026-09-11T20:00:00Z",
+			path: `cloud/v2/universes/123/memory-store/sorted-maps/jest-roblox-execution-v1/items/${itemId}`,
+			value: state.executionClaim,
+		}),
+	);
+	return true;
+}
+
 /** The routes a run only ever reads from, plus the unhandled-route answer. */
 function handleReadRequest({
 	method,
@@ -603,6 +643,10 @@ function handleReadRequest({
 	state: FakeOpenCloudState;
 	url: URL;
 }): void {
+	if (method === "GET" && handleExecutionClaimRead({ response, state, url })) {
+		return;
+	}
+
 	if (method === "GET" && url.pathname.endsWith("/logs")) {
 		handleListLogs({ response, state, url });
 		return;

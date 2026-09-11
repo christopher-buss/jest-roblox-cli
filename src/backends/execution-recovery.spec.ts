@@ -3,7 +3,7 @@ import type { ScriptResult } from "@isentinel/roblox-runner";
 import { ExecutionTimeoutError } from "@isentinel/roblox-runner";
 
 import process from "node:process";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { EXECUTION_NOT_CLAIMED, EXECUTION_START_EXPIRED } from "../luau/execution-claim.ts";
 import { executeWithRecoveryAsync } from "./execution-recovery.ts";
@@ -14,16 +14,401 @@ const DECLINED: ScriptResult = {
 	outputs: [EXECUTION_NOT_CLAIMED],
 };
 
-function timeoutFailure(): Error {
-	return new Error("Execution timed out", {
+function timeoutFailure(message = "Execution timed out"): Error {
+	return new Error(message, {
 		cause: new PollTimeoutError("Still PROCESSING", { timeoutMs: 75_000 }),
 	});
 }
 
 describe("open Cloud execution recovery", () => {
-	it("should run a healthy task once without warning", async () => {
-		expect.assertions(3);
+	it("should replace an unclaimed task when the boot watchdog expires", async () => {
+		expect.assertions(5);
 
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		const warning = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockImplementationOnce(async () => original.promise)
+			.mockResolvedValue(SUCCESS);
+		const readClaimAsync = vi
+			.fn<(key: string) => Promise<{ status: "missing" }>>()
+			.mockResolvedValue({ status: "missing" });
+
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			createKey: () => "execution-key",
+			executeAsync,
+			readClaimAsync,
+			timeout: 30_000,
+		});
+
+		expect({
+			executeCount: executeAsync.mock.calls.length,
+			readCount: readClaimAsync.mock.calls.length,
+		}).toStrictEqual({
+			executeCount: 1,
+			readCount: 0,
+		});
+
+		await vi.advanceTimersByTimeAsync(999);
+
+		expect({
+			executeCount: executeAsync.mock.calls.length,
+			readCount: readClaimAsync.mock.calls.length,
+		}).toStrictEqual({
+			executeCount: 1,
+			readCount: 0,
+		});
+
+		await vi.advanceTimersByTimeAsync(1);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+		expect(readClaimAsync).toHaveBeenCalledExactlyOnceWith("execution-key");
+		expect({
+			claimsMatch: executeAsync.mock.calls[1]![0] === executeAsync.mock.calls[0]![0],
+			warnings: warning.mock.calls.map(([chunk]) => String(chunk)),
+		}).toStrictEqual({
+			claimsMatch: true,
+			warnings: [
+				"Warning: Open Cloud task did not claim execution within 1s; starting a replacement with the same execution claim.\n",
+			],
+		});
+	});
+
+	it("should keep polling a task whose claim is visible", async () => {
+		expect.assertions(4);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		const original = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi.fn<(claim: string) => Promise<ScriptResult>>(async () => {
+			return original.promise;
+		});
+		const readClaimAsync = vi
+			.fn<() => Promise<{ claim: { claimedAt: number; owner: string }; status: "found" }>>()
+			.mockResolvedValue({
+				claim: { claimedAt: 500, owner: "server-1" },
+				status: "found",
+			});
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync,
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+
+		expect(readClaimAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledOnce();
+
+		original.resolve(SUCCESS);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+		expect(executeAsync).toHaveBeenCalledOnce();
+	});
+
+	it("should keep polling when the execution claim cannot be observed", async () => {
+		expect.assertions(4);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		const warning = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi.fn<(claim: string) => Promise<ScriptResult>>(async () => {
+			return original.promise;
+		});
+		const readFailure = new Error("MemoryStore unavailable");
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => {
+				throw readFailure;
+			},
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+
+		expect(executeAsync).toHaveBeenCalledOnce();
+
+		original.resolve(SUCCESS);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(warning).toHaveBeenCalledExactlyOnceWith(
+			"Warning: could not observe the Open Cloud execution claim; keeping the original task.\n",
+		);
+	});
+
+	it("should conservatively keep polling when no observer is supplied", async () => {
+		expect.assertions(2);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		const original = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi.fn<(claim: string) => Promise<ScriptResult>>(async () => {
+			return original.promise;
+		});
+		const recovered = executeWithRecoveryAsync({
+			executeAsync,
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(45_000);
+
+		expect(executeAsync).toHaveBeenCalledOnce();
+
+		original.resolve(SUCCESS);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+	});
+
+	it("should use the original claimed result when it beats its hedge", async () => {
+		expect.assertions(2);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const replacement = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockReturnValueOnce(original.promise)
+			.mockReturnValueOnce(replacement.promise);
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => ({ status: "missing" }),
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		original.resolve(SUCCESS);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+		expect(executeAsync).toHaveBeenCalledTimes(2);
+	});
+
+	it("should ignore an unclaimed hedge while the original is still running", async () => {
+		expect.assertions(2);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockReturnValueOnce(original.promise)
+			.mockResolvedValueOnce(DECLINED);
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => ({ status: "missing" }),
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		await vi.waitFor(() => {
+			expect(executeAsync).toHaveBeenCalledTimes(2);
+		});
+		original.resolve(SUCCESS);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+	});
+
+	it("should use the hedge when the original declines first", async () => {
+		expect.assertions(1);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const replacement = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockReturnValueOnce(original.promise)
+			.mockReturnValueOnce(replacement.promise);
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => ({ status: "missing" }),
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		original.resolve(DECLINED);
+		replacement.resolve(SUCCESS);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+	});
+
+	it("should use the original when a rejected hedge finishes first", async () => {
+		expect.assertions(1);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const replacement = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockReturnValueOnce(original.promise)
+			.mockReturnValueOnce(replacement.promise);
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => ({ status: "missing" }),
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		replacement.reject(timeoutFailure());
+		original.resolve(SUCCESS);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
+	});
+
+	it("should preserve both failures when the original and hedge stall", async () => {
+		expect.assertions(1);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const first = timeoutFailure("Original execution timed out");
+		const second = timeoutFailure("Hedged execution timed out");
+		const original = Promise.withResolvers<ScriptResult>();
+		const replacement = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockReturnValueOnce(original.promise)
+			.mockReturnValueOnce(replacement.promise);
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => ({ status: "missing" }),
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		original.reject(first);
+		replacement.reject(second);
+
+		await expect(recovered).rejects.toMatchObject({ cause: first, errors: [first, second] });
+	});
+
+	it("should preserve attempt order when the hedge fails first", async () => {
+		expect.assertions(1);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const first = new Error("original stalled");
+		const second = new Error("hedge stalled");
+		const original = Promise.withResolvers<ScriptResult>();
+		const replacement = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockReturnValueOnce(original.promise)
+			.mockReturnValueOnce(replacement.promise);
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => ({ status: "missing" }),
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		replacement.reject(second);
+		original.reject(first);
+
+		await expect(recovered).rejects.toMatchObject({ cause: first, errors: [first, second] });
+	});
+
+	it("should fail when neither hedged task claims execution", async () => {
+		expect.assertions(1);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockReturnValueOnce(original.promise)
+			.mockResolvedValueOnce(DECLINED);
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => ({ status: "missing" }),
+			timeout: 30_000,
+		});
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		original.resolve(DECLINED);
+
+		await expect(recovered).rejects.toThrow("refusing to run tests twice");
+	});
+
+	it("should diagnose an expired hedged task without waiting for the other task", async () => {
+		expect.assertions(1);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const executeAsync = vi
+			.fn<(claim: string) => Promise<ScriptResult>>()
+			.mockReturnValueOnce(original.promise)
+			.mockResolvedValueOnce({ durationMs: 0, outputs: [EXECUTION_START_EXPIRED] });
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync: async () => ({ status: "missing" }),
+			timeout: 30_000,
+		});
+		const diagnosed = recovered.catch((err: unknown) => err);
+
+		await vi.advanceTimersByTimeAsync(1_000);
+
+		await expect(diagnosed).resolves.toMatchObject({
+			message:
+				"Test execution's start window expired; check the client clock and Open Cloud queue delay.",
+		});
+	});
+
+	it("should run a healthy task once without warning", async () => {
+		expect.assertions(4);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
 		const warning = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const executeAsync = vi
 			.fn<(claim: string) => Promise<ScriptResult>>()
@@ -34,6 +419,7 @@ describe("open Cloud execution recovery", () => {
 		);
 		expect(executeAsync).toHaveBeenCalledOnce();
 		expect(warning).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("should retry a poll timeout with the same claim and deadline", async () => {

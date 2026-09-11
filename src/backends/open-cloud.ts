@@ -14,6 +14,7 @@ import type { Except } from "type-fest";
 import { ConfigError } from "../config/errors.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import { resolvePlaceFilePath } from "../config/schema.ts";
+import { ExecutionClaimObserver } from "../luau/execution-claim.ts";
 import { prepareTaskScript } from "../luau/task-script.ts";
 import { NOOP_RUN_PROGRESS, type RunProgress } from "../progress/reporter.ts";
 import { describeCodeBundle, describePlaceFile, describeProjectCount } from "../progress/stages.ts";
@@ -24,7 +25,7 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
 import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
-import { executeWithRecoveryAsync } from "./execution-recovery.ts";
+import { DEFAULT_BOOT_WATCH_MS, executeWithRecoveryAsync } from "./execution-recovery.ts";
 import type {
 	Backend,
 	BackendOptions,
@@ -73,6 +74,10 @@ const DEFAULT_STREAM_POLL_MS = 250;
 export type OpenCloudCredentials = RunnerCredentials;
 
 export interface OpenCloudOptions {
+	/** Delay before checking whether the first test task acquired its claim. */
+	bootWatchMs?: number | undefined;
+	/** Override the Open Cloud execution-claim reader. Test seam. */
+	executionClaimObserver?: Pick<ExecutionClaimObserver, "readAsync"> | undefined;
 	/** Where the Code Bundle is read from. Defaults to the real filesystem. */
 	fileSystem?: FileSystem | undefined;
 	/**
@@ -209,10 +214,12 @@ type DispatchOutcome = Except<BackendResult, "timing">;
 type SubmitShape = "guarded" | "head" | "pinned";
 
 export class OpenCloudBackend implements Backend {
+	private readonly bootWatchMs: number;
 	/**
 	 * Kept so the upload cache can key on the universe and place it targets.
 	 */
 	private readonly credentials: OpenCloudCredentials;
+	private readonly executionClaimObserver: Pick<ExecutionClaimObserver, "readAsync">;
 	private readonly fileSystem: FileSystem;
 	private readonly now: () => number;
 	private readonly prepareScript: typeof prepareTaskScript;
@@ -236,8 +243,15 @@ export class OpenCloudBackend implements Backend {
 	public readonly kind = "open-cloud" as const;
 
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
+		this.bootWatchMs = options?.bootWatchMs ?? DEFAULT_BOOT_WATCH_MS;
 		this.prepareScript = options?.prepareScript ?? prepareTaskScript;
 		this.credentials = credentials;
+		this.executionClaimObserver =
+			options?.executionClaimObserver ??
+			new ExecutionClaimObserver({
+				baseUrl: resolveOpenCloudBaseUrl(),
+				credentials,
+			});
 		this.fileSystem = options?.fileSystem ?? nodeFileSystem;
 		this.now = options?.now ?? Date.now;
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
@@ -433,6 +447,7 @@ export class OpenCloudBackend implements Backend {
 	}): Promise<ScriptResult> {
 		let shape: SubmitShape = version.isOwned ? "head" : "guarded";
 		return executeWithRecoveryAsync({
+			bootWatchMs: this.bootWatchMs,
 			executeAsync: async (claim) => {
 				const first = await this.submitAsync({ claim, script, shape, timeout, version });
 				if (shape !== "guarded") {
@@ -450,6 +465,7 @@ export class OpenCloudBackend implements Backend {
 				return this.retryPinnedAsync({ bootedVersion, claim, script, timeout, version });
 			},
 			now: this.now,
+			readClaimAsync: this.executionClaimObserver.readAsync.bind(this.executionClaimObserver),
 			timeout,
 		});
 	}
