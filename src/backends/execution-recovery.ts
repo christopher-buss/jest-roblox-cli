@@ -133,10 +133,7 @@ async function resolveRecoveryAsync({
 	const failures = [firstFailure, replacementFailure];
 	try {
 		if (firstFailure instanceof ExecutionTimeoutError) {
-			const original = await firstFailure.readResultAsync();
-			if (original !== undefined) {
-				return requireClaim(original);
-			}
+			return requireClaim(await firstFailure.readResultAsync());
 		}
 	} catch (err) {
 		failures.push(err);

@@ -523,9 +523,7 @@ describe("open Cloud execution recovery", () => {
 		expect.assertions(3);
 
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const readResultAsync = vi
-			.fn<() => Promise<ScriptResult | undefined>>()
-			.mockResolvedValue(SUCCESS);
+		const readResultAsync = vi.fn<() => Promise<ScriptResult>>().mockResolvedValue(SUCCESS);
 		const failure = new ExecutionTimeoutError(timeoutFailure(), readResultAsync);
 		const executeAsync = vi
 			.fn<(claim: string) => Promise<ScriptResult>>()
@@ -543,7 +541,7 @@ describe("open Cloud execution recovery", () => {
 		expect.assertions(2);
 
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const readResultAsync = vi.fn<() => Promise<ScriptResult | undefined>>();
+		const readResultAsync = vi.fn<() => Promise<ScriptResult>>();
 		const failure = new ExecutionTimeoutError(timeoutFailure(), readResultAsync);
 		const executeAsync = vi
 			.fn<(claim: string) => Promise<ScriptResult>>()
@@ -560,9 +558,7 @@ describe("open Cloud execution recovery", () => {
 		expect.assertions(2);
 
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const readResultAsync = vi
-			.fn<() => Promise<ScriptResult | undefined>>()
-			.mockResolvedValue(SUCCESS);
+		const readResultAsync = vi.fn<() => Promise<ScriptResult>>().mockResolvedValue(SUCCESS);
 		const first = new ExecutionTimeoutError(timeoutFailure(), readResultAsync);
 		const executeAsync = vi
 			.fn<(claim: string) => Promise<ScriptResult>>()
@@ -588,25 +584,6 @@ describe("open Cloud execution recovery", () => {
 		await expect(executeWithRecoveryAsync({ executeAsync, timeout: 30_000 })).rejects.toThrow(
 			"refusing to run tests twice",
 		);
-		expect(executeAsync).toHaveBeenCalledTimes(2);
-	});
-
-	it("should fail with the original task diagnosis if it still has no result", async () => {
-		expect.assertions(2);
-
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const failure = new ExecutionTimeoutError(timeoutFailure(), async () => {});
-		const executeAsync = vi
-			.fn<(claim: string) => Promise<ScriptResult>>()
-			.mockRejectedValueOnce(failure)
-			.mockResolvedValue(DECLINED);
-
-		await expect(
-			executeWithRecoveryAsync({ executeAsync, timeout: 30_000 }),
-		).rejects.toMatchObject({
-			cause: failure,
-			message: `Open Cloud recovery failed: ${String(failure)}\nError: Test execution was already claimed; refusing to run tests twice.`,
-		});
 		expect(executeAsync).toHaveBeenCalledTimes(2);
 	});
 

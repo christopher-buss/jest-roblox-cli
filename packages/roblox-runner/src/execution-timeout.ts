@@ -12,9 +12,9 @@ type TaskResult = Result<LuauExecutionTask, OpenCloudError>;
  * A timed-out observer can re-read its original task without submitting work.
  */
 export class ExecutionTimeoutError extends Error {
-	public readonly readResultAsync: () => Promise<ScriptResult | undefined>;
+	public readonly readResultAsync: () => Promise<ScriptResult>;
 
-	constructor(error: Error, readResultAsync: () => Promise<ScriptResult | undefined>) {
+	constructor(error: Error, readResultAsync: () => Promise<ScriptResult>) {
 		super(error.message, { cause: error.cause });
 		this.readResultAsync = readResultAsync;
 	}
@@ -23,12 +23,12 @@ export class ExecutionTimeoutError extends Error {
 export function toExecutionError({
 	context,
 	error,
-	readAsync,
+	pollAsync,
 	resolveAsync,
 }: {
 	context: PollContext;
 	error: OpenCloudError;
-	readAsync: () => Promise<TaskResult>;
+	pollAsync: () => Promise<TaskResult>;
 	resolveAsync: (result: TaskResult) => Promise<ScriptResult>;
 }): Error {
 	const described = toPollError(error, context);
@@ -36,15 +36,5 @@ export function toExecutionError({
 		return described;
 	}
 
-	return new ExecutionTimeoutError(described, async () => {
-		const observed = await readAsync();
-		if (
-			observed.success &&
-			(observed.data.state === "PROCESSING" || observed.data.state === "QUEUED")
-		) {
-			return;
-		}
-
-		return resolveAsync(observed);
-	});
+	return new ExecutionTimeoutError(described, async () => resolveAsync(await pollAsync()));
 }

@@ -11,6 +11,7 @@ import type { FailedTask, LuauExecutionTaskRef } from "@bedrock-rbx/ocale/luau-e
 export interface PollContext {
 	readonly bootProven: boolean;
 	readonly hasDefaultBudget: boolean;
+	readonly recoveryPollBudgetMs: number;
 	readonly ref: LuauExecutionTaskRef;
 	readonly timeoutSeconds: number;
 }
@@ -51,12 +52,18 @@ const MAX_TASK_TIMEOUT_SECONDS = 300;
 export function resolveBudgets(
 	timeout: number,
 	pollBudget: number | undefined,
-): { hasDefaultBudget: boolean; pollBudgetMs: number; timeoutSeconds: number } {
+): {
+	hasDefaultBudget: boolean;
+	pollBudgetMs: number;
+	recoveryPollBudgetMs: number;
+	timeoutSeconds: number;
+} {
 	const timeoutSeconds = Math.min(Math.floor(timeout / 1000), MAX_TASK_TIMEOUT_SECONDS);
+	const recoveryPollBudgetMs = Math.max(timeout, timeoutSeconds * 1000 + TASK_DEADLINE_GRACE_MS);
 	return {
 		hasDefaultBudget: pollBudget === undefined,
-		pollBudgetMs:
-			pollBudget ?? Math.max(timeout, timeoutSeconds * 1000 + TASK_DEADLINE_GRACE_MS),
+		pollBudgetMs: pollBudget ?? recoveryPollBudgetMs,
+		recoveryPollBudgetMs,
 		timeoutSeconds,
 	};
 }

@@ -228,11 +228,12 @@ tests, without caching the unverified version. A different or unreadable version
 also leaves the cache untouched; a foreign version produces a warning. If the
 probe and both test tasks all stall without acquiring an execution claim, the
 recovery task starts after 45 s and overlaps the original. The run then consumes
-about 90 s + 45 s + 345 s (8 minutes) with the defaults, before HTTP pacing or a
-version-guard fallback. A timeout cannot establish that a place is unbootable.
-The probe's default budget is 90 s, with a separate short script deadline. Set
-`bootProbeTimeout` to `0` to skip the probe; no new upload-cache entry is
-written in that case.
+about 90 s + 45 s + 345 s + 345 s (13 minutes 45 seconds) with the defaults,
+before HTTP pacing or a version-guard fallback. The last allowance polls the
+original after both attempts settle without results. A timeout cannot establish
+that a place is unbootable. The probe's default budget is 90 s, with a separate
+short script deadline. Set `bootProbeTimeout` to `0` to skip the probe; no new
+upload-cache entry is written in that case.
 
 If a test task never reaches a terminal state, the backend makes one recovery
 attempt. Each attempt may submit a guarded head task followed by an
@@ -251,14 +252,14 @@ including client clock skew. An expired startup window fails with a clock/queue
 diagnosis.
 
 Test failures and terminal task errors are never retried. If execution was
-already claimed, or the recovery attempt fails, the backend reads the original
-task once more and uses its result if it has completed. If neither attempt
-provides test results, the run fails with the original task's details. This
-final read does not add another polling budget. When the initial claim is
-missing, both pollers overlap and the first claimed result wins; a `NOT_CLAIMED`
-loser is ignored. Recovery adds no place upload or boot probe. A started
-execution whose results Roblox never delivers cannot be recovered by rerunning
-tests safely.
+already claimed, or the recovery attempt fails, the backend polls the original
+task through one more task-deadline-plus-boot allowance and uses its terminal
+result. A stale `PROCESSING` read only delays that poll. If neither attempt
+provides test results, the run fails with the original task's details. Healthy
+runs never start this extra poll. When the initial claim is missing, both
+pollers overlap and the first claimed result wins; a `NOT_CLAIMED` loser is
+ignored. Recovery adds no place upload or boot probe. A started execution whose
+results Roblox never delivers cannot be recovered by rerunning tests safely.
 
 A 404 during a run using a cached upload clears that cache entry for the next
 invocation. It does not restart the current wave, whose other tasks may already

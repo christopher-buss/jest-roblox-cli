@@ -180,10 +180,7 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		const { ref } = submitted.data;
 		// The poll clock starts here either way: `runUntilDone` also begins its
 		// budget once the submit has returned.
-		const result = await this.luau.tasks.pollUntilDone(ref, {
-			retryableTransportCodes: POLL_RETRYABLE_TRANSPORT_CODES,
-			timeoutMs: pollBudgetMs,
-		});
+		const result = await this.pollTaskAsync(ref, pollBudgetMs);
 
 		return this.toScriptResultAsync(result, { ...budgets, bootProven, ref, startTime });
 	}
@@ -254,6 +251,16 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			uploadMs: Date.now() - uploadStart,
 			versionNumber: result.data.versionNumber,
 		};
+	}
+
+	private async pollTaskAsync(
+		ref: LuauExecutionTaskRef,
+		timeoutMs: number,
+	): Promise<Result<LuauExecutionTask, OpenCloudError>> {
+		return this.luau.tasks.pollUntilDone(ref, {
+			retryableTransportCodes: POLL_RETRYABLE_TRANSPORT_CODES,
+			timeoutMs,
+		});
 	}
 
 	/**
@@ -331,7 +338,9 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			throw toExecutionError({
 				context,
 				error: result.err,
-				readAsync: async () => this.luau.tasks.get({ ref: context.ref }),
+				pollAsync: async () => {
+					return this.pollTaskAsync(context.ref, context.recoveryPollBudgetMs);
+				},
 				resolveAsync: async (observed) => this.toScriptResultAsync(observed, context),
 			});
 		}

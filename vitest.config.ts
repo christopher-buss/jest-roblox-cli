@@ -380,12 +380,13 @@ export default defineConfig({
 					},
 					clearMocks: true,
 					// Files here run in parallel, and so do other checkouts
-					// running against the same place: execution is pinned to
-					// each run's uploaded version (no clobber), streaming keys
-					// are per-run UUIDs, and each test builds its own temp
-					// sandbox, so concurrent live runs do not collide. The
-					// fixture compile is hoisted to the e2e-live-fixture target
-					// so nothing races on out/.
+					// running against the same place: execution is guarded on
+					// head by each run's uploaded version identity, streaming
+					// keys are per-run UUIDs, and each test builds its own temp
+					// sandbox, so concurrent live runs do not collide. A changed
+					// head falls back to the uploaded version. The fixture
+					// compile is hoisted to the e2e-live-fixture target so
+					// nothing races on out/.
 					env: {
 						// Concurrent runs across processes share one place's
 						// per-minute upload quota, so a burst can 429. The

@@ -134,6 +134,8 @@ describe("cLI Open Cloud recovery", () => {
 		async ({ exitCode, pollsBeforeComplete, replacement }) => {
 			expect.assertions(5);
 
+			let clock = 1_000_000;
+			vi.spyOn(Date, "now").mockImplementation(() => clock);
 			const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 			const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 			const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -146,7 +148,13 @@ describe("cLI Open Cloud recovery", () => {
 				replacement,
 			]);
 			const credentials = { apiKey: "fake", placeId: "456", universeId: "123" };
-			const runner = new OcaleRunner(credentials, { baseUrl: server.baseUrl, maxRetries: 0 });
+			const runner = new OcaleRunner(credentials, {
+				baseUrl: server.baseUrl,
+				maxRetries: 0,
+				sleep: async (ms) => {
+					clock += ms;
+				},
+			});
 			const executeScriptAsync = vi
 				.fn<
 					(options: ExecuteScriptOptions) => ReturnType<OcaleRunner["executeScriptAsync"]>

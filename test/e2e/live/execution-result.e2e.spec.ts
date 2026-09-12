@@ -32,13 +32,8 @@ describe("original execution result", () => {
 					assert(failure instanceof ExecutionTimeoutError);
 					// Establish that the original owns the claim before allowing
 					// the replacement to race it.
-					await vi.waitFor(
-						async () => {
-							const original = await failure.readResultAsync();
-							assert(original!.outputs[0] === "ORIGINAL");
-						},
-						{ interval: 500, timeout: 60_000 },
-					);
+					const original = await failure.readResultAsync();
+					assert(original.outputs[0] === "ORIGINAL");
 					throw failure;
 				})
 				.mockImplementation(async (claim) => {
