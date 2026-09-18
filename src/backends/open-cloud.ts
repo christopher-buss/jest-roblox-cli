@@ -1,5 +1,10 @@
 import { PermissionError } from "@bedrock-rbx/ocale";
-import { OcaleRunner, readRefusedPlaceVersion, runTaskPool } from "@isentinel/roblox-runner";
+import {
+	ExecutionTimeoutError,
+	OcaleRunner,
+	readRefusedPlaceVersion,
+	runTaskPool,
+} from "@isentinel/roblox-runner";
 import type {
 	BinaryInputUploader,
 	OcaleRunnerOptions,
@@ -25,7 +30,11 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
 import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
-import { DEFAULT_BOOT_WATCH_MS, executeWithRecoveryAsync } from "./execution-recovery.ts";
+import {
+	DEFAULT_BOOT_WATCH_MS,
+	executeWithRecoveryAsync,
+	type SubmissionLifecycle,
+} from "./execution-recovery.ts";
 import type {
 	Backend,
 	BackendOptions,
@@ -35,6 +44,9 @@ import type {
 	RawBackendEntry,
 	StreamingHooks,
 } from "./interface.ts";
+import { openCloudExecutionBudgets } from "./open-cloud-budgets.ts";
+import { executeWithResultRelayAsync } from "./result-relay.ts";
+import { UncertainSubmissionError, withResultReader } from "./uncertain-submission.ts";
 import type { UploadCacheTarget } from "./upload-cache.ts";
 import {
 	hashPlaceFile,
@@ -56,15 +68,7 @@ export const BOOT_PROBE_SCRIPT = "return tostring(game.PlaceVersion)";
  */
 const BOOT_PROBE_TASK_TIMEOUT_MS = 10_000;
 
-/**
- * How long a binary input is used before it is created again.
- *
- * Open Cloud gives one fifteen minutes, measured from the create. A run whose
- * last shard submits at fourteen minutes would be inside that window when it
- * asks and outside it when Roblox reads the input, so the margin buys the
- * submit that is already in flight rather than the one being composed.
- */
-const BINARY_INPUT_REFRESH_MS = 13 * 60_000;
+const BINARY_INPUT_LIFETIME_MS = 15 * 60_000;
 
 const PARALLEL_AUTO_CAP = 3;
 const BASE_URL_ENV = "JEST_ROBLOX_OPEN_CLOUD_BASE_URL";
@@ -82,8 +86,8 @@ export interface OpenCloudOptions {
 	fileSystem?: FileSystem | undefined;
 	/**
 	 * The clock a binary input's age is measured on. Defaults to the wall
-	 * clock; a spec hands one that can reach past the refresh threshold
-	 * without waiting thirteen minutes for it.
+	 * clock; a spec advances it past the refresh threshold without waiting
+	 * for an input to age.
 	 */
 	now?: (() => number) | undefined;
 	/**
@@ -92,6 +96,8 @@ export interface OpenCloudOptions {
 	 * a saving the composed script itself cannot show.
 	 */
 	prepareScript?: typeof prepareTaskScript | undefined;
+	/** Override the complete-result transport. Test seam. */
+	resultRelay?: typeof executeWithResultRelayAsync;
 	/**
 	 * Inject a pre-built runner. When provided, the `credentials` argument to
 	 * {@link OpenCloudBackend} is ignored — the injected runner already owns
@@ -102,6 +108,11 @@ export interface OpenCloudOptions {
 	 * what a runner has to supply to serve it.
 	 */
 	runner?: (BinaryInputUploader & RemoteRunner) | undefined;
+}
+
+interface BundleInput {
+	createdAt: number;
+	path: string;
 }
 
 /**
@@ -117,14 +128,14 @@ interface BundleRun {
 	 * Absent until the bundle has been uploaded, which is after the boot
 	 * probe.
 	 */
-	input: undefined | { createdAt: number; path: string };
+	input: BundleInput | undefined;
 	/**
 	 * The upload in flight, so submits that all cross the refresh threshold at
 	 * once wait on one create rather than each making its own — N creates
 	 * against a five-a-minute quota, N PUTs of the same tens of megabytes, and
 	 * N stage lines for one upload.
 	 */
-	pending: Promise<string> | undefined;
+	pending: Promise<BundleInput> | undefined;
 	progress: RunProgress;
 	/** Create and PUT time, this run's refreshes included. */
 	uploadMs: number;
@@ -146,6 +157,12 @@ interface RaceDiagnosis {
 	isStaleCache: boolean;
 	versionNumber: number;
 }
+
+/**
+ * Which of the three submits a task is: unguarded on head (an owned place),
+ * guarded on head, or pinned to the run's own version (the guard fired).
+ */
+type SubmitShape = "guarded" | "head" | "pinned";
 
 /**
  * The version tasks are asked to boot, plus the cache entry that claimed it.
@@ -170,6 +187,8 @@ interface VersionContext {
 	 * does not survive that check keeps the guard.
 	 */
 	isOwned: boolean;
+	/** A refusal pins every later task in this run to its uploaded version. */
+	shape: { value: SubmitShape };
 	versionNumber: number;
 }
 
@@ -207,11 +226,15 @@ interface StealingEnvelope extends DecodedEnvelope {
 /** What one dispatch produced, minus the timing the caller measures itself. */
 type DispatchOutcome = Except<BackendResult, "timing">;
 
-/**
- * Which of the three submits a task is: unguarded on head (an owned place),
- * guarded on head, or pinned to the run's own version (the guard fired).
- */
-type SubmitShape = "guarded" | "head" | "pinned";
+interface BackendAttemptContext {
+	claim: string;
+	observationSignal: AbortSignal;
+	script: string;
+	shape: { value: SubmitShape };
+	submission: SubmissionLifecycle;
+	timeout: number;
+	version: VersionContext;
+}
 
 export class OpenCloudBackend implements Backend {
 	private readonly bootWatchMs: number;
@@ -223,6 +246,7 @@ export class OpenCloudBackend implements Backend {
 	private readonly fileSystem: FileSystem;
 	private readonly now: () => number;
 	private readonly prepareScript: typeof prepareTaskScript;
+	private readonly resultRelay: typeof executeWithResultRelayAsync;
 	private readonly runner: BinaryInputUploader & RemoteRunner;
 
 	/** This run's Code Bundle, absent for a run that ships the whole place. */
@@ -255,6 +279,7 @@ export class OpenCloudBackend implements Backend {
 		this.fileSystem = options?.fileSystem ?? nodeFileSystem;
 		this.now = options?.now ?? Date.now;
 		this.runner = options?.runner ?? new OcaleRunner(credentials, resolveRunnerOptions());
+		this.resultRelay = options?.resultRelay ?? executeWithResultRelayAsync;
 	}
 
 	public async runTestsAsync(options: BackendOptions): Promise<BackendResult> {
@@ -331,7 +356,9 @@ export class OpenCloudBackend implements Backend {
 			upload,
 		});
 		// Keep the input's validity window available for dispatched test tasks.
-		await this.ensureBinaryInputAsync();
+		await this.ensureBinaryInputAsync(
+			openCloudExecutionBudgets(primary.config.timeout).inputValidityMs,
+		);
 		// Closed on success only: a dispatch that throws leaves the stage open,
 		// and the reporter then names it as the step the run died inside.
 		const done = progress.begin("tests", describeProjectCount(options.jobs.length));
@@ -403,14 +430,17 @@ export class OpenCloudBackend implements Backend {
 	 * outlives one: a late shard would otherwise fail on an input that was
 	 * valid when the run started.
 	 */
-	private async ensureBinaryInputAsync(): Promise<string | undefined> {
+	private async ensureBinaryInputAsync(minimumValidityMs: number): Promise<string | undefined> {
 		const { bundle } = this;
 		if (bundle === undefined) {
 			return undefined;
 		}
 
 		const { input } = bundle;
-		if (input !== undefined && this.now() - input.createdAt < BINARY_INPUT_REFRESH_MS) {
+		if (
+			input !== undefined &&
+			this.now() - input.createdAt < BINARY_INPUT_LIFETIME_MS - minimumValidityMs
+		) {
 			return input.path;
 		}
 
@@ -420,7 +450,47 @@ export class OpenCloudBackend implements Backend {
 			// be handed to every later submit as the answer.
 			bundle.pending = undefined;
 		});
-		return bundle.pending;
+		const uploaded = await bundle.pending;
+		if (this.now() - uploaded.createdAt >= BINARY_INPUT_LIFETIME_MS - minimumValidityMs) {
+			throw new ConfigError(
+				"The binary input upload completed too late to remain valid through task admission and boot.",
+				"Run with `--no-binary-input` to upload the code inside the place instead.",
+			);
+		}
+
+		return uploaded.path;
+	}
+
+	private async executeAttemptAsync(context: BackendAttemptContext): Promise<ScriptResult> {
+		const { claim, observationSignal, script, shape, submission, timeout, version } = context;
+		const submittedShape = shape.value;
+		const first = await this.submitAsync({
+			claim,
+			observationSignal,
+			onSubmitted: () => {
+				submission.accepted();
+			},
+			script,
+			shape: submittedShape,
+			timeout,
+			version,
+		}).catch((err: unknown) => {
+			if (!(err instanceof ExecutionTimeoutError)) {
+				throw err;
+			}
+
+			throw withResultReader(err, async (recoverySignal = observationSignal) => {
+				return this.resolveRecoveredAttemptAsync(
+					await err.readResultAsync(recoverySignal),
+					{
+						...context,
+						observationSignal: recoverySignal,
+						submittedShape,
+					},
+				);
+			});
+		});
+		return this.resolveAttemptResultAsync(first, { ...context, submittedShape });
 	}
 
 	/**
@@ -445,28 +515,25 @@ export class OpenCloudBackend implements Backend {
 		timeout: number;
 		version: VersionContext;
 	}): Promise<ScriptResult> {
-		let shape: SubmitShape = version.isOwned ? "head" : "guarded";
+		const { shape } = version;
 		return executeWithRecoveryAsync({
 			bootWatchMs: this.bootWatchMs,
-			executeAsync: async (claim) => {
-				const first = await this.submitAsync({ claim, script, shape, timeout, version });
-				if (shape !== "guarded") {
-					return first;
-				}
-
-				const bootedVersion = readRefusedPlaceVersion(first.outputs[0]);
-				if (bootedVersion === undefined) {
-					return first;
-				}
-
-				// The claim survives both recovery and the exact-version
-				// fallback.
-				shape = "pinned";
-				return this.retryPinnedAsync({ bootedVersion, claim, script, timeout, version });
+			executeAsync: async ({ claim, observationSignal, submission }) => {
+				return this.executeAttemptAsync({
+					claim,
+					observationSignal,
+					script,
+					shape,
+					submission,
+					timeout,
+					version,
+				});
 			},
 			now: this.now,
 			readClaimAsync: this.executionClaimObserver.readAsync.bind(this.executionClaimObserver),
+			startupWindowMs: openCloudExecutionBudgets(timeout).startupWindowMs,
 			timeout,
+			watchesSubmission: true,
 		});
 	}
 
@@ -529,6 +596,57 @@ export class OpenCloudBackend implements Backend {
 		return composed;
 	}
 
+	private async resolveAttemptResultAsync(
+		first: ScriptResult,
+		{
+			claim,
+			observationSignal,
+			script,
+			shape,
+			submission,
+			submittedShape,
+			timeout,
+			version,
+		}: BackendAttemptContext & { submittedShape: SubmitShape },
+	): Promise<ScriptResult> {
+		const bootedVersion =
+			submittedShape === "guarded" ? readRefusedPlaceVersion(first.outputs[0]) : undefined;
+		if (bootedVersion === undefined) {
+			return first;
+		}
+
+		submission.refused();
+		shape.value = "pinned";
+
+		return this.retryPinnedAsync({
+			bootedVersion,
+			claim,
+			observationSignal,
+			script,
+			submission,
+			timeout,
+			version,
+		});
+	}
+
+	private async resolveRecoveredAttemptAsync(
+		result: ScriptResult,
+		context: BackendAttemptContext & { submittedShape: SubmitShape },
+	): Promise<ScriptResult> {
+		try {
+			return await this.resolveAttemptResultAsync(result, context);
+		} catch (err) {
+			if (
+				!(err instanceof ExecutionTimeoutError) ||
+				err instanceof UncertainSubmissionError
+			) {
+				throw err;
+			}
+
+			return err.readResultAsync(context.observationSignal);
+		}
+	}
+
 	/**
 	 * The guard fired, so head has moved: rerun this task pinned to the version
 	 * the run uploaded, which still exists and still holds its bytes.
@@ -536,13 +654,17 @@ export class OpenCloudBackend implements Backend {
 	private async retryPinnedAsync({
 		bootedVersion,
 		claim,
+		observationSignal,
 		script,
+		submission,
 		timeout,
 		version,
 	}: {
 		bootedVersion: number;
 		claim: string;
+		observationSignal: AbortSignal;
 		script: string;
+		submission: SubmissionLifecycle;
 		timeout: number;
 		version: VersionContext;
 	}): Promise<ScriptResult> {
@@ -561,7 +683,17 @@ export class OpenCloudBackend implements Backend {
 		// A second submit rather than a re-send of the first: the input is
 		// asked for again inside it, because a task that raced may have waited
 		// out the one the head attempt named.
-		return this.submitAsync({ claim, script, shape: "pinned", timeout, version });
+		return this.submitAsync({
+			claim,
+			observationSignal,
+			onSubmitted: () => {
+				submission.accepted();
+			},
+			script,
+			shape: "pinned",
+			timeout,
+			version,
+		});
 	}
 
 	private async runBucketAsync({
@@ -777,34 +909,53 @@ export class OpenCloudBackend implements Backend {
 	 * A run carrying a code bundle always pairs its rebuild script with a
 	 * current binary input, including pinned and recovery submissions.
 	 */
+	// eslint-disable-next-line flawless/max-lines-per-function -- submission and relay share one observation owner.
 	private async submitAsync({
 		claim,
+		observationSignal,
+		onSubmitted,
 		script,
 		shape,
 		timeout,
 		version,
 	}: {
 		claim: string;
+		observationSignal: AbortSignal;
+		onSubmitted: () => void;
 		script: string;
 		shape: SubmitShape;
 		timeout: number;
 		version: VersionContext;
 	}): Promise<ScriptResult> {
-		const isPinned = shape === "pinned";
-		const compose = this.prepareOnce({
-			guardVersion: shape === "guarded" ? version.versionNumber : undefined,
-			hasRebuild: this.bundle !== undefined,
-			script,
-		});
-		return this.runner
-			.executeScriptAsync({
-				binaryInput: await this.ensureBinaryInputAsync(),
-				bootProven: version.bootProven,
-				...(isPinned ? { placeVersion: version.versionNumber } : {}),
-				script: compose(`${claim}\n`),
-				timeout,
-			})
-			.catch(rethrowOversizedResult);
+		const budgets = openCloudExecutionBudgets(timeout);
+		const baseUrl = resolveOpenCloudBaseUrl();
+		const binaryInput = await this.ensureBinaryInputAsync(budgets.inputValidityMs);
+		return this.resultRelay({
+			...(baseUrl === undefined ? {} : { baseUrl }),
+			credentials: this.credentials,
+			executeAsync: async (wrapped, signal) => {
+				return this.runner.executeScriptAsync({
+					binaryInput,
+					bootProven: version.bootProven,
+					observationSignal: signal,
+					onSubmitted,
+					retrySubmitTransportErrors: false,
+					...(shape === "pinned" ? { placeVersion: version.versionNumber } : {}),
+					script: wrapped,
+					submitBudget: budgets.submitBudget,
+					submitCapacityBudget: budgets.submitCapacityBudget,
+					timeout,
+				});
+			},
+			runtimeBudget: timeout,
+			script: this.prepareOnce({
+				guardVersion: shape === "guarded" ? version.versionNumber : undefined,
+				hasRebuild: this.bundle !== undefined,
+				script,
+			})(`${claim}\n`),
+			signal: observationSignal,
+			timeout: budgets.observationMs,
+		}).catch(rethrowOversizedResult);
 	}
 
 	/**
@@ -817,21 +968,17 @@ export class OpenCloudBackend implements Backend {
 		budget: number;
 		upload: UploadOutcome;
 	}): Promise<string | undefined> {
+		const { submitBudget, submitCapacityBudget } = openCloudExecutionBudgets(budget);
 		try {
 			const result = await this.runner.executeScriptAsync({
+				isSubmitIdempotent: true,
 				// A wall-clock cap, not a deadline: the question is whether the
 				// place booted, and the runner's boot-lag allowance answers a
 				// different one — it would only delay the verdict.
 				pollBudget: budget,
 				script: BOOT_PROBE_SCRIPT,
-				// The probe is the one task create outside the pool, so it is
-				// the one that meets a per-key 429 with nothing but the
-				// client's retry loop — which waits in attempts, not seconds.
-				// The same number that bounds the poll bounds the wait, so a
-				// throttled key ends the stage with a verdict instead of
-				// holding it open. A probe abandoned mid-submit costs a
-				// read-only task nobody reads.
-				submitBudget: budget,
+				submitBudget,
+				submitCapacityBudget,
 				timeout: Math.min(BOOT_PROBE_TASK_TIMEOUT_MS, budget),
 			});
 			return result.outputs[0];
@@ -857,7 +1004,7 @@ export class OpenCloudBackend implements Backend {
 	 * per-key quota included, which is exactly the slice this backend would
 	 * otherwise be re-measuring around it. A refresh adds onto the same number.
 	 */
-	private async uploadBundleAsync(bundle: BundleRun): Promise<string> {
+	private async uploadBundleAsync(bundle: BundleRun): Promise<BundleInput> {
 		const { artifact, progress } = bundle;
 		const done = progress.begin("bundle", describeCodeBundle(artifact));
 		// Read before the create, and the only clock this keeps: Open Cloud's
@@ -870,7 +1017,7 @@ export class OpenCloudBackend implements Backend {
 		done();
 		bundle.uploadMs += created.uploadMs;
 		bundle.input = { createdAt, path: created.path };
-		return created.path;
+		return bundle.input;
 	}
 
 	/**
@@ -1094,6 +1241,7 @@ function toVersionContext(
 	return {
 		...verification,
 		cacheEntry: upload.fromCache ? { rootDirectory, target } : undefined,
+		shape: { value: verification.isOwned ? "head" : "guarded" },
 		versionNumber: upload.versionNumber,
 	};
 }

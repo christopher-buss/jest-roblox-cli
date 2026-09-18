@@ -18,4 +18,5 @@ publicHoistPattern:
   - "@typescript/*"
 
 patchedDependencies:
+  "@bedrock-rbx/ocale@0.3.0": patches/@bedrock-rbx__ocale@0.3.0.patch
   "@stryker-mutator/vitest-runner@10.0.0": patches/@stryker-mutator__vitest-runner@10.0.0.patch

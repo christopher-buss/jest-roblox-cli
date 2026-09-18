@@ -1,4 +1,5 @@
 --!nocheck
+local activeScheduling = 0
 -- Lute-driven test for the multi-mode runner's per-config dispatch. The runner
 -- and the three modules it shares with the workspace runner — the Game Output
 -- capture, the watchdog and the result seam — are inlined into the
@@ -262,6 +263,7 @@ end
 
 local Jest = {
 	runCLI = function(_, config, projects)
+		check(activeScheduling == 1, "Jest starts with one scheduling owner")
 		local project = projects[1]
 		return {
 			expect = function()
@@ -305,6 +307,17 @@ local Jest = {
 }
 
 local stubs = {
+	["./cooperative-scheduler"] = {
+		arm = function()
+			check(activeScheduling == 0, "previous run did not disarm scheduling")
+			activeScheduling += 1
+			return function()
+				check(activeScheduling == 1, "scheduling stopped more than once")
+				activeScheduling -= 1
+				return nil
+			end
+		end,
+	},
 	["./instance-resolver"] = {
 		getJest = function(config)
 			local project = config.projects[1]
@@ -418,6 +431,7 @@ stubs["./runner-result"] = __RUNNER_RESULT_MODULE__
 local Runner = __MODULE__
 
 local function reset()
+	check(activeScheduling == 0, "finished, failed, or abandoned run retained scheduling")
 	jestFails = {}
 	jestParks = {}
 	jestHangs = {}
@@ -675,10 +689,7 @@ local function testNoteWithNoCaptureOpenDropsNothingLater()
 	local captured = stopCapture()
 
 	check(captured ~= nil, "T4d: the later capture reported something")
-	check(
-		has(messagesOf({ gameOutput = captured }), line),
-		"T4d: and kept its byte-identical line"
-	)
+	check(has(messagesOf({ gameOutput = captured }), line), "T4d: and kept its byte-identical line")
 end
 
 -- T5: a config that finished inside its budget names no abandon reason, so the
@@ -785,4 +796,5 @@ testHooksFireAroundEveryConfig()
 testFailedInjectionStillCleansUp()
 testFailedCleanupDoesNotEndTheBatch()
 
+check(activeScheduling == 0, "final run retained scheduling")
 writeStdout("ALL OK")

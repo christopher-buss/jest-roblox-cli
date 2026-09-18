@@ -240,6 +240,7 @@ local function runEntry(
 	-- Armed inside the guarded closure, read from out here by the watchdog. Nil
 	-- until Jest is about to start, which is itself an answer.
 	local lastSeen: LastSeen.Watch? = nil
+	local stopScheduling: (() -> string?)? = nil
 	local ok, jestResultOrError, timedOut = InfiniteYield.guard(function()
 		local t_requireJest0 = os.clock()
 		local Jest = (require :: any)(JestModule)
@@ -274,6 +275,7 @@ local function runEntry(
 		)
 
 		progress.phase = "run"
+		stopScheduling = RunnerResult.beginScheduling(JestModule)
 		-- Per-package isolation: the shared helper resets the global probe
 		-- sink here, immediately before Jest.runCLI, so the captured map only
 		-- contains hits from this package's instrumented sources — and installs
@@ -335,6 +337,7 @@ local function runEntry(
 		end,
 		timeoutMs = budgetMs,
 	})
+	RunnerResult.finishScheduling(stopScheduling)
 
 	if restoreCapture then
 		restoreCapture()
@@ -559,13 +562,11 @@ local function executeEntry(
 			pkg = entry.pkg,
 			project = entry.project,
 			elapsedMs = elapsedMs,
-			jestOutput = HttpService:JSONEncode(
-				RunnerResult.fail(primary, {
-					abandon = if abandoned then "timeout" else nil,
-					captureInstalled = progress.captureInstalled,
-					phase = progress.phase,
-				})
-			),
+			jestOutput = HttpService:JSONEncode(RunnerResult.fail(primary, {
+				abandon = if abandoned then "timeout" else nil,
+				captureInstalled = progress.captureInstalled,
+				phase = progress.phase,
+			})),
 			gameOutput = gameOutput,
 			bannerOutput = bannerOutput,
 		}

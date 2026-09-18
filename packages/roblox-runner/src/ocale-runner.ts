@@ -5,8 +5,14 @@ import type {
 	Result,
 	SleepFunc,
 } from "@bedrock-rbx/ocale";
-import { RESPONSE_UNPARSEABLE, TRANSIENT_TRANSPORT_CODES } from "@bedrock-rbx/ocale";
+import {
+	createFetchHttpClient,
+	RateLimitError,
+	RESPONSE_UNPARSEABLE,
+	TRANSIENT_TRANSPORT_CODES,
+} from "@bedrock-rbx/ocale";
 import type {
+	CompleteTask,
 	LuauExecutionTask,
 	LuauExecutionTaskRef,
 	SubmitAtHeadParameters,
@@ -16,11 +22,12 @@ import { LuauExecutionClient } from "@bedrock-rbx/ocale/luau-execution";
 import type { PublishParameters } from "@bedrock-rbx/ocale/places";
 import { PlacesClient } from "@bedrock-rbx/ocale/places";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import type buffer from "node:buffer";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 
+import { createCapacitySubmitClient } from "./capacity-submit-client.ts";
 import { toExecutionError } from "./execution-timeout.ts";
 import type { PollContext } from "./poll-diagnosis.ts";
 import {
@@ -31,6 +38,7 @@ import {
 	formatLogMessage,
 	resolveBudgets,
 } from "./poll-diagnosis.ts";
+import { TaskSubmitError } from "./task-submit-error.ts";
 import type {
 	BinaryInputUploader,
 	ExecuteScriptOptions,
@@ -43,8 +51,28 @@ import type {
 	UploadPlaceResult,
 } from "./types.ts";
 
+/* eslint-disable max-lines -- transport orchestration stays cohesive in the runner */
+
+export interface SubmitDurationOptions {
+	submitBudget?: number;
+	submitCapacityBudget?: number;
+}
+
+export interface SubmitBudgetController {
+	defer(milliseconds: number): void;
+	pause(): (() => void) | undefined;
+	progress(fingerprint: string): void;
+	raceAsync<T>(submitting: Promise<T>): Promise<T>;
+}
+
 /** What a task submit settles on, success or failure, before it is read. */
 type SubmitResult = Awaited<ReturnType<LuauExecutionClient["tasks"]["submit"]>>;
+
+interface TaskObservation extends PollContext {
+	observationSignal: AbortSignal | undefined;
+	pollBudgetMs: number;
+	startTime: number;
+}
 
 interface TaskParametersInput {
 	readonly binaryInput: string | undefined;
@@ -52,6 +80,17 @@ interface TaskParametersInput {
 	readonly placeVersion: number | undefined;
 	readonly script: string;
 	readonly timeoutSeconds: number;
+}
+
+/** Maximum wall time of an explicitly budgeted task submission. */
+export function maximumSubmitDuration(
+	options: SubmitDurationOptions & { submitBudget: number },
+): number;
+export function maximumSubmitDuration(options: SubmitDurationOptions): number | undefined;
+export function maximumSubmitDuration(options: SubmitDurationOptions): number | undefined {
+	return options.submitBudget === undefined
+		? undefined
+		: options.submitBudget + (options.submitCapacityBudget ?? 0);
 }
 
 /**
@@ -64,6 +103,8 @@ interface TaskParametersInput {
  * attempt.
  */
 const UPLOAD_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+
+const SAFE_SUBMIT_RETRY_STATUSES = [429, 500, 502, 503, 504];
 
 /**
  * Attempts a submit under an {@link ExecuteScriptOptions.submitBudget} is
@@ -97,6 +138,7 @@ const POLL_RETRYABLE_TRANSPORT_CODES = [...TRANSIENT_TRANSPORT_CODES, RESPONSE_U
 
 export interface OcaleRunnerOptions {
 	baseUrl?: string | undefined;
+	capacityWaitAsync?: (ms: number, signal: AbortSignal | undefined) => Promise<void>;
 	/**
 	 * The `fetch` a binary input's PUT goes over. The presigned upload URI is
 	 * on a host the Open Cloud client does not own, so the client's transport
@@ -117,21 +159,42 @@ export interface OcaleRunnerOptions {
 }
 
 export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
+	private readonly capacityBudgetContext = new AsyncLocalStorage<SubmitBudgetController>();
 	private readonly credentials: RunnerCredentials;
 	private readonly fetchFn: typeof globalThis.fetch;
 	private readonly luau: LuauExecutionClient;
 	private readonly places: PlacesClient;
 	private readonly readFileFn: (filePath: string) => buffer.Buffer;
 
+	// eslint-disable-next-line flawless/max-lines-per-function -- transport clients share setup
 	constructor(credentials: RunnerCredentials, options?: OcaleRunnerOptions) {
 		this.credentials = credentials;
-		let clientOptions: OpenCloudClientOptions = { apiKey: credentials.apiKey };
+		const transport = options?.httpClient ?? createFetchHttpClient();
+		const capacityAwareTransport =
+			options?.maxRetries === 0
+				? transport
+				: createCapacitySubmitClient(transport, {
+						onAdmissionWait: (milliseconds) => {
+							this.capacityBudgetContext.getStore()?.defer(milliseconds);
+						},
+						onCapacityProgress: ({ fingerprint }) => {
+							this.capacityBudgetContext.getStore()?.progress(fingerprint);
+						},
+						placeId: credentials.placeId,
+						universeId: credentials.universeId,
+						...(options?.capacityWaitAsync === undefined
+							? {}
+							: { waitAsync: options.capacityWaitAsync }),
+					});
+		let clientOptions: OpenCloudClientOptions = {
+			apiKey: credentials.apiKey,
+			hooks: {
+				onAdmissionWait: () => this.capacityBudgetContext.getStore()?.pause(),
+			},
+			httpClient: capacityAwareTransport,
+		};
 		if (options?.baseUrl !== undefined) {
 			clientOptions = { ...clientOptions, baseUrl: options.baseUrl };
-		}
-
-		if (options?.httpClient !== undefined) {
-			clientOptions = { ...clientOptions, httpClient: options.httpClient };
 		}
 
 		if (options?.maxRetries !== undefined) {
@@ -148,13 +211,19 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		this.fetchFn = options?.fetch ?? globalThis.fetch;
 	}
 
+	// eslint-disable-next-line flawless/max-lines-per-function -- validates and dispatches one task
 	public async executeScriptAsync({
 		binaryInput,
 		bootProven = false,
+		isSubmitIdempotent = false,
+		observationSignal,
+		onSubmitted,
 		placeVersion,
 		pollBudget,
+		retrySubmitTransportErrors = true,
 		script,
 		submitBudget,
+		submitCapacityBudget,
 		timeout,
 	}: ExecuteScriptOptions): Promise<ScriptResult> {
 		if (timeout <= 0) {
@@ -163,26 +232,34 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 
 		const startTime = Date.now();
 		const budgets = resolveBudgets(timeout, pollBudget);
-		const { pollBudgetMs, timeoutSeconds } = budgets;
 
 		const taskParameters = buildTaskParameters({
 			binaryInput,
 			credentials: this.credentials,
 			placeVersion,
 			script,
-			timeoutSeconds,
+			timeoutSeconds: budgets.timeoutSeconds,
 		});
-		const submitted = await this.submitTaskAsync(taskParameters, { submitBudget, timeout });
+		const submitted = await this.submitTaskAsync(taskParameters, {
+			isSubmitIdempotent,
+			retrySubmitTransportErrors,
+			signal: observationSignal,
+			submitBudget,
+			submitCapacityBudget,
+			timeout,
+		});
 		if (!submitted.success) {
 			throw toSubmitError(submitted.err);
 		}
 
-		const { ref } = submitted.data;
-		// The poll clock starts here either way: `runUntilDone` also begins its
-		// budget once the submit has returned.
-		const result = await this.pollTaskAsync(ref, pollBudgetMs);
-
-		return this.toScriptResultAsync(result, { ...budgets, bootProven, ref, startTime });
+		onSubmitted?.();
+		return this.observeTaskAsync({
+			...budgets,
+			bootProven,
+			observationSignal,
+			ref: submitted.data.ref,
+			startTime,
+		});
 	}
 
 	/**
@@ -253,19 +330,33 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		};
 	}
 
-	private async pollTaskAsync(
-		ref: LuauExecutionTaskRef,
-		timeoutMs: number,
-	): Promise<Result<LuauExecutionTask, OpenCloudError>> {
+	private async observeTaskAsync(context: TaskObservation): Promise<ScriptResult> {
+		const result = await this.pollTaskAsync({
+			ref: context.ref,
+			signal: context.observationSignal,
+			timeoutMs: context.pollBudgetMs,
+		});
+		return this.toScriptResultAsync(result, context);
+	}
+
+	private async pollTaskAsync({
+		ref,
+		signal,
+		timeoutMs,
+	}: {
+		ref: LuauExecutionTaskRef;
+		signal?: AbortSignal | undefined;
+		timeoutMs: number;
+	}): Promise<Result<LuauExecutionTask, OpenCloudError>> {
 		return this.luau.tasks.pollUntilDone(ref, {
 			retryableTransportCodes: POLL_RETRYABLE_TRANSPORT_CODES,
+			...(signal === undefined ? {} : { signal }),
 			timeoutMs,
 		});
 	}
 
 	/**
 	 * The tail of what the task printed, or nothing when Roblox will not say.
-	 *
 	 * Best-effort by construction: the logs are a second call made while the
 	 * first one is already failing, so anything it returns is a bonus and
 	 * anything it throws must not replace the failure being reported. The
@@ -275,10 +366,16 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 	 * @param ref - Reference to the terminal task.
 	 * @returns Newest-last log lines, already capped, or an empty array.
 	 */
-	private async readFailureLogTailAsync(ref: LuauExecutionTaskRef): Promise<Array<string>> {
+	private async readFailureLogTailAsync({
+		ref,
+		signal,
+	}: {
+		ref: LuauExecutionTaskRef;
+		signal: AbortSignal | undefined;
+	}): Promise<Array<string>> {
 		let page;
 		try {
-			page = await this.luau.tasks.listLogs({ ref });
+			page = await this.luau.tasks.listLogs({ ref }, signal === undefined ? {} : { signal });
 		} catch {
 			return [];
 		}
@@ -306,16 +403,46 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 	 */
 	private async submitTaskAsync(
 		taskParameters: SubmitAtHeadParameters | SubmitAtVersionParameters,
-		{ submitBudget, timeout }: { submitBudget: number | undefined; timeout: number },
-	): Promise<SubmitResult> {
-		const submitting = this.luau.tasks.submit(taskParameters, {
-			...(submitBudget === undefined ? {} : { maxRetries: BUDGETED_SUBMIT_MAX_RETRIES }),
-			retryableTransportCodes: TRANSIENT_TRANSPORT_CODES,
+		{
+			isSubmitIdempotent,
+			retrySubmitTransportErrors,
+			signal,
+			submitBudget,
+			submitCapacityBudget,
 			timeout,
+		}: {
+			isSubmitIdempotent: boolean;
+			retrySubmitTransportErrors: boolean;
+			signal: AbortSignal | undefined;
+			submitBudget: number | undefined;
+			submitCapacityBudget: number | undefined;
+			timeout: number;
+		},
+	): Promise<SubmitResult> {
+		const budgetAbort = new AbortController();
+		const submitSignal = combineSignals(signal, budgetAbort.signal);
+		const submitOptions = {
+			...(submitBudget === undefined ? {} : { maxRetries: BUDGETED_SUBMIT_MAX_RETRIES }),
+			...(isSubmitIdempotent ? { retryableStatuses: SAFE_SUBMIT_RETRY_STATUSES } : {}),
+			retryableTransportCodes: retrySubmitTransportErrors ? TRANSIENT_TRANSPORT_CODES : [],
+			signal: submitSignal,
+			timeout,
+		};
+		if (submitBudget === undefined) {
+			return this.luau.tasks.submit(taskParameters, submitOptions);
+		}
+
+		const budget = createSubmitBudgetController({
+			budgetMs: submitBudget,
+			cancelSubmitting: () => {
+				budgetAbort.abort("submit budget expired");
+			},
+			capacityBudgetMs: submitCapacityBudget ?? 0,
 		});
-		return submitBudget === undefined
-			? submitting
-			: withSubmitBudgetAsync(submitting, submitBudget);
+		const submitting = this.capacityBudgetContext.run(budget, async () => {
+			return this.luau.tasks.submit(taskParameters, submitOptions);
+		});
+		return budget.raceAsync(submitting);
 	}
 
 	/**
@@ -332,38 +459,159 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 	 */
 	private async toScriptResultAsync(
 		result: Result<LuauExecutionTask, OpenCloudError>,
-		context: PollContext & { startTime: number },
+		context: TaskObservation,
 	): Promise<ScriptResult> {
 		if (!result.success) {
 			throw toExecutionError({
 				context,
 				error: result.err,
-				pollAsync: async () => {
-					return this.pollTaskAsync(context.ref, context.recoveryPollBudgetMs);
+				pollAsync: async (signal) => {
+					return this.pollTaskAsync({ ...recoveryPollOptions(context), signal });
 				},
-				resolveAsync: async (observed) => this.toScriptResultAsync(observed, context),
+				resolveAsync: async (observed, signal) => {
+					return this.toScriptResultAsync(observed, {
+						...context,
+						observationSignal: signal,
+					});
+				},
 			});
 		}
 
 		const task = result.data;
 		if (task.state === "COMPLETE") {
-			return {
-				durationMs: Date.now() - context.startTime,
-				outputs: task.output.results.map(coerceOutputToString),
-				terminalTask: {
-					ref: { sessionId: task.ref.sessionId, taskId: task.ref.taskId },
-					state: task.state,
-				},
-			};
+			return completedResult(task, context.startTime);
 		}
 
 		if (task.state === "FAILED") {
-			const logTail = await this.readFailureLogTailAsync(task.ref);
+			const logTail = await this.readFailureLogTailAsync({
+				ref: task.ref,
+				signal: context.observationSignal,
+			});
 			throw new Error(describeTaskFailure(task, logTail));
 		}
 
 		throw new Error(`Execution was cancelled (task ${task.ref.taskId})`);
 	}
+}
+
+/**
+ * Bound local submission work. Aborting a request cannot undo a task Roblox
+ * already accepted.
+ */
+// eslint-disable-next-line flawless/max-lines-per-function -- timer lifecycle is one state machine
+export function createSubmitBudgetController({
+	budgetMs,
+	cancelSubmitting,
+	capacityBudgetMs,
+}: {
+	budgetMs: number;
+	cancelSubmitting: () => void;
+	capacityBudgetMs: number;
+}): SubmitBudgetController {
+	const maximumMs = budgetMs + capacityBudgetMs;
+	const startedAt = Date.now();
+	let inactivityDeadline = startedAt + budgetMs;
+	const expired = Promise.withResolvers<typeof SUBMIT_EXPIRED>();
+	const progress = new Set<string>();
+	let timer: ReturnType<typeof setTimeout>;
+	let isSettled = false;
+	let waiting = 0;
+	let waitingSince = startedAt;
+
+	function arm(): void {
+		clearTimeout(timer);
+		const remainingMaximum = maximumMs - (Date.now() - startedAt);
+		timer = setTimeout(
+			() => {
+				expired.resolve(SUBMIT_EXPIRED);
+			},
+			waiting > 0
+				? remainingMaximum
+				: Math.min(inactivityDeadline - Date.now(), remainingMaximum),
+		);
+	}
+
+	arm();
+	return {
+		defer(milliseconds) {
+			if (isSettled || capacityBudgetMs === 0) {
+				return;
+			}
+
+			// Validated admission waits consume the absolute allowance, not
+			// inactivity.
+			inactivityDeadline = Math.min(startedAt + maximumMs, inactivityDeadline + milliseconds);
+			arm();
+		},
+		pause() {
+			if (isSettled || capacityBudgetMs === 0) {
+				return;
+			}
+
+			if (waiting === 0) {
+				waitingSince = Date.now();
+			}
+
+			waiting += 1;
+			arm();
+			let hasResumed = false;
+			return () => {
+				if (hasResumed || isSettled) {
+					return;
+				}
+
+				hasResumed = true;
+				waiting -= 1;
+				if (waiting === 0) {
+					inactivityDeadline += Date.now() - waitingSince;
+					arm();
+				}
+			};
+		},
+		progress(nextFingerprint) {
+			if (isSettled || capacityBudgetMs === 0 || progress.has(nextFingerprint)) {
+				return;
+			}
+
+			progress.add(nextFingerprint);
+			inactivityDeadline = Date.now() + budgetMs;
+			waitingSince = Date.now();
+			arm();
+		},
+		async raceAsync<T>(submitting: Promise<T>): Promise<T> {
+			try {
+				const outcome: typeof SUBMIT_EXPIRED | { value: T } = await Promise.race([
+					submitting.then((value) => ({ value })),
+					expired.promise,
+				]);
+				if (outcome === SUBMIT_EXPIRED) {
+					cancelSubmitting();
+					if (capacityBudgetMs === 0) {
+						throw new Error(
+							`Open Cloud did not accept the task within ${describeSeconds(budgetMs)}. ` +
+								"Open Cloud may be throttling creates, or the place may have no task slots available.",
+						);
+					}
+
+					throw new Error(
+						"Open Cloud did not accept the task " +
+							`(${describeSeconds(budgetMs)} inactivity limit; ${describeSeconds(maximumMs)} maximum). ` +
+							"Open Cloud may be throttling creates, " +
+							"or the place may have no task slots available.",
+					);
+				}
+
+				return outcome.value;
+			} finally {
+				isSettled = true;
+				clearTimeout(timer);
+			}
+		},
+	};
+}
+
+function describeSeconds(ms: number): string {
+	return `${String(Math.round(ms / 1000))}s`;
 }
 
 function coerceOutputToString(value: JSONValue): string {
@@ -374,6 +622,17 @@ function coerceOutputToString(value: JSONValue): string {
 	// Bedrock's wire-parsed output.results is JSONValue (no undefined, function,
 	// or symbol entries), so JSON.stringify always returns a string here.
 	return JSON.stringify(value);
+}
+
+function completedResult(task: CompleteTask, startTime: number): ScriptResult {
+	return {
+		durationMs: Date.now() - startTime,
+		outputs: task.output.results.map(coerceOutputToString),
+		terminalTask: {
+			ref: { sessionId: task.ref.sessionId, taskId: task.ref.taskId },
+			state: task.state,
+		},
+	};
 }
 
 /**
@@ -398,61 +657,28 @@ function buildTaskParameters({
 	return placeVersion === undefined ? base : { ...base, versionId: String(placeVersion) };
 }
 
-function describeSeconds(ms: number): string {
-	return `${String(Math.round(ms / 1000))}s`;
+function combineSignals(first: AbortSignal | undefined, second: AbortSignal): AbortSignal {
+	if (first === undefined) {
+		return second;
+	}
+
+	return AbortSignal.any([first, second]);
 }
 
-/**
- * Give the submit a deadline, and say what running past it means.
- *
- * A submit that has not answered in this long is not slow, it is waiting: the
- * only thing the client sleeps on is a `retry-after` from a metered create, and
- * the meter is on the key rather than on this run. So the remedy is about the
- * key, and the message says so — nothing the caller can do to its own request
- * moves a quota window someone else filled.
- *
- * The pending submit is left to settle unread. It is a create, so it may still
- * take a slot; the alternative is a caller that never returns, which is the
- * failure this exists to end.
- *
- * @param submitting - The in-flight submit, retries and all.
- * @param budgetMs - Wall clock the submit may spend before it is given up on.
- * @returns What the submit returned, when it returned in time.
- */
-async function withSubmitBudgetAsync<T>(submitting: Promise<T>, budgetMs: number): Promise<T> {
-	const abort = new AbortController();
-	// The type argument is spelled out because inference widens the marker to
-	// `string`, which the race's union would then swallow.
-	const expiry = delay<typeof SUBMIT_EXPIRED>(budgetMs, SUBMIT_EXPIRED, {
-		ref: false,
-		signal: abort.signal,
-	}).catch(
-		// The `finally` abort is this promise's only rejection, and the race has
-		// settled by the time it fires, so nothing reads what it resolves with.
-		(): typeof SUBMIT_EXPIRED => SUBMIT_EXPIRED,
+function recoveryPollOptions(context: PollContext): {
+	ref: LuauExecutionTaskRef;
+	timeoutMs: number;
+} {
+	return { ref: context.ref, timeoutMs: context.recoveryPollBudgetMs };
+}
+
+function isServerErrorDetails(value: unknown): value is { code: string; message: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof Reflect.get(value, "code") === "string" &&
+		typeof Reflect.get(value, "message") === "string"
 	);
-
-	try {
-		// The winner is boxed rather than compared by value: a submit result is
-		// opaque here, so only a wrapper tells the two branches apart.
-		const outcome: typeof SUBMIT_EXPIRED | { value: T } = await Promise.race([
-			submitting.then((value) => ({ value })),
-			expiry,
-		]);
-		if (outcome === SUBMIT_EXPIRED) {
-			throw new Error(
-				`Open Cloud did not accept the task within ${describeSeconds(budgetMs)}. ` +
-					"Task creates are metered per API key, so a key several runs " +
-					"share is refused on a window this run cannot shorten.\n" +
-					"  Re-run when fewer runs share the key, or raise the budget if " +
-					"this one is genuinely too tight.",
-			);
-		}
-
-		return outcome.value;
-	} finally {
-		abort.abort();
-	}
 }
 
 /**
@@ -464,7 +690,11 @@ async function withSubmitBudgetAsync<T>(submitting: Promise<T>, budgetMs: number
  * @returns The error to throw, carrying the ocale error as its cause.
  */
 function toSubmitError(err: OpenCloudError): Error {
-	return new Error(err.message, { cause: err });
+	if (err instanceof RateLimitError && isServerErrorDetails(err.details)) {
+		return new TaskSubmitError(err, `${err.details.code}: ${err.details.message}`);
+	}
+
+	return new TaskSubmitError(err);
 }
 
 function toArrayBufferView(data: buffer.Buffer): Uint8Array<ArrayBuffer> {
@@ -476,3 +706,5 @@ function toArrayBufferView(data: buffer.Buffer): Uint8Array<ArrayBuffer> {
 function deriveFormat(filePath: string): "rbxl" | "rbxlx" {
 	return path.extname(filePath).toLowerCase() === ".rbxlx" ? "rbxlx" : "rbxl";
 }
+
+/* eslint-enable max-lines */

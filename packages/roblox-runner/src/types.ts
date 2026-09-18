@@ -58,6 +58,16 @@ export interface ExecuteScriptOptions {
 	 */
 	bootProven?: boolean;
 	/**
+	 * Retry transient HTTP 5xx responses from task creation. Enable only when
+	 * repeating the script is safe and every successful attempt produces an
+	 * interchangeable result. An execution claim alone does not ensure that.
+	 */
+	isSubmitIdempotent?: boolean;
+	/** Stop host polling without cancelling the remote Roblox execution. */
+	observationSignal?: AbortSignal;
+	/** Called after Open Cloud accepts the task and before polling starts. */
+	onSubmitted?: () => void;
+	/**
 	 * Pin execution to a specific place version (the `versionNumber` returned
 	 * by {@link RemoteRunner.uploadPlaceAsync}). Open Cloud Luau Execution
 	 * otherwise boots whatever version is currently live, so a concurrent
@@ -77,6 +87,12 @@ export interface ExecuteScriptOptions {
 	 * the grace only delays the answer.
 	 */
 	pollBudget?: number;
+	/**
+	 * Retry task-create transport failures whose response may have been lost
+	 * after Open Cloud accepted the task. Defaults to `true`. Disable when the
+	 * caller resolves ambiguous creates at a higher layer.
+	 */
+	retrySubmitTransportErrors?: boolean;
 	script: string;
 	/**
 	 * Wall-clock cap on the submit, in milliseconds, covering every rate-limit
@@ -96,6 +112,11 @@ export interface ExecuteScriptOptions {
 	 * cheaper than a stage that never returns.
 	 */
 	submitBudget?: number;
+	/**
+	 * Extra time for capacity, quota and SDK admission waits or task turnover.
+	 * Omitted keeps `submitBudget` as the complete submission bound.
+	 */
+	submitCapacityBudget?: number;
 	timeout: number;
 }
 

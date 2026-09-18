@@ -16,7 +16,7 @@ function makeStorage(get: GetFunc): StorageClient {
 
 describe(ExecutionClaimObserver, () => {
 	it("should read and decode an execution claim by key", async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const requests: Array<GetSortedMapItemParameters> = [];
 		const get = vi.fn<GetFunc>(async (parameters) => {
@@ -37,7 +37,9 @@ describe(ExecutionClaimObserver, () => {
 			storageFactory: () => makeStorage(get),
 		});
 
-		await expect(observer.readAsync("execution-key")).resolves.toStrictEqual({
+		const { signal } = new AbortController();
+
+		await expect(observer.readAsync("execution-key", signal)).resolves.toStrictEqual({
 			claim: { claimedAt: 1234, owner: "server-1" },
 			status: "found",
 		});
@@ -48,6 +50,7 @@ describe(ExecutionClaimObserver, () => {
 				universeId: "123",
 			},
 		]);
+		expect(get).toHaveBeenCalledWith(requests[0]!, { signal });
 	});
 
 	it("should report a missing claim only for an Open Cloud 404", async () => {

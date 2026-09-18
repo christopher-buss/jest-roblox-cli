@@ -33,12 +33,15 @@ export class ExecutionClaimObserver {
 		this.universeId = options.credentials.universeId;
 	}
 
-	public async readAsync(key: string): Promise<ExecutionClaimObservation> {
-		const result = await this.storage.sortedMaps.get({
-			itemId: key,
-			mapId: EXECUTION_CLAIM_MAP_ID,
-			universeId: this.universeId,
-		});
+	public async readAsync(key: string, signal?: AbortSignal): Promise<ExecutionClaimObservation> {
+		const result = await this.storage.sortedMaps.get(
+			{
+				itemId: key,
+				mapId: EXECUTION_CLAIM_MAP_ID,
+				universeId: this.universeId,
+			},
+			signal === undefined ? {} : { signal },
+		);
 		if (result.success) {
 			const claim = executionClaimSchema(result.data.value);
 			return claim instanceof type.errors

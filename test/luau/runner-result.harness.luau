@@ -46,6 +46,16 @@ local ExpectModule = makeInstance("Expect")
 local RuntimeModule = makeInstance("JestRuntime")
 
 local notedMessages: { string } = {}
+local schedulingArmedWith = nil
+local schedulingFailure = nil
+local schedulingStops = 0
+local waited = 0
+local task = {
+	cancel = coroutine.close,
+	wait = function()
+		waited += 1
+	end,
+}
 local siblingsResolve = true
 local armedWith: any = nil
 local lastSeenArmedWith: any = nil
@@ -54,6 +64,20 @@ local disarms = 0
 local nextInstallation: any = nil
 
 local stubs = {
+	["./cooperative-scheduler"] = {
+		arm = function(options)
+			schedulingArmedWith = options
+			local active = true
+			return function()
+				if not active then
+					return nil
+				end
+				active = false
+				schedulingStops += 1
+				return schedulingFailure
+			end
+		end,
+	},
 	["./instance-resolver"] = {
 		findSiblingPackage = function(_module: any, name: string)
 			if not siblingsResolve then
@@ -140,6 +164,10 @@ local RunnerResult = __MODULE__
 local JEST_RESULT = { numPassedTests = 3, success = true }
 
 local function reset()
+	schedulingArmedWith = nil
+	schedulingFailure = nil
+	schedulingStops = 0
+	waited = 0
 	_G.__jest_roblox_cov = nil
 	armedWith = nil
 	lastSeenArmedWith = nil
@@ -440,6 +468,44 @@ local function testEachDimensionRidesAlone()
 	check(captureOnly.runner.phase == nil, "T15: a capture state alone names no phase")
 end
 
+local function testSchedulingLifecycleAndFailures()
+	reset()
+	local stop = RunnerResult.beginScheduling(JestModule)
+	check(schedulingArmedWith.circusState == CircusStateModule, "scheduler uses this run's circus")
+	check(
+		typeof(schedulingArmedWith.runtimeClass.setGlobalsForRuntime) == "function",
+		"scheduler uses this run's runtime"
+	)
+	check(schedulingArmedWith.now == os.clock, "scheduler uses the real elapsed clock")
+	schedulingArmedWith.yield()
+	check(waited == 1, "scheduler yields to the engine")
+	check(schedulingArmedWith.cancel == task.cancel, "scheduler owns engine wait cancellation")
+	RunnerResult.finishScheduling(stop)
+	RunnerResult.finishScheduling(stop)
+	RunnerResult.finishScheduling(nil)
+	check(schedulingStops == 1 and #notedMessages == 0, "successful stop is silent and idempotent")
+
+	reset()
+	siblingsResolve = false
+	local unavailable = RunnerResult.beginScheduling(JestModule)
+	RunnerResult.finishScheduling(unavailable)
+	RunnerResult.finishScheduling(unavailable)
+	check(#notedMessages == 1, "unavailable scheduling is reported once")
+	check(
+		string.find(notedMessages[1], "cooperative test scheduling unavailable", 1, true),
+		"warning names unavailable feature"
+	)
+
+	reset()
+	schedulingFailure = "circus registry rejected the handler"
+	RunnerResult.finishScheduling(RunnerResult.beginScheduling(JestModule))
+	check(
+		string.find(notedMessages[1], schedulingFailure, 1, true),
+		"per-file installation failure remains observable"
+	)
+end
+
+testSchedulingLifecycleAndFailures()
 testBareRunHasNoRunnerKey()
 testLastSeenArmsAgainstThisRunsJest()
 testUnresolvableJestStillWatches()

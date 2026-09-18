@@ -30,9 +30,11 @@ out-of-band when the contract test's pre-built copy needs refreshing
   to merge:
   - `ReplicatedStorage.PkgShared` <- `out/shared/`
   - `ServerScriptService.PkgServer` <- `out/server/`
-- One passing `.spec.ts` on the shared mount and four on the server mount
+- Two passing `.spec.ts` files on the shared mount and four on the server mount
   (`server-thing` plus three same-basename `index.spec` files), so:
-  - The both-mounts run asserts "5 passed".
+  - The both-mounts run asserts "129 passed", including 120 bounded CPU cases
+    and a deferred-callback/Heartbeat progress check. Their twelve seconds of
+    cumulative work require the runner to yield between tests.
   - The namesake run narrows to "1 passed" out of the three that share a
     basename.
 

@@ -72,6 +72,13 @@ jobs:
       - name: Build
         run: nr build
 
+      - name: Test release candidate
+        run: |
+          nr typecheck
+          pnpm exec vitest run --project unit --coverage
+          pnpm exec vitest run --project integration
+          pnpm exec vitest run --project e2e
+
       - name: Publish to npm
         run: pnpm publish --access public --no-git-checks
         env:

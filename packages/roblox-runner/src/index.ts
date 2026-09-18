@@ -7,8 +7,8 @@ export { createMemoryStoreJanitor } from "./memory-store-janitor.ts";
 export type { MemoryStoreJanitor, MemoryStoreJanitorOptions } from "./memory-store-janitor.ts";
 export { publishMessageAsync } from "./messaging-publish.ts";
 export type { PublishMessageOptions } from "./messaging-publish.ts";
-export { OcaleRunner } from "./ocale-runner.ts";
-export type { OcaleRunnerOptions } from "./ocale-runner.ts";
+export { maximumSubmitDuration, OcaleRunner } from "./ocale-runner.ts";
+export type { OcaleRunnerOptions, SubmitDurationOptions } from "./ocale-runner.ts";
 export {
 	PLACE_CONTENT_ID_NAME,
 	PLACE_CONTENT_ID_SERVICE,
@@ -20,6 +20,7 @@ export { ProgressMap } from "./progress-map.ts";
 export type { ProgressMapOptions } from "./progress-map.ts";
 export { runTaskPoolAsync as runTaskPool } from "./task-pool.ts";
 export type { TaskPoolBackoff, TaskPoolOptions, TaskPoolPlace } from "./task-pool.ts";
+export { TaskSubmitError } from "./task-submit-error.ts";
 export type {
 	BinaryInputUploader,
 	ExecuteScriptOptions,

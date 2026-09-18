@@ -30,6 +30,7 @@
 		"src/**/*.spec.ts",
 		"src/**/*.spec-d.ts",
 		"test/**/*.ts",
-		"test/**/*.d.ts"
+		"test/**/*.d.ts",
+		"../../types/**/*.d.ts"
 	]
 }

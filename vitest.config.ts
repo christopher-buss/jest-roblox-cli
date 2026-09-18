@@ -403,12 +403,8 @@ export default defineConfig({
 					include: [`${LIVE_DIRECTORY}/**/*.spec.ts`],
 					pool: "forks",
 					restoreMocks: true,
-					// Live tests hit the real Open Cloud API; transient network
-					// blips (latency, 5xx, OCALE rate limits) self-heal on a
-					// retry instead of forcing a manual re-run. Scoped to
-					// `live` only — `unit`/`integration`/`e2e` stay at 0 so real
-					// failures surface immediately.
-					retry: 2,
+					// Exercise recovery without retrying failed assertions.
+					retry: 0,
 					setupFiles,
 					// Generous budget: a heavily-throttled upload can wait
 					// through several ~7s retry-after delays before landing.

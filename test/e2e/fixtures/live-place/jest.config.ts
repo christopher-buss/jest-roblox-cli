@@ -1,6 +1,7 @@
 import { defineConfig } from "@isentinel/jest-roblox";
 
 export default defineConfig({
+	bootProbeTimeout: 90_000,
 	placeFile: "game.rbxl",
 	rojoProject: "default.project.json",
 	test: {
@@ -23,4 +24,5 @@ export default defineConfig({
 			},
 		],
 	},
+	timeout: 30_000,
 });

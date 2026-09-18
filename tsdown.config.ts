@@ -110,9 +110,9 @@ export default defineConfig([
 	{
 		clean: true,
 		deps: {
+			alwaysBundle: ["@bedrock-rbx/ocale", /^@bedrock-rbx\/ocale\//],
 			alwaysBundle: ["@isentinel/luau-ast"],
 			neverBundle: [
-				"@bedrock-rbx/ocale",
 				"arktype",
 				"istanbul-lib-coverage",
 				"istanbul-lib-report",
@@ -121,7 +121,7 @@ export default defineConfig([
 				"typescript",
 				"ws",
 			],
-			onlyBundle: ["@rbxts/jest", "type-fest"],
+			onlyBundle: ["@bedrock-rbx/ocale", "@rbxts/jest", "type-fest"],
 		},
 		dts: {
 			build: true,

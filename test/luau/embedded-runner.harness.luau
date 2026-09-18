@@ -1,4 +1,5 @@
 --!nocheck
+local activeScheduling = 0
 -- Lute-driven test for the embedded workspace runner's per-package Game
 -- Output capture. The runner and the capture module it shares with runner.luau
 -- are inlined into the placeholders below by embedded-runner.spec.ts; the fake
@@ -354,6 +355,7 @@ end
 
 local Jest = {
 	runCLI = function(_, config)
+		check(activeScheduling == 1, "Jest starts with one scheduling owner")
 		return {
 			expect = function()
 				-- The scheduler turn the previous package never got: whatever
@@ -409,6 +411,17 @@ local Jest = {
 }
 
 local stubs = {
+	["./cooperative-scheduler"] = {
+		arm = function()
+			check(activeScheduling == 0, "previous package did not disarm scheduling")
+			activeScheduling += 1
+			return function()
+				check(activeScheduling == 1, "scheduling stopped more than once")
+				activeScheduling -= 1
+				return nil
+			end
+		end,
+	},
 	["../instance-resolver"] = {
 		getJest = function(config)
 			if jestMissing[config.pkg] then
@@ -657,8 +670,7 @@ end
 -- T1: the capture opens before the package is materialized and spans its run,
 -- and two packages that each print distinct messages get only their own —
 -- including the reset between them, which belongs to neither capture.
-local function 
-testWindowAndNoBleedAcrossPackages()
+local function testWindowAndNoBleedAcrossPackages()
 	local results = run({ "a", "b" })
 	local a = messagesOf(results[1])
 	local b = messagesOf(results[2])
@@ -1252,4 +1264,5 @@ testRequeueUsesTheSeededTtl()
 testFailedRequeueLeavesTheReadStanding()
 testRefusedRequeueIsRetried()
 
+check(activeScheduling == 0, "finished, failed, or abandoned package retained scheduling")
 writeStdout("ALL OK")

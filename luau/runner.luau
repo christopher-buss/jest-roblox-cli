@@ -108,6 +108,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 	-- Armed inside `runTests`, read from out here by the watchdog. Nil until
 	-- Jest is about to start, which is itself an answer.
 	local lastSeen: LastSeen.Watch? = nil
+	local stopScheduling: (() -> string?)? = nil
 
 	local function runTests()
 		phase = "resolveProjects"
@@ -158,6 +159,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		config.runnerCaptureGameOutput = nil :: any
 
 		phase = "run"
+		stopScheduling = RunnerResult.beginScheduling(findValue)
 		lastSeen = RunnerResult.beginLastSeen(findValue)
 		local coverage = RunnerResult.beginCoverage(findValue, {
 			coverage = coverageEnabled,
@@ -216,6 +218,7 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 		end,
 		timeoutMs = budgetMs,
 	})
+	RunnerResult.finishScheduling(stopScheduling)
 
 	if restoreCapture then
 		restoreCapture()
@@ -225,13 +228,11 @@ function module.run(callingScript: LuaSourceContainer, config: Config): (string,
 
 	local jestResult
 	if not runSuccess then
-		jestResult = HttpService:JSONEncode(
-			RunnerResult.fail(runValue, {
-				abandon = if timedOut then "timeout" else nil,
-				captureInstalled = restoreCapture ~= nil,
-				phase = phase,
-			})
-		)
+		jestResult = HttpService:JSONEncode(RunnerResult.fail(runValue, {
+			abandon = if timedOut then "timeout" else nil,
+			captureInstalled = restoreCapture ~= nil,
+			phase = phase,
+		}))
 	else
 		jestResult = HttpService:JSONEncode(runValue)
 	end

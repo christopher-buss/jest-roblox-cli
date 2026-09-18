@@ -1,0 +1,327 @@
+diff --git a/dist/index.d.mts b/dist/index.d.mts
+index f756ff4fae418dda873135afb78371f64e728fb5..de7f28643747ba8b3f900c93b1c9745c934b5573 100644
+--- a/dist/index.d.mts
++++ b/dist/index.d.mts
+@@ -211,5 +211,7 @@ declare class ValidationError extends OpenCloudError {
+   constructor(message: string, options: ValidationErrorOptions);
+ }
+ //#endregion
+-export { ApiError, type ApiErrorOptions, type ApiRequestContext, GATEWAY_REJECTED, type HttpClient, type HttpRequest, type HttpResponse, NetworkError, type NetworkErrorOptions, type OpenCloudClientOptions, OpenCloudError, type OpenCloudErrorOptions, type OpenCloudHooks, type Page, PermissionError, type PermissionErrorOptions, PollAbortedError, type PollAbortedErrorOptions, PollTimeoutError, type PollTimeoutErrorOptions, RESPONSE_UNPARSEABLE, RateLimitError, type RateLimitErrorOptions, type RequestConfig, type RequestOptions, type Result, type SleepFunc, TRANSIENT_TRANSPORT_CODES, ValidationError, type ValidationErrorCode, type ValidationErrorOptions, requestContextOf };
++/** Creates the default fetch-backed Open Cloud HTTP transport. */
++declare function createFetchHttpClient(fetchFunc?: typeof fetch): HttpClient;
++export { createFetchHttpClient, ApiError, type ApiErrorOptions, type ApiRequestContext, GATEWAY_REJECTED, type HttpClient, type HttpRequest, type HttpResponse, NetworkError, type NetworkErrorOptions, type OpenCloudClientOptions, OpenCloudError, type OpenCloudErrorOptions, type OpenCloudHooks, type Page, PermissionError, type PermissionErrorOptions, PollAbortedError, type PollAbortedErrorOptions, PollTimeoutError, type PollTimeoutErrorOptions, RESPONSE_UNPARSEABLE, RateLimitError, type RateLimitErrorOptions, type RequestConfig, type RequestOptions, type Result, type SleepFunc, TRANSIENT_TRANSPORT_CODES, ValidationError, type ValidationErrorCode, type ValidationErrorOptions, requestContextOf };
+ //# sourceMappingURL=index.d.mts.map
+\ No newline at end of file
+diff --git a/dist/index.mjs b/dist/index.mjs
+index a86239815adc9080d2b3d02b32d4e923b0c104f7..a4bde3fef940aacb0924c11c2241d10ddc75a4a2 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -1,5 +1,6 @@
++import { c as createFetchHttpClient } from "./resource-client-DtfDWglY.mjs";
+ import { a as OpenCloudError, i as requestContextOf, n as NetworkError, r as ApiError, t as RateLimitError } from "./rate-limit-Df55K34f.mjs";
+ import { a as TRANSIENT_TRANSPORT_CODES, f as PermissionError, i as RESPONSE_UNPARSEABLE, n as GATEWAY_REJECTED } from "./retry-DM2-tlR8.mjs";
+ import { n as PollAbortedError, t as PollTimeoutError } from "./poll-timeout-DpEY-gAc.mjs";
+ import { t as ValidationError } from "./validation-Cg2lBhpQ.mjs";
+-export { ApiError, GATEWAY_REJECTED, NetworkError, OpenCloudError, PermissionError, PollAbortedError, PollTimeoutError, RESPONSE_UNPARSEABLE, RateLimitError, TRANSIENT_TRANSPORT_CODES, ValidationError, requestContextOf };
++export { createFetchHttpClient, ApiError, GATEWAY_REJECTED, NetworkError, OpenCloudError, PermissionError, PollAbortedError, PollTimeoutError, RESPONSE_UNPARSEABLE, RateLimitError, TRANSIENT_TRANSPORT_CODES, ValidationError, requestContextOf };
+diff --git a/dist/polling-helpers-BjFXyaOm.mjs b/dist/polling-helpers-BjFXyaOm.mjs
+index e808a2d52f082e9669785519fd816a07dfa0a8f5..223fa97bf3b7db2acb948e9d35e6e9ec6a4a3976 100644
+--- a/dist/polling-helpers-BjFXyaOm.mjs
++++ b/dist/polling-helpers-BjFXyaOm.mjs
+@@ -703,7 +703,7 @@ async function raceWithAbortAsync(promise, signal) {
+ 	}
+ }
+ async function sleepWithAbortAsync({ ms, signal, sleep }) {
+-	return await raceWithAbortAsync(sleep(ms), signal) === ABORTED;
++	return await raceWithAbortAsync(sleep(ms, signal), signal) === ABORTED;
+ }
+ function makeTimeout(task, timeoutMs) {
+ 	return new PollTimeoutError(`Polling timed out after ${timeoutMs} ms`, {
+diff --git a/dist/resource-client-DtfDWglY.mjs b/dist/resource-client-DtfDWglY.mjs
+index aab2a7f9510a19b3228c422e69071a4586248f7f..3c206ee54a19427551f10aa18010810f46eb90cb 100644
+--- a/dist/resource-client-DtfDWglY.mjs
++++ b/dist/resource-client-DtfDWglY.mjs
+@@ -157,6 +157,7 @@ var BudgetTracker = class {
+ */
+ var BudgetGate = class {
+ 	#chains = /* @__PURE__ */ new Map();
++	#hooks;
+ 	#sleep;
+ 	#trackers = /* @__PURE__ */ new Map();
+ 	/**
+@@ -164,8 +165,9 @@ var BudgetGate = class {
+ 	*
+ 	* @param sleep - Injectable sleep (tests pass a fake clock).
+ 	*/
+-	constructor(sleep) {
++	constructor(sleep, hooks) {
+ 		this.#sleep = sleep;
++		this.#hooks = hooks;
+ 	}
+ 	/**
+ 	* Holds until the scope's budget permits a send, then reserves one slot.
+@@ -175,13 +177,13 @@ var BudgetGate = class {
+ 	*
+ 	* @param scope - The API key and operation to gate on.
+ 	*/
+-	async gateAsync(scope) {
++	async gateAsync(scope, signal) {
+ 		const key = scopeKey(scope);
+ 		const previous = this.#chains.get(key) ?? Promise.resolve();
+-		const runGateAsync = async () => this.#gateOnce(key);
++		const runGateAsync = async () => this.#gateOnce(key, signal);
+ 		const mine = previous.then(runGateAsync, runGateAsync);
+ 		this.#chains.set(key, mine);
+-		await mine;
++		await waitForAdmissionAsync(mine, this.#hooks, signal);
+ 	}
+ 	/**
+ 	* Folds a response's parsed budget back onto the scope. A `undefined`
+@@ -195,10 +197,12 @@ var BudgetGate = class {
+ 		if (sample === void 0) return;
+ 		this.#tracker(scopeKey(scope)).observe(sample, Date.now());
+ 	}
+-	async #gateOnce(key) {
++	async #gateOnce(key, signal) {
++		throwIfAborted(signal);
+ 		const tracker = this.#tracker(key);
+ 		const waitMs = tracker.waitMs(Date.now());
+-		if (waitMs > 0) await this.#sleep(waitMs);
++		if (waitMs > 0) await this.#sleep(waitMs, signal);
++		throwIfAborted(signal);
+ 		tracker.reserve(Date.now());
+ 	}
+ 	#tracker(key) {
+@@ -233,6 +237,7 @@ function scopeKey({ apiKey, operationKey }) {
+ */
+ async function executeWithRetryAsync(request, { config, hooks, send, sleep }) {
+ 	async function attemptAsync() {
++		throwIfAborted(config.signal);
+ 		hooks.onRequest?.(request);
+ 		return send(request);
+ 	}
+@@ -246,7 +251,8 @@ async function executeWithRetryAsync(request, { config, hooks, send, sleep }) {
+ 			retryDelay: config.retryDelay
+ 		});
+ 		hooks.onRateLimit?.(waitMs);
+-		await sleep(waitMs);
++		await sleep(waitMs, config.signal);
++		throwIfAborted(config.signal);
+ 		result = await attemptAsync();
+ 	}
+ 	return result;
+@@ -362,13 +368,15 @@ var RateLimitQueue = class {
+ 	* @param task - The request to run once a token is available.
+ 	* @returns The value produced by `task`.
+ 	*/
+-	async acquireAsync(task) {
+-		const myTurn = this.#chain.then(async () => this.#waitForToken());
+-		this.#chain = myTurn;
+-		await myTurn;
++	async acquireAsync(task, signal) {
++		const myTurn = this.#chain.then(async () => this.#waitForToken(signal));
++		this.#chain = myTurn.catch(() => {});
++		await waitForAdmissionAsync(myTurn, this.#hooks, signal);
++		throwIfAborted(signal);
+ 		return task();
+ 	}
+-	async #waitForToken() {
++	async #waitForToken(signal) {
++		throwIfAborted(signal);
+ 		const now = Math.max(Date.now(), this.#lastCheck);
+ 		const drained = Math.max(0, this.#bucketLevel - (now - this.#lastCheck));
+ 		this.#lastCheck = now;
+@@ -378,7 +386,8 @@ var RateLimitQueue = class {
+ 		}
+ 		const waitMs = drained + this.#intervalMs - this.#maxBucketLevel;
+ 		this.#hooks.onRateLimit?.(waitMs);
+-		await this.#sleep(waitMs);
++		await this.#sleep(waitMs, signal);
++		throwIfAborted(signal);
+ 		this.#bucketLevel = this.#maxBucketLevel;
+ 		this.#lastCheck = now + waitMs;
+ 	}
+@@ -658,17 +667,21 @@ function extractErrorMessage(body) {
+ 	return extractLegacyMessage(body);
+ }
+ /**
+-* Parses the `x-ratelimit-reset` header value into seconds. On a 429 the
+-* header is a comma-separated list of per-window reset times (e.g. `"22, 0"`,
+-* one entry per rate-limit window); the largest value is the longest-resetting
+-* window and the only safe wait that won't retry into a still-exhausted
+-* window. A single value is treated as a one-element list.
++* Parses a numeric `Retry-After` header into seconds.
+ *
+ * @param headerValue - The raw header value, or `undefined` if missing.
+-* @returns The number of seconds to wait, or 0 if missing/invalid.
++* @returns The number of seconds to wait, or `undefined` if missing/invalid.
+ */
+ function parseRetryAfterSeconds(headerValue) {
+-	return reduceRateLimitTokens(headerValue, (a, b) => Math.max(a, b)) ?? 0;
++	if (headerValue === void 0) return;
++	const seconds = Number(headerValue);
++	return Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) : void 0;
++}
++function retryAfterSeconds(headers, remaining) {
++	const retryAfter = parseRetryAfterSeconds(headers["retry-after"]);
++	if (remaining !== 0) return retryAfter ?? 0;
++	const reset = reduceRateLimitTokens(headers["x-ratelimit-reset"], (a, b) => Math.max(a, b)) ?? 0;
++	return Math.max(retryAfter ?? 0, reset);
+ }
+ /**
+ * Joins the base URL from config with the relative path from the request.
+@@ -702,7 +715,9 @@ function buildFetchOptions(request, config) {
+ 		options.body = JSON.stringify(request.body);
+ 	}
+ 	applyRequestHeaders(headers, request);
+-	if (config.timeout !== void 0) options.signal = AbortSignal.timeout(config.timeout);
++	if (config.timeout !== void 0 && config.signal !== void 0) options.signal = AbortSignal.any([config.signal, AbortSignal.timeout(config.timeout)]);
++	else if (config.timeout !== void 0) options.signal = AbortSignal.timeout(config.timeout);
++	else if (config.signal !== void 0) options.signal = config.signal;
+ 	return options;
+ }
+ /**
+@@ -905,12 +920,13 @@ async function readResponseBodyAsync(response) {
+ async function createRateLimitErrorAsync(response) {
+ 	const headers = headersToRecord(response.headers);
+ 	const { parsed, text } = await readResponseBodyAsync(response);
++	const remaining = reduceRateLimitTokens(headers["x-ratelimit-remaining"], (a, b) => {
++		return Math.min(a, b);
++	});
+ 	return new RateLimitError("Rate limited", {
+ 		details: bodyDetail(text, parsed),
+-		remaining: reduceRateLimitTokens(headers["x-ratelimit-remaining"], (a, b) => {
+-			return Math.min(a, b);
+-		}),
+-		retryAfterSeconds: parseRetryAfterSeconds(headers["x-ratelimit-reset"]),
++		remaining,
++		retryAfterSeconds: retryAfterSeconds(headers, remaining),
+ 		statusCode: response.status
+ 	});
+ }
+@@ -979,7 +995,7 @@ async function classifyResponseAsync(response, context) {
+ function resolveDependencies(options) {
+ 	return {
+ 		httpClient: options.httpClient ?? createFetchHttpClient(),
+-		sleep: options.sleep ?? setTimeout
++		sleep: options.sleep ?? ((ms, signal) => setTimeout(ms, void 0, { signal }))
+ 	};
+ }
+ //#endregion
+@@ -1051,8 +1067,8 @@ var ResourceClient = class {
+ 		});
+ 		this.#httpClient = resolved.httpClient;
+ 		this.#sleep = resolved.sleep;
+-		this.#budgets = new BudgetGate(this.#sleep);
+ 		this.#hooks = hooks ?? {};
++		this.#budgets = new BudgetGate(this.#sleep, this.#hooks);
+ 		this.#config = Object.freeze({
+ 			...CLIENT_DEFAULTS,
+ 			apiKey,
+@@ -1086,7 +1102,7 @@ var ResourceClient = class {
+ 		});
+ 		const httpResult = await this.#getQueue(merged.apiKey, spec.operationLimit).acquireAsync(async () => {
+ 			return executeWithRetryAsync(requestResult.data, {
+-				config: merged,
++				config: { ...merged, signal: options?.signal },
+ 				hooks: this.#hooks,
+ 				send: this.#gatedSend({
+ 					apiKey: merged.apiKey,
+@@ -1094,7 +1110,7 @@ var ResourceClient = class {
+ 				}, requestConfig),
+ 				sleep: this.#sleep
+ 			});
+-		});
++		}, options?.signal);
+ 		if (!httpResult.success) return {
+ 			err: enrichPermissionError(httpResult.err, spec),
+ 			success: false
+@@ -1121,7 +1137,8 @@ var ResourceClient = class {
+ 	*/
+ 	#gatedSend(scope, requestConfig) {
+ 		return async (toSend) => {
+-			await this.#budgets.gateAsync(scope);
++			await this.#budgets.gateAsync(scope, requestConfig.signal);
++			throwIfAborted(requestConfig.signal);
+ 			const sendResult = await this.#httpClient.request(toSend, requestConfig);
+ 			this.#budgets.observe(scope, rateLimitSampleFromResult(sendResult));
+ 			return sendResult;
+@@ -1152,9 +1169,28 @@ function buildRequestConfig({ merged, options, request }) {
+ 	return {
+ 		apiKey: merged.apiKey,
+ 		baseUrl: merged.baseUrl,
++		...options?.signal === void 0 ? {} : { signal: options.signal },
+ 		...shouldOmitDefaultTimeout ? {} : { timeout: merged.timeout }
+ 	};
+ }
++async function waitForAdmissionAsync(waiting, hooks, signal) {
++	const finish = hooks.onAdmissionWait?.();
++	let onAbort;
++	try {
++		return await new Promise((resolve, reject) => {
++			onAbort = () => reject(new Error("Request aborted", { cause: signal.reason }));
++			signal?.addEventListener("abort", onAbort, { once: true });
++			waiting.then(resolve, reject);
++			if (signal?.aborted === true) onAbort();
++		});
++	} finally {
++		signal?.removeEventListener("abort", onAbort);
++		finish?.();
++	}
++}
++function throwIfAborted(signal) {
++	if (signal?.aborted === true) throw new Error("Request aborted", { cause: signal.reason });
++}
+ function enrichPermissionError(err, spec) {
+ 	if (spec.requiredScopes === void 0) return err;
+ 	if (err instanceof PermissionError) return err;
+@@ -1172,6 +1208,6 @@ function enrichPermissionError(err, spec) {
+ 	});
+ }
+ //#endregion
+-export { isRecord as a, toJsonDetails as i, okRequest as n, isDateTimeString as o, parseEmptyResponse as r, ResourceClient as t };
++export { isRecord as a, createFetchHttpClient as c, toJsonDetails as i, okRequest as n, isDateTimeString as o, parseEmptyResponse as r, ResourceClient as t };
+ 
+ //# sourceMappingURL=resource-client-DtfDWglY.mjs.map
+diff --git a/dist/types-mhEalVsR.d.mts b/dist/types-mhEalVsR.d.mts
+index ff7e43f0b09b2e159f1812ed2a1657d7e35ce298..16c6e387d9da0fa0f71dc4477a30ba9487d78728 100644
+--- a/dist/types-mhEalVsR.d.mts
++++ b/dist/types-mhEalVsR.d.mts
+@@ -189,6 +189,8 @@ interface RequestConfig {
+   readonly apiKey: string;
+   /** Base URL for the API, e.g. `https://apis.roblox.com`. */
+   readonly baseUrl: string;
++  /** Optional caller cancellation signal. */
++  readonly signal?: AbortSignal;
+   /** Optional request timeout in milliseconds. */
+   readonly timeout?: number;
+ }
+@@ -203,12 +205,14 @@ interface HttpClient {
+   request(request: HttpRequest, config: RequestConfig): Promise<Result<HttpResponse, OpenCloudError>>;
+ }
+ /**
+-* Client-level observability hooks. All hooks are notification-only and
+-* fire-and-forget; they cannot alter retry behaviour.
++* Client-level observability hooks. Hooks observe request transitions;
++* they cannot alter retry behaviour.
+ *
+ * @since 0.1.0
+ */
+ interface OpenCloudHooks {
++  /** Starts a local quota/queue wait. Returned cleanup runs before HTTP starts, or on cancellation. */
++  readonly onAdmissionWait?: () => (() => void) | undefined;
+   /** Fired before the SDK sleeps for a computed retry or rate-limit wait. */
+   readonly onRateLimit?: (waitMs: number) => void;
+   /** Fired before each HTTP attempt (including retries). */
+@@ -282,7 +286,10 @@ interface OpenCloudClientOptions {
+ *
+ * @since 0.1.0
+ */
+-type RequestOptions = Partial<Pick<OpenCloudClientOptions, "apiKey" | "baseUrl" | "maxRetries" | "retryableStatuses" | "retryableTransportCodes" | "retryDelay" | "timeout">>;
++type RequestOptions = Partial<Pick<OpenCloudClientOptions, "apiKey" | "baseUrl" | "maxRetries" | "retryableStatuses" | "retryableTransportCodes" | "retryDelay" | "timeout">> & {
++  /** Optional caller cancellation signal. */
++  readonly signal?: AbortSignal;
++};
+ /**
+ * Supported request body types.
+ *

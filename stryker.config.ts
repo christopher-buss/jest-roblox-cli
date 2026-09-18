@@ -14,7 +14,7 @@ export default {
 	),
 	// Preserve type checking and deliberate errors in typecheck fixtures.
 	disableTypeChecks: false,
-	ignorePatterns: ["dist", "coverage", "out-tsc"],
+	ignorePatterns: ["dist", "coverage", "out-tsc", ".eslintcache", "test/e2e/cli/.tmp/**"],
 	mutate: [
 		...(sharedConfig.mutate ?? []).filter(
 			(pattern): pattern is string => pattern !== undefined,

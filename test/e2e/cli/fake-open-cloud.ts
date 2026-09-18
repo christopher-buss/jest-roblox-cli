@@ -103,6 +103,13 @@ export interface FakeOpenCloudOptions {
 	 */
 	bootProbe?: "complete" | "stall";
 	executionClaim?: "missing" | { claimedAt: number; owner: string };
+	/** Ordered failures returned before queued test tasks are accepted. */
+	submitFailures?: Array<{
+		body: JSONValue;
+		headers?: Record<string, string>;
+		status: number;
+	}>;
+	uploadConnectionResets?: number;
 }
 
 /** One binary input the fake allocated, and the bytes that were PUT to it. */
@@ -156,8 +163,10 @@ interface FakeOpenCloudState {
 	queueDiscards: FakeOpenCloudServer["queueDiscards"];
 	queues: Map<string, Array<QueuedItem>>;
 	requests: FakeOpenCloudServer["requests"];
+	submitFailures: NonNullable<FakeOpenCloudOptions["submitFailures"]>;
 	taskQueue: Array<FakeOpenCloudTask>;
 	taskResults: Map<string, FakeOpenCloudTask>;
+	uploadConnectionResets: number;
 }
 
 export async function startFakeOpenCloudServerAsync(
@@ -199,8 +208,10 @@ function createState(
 		queueDiscards: [],
 		queues: new Map(),
 		requests: [],
+		submitFailures: [...(options.submitFailures ?? [])],
 		taskQueue: [...tasks],
 		taskResults: new Map(),
+		uploadConnectionResets: options.uploadConnectionResets ?? 0,
 	};
 }
 
@@ -363,6 +374,12 @@ function handlePublishVersion({
 	response: ServerResponse;
 	state: FakeOpenCloudState;
 }): void {
+	if (state.uploadConnectionResets > 0) {
+		state.uploadConnectionResets -= 1;
+		response.socket?.destroy();
+		return;
+	}
+
 	state.counters.uploadCount += 1;
 	response.writeHead(200, { "content-type": JSON_CONTENT_TYPE });
 	response.end(
@@ -439,6 +456,39 @@ function acceptTask({
 	response.end(JSON.stringify(validInProgressTaskBody({ path: taskPath })));
 }
 
+function rejectTaskSubmission(
+	response: ServerResponse,
+	submitFailure: NonNullable<FakeOpenCloudOptions["submitFailures"]>[number],
+): void {
+	response.writeHead(submitFailure.status, {
+		"content-type": JSON_CONTENT_TYPE,
+		...submitFailure.headers,
+	});
+	response.end(JSON.stringify(submitFailure.body));
+}
+
+function rejectConfiguredSubmission(state: FakeOpenCloudState, response: ServerResponse): boolean {
+	const submitFailure = state.submitFailures.shift();
+	if (submitFailure === undefined) {
+		return false;
+	}
+
+	rejectTaskSubmission(response, submitFailure);
+
+	return true;
+}
+
+function acceptQueuedTask(state: FakeOpenCloudState, response: ServerResponse): void {
+	const nextTask = state.taskQueue.shift();
+	if (nextTask === undefined) {
+		response.writeHead(500, { "content-type": JSON_CONTENT_TYPE });
+		response.end(JSON.stringify({ error: { message: "No fake task queued" } }));
+		return;
+	}
+
+	acceptTask({ queuedTask: nextTask, response, state });
+}
+
 function handleCreateTask({
 	body,
 	response,
@@ -471,15 +521,11 @@ function handleCreateTask({
 	}
 
 	state.requests.push(parsed);
-
-	const nextTask = state.taskQueue.shift();
-	if (nextTask === undefined) {
-		response.writeHead(500, { "content-type": JSON_CONTENT_TYPE });
-		response.end(JSON.stringify({ error: { message: "No fake task queued" } }));
+	if (rejectConfiguredSubmission(state, response)) {
 		return;
 	}
 
-	acceptTask({ queuedTask: nextTask, response, state });
+	acceptQueuedTask(state, response);
 }
 
 /**

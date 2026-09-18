@@ -15,6 +15,7 @@
 -- `fail` for one that did not. A dimension only a failed run can carry has the
 -- same seam as any other, rather than a field of its own beside the envelope.
 
+local CooperativeScheduler = require("./cooperative-scheduler")
 local GameOutputCapture = require("./game-output-capture")
 local InstanceResolver = require("./instance-resolver")
 local LastSeen = require("./last-seen")
@@ -203,6 +204,40 @@ function module.beginLastSeen(jestModule: ModuleScript): LastSeen.Watch
 	end)
 
 	return if armed then watch else LastSeen.unarmed(tostring(watch))
+end
+
+function module.beginScheduling(jestModule: ModuleScript): () -> string?
+	local ok, result = pcall(function()
+		local hooks = resolveHookModules(jestModule)
+		return CooperativeScheduler.arm({
+			circusState = hooks.circusState,
+			runtimeClass = hooks.runtimeClass,
+			now = os.clock,
+			yield = function()
+				task.wait()
+			end,
+			cancel = task.cancel,
+		})
+	end)
+	if ok then
+		return result
+	end
+	local failure: string? = tostring(result)
+	return function()
+		local message = failure
+		failure = nil
+		return message
+	end
+end
+
+function module.finishScheduling(stop: (() -> string?)?)
+	if stop == nil then
+		return
+	end
+	local failure = stop()
+	if failure ~= nil then
+		GameOutputCapture.note("Warning: cooperative test scheduling unavailable: " .. failure)
+	end
 end
 
 --[=[

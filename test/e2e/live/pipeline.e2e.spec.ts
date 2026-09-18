@@ -4,6 +4,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished } from "vitest";
 
+import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import { loadConfig, prepareArtifactsAsync, readCoverageManifest } from "../../../src/index.ts";
 import { createFixtureSandbox, runCliAsync } from "../cli/helpers.ts";
 import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
@@ -22,7 +23,7 @@ import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
  *
  * The fixture (`test/e2e/fixtures/live-place`) ships a pre-built `.rbxl` and
  * two configured `projects` in its `jest.config.ts` — `live-place-shared`
- * (one spec) and `live-place-server` (four).
+ * (two specs) and `live-place-server` (four).
  *
  * Only the first run below carries the boot probe. One live proof that a fresh
  * version starts is the whole of what the wire can tell us; every later run
@@ -37,7 +38,17 @@ function lineOfTitle(source: string, title: string): number {
 	return source.split("\n").findIndex((line) => line.includes(title)) + 1;
 }
 
-const RUN_TIMEOUT_MS = 120_000;
+const FIXTURE_BOOT_PROBE_TIMEOUT_MS = 90_000;
+const FIXTURE_TASK_TIMEOUT_MS = 30_000;
+const HOST_SETUP_ALLOWANCE_MS = 30_000;
+const VITEST_CLEANUP_ALLOWANCE_MS = 5000;
+
+const RECOVERY_DEADLINE_MS =
+	openCloudExecutionBudgets(FIXTURE_TASK_TIMEOUT_MS).startupWindowMs + HOST_SETUP_ALLOWANCE_MS;
+const CLI_RUN_TIMEOUT_MS =
+	openCloudExecutionBudgets(FIXTURE_BOOT_PROBE_TIMEOUT_MS).maximumSubmitMs +
+	FIXTURE_BOOT_PROBE_TIMEOUT_MS +
+	RECOVERY_DEADLINE_MS;
 
 const coverageEntrySchema = type({
 	s: { "[string]": "number" },
@@ -111,7 +122,7 @@ describe("live pipeline", () => {
 	it.runIf(IS_LIVE)(
 		"should run both mounts, capture game output, and report coverage in one run",
 		async () => {
-			expect.assertions(12);
+			expect.assertions(13);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
 			const gameOutputPath = path.join(sandbox, "game-output.json");
@@ -130,15 +141,14 @@ describe("live pipeline", () => {
 				{
 					cwd: sandbox,
 					env: liveEnvironment(),
-					timeoutMs: RUN_TIMEOUT_MS,
+					timeoutMs: CLI_RUN_TIMEOUT_MS,
 				},
 			);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
-			// Four shared tests (one bare `it`, one nested, two `each` rows) plus
-			// four server ones (`server-thing` and the three same-basename
-			// `index.spec` files the narrowing regression needs).
-			expect(result.stdout, "both mounts ran").toContain("8 passed");
+			// Eight original cases plus 120 bounded CPU cases and their
+			// deferred-callback/Heartbeat completion check.
+			expect(result.stdout, "both mounts ran").toContain("129 passed");
 			expect(result.stdout, "shared mount reported").toContain("live-place-shared");
 			expect(result.stdout, "server mount reported").toContain("live-place-server");
 
@@ -166,6 +176,10 @@ describe("live pipeline", () => {
 				gameOutput.flatMap((group) => group.entries).map((entry) => entry.message),
 				"native warn reached the dump",
 			).toSatisfyAny((message) => message.includes("game-output marker"));
+			expect(
+				gameOutput.flatMap((group) => group.entries).map((entry) => entry.message),
+				"scheduler remained responsive across the CPU batch",
+			).toSatisfyAny((message) => message.includes("scheduler fairness marker"));
 
 			const report = coverageReportSchema.assert(
 				JSON.parse(
@@ -182,7 +196,7 @@ describe("live pipeline", () => {
 				(entry) => Object.values(entry.s).some((count) => count > 0),
 			);
 
-			// The eight tests above passed against a place that never held
+			// The tests above passed against a place that never held
 			// them: the harness does not serve the shared mount at all, and the
 			// spec that ran arrived as the binary input built beside it.
 			expect(readHarnessMount(sandbox), "the harness mounts no code").toBeUndefined();
@@ -190,7 +204,7 @@ describe("live pipeline", () => {
 				"example.spec",
 			);
 		},
-		RUN_TIMEOUT_MS + 5000,
+		CLI_RUN_TIMEOUT_MS + VITEST_CLEANUP_ALLOWANCE_MS,
 	);
 
 	// Regression for the patched jest-circus: the runtime reads a test's call
@@ -256,7 +270,7 @@ describe("live pipeline", () => {
 				firstRow.testSourceHash,
 			);
 		},
-		RUN_TIMEOUT_MS + 5000,
+		RECOVERY_DEADLINE_MS + VITEST_CLEANUP_ALLOWANCE_MS,
 	);
 
 	// Regression: a positional file is forwarded to Jest-on-Roblox as a pattern,
@@ -288,7 +302,7 @@ describe("live pipeline", () => {
 				{
 					cwd: sandbox,
 					env: liveEnvironment(),
-					timeoutMs: RUN_TIMEOUT_MS,
+					timeoutMs: RECOVERY_DEADLINE_MS,
 				},
 			);
 
@@ -297,6 +311,6 @@ describe("live pipeline", () => {
 			expect(result.stdout).not.toContain("other/index.spec");
 			expect(result.stdout).not.toContain("nested/namesake/index.spec");
 		},
-		RUN_TIMEOUT_MS + 5000,
+		RECOVERY_DEADLINE_MS + VITEST_CLEANUP_ALLOWANCE_MS,
 	);
 });

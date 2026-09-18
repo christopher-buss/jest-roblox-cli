@@ -221,6 +221,8 @@ the uploaded version. A matching response records the version in
 `.jest-roblox/upload-cache.json`, so re-running the same place bytes skips the
 probe (see `uploadCache`). Tests on a shared place still check their version
 before rebuilding the code bundle and retry pinned if another upload moved head.
+After the first refusal, later tasks in that run use the pinned version
+directly. Each new run starts optimistically on head.
 
 A probe timeout is inconclusive: Open Cloud can stall a task even when that
 place version loads successfully. The runner warns and continues with guarded
@@ -228,12 +230,12 @@ tests, without caching the unverified version. A different or unreadable version
 also leaves the cache untouched; a foreign version produces a warning. If the
 probe and both test tasks all stall without acquiring an execution claim, the
 recovery task starts after 45 s and overlaps the original. The run then consumes
-about 90 s + 45 s + 345 s + 345 s (13 minutes 45 seconds) with the defaults,
-before HTTP pacing or a version-guard fallback. The last allowance polls the
-original after both attempts settle without results. A timeout cannot establish
-that a place is unbootable. The probe's default budget is 90 s, with a separate
-short script deadline. Set `bootProbeTimeout` to `0` to skip the probe; no new
-upload-cache entry is written in that case.
+separate submission and observation budgets, including a final result read if
+neither attempt returns results. A timeout cannot establish that a place is
+unbootable. The probe uses the bounded task-admission policy below, then applies
+its default 90 s polling budget with a short script deadline. Set
+`bootProbeTimeout` to `0` to skip the probe; no new upload-cache entry is
+written in that case.
 
 If a test task never reaches a terminal state, the backend makes one recovery
 attempt. Each attempt may submit a guarded head task followed by an
@@ -241,25 +243,68 @@ exact-version task if head has changed. All submissions share an atomic
 MemoryStore execution claim, acquired after the place-version guard and before
 bundle reconstruction. Only one attempt can start the tests; an abandoned task
 that starts late cannot run them again. The claim lives in a SortedMap and
-records its owner and Roblox start time. After 45 s, the backend reads that
-item: a missing item starts the recovery task immediately, while a present item
-keeps the original task's poller. Tasks finishing sooner make no extra request,
-and a failed observer read is inconclusive rather than permission to start
-another task. Healthy tasks perform one MemoryStore update with no added sleep.
-Transient claim errors receive short bounded retries; persistent claim errors
-fail the task. Retention covers the startup deadline using Roblox's clock,
-including client clock skew. An expired startup window fails with a clock/queue
-diagnosis.
+records its owner and Roblox start time. After 45 s from an accepted submission,
+the backend reads that item: a missing item starts the recovery task
+immediately, while a present item keeps the original task's poller. Tasks
+finishing sooner make no extra request, and a failed observer read is
+inconclusive rather than permission to start another task. Acquiring the claim
+uses one MemoryStore update with no added sleep. Transient claim errors receive
+short bounded retries; persistent claim errors fail the task. Retention covers
+the startup deadline using Roblox's clock, including client clock skew. If
+neither attempt provides results, an expired startup window fails with a
+clock/queue diagnosis.
+
+Task submission retries have a 90 s inactivity budget, independent of the
+script's execution timeout, to cover a full create-quota window. When Roblox
+reports a full place, the runner observes the occupying tasks. Verified task
+turnover renews that budget. Scheduled waits after valid nonterminal blocker
+reads do not consume inactivity; an unchanged running task need not show
+progress. Valid finite server waits for an exhausted create quota also exclude
+waiting time, so competing worktrees can span quota windows. Local SDK quota and
+pacing queues also pause inactivity until the request can be sent; their waits
+count once even when callers queue behind each other. Network requests and
+ordinary retry delays still consume inactivity. Missing or malformed quota hints
+do not extend admission. Every submission, including the boot probe, remains
+bounded by 495 s total: the inactivity budget plus a 405 s allowance for
+capacity and quota waits.
+
+Waiting for capacity does not start the claim watchdog or launch a competing
+recovery submission. If the version guard refuses a foreign upload, its watchdog
+is canceled; the pinned task starts a fresh watch only after its submission is
+accepted. Execution claims and result observation cover the bounded admission
+path. Binary inputs are refreshed before submission when their remaining
+lifetime cannot cover admission and boot.
+
+An ambiguous task-create failure, such as a transient HTTP 500 or connection
+reset, permits one additional attempt across the whole recovery operation. It
+uses the same execution claim and a fresh result channel, while the CLI keeps
+reading the uncertain submission's channel. A late result or script error from
+the first submission remains observable even if the new task is refused by the
+claim. This recovery also works when the create response contains no task ID.
 
 Test failures and terminal task errors are never retried. If execution was
-already claimed, or the recovery attempt fails, the backend polls the original
-task through one more task-deadline-plus-boot allowance and uses its terminal
-result. A stale `PROCESSING` read only delays that poll. If neither attempt
-provides test results, the run fails with the original task's details. Healthy
-runs never start this extra poll. When the initial claim is missing, both
-pollers overlap and the first claimed result wins; a `NOT_CLAIMED` loser is
-ignored. Recovery adds no place upload or boot probe. A started execution whose
-results Roblox never delivers cannot be recovered by rerunning tests safely.
+already claimed, or the recovery attempt fails, the backend reads results from
+each uncertain attempt. Native task reads use one more task-deadline-plus-boot
+allowance, while result channels keep their bounded observation deadline. These
+reads overlap, and the first claimed result wins. If no attempt provides test
+results, the run fails with the original task's details. Healthy runs never
+start this extra poll. When the initial claim is missing, both pollers overlap
+and the first claimed result wins; a duplicate or startup-expired loser is
+ignored, and observation of the losing task stops once a valid result arrives.
+Recovery adds no place upload or boot probe.
+
+Tasks also relay their full string outputs or script errors through MemoryStore.
+Outputs include coverage, snapshots, and game output. Compressed chunks use a
+unique key per submission and sequence; the CLI reads and deletes each chunk
+before the task publishes the next. Only a complete, validated payload can
+replace the native result, and the winning transport stops the other host
+observer. Publication is bounded by the remaining task runtime. An unavailable
+or incomplete relay falls back to native delivery. A native polling timeout
+preserves collected chunks and keeps the relay reading while recovery waits for
+the other attempt. Recovery can use either task's late payload without rerunning
+its script, and cancels collection when it ends. A started execution with no
+complete result from either transport cannot be recovered by rerunning tests
+safely.
 
 A 404 during a run using a cached upload clears that cache entry for the next
 invocation. It does not restart the current wave, whose other tasks may already
@@ -288,6 +333,12 @@ whatever `--timeout` says, so raising the task deadline gives a slow project
 nothing. Set `projectTimeout` on a single project (under its `projects[N].test`)
 to give a slow one more room without raising it for the rest; set it to `0` to
 turn the budget off.
+
+The runner periodically yields to Roblox between completed tests and files,
+after teardown and coverage accounting. This lets Heartbeat and deferred
+callbacks progress during long sequences of synchronous tests, preventing the
+sequence from exhausting Roblox's script watchdog. A single non-yielding test
+still needs to stay within the engine's execution limit.
 
 A project still running when its budget elapses is abandoned: its Jest run is
 cancelled, anything it staged is torn down, and the run moves on to the next
@@ -488,17 +539,19 @@ same shard count, each session holding a fixed share it cannot rebalance:
 | -------------------------------------------------- | ---------------------------------------------- |
 | `memory-store.queue:add` / `:dequeue` / `:discard` | Work-stealing queue across concurrent sessions |
 
-An Open Cloud run needs the sorted-map scopes only when it streams live
-per-package results:
+The sorted-map scopes support live per-package results and complete-result
+recovery when native task delivery stalls:
 
-| Scope                                     | What it's for            |
-| ----------------------------------------- | ------------------------ |
-| `memory-store.sorted-map:read` / `:write` | Live per-package results |
+| Scope                                     | What it's for                 |
+| ----------------------------------------- | ----------------------------- |
+| `memory-store.sorted-map:read` / `:write` | Result streaming and recovery |
 
 Streaming is enabled by default and disabled only for `--silent`,
 `--formatters json`, and `--formatters agent` (without `--verbose`).
 `--formatters agent --verbose` re-enables streaming and therefore still needs
 the sorted-map scopes; `--formatters github-actions` also streams.
+Complete-result recovery uses those scopes independently of the formatter;
+without them, the CLI keeps native result delivery.
 
 #### Code as a binary input
 

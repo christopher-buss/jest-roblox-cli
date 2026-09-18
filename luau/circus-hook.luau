@@ -43,6 +43,8 @@ export type ArmOptions = {
 	]=]
 	circusState: ModuleScript,
 	install: Installer,
+	-- Yielding observers must follow attribution and other synchronous readers.
+	installLast: boolean?,
 	report: Report,
 	-- The shared JestRuntime class table, whose `setGlobalsForRuntime` is the
 	-- per-test-file hook point.
@@ -93,7 +95,14 @@ end
 
 local function installInto(runtime: any)
 	for report, entry in armedEntries do
-		serve(report, entry, runtime)
+		if not entry.options.installLast then
+			serve(report, entry, runtime)
+		end
+	end
+	for report, entry in armedEntries do
+		if entry.options.installLast then
+			serve(report, entry, runtime)
+		end
 	end
 end
 

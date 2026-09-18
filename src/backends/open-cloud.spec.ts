@@ -1,5 +1,5 @@
 import { PollTimeoutError } from "@bedrock-rbx/ocale";
-import { placeIdentityGuardSource } from "@isentinel/roblox-runner";
+import { ExecutionTimeoutError, placeIdentityGuardSource } from "@isentinel/roblox-runner";
 import type {
 	BinaryInputUploader,
 	ExecuteScriptOptions,
@@ -43,6 +43,8 @@ import {
 	resolveOcaleMaxRetries,
 	resolveOpenCloudBaseUrl,
 } from "./open-cloud.ts";
+import type { OpenCloudOptions } from "./open-cloud.ts";
+import { UncertainSubmissionError } from "./uncertain-submission.ts";
 
 interface StubStreamReader extends StreamingResultReader {
 	deleted: Array<string>;
@@ -76,6 +78,16 @@ interface RunnerStub {
 	setExecute: (handler: ExecuteHandler) => void;
 	setProbe: (handler: ExecuteHandler) => void;
 	uploadCalls: Array<UploadPlaceOptions>;
+}
+
+function createBackend(options: OpenCloudOptions): OpenCloudBackend {
+	return new OpenCloudBackend(credentials, {
+		resultRelay: async (relay) => {
+			assert(relay.signal);
+			return relay.executeAsync(relay.script, relay.signal);
+		},
+		...options,
+	});
 }
 
 /**
@@ -446,7 +458,7 @@ async function runProbedRunAsync(
 	overrides: Partial<ResolvedConfig> = {},
 ): Promise<RunnerStub> {
 	const stub = probeStub();
-	const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+	const backend = createBackend({ runner: stub.runner });
 	await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, overrides)]));
 	return stub;
 }
@@ -458,12 +470,147 @@ const credentials = {
 };
 
 describe(OpenCloudBackend, () => {
+	it("should rearm recovery only after a refused head task's pinned submit is accepted", async () => {
+		expect.assertions(5);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		captureStderr();
+		const stub = probeStub();
+		const pinned = Promise.withResolvers<ScriptResult>();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockImplementationOnce(async ({ onSubmitted }) => {
+					onSubmitted!();
+					return racedOnce(99);
+				})
+				.mockImplementationOnce(async () => pinned.promise)
+				.mockReturnValue(oneSuccessEntry()),
+		);
+		const backend = createBackend({
+			bootWatchMs: 45_000,
+			executionClaimObserver: { readAsync: async () => ({ status: "missing" }) },
+			runner: stub.runner,
+		});
+		const pending = backend.runTestsAsync(jobsOptions([job("alpha")]));
+		await vi.advanceTimersByTimeAsync(75_000);
+
+		expect(stub.executeCalls).toHaveLength(2);
+		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
+			undefined,
+			PROBED_VERSION,
+		]);
+
+		stub.executeCalls[1]!.onSubmitted!();
+		await vi.advanceTimersByTimeAsync(44_999);
+
+		expect(stub.executeCalls).toHaveLength(2);
+
+		await vi.advanceTimersByTimeAsync(1);
+
+		await expect(pending).resolves.toMatchObject({
+			rawResults: [{ entry: { jestOutput: successJest() }, fallbackGameOutput: "[]" }],
+		});
+		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
+			undefined,
+			PROBED_VERSION,
+			PROBED_VERSION,
+		]);
+	});
+
+	it.for([
+		{ budget: 90_000, relayTimeout: 555_000, timeout: 15_000 },
+		{ budget: 90_000, relayTimeout: 570_000, timeout: 30_000 },
+		{ budget: 90_000, relayTimeout: 840_000, timeout: 300_000 },
+	])(
+		"should bound submission to $budget ms before watching a recovery task",
+		async ({ budget, relayTimeout, timeout }) => {
+			expect.assertions(5);
+
+			vi.useFakeTimers();
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+			vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			const stub = createRunnerStub();
+			const original = Promise.withResolvers<ScriptResult>();
+			stub.setExecute(
+				vi
+					.fn<ExecuteHandler>()
+					.mockImplementationOnce(async () => original.promise)
+					.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
+			);
+			const resultRelay = vi.fn<NonNullable<OpenCloudOptions["resultRelay"]>>(
+				async (relay) => {
+					assert(relay.signal);
+					return relay.executeAsync(relay.script, relay.signal);
+				},
+			);
+			const backend = createBackend({
+				bootWatchMs: 1_000,
+				executionClaimObserver: { readAsync: async () => ({ status: "missing" }) },
+				resultRelay,
+				runner: stub.runner,
+			});
+			const pending = backend.runTestsAsync(jobsOptions([job("alpha", { timeout })]));
+			await vi.advanceTimersByTimeAsync(60_000);
+
+			expect(stub.executeCalls).toHaveLength(1);
+			expect(stub.executeCalls[0]).toMatchObject({
+				submitBudget: budget,
+				submitCapacityBudget: 405_000,
+			});
+			expect(resultRelay).toHaveBeenCalledWith(
+				expect.objectContaining({ runtimeBudget: timeout, timeout: relayTimeout }),
+			);
+
+			stub.executeCalls[0]!.onSubmitted!();
+			await vi.advanceTimersByTimeAsync(1_000);
+
+			await expect(pending).resolves.toMatchObject({
+				rawResults: [{ entry: { jestOutput: successJest() }, fallbackGameOutput: "[]" }],
+			});
+			expect(stub.executeCalls).toHaveLength(2);
+		},
+	);
+
+	it("should keep a claim valid through admission and recovery with bounded probe admission", async () => {
+		expect.assertions(3);
+
+		captureStderr();
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockReturnValueOnce(racedOnce())
+				.mockReturnValue(oneSuccessEntry()),
+		);
+		const backend = createBackend({ now: () => 1234, runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha", { timeout: 30_000 })]));
+
+		expect(stub.executeCalls.map((call) => claimParameters(call.script))).toStrictEqual([
+			expect.stringContaining(", 3646234, 3705"),
+			expect.stringContaining(", 3646234, 3705"),
+		]);
+		expect(stub.executeCalls.map((call) => call.submitCapacityBudget)).toStrictEqual([
+			405_000, 405_000,
+		]);
+		expect(stub.probeCalls[0]).toMatchObject({
+			pollBudget: 90_000,
+			submitBudget: 90_000,
+			submitCapacityBudget: 405_000,
+		});
+	});
+
 	describe("validation", () => {
 		it("should throw when the jobs array is empty", async () => {
 			expect.assertions(1);
 
 			const { runner } = createRunnerStub();
-			const backend = new OpenCloudBackend(credentials, { runner });
+			const backend = createBackend({ runner });
 
 			await expect(backend.runTestsAsync({ jobs: [] })).rejects.toThrow(
 				"OpenCloudBackend requires at least one job",
@@ -474,7 +621,7 @@ describe(OpenCloudBackend, () => {
 			expect.assertions(1);
 
 			const { runner } = createRunnerStub();
-			const backend = new OpenCloudBackend(credentials, { runner });
+			const backend = createBackend({ runner });
 
 			await expect(backend.runTestsAsync(jobsOptions([job("alpha")], 0))).rejects.toThrow(
 				/--parallel must be >= 1/,
@@ -485,7 +632,7 @@ describe(OpenCloudBackend, () => {
 			expect.assertions(1);
 
 			const { runner } = createRunnerStub();
-			const backend = new OpenCloudBackend(credentials, { runner });
+			const backend = createBackend({ runner });
 
 			await expect(
 				backend.runTestsAsync({ jobs: [job("alpha")], workStealing: true }),
@@ -508,7 +655,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(
 				jobsOptions([
 					job("alpha", { testNamePattern: "alpha-pattern" }),
@@ -540,7 +687,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(
 				jobsOptions([
 					job("alpha", {
@@ -572,7 +719,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(
 				jobsOptions([job("alpha"), job("beta"), job("gamma")], 1),
 			);
@@ -597,7 +744,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { timing } = await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
 			expect(timing).toStrictEqual({ executionMs: 45, uploadMs: 12 });
@@ -621,7 +768,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(
 				jobsOptions([job("alpha"), job("beta"), job("gamma")], 3),
 			);
@@ -657,7 +804,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const jobs = Array.from({ length: 10 }, (_, index) => {
 				return job(`p${index.toString()}`, {
 					testNamePattern: `pattern-${index.toString()}`,
@@ -693,7 +840,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const jobs = Array.from({ length: 5 }, (_, index) => {
 				return job(`p${index.toString()}`, { testNamePattern: `auto-${index.toString()}` });
 			});
@@ -709,7 +856,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta")], "auto"));
 
 			expect(stub.executeCalls).toHaveLength(2);
@@ -721,7 +868,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta")], 10));
 
 			expect(stub.executeCalls).toHaveLength(2);
@@ -737,7 +884,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
 				/Open Cloud backend returned 2 entries but bucket had 1 jobs/,
@@ -758,7 +905,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
 				backend.runTestsAsync(jobsOptions([job("alpha"), job("beta"), job("gamma")], 3)),
@@ -774,7 +921,7 @@ describe(OpenCloudBackend, () => {
 				return scriptResult(envelope([{ jestOutput: successJest(), pkg: "@halcyon/foo" }]));
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({ jobs: [job("alpha")], scriptOverride: customScript });
 
 			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
@@ -801,7 +948,7 @@ describe(OpenCloudBackend, () => {
 			// whether the run composed it once or once per bucket.
 			const prepareScript = vi.fn<typeof prepareTaskScript>(prepareTaskScript);
 
-			const backend = new OpenCloudBackend(credentials, {
+			const backend = createBackend({
 				prepareScript,
 				runner: stub.runner,
 			});
@@ -830,7 +977,7 @@ describe(OpenCloudBackend, () => {
 				return scriptResult(envelope([{ jestOutput: successJest() }]), fallback);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
 			expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
@@ -842,7 +989,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => ({ durationMs: 0, outputs: [] }));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
 				/No test results in output/,
@@ -863,7 +1010,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(
 				jobsOptions([job("@halcyon/foo"), job("@halcyon/bar"), job("@halcyon/baz")]),
 			);
@@ -880,7 +1027,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(
 				jobsOptions([job("alpha"), job("beta"), job("gamma"), job("delta")], 4),
 			);
@@ -896,7 +1043,7 @@ describe(OpenCloudBackend, () => {
 			});
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta"), job("gamma")], 3));
 
 			// 3 jobs at parallel 3 ⇒ one bucket each ⇒ exactly 3 calls. An exact
@@ -916,7 +1063,7 @@ describe(OpenCloudBackend, () => {
 			});
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				scriptOverride: "stealing-script",
@@ -942,7 +1089,7 @@ describe(OpenCloudBackend, () => {
 			});
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha", { ownedPlace: true })],
 				scriptOverride: "stealing-script",
@@ -953,13 +1100,35 @@ describe(OpenCloudBackend, () => {
 			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe("stealing-script");
 		});
 
+		it("should not treat output from an owned place as a version refusal", async () => {
+			expect.assertions(2);
+
+			const stub = createRunnerStub();
+			stub.setExecute(
+				stepExecute([
+					() => racedOnce(),
+					() => scriptResult(envelope([packageEntry("alpha")])),
+				]),
+			);
+			const backend = createBackend({ runner: stub.runner });
+
+			await expect(
+				backend.runTestsAsync({
+					jobs: [job("alpha", { ownedPlace: true })],
+					scriptOverride: "stealing-script",
+					workStealing: true,
+				}),
+			).rejects.toThrow("is not valid JSON");
+			expect(stub.executeCalls).toHaveLength(1);
+		});
+
 		it("should inject the guard after leading Luau directives", async () => {
 			expect.assertions(1);
 
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				scriptOverride: "--!strict\n--!optimize 2\nreturn nil",
@@ -978,7 +1147,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				scriptOverride: "-- boot notes\n--!native\nreturn nil",
@@ -997,7 +1166,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				scriptOverride: "--!Native\n--!strict\nreturn nil",
@@ -1023,7 +1192,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
 			expect(stub.executeCalls).toHaveLength(2);
@@ -1053,7 +1222,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta")],
 				parallel: 2,
@@ -1074,7 +1243,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub({
 				uploadError: new Error("Failed to upload place: 401"),
 			});
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
 				/Failed to upload place/,
@@ -1091,7 +1260,7 @@ describe(OpenCloudBackend, () => {
 			// (recognizable by placeVersion) succeed.
 			stub.setExecute(raceUnpinnedExecute(2));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta")], 2));
 			restore();
 
@@ -1106,7 +1275,7 @@ describe(OpenCloudBackend, () => {
 
 			const { restore, writes } = captureStderr();
 			const stub = createRunnerStub({ uploadResult: { uploadMs: 3, versionNumber: 42 } });
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			stub.setExecute(raceUnpinnedExecute(1));
 			await backend.runTestsAsync(jobsOptions([job("alpha")]));
@@ -1128,7 +1297,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(jobsOptions([job("alpha")]));
 			restore();
 
@@ -1149,7 +1318,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub({ uploadResult: { uploadMs: 3, versionNumber: 42 } });
 			stub.setExecute(raceUnpinnedExecute(1));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(jobsOptions([job("alpha")]));
 			restore();
 
@@ -1170,7 +1339,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub({ uploadResult: { uploadMs: 3, versionNumber: 42 } });
 			stub.setExecute(raceUnpinnedExecute(1, 41));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(jobsOptions([job("alpha")]));
 			restore();
 
@@ -1199,7 +1368,7 @@ describe(OpenCloudBackend, () => {
 				),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [
 					job("alpha"),
@@ -1246,7 +1415,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta")],
 				parallel: 2,
@@ -1266,7 +1435,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(scriptedEntries);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const results = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma")],
 				parallel: 3,
@@ -1290,7 +1459,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(deferOnceExecute("alpha"));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const results = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
 				parallel: 2,
@@ -1305,6 +1474,101 @@ describe(OpenCloudBackend, () => {
 			]);
 		});
 
+		it("should keep deferred tasks pinned after a refusal", async () => {
+			expect.assertions(5);
+
+			captureStderr();
+			const stub = probeStub();
+			stub.setExecute(
+				vi
+					.fn<ExecuteHandler>()
+					.mockReturnValueOnce(racedOnce())
+					.mockReturnValueOnce(
+						scriptResult(envelope([packageEntry("alpha")], { deferred: true })),
+					)
+					.mockImplementation(scriptedEntries),
+			);
+			const backend = createBackend({ runner: stub.runner });
+			const result = await backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta")],
+				scriptFactory: scriptNaming,
+			});
+			const claims = stub.executeCalls.map((call) => claimParameters(call.script));
+
+			expect(result.rawResults).toHaveLength(2);
+			expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
+				undefined,
+				PROBED_VERSION,
+				PROBED_VERSION,
+			]);
+			expect(claims[1]).toBe(claims[0]);
+			expect(claims[2]).not.toBe(claims[0]);
+			expect(stub.uploadCalls).toHaveLength(1);
+		});
+
+		it("should start a new run optimistically after the previous run pinned", async () => {
+			expect.assertions(2);
+
+			captureStderr();
+			const stub = probeStub();
+			stub.setExecute(
+				vi
+					.fn<ExecuteHandler>()
+					.mockReturnValueOnce(racedOnce())
+					.mockImplementation(scriptedEntries),
+			);
+			const backend = createBackend({ runner: stub.runner });
+			await backend.runTestsAsync({ jobs: [job("alpha")], scriptFactory: scriptNaming });
+			await backend.runTestsAsync({ jobs: [job("beta")], scriptFactory: scriptNaming });
+
+			expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
+				undefined,
+				PROBED_VERSION,
+				undefined,
+			]);
+			expect(stub.uploadCalls).toHaveLength(2);
+		});
+
+		it("should recognize an in-flight head refusal after a sibling pins the run", async () => {
+			expect.assertions(4);
+
+			captureStderr();
+			const stub = probeStub();
+			const siblingHead = Promise.withResolvers<ScriptResult>();
+			const firstPinned = Promise.withResolvers<void>();
+			stub.setExecute(
+				vi
+					.fn<ExecuteHandler>()
+					.mockReturnValueOnce(racedOnce())
+					.mockReturnValueOnce(siblingHead.promise)
+					.mockImplementationOnce((options) => {
+						firstPinned.resolve();
+						return scriptedEntries(options);
+					})
+					.mockImplementation(scriptedEntries),
+			);
+			const backend = createBackend({ runner: stub.runner });
+			const pending = backend.runTestsAsync({
+				jobs: [job("alpha"), job("beta")],
+				parallel: 2,
+				scriptFactory: scriptNaming,
+			});
+			await firstPinned.promise;
+			siblingHead.resolve(racedOnce());
+			const result = await pending;
+			const claims = stub.executeCalls.map((call) => claimParameters(call.script));
+
+			expect(result.rawResults).toHaveLength(2);
+			expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
+				undefined,
+				undefined,
+				PROBED_VERSION,
+				PROBED_VERSION,
+			]);
+			expect(claims[2]).toBe(claims[0]);
+			expect(claims[3]).toBe(claims[1]);
+		});
+
 		it("should keep a sibling bucket's results when one bucket bails", async () => {
 			expect.assertions(2);
 
@@ -1315,7 +1579,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(bailingBucketExecute("alpha"));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const results = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
 				parallel: 2,
@@ -1342,7 +1606,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const jobs = [job("alpha"), job("beta"), job("gamma")];
 			const results = await backend.runTestsAsync({ jobs, scriptFactory: scriptNaming });
 
@@ -1359,7 +1623,7 @@ describe(OpenCloudBackend, () => {
 			stub.setExecute(() => {
 				return scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")]));
 			});
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			const result = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta")],
@@ -1379,7 +1643,7 @@ describe(OpenCloudBackend, () => {
 					envelope([packageEntry("alpha"), packageEntry("beta")], { deferred: true }),
 				);
 			});
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			const result = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta")],
@@ -1404,7 +1668,7 @@ describe(OpenCloudBackend, () => {
 					() => scriptResult(envelope([packageEntry("beta")])),
 				]),
 			);
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			const result = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma")],
@@ -1428,7 +1692,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
 				backend.runTestsAsync({
@@ -1446,7 +1710,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				scriptFactory: () => "factory-built",
@@ -1461,7 +1725,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => ({ durationMs: 1, outputs: [] }));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
 				backend.runTestsAsync({
@@ -1486,7 +1750,7 @@ describe(OpenCloudBackend, () => {
 				throw cause;
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			const thrown = await backend
 				.runTestsAsync({
@@ -1519,7 +1783,7 @@ describe(OpenCloudBackend, () => {
 				throw new Error("open cloud task crashed");
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
 				backend.runTestsAsync({
@@ -1547,7 +1811,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const results = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma")],
 				parallel: 2,
@@ -1575,7 +1839,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma")],
 				parallel: 2,
@@ -1600,7 +1864,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
 				backend.runTestsAsync({
@@ -1632,7 +1896,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
 				backend.runTestsAsync({
@@ -1666,7 +1930,7 @@ describe(OpenCloudBackend, () => {
 				]),
 			);
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta")],
 				parallel: 2,
@@ -1688,7 +1952,7 @@ describe(OpenCloudBackend, () => {
 				return scriptResult(envelope([{ jestOutput: successJest(), pkg: "alpha" }]));
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
 				backend.runTestsAsync({
@@ -1713,7 +1977,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { bailedJobIndices, rawResults } = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma")],
 				parallel: 1,
@@ -1741,7 +2005,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { bailedJobIndices, rawResults } = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta")],
 				parallel: 1,
@@ -1763,7 +2027,7 @@ describe(OpenCloudBackend, () => {
 					() => scriptResult(envelope([packageEntry("beta")])),
 				]),
 			);
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			const result = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma")],
@@ -1790,7 +2054,7 @@ describe(OpenCloudBackend, () => {
 				return scriptResult(envelope(pkgs.map(packageEntry)));
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
 				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
 				parallel: 2,
@@ -1824,7 +2088,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
@@ -1859,7 +2123,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
 				jobs: [job("client", {}, "@halcyon/foo"), job("server", {}, "@halcyon/foo")],
 				parallel: 2,
@@ -1906,7 +2170,7 @@ describe(OpenCloudBackend, () => {
 				);
 			});
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("client", {}, "alpha")],
 				parallel: 1,
@@ -1956,7 +2220,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const promise = backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
@@ -2003,7 +2267,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
@@ -2054,7 +2318,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
@@ -2095,7 +2359,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
@@ -2134,7 +2398,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
@@ -2175,7 +2439,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
@@ -2228,7 +2492,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
 				jobs: [job("alpha")],
 				parallel: 1,
@@ -2259,7 +2523,7 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => ({ durationMs: 0, outputs: [] }));
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
 				backend.runTestsAsync({
@@ -2283,7 +2547,7 @@ describe(createOpenCloudBackend, () => {
 	});
 
 	it("should run through the configured Open Cloud base URL", { timeout: 1000 }, async () => {
-		expect.assertions(2);
+		expect.assertions(3);
 
 		const server = await startFakeOpenCloudServerAsync([{ jestOutput: successJest() }]);
 		const fetchAsync = globalThis.fetch;
@@ -2304,6 +2568,12 @@ describe(createOpenCloudBackend, () => {
 
 		expect(result.rawResults).toHaveLength(1);
 		expect(server.calls).not.toBeEmpty();
+		expect(fetch).toHaveBeenCalledWith(
+			expect.stringContaining(
+				`${server.baseUrl}/cloud/v2/universes/123/memory-store/sorted-maps/jest-roblox-result-relay-v1/items/`,
+			),
+			expect.anything(),
+		);
 	});
 
 	it("should construct the default runner with JEST_ROBLOX_OCALE_MAX_RETRIES set", () => {
@@ -2409,7 +2679,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 		const stub = createRunnerStub();
 		stub.setExecute(raceBootedVersions(bootedVersions));
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		const jobs = bootedVersions.map(() => cacheJob(rootDirectory));
 		await backend.runTestsAsync(jobsOptions(jobs, jobs.length));
 		capture.restore();
@@ -2449,7 +2719,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 		await runOnceAsync(rootDirectory);
 		const stub = probeStub();
 		const notes: Array<{ detail: string; id: StageId }> = [];
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await backend.runTestsAsync({
 			jobs: [cacheJob(rootDirectory)],
@@ -2472,7 +2742,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 
 		const stub = createRunnerStub();
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
 
 		expect(stub.executeCalls[0]!.script.startsWith(guardPrefix(42))).toBeTrue();
@@ -2605,7 +2875,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 		stub.setExecute(() => {
 			throw failure;
 		});
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toBe(
 			failure,
@@ -2628,7 +2898,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 			throw apiError(500);
 		});
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toThrow(
 			"execute failed",
@@ -2650,7 +2920,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 			.mockReturnValue(222);
 		const stub = createRunnerStub();
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		const result = await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
 
 		expect(result.timing).toStrictEqual({ executionMs: 22, uploadMs: 1 });
@@ -2672,7 +2942,7 @@ describe("upload cache", { timeout: 1000 }, () => {
 				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
 		);
 		captureStderr();
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toThrow(
 			"Open Cloud recovery failed: PollTimeoutError: Still PROCESSING\nError: execute failed",
@@ -2682,6 +2952,159 @@ describe("upload cache", { timeout: 1000 }, () => {
 });
 
 describe("boot probe", { timeout: 1000 }, () => {
+	it("should rescue a late pinned ambiguous create after recovering a guard refusal", async () => {
+		expect.assertions(4);
+
+		captureStderr();
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(
+					new ExecutionTimeoutError(probeTimeout(), async () => racedOnce()),
+				)
+				.mockRejectedValueOnce(new Error("replacement unavailable"))
+				.mockRejectedValueOnce(
+					new UncertainSubmissionError(new Error("pinned POST 500"), async () => {
+						return oneSuccessEntry();
+					}),
+				)
+				.mockReturnValue(scriptResult("__JEST_ROBLOX_EXECUTION_NOT_CLAIMED__")),
+		);
+		const result = await createBackend({ runner: stub.runner }).runTestsAsync(
+			jobsOptions([job("alpha")]),
+		);
+
+		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
+		expect(stub.executeCalls.map(({ placeVersion }) => placeVersion)).toStrictEqual([
+			undefined,
+			undefined,
+			PROBED_VERSION,
+			PROBED_VERSION,
+		]);
+
+		const claims = new Set(stub.executeCalls.map(({ script }) => claimParameters(script)));
+
+		expect(claims.size).toBe(1);
+		expect(
+			stub.executeCalls.map(({ retrySubmitTransportErrors }) => retrySubmitTransportErrors),
+		).toStrictEqual([false, false, false, false]);
+	});
+
+	it("should interpret an ambiguous original guard refusal before choosing its result", async () => {
+		expect.assertions(3);
+
+		captureStderr();
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(
+					new UncertainSubmissionError(new Error("POST 500"), async () => racedOnce()),
+				)
+				.mockReturnValueOnce(scriptResult("__JEST_ROBLOX_EXECUTION_NOT_CLAIMED__"))
+				.mockReturnValue(oneSuccessEntry()),
+		);
+		const result = await createBackend({ runner: stub.runner }).runTestsAsync(
+			jobsOptions([job("alpha")]),
+		);
+
+		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
+		expect(stub.executeCalls.map(({ placeVersion }) => placeVersion)).toStrictEqual([
+			undefined,
+			undefined,
+			PROBED_VERSION,
+		]);
+
+		const claims = new Set(stub.executeCalls.map(({ script }) => claimParameters(script)));
+
+		expect(claims.size).toBe(1);
+	});
+
+	it("should pin a version refusal recovered after the original observer times out", async () => {
+		expect.assertions(5);
+
+		captureStderr();
+		const stub = probeStub();
+		let recoverySignal: AbortSignal | undefined;
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(
+					new ExecutionTimeoutError(probeTimeout(), async (signal) => {
+						recoverySignal = signal;
+						return racedOnce();
+					}),
+				)
+				.mockRejectedValueOnce(new Error("replacement unavailable"))
+				.mockReturnValue(oneSuccessEntry()),
+		);
+		const backend = createBackend({ runner: stub.runner });
+		const result = await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
+		expect(stub.executeCalls.map(({ placeVersion }) => placeVersion)).toStrictEqual([
+			undefined,
+			undefined,
+			PROBED_VERSION,
+		]);
+
+		const claims = new Set(stub.executeCalls.map(({ script }) => claimParameters(script)));
+
+		expect(claims.size).toBe(1);
+		expect(stub.executeCalls[2]!.observationSignal).toBe(recoverySignal);
+		expect(recoverySignal!.aborted).toBeTrue();
+	});
+
+	it("should recover a pinned timeout reached through a late version refusal", async () => {
+		expect.assertions(3);
+
+		captureStderr();
+		const stub = probeStub();
+		const readPinnedResult = vi
+			.fn<(signal?: AbortSignal) => Promise<ScriptResult>>()
+			.mockResolvedValue(oneSuccessEntry());
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(
+					new ExecutionTimeoutError(probeTimeout(), async () => racedOnce()),
+				)
+				.mockRejectedValueOnce(new Error("replacement unavailable"))
+				.mockRejectedValue(new ExecutionTimeoutError(probeTimeout(), readPinnedResult)),
+		);
+		const backend = createBackend({ runner: stub.runner });
+		const result = await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
+		expect(readPinnedResult).toHaveBeenCalledExactlyOnceWith(
+			stub.executeCalls[2]!.observationSignal,
+		);
+		expect(stub.executeCalls).toHaveLength(3);
+	});
+
+	it("should preserve a late pinned submission failure without resubmitting", async () => {
+		expect.assertions(2);
+
+		captureStderr();
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(
+					new ExecutionTimeoutError(probeTimeout(), async () => racedOnce()),
+				)
+				.mockRejectedValueOnce(new Error("replacement unavailable"))
+				.mockRejectedValue(new Error("pinned unavailable")),
+		);
+		const backend = createBackend({ runner: stub.runner });
+
+		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
+			"pinned unavailable",
+		);
+		expect(stub.executeCalls).toHaveLength(3);
+	});
+
 	it("should not retry malformed results from a recovered pinned task", async () => {
 		expect.assertions(2);
 
@@ -2695,7 +3118,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
 		);
 		captureStderr();
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toBeInstanceOf(
 			SyntaxError,
@@ -2715,7 +3138,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
 		);
 		captureStderr();
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
 		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
@@ -2738,7 +3161,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
 		);
 		captureStderr();
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([job("alpha")]));
 		const claims = stub.executeCalls.map((call) => claimParameters(call.script));
 
@@ -2747,7 +3170,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 	});
 
 	it("should recover when a test task stays PROCESSING after the probe passes", async () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const stub = probeStub();
 		const execute = vi
@@ -2756,11 +3179,15 @@ describe("boot probe", { timeout: 1000 }, () => {
 			.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }])));
 		stub.setExecute(execute);
 		captureStderr();
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
 		expect(stub.executeCalls).toHaveLength(2);
+		expect(stub.executeCalls.map(({ placeVersion }) => placeVersion)).toStrictEqual([
+			undefined,
+			undefined,
+		]);
 		expect(stub.uploadCalls).toHaveLength(1);
 		expect(stub.executeCalls[1]!.script).toBe(stub.executeCalls[0]!.script);
 	});
@@ -2778,7 +3205,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		const stub = probeStub();
 		stub.setProbe(headOnlyProbe);
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
@@ -2797,7 +3224,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 			const rootDirectory = temporaryRoot();
 			const stub = probeStub();
 			stub.setProbe(() => ({ durationMs: 0, outputs }));
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 
 			await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
 			const next = await runProbedRunAsync(rootDirectory);
@@ -2819,7 +3246,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 			throw probeTimeout();
 		});
 		const capture = captureStderr();
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await backend.runTestsAsync(jobsOptions([job("alpha")]));
 		capture.restore();
@@ -2843,7 +3270,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		const stub = probeStub();
 		stub.setProbe(() => ({ durationMs: 0, outputs }));
 		const completed: Array<{ detail: string | undefined; id: StageId }> = [];
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await backend.runTestsAsync({
 			jobs: [job("alpha")],
@@ -2868,16 +3295,17 @@ describe("boot probe", { timeout: 1000 }, () => {
 	it.for([false, true])(
 		"should probe a fresh upload on head with ownedPlace=%s",
 		async (ownedPlace) => {
-			expect.assertions(3);
+			expect.assertions(4);
 
 			const stub = probeStub();
 
-			const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace })]));
 
 			expect(stub.probeCalls).toHaveLength(1);
 			expect(stub.probeCalls[0]!.script).toBe(BOOT_PROBE_SCRIPT);
 			expect(stub.probeCalls[0]!.placeVersion).toBeUndefined();
+			expect(stub.probeCalls[0]!.isSubmitIdempotent).toBeTrue();
 		},
 	);
 
@@ -2888,7 +3316,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		stub.setProbe(() => ({ durationMs: 0, outputs: ["43"] }));
 		const capture = captureStderr();
 		const rootDirectory = temporaryRoot();
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
 		const second = await runProbedRunAsync(rootDirectory);
 
@@ -2907,7 +3335,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		stub.setProbe(() => ({ durationMs: 0, outputs: [String(PROBED_VERSION + 1)] }));
 		const capture = captureStderr();
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		const rootDirectory = temporaryRoot();
 		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, { ownedPlace: true })]));
 
@@ -2942,7 +3370,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		stub.setProbe(() => ({ durationMs: 0, outputs: [] }));
 		const capture = captureStderr();
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace: true })]));
 		capture.restore();
 
@@ -3024,7 +3452,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		const stub = probeStub();
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
 		expect(stub.executeCalls).toHaveLength(1);
@@ -3058,7 +3486,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		});
 		captureStderr();
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		const caught = await backend
 			.runTestsAsync(jobsOptions([job("alpha")]))
 			.catch((err: unknown) => err);
@@ -3077,7 +3505,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 			throw probeTimeout();
 		});
 
-		const backend = new OpenCloudBackend(credentials, { runner: failing.runner });
+		const backend = createBackend({ runner: failing.runner });
 
 		captureStderr();
 		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
@@ -3101,7 +3529,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 			throw new Error("HTTP 429: Too Many Requests");
 		});
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 
 		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
 			"HTTP 429: Too Many Requests",
@@ -3124,7 +3552,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		const stub = createRunnerStub();
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
 		expect(stub.probeCalls[0]!.pollBudget).toBe(90_000);
@@ -3138,7 +3566,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		const stub = createRunnerStub();
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([job("alpha", { bootProbeTimeout: 30_000 })]));
 
 		expect(stub.probeCalls[0]!.pollBudget).toBe(30_000);
@@ -3154,7 +3582,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		const stub = createRunnerStub();
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-		const backend = new OpenCloudBackend(credentials, { runner: stub.runner });
+		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync(jobsOptions([job("alpha", { bootProbeTimeout: 1000 })]));
 
 		expect(stub.probeCalls[0]!.pollBudget).toBe(1000);
@@ -3187,7 +3615,7 @@ describe("code bundle", () => {
 	/** A backend reading its bundle out of a volume of this test's own. */
 	function bundleBackend(stub: RunnerStub, now?: () => number): OpenCloudBackend {
 		const { fileSystem } = createMemoryFileSystem({ [BUNDLE_FILE]: BUNDLE_JSON });
-		return new OpenCloudBackend(credentials, { fileSystem, now, runner: stub.runner });
+		return createBackend({ fileSystem, now, runner: stub.runner });
 	}
 
 	/** A stub whose every task passes, whatever script it was handed. */
@@ -3215,6 +3643,55 @@ describe("code bundle", () => {
 
 		expect(stub.binaryInputCalls).toHaveLength(1);
 		expect(Buffer.from(stub.binaryInputCalls[0]!.payload).toString("utf-8")).toBe(BUNDLE_JSON);
+		expect(stub.executeCalls[0]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
+	});
+
+	it.for([6 * 60_000, 7 * 60_000])(
+		"should reject an input whose upload consumed its validity margin after %s ms",
+		async (elapsedMs) => {
+			expect.assertions(3);
+
+			const stub = passingStub();
+			let now = 0;
+			const upload = stub.runner.uploadBinaryInputAsync;
+			vi.spyOn(stub.runner, "uploadBinaryInputAsync").mockImplementation(async (options) => {
+				const result = await upload(options);
+				now = elapsedMs;
+				return result;
+			});
+
+			await expect(
+				bundleBackend(stub, () => now).runTestsAsync({
+					codeBundle: bundleArtifact(),
+					jobs: [job("alpha")],
+				}),
+			).rejects.toMatchObject({
+				hint: "Run with `--no-binary-input` to upload the code inside the place instead.",
+				message:
+					"The binary input upload completed too late to remain valid through task admission and boot.",
+			});
+			expect(stub.binaryInputCalls).toHaveLength(1);
+			expect(stub.executeCalls).toStrictEqual([]);
+		},
+	);
+
+	it("should submit an uploaded input with sufficient validity remaining", async () => {
+		expect.assertions(2);
+
+		const stub = passingStub();
+		let now = 0;
+		const upload = stub.runner.uploadBinaryInputAsync;
+		vi.spyOn(stub.runner, "uploadBinaryInputAsync").mockImplementation(async (options) => {
+			const result = await upload(options);
+			now = 6 * 60_000 - 1;
+			return result;
+		});
+		await bundleBackend(stub, () => now).runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha")],
+		});
+
+		expect(stub.binaryInputCalls).toHaveLength(1);
 		expect(stub.executeCalls[0]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
 	});
 
@@ -3317,7 +3794,7 @@ describe("code bundle", () => {
 
 		const stub = passingStub();
 		const { fileSystem } = createMemoryFileSystem({ [BUNDLE_FILE]: BUNDLE_JSON });
-		const backend = new OpenCloudBackend(credentials, { fileSystem, runner: stub.runner });
+		const backend = createBackend({ fileSystem, runner: stub.runner });
 
 		await backend.runTestsAsync({ codeBundle: bundleArtifact(), jobs: [job("alpha")] });
 		await backend.runTestsAsync({ jobs: [job("alpha")] });
@@ -3364,7 +3841,7 @@ describe("code bundle", () => {
 		// The threshold is the margin, not the expiry: an input reaching it is
 		// one whose next submit could be read after Open Cloud's fifteen
 		// minutes are up.
-		const stub = await runAcrossElapsedAsync(13 * 60_000);
+		const stub = await runAcrossElapsedAsync(6 * 60_000);
 
 		expect(stub.binaryInputCalls).toHaveLength(2);
 	});
@@ -3372,7 +3849,7 @@ describe("code bundle", () => {
 	it("should keep an input the refresh threshold has not reached", async () => {
 		expect.assertions(2);
 
-		const stub = await runAcrossElapsedAsync(60_000);
+		const stub = await runAcrossElapsedAsync(6 * 60_000 - 1);
 
 		expect(stub.binaryInputCalls).toHaveLength(1);
 		expect(stub.executeCalls[1]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
@@ -3475,20 +3952,19 @@ describe("code bundle", () => {
 		const stub = passingStub({
 			binaryInputPaths: [DEFAULT_BINARY_INPUT_PATH, REFRESHED_PATH],
 		});
-		// The run's first upload happens before any task dispatches and dates
-		// its input at zero; every reading after that is past the refresh
-		// threshold, so both shards want a new input at once.
+		stub.setExecute(scriptedEntries);
+		// Script preparation takes the initial input past its refresh threshold
+		// before either shard submits.
 		let clock = 0;
-		function now(): number {
-			const reading = clock;
-			clock = REFRESH_STEP_MS;
-			return reading;
-		}
 
-		await bundleBackend(stub, now).runTestsAsync({
+		await bundleBackend(stub, () => clock).runTestsAsync({
 			codeBundle: bundleArtifact(),
 			jobs: [job("alpha"), job("beta")],
 			parallel: 2,
+			scriptFactory: (jobs) => {
+				clock = REFRESH_STEP_MS;
+				return scriptNaming(jobs);
+			},
 		});
 
 		// One refresh behind the first upload rather than one per shard.
