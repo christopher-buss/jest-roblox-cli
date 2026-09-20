@@ -74,7 +74,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	private readonly mapId: string;
 	private readonly queueId: string;
 	private readonly reclaimBudgetSeconds: number;
-	private readonly sleep: SleepFunc;
+	private readonly sleep: (ms: number) => Promise<void>;
 	private readonly storage: StorageClient;
 	private readonly universeId: string;
 
@@ -85,9 +85,9 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 		this.queueId = options.queueId;
 		this.reclaimBudgetSeconds = options.reclaimBudgetSeconds;
 		this.sleep = options.sleep ?? delay;
-		// Resolved once, so the retry backoff and the reclaim wait can never
-		// drift onto two different timers.
-		this.storage = createWorkQueueStorage({ ...options, sleep: this.sleep });
+		// A caller's sleep reaches both the retry backoff and the reclaim
+		// wait, so one fake clock drives the two timers.
+		this.storage = createWorkQueueStorage(options);
 		this.universeId = options.universeId;
 	}
 

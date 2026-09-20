@@ -1,4 +1,4 @@
-import { ApiError, OpenCloudError } from "@bedrock-rbx/ocale";
+import { ApiError, OpenCloudError, RequestAbortedError } from "@bedrock-rbx/ocale";
 import type { GetSortedMapItemParameters, SortedMapItem } from "@bedrock-rbx/ocale/storage";
 import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
@@ -102,6 +102,21 @@ describe(ExecutionClaimObserver, () => {
 			error: cause,
 			status: "failed",
 		});
+	});
+
+	it("should rethrow a cancelled read rather than report it as a failure", async () => {
+		expect.assertions(1);
+
+		const cause = new RequestAbortedError("Request was aborted", {
+			reason: "run superseded",
+		});
+		const get = vi.fn<GetFunc>(async () => ({ err: cause, success: false }));
+		const observer = new ExecutionClaimObserver({
+			credentials: { apiKey: "test-key", universeId: "123" },
+			storageFactory: () => makeStorage(get),
+		});
+
+		await expect(observer.readAsync("execution-key")).rejects.toBe(cause);
 	});
 
 	it("should reject a malformed claim value at the Open Cloud boundary", async () => {

@@ -578,7 +578,7 @@ describe(OcaleRunner, () => {
 					script: "return 1",
 					timeout: 30_000,
 				}),
-			).rejects.toThrow("Request aborted");
+			).rejects.toMatchObject({ cause: { reason: "result no longer needed" } });
 			expect(http.requests).toStrictEqual([]);
 		});
 
@@ -946,12 +946,16 @@ describe(OcaleRunner, () => {
 			});
 			firstController.abort(new Error("stop first"));
 
-			await expect(first).resolves.toMatchObject({ cause: { message: "stop first" } });
+			await expect(first).resolves.toMatchObject({
+				cause: { reason: { message: "stop first" } },
+			});
 			expect(isSecondSettled).toBeFalse();
 
 			secondController.abort(new Error("stop second"));
 
-			await expect(second).resolves.toMatchObject({ cause: { message: "stop second" } });
+			await expect(second).resolves.toMatchObject({
+				cause: { reason: { message: "stop second" } },
+			});
 		});
 
 		it("should admit after a validated capacity blocker completes", async () => {

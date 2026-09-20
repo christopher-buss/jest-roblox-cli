@@ -1,4 +1,5 @@
 import type {
+	AdmissionWaitObserver,
 	HttpClient,
 	OpenCloudClientOptions,
 	OpenCloudError,
@@ -188,9 +189,6 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 					});
 		let clientOptions: OpenCloudClientOptions = {
 			apiKey: credentials.apiKey,
-			hooks: {
-				onAdmissionWait: () => this.capacityBudgetContext.getStore()?.pause(),
-			},
 			httpClient: capacityAwareTransport,
 		};
 		if (options?.baseUrl !== undefined) {
@@ -440,7 +438,10 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			capacityBudgetMs: submitCapacityBudget ?? 0,
 		});
 		const submitting = this.capacityBudgetContext.run(budget, async () => {
-			return this.luau.tasks.submit(taskParameters, submitOptions);
+			return this.luau.tasks.submit(taskParameters, {
+				...submitOptions,
+				onAdmissionWait: pauseBudgetWhileWaiting(budget),
+			});
 		});
 		return budget.raceAsync(submitting);
 	}
@@ -612,6 +613,29 @@ export function createSubmitBudgetController({
 
 function describeSeconds(ms: number): string {
 	return `${String(Math.round(ms / 1000))}s`;
+}
+
+/**
+ * Holds the submit budget open while the SDK queues or honours a reported
+ * budget. The SDK never nests one request's waits, so a single resume matches
+ * each `started` to its `ended`. A `retry-delay` stays charged: it covers 5xx
+ * backoff, and the 429 `retry-after` is credited through `defer` already.
+ */
+function pauseBudgetWhileWaiting(budget: SubmitBudgetController): AdmissionWaitObserver {
+	let resume: (() => void) | undefined;
+	return ({ phase, reason }) => {
+		if (reason === "retry-delay") {
+			return;
+		}
+
+		if (phase === "started") {
+			resume = budget.pause();
+			return;
+		}
+
+		resume?.();
+		resume = undefined;
+	};
 }
 
 function coerceOutputToString(value: JSONValue): string {

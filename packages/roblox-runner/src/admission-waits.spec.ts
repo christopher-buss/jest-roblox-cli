@@ -93,7 +93,7 @@ describe("sDK admission waits", () => {
 		await vi.advanceTimersByTimeAsync(1000);
 		controller.abort("no longer needed");
 
-		await expect(canceled).resolves.toMatchObject({ message: "Request aborted" });
+		await expect(canceled).resolves.toMatchObject({ cause: { reason: "no longer needed" } });
 
 		await vi.advanceTimersByTimeAsync(99_000);
 
@@ -193,13 +193,46 @@ describe("sDK admission waits", () => {
 		await vi.advanceTimersByTimeAsync(1000);
 		second.abort("follower stopped");
 
-		await expect(secondResult).resolves.toMatchObject({ message: "Request aborted" });
+		await expect(secondResult).resolves.toMatchObject({
+			cause: { reason: "follower stopped" },
+		});
 
 		first.abort("first stopped");
 
-		await expect(firstResult).resolves.toMatchObject({ message: "Request aborted" });
+		await expect(firstResult).resolves.toMatchObject({ cause: { reason: "first stopped" } });
 		expect(http.requests).toHaveLength(2);
 		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("should not excuse an SDK wait when no capacity budget was granted", async () => {
+		expect.assertions(3);
+
+		useClock();
+		const http = createFakeHttpClient();
+		http.mockResponse({
+			body: COMPLETE,
+			headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "600" },
+			status: 200,
+		});
+		http.mockResponse({ body: COMPLETE, status: 200 });
+		const runner = new OcaleRunner(CREDENTIALS, { httpClient: http, sleep: sleepAsync });
+		const { submitCapacityBudget, ...inactivityOnly } = OPTIONS;
+		await runner.executeScriptAsync(inactivityOnly);
+		const settled = vi.fn<(value: unknown) => void>();
+		const observed = runner.executeScriptAsync(inactivityOnly).catch(settled);
+		await vi.advanceTimersByTimeAsync(89_999);
+
+		expect(settled).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(1);
+		await observed;
+
+		expect(settled).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				message: expect.stringContaining("did not accept the task within 90s"),
+			}),
+		);
+		expect(http.requests).toHaveLength(2);
 	});
 
 	it("should not credit a quota retry again when it crosses the SDK gate", async () => {

@@ -1,4 +1,4 @@
-import { ApiError } from "@bedrock-rbx/ocale";
+import { ApiError, RequestAbortedError } from "@bedrock-rbx/ocale";
 import type { StorageClient } from "@bedrock-rbx/ocale/storage";
 
 import { type } from "arktype";
@@ -56,6 +56,12 @@ export class ExecutionClaimObserver {
 
 		if (result.err instanceof ApiError && result.err.statusCode === 404) {
 			return { status: "missing" };
+		}
+
+		// A cancelled read is the caller's own decision; reported as `failed` it
+		// would read as evidence the runtime is unreachable.
+		if (result.err instanceof RequestAbortedError) {
+			throw result.err;
 		}
 
 		return { error: result.err, status: "failed" };

@@ -1,4 +1,4 @@
-import { ApiError, NetworkError } from "@bedrock-rbx/ocale";
+import { ApiError, NetworkError, RequestAbortedError } from "@bedrock-rbx/ocale";
 import { ExecutionTimeoutError, TaskSubmitError } from "@isentinel/roblox-runner";
 
 import { describe, expect, it } from "vitest";
@@ -26,6 +26,14 @@ describe(isUncertainTaskSubmit, () => {
 			).toBe(expected);
 		},
 	);
+
+	it("should not rescue a create the caller cancelled", () => {
+		expect.assertions(1);
+
+		const aborted = new RequestAbortedError("Request was aborted", { reason: "superseded" });
+
+		expect(isUncertainTaskSubmit(new TaskSubmitError(aborted))).toBeFalse();
+	});
 
 	it.for([500, 502, 503, 504])("should retain an ambiguous create HTTP %i", (statusCode) => {
 		expect.assertions(1);
