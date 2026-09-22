@@ -20,6 +20,7 @@ import {
 import { outputMultiResultAsync } from "./output.ts";
 import { createStdoutRunProgress } from "./progress/reporter.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
+import { withRunLogAsync } from "./run-log/run-log.ts";
 import { runJestRobloxAsync } from "./run.ts";
 import type { MultiRunResult, WorkspaceRunResult } from "./run/types.ts";
 import { formatBanner } from "./utils/banner.ts";
@@ -617,6 +618,28 @@ async function dispatchResultAsync(
 	return outputMultiResult(config, result, { fileSystem });
 }
 
+/**
+ * The CLI owns the terminal for the whole invocation, so it owns the stage
+ * block: the run is only part of it, and a run that throws leaves the block
+ * open. Settled in a `finally`, so that block still names the step it died
+ * inside rather than freezing on a spinner.
+ */
+async function runReportedAsync(
+	cli: CliOptions,
+	config: ResolvedConfig,
+	dependencies: ResolvedCliDependencies,
+): Promise<number> {
+	const progress = createStdoutRunProgress();
+	try {
+		const result = await dependencies.runJestRoblox(cli, config, progress, {
+			fileSystem: dependencies.fileSystem,
+		});
+		return await dispatchResultAsync(config, result, dependencies);
+	} finally {
+		progress.finish();
+	}
+}
+
 async function runInnerAsync(
 	args: Array<string>,
 	dependencies: ResolvedCliDependencies,
@@ -645,17 +668,12 @@ async function runInnerAsync(
 	});
 	const config = mergeCliWithConfig(cli, loadedConfig);
 
-	// The CLI owns the terminal for the whole invocation, so it owns the stage
-	// block: the run is only part of it, and a run that throws leaves the block
-	// open. Settled in a `finally`, so that block still names the step it died
-	// inside rather than freezing on a spinner.
-	const progress = createStdoutRunProgress();
-	try {
-		const result = await dependencies.runJestRoblox(cli, config, progress, { fileSystem });
-		return await dispatchResultAsync(config, result, dependencies);
-	} finally {
-		progress.finish();
-	}
+	// The log wraps the whole invocation because it holds what the terminal
+	// held, the stage block included.
+	return withRunLogAsync(
+		{ config, fileSystem, streams: { stderr: process.stderr, stdout: process.stdout } },
+		async () => runReportedAsync(cli, config, dependencies),
+	);
 }
 
 const LUAU_ERROR_HINTS: Array<[pattern: RegExp, hint: string]> = [

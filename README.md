@@ -1012,6 +1012,11 @@ block stops there and stays put: the results, the summary and the coverage
 report are the run saying where it is from then on. `--silent`,
 `--formatters json` and `--formatters agent` report no stages at all.
 
+Every run also writes what it printed to `.jest-roblox/last-run.log` under the
+root, overwritten per run, whatever the mode or exit code. An agent that read
+the output through `| tail` and missed a line reads the file instead of paying
+for the run again; the `agent` formatter says so on stderr once the run ends.
+
 <!-- prettier-ignore -->
 > [!NOTE]
 > Coverage adds extra steps: copy Luau files, insert tracking probes,

@@ -1171,12 +1171,12 @@ packages:
       '@types/node':
         optional: true
 
-  '@isentinel/dict-rbxts@1.0.23':
-    resolution: {integrity: sha512-vSH8tgBITZNjYxw49aD8IXk2liqO9Rpu/lUk3MIQvp0RKBg5OQSmrNRvy7XKFk481XUkMaA9rAwmfJIV11HuWw==}
+  '@isentinel/dict-rbxts@1.0.24':
+    resolution: {integrity: sha512-UnBvOYjv6pV1cr5Gi9GqwCRfP62QFuhW+N/TsmcfGrwJzfoHCzU6AwONZQNzg1JTE9SH5zAIVM+vjUWZzCf1sA==}
     engines: {node: '>=22'}
 
-  '@isentinel/dict-roblox@1.0.16':
-    resolution: {integrity: sha512-L4EMB+7V57qljfBbqctWBgq4ywLJ9mS7gj0t44bAZ9OCjJaieNuY2LADNsOgOgy7nQqo/jK2/JSZuLPJmcsDww==}
+  '@isentinel/dict-roblox@1.0.17':
+    resolution: {integrity: sha512-TkHs9srgpspvO61G99tMM0Hb3nKkuFcIHGqiVDclkBN7Wn8Z5uFlKggYtZrjL+WyOvvgNcvFH1yKI8SWjFp50Q==}
     engines: {node: '>=20.18.0'}
 
   '@isentinel/eslint-config@6.0.0-beta.42':
@@ -3118,8 +3118,8 @@ packages:
     peerDependencies:
       eslint: '>=7.0.0'
 
-  eslint-fix-utils@0.4.3:
-    resolution: {integrity: sha512-EKzNhsNavV5DdkHVltHBM9TqfsonCmiUhOm1Ra97zo03M9IAx3wtM1eC27eWGMj/D3LrALmHHNe1QlQH1P7Nxw==}
+  eslint-fix-utils@0.4.4:
+    resolution: {integrity: sha512-9reP0fw++eZv0qs0ji8U1G9a+j8yWQW1RT8Wrlw32JlhQJDiweVX98kyDrJq6G7jdOLgKwmj0nPghyMadsOgHQ==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=24.0.0}
     peerDependencies:
       '@types/estree': '>=1'
@@ -3405,8 +3405,8 @@ packages:
   fast-diff@1.3.0:
     resolution: {integrity: sha512-VxPP4NqbUjj6MaAOafWeUn2cXWLcCtljklUtZf0Ind4XQ+QPtmA0b18zZy0jIQx+ExRVCR/ZQpBmik5lXshNsw==}
 
-  fast-equals@6.0.3:
-    resolution: {integrity: sha512-IECu4C0fFZFoUC2cA2rDaNUuVIfWIZMwh3tY+ng924vOuD9OaUFFrcIrVwCKbV7TJDkGmrHfhwZ7R0AnHfVhyw==}
+  fast-equals@6.0.4:
+    resolution: {integrity: sha512-JiBeR0k76FIahi9zAtQR7X1jgZDKLE+fs5S9ryjOGYZWZCOcm8QiwgeahkFvaboS3i6PkGBopRznHKuKhm9zpg==}
     engines: {node: '>=6.0.0'}
 
   fast-json-stable-stringify@2.1.0:
@@ -3755,8 +3755,8 @@ packages:
   json-buffer@3.0.1:
     resolution: {integrity: sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ==}
 
-  json-rpc-2.0@1.8.0:
-    resolution: {integrity: sha512-4nw+XlJbk5XokA7BtqHGu+0PEiUPfAkRzXXd1Cgjy1c3F2UI/3Gy7yr76wyJEv3X1F1SRGGF8xPAPPhelBiGmA==}
+  json-rpc-2.0@1.8.1:
+    resolution: {integrity: sha512-BmN42JKn6FI36pcMMzHCXQhpKNEfbeqgSIcUYHKnifq0/4Ey6PDinovwUOgajT7NsgUtpWdDXaCWlpI4LHXN3g==}
 
   json-schema-traverse@0.4.1:
     resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
@@ -4075,8 +4075,8 @@ packages:
   mlly@1.8.2:
     resolution: {integrity: sha512-d+ObxMQFmbt10sretNDytwt85VrbkhhUA/JBGm1MPaWJ65Cl4wOgLaB1NYvJSZ0Ef03MMEU/0xpPMXUIQ29UfA==}
 
-  module-replacements@3.3.0:
-    resolution: {integrity: sha512-AVZL23uePazQOZlb/QMGwxsUa1oWA62Cfe6ApPzgasUoF4cdCWAiRPVq4KkaQzXbIDAlpLhLG61Jx8Lju4wjTg==}
+  module-replacements@3.4.0:
+    resolution: {integrity: sha512-NKBNFM/uAUvSs+LOYfSly4EwrC9bgMoFuEnqNNjcDb910W+5IgS2KMB2ERLm5YZZm7R187jx1dMA9pOPvqbSbw==}
 
   mri@1.2.0:
     resolution: {integrity: sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA==}
@@ -5512,7 +5512,7 @@ snapshots:
   '@e18e/eslint-plugin@0.5.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxlint@1.83.0)':
     dependencies:
       empathic: 2.1.0
-      module-replacements: 3.3.0
+      module-replacements: 3.4.0
       semver: 7.8.5
     optionalDependencies:
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
@@ -5819,9 +5819,9 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.12.3
 
-  '@isentinel/dict-rbxts@1.0.23': {}
+  '@isentinel/dict-rbxts@1.0.24': {}
 
-  '@isentinel/dict-roblox@1.0.16': {}
+  '@isentinel/dict-roblox@1.0.17': {}
 
   '@isentinel/eslint-config@6.0.0-beta.42(@vitest/eslint-plugin@1.6.19(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.0))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint@1.83.0)(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
@@ -5831,8 +5831,8 @@ snapshots:
       '@e18e/eslint-plugin': 0.5.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxlint@1.83.0)
       '@eslint-community/eslint-plugin-eslint-comments': 4.7.2(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))
       '@eslint/markdown': 8.0.3(supports-color@10.2.2)
-      '@isentinel/dict-rbxts': 1.0.23
-      '@isentinel/dict-roblox': 1.0.16
+      '@isentinel/dict-rbxts': 1.0.24
+      '@isentinel/dict-roblox': 1.0.17
       '@oxlint/plugins': 1.78.0
       '@pobammer-ts/small-rules': 2.14.0(typescript@6.0.3)
       '@stylistic/eslint-plugin': 5.10.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))
@@ -6843,7 +6843,7 @@ snapshots:
       diff-match-patch: 1.0.5
       emoji-regex: 10.6.0
       execa: 9.6.1
-      json-rpc-2.0: 1.8.0
+      json-rpc-2.0: 1.8.1
       lodash.groupby: 4.6.0
       minimatch: 10.2.6
       mutation-server-protocol: 0.4.1
@@ -7523,7 +7523,7 @@ snapshots:
       '@cspell/cspell-pipe': 10.0.1
       '@cspell/cspell-types': 10.0.1
       cspell-trie-lib: 10.0.1(@cspell/cspell-types@10.0.1)
-      fast-equals: 6.0.3
+      fast-equals: 6.0.4
 
   cspell-glob@10.0.1:
     dependencies:
@@ -7678,7 +7678,7 @@ snapshots:
     dependencies:
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
 
-  eslint-fix-utils@0.4.3(@types/estree@1.0.9)(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2)):
+  eslint-fix-utils@0.4.4(@types/estree@1.0.9)(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2)):
     dependencies:
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
     optionalDependencies:
@@ -7842,7 +7842,7 @@ snapshots:
       detect-indent: 7.0.2
       detect-newline: 4.0.1
       eslint: 10.9.0(jiti@2.7.0)(supports-color@10.2.2)
-      eslint-fix-utils: 0.4.3(@types/estree@1.0.9)(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))
+      eslint-fix-utils: 0.4.4(@types/estree@1.0.9)(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))
       eslint-json-compat-utils: 0.2.3(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(jsonc-eslint-parser@3.1.0)
       jsonc-eslint-parser: 3.1.0
       package-json-validator: 1.6.1
@@ -8077,7 +8077,7 @@ snapshots:
 
   fast-diff@1.3.0: {}
 
-  fast-equals@6.0.3: {}
+  fast-equals@6.0.4: {}
 
   fast-json-stable-stringify@2.1.0: {}
 
@@ -8349,7 +8349,7 @@ snapshots:
 
   json-buffer@3.0.1: {}
 
-  json-rpc-2.0@1.8.0: {}
+  json-rpc-2.0@1.8.1: {}
 
   json-schema-traverse@0.4.1: {}
 
@@ -8865,7 +8865,7 @@ snapshots:
       pkg-types: 1.3.1
       ufo: 1.6.4
 
-  module-replacements@3.3.0: {}
+  module-replacements@3.4.0: {}
 
   mri@1.2.0: {}
 

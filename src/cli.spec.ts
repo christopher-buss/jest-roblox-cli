@@ -13,6 +13,7 @@ import { ConfigError } from "./config/errors.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import type { ExecuteResult } from "./executor.ts";
 import { LuauScriptError } from "./reporter/parser.ts";
+import { runLogPath } from "./run-log/run-log.ts";
 import type { MultiRunResult, ProjectResult, WorkspaceRunResult } from "./run/types.ts";
 import type { JestResult } from "./types/jest-result.ts";
 
@@ -1344,6 +1345,17 @@ describe(main, () => {
 });
 
 describe("runInner orchestration", () => {
+	it("should write the run log through the injected file system", async () => {
+		expect.assertions(1);
+
+		setupOutputSpies();
+		const cli = setupDefaults();
+
+		await runAsync([], cli.dependencies);
+
+		expect(cli.fileSystem.existsSync(runLogPath("/test"))).toBeTrue();
+	});
+
 	it("should print HELP_TEXT and return 0 when --help is passed", async () => {
 		expect.assertions(3);
 
@@ -1415,7 +1427,7 @@ describe("runInner orchestration", () => {
 		const cli = setupDefaults();
 		vi.stubEnv("JEST_ROBLOX_SEA", "false");
 
-		const code = await runAsync(["--typecheck"], cli.dependencies);
+		const code = await runAsync(["--typecheck", "--formatters", "default"], cli.dependencies);
 
 		expect(code).toBe(0);
 		expect(spies.stderr).not.toHaveBeenCalled();
@@ -1428,7 +1440,7 @@ describe("runInner orchestration", () => {
 		const cli = setupDefaults();
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
 
-		const code = await runAsync([], cli.dependencies);
+		const code = await runAsync(["--formatters", "default"], cli.dependencies);
 
 		expect(code).toBe(0);
 		expect(spies.stderr).not.toHaveBeenCalled();
@@ -1551,7 +1563,7 @@ describe("runInner orchestration", () => {
 			makeMultiResult({ projectResults: [], validationExitCode: 2 }),
 		);
 
-		const code = await runAsync([], cli.dependencies);
+		const code = await runAsync(["--formatters", "default"], cli.dependencies);
 
 		expect(code).toBe(2);
 		expect(spies.stderr).not.toHaveBeenCalled();
