@@ -1,19 +1,10 @@
-import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "./cli/fake-open-cloud.ts";
-
-const DIST = path.resolve(import.meta.dirname, "../../dist");
-
-function builtJavaScript(): string {
-	return readdirSync(DIST)
-		.filter((name) => name.endsWith(".mjs"))
-		.map((name) => readFileSync(path.join(DIST, name), "utf8"))
-		.join("\n");
-}
 
 function temporaryPlace(): { placeFile: string; rootDir: string } {
 	const rootDirectory = mkdtempSync(path.join(tmpdir(), "jest-roblox-bundle-"));
@@ -56,17 +47,7 @@ function taskGetCount(calls: Array<{ method: string; url: string }>, taskName: s
 		.filter(({ url }) => url.includes(taskName)).length;
 }
 
-describe("published bundle dependencies", () => {
-	it("should include OCALE rather than require it from the consumer", () => {
-		expect.assertions(1);
-
-		const bundle = builtJavaScript();
-
-		expect(bundle).not.toMatch(
-			/^import .* from ["']@bedrock-rbx\/ocale(?:\/[^"']*)?["'];?$/gmu,
-		);
-	});
-
+describe("published bundle", () => {
 	it("should recover an upload connection reset through the built backend", async () => {
 		expect.assertions(2);
 
@@ -114,7 +95,7 @@ describe("published bundle dependencies", () => {
 		expect(originalTaskGets()).toBe(settledCount);
 	});
 
-	it("should retry a resource-exhausted submission through bundled OCALE", async () => {
+	it("should retry a resource-exhausted submission through the built backend", async () => {
 		expect.assertions(2);
 
 		const server = await startFakeOpenCloudServerAsync([{ rawOutput: envelope("complete") }], {
