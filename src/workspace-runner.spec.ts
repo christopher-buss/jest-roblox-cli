@@ -152,7 +152,6 @@ function makeRunOptions(overrides: Partial<WorkspaceRunOptions> = {}): Workspace
 	return {
 		backend: DEFAULT_CONFIG.backend,
 		bail: false,
-		binaryInput: DEFAULT_CONFIG.binaryInput,
 		color: DEFAULT_CONFIG.color,
 		formatters: [],
 		port: DEFAULT_CONFIG.port,
@@ -345,9 +344,8 @@ describe("the place a workspace run uploads", () => {
 	}
 
 	/**
-	 * A Shared Place run builds every package into the one place. `binaryInput`
-	 * defaults on and selects nothing: only an Exclusive Place grant makes a
-	 * Harness Place safe, and none exists.
+	 * A Shared Place run builds every package into the one place: only an
+	 * Exclusive Place grant makes a Harness Place safe, and none exists.
 	 */
 	it("should build the whole open-cloud place", async () => {
 		expect.assertions(2);

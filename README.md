@@ -158,7 +158,6 @@ per-package declarations error loudly.
 | Field                  | What it does                                                                                                                                                        | Default       |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                             | `"auto"`      |
-| `binaryInput`          | Accepted, selects nothing: an Open Cloud run always builds its code into the place (see [One complete place](#one-complete-place))                                  | `true`        |
 | `color`                | Use ANSI colors in console output                                                                                                                                   | `true`        |
 | `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                            | `["default"]` |
 | `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package | —             |
@@ -556,10 +555,9 @@ returned. A shared place has no head this run can trust: another run may save
 over it at any moment, so the version is the only thing that names this run's
 bytes.
 
-Sending the code beside a code-free place as a binary input is not active.
-`binaryInput` and `--no-binary-input` are accepted and select nothing; that
-transport needs a place no other run can change, which only a future exclusive
-place allocator can grant.
+No option sends the code beside a code-free place. That transport needs a place
+no other run can change, which only a future exclusive place allocator can
+grant.
 
 ### Studio (local)
 
@@ -969,8 +967,6 @@ project) under `.jest-roblox/output/`.
 | `--no-color`                     | Turn off colors                                                                                                                                           |
 | `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                                                                 |
 | `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                |
-| `--binary-input`                 | Accepted, selects nothing (see [One complete place](#one-complete-place))                                                                                 |
-| `--no-binary-input`              | Accepted, selects nothing: the run's code is always built into the place (see [One complete place](#one-complete-place))                                  |
 | `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); ignored on studio-cli                                                                       |
 | `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism)) |
 | `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                           |

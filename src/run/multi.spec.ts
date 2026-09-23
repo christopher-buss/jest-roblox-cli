@@ -663,9 +663,8 @@ describe(runMultiProjectAsync, () => {
 	}
 
 	/**
-	 * A Shared Place run builds its code into the place. `binaryInput` defaults
-	 * on and selects nothing: only an Exclusive Place grant makes a Harness
-	 * Place safe, and none exists.
+	 * A Shared Place run builds its code into the place: only an Exclusive
+	 * Place grant makes a Harness Place safe, and none exists.
 	 */
 	it("should build the whole open-cloud place", async () => {
 		expect.assertions(2);
@@ -2191,9 +2190,7 @@ describe(runMultiProjectAsync, () => {
 	it("should skip stubMounts and runtimeInjectionPaths for mounts with user-authored configs", async () => {
 		expect.assertions(4);
 
-		// Whole-place: the split would take both mounts into the bundle, and
-		// what this case pins is what synthesis put inside them.
-		const { config, fileSystem, volume } = setupDefaults({ binaryInput: false });
+		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce(makeBackend("open-cloud"));
 		seedUserAuthoredConfigs(volume);
 		seedProjectFiles(volume);

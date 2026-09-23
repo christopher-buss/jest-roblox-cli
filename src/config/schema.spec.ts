@@ -285,6 +285,12 @@ describe(configSchema, () => {
 			expect(() => validateConfig({ cache: true })).toThrow(/Invalid config/);
 		});
 
+		it("should reject `binaryInput` as unknown", () => {
+			expect.assertions(1);
+
+			expect(() => validateConfig({ binaryInput: true })).toThrow(/Invalid config/);
+		});
+
 		it("should accept all valid backend values", () => {
 			expect.assertions(1);
 

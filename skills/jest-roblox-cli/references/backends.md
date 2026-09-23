@@ -41,8 +41,7 @@ head holds now. A version Open Cloud no longer serves comes back as a 404, which
 drops the cache entry. The poll cadence for task completion is managed
 internally by the Open Cloud client and is not user-configurable.
 
-Shipping the code beside a code-free place as a binary input is retained in the
-codebase but inactive: `binaryInput` and `--no-binary-input` select nothing
+No option ships the code beside a code-free place: that transport stays inactive
 until an exclusive-place allocator exists.
 
 ## Studio

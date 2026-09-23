@@ -1,6 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assert, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
 import type { JestEnvelopePayload } from "./helpers.ts";
@@ -10,6 +9,7 @@ import {
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	createRbxtsFixtureSandbox,
+	patchSandboxConfig,
 	runCliAsync,
 } from "./helpers.ts";
 
@@ -19,21 +19,10 @@ const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 /**
  * Shorten the boot probe's budget for a sandbox, so a spec that stalls the
  * probe on purpose costs seconds rather than the 90s a real cold boot is
- * allowed. Patches the fixture's own config rather than restating it, so the
- * sandbox keeps testing the same project shape as every sibling spec.
+ * allowed.
  */
 function writeBootProbeTimeout(sandbox: string, bootProbeTimeout: number): void {
-	const configPath = path.join(sandbox, "jest.config.ts");
-	const source = readFileSync(configPath, "utf-8");
-	const patched = source.replace(
-		"defineConfig({",
-		() => `defineConfig({
-	bootProbeTimeout: ${String(bootProbeTimeout)},`,
-	);
-	// A patch that matched nothing would leave the 90s default in place and the
-	// spec would fail as a long, unexplained wait rather than a broken helper.
-	assert(patched !== source, "boot-probe patch matched nothing in the fixture config");
-	writeFileSync(configPath, patched);
+	patchSandboxConfig(sandbox, `bootProbeTimeout: ${String(bootProbeTimeout)},`);
 }
 
 describe("cli error paths", () => {

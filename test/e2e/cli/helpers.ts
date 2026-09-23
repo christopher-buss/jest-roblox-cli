@@ -4,7 +4,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import nodeProcess from "node:process";
-import { onTestFinished } from "vitest";
+import { assert, onTestFinished } from "vitest";
 
 import type { JestResult } from "../../../src/types/jest-result.ts";
 import { createSandboxDirectory } from "../sandbox-root.ts";
@@ -224,6 +224,24 @@ export function createFixtureSandbox(sourcePath: string): string {
 		rmSync(directory, { force: true, recursive: true });
 	});
 	return sandboxPath;
+}
+
+/**
+ * Prepend config fields to a sandbox's `defineConfig({ … })`, patching the
+ * fixture's own config rather than restating it.
+ */
+export function patchSandboxConfig(sandbox: string, fields: string): void {
+	const configPath = path.join(sandbox, "jest.config.ts");
+	const source = readFileSync(configPath, "utf-8");
+	const patched = source.replace(
+		"defineConfig({",
+		() => `defineConfig({
+	${fields}`,
+	);
+	// A patch that matched nothing would run the fixture's own config and fail
+	// the spec far from the broken helper.
+	assert(patched !== source, "config patch matched nothing in the fixture config");
+	writeFileSync(configPath, patched);
 }
 
 export function createRbxtsFixtureSandbox(sourcePath: string): string {

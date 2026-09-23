@@ -1,19 +1,20 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { runCli } from "./helpers.ts";
+import { createFixtureSandbox, patchSandboxConfig, runCli } from "./helpers.ts";
 
 const LUAU_FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
 
 describe("cli binary", () => {
-	it("should print help and exit 0", () => {
-		expect.assertions(2);
+	it("should print help without binary-input flags and exit 0", () => {
+		expect.assertions(3);
 
 		const result = runCli(["--help"]);
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("Usage: jest-roblox");
+		expect(result.stdout).not.toContain("binary-input");
 	});
 
 	it("should print version and exit 0", () => {
@@ -76,5 +77,31 @@ describe("cli binary", () => {
 
 		expect(result.exitCode).toBeGreaterThan(0);
 		expect(result.stderr).toContain("Invalid --parallel value");
+	});
+
+	// Which removed flags `parseArgs` rejects is settled in `cli.spec.ts`; one
+	// case here proves the rejection reaches the exit code and stderr.
+	it("should reject --no-binary-input as an unknown option", () => {
+		expect.assertions(2);
+
+		const result = runCli(
+			["--no-binary-input", "--typecheckOnly", "--passWithNoTests"],
+			RBXTS_FIXTURE,
+		);
+
+		expect(result.exitCode).toBeGreaterThan(0);
+		expect(result.stderr).toContain("Unknown option '--no-binary-input'");
+	});
+
+	it("should reject a binaryInput config field as unknown", () => {
+		expect.assertions(2);
+
+		const sandbox = createFixtureSandbox(RBXTS_FIXTURE);
+		patchSandboxConfig(sandbox, "binaryInput: true,");
+
+		const result = runCli(["--typecheckOnly", "--passWithNoTests"], sandbox);
+
+		expect(result.exitCode).toBeGreaterThan(0);
+		expect(result.stderr).toMatch(/Invalid config:.*binaryInput/s);
 	});
 });

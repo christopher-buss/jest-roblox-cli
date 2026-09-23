@@ -291,19 +291,14 @@ describe(parseArgs, () => {
 		expect(parseArgs([]).uploadCache).toBeUndefined();
 	});
 
-	it("should parse binary-input flags and prefer --no-binary-input", () => {
-		expect.assertions(3);
+	it.for(["--binary-input", "--no-binary-input"])(
+		"should reject %s as an unknown option",
+		(flag) => {
+			expect.assertions(1);
 
-		expect(parseArgs(["--no-binary-input"]).binaryInput).toBeFalse();
-		expect(parseArgs(["--binary-input"]).binaryInput).toBeTrue();
-		expect(parseArgs(["--binary-input", "--no-binary-input"]).binaryInput).toBeFalse();
-	});
-
-	it("should leave binaryInput unset when neither flag is given", () => {
-		expect.assertions(1);
-
-		expect(parseArgs([]).binaryInput).toBeUndefined();
-	});
+			expect(() => parseArgs([flag])).toThrow(/Unknown option/);
+		},
+	);
 
 	it("should parse color flags and prefer --no-color", () => {
 		expect.assertions(3);
@@ -1381,6 +1376,14 @@ describe("runInner orchestration", () => {
 			expect(entry).toContain("(repeatable)");
 		},
 	);
+
+	it("should document no binary-input option", async () => {
+		expect.assertions(1);
+
+		const help = await captureHelpAsync();
+
+		expect(help).not.toContain("binary-input");
+	});
 
 	it("should document no option value as variadic", async () => {
 		expect.assertions(1);

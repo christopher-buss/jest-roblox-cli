@@ -363,12 +363,6 @@ export interface Config {
 	 */
 	backend?: Backend;
 	/**
-	 * Open Cloud only. Selects nothing: a Shared Place run always builds its
-	 * code into the place. Binary Input stays inactive until an Exclusive
-	 * Place grant can make a Harness Place safe to share a code bundle with.
-	 */
-	binaryInput?: boolean;
-	/**
 	 * Budget in milliseconds for the boot probe after uploading, run against
 	 * the uploaded version. Default `90000`. Only a completed probe earns an
 	 * upload-cache entry. A timeout is inconclusive and tests continue on the
@@ -516,7 +510,6 @@ export interface ResolvedConfig
 		UndefinedTolerant<Except<Config, "test">>,
 		UndefinedTolerant<Except<GlobalTestConfig, "projects">> {
 	backend: Backend;
-	binaryInput: boolean;
 	bootProbeTimeout: number;
 	collectCoverage: boolean;
 	collectPerTestCoverage?: boolean | undefined;
@@ -577,11 +570,6 @@ export interface WorkspaceRunOptions {
 	 * counterpart, so a package cannot opt its workspace into failing fast.
 	 */
 	bail: boolean;
-	/**
-	 * Resolved for the whole run and then ignored: a Shared Place run always
-	 * builds every package into the one synthesized place.
-	 */
-	binaryInput: boolean;
 	color: boolean;
 	formatters: Array<FormatterEntry>;
 	/** Absolute path for the Aggregated Game Output file; undefined = off. */
@@ -655,7 +643,6 @@ export function resolvePlaceFilePath(config: ResolvedConfig): string {
 
 export const DEFAULT_CONFIG: ResolvedConfig = {
 	backend: "auto",
-	binaryInput: true,
 	bootProbeTimeout: 90_000,
 	collectCoverage: false,
 	color: true,
@@ -713,7 +700,6 @@ export interface CliOptions {
 	 * failing test suites inside a single package.
 	 */
 	bail?: boolean | undefined;
-	binaryInput?: boolean | undefined;
 	collectCoverage?: boolean | undefined;
 	collectCoverageFrom?: Array<string> | undefined;
 	color?: boolean | undefined;
@@ -932,7 +918,6 @@ const globalTestConfigSchema = type({
 export const configSchema: Type<Config> = type({
 	"+": "reject",
 	"backend?": type("'auto'|'open-cloud'|'studio'|'studio-cli'"),
-	"binaryInput?": "boolean",
 	"bootProbeTimeout?": "number",
 	"color?": "boolean",
 	"config?": "string",
@@ -1005,7 +990,6 @@ type SharedKey = keyof SharedTestConfig;
 
 export const ROOT_CLI_KEYS_LIST: ReadonlyArray<RootCliKey> = [
 	"backend",
-	"binaryInput",
 	"bootProbeTimeout",
 	"color",
 	"coverageCache",
