@@ -179,7 +179,14 @@ if testArgs.workspace ~= nil then
 	end
 
 	-- `bailed` tells the CLI the missing entries were skipped under --bail.
-	endTest(HttpService:JSONEncode({ bailed = outcome.bailed, entries = entriesOrErr }), "[]")
+	endTest(
+		HttpService:JSONEncode({
+			bailed = outcome.bailed,
+			deferred = outcome.deferred,
+			entries = entriesOrErr,
+		}),
+		"[]"
+	)
 	return
 end
 

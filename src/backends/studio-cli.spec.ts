@@ -88,8 +88,11 @@ function successResult(
 	);
 }
 
-function envelope(entries: Array<{ elapsedMs?: number; jestOutput: string }>): string {
-	return JSON.stringify({ entries });
+function envelope(
+	entries: Array<{ elapsedMs?: number; jestOutput: string }>,
+	flags: { deferred?: boolean } = {},
+): string {
+	return JSON.stringify({ ...flags, entries });
 }
 
 // The lock-poll interval never arms on the timeout path — a hung run gets no
@@ -1013,6 +1016,22 @@ describe(StudioCliBackend, () => {
 		);
 	});
 
+	it("should name a deferred stop rather than report an entry count mismatch", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		const backend = backendReplying(fileSystem, {
+			rawJestOutput: envelope([{ jestOutput: successResult() }], { deferred: true }),
+		});
+
+		await expect(
+			backend.runTestsAsync({
+				jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+			}),
+		).rejects.toThrow(/^studio-cli backend deferred 1 of 2 jobs/);
+	});
+
 	it("should run a workspace config against the pre-built mega-place without building its own", async () => {
 		expect.assertions(2);
 
@@ -1047,7 +1066,7 @@ describe(StudioCliBackend, () => {
 	});
 
 	it("should drive the staged workspace entries (pkg/project per job), not a configs payload", async () => {
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const { fileSystem } = createMemoryFileSystem();
 
@@ -1073,6 +1092,7 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap).toContain("workspace");
 		expect(bootstrap).toContain("@scope/a");
 		expect(bootstrap).toContain("@scope/b");
+		expect(bootstrap).toContain(`"resultBudgetBytes":${String(Number.MAX_SAFE_INTEGER)}`);
 	});
 
 	it("should tell the workspace runner to stop on the first failing package under --bail", async () => {

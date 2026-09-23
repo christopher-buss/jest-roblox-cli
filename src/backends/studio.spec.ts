@@ -113,8 +113,9 @@ function successResult(overrides: Partial<JestResult> = {}): string {
 
 function envelope(
 	entries: Array<{ elapsedMs?: number; gameOutput?: string; jestOutput: string }>,
+	flags: { deferred?: boolean } = {},
 ): string {
-	return JSON.stringify({ entries });
+	return JSON.stringify({ ...flags, entries });
 }
 
 const vmRequestSchema = type({
@@ -522,7 +523,7 @@ describe(StudioBackend, () => {
 		// (WebSocket) studio backend. A workspace run sends `workspace.entries`,
 		// not `config.configs` — the plugin's run-mode runner dispatches on
 		// shape.
-		expect.assertions(3);
+		expect.assertions(4);
 
 		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
 		const promise = backend.runTestsAsync({
@@ -531,7 +532,10 @@ describe(StudioBackend, () => {
 
 		const workspaceRequest = type({
 			requestId: "string",
-			workspace: { entries: type({ pkg: "string", project: "string" }).array() },
+			workspace: {
+				entries: type({ pkg: "string", project: "string" }).array(),
+				resultBudgetBytes: "number",
+			},
 		});
 
 		const wss = getLastCreatedServer()!;
@@ -566,6 +570,7 @@ describe(StudioBackend, () => {
 		expect(captured!.workspace.entries).toHaveLength(2);
 		expect(captured!.workspace.entries[0]!.pkg).toBe("@scope/a");
 		expect(captured!.workspace.entries[1]!.project).toBe("b");
+		expect(captured!.workspace.resultBudgetBytes).toBe(Number.MAX_SAFE_INTEGER);
 	});
 
 	it("should fail fast when a workspace run has a job missing its package name", async () => {
@@ -937,6 +942,20 @@ describe(StudioBackend, () => {
 		await expect(promise).rejects.toThrow(
 			/Studio backend returned 1 entries but request had 2 jobs/,
 		);
+	});
+
+	it("should name a deferred stop rather than report an entry count mismatch", async () => {
+		expect.assertions(1);
+
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const promise = backend.runTestsAsync({ jobs: [job("alpha"), job("beta")] });
+
+		const wss = getLastCreatedServer()!;
+		connectAndReply(wss, {
+			rawJestOutput: envelope([{ jestOutput: successResult() }], { deferred: true }),
+		});
+
+		await expect(promise).rejects.toThrow(/^Studio backend deferred 1 of 2 jobs/);
 	});
 
 	it("should surface a top-level whole-run error instead of the count-mismatch guard", async () => {

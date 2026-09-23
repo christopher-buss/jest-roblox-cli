@@ -10,6 +10,12 @@ import { resolveVmHostCount } from "./vm-parallel.ts";
 
 export type RunPayload = ConfigRunPayload | WorkspaceRunPayload;
 
+/**
+ * The runner's default result budget holds Open Cloud's 4 MiB return cap, which
+ * no Studio transport has.
+ */
+const UNBOUNDED_RESULT_BUDGET_BYTES = Number.MAX_SAFE_INTEGER;
+
 export interface RunPayloadRequest {
 	/** Workspace runs only: stop on the first failing package. */
 	bail?: boolean | undefined;
@@ -48,7 +54,11 @@ interface WorkspaceEntry {
 }
 
 interface WorkspaceRunPayload {
-	workspace: { bail?: boolean | undefined; entries: Array<WorkspaceEntry> };
+	workspace: {
+		bail?: boolean | undefined;
+		entries: Array<WorkspaceEntry>;
+		resultBudgetBytes: number;
+	};
 }
 
 interface ConfigEntries {
@@ -68,7 +78,13 @@ export function buildRunPayload({
 	vmParallel,
 }: RunPayloadRequest): RunPayload {
 	if (isWorkspaceRun(jobs)) {
-		return { workspace: { bail, entries: buildWorkspaceEntries(jobs) } };
+		return {
+			workspace: {
+				bail,
+				entries: buildWorkspaceEntries(jobs),
+				resultBudgetBytes: UNBOUNDED_RESULT_BUDGET_BYTES,
+			},
+		};
 	}
 
 	const { configs, runtimeStubMounts } = buildConfigEntries(jobs);
@@ -87,13 +103,19 @@ export function buildRunPayload({
  * bailed envelope carries a prefix of the jobs and the rest never ran.
  */
 export function pairPluginEntries(
-	{ bailed, entries, gameOutputScope }: DecodedEnvelope,
+	{ bailed, deferred: wasDeferred, entries, gameOutputScope }: DecodedEnvelope,
 	{
 		backendName,
 		gameOutput,
 		jobCount,
 	}: { backendName: string; gameOutput: string | undefined; jobCount: number },
 ): Pick<BackendResult, "bailedJobIndices" | "rawResults"> {
+	if (wasDeferred) {
+		throw new Error(
+			`${backendName} deferred ${(jobCount - entries.length).toString()} of ${jobCount.toString()} jobs: the runner's result budget filled before they ran`,
+		);
+	}
+
 	const rawResults = entries.map((entry) => {
 		return { entry, fallbackGameOutput: gameOutput, gameOutputScope };
 	});
