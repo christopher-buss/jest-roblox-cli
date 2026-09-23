@@ -31,31 +31,19 @@ unchanged build reuses it — an upload is the only thing measured to precede a
 cold place boot (~22s against ~3s), so skipping it keeps the fast path.
 `--no-upload-cache` forces the upload.
 
-The place it uploads holds no code. The run's compiled directories are split out
-of the synthesized project and sent to each task as a binary input, rebuilt
-in-session above the generated runner, so the place changes only when a
-dependency or an asset does and the upload cache hits on a code-only edit. A
-mount holding anything a task cannot construct — an `.rbxm`, a descriptor, a
-nested project — stays in the place and is named once. `--no-binary-input`
-builds the whole place instead.
-
-Execution tasks then run _unpinned_ so they can land on a warm server holding
-the latest saved version; an injected guard compares `game.PlaceVersion` against
-the version this run uploaded or reused, and bails with a sentinel naming the
-version it booted instead. Raced tasks are retried once pinned to that version —
-correct by construction, but a cold place boot. This guard is also what makes
-the upload cache safe: a stale entry can only cause the sentinel, never a run
-against the wrong source. The poll cadence for task completion is managed
+The place it uploads holds the run's code, and every task, the boot probe and
+the tests alike, is submitted to the exact version that upload returned, never
+to head. A shared place can be saved over by another run at any moment, so the
+version is the only thing that names this run's bytes. A pinned task may miss
+the warm-server pool and pay a cold place boot. This is also what makes the
+upload cache safe: a reused version names the bytes that were hashed, whatever
+head holds now. A version Open Cloud no longer serves comes back as a 404, which
+drops the cache entry. The poll cadence for task completion is managed
 internally by the Open Cloud client and is not user-configurable.
 
-The version the sentinel names is the only way to tell a stale cache entry from
-a genuine concurrent upload — Open Cloud will not say which version is head. A
-task booting past a _reused_ version proves the entry is behind head, so the run
-deletes it from `.jest-roblox/upload-cache.json` and the next run uploads again.
-Without that, the entry would be stuck: a cache hit never uploads, so the
-version it names could never become head again, and every later run would pay a
-pinned cold boot. A raced run therefore mutates the cache file, and the upload
-that follows on the next run is expected, not a cache fault.
+Shipping the code beside a code-free place as a binary input is retained in the
+codebase but inactive: `binaryInput` and `--no-binary-input` select nothing
+until an exclusive-place allocator exists.
 
 ## Studio
 

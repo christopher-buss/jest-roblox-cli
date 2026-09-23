@@ -267,7 +267,7 @@ function writeCodeBundle({
 	if (bytes.length > MAX_CODE_BUNDLE_BYTES) {
 		throw new ConfigError(
 			`The run's code comes to ${formatBytes(bytes.length)}, over the ${formatBytes(MAX_CODE_BUNDLE_BYTES)} cap Open Cloud puts on a binary input.`,
-			"Run with `--no-binary-input` to upload the code inside the place instead.",
+			"Upload the code inside the place instead.",
 		);
 	}
 

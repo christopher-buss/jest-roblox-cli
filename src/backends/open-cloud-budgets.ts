@@ -26,8 +26,8 @@ export function openCloudExecutionBudgets(timeout: number): {
 		inputValidityMs: maximumSubmitMs + DEFAULT_BOOT_WATCH_MS,
 		maximumSubmitMs,
 		observationMs,
-		// Two ordinary attempts and one uncertain-create rescue can each
-		// refuse head, submit pinned, and recover a late result.
+		// Sized for the recovery chain this backend still runs. The recovery
+		// rewrite owns this number; it is not re-derived here.
 		startupWindowMs:
 			PHYSICAL_SUBMIT_LIMIT * observationMs + NATIVE_RESULT_READ_LIMIT * resultReadMs,
 		submitBudget: SUBMIT_BUDGET_MS,

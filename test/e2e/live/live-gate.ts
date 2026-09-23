@@ -3,6 +3,9 @@ import process from "node:process";
 /** Whether the specs in this directory reach real Open Cloud. */
 export const IS_LIVE = process.env["JEST_ROBLOX_LIVE"] === "1";
 
+/** Whether live specs of the Binary Input and recovery layer run too. */
+export const IS_BINARY_INPUT = process.env["BINARY_INPUT"] === "true";
+
 /**
  * The credentials a spawned CLI needs to reach real Open Cloud. Passed through
  * rather than read from `process.env` by the child, because `runCliAsync`

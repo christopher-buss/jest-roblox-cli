@@ -21,13 +21,10 @@ import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
  * `docs/research/open-cloud-warm-boot/README.md`.
  *
  * The cache cannot be validated against the server — Open Cloud exposes no
- * content hash for a place version, nor a way to ask which version is head. It
- * does not need to be: the caller runs tasks behind the `game.PlaceVersion`
- * guard, so a stale entry can only make the guard fire and the task retry
- * pinned to the recorded version, which holds exactly the bytes this file
- * hashed. The guard names the version it booted, so the caller invalidates an
- * entry it proves is behind head — a cache hit never uploads, so an entry left
- * in place could never become head again on its own.
+ * content hash for a place version. It does not need to be: the caller submits
+ * every task to the recorded version itself, which holds exactly the bytes this
+ * file hashed, and a version keeps existing after head moves on. A version Open
+ * Cloud no longer serves answers with a 404, and the caller drops the entry.
  */
 export interface UploadCacheTarget {
 	/** Absolute path of the place file whose bytes were uploaded. */
@@ -140,38 +137,6 @@ export function invalidateCachedVersion(
 	}
 
 	return true;
-}
-
-/**
- * Whether a task booting `bootedVersion` proves `reusedVersion` is behind
- * head.
- */
-export function isBehindHead({
-	bootedVersion,
-	reusedVersion,
-}: {
-	bootedVersion: number;
-	reusedVersion: number;
-}): boolean {
-	return bootedVersion > reusedVersion;
-}
-
-/**
- * Drop the entry when a task proves it is behind head, and report whether it
- * went. This is the only evidence there is — Open Cloud will not say which
- * version is head, so a task that booted past the reused one is what stands in
- * for asking. Dropping it keeps the slow path from becoming permanent: a cache
- * hit never uploads, so an entry left in place can never become head again on
- * its own, and every later run pays a pinned cold boot. Dropping one that was
- * in fact fine costs a single upload on the next run.
- */
-export function invalidateIfBehindHead(
-	rootDirectory: string,
-	target: UploadCacheTarget,
-	versions: { bootedVersion: number; reusedVersion: number },
-	fileSystem: FileSystem = nodeFileSystem,
-): boolean {
-	return isBehindHead(versions) && invalidateCachedVersion(rootDirectory, target, fileSystem);
 }
 
 /**

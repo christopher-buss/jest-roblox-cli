@@ -363,21 +363,16 @@ export interface Config {
 	 */
 	backend?: Backend;
 	/**
-	 * Open Cloud only: send the run's compiled code to each task as a binary
-	 * input instead of building it into the place. Default `true`.
-	 *
-	 * The place then holds the assets, the dependency tree and everything else
-	 * rojo builds from outside a Code Root, and changes only when one of those
-	 * does — so a code-only edit skips both the rojo build and the upload, and
-	 * every task rebuilds this run's code in-session before Jest resolves
-	 * anything. `false` builds the whole place as it always was.
+	 * Open Cloud only. Selects nothing: a Shared Place run always builds its
+	 * code into the place. Binary Input stays inactive until an Exclusive
+	 * Place grant can make a Harness Place safe to share a code bundle with.
 	 */
 	binaryInput?: boolean;
 	/**
-	 * Budget in milliseconds for a head probe after uploading. Default `90000`.
-	 * Only a matching version earns an upload-cache entry. A timeout is
-	 * inconclusive and tests continue with the version guard. Zero skips the
-	 * probe and prevents new cache entries.
+	 * Budget in milliseconds for the boot probe after uploading, run against
+	 * the uploaded version. Default `90000`. Only a completed probe earns an
+	 * upload-cache entry. A timeout is inconclusive and tests continue on the
+	 * same version. Zero skips the probe and prevents new cache entries.
 	 */
 	bootProbeTimeout?: number;
 	/** Force ANSI colour in output. Default `true`. */
@@ -548,20 +543,6 @@ export interface ResolvedConfig
 	 * explicit path is kept as-is.
 	 */
 	outputFile?: string | undefined;
-	/**
-	 * Declare this run the only writer of its place, which lets every submit
-	 * stay on head.
-	 *
-	 * A matching head probe lets an owned run omit the version guard and its
-	 * pinned fallback. Shared runs retain both even after a matching probe.
-	 *
-	 * Resolved-only, with no config key and no flag behind it. The claim is
-	 * true of a place a lease handed out and false of one a person guessed at,
-	 * so the only caller who can set it honestly is the one holding the lease.
-	 * The backend still checks it rather than trusting it, and a run whose
-	 * claim fails keeps the guard.
-	 */
-	ownedPlace: boolean;
 	passWithNoTests: boolean;
 	placeFile: string;
 	port: number;
@@ -597,9 +578,8 @@ export interface WorkspaceRunOptions {
 	 */
 	bail: boolean;
 	/**
-	 * Whether an Open Cloud run ships its code as a binary input. One answer
-	 * for the whole run: every package shares the one synthesized place, so two
-	 * of them disagreeing would be one place asked to be built both ways.
+	 * Resolved for the whole run and then ignored: a Shared Place run always
+	 * builds every package into the one synthesized place.
 	 */
 	binaryInput: boolean;
 	color: boolean;
@@ -697,7 +677,6 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
 		"**/rbxts_include/**",
 	],
 	coverageReporters: ["text", "lcov"],
-	ownedPlace: false,
 	passWithNoTests: false,
 	placeFile: "./game.rbxl",
 	port: 3001,
@@ -1160,9 +1139,6 @@ export const JEST_ARGV_EXCLUDED_KEYS: ReadonlySet<string> = new Set<string>([
 	// CLI-only, and not in `Config`, so `ROOT_CLI_KEYS_LIST` cannot carry it:
 	// it tells the plugin how many VMs to run, and means nothing to Jest.
 	"experimentalVmParallel",
-	// Resolved-only, so `ROOT_CLI_KEYS_LIST` cannot carry it: it decides how
-	// this run submits to Open Cloud, and means nothing to Jest.
-	"ownedPlace",
 	// Read by our own runner, not by Jest — it reaches the runtime as
 	// `runnerTimeoutMs` instead. See `buildJestArgv`.
 	"projectTimeout",

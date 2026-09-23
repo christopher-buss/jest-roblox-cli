@@ -55,8 +55,8 @@ export interface StageWorkspacePlaceOptions {
 	childProcess: ChildProcessRunner;
 	/**
 	 * Build a Harness Place, splitting the mounts inside these Code Roots into
-	 * a Code Bundle beside it. Set only for an Open Cloud run whose packages
-	 * agreed on `binaryInput`.
+	 * a Code Bundle beside it. `resolveCodeRoots` decides, and only an Open
+	 * Cloud run on an Exclusive Place ever gets any.
 	 */
 	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
 	fileSystem: FileSystem;

@@ -751,7 +751,7 @@ describe("code bundle", () => {
 			await expect(buildHarnessAsync(rojo)).rejects.toMatchObject({
 				// The way out rides with the refusal: a run that cannot ship
 				// its code this way can still ship it inside the place.
-				hint: expect.stringContaining("--no-binary-input"),
+				hint: expect.stringContaining("inside the place"),
 				message: expect.stringContaining(
 					"over the 100.0 MB cap Open Cloud puts on a binary input",
 				),

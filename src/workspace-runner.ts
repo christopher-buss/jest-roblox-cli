@@ -306,7 +306,6 @@ function resolveWorkspaceCodeRoots({
 }): Array<PosixRoot> | undefined {
 	return resolveCodeRoots({
 		backendKind: options.backend?.kind,
-		binaryInput: options.runOptions.binaryInput,
 		configs: loaded.map((entry) => entry.pkgConfig),
 		fileSystem: options.fileSystem,
 		stagingDirectory: cacheDirectory,

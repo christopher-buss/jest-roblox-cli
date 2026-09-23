@@ -8,7 +8,7 @@ import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import type { JestResult } from "../../../src/types/jest-result.ts";
 import { type FakeOpenCloudTask, startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
-import { IS_LIVE } from "./live-gate.ts";
+import { IS_BINARY_INPUT, IS_LIVE } from "./live-gate.ts";
 
 interface HttpResponse {
 	body: unknown;
@@ -100,7 +100,7 @@ const cases =
 				{ name: "live", testCase: liveCase },
 			];
 
-describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
+describe.for(cases)("open Cloud contract ($name)", ({ name, testCase }) => {
 	it(
 		"should return a numeric versionNumber from a place upload",
 		{ timeout: TASK_CREATE_RETRY_BUDGET_MS + 5000 },
@@ -125,7 +125,7 @@ describe.for(cases)("open Cloud contract ($name)", ({ testCase }) => {
 	// One create, and only one: the operation is metered at five a minute per
 	// API key owner, and the live pipeline suite spends more of that same
 	// allowance on the runs it makes.
-	it(
+	it.skipIf(name === "live" && !IS_BINARY_INPUT)(
 		"should return a slot path and an upload uri from a binary-input create",
 		{ timeout: TASK_CREATE_RETRY_BUDGET_MS + 5000 },
 		async () => {

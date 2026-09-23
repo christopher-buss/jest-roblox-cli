@@ -754,8 +754,8 @@ async function reuseCoverageResultAsync(
  * The place-reuse key folds these for every other build, and reaches no build
  * on this path — the gate below is this pipeline's own. Without them a bumped
  * pass version or a moved Code Root hands back a harness the old rule built,
- * and a run that changed its mind about `binaryInput` is handed the other
- * answer's place: a harness holds none of the run's code, so every test goes
+ * and a run whose Code Roots changed is handed the other answer's place: a
+ * harness holds none of the run's code, so every test goes
  * missing rather than fails.
  *
  * The roots go in as they are rather than hashed: the manifest already records

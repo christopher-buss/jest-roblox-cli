@@ -49,8 +49,8 @@ export interface StageRunOptions {
 	backendKind: BackendKind;
 	/**
 	 * Build a Harness Place, splitting the mounts inside these Code Roots into
-	 * a Code Bundle beside it. Set only for an Open Cloud run that resolved
-	 * `binaryInput` true, which is why the backend is resolved before this.
+	 * a Code Bundle beside it. `resolveCodeRoots` decides, and only an Open
+	 * Cloud run on an Exclusive Place ever gets any.
 	 */
 	codeRoots?: ReadonlyArray<PosixRoot> | undefined;
 	fileSystem: FileSystem;

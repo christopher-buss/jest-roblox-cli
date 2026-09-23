@@ -25,15 +25,6 @@ export function isUncertainTaskSubmit(error: unknown): error is TaskSubmitError 
 	);
 }
 
-export function withResultReader(
-	error: ExecutionTimeoutError,
-	readResultAsync: ExecutionTimeoutError["readResultAsync"],
-): ExecutionTimeoutError {
-	return error instanceof UncertainSubmissionError
-		? new UncertainSubmissionError(error, readResultAsync)
-		: new ExecutionTimeoutError(error, readResultAsync);
-}
-
 function isRequestTimeout(error: Error): boolean {
 	return (
 		error instanceof NetworkError &&

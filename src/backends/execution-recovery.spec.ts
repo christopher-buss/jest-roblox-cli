@@ -11,11 +11,7 @@ import {
 	EXECUTION_START_EXPIRED,
 	type ExecutionClaimObservation,
 } from "../luau/execution-claim.ts";
-import {
-	executeWithRecoveryAsync,
-	type ExecutionAttemptContext,
-	type SubmissionLifecycle,
-} from "./execution-recovery.ts";
+import { executeWithRecoveryAsync, type ExecutionAttemptContext } from "./execution-recovery.ts";
 import { UncertainSubmissionError } from "./uncertain-submission.ts";
 
 type ExecuteAttempt = (context: ExecutionAttemptContext) => Promise<ScriptResult>;
@@ -60,6 +56,55 @@ describe("open Cloud execution recovery", () => {
 		);
 		await nextTurn();
 
+		expect(executeAsync).toHaveBeenCalledTimes(2);
+	});
+
+	/**
+	 * The original's claim read is still in flight when its poll runs out and
+	 * the replacement is accepted. Whatever that read comes back with belongs
+	 * to a watch that has been re-armed, and must not settle the new one.
+	 */
+	it("should ignore a stale claim read once a replacement submission is accepted", async () => {
+		expect.assertions(3);
+
+		vi.useFakeTimers();
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const original = Promise.withResolvers<ScriptResult>();
+		const staleRead = Promise.withResolvers<{ status: "missing" }>();
+		const executeAsync = vi
+			.fn<ExecuteAttempt>()
+			.mockImplementationOnce(async ({ submission }) => {
+				submission.accepted();
+				return original.promise;
+			})
+			.mockImplementationOnce(async ({ submission }) => {
+				submission.accepted();
+				return SUCCESS;
+			});
+		const readClaimAsync = vi
+			.fn<() => Promise<{ status: "missing" }>>()
+			.mockImplementationOnce(async () => staleRead.promise)
+			.mockResolvedValue({ status: "missing" });
+		const recovered = executeWithRecoveryAsync({
+			bootWatchMs: 1_000,
+			executeAsync,
+			readClaimAsync,
+			timeout: 30_000,
+			watchesSubmission: true,
+		});
+		await vi.advanceTimersByTimeAsync(1_000);
+
+		expect(readClaimAsync).toHaveBeenCalledOnce();
+
+		original.reject(timeoutFailure());
+		await vi.advanceTimersByTimeAsync(0);
+		staleRead.resolve({ status: "missing" });
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		await expect(recovered).resolves.toBe(SUCCESS);
 		expect(executeAsync).toHaveBeenCalledTimes(2);
 	});
 
@@ -270,54 +315,6 @@ describe("open Cloud execution recovery", () => {
 		expect(readClaimAsync).toHaveBeenCalledOnce();
 	});
 
-	it("should discard a settled claim observation refused before its result is consumed", async () => {
-		expect.assertions(3);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const original = Promise.withResolvers<ScriptResult>();
-		const staleRead = Promise.withResolvers<{ status: "missing" }>();
-		let submission: SubmissionLifecycle | undefined;
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockImplementationOnce(async ({ submission: lifecycle }) => {
-				submission = lifecycle;
-				lifecycle.accepted();
-				return original.promise;
-			})
-			.mockResolvedValue(SUCCESS);
-		const readClaimAsync = vi
-			.fn<() => Promise<{ status: "missing" }>>()
-			.mockReturnValueOnce(staleRead.promise)
-			.mockResolvedValue({ status: "missing" });
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync,
-			timeout: 30_000,
-			watchesSubmission: true,
-		});
-		await vi.advanceTimersByTimeAsync(1_000);
-		staleRead.resolve({ status: "missing" });
-		await Promise.resolve();
-		submission!.refused();
-		await vi.advanceTimersByTimeAsync(60_000);
-
-		expect(executeAsync).toHaveBeenCalledOnce();
-
-		submission!.accepted();
-		await vi.advanceTimersByTimeAsync(999);
-
-		expect(executeAsync).toHaveBeenCalledOnce();
-
-		await vi.advanceTimersByTimeAsync(1);
-
-		await expect(recovered).resolves.toBe(SUCCESS);
-	});
-
 	it("should cancel a claim read when the original returns during observation", async () => {
 		expect.assertions(2);
 
@@ -410,58 +407,6 @@ describe("open Cloud execution recovery", () => {
 
 		accept!();
 		await vi.advanceTimersByTimeAsync(1_000);
-
-		await expect(recovered).resolves.toBe(SUCCESS);
-	});
-
-	it("should ignore a stale claim read after an accepted submission is refused", async () => {
-		expect.assertions(4);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		const original = Promise.withResolvers<ScriptResult>();
-		const staleRead = Promise.withResolvers<{ status: "missing" }>();
-		let submission: SubmissionLifecycle | undefined;
-		const executeAsync = vi
-			.fn<ExecuteAttempt>()
-			.mockImplementationOnce(async ({ submission: lifecycle }) => {
-				submission = lifecycle;
-				return original.promise;
-			})
-			.mockResolvedValue(SUCCESS);
-		const readClaimAsync = vi
-			.fn<() => Promise<{ status: "missing" }>>()
-			.mockImplementationOnce(async () => staleRead.promise)
-			.mockResolvedValue({ status: "missing" });
-		const recovered = executeWithRecoveryAsync({
-			bootWatchMs: 1_000,
-			executeAsync,
-			readClaimAsync,
-			timeout: 30_000,
-			watchesSubmission: true,
-		});
-
-		submission!.accepted();
-		await vi.advanceTimersByTimeAsync(1_000);
-
-		expect(readClaimAsync).toHaveBeenCalledOnce();
-
-		submission!.refused();
-		staleRead.resolve({ status: "missing" });
-		await Promise.resolve();
-		await vi.advanceTimersByTimeAsync(60_000);
-
-		expect(executeAsync).toHaveBeenCalledOnce();
-
-		submission!.accepted();
-		await vi.advanceTimersByTimeAsync(999);
-
-		expect(executeAsync).toHaveBeenCalledOnce();
-
-		await vi.advanceTimersByTimeAsync(1);
 
 		await expect(recovered).resolves.toBe(SUCCESS);
 	});

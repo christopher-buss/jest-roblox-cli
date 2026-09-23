@@ -59,15 +59,11 @@ function game:GetService(name)
 end
 local DateTime = { now = function() return { UnixTimestampMillis = clock } end }
 local task = { wait = function(seconds) table.insert(waits, seconds) end }
-local function guarded(key, ...)
-	__GUARDED__
+local function claimed(key, ...)
+	__CLAIMED__
 end
-game.PlaceVersion = 41
-assert(guarded("guarded") == "ROBLOX_RUNNER_PLACE_MISMATCH:41")
-assert(calls == 0 and owners == 0, "Wrong versions return before any claim or rebuild")
-game.PlaceVersion = 42
-values.guarded = { owner = "other-server", claimedAt = clock }
-assert(guarded("guarded") == declined,
+values.claimed = { owner = "other-server", claimedAt = clock }
+assert(claimed("claimed") == declined,
 	"A denied claim returns before reading the missing BinaryInput")
 calls = 0
 local function run(key)

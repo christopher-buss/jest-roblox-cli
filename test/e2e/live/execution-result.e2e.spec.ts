@@ -13,7 +13,7 @@ import {
 } from "../../../src/backends/execution-recovery.ts";
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import { executeWithResultRelayAsync } from "../../../src/backends/result-relay.ts";
-import { IS_LIVE } from "./live-gate.ts";
+import { IS_BINARY_INPUT, IS_LIVE } from "./live-gate.ts";
 
 const TASK_TIMEOUT_MS = 30_000;
 const TASK_BUDGETS = openCloudExecutionBudgets(TASK_TIMEOUT_MS);
@@ -21,7 +21,7 @@ const TASK_POLL_BUDGET_MS = TASK_TIMEOUT_MS + DEFAULT_BOOT_WATCH_MS;
 const RECOVERY_DEADLINE_MS = 2 * TASK_BUDGETS.startupWindowMs;
 
 describe("original execution result", () => {
-	it.skipIf(!IS_LIVE)(
+	it.skipIf(!IS_LIVE || !IS_BINARY_INPUT)(
 		"should recover a completed original after its host observation is lost",
 		{ retry: 0, timeout: RECOVERY_DEADLINE_MS + 5000 },
 		async () => {

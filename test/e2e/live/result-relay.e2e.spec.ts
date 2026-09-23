@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { executeWithRecoveryAsync } from "../../../src/backends/execution-recovery.ts";
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import { executeWithResultRelayAsync } from "../../../src/backends/result-relay.ts";
-import { IS_LIVE } from "./live-gate.ts";
+import { IS_BINARY_INPUT, IS_LIVE } from "./live-gate.ts";
 
 const TASK_TIMEOUT_MS = 30_000;
 const TASK_BUDGETS = openCloudExecutionBudgets(TASK_TIMEOUT_MS);
@@ -73,7 +73,7 @@ function executeWithoutNativeDelivery(script: string): {
 }
 
 describe("complete result relay", () => {
-	it.skipIf(!IS_LIVE)(
+	it.skipIf(!IS_LIVE || !IS_BINARY_INPUT)(
 		"should return every output when native result delivery stalls",
 		TEST_OPTIONS,
 		async () => {
@@ -90,7 +90,7 @@ describe("complete result relay", () => {
 		},
 	);
 
-	it.skipIf(!IS_LIVE)(
+	it.skipIf(!IS_LIVE || !IS_BINARY_INPUT)(
 		"should report script errors when native result delivery stalls",
 		TEST_OPTIONS,
 		async () => {

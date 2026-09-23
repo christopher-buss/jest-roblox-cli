@@ -312,10 +312,9 @@ function seedPackage(
 	};
 }
 
-describe("the code bundle a workspace run ships", () => {
-	/** One passing package, run with the `binaryInput` the caller names. */
-	async function runWithBinaryInputAsync(
-		binaryInput: boolean,
+describe("the place a workspace run uploads", () => {
+	/** One passing package, run against the named backend. */
+	async function runOnBackendAsync(
 		backendKind: Backend["kind"] = "open-cloud",
 	): Promise<MemoryFileSystem> {
 		const memory = createMemoryFileSystem();
@@ -338,44 +337,22 @@ describe("the code bundle a workspace run ships", () => {
 			cli: makeCli(),
 			fileSystem: memory.fileSystem,
 			packageInfos: [FOO_INFO],
-			runOptions: makeRunOptions({ binaryInput }),
+			runOptions: makeRunOptions(),
 			version: "0.0.0-test",
 			workspaceRoot: ROOT,
 		});
 		return memory;
 	}
 
-	/** Where each mount the bundle carries lands in the DataModel. */
-	function bundledMounts({ fileSystem }: MemoryFileSystem): Array<string> {
-		const bundle = fromAny<{ mounts: Array<{ dataModelPath: Array<string> }> }, JSONValue>(
-			JSON.parse(fileSystem.readFileSync(CODE_BUNDLE, "utf-8")),
-		);
-		return bundle.mounts.map((mount) => mount.dataModelPath.join("/"));
-	}
-
-	it("should split one out of the shared place by default", async () => {
+	/**
+	 * A Shared Place run builds every package into the one place. `binaryInput`
+	 * defaults on and selects nothing: only an Exclusive Place grant makes a
+	 * Harness Place safe, and none exists.
+	 */
+	it("should build the whole open-cloud place", async () => {
 		expect.assertions(2);
 
-		const memory = await runWithBinaryInputAsync(true);
-
-		// Both Code Roots are represented: the package's own compiled
-		// directory, and the workspace cache the generated stubs mount from.
-		expect(bundledMounts(memory)).toStrictEqual([
-			"ServerStorage/__pkg_stage/@halcyon/foo/ReplicatedStorage/Pkg",
-			"ServerStorage/__pkg_stage/@halcyon/foo/ReplicatedStorage/Pkg/jest.config",
-		]);
-		// What travels is gone from the harness the place was built from.
-		expect(
-			JSON.stringify(
-				JSON.parse(memory.fileSystem.readFileSync(SYNTHESIZED_PROJECT, "utf-8")),
-			),
-		).not.toContain("Pkg");
-	});
-
-	it("should build the whole place when the packages agreed against it", async () => {
-		expect.assertions(2);
-
-		const memory = await runWithBinaryInputAsync(false);
+		const memory = await runOnBackendAsync();
 
 		expect(memory.volume.existsSync(CODE_BUNDLE)).toBeFalse();
 		expect(
@@ -388,9 +365,7 @@ describe("the code bundle a workspace run ships", () => {
 	it("should build the whole place for a Studio backend", async () => {
 		expect.assertions(1);
 
-		// Studio is served the place a caller opens, so code taken out of it
-		// would be code that never arrives.
-		const memory = await runWithBinaryInputAsync(true, "studio");
+		const memory = await runOnBackendAsync("studio");
 
 		expect(memory.volume.existsSync(CODE_BUNDLE)).toBeFalse();
 	});

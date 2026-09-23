@@ -15,15 +15,14 @@ import { UncertainSubmissionError } from "./uncertain-submission.ts";
 
 export const DEFAULT_BOOT_WATCH_MS = 45_000;
 
-export interface SubmissionLifecycle {
-	accepted(): void;
-	refused(): void;
-}
-
 export interface ExecutionAttemptContext {
 	claim: string;
 	observationSignal: AbortSignal;
 	submission: SubmissionLifecycle;
+}
+
+interface SubmissionLifecycle {
+	accepted(): void;
 }
 
 type ExecuteAttempt = (context: ExecutionAttemptContext) => Promise<ScriptResult>;
@@ -423,12 +422,7 @@ function createBootWatch({
 		get promise() {
 			return settled.promise;
 		},
-		submission: {
-			accepted: arm,
-			refused: () => {
-				invalidate();
-			},
-		},
+		submission: { accepted: arm },
 	};
 }
 

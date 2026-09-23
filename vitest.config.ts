@@ -348,36 +348,27 @@ export default defineConfig({
 			{
 				test: {
 					name: "live",
-					// Benchmarks belong to the unit project only, so leave
-					// `live (bench)` with nothing to collect. Note this alone
-					// no longer keeps the network globalSetup out of a bare
-					// `vitest bench` — the derived project exists either way —
-					// which is why the `bench` script names `unit (bench)`.
+					// Benchmarks belong to the unit project only. This leaves
+					// `live (bench)` empty but still derived, so the `bench`
+					// script names `unit (bench)` to skip the network setup.
 					benchmark: {
 						include: [],
 					},
 					clearMocks: true,
-					// Files here run in parallel, and so do other checkouts
-					// running against the same place: execution is guarded on
-					// head by each run's uploaded version identity, streaming
-					// keys are per-run UUIDs, and each test builds its own temp
-					// sandbox, so concurrent live runs do not collide. A changed
-					// head falls back to the uploaded version. The fixture
-					// compile is hoisted to the e2e-live-fixture target so
-					// nothing races on out/.
+					// Concurrent live runs must not collide, whether they are
+					// files here or other checkouts on the same place: version
+					// identity guards execution, streaming keys are per-run
+					// UUIDs, and each test builds its own sandbox. Nothing may
+					// serialize this project to keep that true.
 					env: {
-						// Concurrent runs across processes share one place's
-						// per-minute upload quota, so a burst can 429. The
-						// server's retry-after is short (~5-9s), so raise the
-						// client retry budget to ride it out in-place instead
-						// of failing (the CLI reads this for its OcaleRunner).
+						// Concurrent runs share one place's per-minute upload
+						// quota, so a burst can 429 with a short retry-after.
+						// Budget enough retries to ride that out in place.
 						JEST_ROBLOX_OCALE_MAX_RETRIES: "8",
 					},
 					globalSetup: ["./test/e2e/fixtures/live-place/global-setup.ts"],
 					// Every spec that reaches real Open Cloud lives here and
-					// nowhere else. Both projects glob on `LIVE_DIRECTORY` and
-					// on the same `*.spec.ts` suffix, so the two halves cannot
-					// drift into a gap where a file belongs to neither.
+					// nowhere else; the `e2e` project globs the complement.
 					include: [`${LIVE_DIRECTORY}/**/*.spec.ts`],
 					pool: "forks",
 					restoreMocks: true,

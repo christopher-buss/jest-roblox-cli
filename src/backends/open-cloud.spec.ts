@@ -1,5 +1,4 @@
 import { PollTimeoutError } from "@bedrock-rbx/ocale";
-import { ExecutionTimeoutError, placeIdentityGuardSource } from "@isentinel/roblox-runner";
 import type {
 	BinaryInputUploader,
 	ExecuteScriptOptions,
@@ -44,7 +43,6 @@ import {
 	resolveOpenCloudBaseUrl,
 } from "./open-cloud.ts";
 import type { OpenCloudOptions } from "./open-cloud.ts";
-import { UncertainSubmissionError } from "./uncertain-submission.ts";
 
 interface StubStreamReader extends StreamingResultReader {
 	deleted: Array<string>;
@@ -255,8 +253,8 @@ function scriptNaming(jobs: ReadonlyArray<ProjectJob>): string {
 
 /**
  * The packages a {@link scriptNaming} script carries, read back off the
- * submitted task — the guard prefix an unpinned attempt gains sits
- * ahead of the marker, so the split survives it.
+ * submitted task — the claim sits ahead of the marker, so the split survives
+ * it.
  */
 function requestedNames(options: ExecuteScriptOptions): Array<string> {
 	return options.script.split("entries:", 2)[1]!.split(",");
@@ -309,50 +307,16 @@ function stepExecute(steps: Array<ExecuteStep>): ExecuteHandler {
 	};
 }
 
-/** What the injected guard returns from a task that booted another version. */
-function racedOnce(bootedVersion = 99): ScriptResult {
-	return {
-		durationMs: 3,
-		outputs: [formatPlaceMismatch(bootedVersion)],
-	};
+/**
+ * What a task once returned on booting another version. No task carries the
+ * guard that produced it any more, so it is just an output that is not JSON.
+ */
+function versionMismatchOutput(): ScriptResult {
+	return { durationMs: 3, outputs: [formatPlaceMismatch(99)] };
 }
 
 function oneSuccessEntry(): ScriptResult {
 	return scriptResult(envelope([{ jestOutput: successJest() }]));
-}
-
-/**
- * An execute handler that races each unpinned call in turn, booting the named
- * versions in order — one per raced task, so a run can mix causes. Later
- * unpinned calls, and every pinned retry, succeed.
- */
-function raceBootedVersions(bootedVersions: Array<number>): ExecuteHandler {
-	let callIndex = 0;
-	return (options): ScriptResult => {
-		if (options.placeVersion !== undefined) {
-			return oneSuccessEntry();
-		}
-
-		const booted = bootedVersions[callIndex];
-		callIndex += 1;
-		return booted === undefined ? oneSuccessEntry() : racedOnce(booted);
-	};
-}
-
-/**
- * An execute handler that races the first `raceCount` unpinned calls — all
- * booting the same version — and succeeds on every other call, including a
- * pinned retry (`placeVersion` set), which never races.
- */
-function raceUnpinnedExecute(raceCount: number, bootedVersion = 99): ExecuteHandler {
-	return raceBootedVersions(Array.from<number>({ length: raceCount }).fill(bootedVersion));
-}
-
-/**
- * The exact guard line `executeGuarded` prepends to unpinned first attempts.
- */
-function guardPrefix(placeVersion: number): string {
-	return `${placeIdentityGuardSource({ placeVersion })}\n`;
 }
 
 function captureStderr(): StderrCapture {
@@ -470,57 +434,6 @@ const credentials = {
 };
 
 describe(OpenCloudBackend, () => {
-	it("should rearm recovery only after a refused head task's pinned submit is accepted", async () => {
-		expect.assertions(5);
-
-		vi.useFakeTimers();
-		onTestFinished(() => {
-			vi.useRealTimers();
-		});
-		captureStderr();
-		const stub = probeStub();
-		const pinned = Promise.withResolvers<ScriptResult>();
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockImplementationOnce(async ({ onSubmitted }) => {
-					onSubmitted!();
-					return racedOnce(99);
-				})
-				.mockImplementationOnce(async () => pinned.promise)
-				.mockReturnValue(oneSuccessEntry()),
-		);
-		const backend = createBackend({
-			bootWatchMs: 45_000,
-			executionClaimObserver: { readAsync: async () => ({ status: "missing" }) },
-			runner: stub.runner,
-		});
-		const pending = backend.runTestsAsync(jobsOptions([job("alpha")]));
-		await vi.advanceTimersByTimeAsync(75_000);
-
-		expect(stub.executeCalls).toHaveLength(2);
-		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
-			undefined,
-			PROBED_VERSION,
-		]);
-
-		stub.executeCalls[1]!.onSubmitted!();
-		await vi.advanceTimersByTimeAsync(44_999);
-
-		expect(stub.executeCalls).toHaveLength(2);
-
-		await vi.advanceTimersByTimeAsync(1);
-
-		await expect(pending).resolves.toMatchObject({
-			rawResults: [{ entry: { jestOutput: successJest() }, fallbackGameOutput: "[]" }],
-		});
-		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
-			undefined,
-			PROBED_VERSION,
-			PROBED_VERSION,
-		]);
-	});
-
 	it.for([
 		{ budget: 90_000, relayTimeout: 555_000, timeout: 15_000 },
 		{ budget: 90_000, relayTimeout: 570_000, timeout: 30_000 },
@@ -585,7 +498,7 @@ describe(OpenCloudBackend, () => {
 		stub.setExecute(
 			vi
 				.fn<ExecuteHandler>()
-				.mockReturnValueOnce(racedOnce())
+				.mockRejectedValueOnce(pollTimeout())
 				.mockReturnValue(oneSuccessEntry()),
 		);
 		const backend = createBackend({ now: () => 1234, runner: stub.runner });
@@ -924,9 +837,7 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({ jobs: [job("alpha")], scriptOverride: customScript });
 
-			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
-				`${guardPrefix(1)}${customScript}`,
-			);
+			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(customScript);
 			expect(stub.executeCalls[0]!.script).not.toContain("Jest.runCLI");
 		});
 
@@ -1035,95 +946,16 @@ describe(OpenCloudBackend, () => {
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
 
-		it("should run every bucket unpinned with a version guard prepended", async () => {
+		it.for([
+			{ name: "two directives", directives: "--!strict\n--!optimize 2" },
+			// The comment is no token, so the `--!native` behind it is still a
+			// directive — and a claim ahead of it would end that.
+			{ name: "a directive behind a comment", directives: "-- boot notes\n--!native" },
+			// `--!Native` is a hot comment Luau ignores, not the end of the
+			// block, so the claim goes behind the `--!strict` it shields.
+			{ name: "a directive Luau does not act on", directives: "--!Native\n--!strict" },
+		])("should bind the claim behind $name", async ({ directives }) => {
 			expect.assertions(3);
-
-			const stub = createRunnerStub({
-				uploadResult: { uploadMs: 12, versionNumber: 42 },
-			});
-			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta"), job("gamma")], 3));
-
-			// 3 jobs at parallel 3 ⇒ one bucket each ⇒ exactly 3 calls. An exact
-			// count catches a regression that re-executes between buckets.
-			expect(stub.executeCalls).toHaveLength(3);
-			expect(stub.executeCalls.every((call) => call.placeVersion === undefined)).toBeTrue();
-			expect(
-				stub.executeCalls.every((call) => call.script.startsWith(guardPrefix(42))),
-			).toBeTrue();
-		});
-
-		it("should run work-stealing tasks unpinned with the version guard", async () => {
-			expect.assertions(3);
-
-			const stub = createRunnerStub({
-				uploadResult: { uploadMs: 12, versionNumber: 7 },
-			});
-			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync({
-				jobs: [job("alpha")],
-				scriptOverride: "stealing-script",
-				workStealing: true,
-			});
-
-			// work-stealing over 1 job with default parallel ⇒ exactly 1 task.
-			expect(stub.executeCalls).toHaveLength(1);
-			expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
-			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
-				`${guardPrefix(7)}stealing-script`,
-			);
-		});
-
-		/**
-		 * An owned place omits the version guard only after a matching probe.
-		 */
-		it("should run unguarded and unpinned when the place is owned", async () => {
-			expect.assertions(2);
-
-			const stub = createRunnerStub({
-				uploadResult: { uploadMs: 12, versionNumber: 7 },
-			});
-			stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync({
-				jobs: [job("alpha", { ownedPlace: true })],
-				scriptOverride: "stealing-script",
-				workStealing: true,
-			});
-
-			expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
-			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe("stealing-script");
-		});
-
-		it("should not treat output from an owned place as a version refusal", async () => {
-			expect.assertions(2);
-
-			const stub = createRunnerStub();
-			stub.setExecute(
-				stepExecute([
-					() => racedOnce(),
-					() => scriptResult(envelope([packageEntry("alpha")])),
-				]),
-			);
-			const backend = createBackend({ runner: stub.runner });
-
-			await expect(
-				backend.runTestsAsync({
-					jobs: [job("alpha", { ownedPlace: true })],
-					scriptOverride: "stealing-script",
-					workStealing: true,
-				}),
-			).rejects.toThrow("is not valid JSON");
-			expect(stub.executeCalls).toHaveLength(1);
-		});
-
-		it("should inject the guard after leading Luau directives", async () => {
-			expect.assertions(1);
 
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
@@ -1131,110 +963,17 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [job("alpha")],
-				scriptOverride: "--!strict\n--!optimize 2\nreturn nil",
+				scriptOverride: `${directives}\nreturn nil`,
 			});
 
 			// Luau honors `--!` directives only in the leading comment block —
 			// a plain line-1 prepend would silently disable them.
-			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
-				`--!strict\n--!optimize 2\n${guardPrefix(1)}return nil`,
-			);
-		});
+			const { script } = stub.executeCalls[0]!;
+			const claimAt = script.indexOf(claimParameters(script));
 
-		it("should inject the guard behind a directive that follows a comment", async () => {
-			expect.assertions(1);
-
-			const stub = createRunnerStub();
-			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync({
-				jobs: [job("alpha")],
-				scriptOverride: "-- boot notes\n--!native\nreturn nil",
-			});
-
-			// The comment is no token, so the `--!native` behind it is still a
-			// directive — and the guard ahead of it would end that.
-			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
-				`-- boot notes\n--!native\n${guardPrefix(1)}return nil`,
-			);
-		});
-
-		it("should inject the guard after a directive Luau does not act on", async () => {
-			expect.assertions(1);
-
-			const stub = createRunnerStub();
-			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync({
-				jobs: [job("alpha")],
-				scriptOverride: "--!Native\n--!strict\nreturn nil",
-			});
-
-			// `--!Native` is a hot comment Luau ignores, not the end of the
-			// block, so the guard goes behind the `--!strict` it shields.
-			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(
-				`--!Native\n--!strict\n${guardPrefix(1)}return nil`,
-			);
-		});
-
-		it("should retry a raced bucket once, pinned to the uploaded version", async () => {
-			expect.assertions(5);
-
-			const stub = createRunnerStub({
-				uploadResult: { uploadMs: 12, versionNumber: 42 },
-			});
-			stub.setExecute(
-				stepExecute([
-					racedOnce,
-					() => scriptResult(envelope([{ elapsedMs: 55, jestOutput: successJest() }])),
-				]),
-			);
-
-			const backend = createBackend({ runner: stub.runner });
-			const { rawResults } = await backend.runTestsAsync(jobsOptions([job("alpha")]));
-
-			expect(stub.executeCalls).toHaveLength(2);
-
-			const [raced, retried] = stub.executeCalls;
-
-			expect(raced!.placeVersion).toBeUndefined();
-			expect(retried!.placeVersion).toBe(42);
-			// The pinned retry re-runs the original script, guard stripped — a
-			// pinned task can't race, so the guard would only be dead weight.
-			expect(`${guardPrefix(42)}${withoutClaim(retried!.script)}`).toBe(
-				withoutClaim(raced!.script),
-			);
-			expect(rawResults[0]!.entry.elapsedMs).toBe(55);
-		});
-
-		it("should retry only the raced work-stealing task", async () => {
-			expect.assertions(3);
-
-			const stub = createRunnerStub({
-				uploadResult: { uploadMs: 12, versionNumber: 9 },
-			});
-			stub.setExecute(
-				stepExecute([
-					racedOnce,
-					() => scriptResult(envelope([packageEntry("alpha"), packageEntry("beta")])),
-				]),
-			);
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta")],
-				parallel: 2,
-				scriptOverride: "stealing-script",
-				workStealing: true,
-			});
-
-			// 2 tasks fired; the raced one retried pinned ⇒ exactly 3 calls, of
-			// which exactly one is pinned.
-			expect(stub.executeCalls).toHaveLength(3);
-			expect(stub.executeCalls.filter((call) => call.placeVersion === 9)).toHaveLength(1);
-			expect(stub.uploadCalls).toHaveLength(1);
+			expect(script.startsWith(`${directives}\n`)).toBeTrue();
+			expect(claimAt).toBeGreaterThan(directives.length);
+			expect(script.lastIndexOf("return nil")).toBeGreaterThan(claimAt);
 		});
 
 		it("should propagate upload errors from the runner", async () => {
@@ -1247,104 +986,6 @@ describe(OpenCloudBackend, () => {
 
 			await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
 				/Failed to upload place/,
-			);
-		});
-
-		it("should warn once on stderr when tasks race, even across multiple raced buckets", async () => {
-			expect.assertions(2);
-
-			const { restore, writes } = captureStderr();
-
-			const stub = createRunnerStub();
-			// Both buckets' unpinned first attempts race; the pinned retries
-			// (recognizable by placeVersion) succeed.
-			stub.setExecute(raceUnpinnedExecute(2));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta")], 2));
-			restore();
-
-			const warnings = writes.filter((line) => line.includes("Tasks retried pinned"));
-
-			expect(warnings).toHaveLength(1);
-			expect(warnings[0]).toContain("raced by a concurrent upload");
-		});
-
-		it("should reset the one-shot race warning for each run", async () => {
-			expect.assertions(1);
-
-			const { restore, writes } = captureStderr();
-			const stub = createRunnerStub({ uploadResult: { uploadMs: 3, versionNumber: 42 } });
-			const backend = createBackend({ runner: stub.runner });
-
-			stub.setExecute(raceUnpinnedExecute(1));
-			await backend.runTestsAsync(jobsOptions([job("alpha")]));
-			stub.setExecute(raceUnpinnedExecute(1));
-			await backend.runTestsAsync(jobsOptions([job("alpha")]));
-			restore();
-
-			expect(writes).toStrictEqual([
-				"Warning: place version 42 raced by a concurrent upload — a task booted 99. Tasks retried pinned (slower, cold place boot).\n",
-				"Warning: place version 42 raced by a concurrent upload — a task booted 99. Tasks retried pinned (slower, cold place boot).\n",
-			]);
-		});
-
-		it("should not warn when no task races", async () => {
-			expect.assertions(1);
-
-			const { restore, writes } = captureStderr();
-
-			const stub = createRunnerStub();
-			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync(jobsOptions([job("alpha")]));
-			restore();
-
-			expect(writes.filter((line) => line.includes("Tasks retried pinned"))).toHaveLength(0);
-		});
-
-		/**
-		 * The guard reports which version the task actually booted, so the
-		 * warning can name a cause instead of guessing one. A version ahead of
-		 * this run's fresh upload is the genuine race: someone published
-		 * between the upload and the boot.
-		 */
-		it("should name the version a concurrent upload booted", async () => {
-			expect.assertions(1);
-
-			const { restore, writes } = captureStderr();
-
-			const stub = createRunnerStub({ uploadResult: { uploadMs: 3, versionNumber: 42 } });
-			stub.setExecute(raceUnpinnedExecute(1));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync(jobsOptions([job("alpha")]));
-			restore();
-
-			expect(writes.join("")).toContain(
-				"place version 42 raced by a concurrent upload — a task booted 99",
-			);
-		});
-
-		/**
-		 * A booted version *behind* the upload is the opposite problem:
-		 * nothing raced, the save has yet to reach the boot pool.
-		 */
-		it("should report a version the boot pool has not picked up yet", async () => {
-			expect.assertions(1);
-
-			const { restore, writes } = captureStderr();
-
-			const stub = createRunnerStub({ uploadResult: { uploadMs: 3, versionNumber: 42 } });
-			stub.setExecute(raceUnpinnedExecute(1, 41));
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync(jobsOptions([job("alpha")]));
-			restore();
-
-			expect(writes.join("")).toContain(
-				"place version 42 is not in the boot pool yet — a task booted 41",
 			);
 		});
 	});
@@ -1385,12 +1026,10 @@ describe(OpenCloudBackend, () => {
 
 			expect(stub.executeCalls).toHaveLength(3);
 
-			const guardedStealingScript = `${guardPrefix(1)}${stealingScript}`;
-
 			expect(stub.executeCalls.map((call) => withoutClaim(call.script))).toStrictEqual([
-				guardedStealingScript,
-				guardedStealingScript,
-				guardedStealingScript,
+				stealingScript,
+				stealingScript,
+				stealingScript,
 			]);
 			expect(stub.uploadCalls).toHaveLength(1);
 		});
@@ -1472,101 +1111,6 @@ describe(OpenCloudBackend, () => {
 				["beta", "delta"],
 				["gamma"],
 			]);
-		});
-
-		it("should keep deferred tasks pinned after a refusal", async () => {
-			expect.assertions(5);
-
-			captureStderr();
-			const stub = probeStub();
-			stub.setExecute(
-				vi
-					.fn<ExecuteHandler>()
-					.mockReturnValueOnce(racedOnce())
-					.mockReturnValueOnce(
-						scriptResult(envelope([packageEntry("alpha")], { deferred: true })),
-					)
-					.mockImplementation(scriptedEntries),
-			);
-			const backend = createBackend({ runner: stub.runner });
-			const result = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta")],
-				scriptFactory: scriptNaming,
-			});
-			const claims = stub.executeCalls.map((call) => claimParameters(call.script));
-
-			expect(result.rawResults).toHaveLength(2);
-			expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
-				undefined,
-				PROBED_VERSION,
-				PROBED_VERSION,
-			]);
-			expect(claims[1]).toBe(claims[0]);
-			expect(claims[2]).not.toBe(claims[0]);
-			expect(stub.uploadCalls).toHaveLength(1);
-		});
-
-		it("should start a new run optimistically after the previous run pinned", async () => {
-			expect.assertions(2);
-
-			captureStderr();
-			const stub = probeStub();
-			stub.setExecute(
-				vi
-					.fn<ExecuteHandler>()
-					.mockReturnValueOnce(racedOnce())
-					.mockImplementation(scriptedEntries),
-			);
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync({ jobs: [job("alpha")], scriptFactory: scriptNaming });
-			await backend.runTestsAsync({ jobs: [job("beta")], scriptFactory: scriptNaming });
-
-			expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
-				undefined,
-				PROBED_VERSION,
-				undefined,
-			]);
-			expect(stub.uploadCalls).toHaveLength(2);
-		});
-
-		it("should recognize an in-flight head refusal after a sibling pins the run", async () => {
-			expect.assertions(4);
-
-			captureStderr();
-			const stub = probeStub();
-			const siblingHead = Promise.withResolvers<ScriptResult>();
-			const firstPinned = Promise.withResolvers<void>();
-			stub.setExecute(
-				vi
-					.fn<ExecuteHandler>()
-					.mockReturnValueOnce(racedOnce())
-					.mockReturnValueOnce(siblingHead.promise)
-					.mockImplementationOnce((options) => {
-						firstPinned.resolve();
-						return scriptedEntries(options);
-					})
-					.mockImplementation(scriptedEntries),
-			);
-			const backend = createBackend({ runner: stub.runner });
-			const pending = backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta")],
-				parallel: 2,
-				scriptFactory: scriptNaming,
-			});
-			await firstPinned.promise;
-			siblingHead.resolve(racedOnce());
-			const result = await pending;
-			const claims = stub.executeCalls.map((call) => claimParameters(call.script));
-
-			expect(result.rawResults).toHaveLength(2);
-			expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
-				undefined,
-				undefined,
-				PROBED_VERSION,
-				PROBED_VERSION,
-			]);
-			expect(claims[2]).toBe(claims[0]);
-			expect(claims[3]).toBe(claims[1]);
 		});
 
 		it("should keep a sibling bucket's results when one bucket bails", async () => {
@@ -2665,28 +2209,6 @@ describe(resolveOcaleMaxRetries, () => {
 // Real tmpdir I/O per test (the cache reads place bytes off disk), so the
 // suite-wide per-test budget cannot hold this describe under parallel load.
 describe("upload cache", { timeout: 1000 }, () => {
-	/**
-	 * Run against a seeded cache with one task per entry in `bootedVersions`,
-	 * each booting the version named instead of the reused one. Stderr is
-	 * captured throughout, so a caller asserts on the warning, on the calls the
-	 * runner saw, or on what a later {@link runOnceAsync} has to upload.
-	 */
-	async function raceCachedRunAsync(
-		rootDirectory: string,
-		bootedVersions: Array<number>,
-	): Promise<{ capture: StderrCapture; stub: RunnerStub }> {
-		const capture = captureStderr();
-		const stub = createRunnerStub();
-		stub.setExecute(raceBootedVersions(bootedVersions));
-
-		const backend = createBackend({ runner: stub.runner });
-		const jobs = bootedVersions.map(() => cacheJob(rootDirectory));
-		await backend.runTestsAsync(jobsOptions(jobs, jobs.length));
-		capture.restore();
-
-		return { capture, stub };
-	}
-
 	/** How many uploads one passing run made. */
 	async function runOnceAsync(
 		rootDirectory: string,
@@ -2732,103 +2254,6 @@ describe("upload cache", { timeout: 1000 }, () => {
 		});
 
 		expect(notes).toStrictEqual([{ id: "upload", detail: "cache hit, version 42" }]);
-	});
-
-	it("should guard the reused version so a stale entry can only race", async () => {
-		expect.assertions(1);
-
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
-
-		const stub = createRunnerStub();
-		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
-		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
-
-		expect(stub.executeCalls[0]!.script.startsWith(guardPrefix(42))).toBeTrue();
-	});
-
-	it("should retry pinned to the cached version when the guard races", async () => {
-		expect.assertions(3);
-
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
-		const { stub } = await raceCachedRunAsync(rootDirectory, [99]);
-
-		// The whole safety argument for reusing a version: when another upload
-		// moved the head, the raced task re-runs pinned to the version whose
-		// bytes the cache hashed — never against whatever is live now.
-		expect(stub.uploadCalls).toHaveLength(0);
-		expect(stub.executeCalls[0]!.placeVersion).toBeUndefined();
-		expect(stub.executeCalls[1]!.placeVersion).toBe(42);
-	});
-
-	/**
-	 * A cached version is evicted only when the guard proves head moved ahead.
-	 */
-	it("should drop a cached version once the guard proves it is behind head", async () => {
-		expect.assertions(1);
-
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
-		await raceCachedRunAsync(rootDirectory, [99]);
-
-		await expect(runOnceAsync(rootDirectory)).resolves.toBe(1);
-	});
-
-	/**
-	 * Cache eviction still applies after the one-shot race warning is spent.
-	 */
-	it("should drop a stale cached version proved after the first warning", async () => {
-		expect.assertions(3);
-
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
-		const { capture } = await raceCachedRunAsync(rootDirectory, [41, 99]);
-		const warnings = capture.writes.filter((line) => line.includes("Tasks retried pinned"));
-
-		expect(warnings).toHaveLength(2);
-		expect(warnings[1]).toContain("no longer head");
-		await expect(runOnceAsync(rootDirectory)).resolves.toBe(1);
-	});
-
-	it("should say a cached version is no longer head only once", async () => {
-		expect.assertions(1);
-
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
-		const { capture } = await raceCachedRunAsync(rootDirectory, [99, 99]);
-
-		expect(capture.writes.filter((line) => line.includes("no longer head"))).toHaveLength(1);
-	});
-
-	it("should say the cached version is no longer head", async () => {
-		expect.assertions(1);
-
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
-		const { capture } = await raceCachedRunAsync(rootDirectory, [99]);
-
-		expect(capture.writes.join("")).toBe(
-			"Warning: cached place version 42 is no longer head — a task booted 99. " +
-				"Cache entry dropped, so the next run re-uploads. " +
-				"Tasks retried pinned (slower, cold place boot).\n",
-		);
-	});
-
-	/**
-	 * A booted version behind the cached one says the boot pool lags, not that
-	 * the entry is wrong. Dropping it there would trade a correct fast path for
-	 * an upload on every run.
-	 */
-	it("should keep the cached version when the booted version is older", async () => {
-		expect.assertions(1);
-
-		const rootDirectory = temporaryRoot();
-		await runOnceAsync(rootDirectory);
-		await raceCachedRunAsync(rootDirectory, [41]);
-
-		await expect(runOnceAsync(rootDirectory)).resolves.toBe(0);
 	});
 
 	it("should upload again when the place bytes change", async () => {
@@ -2951,279 +2376,115 @@ describe("upload cache", { timeout: 1000 }, () => {
 	});
 });
 
-describe("boot probe", { timeout: 1000 }, () => {
-	it("should rescue a late pinned ambiguous create after recovering a guard refusal", async () => {
-		expect.assertions(4);
-
-		captureStderr();
-		const stub = probeStub();
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockRejectedValueOnce(
-					new ExecutionTimeoutError(probeTimeout(), async () => racedOnce()),
-				)
-				.mockRejectedValueOnce(new Error("replacement unavailable"))
-				.mockRejectedValueOnce(
-					new UncertainSubmissionError(new Error("pinned POST 500"), async () => {
-						return oneSuccessEntry();
-					}),
-				)
-				.mockReturnValue(scriptResult("__JEST_ROBLOX_EXECUTION_NOT_CLAIMED__")),
-		);
-		const result = await createBackend({ runner: stub.runner }).runTestsAsync(
-			jobsOptions([job("alpha")]),
-		);
-
-		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
-		expect(stub.executeCalls.map(({ placeVersion }) => placeVersion)).toStrictEqual([
-			undefined,
-			undefined,
-			PROBED_VERSION,
-			PROBED_VERSION,
-		]);
-
-		const claims = new Set(stub.executeCalls.map(({ script }) => claimParameters(script)));
-
-		expect(claims.size).toBe(1);
-		expect(
-			stub.executeCalls.map(({ retrySubmitTransportErrors }) => retrySubmitTransportErrors),
-		).toStrictEqual([false, false, false, false]);
-	});
-
-	it("should interpret an ambiguous original guard refusal before choosing its result", async () => {
-		expect.assertions(3);
-
-		captureStderr();
-		const stub = probeStub();
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockRejectedValueOnce(
-					new UncertainSubmissionError(new Error("POST 500"), async () => racedOnce()),
-				)
-				.mockReturnValueOnce(scriptResult("__JEST_ROBLOX_EXECUTION_NOT_CLAIMED__"))
-				.mockReturnValue(oneSuccessEntry()),
-		);
-		const result = await createBackend({ runner: stub.runner }).runTestsAsync(
-			jobsOptions([job("alpha")]),
-		);
-
-		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
-		expect(stub.executeCalls.map(({ placeVersion }) => placeVersion)).toStrictEqual([
-			undefined,
-			undefined,
-			PROBED_VERSION,
-		]);
-
-		const claims = new Set(stub.executeCalls.map(({ script }) => claimParameters(script)));
-
-		expect(claims.size).toBe(1);
-	});
-
-	it("should pin a version refusal recovered after the original observer times out", async () => {
-		expect.assertions(5);
-
-		captureStderr();
-		const stub = probeStub();
-		let recoverySignal: AbortSignal | undefined;
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockRejectedValueOnce(
-					new ExecutionTimeoutError(probeTimeout(), async (signal) => {
-						recoverySignal = signal;
-						return racedOnce();
-					}),
-				)
-				.mockRejectedValueOnce(new Error("replacement unavailable"))
-				.mockReturnValue(oneSuccessEntry()),
-		);
-		const backend = createBackend({ runner: stub.runner });
-		const result = await backend.runTestsAsync(jobsOptions([job("alpha")]));
-
-		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
-		expect(stub.executeCalls.map(({ placeVersion }) => placeVersion)).toStrictEqual([
-			undefined,
-			undefined,
-			PROBED_VERSION,
-		]);
-
-		const claims = new Set(stub.executeCalls.map(({ script }) => claimParameters(script)));
-
-		expect(claims.size).toBe(1);
-		expect(stub.executeCalls[2]!.observationSignal).toBe(recoverySignal);
-		expect(recoverySignal!.aborted).toBeTrue();
-	});
-
-	it("should recover a pinned timeout reached through a late version refusal", async () => {
-		expect.assertions(3);
-
-		captureStderr();
-		const stub = probeStub();
-		const readPinnedResult = vi
-			.fn<(signal?: AbortSignal) => Promise<ScriptResult>>()
-			.mockResolvedValue(oneSuccessEntry());
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockRejectedValueOnce(
-					new ExecutionTimeoutError(probeTimeout(), async () => racedOnce()),
-				)
-				.mockRejectedValueOnce(new Error("replacement unavailable"))
-				.mockRejectedValue(new ExecutionTimeoutError(probeTimeout(), readPinnedResult)),
-		);
-		const backend = createBackend({ runner: stub.runner });
-		const result = await backend.runTestsAsync(jobsOptions([job("alpha")]));
-
-		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
-		expect(readPinnedResult).toHaveBeenCalledExactlyOnceWith(
-			stub.executeCalls[2]!.observationSignal,
-		);
-		expect(stub.executeCalls).toHaveLength(3);
-	});
-
-	it("should preserve a late pinned submission failure without resubmitting", async () => {
-		expect.assertions(2);
-
-		captureStderr();
-		const stub = probeStub();
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockRejectedValueOnce(
-					new ExecutionTimeoutError(probeTimeout(), async () => racedOnce()),
-				)
-				.mockRejectedValueOnce(new Error("replacement unavailable"))
-				.mockRejectedValue(new Error("pinned unavailable")),
-		);
-		const backend = createBackend({ runner: stub.runner });
-
-		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
-			"pinned unavailable",
-		);
-		expect(stub.executeCalls).toHaveLength(3);
-	});
-
-	it("should not retry malformed results from a recovered pinned task", async () => {
+/**
+ * A Shared Place run submits everything to the Exact Version its upload
+ * returned. Nothing goes to head, so no task carries a guard and none is
+ * retried pinned: the first submission is already the right one.
+ */
+describe("exact version submission", { timeout: 1000 }, () => {
+	it("should pin the boot probe to the uploaded version", async () => {
 		expect.assertions(2);
 
 		const stub = probeStub();
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockReturnValueOnce(racedOnce())
-				.mockRejectedValueOnce(probeTimeout())
-				.mockReturnValueOnce(racedOnce())
-				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
-		);
-		captureStderr();
 		const backend = createBackend({ runner: stub.runner });
-
-		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toBeInstanceOf(
-			SyntaxError,
-		);
-		expect(stub.executeCalls).toHaveLength(3);
-	});
-
-	it("should retry a timed-out pinned task without returning to head", async () => {
-		expect.assertions(2);
-
-		const stub = probeStub();
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockReturnValueOnce(racedOnce())
-				.mockRejectedValueOnce(probeTimeout())
-				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
-		);
-		captureStderr();
-		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
-
-		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
-			undefined,
-			PROBED_VERSION,
-			PROBED_VERSION,
-		]);
-		expect(stub.executeCalls[2]!.script).toBe(stub.executeCalls[1]!.script);
-	});
-
-	it("should preserve the claim when timeout recovery falls back to an exact version", async () => {
-		expect.assertions(2);
-
-		const stub = probeStub();
-		stub.setExecute(
-			vi
-				.fn<ExecuteHandler>()
-				.mockRejectedValueOnce(probeTimeout())
-				.mockReturnValueOnce(racedOnce())
-				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
-		);
-		captureStderr();
-		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
-		const claims = stub.executeCalls.map((call) => claimParameters(call.script));
-
-		expect(claims).toStrictEqual([claims[0]!, claims[0]!, claims[0]!]);
-		expect(stub.executeCalls[2]!.placeVersion).toBe(PROBED_VERSION);
-	});
-
-	it("should recover when a test task stays PROCESSING after the probe passes", async () => {
-		expect.assertions(4);
-
-		const stub = probeStub();
-		const execute = vi
-			.fn<ExecuteHandler>()
-			.mockRejectedValueOnce(probeTimeout())
-			.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }])));
-		stub.setExecute(execute);
-		captureStderr();
-		const backend = createBackend({ runner: stub.runner });
-
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
-
-		expect(stub.executeCalls).toHaveLength(2);
-		expect(stub.executeCalls.map(({ placeVersion }) => placeVersion)).toStrictEqual([
-			undefined,
-			undefined,
-		]);
-		expect(stub.uploadCalls).toHaveLength(1);
-		expect(stub.executeCalls[1]!.script).toBe(stub.executeCalls[0]!.script);
-	});
-
-	function headOnlyProbe(options: ExecuteScriptOptions): ScriptResult {
-		if (options.placeVersion !== undefined) {
-			throw probeTimeout();
-		}
-
-		return { durationMs: 0, outputs: [String(PROBED_VERSION)] };
-	}
-
-	it("should avoid a stuck pinned probe when head holds the uploaded version", async () => {
-		expect.assertions(3);
-
-		const stub = probeStub();
-		stub.setProbe(headOnlyProbe);
-		const backend = createBackend({ runner: stub.runner });
-
 		await backend.runTestsAsync(jobsOptions([job("alpha")]));
 
 		expect(stub.probeCalls).toHaveLength(1);
-		expect(stub.executeCalls[0]!.bootProven).toBeTrue();
-		expect(stub.executeCalls[0]!.script).toContain(
-			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
-		);
+		expect(stub.probeCalls[0]).toMatchObject({
+			isSubmitIdempotent: true,
+			placeVersion: PROBED_VERSION,
+			script: BOOT_PROBE_SCRIPT,
+		});
 	});
 
+	it("should pin every bucket to the uploaded version with no guard", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		const backend = createBackend({ runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta"), job("gamma")], 3));
+
+		// 3 jobs at parallel 3 => one bucket each => exactly 3 calls.
+		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
+			PROBED_VERSION,
+			PROBED_VERSION,
+			PROBED_VERSION,
+		]);
+		expect(stub.executeCalls.some((call) => call.script.includes(PLACE_MISMATCH))).toBeFalse();
+	});
+
+	it("should pin work-stealing tasks and hand them the script as written", async () => {
+		expect.assertions(2);
+
+		const stub = createRunnerStub({ uploadResult: { uploadMs: 12, versionNumber: 7 } });
+		stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
+		const backend = createBackend({ runner: stub.runner });
+		await backend.runTestsAsync({
+			jobs: [job("alpha")],
+			scriptOverride: "stealing-script",
+			workStealing: true,
+		});
+
+		expect(stub.executeCalls[0]!.placeVersion).toBe(7);
+		expect(withoutClaim(stub.executeCalls[0]!.script)).toBe("stealing-script");
+	});
+
+	it("should pin a replacement task to the same version", async () => {
+		expect.assertions(2);
+
+		captureStderr();
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(pollTimeout())
+				.mockReturnValue(oneSuccessEntry()),
+		);
+		const backend = createBackend({ runner: stub.runner });
+		const result = await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
+		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
+			PROBED_VERSION,
+			PROBED_VERSION,
+		]);
+	});
+
+	/**
+	 * A poll that runs out says nothing about the version; the task never
+	 * booted another one. The claim keeps a late starter from running twice.
+	 */
+	it("should treat a version mismatch sentinel as a malformed result", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setExecute(versionMismatchOutput);
+		const backend = createBackend({ runner: stub.runner });
+
+		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
+			"is not valid JSON",
+		);
+		expect(stub.executeCalls).toHaveLength(1);
+	});
+});
+
+/** What the runner throws when a task never reaches a terminal state. */
+function pollTimeout(): Error {
+	return new Error("Execution timed out: Roblox never reported a terminal state", {
+		cause: new PollTimeoutError("poll budget exhausted", { timeoutMs: 135_000 }),
+	});
+}
+
+describe("boot probe", { timeout: 1000 }, () => {
 	it.for([["43"], []])(
-		"should leave a shared version unverified when head returns %j",
+		"should leave a version unverified when its probe returns %j",
 		async (outputs) => {
 			expect.assertions(4);
 
 			const rootDirectory = temporaryRoot();
 			const stub = probeStub();
 			stub.setProbe(() => ({ durationMs: 0, outputs }));
+			captureStderr();
 			const backend = createBackend({ runner: stub.runner });
 
 			await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
@@ -3231,19 +2492,17 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 			expect(stub.probeCalls).toHaveLength(1);
 			expect(stub.executeCalls[0]!.bootProven).toBeFalse();
-			expect(stub.executeCalls[0]!.script).toContain(
-				placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
-			);
+			expect(stub.executeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
 			expect(next.uploadCalls).toHaveLength(1);
 		},
 	);
 
-	it("should run guarded tests after an inconclusive probe timeout", async () => {
+	it("should run the tests on the uploaded version after an inconclusive probe timeout", async () => {
 		expect.assertions(3);
 
 		const stub = probeStub();
 		stub.setProbe(() => {
-			throw probeTimeout();
+			throw pollTimeout();
 		});
 		const capture = captureStderr();
 		const backend = createBackend({ runner: stub.runner });
@@ -3252,11 +2511,9 @@ describe("boot probe", { timeout: 1000 }, () => {
 		capture.restore();
 
 		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
-		expect(stub.executeCalls[0]!.script).toContain(
-			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
-		);
+		expect(stub.executeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
 		expect(capture.writes.join("")).toBe(
-			"Warning: boot probe for place version 42 is inconclusive after 90s; continuing with guarded tests.\n" +
+			"Warning: boot probe for place version 42 is inconclusive after 90s; continuing with tests on that version.\n" +
 				"  Open Cloud may have stalled the probe; this does not prove the place cannot load.\n",
 		);
 	});
@@ -3285,143 +2542,22 @@ describe("boot probe", { timeout: 1000 }, () => {
 		expect(completed).toContainEqual({ id: "boot", detail });
 	});
 
-	/** What the runner throws when a task never reaches a terminal state. */
-	function probeTimeout(): Error {
-		return new Error("Execution timed out: Roblox never reported a terminal state", {
-			cause: new PollTimeoutError("poll budget exhausted", { timeoutMs: 135_000 }),
-		});
-	}
-
-	it.for([false, true])(
-		"should probe a fresh upload on head with ownedPlace=%s",
-		async (ownedPlace) => {
-			expect.assertions(4);
-
-			const stub = probeStub();
-
-			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace })]));
-
-			expect(stub.probeCalls).toHaveLength(1);
-			expect(stub.probeCalls[0]!.script).toBe(BOOT_PROBE_SCRIPT);
-			expect(stub.probeCalls[0]!.placeVersion).toBeUndefined();
-			expect(stub.probeCalls[0]!.isSubmitIdempotent).toBeTrue();
-		},
-	);
-
-	it("should warn and leave a shared upload uncached when the probe reads a foreign head", async () => {
-		expect.assertions(3);
-
-		const stub = probeStub();
-		stub.setProbe(() => ({ durationMs: 0, outputs: ["43"] }));
-		const capture = captureStderr();
-		const rootDirectory = temporaryRoot();
-		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
-		const second = await runProbedRunAsync(rootDirectory);
-
-		expect(capture.writes.join("")).toBe(
-			"Warning: boot probe read head version 43, but this run uploaded 42.\n  Continuing with guarded tests; the unverified upload is not cached.\n",
-		);
-		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
-		expect(second.probeCalls).toHaveLength(1);
-	});
-
-	/** An owned place with a mismatched probe still needs its version guard. */
-	it("should keep the guard and skip the cache when an owned head is not ours", async () => {
-		expect.assertions(4);
-
-		const stub = probeStub();
-		stub.setProbe(() => ({ durationMs: 0, outputs: [String(PROBED_VERSION + 1)] }));
-		const capture = captureStderr();
-
-		const backend = createBackend({ runner: stub.runner });
-		const rootDirectory = temporaryRoot();
-		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory, { ownedPlace: true })]));
-
-		capture.restore();
-
-		expect(stub.executeCalls[0]!.script).toContain(
-			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
-		);
-		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
-		expect(capture.writes.join("")).toBe(
-			"Warning: ownedPlace was set, but head is 43 rather than the uploaded version 42 — " +
-				"another run wrote this place.\n" +
-				"  Falling back to the version guard for this run; check the lease that set the flag.\n",
-		);
-
-		// A second run must upload again: nothing was cached, because the bytes
-		// this run uploaded are not the bytes that booted.
-		const second = await runProbedRunAsync(rootDirectory, { ownedPlace: true });
-
-		expect(second.probeCalls).toHaveLength(1);
-	});
-
-	/**
-	 * A probe that prints nothing leaves the claim unproven, which is not the
-	 * same as disproven — but it is just as far from the fact the fast path
-	 * needs, so it is treated the same way.
-	 */
-	it("should keep the guard when an owned probe reports no version", async () => {
-		expect.assertions(3);
-
-		const stub = probeStub();
-		stub.setProbe(() => ({ durationMs: 0, outputs: [] }));
-		const capture = captureStderr();
-
-		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha", { ownedPlace: true })]));
-		capture.restore();
-
-		expect(stub.executeCalls[0]!.script).toContain(
-			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
-		);
-		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
-		expect(capture.writes.join("")).toBe(
-			"Warning: ownedPlace was set, but head is unreadable rather than the uploaded version 42 — " +
-				"another run wrote this place.\n" +
-				"  Falling back to the version guard for this run; check the lease that set the flag.\n",
-		);
-	});
-
-	/**
-	 * Ownership says no other run writes this place *now*; it says nothing
-	 * about who wrote it before this run held the lease. A cached version is a
-	 * claim about the past, so head may hold a previous holder's bytes — the
-	 * one case where dropping the guard would run the tests against code from
-	 * another checkout and report a pass. Only a version this run uploaded is
-	 * head by construction.
-	 */
-	it("should keep the guard on an owned place when the version came from cache", async () => {
-		expect.assertions(2);
-
-		const rootDirectory = temporaryRoot();
-		const first = await runProbedRunAsync(rootDirectory, { ownedPlace: true });
-		const second = await runProbedRunAsync(rootDirectory, { ownedPlace: true });
-
-		// Version-agnostic: a guard pinned to any other version is still a
-		// guard, and this asserts there is none.
-		expect(first.executeCalls[0]!.script).not.toContain(PLACE_MISMATCH);
-		expect(second.executeCalls[0]!.script).toContain(
-			placeIdentityGuardSource({ placeVersion: PROBED_VERSION }),
-		);
-	});
-
 	/**
 	 * The cache entry is written only once the probe passes, so a hit already
 	 * carries the proof. Re-probing would spend a boot on a question already
 	 * answered, on every run that reuses a version.
 	 */
-	it("should skip the probe when the version came from the upload cache", async () => {
-		expect.assertions(2);
+	it("should skip the probe and pin the tests to the version the upload cache reused", async () => {
+		expect.assertions(4);
 
 		const rootDirectory = temporaryRoot();
 		const first = await runProbedRunAsync(rootDirectory);
 		const second = await runProbedRunAsync(rootDirectory);
 
 		expect(first.probeCalls).toHaveLength(1);
+		expect(second.uploadCalls).toHaveLength(0);
 		expect(second.probeCalls).toHaveLength(0);
+		expect(second.executeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
 	});
 
 	/**
@@ -3478,9 +2614,9 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		const stub = probeStub();
 		stub.setProbe(() => {
-			throw probeTimeout();
+			throw pollTimeout();
 		});
-		const testFailure = probeTimeout();
+		const testFailure = pollTimeout();
 		stub.setExecute(() => {
 			throw testFailure;
 		});
@@ -3502,7 +2638,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		const rootDirectory = temporaryRoot();
 		const failing = probeStub();
 		failing.setProbe(() => {
-			throw probeTimeout();
+			throw pollTimeout();
 		});
 
 		const backend = createBackend({ runner: failing.runner });
@@ -3666,7 +2802,7 @@ describe("code bundle", () => {
 					jobs: [job("alpha")],
 				}),
 			).rejects.toMatchObject({
-				hint: "Run with `--no-binary-input` to upload the code inside the place instead.",
+				hint: "Upload the code inside the place instead.",
 				message:
 					"The binary input upload completed too late to remain valid through task admission and boot.",
 			});
@@ -3707,18 +2843,18 @@ describe("code bundle", () => {
 		expect(stub.binaryInputCalls).toHaveLength(1);
 	});
 
-	it("should put the rebuild below the version guard", async () => {
-		expect.assertions(3);
+	it("should put the rebuild below the claim", async () => {
+		expect.assertions(2);
 
 		const stub = await runBundledAsync();
 		const { script } = stub.executeCalls[0]!;
-		const guard = placeIdentityGuardSource({ placeVersion: 1 });
 
 		expect(script).toContain(CODE_BUNDLE_REBUILD_SOURCE);
-		expect(script.indexOf(guard)).toBeLessThan(script.indexOf(CODE_BUNDLE_REBUILD_SOURCE));
-		// Behind the directives either way — a preamble above them would turn
-		// every `--!` line the script wrote into an ordinary comment.
-		expect(script.startsWith(guard)).toBeTrue();
+		// Below the claim, so a task that loses the claim returns before it
+		// rebuilds anything.
+		expect(script.indexOf(claimParameters(script))).toBeLessThan(
+			script.indexOf(CODE_BUNDLE_REBUILD_SOURCE),
+		);
 	});
 
 	/**
@@ -3739,11 +2875,18 @@ describe("code bundle", () => {
 		);
 	});
 
-	it("should carry the rebuild and the input on the pinned retry", async () => {
-		expect.assertions(4);
+	it("should carry the rebuild and the input on a replacement task", async () => {
+		expect.assertions(3);
 
 		const stub = createRunnerStub();
-		stub.setExecute(raceUnpinnedExecute(1));
+		stub.setExecute(
+			stepExecute([
+				() => {
+					throw pollTimeout();
+				},
+				oneSuccessEntry,
+			]),
+		);
 		const capture = captureStderr();
 		onTestFinished(capture.restore);
 		await bundleBackend(stub).runTestsAsync({
@@ -3751,24 +2894,11 @@ describe("code bundle", () => {
 			jobs: [job("alpha")],
 		});
 
-		const retry = stub.executeCalls[1]!;
+		const replacement = stub.executeCalls[1]!;
 
-		expect(retry.placeVersion).toBe(1);
-		expect(retry.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
-		expect(retry.script).toContain(CODE_BUNDLE_REBUILD_SOURCE);
-		// The guard is what a pinned submit drops; the rebuild is not.
-		expect(retry.script).not.toContain(PLACE_MISMATCH);
-	});
-
-	it("should carry the rebuild with no guard on an owned place", async () => {
-		expect.assertions(3);
-
-		const stub = await runBundledAsync({ jobs: [job("alpha", { ownedPlace: true })] });
-		const { script } = stub.executeCalls[0]!;
-
-		expect(stub.executeCalls[0]!.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
-		expect(withoutClaim(script).startsWith(CODE_BUNDLE_REBUILD_SOURCE)).toBeTrue();
-		expect(script).not.toContain(PLACE_MISMATCH);
+		expect(replacement.placeVersion).toBe(1);
+		expect(replacement.binaryInput).toBe(DEFAULT_BINARY_INPUT_PATH);
+		expect(replacement.script).toContain(CODE_BUNDLE_REBUILD_SOURCE);
 	});
 
 	it("should neither upload nor rebuild without a bundle", async () => {
@@ -3804,18 +2934,26 @@ describe("code bundle", () => {
 	});
 
 	/**
-	 * A pinned retry must refresh a binary input that expired after the head
-	 * attempt.
+	 * A replacement task must refresh a binary input that expired while the
+	 * first task was being watched.
 	 */
 	async function runAcrossElapsedAsync(elapseMs: number): Promise<RunnerStub> {
 		const stub = createRunnerStub({
 			binaryInputPaths: [DEFAULT_BINARY_INPUT_PATH, REFRESHED_PATH],
 		});
 		let now = 0;
-		stub.setExecute((executeOptions) => {
-			now += elapseMs;
-			return executeOptions.placeVersion === undefined ? racedOnce() : oneSuccessEntry();
-		});
+		stub.setExecute(
+			stepExecute([
+				() => {
+					now += elapseMs;
+					throw pollTimeout();
+				},
+				() => {
+					now += elapseMs;
+					return oneSuccessEntry();
+				},
+			]),
+		);
 		const capture = captureStderr();
 		onTestFinished(capture.restore);
 		await bundleBackend(stub, () => now).runTestsAsync({
@@ -3996,7 +3134,7 @@ describe("code bundle", () => {
 			"`binaryInputs.create` is metered at five a minute per API key, and the " +
 				"client has already retried inside that budget — so several runs " +
 				"sharing one key is the usual cause.\n" +
-				"Run with `--no-binary-input` to upload the code inside the place instead.",
+				"Upload the code inside the place instead.",
 		);
 	});
 });

@@ -26,9 +26,8 @@ describe("execution claim", () => {
 			const source = claimSource.replace("__EXECUTION_CLAIM_PARAMETERS__", () => {
 				return `key, 2000, 300, ${JSON.stringify(EXECUTION_NOT_CLAIMED)}, ${JSON.stringify(EXECUTION_START_EXPIRED)}`;
 			});
-			const guarded = prepareTaskScript({
+			const claimed = prepareTaskScript({
 				hasRebuild: true,
-				placeVersion: 42,
 				script: '--!strict\nerror("Tests must not run")',
 			})(`${source}\n`);
 			const directory = fs.mkdtempSync(path.join(os.tmpdir(), "execution-claim-"));
@@ -42,7 +41,7 @@ describe("execution claim", () => {
 					.replace("__NOT_CLAIMED__", () => JSON.stringify(EXECUTION_NOT_CLAIMED))
 					.replace("__START_EXPIRED__", () => JSON.stringify(EXECUTION_START_EXPIRED))
 					.replace("__CLAIM__", () => source)
-					.replace("__GUARDED__", () => guarded),
+					.replace("__CLAIMED__", () => claimed),
 			);
 
 			expect(spawnLute({ args: [], scriptPath })).toContain("ALL OK");

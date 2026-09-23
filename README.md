@@ -158,7 +158,7 @@ per-package declarations error loudly.
 | Field                  | What it does                                                                                                                                                        | Default       |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                             | `"auto"`      |
-| `binaryInput`          | Open Cloud: send the run's code to each task instead of building it into the place (see [Code as a binary input](#code-as-a-binary-input))                          | `true`        |
+| `binaryInput`          | Accepted, selects nothing: an Open Cloud run always builds its code into the place (see [One complete place](#one-complete-place))                                  | `true`        |
 | `color`                | Use ANSI colors in console output                                                                                                                                   | `true`        |
 | `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                            | `["default"]` |
 | `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package | —             |
@@ -215,44 +215,40 @@ for Roblox's verdict, and reports the error Roblox gives rather than a poll
 timeout.
 
 `bootProbeTimeout` covers the Open Cloud backend's boot probe: after uploading a
-place, it runs one trivial script on head and reads `game.PlaceVersion` before
-dispatching tests. This avoids a version-pinned probe when head already holds
-the uploaded version. A matching response records the version in
-`.jest-roblox/upload-cache.json`, so re-running the same place bytes skips the
-probe (see `uploadCache`). Tests on a shared place still check their version
-before rebuilding the code bundle and retry pinned if another upload moved head.
-After the first refusal, later tasks in that run use the pinned version
-directly. Each new run starts optimistically on head.
+place, it runs one trivial script pinned to the uploaded version and reads
+`game.PlaceVersion` before dispatching tests. A matching response records the
+version in `.jest-roblox/upload-cache.json`, so re-running the same place bytes
+skips the probe (see `uploadCache`). Every test task is then submitted to that
+same version, never to head, so another run saving the shared place cannot
+change which bytes execute your tests. A pinned task may miss the warm-server
+pool and pay a cold place boot.
 
 A probe timeout is inconclusive: Open Cloud can stall a task even when that
-place version loads successfully. The runner warns and continues with guarded
-tests, without caching the unverified version. A different or unreadable version
-also leaves the cache untouched; a foreign version produces a warning. If the
-probe and both test tasks all stall without acquiring an execution claim, the
-recovery task starts after 45 s and overlaps the original. The run then consumes
-separate submission and observation budgets, including a final result read if
-neither attempt returns results. A timeout cannot establish that a place is
-unbootable. The probe uses the bounded task-admission policy below, then applies
-its default 90 s polling budget with a short script deadline. Set
-`bootProbeTimeout` to `0` to skip the probe; no new upload-cache entry is
-written in that case.
+place version loads successfully. The runner warns and continues with tests on
+the uploaded version, without caching it as verified. A probe reporting another
+version also leaves the cache untouched. If the probe and both test tasks all
+stall without acquiring an execution claim, the recovery task starts after 45 s
+and overlaps the original. The run then consumes separate submission and
+observation budgets, including a final result read if neither attempt returns
+results. A timeout cannot establish that a place is unbootable. The probe uses
+the bounded task-admission policy below, then applies its default 90 s polling
+budget with a short script deadline. Set `bootProbeTimeout` to `0` to skip the
+probe; no new upload-cache entry is written in that case.
 
 If a test task never reaches a terminal state, the backend makes one recovery
-attempt. Each attempt may submit a guarded head task followed by an
-exact-version task if head has changed. All submissions share an atomic
-MemoryStore execution claim, acquired after the place-version guard and before
-bundle reconstruction. Only one attempt can start the tests; an abandoned task
-that starts late cannot run them again. The claim lives in a SortedMap and
-records its owner and Roblox start time. After 45 s from an accepted submission,
-the backend reads that item: a missing item starts the recovery task
-immediately, while a present item keeps the original task's poller. Tasks
-finishing sooner make no extra request, and a failed observer read is
-inconclusive rather than permission to start another task. Acquiring the claim
-uses one MemoryStore update with no added sleep. Transient claim errors receive
-short bounded retries; persistent claim errors fail the task. Retention covers
-the startup deadline using Roblox's clock, including client clock skew. If
-neither attempt provides results, an expired startup window fails with a
-clock/queue diagnosis.
+attempt, submitted to the same exact version. All submissions share an atomic
+MemoryStore execution claim, acquired before anything else the task does. Only
+one attempt can start the tests; an abandoned task that starts late cannot run
+them again. The claim lives in a SortedMap and records its owner and Roblox
+start time. After 45 s from an accepted submission, the backend reads that item:
+a missing item starts the recovery task immediately, while a present item keeps
+the original task's poller. Tasks finishing sooner make no extra request, and a
+failed observer read is inconclusive rather than permission to start another
+task. Acquiring the claim uses one MemoryStore update with no added sleep.
+Transient claim errors receive short bounded retries; persistent claim errors
+fail the task. Retention covers the startup deadline using Roblox's clock,
+including client clock skew. If neither attempt provides results, an expired
+startup window fails with a clock/queue diagnosis.
 
 Task submission retries have a 90 s inactivity budget, independent of the
 script's execution timeout, to cover a full create-quota window. When Roblox
@@ -269,11 +265,8 @@ bounded by 495 s total: the inactivity budget plus a 405 s allowance for
 capacity and quota waits.
 
 Waiting for capacity does not start the claim watchdog or launch a competing
-recovery submission. If the version guard refuses a foreign upload, its watchdog
-is canceled; the pinned task starts a fresh watch only after its submission is
-accepted. Execution claims and result observation cover the bounded admission
-path. Binary inputs are refreshed before submission when their remaining
-lifetime cannot cover admission and boot.
+recovery submission; a watch starts only once a submission is accepted.
+Execution claims and result observation cover the bounded admission path.
 
 An ambiguous task-create failure, such as a transient HTTP 500 or connection
 reset, permits one additional attempt across the whole recovery operation. It
@@ -555,27 +548,18 @@ the sorted-map scopes; `--formatters github-actions` also streams.
 Complete-result recovery uses those scopes independently of the formatter;
 without them, the CLI keeps native result delivery.
 
-#### Code as a binary input
+#### One complete place
 
-By default an Open Cloud run does not build its code into the place. The place
-holds the assets, `rbxts_include` and the vendored dependency tree — everything
-rojo builds from outside a directory the run compiled into — and the compiled
-code travels beside it as a binary input, rebuilt inside each task before Jest
-resolves anything. The place then changes only when a dependency or an asset
-does, so a code-only edit skips the rojo build and, through `uploadCache`, the
-upload as well.
+An Open Cloud run builds its code into the place it uploads, and every task —
+the boot probe and the tests — runs against the exact version that upload
+returned. A shared place has no head this run can trust: another run may save
+over it at any moment, so the version is the only thing that names this run's
+bytes.
 
-A directory travels only when every instance rojo builds from it is a script a
-task can construct: `.luau`, `.lua`, and `.json` modules. One holding an
-`.rbxm`, an `.rbxmx`, a `.meta.json`, a nested `.project.json`, a `.toml`, a
-`.txt` or a `.csv` stays in the place whole, and the run names it once so you
-know what to move. A file rojo builds nothing from rides along instead, so the
-`.d.ts` and `.luau.map` files a roblox-ts `out/` holds beside every script cost
-you nothing and need no `globIgnorePaths` entry.
-
-`binaryInput: false` or `--no-binary-input` builds the whole place as before.
-Reach for it when a run does something you cannot explain; the Studio backends
-ignore the setting, because they never upload a place at all.
+Sending the code beside a code-free place as a binary input is not active.
+`binaryInput` and `--no-binary-input` are accepted and select nothing; that
+transport needs a place no other run can change, which only a future exclusive
+place allocator can grant.
 
 ### Studio (local)
 
@@ -985,8 +969,8 @@ project) under `.jest-roblox/output/`.
 | `--no-color`                     | Turn off colors                                                                                                                                           |
 | `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                                                                 |
 | `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                |
-| `--binary-input`                 | Send the run's code to each task as a binary input (the default; see [Code as a binary input](#code-as-a-binary-input))                                   |
-| `--no-binary-input`              | Build the run's code into the place instead of sending it to each task (see [Code as a binary input](#code-as-a-binary-input))                            |
+| `--binary-input`                 | Accepted, selects nothing (see [One complete place](#one-complete-place))                                                                                 |
+| `--no-binary-input`              | Accepted, selects nothing: the run's code is always built into the place (see [One complete place](#one-complete-place))                                  |
 | `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); ignored on studio-cli                                                                       |
 | `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism)) |
 | `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                           |

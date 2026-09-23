@@ -69,8 +69,8 @@ Options:
   --affected-since <ref>            Run only packages affected since git ref via turbo/nx
   --no-coverage-cache               Force a clean coverage re-instrumentation (skip incremental cache)
   --no-upload-cache                 Always upload the place, even when its bytes are unchanged
-  --no-binary-input                 Build the run's code into the place instead of sending it
-                                    to each task as a binary input
+  --no-binary-input                 Accepted, selects nothing: the run's code is always built
+                                    into the place
   --parallel [n]                    Open-Cloud-only: number of concurrent sessions
                                     (or "auto" = min(jobs, 3); default: 1 session)
   --experimental-vm-parallel [n]    Studio-only, experimental: run the configs across

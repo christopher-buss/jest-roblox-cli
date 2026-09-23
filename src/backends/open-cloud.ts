@@ -1,10 +1,5 @@
 import { PermissionError } from "@bedrock-rbx/ocale";
-import {
-	ExecutionTimeoutError,
-	OcaleRunner,
-	readRefusedPlaceVersion,
-	runTaskPool,
-} from "@isentinel/roblox-runner";
+import { OcaleRunner, runTaskPool } from "@isentinel/roblox-runner";
 import type {
 	BinaryInputUploader,
 	OcaleRunnerOptions,
@@ -30,11 +25,7 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
 import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
-import {
-	DEFAULT_BOOT_WATCH_MS,
-	executeWithRecoveryAsync,
-	type SubmissionLifecycle,
-} from "./execution-recovery.ts";
+import { DEFAULT_BOOT_WATCH_MS, executeWithRecoveryAsync } from "./execution-recovery.ts";
 import type {
 	Backend,
 	BackendOptions,
@@ -46,20 +37,15 @@ import type {
 } from "./interface.ts";
 import { openCloudExecutionBudgets } from "./open-cloud-budgets.ts";
 import { executeWithResultRelayAsync } from "./result-relay.ts";
-import { UncertainSubmissionError, withResultReader } from "./uncertain-submission.ts";
 import type { UploadCacheTarget } from "./upload-cache.ts";
 import {
 	hashPlaceFile,
 	invalidateCachedVersion,
-	invalidateIfBehindHead,
-	isBehindHead,
 	readCachedVersion,
 	writeCachedVersion,
 } from "./upload-cache.ts";
 
-const PINNED_RETRY_NOTE = "Tasks retried pinned (slower, cold place boot).";
-
-/** A completed head probe proves only the version it actually booted. */
+/** A completed probe proves only the version it actually booted. */
 export const BOOT_PROBE_SCRIPT = "return tostring(game.PlaceVersion)";
 
 /**
@@ -150,50 +136,16 @@ interface PollState {
 	warned: boolean;
 }
 
-/** What one raced task turned out to mean, once the cache had its say. */
-interface RaceDiagnosis {
-	bootedVersion: number;
-	/** True when this task's evidence dropped the entry the run reused. */
-	isStaleCache: boolean;
-	versionNumber: number;
-}
-
 /**
- * Which of the three submits a task is: unguarded on head (an owned place),
- * guarded on head, or pinned to the run's own version (the guard fired).
- */
-type SubmitShape = "guarded" | "head" | "pinned";
-
-/**
- * The version tasks are asked to boot, plus the cache entry that claimed it.
- * The entry rides along only for a reused version — that is the one case where
- * the guard firing proves the entry is stale rather than merely unlucky.
+ * The Exact Version every task in this run is submitted to. A Shared Place
+ * has no stable head, so nothing is ever submitted there: the version the
+ * upload (or the cache) named is the one whose bytes hold this run's code.
  */
 interface VersionContext {
-	/**
-	 * True when this run's probe completed on the uploaded version.
-	 */
+	/** True when this run's probe completed on the uploaded version. */
 	bootProven: boolean;
-	cacheEntry: undefined | { rootDirectory: string; target: UploadCacheTarget };
-	/**
-	 * True when the boot probe read head back and found this run's own version,
-	 * so the guard has no race left to catch.
-	 *
-	 * Measured rather than declared. {@link ResolvedConfig.ownedPlace} is a
-	 * claim the CLI cannot check on its own — it says no other run writes this
-	 * place *now*, and says nothing about who wrote it before this run took the
-	 * lease, so a version reused from the upload cache may sit behind a
-	 * previous holder's. The probe settles it for free, and a run whose claim
-	 * does not survive that check keeps the guard.
-	 */
-	isOwned: boolean;
-	/** A refusal pins every later task in this run to its uploaded version. */
-	shape: { value: SubmitShape };
 	versionNumber: number;
 }
-
-/** What this run's probe proved about the version it will dispatch. */
-type BootVerification = Pick<VersionContext, "bootProven" | "isOwned">;
 
 interface UploadOutcome {
 	/** True when the version came from the cache instead of a fresh upload. */
@@ -226,16 +178,6 @@ interface StealingEnvelope extends DecodedEnvelope {
 /** What one dispatch produced, minus the timing the caller measures itself. */
 type DispatchOutcome = Except<BackendResult, "timing">;
 
-interface BackendAttemptContext {
-	claim: string;
-	observationSignal: AbortSignal;
-	script: string;
-	shape: { value: SubmitShape };
-	submission: SubmissionLifecycle;
-	timeout: number;
-	version: VersionContext;
-}
-
 export class OpenCloudBackend implements Backend {
 	private readonly bootWatchMs: number;
 	/**
@@ -252,17 +194,12 @@ export class OpenCloudBackend implements Backend {
 	/** This run's Code Bundle, absent for a run that ships the whole place. */
 	private bundle!: BundleRun | undefined;
 	/**
-	 * Composed task scripts, keyed by the caller's own script and the guard it
-	 * carries. Work-stealing sends one script to every task in the pool and a
-	 * static split sends one to every bucket, so without this the same
-	 * split/splice/join runs once per task over a script that is megabytes on a
-	 * real run.
+	 * Composed task scripts, keyed by the caller's own script. Work-stealing
+	 * sends one script to every task in the pool and a static split sends one
+	 * to every bucket, so without this the same split/splice/join runs once
+	 * per task over a script that is megabytes on a real run.
 	 */
-	private composed!: Map<number | undefined, Map<string, (claim: string) => string>>;
-	/** One-shot per run so parallel raced tasks don't repeat the warning. */
-	private raceWarned!: boolean;
-	/** Tracked apart, so a drop still gets said once a lesser cause warned. */
-	private staleCacheWarned!: boolean;
+	private composed!: Map<string, (claim: string) => string>;
 
 	public readonly kind = "open-cloud" as const;
 
@@ -320,21 +257,18 @@ export class OpenCloudBackend implements Backend {
 	 * Clear everything one run holds, and say what its split left behind.
 	 *
 	 * Every field here is per-run rather than per-backend, and a second run on
-	 * one instance must not inherit the first's bundle, composed scripts or
-	 * spent warnings.
+	 * one instance must not inherit the first's bundle or composed scripts.
 	 */
 	private beginRun(codeBundle: CodeBundleArtifact | undefined, progress: RunProgress): void {
 		noteStayedMounts(codeBundle);
 		this.bundle = toBundleRun(codeBundle, progress);
 		this.composed = new Map();
-		this.raceWarned = false;
-		this.staleCacheWarned = false;
 	}
 
 	/**
 	 * One attempt against one place version: prove it boots, then run every job
-	 * on it. The self-heal path calls this a second time with a fresh upload,
-	 * so the `tests` stage reopens rather than reporting twice.
+	 * on it. A 404 on a reused version drops the cache entry and fails the run;
+	 * the next run uploads afresh.
 	 */
 	private async bootAndDispatchAsync({
 		options,
@@ -349,7 +283,7 @@ export class OpenCloudBackend implements Backend {
 		target: UploadCacheTarget;
 		upload: UploadOutcome;
 	}): Promise<DispatchOutcome> {
-		const verification = await this.verifyBootAsync({
+		const isBootProven = await this.verifyBootAsync({
 			config: primary.config,
 			progress,
 			target,
@@ -362,11 +296,10 @@ export class OpenCloudBackend implements Backend {
 		// Closed on success only: a dispatch that throws leaves the stage open,
 		// and the reporter then names it as the step the run died inside.
 		const done = progress.begin("tests", describeProjectCount(options.jobs.length));
-		const outcome = await this.selectDispatchAsync(
-			options,
-			primary.config,
-			toVersionContext(primary.config.rootDir, target, upload, verification),
-		);
+		const outcome = await this.selectDispatchAsync(options, primary.config, {
+			bootProven: isBootProven,
+			versionNumber: upload.versionNumber,
+		});
 		done();
 		return outcome;
 	}
@@ -395,7 +328,7 @@ export class OpenCloudBackend implements Backend {
 		// entry, so it cannot take more rounds than there are jobs.
 		for (const _attempt of jobs) {
 			const envelope = parseStealingEnvelope(
-				await this.executeGuardedAsync({ script, timeout, version }),
+				await this.executeClaimedAsync({ script, timeout, version }),
 			);
 			addEntriesToMap(collected, envelope.entries, envelope.gameOutput);
 			hasBailed ||= envelope.bailed;
@@ -454,59 +387,18 @@ export class OpenCloudBackend implements Backend {
 		if (this.now() - uploaded.createdAt >= BINARY_INPUT_LIFETIME_MS - minimumValidityMs) {
 			throw new ConfigError(
 				"The binary input upload completed too late to remain valid through task admission and boot.",
-				"Run with `--no-binary-input` to upload the code inside the place instead.",
+				"Upload the code inside the place instead.",
 			);
 		}
 
 		return uploaded.path;
 	}
 
-	private async executeAttemptAsync(context: BackendAttemptContext): Promise<ScriptResult> {
-		const { claim, observationSignal, script, shape, submission, timeout, version } = context;
-		const submittedShape = shape.value;
-		const first = await this.submitAsync({
-			claim,
-			observationSignal,
-			onSubmitted: () => {
-				submission.accepted();
-			},
-			script,
-			shape: submittedShape,
-			timeout,
-			version,
-		}).catch((err: unknown) => {
-			if (!(err instanceof ExecutionTimeoutError)) {
-				throw err;
-			}
-
-			throw withResultReader(err, async (recoverySignal = observationSignal) => {
-				return this.resolveRecoveredAttemptAsync(
-					await err.readResultAsync(recoverySignal),
-					{
-						...context,
-						observationSignal: recoverySignal,
-						submittedShape,
-					},
-				);
-			});
-		});
-		return this.resolveAttemptResultAsync(first, { ...context, submittedShape });
-	}
-
 	/**
-	 * Optimistic version pinning. Pinned tasks
-	 * (`/versions/{v}/luau-execution-session-tasks`) miss the warm-server pool
-	 * whenever no server holds the freshly-uploaded version yet, costing a cold
-	 * place boot per task (~10-45s, scaling with place size). Unpinned tasks
-	 * boot the latest saved version from the warm pool, so the first attempt
-	 * runs unpinned with a guard prepended: if the booted server is not on
-	 * this run's version, the task refuses — naming the version it did boot —
-	 * instead of running. On a refusal, the task is retried once, pinned —
-	 * correct by construction, no re-upload (the version exists even when it is
-	 * no longer head), and no unpinned retry loop for a concurrent uploader to
-	 * keep winning against.
+	 * One logical execution under one execution claim. Every physical task it
+	 * creates, replacements included, is pinned to the run's Exact Version.
 	 */
-	private async executeGuardedAsync({
+	private async executeClaimedAsync({
 		script,
 		timeout,
 		version,
@@ -515,16 +407,16 @@ export class OpenCloudBackend implements Backend {
 		timeout: number;
 		version: VersionContext;
 	}): Promise<ScriptResult> {
-		const { shape } = version;
 		return executeWithRecoveryAsync({
 			bootWatchMs: this.bootWatchMs,
 			executeAsync: async ({ claim, observationSignal, submission }) => {
-				return this.executeAttemptAsync({
+				return this.submitAsync({
 					claim,
 					observationSignal,
+					onSubmitted: () => {
+						submission.accepted();
+					},
 					script,
-					shape,
-					submission,
 					timeout,
 					version,
 				});
@@ -567,133 +459,18 @@ export class OpenCloudBackend implements Backend {
 		}
 	}
 
-	/** {@link prepareTaskScript}, once per script per shape. See `composed`. */
-	private prepareOnce({
-		guardVersion,
-		hasRebuild,
-		script,
-	}: {
-		guardVersion: number | undefined;
-		hasRebuild: boolean;
-		script: string;
-	}): (claim: string) => string {
-		// `hasRebuild` is not in the key. A run either carries a bundle for
-		// every submit or for none, and the map is cleared per run, so it
-		// cannot differ between two entries this could hand the wrong one of.
-		let scripts = this.composed.get(guardVersion);
-		if (scripts === undefined) {
-			scripts = new Map();
-			this.composed.set(guardVersion, scripts);
-		}
-
-		const cached = scripts.get(script);
+	/** {@link prepareTaskScript}, once per script. See `composed`. */
+	private prepareOnce(script: string): (claim: string) => string {
+		// The bundle is per-run and the map is cleared per run, so the script
+		// alone is the key.
+		const cached = this.composed.get(script);
 		if (cached !== undefined) {
 			return cached;
 		}
 
-		const composed = this.prepareScript({ hasRebuild, placeVersion: guardVersion, script });
-		scripts.set(script, composed);
+		const composed = this.prepareScript({ hasRebuild: this.bundle !== undefined, script });
+		this.composed.set(script, composed);
 		return composed;
-	}
-
-	private async resolveAttemptResultAsync(
-		first: ScriptResult,
-		{
-			claim,
-			observationSignal,
-			script,
-			shape,
-			submission,
-			submittedShape,
-			timeout,
-			version,
-		}: BackendAttemptContext & { submittedShape: SubmitShape },
-	): Promise<ScriptResult> {
-		const bootedVersion =
-			submittedShape === "guarded" ? readRefusedPlaceVersion(first.outputs[0]) : undefined;
-		if (bootedVersion === undefined) {
-			return first;
-		}
-
-		submission.refused();
-		shape.value = "pinned";
-
-		return this.retryPinnedAsync({
-			bootedVersion,
-			claim,
-			observationSignal,
-			script,
-			submission,
-			timeout,
-			version,
-		});
-	}
-
-	private async resolveRecoveredAttemptAsync(
-		result: ScriptResult,
-		context: BackendAttemptContext & { submittedShape: SubmitShape },
-	): Promise<ScriptResult> {
-		try {
-			return await this.resolveAttemptResultAsync(result, context);
-		} catch (err) {
-			if (
-				!(err instanceof ExecutionTimeoutError) ||
-				err instanceof UncertainSubmissionError
-			) {
-				throw err;
-			}
-
-			return err.readResultAsync(context.observationSignal);
-		}
-	}
-
-	/**
-	 * The guard fired, so head has moved: rerun this task pinned to the version
-	 * the run uploaded, which still exists and still holds its bytes.
-	 */
-	private async retryPinnedAsync({
-		bootedVersion,
-		claim,
-		observationSignal,
-		script,
-		submission,
-		timeout,
-		version,
-	}: {
-		bootedVersion: number;
-		claim: string;
-		observationSignal: AbortSignal;
-		script: string;
-		submission: SubmissionLifecycle;
-		timeout: number;
-		version: VersionContext;
-	}): Promise<ScriptResult> {
-		// Dropping a stale entry is deliberately not one-shot the way a warning
-		// is: parallel tasks can boot different versions, and only the one that
-		// booted past ours carries the proof. Spending that proof on a task
-		// with a lesser complaint would keep the entry for good.
-		const { cacheEntry, versionNumber } = version;
-		const isStaleCache =
-			cacheEntry !== undefined &&
-			invalidateIfBehindHead(cacheEntry.rootDirectory, cacheEntry.target, {
-				bootedVersion,
-				reusedVersion: versionNumber,
-			});
-		this.warnRace({ bootedVersion, isStaleCache, versionNumber });
-		// A second submit rather than a re-send of the first: the input is
-		// asked for again inside it, because a task that raced may have waited
-		// out the one the head attempt named.
-		return this.submitAsync({
-			claim,
-			observationSignal,
-			onSubmitted: () => {
-				submission.accepted();
-			},
-			script,
-			shape: "pinned",
-			timeout,
-			version,
-		});
 	}
 
 	private async runBucketAsync({
@@ -709,7 +486,7 @@ export class OpenCloudBackend implements Backend {
 		// eslint-disable-next-line ts/no-non-null-assertion -- bucket non-empty
 		const primary = jobs[0]!;
 		const script = scriptOverride ?? bucketScript(jobs);
-		const scriptResult = await this.executeGuardedAsync({
+		const scriptResult = await this.executeClaimedAsync({
 			script,
 			timeout: primary.config.timeout,
 			version,
@@ -836,7 +613,7 @@ export class OpenCloudBackend implements Backend {
 		const taskResults = await drainStealingPoolAsync(
 			resolveBucketCount(parallel, jobs.length),
 			async () => {
-				return this.executeGuardedAsync({
+				return this.executeClaimedAsync({
 					script: scriptOverride,
 					timeout: primaryConfig.timeout,
 					version,
@@ -904,18 +681,16 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
-	 * One submit, in whichever of the three shapes the caller is in.
+	 * One submit, pinned to the run's Exact Version.
 	 *
 	 * A run carrying a code bundle always pairs its rebuild script with a
-	 * current binary input, including pinned and recovery submissions.
+	 * current binary input, recovery submissions included.
 	 */
-	// eslint-disable-next-line flawless/max-lines-per-function -- submission and relay share one observation owner.
 	private async submitAsync({
 		claim,
 		observationSignal,
 		onSubmitted,
 		script,
-		shape,
 		timeout,
 		version,
 	}: {
@@ -923,7 +698,6 @@ export class OpenCloudBackend implements Backend {
 		observationSignal: AbortSignal;
 		onSubmitted: () => void;
 		script: string;
-		shape: SubmitShape;
 		timeout: number;
 		version: VersionContext;
 	}): Promise<ScriptResult> {
@@ -939,8 +713,8 @@ export class OpenCloudBackend implements Backend {
 					bootProven: version.bootProven,
 					observationSignal: signal,
 					onSubmitted,
+					placeVersion: version.versionNumber,
 					retrySubmitTransportErrors: false,
-					...(shape === "pinned" ? { placeVersion: version.versionNumber } : {}),
 					script: wrapped,
 					submitBudget: budgets.submitBudget,
 					submitCapacityBudget: budgets.submitCapacityBudget,
@@ -948,18 +722,14 @@ export class OpenCloudBackend implements Backend {
 				});
 			},
 			runtimeBudget: timeout,
-			script: this.prepareOnce({
-				guardVersion: shape === "guarded" ? version.versionNumber : undefined,
-				hasRebuild: this.bundle !== undefined,
-				script,
-			})(`${claim}\n`),
+			script: this.prepareOnce(script)(`${claim}\n`),
 			signal: observationSignal,
 			timeout: budgets.observationMs,
 		}).catch(rethrowOversizedResult);
 	}
 
 	/**
-	 * Read head without forcing a cold pinned task.
+	 * Ask the uploaded version, and only it, whether it boots.
 	 */
 	private async submitBootProbeAsync({
 		budget,
@@ -975,6 +745,7 @@ export class OpenCloudBackend implements Backend {
 				// A wall-clock cap, not a deadline: the question is whether the
 				// place booted, and the runner's boot-lag allowance answers a
 				// different one — it would only delay the verdict.
+				placeVersion: upload.versionNumber,
 				pollBudget: budget,
 				script: BOOT_PROBE_SCRIPT,
 				submitBudget,
@@ -989,7 +760,7 @@ export class OpenCloudBackend implements Backend {
 
 			process.stderr.write(
 				`Warning: boot probe for place version ${String(upload.versionNumber)} is inconclusive ` +
-					`after ${String(Math.round(budget / 1000))}s; continuing with guarded tests.\n` +
+					`after ${String(Math.round(budget / 1000))}s; continuing with tests on that version.\n` +
 					"  Open Cloud may have stalled the probe; this does not prove the place cannot load.\n",
 			);
 			return undefined;
@@ -1024,12 +795,9 @@ export class OpenCloudBackend implements Backend {
 	 * Skip `places.save` when these exact place bytes already have a version.
 	 * An upload is the only thing measured to precede a cold place boot (~22s
 	 * against ~3s warm), so an unchanged build that reuses its version keeps
-	 * the fast path. Correctness rests on the guard in
-	 * {@link OpenCloudBackend.executeGuardedAsync}, not on the cache: a stale
-	 * entry can only make the sentinel fire and the task retry pinned to the
-	 * recorded version, which holds exactly the bytes that were hashed. The
-	 * guard also reports the version it did boot, which is what lets
-	 * {@link invalidateIfBehindHead} drop an entry that is behind head.
+	 * the fast path. Correctness rests on every task being pinned to the
+	 * version, not on the cache: the recorded version holds exactly the bytes
+	 * that were hashed, and a version keeps existing after head moves on.
 	 *
 	 * Reads the cache but never writes it: an entry means "these bytes boot",
 	 * so only {@link OpenCloudBackend.verifyBootAsync} may record one. The
@@ -1079,7 +847,8 @@ export class OpenCloudBackend implements Backend {
 
 	/**
 	 * Cache only a completed probe of the uploaded version. Every other outcome
-	 * leaves the version guard responsible for selecting the test task's bytes.
+	 * leaves the version unverified: the tests still run pinned to it, and the
+	 * next run with these bytes uploads and probes again.
 	 */
 	private async verifyBootAsync({
 		config,
@@ -1091,27 +860,20 @@ export class OpenCloudBackend implements Backend {
 		progress: RunProgress;
 		target: UploadCacheTarget;
 		upload: UploadOutcome;
-	}): Promise<BootVerification> {
+	}): Promise<boolean> {
 		const budget = config.bootProbeTimeout;
 		if (budget === 0 || upload.fromCache) {
-			return { bootProven: false, isOwned: false };
+			return false;
 		}
 
 		const done = progress.begin("boot", `version ${upload.versionNumber.toString()}`);
 		const booted = await this.submitBootProbeAsync({ budget, upload });
-		const isHeadOurs = booted === String(upload.versionNumber);
-		done(isHeadOurs ? undefined : "inconclusive");
-		if (!isHeadOurs) {
-			if (config.ownedPlace) {
-				warnOwnershipBroken(upload.versionNumber, booted);
-			} else if (booted !== undefined) {
-				process.stderr.write(
-					`Warning: boot probe read head version ${booted}, but this run uploaded ${String(upload.versionNumber)}.\n` +
-						"  Continuing with guarded tests; the unverified upload is not cached.\n",
-				);
-			}
-
-			return { bootProven: false, isOwned: false };
+		// A pinned probe can report only its own version; anything else is no
+		// proof at all.
+		const isProven = booted === String(upload.versionNumber);
+		done(isProven ? undefined : "inconclusive");
+		if (!isProven) {
+			return false;
 		}
 
 		if (upload.hash !== undefined) {
@@ -1121,27 +883,7 @@ export class OpenCloudBackend implements Backend {
 			});
 		}
 
-		return { bootProven: true, isOwned: config.ownedPlace };
-	}
-
-	/**
-	 * Name the cause of a mismatch, at most once per cause.
-	 *
-	 * A dropped cache entry is always said out loud, even when a task with a
-	 * lesser complaint reported first and spent the ordinary warning: it is the
-	 * one cause that changed state on disk, and the only thing that explains
-	 * the upload the next run makes.
-	 */
-	private warnRace(diagnosis: RaceDiagnosis): void {
-		if (diagnosis.isStaleCache ? this.staleCacheWarned : this.raceWarned) {
-			return;
-		}
-
-		this.staleCacheWarned ||= diagnosis.isStaleCache;
-		this.raceWarned = true;
-		process.stderr.write(
-			`Warning: ${describeVersionMismatch(diagnosis)} ${PINNED_RETRY_NOTE}\n`,
-		);
+		return true;
 	}
 }
 
@@ -1183,33 +925,6 @@ export function createOpenCloudBackend(credentials: OpenCloudCredentials): OpenC
 }
 
 /**
- * Name what went wrong, rather than blaming the one cause the guard cannot
- * distinguish on its own. A booted version ahead of ours means someone else's
- * upload is head — a race against a fresh upload, a stale entry against a
- * reused one. Behind ours means nothing raced at all: the save has yet to reach
- * the boot pool.
- */
-function describeVersionMismatch({
-	bootedVersion,
-	isStaleCache,
-	versionNumber,
-}: RaceDiagnosis): string {
-	const booted = `a task booted ${String(bootedVersion)}`;
-	if (isStaleCache) {
-		return (
-			`cached place version ${String(versionNumber)} is no longer head — ${booted}. ` +
-			"Cache entry dropped, so the next run re-uploads."
-		);
-	}
-
-	if (isBehindHead({ bootedVersion, reusedVersion: versionNumber })) {
-		return `place version ${String(versionNumber)} raced by a concurrent upload — ${booted}.`;
-	}
-
-	return `place version ${String(versionNumber)} is not in the boot pool yet — ${booted}.`;
-}
-
-/**
  * Binary uploads occur inside the execution window; charge them to uploadMs.
  */
 function splitUploadAndExecution({
@@ -1229,20 +944,6 @@ function splitUploadAndExecution({
 			executionMs: Date.now() - executionStart - extraUploadMs,
 			uploadMs: uploadMs + extraUploadMs,
 		},
-	};
-}
-
-function toVersionContext(
-	rootDirectory: string,
-	target: UploadCacheTarget,
-	upload: UploadOutcome,
-	verification: BootVerification,
-): VersionContext {
-	return {
-		...verification,
-		cacheEntry: upload.fromCache ? { rootDirectory, target } : undefined,
-		shape: { value: verification.isOwned ? "head" : "guarded" },
-		versionNumber: upload.versionNumber,
 	};
 }
 
@@ -1335,21 +1036,7 @@ function rethrowBinaryInputFailure(err: unknown): never {
 		"`binaryInputs.create` is metered at five a minute per API key, and the " +
 			"client has already retried inside that budget — so several runs " +
 			"sharing one key is the usual cause.\n" +
-			"Run with `--no-binary-input` to upload the code inside the place instead.",
-	);
-}
-
-/**
- * Say that `ownedPlace` was wrong, because nothing else will. The run stays
- * correct — the guard comes back and the tasks still get the right bytes — so
- * only this line distinguishes a lease that is working from one that is
- * quietly handing the same place to two runs.
- */
-function warnOwnershipBroken(versionNumber: number, bootedVersion: string | undefined): void {
-	process.stderr.write(
-		`Warning: ownedPlace was set, but head is ${bootedVersion ?? "unreadable"} rather than ` +
-			`the uploaded version ${String(versionNumber)} — another run wrote this place.\n` +
-			"  Falling back to the version guard for this run; check the lease that set the flag.\n",
+			"Upload the code inside the place instead.",
 	);
 }
 

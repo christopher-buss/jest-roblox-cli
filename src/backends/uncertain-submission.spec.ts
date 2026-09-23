@@ -1,13 +1,9 @@
 import { ApiError, NetworkError, RequestAbortedError } from "@bedrock-rbx/ocale";
-import { ExecutionTimeoutError, TaskSubmitError } from "@isentinel/roblox-runner";
+import { TaskSubmitError } from "@isentinel/roblox-runner";
 
 import { describe, expect, it } from "vitest";
 
-import {
-	isUncertainTaskSubmit,
-	UncertainSubmissionError,
-	withResultReader,
-} from "./uncertain-submission.ts";
+import { isUncertainTaskSubmit } from "./uncertain-submission.ts";
 
 describe(isUncertainTaskSubmit, () => {
 	it.for([
@@ -64,30 +60,5 @@ describe(isUncertainTaskSubmit, () => {
 		expect(isUncertainTaskSubmit(new TaskSubmitError(transport))).toBeTrue();
 		expect(isUncertainTaskSubmit(new ApiError("GET failed", { statusCode: 500 }))).toBeFalse();
 		expect(isUncertainTaskSubmit(new TaskSubmitError(new NetworkError("unknown")))).toBeFalse();
-	});
-
-	it.for([
-		new ExecutionTimeoutError(new Error("uncertain"), async () => {
-			return { durationMs: 0, outputs: ["old"] };
-		}),
-		new UncertainSubmissionError(new Error("uncertain"), async () => {
-			return { durationMs: 0, outputs: ["old"] };
-		}),
-	])("should preserve the recovery kind and replace its reader", async (cause) => {
-		expect.assertions(3);
-
-		const error = withResultReader(cause, async () => {
-			return {
-				durationMs: 1,
-				outputs: ["new"],
-			};
-		});
-
-		expect(error.constructor).toBe(cause.constructor);
-		expect(error.message).toBe(cause.message);
-		await expect(error.readResultAsync()).resolves.toStrictEqual({
-			durationMs: 1,
-			outputs: ["new"],
-		});
 	});
 });

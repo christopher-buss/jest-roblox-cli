@@ -34,7 +34,6 @@ const DEFAULT_ROJO_PROJECT = "default.project.json";
  * invocation directory, the same place a multi run is invoked from.
  */
 const STAGING_DIRECTORY = ".jest-roblox";
-
 export interface MultiRunOptions extends RunOptions {
 	rawProjects: Array<ProjectEntry>;
 }
@@ -147,7 +146,6 @@ function resolveRunCodeRoots({
 }): Array<PosixRoot> | undefined {
 	return resolveCodeRoots({
 		backendKind: backend.kind,
-		binaryInput: rootConfig.binaryInput,
 		configs: discovery.projects.map((project) => project.config),
 		fileSystem: discovery.fileSystem,
 		stagingDirectory: path.resolve(rootConfig.rootDir, STAGING_DIRECTORY),

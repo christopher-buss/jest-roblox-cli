@@ -16,14 +16,15 @@ export interface CodeRootsRequest {
 	 */
 	backendKind: string | undefined;
 	/**
-	 * The run's resolved `binaryInput`, false where it ships the whole place.
-	 */
-	binaryInput: boolean;
-	/**
 	 * One per project (multi) or per package (workspace). Each contributes the
 	 * compiled-Luau directories it runs against, in its own frame.
 	 */
 	configs: ReadonlyArray<ResolvedConfig>;
+	/**
+	 * Whether this run holds an Exclusive Place, the one condition under which
+	 * a Harness Place is safe. Nothing in production grants one yet.
+	 */
+	exclusivePlace?: boolean;
 	/** Where the roots are probed. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
 	/**
@@ -42,7 +43,7 @@ export interface CodeRootsRequest {
 
 /**
  * The Code Roots a run's bundle is split against, or none where the run ships
- * the whole place.
+ * the whole place — which is every run until an Exclusive Place is granted.
  *
  * Absolute, canonical and deduplicated, because two spellings of one directory
  * would read as two roots and a mount can only travel once.
@@ -55,13 +56,13 @@ export interface CodeRootsRequest {
  */
 export function resolveCodeRoots({
 	backendKind,
-	binaryInput,
 	configs,
+	exclusivePlace = false,
 	fileSystem = nodeFileSystem,
 	stagingDirectory,
 	tsconfigReader,
 }: CodeRootsRequest): Array<PosixRoot> | undefined {
-	if (backendKind !== "open-cloud" || !binaryInput) {
+	if (backendKind !== "open-cloud" || !exclusivePlace) {
 		return undefined;
 	}
 

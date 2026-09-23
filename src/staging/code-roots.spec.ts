@@ -23,13 +23,13 @@ function projectConfig(rootDirectory: string, luauRoots?: Array<string>): Resolv
 
 function resolve(
 	configs: Array<ResolvedConfig>,
-	gate: Partial<Pick<CodeRootsRequest, "backendKind" | "binaryInput">> = {},
+	gate: Partial<Pick<CodeRootsRequest, "backendKind" | "exclusivePlace">> = {},
 ): Array<PosixRoot> | undefined {
 	const { fileSystem } = createMemoryFileSystem();
 	return resolveCodeRoots({
 		backendKind: "open-cloud",
-		binaryInput: true,
 		configs,
+		exclusivePlace: true,
 		fileSystem,
 		stagingDirectory: STAGING_DIRECTORY,
 		// A project with no roots of its own must not reach a real tsconfig on
@@ -92,9 +92,18 @@ describe(resolveCodeRoots, () => {
 		).toBeUndefined();
 	});
 
-	it("should split nothing for a run that turned the binary input off", () => {
+	it("should split nothing without an Exclusive Place, which is the default", () => {
 		expect.assertions(1);
 
-		expect(resolve([projectConfig("/repo", ["out"])], { binaryInput: false })).toBeUndefined();
+		const { fileSystem } = createMemoryFileSystem();
+
+		expect(
+			resolveCodeRoots({
+				backendKind: "open-cloud",
+				configs: [projectConfig("/repo", ["out"])],
+				fileSystem,
+				stagingDirectory: STAGING_DIRECTORY,
+			}),
+		).toBeUndefined();
 	});
 });

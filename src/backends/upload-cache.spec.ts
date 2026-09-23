@@ -6,7 +6,6 @@ import type { FileSystem } from "../utils/file-system.ts";
 import {
 	hashPlaceFile,
 	invalidateCachedVersion,
-	invalidateIfBehindHead,
 	readCachedVersion,
 	type UploadCacheTarget,
 	writeCachedVersion,
@@ -175,57 +174,6 @@ describe("upload cache", () => {
 	});
 
 	/**
-	 * The one rule that decides whether a reused version is still valid. Open
-	 * Cloud will not say which version is head, so a task that booted past the
-	 * reused one is the whole of the evidence.
-	 */
-	it("should drop the entry when a task booted past the reused version", () => {
-		expect.assertions(2);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		const hash = seedPlaceFile(volume, fileSystem);
-		writeCachedVersion(ROOT, TARGET, { hash, versionNumber: 42 }, fileSystem);
-
-		expect(
-			invalidateIfBehindHead(
-				ROOT,
-				TARGET,
-				{ bootedVersion: 43, reusedVersion: 42 },
-				fileSystem,
-			),
-		).toBeTrue();
-		expect(readCachedVersion(ROOT, TARGET, hash, fileSystem)).toBeUndefined();
-	});
-
-	it("should keep the entry when a task booted the reused version or older", () => {
-		expect.assertions(3);
-
-		const { fileSystem, volume } = createMemoryFileSystem();
-
-		const hash = seedPlaceFile(volume, fileSystem);
-		writeCachedVersion(ROOT, TARGET, { hash, versionNumber: 42 }, fileSystem);
-
-		expect(
-			invalidateIfBehindHead(
-				ROOT,
-				TARGET,
-				{ bootedVersion: 41, reusedVersion: 42 },
-				fileSystem,
-			),
-		).toBeFalse();
-		expect(
-			invalidateIfBehindHead(
-				ROOT,
-				TARGET,
-				{ bootedVersion: 42, reusedVersion: 42 },
-				fileSystem,
-			),
-		).toBeFalse();
-		expect(readCachedVersion(ROOT, TARGET, hash, fileSystem)).toBe(42);
-	});
-
-	/**
 	 * A write that fails leaves the entry in the file, so it is still the one
 	 * the next run reads. The caller says so out loud rather than promising a
 	 * re-upload that will not happen.
@@ -241,14 +189,7 @@ describe("upload cache", () => {
 			throw new Error("EROFS: read-only file system");
 		});
 
-		expect(
-			invalidateIfBehindHead(
-				ROOT,
-				TARGET,
-				{ bootedVersion: 43, reusedVersion: 42 },
-				fileSystem,
-			),
-		).toBeFalse();
+		expect(invalidateCachedVersion(ROOT, TARGET, fileSystem)).toBeFalse();
 		expect(readCachedVersion(ROOT, TARGET, hash, fileSystem)).toBe(42);
 	});
 

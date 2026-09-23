@@ -17,7 +17,7 @@ import {
 	ExecutionClaimObserver,
 } from "../../../src/luau/execution-claim.ts";
 import { observeDelayedOriginalAsync } from "./execution-claim-helper.ts";
-import { IS_LIVE } from "./live-gate.ts";
+import { IS_BINARY_INPUT, IS_LIVE } from "./live-gate.ts";
 
 const TASK_TIMEOUT_MS = 30_000;
 const TASK_BUDGETS = openCloudExecutionBudgets(TASK_TIMEOUT_MS);
@@ -71,7 +71,7 @@ describe("execution claim", () => {
 		});
 	}
 
-	it.skipIf(!IS_LIVE)(
+	it.skipIf(!IS_LIVE || !IS_BINARY_INPUT)(
 		"should replace an accepted execution whose observation never reaches its claim",
 		{
 			retry: 0,
@@ -131,7 +131,7 @@ describe("execution claim", () => {
 		},
 	);
 
-	it.skipIf(!IS_LIVE)(
+	it.skipIf(!IS_LIVE || !IS_BINARY_INPUT)(
 		"should refuse a delayed original after recovery claims execution on Roblox",
 		{
 			retry: 0,

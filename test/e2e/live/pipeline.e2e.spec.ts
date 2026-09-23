@@ -70,36 +70,22 @@ const gameOutputSchema = type({
 	"project": "string",
 }).array();
 
-/**
- * Where a coverage run leaves the harness's project and the bundle beside it.
- */
+/** Where a coverage run leaves the project it built the place from. */
 const COVERAGE_DIR = ".jest-roblox/coverage";
-const harnessProjectSchema = type({
+const placeProjectSchema = type({
 	tree: { ReplicatedStorage: { "PkgShared?": "object" } },
 });
-const codeBundleSchema = type({
-	mounts: type({ entries: type({ path: "string" }).array() }).array(),
-	version: "number",
-});
 
-/**
- * The node the harness serves the shared mount at, if it serves one at all.
- *
- * A coverage run bakes each project's generated `jest.config` into the shadow
- * tree rather than hanging it off the mount as an explicit child, so the mount
- * travels whole and its node leaves the harness with it.
- */
-function readHarnessMount(sandbox: string): object | undefined {
+/** The node the built place serves the shared mount at, if it serves one. */
+function readSharedMount(sandbox: string): object | undefined {
 	const projectFile = path.join(sandbox, COVERAGE_DIR, "default.project.json");
-	return harnessProjectSchema.assert(JSON.parse(fs.readFileSync(projectFile, "utf-8"))).tree
+	return placeProjectSchema.assert(JSON.parse(fs.readFileSync(projectFile, "utf-8"))).tree
 		.ReplicatedStorage.PkgShared;
 }
 
-/** Every instance path the Code Bundle carries, across every mount. */
-function readBundledEntries(sandbox: string): Array<string> {
-	const bundleFile = path.join(sandbox, COVERAGE_DIR, "game.code-bundle.json");
-	const bundle = codeBundleSchema.assert(JSON.parse(fs.readFileSync(bundleFile, "utf-8")));
-	return bundle.mounts.flatMap((mount) => mount.entries.map((entry) => entry.path));
+/** Whether a Code Bundle was written beside the place. */
+function hasCodeBundle(sandbox: string): boolean {
+	return fs.existsSync(path.join(sandbox, COVERAGE_DIR, "game.code-bundle.json"));
 }
 
 describe("live pipeline", () => {
@@ -196,13 +182,13 @@ describe("live pipeline", () => {
 				(entry) => Object.values(entry.s).some((count) => count > 0),
 			);
 
-			// The tests above passed against a place that never held
-			// them: the harness does not serve the shared mount at all, and the
-			// spec that ran arrived as the binary input built beside it.
-			expect(readHarnessMount(sandbox), "the harness mounts no code").toBeUndefined();
-			expect(readBundledEntries(sandbox), "the bundle carries the spec").toContain(
-				"example.spec",
-			);
+			// A Shared Place run builds its code into the place: the shared
+			// mount is served from the place itself, and nothing travels beside
+			// it as a Binary Input.
+			expect(readSharedMount(sandbox), "the place mounts the code").toStrictEqual({
+				$path: "out/shared",
+			});
+			expect(hasCodeBundle(sandbox), "no Code Bundle beside the place").toBeFalse();
 		},
 		CLI_RUN_TIMEOUT_MS + VITEST_CLEANUP_ALLOWANCE_MS,
 	);

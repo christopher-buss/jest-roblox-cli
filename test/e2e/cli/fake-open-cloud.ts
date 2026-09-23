@@ -30,6 +30,9 @@ const LOGS_SUFFIX_PATTERN = /\/logs$/;
 const EXECUTION_CLAIM_PATH_PATTERN =
 	/\/memory-store\/sorted-maps\/jest-roblox-execution-v1\/items\/([^/]+)$/;
 const BINARY_INPUT_SUFFIX = "/luau-execution-session-task-binary-inputs";
+/** Where a task is created, on head or under `/versions/{v}`. */
+export const TASK_CREATE_SUFFIX = "/luau-execution-session-tasks";
+
 /**
  * Where the fake serves the presigned PUT it hands out. Live Open Cloud names a
  * storage host the API does not own, and the client PUTs there over a plain
@@ -739,7 +742,7 @@ async function handleRequestAsync({
 		return;
 	}
 
-	if (request.method === "POST" && url.pathname.endsWith("/luau-execution-session-tasks")) {
+	if (request.method === "POST" && url.pathname.endsWith(TASK_CREATE_SUFFIX)) {
 		handleCreateTask({ body: await readBodyAsync(request), response, state });
 		return;
 	}
