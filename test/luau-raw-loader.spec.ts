@@ -6,6 +6,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { buildIstanbulHtmlAssetsModule } from "../loaders/istanbul-html-assets.mjs";
 import { load, resolve } from "../loaders/luau-raw.mjs";
+import { buildRunnerPluginSourcesModule } from "../loaders/runner-plugin-sources.mjs";
 
 function temporaryLuauUrl(content: string): string {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "luau-raw-"));
@@ -58,6 +59,16 @@ describe(resolve, () => {
 		expect(next).not.toHaveBeenCalled();
 	});
 
+	it("should claim the virtual plugin sources module before node resolves it", () => {
+		expect.assertions(2);
+
+		const next = mockNextResolve("file:///unused");
+		const result = resolve("virtual:runner-plugin-sources", {}, next);
+
+		expect(result.url).toBe("virtual:runner-plugin-sources");
+		expect(next).not.toHaveBeenCalled();
+	});
+
 	it("should pass through non-lua resolved URLs unchanged", () => {
 		expect.assertions(1);
 
@@ -96,13 +107,17 @@ describe(load, () => {
 	it("should build the virtual asset module", () => {
 		expect.assertions(1);
 
-		const result = load(
-			"virtual:istanbul-html-assets",
-			{ format: "istanbul-html-assets" },
-			mockNextLoad(),
-		);
+		const result = load("virtual:istanbul-html-assets", { format: "virtual" }, mockNextLoad());
 
 		expect(result.source).toBe(buildIstanbulHtmlAssetsModule());
+	});
+
+	it("should build the virtual plugin sources module", () => {
+		expect.assertions(1);
+
+		const result = load("virtual:runner-plugin-sources", { format: "virtual" }, mockNextLoad());
+
+		expect(result.source).toBe(buildRunnerPluginSourcesModule());
 	});
 
 	it("should delegate to nextLoad for other formats", () => {

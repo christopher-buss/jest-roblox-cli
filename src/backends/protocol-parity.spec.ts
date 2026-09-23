@@ -33,6 +33,17 @@ describe("protocol version parity", () => {
 		},
 	);
 
+	it("should read the pluginKey field the studio-cli payload sends", () => {
+		expect.assertions(1);
+
+		const runner = fs.readFileSync(
+			new URL("../../plugin/src/test-in-run-mode.server.luau", import.meta.url),
+			"utf8",
+		);
+
+		expect(runner).toContain("testArgs.pluginKey");
+	});
+
 	it("should use one protocol version across both Studio backends", () => {
 		expect.assertions(1);
 

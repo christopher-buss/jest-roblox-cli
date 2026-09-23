@@ -196,8 +196,7 @@ export async function prepareWorkspaceDispatchAsync({
 	// resolve nowhere else), so `"auto"` counts as sharded and is forwarded
 	// unresolved — the backend turns it into a task count against the job
 	// total, the same arithmetic multi's static bucketing does. A serial
-	// backend reads the same `"auto"` as one session; `isExplicitMultiShard`
-	// is the predicate that guards those.
+	// backend runs one session whatever the count.
 	if (workStealingCredentials !== undefined && isShardedParallel(parallel)) {
 		const stealing = await tryStealingDispatchAsync({
 			bail,

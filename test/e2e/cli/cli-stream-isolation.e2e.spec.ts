@@ -1,3 +1,4 @@
+// cspell:ignore LOCALAPPDATA
 import { type } from "arktype";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -31,9 +32,11 @@ describe("--formatters json stream isolation", () => {
 			},
 		]);
 
-		const result = await runCliAsync(["--formatters", "json"], {
+		// Auto, for the line it writes naming its choice. Without LOCALAPPDATA
+		// Windows discovery finds no Studio, so the choice is Open Cloud.
+		const result = await runCliAsync(["--backend", "auto", "--formatters", "json"], {
 			cwd: sandbox,
-			env: createOpenCloudEnvironment(server.baseUrl),
+			env: { ...createOpenCloudEnvironment(server.baseUrl), LOCALAPPDATA: undefined },
 		});
 
 		expect(result.exitCode).toBe(0);
@@ -46,8 +49,8 @@ describe("--formatters json stream isolation", () => {
 
 		expect(parsed.success).toBeTrue();
 		expect(parsed.numPassedTests).toBe(1);
-		// resolveBackend writes "Backend: open-cloud (no plugin, using Open
-		// Cloud)" to stderr when auto-detecting. This confirms human-facing
+		// Auto writes "Backend: open-cloud (Studio not installed)" to stderr
+		// when it selects a backend. This confirms human-facing
 		// log lines went to stderr instead of polluting the JSON channel on
 		// stdout.
 		expect(result.stderr).toContain("Backend: open-cloud");

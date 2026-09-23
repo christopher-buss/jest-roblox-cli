@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { buildIstanbulHtmlAssetsModule, ISTANBUL_HTML_ASSETS_ID } from "./istanbul-html-assets.mjs";
+import { buildVirtualModule, isVirtualModule } from "./virtual-modules.mjs";
 
 export function resolve(specifier, context, nextResolve) {
-	if (specifier === ISTANBUL_HTML_ASSETS_ID) {
-		return { format: "istanbul-html-assets", shortCircuit: true, url: specifier };
+	if (isVirtualModule(specifier)) {
+		return { format: "virtual", shortCircuit: true, url: specifier };
 	}
 
 	const resolved = nextResolve(specifier, context);
@@ -18,12 +18,8 @@ export function resolve(specifier, context, nextResolve) {
 }
 
 export function load(url, context, nextLoad) {
-	if (context.format === "istanbul-html-assets") {
-		return {
-			format: "module",
-			shortCircuit: true,
-			source: buildIstanbulHtmlAssetsModule(),
-		};
+	if (context.format === "virtual") {
+		return { format: "module", shortCircuit: true, source: buildVirtualModule(url) };
 	}
 
 	if (context.format === "luau-raw") {

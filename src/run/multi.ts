@@ -178,6 +178,7 @@ async function stageAndExecuteAsync({
 	// decision, so the decision is made once, above both.
 	const codeRoots = resolveRunCodeRoots({ backend, discovery, rootConfig });
 	const staged = await stageRunAsync({
+		backendKind: backend.kind,
 		codeRoots,
 		fileSystem,
 		projects: discovery.projects,

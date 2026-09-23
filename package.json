@@ -44,7 +44,6 @@
 		"bin",
 		"dist",
 		"loaders",
-		"plugin",
 		"!dist/sea",
 		"!dist/**/*.map",
 		"!dist/**/*.tsbuildinfo"

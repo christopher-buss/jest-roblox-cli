@@ -1,35 +1,7 @@
 import { readFileSync } from "node:fs";
 import { defineConfig, type ExportsOptions } from "tsdown";
 
-import {
-	buildIstanbulHtmlAssetsModule,
-	ISTANBUL_HTML_ASSETS_ID,
-} from "./loaders/istanbul-html-assets.mjs";
-
-/**
- * Puts istanbul's html assets in the bundle. Both builds carry them: the
- * reporters read them from beside their own module otherwise, which only holds
- * for an install with `node_modules` beside it.
- */
-function istanbulHtmlAssetsPlugin() {
-	return {
-		name: "istanbul-html-assets",
-		load(id: string) {
-			if (id !== ISTANBUL_HTML_ASSETS_ID) {
-				return;
-			}
-
-			return buildIstanbulHtmlAssetsModule();
-		},
-		resolveId(id: string) {
-			if (id !== ISTANBUL_HTML_ASSETS_ID) {
-				return;
-			}
-
-			return { id, external: false };
-		},
-	};
-}
+import { virtualModulesPlugin } from "./loaders/virtual-modules.mjs";
 
 function luauRawPlugin() {
 	return {
@@ -135,7 +107,7 @@ export default defineConfig([
 		},
 		fixedExtension: true,
 		format: ["esm"],
-		plugins: [istanbulHtmlAssetsPlugin(), luauRawPlugin()],
+		plugins: [virtualModulesPlugin(), luauRawPlugin()],
 		publint: true,
 		shims: true,
 		target: ["node24"],
@@ -154,7 +126,7 @@ export default defineConfig([
 		},
 		format: ["cjs"],
 		outDir: "dist/sea",
-		plugins: [istanbulHtmlAssetsPlugin(), seaStubPlugin(), luauRawPlugin()],
+		plugins: [virtualModulesPlugin(), seaStubPlugin(), luauRawPlugin()],
 		shims: true,
 		target: ["node25"],
 	},

@@ -19,27 +19,19 @@ import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 const DEFAULT_STUDIO_TIMEOUT = 300_000;
 
-interface PreConnected {
-	/** The probe's connection pool, carrying what each plugin announced. */
-	pool: PluginConnectionPool;
-	server: WebSocketServer;
-	/** The socket the auto probe already selected by protocol version. */
-	socket: WebSocket;
-}
-
 interface StudioOptions {
 	port: number;
-	preConnected?: PreConnected | undefined;
 	timeout?: number | undefined;
 	webSocketServerFactory?: undefined | WebSocketServerFactory;
 }
 
 /**
  * Plugin/CLI protocol version. Must match `PROTOCOL_VERSION` in
- * `plugin/src/init.server.luau`. Increment when the runtime contract
- * changes — v7 adds the `runnerTimeoutMs` argv the runner enforces a project's
- * budget from and strips before calling Jest, so a v6 plugin handed one runs
- * unbounded and passes the key through to Jest; v6 adds the `hello`
+ * `plugin/src/init.server.luau`. Increment when the runtime contract changes —
+ * v8 adds the `pluginKey` a `studio-cli` run asks for, which this backend
+ * never sends; v7 adds the `runnerTimeoutMs` argv the runner enforces a
+ * project's budget from and strips before calling Jest, so a v6 plugin handed
+ * one runs unbounded and passes the key through to Jest; v6 adds the `hello`
  * announcement a plugin sends on connect, which is what lets the CLI pick
  * between several installed copies rather than dispatching to whichever one
  * connected first; v4 nests the fields the runner adds to Jest's result under
@@ -48,7 +40,7 @@ interface StudioOptions {
  * is now only reachable from a plugin whose announcement and request handling
  * disagree.
  */
-export const STUDIO_PROTOCOL_VERSION = 7;
+export const STUDIO_PROTOCOL_VERSION = 8;
 
 const pluginResultSchema = type({
 	"gameOutput?": "string",
@@ -100,7 +92,6 @@ export class StudioBackend implements Backend {
 	private readonly webSocketServerFactory: WebSocketServerFactory;
 
 	private pool: PluginConnectionPool | undefined;
-	private preConnected: PreConnected | undefined;
 	private wss: undefined | WebSocketServer;
 
 	public readonly kind = "studio" as const;
@@ -109,26 +100,16 @@ export class StudioBackend implements Backend {
 		this.port = options.port;
 		this.timeout = options.timeout ?? DEFAULT_STUDIO_TIMEOUT;
 		this.webSocketServerFactory = options.webSocketServerFactory ?? nodeWebSocketServerFactory;
-		this.preConnected = options.preConnected;
-		// Adopted rather than rebuilt: an announcement is sent once per socket,
-		// so a pool built after the probe would see the probe's connections
-		// without knowing what any of them are.
-		this.pool = options.preConnected?.pool;
 	}
 
 	public closeAsync(): void {
-		// Fall back to the pre-connected server: the auto probe can detect a
-		// Studio (preConnected) and then close the backend via a zero-jobs flow
-		// that never calls runTests, so `this.wss` is never assigned.
-		const server = this.wss ?? this.preConnected?.server;
+		const server = this.wss;
 		// Abort before dropping the reference: closing the server does not stop
 		// the pool's connect timer, and on the default timeout that is a live
-		// handle holding the process open for five minutes after an explicit
-		// failure or a fallback to Open Cloud.
+		// handle holding the process open for five minutes after a failure.
 		this.pool?.abortSelection();
 		this.pool = undefined;
 		this.wss = undefined;
-		this.preConnected = undefined;
 		if (server === undefined) {
 			return;
 		}
@@ -137,17 +118,14 @@ export class StudioBackend implements Backend {
 	}
 
 	public async runTestsAsync(options: BackendOptions): Promise<BackendResult> {
-		const pre = this.preConnected;
-		this.preConnected = undefined;
-
-		this.wss ??= pre?.server ?? this.webSocketServerFactory({ port: this.port });
+		this.wss ??= this.webSocketServerFactory({ port: this.port });
 
 		// Announced here rather than in the executor, which wraps every backend
 		// alike and so would open the stage around the upload too: only a
 		// backend knows when its own dispatch window starts.
 		const progress = options.progress ?? NOOP_RUN_PROGRESS;
 		const done = progress.begin("tests", describeProjectCount(options.jobs.length));
-		const result = await this.executeViaPluginAsync(this.wss, options, pre?.socket);
+		const result = await this.executeViaPluginAsync(this.wss, options);
 		done();
 		return result;
 	}
@@ -155,7 +133,6 @@ export class StudioBackend implements Backend {
 	private async executeViaPluginAsync(
 		wss: WebSocketServer,
 		{ jobs, vmParallel }: BackendOptions,
-		existingSocket?: WebSocket,
 	): Promise<BackendResult> {
 		const requestId = randomUUID();
 		const requestMessage = buildRunTestsMessage({
@@ -166,12 +143,7 @@ export class StudioBackend implements Backend {
 		});
 
 		const executionStart = Date.now();
-		const message = await this.waitForResultAsync(
-			wss,
-			requestMessage,
-			requestId,
-			existingSocket,
-		);
+		const message = await this.waitForResultAsync(wss, requestMessage, requestId);
 
 		// Unreachable against a plugin whose announcement matches what it
 		// serves, since a connection announcing another protocol is never
@@ -190,21 +162,14 @@ export class StudioBackend implements Backend {
 	}
 
 	/**
-	 * The socket to run on: the one the auto probe already selected, or the
-	 * connection that announces this CLI's protocol version.
+	 * The socket to run on: the connection that announces this CLI's protocol
+	 * version.
 	 *
 	 * Several installed plugin copies each open their own socket, so this is
 	 * where "a Studio is listening" narrows to "this Studio can serve the run".
 	 * Failing here means failing before the place is built, rather than after.
 	 */
-	private async selectSocketAsync(
-		wss: WebSocketServer,
-		existingSocket: undefined | WebSocket,
-	): Promise<WebSocket> {
-		if (existingSocket !== undefined) {
-			return existingSocket;
-		}
-
+	private async selectSocketAsync(wss: WebSocketServer): Promise<WebSocket> {
 		// Assigned before the first await of this chain, so a plugin connecting
 		// into the same tick as the dispatch is still recorded.
 		this.pool ??= new PluginConnectionPool(wss);
@@ -228,15 +193,14 @@ export class StudioBackend implements Backend {
 		wss: WebSocketServer,
 		requestMessage: RunTestsMessage,
 		requestId: string,
-		existingSocket?: WebSocket,
 	): Promise<PluginMessage> {
 		return new Promise((resolve, reject) => {
 			// One error listener spans both halves of the wait — selecting a
 			// compatible plugin, then the run itself. A bind failure surfaces
-			// as the EADDRINUSE `StudioWithFallback` reads, not as a timeout.
+			// as EADDRINUSE, not as a timeout.
 			wss.on("error", reject);
 
-			this.selectSocketAsync(wss, existingSocket)
+			this.selectSocketAsync(wss)
 				.then((socket) => {
 					awaitPluginMessage({
 						reject,

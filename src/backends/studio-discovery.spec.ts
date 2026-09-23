@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import { discoverStudioPath } from "./studio-discovery.ts";
+import { discoverPluginsDirectory, discoverStudioPath } from "./studio-discovery.ts";
 
 const WIN_ENV = { LOCALAPPDATA: "C:/Users/dev/AppData/Local" };
 
@@ -198,5 +198,33 @@ describe(discoverStudioPath, () => {
 					"Set studioPath to point at your Roblox Studio executable.",
 			),
 		);
+	});
+});
+
+describe(discoverPluginsDirectory, () => {
+	it("should find the plugins folder under LOCALAPPDATA on Windows", () => {
+		expect.assertions(1);
+
+		expect(discoverPluginsDirectory({ environment: WIN_ENV, platform: "win32" })).toBe(
+			"C:/Users/dev/AppData/Local/Roblox/Plugins",
+		);
+	});
+
+	it("should find the plugins folder under Documents on macOS", () => {
+		expect.assertions(1);
+
+		expect(discoverPluginsDirectory({ homeDirectory: "/Users/dev", platform: "darwin" })).toBe(
+			"/Users/dev/Documents/Roblox/Plugins",
+		);
+	});
+
+	it.for([
+		{ environment: {}, platform: "win32" },
+		{ environment: { LOCALAPPDATA: "" }, platform: "win32" },
+		{ environment: WIN_ENV, platform: "linux" },
+	] as const)("should find no plugins folder on $platform without a known location", (input) => {
+		expect.assertions(1);
+
+		expect(discoverPluginsDirectory(input)).toBeUndefined();
 	});
 });

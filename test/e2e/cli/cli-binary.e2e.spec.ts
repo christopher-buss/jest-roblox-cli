@@ -25,8 +25,8 @@ describe("cli binary", () => {
 		expect(result.stdout).toMatch(/^\d+\.\d+\.\d+/);
 	});
 
-	// Discovery runs before backend resolution, so reaching "No backend
-	// available" is itself the proof that discovery found the spec files — a
+	// Discovery runs before backend resolution, so reaching the credential
+	// error is itself the proof that discovery found the spec files — a
 	// discovery failure prints "No test files found" and stops earlier.
 	it("should load luau config and find test files", () => {
 		expect.assertions(3);
@@ -35,7 +35,7 @@ describe("cli binary", () => {
 
 		expect(result.exitCode).toBe(2);
 		expect(result.stderr).not.toContain("No test files found");
-		expect(result.stderr).toContain("No backend available");
+		expect(result.stderr).toContain("Open Cloud credentials are required");
 	});
 
 	it("should load rbxts config and find test files", () => {
@@ -45,7 +45,7 @@ describe("cli binary", () => {
 
 		expect(result.exitCode).toBe(2);
 		expect(result.stderr).not.toContain("No test files found");
-		expect(result.stderr).toContain("No backend available");
+		expect(result.stderr).toContain("Open Cloud credentials are required");
 	});
 
 	it("should short-circuit --typecheckOnly --passWithNoTests before backend resolution", () => {
@@ -53,13 +53,13 @@ describe("cli binary", () => {
 
 		// `--typecheckOnly` is pure-local tsgo: with no Type Tests to run and
 		// `--passWithNoTests`, the run exits 0 WITHOUT resolving a backend. The
-		// absence of "No backend available" proves the type-only short-circuit
+		// absence of the credential error proves the type-only short-circuit
 		// fired ahead of any Open Cloud / Studio resolution.
 		const result = runCli(["--typecheckOnly", "--passWithNoTests"], RBXTS_FIXTURE);
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).not.toContain("No test files found");
-		expect(result.stderr).not.toContain("No backend available");
+		expect(result.stderr).not.toContain("Open Cloud credentials are required");
 	});
 
 	// Which argv `parseArgs` accepts and rejects is settled in `cli.spec.ts`

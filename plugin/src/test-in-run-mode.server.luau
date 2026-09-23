@@ -10,8 +10,10 @@ end
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `STUDIO_CLI_PROTOCOL_VERSION` in
--- `src/backends/studio-cli.ts`. v7 adds the `runnerTimeoutMs` argv the runner
--- bounds a project's run with and strips before calling Jest, so a v6 plugin
+-- `src/backends/studio-cli.ts`. v8 adds the `pluginKey` the run asks for, so a
+-- copy built for another key stands down; v7 adds the `runnerTimeoutMs` argv
+-- the runner bounds a project's run with and strips before calling Jest, so a
+-- v6 plugin
 -- handed one runs unbounded and passes the key on to Jest; v6 adds the plugin's
 -- own release version to the result and the claim below; v5 added the optional
 -- `vmParallel` count: a
@@ -22,7 +24,7 @@ end
 -- the version the CLI sent and echoes its own in `EndTest`, so the CLI
 -- surfaces a clean error against a mismatched plugin rather than running with
 -- stale runtime semantics.
-local PROTOCOL_VERSION = 7
+local PROTOCOL_VERSION = 8
 
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
 -- tree served straight out of source control. Diagnostic only — see the same
@@ -30,6 +32,13 @@ local PROTOCOL_VERSION = 7
 local versionOk, PluginVersion = pcall(require, script.Parent:FindFirstChild("version") :: any)
 if not versionOk or typeof(PluginVersion) ~= "string" then
 	PluginVersion = "unknown"
+end
+
+-- The Plugin Key `studio-cli` stamps into its Managed Plugin. A Manual Plugin
+-- carries none, so it never matches a run that asks for one.
+local keyOk, PluginKey = pcall(require, script.Parent:FindFirstChild("pluginKey") :: any)
+if not keyOk or typeof(PluginKey) ~= "string" then
+	PluginKey = nil
 end
 
 -- Set by whichever installed copy of the plugin can serve this run. Studio
@@ -98,7 +107,25 @@ end
 local clientVersion = if typeof(testArgs.protocolVersion) == "number"
 	then testArgs.protocolVersion
 	else nil
+local requestedKey = if typeof(testArgs.pluginKey) == "string" then testArgs.pluginKey else nil
+local mismatchMessage: string? = nil
 if clientVersion ~= PROTOCOL_VERSION then
+	mismatchMessage = "Studio plugin protocol version mismatch — plugin v"
+		.. tostring(PROTOCOL_VERSION)
+		.. " ("
+		.. PluginVersion
+		.. "), CLI v"
+		.. tostring(clientVersion)
+		.. ". Update the jest-roblox Studio plugin to match the CLI."
+elseif requestedKey ~= nil and requestedKey ~= PluginKey then
+	mismatchMessage = "Studio plugin key mismatch — the CLI asked for plugin "
+		.. requestedKey
+		.. ", but no copy with that key answered (this copy: "
+		.. (PluginKey or ("manually installed " .. PluginVersion))
+		.. "). The CLI's managed plugin did not load."
+end
+
+if mismatchMessage ~= nil then
 	-- Defer to any installed copy that can serve this run before reporting.
 	-- Reporting straight away is what makes a stale copy fatal to a Studio
 	-- that also has a working one: `EndTest` is first-past-the-post, and
@@ -112,15 +139,7 @@ if clientVersion ~= PROTOCOL_VERSION then
 		task.wait(0.05)
 	until os.clock() >= deadline
 
-	endWithError(
-		"Studio plugin protocol version mismatch — plugin v"
-			.. tostring(PROTOCOL_VERSION)
-			.. " ("
-			.. PluginVersion
-			.. "), CLI v"
-			.. tostring(clientVersion)
-			.. ". Update the jest-roblox Studio plugin to match the CLI."
-	)
+	endWithError(mismatchMessage)
 	return
 end
 

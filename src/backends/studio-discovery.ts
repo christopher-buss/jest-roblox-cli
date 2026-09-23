@@ -1,5 +1,6 @@
 // cspell:ignore LOCALAPPDATA mtimes
 import type { Dirent } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import process from "node:process";
 
@@ -28,12 +29,35 @@ export interface StudioDiscoveryOptions {
 	platform?: NodeJS.Platform | undefined;
 }
 
+const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
+
 const WINDOWS_STUDIO_EXECUTABLE = "RobloxStudioBeta.exe";
 const MACOS_STUDIO_EXECUTABLE = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta";
 
 const NOT_FOUND_HINT =
 	"Install Roblox Studio, or set studioPath (config key, --studioPath, or " +
 	"JEST_ROBLOX_STUDIO_PATH).";
+
+export interface PluginsDirectoryOptions {
+	/** Defaults to `process.env`. */
+	environment?: NodeJS.ProcessEnv | undefined;
+	/** Defaults to `os.homedir()`. */
+	homeDirectory?: string | undefined;
+	/** Defaults to `process.platform`. */
+	platform?: NodeJS.Platform | undefined;
+}
+
+/**
+ * The Studio path the user named: the `studioPath` setting, else
+ * `JEST_ROBLOX_STUDIO_PATH`. An empty variable names nothing.
+ */
+export function configuredStudioPath(
+	studioPath: string | undefined,
+	environment: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+	const fromEnvironment = environment[STUDIO_PATH_ENV];
+	return studioPath ?? (fromEnvironment === "" ? undefined : fromEnvironment);
+}
 
 /**
  * Resolve the Roblox Studio executable studio-cli should launch. An explicit
@@ -75,6 +99,27 @@ export function discoverStudioPath({
 		`studio-cli backend has no Studio auto-discovery for platform "${platform}". ` +
 			"Set studioPath to point at your Roblox Studio executable.",
 	);
+}
+
+/**
+ * The folder Studio loads local plugins from, or undefined where this OS has
+ * no known one.
+ */
+export function discoverPluginsDirectory({
+	environment = process.env,
+	homeDirectory = os.homedir(),
+	platform = process.platform,
+}: PluginsDirectoryOptions = {}): string | undefined {
+	const localAppData = environment["LOCALAPPDATA"];
+	if (platform === "win32" && localAppData !== undefined && localAppData !== "") {
+		return normalizeWindowsPath(path.join(localAppData, "Roblox", "Plugins"));
+	}
+
+	if (platform === "darwin") {
+		return path.posix.join(homeDirectory, "Documents", "Roblox", "Plugins");
+	}
+
+	return undefined;
 }
 
 function notFound(): Error {

@@ -85,9 +85,7 @@ export interface BackendOptions {
 	/**
 	 * Open-Cloud-only: number of concurrent Open Cloud Luau execution sessions
 	 * to fire. Unset or 1 means one session carrying all jobs. `"auto"`
-	 * resolves to min(jobs.length, 3). studio-cli takes unset, 1, or `"auto"`
-	 * and rejects an explicit count above 1; the attached `studio` backend
-	 * ignores the field entirely.
+	 * resolves to min(jobs.length, 3). Both Studio backends ignore it.
 	 */
 	parallel?: ParallelOption;
 	/**
@@ -192,13 +190,13 @@ export interface BackendResult {
 	timing: BackendTiming;
 }
 
+export type BackendKind = "open-cloud" | "studio" | "studio-cli";
+
 export interface Backend {
 	closeAsync?(): Promise<void> | void;
 	readonly kind: BackendKind;
 	runTestsAsync(options: BackendOptions): Promise<BackendResult>;
 }
-
-type BackendKind = "open-cloud" | "studio" | "studio-cli";
 
 /**
  * Whether this is a workspace (multi-package) run. Workspace jobs each carry
@@ -220,14 +218,4 @@ export function isWorkspaceRun(jobs: ReadonlyArray<ProjectJob>): boolean {
  */
 export function isShardedParallel(parallel: ParallelOption): parallel is "auto" | number {
 	return parallel === "auto" || (typeof parallel === "number" && parallel > 1);
-}
-
-/**
- * A demand for more than one session, spelled out by hand. `"auto"` is not
- * one: it asks the backend for the count the run needs, and a backend driving
- * a single Studio instance needs 1 — so auto runs serially rather than
- * conflicting with it. This is the predicate every serial-backend guard reads.
- */
-export function isExplicitMultiShard(parallel: ParallelOption): parallel is number {
-	return typeof parallel === "number" && parallel > 1;
 }

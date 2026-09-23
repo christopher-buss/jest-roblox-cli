@@ -2,7 +2,6 @@ import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-ru
 
 import assert from "node:assert";
 
-import { isExplicitMultiShard } from "../backends/interface.ts";
 import type { Backend, CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
@@ -102,30 +101,15 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
  * Checks the resolved WorkspaceRunOptions for invariants that depend on the
  * fully resolved values (CLI > per-package consensus > defaults).
  *
- * Every backend now runs workspace (studio-cli launches its own mega-place;
- * the attached `studio` backend runs against an open Studio for debugging),
- * so what is left are the two things a Studio transport cannot do: shard (it
- * drives one Studio instance — see {@link isExplicitMultiShard} for why
- * `"auto"` is not a conflict), and carry a bail back to the CLI.
+ * Every backend runs workspace (studio-cli launches its own mega-place; the
+ * attached `studio` backend runs against an open Studio for debugging), so
+ * what is left is the one thing a Studio transport cannot do: carry a bail
+ * back to the CLI.
  */
 export function assertWorkspaceRunOptions({
 	backend,
 	bail,
-	parallel,
 }: WorkspaceRunOptions): WorkspaceValidationResult {
-	if (backend === "studio-cli" && isExplicitMultiShard(parallel)) {
-		return {
-			exitCode: 2,
-			// Source-agnostic: the count reaching here may come from a package
-			// config rather than a flag, so "drop --parallel" would name a
-			// remedy the user does not have.
-			message:
-				"Error: studio-cli backend is serial (one Studio instance) and cannot " +
-				'shard; set parallel to 1 or "auto" for a --workspace run.\n',
-			ok: false,
-		};
-	}
-
 	// Bail lives in the staged materializer's entry loop, and travels back on
 	// the Open Cloud task envelope (between parallel tasks, through a
 	// MemoryStore signal map). The Studio plugin drives that same loop but its
@@ -246,9 +230,8 @@ function hasNonEmptyPackages(packages: string): boolean {
 /**
  * Whether this backend drives a Studio process rather than Open Cloud.
  *
- * Named as a deny-list on purpose: `"auto"` is the default and workspace mode
- * resolves it to Open Cloud without probing, so asking `!== "open-cloud"` would
- * catch the default invocation.
+ * Named as a deny-list on purpose: a caller may still hold `"auto"`, which
+ * `!== "open-cloud"` would count as Studio.
  */
 function isStudioBackend(backend: Backend): boolean {
 	return backend === "studio" || backend === "studio-cli";

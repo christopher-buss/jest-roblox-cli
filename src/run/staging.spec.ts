@@ -3,6 +3,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { describe, expect, it, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import type { BackendKind } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "../config/schema.ts";
 import type { PrepareCoverageResult } from "../coverage-pipeline/prepare.ts";
@@ -51,8 +52,14 @@ function makeSeams(): RunSeams {
 	};
 }
 
-async function stageAsync(rootConfig: ResolvedConfig, seams: RunSeams, fileSystem: FileSystem) {
+async function stageAsync(
+	rootConfig: ResolvedConfig,
+	seams: RunSeams,
+	fileSystem: FileSystem,
+	backendKind: BackendKind = "open-cloud",
+) {
 	return stageRunAsync({
+		backendKind,
 		fileSystem,
 		projects: [makeProject()],
 		rootConfig,
@@ -109,11 +116,7 @@ describe(stageRunAsync, () => {
 		const seams = makeSeams();
 
 		await stageAsync(makeConfig({ collectCoverage: true }), seams, fileSystem);
-		await stageAsync(
-			makeConfig({ backend: "studio-cli", collectCoverage: true }),
-			seams,
-			fileSystem,
-		);
+		await stageAsync(makeConfig({ collectCoverage: true }), seams, fileSystem, "studio-cli");
 
 		const [baked, unbaked] = vi.mocked(seams.prepareCoverage).mock.calls;
 

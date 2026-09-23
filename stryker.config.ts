@@ -1,6 +1,6 @@
 import { availableParallelism } from "node:os";
 
-import { type PartialStrykerOptions, sharedConfig } from "./stryker.shared.config.ts";
+import { type PartialStrykerOptions, scopedBreak, sharedConfig } from "./stryker.shared.config.ts";
 
 const CPU_SHARE = 0.75;
 const MAX_CONCURRENCY = 12;
@@ -22,10 +22,12 @@ export default {
 		"!src/**/__fixtures__/**",
 		"!src/sea-entry.ts",
 	],
-	// The gate compares the unrounded score.
+	// The gate compares the unrounded score. `scopedBreak` holds diff-mode runs
+	// to 100 regardless, so the floor covers existing debt and never the lines a
+	// change touches.
 	thresholds: {
 		...sharedConfig.thresholds,
-		break: 99.82,
+		break: scopedBreak(99.82),
 	},
 	timeoutMS: 10_000,
 	tsconfigFile: "tsconfig.json",

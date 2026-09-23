@@ -107,8 +107,8 @@ jest-roblox -t "should spawn"
 jest-roblox --testPathPattern player
 jest-roblox --testPathPattern="modifiers|define\\.spec|triggers"
 
-# Use a specific backend (default "auto" picks Studio if the plugin is
-# connected, else Open Cloud if credentials are set — see Backends below)
+# Use a specific backend (default "auto" picks studio-cli if Roblox Studio is
+# installed, else Open Cloud — see Backends below)
 jest-roblox --backend studio
 jest-roblox --backend studio-cli
 jest-roblox --backend open-cloud
@@ -166,7 +166,7 @@ per-package declarations error loudly.
 | `workspace.exclude`    | Globs (workspace-root-relative) naming package directories an enumerated run must skip; `--packages` overrides it                                                   | —             |
 | `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                 | —             |
 | `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                      | —             |
-| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). studio-cli is serial: it runs one session for any of unset, `1`, or `"auto"`                        | —             |
+| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). studio-cli ignores it and runs one session                                                          | —             |
 | `placeId`              | Open Cloud place ID                                                                                                                                                 | —             |
 | `port`                 | WebSocket port for Studio backend                                                                                                                                   | `3001`        |
 | `silent`               | Suppress console output                                                                                                                                             | `false`       |
@@ -492,14 +492,16 @@ Three ways to run tests, plus an auto-pick:
 
 ### Auto (default)
 
-`--backend auto` (the default) probes for a connected Studio plugin first. If a
-plugin matching this release answers, runs via Studio; otherwise falls back to
-Open Cloud — but only if credentials are available (see Open Cloud below). With
-no plugin and no credentials, the run errors instead of silently falling back.
+`--backend auto` (the default) runs via `studio-cli` when Roblox Studio is
+installed, and via Open Cloud otherwise (see Open Cloud below for the
+credentials it needs). Studio counts as installed when `studioPath` or
+`JEST_ROBLOX_STUDIO_PATH` is set, or when per-OS discovery finds it (see Studio
+CLI below).
 
-A plugin that connects but reports a different protocol version is an error
-rather than a fallback — see
-[Several plugins installed](#several-plugins-installed).
+The choice is made once, before the run. A `studio-cli` run that fails — Studio
+not logged in, the plugin missing — fails the run; it does not retry on Open
+Cloud. Auto never selects the attached `studio` backend: request it with
+`--backend studio`.
 
 ### Open Cloud (remote)
 
@@ -618,7 +620,7 @@ When no connection speaks it, the run stops before building a place and names
 every connection it found:
 
 ```text
-No compatible jest-roblox Studio plugin. This CLI speaks protocol v7, and the 2 plugin connection(s) on this port report:
+No compatible jest-roblox Studio plugin. This CLI speaks protocol v8, and the 2 plugin connection(s) on this port report:
   - JestRobloxRunner 0.3.18 (protocol v6)
   - a plugin that sent no handshake (it predates the handshake entirely)
 Install the JestRobloxRunner.rbxm shipped with jest-roblox 0.4.1, and remove the other copies from your Studio plugins folder.
@@ -627,28 +629,32 @@ Install the JestRobloxRunner.rbxm shipped with jest-roblox 0.4.1, and remove the
 This is an error even when Open Cloud credentials are set: a plugin that cannot
 serve the run is something to fix, not a reason to switch backend.
 
-`--backend studio-cli` cannot make this choice. It drives the plugin through Run
-mode rather than a socket, every installed copy gets its own runner, and
-`StudioTestService:EndTest` is first-past-the-post — a copy that refuses the
-version answers in milliseconds while the copy that can serve the run is still
-running your suite. Copies from this release onwards stand down for one that has
-claimed the run, but a copy predating it answers regardless. **Keep exactly one
-`JestRobloxRunner` in your plugins folder if you use `studio-cli`.**
+`--backend studio-cli` installs its own plugin and needs none of this; see
+below.
 
 ### Studio CLI (self-launched, local)
 
 `--backend studio-cli` owns the whole Studio lifecycle: it builds its own place,
 launches Roblox Studio headless via Studio's `--task RunScript` interface,
-drives the installed plugin's Run mode, reads the result from Studio's output
-log, and quits Studio. No API key, no upload, no pre-opened editor — you just
-need Studio installed (logged in) with the jest plugin. It spawns its own
-isolated Studio instance, so any editor you already have open is untouched.
+drives its plugin's Run mode, reads the result from Studio's output log, and
+quits Studio. No API key, no upload, no pre-opened editor — you just need Studio
+installed (logged in) and [rojo](https://rojo.space) on `PATH`. It spawns its
+own isolated Studio instance, so any editor you already have open is untouched.
 
-It is selected only when you ask for it explicitly — `auto` never launches a
-Studio process on its own. Studio is auto-discovered per-OS; override the
-executable with `studioPath` (config key), `--studioPath`, or
-`JEST_ROBLOX_STUDIO_PATH`. The backend is serial: `--parallel auto` resolves to
-one session, and an explicit `--parallel > 1` errors.
+You never install or update the plugin for `studio-cli`. Before each run the CLI
+checks the Studio plugins folder for the plugin built from its own source —
+`JestRobloxRunner.cli-<version>-<hash>.rbxm` — and builds it with rojo when it
+is missing. The file stays for later runs, so only the first run after an
+upgrade pays for the build. The CLI deletes its own files for other versions
+once they have gone unused for a day, and never touches a plugin you installed
+yourself. Each run asks for its own plugin by name, so any other copy in the
+folder stands down; a copy that predates the key check can still answer first,
+and the error then names the files to remove.
+
+`auto` selects it whenever Studio is installed. Studio is auto-discovered
+per-OS; override the executable with `studioPath` (config key), `--studioPath`,
+or `JEST_ROBLOX_STUDIO_PATH`. The backend is serial: it ignores `--parallel` and
+runs one session.
 
 Pass `--headed` to show the Studio window during the run instead of the default
 hidden one — useful for watching a slow run or a hang (Studio still self-quits
@@ -669,8 +675,8 @@ file reports **0%** and fails `coverageThreshold`).
 
 <!-- prettier-ignore -->
 > [!NOTE]
-> studio-cli is a local-developer convenience backend (it needs a logged-in
-> Studio and the installed plugin), not a CI path.
+> studio-cli needs a logged-in Studio. On a CI machine with Studio installed,
+> pass `--backend open-cloud` to keep CI on Open Cloud.
 
 ### Experimental: in-session VM parallelism
 
@@ -722,9 +728,8 @@ Run tests across multiple packages in a pnpm workspace in a single invocation.
 Works on every backend: Open Cloud (fans packages across parallel tasks),
 `studio-cli` (one self-launched Studio process drives every package, no
 sharding), and the attached `studio` backend (runs the workspace inside an open
-Studio — handy for debugging the flow). `studio-cli` is serial, so
-`--parallel auto` runs one session and an explicit count above 1 is rejected
-with `--workspace`.
+Studio — handy for debugging the flow). `studio-cli` is serial, so it ignores
+`--parallel` and runs one session.
 
 <!-- prettier-ignore -->
 > [!NOTE]
@@ -858,7 +863,9 @@ package in every bucket and reports the rest as not run, but a sibling bucket
 runs its whole share out first.
 
 Workspace mode and Open Cloud only. `--bail` without `--workspace`, or with a
-Studio backend, is rejected rather than quietly running the whole batch.
+Studio backend, is rejected rather than quietly running the whole batch. Where
+Studio is installed, `auto` selects studio-cli, so pass `--backend open-cloud`
+with `--bail`.
 
 This is not Jest's `bail`. `test.bail` in your config still counts failing test
 suites inside a single package and is passed through to Jest untouched.
@@ -978,7 +985,7 @@ project) under `.jest-roblox/output/`.
 | `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                |
 | `--binary-input`                 | Send the run's code to each task as a binary input (the default; see [Code as a binary input](#code-as-a-binary-input))                                   |
 | `--no-binary-input`              | Build the run's code into the place instead of sending it to each task (see [Code as a binary input](#code-as-a-binary-input))                            |
-| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one session on studio-cli                                                                   |
+| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); ignored on studio-cli                                                                       |
 | `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism)) |
 | `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                           |
 | `--setupFiles <path>`            | Script to run before env (repeatable)                                                                                                                     |

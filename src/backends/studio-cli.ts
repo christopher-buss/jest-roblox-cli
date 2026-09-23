@@ -3,7 +3,6 @@ import type buffer from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import * as path from "node:path";
-import process from "node:process";
 import type { WebSocket, WebSocketServer } from "ws";
 
 import { resolvePlaceFilePath } from "../config/schema.ts";
@@ -32,7 +31,9 @@ import {
 	type RawBackendEntry,
 } from "./interface.ts";
 import { buildRunPayload, type RunPayload, type RunPayloadRequest } from "./plugin-payload.ts";
-import { discoverStudioPath } from "./studio-discovery.ts";
+import type { ManagedPluginInstall } from "./runner-plugin.ts";
+import { installRunnerPluginAsync } from "./runner-plugin.ts";
+import { configuredStudioPath, discoverStudioPath } from "./studio-discovery.ts";
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
@@ -41,7 +42,6 @@ const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
 /**
  * Lowest-precedence Studio-executable override (below config key / CLI flag).
  */
-const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
 
 /**
  * Plugin/CLI protocol version, carried in the Run-mode payload. Matches
@@ -51,9 +51,14 @@ const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
  * omits the echo (a stale runner predating the handshake) or returns a
  * different number, surfacing a clean "update the plugin" error.
  */
-export const STUDIO_CLI_PROTOCOL_VERSION = 7;
+export const STUDIO_CLI_PROTOCOL_VERSION = 8;
 
 type StudioCliPayload = RunPayload & {
+	/**
+	 * The Managed Plugin that must serve the run; absent when none was
+	 * installed.
+	 */
+	pluginKey?: string;
 	protocolVersion: typeof STUDIO_CLI_PROTOCOL_VERSION;
 	test: true;
 };
@@ -203,6 +208,13 @@ export interface StudioCliOptions {
 	 * read from config. Defaults to false (hidden window).
 	 */
 	headed?: boolean | undefined;
+	/**
+	 * Puts the Managed Plugin in the Studio plugins folder before launch, given
+	 * the run's scratch directory. Resolves undefined where none was installed.
+	 */
+	installPluginAsync?:
+		| ((workDirectory: string) => Promise<ManagedPluginInstall | undefined>)
+		| undefined;
 	/** Process launcher seam; defaults to the real {@link spawnStudio}. */
 	launch?: StudioCliLauncher | undefined;
 	/** Explicit Studio executable path (override from config / CLI / env). */
@@ -246,6 +258,7 @@ interface RunPlace {
 
 interface StudioArgsOptions extends RunPayloadRequest, RunPlace {
 	fileSystem: FileSystem;
+	pluginKey: string | undefined;
 	port: number;
 	requestId: string;
 }
@@ -285,9 +298,12 @@ interface StudioCliDispatch {
 	deadline: ResultDeadline;
 	jobs: Array<ProjectJob>;
 	place: RunPlace;
+	plugin: ManagedPluginInstall | undefined;
 	progress: RunProgress;
 	runRequest: { runBudgetMs: number; vmParallel: ParallelOption };
 	server: WebSocketServer;
+	/** The Studio executable the run launches. */
+	studioPath: string;
 }
 
 /**
@@ -312,6 +328,9 @@ export class StudioCliBackend implements Backend {
 	private readonly fileSystem: FileSystem;
 	private readonly gracefulShutdownTimeout: number;
 	private readonly headed: boolean;
+	private readonly installPluginAsync: (
+		workDirectory: string,
+	) => Promise<ManagedPluginInstall | undefined>;
 	private readonly launch: StudioCliLauncher;
 	private readonly studioPath: string | undefined;
 	private readonly timeout: number;
@@ -327,13 +346,22 @@ export class StudioCliBackend implements Backend {
 			((override) => {
 				return discoverStudioPath({
 					fileSystem,
-					override: override ?? process.env[STUDIO_PATH_ENV],
+					override: configuredStudioPath(override),
 				});
 			});
 		this.childProcess = options.childProcess ?? nodeChildProcessRunner;
 		this.fileSystem = fileSystem;
 		this.gracefulShutdownTimeout = options.gracefulShutdownTimeout ?? GRACEFUL_SHUTDOWN_CAP_MS;
 		this.headed = options.headed ?? false;
+		this.installPluginAsync =
+			options.installPluginAsync ??
+			(async (workDirectory) => {
+				return installRunnerPluginAsync({
+					childProcess: this.childProcess,
+					fileSystem,
+					workDirectory,
+				});
+			});
 		this.launch = options.launch ?? spawnStudio;
 		this.studioPath = options.studioPath;
 		this.timeout = options.timeout ?? DEFAULT_STUDIO_CLI_TIMEOUT;
@@ -342,13 +370,16 @@ export class StudioCliBackend implements Backend {
 
 	public async runTestsAsync({
 		jobs,
-		parallel,
 		progress = NOOP_RUN_PROGRESS,
 		vmParallel,
 		workStealing,
 	}: BackendOptions): Promise<BackendResult> {
-		assertSerialJobs({ jobs, parallel, workStealing });
+		assertSerialJobs({ jobs, workStealing });
 		const place = await this.prepareRunPlaceAsync(jobs);
+		// Found before the plugin is installed: without Studio there is no run
+		// to install it for.
+		const studioPath = this.discover(this.studioPath);
+		const plugin = await this.installPluginAsync(place.workDirectory);
 		const server = this.webSocketServerFactory({ host: "127.0.0.1", port: 0 });
 		const session: StudioCliSession = { wasGracefulTeardownStarted: false };
 		try {
@@ -356,9 +387,11 @@ export class StudioCliBackend implements Backend {
 				deadline: this.deadlineFor(place.workDirectory),
 				jobs,
 				place,
+				plugin,
 				progress,
 				runRequest: { runBudgetMs: this.timeout, vmParallel },
 				server,
+				studioPath,
 			});
 		} finally {
 			if (!session.wasGracefulTeardownStarted) {
@@ -408,7 +441,16 @@ export class StudioCliBackend implements Backend {
 	 */
 	private async dispatchRunAsync(
 		session: StudioCliSession,
-		{ deadline, jobs, place, progress, runRequest, server }: StudioCliDispatch,
+		{
+			deadline,
+			jobs,
+			place,
+			plugin,
+			progress,
+			runRequest,
+			server,
+			studioPath,
+		}: StudioCliDispatch,
 	): Promise<BackendResult> {
 		const requestId = randomUUID();
 		const args = buildStudioArgs({
@@ -416,6 +458,7 @@ export class StudioCliBackend implements Backend {
 			...runRequest,
 			fileSystem: this.fileSystem,
 			jobs,
+			pluginKey: plugin?.key,
 			port: await serverPortAsync(server),
 			requestId,
 		});
@@ -423,7 +466,7 @@ export class StudioCliBackend implements Backend {
 		// alike: only a backend knows when its own dispatch window starts.
 		const done = progress.begin("tests", describeProjectCount(jobs.length));
 		const executionStart = Date.now();
-		const child = this.launchStudio(args, place.placeFile);
+		const child = this.launchStudio(args, place.placeFile, studioPath);
 		session.child = child;
 		const message = await waitForResultAsync(
 			{ child, fileSystem: this.fileSystem, server },
@@ -435,20 +478,28 @@ export class StudioCliBackend implements Backend {
 		startGracefulTeardown(child, server, this.gracefulShutdownTimeout);
 		session.wasGracefulTeardownStarted = true;
 
-		return buildBackendResult(message, jobs, Date.now() - executionStart);
+		return buildBackendResult(message, {
+			executionMs: Date.now() - executionStart,
+			jobs,
+			manualPlugins: plugin?.manualPlugins ?? [],
+		});
 	}
 
 	/**
 	 * The Studio the run was pointed at, launched against the place it built.
 	 */
-	private launchStudio(args: Array<string>, placeFile: string): StudioCliProcess {
+	private launchStudio(
+		args: Array<string>,
+		placeFile: string,
+		studioPath: string,
+	): StudioCliProcess {
 		return this.launch({
 			args,
 			childProcess: this.childProcess,
 			fileSystem: this.fileSystem,
 			headed: this.headed,
 			placeFile,
-			studioPath: this.discover(this.studioPath),
+			studioPath,
 		});
 	}
 
@@ -501,31 +552,20 @@ export function createStudioCliBackend(options: StudioCliOptions = {}): StudioCl
 
 /**
  * studio-cli drives one Studio instance serially, so reject a request it
- * structurally cannot serve before anything is built or launched.
+ * structurally cannot serve before anything is built or launched. A
+ * `parallel` count is not such a request: the run is one session whatever
+ * it asks for.
  */
 function assertSerialJobs({
 	jobs,
-	parallel,
 	workStealing,
-}: Pick<BackendOptions, "jobs" | "parallel" | "workStealing">): void {
+}: Pick<BackendOptions, "jobs" | "workStealing">): void {
 	if (jobs.length === 0) {
 		throw new Error("StudioCliBackend requires at least one job");
 	}
 
 	if (workStealing === true) {
 		throw new Error("studio-cli backend is serial and does not support work-stealing");
-	}
-
-	// The backend is reachable without the CLI and config validators (it is
-	// exported), so it states what it can serve rather than which requests to
-	// refuse: one session, which `"auto"` also asks for. That rejects a count
-	// above 1 and equally the counts those validators would never pass on — 0,
-	// a negative, a fraction, NaN.
-	if (parallel !== undefined && parallel !== "auto" && parallel !== 1) {
-		throw new Error(
-			`studio-cli backend is serial (one Studio instance); --parallel ${String(parallel)} ` +
-				'is not supported (use 1 or "auto").',
-		);
 	}
 }
 
@@ -535,8 +575,12 @@ function studioOutputFile(workDirectory: string): string {
 	return path.join(workDirectory, OUTPUT_FILE);
 }
 
-function buildStudioCliPayload(request: RunPayloadRequest): StudioCliPayload {
+function buildStudioCliPayload(
+	request: RunPayloadRequest,
+	pluginKey: string | undefined,
+): StudioCliPayload {
 	return {
+		...(pluginKey === undefined ? {} : { pluginKey }),
 		protocolVersion: STUDIO_CLI_PROTOCOL_VERSION,
 		test: true,
 		...buildRunPayload(request),
@@ -612,6 +656,7 @@ function buildStudioArgs({
 	fileSystem,
 	jobs,
 	placeFile,
+	pluginKey,
 	port,
 	requestId,
 	runBudgetMs,
@@ -622,7 +667,11 @@ function buildStudioArgs({
 	const outputFile = studioOutputFile(workDirectory);
 	fileSystem.writeFileSync(
 		bootstrapFile,
-		buildBootstrap(buildStudioCliPayload({ jobs, runBudgetMs, vmParallel }), port, requestId),
+		buildBootstrap(
+			buildStudioCliPayload({ jobs, runBudgetMs, vmParallel }, pluginKey),
+			port,
+			requestId,
+		),
 	);
 
 	return [
@@ -645,7 +694,10 @@ function buildStudioArgs({
  * Either way the user must update the plugin. Mirrors the WebSocket backend's
  * `version_mismatch` path.
  */
-function assertProtocolMatch(actual: number | undefined, pluginVersion: string | undefined): void {
+function assertProtocolMatch(
+	{ pluginVersion, protocolVersion: actual }: ResultMessage,
+	manualPlugins: ReadonlyArray<string>,
+): void {
 	if (actual === STUDIO_CLI_PROTOCOL_VERSION) {
 		return;
 	}
@@ -655,10 +707,14 @@ function assertProtocolMatch(actual: number | undefined, pluginVersion: string |
 	// several copies can be installed at once, and a protocol number alone
 	// does not say which file to remove.
 	const release = pluginVersion === undefined ? "" : ` from jest-roblox ${pluginVersion}`;
+	// With a Managed Plugin installed, only a Manual Plugin can answer wrong.
+	const remedy =
+		manualPlugins.length === 0
+			? "Update the jest-roblox Studio plugin to match this CLI version."
+			: `Remove or update these copies in the Studio plugins folder: ${manualPlugins.join(", ")}.`;
 	throw new Error(
 		"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-			`(plugin${release} reported ${reported}, CLI expects v${STUDIO_CLI_PROTOCOL_VERSION.toString()}). ` +
-			"Update the jest-roblox Studio plugin to match this CLI version.",
+			`(plugin${release} reported ${reported}, CLI expects v${STUDIO_CLI_PROTOCOL_VERSION.toString()}). ${remedy}`,
 	);
 }
 
@@ -672,11 +728,14 @@ function assertProtocolMatch(actual: number | undefined, pluginVersion: string |
  */
 function buildBackendResult(
 	message: ResultMessage,
-	jobs: Array<ProjectJob>,
-	executionMs: number,
+	{
+		executionMs,
+		jobs,
+		manualPlugins,
+	}: { executionMs: number; jobs: Array<ProjectJob>; manualPlugins: ReadonlyArray<string> },
 ): BackendResult {
 	const { entries, gameOutputScope } = decodeEnvelope(message.jestOutput);
-	assertProtocolMatch(message.protocolVersion, message.pluginVersion);
+	assertProtocolMatch(message, manualPlugins);
 	if (entries.length !== jobs.length) {
 		throw new Error(
 			`studio-cli backend returned ${entries.length.toString()} entries but request had ${jobs.length.toString()} jobs`,

@@ -152,7 +152,7 @@ function makeExecuteResult(overrides: Partial<ExecuteResult> = {}): ExecuteResul
 	};
 }
 
-function makeBackend(kind: "open-cloud" | "studio" = "studio"): Backend {
+function makeBackend(kind: Backend["kind"] = "studio"): Backend {
 	return {
 		closeAsync: vi.fn<NonNullable<Backend["closeAsync"]>>(),
 		kind,
@@ -1111,7 +1111,7 @@ describe(runMultiProjectAsync, () => {
 		);
 	});
 
-	it("should NOT bake stubs into the coverage place for the studio-cli backend", async () => {
+	it("should NOT bake stubs into the coverage place when the run resolves studio-cli", async () => {
 		// studio-cli drives the plugin's Run-mode runner, which injects
 		// `jest.config` ModuleScripts from the payload at runtime. Baking them
 		// into the instrumented place too would make the runner collide with an
@@ -1120,10 +1120,12 @@ describe(runMultiProjectAsync, () => {
 		// runtime injection be the sole config source.
 		expect.assertions(2);
 
+		// Auto, so the resolved backend rather than the config decides.
 		const { config, fileSystem, volume } = setupDefaults({
-			backend: "studio-cli",
+			backend: "auto",
 			collectCoverage: true,
 		});
+		mocks.resolveBackend.mockResolvedValue(makeBackend("studio-cli"));
 		mocks.prepareCoverage.mockImplementation(async (_config, options) => {
 			// The absent bake *is* the contract: no hook, no stub in the place.
 			expect(options!.bake).toBeUndefined();

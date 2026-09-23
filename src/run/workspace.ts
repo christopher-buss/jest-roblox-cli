@@ -2,6 +2,8 @@ import assert from "node:assert";
 import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
+import type { StudioInstalledCheck } from "../backends/auto.ts";
+import { isStudioDiscoverable, resolveAutoBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/open-cloud.ts";
 import { createStudioCliBackend } from "../backends/studio-cli.ts";
@@ -57,6 +59,7 @@ export interface WorkspaceModeDependencies {
 	aggregateCoverage?: typeof aggregateWorkspaceCoverage;
 	childProcess?: ChildProcessRunner;
 	fileSystem?: FileSystem;
+	isStudioInstalled?: StudioInstalledCheck;
 	loadPackageConfig?: typeof loadRawConfig;
 	openCloudBackend?: typeof createOpenCloudBackend;
 	runTypecheck?: RunTypecheck;
@@ -71,6 +74,7 @@ const NODE_DEPENDENCIES: ResolvedDependencies = {
 	aggregateCoverage: aggregateWorkspaceCoverage,
 	childProcess: nodeChildProcessRunner,
 	fileSystem: nodeFileSystem,
+	isStudioInstalled: isStudioDiscoverable,
 	loadPackageConfig: loadRawConfig,
 	openCloudBackend: createOpenCloudBackend,
 	runTypecheck: runTypecheckAsync,
@@ -183,6 +187,19 @@ function bail(validationExitCode: 2, validationMessage?: string): WorkspaceRunRe
 	return validationMessage === undefined ? result : { ...result, validationMessage };
 }
 
+// A typecheck-only run dispatches nothing, so it has no backend to name.
+function resolveRunBackend(
+	cli: CliOptions,
+	runOptions: WorkspaceRunOptions,
+	isStudioInstalled: StudioInstalledCheck,
+): WorkspaceRunOptions {
+	if (cli.typecheckOnly === true) {
+		return runOptions;
+	}
+
+	return { ...runOptions, backend: resolveAutoBackend(runOptions, isStudioInstalled) };
+}
+
 // Load every package's raw config, fold them into the consensus-resolved
 // WorkspaceRunOptions, and check the resolved-value invariants. A config that
 // fails to load and a consensus conflict both surface as the same validation
@@ -190,12 +207,14 @@ function bail(validationExitCode: 2, validationMessage?: string): WorkspaceRunRe
 async function resolveWorkspaceOptionsAsync({
 	cli,
 	fileSystem,
+	isStudioInstalled,
 	loadPackageConfig,
 	packageInfos,
 	workspaceRoot,
 }: {
 	cli: CliOptions;
 	fileSystem: FileSystem;
+	isStudioInstalled: StudioInstalledCheck;
 	loadPackageConfig: typeof loadRawConfig;
 	packageInfos: Array<PackageInfo>;
 	workspaceRoot: string;
@@ -211,7 +230,11 @@ async function resolveWorkspaceOptionsAsync({
 				};
 			}),
 		);
-		const runOptions = buildWorkspaceRunOptions({ cli, perPackageConfigs, workspaceRoot });
+		const runOptions = resolveRunBackend(
+			cli,
+			buildWorkspaceRunOptions({ cli, perPackageConfigs, workspaceRoot }),
+			isStudioInstalled,
+		);
 		const assertion = assertWorkspaceRunOptions(runOptions);
 		if (!assertion.ok) {
 			return { error: { exitCode: assertion.exitCode, message: assertion.message } };
@@ -259,7 +282,7 @@ function resolveOpenCloudBackendFor(
 // its own Studio against the synthesized mega-place the workspace runner builds;
 // the attached `studio` backend runs the workspace against a developer's open
 // Studio (debug/introspection). Both bypass the credential path entirely; only
-// open-cloud (and `auto`, which never probes in workspace mode) resolves them.
+// open-cloud resolves them.
 function resolveWorkspaceBackend(
 	cli: CliOptions,
 	runOptions: WorkspaceRunOptions,
@@ -600,6 +623,7 @@ async function runSelectedPackagesAsync({
 	const optionsResolution = await resolveWorkspaceOptionsAsync({
 		cli,
 		fileSystem: dependencies.fileSystem,
+		isStudioInstalled: dependencies.isStudioInstalled,
 		loadPackageConfig: dependencies.loadPackageConfig,
 		packageInfos,
 		workspaceRoot,

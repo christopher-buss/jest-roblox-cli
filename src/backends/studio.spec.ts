@@ -4,9 +4,9 @@ import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import type { MockWebSocketServer } from "../../test/mocks/mock-web-socket-server.ts";
 import {
 	getLastCreatedServer,
-	MockWebSocketServer,
 	mockWebSocketServerFactory as webSocketServerFactory,
 } from "../../test/mocks/mock-web-socket-server.ts";
 import { MockWebSocket } from "../../test/mocks/mock-web-socket.ts";
@@ -33,7 +33,7 @@ const pluginRequest = type({
 
 // The protocol this CLI speaks, pinned here on purpose: the spec asserts the
 // wire, so a bump has to be made deliberately in both places.
-const PROTOCOL_VERSION = 7;
+const PROTOCOL_VERSION = 8;
 
 /**
  * Connect a plugin that announces a protocol the CLI can use.
@@ -745,48 +745,6 @@ describe(StudioBackend, () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should use a pre-connected socket without waiting for a new connection", async () => {
-		expect.assertions(2);
-
-		const wss = new MockWebSocketServer({ port: 0 });
-		const socket = new MockWebSocket();
-
-		socket.send.mockImplementation((data) => {
-			const message = pluginRequest.assert(JSON.parse(data));
-			queueMicrotask(() => {
-				socket.emit(
-					"message",
-					Buffer.from(
-						JSON.stringify({
-							gameOutput: JSON.stringify([]),
-							jestOutput: envelope([
-								{
-									jestOutput: successResult({
-										numPassedTests: 3,
-										numTotalTests: 3,
-									}),
-								},
-							]),
-							protocolVersion: PROTOCOL_VERSION,
-							requestId: message.requestId,
-							type: "results",
-						}),
-					),
-				);
-			});
-		});
-
-		const backend = new StudioBackend({
-			port: 0,
-			preConnected: fromPartial({ server: wss, socket }),
-		});
-
-		const { rawResults } = await backend.runTestsAsync(singleJobOptions);
-
-		expect(rawResults).toHaveLength(1);
-		expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":3');
-	});
-
 	it("should reject when the plugin sends a malformed message", async () => {
 		expect.assertions(1);
 
@@ -984,6 +942,20 @@ describe(StudioBackend, () => {
 		expect(wss.close).toHaveBeenCalledOnce();
 	});
 
+	it("should listen on a real server when given no server factory", async () => {
+		expect.assertions(1);
+
+		const backend = new StudioBackend({ port: 0, timeout: 1 });
+		onTestFinished(() => {
+			backend.closeAsync();
+		});
+
+		await expect(backend.runTestsAsync(singleJobOptions)).rejects.toThrowWithMessage(
+			Error,
+			"Timed out waiting for Studio plugin connection",
+		);
+	});
+
 	it("should terminate the connected plugin socket on close so the CLI can exit", async () => {
 		// Regression: close() only closed the server, leaving the plugin socket
 		// open. That open handle kept the Node event loop alive and hung the
@@ -1020,29 +992,5 @@ describe(StudioBackend, () => {
 		assert(caught instanceof Error);
 
 		expect(vi.getTimerCount()).toBe(0);
-	});
-
-	it("should tear down a pre-connected server on close when runTests never ran", () => {
-		// The auto probe can detect a Studio (preConnected) and then hit a
-		// zero-jobs / passWithNoTests flow that closes the backend without ever
-		// calling runTests — so `this.wss` is never assigned. close() must still
-		// terminate the probe's socket and server, or the live handle hangs the
-		// CLI.
-		expect.assertions(2);
-
-		const wss = new MockWebSocketServer({ port: 0 });
-		const socket = new MockWebSocket();
-		// Mirror ws: the probe's connection is tracked in server.clients.
-		connectPlugin(wss, socket);
-
-		const backend = new StudioBackend({
-			port: 0,
-			preConnected: fromPartial({ server: wss, socket }),
-		});
-
-		backend.closeAsync();
-
-		expect(socket.terminate).toHaveBeenCalledOnce();
-		expect(wss.close).toHaveBeenCalledOnce();
 	});
 });

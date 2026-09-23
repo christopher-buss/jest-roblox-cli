@@ -1,9 +1,11 @@
+// cspell:ignore LOCALAPPDATA
 import { fromAny, fromExact, fromPartial } from "@total-typescript/shoehorn";
 
 import { Buffer } from "node:buffer";
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
+import nodeProcess from "node:process";
 import { assert, describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
@@ -24,6 +26,7 @@ import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
+import type { ManagedPluginInstall } from "./runner-plugin.ts";
 import { createStudioCliBackend, StudioCliBackend } from "./studio-cli.ts";
 import type { StudioCliLauncher, StudioCliProcess } from "./studio-cli.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
@@ -50,7 +53,7 @@ interface ReplyOptions {
 
 // The protocol this CLI speaks, pinned here on purpose: the spec asserts the
 // wire, so a bump has to be made deliberately in both places.
-const PROTOCOL_VERSION = 7;
+const PROTOCOL_VERSION = 8;
 
 function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
 	return {
@@ -121,6 +124,10 @@ function readRequestId(fileSystem: FileSystem, args: Array<string>): string {
 	return /REQUEST_ID = \[=*\[(.+?)\]=*\]/.exec(bootstrap)![1]!;
 }
 
+function readRunScriptFile(args: Array<string>): string {
+	return args[args.indexOf("--runScriptFile") + 1]!;
+}
+
 function readOutputFile(args: Array<string>): string {
 	return args[args.indexOf("--outputFile") + 1]!;
 }
@@ -182,6 +189,21 @@ function fakeBuildPlace(): (options: BuildPlaceOptions) => Promise<BuildManifest
 	return async (options) => ({ hash: "hash", path: options.placeFile });
 }
 
+const PLUGIN_KEY = "1.2.3-abcdef01";
+
+type RojoExec = (
+	file: string,
+	args: Array<string>,
+	options: object,
+	done: (error: Error | null, stdout: string, stderr: string) => void,
+) => void;
+
+function installed(
+	manualPlugins: Array<string> = [],
+): () => Promise<ManagedPluginInstall | undefined> {
+	return async () => ({ key: PLUGIN_KEY, manualPlugins });
+}
+
 function makeBackend(
 	fileSystem: FileSystem,
 	launch: StudioCliLauncher,
@@ -191,6 +213,7 @@ function makeBackend(
 		buildPlaceAsync: fakeBuildPlace(),
 		discover: () => "C:/Studio/RobloxStudioBeta.exe",
 		fileSystem,
+		installPluginAsync: installed(),
 		launch,
 		webSocketServerFactory,
 		...extra,
@@ -329,6 +352,76 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap).toContain('"vmParallel":2');
 	});
 
+	it("should ask the run for the managed plugin's key", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		let bootstrap = "";
+		const { launch } = replyWith(fileSystem, {}, (request) => {
+			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		});
+
+		await makeBackend(fileSystem, launch).runTestsAsync(singleJob);
+
+		expect(bootstrap).toContain(`"pluginKey":"${PLUGIN_KEY}"`);
+	});
+
+	it("should ask for no key where no managed plugin was installed", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		let bootstrap = "";
+		const { launch } = replyWith(fileSystem, {}, (request) => {
+			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		});
+
+		await makeBackend(fileSystem, launch, {
+			installPluginAsync: async () => {},
+		}).runTestsAsync(singleJob);
+
+		expect(bootstrap).not.toContain("pluginKey");
+	});
+
+	it("should install no plugin when Studio cannot be found", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const installPluginAsync = vi.fn<() => Promise<undefined>>(async () => {});
+
+		await expect(
+			makeBackend(fileSystem, replyWith(fileSystem).launch, {
+				discover: () => {
+					throw new Error("Roblox Studio not found.");
+				},
+				installPluginAsync,
+			}).runTestsAsync(singleJob),
+		).rejects.toThrowWithMessage(Error, "Roblox Studio not found.");
+		expect(installPluginAsync).not.toHaveBeenCalled();
+	});
+
+	it("should install the managed plugin before Studio launches", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const order: Array<string> = [];
+		const { launch } = replyWith(fileSystem, {}, () => {
+			order.push("launch");
+		});
+
+		await makeBackend(fileSystem, launch, {
+			installPluginAsync: async (workDirectory) => {
+				order.push(`install ${normalizeWindowsPath(workDirectory)}`);
+			},
+		}).runTestsAsync(singleJob);
+
+		expect(order).toStrictEqual([
+			`install ${normalizeWindowsPath(path.resolve("/repo/.jest-roblox/studio-cli"))}`,
+			"launch",
+		]);
+	});
+
 	it("should tell the plugin the run budget it must finish inside", async () => {
 		expect.assertions(1);
 
@@ -387,6 +480,7 @@ describe(StudioCliBackend, () => {
 			buildPlaceAsync,
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
+			installPluginAsync: installed(),
 			launch: replyWith(fileSystem).launch,
 			webSocketServerFactory,
 		});
@@ -480,7 +574,7 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin reported no version, CLI expects v7). " +
+				"(plugin reported no version, CLI expects v8). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -495,7 +589,7 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin reported v2, CLI expects v7). " +
+				"(plugin reported v2, CLI expects v8). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -515,8 +609,46 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v7). " +
+				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v8). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
+		);
+	});
+
+	it("should name the manual plugins that can answer in place of the managed one", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		const backend = makeBackend(
+			fileSystem,
+			replyWith(fileSystem, { pluginVersion: "0.3.18", protocolVersion: 5 }).launch,
+			{ installPluginAsync: installed(["JestRobloxRunner.rbxm", "jest-old.rbxm"]) },
+		);
+
+		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
+			Error,
+			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
+				`(plugin from jest-roblox 0.3.18 reported v5, CLI expects v${PROTOCOL_VERSION.toString()}). ` +
+				"Remove or update these copies in the Studio plugins folder: " +
+				"JestRobloxRunner.rbxm, jest-old.rbxm.",
+		);
+	});
+
+	it("should ask for a plugin update when no managed plugin was installed", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		const backend = makeBackend(
+			fileSystem,
+			replyWith(fileSystem, { protocolVersion: 2 }).launch,
+			{
+				installPluginAsync: async () => {},
+			},
+		);
+
+		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(
+			"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
 
@@ -607,6 +739,7 @@ describe(StudioCliBackend, () => {
 			buildPlaceAsync: fakeBuildPlace(),
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
+			installPluginAsync: installed(),
 			launch: (request) => {
 				outputFile = readOutputFile(request.args);
 				return process;
@@ -646,6 +779,7 @@ describe(StudioCliBackend, () => {
 			buildPlaceAsync: fakeBuildPlace(),
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
+			installPluginAsync: installed(),
 			launch: (request) => {
 				outputFile = readOutputFile(request.args);
 				volume.writeFileSync(
@@ -794,6 +928,7 @@ describe(StudioCliBackend, () => {
 			buildPlaceAsync: fakeBuildPlace(),
 			discover,
 			fileSystem,
+			installPluginAsync: installed(),
 			launch: replyWith(fileSystem).launch,
 			studioPath: "C:/override/RobloxStudioBeta.exe",
 			webSocketServerFactory,
@@ -804,25 +939,17 @@ describe(StudioCliBackend, () => {
 		expect(discover).toHaveBeenCalledWith("C:/override/RobloxStudioBeta.exe");
 	});
 
-	it("should reject --parallel > 1 with a clear message", async () => {
+	it("should run one session whatever --parallel asks for", async () => {
 		expect.assertions(1);
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		await expect(
-			backendReplying(fileSystem).runTestsAsync({ jobs: [job("")], parallel: 2 }),
-		).rejects.toThrow(/--parallel 2 is not supported/);
-	});
+		const { rawResults } = await backendReplying(fileSystem).runTestsAsync({
+			jobs: [job("")],
+			parallel: 2,
+		});
 
-	// Reachable without the CLI and config validators that screen these out.
-	it("should reject a count no serial run can mean", async () => {
-		expect.assertions(1);
-
-		const { fileSystem } = createMemoryFileSystem();
-
-		await expect(
-			backendReplying(fileSystem).runTestsAsync({ jobs: [job("")], parallel: 0 }),
-		).rejects.toThrow(/--parallel 0 is not supported/);
+		expect(rawResults).toHaveLength(1);
 	});
 
 	it('should allow --parallel "auto", which asks for the count it needs', async () => {
@@ -904,6 +1031,7 @@ describe(StudioCliBackend, () => {
 			buildPlaceAsync,
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
+			installPluginAsync: installed(),
 			launch,
 			webSocketServerFactory,
 		});
@@ -987,6 +1115,7 @@ describe(StudioCliBackend, () => {
 		const backend = new StudioCliBackend({
 			buildPlaceAsync: fakeBuildPlace(),
 			fileSystem,
+			installPluginAsync: installed(),
 			launch,
 			studioPath: "C:/seeded/RobloxStudioBeta.exe",
 			webSocketServerFactory,
@@ -995,6 +1124,42 @@ describe(StudioCliBackend, () => {
 		await backend.runTestsAsync(singleJob);
 
 		expect(launchedPath).toBe("C:/seeded/RobloxStudioBeta.exe");
+	});
+
+	it("should build the managed plugin through the backend's own child process by default", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+		vi.stubEnv("LOCALAPPDATA", "/local");
+		const platform = Object.getOwnPropertyDescriptor(nodeProcess, "platform")!;
+		Object.defineProperty(nodeProcess, "platform", { value: "win32" });
+		onTestFinished(() => {
+			Object.defineProperty(nodeProcess, "platform", platform);
+		});
+		let bootstrap = "";
+		const execFile = vi.fn<RojoExec>((_file, args, _options, done) => {
+			fileSystem.writeFileSync(args[3]!, "rbxm-bytes");
+			done(null, "", "");
+		});
+		const backend = new StudioCliBackend({
+			buildPlaceAsync: fakeBuildPlace(),
+			childProcess: fromAny({ execFile }),
+			discover: () => "C:/Studio/RobloxStudioBeta.exe",
+			fileSystem,
+			launch: replyWith(fileSystem, {}, (request) => {
+				bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+			}).launch,
+			webSocketServerFactory,
+		});
+
+		await backend.runTestsAsync(singleJob);
+
+		const [pluginFile] = fileSystem.readdirSync("/local/Roblox/Plugins");
+
+		expect(pluginFile).toMatch(/^JestRobloxRunner\.cli-.+\.rbxm$/);
+		expect(bootstrap).toContain(
+			`"pluginKey":"${pluginFile!.slice("JestRobloxRunner.cli-".length, -".rbxm".length)}"`,
+		);
 	});
 
 	it("should fall back to JEST_ROBLOX_STUDIO_PATH when no override is given", async () => {
@@ -1011,6 +1176,7 @@ describe(StudioCliBackend, () => {
 		const backend = new StudioCliBackend({
 			buildPlaceAsync: fakeBuildPlace(),
 			fileSystem,
+			installPluginAsync: installed(),
 			launch,
 			webSocketServerFactory,
 		});
@@ -1060,6 +1226,7 @@ describe(StudioCliBackend, () => {
 				buildPlaceAsync: fakeBuildPlace(),
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
+				installPluginAsync: installed(),
 				launch,
 				webSocketServerFactory: pendingServerFactory(54_321),
 			});
@@ -1078,6 +1245,7 @@ describe(StudioCliBackend, () => {
 				buildPlaceAsync: fakeBuildPlace(),
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
+				installPluginAsync: installed(),
 				launch: replyWith(fileSystem).launch,
 				webSocketServerFactory: pendingServerFactory(undefined),
 			});
@@ -1115,6 +1283,7 @@ describe(StudioCliBackend, () => {
 				buildPlaceAsync,
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
+				installPluginAsync: installed(),
 				launch,
 				webSocketServerFactory,
 			});
@@ -1240,6 +1409,7 @@ describe(StudioCliBackend, () => {
 				childProcess,
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
+				installPluginAsync: installed(),
 				webSocketServerFactory,
 				...extra,
 			});

@@ -71,7 +71,7 @@ export function runCli(args: Array<string>, cwdOrOptions?: RunCliOptions | strin
 	const options = typeof cwdOrOptions === "string" ? { cwd: cwdOrOptions } : (cwdOrOptions ?? {});
 
 	try {
-		const stdout = execFileSync("node", [BIN, ...withIsolatedBackendPort(args)], {
+		const stdout = execFileSync("node", [BIN, ...withIsolatedBackend(args)], {
 			cwd: options.cwd,
 			encoding: "utf-8",
 			env: buildCliEnvironment(options.env),
@@ -151,7 +151,7 @@ async function execNodeAsync(
 	return new Promise((resolve) => {
 		execFile(
 			"node",
-			[entry, ...withIsolatedBackendPort(args)],
+			[entry, ...withIsolatedBackend(args)],
 			{
 				cwd: options.cwd,
 				encoding: "utf-8",
@@ -292,17 +292,13 @@ function absolutizeEscapingProjectPaths(sourceDirectory: string, sandboxDirector
 	writeFileSync(projectFile, `${JSON.stringify(raw, null, "\t")}\n`);
 }
 
-// The `auto` backend opens a WebSocket server on the configured port and waits
-// for a Studio plugin to connect. A developer's running Studio connects to the
-// fixed default port, so e2e runs flakily detect it and route to the Studio
-// backend (or hang). Binding the probe to an ephemeral port (0) — which no
-// Studio plugin knows to dial — makes `auto` deterministically fall through to
-// Open Cloud. Callers that need a real port pass their own `--port` and opt out.
-function withIsolatedBackendPort(args: Array<string>): Array<string> {
-	const hasPort = args.some(
-		(argument) => argument === "--port" || argument.startsWith("--port="),
+// Pins Open Cloud, so auto never launches a local Studio, unless the caller
+// names a `--backend`.
+function withIsolatedBackend(args: Array<string>): Array<string> {
+	const hasBackend = args.some(
+		(argument) => argument === "--backend" || argument.startsWith("--backend="),
 	);
-	return hasPort ? args : ["--port", "0", ...args];
+	return hasBackend ? args : ["--backend", "open-cloud", ...args];
 }
 
 /* eslint-disable unicorn/no-incorrect-template-string-interpolation -- Luau `{name}` interpolation syntax, not a JS placeholder; fixture text for a compiled Luau file, must stay byte-exact */

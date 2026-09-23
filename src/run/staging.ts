@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import process from "node:process";
 
+import type { BackendKind } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import type { ResolvedConfig } from "../config/schema.ts";
 import {
@@ -45,6 +46,7 @@ export interface BakedCoverage {
 }
 
 export interface StageRunOptions {
+	backendKind: BackendKind;
 	/**
 	 * Build a Harness Place, splitting the mounts inside these Code Roots into
 	 * a Code Bundle beside it. Set only for an Open Cloud run that resolved
@@ -182,6 +184,7 @@ export async function prepareBakedCoverageAsync({
  * one.
  */
 export async function stageRunAsync({
+	backendKind,
 	codeRoots,
 	fileSystem,
 	projects,
@@ -220,6 +223,7 @@ export async function stageRunAsync({
 		"prepareCoverage",
 		async () => {
 			return prepareMultiCoverageAsync({
+				backendKind,
 				cacheRoot,
 				codeRoots,
 				fileSystem,
@@ -246,6 +250,7 @@ function reportCleanedStubs(cleaned: Array<string>): void {
 }
 
 async function prepareMultiCoverageAsync({
+	backendKind,
 	cacheRoot,
 	codeRoots,
 	fileSystem,
@@ -261,9 +266,8 @@ async function prepareMultiCoverageAsync({
 	// studio-cli drives the plugin's Run-mode runner, which materializes
 	// `jest.config` ModuleScripts from the payload configs — baking here too
 	// would collide ("Structural collision …"). Every other backend needs the
-	// stubs baked in. `auto` never resolves to studio-cli, so the config flag is
-	// the exact, probe-free signal.
-	const isBakeStubs = rootConfig.backend !== "studio-cli";
+	// stubs baked in.
+	const isBakeStubs = backendKind !== "studio-cli";
 	const { artifacts, coverage } = await prepareBakedCoverageAsync({
 		bakeStubs: isBakeStubs,
 		cacheRoot,

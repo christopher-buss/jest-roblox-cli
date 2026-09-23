@@ -90,9 +90,8 @@ export class PluginConnectionPool {
 	/**
 	 * End an in-flight selection now, as though nothing had connected.
 	 *
-	 * For the caller that learns from elsewhere that the wait is pointless —
-	 * a server that failed to bind has no plugins to hear from — and would
-	 * otherwise leave the connect timer holding the event loop open.
+	 * For the caller that learns from elsewhere that the wait is pointless and
+	 * would otherwise leave the connect timer holding the event loop open.
 	 */
 	public abortSelection(): void {
 		this.abort?.();
@@ -163,10 +162,9 @@ export class PluginConnectionPool {
 			return;
 		}
 
-		// The two windows are sequential, not concurrent. Auto-detection probes
-		// for 500ms against a 750ms grace, so leaving the connect timer armed
-		// would let a stale socket arriving late in the probe close selection
-		// before a compatible one had its promised window to announce in.
+		// The two windows are sequential, not concurrent: a connect timer left
+		// armed could close selection before a compatible socket had its
+		// promised window to announce in.
 		clearTimeout(this.connectTimer);
 		this.connectTimer = undefined;
 

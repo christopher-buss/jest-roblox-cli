@@ -3,6 +3,27 @@
 
 import type { PartialStrykerOptions } from "@stryker-mutator/api/core";
 
+import process from "node:process";
+
+/** Every mutant in the changed lines must die, whatever the package's floor. */
+const SCOPED_BREAK = 100;
+
+/**
+ * The `break` threshold a run should enforce, given a package's own floor.
+ *
+ * A scoped run mutates only the lines a diff touched, so its denominator is
+ * those lines alone: a package sitting below 100 could otherwise pass its floor
+ * with a live survivor in the code it just changed. Holding scoped runs to 100
+ * makes the floor a statement about existing debt rather than a permit to add
+ * more.
+ *
+ * @param floor - The package's measured floor, for an unscoped run.
+ * @returns The threshold this run should break on.
+ */
+export function scopedBreak(floor: number): number {
+	return process.env["MUTATE_SCOPED"] === undefined ? floor : SCOPED_BREAK;
+}
+
 export const sharedConfig: PartialStrykerOptions = {
 	checkers: ["typescript"],
 	// The adaptive launcher owns the machine-wide 75% budget and overrides this

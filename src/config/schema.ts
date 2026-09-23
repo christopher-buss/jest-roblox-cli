@@ -353,12 +353,13 @@ export interface GlobalTestConfig extends SharedTestConfig {
  */
 export interface Config {
 	/**
-	 * Execution backend. `"auto"` probes for a running Studio then falls back
-	 * to Open Cloud; `"open-cloud"` uploads and runs via Roblox Open Cloud;
-	 * `"studio"` drives a locally running Studio; `"studio-cli"` launches its
-	 * own headless Studio via `--task RunScript` and quits it (pass `--headed`
-	 * to show the Studio window during the run). Default `"auto"`.
-	 * `"studio-cli"` is never selected by `"auto"` — request it explicitly.
+	 * Execution backend. `"auto"` selects `"studio-cli"` when Roblox Studio is
+	 * installed, otherwise `"open-cloud"`; `"open-cloud"` uploads and runs via
+	 * Roblox Open Cloud; `"studio"` drives a locally running Studio;
+	 * `"studio-cli"` launches its own headless Studio via `--task RunScript`
+	 * and quits it (pass `--headed` to show the Studio window during the run).
+	 * Default `"auto"`. `"studio"` is never selected by `"auto"` — request it
+	 * explicitly.
 	 */
 	backend?: Backend;
 	/**

@@ -7,12 +7,12 @@ import { createFixtureSandbox, runCliAsync } from "./helpers.ts";
 const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
 const RUN_TIMEOUT_MS = 180_000;
 
-// studio-cli launches a real Roblox Studio process and drives the installed
-// jest-roblox plugin's Run-mode runner. The Luau runner change (workspace
+// studio-cli launches a real Roblox Studio process and drives the Run-mode
+// runner of the Managed Plugin it installs. The Luau runner change (workspace
 // dispatch + protocol-version echo) cannot be unit-tested off-process, so it is
 // verified by this gated end-to-end smoke — the studio-cli analogue of the live
-// OCALE shards. It needs Studio installed, the developer logged in, and the
-// plugin installed, so it can't run in CI. It stays dormant unless a developer
+// OCALE shards. It needs Studio installed and the developer logged in, so
+// it can't run in CI. It stays dormant unless a developer
 // opts in with `JEST_ROBLOX_STUDIO_LIVE=1`; with the gate off, vitest reports it
 // skipped and the file runs on any machine without secrets or Studio.
 const IS_STUDIO_LIVE = process.env["JEST_ROBLOX_STUDIO_LIVE"] === "1";

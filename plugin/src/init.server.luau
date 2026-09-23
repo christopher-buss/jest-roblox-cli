@@ -13,7 +13,8 @@ local RECONNECT_DELAY = 0.1
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `PROTOCOL_VERSION` in the run-mode runner
--- beside this file. Bumped when the runtime contract changes — v7 adds the
+-- beside this file. Bumped when the runtime contract changes — v8 adds the
+-- run-mode runner's `pluginKey` check; v7 adds the
 -- `runnerTimeoutMs` argv the runner bounds a project's run with and strips
 -- before calling Jest, so a v6 plugin handed one runs unbounded and passes the
 -- key on to Jest; v6 adds the `hello` announcement below; v5 added the optional
@@ -24,7 +25,7 @@ local RECONNECT_DELAY = 0.1
 -- mismatched CLI versions with a `version_mismatch` response so users see a
 -- clear upgrade message rather than running with stale behaviour or an opaque
 -- timeout.
-local PROTOCOL_VERSION = 7
+local PROTOCOL_VERSION = 8
 
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
 -- tree served straight out of source control. Diagnostic only: the CLI selects

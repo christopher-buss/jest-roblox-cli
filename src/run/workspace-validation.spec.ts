@@ -225,21 +225,14 @@ describe(assertWorkspaceRunOptions, () => {
 		expect(result).toStrictEqual({ ok: true });
 	});
 
-	it("should reject studio-cli with --parallel > 1 (it is serial)", () => {
+	it("should accept studio-cli with --parallel > 1, which it ignores", () => {
 		expect.assertions(1);
 
 		const result = assertWorkspaceRunOptions(
 			makeRunOptions({ backend: "studio-cli", parallel: 2 }),
 		);
-		assert(!result.ok);
 
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message:
-				"Error: studio-cli backend is serial (one Studio instance) and cannot " +
-				'shard; set parallel to 1 or "auto" for a --workspace run.\n',
-			ok: false,
-		});
+		expect(result).toStrictEqual({ ok: true });
 	});
 
 	it("should accept studio-cli with --parallel auto", () => {

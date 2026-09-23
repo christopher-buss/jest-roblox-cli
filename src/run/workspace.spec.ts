@@ -185,6 +185,7 @@ function setupHappyPath(seed: Record<string, string> = seedWorkspace(ROOT, WORKS
 		aggregateCoverage,
 		childProcess,
 		fileSystem,
+		isStudioInstalled: () => false,
 		loadPackageConfig,
 		openCloudBackend,
 		runWorkspace,
@@ -295,19 +296,21 @@ describe(runWorkspaceModeAsync, () => {
 			expect(result.validationMessage).toContain("Widen `workspace.packages`");
 		});
 
-		it("should reject studio-cli with --parallel > 1", async () => {
-			expect.assertions(2);
+		it("should accept studio-cli with --parallel > 1", async () => {
+			expect.assertions(1);
 
-			const { dependencies } = setupHappyPath();
+			const harness = setupHappyPath();
+			runWorkspaceReturns(harness, [
+				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
+			]);
 			const result = await runWorkspaceModeAsync(
 				makeCli({ backend: "studio-cli", packages: "a", parallel: 2, workspace: true }),
 				undefined,
 				undefined,
-				dependencies,
+				harness.dependencies,
 			);
 
-			expect(result.validationExitCode).toBe(2);
-			expect(result.validationMessage).toContain("serial");
+			expect(result.validationExitCode).toBeUndefined();
 		});
 
 		it("should accept studio-cli with --parallel auto", async () => {
@@ -354,6 +357,44 @@ describe(runWorkspaceModeAsync, () => {
 	});
 
 	describe("backend resolution", () => {
+		it("should resolve auto to studio-cli when Studio is installed", async () => {
+			expect.assertions(2);
+
+			const harness = setupHappyPath();
+			vi.spyOn(process.stderr, "write").mockReturnValue(true);
+			runWorkspaceReturns(harness, [
+				{ displayName: "a", pkg: "a", result: makeExecuteResult() },
+			]);
+
+			await runWorkspaceModeAsync(
+				makeCli({ backend: "auto", packages: "a", workspace: true }),
+				undefined,
+				undefined,
+				{ ...harness.dependencies, isStudioInstalled: () => true },
+			);
+
+			expect(harness.studioCliBackend).toHaveBeenCalledOnce();
+			expect(harness.openCloudBackend).not.toHaveBeenCalled();
+		});
+
+		// Resolved before validation, so the Studio-only checks see the backend
+		// auto chose rather than `auto` itself.
+		it("should reject --bail when auto resolves to studio-cli", async () => {
+			expect.assertions(1);
+
+			const harness = setupHappyPath();
+			vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+			const result = await runWorkspaceModeAsync(
+				makeCli({ backend: "auto", bail: true, packages: "a", workspace: true }),
+				undefined,
+				undefined,
+				{ ...harness.dependencies, isStudioInstalled: () => true },
+			);
+
+			expect(result.validationExitCode).toBe(2);
+		});
+
 		it("should resolve the studio-cli backend without Open Cloud credentials", async () => {
 			expect.assertions(3);
 
@@ -776,6 +817,28 @@ describe(runWorkspaceModeAsync, () => {
 
 			expect(result.typecheckResult).toStrictEqual(typecheckResult);
 			expect(result.projectResults).toStrictEqual([]);
+		});
+
+		it("should not look for Studio under --typecheckOnly", async () => {
+			expect.assertions(1);
+
+			const harness = setupHappyPath();
+			runWorkspaceReturns(harness, [], makeJestResult());
+			const isStudioInstalled = vi.fn<() => boolean>(() => true);
+
+			await runWorkspaceModeAsync(
+				makeCli({
+					backend: "auto",
+					packages: "@halcyon/foo",
+					typecheckOnly: true,
+					workspace: true,
+				}),
+				undefined,
+				undefined,
+				{ ...harness.dependencies, isStudioInstalled },
+			);
+
+			expect(isStudioInstalled).not.toHaveBeenCalled();
 		});
 
 		it("should not create an Open Cloud backend under --typecheckOnly", async () => {
