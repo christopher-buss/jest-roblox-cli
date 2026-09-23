@@ -163,11 +163,14 @@ async function captureVmRequestAsync(
 	return captured!;
 }
 
+// Any run request, config- or workspace-shaped: what a reply needs to echo.
+const runRequestSchema = type({ action: "string", requestId: "string" });
+
 function connectAndReply(wss: MockWebSocketServer, reply: ReplyOptions): MockWebSocket {
 	const socket = new MockWebSocket();
 
 	socket.send.mockImplementation((data) => {
-		const message = pluginRequest.assert(JSON.parse(data));
+		const message = runRequestSchema.assert(JSON.parse(data));
 		if (message.action === "run_tests") {
 			const jestOutput =
 				reply.rawJestOutput ?? envelope(reply.entries ?? [{ jestOutput: successResult() }]);
@@ -577,6 +580,43 @@ describe(StudioBackend, () => {
 		await expect(
 			backend.runTestsAsync({ jobs: [wsJob("@scope/a", "a"), job("b")] }),
 		).rejects.toThrow(/missing its package name/);
+	});
+
+	it("should tell the workspace runner to stop on the first failing package under --bail", async () => {
+		expect.assertions(1);
+
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const promise = backend.runTestsAsync({ bail: true, jobs: [wsJob("@scope/a", "a")] });
+
+		const socket = connectAndReply(getLastCreatedServer()!, {});
+		await promise;
+
+		const request = type({ workspace: { "bail?": "boolean" } }).assert(
+			JSON.parse(socket.send.mock.calls[0]![0]),
+		);
+
+		expect(request.workspace.bail).toBeTrue();
+	});
+
+	it("should report the packages a bailed workspace run never reached", async () => {
+		expect.assertions(2);
+
+		const backend = new StudioBackend({ port: 0, webSocketServerFactory });
+		const promise = backend.runTestsAsync({
+			jobs: [wsJob("@scope/a", "a"), wsJob("@scope/b", "b")],
+		});
+
+		connectAndReply(getLastCreatedServer()!, {
+			rawJestOutput: JSON.stringify({
+				bailed: true,
+				entries: [{ elapsedMs: 11, jestOutput: successResult() }],
+			}),
+		});
+
+		const { bailedJobIndices, rawResults } = await promise;
+
+		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([11]);
+		expect(bailedJobIndices).toStrictEqual([1]);
 	});
 
 	it("should return rawResults in the same order as the submitted jobs", async () => {

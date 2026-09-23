@@ -190,6 +190,19 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		expect(spec).not.toHaveProperty("workStealing");
 	});
 
+	it("should hand --bail to a backend that builds its own payload", async () => {
+		expect.assertions(1);
+
+		const spec = await prepareWorkspaceDispatchAsync({
+			bail: true,
+			jobs: [makeJob("pkg-a", "unit")],
+			parallel: 1,
+			workStealingCredentials: undefined,
+		});
+
+		expect(spec.bail).toBeTrue();
+	});
+
 	it("should return a work-stealing script when queue setup succeeds", async () => {
 		expect.assertions(2);
 

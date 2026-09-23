@@ -72,6 +72,11 @@ export interface StreamingHooks {
 
 export interface BackendOptions {
 	/**
+	 * Studio workspace runs only: stop on the first failing package
+	 * (`--bail`). Open Cloud bakes it into `scriptFactory`/`scriptOverride`.
+	 */
+	bail?: boolean | undefined;
+	/**
 	 * Open-Cloud-only: the Code Bundle this run's place was split from, which
 	 * the backend uploads once as a binary input and every task rebuilds from.
 	 *

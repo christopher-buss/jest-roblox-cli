@@ -33,7 +33,7 @@ import type { PendingEntry } from "./test-selection.ts";
 
 export type WorkspaceDispatchSpec = Pick<
 	RunProjectsOptions,
-	"parallel" | "scriptFactory" | "scriptOverride" | "streaming" | "workStealing"
+	"bail" | "parallel" | "scriptFactory" | "scriptOverride" | "streaming" | "workStealing"
 >;
 
 export type PrepareWorkStealingQueue = typeof prepareWorkStealingQueueAsync;
@@ -413,6 +413,9 @@ function deferrableDispatch({
 	const options = { bail };
 
 	return {
+		// The Studio hosts build their own payload from the jobs, not from
+		// `scriptFactory`, so they read the flag here.
+		bail,
 		parallel,
 		scriptFactory: (jobs) => {
 			return generateMaterializerScript(

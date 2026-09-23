@@ -1,6 +1,7 @@
 // cspell:ignore LOCALAPPDATA
 import { fromAny, fromExact, fromPartial } from "@total-typescript/shoehorn";
 
+import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
@@ -1008,7 +1009,7 @@ describe(StudioCliBackend, () => {
 		});
 
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(
-			/returned 2 entries but request had 1 jobs/,
+			/^studio-cli backend returned 2 entries but request had 1 jobs/,
 		);
 	});
 
@@ -1074,6 +1075,34 @@ describe(StudioCliBackend, () => {
 		expect(bootstrap).toContain("@scope/b");
 	});
 
+	it("should tell the workspace runner to stop on the first failing package under --bail", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		let bootstrap = "";
+		const { launch } = replyWith(
+			fileSystem,
+			{ entries: [{ jestOutput: successResult() }] },
+			(request) => {
+				bootstrap = fileSystem.readFileSync(
+					request.args[request.args.indexOf("--runScriptFile") + 1]!,
+					"utf8",
+				);
+			},
+		);
+
+		await makeBackend(fileSystem, launch).runTestsAsync({
+			bail: true,
+			jobs: [workspaceJob("@scope/a", "a")],
+		});
+
+		const payload = /JSONDecode\(\[=*\[(.+?)\]=*\]\)/.exec(bootstrap)![1]!;
+		const request = type({ workspace: { "bail?": "boolean" } }).assert(JSON.parse(payload));
+
+		expect(request.workspace.bail).toBeTrue();
+	});
+
 	it("should return one rawResult per workspace package, in submitted order", async () => {
 		expect.assertions(2);
 
@@ -1092,6 +1121,49 @@ describe(StudioCliBackend, () => {
 
 		expect(rawResults).toHaveLength(2);
 		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([5, 7]);
+	});
+
+	it("should report the packages a bailed workspace run never reached", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		const backend = backendReplying(fileSystem, {
+			rawJestOutput: JSON.stringify({
+				bailed: true,
+				entries: [{ elapsedMs: 5, jestOutput: successResult() }],
+			}),
+		});
+
+		const { bailedJobIndices, rawResults } = await backend.runTestsAsync({
+			jobs: [
+				workspaceJob("@scope/a", "a"),
+				workspaceJob("@scope/b", "b"),
+				workspaceJob("@scope/c", "c"),
+			],
+		});
+
+		expect(rawResults.map((raw) => raw.entry.elapsedMs)).toStrictEqual([5]);
+		expect(bailedJobIndices).toStrictEqual([1, 2]);
+	});
+
+	it("should report no skipped packages when the bail landed on the last one", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		const backend = backendReplying(fileSystem, {
+			rawJestOutput: JSON.stringify({
+				bailed: true,
+				entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }],
+			}),
+		});
+
+		const result = await backend.runTestsAsync({
+			jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+		});
+
+		expect(result.bailedJobIndices).toBeUndefined();
 	});
 
 	it("should construct with default seams via createStudioCliBackend", async () => {

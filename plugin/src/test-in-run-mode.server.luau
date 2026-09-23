@@ -171,13 +171,15 @@ if testArgs.workspace ~= nil then
 		return
 	end
 
-	local runOk, entriesOrErr = pcall(EmbeddedRunner.runEmbedded, script, testArgs.workspace)
+	local runOk, entriesOrErr, outcome =
+		pcall(EmbeddedRunner.runEmbedded, script, testArgs.workspace)
 	if not runOk then
 		endWithError("EmbeddedRunner.runEmbedded threw: " .. tostring(entriesOrErr))
 		return
 	end
 
-	endTest(HttpService:JSONEncode({ entries = entriesOrErr }), "[]")
+	-- `bailed` tells the CLI the missing entries were skipped under --bail.
+	endTest(HttpService:JSONEncode({ bailed = outcome.bailed, entries = entriesOrErr }), "[]")
 	return
 end
 

@@ -3056,6 +3056,33 @@ describe(runProjectsAsync, () => {
 		expect(captured!.streaming).toBe(streaming);
 	});
 
+	it("should forward --bail to the backend", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = memoryFileSystem();
+
+		let captured: BackendOptions | undefined;
+		const backend: Backend = {
+			kind: "studio",
+			runTestsAsync: async (runOptions) => {
+				captured = runOptions;
+				return singleEntryResult({ result: createPassingResult() });
+			},
+		};
+
+		await runProjectsAsync({
+			backend,
+			bail: true,
+			fileSystem,
+			projects: [{ config: DEFAULT_CONFIG, testFiles: ["src/test.spec.ts"] }],
+			startTime: Date.now(),
+			tsconfigReader: readingVolume(fileSystem),
+			version: "0.0.0-test",
+		});
+
+		expect(captured!.bail).toBeTrue();
+	});
+
 	it("should post-process each result with its own project config", async () => {
 		expect.assertions(2);
 

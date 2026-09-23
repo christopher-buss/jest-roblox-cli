@@ -46,7 +46,6 @@ import type {
 	WorkspaceRunResult,
 } from "./types.ts";
 import {
-	assertWorkspaceRunOptions,
 	buildWorkspaceCredentials,
 	resolveWorkspacePackages,
 	validateBasicWorkspaceFlags,
@@ -200,10 +199,9 @@ function resolveRunBackend(
 	return { ...runOptions, backend: resolveAutoBackend(runOptions, isStudioInstalled) };
 }
 
-// Load every package's raw config, fold them into the consensus-resolved
-// WorkspaceRunOptions, and check the resolved-value invariants. A config that
-// fails to load and a consensus conflict both surface as the same validation
-// error the caller bails on.
+// Load every package's raw config and fold them into the consensus-resolved
+// WorkspaceRunOptions. A config that fails to load and a consensus conflict
+// both surface as the same validation error the caller bails on.
 async function resolveWorkspaceOptionsAsync({
 	cli,
 	fileSystem,
@@ -235,10 +233,6 @@ async function resolveWorkspaceOptionsAsync({
 			buildWorkspaceRunOptions({ cli, perPackageConfigs, workspaceRoot }),
 			isStudioInstalled,
 		);
-		const assertion = assertWorkspaceRunOptions(runOptions);
-		if (!assertion.ok) {
-			return { error: { exitCode: assertion.exitCode, message: assertion.message } };
-		}
 
 		return { runOptions };
 	} catch (err) {

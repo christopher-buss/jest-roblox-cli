@@ -2,7 +2,7 @@ import { resolveCredentials, type RunnerCredentials } from "@isentinel/roblox-ru
 
 import assert from "node:assert";
 
-import type { Backend, CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
+import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { getAffectedPackages } from "../workspace/affected.ts";
@@ -92,38 +92,6 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
 	// running the whole workspace is the one answer they did not ask for.
 	if (cli.packages !== undefined && !hasNonEmptyPackages(cli.packages)) {
 		return { exitCode: 2, message: "Error: --packages names no packages.\n", ok: false };
-	}
-
-	return { ok: true };
-}
-
-/**
- * Checks the resolved WorkspaceRunOptions for invariants that depend on the
- * fully resolved values (CLI > per-package consensus > defaults).
- *
- * Every backend runs workspace (studio-cli launches its own mega-place; the
- * attached `studio` backend runs against an open Studio for debugging), so
- * what is left is the one thing a Studio transport cannot do: carry a bail
- * back to the CLI.
- */
-export function assertWorkspaceRunOptions({
-	backend,
-	bail,
-}: WorkspaceRunOptions): WorkspaceValidationResult {
-	// Bail lives in the staged materializer's entry loop, and travels back on
-	// the Open Cloud task envelope (between parallel tasks, through a
-	// MemoryStore signal map). The Studio plugin drives that same loop but its
-	// protocol carries neither channel, so a Studio run would test every
-	// package while the user waits for it to stop early. Teaching the plugin
-	// protocol to report a bail is what would lift this, not anything here.
-	if (bail && isStudioBackend(backend)) {
-		return {
-			exitCode: 2,
-			message:
-				"Error: --bail is Open Cloud only; a Studio backend runs every " +
-				"package in the workspace regardless.\n",
-			ok: false,
-		};
 	}
 
 	return { ok: true };
@@ -225,14 +193,4 @@ function splitPackageNames(packages: string): Array<string> {
 
 function hasNonEmptyPackages(packages: string): boolean {
 	return splitPackageNames(packages).length > 0;
-}
-
-/**
- * Whether this backend drives a Studio process rather than Open Cloud.
- *
- * Named as a deny-list on purpose: a caller may still hold `"auto"`, which
- * `!== "open-cloud"` would count as Studio.
- */
-function isStudioBackend(backend: Backend): boolean {
-	return backend === "studio" || backend === "studio-cli";
 }

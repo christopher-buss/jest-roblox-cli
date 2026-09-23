@@ -2,14 +2,13 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import * as path from "node:path";
 import process from "node:process";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import type { CliOptions, WorkspaceRunOptions } from "../config/schema.ts";
 import { DEFAULT_CONFIG } from "../config/schema.ts";
 import type { ChildProcessRunner } from "../utils/child-process.ts";
 import {
-	assertWorkspaceRunOptions,
 	buildWorkspaceCredentials,
 	resolveWorkspacePackages,
 	validateBasicWorkspaceFlags,
@@ -203,143 +202,6 @@ describe(validateBasicWorkspaceFlags, () => {
 		const result = validateBasicWorkspaceFlags(
 			makeCli({ affectedSince: "HEAD~1", workspace: true }),
 		);
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-});
-
-describe(assertWorkspaceRunOptions, () => {
-	it("should accept the studio backend (workspace debug via an open Studio)", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio" }));
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should accept the studio-cli backend", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio-cli" }));
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should accept studio-cli with --parallel > 1, which it ignores", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(
-			makeRunOptions({ backend: "studio-cli", parallel: 2 }),
-		);
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should accept studio-cli with --parallel auto", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(
-			makeRunOptions({ backend: "studio-cli", parallel: "auto" }),
-		);
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should accept studio-cli with --parallel 1", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(
-			makeRunOptions({ backend: "studio-cli", parallel: 1 }),
-		);
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	// The bail rides the Open Cloud task envelope and a MemoryStore signal map,
-	// neither of which the Studio transports have — better to say so than to run
-	// the whole batch while the user believes it will stop early.
-	it("should reject --bail on a Studio backend", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio", bail: true }));
-		assert(!result.ok);
-
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message:
-				"Error: --bail is Open Cloud only; a Studio backend runs every " +
-				"package in the workspace regardless.\n",
-			ok: false,
-		});
-	});
-
-	it("should accept --bail on the open-cloud backend", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(
-			makeRunOptions({ backend: "open-cloud", bail: true }),
-		);
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	// "auto" is the default, and workspace mode resolves it to Open Cloud
-	// without probing — so this is the invocation the README documents.
-	it("should accept --bail on the default auto backend", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "auto", bail: true }));
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should reject --bail on studio-cli", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(
-			makeRunOptions({ backend: "studio-cli", bail: true }),
-		);
-		assert(!result.ok);
-
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message:
-				"Error: --bail is Open Cloud only; a Studio backend runs every " +
-				"package in the workspace regardless.\n",
-			ok: false,
-		});
-	});
-
-	it("should accept a Studio backend without --bail", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "studio-cli" }));
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should accept open-cloud backend", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "open-cloud" }));
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should accept sharded open-cloud runs", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(
-			makeRunOptions({ backend: "open-cloud", parallel: 3 }),
-		);
-
-		expect(result).toStrictEqual({ ok: true });
-	});
-
-	it("should accept auto backend", () => {
-		expect.assertions(1);
-
-		const result = assertWorkspaceRunOptions(makeRunOptions({ backend: "auto" }));
 
 		expect(result).toStrictEqual({ ok: true });
 	});

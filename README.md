@@ -862,10 +862,12 @@ fixed bucket and bails only its own. The run still stops at the first failing
 package in every bucket and reports the rest as not run, but a sibling bucket
 runs its whole share out first.
 
-Workspace mode and Open Cloud only. `--bail` without `--workspace`, or with a
-Studio backend, is rejected rather than quietly running the whole batch. Where
-Studio is installed, `auto` selects studio-cli, so pass `--backend open-cloud`
-with `--bail`.
+A Studio backend (`studio`, `studio-cli`) runs one package at a time, so it
+stops at the first failing package with nothing left running. It needs a Studio
+plugin from this release or later; an older plugin runs every package.
+
+Workspace mode only. `--bail` without `--workspace` is rejected rather than
+quietly running the whole batch.
 
 This is not Jest's `bail`. `test.bail` in your config still counts failing test
 suites inside a single package and is passed through to Jest untouched.

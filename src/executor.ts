@@ -71,6 +71,8 @@ export interface ProjectInput {
 
 export interface RunProjectsOptions {
 	backend: Backend;
+	/** Workspace mode: stop on the first failing package (`--bail`). */
+	bail?: boolean | undefined;
 	/**
 	 * The Code Bundle the run's place was split from, forwarded to the backend
 	 * as-is. Absent for a run that built the whole place.
@@ -281,6 +283,7 @@ async function dispatchToBackendAsync(
 ): Promise<BackendResult> {
 	return timing.profileAsync("backend.runTests", async () => {
 		const result = await options.backend.runTestsAsync({
+			bail: options.bail,
 			codeBundle: options.codeBundle,
 			jobs,
 			parallel: options.parallel,

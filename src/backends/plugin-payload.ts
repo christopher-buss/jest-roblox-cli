@@ -1,10 +1,18 @@
 import { buildJestArgv, type JestArgv } from "../test-script.ts";
-import { isWorkspaceRun, type ParallelOption, type ProjectJob } from "./interface.ts";
+import type { DecodedEnvelope } from "./envelope.ts";
+import {
+	type BackendResult,
+	isWorkspaceRun,
+	type ParallelOption,
+	type ProjectJob,
+} from "./interface.ts";
 import { resolveVmHostCount } from "./vm-parallel.ts";
 
 export type RunPayload = ConfigRunPayload | WorkspaceRunPayload;
 
 export interface RunPayloadRequest {
+	/** Workspace runs only: stop on the first failing package. */
+	bail?: boolean | undefined;
 	jobs: Array<ProjectJob>;
 	/** The transport's own run timeout, in milliseconds. */
 	runBudgetMs: number;
@@ -40,7 +48,7 @@ interface WorkspaceEntry {
 }
 
 interface WorkspaceRunPayload {
-	workspace: { entries: Array<WorkspaceEntry> };
+	workspace: { bail?: boolean | undefined; entries: Array<WorkspaceEntry> };
 }
 
 interface ConfigEntries {
@@ -53,9 +61,14 @@ interface ConfigEntries {
  * add their own protocol envelope, while this seam owns the config/workspace
  * dispatch shape consumed by the Run-mode runner.
  */
-export function buildRunPayload({ jobs, runBudgetMs, vmParallel }: RunPayloadRequest): RunPayload {
+export function buildRunPayload({
+	bail,
+	jobs,
+	runBudgetMs,
+	vmParallel,
+}: RunPayloadRequest): RunPayload {
 	if (isWorkspaceRun(jobs)) {
-		return { workspace: { entries: buildWorkspaceEntries(jobs) } };
+		return { workspace: { bail, entries: buildWorkspaceEntries(jobs) } };
 	}
 
 	const { configs, runtimeStubMounts } = buildConfigEntries(jobs);
@@ -65,6 +78,41 @@ export function buildRunPayload({ jobs, runBudgetMs, vmParallel }: RunPayloadReq
 	}
 
 	return { config: { configs }, runBudgetMs, runtimeStubMounts, vmParallel: hostCount };
+}
+
+/**
+ * Pair a Studio run's envelope entries with its jobs, in request order.
+ *
+ * The run-mode runner walks its entries in order and stops on a bail, so a
+ * bailed envelope carries a prefix of the jobs and the rest never ran.
+ */
+export function pairPluginEntries(
+	{ bailed, entries, gameOutputScope }: DecodedEnvelope,
+	{
+		backendName,
+		gameOutput,
+		jobCount,
+	}: { backendName: string; gameOutput: string | undefined; jobCount: number },
+): Pick<BackendResult, "bailedJobIndices" | "rawResults"> {
+	const rawResults = entries.map((entry) => {
+		return { entry, fallbackGameOutput: gameOutput, gameOutputScope };
+	});
+
+	if (bailed && entries.length < jobCount) {
+		const bailedJobIndices = Array.from(
+			{ length: jobCount - entries.length },
+			(_, offset) => entries.length + offset,
+		);
+		return { bailedJobIndices, rawResults };
+	}
+
+	if (entries.length !== jobCount) {
+		throw new Error(
+			`${backendName} returned ${entries.length.toString()} entries but request had ${jobCount.toString()} jobs`,
+		);
+	}
+
+	return { rawResults };
 }
 
 /**

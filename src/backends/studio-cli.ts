@@ -3,6 +3,7 @@ import type buffer from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import * as path from "node:path";
+import type { Except } from "type-fest";
 import type { WebSocket, WebSocketServer } from "ws";
 
 import { resolvePlaceFilePath } from "../config/schema.ts";
@@ -26,11 +27,14 @@ import {
 	type BackendOptions,
 	type BackendResult,
 	isWorkspaceRun,
-	type ParallelOption,
 	type ProjectJob,
-	type RawBackendEntry,
 } from "./interface.ts";
-import { buildRunPayload, type RunPayload, type RunPayloadRequest } from "./plugin-payload.ts";
+import {
+	buildRunPayload,
+	pairPluginEntries,
+	type RunPayload,
+	type RunPayloadRequest,
+} from "./plugin-payload.ts";
 import type { ManagedPluginInstall } from "./runner-plugin.ts";
 import { installRunnerPluginAsync } from "./runner-plugin.ts";
 import { configuredStudioPath, discoverStudioPath } from "./studio-discovery.ts";
@@ -300,7 +304,7 @@ interface StudioCliDispatch {
 	place: RunPlace;
 	plugin: ManagedPluginInstall | undefined;
 	progress: RunProgress;
-	runRequest: { runBudgetMs: number; vmParallel: ParallelOption };
+	runRequest: Except<RunPayloadRequest, "jobs">;
 	server: WebSocketServer;
 	/** The Studio executable the run launches. */
 	studioPath: string;
@@ -369,6 +373,7 @@ export class StudioCliBackend implements Backend {
 	}
 
 	public async runTestsAsync({
+		bail,
 		jobs,
 		progress = NOOP_RUN_PROGRESS,
 		vmParallel,
@@ -389,7 +394,7 @@ export class StudioCliBackend implements Backend {
 				place,
 				plugin,
 				progress,
-				runRequest: { runBudgetMs: this.timeout, vmParallel },
+				runRequest: { bail, runBudgetMs: this.timeout, vmParallel },
 				server,
 				studioPath,
 			});
@@ -653,6 +658,7 @@ function buildBootstrap(payload: StudioCliPayload, port: number, requestId: stri
  * Studio CLI argument vector that opens the place and runs it.
  */
 function buildStudioArgs({
+	bail,
 	fileSystem,
 	jobs,
 	placeFile,
@@ -668,7 +674,7 @@ function buildStudioArgs({
 	fileSystem.writeFileSync(
 		bootstrapFile,
 		buildBootstrap(
-			buildStudioCliPayload({ jobs, runBudgetMs, vmParallel }, pluginKey),
+			buildStudioCliPayload({ bail, jobs, runBudgetMs, vmParallel }, pluginKey),
 			port,
 			requestId,
 		),
@@ -734,19 +740,17 @@ function buildBackendResult(
 		manualPlugins,
 	}: { executionMs: number; jobs: Array<ProjectJob>; manualPlugins: ReadonlyArray<string> },
 ): BackendResult {
-	const { entries, gameOutputScope } = decodeEnvelope(message.jestOutput);
+	const decoded = decodeEnvelope(message.jestOutput);
 	assertProtocolMatch(message, manualPlugins);
-	if (entries.length !== jobs.length) {
-		throw new Error(
-			`studio-cli backend returned ${entries.length.toString()} entries but request had ${jobs.length.toString()} jobs`,
-		);
-	}
 
-	const rawResults: Array<RawBackendEntry> = entries.map((entry) => {
-		return { entry, fallbackGameOutput: message.gameOutput, gameOutputScope };
-	});
-
-	return { rawResults, timing: { executionMs } };
+	return {
+		...pairPluginEntries(decoded, {
+			backendName: "studio-cli backend",
+			gameOutput: message.gameOutput,
+			jobCount: jobs.length,
+		}),
+		timing: { executionMs },
+	};
 }
 
 /**

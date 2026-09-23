@@ -377,13 +377,10 @@ describe(runWorkspaceModeAsync, () => {
 			expect(harness.openCloudBackend).not.toHaveBeenCalled();
 		});
 
-		// Resolved before validation, so the Studio-only checks see the backend
-		// auto chose rather than `auto` itself.
-		it("should reject --bail when auto resolves to studio-cli", async () => {
-			expect.assertions(1);
+		it("should run --bail on studio-cli when auto resolves to it", async () => {
+			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 			const result = await runWorkspaceModeAsync(
 				makeCli({ backend: "auto", bail: true, packages: "a", workspace: true }),
@@ -392,7 +389,8 @@ describe(runWorkspaceModeAsync, () => {
 				{ ...harness.dependencies, isStudioInstalled: () => true },
 			);
 
-			expect(result.validationExitCode).toBe(2);
+			expect(result.validationExitCode).toBeUndefined();
+			expect(harness.studioCliBackend).toHaveBeenCalledOnce();
 		});
 
 		it("should resolve the studio-cli backend without Open Cloud credentials", async () => {

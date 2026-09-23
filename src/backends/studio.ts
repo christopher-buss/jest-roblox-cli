@@ -6,13 +6,13 @@ import type { WebSocket, WebSocketServer } from "ws";
 import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import { describeProjectCount } from "../progress/stages.ts";
 import { decodeEnvelope } from "./envelope.ts";
-import type { Backend, BackendOptions, BackendResult, RawBackendEntry } from "./interface.ts";
+import type { Backend, BackendOptions, BackendResult } from "./interface.ts";
 import {
 	closePluginServer,
 	describePluginMismatch,
 	PluginConnectionPool,
 } from "./plugin-connections.ts";
-import { buildRunPayload, type RunPayloadRequest } from "./plugin-payload.ts";
+import { buildRunPayload, pairPluginEntries, type RunPayloadRequest } from "./plugin-payload.ts";
 import type { RunPayload } from "./plugin-payload.ts";
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
@@ -132,10 +132,11 @@ export class StudioBackend implements Backend {
 
 	private async executeViaPluginAsync(
 		wss: WebSocketServer,
-		{ jobs, vmParallel }: BackendOptions,
+		{ bail, jobs, vmParallel }: BackendOptions,
 	): Promise<BackendResult> {
 		const requestId = randomUUID();
 		const requestMessage = buildRunTestsMessage({
+			bail,
 			jobs,
 			requestId,
 			runBudgetMs: this.timeout,
@@ -156,7 +157,7 @@ export class StudioBackend implements Backend {
 		}
 
 		return {
-			rawResults: buildRawResults(message, jobs.length),
+			...pairResults(message, jobs.length),
 			timing: { executionMs: Date.now() - executionStart },
 		};
 	}
@@ -230,39 +231,26 @@ export function createStudioBackend(options: StudioOptions): StudioBackend {
  * one.
  */
 function buildRunTestsMessage({
-	jobs,
 	requestId,
-	runBudgetMs,
-	vmParallel,
+	...request
 }: RunPayloadRequest & { requestId: string }): RunTestsMessage {
 	return {
 		action: "run_tests",
 		protocolVersion: STUDIO_PROTOCOL_VERSION,
 		requestId,
-		...buildRunPayload({ jobs, runBudgetMs, vmParallel }),
+		...buildRunPayload(request),
 	};
 }
 
-/**
- * The per-job raw entries a `results` frame carries, in request order.
- *
- * `gameOutputScope` rides along from the envelope: it is the runner's report of
- * whether the run's game output was captured once for the batch (an in-session
- * parallel run) or per project.
- */
-function buildRawResults(
+/** The per-job entries a `results` frame carries, in request order. */
+function pairResults(
 	message: Extract<PluginMessage, { type: "results" }>,
 	jobCount: number,
-): Array<RawBackendEntry> {
-	const { entries, gameOutputScope } = decodeEnvelope(message.jestOutput);
-	if (entries.length !== jobCount) {
-		throw new Error(
-			`Studio backend returned ${entries.length.toString()} entries but request had ${jobCount.toString()} jobs`,
-		);
-	}
-
-	return entries.map((entry) => {
-		return { entry, fallbackGameOutput: message.gameOutput, gameOutputScope };
+): Pick<BackendResult, "bailedJobIndices" | "rawResults"> {
+	return pairPluginEntries(decodeEnvelope(message.jestOutput), {
+		backendName: "Studio backend",
+		gameOutput: message.gameOutput,
+		jobCount,
 	});
 }
 
