@@ -234,7 +234,7 @@ end
 
 local game = newInstance("DataModel", "game")
 for _, serviceName in
-	{ "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterPlayer" }
+	{ "Lighting", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterPlayer" }
 do
 	local service = newInstance(serviceName, serviceName)
 	-- Anything parented under one of these is running. `liveArrivals` records
@@ -250,6 +250,7 @@ local Materializer = __MODULE__
 
 local ServerStorage = methods.FindFirstChild(game, "ServerStorage")
 local ReplicatedStorage = methods.FindFirstChild(game, "ReplicatedStorage")
+local Lighting = methods.FindFirstChild(game, "Lighting")
 local stage = newInstance("Folder", "__pkg_stage")
 setParent(stage, ServerStorage)
 
@@ -259,22 +260,25 @@ local DEPTH = 14
 
 -- A package stages as `__pkg_stage/<pkg>/<live service name>/…`, which is the
 -- layout `materialize` walks. Returns the staged ReplicatedStorage to fill.
-local function stagePackage(pkgName: string, runContextScripts: boolean?)
+type StageOptions = { runContextScripts: boolean?, service: string? }
+
+local function stagePackage(pkgName: string, options: StageOptions?)
+	local settings: StageOptions = options or {}
 	local staged = newInstance("Folder", pkgName)
-	if runContextScripts then
+	if settings.runContextScripts then
 		methods.SetAttribute(staged, "JestRunContextScripts", true)
 	end
 
 	setParent(staged, stage)
 
-	local stagedService = newInstance("Folder", "ReplicatedStorage")
+	local stagedService = newInstance("Folder", settings.service or "ReplicatedStorage")
 	setParent(stagedService, staged)
 
 	return stagedService
 end
 
 local function stageDeepPackage(pkgName: string, runContextScripts: boolean)
-	local stagedService = stagePackage(pkgName, runContextScripts)
+	local stagedService = stagePackage(pkgName, { runContextScripts = runContextScripts })
 
 	local nodeCount = 0
 	local cursor = newInstance("Folder", "chain")
@@ -686,7 +690,7 @@ end
 -- A package whose only mount is a marker for the pooled entry. `rbxts_include`
 -- is what the real one is: the dependency tree every package mounts.
 local function stagePooledPackage(pkgName: string, runContextScripts: boolean)
-	return newMarker("rbxts_include", POOL_KEY, stagePackage(pkgName, runContextScripts))
+	return newMarker("rbxts_include", POOL_KEY, stagePackage(pkgName, { runContextScripts = runContextScripts }))
 end
 
 -- T11: a marker resolves to a clone of the pooled entry carrying the marker's
@@ -785,7 +789,7 @@ end
 -- `rbxts_include` to merge into, so the whole subtree is cloned in one go and
 -- the marker rides along inside it.
 local function testNestedPooledMarkerResolves()
-	local stagedService = stagePackage("nested", true)
+	local stagedService = stagePackage("nested", { runContextScripts = true })
 
 	local include = newInstance("Folder", "rbxts_include")
 	setParent(include, stagedService)
@@ -872,7 +876,7 @@ end
 -- instance, two containers merge, and anything else is reported.
 local function stageNestedMarker(pkgName: string, key: string)
 	local vendor = newInstance("Folder", "Vendor")
-	setParent(vendor, stagePackage(pkgName, false))
+	setParent(vendor, stagePackage(pkgName))
 	return newMarker("rbxts_include", key, vendor)
 end
 
@@ -918,7 +922,7 @@ local function testMarkerHalvesMergeIntoLiveFolder()
 	local live = newInstance("Folder", "rbxts_include")
 	setParent(live, ReplicatedStorage)
 
-	local marker = newMarker("rbxts_include", MERGE_POOL_KEY, stagePackage("markerHalves", false))
+	local marker = newMarker("rbxts_include", MERGE_POOL_KEY, stagePackage("markerHalves"))
 	local modules = newInstance("Folder", "node_modules")
 	setParent(modules, marker)
 	setParent(newInstance("ModuleScript", "ownModule"), modules)
@@ -969,7 +973,7 @@ end
 -- path and walks to the same instance through `TS.getModule`, and a Folder in
 -- that position answers both without being requireable.
 local function testPooledModuleScriptResolves()
-	local stagedService = stagePackage("pooledModuleScript", false)
+	local stagedService = stagePackage("pooledModuleScript")
 
 	local include = newInstance("Folder", "rbxts_include")
 	setParent(include, stagedService)
@@ -1125,6 +1129,44 @@ local function testMarkerInsideNestedMarkerChildren()
 	Materializer.reset()
 end
 
+-- What Studio adds to a Lighting that lacks the class when it opens a place.
+local function addStudioLightingDefaults()
+	local bloom = newInstance("BloomEffect", "Bloom")
+	setParent(bloom, Lighting)
+	setParent(newInstance("ColorGradingEffect", "ColorGrading"), Lighting)
+	return bloom
+end
+
+-- T24: a staged Lighting effect lands over the default Studio put there, rather
+-- than colliding with an instance the place never declared.
+local function testStagedEffectReplacesStudioDefault()
+	local studioBloom = addStudioLightingDefaults()
+
+	setParent(newInstance("BloomEffect", "Bloom"), stagePackage("studioLit", { service = "Lighting" }))
+
+	Materializer.materialize("studioLit")
+
+	local bloom = methods.FindFirstChild(Lighting, "Bloom")
+	check(bloom ~= nil and bloom ~= studioBloom, "T24: Lighting.Bloom is the staged effect")
+	check(#methods.GetChildren(Lighting) == 1, "T24: Studio's ColorGrading went too")
+
+	Materializer.reset()
+end
+
+-- T25: live Lighting is cleared even when no package stages it. The place
+-- declares none of it, whatever its class.
+local function testUndeclaredLightingCleared()
+	addStudioLightingDefaults()
+	setParent(newInstance("Sky", "Sky"), Lighting)
+	stagePackage("unlit")
+
+	Materializer.materialize("unlit")
+
+	check(#methods.GetChildren(Lighting) == 0, "T25: every undeclared Lighting child removed")
+
+	Materializer.reset()
+end
+
 testRestoreRunContextIsLinear()
 testRestoreRunContextReachesEveryDepth()
 testResetClearsMaterialized()
@@ -1153,5 +1195,7 @@ testMarkerHalvesMergeIntoLiveFolder()
 testNestedMarkerChildCollides()
 testNestedMarkerChildMerges()
 testMarkerInsideNestedMarkerChildren()
+testStagedEffectReplacesStudioDefault()
+testUndeclaredLightingCleared()
 
 print("ALL OK")

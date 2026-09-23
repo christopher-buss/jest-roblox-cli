@@ -1,4 +1,5 @@
 --!strict
+local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
@@ -48,6 +49,14 @@ local function restoreRunContext(root: Instance)
 	restoreOne(root)
 	for _, descendant in root:GetDescendants() do
 		restoreOne(descendant)
+	end
+end
+
+-- The mega-place declares no live Lighting child, so whatever Lighting holds
+-- is Studio's, which fills an empty one on place open, or a prior run's.
+local function clearUndeclaredLighting()
+	for _, child in Lighting:GetChildren() do
+		child:Destroy()
 	end
 end
 
@@ -270,6 +279,8 @@ function module.materialize(pkgName: string)
 
 	local staged = stage:FindFirstChild(pkgName)
 	assert(staged, "no stage for " .. pkgName)
+
+	clearUndeclaredLighting()
 
 	local runContextScripts = staged:GetAttribute(RUN_CONTEXT_ATTRIBUTE) == true
 	local pool = stage:FindFirstChild(SHARED_POOL_NAME)
