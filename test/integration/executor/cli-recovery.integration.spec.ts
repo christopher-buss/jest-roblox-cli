@@ -6,6 +6,7 @@ import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { assert, describe, expect, it, vi } from "vitest";
 
+import type { Backend } from "../../../src/backends/interface.ts";
 import { OpenCloudBackend } from "../../../src/backends/open-cloud.ts";
 import { runAsync } from "../../../src/cli.ts";
 import { loadConfig } from "../../../src/config/loader.ts";
@@ -20,10 +21,21 @@ import {
 	buildMixedOutput,
 	buildPassingPayload,
 	createFixtureSandbox,
+	writeCodeBundle,
 } from "../../e2e/cli/helpers.ts";
+import { IS_BINARY_INPUT } from "../../e2e/live/live-gate.ts";
 
 const FIXTURE = path.resolve(import.meta.dirname, "../../e2e/fixtures/luau-project");
 const JEST_OUTPUT = buildMixedOutput(buildPassingPayload());
+
+/** Ship a Code Bundle beside the place: the one run that may replace a task. */
+function withCodeBundle(backend: OpenCloudBackend, sandbox: string): Backend {
+	const codeBundle = writeCodeBundle(sandbox);
+	return {
+		kind: backend.kind,
+		runTestsAsync: async (options) => backend.runTestsAsync({ ...options, codeBundle }),
+	};
+}
 
 function claimParameters(script: string): string {
 	const match = /local key, startBefore, retention, notClaimed, startExpired = [^\r\n]+/u.exec(
@@ -33,7 +45,7 @@ function claimParameters(script: string): string {
 	return match[0];
 }
 
-describe("cLI Open Cloud recovery", () => {
+describe.skipIf(!IS_BINARY_INPUT)("cLI Open Cloud recovery", () => {
 	it("should recover a task create failure with a fresh relay and the same claim", async () => {
 		expect.assertions(4);
 
@@ -51,7 +63,10 @@ describe("cLI Open Cloud recovery", () => {
 		const backend = new OpenCloudBackend(credentials, {
 			runner: new OcaleRunner(credentials, { baseUrl: server.baseUrl, maxRetries: 0 }),
 		});
-		const seams = { ...nodeRunSeams(), resolveBackend: async () => backend };
+		const seams = {
+			...nodeRunSeams(),
+			resolveBackend: async () => withCodeBundle(backend, sandbox),
+		};
 		const actual = await runAsync([], {
 			loadConfig: async () => {
 				return {
@@ -121,7 +136,10 @@ describe("cLI Open Cloud recovery", () => {
 				uploadPlaceAsync: async (options) => runner.uploadPlaceAsync(options),
 			},
 		});
-		const seams = { ...nodeRunSeams(), resolveBackend: async () => backend };
+		const seams = {
+			...nodeRunSeams(),
+			resolveBackend: async () => withCodeBundle(backend, sandbox),
+		};
 		const actual = await runAsync([], {
 			loadConfig: async () => {
 				return {
@@ -230,7 +248,10 @@ describe("cLI Open Cloud recovery", () => {
 					uploadPlaceAsync: async (options) => runner.uploadPlaceAsync(options),
 				},
 			});
-			const seams = { ...nodeRunSeams(), resolveBackend: async () => backend };
+			const seams = {
+				...nodeRunSeams(),
+				resolveBackend: async () => withCodeBundle(backend, sandbox),
+			};
 
 			const actual = await runAsync([], {
 				loadConfig: async () => {

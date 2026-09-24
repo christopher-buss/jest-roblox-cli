@@ -155,22 +155,22 @@ presents output, not how any individual package runs. In `--workspace` mode they
 resolve as: CLI flag > unanimous per-package declaration > default. Mixed
 per-package declarations error loudly.
 
-| Field                  | What it does                                                                                                                                                        | Default       |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                             | `"auto"`      |
-| `color`                | Use ANSI colors in console output                                                                                                                                   | `true`        |
-| `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                            | `["default"]` |
-| `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package | —             |
-| `outputFile`           | Write the Jest result JSON — a path, or `true` for `jest-output.log` under the root. In `--workspace` mode this is the single merged result across every package    | —             |
-| `workspace.exclude`    | Globs (workspace-root-relative) naming package directories an enumerated run must skip; `--packages` overrides it                                                   | —             |
-| `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                 | —             |
-| `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                      | —             |
-| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). studio-cli ignores it and runs one session                                                          | —             |
-| `placeId`              | Open Cloud place ID                                                                                                                                                 | —             |
-| `port`                 | WebSocket port for Studio backend                                                                                                                                   | `3001`        |
-| `silent`               | Suppress console output                                                                                                                                             | `false`       |
-| `studioPath`           | Roblox Studio executable for the `studio-cli` backend (auto-detected if unset; also `--studioPath` / `JEST_ROBLOX_STUDIO_PATH`)                                     | —             |
-| `universeId`           | Open Cloud universe ID                                                                                                                                              | —             |
+| Field                  | What it does                                                                                                                                                                 | Default       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `backend`              | `"auto"`, `"open-cloud"`, `"studio"`, or `"studio-cli"`                                                                                                                      | `"auto"`      |
+| `color`                | Use ANSI colors in console output                                                                                                                                            | `true`        |
+| `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                                                                                                     | `["default"]` |
+| `gameOutput`           | Write Game Output to a file — a path, or `true` for `game-output.log` under the root. In `--workspace` mode this is one grouped aggregate file across every package          | —             |
+| `outputFile`           | Write the Jest result JSON — a path, or `true` for `jest-output.log` under the root. In `--workspace` mode this is the single merged result across every package             | —             |
+| `workspace.exclude`    | Globs (workspace-root-relative) naming package directories an enumerated run must skip; `--packages` overrides it                                                            | —             |
+| `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                          | —             |
+| `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                               | —             |
+| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). Each session costs one task create against Roblox's hourly limit. studio-cli ignores it and runs one session | one session   |
+| `placeId`              | Open Cloud place ID                                                                                                                                                          | —             |
+| `port`                 | WebSocket port for Studio backend                                                                                                                                            | `3001`        |
+| `silent`               | Suppress console output                                                                                                                                                      | `false`       |
+| `studioPath`           | Roblox Studio executable for the `studio-cli` backend (auto-detected if unset; also `--studioPath` / `JEST_ROBLOX_STUDIO_PATH`)                                              | —             |
+| `universeId`           | Open Cloud universe ID                                                                                                                                                       | —             |
 
 #### Per-package fields
 
@@ -228,73 +228,21 @@ version, the run stops as boot unverified (exit code 2) before any test task is
 created, so a stalled version costs at most twice `bootProbeTimeout`. A lost
 probe does not prove the place cannot load: Open Cloud can stall a task on a
 version that boots. Nothing is cached, so the next run uploads and probes again.
-The probe uses the bounded task-admission policy below, then applies its polling
-budget with a short script deadline. Set `bootProbeTimeout` to `0` to skip the
-probe; no new upload-cache entry is written in that case.
+The probe polls for `bootProbeTimeout` with a short script deadline. Set
+`bootProbeTimeout` to `0` to skip the probe; no new upload-cache entry is
+written in that case.
 
-If a test task never reaches a terminal state, the backend makes one recovery
-attempt, submitted to the same exact version. All submissions share an atomic
-MemoryStore execution claim, acquired before anything else the task does. Only
-one attempt can start the tests; an abandoned task that starts late cannot run
-them again. The claim lives in a SortedMap and records its owner and Roblox
-start time. After 45 s from an accepted submission, the backend reads that item:
-a missing item starts the recovery task immediately, while a present item keeps
-the original task's poller. Tasks finishing sooner make no extra request, and a
-failed observer read is inconclusive rather than permission to start another
-task. Acquiring the claim uses one MemoryStore update with no added sleep.
-Transient claim errors receive short bounded retries; persistent claim errors
-fail the task. Retention covers the startup deadline using Roblox's clock,
-including client clock skew. If neither attempt provides results, an expired
-startup window fails with a clock/queue diagnosis.
-
-Task submission retries have a 90 s inactivity budget, independent of the
-script's execution timeout, to cover a full create-quota window. When Roblox
-reports a full place, the runner observes the occupying tasks. Verified task
-turnover renews that budget. Scheduled waits after valid nonterminal blocker
-reads do not consume inactivity; an unchanged running task need not show
-progress. Valid finite server waits for an exhausted create quota also exclude
-waiting time, so competing worktrees can span quota windows. Local SDK quota and
-pacing queues also pause inactivity until the request can be sent; their waits
-count once even when callers queue behind each other. Network requests and
-ordinary retry delays still consume inactivity. Missing or malformed quota hints
-do not extend admission. Every submission, including the boot probe, remains
-bounded by 495 s total: the inactivity budget plus a 405 s allowance for
-capacity and quota waits.
-
-Waiting for capacity does not start the claim watchdog or launch a competing
-recovery submission; a watch starts only once a submission is accepted.
-Execution claims and result observation cover the bounded admission path.
-
-An ambiguous task-create failure, such as a transient HTTP 500 or connection
-reset, permits one additional attempt across the whole recovery operation. It
-uses the same execution claim and a fresh result channel, while the CLI keeps
-reading the uncertain submission's channel. A late result or script error from
-the first submission remains observable even if the new task is refused by the
-claim. This recovery also works when the create response contains no task ID.
-
-Test failures and terminal task errors are never retried. If execution was
-already claimed, or the recovery attempt fails, the backend reads results from
-each uncertain attempt. Native task reads use one more task-deadline-plus-boot
-allowance, while result channels keep their bounded observation deadline. These
-reads overlap, and the first claimed result wins. If no attempt provides test
-results, the run fails with the original task's details. Healthy runs never
-start this extra poll. When the initial claim is missing, both pollers overlap
-and the first claimed result wins; a duplicate or startup-expired loser is
-ignored, and observation of the losing task stops once a valid result arrives.
-Recovery adds no place upload or boot probe.
-
-Tasks also relay their full string outputs or script errors through MemoryStore.
-Outputs include coverage, snapshots, and game output. Compressed chunks use a
-unique key per submission and sequence; the CLI reads and deletes each chunk
-before the task publishes the next. Only a complete, validated payload can
-replace the native result, and the winning transport stops the other host
-observer. Publication is bounded by the remaining task runtime. An unavailable
-or incomplete relay falls back to native delivery. A native polling timeout
-preserves collected chunks and keeps the relay reading while recovery waits for
-the other attempt. Recovery can use either task's late payload without rerunning
-its script, and cancels collection when it ends. A started execution with no
-complete result from either transport cannot be recovered by rerunning tests
-safely.
+Each logical execution creates exactly one Open Cloud task. Roblox allows about
+30 task creates per rolling hour per account, shared by every key, universe and
+place the account owns, so the backend never starts a replacement task: a
+stalled task, a poll timeout or an uncertain create fails the run instead of
+spending another create. Retries stay inside one request. A task create is sent
+again only when the edge rate limit refused it before Roblox's task service saw
+it; a 429 or 5xx from the task service itself is final, because that attempt
+already counted against the hourly limit. A create that loses its connection is
+also sent again, as it was before replacement tasks existed. Place uploads retry
+429, 5xx and transport errors; task polls retry transient read failures. Test
+failures and terminal task errors are never retried.
 
 A 404 during a run using a cached upload clears that cache entry for the next
 invocation. It does not restart the current wave, whose other tasks may already
@@ -531,19 +479,16 @@ same shard count, each session holding a fixed share it cannot rebalance:
 | -------------------------------------------------- | ---------------------------------------------- |
 | `memory-store.queue:add` / `:dequeue` / `:discard` | Work-stealing queue across concurrent sessions |
 
-The sorted-map scopes support live per-package results and complete-result
-recovery when native task delivery stalls:
+The sorted-map scopes support live per-package results:
 
-| Scope                                     | What it's for                 |
-| ----------------------------------------- | ----------------------------- |
-| `memory-store.sorted-map:read` / `:write` | Result streaming and recovery |
+| Scope                                     | What it's for    |
+| ----------------------------------------- | ---------------- |
+| `memory-store.sorted-map:read` / `:write` | Result streaming |
 
 Streaming is enabled by default and disabled only for `--silent`,
 `--formatters json`, and `--formatters agent` (without `--verbose`).
 `--formatters agent --verbose` re-enables streaming and therefore still needs
 the sorted-map scopes; `--formatters github-actions` also streams.
-Complete-result recovery uses those scopes independently of the formatter;
-without them, the CLI keeps native result delivery.
 
 #### One complete place
 
@@ -937,49 +882,49 @@ project) under `.jest-roblox/output/`.
 
 ## CLI flags
 
-| Flag                             | What it does                                                                                                                                              |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--backend <type>`               | Choose `auto`, `open-cloud`, `studio`, or `studio-cli`                                                                                                    |
-| `--port <n>`                     | WebSocket port for Studio                                                                                                                                 |
-| `--studioPath <path>`            | Roblox Studio executable for `studio-cli` (auto-detected if unset)                                                                                        |
-| `--headed`                       | Show the Studio window during the run (`studio-cli` only; default: hidden)                                                                                |
-| `--config <path>`                | Path to config file                                                                                                                                       |
-| `--testPathPattern <regex>`      | Filter test files by path                                                                                                                                 |
-| `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                                                                      |
-| `--formatters <name>`            | Output formatter: `default`, `agent`, `json`, or `github-actions` (repeatable)                                                                            |
-| `--outputFile <path>`            | Write results to a file                                                                                                                                   |
-| `--gameOutput <path>`            | Write game print/warn/error to a file                                                                                                                     |
-| `--coverage`                     | Collect coverage                                                                                                                                          |
-| `--no-coverage`                  | Disable coverage for this run, even when enabled in config                                                                                                |
-| `--coverageDirectory <path>`     | Where to put coverage reports                                                                                                                             |
-| `--coverageReporters <name>`     | Which report format to use (repeatable)                                                                                                                   |
-| `--collectCoverageFrom <glob>`   | Globs for files to include in coverage (repeatable)                                                                                                       |
-| `--no-show-luau`                 | Hide Luau code in failure output                                                                                                                          |
-| `-u, --updateSnapshot`           | Update snapshot files                                                                                                                                     |
-| `--sourceMap`                    | Map Luau errors to TypeScript (roblox-ts only)                                                                                                            |
-| `--rojoProject <path>`           | Path to Rojo project file                                                                                                                                 |
-| `--timeout <ms>`                 | Max time for tests to run                                                                                                                                 |
-| `--passWithNoTests`              | Exit `0` when no test files are found                                                                                                                     |
-| `--verbose`                      | Show each test result                                                                                                                                     |
-| `--silent`                       | Hide all output                                                                                                                                           |
-| `--no-color`                     | Turn off colors                                                                                                                                           |
-| `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                                                                 |
-| `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                |
-| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); ignored on studio-cli                                                                       |
-| `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism)) |
-| `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                           |
-| `--setupFiles <path>`            | Script to run before env (repeatable)                                                                                                                     |
-| `--setupFilesAfterEnv <path>`    | Script to run after env (repeatable)                                                                                                                      |
-| `--typecheck`                    | Run type tests too                                                                                                                                        |
-| `--typecheckOnly`                | Run only type tests                                                                                                                                       |
-| `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                                                                   |
-| `--workspace`                    | Run every package in the workspace; narrow it with `--packages`, `--affected-since`, or a positional file (see [Workspace mode](#workspace-mode))         |
-| `--bail`                         | Workspace mode: stop at the first failing package (see [Failing fast](#failing-fast))                                                                     |
-| `--packages <names>`             | Comma-separated package names; narrows a workspace run                                                                                                    |
-| `--affected-since <ref>`         | Run only packages affected since a git ref (workspace mode)                                                                                               |
-| `--apiKey <key>`                 | Open Cloud API key (prefer env vars in CI — visible in process listings)                                                                                  |
-| `--universeId <id>`              | Target universe ID (Open Cloud)                                                                                                                           |
-| `--placeId <id>`                 | Target place ID (Open Cloud)                                                                                                                              |
+| Flag                             | What it does                                                                                                                                                    |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--backend <type>`               | Choose `auto`, `open-cloud`, `studio`, or `studio-cli`                                                                                                          |
+| `--port <n>`                     | WebSocket port for Studio                                                                                                                                       |
+| `--studioPath <path>`            | Roblox Studio executable for `studio-cli` (auto-detected if unset)                                                                                              |
+| `--headed`                       | Show the Studio window during the run (`studio-cli` only; default: hidden)                                                                                      |
+| `--config <path>`                | Path to config file                                                                                                                                             |
+| `--testPathPattern <regex>`      | Filter test files by path                                                                                                                                       |
+| `-t, --testNamePattern <regex>`  | Filter tests by name                                                                                                                                            |
+| `--formatters <name>`            | Output formatter: `default`, `agent`, `json`, or `github-actions` (repeatable)                                                                                  |
+| `--outputFile <path>`            | Write results to a file                                                                                                                                         |
+| `--gameOutput <path>`            | Write game print/warn/error to a file                                                                                                                           |
+| `--coverage`                     | Collect coverage                                                                                                                                                |
+| `--no-coverage`                  | Disable coverage for this run, even when enabled in config                                                                                                      |
+| `--coverageDirectory <path>`     | Where to put coverage reports                                                                                                                                   |
+| `--coverageReporters <name>`     | Which report format to use (repeatable)                                                                                                                         |
+| `--collectCoverageFrom <glob>`   | Globs for files to include in coverage (repeatable)                                                                                                             |
+| `--no-show-luau`                 | Hide Luau code in failure output                                                                                                                                |
+| `-u, --updateSnapshot`           | Update snapshot files                                                                                                                                           |
+| `--sourceMap`                    | Map Luau errors to TypeScript (roblox-ts only)                                                                                                                  |
+| `--rojoProject <path>`           | Path to Rojo project file                                                                                                                                       |
+| `--timeout <ms>`                 | Max time for tests to run                                                                                                                                       |
+| `--passWithNoTests`              | Exit `0` when no test files are found                                                                                                                           |
+| `--verbose`                      | Show each test result                                                                                                                                           |
+| `--silent`                       | Hide all output                                                                                                                                                 |
+| `--no-color`                     | Turn off colors                                                                                                                                                 |
+| `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                                                                       |
+| `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                      |
+| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one by default, each costing one task create against Roblox's hourly limit; ignored on studio-cli |
+| `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism))       |
+| `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                                 |
+| `--setupFiles <path>`            | Script to run before env (repeatable)                                                                                                                           |
+| `--setupFilesAfterEnv <path>`    | Script to run after env (repeatable)                                                                                                                            |
+| `--typecheck`                    | Run type tests too                                                                                                                                              |
+| `--typecheckOnly`                | Run only type tests                                                                                                                                             |
+| `--typecheckTsconfig <path>`     | tsconfig for type tests                                                                                                                                         |
+| `--workspace`                    | Run every package in the workspace; narrow it with `--packages`, `--affected-since`, or a positional file (see [Workspace mode](#workspace-mode))               |
+| `--bail`                         | Workspace mode: stop at the first failing package (see [Failing fast](#failing-fast))                                                                           |
+| `--packages <names>`             | Comma-separated package names; narrows a workspace run                                                                                                          |
+| `--affected-since <ref>`         | Run only packages affected since a git ref (workspace mode)                                                                                                     |
+| `--apiKey <key>`                 | Open Cloud API key (prefer env vars in CI — visible in process listings)                                                                                        |
+| `--universeId <id>`              | Target universe ID (Open Cloud)                                                                                                                                 |
+| `--placeId <id>`                 | Target place ID (Open Cloud)                                                                                                                                    |
 
 ## How it works
 

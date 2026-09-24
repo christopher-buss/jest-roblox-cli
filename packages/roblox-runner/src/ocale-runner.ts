@@ -3,6 +3,7 @@ import type {
 	HttpClient,
 	OpenCloudClientOptions,
 	OpenCloudError,
+	RequestOptions,
 	Result,
 	SleepFunc,
 } from "@bedrock-rbx/ocale";
@@ -23,6 +24,7 @@ import { LuauExecutionClient } from "@bedrock-rbx/ocale/luau-execution";
 import type { PublishParameters } from "@bedrock-rbx/ocale/places";
 import { PlacesClient } from "@bedrock-rbx/ocale/places";
 
+import { type } from "arktype";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type buffer from "node:buffer";
 import * as fs from "node:fs";
@@ -107,6 +109,15 @@ const UPLOAD_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
 
 const SAFE_SUBMIT_RETRY_STATUSES = [429, 500, 502, 503, 504];
 
+/** The body the edge rate limit answers with, when it sends one. */
+const edgeRateLimitSchema = type({ errors: "unknown[]" });
+
+/** ocale's own per-request retry count, which an unbudgeted create mirrors. */
+const DEFAULT_MAX_RETRIES = 3;
+
+/** The least an edge-refused create waits before it is sent again. */
+const EDGE_RETRY_FLOOR_MS = 1000;
+
 /**
  * Attempts a submit under an {@link ExecuteScriptOptions.submitBudget} is
  * allowed. High on purpose: the budget is the bound, and a count that bites
@@ -161,17 +172,20 @@ export interface OcaleRunnerOptions {
 
 export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 	private readonly capacityBudgetContext = new AsyncLocalStorage<SubmitBudgetController>();
+	private readonly capacityLuau: LuauExecutionClient;
 	private readonly credentials: RunnerCredentials;
 	private readonly fetchFn: typeof globalThis.fetch;
 	private readonly luau: LuauExecutionClient;
+	private readonly maxRetries: number;
 	private readonly places: PlacesClient;
 	private readonly readFileFn: (filePath: string) => buffer.Buffer;
+	private readonly sleep: SleepFunc;
 
 	// eslint-disable-next-line flawless/max-lines-per-function -- transport clients share setup
 	constructor(credentials: RunnerCredentials, options?: OcaleRunnerOptions) {
 		this.credentials = credentials;
 		const transport = options?.httpClient ?? createFetchHttpClient();
-		const capacityAwareTransport =
+		const capacityTransport =
 			options?.maxRetries === 0
 				? transport
 				: createCapacitySubmitClient(transport, {
@@ -189,7 +203,7 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 					});
 		let clientOptions: OpenCloudClientOptions = {
 			apiKey: credentials.apiKey,
-			httpClient: capacityAwareTransport,
+			httpClient: transport,
 		};
 		if (options?.baseUrl !== undefined) {
 			clientOptions = { ...clientOptions, baseUrl: options.baseUrl };
@@ -204,7 +218,15 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		}
 
 		this.luau = new LuauExecutionClient(clientOptions);
+		// Capacity admission serves budgeted submits only; an unbudgeted create
+		// takes dmaas's answer as final.
+		this.capacityLuau = new LuauExecutionClient({
+			...clientOptions,
+			httpClient: capacityTransport,
+		});
+		this.maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
 		this.places = new PlacesClient(clientOptions);
+		this.sleep = options?.sleep ?? delayAsync;
 		this.readFileFn = options?.readFile ?? ((filePath) => fs.readFileSync(filePath));
 		this.fetchFn = options?.fetch ?? globalThis.fetch;
 	}
@@ -328,6 +350,33 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		};
 	}
 
+	/**
+	 * Create one task. Only a refusal from the edge rate limit is sent again;
+	 * anything dmaas answered is final.
+	 *
+	 * @param taskParameters - The task to create.
+	 * @param submitOptions - The request options every attempt carries.
+	 * @returns The create's result, unread.
+	 */
+	private async createTaskAsync(
+		taskParameters: SubmitAtHeadParameters | SubmitAtVersionParameters,
+		submitOptions: RequestOptions,
+	): Promise<SubmitResult> {
+		const options = { ...submitOptions, retryableStatuses: [] };
+		let result = await this.luau.tasks.submit(taskParameters, options);
+		for (let retry = 0; retry < this.maxRetries && isEdgeRateLimited(result); retry += 1) {
+			// An abort ends the wait; ocale then refuses the next attempt
+			// locally.
+			await this.sleep(
+				Math.max(result.err.retryAfterSeconds * 1000, EDGE_RETRY_FLOOR_MS),
+				submitOptions.signal,
+			);
+			result = await this.luau.tasks.submit(taskParameters, options);
+		}
+
+		return result;
+	}
+
 	private async observeTaskAsync(context: TaskObservation): Promise<ScriptResult> {
 		const result = await this.pollTaskAsync({
 			ref: context.ref,
@@ -427,7 +476,9 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			timeout,
 		};
 		if (submitBudget === undefined) {
-			return this.luau.tasks.submit(taskParameters, submitOptions);
+			return isSubmitIdempotent
+				? this.luau.tasks.submit(taskParameters, submitOptions)
+				: this.createTaskAsync(taskParameters, submitOptions);
 		}
 
 		const budget = createSubmitBudgetController({
@@ -438,7 +489,7 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			capacityBudgetMs: submitCapacityBudget ?? 0,
 		});
 		const submitting = this.capacityBudgetContext.run(budget, async () => {
-			return this.luau.tasks.submit(taskParameters, {
+			return this.capacityLuau.tasks.submit(taskParameters, {
 				...submitOptions,
 				onAdmissionWait: pauseBudgetWhileWaiting(budget),
 			});
@@ -694,6 +745,34 @@ function recoveryPollOptions(context: PollContext): {
 	timeoutMs: number;
 } {
 	return { ref: context.ref, timeoutMs: context.recoveryPollBudgetMs };
+}
+
+/**
+ * A 429 from the edge rate limit, which never reached dmaas: only the edge
+ * answers with a bare `errors` list.
+ */
+function isEdgeRateLimited(
+	result: SubmitResult,
+): result is Extract<SubmitResult, { success: false }> & { err: RateLimitError } {
+	if (result.success || !(result.err instanceof RateLimitError)) {
+		return false;
+	}
+
+	return !(edgeRateLimitSchema(result.err.details) instanceof type.errors);
+}
+
+/** Wait `ms`, or less when `signal` aborts first. */
+async function delayAsync(ms: number, signal?: AbortSignal): Promise<void> {
+	await new Promise<void>((resolve) => {
+		function finish(): void {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", finish);
+			resolve();
+		}
+
+		const timer = setTimeout(finish, ms);
+		signal?.addEventListener("abort", finish, { once: true });
+	});
 }
 
 function isServerErrorDetails(value: unknown): value is { code: string; message: string } {

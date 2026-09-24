@@ -27,7 +27,6 @@ describe("execution claim", () => {
 				return `key, 2000, 300, ${JSON.stringify(EXECUTION_NOT_CLAIMED)}, ${JSON.stringify(EXECUTION_START_EXPIRED)}`;
 			});
 			const claimed = prepareTaskScript({
-				hasRebuild: true,
 				script: '--!strict\nerror("Tests must not run")',
 			})(`${source}\n`);
 			const directory = fs.mkdtempSync(path.join(os.tmpdir(), "execution-claim-"));

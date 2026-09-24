@@ -18,7 +18,6 @@ import * as path from "node:path";
 import process from "node:process";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
-import claimSource from "../../luau/execution-claim.luau";
 import { startFakeOpenCloudServerAsync } from "../../test/e2e/cli/fake-open-cloud.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { ConfigError } from "../config/errors.ts";
@@ -89,10 +88,29 @@ function createBackend(options: OpenCloudOptions): OpenCloudBackend {
 	});
 }
 
+const BUNDLE_FILE = "/cache/code-bundle.json";
+const BUNDLE_JSON = '{"mounts":[],"version":1}';
+
+function bundleArtifact(overrides: Partial<CodeBundleArtifact> = {}): CodeBundleArtifact {
+	return {
+		byteLength: BUNDLE_JSON.length,
+		fileCount: 3,
+		path: BUNDLE_FILE,
+		stayedMounts: [],
+		...overrides,
+	};
+}
+
 /**
- * Verify the entire claim, then compare the task's remaining preambles and
- * body.
+ * A backend reading its bundle out of a volume of this test's own. A run that
+ * ships a bundle is the only one that may recover a task.
  */
+function bundleBackend(stub: RunnerStub, options: OpenCloudOptions = {}): OpenCloudBackend {
+	const { fileSystem } = createMemoryFileSystem({ [BUNDLE_FILE]: BUNDLE_JSON });
+	return createBackend({ fileSystem, runner: stub.runner, ...options });
+}
+
+/** The parameters a task's execution claim binds. */
 function claimParameters(script: string): string {
 	const parameters = /local key, startBefore, retention, notClaimed, startExpired = (.+)/.exec(
 		script,
@@ -102,16 +120,6 @@ function claimParameters(script: string): string {
 	}
 
 	return parameters;
-}
-
-function withoutClaim(script: string): string {
-	const parameters = claimParameters(script);
-	const claim = `${claimSource.replace("__EXECUTION_CLAIM_PARAMETERS__", () => parameters)}\n`;
-	if (!script.includes(claim)) {
-		throw new Error("Incomplete execution claim");
-	}
-
-	return script.replace(claim, "");
 }
 
 function createStreamReader(pages: Array<Array<StreamingResultRecord>>): StubStreamReader {
@@ -463,13 +471,15 @@ describe(OpenCloudBackend, () => {
 					return relay.executeAsync(relay.script, relay.signal);
 				},
 			);
-			const backend = createBackend({
+			const backend = bundleBackend(stub, {
 				bootWatchMs: 1_000,
 				executionClaimObserver: { readAsync: async () => ({ status: "missing" }) },
 				resultRelay,
-				runner: stub.runner,
 			});
-			const pending = backend.runTestsAsync(jobsOptions([job("alpha", { timeout })]));
+			const pending = backend.runTestsAsync({
+				codeBundle: bundleArtifact(),
+				jobs: [job("alpha", { timeout })],
+			});
 			await vi.advanceTimersByTimeAsync(60_000);
 
 			expect(stub.executeCalls).toHaveLength(1);
@@ -491,8 +501,8 @@ describe(OpenCloudBackend, () => {
 		},
 	);
 
-	it("should keep a claim valid through admission and recovery with bounded probe admission", async () => {
-		expect.assertions(3);
+	it("should keep a claim valid through admission and recovery", async () => {
+		expect.assertions(2);
 
 		captureStderr();
 		const stub = probeStub();
@@ -502,8 +512,11 @@ describe(OpenCloudBackend, () => {
 				.mockRejectedValueOnce(pollTimeout())
 				.mockReturnValue(oneSuccessEntry()),
 		);
-		const backend = createBackend({ now: () => 1234, runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha", { timeout: 30_000 })]));
+		const backend = bundleBackend(stub, { now: () => 1234 });
+		await backend.runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha", { timeout: 30_000 })],
+		});
 
 		expect(stub.executeCalls.map((call) => claimParameters(call.script))).toStrictEqual([
 			expect.stringContaining(", 3646234, 3705"),
@@ -512,11 +525,62 @@ describe(OpenCloudBackend, () => {
 		expect(stub.executeCalls.map((call) => call.submitCapacityBudget)).toStrictEqual([
 			405_000, 405_000,
 		]);
-		expect(stub.probeCalls[0]).toMatchObject({
-			pollBudget: 90_000,
-			submitBudget: 90_000,
-			submitCapacityBudget: 405_000,
-		});
+	});
+
+	it.for([
+		{ cause: "an uncertain create", failure: () => new Error("HTTP 500 unknown exception") },
+		{ cause: "a poll timeout", failure: pollTimeout },
+	])("should create one task per execution after $cause", async ({ failure }) => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		stub.setExecute(
+			vi
+				.fn<ExecuteHandler>()
+				.mockRejectedValueOnce(failure())
+				.mockReturnValue(oneSuccessEntry()),
+		);
+		const backend = createBackend({ runner: stub.runner });
+
+		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
+			failure().message,
+		);
+		expect(stub.executeCalls).toHaveLength(1);
+	});
+
+	it("should submit a Shared Place task with no claim, relay or submit budget", async () => {
+		expect.assertions(2);
+
+		const stub = probeStub();
+		const resultRelay = vi.fn<NonNullable<OpenCloudOptions["resultRelay"]>>();
+		const backend = createBackend({ resultRelay, runner: stub.runner });
+		await backend.runTestsAsync({ jobs: [job("alpha")], scriptOverride: "return run()" });
+
+		expect(resultRelay).not.toHaveBeenCalled();
+		expect(stub.executeCalls).toStrictEqual([
+			{
+				bootProven: true,
+				placeVersion: PROBED_VERSION,
+				script: "return run()",
+				timeout: 300_000,
+			},
+		]);
+	});
+
+	it("should submit the boot probe without an idempotent retry or a submit budget", async () => {
+		expect.assertions(1);
+
+		const stub = probeStub();
+		await createBackend({ runner: stub.runner }).runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.probeCalls).toStrictEqual([
+			{
+				placeVersion: PROBED_VERSION,
+				pollBudget: 90_000,
+				script: BOOT_PROBE_SCRIPT,
+				timeout: 10_000,
+			},
+		]);
 	});
 
 	describe("validation", () => {
@@ -649,7 +713,6 @@ describe(OpenCloudBackend, () => {
 				.spyOn(Date, "now")
 				.mockReturnValueOnce(100)
 				.mockReturnValueOnce(112)
-				.mockReturnValueOnce(200)
 				.mockReturnValueOnce(200)
 				.mockReturnValueOnce(245);
 			onTestFinished(() => {
@@ -838,7 +901,7 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({ jobs: [job("alpha")], scriptOverride: customScript });
 
-			expect(withoutClaim(stub.executeCalls[0]!.script)).toBe(customScript);
+			expect(stub.executeCalls[0]!.script).toBe(customScript);
 			expect(stub.executeCalls[0]!.script).not.toContain("Jest.runCLI");
 		});
 
@@ -860,11 +923,9 @@ describe(OpenCloudBackend, () => {
 			// whether the run composed it once or once per bucket.
 			const prepareScript = vi.fn<typeof prepareTaskScript>(prepareTaskScript);
 
-			const backend = createBackend({
-				prepareScript,
-				runner: stub.runner,
-			});
+			const backend = bundleBackend(stub, { prepareScript });
 			await backend.runTestsAsync({
+				codeBundle: bundleArtifact(),
 				jobs: [job("alpha"), job("beta"), job("gamma")],
 				parallel: 3,
 				scriptOverride: "-- shared\nreturn nil",
@@ -961,8 +1022,9 @@ describe(OpenCloudBackend, () => {
 			const stub = createRunnerStub();
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
-			const backend = createBackend({ runner: stub.runner });
+			const backend = bundleBackend(stub);
 			await backend.runTestsAsync({
+				codeBundle: bundleArtifact(),
 				jobs: [job("alpha")],
 				scriptOverride: `${directives}\nreturn nil`,
 			});
@@ -1027,7 +1089,7 @@ describe(OpenCloudBackend, () => {
 
 			expect(stub.executeCalls).toHaveLength(3);
 
-			expect(stub.executeCalls.map((call) => withoutClaim(call.script))).toStrictEqual([
+			expect(stub.executeCalls.map((call) => call.script)).toStrictEqual([
 				stealingScript,
 				stealingScript,
 				stealingScript,
@@ -2115,7 +2177,7 @@ describe(createOpenCloudBackend, () => {
 		expect(server.calls).not.toBeEmpty();
 		expect(fetch).toHaveBeenCalledWith(
 			expect.stringContaining(
-				`${server.baseUrl}/cloud/v2/universes/123/memory-store/sorted-maps/jest-roblox-result-relay-v1/items/`,
+				`${server.baseUrl}/cloud/v2/universes/123/places/456/versions/1/luau-execution-session-tasks`,
 			),
 			expect.anything(),
 		);
@@ -2342,7 +2404,6 @@ describe("upload cache", { timeout: 1000 }, () => {
 			.mockReturnValueOnce(100)
 			.mockReturnValueOnce(101)
 			.mockReturnValueOnce(200)
-			.mockReturnValueOnce(200)
 			.mockReturnValue(222);
 		const stub = createRunnerStub();
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
@@ -2368,9 +2429,14 @@ describe("upload cache", { timeout: 1000 }, () => {
 				.mockReturnValue(scriptResult(envelope([{ jestOutput: successJest() }]))),
 		);
 		captureStderr();
-		const backend = createBackend({ runner: stub.runner });
+		const backend = bundleBackend(stub);
 
-		await expect(backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))).rejects.toThrow(
+		await expect(
+			backend.runTestsAsync({
+				codeBundle: bundleArtifact(),
+				jobs: [cacheJob(rootDirectory)],
+			}),
+		).rejects.toThrow(
 			"Open Cloud recovery failed: PollTimeoutError: Still PROCESSING\nError: execute failed",
 		);
 		expect(stub.uploadCalls).toHaveLength(0);
@@ -2437,7 +2503,7 @@ describe("exact version submission", { timeout: 1000 }, () => {
 		});
 
 		expect(stub.executeCalls[0]!.placeVersion).toBe(7);
-		expect(withoutClaim(stub.executeCalls[0]!.script)).toBe("stealing-script");
+		expect(stub.executeCalls[0]!.script).toBe("stealing-script");
 	});
 
 	it("should pin a replacement task to the same version", async () => {
@@ -2451,8 +2517,11 @@ describe("exact version submission", { timeout: 1000 }, () => {
 				.mockRejectedValueOnce(pollTimeout())
 				.mockReturnValue(oneSuccessEntry()),
 		);
-		const backend = createBackend({ runner: stub.runner });
-		const result = await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		const backend = bundleBackend(stub);
+		const result = await backend.runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha")],
+		});
 
 		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
 		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
@@ -2736,8 +2805,6 @@ describe("boot probe", { timeout: 1000 }, () => {
 	});
 });
 
-const BUNDLE_FILE = "/cache/code-bundle.json";
-const BUNDLE_JSON = '{"mounts":[],"version":1}';
 const REFRESHED_PATH = "universes/123/luau-execution-session-task-binary-inputs/input-2";
 const REFRESH_STEP_MS = 14 * 60_000;
 
@@ -2748,22 +2815,6 @@ const REFRESH_STEP_MS = 14 * 60_000;
  * number of creates a run made.
  */
 describe("code bundle", () => {
-	function bundleArtifact(overrides: Partial<CodeBundleArtifact> = {}): CodeBundleArtifact {
-		return {
-			byteLength: BUNDLE_JSON.length,
-			fileCount: 3,
-			path: BUNDLE_FILE,
-			stayedMounts: [],
-			...overrides,
-		};
-	}
-
-	/** A backend reading its bundle out of a volume of this test's own. */
-	function bundleBackend(stub: RunnerStub, now?: () => number): OpenCloudBackend {
-		const { fileSystem } = createMemoryFileSystem({ [BUNDLE_FILE]: BUNDLE_JSON });
-		return createBackend({ fileSystem, now, runner: stub.runner });
-	}
-
 	/** A stub whose every task passes, whatever script it was handed. */
 	function passingStub(stubOptions: RunnerStubOptions = {}): RunnerStub {
 		const stub = createRunnerStub(stubOptions);
@@ -2781,6 +2832,24 @@ describe("code bundle", () => {
 		});
 		return stub;
 	}
+
+	it("should relay results through the configured Open Cloud base URL", async () => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_OPEN_CLOUD_BASE_URL", "http://127.0.0.1:1/");
+		const resultRelay = vi.fn<NonNullable<OpenCloudOptions["resultRelay"]>>(async (relay) => {
+			assert(relay.signal);
+			return relay.executeAsync(relay.script, relay.signal);
+		});
+		await bundleBackend(passingStub(), { resultRelay }).runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job("alpha")],
+		});
+
+		expect(resultRelay).toHaveBeenCalledWith(
+			expect.objectContaining({ baseUrl: "http://127.0.0.1:1" }),
+		);
+	});
 
 	it("should upload the bundle once and name the input on the submit", async () => {
 		expect.assertions(3);
@@ -2807,7 +2876,7 @@ describe("code bundle", () => {
 			});
 
 			await expect(
-				bundleBackend(stub, () => now).runTestsAsync({
+				bundleBackend(stub, { now: () => now }).runTestsAsync({
 					codeBundle: bundleArtifact(),
 					jobs: [job("alpha")],
 				}),
@@ -2832,7 +2901,7 @@ describe("code bundle", () => {
 			now = 6 * 60_000 - 1;
 			return result;
 		});
-		await bundleBackend(stub, () => now).runTestsAsync({
+		await bundleBackend(stub, { now: () => now }).runTestsAsync({
 			codeBundle: bundleArtifact(),
 			jobs: [job("alpha")],
 		});
@@ -2966,7 +3035,7 @@ describe("code bundle", () => {
 		);
 		const capture = captureStderr();
 		onTestFinished(capture.restore);
-		await bundleBackend(stub, () => now).runTestsAsync({
+		await bundleBackend(stub, { now: () => now }).runTestsAsync({
 			codeBundle: bundleArtifact(),
 			jobs: [job("alpha")],
 		});
@@ -3105,7 +3174,7 @@ describe("code bundle", () => {
 		// before either shard submits.
 		let clock = 0;
 
-		await bundleBackend(stub, () => clock).runTestsAsync({
+		await bundleBackend(stub, { now: () => clock }).runTestsAsync({
 			codeBundle: bundleArtifact(),
 			jobs: [job("alpha"), job("beta")],
 			parallel: 2,

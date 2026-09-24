@@ -21,6 +21,7 @@ const CLAIM_URL = pathToFileURL(
 	path.resolve(import.meta.dirname, "../../../src/luau/execution-claim.ts"),
 );
 const STORAGE_URL = import.meta.resolve("@bedrock-rbx/ocale/storage");
+const OCALE_URL = import.meta.resolve("@bedrock-rbx/ocale");
 
 const CHILD_SCRIPT = `
 import assert from "node:assert/strict";
@@ -32,6 +33,7 @@ const { OcaleRunner } = await import(${JSON.stringify(RUNNER_URL.href)});
 const { createFakeHttpClient } = await import(${JSON.stringify(OCALE_TESTING_URL.href)});
 const { ExecutionClaimObserver } = await import(${JSON.stringify(CLAIM_URL.href)});
 const { StorageClient } = await import(${JSON.stringify(STORAGE_URL)});
+const { RateLimitError } = await import(${JSON.stringify(OCALE_URL)});
 const mode = process.argv[1];
 const task = {
   createTime: "2026-01-01T00:00:00Z",
@@ -44,7 +46,11 @@ const http = createFakeHttpClient();
 if (mode === "queue") {
   http.mockResponse({ body: { code: "NOT_FOUND", message: "missing" }, status: 404 });
 } else if (mode === "retry") {
-  http.mockRateLimit({ retryAfterSeconds: 0.1 });
+  http.mockError(new RateLimitError("Rate limited", {
+    details: { errors: [{ code: 0, message: "" }] },
+    retryAfterSeconds: 0.1,
+    statusCode: 429,
+  }));
   http.mockResponse({ body: task, status: 200 });
 } else {
   http.mockResponse({ body: task, status: 200 });

@@ -70,7 +70,9 @@ Options:
   --no-coverage-cache               Force a clean coverage re-instrumentation (skip incremental cache)
   --no-upload-cache                 Always upload the place, even when its bytes are unchanged
   --parallel [n]                    Open-Cloud-only: number of concurrent sessions
-                                    (or "auto" = min(jobs, 3); default: 1 session)
+                                    (or "auto" = min(jobs, 3); default: 1 session).
+                                    Each session costs one task create against
+                                    Roblox's hourly limit
   --experimental-vm-parallel [n]    Studio-only, experimental: run the configs across
                                     n Luau VMs in one Studio session (default: one
                                     VM per config; max 4, the hosts the plugin

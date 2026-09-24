@@ -329,7 +329,7 @@ export class OpenCloudBackend implements Backend {
 		// entry, so it cannot take more rounds than there are jobs.
 		for (const _attempt of jobs) {
 			const envelope = parseStealingEnvelope(
-				await this.executeClaimedAsync({ script, timeout, version }),
+				await this.executeAsync({ script, timeout, version }),
 			);
 			addEntriesToMap(collected, envelope.entries, envelope.gameOutput);
 			hasBailed ||= envelope.bailed;
@@ -393,6 +393,31 @@ export class OpenCloudBackend implements Backend {
 		}
 
 		return uploaded.path;
+	}
+
+	/**
+	 * One logical execution. A Shared Place run creates exactly one task for
+	 * it; only a Binary Input run, which nothing in production selects, may
+	 * replace one under an execution claim.
+	 */
+	private async executeAsync(request: {
+		script: string;
+		timeout: number;
+		version: VersionContext;
+	}): Promise<ScriptResult> {
+		if (this.bundle !== undefined) {
+			return this.executeClaimedAsync(request);
+		}
+
+		const { script, timeout, version } = request;
+		return this.runner
+			.executeScriptAsync({
+				bootProven: version.bootProven,
+				placeVersion: version.versionNumber,
+				script,
+				timeout,
+			})
+			.catch(rethrowOversizedResult);
 	}
 
 	/**
@@ -469,7 +494,7 @@ export class OpenCloudBackend implements Backend {
 			return cached;
 		}
 
-		const composed = this.prepareScript({ hasRebuild: this.bundle !== undefined, script });
+		const composed = this.prepareScript({ script });
 		this.composed.set(script, composed);
 		return composed;
 	}
@@ -500,7 +525,7 @@ export class OpenCloudBackend implements Backend {
 		// eslint-disable-next-line ts/no-non-null-assertion -- bucket non-empty
 		const primary = jobs[0]!;
 		const script = scriptOverride ?? bucketScript(jobs);
-		const scriptResult = await this.executeClaimedAsync({
+		const scriptResult = await this.executeAsync({
 			script,
 			timeout: primary.config.timeout,
 			version,
@@ -627,7 +652,7 @@ export class OpenCloudBackend implements Backend {
 		const taskResults = await drainStealingPoolAsync(
 			resolveBucketCount(parallel, jobs.length),
 			async () => {
-				return this.executeClaimedAsync({
+				return this.executeAsync({
 					script: scriptOverride,
 					timeout: primaryConfig.timeout,
 					version,
@@ -753,7 +778,6 @@ export class OpenCloudBackend implements Backend {
 		budget: number;
 		upload: UploadOutcome;
 	}): Promise<string | undefined> {
-		const { submitBudget, submitCapacityBudget } = openCloudExecutionBudgets(budget);
 		try {
 			const result = await this.runner.executeScriptAsync({
 				// A wall-clock cap, not a deadline: the question is whether the
@@ -762,8 +786,6 @@ export class OpenCloudBackend implements Backend {
 				placeVersion: upload.versionNumber,
 				pollBudget: budget,
 				script: BOOT_PROBE_SCRIPT,
-				submitBudget,
-				submitCapacityBudget,
 				timeout: Math.min(BOOT_PROBE_TASK_TIMEOUT_MS, budget),
 			});
 			return result.outputs[0] ?? "";

@@ -6,6 +6,7 @@ import path from "node:path";
 import nodeProcess from "node:process";
 import { assert, onTestFinished } from "vitest";
 
+import type { CodeBundleArtifact } from "../../../src/staging/place-builder.ts";
 import type { JestResult } from "../../../src/types/jest-result.ts";
 import { createSandboxDirectory } from "../sandbox-root.ts";
 
@@ -28,6 +29,23 @@ interface RunCliOptions {
 }
 
 const BIN = path.resolve(__dirname, "../../../bin/jest-roblox.js");
+const CODE_BUNDLE_JSON = '{"mounts":[],"version":1}';
+
+/**
+ * Write an empty Code Bundle into `directory`. A run that ships one is the only
+ * kind that may replace a task, and no production resolver selects it.
+ */
+export function writeCodeBundle(directory: string): CodeBundleArtifact {
+	const bundlePath = path.join(directory, "code-bundle.json");
+	writeFileSync(bundlePath, CODE_BUNDLE_JSON);
+	return {
+		byteLength: CODE_BUNDLE_JSON.length,
+		fileCount: 0,
+		path: bundlePath,
+		stayedMounts: [],
+	};
+}
+
 const SEA_BUNDLE = path.resolve(__dirname, "../../../dist/sea/sea-entry.cjs");
 
 const mergedResultSchema = type({ testResults: type({ testFilePath: "string" }).array() });

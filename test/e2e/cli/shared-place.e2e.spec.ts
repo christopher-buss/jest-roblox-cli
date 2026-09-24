@@ -95,4 +95,64 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 		// A task pinned to its version has no other version to refuse.
 		expect(submit.script).not.toContain(PLACE_MISMATCH);
 	});
+
+	it.for([
+		{
+			cause: "an uncertain create",
+			failure: { body: { code: "INTERNAL", message: "unknown exception" }, status: 500 },
+		},
+		{
+			cause: "a dmaas concurrency refusal",
+			failure: {
+				body: {
+					code: "RESOURCE_EXHAUSTED",
+					message: "Too many concurrent task creation requests for this place",
+				},
+				headers: { "retry-after": "0" },
+				status: 429,
+			},
+		},
+	])("should create one test task after $cause", async ({ failure }) => {
+		expect.assertions(2);
+
+		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
+		const server = await startFakeOpenCloudServerAsync(
+			[{ jestOutput: buildMixedOutput(buildPassingPayload()) }],
+			{ submitFailures: [failure] },
+		);
+
+		const result = await runCliAsync([], {
+			cwd: sandbox,
+			env: createOpenCloudEnvironment(server.baseUrl),
+		});
+
+		expect(result.exitCode).not.toBe(0);
+		expect(server.requests).toHaveLength(1);
+	});
+
+	it("should retry a create the edge rate limit refused before dmaas saw it", async () => {
+		expect.assertions(2);
+
+		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
+		const server = await startFakeOpenCloudServerAsync(
+			[{ jestOutput: buildMixedOutput(buildPassingPayload()) }],
+			{
+				submitFailures: [
+					{
+						body: { errors: [{ code: 0, message: "" }] },
+						headers: { "retry-after": "0", "x-envoy-ratelimited": "true" },
+						status: 429,
+					},
+				],
+			},
+		);
+
+		const result = await runCliAsync([], {
+			cwd: sandbox,
+			env: createOpenCloudEnvironment(server.baseUrl),
+		});
+
+		expect(result.exitCode, `stderr: ${result.stderr}`).toBe(0);
+		expect(server.requests).toHaveLength(2);
+	});
 });

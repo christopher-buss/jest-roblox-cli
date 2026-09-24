@@ -5,6 +5,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { startFakeOpenCloudServerAsync } from "./cli/fake-open-cloud.ts";
+import { writeCodeBundle } from "./cli/helpers.ts";
+import { IS_BINARY_INPUT } from "./live/live-gate.ts";
 
 function temporaryPlace(): { placeFile: string; rootDir: string } {
 	const rootDirectory = mkdtempSync(path.join(tmpdir(), "jest-roblox-bundle-"));
@@ -64,61 +66,72 @@ describe("published bundle", () => {
 		expect(server.calls.filter(({ url }) => url.includes("/versions?"))).toHaveLength(2);
 	});
 
-	it("should stop the superseded observer after a replacement succeeds", async () => {
-		expect.assertions(3);
+	it.skipIf(!IS_BINARY_INPUT)(
+		"should stop the superseded observer after a replacement succeeds",
+		async () => {
+			expect.assertions(3);
 
-		const server = await startFakeOpenCloudServerAsync(
-			[
-				{ pollsBeforeComplete: Number.MAX_SAFE_INTEGER },
-				{ rawOutput: envelope("replacement") },
-			],
-			{ executionClaim: "missing" },
-		);
-		const { backend, config } = await builtBackendAsync(server.baseUrl);
-		const result = await backend.runTestsAsync({
-			jobs: [{ config, displayName: "bundle", testFiles: [] }],
-			scriptOverride: 'return "result"',
-		});
+			const server = await startFakeOpenCloudServerAsync(
+				[
+					{ pollsBeforeComplete: Number.MAX_SAFE_INTEGER },
+					{ rawOutput: envelope("replacement") },
+				],
+				{ executionClaim: "missing" },
+			);
+			const { backend, config } = await builtBackendAsync(server.baseUrl);
+			const result = await backend.runTestsAsync({
+				codeBundle: writeCodeBundle(config.rootDir),
+				jobs: [{ config, displayName: "bundle", testFiles: [] }],
+				scriptOverride: 'return "result"',
+			});
 
-		expect(result.rawResults[0]!.entry.jestOutput).toBe("replacement");
+			expect(result.rawResults[0]!.entry.jestOutput).toBe("replacement");
 
-		function originalTaskGets(): number {
-			return taskGetCount(server.calls, "/tasks/task-1");
-		}
+			function originalTaskGets(): number {
+				return taskGetCount(server.calls, "/tasks/task-1");
+			}
 
-		const settledCount = originalTaskGets();
+			const settledCount = originalTaskGets();
 
-		expect(settledCount).toBeGreaterThan(0);
+			expect(settledCount).toBeGreaterThan(0);
 
-		await sleep(1_100);
+			await sleep(1_100);
 
-		expect(originalTaskGets()).toBe(settledCount);
-	});
+			expect(originalTaskGets()).toBe(settledCount);
+		},
+	);
 
-	it("should retry a resource-exhausted submission through the built backend", async () => {
-		expect.assertions(2);
+	it.skipIf(!IS_BINARY_INPUT)(
+		"should retry a resource-exhausted submission through the built backend",
+		async () => {
+			expect.assertions(2);
 
-		const server = await startFakeOpenCloudServerAsync([{ rawOutput: envelope("complete") }], {
-			submitFailures: [
+			const server = await startFakeOpenCloudServerAsync(
+				[{ rawOutput: envelope("complete") }],
 				{
-					body: {
-						error: {
-							code: "RESOURCE_EXHAUSTED",
-							message: "Too many tasks already active for this place",
+					submitFailures: [
+						{
+							body: {
+								error: {
+									code: "RESOURCE_EXHAUSTED",
+									message: "Too many tasks already active for this place",
+								},
+							},
+							headers: { "retry-after": "0" },
+							status: 429,
 						},
-					},
-					headers: { "retry-after": "0" },
-					status: 429,
+					],
 				},
-			],
-		});
-		const { backend, config } = await builtBackendAsync(server.baseUrl);
-		const result = await backend.runTestsAsync({
-			jobs: [{ config, displayName: "bundle", testFiles: [] }],
-			scriptOverride: 'return "result"',
-		});
+			);
+			const { backend, config } = await builtBackendAsync(server.baseUrl);
+			const result = await backend.runTestsAsync({
+				codeBundle: writeCodeBundle(config.rootDir),
+				jobs: [{ config, displayName: "bundle", testFiles: [] }],
+				scriptOverride: 'return "result"',
+			});
 
-		expect(result.rawResults[0]!.entry.jestOutput).toBe("complete");
-		expect(server.requests).toHaveLength(2);
-	});
+			expect(result.rawResults[0]!.entry.jestOutput).toBe("complete");
+			expect(server.requests).toHaveLength(2);
+		},
+	);
 });

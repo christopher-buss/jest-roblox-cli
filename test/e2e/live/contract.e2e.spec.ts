@@ -213,7 +213,7 @@ describe.for(cases)("open Cloud contract ($name)", ({ name, testCase }) => {
 	);
 });
 
-describe("idempotent contract task recovery", () => {
+describe.skipIf(!IS_BINARY_INPUT)("idempotent contract task recovery", () => {
 	it("should replace one task that stays processing", async () => {
 		expect.assertions(2);
 
@@ -298,48 +298,51 @@ describe("idempotent contract task recovery", () => {
 });
 
 describe("rate-limited contract HTTP", () => {
-	it("should preserve a real FAILED response after quota windows and one stalled task", async () => {
-		expect.assertions(3);
+	it.skipIf(!IS_BINARY_INPUT)(
+		"should preserve a real FAILED response after quota windows and one stalled task",
+		async () => {
+			expect.assertions(3);
 
-		vi.useFakeTimers();
-		function quota(): Response {
-			return new Response("quota", { headers: { "Retry-After": "60" }, status: 429 });
-		}
+			vi.useFakeTimers();
+			function quota(): Response {
+				return new Response("quota", { headers: { "Retry-After": "60" }, status: 429 });
+			}
 
-		const fetchMock = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(quota())
-			.mockResolvedValueOnce(quota())
-			.mockResolvedValueOnce(Response.json({ path: "universes/123/tasks/first" }))
-			.mockResolvedValueOnce(Response.json({ state: "PROCESSING" }))
-			.mockResolvedValueOnce(quota())
-			.mockResolvedValueOnce(quota())
-			.mockResolvedValueOnce(Response.json({ path: "universes/123/tasks/second" }))
-			.mockResolvedValueOnce(
-				Response.json({ error: { message: "contract-failure" }, state: "FAILED" }),
-			);
-		vi.stubGlobal("fetch", fetchMock);
-		onTestFinished(() => {
-			vi.useRealTimers();
-			vi.unstubAllGlobals();
-		});
-		const execution = executeIdempotentScriptAsync({
-			baseUrl: "https://example.invalid",
-			http: createHttpClient("key"),
-			placeId: "456",
-			pollIntervalMs: TASK_POLL_TIMEOUT_MS,
-			script: 'error("contract-failure")',
-			universeId: "123",
-		});
-		await vi.advanceTimersByTimeAsync(295_000);
+			const fetchMock = vi
+				.fn<typeof fetch>()
+				.mockResolvedValueOnce(quota())
+				.mockResolvedValueOnce(quota())
+				.mockResolvedValueOnce(Response.json({ path: "universes/123/tasks/first" }))
+				.mockResolvedValueOnce(Response.json({ state: "PROCESSING" }))
+				.mockResolvedValueOnce(quota())
+				.mockResolvedValueOnce(quota())
+				.mockResolvedValueOnce(Response.json({ path: "universes/123/tasks/second" }))
+				.mockResolvedValueOnce(
+					Response.json({ error: { message: "contract-failure" }, state: "FAILED" }),
+				);
+			vi.stubGlobal("fetch", fetchMock);
+			onTestFinished(() => {
+				vi.useRealTimers();
+				vi.unstubAllGlobals();
+			});
+			const execution = executeIdempotentScriptAsync({
+				baseUrl: "https://example.invalid",
+				http: createHttpClient("key"),
+				placeId: "456",
+				pollIntervalMs: TASK_POLL_TIMEOUT_MS,
+				script: 'error("contract-failure")',
+				universeId: "123",
+			});
+			await vi.advanceTimersByTimeAsync(295_000);
 
-		await expect(execution).resolves.toStrictEqual({
-			error: { message: "contract-failure" },
-			state: "FAILED",
-		});
-		expect(fetchMock).toHaveBeenCalledTimes(8);
-		expect(vi.getTimerCount()).toBe(0);
-	});
+			await expect(execution).resolves.toStrictEqual({
+				error: { message: "contract-failure" },
+				state: "FAILED",
+			});
+			expect(fetchMock).toHaveBeenCalledTimes(8);
+			expect(vi.getTimerCount()).toBe(0);
+		},
+	);
 
 	it("should cancel a retry wait when its caller aborts", { timeout: 1000 }, async () => {
 		expect.assertions(3);
@@ -426,38 +429,41 @@ describe("rate-limited contract HTTP", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("should bound a throttled poll and replace only its timed-out task", async () => {
-		expect.assertions(3);
+	it.skipIf(!IS_BINARY_INPUT)(
+		"should bound a throttled poll and replace only its timed-out task",
+		async () => {
+			expect.assertions(3);
 
-		vi.useFakeTimers();
-		const fetchMock = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json({ path: "universes/123/tasks/first" }))
-			.mockResolvedValueOnce(
-				new Response("quota", { headers: { "Retry-After": "60" }, status: 429 }),
-			)
-			.mockResolvedValueOnce(Response.json({ path: "universes/123/tasks/second" }))
-			.mockResolvedValueOnce(
-				Response.json({ error: { message: "contract-failure" }, state: "FAILED" }),
-			);
-		vi.stubGlobal("fetch", fetchMock);
-		onTestFinished(() => {
-			vi.useRealTimers();
-			vi.unstubAllGlobals();
-		});
-		const execution = executeIdempotentScriptAsync({
-			baseUrl: "https://example.invalid",
-			http: createHttpClient("key"),
-			placeId: "456",
-			script: 'error("contract-failure")',
-			universeId: "123",
-		});
-		await vi.advanceTimersByTimeAsync(55_000);
+			vi.useFakeTimers();
+			const fetchMock = vi
+				.fn<typeof fetch>()
+				.mockResolvedValueOnce(Response.json({ path: "universes/123/tasks/first" }))
+				.mockResolvedValueOnce(
+					new Response("quota", { headers: { "Retry-After": "60" }, status: 429 }),
+				)
+				.mockResolvedValueOnce(Response.json({ path: "universes/123/tasks/second" }))
+				.mockResolvedValueOnce(
+					Response.json({ error: { message: "contract-failure" }, state: "FAILED" }),
+				);
+			vi.stubGlobal("fetch", fetchMock);
+			onTestFinished(() => {
+				vi.useRealTimers();
+				vi.unstubAllGlobals();
+			});
+			const execution = executeIdempotentScriptAsync({
+				baseUrl: "https://example.invalid",
+				http: createHttpClient("key"),
+				placeId: "456",
+				script: 'error("contract-failure")',
+				universeId: "123",
+			});
+			await vi.advanceTimersByTimeAsync(55_000);
 
-		await expect(execution).resolves.toMatchObject({ state: "FAILED" });
-		expect(fetchMock).toHaveBeenCalledTimes(4);
-		expect(vi.getTimerCount()).toBe(0);
-	});
+			await expect(execution).resolves.toMatchObject({ state: "FAILED" });
+			expect(fetchMock).toHaveBeenCalledTimes(4);
+			expect(vi.getTimerCount()).toBe(0);
+		},
+	);
 
 	it.for([
 		{ calls: 2, isIdempotent: false, method: "GET", status: 200 },

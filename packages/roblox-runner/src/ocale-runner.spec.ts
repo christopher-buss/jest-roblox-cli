@@ -16,7 +16,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 import { type } from "arktype";
 import buffer from "node:buffer";
 import { createServer } from "node:http";
-import { assert, describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { ExecutionTimeoutError } from "./execution-timeout.ts";
 import {
@@ -959,7 +959,7 @@ describe(OcaleRunner, () => {
 		});
 
 		it("should admit after a validated capacity blocker completes", async () => {
-			expect.assertions(3);
+			expect.assertions(2);
 
 			const http = createFakeHttpClient();
 			const blocker =
@@ -1027,30 +1027,6 @@ describe(OcaleRunner, () => {
 			});
 
 			expect(withoutExtension.outputs).toStrictEqual(["without extension"]);
-
-			http.mockError(
-				new RateLimitError("Rate limited", {
-					details: {
-						code: "RESOURCE_EXHAUSTED",
-						message: `Too many tasks already active: ${blocker}`,
-					},
-					remaining: 3,
-					retryAfterSeconds: 1,
-					statusCode: 429,
-				}),
-			);
-			http.mockResponse({ body: { state: "COMPLETE" }, status: 200 });
-			http.mockResponse({ body: taskBody(), status: 200 });
-			http.mockResponse({
-				body: taskBody({ output: { results: ["unbudgeted"] }, state: "COMPLETE" }),
-				status: 200,
-			});
-			const unbudgeted = await makeRunner(http).executeScriptAsync({
-				script: "return 1",
-				timeout: 30_000,
-			});
-
-			expect(unbudgeted.outputs).toStrictEqual(["unbudgeted"]);
 		});
 
 		// eslint-disable-next-line flawless/prefer-ending-with-an-expect -- timer cleanup must be last
@@ -1239,6 +1215,120 @@ describe(OcaleRunner, () => {
 				makeRunner(http).executeScriptAsync({ script: "return 1", timeout: 30_000 }),
 			).rejects.toBeInstanceOf(TaskSubmitError);
 			expect(http.requests).toHaveLength(1);
+		});
+
+		it.for([
+			{ body: "top-level", error: capacityError },
+			{
+				body: "missing",
+				error: () => {
+					return new RateLimitError("Rate limited", {
+						retryAfterSeconds: 0,
+						statusCode: 429,
+					});
+				},
+			},
+			{
+				body: "nested",
+				error: () => {
+					return new RateLimitError("Rate limited", {
+						details: {
+							error: { code: "RESOURCE_EXHAUSTED", message: "Too many tasks" },
+						},
+						remaining: 3,
+						retryAfterSeconds: 0,
+						statusCode: 429,
+					});
+				},
+			},
+		])(
+			"should not retry or wait out a create dmaas refused with a $body code",
+			async ({ error }) => {
+				expect.assertions(2);
+
+				const http = createFakeHttpClient();
+				http.mockError(error());
+				http.mockResponse({ body: taskBody(), status: 200 });
+
+				await expect(
+					makeRunner(http).executeScriptAsync({ script: "return 1", timeout: 30_000 }),
+				).rejects.toBeInstanceOf(TaskSubmitError);
+				expect(http.requests).toHaveLength(1);
+			},
+		);
+
+		it("should retry a task create the edge rate limit refused after its retry-after", async () => {
+			expect.assertions(3);
+
+			vi.useFakeTimers();
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					details: { errors: [{ code: 0, message: "" }] },
+					remaining: 0,
+					retryAfterSeconds: 5,
+					statusCode: 429,
+				}),
+			);
+			http.mockResponse({ body: taskBody(), status: 200 });
+			http.mockResponse({
+				body: taskBody({ output: { results: ["admitted"] }, state: "COMPLETE" }),
+				status: 200,
+			});
+
+			const runner = new OcaleRunner(
+				{ apiKey: "test-key", placeId: "456", universeId: "123" },
+				{ httpClient: http },
+			);
+			const execution = runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
+			await vi.advanceTimersByTimeAsync(4999);
+
+			expect(http.requests).toHaveLength(1);
+
+			await vi.advanceTimersByTimeAsync(60_000);
+
+			await expect(execution).resolves.toMatchObject({ outputs: ["admitted"] });
+			expect(http.requests.filter(({ request }) => request.method === "POST")).toHaveLength(
+				2,
+			);
+		});
+
+		it("should stop waiting out an edge refusal when the caller aborts", async () => {
+			expect.assertions(3);
+
+			vi.useFakeTimers();
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					details: { errors: [{ code: 0, message: "" }] },
+					retryAfterSeconds: 5,
+					statusCode: 429,
+				}),
+			);
+			const observation = new AbortController();
+			const runner = new OcaleRunner(
+				{ apiKey: "test-key", placeId: "456", universeId: "123" },
+				{ httpClient: http },
+			);
+			const execution = runner
+				.executeScriptAsync({
+					observationSignal: observation.signal,
+					script: "return 1",
+					timeout: 30_000,
+				})
+				.catch((err: unknown) => err);
+			await vi.advanceTimersByTimeAsync(1000);
+			observation.abort(new Error("superseded"));
+
+			await expect(execution).resolves.toBeInstanceOf(TaskSubmitError);
+			expect(http.requests).toHaveLength(1);
+			expect(vi.getTimerCount()).toBe(0);
 		});
 
 		it("should retry a task submit server failure when explicitly idempotent", async () => {
