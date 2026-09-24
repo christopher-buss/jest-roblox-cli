@@ -94,7 +94,7 @@ interface StagedCoverageRun extends StagedCoverage {
 /**
  * `jest.config` stub mounts for a place build: one `$path` named-child per
  * rojo mount that lacks a user-authored config on disk, pointing at the cache
- * stub. Shared by the open-cloud place build and `prepareArtifacts`'s Clean
+ * stub. Shared by the dispatch place build and `prepareArtifacts`'s Clean
  * Place.
  */
 export function collectStubMounts({

@@ -9,6 +9,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import type { MemoryVolume } from "../../test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { movableClockCollector } from "../../test/mocks/movable-clock.ts";
+import { PLACE_INPUT_BY_KIND } from "../../test/mocks/place-input.ts";
 import type { Backend } from "../backends/interface.ts";
 import type { ResolvedProjectConfig } from "../config/projects.ts";
 import {
@@ -144,6 +145,7 @@ function makeBackend(kind: Backend["kind"] = "studio"): Backend {
 	return {
 		closeAsync: vi.fn<NonNullable<Backend["closeAsync"]>>(),
 		kind,
+		placeInput: PLACE_INPUT_BY_KIND[kind],
 		runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
 	};
 }
@@ -805,6 +807,28 @@ describe(runMultiProjectAsync, () => {
 
 		expect(mocks.execFile).not.toHaveBeenCalled();
 		expect(volume.existsSync(SYNTH_PROJECT)).toBeFalse();
+	});
+
+	it("should build the dispatch place for any backend that takes the built place", async () => {
+		expect.assertions(2);
+
+		const { config, fileSystem, volume } = setupDefaults();
+		mocks.resolveBackend.mockResolvedValueOnce({
+			...makeBackend("studio"),
+			placeInput: "built",
+		});
+		seedProjectFiles(volume);
+
+		await runMultiProjectAsync({
+			cli: makeCli(),
+			config,
+			fileSystem,
+			rawProjects: [makeProjectEntry("client")],
+			seams,
+		});
+
+		expect(mocks.execFile).toHaveBeenCalledOnce();
+		expect(volume.existsSync(SYNTH_PROJECT)).toBeTrue();
 	});
 
 	it("should skip buildWithRojoAsync and prepare coverage when collectCoverage is true", async () => {
@@ -1826,6 +1850,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce({
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
 		});
 		mocks.resolveAllProjects.mockResolvedValue([
@@ -1850,6 +1875,7 @@ describe(runMultiProjectAsync, () => {
 		const { config, fileSystem, volume } = setupDefaults();
 		mocks.resolveBackend.mockResolvedValueOnce({
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: vi.fn<Backend["runTestsAsync"]>(),
 		});
 		const error = new Error("dispatch failed");

@@ -65,8 +65,8 @@ export interface ExecutionOutcome {
 	typecheck: TypecheckPassOutcome;
 }
 
-/** Where the non-coverage open-cloud place is built, and from what. */
-interface OpenCloudPlaceOptions {
+/** Where the non-coverage dispatch place is built, and from what. */
+interface DispatchPlaceOptions {
 	cacheRoot: string;
 	childProcess: ChildProcessRunner;
 	codeRoots: ReadonlyArray<PosixRoot> | undefined;
@@ -132,7 +132,7 @@ export async function resolveRunBackendAsync({
 
 /**
  * Run a `TestPlan` against a backend the caller resolved and owns: build the
- * open-cloud place when one is needed, then run the Roblox jobs and the
+ * dispatch place when the backend takes one, then run the Roblox jobs and the
  * host-side tsgo pass concurrently.
  */
 export async function runTestPlanAsync(input: ExecutionInput): Promise<ExecutionOutcome> {
@@ -151,7 +151,7 @@ export async function runTestPlanAsync(input: ExecutionInput): Promise<Execution
 		runJobsAsync({
 			backend,
 			// One of the two builds wrote it: a coverage run's place is built
-			// inside staging, every other open-cloud place just above.
+			// inside staging, every other built place just above.
 			codeBundle: staged.codeBundle ?? placeBuild.codeBundle,
 			fileSystem: discovery.fileSystem,
 			jobs: plan.jobs,
@@ -243,7 +243,7 @@ async function runJobsAsync({
 }
 
 /**
- * The gate a non-coverage open-cloud build reuses its place through.
+ * The gate a non-coverage dispatch build reuses its place through.
  *
  * No manifests and no shadow roots: this is the path a coverage run never
  * takes, so every input is walked off disk. On a harness build what is left to
@@ -257,14 +257,14 @@ function placeReuseFor(cacheRoot: string): PlaceReuseOptions {
 	};
 }
 
-async function buildOpenCloudPlaceAsync({
+async function buildDispatchPlaceAsync({
 	cacheRoot,
 	childProcess,
 	codeRoots,
 	fileSystem,
 	projects,
 	rootConfig,
-}: OpenCloudPlaceOptions): Promise<PlaceBuildResult> {
+}: DispatchPlaceOptions): Promise<PlaceBuildResult> {
 	const userRojoProjectPath = path.resolve(
 		rootConfig.rootDir,
 		rootConfig.rojoProject ?? DEFAULT_ROJO_PROJECT,
@@ -294,8 +294,8 @@ async function buildOpenCloudPlaceAsync({
 }
 
 /**
- * Build the place a non-coverage open-cloud run dispatches against, and report
- * how long it took.
+ * Build the place a non-coverage run dispatches against, for a backend whose
+ * `placeInput` is `built`, and report how long it took.
  *
  * Timed rather than merely elapsed-through: the build lands before the dispatch
  * window opens, so its cost falls outside every phase the backend measures. A
@@ -310,12 +310,12 @@ async function buildPlaceForBackendAsync({
 	staged,
 }: ExecutionInput): Promise<PlaceBuildOutcome> {
 	const { fileSystem, projects, rootConfig, seams, timing } = discovery;
-	if (rootConfig.collectCoverage || backend.kind !== "open-cloud") {
+	if (rootConfig.collectCoverage || backend.placeInput !== "built") {
 		return { elapsedMs: 0 };
 	}
 
 	const { elapsedMs, value } = await timing.profileTimedAsync("buildOpenCloudPlace", async () => {
-		const built = await buildOpenCloudPlaceAsync({
+		const built = await buildDispatchPlaceAsync({
 			cacheRoot: staged.cacheRoot,
 			childProcess: seams.childProcess,
 			codeRoots,

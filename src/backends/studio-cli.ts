@@ -341,6 +341,7 @@ export class StudioCliBackend implements Backend {
 	private readonly webSocketServerFactory: WebSocketServerFactory;
 
 	public readonly kind = "studio-cli" as const;
+	public readonly placeInput = "own" as const;
 
 	constructor(options: StudioCliOptions = {}) {
 		this.buildPlaceAsync = options.buildPlaceAsync ?? defaultBuildPlace;

@@ -117,6 +117,7 @@ function createStubBackend(
 	const captured: Partial<Record<"options", BackendOptions>> = {};
 	const backend: Backend = {
 		kind: "open-cloud",
+		placeInput: "built",
 		runTestsAsync: async (options): Promise<BackendResult> => {
 			captured.options = options;
 			return {
@@ -3908,6 +3909,7 @@ describe(runWorkspaceAsync, () => {
 			// simulating an entry observed mid-task.
 			const wrappedBackend: Backend = {
 				kind: "open-cloud",
+				placeInput: "built",
 				runTestsAsync: async (options) => {
 					options.streaming!.onPackageResult(streamedEntry);
 					return backend.runTestsAsync(options);
@@ -5624,6 +5626,7 @@ describe("workspace type tests", () => {
 		});
 		const backend: Backend = {
 			kind: "open-cloud",
+			placeInput: "built",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				signalRuntimeStarted();
 				await typecheckStarted;

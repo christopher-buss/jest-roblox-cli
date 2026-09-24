@@ -96,6 +96,7 @@ export class StudioBackend implements Backend {
 	private wss: undefined | WebSocketServer;
 
 	public readonly kind = "studio" as const;
+	public readonly placeInput = "none" as const;
 
 	constructor(options: StudioOptions) {
 		this.port = options.port;

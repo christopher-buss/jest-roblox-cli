@@ -96,6 +96,7 @@ describe("executor multi-root pipeline", () => {
 		let captured: BackendOptions | undefined;
 		const fakeBackend: Backend = {
 			kind: "open-cloud",
+			placeInput: "built",
 			runTestsAsync: async (options): Promise<BackendResult> => {
 				captured = options;
 				const jestOutput = JSON.stringify({

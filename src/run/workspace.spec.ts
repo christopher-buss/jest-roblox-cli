@@ -5,6 +5,7 @@ import process from "node:process";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
+import { PLACE_INPUT_BY_KIND } from "../../test/mocks/place-input.ts";
 import type { Backend, BackendOptions, BackendResult } from "../backends/interface.ts";
 import type { createOpenCloudBackend } from "../backends/open-cloud.ts";
 import type { createStudioCliBackend } from "../backends/studio-cli.ts";
@@ -135,6 +136,7 @@ function makeFakeBackend(kind: Backend["kind"] = "open-cloud"): Backend {
 	return {
 		closeAsync: vi.fn<() => void>(),
 		kind,
+		placeInput: PLACE_INPUT_BY_KIND[kind],
 		runTestsAsync: vi.fn<(options: BackendOptions) => Promise<BackendResult>>(async () => {
 			return { rawResults: [], timing: { executionMs: 0 } };
 		}),

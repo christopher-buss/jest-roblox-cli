@@ -203,6 +203,7 @@ export class OpenCloudBackend implements Backend {
 	private composed!: Map<string, (claim: string) => string>;
 
 	public readonly kind = "open-cloud" as const;
+	public readonly placeInput = "built" as const;
 
 	constructor(credentials: OpenCloudCredentials, options?: OpenCloudOptions) {
 		this.bootWatchMs = options?.bootWatchMs ?? DEFAULT_BOOT_WATCH_MS;

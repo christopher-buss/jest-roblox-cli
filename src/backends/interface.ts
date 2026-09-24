@@ -199,8 +199,15 @@ export type BackendKind = "open-cloud" | "studio" | "studio-cli";
 export interface Backend {
 	closeAsync?(): Promise<void> | void;
 	readonly kind: BackendKind;
+	readonly placeInput: PlaceInput;
 	runTestsAsync(options: BackendOptions): Promise<BackendResult>;
 }
+
+/**
+ * The place a backend dispatches against: the one the run builds before
+ * dispatch (`built`), one the backend builds itself (`own`), or none.
+ */
+type PlaceInput = "built" | "none" | "own";
 
 /**
  * Whether this is a workspace (multi-package) run. Workspace jobs each carry

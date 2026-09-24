@@ -33,6 +33,7 @@ function withCodeBundle(backend: OpenCloudBackend, sandbox: string): Backend {
 	const codeBundle = writeCodeBundle(sandbox);
 	return {
 		kind: backend.kind,
+		placeInput: backend.placeInput,
 		runTestsAsync: async (options) => backend.runTestsAsync({ ...options, codeBundle }),
 	};
 }

@@ -187,6 +187,7 @@ function multiEntryResult(
 function createMockBackend(result: JestResult, gameOutput?: string): Backend {
 	return {
 		kind: "studio",
+		placeInput: "none",
 		runTestsAsync: async (): Promise<BackendResult> => {
 			return singleEntryResult({ gameOutput, result });
 		},
@@ -196,6 +197,7 @@ function createMockBackend(result: JestResult, gameOutput?: string): Backend {
 function createMockBackendWithCoverage(result: JestResult, coverageData: RawCoverageData): Backend {
 	return {
 		kind: "studio",
+		placeInput: "none",
 		runTestsAsync: async (): Promise<BackendResult> => {
 			return singleEntryResult({ coverageData, result });
 		},
@@ -409,6 +411,7 @@ describe("execute single-project helper", () => {
 		let capturedOptions: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (runOptions): Promise<BackendResult> => {
 				capturedOptions = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
@@ -614,6 +617,7 @@ describe("execute single-project helper", () => {
 		const { fileSystem } = memoryFileSystem();
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return singleEntryResult({
 					result: createPassingResult(),
@@ -714,6 +718,7 @@ describe("execute single-project helper", () => {
 		// emitting an "undefined ms" line.
 		const studioBackend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return singleEntryResult({ result: createPassingResult() }, { executionMs: 100 });
 			},
@@ -750,6 +755,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1, jestRunCLI: 2.5 },
@@ -789,6 +795,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1, total: 3 },
@@ -828,6 +835,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return multiEntryResult([
 					{ luauTiming: { findJest: 0.10025 }, result: createPassingResult() },
@@ -867,6 +875,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1 },
@@ -918,6 +927,7 @@ describe("execute single-project helper", () => {
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1 },
@@ -947,6 +957,7 @@ describe("execute single-project helper", () => {
 		const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return singleEntryResult({
 					luauTiming: { findJest: 0.1 },
@@ -1057,6 +1068,7 @@ describe("execute single-project helper", () => {
 		];
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult({ perTestCoverage, result: createPassingResult() });
 			},
@@ -1105,6 +1117,7 @@ describe("execute single-project helper", () => {
 		};
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult({
 					coverageData,
@@ -1138,6 +1151,7 @@ describe("execute single-project helper", () => {
 		};
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult({ coverageData, result: createPassingResult() });
 			},
@@ -1256,6 +1270,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1353,6 +1368,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1399,6 +1415,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1452,6 +1469,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1499,6 +1517,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1548,6 +1567,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1605,6 +1625,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1666,6 +1687,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1711,6 +1733,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1754,6 +1777,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1805,6 +1829,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1850,6 +1875,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1907,6 +1933,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -1952,6 +1979,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -2000,6 +2028,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -2058,6 +2087,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -2128,6 +2158,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -2191,6 +2222,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -2364,6 +2396,7 @@ describe("execute single-project helper", () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (): Promise<BackendResult> => {
 				return singleEntryResult(
 					{
@@ -2960,6 +2993,7 @@ describe(runProjectsAsync, () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return multiEntryResult([
 					{ result: createPassingResult() },
@@ -3001,6 +3035,7 @@ describe(runProjectsAsync, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "open-cloud",
+			placeInput: "built",
 			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
@@ -3028,6 +3063,7 @@ describe(runProjectsAsync, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "open-cloud",
+			placeInput: "built",
 			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
@@ -3064,6 +3100,7 @@ describe(runProjectsAsync, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
@@ -3090,6 +3127,7 @@ describe(runProjectsAsync, () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return multiEntryResult([
 					{ result: createPassingResult() },
@@ -3129,6 +3167,7 @@ describe(runProjectsAsync, () => {
 
 		const backend: Backend = {
 			kind: "open-cloud",
+			placeInput: "built",
 			runTestsAsync: async () => {
 				return multiEntryResult(
 					[{ result: createPassingResult() }, { result: createPassingResult() }],
@@ -3162,6 +3201,7 @@ describe(runProjectsAsync, () => {
 		const emptyResult: BackendResult = { rawResults: [], timing: DEFAULT_TIMING };
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => emptyResult,
 		};
 
@@ -3198,6 +3238,7 @@ describe(runProjectsAsync, () => {
 
 		const backend: Backend = {
 			kind: "open-cloud",
+			placeInput: "built",
 			runTestsAsync: async () => {
 				return {
 					...singleEntryResult({ result: createPassingResult() }),
@@ -3234,6 +3275,7 @@ describe(runProjectsAsync, () => {
 
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async () => {
 				return multiEntryResult([
 					{ result: createPassingResult() },
@@ -3264,6 +3306,7 @@ describe(runProjectsAsync, () => {
 
 		const backend: Backend = {
 			kind: "open-cloud",
+			placeInput: "built",
 			runTestsAsync: async () => {
 				throw new Error("backend exploded");
 			},
@@ -3289,6 +3332,7 @@ describe(runProjectsAsync, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
@@ -3325,6 +3369,7 @@ describe(runProjectsAsync, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return singleEntryResult({ result: createPassingResult() });
@@ -3352,6 +3397,7 @@ describe(runProjectsAsync, () => {
 		let captured: BackendOptions | undefined;
 		const backend: Backend = {
 			kind: "studio",
+			placeInput: "none",
 			runTestsAsync: async (runOptions) => {
 				captured = runOptions;
 				return multiEntryResult([
@@ -3400,6 +3446,7 @@ describe(runProjectsAsync, () => {
 		function backendReturning(result: BackendResult): Backend {
 			return {
 				kind: "open-cloud",
+				placeInput: "built",
 				runTestsAsync: async () => result,
 			};
 		}
