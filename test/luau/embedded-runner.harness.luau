@@ -1224,10 +1224,12 @@ local function testJestStdoutReachesBannerOutput()
 
 	local banner = results[1].bannerOutput
 	check(banner ~= nil, "T29: a package that wrote to stdout has Banner Output")
-	check(
-		string.find(banner, "No tests found in a", 1, true) ~= nil,
-		"T29: carrying what Jest wrote"
-	)
+	local written = {}
+	for _, record in HttpService:JSONDecode(banner) do
+		table.insert(written, record.message)
+	end
+
+	check(has(written, "No tests found in a"), "T29: carrying what Jest wrote")
 end
 
 -- T30: and the tap puts it back where it found it, so the next package's
@@ -1393,6 +1395,11 @@ testReplacementTakesTheDroppedItemFirst()
 testRequeueUsesTheSeededTtl()
 testFailedRequeueLeavesTheReadStanding()
 testRefusedRequeueIsRetried()
+testFailuresNameTheirPhase()
+testFailureReportsWhetherOutputWasWatched()
+testFailureBeforeTheTapAnswersNothing()
+testJestStdoutReachesBannerOutput()
+testTheTapIsPutBack()
 testFanOutStagesEachPackageOnce()
 testFanOutFilesThePackageOutputOnce()
 testFanOutStageFailureFailsThePackage()
