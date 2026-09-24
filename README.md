@@ -522,7 +522,7 @@ Create a file named drillbit.toml in your project's directory.
 
 ```toml
 [plugins.jest_roblox]
-github = "https://github.com/christopher-buss/jest-roblox-cli/releases/download/v0.4.1/JestRobloxRunner.rbxm"
+github = "https://github.com/christopher-buss/jest-roblox-cli/releases/download/v0.4.2/JestRobloxRunner.rbxm"
 ```
 
 Then run `drillbit` and it will download the plugin and install it in Studio for
@@ -548,7 +548,7 @@ every connection it found:
 No compatible jest-roblox Studio plugin. This CLI speaks protocol v8, and the 2 plugin connection(s) on this port report:
   - JestRobloxRunner 0.3.18 (protocol v6)
   - a plugin that sent no handshake (it predates the handshake entirely)
-Install the JestRobloxRunner.rbxm shipped with jest-roblox 0.4.1, and remove the other copies from your Studio plugins folder.
+Install the JestRobloxRunner.rbxm shipped with jest-roblox 0.4.2, and remove the other copies from your Studio plugins folder.
 ```
 
 This is an error even when Open Cloud credentials are set: a plugin that cannot
