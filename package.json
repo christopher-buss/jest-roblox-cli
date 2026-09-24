@@ -61,7 +61,7 @@
 		"prepublishOnly": "pnpm build",
 		"release": "bumpp",
 		"test": "nr typecheck && vitest run --coverage",
-		"typecheck": "tsgo --build --emitDeclarationOnly",
+		"typecheck": "tsc --build --emitDeclarationOnly",
 		"watch": "tsdown --watch"
 	},
 	"dependencies": {
@@ -105,7 +105,8 @@
 		"@types/node": "24.12.3",
 		"@types/picomatch": "4.0.3",
 		"@types/ws": "8.18.1",
-		"@typescript/native-preview": "7.0.0-dev.20260607.1",
+		"@typescript/native": "npm:typescript@7.0.2",
+		"@typescript/native-preview": "7.0.0-dev.20260707.2",
 		"@vitest/coverage-v8": "5.0.0",
 		"@vitest/eslint-plugin": "1.6.19",
 		"better-typescript-lib": "2.12.0",
@@ -123,10 +124,18 @@
 		"vitest": "5.0.0"
 	},
 	"peerDependencies": {
-		"@typescript/native-preview": ">=7.0.0-0"
+		"@typescript/native": ">=7.0.0",
+		"@typescript/native-preview": ">=7.0.0-0",
+		"typescript": ">=7.0.0"
 	},
 	"peerDependenciesMeta": {
+		"@typescript/native": {
+			"optional": true
+		},
 		"@typescript/native-preview": {
+			"optional": true
+		},
+		"typescript": {
 			"optional": true
 		}
 	},

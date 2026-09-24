@@ -18,7 +18,7 @@ function luauRawPlugin() {
 }
 
 // cspell:ignore giget
-const SEA_STUB_MODULES = new Set(["@typescript/native-preview", "giget", "oxc-parser"]);
+const SEA_STUB_MODULES = new Set(["@typescript/native", "giget", "oxc-parser"]);
 
 type ExportsMap = Parameters<
 	Extract<NonNullable<ExportsOptions["customExports"]>, (...args: never) => void>

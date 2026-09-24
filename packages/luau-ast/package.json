@@ -59,7 +59,7 @@
 		"@isentinel/tsconfig": "2.0.0",
 		"@total-typescript/shoehorn": "0.1.2",
 		"@types/node": "24.12.3",
-		"@typescript/native-preview": "7.0.0-dev.20260607.1",
+		"@typescript/native": "npm:typescript@7.0.2",
 		"@vitest/coverage-v8": "5.0.0",
 		"@vitest/eslint-plugin": "1.6.19",
 		"eslint": "10.9.0",

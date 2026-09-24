@@ -32,14 +32,21 @@ Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 npm install @isentinel/jest-roblox
 ```
 
-Type tests need
-[@typescript/native-preview](https://npmx.dev/package/@typescript/native-preview),
-an optional peer dependency. Install it only if you run `--typecheck` or
-`--typecheckOnly`; runtime tests do not use it.
+Type tests need TypeScript 7, an optional peer dependency. Install it only if
+you run `--typecheck` or `--typecheckOnly`; runtime tests do not use it.
 
 ```bash
-npm install -D @typescript/native-preview
+npm install -D typescript@7
 ```
+
+A project that keeps TypeScript 6 for other tools can install 7 beside it as
+`@typescript/native`, which type tests use first:
+
+```bash
+npm install -D @typescript/native@npm:typescript@7
+```
+
+An existing `@typescript/native-preview` install still works.
 
 ### Standalone binary (no Node.js required)
 

@@ -8,6 +8,8 @@ overrides:
   "@typescript-eslint/types": 8.62.1
   "@typescript-eslint/typescript-estree": 8.62.1
   "@typescript-eslint/utils": 8.62.1
+  # weld's dts-bundle-generator needs the TypeScript JS API, which 7 lacks.
+  dts-bundle-generator>typescript: 6.0.3
 
 minimumReleaseAgeExclude:
   - "@bedrock-rbx/ocale"

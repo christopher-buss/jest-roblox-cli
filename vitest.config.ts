@@ -224,10 +224,10 @@ export const unitProject = {
 			// `tsconfig.lib.json` by building it. Without this the checker
 			// runs `--noEmit -p`, which reads the reference's emitted
 			// declarations and fails TS6305 until some earlier
-			// `tsgo --build` has produced them — which is what this
+			// `tsc --build` has produced them — which is what this
 			// target used to inline.
 			build: true,
-			checker: "tsgo",
+			checker: "tsc",
 			enabled: true,
 			include: ["src/**/*.spec-d.ts"],
 			tsconfig: "./tsconfig.spec.json",

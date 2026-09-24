@@ -32,11 +32,25 @@ const DEFAULT_SPAWN_TIMEOUT = 10_000;
 const DEFAULT_RUN_TIMEOUT = 300_000;
 
 const MISSING_TSGO_MESSAGE =
-	"Type tests need '@typescript/native-preview', an optional peer " +
-	"dependency that is not installed.";
+	"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' " +
+	"beside TypeScript 6), an optional peer dependency that is not installed.";
 
 const MISSING_TSGO_HINT =
-	"npm install -D @typescript/native-preview — or run without --typecheck/--typecheckOnly.";
+	"npm install -D typescript@7 — or run without --typecheck/--typecheckOnly.";
+
+// TypeScript's advice for running 7 beside 6 aliases 7 as `@typescript/native`;
+// `@typescript/native-preview` is the nightly package 7 replaced.
+const TSGO_PACKAGES = [
+	{ name: "@typescript/native", bin: "tsc" },
+	{ name: "typescript", bin: "tsc" },
+	{ name: "@typescript/native-preview", bin: "tsgo" },
+] as const;
+
+// The manifest's `bin` field is the only stable name for the compiler script.
+const tsgoManifestSchema = type({
+	"bin?": { "[string]": "string > 0" },
+	"version": "string",
+});
 
 const compositeTsconfigSchema = type({
 	"compilerOptions?": {
@@ -348,29 +362,51 @@ function buildFileResult(
 	};
 }
 
-// tsgo is an optional peer dependency, so its absence is an ordinary state to
-// report rather than a broken install — `require.resolve` only raises a bare
-// `MODULE_NOT_FOUND`, which reads as a fault inside the CLI. `ConfigError`
 /** CJS resolution off this module — the only thing here that needs it. */
 function defaultResolveModule(specifier: string): string {
 	return createRequire(import.meta.url).resolve(specifier);
 }
 
+// TypeScript 7 is an optional peer dependency, so its absence is an ordinary
+// state to report rather than a broken install — `require.resolve` only raises
+// a bare `MODULE_NOT_FOUND`, which reads as a fault inside the CLI. `ConfigError`
 // matches the sibling guard that rejects `--typecheck` under the standalone
 // binary, and puts the install command in the banner's `Hint:` slot.
-function resolveTsgoScript(resolveModule: (specifier: string) => string): string {
-	let packageJsonPath: string;
+function resolveManifest(
+	resolveModule: (specifier: string) => string,
+	packageName: string,
+): string | undefined {
 	try {
-		packageJsonPath = resolveModule("@typescript/native-preview/package.json");
+		return resolveModule(`${packageName}/package.json`);
 	} catch (err) {
 		if (err instanceof Error && "code" in err && err.code === "MODULE_NOT_FOUND") {
-			throw new ConfigError(MISSING_TSGO_MESSAGE, MISSING_TSGO_HINT);
+			return undefined;
 		}
 
 		throw err;
 	}
+}
 
-	return path.join(path.dirname(packageJsonPath), "bin", "tsgo.js");
+function resolveTsgoScript(
+	resolveModule: (specifier: string) => string,
+	fileSystem: FileSystem,
+): string {
+	for (const { name, bin: binName } of TSGO_PACKAGES) {
+		const packageJsonPath = resolveManifest(resolveModule, name);
+		if (packageJsonPath === undefined) {
+			continue;
+		}
+
+		const { bin, version } = tsgoManifestSchema.assert(
+			JSON.parse(fileSystem.readFileSync(packageJsonPath, "utf-8")),
+		);
+		const script = bin?.[binName];
+		if (script !== undefined && Number.parseInt(version, 10) >= 7) {
+			return path.join(path.dirname(packageJsonPath), script);
+		}
+	}
+
+	throw new ConfigError(MISSING_TSGO_MESSAGE, MISSING_TSGO_HINT);
 }
 
 // A composite project must be driven through `--build` (and emit declarations
@@ -529,7 +565,7 @@ async function spawnTsgoAsync(options: TypecheckOptions): Promise<string> {
 	const { childProcess = nodeChildProcessRunner, fileSystem = nodeFileSystem } = options;
 	const isComposite = isCompositeProject(options.rootDir, options.tsconfig, fileSystem);
 	const args = buildTsgoArgs(options, isComposite);
-	const tsgoScript = resolveTsgoScript(options.resolveModule ?? defaultResolveModule);
+	const tsgoScript = resolveTsgoScript(options.resolveModule ?? defaultResolveModule, fileSystem);
 	const spawnTimeout = options.spawnTimeout ?? DEFAULT_SPAWN_TIMEOUT;
 	const runTimeout = options.timeout ?? DEFAULT_RUN_TIMEOUT;
 

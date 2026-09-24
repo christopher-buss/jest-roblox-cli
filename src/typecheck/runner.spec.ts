@@ -18,6 +18,8 @@ import {
 } from "./runner.ts";
 import type { RawErrorsMap, TestDefinition } from "./types.ts";
 
+const TSC_7_MANIFEST = JSON.stringify({ bin: { tsc: "./bin/tsc" }, version: "7.0.2" });
+
 describe(createLocationsIndexMap, () => {
 	it("should map line:column pairs to character indices", () => {
 		expect.assertions(3);
@@ -121,6 +123,38 @@ describe(mapErrorsToTests, () => {
 		expect(result.success).toBeFalse();
 		expect(result.numFailedTests).toBePositive();
 		expect(result).toMatchSnapshot();
+	});
+
+	it("should attribute an error after a finished test to the file, not that test", () => {
+		expect.assertions(1);
+
+		const source = 'it("should pass", () => {});\nconst x: number = "bad";';
+		const errors: RawErrorsMap = new Map([
+			[
+				"/test.ts",
+				[
+					{
+						column: 7,
+						errorCode: 2322,
+						errorMessage: "Type mismatch",
+						filePath: "/test.ts",
+						line: 2,
+					},
+				],
+			],
+		]);
+		const definitions: Array<TestDefinition> = [
+			{ name: "should pass", ancestorNames: [], end: 27, start: 0, type: "test" },
+		];
+		const files = new Map<string, { definitions: Array<TestDefinition>; source: string }>([
+			["/test.ts", { definitions, source }],
+		]);
+
+		const result = mapErrorsToTests(errors, files, 123);
+
+		const test = result.testResults[0]!.testResults.find((tc) => tc.title === "should pass");
+
+		expect(test!.status).toBe("passed");
 	});
 
 	it("should collect multiple errors in the same test", () => {
@@ -643,6 +677,10 @@ describe(runTypecheckAsync, () => {
 		return fromAny({
 			readFileSync: (filePath: string) => {
 				const fileString = filePath;
+				if (fileString.endsWith("package.json")) {
+					return JSON.stringify({ bin: { tsc: "./bin/tsc" }, version: "7.0.2" });
+				}
+
 				return fileString.endsWith("tsconfig.json") ||
 					fileString.endsWith("tsconfig.test.json")
 					? tsconfigContent
@@ -674,7 +712,7 @@ describe(runTypecheckAsync, () => {
 
 		const [tsgoScript, ...callArgs] = invocations[0]!.arguments;
 
-		expect(normalizeWindowsPath(tsgoScript)).toEndWith("/bin/tsgo.js");
+		expect(normalizeWindowsPath(tsgoScript)).toEndWith("/bin/tsc");
 		expect(callArgs).toStrictEqual([
 			"--noEmit",
 			"--pretty",
@@ -935,14 +973,17 @@ describe(runTypecheckAsync, () => {
 		const { childProcess, kill } = stubTsgo((callback) => {
 			completed = callback;
 		});
+		const manifestPath = "/tsgo/package.json";
 		const { fileSystem } = createMemoryFileSystem({
 			"/project/src/test.spec.ts": 'it("passes", () => {});',
 			"/project/tsconfig.json": "{}",
+			[manifestPath]: JSON.stringify({ bin: { tsc: "./bin/tsc" }, version: "7.0.2" }),
 		});
 		const pending = runTypecheckAsync({
 			childProcess,
 			files: ["/project/src/test.spec.ts"],
 			fileSystem,
+			resolveModule: () => manifestPath,
 			rootDir: "/project",
 			spawnTimeout: 5,
 		});
@@ -1062,10 +1103,137 @@ describe(runTypecheckAsync, () => {
 		assert(error instanceof ConfigError, "expected a ConfigError");
 
 		expect({ hint: error.hint, message: error.message }).toStrictEqual({
-			hint: "npm install -D @typescript/native-preview — or run without --typecheck/--typecheckOnly.",
+			hint: "npm install -D typescript@7 — or run without --typecheck/--typecheckOnly.",
 			message:
-				"Type tests need '@typescript/native-preview', an optional peer dependency that is not installed.",
+				"Type tests need TypeScript 7 ('typescript' 7+, or '@typescript/native' beside TypeScript 6), an optional peer dependency that is not installed.",
 		});
+	});
+
+	/**
+	 * Resolves each listed specifier to its manifest path; any other package
+	 * reads as not installed.
+	 *
+	 * @param manifests - Manifest path per `<package>/package.json` specifier.
+	 */
+	function resolvingManifests(manifests: Record<string, string>): (specifier: string) => string {
+		return (specifier) => {
+			const manifest = manifests[specifier];
+			if (manifest === undefined) {
+				throw Object.assign(new Error("Cannot find module"), { code: "MODULE_NOT_FOUND" });
+			}
+
+			return manifest;
+		};
+	}
+
+	it("should prefer '@typescript/native' over 'typescript'", async () => {
+		expect.assertions(1);
+
+		const { childProcess, invocations } = stubTsgo((callback) => {
+			callback(null, "", "");
+		});
+		const { fileSystem } = createMemoryFileSystem({
+			"/native/package.json": TSC_7_MANIFEST,
+			"/project/src/test.spec.ts": 'it("passes", () => {});',
+			"/project/tsconfig.json": "{}",
+			"/typescript/package.json": TSC_7_MANIFEST,
+		});
+
+		await runTypecheckAsync({
+			childProcess,
+			files: ["/project/src/test.spec.ts"],
+			fileSystem,
+			resolveModule: resolvingManifests({
+				"@typescript/native/package.json": "/native/package.json",
+				"typescript/package.json": "/typescript/package.json",
+			}),
+			rootDir: "/project",
+		});
+
+		expect(normalizeWindowsPath(invocations[0]!.arguments[0])).toBe("/native/bin/tsc");
+	});
+
+	it("should fall back to 'typescript' when it is TypeScript 7", async () => {
+		expect.assertions(1);
+
+		const { childProcess, invocations } = stubTsgo((callback) => {
+			callback(null, "", "");
+		});
+		const { fileSystem } = createMemoryFileSystem({
+			"/project/src/test.spec.ts": 'it("passes", () => {});',
+			"/project/tsconfig.json": "{}",
+			"/typescript/package.json": JSON.stringify({
+				bin: { tsc: "./bin/tsc" },
+				version: "7.1.0-dev.20260924.1",
+			}),
+		});
+
+		await runTypecheckAsync({
+			childProcess,
+			files: ["/project/src/test.spec.ts"],
+			fileSystem,
+			resolveModule: resolvingManifests({
+				"typescript/package.json": "/typescript/package.json",
+			}),
+			rootDir: "/project",
+		});
+
+		expect(normalizeWindowsPath(invocations[0]!.arguments[0])).toBe("/typescript/bin/tsc");
+	});
+
+	it("should fall back to '@typescript/native-preview'", async () => {
+		expect.assertions(1);
+
+		const { childProcess, invocations } = stubTsgo((callback) => {
+			callback(null, "", "");
+		});
+		const { fileSystem } = createMemoryFileSystem({
+			"/preview/package.json": JSON.stringify({
+				bin: { tsgo: "./bin/tsgo" },
+				version: "7.0.0-dev.20260707.2",
+			}),
+			"/project/src/test.spec.ts": 'it("passes", () => {});',
+			"/project/tsconfig.json": "{}",
+			"/typescript/package.json": JSON.stringify({
+				bin: { tsc: "./bin/tsc" },
+				version: "6.0.3",
+			}),
+		});
+
+		await runTypecheckAsync({
+			childProcess,
+			files: ["/project/src/test.spec.ts"],
+			fileSystem,
+			resolveModule: resolvingManifests({
+				"@typescript/native-preview/package.json": "/preview/package.json",
+				"typescript/package.json": "/typescript/package.json",
+			}),
+			rootDir: "/project",
+		});
+
+		expect(normalizeWindowsPath(invocations[0]!.arguments[0])).toBe("/preview/bin/tsgo");
+	});
+
+	it("should not run a 'typescript' older than 7", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			"/typescript/package.json": JSON.stringify({
+				bin: { tsc: "./bin/tsc", tsserver: "./bin/tsserver" },
+				version: "6.0.3",
+			}),
+		});
+
+		await expect(
+			runTypecheckAsync({
+				files: ["src/test.spec.ts"],
+				fileSystem,
+				resolveModule: resolvingManifests({
+					"typescript/package.json": "/typescript/package.json",
+				}),
+				rootDir: "/project",
+			}),
+		).rejects.toThrow(ConfigError);
 	});
 
 	// Only a missing module means "not installed". Relabelling every failure
