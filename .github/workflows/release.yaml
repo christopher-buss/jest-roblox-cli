@@ -30,7 +30,7 @@ jobs:
 
         shell: bash
       - name: Archive binary
-        run: cd dist/sea && 7z a "${{ matrix.archive }}" "${{ matrix.binary }}"
+        run: cd dist/sea && tar -cJf "${{ matrix.archive }}" "${{ matrix.binary }}"
         shell: bash
 
       - env:
@@ -41,15 +41,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - archive: jest-roblox-linux-x64.zip
+          - archive: jest-roblox-linux-x64.tar.xz
             binary: jest-roblox-linux-x64
             os: ubuntu-latest
 
-          - archive: jest-roblox-darwin-arm64.zip
+          - archive: jest-roblox-darwin-arm64.tar.xz
             binary: jest-roblox-darwin-arm64
             os: macos-latest
 
-          - archive: jest-roblox-windows-x64.zip
+          - archive: jest-roblox-windows-x64.tar.xz
             binary: jest-roblox-windows-x64.exe
             os: windows-latest
 

@@ -1,7 +1,10 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import fs, { readFileSync } from "node:fs";
+import process from "node:process";
 import { defineConfig, type ExportsOptions } from "tsdown";
 
 import { virtualModulesPlugin } from "./loaders/virtual-modules.mjs";
+import { resolveSeaExecutable } from "./scripts/sea-executable.ts";
 
 function luauRawPlugin() {
 	return {
@@ -121,6 +124,16 @@ export default defineConfig([
 			outDir: "dist/sea",
 			seaConfig: {
 				disableExperimentalSEAWarning: true,
+				executable: resolveSeaExecutable({
+					cacheDirectory: "node_modules/.cache/jest-roblox-sea",
+					execPath: process.execPath,
+					fileSystem: fs,
+					platform: process.platform,
+					strip: (file) => {
+						execFileSync("strip", [file], { windowsHide: true });
+					},
+					version: process.version,
+				}),
 				useCodeCache: true,
 			},
 		},
