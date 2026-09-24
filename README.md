@@ -213,6 +213,12 @@ boots — so a run that overruns waits a short fixed allowance past the deadline
 for Roblox's verdict, and reports the error Roblox gives rather than a poll
 timeout.
 
+On Open Cloud, `timeout` plus that allowance also bounds each task on the host.
+The clock starts when the task is submitted, and the submit and every poll share
+it. A task that stays `PROCESSING` fails when it runs out, not at Roblox's own
+internal limit (about 11 minutes). A server-directed wait that cannot finish
+before the deadline fails at once and names the wait and the time left.
+
 `bootProbeTimeout` covers the Open Cloud backend's boot probe: after uploading a
 place, it runs one trivial script pinned to the uploaded version and reads
 `game.PlaceVersion` before dispatching tests. A matching response records the
@@ -228,9 +234,9 @@ version, the run stops as boot unverified (exit code 2) before any test task is
 created, so a stalled version costs at most twice `bootProbeTimeout`. A lost
 probe does not prove the place cannot load: Open Cloud can stall a task on a
 version that boots. Nothing is cached, so the next run uploads and probes again.
-The probe polls for `bootProbeTimeout` with a short script deadline. Set
-`bootProbeTimeout` to `0` to skip the probe; no new upload-cache entry is
-written in that case.
+The probe's submit and poll share one `bootProbeTimeout` deadline, with a short
+script deadline. Set `bootProbeTimeout` to `0` to skip the probe; no new
+upload-cache entry is written in that case.
 
 Each logical execution creates exactly one Open Cloud task. Roblox allows about
 30 task creates per rolling hour per account, shared by every key, universe and
@@ -239,7 +245,9 @@ stalled task, a poll timeout or an uncertain create fails the run instead of
 spending another create. Retries stay inside one request. A task create is sent
 again only when the edge rate limit refused it before Roblox's task service saw
 it; a 429 or 5xx from the task service itself is final, because that attempt
-already counted against the hourly limit. A create that loses its connection is
+already counted against the hourly limit. A 429 fails with its code and its
+rate-limit headers; when the hourly limit refused it, the error names the UTC
+time the account can create tasks again. A create that loses its connection is
 also sent again, as it was before replacement tasks existed. Place uploads retry
 429, 5xx and transport errors; task polls retry transient read failures. Test
 failures and terminal task errors are never retried.

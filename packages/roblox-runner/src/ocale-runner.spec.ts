@@ -241,6 +241,21 @@ async function timeoutExecutionAsync(): Promise<{
 	return { caught, http };
 }
 
+/** A transport whose GETs never answer until their signal aborts them. */
+function withUnansweredReads(http: FakeHttpClient): Pick<FakeHttpClient, "request"> {
+	return {
+		request: async (request, config) => {
+			if (request.method === "GET") {
+				await new Promise((resolve) => {
+					config.signal?.addEventListener("abort", resolve, { once: true });
+				});
+			}
+
+			return http.request(request, config);
+		},
+	};
+}
+
 function makeRunner(
 	httpClient: FakeHttpClient,
 	readData: buffer.Buffer = rbxlBuffer(),
@@ -1331,6 +1346,40 @@ describe(OcaleRunner, () => {
 			expect(vi.getTimerCount()).toBe(0);
 		});
 
+		it("should refuse at once an edge retry-after the task deadline cannot fit", async () => {
+			expect.assertions(2);
+
+			vi.useFakeTimers();
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					details: { errors: [{ code: 0, message: "" }] },
+					responseHeaders: { "retry-after": "1856" },
+					retryAfterSeconds: 1856,
+					statusCode: 429,
+				}),
+			);
+			const runner = new OcaleRunner(
+				{ apiKey: "test-key", placeId: "456", universeId: "123" },
+				{ httpClient: http },
+			);
+			let settled: unknown;
+			void runner
+				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
+				.catch((err: unknown) => {
+					settled = err;
+				});
+			await vi.advanceTimersByTimeAsync(0);
+
+			assert(settled instanceof TaskSubmitError);
+
+			expect(settled.message).toMatch(/would wait 1856s; 75s remain\n {2}retry-after: 1856$/);
+			expect(http.requests).toHaveLength(1);
+		});
+
 		it("should retry a task submit server failure when explicitly idempotent", async () => {
 			expect.assertions(2);
 
@@ -1583,6 +1632,53 @@ describe(OcaleRunner, () => {
 
 			expect(caught.message).toContain("DEADLINE_EXCEEDED");
 			expect(caught.message).not.toContain("Execution timed out:");
+		});
+
+		it("should fail a task that stays PROCESSING at the deadline its submit started", async () => {
+			expect.assertions(3);
+
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					details: { errors: [{ code: 0, message: "" }] },
+					retryAfterSeconds: 20,
+					statusCode: 429,
+				}),
+			);
+			http.mockResponse({ body: taskBody({ state: "PROCESSING" }), status: 200 });
+			mockProcessing(http, 200);
+			const runner = makeAdvancingRunner(http);
+			const startedAt = Date.now();
+
+			const caught: unknown = await runner
+				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof ExecutionTimeoutError);
+
+			expect(caught.message).toContain("within 75s");
+			expect(Date.now() - startedAt).toBeGreaterThanOrEqual(75_000);
+			expect(Date.now() - startedAt).toBeLessThan(80_000);
+		});
+
+		it("should report a poll read the deadline cut off as a timeout", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockResponse({ body: taskBody({ state: "PROCESSING" }), status: 200 });
+			const runner = new OcaleRunner(
+				{ apiKey: "test-key", placeId: "456", universeId: "123" },
+				{ httpClient: withUnansweredReads(http) },
+			);
+
+			const caught: unknown = await runner
+				.executeScriptAsync({ pollBudget: 50, script: "return 1", timeout: 1000 })
+				.catch((err: unknown) => err);
+
+			assert(caught instanceof ExecutionTimeoutError);
+
+			expect(caught.cause).toBeInstanceOf(PollTimeoutError);
+			expect(caught.message).toContain("within 0s");
 		});
 
 		it("should name the task and its last state when polling exhausts budget", async () => {
@@ -1892,20 +1988,27 @@ describe(OcaleRunner, () => {
 		it("should say the state is unknown when the budget outran the first poll", async () => {
 			expect.assertions(2);
 
-			// A clock that jumps a full budget between reads exhausts the poll
-			// before any task body comes back, so there is no state to report.
+			// A submit answered after the whole task deadline leaves the poll
+			// no time for a single read, so there is no state to report.
 			let clock = 1_000_000;
-			vi.spyOn(Date, "now").mockImplementation(() => {
-				clock += 100_000;
-				return clock;
-			});
+			vi.spyOn(Date, "now").mockImplementation(() => clock);
 
 			const http = createFakeHttpClient();
 			http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
 
 			const runner = new OcaleRunner(
 				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http, readFile: () => rbxlBuffer(), sleep: createFakeSleep() },
+				{
+					httpClient: {
+						request: async (request, config) => {
+							const response = await http.request(request, config);
+							clock += 100_000;
+							return response;
+						},
+					},
+					readFile: () => rbxlBuffer(),
+					sleep: createFakeSleep(),
+				},
 			);
 
 			const caught: unknown = await runner
@@ -1974,6 +2077,68 @@ describe(OcaleRunner, () => {
 				"RESOURCE_EXHAUSTED: Too many tasks already active. Task resource paths: task/one, task/two",
 			);
 			expect(caught.cause).toBe(exhausted);
+		});
+
+		it("should name the 429's code and rate-limit headers when dmaas refuses a create", async () => {
+			expect.assertions(1);
+
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					code: "RESOURCE_EXHAUSTED",
+					details: { code: "RESOURCE_EXHAUSTED", message: "Too many tasks" },
+					responseHeaders: {
+						"retry-after": "3",
+						"x-ratelimit-limit": "5, 5;w=60",
+						"x-ratelimit-remaining": "0",
+					},
+					retryAfterSeconds: 3,
+					statusCode: 429,
+				}),
+			);
+
+			await expect(
+				makeRunner(http).executeScriptAsync({ script: "return 1", timeout: 30_000 }),
+			).rejects.toThrow(
+				[
+					"RESOURCE_EXHAUSTED: Too many tasks",
+					"  code: RESOURCE_EXHAUSTED",
+					"  retry-after: 3",
+					"  x-ratelimit-limit: 5, 5;w=60",
+					"  x-ratelimit-remaining: 0",
+				].join("\n"),
+			);
+		});
+
+		it("should name the unlock time and the hourly limit when the account's creates are spent", async () => {
+			expect.assertions(2);
+
+			vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					details: {
+						code: "RESOURCE_EXHAUSTED",
+						message: "dmaas (Too Many Requests)",
+					},
+					retryAfterSeconds: 1856,
+					statusCode: 429,
+				}),
+			);
+
+			const caught: unknown = await makeRunner(http)
+				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
+				.catch((err: unknown) => err);
+			assert(caught instanceof TaskSubmitError);
+
+			expect(caught.message).toContain(
+				"Roblox allows 30 task creates per hour per account; " +
+					"this account can create tasks again at 2026-09-22T12:31:47Z.",
+			);
+			expect(http.requests).toHaveLength(1);
 		});
 
 		it("should not observe capacity blockers when retries are disabled", async () => {

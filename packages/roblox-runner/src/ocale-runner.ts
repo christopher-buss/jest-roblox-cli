@@ -9,8 +9,11 @@ import type {
 } from "@bedrock-rbx/ocale";
 import {
 	createFetchHttpClient,
+	PollTimeoutError,
 	RateLimitError,
+	RequestDeadlineExceededError,
 	RESPONSE_UNPARSEABLE,
+	RetryDelayExceededError,
 	TRANSIENT_TRANSPORT_CODES,
 } from "@bedrock-rbx/ocale";
 import type {
@@ -72,9 +75,20 @@ export interface SubmitBudgetController {
 type SubmitResult = Awaited<ReturnType<LuauExecutionClient["tasks"]["submit"]>>;
 
 interface TaskObservation extends PollContext {
+	/** When the poll gives up, as Unix epoch milliseconds. */
+	deadlineMs: number;
 	observationSignal: AbortSignal | undefined;
-	pollBudgetMs: number;
 	startTime: number;
+}
+
+interface SubmitTaskOptions {
+	deadlineMs: number;
+	isSubmitIdempotent: boolean;
+	retrySubmitTransportErrors: boolean;
+	signal: AbortSignal | undefined;
+	submitBudget: number | undefined;
+	submitCapacityBudget: number | undefined;
+	timeout: number;
 }
 
 interface TaskParametersInput {
@@ -114,6 +128,17 @@ const edgeRateLimitSchema = type({ errors: "unknown[]" });
 
 /** ocale's own per-request retry count, which an unbudgeted create mirrors. */
 const DEFAULT_MAX_RETRIES = 3;
+
+/**
+ * The longest `retry-after` of dmaas's per-minute limits. Longer is the
+ * account's hourly create limit, whose `retry-after` names its unlock.
+ */
+const MINUTE_WINDOW_SECONDS = 60;
+
+/**
+ * The fraction of a second `toISOString` writes, which an unlock time drops.
+ */
+const ISO_MILLISECONDS = /\.\d{3}Z$/u;
 
 /** The least an edge-refused create waits before it is sent again. */
 const EDGE_RETRY_FLOOR_MS = 1000;
@@ -252,6 +277,7 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 
 		const startTime = Date.now();
 		const budgets = resolveBudgets(timeout, pollBudget);
+		const deadlineMs = startTime + budgets.pollBudgetMs;
 
 		const taskParameters = buildTaskParameters({
 			binaryInput,
@@ -261,6 +287,7 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			timeoutSeconds: budgets.timeoutSeconds,
 		});
 		const submitted = await this.submitTaskAsync(taskParameters, {
+			deadlineMs,
 			isSubmitIdempotent,
 			retrySubmitTransportErrors,
 			signal: observationSignal,
@@ -273,9 +300,13 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		}
 
 		onSubmitted?.();
+		// A budgeted submit's poll starts its own clock.
+		const pollDeadlineMs =
+			submitBudget === undefined ? deadlineMs : Date.now() + budgets.pollBudgetMs;
 		return this.observeTaskAsync({
 			...budgets,
 			bootProven,
+			deadlineMs: pollDeadlineMs,
 			observationSignal,
 			ref: submitted.data.ref,
 			startTime,
@@ -360,17 +391,24 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 	 */
 	private async createTaskAsync(
 		taskParameters: SubmitAtHeadParameters | SubmitAtVersionParameters,
-		submitOptions: RequestOptions,
+		submitOptions: RequestOptions & { deadlineMs: number },
 	): Promise<SubmitResult> {
 		const options = { ...submitOptions, retryableStatuses: [] };
 		let result = await this.luau.tasks.submit(taskParameters, options);
 		for (let retry = 0; retry < this.maxRetries && isEdgeRateLimited(result); retry += 1) {
+			const waitMs = Math.max(result.err.retryAfterSeconds * 1000, EDGE_RETRY_FLOOR_MS);
+			const refusal = refuseUnfitWait({
+				cause: result.err,
+				deadlineMs: submitOptions.deadlineMs,
+				waitMs,
+			});
+			if (refusal !== undefined) {
+				return { err: refusal, success: false };
+			}
+
 			// An abort ends the wait; ocale then refuses the next attempt
 			// locally.
-			await this.sleep(
-				Math.max(result.err.retryAfterSeconds * 1000, EDGE_RETRY_FLOOR_MS),
-				submitOptions.signal,
-			);
+			await this.sleep(waitMs, submitOptions.signal);
 			result = await this.luau.tasks.submit(taskParameters, options);
 		}
 
@@ -379,23 +417,36 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 
 	private async observeTaskAsync(context: TaskObservation): Promise<ScriptResult> {
 		const result = await this.pollTaskAsync({
+			deadlineMs: context.deadlineMs,
 			ref: context.ref,
 			signal: context.observationSignal,
-			timeoutMs: context.pollBudgetMs,
+			timeoutMs: Math.max(0, context.deadlineMs - Date.now()),
 		});
+		// A read the deadline cut off is the same stall as a spent poll budget.
+		if (!result.success && result.err instanceof RequestDeadlineExceededError) {
+			const timedOut = new PollTimeoutError(result.err.message, {
+				cause: result.err,
+				timeoutMs: context.pollBudgetMs,
+			});
+			return this.toScriptResultAsync({ err: timedOut, success: false }, context);
+		}
+
 		return this.toScriptResultAsync(result, context);
 	}
 
 	private async pollTaskAsync({
+		deadlineMs,
 		ref,
 		signal,
 		timeoutMs,
 	}: {
+		deadlineMs?: number;
 		ref: LuauExecutionTaskRef;
 		signal?: AbortSignal | undefined;
 		timeoutMs: number;
 	}): Promise<Result<LuauExecutionTask, OpenCloudError>> {
 		return this.luau.tasks.pollUntilDone(ref, {
+			...(deadlineMs === undefined ? {} : { deadlineMs }),
 			retryableTransportCodes: POLL_RETRYABLE_TRANSPORT_CODES,
 			...(signal === undefined ? {} : { signal }),
 			timeoutMs,
@@ -441,30 +492,24 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 	 * to seconds. The two do not compose: an attempt count that bites first
 	 * would end the wait early and at a point the caller never chose, so a
 	 * budgeted submit is given a count high enough that the clock is what runs
-	 * out. Unbudgeted, the client's own count is the only bound and the call
-	 * takes as long as it takes.
+	 * out. Unbudgeted, the task deadline bounds every wait.
 	 *
 	 * @param taskParameters - The task to create.
-	 * @param budgets - The submit's wall clock, if any, and its request timeout.
+	 * @param budgets - The submit's wall clock or task deadline, and its
+	 *   request timeout.
 	 * @returns The submit's result, unread.
 	 */
 	private async submitTaskAsync(
 		taskParameters: SubmitAtHeadParameters | SubmitAtVersionParameters,
 		{
+			deadlineMs,
 			isSubmitIdempotent,
 			retrySubmitTransportErrors,
 			signal,
 			submitBudget,
 			submitCapacityBudget,
 			timeout,
-		}: {
-			isSubmitIdempotent: boolean;
-			retrySubmitTransportErrors: boolean;
-			signal: AbortSignal | undefined;
-			submitBudget: number | undefined;
-			submitCapacityBudget: number | undefined;
-			timeout: number;
-		},
+		}: SubmitTaskOptions,
 	): Promise<SubmitResult> {
 		const budgetAbort = new AbortController();
 		const submitSignal = combineSignals(signal, budgetAbort.signal);
@@ -477,8 +522,8 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		};
 		if (submitBudget === undefined) {
 			return isSubmitIdempotent
-				? this.luau.tasks.submit(taskParameters, submitOptions)
-				: this.createTaskAsync(taskParameters, submitOptions);
+				? this.luau.tasks.submit(taskParameters, { ...submitOptions, deadlineMs })
+				: this.createTaskAsync(taskParameters, { ...submitOptions, deadlineMs });
 		}
 
 		const budget = createSubmitBudgetController({
@@ -524,6 +569,7 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 					return this.toScriptResultAsync(observed, {
 						...context,
 						observationSignal: signal,
+						pollBudgetMs: context.recoveryPollBudgetMs,
 					});
 				},
 			});
@@ -747,6 +793,10 @@ function recoveryPollOptions(context: PollContext): {
 	return { ref: context.ref, timeoutMs: context.recoveryPollBudgetMs };
 }
 
+function isEdgeRefusal(err: RateLimitError): boolean {
+	return !(edgeRateLimitSchema(err.details) instanceof type.errors);
+}
+
 /**
  * A 429 from the edge rate limit, which never reached dmaas: only the edge
  * answers with a bare `errors` list.
@@ -754,11 +804,32 @@ function recoveryPollOptions(context: PollContext): {
 function isEdgeRateLimited(
 	result: SubmitResult,
 ): result is Extract<SubmitResult, { success: false }> & { err: RateLimitError } {
-	if (result.success || !(result.err instanceof RateLimitError)) {
-		return false;
+	return !result.success && result.err instanceof RateLimitError && isEdgeRefusal(result.err);
+}
+
+/**
+ * Refuse a retry wait that would end past the task deadline, naming the wait
+ * and what is left of the deadline.
+ */
+function refuseUnfitWait({
+	cause,
+	deadlineMs,
+	waitMs,
+}: {
+	cause: OpenCloudError;
+	deadlineMs: number;
+	waitMs: number;
+}): RetryDelayExceededError | undefined {
+	const remainingMs = Math.max(0, deadlineMs - Date.now());
+	if (waitMs <= remainingMs) {
+		return undefined;
 	}
 
-	return !(edgeRateLimitSchema(result.err.details) instanceof type.errors);
+	return new RetryDelayExceededError(
+		"Open Cloud asked the task create to wait before retrying, past the task deadline: " +
+			`would wait ${describeSeconds(waitMs)}; ${describeSeconds(remainingMs)} remain`,
+		{ cause, deadlineMs, remainingMs, retryAfterMs: waitMs },
+	);
 }
 
 /** Wait `ms`, or less when `signal` aborts first. */
@@ -785,6 +856,31 @@ function isServerErrorDetails(value: unknown): value is { code: string; message:
 }
 
 /**
+ * The unlock of the account's hourly create limit, when the 429 is one: a
+ * dmaas refusal whose wait outlasts the per-minute window.
+ */
+function describeHourlyUnlock(err: RateLimitError): Array<string> {
+	if (isEdgeRefusal(err) || err.retryAfterSeconds <= MINUTE_WINDOW_SECONDS) {
+		return [];
+	}
+
+	const unlock = new Date(Date.now() + err.retryAfterSeconds * 1000);
+	return [
+		"  Roblox allows 30 task creates per hour per account; " +
+			`this account can create tasks again at ${unlock.toISOString().replace(ISO_MILLISECONDS, "Z")}.`,
+	];
+}
+
+/** The 429's evidence, one line each: the hourly unlock, code and headers. */
+function describeRateLimit(err: RateLimitError): Array<string> {
+	return [
+		...describeHourlyUnlock(err),
+		...(err.code === undefined ? [] : [`  code: ${err.code}`]),
+		...Object.entries(err.responseHeaders ?? {}).map(([name, value]) => `  ${name}: ${value}`),
+	];
+}
+
+/**
  * Names a submit that never created a task. Kept apart from the poll path
  * because a submit failure has no task to point at — there is nothing to look
  * up and nothing to log.
@@ -793,11 +889,18 @@ function isServerErrorDetails(value: unknown): value is { code: string; message:
  * @returns The error to throw, carrying the ocale error as its cause.
  */
 function toSubmitError(err: OpenCloudError): Error {
-	if (err instanceof RateLimitError && isServerErrorDetails(err.details)) {
-		return new TaskSubmitError(err, `${err.details.code}: ${err.details.message}`);
+	if (err instanceof RetryDelayExceededError && err.cause instanceof RateLimitError) {
+		return new TaskSubmitError(err, [err.message, ...describeRateLimit(err.cause)].join("\n"));
 	}
 
-	return new TaskSubmitError(err);
+	if (!(err instanceof RateLimitError)) {
+		return new TaskSubmitError(err);
+	}
+
+	const headline = isServerErrorDetails(err.details)
+		? `${err.details.code}: ${err.details.message}`
+		: err.message;
+	return new TaskSubmitError(err, [headline, ...describeRateLimit(err)].join("\n"));
 }
 
 function toArrayBufferView(data: buffer.Buffer): Uint8Array<ArrayBuffer> {

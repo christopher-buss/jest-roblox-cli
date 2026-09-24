@@ -130,6 +130,37 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 		expect(server.requests).toHaveLength(1);
 	});
 
+	it("should fail at once with the unlock time when the account's hourly creates are spent", async () => {
+		expect.assertions(4);
+
+		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
+		const server = await startFakeOpenCloudServerAsync(
+			[{ jestOutput: buildMixedOutput(buildPassingPayload()) }],
+			{
+				submitFailures: [
+					{
+						body: { code: "RESOURCE_EXHAUSTED", message: "dmaas (Too Many Requests)" },
+						headers: { "retry-after": "1856", "x-ratelimit-remaining": "3" },
+						status: 429,
+					},
+				],
+			},
+		);
+
+		const result = await runCliAsync([], {
+			cwd: sandbox,
+			env: createOpenCloudEnvironment(server.baseUrl),
+		});
+		const output = `${result.stdout}\n${result.stderr}`;
+
+		expect(result.exitCode).not.toBe(0);
+		expect(server.requests).toHaveLength(1);
+		expect(output).toMatch(
+			/30 task creates per hour per account; this account can create tasks again at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/,
+		);
+		expect(output).toContain("retry-after: 1856");
+	});
+
 	it("should retry a create the edge rate limit refused before dmaas saw it", async () => {
 		expect.assertions(2);
 

@@ -11,6 +11,8 @@ import type { FailedTask, LuauExecutionTaskRef } from "@bedrock-rbx/ocale/luau-e
 export interface PollContext {
 	readonly bootProven: boolean;
 	readonly hasDefaultBudget: boolean;
+	/** The whole poll's wall clock, whatever part of it the submit spent. */
+	readonly pollBudgetMs: number;
 	readonly recoveryPollBudgetMs: number;
 	readonly ref: LuauExecutionTaskRef;
 	readonly timeoutSeconds: number;
@@ -85,7 +87,7 @@ export function toPollError(err: OpenCloudError, context: PollContext): Error {
 
 	const lines = [
 		"Execution timed out: Roblox never reported a terminal state for the task " +
-			`within ${String(Math.round(err.timeoutMs / 1000))}s${describeBudgetOrigin(context)}.`,
+			`within ${String(Math.round(context.pollBudgetMs / 1000))}s${describeBudgetOrigin(context)}.`,
 		`  task: ${describeTaskRef(context.ref)}`,
 		`  last observed state: ${readObservedState(err.lastObservedTask)}`,
 		...describeSuspects(context),

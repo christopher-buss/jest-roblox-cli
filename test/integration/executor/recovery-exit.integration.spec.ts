@@ -111,7 +111,7 @@ if (mode === "recovery") {
   });
   const result = await executeWithRecoveryAsync({
     executeAsync: ({ observationSignal }) => readers[attempt++].executeScriptAsync({
-      observationSignal, pollBudget: 1, script: "return 1", timeout: 1_000,
+      observationSignal, pollBudget: 100, script: "return 1", timeout: 1_000,
     }),
     timeout: 1_000,
   });

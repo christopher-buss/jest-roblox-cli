@@ -77,8 +77,9 @@ export interface ExecuteScriptOptions {
 	 */
 	placeVersion?: number;
 	/**
-	 * Wall-clock cap on the poll, in milliseconds, replacing the default of
-	 * the task deadline plus a boot-lag allowance.
+	 * Wall-clock cap on the task, in milliseconds, replacing the default of
+	 * the task deadline plus a boot-lag allowance. Without a `submitBudget`,
+	 * the submit and the poll share it, counted from the submit.
 	 *
 	 * The default budget is built to outlast the deadline so Roblox's own
 	 * verdict on a script that overran is observable. A caller asking a

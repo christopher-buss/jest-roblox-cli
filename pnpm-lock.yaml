@@ -20,8 +20,8 @@ importers:
   .:
     dependencies:
       '@bedrock-rbx/ocale':
-        specifier: 0.3.1
-        version: 0.3.1
+        specifier: 0.3.3
+        version: 0.3.3
       '@jridgewell/trace-mapping':
         specifier: 0.3.31
         version: 0.3.31
@@ -228,8 +228,8 @@ importers:
   packages/roblox-runner:
     dependencies:
       '@bedrock-rbx/ocale':
-        specifier: 0.3.1
-        version: 0.3.1
+        specifier: 0.3.3
+        version: 0.3.3
       arktype:
         specifier: 2.2.3
         version: 2.2.3
@@ -555,8 +555,8 @@ packages:
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
 
-  '@bedrock-rbx/ocale@0.3.1':
-    resolution: {integrity: sha512-doWAIRXV8XEioUB4s9b5wzHDzoFRvrGfW+Tt1Y0t8xKbX51kMwIIN/vYl/mJh4c5iSobtfWk49tJ6yTHT/sqNA==}
+  '@bedrock-rbx/ocale@0.3.3':
+    resolution: {integrity: sha512-slddPzFS78tzOWCeSHWT0WUBnDE9VazVB5JP10LIB7KU/Ad7L1hJpF94ThD0MxJ+pkUz8LKWm0zohGUCnCVWLA==}
     engines: {bun: '>=1.3.0', node: '>=24.12.0'}
 
   '@better-typescript-lib/decorators@2.12.0':
@@ -3049,8 +3049,8 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  electron-to-chromium@1.5.435:
-    resolution: {integrity: sha512-hwZNgb6JmRlmQX/L0yojyu6upuvtR7iGS1hB/9nc7I9vCsvekahqh3noFeXUBRirv9+Hk7E6v/LFz4CW6FvpWA==}
+  electron-to-chromium@1.5.436:
+    resolution: {integrity: sha512-iG79/xCF3iThADicbgbES2+liFYmTvelo7jWcEfg6lQ+Adrh7zShrXSg2ZdEDLbKjJ298kGAKMnnzVWobp0L+g==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -5193,7 +5193,7 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@bedrock-rbx/ocale@0.3.1': {}
+  '@bedrock-rbx/ocale@0.3.3': {}
 
   '@better-typescript-lib/decorators@2.12.0(typescript@6.0.3)':
     dependencies:
@@ -7371,7 +7371,7 @@ snapshots:
     dependencies:
       baseline-browser-mapping: 2.11.25
       caniuse-lite: 1.0.30001810
-      electron-to-chromium: 1.5.435
+      electron-to-chromium: 1.5.436
       node-releases: 2.0.56
       update-browserslist-db: 1.3.3(browserslist@4.29.0)
 
@@ -7629,7 +7629,7 @@ snapshots:
       minimatch: 10.2.6
       semver: 7.8.5
 
-  electron-to-chromium@1.5.435: {}
+  electron-to-chromium@1.5.436: {}
 
   emoji-regex@10.6.0: {}
 
