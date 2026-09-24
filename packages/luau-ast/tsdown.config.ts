@@ -4,7 +4,7 @@ export default defineConfig({
 	clean: true,
 	dts: {
 		build: true,
-		oxc: true,
+		generator: "oxc",
 		tsconfig: "tsconfig.lib.json",
 	},
 	entry: [

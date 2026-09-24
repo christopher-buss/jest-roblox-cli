@@ -98,7 +98,7 @@
 		"@stryker-mutator/typescript-checker": "10.0.0",
 		"@stryker-mutator/vitest-runner": "10.0.0",
 		"@total-typescript/shoehorn": "0.1.2",
-		"@tsdown/exe": "0.22.14",
+		"@tsdown/exe": "0.23.0",
 		"@types/istanbul-lib-coverage": "2.0.6",
 		"@types/istanbul-lib-report": "3.0.3",
 		"@types/istanbul-reports": "3.0.4",
@@ -118,7 +118,7 @@
 		"jest-extended": "7.0.0",
 		"memfs": "4.68.1",
 		"publint": "0.3.24",
-		"tsdown": "0.22.14",
+		"tsdown": "0.23.0",
 		"type-fest": "5.7.0",
 		"typescript": "6.0.3",
 		"vitest": "5.0.1"
