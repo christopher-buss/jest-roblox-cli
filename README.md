@@ -534,7 +534,7 @@ which place is open, so multiple concurrent projects aren't supported yet.
 <!-- prettier-ignore -->
 > [!NOTE]
 > For `--coverage`, prefer `--backend open-cloud` since the coverage
-> output is built to a separate output under `.jest-roblox/coverage/` that is
+> output is built to a separate output under `.jest-roblox/place/` that is
 > likely not the studio place being served.
 
 Install the plugin with [Drillbit](https://github.com/jacktabscode/drillbit):

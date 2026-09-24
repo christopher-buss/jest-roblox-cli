@@ -26,9 +26,9 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { hashBuffer } from "../utils/hash.ts";
 import { prepareArtifactsAsync } from "./prepare-artifacts.ts";
 
-const COVERAGE_DIR = path.dirname(COVERAGE_BUILD_MANIFEST_PATH);
-const CLEAN_PLACE_PATH = path.join(COVERAGE_DIR, "clean.rbxl");
-const CLEAN_PROJECT_PATH = path.join(COVERAGE_DIR, "clean.project.json");
+const PLACE_DIR = path.join(".jest-roblox", "place");
+const CLEAN_PLACE_PATH = path.join(PLACE_DIR, "clean.rbxl");
+const CLEAN_PROJECT_PATH = path.join(PLACE_DIR, "clean.project.json");
 const PLACE_BYTES = "CLEAN-RBXL-BYTES";
 const MOUNT_DATA_MODEL_PATH = "ReplicatedStorage/shared";
 const ROJO_PROJECT = JSON.stringify({
@@ -210,6 +210,16 @@ describe(prepareArtifactsAsync, () => {
 		expect(bundle.coveragePlace).not.toBe(bundle.cleanPlace);
 		expect(bundle.cleanPlace.hash).not.toBe(bundle.coveragePlace.hash);
 		expect(bundle.buildId).toBe("build-42");
+	});
+
+	it("should build the Clean Place in the place directory", async () => {
+		expect.assertions(1);
+
+		const harness = seed(manifestWithFile());
+
+		const bundle = await prepareArtifactsAsync(makeConfig(), harness);
+
+		expect(bundle.cleanPlace.path).toBe(CLEAN_PLACE_PATH);
 	});
 
 	it("should build the Clean Place stamped with the covering set's id", async () => {

@@ -17,6 +17,7 @@ import {
 	COVERAGE_BUILD_MANIFEST_PATH,
 	COVERAGE_MANIFEST_PATH,
 	findRojoProject,
+	PLACE_DIR,
 } from "../coverage-pipeline/prepare.ts";
 import type { RawCoverageData } from "../coverage-pipeline/types.ts";
 import type { RunEntryOptions } from "../run.ts";
@@ -30,9 +31,8 @@ import { createTimingCollector } from "../timing/orchestration-collector.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 
-const COVERAGE_DIR = path.dirname(COVERAGE_BUILD_MANIFEST_PATH);
-const CLEAN_PLACE_FILE = path.join(COVERAGE_DIR, "clean.rbxl");
-const CLEAN_PROJECT_FILE = path.join(COVERAGE_DIR, "clean.project.json");
+const CLEAN_PLACE_FILE = path.join(PLACE_DIR, "clean.rbxl");
+const CLEAN_PROJECT_FILE = path.join(PLACE_DIR, "clean.project.json");
 const CACHE_DIR = path.join(".jest-roblox", "cache");
 
 /**

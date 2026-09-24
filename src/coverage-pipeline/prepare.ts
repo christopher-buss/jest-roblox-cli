@@ -57,18 +57,21 @@ import { prepareShadowRoot } from "./shadow-root.ts";
 import type { PreparedSpine, ShadowBake } from "./spine.ts";
 import { createShadowLayout, prepareSpine } from "./spine.ts";
 
-const COVERAGE_DIR = ".jest-roblox/coverage";
+const SHADOW_DIR = ".jest-roblox/coverage";
+/** Outside `SHADOW_DIR`, so a cold wipe keeps the place. */
+export const PLACE_DIR = ".jest-roblox/place";
+
 /** Framed on `rootDir`, and outside the directory a cold rebuild wipes. */
 const INPUT_DIGEST_PATH = ".jest-roblox/input-digests";
 const COVERAGE_MANIFEST = "coverage-manifest.json";
 /**
  * The place this pipeline builds, and the bundle a harness build splits out.
  */
-const COVERAGE_PLACE_FILE = path.join(COVERAGE_DIR, "game.rbxl");
+const COVERAGE_PLACE_FILE = path.join(PLACE_DIR, "game.rbxl");
 
 /** Where the coverage path publishes its sibling manifests (cwd-relative). */
-export const COVERAGE_MANIFEST_PATH: string = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
-export const COVERAGE_BUILD_MANIFEST_PATH: string = path.join(COVERAGE_DIR, BUILD_MANIFEST_FILE);
+export const COVERAGE_MANIFEST_PATH: string = path.join(SHADOW_DIR, COVERAGE_MANIFEST);
+export const COVERAGE_BUILD_MANIFEST_PATH: string = path.join(SHADOW_DIR, BUILD_MANIFEST_FILE);
 
 export interface PrepareCoverageResult {
 	/** Shared UUID for the sibling Build + Coverage manifests. */
@@ -722,6 +725,11 @@ async function reuseCoverageResultAsync(
 	}
 
 	const { buildId, placeFilePath } = previousManifest;
+	// A manifest from before `PLACE_DIR` points into the shadow.
+	if (path.normalize(placeFilePath) !== COVERAGE_PLACE_FILE) {
+		return undefined;
+	}
+
 	const reuse = priorPlaceIsReusable(fileSystem, placeFilePath, buildManifestPath);
 	if (!reuse.reusable) {
 		return undefined;
@@ -801,7 +809,7 @@ function coveragePlaceOptions({
 			},
 		],
 		placeFile: COVERAGE_PLACE_FILE,
-		projectFile: path.join(COVERAGE_DIR, path.basename(rojoProjectPath)),
+		projectFile: path.join(PLACE_DIR, path.basename(rojoProjectPath)),
 		wrap: false,
 	};
 }
@@ -832,7 +840,7 @@ function buildAndWriteManifest({
 		nonInstrumentedFiles,
 		placeFilePath: placeFile,
 		rojoInputsHash,
-		shadowDir: COVERAGE_DIR,
+		shadowDir: SHADOW_DIR,
 		version: MANIFEST_VERSION,
 	};
 
@@ -925,7 +933,7 @@ async function bakeCoveragePlaceAsync({
 	const build = toBuildOptions({ childProcess, codeRoots, config, inputs, shadow });
 	// The layout stays inside the optional call: a run with no bake never
 	// builds one, and it is the only thing that would read it.
-	const hasBakeChanges = bake?.run(createShadowLayout(COVERAGE_DIR, inputs.narrowed)) === true;
+	const hasBakeChanges = bake?.run(createShadowLayout(SHADOW_DIR, inputs.narrowed)) === true;
 	const hasChanges = hasCoverageChanges(inputs, {
 		hasExtraChanges:
 			hasBakeChanges ||
@@ -1009,7 +1017,7 @@ function loadCoverageManifest(
  *
  * No `rootDir`: the candidate paths these globs are matched against are
  * cwd-relative here. `luauRoots` are walked from the invocation directory and
- * `COVERAGE_DIR` hangs off it, so the manifest keys — and through them the
+ * `SHADOW_DIR` hangs off it, so the manifest keys — and through them the
  * mapped TS paths — are cwd-relative too. Anchoring the globs anywhere else
  * would match none of them. Only workspace mode, whose candidates are absolute
  * under a package, has an anchor worth preferring.
@@ -1129,10 +1137,10 @@ async function resolveCoverageInputsAsync(
 	});
 	const luauRoots = narrowed.flatMap((entry) => entry.roots);
 	const hash = await resolveRojoInputsHashAsync(config, rojoProjectPath, luauRoots, fileSystem);
-	const manifestPath = path.join(COVERAGE_DIR, COVERAGE_MANIFEST);
+	const manifestPath = path.join(SHADOW_DIR, COVERAGE_MANIFEST);
 
 	return {
-		buildManifestPath: path.join(COVERAGE_DIR, BUILD_MANIFEST_FILE),
+		buildManifestPath: path.join(SHADOW_DIR, BUILD_MANIFEST_FILE),
 		copyIgnoreHash: hashCopyIgnorePatterns(config.coverageCopyIgnorePatterns),
 		fileSystem,
 		isCopyIgnored,
@@ -1171,8 +1179,8 @@ function decideIncremental(
 			universe,
 		}) && !hasDroppedLuauRoot(previousManifest.luauRoots, luauRoots);
 
-	if (!isIncremental && fileSystem.existsSync(COVERAGE_DIR)) {
-		fileSystem.rmSync(COVERAGE_DIR, { recursive: true });
+	if (!isIncremental && fileSystem.existsSync(SHADOW_DIR)) {
+		fileSystem.rmSync(SHADOW_DIR, { recursive: true });
 	}
 
 	return isIncremental;
@@ -1197,7 +1205,7 @@ function instrumentOneRoot(
 		isCopyIgnored,
 		luauRoot,
 		previousManifest,
-		shadowDir: normalizeWindowsPath(path.join(COVERAGE_DIR, luauRoot)),
+		shadowDir: normalizeWindowsPath(path.join(SHADOW_DIR, luauRoot)),
 		universe,
 		useIncremental: isIncremental,
 	});
@@ -1218,7 +1226,7 @@ function prepareSingleSpine(
 		isCopyIgnored: inputs.isCopyIgnored,
 		narrowed: inputs.narrowed,
 		previousNonInstrumented: inputs.previousManifest?.nonInstrumentedFiles,
-		shadowRoot: COVERAGE_DIR,
+		shadowRoot: SHADOW_DIR,
 		toSourcePath: (relativePath) => relativePath,
 	});
 }

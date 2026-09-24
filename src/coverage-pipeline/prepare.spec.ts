@@ -369,6 +369,51 @@ describe(prepareCoverageAsync, () => {
 			expect(volume.existsSync(".jest-roblox/coverage")).toBeTrue();
 		});
 
+		it("should write the synthesized project outside the shadow directory", async () => {
+			expect.assertions(2);
+
+			const { fileSystem, volume } = seedFilesystem();
+			const { childProcess, instrumenter } = setupMocks(volume);
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			await prepareCoverageAsync(config, {
+				childProcess,
+				fileSystem,
+				instrumenter,
+				tsconfigReader: noTsconfig,
+			});
+
+			expect(volume.existsSync(".jest-roblox/coverage/default.project.json")).toBeFalse();
+			expect(volume.existsSync(".jest-roblox/place/default.project.json")).toBeTrue();
+		});
+
+		it("should build the place outside the shadow directory", async () => {
+			expect.assertions(1);
+
+			const { fileSystem, volume } = seedFilesystem();
+			const { childProcess, execFile, instrumenter } = setupMocks(volume);
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			await prepareCoverageAsync(config, {
+				childProcess,
+				fileSystem,
+				instrumenter,
+				tsconfigReader: noTsconfig,
+			});
+
+			expect(execFile).toHaveBeenCalledWith(
+				"rojo",
+				[
+					"build",
+					expect.any(String),
+					"-o",
+					path.join(".jest-roblox", "place", "game.rbxl"),
+				],
+				expect.any(Object),
+				expect.any(Function),
+			);
+		});
+
 		it("should mirror every file the instrumenter never emits", async () => {
 			expect.assertions(2);
 
@@ -565,12 +610,12 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(volume.existsSync(".jest-roblox/coverage/default.project.json")).toBeTrue();
+			expect(volume.existsSync(".jest-roblox/place/default.project.json")).toBeTrue();
 			expect(execFile).toHaveBeenCalledWith(
 				"rojo",
 				[
 					"build",
-					expect.stringContaining(path.join(".jest-roblox", "coverage")),
+					expect.stringContaining(path.join(".jest-roblox", "place")),
 					"-o",
 					expect.stringContaining("game.rbxl"),
 				],
@@ -596,7 +641,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(volume.existsSync(".jest-roblox/coverage/custom.project.json")).toBeTrue();
+			expect(volume.existsSync(".jest-roblox/place/custom.project.json")).toBeTrue();
 		});
 
 		it("should auto-detect the Rojo project when not configured", async () => {
@@ -613,7 +658,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(volume.existsSync(".jest-roblox/coverage/default.project.json")).toBeTrue();
+			expect(volume.existsSync(".jest-roblox/place/default.project.json")).toBeTrue();
 		});
 
 		it("should find a non-default .project.json via directory listing", async () => {
@@ -632,7 +677,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(volume.existsSync(".jest-roblox/coverage/game.project.json")).toBeTrue();
+			expect(volume.existsSync(".jest-roblox/place/game.project.json")).toBeTrue();
 		});
 
 		it("should throw when Rojo project has valid JSON but invalid schema", async () => {
@@ -692,10 +737,7 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			const written = readRojoProjectJson(
-				volume,
-				".jest-roblox/coverage/default.project.json",
-			);
+			const written = readRojoProjectJson(volume, ".jest-roblox/place/default.project.json");
 
 			expect(
 				readNestedProperty(
@@ -743,18 +785,16 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			const written = readRojoProjectJson(
-				volume,
-				".jest-roblox/coverage/default.project.json",
-			);
+			const written = readRojoProjectJson(volume, ".jest-roblox/place/default.project.json");
 
 			// Paths are written relative to the project file's own directory —
 			// rojo matches globIgnorePaths against the path as expressed, so an
 			// absolute one would leave every ignore pattern inert.
 			//
-			// Matching path: the shadow dir, a sibling of the project file.
+			// Matching path: the shadow dir, one directory over from the
+			// project file.
 			expect(readNestedProperty(written, "tree", "ReplicatedStorage", "$path")).toBe(
-				"out-tsc/test/client",
+				"../coverage/out-tsc/test/client",
 			);
 			// Non-matching path: the original source dir, two levels up.
 			expect(readNestedProperty(written, "tree", "ServerScriptService", "$path")).toBe(
@@ -799,13 +839,15 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			const parsed = readRojoProjectJson(volume, ".jest-roblox/coverage/dev.project.json");
+			const parsed = readRojoProjectJson(volume, ".jest-roblox/place/dev.project.json");
 
 			// $path "../out" resolves against "config" → absolute "out";
 			// luauRoot "out" resolves against rootDir "." → absolute "out";
 			// match → redirect to the shadow dir, written relative to the
-			// project file that now sits beside it.
-			expect(readNestedProperty(parsed, "tree", "ReplicatedStorage", "$path")).toBe("out");
+			// project file one directory over from it.
+			expect(readNestedProperty(parsed, "tree", "ReplicatedStorage", "$path")).toBe(
+				"../coverage/out",
+			);
 		});
 	});
 
@@ -858,16 +900,16 @@ describe(prepareCoverageAsync, () => {
 
 			const written = readRojoProjectJson(
 				volume,
-				".jest-roblox/coverage/development.project.json",
+				".jest-roblox/place/development.project.json",
 			);
 
 			// The nested $path: "default.project.json" is resolved to $path:
 			// "src", then redirected to the instrumented shadow dir since "src"
 			// matches the configured luauRoot — and written relative to the
-			// project file that now sits beside that shadow dir.
+			// project file, which sits one directory over from that shadow dir.
 			expect(
 				readNestedProperty(written, "tree", "ReplicatedStorage", "uuid-generator", "$path"),
-			).toBe("src");
+			).toBe("../coverage/src");
 		});
 	});
 
@@ -1175,14 +1217,12 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			const written = readRojoProjectJson(
-				volume,
-				".jest-roblox/coverage/default.project.json",
-			);
+			const written = readRojoProjectJson(volume, ".jest-roblox/place/default.project.json");
 
-			// The redirected root is a sibling of the rewritten project file.
+			// The redirected root is one directory over from the rewritten
+			// project file.
 			expect(readNestedProperty(written, "tree", "ReplicatedStorage", "$path")).toBe(
-				"out-tsc/test",
+				"../coverage/out-tsc/test",
 			);
 			// The untouched one still points at the original tree, which serves
 			// exactly the bytes its shadow would have.
@@ -1382,7 +1422,7 @@ describe(prepareCoverageAsync, () => {
 				},
 				previousInstrumenterVersion = INSTRUMENTER_VERSION,
 				previousNonInstrumentedFiles = {},
-				previousPlaceFilePath = ".jest-roblox/coverage/game.rbxl",
+				previousPlaceFilePath = ".jest-roblox/place/game.rbxl",
 			}: {
 				copyIgnoreHash?: string;
 				fileContents?: Record<string, string>;
@@ -1423,6 +1463,7 @@ describe(prepareCoverageAsync, () => {
 
 			// Seed previous place file
 			if (previousPlaceFilePath) {
+				volume.mkdirSync(path.dirname(previousPlaceFilePath), { recursive: true });
 				volume.writeFileSync(previousPlaceFilePath, "RBXL");
 			}
 
@@ -1704,7 +1745,7 @@ describe(prepareCoverageAsync, () => {
 
 			expect(instrumenter).not.toHaveBeenCalled();
 			expect(execFile).not.toHaveBeenCalled();
-			expect(result.placeFile).toBe(".jest-roblox/coverage/game.rbxl");
+			expect(result.placeFile).toBe(".jest-roblox/place/game.rbxl");
 		});
 
 		it("should rebuild when no files changed but the prior place is missing on disk", async () => {
@@ -1717,7 +1758,30 @@ describe(prepareCoverageAsync, () => {
 			await seedIncrementalScenarioAsync(fileSystem, volume);
 			// Simulate an interrupted prior build: the manifest still points at a
 			// place file that is no longer on disk.
-			volume.unlinkSync(".jest-roblox/coverage/game.rbxl");
+			volume.unlinkSync(".jest-roblox/place/game.rbxl");
+
+			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
+
+			await prepareCoverageAsync(config, {
+				childProcess,
+				fileSystem,
+				instrumenter,
+				tsconfigReader: noTsconfig,
+			});
+
+			expect(execFile).toHaveBeenCalledOnce();
+		});
+
+		it("should rebuild when the prior place sits outside the place directory", async () => {
+			expect.assertions(1);
+
+			const { fileSystem, volume } = createMemoryFileSystem();
+
+			const { childProcess, execFile, instrumenter } = setupMocks(volume);
+
+			await seedIncrementalScenarioAsync(fileSystem, volume, {
+				previousPlaceFilePath: ".jest-roblox/coverage/game.rbxl",
+			});
 
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 
@@ -1747,7 +1811,7 @@ describe(prepareCoverageAsync, () => {
 					buildId: "prev-build-id",
 					coveragePlace: {
 						hash: "0".repeat(64),
-						path: ".jest-roblox/coverage/game.rbxl",
+						path: ".jest-roblox/place/game.rbxl",
 					},
 					files: {},
 					generatedAt: isoNow(),
@@ -1789,7 +1853,7 @@ describe(prepareCoverageAsync, () => {
 					buildId: "prev-build-id",
 					coveragePlace: {
 						hash: sha256("RBXL"),
-						path: ".jest-roblox/coverage/game.rbxl",
+						path: ".jest-roblox/place/game.rbxl",
 					},
 					files: {},
 					generatedAt: isoNow(),
@@ -1824,7 +1888,7 @@ describe(prepareCoverageAsync, () => {
 					buildId: "prev-build-id",
 					coveragePlace: {
 						hash: sha256("RBXL"),
-						path: ".jest-roblox/coverage/game.rbxl",
+						path: ".jest-roblox/place/game.rbxl",
 					},
 					files: {},
 					generatedAt: isoNow(),
@@ -2182,7 +2246,8 @@ describe(prepareCoverageAsync, () => {
 				volume.writeFileSync(record.coverageMapPath, "{}");
 			}
 
-			volume.writeFileSync(".jest-roblox/coverage/game.rbxl", "RBXL");
+			volume.mkdirSync(".jest-roblox/place", { recursive: true });
+			volume.writeFileSync(".jest-roblox/place/game.rbxl", "RBXL");
 
 			seedPreviousManifest(volume, {
 				files: {
@@ -2193,7 +2258,7 @@ describe(prepareCoverageAsync, () => {
 				instrumenterVersion: INSTRUMENTER_VERSION,
 				luauRoots: ["packages/core/out", "packages/utils/out"],
 				nonInstrumentedFiles: {},
-				placeFilePath: ".jest-roblox/coverage/game.rbxl",
+				placeFilePath: ".jest-roblox/place/game.rbxl",
 				shadowDir: ".jest-roblox/coverage",
 				version: MANIFEST_VERSION,
 			});
@@ -2293,7 +2358,8 @@ describe(prepareCoverageAsync, () => {
 				volume.mkdirSync(".jest-roblox/coverage/out-tsc/test", { recursive: true });
 				volume.writeFileSync(record.instrumentedLuauPath, "-- instrumented");
 				volume.writeFileSync(record.coverageMapPath, "{}");
-				volume.writeFileSync(".jest-roblox/coverage/game.rbxl", "RBXL");
+				volume.mkdirSync(".jest-roblox/place", { recursive: true });
+				volume.writeFileSync(".jest-roblox/place/game.rbxl", "RBXL");
 
 				seedPreviousManifest(volume, {
 					files: { "out-tsc/test/init.luau": record },
@@ -2301,7 +2367,7 @@ describe(prepareCoverageAsync, () => {
 					instrumenterVersion: INSTRUMENTER_VERSION,
 					luauRoots: ["out-tsc/test"],
 					nonInstrumentedFiles: {},
-					placeFilePath: ".jest-roblox/coverage/game.rbxl",
+					placeFilePath: ".jest-roblox/place/game.rbxl",
 					rojoInputsHash: await computeRojoInputsHashAsync({
 						digestCacheFile: "/project/.jest-roblox/expected-digests",
 						fileSystem,
@@ -2321,7 +2387,7 @@ describe(prepareCoverageAsync, () => {
 						buildId: "prev-build-id",
 						coveragePlace: {
 							hash: sha256("RBXL"),
-							path: ".jest-roblox/coverage/game.rbxl",
+							path: ".jest-roblox/place/game.rbxl",
 						},
 						files: {},
 						generatedAt: isoNow(),
@@ -3413,7 +3479,8 @@ describe(prepareCoverageAsync, () => {
 
 				volume.mkdirSync(".jest-roblox/coverage/packages/core/out", { recursive: true });
 				volume.writeFileSync(coreSpecRecord.shadowPath, "-- core spec");
-				volume.writeFileSync(".jest-roblox/coverage/game.rbxl", "RBXL");
+				volume.mkdirSync(".jest-roblox/place", { recursive: true });
+				volume.writeFileSync(".jest-roblox/place/game.rbxl", "RBXL");
 
 				seedPreviousManifest(volume, {
 					files: {
@@ -3426,7 +3493,7 @@ describe(prepareCoverageAsync, () => {
 					nonInstrumentedFiles: {
 						"packages/core/out/init.spec.luau": coreSpecRecord,
 					},
-					placeFilePath: ".jest-roblox/coverage/game.rbxl",
+					placeFilePath: ".jest-roblox/place/game.rbxl",
 					shadowDir: ".jest-roblox/coverage",
 					version: MANIFEST_VERSION,
 				});
@@ -4761,11 +4828,11 @@ describe(toCoverageArtifacts, () => {
 
 		const result: PrepareCoverageResult = {
 			buildId: "build-7",
-			coveragePlace: { hash: "cov-hash", path: ".jest-roblox/coverage/game.rbxl" },
+			coveragePlace: { hash: "cov-hash", path: ".jest-roblox/place/game.rbxl" },
 			files: { "out/init.luau": { sourceHash: "h" } },
 			instrumentMs: 0,
 			manifest: fromAny({ generatedAt: "2026-07-25T00:00:00.000Z" }),
-			placeFile: ".jest-roblox/coverage/game.rbxl",
+			placeFile: ".jest-roblox/place/game.rbxl",
 			rebuilt: true,
 			stagingMs: 0,
 		};
@@ -4781,7 +4848,7 @@ describe(toCoverageArtifacts, () => {
 
 		expect(toCoverageArtifacts(result, projects)).toStrictEqual({
 			buildId: "build-7",
-			coveragePlace: { hash: "cov-hash", path: ".jest-roblox/coverage/game.rbxl" },
+			coveragePlace: { hash: "cov-hash", path: ".jest-roblox/place/game.rbxl" },
 			files: { "out/init.luau": { sourceHash: "h" } },
 			generatedAt: "2026-07-25T00:00:00.000Z",
 			projects,
