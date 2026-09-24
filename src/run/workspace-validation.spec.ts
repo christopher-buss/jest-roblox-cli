@@ -96,20 +96,14 @@ describe(validateBasicWorkspaceFlags, () => {
 		});
 	});
 
-	it("should reject --experimental-vm-parallel in workspace mode", () => {
+	it("should accept --experimental-vm-parallel in workspace mode", () => {
 		expect.assertions(1);
 
 		const result = validateBasicWorkspaceFlags(
 			makeCli({ experimentalVmParallel: 2, packages: "a", workspace: true }),
 		);
 
-		expect(result).toStrictEqual({
-			exitCode: 2,
-			message:
-				"Error: --experimental-vm-parallel is not supported in workspace mode; " +
-				"it splits the configs of a single multi-project run.\n",
-			ok: false,
-		});
+		expect(result).toStrictEqual({ ok: true });
 	});
 
 	it("should reject --packages without --workspace", () => {

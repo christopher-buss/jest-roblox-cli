@@ -213,6 +213,21 @@ local function testExecutionErrorEntry()
 	check(built.gameOutput == nil, "T7: no per-project game output under parallel")
 end
 
+-- T15: a workspace entry that could not run still names its package and
+-- project, which is what the CLI pairs a workspace result by.
+local function testWorkspaceErrorEntry()
+	local built = VmParallel.workspaceErrorEntry(
+		{ pkg = "a", project = "client" },
+		{ encode = encode, message = "host threw" }
+	)
+
+	check(built.pkg == "a" and built.project == "client", "T15: the entry keeps its identity")
+	check(
+		built.jestOutput == "kind=ExecutionError;error=host threw;success=true",
+		"T15: the message travels inside an ExecutionError result"
+	)
+end
+
 testNestedMountsShareAHost()
 testIdenticalMountsShareAHost()
 testSiblingMountsDoNotShareAHost()
@@ -224,6 +239,7 @@ testRequestOrder()
 testMissingEntriesBecomeExecutionErrors()
 testMissingEntryDefaultReason()
 testExecutionErrorEntry()
+testWorkspaceErrorEntry()
 testHostDeadlineFitsTheRunBudget()
 testHostDeadlineFloorsAtAUsableWait()
 testHostDeadlineWithoutABudget()

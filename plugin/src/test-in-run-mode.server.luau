@@ -10,11 +10,12 @@ end
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `STUDIO_CLI_PROTOCOL_VERSION` in
--- `src/backends/studio-cli.ts`. v8 adds the `pluginKey` the run asks for, so a
--- copy built for another key stands down; v7 adds the `runnerTimeoutMs` argv
--- the runner bounds a project's run with and strips before calling Jest, so a
--- v6 plugin
--- handed one runs unbounded and passes the key on to Jest; v6 adds the plugin's
+-- `src/backends/studio-cli.ts`. v9 adds the workspace payload's `vmParallel`
+-- count, which a v8 plugin would run sequentially; v8 adds the `pluginKey`
+-- the run asks for, so a copy built for another key stands down; v7 adds the
+-- `runnerTimeoutMs` argv the runner bounds a project's run with and strips
+-- before calling Jest, so a v6 plugin handed one runs unbounded and passes the
+-- key on to Jest; v6 adds the plugin's
 -- own release version to the result and the claim below; v5 added the optional
 -- `vmParallel` count: a
 -- plugin predating it would run a parallel request sequentially and say
@@ -24,7 +25,7 @@ end
 -- the version the CLI sent and echoes its own in `EndTest`, so the CLI
 -- surfaces a clean error against a mismatched plugin rather than running with
 -- stale runtime semantics.
-local PROTOCOL_VERSION = 8
+local PROTOCOL_VERSION = 9
 
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
 -- tree served straight out of source control. Diagnostic only — see the same
@@ -156,74 +157,11 @@ if not loadStringEnabled then
 	return
 end
 
--- Dispatch by payload shape. A `workspace` payload drives the staged
--- materializer (clone each package from the mega-place's `__pkg_stage`, run,
--- reset) via the shared single-process embedded runner — the same code OCALE
--- runs, minus the MemoryStore queue. Otherwise the existing single-/multi-
--- project configs path runs `Runner.runProjects`.
-if testArgs.workspace ~= nil then
-	local embeddedOk, EmbeddedRunner =
-		pcall(require, script.Parent.shared.staging["embedded-runner"])
-	if not embeddedOk then
-		endWithError(
-			"Failed to require shared.staging.embedded-runner: " .. tostring(EmbeddedRunner)
-		)
-		return
-	end
-
-	local runOk, entriesOrErr, outcome =
-		pcall(EmbeddedRunner.runEmbedded, script, testArgs.workspace)
-	if not runOk then
-		endWithError("EmbeddedRunner.runEmbedded threw: " .. tostring(entriesOrErr))
-		return
-	end
-
-	-- `bailed` tells the CLI the missing entries were skipped under --bail.
-	endTest(
-		HttpService:JSONEncode({
-			bailed = outcome.bailed,
-			deferred = outcome.deferred,
-			entries = entriesOrErr,
-		}),
-		"[]"
-	)
-	return
-end
-
-if testArgs.config == nil or testArgs.config.configs == nil then
-	local keysOk, keys = pcall(HttpService.JSONEncode, HttpService, testArgs)
-	endWithError(
-		"testArgs.config.configs is nil. Keys: " .. (if keysOk then keys else "<unencodable>")
-	)
-	return
-end
-
-local configs = testArgs.config.configs
-
-local requireOk, Runner = pcall(require, script.Parent.shared.runner)
-if not requireOk then
-	endWithError("Failed to require shared.runner: " .. tostring(Runner))
-	return
-end
-
-local stubHooksOk, StubHooks = pcall(require, script.Parent.shared["runtime-stub-hooks"])
-if not stubHooksOk then
-	endWithError("Failed to require shared.runtime-stub-hooks: " .. tostring(StubHooks))
-	return
-end
-
-local GameOutputCapture = require(script.Parent.shared["game-output-capture"])
 local VmParallel = require(script.Parent.shared["vm-parallel"])
 
 local function encode(value: any): string
 	return HttpService:JSONEncode(value)
 end
-
--- Per-config injection target lists, parallel to `configs`. The CLI sends a
--- pre-filtered list excluding mount paths whose source tree already has a
--- user-authored `jest.config.luau` synced by Rojo. Empty entry (or missing
--- field) means: skip injection for this config.
-local runtimeStubMounts: { { string } } = testArgs.runtimeStubMounts or table.create(#configs, {})
 
 --[[
 	The actor hosts that have bound their message handler, up to `limit`.
@@ -270,6 +208,216 @@ local function collectReadyHosts(limit: number): { Actor }
 end
 
 --[[
+	One round trip to the VM hosts: each host gets `payloadFor` of its slice,
+	and `readAnswer` turns what a host fires back into the request index it
+	answers and the answer itself — or no index, for an answer this exchange
+	did not ask for.
+]]
+type HostExchange = {
+	expected: number,
+	hosts: { Actor },
+	message: string,
+	payloadFor: (slice: { number }) -> any,
+	readAnswer: (...any) -> (number?, any),
+	slices: { { number } },
+	waitSeconds: number,
+}
+
+--[[
+	Send each host its slice and collect the answers by request index. Returns
+	once every index has answered or `waitSeconds` has passed; an index still
+	missing is a host that died or never answered.
+
+	The main thread does the waiting because `StudioTestService:EndTest` must be
+	called from the run-mode runner's own thread: called from inside the
+	BindableEvent handler it fails with "can only be called from the server
+	DataModel of a running Studio play session".
+]]
+local function exchangeWithHosts(exchange: HostExchange): { [number]: any }
+	local results = script.Parent.vmHosts.results :: BindableEvent
+	local received: { [number]: any } = {}
+	local receivedCount = 0
+	local connection = results.Event:Connect(function(...: any)
+		local index, answer = exchange.readAnswer(...)
+		if index ~= nil and received[index] == nil then
+			received[index] = answer
+			receivedCount += 1
+		end
+	end)
+
+	for hostIndex, slice in exchange.slices do
+		exchange.hosts[hostIndex]:SendMessage(exchange.message, exchange.payloadFor(slice))
+	end
+
+	local deadline = os.clock() + exchange.waitSeconds
+	while receivedCount < exchange.expected and os.clock() < deadline do
+		task.wait(0.05)
+	end
+
+	connection:Disconnect()
+	return received
+end
+
+local function missingError(waitSeconds: number): string
+	return "The VM host running this project stopped answering (timed out after "
+		.. string.format("%.0f", waitSeconds)
+		.. "s)"
+end
+
+--[[
+	The fan-out a workspace run hands the embedded runner: one staged package's
+	entries split across the hosts, returned in the order they were given. An
+	entry no host answered for comes back as an ExecutionError.
+
+	A host that misses the deadline is still running, so it takes no further
+	package, and each package's answers carry its batch number: a late answer
+	from an earlier package must not fill a slot in this one.
+]]
+local function fanOutToHosts(hosts: { Actor }, runBudgetMs: number?)
+	local waitSeconds = VmParallel.resolveHostDeadlineSeconds(runBudgetMs)
+	local live = table.clone(hosts)
+	local batch = 0
+
+	local function failAll(entries: { any }, message: string): { any }
+		local failed = {}
+		for index, entry in entries do
+			failed[index] =
+				VmParallel.workspaceErrorEntry(entry, { encode = encode, message = message })
+		end
+
+		return failed
+	end
+
+	return function(entries: { any }): { any }
+		if #live == 0 then
+			return failAll(
+				entries,
+				"No VM host is left to run this project: every host stopped answering"
+			)
+		end
+
+		batch += 1
+		local current = batch
+		local slices = VmParallel.planSlices({ configCount = #entries, hostCount = #live })
+		local received = exchangeWithHosts({
+			expected = #entries,
+			hosts = live,
+			message = "runStaged",
+			payloadFor = function(slice)
+				local sliceEntries = {}
+				for _, index in slice do
+					table.insert(sliceEntries, entries[index])
+				end
+
+				return { batch = current, entries = sliceEntries, indices = slice }
+			end,
+			readAnswer = function(index: number, result: any, answerBatch: number)
+				return if answerBatch == current then index else nil, result
+			end,
+			slices = slices,
+			waitSeconds = waitSeconds,
+		})
+
+		local ordered = failAll(entries, missingError(waitSeconds))
+		local stuck: { [Actor]: true } = {}
+		for hostIndex, slice in slices do
+			for _, index in slice do
+				if received[index] == nil then
+					stuck[live[hostIndex]] = true
+				else
+					ordered[index] = received[index]
+				end
+			end
+		end
+
+		for index = #live, 1, -1 do
+			if stuck[live[index]] then
+				table.remove(live, index)
+			end
+		end
+
+		return ordered
+	end
+end
+
+-- Dispatch by payload shape. A `workspace` payload drives the staged
+-- materializer (clone each package from the mega-place's `__pkg_stage`, run,
+-- reset) via the shared single-process embedded runner — the same code OCALE
+-- runs, minus the MemoryStore queue. Otherwise the existing single-/multi-
+-- project configs path runs `Runner.runProjects`.
+if testArgs.workspace ~= nil then
+	local embeddedOk, EmbeddedRunner =
+		pcall(require, script.Parent.shared.staging["embedded-runner"])
+	if not embeddedOk then
+		endWithError(
+			"Failed to require shared.staging.embedded-runner: " .. tostring(EmbeddedRunner)
+		)
+		return
+	end
+
+	-- Experimental: each package's projects run across the VM hosts once the
+	-- package is staged. No host ready leaves the run sequential.
+	local fanOut = nil
+	local vmParallel = testArgs.workspace.vmParallel
+	if typeof(vmParallel) == "number" and vmParallel > 1 then
+		local hosts = collectReadyHosts(vmParallel)
+		if #hosts > 0 then
+			fanOut = fanOutToHosts(hosts, testArgs.workspace.runBudgetMs)
+		else
+			warn("[jest-roblox] no parallel VM hosts became ready; running projects sequentially")
+		end
+	end
+
+	local runOk, entriesOrErr, outcome =
+		pcall(EmbeddedRunner.runEmbedded, script, testArgs.workspace, fanOut)
+	if not runOk then
+		endWithError("EmbeddedRunner.runEmbedded threw: " .. tostring(entriesOrErr))
+		return
+	end
+
+	-- `bailed` tells the CLI the missing entries were skipped under --bail.
+	endTest(
+		HttpService:JSONEncode({
+			bailed = outcome.bailed,
+			deferred = outcome.deferred,
+			entries = entriesOrErr,
+		}),
+		"[]"
+	)
+	return
+end
+
+if testArgs.config == nil or testArgs.config.configs == nil then
+	local keysOk, keys = pcall(HttpService.JSONEncode, HttpService, testArgs)
+	endWithError(
+		"testArgs.config.configs is nil. Keys: " .. (if keysOk then keys else "<unencodable>")
+	)
+	return
+end
+
+local configs = testArgs.config.configs
+
+local requireOk, Runner = pcall(require, script.Parent.shared.runner)
+if not requireOk then
+	endWithError("Failed to require shared.runner: " .. tostring(Runner))
+	return
+end
+
+local stubHooksOk, StubHooks = pcall(require, script.Parent.shared["runtime-stub-hooks"])
+if not stubHooksOk then
+	endWithError("Failed to require shared.runtime-stub-hooks: " .. tostring(StubHooks))
+	return
+end
+
+local GameOutputCapture = require(script.Parent.shared["game-output-capture"])
+
+-- Per-config injection target lists, parallel to `configs`. The CLI sends a
+-- pre-filtered list excluding mount paths whose source tree already has a
+-- user-authored `jest.config.luau` synced by Rojo. Empty entry (or missing
+-- field) means: skip injection for this config.
+local runtimeStubMounts: { { string } } = testArgs.runtimeStubMounts or table.create(#configs, {})
+
+--[[
 	Run the configs across `requested` Luau VMs and return the entries in
 	request order plus the run's batch-scoped game output.
 
@@ -284,30 +432,6 @@ local function runInVmHosts(requested: number): ({ any }?, string?)
 		return nil, nil
 	end
 
-	local results = script.Parent.vmHosts.results :: BindableEvent
-	local received: { [number]: any } = {}
-	local receivedCount = 0
-
-	local connection = results.Event:Connect(
-		function(
-			configIndex: number,
-			jestOutput: string,
-			bannerOutput: string,
-			elapsedMs: number
-		)
-			if received[configIndex] ~= nil then
-				return
-			end
-
-			received[configIndex] = {
-				bannerOutput = bannerOutput,
-				elapsedMs = elapsedMs,
-				jestOutput = jestOutput,
-			}
-			receivedCount += 1
-		end
-	)
-
 	-- One capture for the whole batch, owned here. `LogService.MessageOut`
 	-- reports every message to every listener with no source identity, so
 	-- under parallel "which project printed this" is unanswerable; the hosts
@@ -320,38 +444,41 @@ local function runInVmHosts(requested: number): ({ any }?, string?)
 		mounts = runtimeStubMounts,
 	})
 
-	for hostIndex, slice in slices do
-		local payload = { configs = {}, indices = slice, runtimeStubMounts = {} }
-		for _, configIndex in slice do
-			table.insert(payload.configs, configs[configIndex])
-			table.insert(payload.runtimeStubMounts, runtimeStubMounts[configIndex] or {})
-		end
-
-		hosts[hostIndex]:SendMessage("run", encode(payload))
-	end
-
-	-- The main thread does the waiting because `StudioTestService:EndTest`
-	-- must be called from the run-mode runner's own thread: called from inside
-	-- the BindableEvent handler it fails with "can only be called from the
-	-- server DataModel of a running Studio play session".
 	-- Bounded by the budget the CLI sent rather than a constant of our own:
 	-- the wait exists to turn a dead host into ExecutionError entries the CLI
 	-- can render, and a wait outlasting the CLI's timeout delivers none of them
 	-- (studio-cli has killed Studio by then).
 	local waitSeconds = VmParallel.resolveHostDeadlineSeconds(testArgs.runBudgetMs)
-	local deadline = os.clock() + waitSeconds
-	while receivedCount < #configs and os.clock() < deadline do
-		task.wait(0.05)
-	end
+	local received = exchangeWithHosts({
+		expected = #configs,
+		hosts = hosts,
+		message = "run",
+		payloadFor = function(slice)
+			local payload = { configs = {}, indices = slice, runtimeStubMounts = {} }
+			for _, configIndex in slice do
+				table.insert(payload.configs, configs[configIndex])
+				table.insert(payload.runtimeStubMounts, runtimeStubMounts[configIndex] or {})
+			end
 
-	connection:Disconnect()
+			return encode(payload)
+		end,
+		readAnswer = function(
+			configIndex: number,
+			jestOutput: string,
+			bannerOutput: string,
+			elapsedMs: number
+		)
+			return configIndex,
+				{ bannerOutput = bannerOutput, elapsedMs = elapsedMs, jestOutput = jestOutput }
+		end,
+		slices = slices,
+		waitSeconds = waitSeconds,
+	})
 
 	return VmParallel.finalizeEntries({
 		configCount = #configs,
 		encode = encode,
-		missingError = "The VM host running this project stopped answering (timed out after "
-			.. string.format("%.0f", waitSeconds)
-			.. "s)",
+		missingError = missingError(waitSeconds),
 		received = received,
 	}),
 		stopCapture()

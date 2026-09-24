@@ -117,6 +117,42 @@ local function runSlice(payload: any): ()
 	end
 end
 
+--[[
+	Run this host's share of one staged workspace package. The coordinator
+	staged it, so each entry runs against the live DataModel as it stands. The
+	result goes back as a table: a workspace entry carries its package, project
+	and snapshot writes, not just the output `report` sends.
+]]
+local function runStagedSlice(payload: any): ()
+	local requireOk, EmbeddedRunner =
+		pcall(require, script.Parent.shared.staging["embedded-runner"])
+	for position, configIndex in payload.indices do
+		local entry = payload.entries[position]
+		local message = "VM host failed to require the embedded runner: "
+			.. tostring(EmbeddedRunner)
+		if requireOk then
+			local runOk, result = pcall(EmbeddedRunner.runStagedEntry, script, entry)
+			if runOk then
+				results:Fire(configIndex, result, payload.batch)
+				continue
+			end
+
+			message = "VM host entry threw: " .. tostring(result)
+		end
+
+		results:Fire(
+			configIndex,
+			VmParallel.workspaceErrorEntry(entry, { encode = encode, message = message }),
+			payload.batch
+		)
+	end
+end
+
+actor:BindToMessage("runStaged", function(payload: any): ()
+	-- A BindToMessage callback may not yield, and the run does.
+	task.spawn(runStagedSlice, payload)
+end)
+
 actor:BindToMessage("run", function(rawPayload: string): ()
 	-- The run yields (Jest awaits its own promise) and a BindToMessage callback
 	-- may not, so the slice runs on its own thread.

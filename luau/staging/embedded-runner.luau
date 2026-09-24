@@ -456,6 +456,39 @@ local function publishEntry(run: Run, result: ResultEntry)
 	end
 end
 
+local function noCapture(): string?
+	return nil
+end
+
+type StageFailure = {
+	err: any,
+	elapsedMs: number,
+	gameOutput: string?,
+}
+
+local function stageFailure(entry: EntryPayload, failure: StageFailure): ResultEntry
+	local err, elapsedMs, gameOutput = failure.err, failure.elapsedMs, failure.gameOutput
+	return {
+		pkg = entry.pkg,
+		project = entry.project,
+		elapsedMs = elapsedMs,
+		jestOutput = HttpService:JSONEncode(
+			RunnerResult.fail(PromiseError.normalize(err), { phase = "staging" })
+		),
+		gameOutput = gameOutput,
+	}
+end
+
+--[=[
+	Where an entry runs. `prevPkg` is the package the DataModel already holds.
+	A `hosted` entry runs on a VM host against the coordinator's stage, so it
+	owns neither the stage nor the Game Output capture.
+]=]
+type EntryPlacement = {
+	hosted: boolean,
+	prevPkg: string?,
+}
+
 --[=[
 	Run one entry and report it, alongside the package left staged afterwards.
 
@@ -466,8 +499,9 @@ end
 local function executeEntry(
 	callingScript: LuaSourceContainer,
 	entry: EntryPayload,
-	prevPkg: string?
+	placement: EntryPlacement
 ): (ResultEntry, string?)
+	local hosted, prevPkg = placement.hosted, placement.prevPkg
 	local t0 = os.clock()
 	local changingPackage = entry.pkg ~= prevPkg
 	-- Opened here so a failure before `runEntry` is reached still names the
@@ -493,7 +527,7 @@ local function executeEntry(
 	-- window covers the whole of this package's time in the live DataModel:
 	-- scripts that start on parenting, patch-time warnings, the run itself,
 	-- and the late warns that fire as Promise:expect resumes the coroutine.
-	local stopCapture = GameOutputCapture.start()
+	local stopCapture = if hosted then noCapture else GameOutputCapture.start()
 
 	if stageOk and changingPackage then
 		stageOk, stageErr = pcall(Materializer.materialize, entry.pkg)
@@ -501,16 +535,11 @@ local function executeEntry(
 
 	if not stageOk then
 		local elapsedMs = math.floor((os.clock() - t0) * 1000)
-		local result: ResultEntry = {
-			pkg = entry.pkg,
-			project = entry.project,
-			elapsedMs = elapsedMs,
-			jestOutput = HttpService:JSONEncode(
-				RunnerResult.fail(PromiseError.normalize(stageErr), { phase = progress.phase })
-			),
-			gameOutput = stopCapture(),
-		}
-		return result, entry.pkg
+		return stageFailure(
+			entry,
+			{ err = stageErr, elapsedMs = elapsedMs, gameOutput = stopCapture() }
+		),
+			entry.pkg
 	end
 
 	local pcallOk, jestSuccess, primary, snapshotWrites, bannerOutput, timedOut =
@@ -523,7 +552,7 @@ local function executeEntry(
 	-- the package that happens to run next. Nothing of it is left staged, which
 	-- is what this function reports back so the next entry stages afresh.
 	local abandoned = timedOut == true
-	if abandoned then
+	if abandoned and not hosted then
 		pcall(Materializer.reset)
 	end
 
@@ -645,6 +674,15 @@ local function stopReason(run: Run): StopReason?
 	return nil
 end
 
+local function newRun(payload: Payload, bail: Bail.State): Run
+	return {
+		bail = bail,
+		budget = ResultBudget.new(payload.resultBudgetBytes),
+		payload = payload,
+		results = {},
+	}
+end
+
 local function toOutcome(stop: StopReason?): RunOutcome
 	return { bailed = stop == "bailed", deferred = stop == "deferred" }
 end
@@ -681,7 +719,96 @@ local function commitEntry(run: Run, result: ResultEntry): boolean
 	return true
 end
 
+--[=[
+	Runs one package's entries somewhere else — the plugin's VM hosts — once
+	the package is staged, and returns their results in the order given.
+]=]
+export type FanOut = (entries: { EntryPayload }) -> { ResultEntry }
+
+-- Consecutive entries of one package. The CLI sends entries package by
+-- package, so this is every package's entries.
+local function packageBatches(entries: { EntryPayload }): { { EntryPayload } }
+	local batches: { { EntryPayload } } = {}
+	local current: { EntryPayload }? = nil
+	for _, entry in entries do
+		if current == nil or current[1].pkg ~= entry.pkg then
+			current = {}
+			table.insert(batches, current :: { EntryPayload })
+		end
+
+		table.insert(current :: { EntryPayload }, entry)
+	end
+
+	return batches
+end
+
+--[=[
+	Stage a package, fan its entries out, and return their results.
+
+	One Game Output capture spans the package, filed under its first entry:
+	projects that run at once share `LogService`, which says nothing about
+	which of them printed a line.
+]=]
+local function runPackage(entries: { EntryPayload }, fanOut: FanOut): { ResultEntry }
+	local t0 = os.clock()
+	local stopCapture = GameOutputCapture.start()
+	local stageOk, stageErr = pcall(Materializer.materialize, entries[1].pkg)
+
+	local results: { ResultEntry } = {}
+	if stageOk then
+		results = fanOut(entries)
+	else
+		local elapsedMs = math.floor((os.clock() - t0) * 1000)
+		for _, entry in entries do
+			table.insert(results, stageFailure(entry, { err = stageErr, elapsedMs = elapsedMs }))
+		end
+	end
+
+	results[1].gameOutput = stopCapture()
+	return results
+end
+
+--[=[
+	`runEmbedded` with each package's projects run at once: packages stay one
+	after another, since each owns the DataModel it is staged into.
+]=]
+local function runFannedOut(payload: Payload, fanOut: FanOut): ({ ResultEntry }, RunOutcome)
+	local run = newRun(payload, Bail.new({ enabled = payload.bail }))
+	local stop: StopReason? = nil
+
+	for _, entries in packageBatches(payload.entries) do
+		stop = stopReason(run)
+		if stop ~= nil then
+			break
+		end
+
+		local results = runPackage(entries, fanOut)
+		pcall(Materializer.reset)
+
+		for _, result in results do
+			if not commitEntry(run, result) then
+				stop = "deferred"
+				break
+			end
+		end
+
+		if stop ~= nil then
+			break
+		end
+	end
+
+	return run.results, toOutcome(stop)
+end
+
 local module = {}
+
+--[=[
+	Run one entry against the package the coordinator already staged, with no
+	Game Output capture of its own. What a VM host runs.
+]=]
+function module.runStagedEntry(callingScript: LuaSourceContainer, entry: EntryPayload): ResultEntry
+	return (executeEntry(callingScript, entry, { hosted = true, prevPkg = entry.pkg }))
+end
 
 --[=[
 	Walk the payload's entries in order, stopping early if the return envelope
@@ -690,20 +817,21 @@ local module = {}
 	Returns the entries it ran and why it stopped. There is no queue on this
 	path, so the CLI answers a deferral by sending a new task carrying only the
 	entries that did not run — and answers a bail by sending nothing.
+
+	Given a `fanOut`, each package's entries run through it at once instead.
 ]=]
 function module.runEmbedded(
 	callingScript: LuaSourceContainer,
-	payload: Payload
+	payload: Payload,
+	fanOut: FanOut?
 ): ({ ResultEntry }, RunOutcome)
-	local run: Run = {
-		-- The trip stays local: this path publishes no bail signal, so a
-		-- sibling bucket runs its whole share out even once this one has
-		-- stopped.
-		bail = Bail.new({ enabled = payload.bail }),
-		budget = ResultBudget.new(payload.resultBudgetBytes),
-		payload = payload,
-		results = {},
-	}
+	if fanOut ~= nil then
+		return runFannedOut(payload, fanOut)
+	end
+
+	-- The trip stays local: this path publishes no bail signal, so a sibling
+	-- bucket runs its whole share out even once this one has stopped.
+	local run = newRun(payload, Bail.new({ enabled = payload.bail }))
 	local prevPkg: string? = nil
 	local stop: StopReason? = nil
 
@@ -713,7 +841,8 @@ function module.runEmbedded(
 			break
 		end
 
-		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg)
+		local result, stagedPkg =
+			executeEntry(callingScript, entry, { hosted = false, prevPkg = prevPkg })
 		prevPkg = stagedPkg
 
 		if not commitEntry(run, result) then
@@ -749,18 +878,16 @@ function module.runWorkStealing(
 	end
 
 	local queue = MemoryStoreService:GetQueue(queueId, invisibility)
-	local run: Run = {
-		-- Siblings drain the same queue, and Open Cloud cannot cancel a running
-		-- task, so the trip travels through the results map they all share.
-		bail = Bail.new({
+	-- Siblings drain the same queue, and Open Cloud cannot cancel a running
+	-- task, so the trip travels through the results map they all share.
+	local run = newRun(
+		payload,
+		Bail.new({
 			enabled = payload.bail,
 			map = resolveSignalMap(payload),
 			ttlSeconds = payload.streamingTtlSeconds,
-		}),
-		budget = ResultBudget.new(payload.resultBudgetBytes),
-		payload = payload,
-		results = {},
-	}
+		})
+	)
 	local prevPkg: string? = nil
 	local stop: StopReason? = nil
 
@@ -802,7 +929,8 @@ function module.runWorkStealing(
 			continue
 		end
 
-		local result, stagedPkg = executeEntry(callingScript, entry, prevPkg)
+		local result, stagedPkg =
+			executeEntry(callingScript, entry, { hosted = false, prevPkg = prevPkg })
 		prevPkg = stagedPkg
 
 		if not commitEntry(run, result) then

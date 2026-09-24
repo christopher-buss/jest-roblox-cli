@@ -357,6 +357,42 @@ describe(runWorkspaceModeAsync, () => {
 	});
 
 	describe("backend resolution", () => {
+		it("should reject --experimental-vm-parallel on open-cloud", async () => {
+			expect.assertions(2);
+
+			const harness = setupHappyPath();
+
+			const result = await runWorkspaceModeAsync(
+				makeCli({ experimentalVmParallel: "auto", packages: "a", workspace: true }),
+				undefined,
+				undefined,
+				harness.dependencies,
+			);
+
+			expect(result.validationExitCode).toBe(2);
+			expect(result.validationMessage).toContain("--experimental-vm-parallel is Studio-only");
+		});
+
+		it("should forward --experimental-vm-parallel to a studio-cli workspace run", async () => {
+			expect.assertions(1);
+
+			const harness = setupHappyPath();
+
+			await runWorkspaceModeAsync(
+				makeCli({
+					backend: "studio-cli",
+					experimentalVmParallel: "auto",
+					packages: "a",
+					workspace: true,
+				}),
+				undefined,
+				undefined,
+				harness.dependencies,
+			);
+
+			expect(runnerCall(harness).runOptions.experimentalVmParallel).toBe("auto");
+		});
+
 		it("should resolve auto to studio-cli when Studio is installed", async () => {
 			expect.assertions(2);
 

@@ -216,6 +216,9 @@ local jestMissing = {}
 -- What a package writes to Jest's own stdout on its way out, the way the real
 -- "No tests found, exiting with code 1" is written.
 local jestBanners = {}
+-- Every materialize and reset, in order, so a fanned-out run can be checked
+-- for staging each package once.
+local stagingCalls = {}
 -- Stands the RobloxShared package down, so the output tap cannot be installed.
 local sharedIsMissing = false
 local silent = {}
@@ -447,12 +450,14 @@ local stubs = {
 	},
 	["./materializer"] = {
 		materialize = function(pkg)
+			table.insert(stagingCalls, "materialize:" .. pkg)
 			say(pkg, "materialize:" .. pkg, OUTPUT)
 			if materializeFails[pkg] then
 				error("no stage for " .. pkg, 0)
 			end
 		end,
 		reset = function()
+			table.insert(stagingCalls, "reset")
 			emit("reset", WARNING)
 		end,
 	},
@@ -1237,6 +1242,131 @@ local function testTheTapIsPutBack()
 	check(second[1].bannerOutput == nil, "T30: the package that did not write has none")
 end
 
+local function projectEntry(pkg: string, project: string)
+	return { pkg = pkg, project = project, config = { pkg = pkg } }
+end
+
+-- Stands in for the plugin's VM hosts: each entry runs as a host would run it,
+-- against the package the coordinator already staged. Records every batch so a
+-- test can see which entries were fanned out together.
+local fanOutBatches = {}
+
+local function fanOut(entries)
+	local keys = {}
+	local results = {}
+	for _, entry in entries do
+		table.insert(keys, entry.pkg .. "/" .. entry.project)
+		table.insert(results, EmbeddedRunner.runStagedEntry({}, entry))
+	end
+
+	table.insert(fanOutBatches, table.concat(keys, ","))
+	return results
+end
+
+local function runFannedOut(entries, payload)
+	stagingCalls = {}
+	fanOutBatches = {}
+	local full = { entries = entries }
+	for key, value in payload or {} do
+		full[key] = value
+	end
+
+	return EmbeddedRunner.runEmbedded({}, full, fanOut)
+end
+
+-- T31: a package's projects go out together, against one staging of it, and
+-- come back in request order.
+local function testFanOutStagesEachPackageOnce()
+	local results = runFannedOut({
+		projectEntry("a", "client"),
+		projectEntry("a", "server"),
+		projectEntry("b", "unit"),
+	})
+
+	check(#fanOutBatches == 2, "T31: one fan-out per package")
+	check(fanOutBatches[1] == "a/client,a/server", "T31: a's projects fan out together")
+	check(fanOutBatches[2] == "b/unit", "T31: b fans out alone")
+	check(
+		table.concat(stagingCalls, ",") == "materialize:a,reset,materialize:b,reset",
+		"T31: each package is staged once and torn down after"
+	)
+	check(#results == 3, "T31: every entry comes back")
+	check(results[2].project == "server" and results[3].pkg == "b", "T31: in request order")
+end
+
+-- T32: the package's Game Output is one capture, filed under its first entry:
+-- once projects overlap, a line cannot be told apart by project.
+local function testFanOutFilesThePackageOutputOnce()
+	local results = runFannedOut({ projectEntry("a", "client"), projectEntry("a", "server") })
+	local first = messagesOf(results[1])
+
+	check(has(first, "materialize:a"), "T32: the capture spans staging")
+	check(has(first, "jest:a"), "T32: the capture spans the projects' runs")
+	check(results[2].gameOutput == nil, "T32: no second copy under a sibling project")
+end
+
+-- T33: a package that cannot be staged fails every one of its entries and is
+-- never fanned out; the next package still runs.
+local function testFanOutStageFailureFailsThePackage()
+	materializeFails.a = true
+	local results = runFannedOut({
+		projectEntry("a", "client"),
+		projectEntry("a", "server"),
+		projectEntry("b", "unit"),
+	})
+	materializeFails.a = nil
+
+	check(#fanOutBatches == 1 and fanOutBatches[1] == "b/unit", "T33: only b fans out")
+	for index = 1, 2 do
+		local decoded = HttpService:JSONDecode(results[index].jestOutput)
+		check(decoded.success == false, "T33: a's entry " .. index .. " failed")
+	end
+
+	check(results[3].pkg == "b", "T33: b still runs")
+end
+
+-- T34: --bail lets the failing package finish — its projects already ran
+-- together — and takes no further package.
+local function testFanOutBailStopsAtThePackage()
+	jestRedTests.a = true
+	local results, outcome = runFannedOut(
+		{ projectEntry("a", "client"), projectEntry("a", "server"), projectEntry("b", "unit") },
+		{ bail = true }
+	)
+	jestRedTests.a = nil
+
+	check(#results == 2, "T34: the failing package's projects all report")
+	check(outcome.bailed, "T34: the outcome says it bailed")
+	check(#fanOutBatches == 1, "T34: no package after the failing one")
+end
+
+-- T35: a host runs its entry against what is already staged: no staging of its
+-- own, and no Game Output capture of its own.
+local function testStagedEntryLeavesStagingAlone()
+	stagingCalls = {}
+	local result = EmbeddedRunner.runStagedEntry({}, projectEntry("a", "client"))
+
+	check(#stagingCalls == 0, "T35: the host neither materializes nor resets")
+	check(result.gameOutput == nil, "T35: the host captures no Game Output")
+	check(HttpService:JSONDecode(result.jestOutput).success == true, "T35: the entry ran")
+end
+
+-- T36: a host entry that runs out of budget leaves the stage standing: its
+-- sibling projects are still running against it on other hosts.
+local function testAbandonedStagedEntryLeavesTheStage()
+	jestParks.a = true
+	stagingCalls = {}
+	local outcome = runInThread(function()
+		return EmbeddedRunner.runStagedEntry({}, budgetedEntryFor("a", 5000))
+	end)
+
+	elapse()
+	jestParks.a = nil
+
+	check(outcome.done, "T36: the elapsed budget ends the entry")
+	check(#stagingCalls == 0, "T36: the host does not tear the stage down")
+end
+
 testWindowAndNoBleedAcrossPackages()
 testRecordShape()
 testFailuresKeepOutput()
@@ -1263,6 +1393,12 @@ testReplacementTakesTheDroppedItemFirst()
 testRequeueUsesTheSeededTtl()
 testFailedRequeueLeavesTheReadStanding()
 testRefusedRequeueIsRetried()
+testFanOutStagesEachPackageOnce()
+testFanOutFilesThePackageOutputOnce()
+testFanOutStageFailureFailsThePackage()
+testFanOutBailStopsAtThePackage()
+testStagedEntryLeavesStagingAlone()
+testAbandonedStagedEntryLeavesTheStage()
 
 check(activeScheduling == 0, "finished, failed, or abandoned package retained scheduling")
 writeStdout("ALL OK")

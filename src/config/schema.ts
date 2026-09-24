@@ -572,6 +572,11 @@ export interface WorkspaceRunOptions {
 	 */
 	bail: boolean;
 	color: boolean;
+	/**
+	 * Studio-only, experimental: how many Luau VMs one package's projects split
+	 * across. CLI-only, like `bail`.
+	 */
+	experimentalVmParallel?: ParallelCount | undefined;
 	formatters: Array<FormatterEntry>;
 	/** Absolute path for the Aggregated Game Output file; undefined = off. */
 	gameOutput?: string;

@@ -203,6 +203,19 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		expect(spec.bail).toBeTrue();
 	});
 
+	it("should hand the VM count to a backend that builds its own payload", async () => {
+		expect.assertions(1);
+
+		const spec = await prepareWorkspaceDispatchAsync({
+			jobs: [makeJob("pkg-a", "unit")],
+			parallel: 1,
+			vmParallel: "auto",
+			workStealingCredentials: undefined,
+		});
+
+		expect(spec.vmParallel).toBe("auto");
+	});
+
 	it("should return a work-stealing script when queue setup succeeds", async () => {
 		expect.assertions(2);
 

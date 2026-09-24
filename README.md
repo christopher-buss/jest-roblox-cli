@@ -620,7 +620,13 @@ asks for one VM per project, capped at the four `Actor` hosts the plugin ships
 built); an explicit `n` above that cap is rejected rather than quietly reduced.
 Both Studio backends drive it (`studio` and `studio-cli`) — Open Cloud rejects
 it, because an Open Cloud session runs no scripts to host a second VM (use
-`--parallel` there to shard across sessions), and workspace mode rejects it too.
+`--parallel` there to shard across sessions).
+
+In workspace mode the split is per package: packages still run one after
+another, each staged into the DataModel on its own, and a package's projects run
+across the VMs once it is staged. A workspace of single-project packages gains
+nothing. The package's Game Output is one capture, filed under its first
+project.
 
 Each host is an `Actor` in the plugin's own tree, so each project gets its own
 `_G`, its own module cache, and its own copy of Jest. That is what makes the

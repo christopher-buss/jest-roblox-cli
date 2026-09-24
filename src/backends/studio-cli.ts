@@ -55,7 +55,7 @@ const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
  * omits the echo (a stale runner predating the handshake) or returns a
  * different number, surfacing a clean "update the plugin" error.
  */
-export const STUDIO_CLI_PROTOCOL_VERSION = 8;
+export const STUDIO_CLI_PROTOCOL_VERSION = 9;
 
 type StudioCliPayload = RunPayload & {
 	/**

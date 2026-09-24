@@ -224,6 +224,20 @@ function module.executionErrorEntry(request: ExecutionErrorRequest): ProjectEntr
 end
 
 --[[
+	The ExecutionError entry for a workspace entry that could not run, keeping
+	the package and project the CLI pairs a workspace result by.
+]]
+function module.workspaceErrorEntry(
+	entry: { pkg: string, project: string },
+	request: ExecutionErrorRequest
+): any
+	local result: any = module.executionErrorEntry(request)
+	result.pkg = entry.pkg
+	result.project = entry.project
+	return result
+end
+
+--[[
 	Flatten what the hosts sent into request order.
 
 	Hosts finish in whatever order their projects happen to end, and a host

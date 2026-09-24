@@ -3,7 +3,7 @@ import process from "node:process";
 
 import packageJson from "../../package.json" with { type: "json" };
 import type { StudioInstalledCheck } from "../backends/auto.ts";
-import { isStudioDiscoverable, resolveAutoBackend } from "../backends/auto.ts";
+import { assertVmParallel, isStudioDiscoverable, resolveAutoBackend } from "../backends/auto.ts";
 import type { Backend } from "../backends/interface.ts";
 import { createOpenCloudBackend, resolveOpenCloudBaseUrl } from "../backends/open-cloud.ts";
 import { createStudioCliBackend } from "../backends/studio-cli.ts";
@@ -196,7 +196,9 @@ function resolveRunBackend(
 		return runOptions;
 	}
 
-	return { ...runOptions, backend: resolveAutoBackend(runOptions, isStudioInstalled) };
+	const backend = resolveAutoBackend(runOptions, isStudioInstalled);
+	assertVmParallel(backend, runOptions.experimentalVmParallel);
+	return { ...runOptions, backend };
 }
 
 // Load every package's raw config and fold them into the consensus-resolved

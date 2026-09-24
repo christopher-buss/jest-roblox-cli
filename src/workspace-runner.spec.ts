@@ -411,6 +411,37 @@ describe(runWorkspaceAsync, () => {
 		expect(dispatchedScript(captured)).toContain('"testTimeout":5678');
 	});
 
+	it("should hand the backend the VM count the run options carry", async () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = createMemoryFileSystem();
+
+		volume.fromJSON({
+			...seedPackage(FOO_DIR, {
+				name: "@halcyon/foo",
+				specFiles: { [path.join(FOO_DIR, "src/foo.spec.luau")]: "" },
+			}),
+			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n  - packages/*\n",
+		});
+		setLoadedConfigPerPackage({ [FOO_DIR]: { ...DEFAULT_CONFIG, rootDir: FOO_DIR } });
+
+		const { backend, captured } = createStubBackend([
+			{ jestOutput: passingResult(), pkg: "@halcyon/foo" },
+		]);
+
+		await runStagedWorkspaceAsync({
+			backend,
+			cli: makeCli(),
+			fileSystem,
+			packageInfos: [FOO_INFO],
+			runOptions: makeRunOptions({ experimentalVmParallel: 3 }),
+			version: "0.0.0-test",
+			workspaceRoot: ROOT,
+		});
+
+		expect(captured.options!.vmParallel).toBe(3);
+	});
+
 	// Workspace mode builds the materializer payload from the pending entries
 	// rather than from the executor's jobs, so `printBasicPrototype` has to be
 	// resolved before dispatch. Left unresolved, Jest-Roblox falls back to its

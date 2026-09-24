@@ -76,7 +76,9 @@ Options:
   --experimental-vm-parallel [n]    Studio-only, experimental: run the configs across
                                     n Luau VMs in one Studio session (default: one
                                     VM per config; max 4, the hosts the plugin
-                                    ships). Game output becomes batch-scoped
+                                    ships). Game output becomes batch-scoped.
+                                    In workspace mode, splits each package's
+                                    projects; packages still run in turn
   --project <name>                  Filter which named projects to run (repeatable)
   --setupFiles <path>               Setup script, a package specifier or relative path
                                     (repeatable)

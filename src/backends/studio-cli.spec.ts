@@ -54,7 +54,7 @@ interface ReplyOptions {
 
 // The protocol this CLI speaks, pinned here on purpose: the spec asserts the
 // wire, so a bump has to be made deliberately in both places.
-const PROTOCOL_VERSION = 8;
+const PROTOCOL_VERSION = 9;
 
 function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
 	return {
@@ -578,7 +578,7 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin reported no version, CLI expects v8). " +
+				"(plugin reported no version, CLI expects v9). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -593,7 +593,7 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin reported v2, CLI expects v8). " +
+				"(plugin reported v2, CLI expects v9). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -613,7 +613,7 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v8). " +
+				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v9). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -1121,6 +1121,80 @@ describe(StudioCliBackend, () => {
 		const request = type({ workspace: { "bail?": "boolean" } }).assert(JSON.parse(payload));
 
 		expect(request.workspace.bail).toBeTrue();
+	});
+
+	it("should size a workspace run's VM count by its largest package", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		let bootstrap = "";
+		const { launch } = replyWith(fileSystem, { entries: [] }, (request) => {
+			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		});
+
+		await makeBackend(fileSystem, launch, { timeout: 120_000 })
+			.runTestsAsync({
+				jobs: [
+					workspaceJob("@scope/a", "client"),
+					workspaceJob("@scope/a", "server"),
+					workspaceJob("@scope/a", "shared"),
+					workspaceJob("@scope/b", "b"),
+				],
+				vmParallel: "auto",
+			})
+			.catch(() => {});
+
+		const payload = /JSONDecode\(\[=*\[(.+?)\]=*\]\)/.exec(bootstrap)![1]!;
+		const request = type({
+			workspace: { "runBudgetMs?": "number", "vmParallel?": "number" },
+		}).assert(JSON.parse(payload));
+
+		expect(request.workspace).toMatchObject({ runBudgetMs: 120_000, vmParallel: 3 });
+	});
+
+	it("should keep a workspace run sequential when no package has two projects", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		let bootstrap = "";
+		const { launch } = replyWith(fileSystem, { entries: [] }, (request) => {
+			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		});
+
+		await makeBackend(fileSystem, launch)
+			.runTestsAsync({
+				jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+				vmParallel: "auto",
+			})
+			.catch(() => {});
+
+		expect(bootstrap).not.toContain("vmParallel");
+	});
+
+	it("should size a workspace run by the projects the runner stages together", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		let bootstrap = "";
+		const { launch } = replyWith(fileSystem, { entries: [] }, (request) => {
+			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		});
+
+		await makeBackend(fileSystem, launch)
+			.runTestsAsync({
+				jobs: [
+					workspaceJob("@scope/a", "client"),
+					workspaceJob("@scope/b", "b"),
+					workspaceJob("@scope/a", "server"),
+				],
+				vmParallel: "auto",
+			})
+			.catch(() => {});
+
+		expect(bootstrap).not.toContain("vmParallel");
 	});
 
 	it("should return one rawResult per workspace package, in submitted order", async () => {

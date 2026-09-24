@@ -53,6 +53,44 @@ export function resolveAutoBackend(
 	return "open-cloud";
 }
 
+/**
+ * What in-session parallelism can serve, checked before a run starts.
+ *
+ * Against the *resolved* backend, so `--backend auto` landing on Open Cloud is
+ * rejected the same way an explicit `--backend open-cloud` is, rather than
+ * running with the flag silently ignored.
+ */
+export function assertVmParallel(kind: BackendKind, vmParallel: ParallelOption): void {
+	if (vmParallel === undefined) {
+		return;
+	}
+
+	// The actor hosts that give each project its own Luau VM need plugin
+	// identity to read `ModuleScript.Source`, and an Open Cloud session runs no
+	// scripts to host them.
+	if (kind === "open-cloud") {
+		throw new Error(
+			"--experimental-vm-parallel is Studio-only: an Open Cloud session has no " +
+				"second Luau VM to run a project in. Use --parallel to shard the run " +
+				"across Open Cloud sessions instead.",
+		);
+	}
+
+	// The hosts are declared in the plugin's rojo project, so the pool is fixed
+	// when the plugin is built. An explicit count above it is a request the
+	// plugin cannot serve: say so rather than quietly run fewer VMs than asked
+	// for. Bare (`"auto"`) asks for as many as the run can use and accepts the
+	// cap by construction.
+	if (typeof vmParallel === "number" && vmParallel > VM_HOST_POOL_SIZE) {
+		throw new Error(
+			`--experimental-vm-parallel ${vmParallel.toString()} is more than the Studio plugin ` +
+				`ships ${VM_HOST_POOL_SIZE.toString()} VM hosts. Pass at most ` +
+				`${VM_HOST_POOL_SIZE.toString()}, or pass the flag bare for one VM per project ` +
+				"up to that cap.",
+		);
+	}
+}
+
 // eslint-disable-next-line ts/require-await -- Async so a bad config rejects rather than throws: `RunSeams.resolveBackend` is awaited, and its fakes resolve.
 export async function resolveBackendAsync(
 	cli: CliOptions,
@@ -64,7 +102,7 @@ export async function resolveBackendAsync(
 ): Promise<Backend> {
 	const kind = resolveAutoBackend(config, isStudioInstalled);
 	const backend = createBackend(kind, cli, config, webSocketServerFactory);
-	assertVmParallel(backend, config.experimentalVmParallel);
+	assertVmParallel(backend.kind, config.experimentalVmParallel);
 	return backend;
 }
 
@@ -100,42 +138,4 @@ function createBackend(
 	}
 
 	return createOpenCloudBackend(buildCredentials(cli, config));
-}
-
-/**
- * What in-session parallelism can serve, checked before a run starts.
- *
- * Against the *resolved* backend, so `--backend auto` landing on Open Cloud is
- * rejected the same way an explicit `--backend open-cloud` is, rather than
- * running with the flag silently ignored.
- */
-function assertVmParallel(backend: Backend, vmParallel: ParallelOption): void {
-	if (vmParallel === undefined) {
-		return;
-	}
-
-	// The actor hosts that give each project its own Luau VM need plugin
-	// identity to read `ModuleScript.Source`, and an Open Cloud session runs no
-	// scripts to host them.
-	if (backend.kind === "open-cloud") {
-		throw new Error(
-			"--experimental-vm-parallel is Studio-only: an Open Cloud session has no " +
-				"second Luau VM to run a project in. Use --parallel to shard the run " +
-				"across Open Cloud sessions instead.",
-		);
-	}
-
-	// The hosts are declared in the plugin's rojo project, so the pool is fixed
-	// when the plugin is built. An explicit count above it is a request the
-	// plugin cannot serve: say so rather than quietly run fewer VMs than asked
-	// for. Bare (`"auto"`) asks for as many as the run can use and accepts the
-	// cap by construction.
-	if (typeof vmParallel === "number" && vmParallel > VM_HOST_POOL_SIZE) {
-		throw new Error(
-			`--experimental-vm-parallel ${vmParallel.toString()} is more than the Studio plugin ` +
-				`ships ${VM_HOST_POOL_SIZE.toString()} VM hosts. Pass at most ` +
-				`${VM_HOST_POOL_SIZE.toString()}, or pass the flag bare for one VM per project ` +
-				"up to that cap.",
-		);
-	}
 }

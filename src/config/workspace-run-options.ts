@@ -148,7 +148,10 @@ export function buildWorkspaceRunOptions({
 function resolveDefaultedFields(
 	cli: CliOptions,
 	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
-): Pick<WorkspaceRunOptions, "backend" | "bail" | "color" | "port" | "silent"> {
+): Pick<
+	WorkspaceRunOptions,
+	"backend" | "bail" | "color" | "experimentalVmParallel" | "port" | "silent"
+> {
 	return {
 		backend: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.backend),
 		// Straight off the CLI rather than through the consensus table: there
@@ -156,6 +159,7 @@ function resolveDefaultedFields(
 		// suite-level bail, so reading it here would give one word two jobs.
 		bail: cli.bail === true,
 		color: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.color),
+		experimentalVmParallel: cli.experimentalVmParallel,
 		port: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.port),
 		silent: resolveField(cli, perPackageConfigs, DEFAULTED_FIELD_SPECS.silent),
 	};

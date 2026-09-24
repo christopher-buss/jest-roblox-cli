@@ -58,6 +58,14 @@ interface WorkspaceRunPayload {
 		bail?: boolean | undefined;
 		entries: Array<WorkspaceEntry>;
 		resultBudgetBytes: number;
+		/** As on {@link ConfigRunPayload}: sent only alongside `vmParallel`. */
+		runBudgetMs?: number;
+		/**
+		 * Experimental: how many Luau VMs one package's projects split across.
+		 * Packages still run one after another; only a package's own projects
+		 * share its staged DataModel at the same time.
+		 */
+		vmParallel?: number;
 	};
 }
 
@@ -78,13 +86,14 @@ export function buildRunPayload({
 	vmParallel,
 }: RunPayloadRequest): RunPayload {
 	if (isWorkspaceRun(jobs)) {
-		return {
-			workspace: {
-				bail,
-				entries: buildWorkspaceEntries(jobs),
-				resultBudgetBytes: UNBOUNDED_RESULT_BUDGET_BYTES,
-			},
-		};
+		const entries = buildWorkspaceEntries(jobs);
+		const workspace = { bail, entries, resultBudgetBytes: UNBOUNDED_RESULT_BUDGET_BYTES };
+		const hostCount = resolveVmHostCount(vmParallel, largestPackageSize(entries));
+		if (hostCount === undefined) {
+			return { workspace };
+		}
+
+		return { workspace: { ...workspace, runBudgetMs, vmParallel: hostCount } };
 	}
 
 	const { configs, runtimeStubMounts } = buildConfigEntries(jobs);
@@ -158,6 +167,22 @@ function buildWorkspaceEntries(jobs: Array<ProjectJob>): Array<WorkspaceEntry> {
 
 		return { config: buildJestArgv(job), pkg: job.pkg, project: job.displayName };
 	});
+}
+
+/**
+ * The most projects one staging of a package runs. The runner stages a package
+ * once per consecutive run of its entries (`packageBatches` in
+ * `embedded-runner.luau`), so that run is what its VMs split.
+ */
+function largestPackageSize(entries: Array<WorkspaceEntry>): number {
+	let largest = 0;
+	let run = 0;
+	for (const [index, { pkg }] of entries.entries()) {
+		run = pkg === entries[index - 1]?.pkg ? run + 1 : 1;
+		largest = Math.max(largest, run);
+	}
+
+	return largest;
 }
 
 /**

@@ -33,7 +33,13 @@ import type { PendingEntry } from "./test-selection.ts";
 
 export type WorkspaceDispatchSpec = Pick<
 	RunProjectsOptions,
-	"bail" | "parallel" | "scriptFactory" | "scriptOverride" | "streaming" | "workStealing"
+	| "bail"
+	| "parallel"
+	| "scriptFactory"
+	| "scriptOverride"
+	| "streaming"
+	| "vmParallel"
+	| "workStealing"
 >;
 
 export type PrepareWorkStealingQueue = typeof prepareWorkStealingQueueAsync;
@@ -61,6 +67,8 @@ interface WorkspaceDispatchInput {
 	onStreamingResult?: StreamingAggregatorOnEntry | undefined;
 	parallel?: ParallelOption;
 	prepareWorkStealingQueue?: PrepareWorkStealingQueue | undefined;
+	/** Studio-only: how many Luau VMs one package's projects split across. */
+	vmParallel?: ParallelOption;
 	workStealingCredentials: undefined | WorkStealingCredentials;
 }
 
@@ -187,6 +195,7 @@ export async function prepareWorkspaceDispatchAsync({
 	onStreamingResult,
 	parallel,
 	prepareWorkStealingQueue = prepareWorkStealingQueueAsync,
+	vmParallel,
 	workStealingCredentials,
 }: WorkspaceDispatchInput): Promise<WorkspaceDispatchSpec> {
 	const inputs = buildMaterializerInputs(jobs);
@@ -212,7 +221,7 @@ export async function prepareWorkspaceDispatchAsync({
 		}
 	}
 
-	return deferrableDispatch({ bail, inputs, parallel });
+	return { ...deferrableDispatch({ bail, inputs, parallel }), vmParallel };
 }
 
 /**

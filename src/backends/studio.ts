@@ -28,19 +28,20 @@ interface StudioOptions {
 /**
  * Plugin/CLI protocol version. Must match `PROTOCOL_VERSION` in
  * `plugin/src/init.server.luau`. Increment when the runtime contract changes —
- * v8 adds the `pluginKey` a `studio-cli` run asks for, which this backend
- * never sends; v7 adds the `runnerTimeoutMs` argv the runner enforces a
- * project's budget from and strips before calling Jest, so a v6 plugin handed
- * one runs unbounded and passes the key through to Jest; v6 adds the `hello`
- * announcement a plugin sends on connect, which is what lets the CLI pick
- * between several installed copies rather than dispatching to whichever one
- * connected first; v4 nests the fields the runner adds to Jest's result under
- * `runner` and renames the frame key `request_id` to `requestId`. A connection
- * that announces another version is never dispatched to, so `version_mismatch`
- * is now only reachable from a plugin whose announcement and request handling
- * disagree.
+ * v9 adds the workspace payload's `vmParallel` count, which a v8 plugin would
+ * ignore and run sequentially; v8 adds the `pluginKey` a `studio-cli` run asks
+ * for, which this backend never sends; v7 adds the `runnerTimeoutMs` argv the
+ * runner enforces a project's budget from and strips before calling Jest, so a
+ * v6 plugin handed one runs unbounded and passes the key through to Jest; v6
+ * adds the `hello` announcement a plugin sends on connect, which is what lets
+ * the CLI pick between several installed copies rather than dispatching to
+ * whichever one connected first; v4 nests the fields the runner adds to Jest's
+ * result under `runner` and renames the frame key `request_id` to `requestId`.
+ * A connection that announces another version is never dispatched to, so
+ * `version_mismatch` is now only reachable from a plugin whose announcement
+ * and request handling disagree.
  */
-export const STUDIO_PROTOCOL_VERSION = 8;
+export const STUDIO_PROTOCOL_VERSION = 9;
 
 const pluginResultSchema = type({
 	"gameOutput?": "string",

@@ -33,7 +33,7 @@ const pluginRequest = type({
 
 // The protocol this CLI speaks, pinned here on purpose: the spec asserts the
 // wire, so a bump has to be made deliberately in both places.
-const PROTOCOL_VERSION = 8;
+const PROTOCOL_VERSION = 9;
 
 /**
  * Connect a plugin that announces a protocol the CLI can use.

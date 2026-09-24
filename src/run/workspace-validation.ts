@@ -82,11 +82,6 @@ export function validateBasicWorkspaceFlags(cli: CliOptions): WorkspaceValidatio
 		};
 	}
 
-	const vmParallelError = rejectVmParallel(cli);
-	if (vmParallelError !== undefined) {
-		return vmParallelError;
-	}
-
 	// A bare `--workspace` means every package, so an empty `--packages` cannot
 	// fall through to it: the user narrowed the run and then named nothing, and
 	// running the whole workspace is the one answer they did not ask for.
@@ -142,35 +137,6 @@ export function buildWorkspaceCredentials(
 		envPrefix: "JEST_",
 		overrides: { apiKey: cli.apiKey, placeId: cli.placeId, universeId: cli.universeId },
 	});
-}
-
-/**
- * In-session parallelism splits the configs of ONE multi-project run across
- * Luau VMs, so a workspace run has nothing for it to split.
- *
- * A deliberate per-mode fork, against the package's cross-mode parity rule:
- * the two modes do not share an execution model here. Multi dispatches a
- * `configs` array to `Runner.runProjects`, which is what the VM hosts slice
- * up; workspace dispatches `workspace.entries` to
- * `EmbeddedRunner.runEmbedded`, which materializes a package from the
- * mega-place's stage, runs it, and resets the DataModel before the next one.
- * That materialize/run/reset cycle owns the DataModel for its package by
- * design, so overlapping packages would corrupt each other's staging rather
- * than merely contend for services. Rejecting the flag says so; leaving it
- * inert would read as a silent no-op.
- */
-function rejectVmParallel(cli: CliOptions): undefined | WorkspaceValidationError {
-	if (cli.experimentalVmParallel === undefined) {
-		return undefined;
-	}
-
-	return {
-		exitCode: 2,
-		message:
-			"Error: --experimental-vm-parallel is not supported in workspace mode; " +
-			"it splits the configs of a single multi-project run.\n",
-		ok: false,
-	};
 }
 
 /**

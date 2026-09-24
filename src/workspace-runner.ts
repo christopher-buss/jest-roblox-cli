@@ -190,6 +190,7 @@ async function prepareDispatchSpecAsync(
 			onStreamingResult: options.onStreamingResult,
 			parallel: options.runOptions.parallel,
 			prepareWorkStealingQueue: options.prepareWorkStealingQueue,
+			vmParallel: options.runOptions.experimentalVmParallel,
 			workStealingCredentials: options.workStealingCredentials,
 		});
 	});
