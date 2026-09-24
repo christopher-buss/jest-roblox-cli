@@ -13,6 +13,7 @@ import { installManagedPluginAsync, installRunnerPluginAsync } from "./runner-pl
 const projectSchema = type({ tree: "object" });
 
 const PLUGINS = "/plugins";
+const USAGE = "/state/managed-plugins";
 const STAGING = "/repo/.jest-roblox/studio-cli/plugin";
 const HOUR_MS = 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 0, 10);
@@ -62,6 +63,7 @@ function options(
 		pluginsDirectory: PLUGINS,
 		sources: SOURCES,
 		stagingDirectory: STAGING,
+		usageDirectory: USAGE,
 		version: "1.2.3",
 		...overrides,
 	};
@@ -69,6 +71,10 @@ function options(
 
 function managedFile(key: string): string {
 	return `${PLUGINS}/JestRobloxRunner.cli-${key}.rbxm`;
+}
+
+function usageMark(key: string): string {
+	return `${USAGE}/JestRobloxRunner.cli-${key}.rbxm`;
 }
 
 describe(installManagedPluginAsync, () => {
@@ -156,6 +162,24 @@ describe(installManagedPluginAsync, () => {
 		expect(wasStaleKept).toBeFalse();
 	});
 
+	it("should keep a plugin another run published while this one was building", async () => {
+		expect.assertions(1);
+
+		const { key } = await installManagedPluginAsync(
+			options(createMemoryFileSystem().fileSystem),
+		);
+		const { fileSystem } = createMemoryFileSystem();
+		const buildAsync = vi.fn<ManagedPluginOptions["buildAsync"]>(async (_project, output) => {
+			fileSystem.mkdirSync(PLUGINS, { recursive: true });
+			fileSystem.writeFileSync(managedFile(key), "loaded-by-studio");
+			fileSystem.writeFileSync(output, "rbxm-bytes");
+		});
+
+		await installManagedPluginAsync(options(fileSystem, { buildAsync }));
+
+		expect(fileSystem.readFileSync(managedFile(key), "utf8")).toBe("loaded-by-studio");
+	});
+
 	it("should refuse sources that carry no plugin project", async () => {
 		expect.assertions(1);
 
@@ -166,20 +190,22 @@ describe(installManagedPluginAsync, () => {
 		).rejects.toThrow("runner plugin sources carry no plugin/plugin.project.json");
 	});
 
-	it("should reuse the installed plugin and mark it used", async () => {
-		expect.assertions(3);
+	it("should reuse the installed plugin and mark it used outside the plugins folder", async () => {
+		expect.assertions(5);
 
 		const { fileSystem } = createMemoryFileSystem();
-		const { key } = await installManagedPluginAsync(
-			options(fileSystem, { now: NOW - HOUR_MS }),
-		);
+		const { key } = await installManagedPluginAsync(options(fileSystem));
+		const installedAt = new Date(NOW - HOUR_MS);
+		fileSystem.utimesSync(managedFile(key), installedAt, installedAt);
 		const buildAsync = fakeRojo(fileSystem);
 
 		await installManagedPluginAsync(options(fileSystem, { buildAsync }));
 
 		expect(buildAsync).not.toHaveBeenCalled();
 		expect(fileSystem.readFileSync(managedFile(key), "utf8")).toBe("rbxm-bytes");
-		expect(fileSystem.statSync(managedFile(key)).mtimeMs).toBe(NOW);
+		expect(fileSystem.statSync(managedFile(key)).mtimeMs).toBe(installedAt.getTime());
+		expect(fileSystem.statSync(usageMark(key)).mtimeMs).toBe(NOW);
+		expect(fileSystem.readFileSync(usageMark(key), "utf8")).toBe("");
 	});
 
 	it("should delete other managed plugins idle for a day, and keep the rest", async () => {
@@ -210,6 +236,69 @@ describe(installManagedPluginAsync, () => {
 				"JestRobloxRunner.rbxm",
 			].toSorted(),
 		);
+	});
+
+	it("should judge idleness by the usage mark where one exists, and drop marks it outlives", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const ages = {
+			[managedFile("1.0.0-aaaaaaaa")]: 25 * HOUR_MS,
+			[managedFile("1.0.0-bbbbbbbb")]: 25 * HOUR_MS,
+			[usageMark("1.0.0-aaaaaaaa")]: HOUR_MS,
+			[usageMark("1.0.0-bbbbbbbb")]: 25 * HOUR_MS,
+			[usageMark("1.0.0-cccccccc")]: HOUR_MS,
+		};
+		fileSystem.mkdirSync(PLUGINS, { recursive: true });
+		fileSystem.mkdirSync(USAGE, { recursive: true });
+		for (const [file, ageMs] of Object.entries(ages)) {
+			fileSystem.writeFileSync(file, "");
+			fileSystem.utimesSync(file, new Date(NOW - ageMs), new Date(NOW - ageMs));
+		}
+
+		const { key } = await installManagedPluginAsync(options(fileSystem));
+
+		expect(fileSystem.readdirSync(PLUGINS).toSorted()).toStrictEqual(
+			[
+				"JestRobloxRunner.cli-1.0.0-aaaaaaaa.rbxm",
+				`JestRobloxRunner.cli-${key}.rbxm`,
+			].toSorted(),
+		);
+		expect(fileSystem.readdirSync(USAGE).toSorted()).toStrictEqual(
+			[
+				"JestRobloxRunner.cli-1.0.0-aaaaaaaa.rbxm",
+				`JestRobloxRunner.cli-${key}.rbxm`,
+			].toSorted(),
+		);
+	});
+
+	it("should let a concurrent sweep take a stale plugin and mark first", async () => {
+		expect.assertions(2);
+
+		const { fileSystem: disk } = createMemoryFileSystem();
+		const stalePlugin = managedFile("1.0.0-aaaaaaaa");
+		const orphanMark = usageMark("1.0.0-bbbbbbbb");
+		disk.mkdirSync(PLUGINS, { recursive: true });
+		disk.mkdirSync(USAGE, { recursive: true });
+		for (const file of [stalePlugin, orphanMark]) {
+			disk.writeFileSync(file, "");
+			disk.utimesSync(file, new Date(NOW - 25 * HOUR_MS), new Date(NOW - 25 * HOUR_MS));
+		}
+
+		const fileSystem: FileSystem = {
+			...disk,
+			rmSync: (target, rmOptions) => {
+				// The other run's sweep, landing between this one's listing and
+				// its delete.
+				disk.rmSync(target, { force: true });
+				disk.rmSync(target, rmOptions);
+			},
+		};
+
+		await installManagedPluginAsync(options(fileSystem));
+
+		expect(disk.existsSync(stalePlugin)).toBeFalse();
+		expect(disk.existsSync(orphanMark)).toBeFalse();
 	});
 
 	it("should name the jest-roblox plugins it does not manage", async () => {
@@ -276,6 +365,33 @@ describe(installRunnerPluginAsync, () => {
 			fileSystem.existsSync(
 				`/local/Roblox/Plugins/JestRobloxRunner.cli-${install!.key}.rbxm`,
 			),
+		).toBeTrue();
+	});
+
+	it.for([
+		{
+			discovery: { environment: { LOCALAPPDATA: "/local" }, platform: "win32" as const },
+			usageDirectory: "/local/jest-roblox/managed-plugins",
+		},
+		{
+			discovery: { homeDirectory: "/home/me", platform: "darwin" as const },
+			usageDirectory: "/home/me/Library/Caches/jest-roblox/managed-plugins",
+		},
+	])("should mark the plugin used in $usageDirectory", async ({ discovery, usageDirectory }) => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		const { childProcess } = rojoChildProcess(fileSystem);
+
+		const install = await installRunnerPluginAsync({
+			childProcess,
+			fileSystem,
+			workDirectory: "/repo/.jest-roblox/studio-cli",
+			...discovery,
+		});
+
+		expect(
+			fileSystem.existsSync(`${usageDirectory}/JestRobloxRunner.cli-${install!.key}.rbxm`),
 		).toBeTrue();
 	});
 });

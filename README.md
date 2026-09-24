@@ -578,7 +578,9 @@ You never install or update the plugin for `studio-cli`. Before each run the CLI
 checks the Studio plugins folder for the plugin built from its own source —
 `JestRobloxRunner.cli-<version>-<hash>.rbxm` — and builds it with rojo when it
 is missing. The file stays for later runs, so only the first run after an
-upgrade pays for the build. The CLI deletes its own files for other versions
+upgrade pays for the build. The CLI records when each of its files was last used
+in its own folder (`%LOCALAPPDATA%\jest-roblox` on Windows,
+`~/Library/Caches/jest-roblox` on macOS), deletes its files for other versions
 once they have gone unused for a day, and never touches a plugin you installed
 yourself. Each run asks for its own plugin by name, so any other copy in the
 folder stands down; a copy that predates the key check can still answer first,

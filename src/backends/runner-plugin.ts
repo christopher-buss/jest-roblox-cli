@@ -9,8 +9,8 @@ import type { ChildProcessRunner } from "../utils/child-process.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { hashString } from "../utils/hash.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
-import type { PluginsDirectoryOptions } from "./studio-discovery.ts";
-import { discoverPluginsDirectory } from "./studio-discovery.ts";
+import type { UserDirectoryOptions } from "./studio-discovery.ts";
+import { discoverUserDirectories } from "./studio-discovery.ts";
 
 export interface ManagedPluginOptions {
 	/** Builds a rojo project to an `.rbxm`. */
@@ -23,6 +23,11 @@ export interface ManagedPluginOptions {
 	readonly sources: ReadonlyArray<RunnerPluginSource>;
 	/** Scratch directory the plugin is built in. */
 	readonly stagingDirectory: string;
+	/**
+	 * Where each Managed Plugin's last use is marked. Never inside the plugins
+	 * folder: Studio reloads a plugin whose file changes, even by mtime alone.
+	 */
+	readonly usageDirectory: string;
 	/** The CLI's release version. */
 	readonly version: string;
 }
@@ -35,7 +40,7 @@ export interface ManagedPluginInstall {
 	readonly manualPlugins: ReadonlyArray<string>;
 }
 
-export interface RunnerPluginInstallOptions extends PluginsDirectoryOptions {
+export interface RunnerPluginInstallOptions extends UserDirectoryOptions {
 	readonly childProcess: ChildProcessRunner;
 	readonly fileSystem: FileSystem;
 	/** The run's scratch directory; the plugin is built beneath it. */
@@ -76,13 +81,13 @@ export async function installManagedPluginAsync(
 ): Promise<ManagedPluginInstall> {
 	const project = managedProject(options.sources);
 	const key = pluginKey({ project, sources: options.sources, version: options.version });
-	const target = path.join(options.pluginsDirectory, managedPluginFileName(key));
+	const fileName = managedPluginFileName(key);
+	const target = path.join(options.pluginsDirectory, fileName);
 	if (!options.fileSystem.existsSync(target)) {
 		await buildManagedPluginAsync(options, { key, project, target });
 	}
 
-	const usedAt = new Date(options.now);
-	options.fileSystem.utimesSync(target, usedAt, usedAt);
+	markUsed(options, fileName);
 	sweepIdleManagedPlugins(options);
 	return { key, manualPlugins: listManualPlugins(options) };
 }
@@ -99,8 +104,8 @@ export async function installRunnerPluginAsync({
 	workDirectory,
 	...discovery
 }: RunnerPluginInstallOptions): Promise<ManagedPluginInstall | undefined> {
-	const pluginsDirectory = discoverPluginsDirectory(discovery);
-	if (pluginsDirectory === undefined) {
+	const directories = discoverUserDirectories(discovery);
+	if (directories === undefined) {
 		return undefined;
 	}
 
@@ -110,9 +115,10 @@ export async function installRunnerPluginAsync({
 		},
 		fileSystem,
 		now: Date.now(),
-		pluginsDirectory,
+		pluginsDirectory: directories.plugins,
 		sources: runnerPluginSources,
 		stagingDirectory: path.join(workDirectory, "plugin"),
+		usageDirectory: path.join(directories.state, "managed-plugins"),
 		version: packageJson.version,
 	});
 }
@@ -180,23 +186,58 @@ async function buildManagedPluginAsync(
 
 	const output = path.join(stagingDirectory, BUILD_OUTPUT);
 	await buildAsync(path.join(stagingDirectory, MANAGED_PROJECT_FILE), output);
+	// Another run on this key may have published while this one built, and a
+	// Studio may already have loaded it: replacing it would reload the plugin.
+	if (fileSystem.existsSync(target)) {
+		return;
+	}
+
 	atomicWrite({ contents: fileSystem.readFileSync(output), fileSystem, targetPath: target });
+}
+
+function markUsed(
+	{ fileSystem, now, usageDirectory }: ManagedPluginOptions,
+	fileName: string,
+): void {
+	const mark = path.join(usageDirectory, fileName);
+	fileSystem.mkdirSync(usageDirectory, { recursive: true });
+	fileSystem.writeFileSync(mark, "");
+	const usedAt = new Date(now);
+	fileSystem.utimesSync(mark, usedAt, usedAt);
 }
 
 function isManagedPlugin(entry: string): boolean {
 	return entry.startsWith(MANAGED_PREFIX) && entry.endsWith(MANAGED_SUFFIX);
 }
 
-/** Delete other keys' Managed Plugins that have sat idle. */
+/**
+ * Delete other keys' Managed Plugins that have sat idle, and the marks of
+ * plugins already gone. A plugin with no mark was last used when it was
+ * written.
+ */
 function sweepIdleManagedPlugins({
 	fileSystem,
 	now,
 	pluginsDirectory,
+	usageDirectory,
 }: ManagedPluginOptions): void {
 	for (const entry of fileSystem.readdirSync(pluginsDirectory)) {
+		if (!isManagedPlugin(entry)) {
+			continue;
+		}
+
 		const file = path.join(pluginsDirectory, entry);
-		if (isManagedPlugin(entry) && now - fileSystem.statSync(file).mtimeMs > IDLE_SWEEP_MS) {
-			fileSystem.rmSync(file);
+		const mark = path.join(usageDirectory, entry);
+		const usedAt =
+			fileSystem.statSync(mark, { throwIfNoEntry: false }) ?? fileSystem.statSync(file);
+		if (now - usedAt.mtimeMs > IDLE_SWEEP_MS) {
+			fileSystem.rmSync(file, { force: true });
+		}
+	}
+
+	for (const entry of fileSystem.readdirSync(usageDirectory)) {
+		if (!fileSystem.existsSync(path.join(pluginsDirectory, entry))) {
+			fileSystem.rmSync(path.join(usageDirectory, entry), { force: true });
 		}
 	}
 }

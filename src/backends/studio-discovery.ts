@@ -38,13 +38,20 @@ const NOT_FOUND_HINT =
 	"Install Roblox Studio, or set studioPath (config key, --studioPath, or " +
 	"JEST_ROBLOX_STUDIO_PATH).";
 
-export interface PluginsDirectoryOptions {
+export interface UserDirectoryOptions {
 	/** Defaults to `process.env`. */
 	environment?: NodeJS.ProcessEnv | undefined;
 	/** Defaults to `os.homedir()`. */
 	homeDirectory?: string | undefined;
 	/** Defaults to `process.platform`. */
 	platform?: NodeJS.Platform | undefined;
+}
+
+export interface UserDirectories {
+	/** The folder Studio loads local plugins from. */
+	readonly plugins: string;
+	/** The CLI's own per-user state, outside anything Studio watches. */
+	readonly state: string;
 }
 
 /**
@@ -102,21 +109,27 @@ export function discoverStudioPath({
 }
 
 /**
- * The folder Studio loads local plugins from, or undefined where this OS has
- * no known one.
+ * The per-user folders the Managed Plugin lives in and is tracked from, or
+ * undefined where this OS has no known plugins folder.
  */
-export function discoverPluginsDirectory({
+export function discoverUserDirectories({
 	environment = process.env,
 	homeDirectory = os.homedir(),
 	platform = process.platform,
-}: PluginsDirectoryOptions = {}): string | undefined {
+}: UserDirectoryOptions = {}): undefined | UserDirectories {
 	const localAppData = environment["LOCALAPPDATA"];
 	if (platform === "win32" && localAppData !== undefined && localAppData !== "") {
-		return normalizeWindowsPath(path.join(localAppData, "Roblox", "Plugins"));
+		return {
+			plugins: normalizeWindowsPath(path.join(localAppData, "Roblox", "Plugins")),
+			state: normalizeWindowsPath(path.join(localAppData, "jest-roblox")),
+		};
 	}
 
 	if (platform === "darwin") {
-		return path.posix.join(homeDirectory, "Documents", "Roblox", "Plugins");
+		return {
+			plugins: path.posix.join(homeDirectory, "Documents", "Roblox", "Plugins"),
+			state: path.posix.join(homeDirectory, "Library", "Caches", "jest-roblox"),
+		};
 	}
 
 	return undefined;

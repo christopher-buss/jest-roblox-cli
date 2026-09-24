@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
-import { discoverPluginsDirectory, discoverStudioPath } from "./studio-discovery.ts";
+import { discoverStudioPath, discoverUserDirectories } from "./studio-discovery.ts";
 
 const WIN_ENV = { LOCALAPPDATA: "C:/Users/dev/AppData/Local" };
 
@@ -201,30 +201,34 @@ describe(discoverStudioPath, () => {
 	});
 });
 
-describe(discoverPluginsDirectory, () => {
-	it("should find the plugins folder under LOCALAPPDATA on Windows", () => {
+describe(discoverUserDirectories, () => {
+	it("should find the plugins and state folders under LOCALAPPDATA on Windows", () => {
 		expect.assertions(1);
 
-		expect(discoverPluginsDirectory({ environment: WIN_ENV, platform: "win32" })).toBe(
-			"C:/Users/dev/AppData/Local/Roblox/Plugins",
-		);
+		expect(discoverUserDirectories({ environment: WIN_ENV, platform: "win32" })).toStrictEqual({
+			plugins: "C:/Users/dev/AppData/Local/Roblox/Plugins",
+			state: "C:/Users/dev/AppData/Local/jest-roblox",
+		});
 	});
 
-	it("should find the plugins folder under Documents on macOS", () => {
+	it("should find the plugins folder under Documents and state under Library/Caches on macOS", () => {
 		expect.assertions(1);
 
-		expect(discoverPluginsDirectory({ homeDirectory: "/Users/dev", platform: "darwin" })).toBe(
-			"/Users/dev/Documents/Roblox/Plugins",
-		);
+		expect(
+			discoverUserDirectories({ homeDirectory: "/Users/dev", platform: "darwin" }),
+		).toStrictEqual({
+			plugins: "/Users/dev/Documents/Roblox/Plugins",
+			state: "/Users/dev/Library/Caches/jest-roblox",
+		});
 	});
 
 	it.for([
 		{ environment: {}, platform: "win32" },
 		{ environment: { LOCALAPPDATA: "" }, platform: "win32" },
 		{ environment: WIN_ENV, platform: "linux" },
-	] as const)("should find no plugins folder on $platform without a known location", (input) => {
+	] as const)("should find no folders on $platform without a known location", (input) => {
 		expect.assertions(1);
 
-		expect(discoverPluginsDirectory(input)).toBeUndefined();
+		expect(discoverUserDirectories(input)).toBeUndefined();
 	});
 });
