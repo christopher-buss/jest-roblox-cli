@@ -33,6 +33,10 @@ const BINARY_INPUT_SUFFIX = "/luau-execution-session-task-binary-inputs";
 /** Where a task is created, on head or under `/versions/{v}`. */
 export const TASK_CREATE_SUFFIX = "/luau-execution-session-tasks";
 
+export function isTaskCreatePost(call: { method: string; url: string }): boolean {
+	return call.method === "POST" && call.url.endsWith(TASK_CREATE_SUFFIX);
+}
+
 /**
  * Where the fake serves the presigned PUT it hands out. Live Open Cloud names a
  * storage host the API does not own, and the client PUTs there over a plain
@@ -101,10 +105,11 @@ export interface FakeOpenCloudTask {
  */
 export interface FakeOpenCloudOptions {
 	/**
-	 * `"complete"` returns the uploaded version. `"stall"` leaves only the
+	 * Answers each probe in turn; every probe past the end completes.
+	 * `"complete"` returns the uploaded version. `"stall"` leaves only that
 	 * probe PROCESSING indefinitely; queued test tasks answer independently.
 	 */
-	bootProbe?: "complete" | "stall";
+	bootProbes?: Array<BootProbeAnswer>;
 	executionClaim?: "missing" | { claimedAt: number; owner: string };
 	/** Ordered failures returned before queued test tasks are accepted. */
 	submitFailures?: Array<{
@@ -114,6 +119,8 @@ export interface FakeOpenCloudOptions {
 	}>;
 	uploadConnectionResets?: number;
 }
+
+type BootProbeAnswer = "complete" | "stall";
 
 /** One binary input the fake allocated, and the bytes that were PUT to it. */
 interface FakeBinaryInput {
@@ -157,7 +164,8 @@ interface FakeOpenCloudState {
 	 */
 	baseUrl: string;
 	binaryInputs: FakeOpenCloudServer["binaryInputs"];
-	bootProbe: NonNullable<FakeOpenCloudOptions["bootProbe"]>;
+	/** Answers for the probes still to come, consumed in order. */
+	bootProbes: Array<BootProbeAnswer>;
 	calls: FakeOpenCloudServer["calls"];
 	counters: { itemSeq: number; taskIndex: number; uploadCount: number };
 	executionClaim: NonNullable<FakeOpenCloudOptions["executionClaim"]>;
@@ -202,7 +210,7 @@ function createState(
 	return {
 		baseUrl: "",
 		binaryInputs: [],
-		bootProbe: options.bootProbe ?? "complete",
+		bootProbes: [...(options.bootProbes ?? [])],
 		calls: [],
 		counters: { itemSeq: 0, taskIndex: 0, uploadCount: 0 },
 		executionClaim: options.executionClaim ?? { claimedAt: 0, owner: "fake-server" },
@@ -511,10 +519,11 @@ function handleCreateTask({
 	}
 
 	if (parsed.script === BOOT_PROBE_SCRIPT) {
+		const answer = state.bootProbes.shift() ?? "complete";
 		acceptTask({
 			queuedTask: {
 				// A stalled task never reaches a terminal state.
-				pollsBeforeComplete: state.bootProbe === "stall" ? Number.MAX_SAFE_INTEGER : 0,
+				pollsBeforeComplete: answer === "stall" ? Number.MAX_SAFE_INTEGER : 0,
 				rawOutput: String(state.counters.uploadCount),
 			},
 			response,

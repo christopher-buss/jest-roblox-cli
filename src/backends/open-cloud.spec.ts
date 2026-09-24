@@ -34,6 +34,7 @@ import { NOOP_RUN_PROGRESS } from "../progress/reporter.ts";
 import type { StageId } from "../progress/stages.ts";
 import type { CodeBundleArtifact } from "../staging/place-builder.ts";
 import type { JestResult } from "../types/jest-result.ts";
+import { BootUnverifiedError } from "./boot-unverified.ts";
 import type { BackendOptions, ProjectJob } from "./interface.ts";
 import {
 	BOOT_PROBE_SCRIPT,
@@ -2391,10 +2392,20 @@ describe("exact version submission", { timeout: 1000 }, () => {
 
 		expect(stub.probeCalls).toHaveLength(1);
 		expect(stub.probeCalls[0]).toMatchObject({
-			isSubmitIdempotent: true,
 			placeVersion: PROBED_VERSION,
 			script: BOOT_PROBE_SCRIPT,
 		});
+	});
+
+	/** A 5xx create may still have counted against the hourly create budget. */
+	it("should not re-send a probe create that Open Cloud answered with a 5xx", async () => {
+		expect.assertions(1);
+
+		const stub = probeStub();
+		const backend = createBackend({ runner: stub.runner });
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.probeCalls[0]!.isSubmitIdempotent).not.toBeTrue();
 	});
 
 	it("should pin every bucket to the uploaded version with no guard", async () => {
@@ -2476,56 +2487,76 @@ function pollTimeout(): Error {
 }
 
 describe("boot probe", { timeout: 1000 }, () => {
-	it.for([["43"], []])(
-		"should leave a version unverified when its probe returns %j",
-		async (outputs) => {
-			expect.assertions(4);
+	it.for([
+		{ message: 'reported "43"', outputs: ["43"] },
+		{ message: 'reported ""', outputs: [] },
+	])(
+		"should stop before the tests when the probe reports $outputs",
+		async ({ message, outputs }) => {
+			expect.assertions(5);
 
 			const rootDirectory = temporaryRoot();
 			const stub = probeStub();
 			stub.setProbe(() => ({ durationMs: 0, outputs }));
-			captureStderr();
 			const backend = createBackend({ runner: stub.runner });
 
-			await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
+			const caught = await backend
+				.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]))
+				.catch((err: unknown) => err);
 			const next = await runProbedRunAsync(rootDirectory);
 
+			expect(caught).toBeInstanceOf(BootUnverifiedError);
+			expect(caught).toHaveProperty("message", expect.stringContaining(message));
+			// A completed probe has answered; asking again cannot change it.
 			expect(stub.probeCalls).toHaveLength(1);
-			expect(stub.executeCalls[0]!.bootProven).toBeFalse();
-			expect(stub.executeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
+			expect(stub.executeCalls).toStrictEqual([]);
 			expect(next.uploadCalls).toHaveLength(1);
 		},
 	);
 
-	it("should run the tests on the uploaded version after an inconclusive probe timeout", async () => {
+	/** A lost probe says nothing about the place. */
+	it("should send one more probe when the first is lost, then run the tests", async () => {
+		expect.assertions(4);
+
+		const stub = probeStub();
+		stub.setProbe(
+			stepExecute([
+				() => {
+					throw pollTimeout();
+				},
+				() => ({ durationMs: 0, outputs: [String(PROBED_VERSION)] }),
+			]),
+		);
+		const backend = createBackend({ runner: stub.runner });
+
+		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+
+		expect(stub.probeCalls).toHaveLength(2);
+		expect(stub.probeCalls[1]!.placeVersion).toBe(PROBED_VERSION);
+		expect(stub.executeCalls).toHaveLength(1);
+		expect(stub.executeCalls[0]!.bootProven).toBeTrue();
+	});
+
+	it("should stop as boot unverified, sending no third probe, when both probes are lost", async () => {
 		expect.assertions(3);
 
 		const stub = probeStub();
 		stub.setProbe(() => {
 			throw pollTimeout();
 		});
-		const capture = captureStderr();
 		const backend = createBackend({ runner: stub.runner });
 
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
-		capture.restore();
-
-		expect(stub.executeCalls[0]!.bootProven).toBeFalse();
-		expect(stub.executeCalls[0]!.placeVersion).toBe(PROBED_VERSION);
-		expect(capture.writes.join("")).toBe(
-			"Warning: boot probe for place version 42 is inconclusive after 90s; continuing with tests on that version.\n" +
-				"  Open Cloud may have stalled the probe; this does not prove the place cannot load.\n",
+		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
+			"Place version 42 is boot unverified: no boot probe completed within 90s. No tests were submitted.",
 		);
+		expect(stub.probeCalls).toHaveLength(2);
+		expect(stub.executeCalls).toStrictEqual([]);
 	});
 
-	it.for([
-		{ detail: undefined, outputs: ["42"] },
-		{ detail: "inconclusive", outputs: ["43"] },
-	])("should report the probe outcome %j", async ({ detail, outputs }) => {
+	it("should close the boot stage once the probe passes", async () => {
 		expect.assertions(1);
 
 		const stub = probeStub();
-		stub.setProbe(() => ({ durationMs: 0, outputs }));
 		const completed: Array<{ detail: string | undefined; id: StageId }> = [];
 		const backend = createBackend({ runner: stub.runner });
 
@@ -2539,7 +2570,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 			},
 		});
 
-		expect(completed).toContainEqual({ id: "boot", detail });
+		expect(completed).toContainEqual({ id: "boot", detail: undefined });
 	});
 
 	/**
@@ -2609,31 +2640,9 @@ describe("boot probe", { timeout: 1000 }, () => {
 		expect(second.executeCalls[0]!.bootProven).toBeFalse();
 	});
 
-	it("should propagate a test timeout after an inconclusive probe", async () => {
-		expect.assertions(2);
-
-		const stub = probeStub();
-		stub.setProbe(() => {
-			throw pollTimeout();
-		});
-		const testFailure = pollTimeout();
-		stub.setExecute(() => {
-			throw testFailure;
-		});
-		captureStderr();
-
-		const backend = createBackend({ runner: stub.runner });
-		const caught = await backend
-			.runTestsAsync(jobsOptions([job("alpha")]))
-			.catch((err: unknown) => err);
-
-		expect(caught).toHaveProperty("cause", testFailure);
-		expect(stub.executeCalls).toHaveLength(2);
-	});
-
-	/** An inconclusive probe cannot verify a version for later runs. */
-	it("should not cache a version whose probe never completed", async () => {
-		expect.assertions(2);
+	/** A lost probe cannot verify a version for later runs. */
+	it("should not cache a version whose probes never completed", async () => {
+		expect.assertions(3);
 
 		const rootDirectory = temporaryRoot();
 		const failing = probeStub();
@@ -2643,8 +2652,9 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		const backend = createBackend({ runner: failing.runner });
 
-		captureStderr();
-		await backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)]));
+		await expect(
+			backend.runTestsAsync(jobsOptions([cacheJob(rootDirectory)])),
+		).rejects.toBeInstanceOf(BootUnverifiedError);
 
 		const next = await runProbedRunAsync(rootDirectory);
 

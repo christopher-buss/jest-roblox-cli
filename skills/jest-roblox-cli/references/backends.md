@@ -38,8 +38,14 @@ version is the only thing that names this run's bytes. A pinned task may miss
 the warm-server pool and pay a cold place boot. This is also what makes the
 upload cache safe: a reused version names the bytes that were hashed, whatever
 head holds now. A version Open Cloud no longer serves comes back as a 404, which
-drops the cache entry. The poll cadence for task completion is managed
-internally by the Open Cloud client and is not user-configurable.
+drops the cache entry.
+
+A fresh version is proved by the boot probe before any test task: a probe that
+never finishes gets one retry, and a second loss stops the run as boot
+unverified (exit code 2), not as a test failure. Only a completed probe is
+cached, so an unchanged build on the same place skips it. The poll cadence for
+task completion is managed internally by the Open Cloud client and is not
+user-configurable.
 
 No option ships the code beside a code-free place: that transport stays inactive
 until an exclusive-place allocator exists.

@@ -5,25 +5,14 @@ import { startFakeOpenCloudServerAsync } from "./fake-open-cloud.ts";
 import type { JestEnvelopePayload } from "./helpers.ts";
 import {
 	buildMixedOutput,
-	buildPassingPayload,
 	createFixtureSandbox,
 	createOpenCloudEnvironment,
 	createRbxtsFixtureSandbox,
-	patchSandboxConfig,
 	runCliAsync,
 } from "./helpers.ts";
 
 const LUAU_FIXTURE = path.resolve(__dirname, "../fixtures/luau-project");
 const RBXTS_FIXTURE = path.resolve(__dirname, "../fixtures/rbxts-project");
-
-/**
- * Shorten the boot probe's budget for a sandbox, so a spec that stalls the
- * probe on purpose costs seconds rather than the 90s a real cold boot is
- * allowed.
- */
-function writeBootProbeTimeout(sandbox: string, bootProbeTimeout: number): void {
-	patchSandboxConfig(sandbox, `bootProbeTimeout: ${String(bootProbeTimeout)},`);
-}
 
 describe("cli error paths", () => {
 	describe("exit codes", () => {
@@ -76,29 +65,6 @@ describe("cli error paths", () => {
 
 		// CLI recovery is covered through the real backend and HTTP runner in
 		// cli-recovery.integration.spec.ts, with an exhausted observer budget.
-
-		it("should report passing tests when only the boot probe stalls", async () => {
-			expect.assertions(4);
-
-			const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
-			writeBootProbeTimeout(sandbox, 2000);
-			const server = await startFakeOpenCloudServerAsync(
-				[{ jestOutput: buildMixedOutput(buildPassingPayload()) }],
-				{ bootProbe: "stall" },
-			);
-
-			const result = await runCliAsync([], {
-				cwd: sandbox,
-				env: createOpenCloudEnvironment(server.baseUrl),
-			});
-
-			expect(result.exitCode).toBe(0);
-			expect(result.stderr).toContain(
-				"boot probe for place version 1 is inconclusive after 2s",
-			);
-			expect(result.stdout).toContain("passed");
-			expect(server.requests).toHaveLength(1);
-		});
 
 		it("should surface the Roblox error code and log tail when a task fails", async () => {
 			expect.assertions(3);

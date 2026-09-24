@@ -23,6 +23,7 @@ import { generateTestScript, type JestArgvInput } from "../test-script.ts";
 import { formatMissingScopes, isPollTimeout, walkErrorChain } from "../utils/error-chain.ts";
 import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
+import { BootUnverifiedError } from "./boot-unverified.ts";
 import type { DecodedEnvelope } from "./envelope.ts";
 import { decodeEnvelope, isEnvelopeDeferred } from "./envelope.ts";
 import { DEFAULT_BOOT_WATCH_MS, executeWithRecoveryAsync } from "./execution-recovery.ts";
@@ -473,6 +474,19 @@ export class OpenCloudBackend implements Backend {
 		return composed;
 	}
 
+	/**
+	 * A lost probe says nothing about the place, so it gets one more; a
+	 * completed one has answered. Undefined when both were lost.
+	 */
+	private async probeBootAsync(options: {
+		budget: number;
+		upload: UploadOutcome;
+	}): Promise<string | undefined> {
+		return (
+			(await this.submitBootProbeAsync(options)) ?? (await this.submitBootProbeAsync(options))
+		);
+	}
+
 	private async runBucketAsync({
 		bucket: { indices, jobs },
 		scriptOverride,
@@ -729,7 +743,8 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
-	 * Ask the uploaded version, and only it, whether it boots.
+	 * Ask the uploaded version, and only it, whether it boots. Undefined when
+	 * the probe reached no terminal state within its budget.
 	 */
 	private async submitBootProbeAsync({
 		budget,
@@ -741,7 +756,6 @@ export class OpenCloudBackend implements Backend {
 		const { submitBudget, submitCapacityBudget } = openCloudExecutionBudgets(budget);
 		try {
 			const result = await this.runner.executeScriptAsync({
-				isSubmitIdempotent: true,
 				// A wall-clock cap, not a deadline: the question is whether the
 				// place booted, and the runner's boot-lag allowance answers a
 				// different one — it would only delay the verdict.
@@ -752,17 +766,12 @@ export class OpenCloudBackend implements Backend {
 				submitCapacityBudget,
 				timeout: Math.min(BOOT_PROBE_TASK_TIMEOUT_MS, budget),
 			});
-			return result.outputs[0];
+			return result.outputs[0] ?? "";
 		} catch (err) {
 			if (!isPollTimeout(err)) {
 				throw err;
 			}
 
-			process.stderr.write(
-				`Warning: boot probe for place version ${String(upload.versionNumber)} is inconclusive ` +
-					`after ${String(Math.round(budget / 1000))}s; continuing with tests on that version.\n` +
-					"  Open Cloud may have stalled the probe; this does not prove the place cannot load.\n",
-			);
 			return undefined;
 		}
 	}
@@ -846,9 +855,9 @@ export class OpenCloudBackend implements Backend {
 	}
 
 	/**
-	 * Cache only a completed probe of the uploaded version. Every other outcome
-	 * leaves the version unverified: the tests still run pinned to it, and the
-	 * next run with these bytes uploads and probes again.
+	 * Gate the tests on a completed probe of the uploaded version, and cache
+	 * only that proof. A lost probe gets one more; a second loss, or a probe
+	 * that booted another version, stops the run before any test task.
 	 */
 	private async verifyBootAsync({
 		config,
@@ -867,15 +876,12 @@ export class OpenCloudBackend implements Backend {
 		}
 
 		const done = progress.begin("boot", `version ${upload.versionNumber.toString()}`);
-		const booted = await this.submitBootProbeAsync({ budget, upload });
-		// A pinned probe can report only its own version; anything else is no
-		// proof at all.
-		const isProven = booted === String(upload.versionNumber);
-		done(isProven ? undefined : "inconclusive");
-		if (!isProven) {
-			return false;
+		const booted = await this.probeBootAsync({ budget, upload });
+		if (booted !== String(upload.versionNumber)) {
+			throw new BootUnverifiedError({ booted, budget, versionNumber: upload.versionNumber });
 		}
 
+		done();
 		if (upload.hash !== undefined) {
 			writeCachedVersion(config.rootDir, target, {
 				hash: upload.hash,

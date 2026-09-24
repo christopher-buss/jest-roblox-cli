@@ -222,15 +222,13 @@ same version, never to head, so another run saving the shared place cannot
 change which bytes execute your tests. A pinned task may miss the warm-server
 pool and pay a cold place boot.
 
-A probe timeout is inconclusive: Open Cloud can stall a task even when that
-place version loads successfully. The runner warns and continues with tests on
-the uploaded version, without caching it as verified. A probe reporting another
-version also leaves the cache untouched. If the probe and both test tasks all
-stall without acquiring an execution claim, the recovery task starts after 45 s
-and overlaps the original. The run then consumes separate submission and
-observation budgets, including a final result read if neither attempt returns
-results. A timeout cannot establish that a place is unbootable. The probe uses
-the bounded task-admission policy below, then applies its default 90 s polling
+The probe is a gate. If it reaches no terminal state within `bootProbeTimeout`,
+one more probe is sent; if that one is lost too, or a probe reports another
+version, the run stops as boot unverified (exit code 2) before any test task is
+created, so a stalled version costs at most twice `bootProbeTimeout`. A lost
+probe does not prove the place cannot load: Open Cloud can stall a task on a
+version that boots. Nothing is cached, so the next run uploads and probes again.
+The probe uses the bounded task-admission policy below, then applies its polling
 budget with a short script deadline. Set `bootProbeTimeout` to `0` to skip the
 probe; no new upload-cache entry is written in that case.
 

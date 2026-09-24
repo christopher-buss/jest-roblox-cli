@@ -5,7 +5,11 @@ import * as path from "node:path";
 import { assert, describe, expect, it } from "vitest";
 
 import { CODE_BUNDLE_REBUILD_SOURCE } from "../../../src/luau/code-bundle-rebuild.ts";
-import { startFakeOpenCloudServerAsync, TASK_CREATE_SUFFIX } from "./fake-open-cloud.ts";
+import {
+	isTaskCreatePost,
+	startFakeOpenCloudServerAsync,
+	TASK_CREATE_SUFFIX,
+} from "./fake-open-cloud.ts";
 import {
 	buildMixedOutput,
 	buildPassingPayload,
@@ -43,10 +47,6 @@ export default defineConfig({
 `;
 
 const EXACT_VERSION_TASKS = `/places/456/versions/1${TASK_CREATE_SUFFIX}`;
-
-function isTaskCreatePost(call: { method: string; url: string }): boolean {
-	return call.method === "POST" && call.url.endsWith(TASK_CREATE_SUFFIX);
-}
 
 describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", () => {
 	it("should upload one complete place and pin the probe and the tests to its version", async () => {

@@ -365,8 +365,9 @@ export interface Config {
 	/**
 	 * Budget in milliseconds for the boot probe after uploading, run against
 	 * the uploaded version. Default `90000`. Only a completed probe earns an
-	 * upload-cache entry. A timeout is inconclusive and tests continue on the
-	 * same version. Zero skips the probe and prevents new cache entries.
+	 * upload-cache entry. A lost probe gets one more; a second loss stops the
+	 * run before any test task. Zero skips the probe and prevents new cache
+	 * entries.
 	 */
 	bootProbeTimeout?: number;
 	/** Force ANSI colour in output. Default `true`. */
