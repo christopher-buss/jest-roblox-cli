@@ -761,6 +761,7 @@ async function handleRequestAsync({
 
 function createRequestListener(state: FakeOpenCloudState): RequestListener {
 	return (request, response) => {
+		response.shouldKeepAlive = false;
 		const apiKeyHeader = request.headers["x-api-key"];
 		state.calls.push({
 			apiKey: typeof apiKeyHeader === "string" ? apiKeyHeader : undefined,
