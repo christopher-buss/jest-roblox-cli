@@ -252,6 +252,14 @@ also sent again, as it was before replacement tasks existed. Place uploads retry
 429, 5xx and transport errors; task polls retry transient read failures. Test
 failures and terminal task errors are never retried.
 
+A test task that reaches its deadline without a terminal state, or a task create
+refused with a 429, is a Roblox infrastructure failure, not a test result. The
+run exits with code 3 and prints a `Roblox Infrastructure Error` banner with the
+evidence to report to Roblox: the task path, the place version, the timeout,
+Roblox's create and update times and the states seen, or for a 429 the unlock
+time, code and rate-limit headers. The API key is removed from the evidence. A
+Boot Probe that is lost stops the run as boot unverified instead.
+
 A 404 during a run using a cached upload clears that cache entry for the next
 invocation. It does not restart the current wave, whose other tasks may already
 have executed.

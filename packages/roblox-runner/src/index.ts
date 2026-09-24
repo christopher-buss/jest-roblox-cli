@@ -1,6 +1,11 @@
 export { resolveCredentials } from "./credentials.ts";
 export type { ResolveCredentialsInput } from "./credentials.ts";
 export { ExecutionTimeoutError } from "./execution-timeout.ts";
+export type {
+	CreateQuotaEvidence,
+	InfrastructureEvidence,
+	TaskStallEvidence,
+} from "./infrastructure-evidence.ts";
 export { flushMemoryStoreAsync } from "./memory-store-flush.ts";
 export type { FlushMemoryStoreOptions } from "./memory-store-flush.ts";
 export { createMemoryStoreJanitor } from "./memory-store-janitor.ts";
@@ -20,6 +25,8 @@ export { ProgressMap } from "./progress-map.ts";
 export type { ProgressMapOptions } from "./progress-map.ts";
 export { runTaskPoolAsync as runTaskPool } from "./task-pool.ts";
 export type { TaskPoolBackoff, TaskPoolOptions, TaskPoolPlace } from "./task-pool.ts";
+export { TaskQuotaError } from "./task-quota-error.ts";
+export { TaskStallError } from "./task-stall-error.ts";
 export { TaskSubmitError } from "./task-submit-error.ts";
 export type {
 	BinaryInputUploader,

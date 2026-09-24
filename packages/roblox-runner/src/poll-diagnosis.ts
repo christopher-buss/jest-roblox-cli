@@ -11,10 +11,13 @@ import type { FailedTask, LuauExecutionTaskRef } from "@bedrock-rbx/ocale/luau-e
 export interface PollContext {
 	readonly bootProven: boolean;
 	readonly hasDefaultBudget: boolean;
+	readonly placeVersion: number | undefined;
 	/** The whole poll's wall clock, whatever part of it the submit spent. */
 	readonly pollBudgetMs: number;
 	readonly recoveryPollBudgetMs: number;
 	readonly ref: LuauExecutionTaskRef;
+	/** The state the submit answered with. */
+	readonly submittedState: string;
 	readonly timeoutSeconds: number;
 }
 
@@ -68,6 +71,33 @@ export function resolveBudgets(
 		recoveryPollBudgetMs,
 		timeoutSeconds,
 	};
+}
+
+/**
+ * The task's resource path, which is what the Open Cloud API and the Creator
+ * Dashboard both key on. Built from the ref rather than kept as the raw
+ * server string because ocale parses the path away on the way in.
+ *
+ * @param ref - The task reference carried on every task and every submit.
+ * @returns The `universes/…/tasks/…` path, omitting segments Roblox left out.
+ */
+export function describeTaskRef(ref: LuauExecutionTaskRef): string {
+	// Both optional segments are present on any ref that got this far: ocale's
+	// GET builder rejects a ref missing either, so a task that was polled at all
+	// carries them — including one submitted against head, which Roblox answers
+	// with the version it resolved.
+	return (
+		`universes/${ref.universeId}/places/${ref.placeId}` +
+		`/versions/${String(ref.versionId)}` +
+		`/luau-execution-sessions/${String(ref.sessionId)}/tasks/${ref.taskId}`
+	);
+}
+
+/**
+ * A field of a task ocale typed `unknown`, or `undefined` when it is absent.
+ */
+export function readTaskField(task: unknown, key: string): unknown {
+	return Reflect.get(Object(task), key);
 }
 
 /**
@@ -182,26 +212,6 @@ export function describeTaskFailure(task: FailedTask, logTail: ReadonlyArray<str
 	return lines.join("\n");
 }
 
-/**
- * The task's resource path, which is what the Open Cloud API and the Creator
- * Dashboard both key on. Built from the ref rather than kept as the raw
- * server string because ocale parses the path away on the way in.
- *
- * @param ref - The task reference carried on every task and every submit.
- * @returns The `universes/…/tasks/…` path, omitting segments Roblox left out.
- */
-function describeTaskRef(ref: LuauExecutionTaskRef): string {
-	// Both optional segments are present on any ref that got this far: ocale's
-	// GET builder rejects a ref missing either, so a task that was polled at all
-	// carries them — including one submitted against head, which Roblox answers
-	// with the version it resolved.
-	return (
-		`universes/${ref.universeId}/places/${ref.placeId}` +
-		`/versions/${String(ref.versionId)}` +
-		`/luau-execution-sessions/${String(ref.sessionId)}/tasks/${ref.taskId}`
-	);
-}
-
 /** How the poll budget was arrived at, or nothing when the caller named it. */
 function describeBudgetOrigin(context: PollContext): string {
 	if (!context.hasDefaultBudget) {
@@ -238,6 +248,6 @@ function describeSuspects(context: PollContext): Array<string> {
  * @returns The task's state, or `"unknown"` when there is none to read.
  */
 function readObservedState(task: unknown): string {
-	const state: unknown = Reflect.get(Object(task), "state");
+	const state = readTaskField(task, "state");
 	return typeof state === "string" ? state : "unknown";
 }

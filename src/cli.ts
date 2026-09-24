@@ -28,6 +28,11 @@ import { type ChainEntry, formatMissingScopes, walkErrorChain } from "./utils/er
 import type { FileSystem } from "./utils/file-system.ts";
 import { nodeFileSystem } from "./utils/file-system.ts";
 import { parseGameOutput } from "./utils/game-output.ts";
+import {
+	formatInfrastructureBanner,
+	INFRASTRUCTURE_EXIT_CODE,
+	isInfrastructureFailure,
+} from "./utils/infrastructure-failure.ts";
 
 const VERSION = packageJson.version;
 
@@ -241,7 +246,7 @@ export async function runAsync(
 		return await runInnerAsync(args, { ...NODE_DEPENDENCIES, ...dependencies });
 	} catch (err) {
 		printError(err);
-		return 2;
+		return isInfrastructureFailure(err) ? INFRASTRUCTURE_EXIT_CODE : 2;
 	}
 }
 
@@ -588,6 +593,8 @@ function printError(err: unknown): void {
 		process.stderr.write(formatBanner({ body, level: "error", title: "Config Error" }));
 	} else if (err instanceof LuauScriptError) {
 		process.stderr.write(formatLuauErrorBanner(err));
+	} else if (isInfrastructureFailure(err)) {
+		process.stderr.write(formatInfrastructureBanner(err));
 	} else if (err instanceof Error && err.cause instanceof OpenCloudError) {
 		process.stderr.write(formatBackendErrorBanner(err));
 	} else if (err instanceof Error) {

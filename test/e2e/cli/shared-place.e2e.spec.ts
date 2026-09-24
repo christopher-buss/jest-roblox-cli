@@ -130,8 +130,8 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 		expect(server.requests).toHaveLength(1);
 	});
 
-	it("should fail at once with the unlock time when the account's hourly creates are spent", async () => {
-		expect.assertions(4);
+	it("should fail at once as an infrastructure error with the unlock time when the account's hourly creates are spent", async () => {
+		expect.assertions(5);
 
 		const sandbox = createRbxtsFixtureSandbox(RBXTS_FIXTURE);
 		const server = await startFakeOpenCloudServerAsync(
@@ -153,8 +153,9 @@ describe.skipIf(!rojoOnPath())("an ordinary Open Cloud run on a Shared Place", (
 		});
 		const output = `${result.stdout}\n${result.stderr}`;
 
-		expect(result.exitCode).not.toBe(0);
+		expect(result.exitCode).toBe(3);
 		expect(server.requests).toHaveLength(1);
+		expect(output).toContain("Roblox Infrastructure Error");
 		expect(output).toMatch(
 			/30 task creates per hour per account; this account can create tasks again at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/,
 		);

@@ -1,4 +1,5 @@
-import { ApiError, NetworkError, PermissionError } from "@bedrock-rbx/ocale";
+import { ApiError, NetworkError, PermissionError, RateLimitError } from "@bedrock-rbx/ocale";
+import { TaskQuotaError, TaskStallError } from "@isentinel/roblox-runner";
 
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
@@ -985,6 +986,115 @@ describe(runAsync, () => {
 
 		expect(code).toBe(2);
 		expect(spies.consoleError).toHaveBeenCalledWith("An unknown error occurred");
+	});
+
+	it("should return 3 and report a stalled task as a Roblox infrastructure failure with its evidence", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		const cli = setupDefaults();
+		const stalled = new TaskStallError({
+			error: new Error("Execution timed out"),
+			evidence: {
+				createTime: "2026-09-23T10:00:00.000Z",
+				kind: "task-stall",
+				observedStates: ["QUEUED", "PROCESSING"],
+				placeVersion: 42,
+				task: "universes/1/places/2/versions/42/luau-execution-sessions/s/tasks/t",
+				timeoutSeconds: 300,
+				updateTime: "2026-09-23T10:05:00.000Z",
+			},
+			readResultAsync: async () => ({ durationMs: 0, outputs: [] }),
+		});
+		cli.runJestRoblox.mockRejectedValue(stalled);
+
+		const code = await runAsync([], cli.dependencies);
+
+		expect(code).toBe(3);
+		expect(renderedStderr(spies)).toContain("Roblox Infrastructure Error");
+		expect(renderedStderr(spies)).toContain(
+			[
+				"  Evidence:",
+				"    kind: task-stall",
+				"    task: universes/1/places/2/versions/42/luau-execution-sessions/s/tasks/t",
+				"    placeVersion: 42",
+				"    timeoutSeconds: 300",
+				"    createTime: 2026-09-23T10:00:00.000Z",
+				"    updateTime: 2026-09-23T10:05:00.000Z",
+				"    observedStates: QUEUED, PROCESSING",
+			].join("\n"),
+		);
+	});
+
+	it("should omit evidence fields Roblox did not report", async () => {
+		expect.assertions(2);
+
+		const spies = setupOutputSpies();
+		const cli = setupDefaults();
+		const stalled = new TaskStallError({
+			error: new Error("Execution timed out"),
+			evidence: {
+				createTime: undefined,
+				kind: "task-stall",
+				observedStates: ["PROCESSING"],
+				placeVersion: undefined,
+				task: "universes/1/places/2/luau-execution-sessions/s/tasks/t",
+				timeoutSeconds: 300,
+				updateTime: undefined,
+			},
+			readResultAsync: async () => ({ durationMs: 0, outputs: [] }),
+		});
+		cli.runJestRoblox.mockRejectedValue(stalled);
+
+		const code = await runAsync([], cli.dependencies);
+
+		expect(code).toBe(3);
+		expect(renderedStderr(spies)).toContain(
+			[
+				"    task: universes/1/places/2/luau-execution-sessions/s/tasks/t",
+				"    timeoutSeconds: 300",
+				"    observedStates: PROCESSING",
+			].join("\n"),
+		);
+	});
+
+	it("should return 3 and report a quota-refused create as a Roblox infrastructure failure with its evidence", async () => {
+		expect.assertions(3);
+
+		const spies = setupOutputSpies();
+		const cli = setupDefaults();
+		const refused = new TaskQuotaError({
+			cause: new RateLimitError("Rate limited", { retryAfterSeconds: 1856, statusCode: 429 }),
+			evidence: {
+				code: "RESOURCE_EXHAUSTED",
+				headers: { "retry-after": "1856" },
+				kind: "create-quota",
+				placeVersion: 42,
+				retryAfterSeconds: 1856,
+				timeoutSeconds: 300,
+				unlockTime: "2026-09-23T10:30:56.000Z",
+			},
+			message: "RESOURCE_EXHAUSTED: dmaas (Too Many Requests)",
+		});
+		cli.runJestRoblox.mockRejectedValue(refused);
+
+		const code = await runAsync([], cli.dependencies);
+
+		expect(code).toBe(3);
+		expect(renderedStderr(spies)).toContain("Roblox Infrastructure Error");
+		expect(renderedStderr(spies)).toContain(
+			[
+				"  Evidence:",
+				"    kind: create-quota",
+				"    unlockTime: 2026-09-23T10:30:56.000Z",
+				"    retryAfterSeconds: 1856",
+				"    code: RESOURCE_EXHAUSTED",
+				"    placeVersion: 42",
+				"    timeoutSeconds: 300",
+				"    headers:",
+				"      retry-after: 1856",
+			].join("\n"),
+		);
 	});
 
 	it("should return 2 and render a Backend Error banner when error.cause is an OpenCloudError", async () => {

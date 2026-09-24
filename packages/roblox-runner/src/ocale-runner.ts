@@ -34,7 +34,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createCapacitySubmitClient } from "./capacity-submit-client.ts";
-import { toExecutionError } from "./execution-timeout.ts";
+import type { RefusedCreate } from "./infrastructure-evidence.ts";
+import {
+	collectQuotaEvidence,
+	computeUnlockTime,
+	redactSecret,
+} from "./infrastructure-evidence.ts";
 import type { PollContext } from "./poll-diagnosis.ts";
 import {
 	describeStatus,
@@ -44,6 +49,8 @@ import {
 	formatLogMessage,
 	resolveBudgets,
 } from "./poll-diagnosis.ts";
+import { TaskQuotaError } from "./task-quota-error.ts";
+import { toExecutionError } from "./task-stall-error.ts";
 import { TaskSubmitError } from "./task-submit-error.ts";
 import type {
 	BinaryInputUploader,
@@ -296,7 +303,11 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			timeout,
 		});
 		if (!submitted.success) {
-			throw toSubmitError(submitted.err);
+			throw toSubmitError(submitted.err, {
+				apiKey: this.credentials.apiKey,
+				placeVersion,
+				timeoutSeconds: budgets.timeoutSeconds,
+			});
 		}
 
 		onSubmitted?.();
@@ -308,8 +319,10 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 			bootProven,
 			deadlineMs: pollDeadlineMs,
 			observationSignal,
+			placeVersion,
 			ref: submitted.data.ref,
 			startTime,
+			submittedState: submitted.data.state,
 		});
 	}
 
@@ -864,7 +877,7 @@ function describeHourlyUnlock(err: RateLimitError): Array<string> {
 		return [];
 	}
 
-	const unlock = new Date(Date.now() + err.retryAfterSeconds * 1000);
+	const unlock = computeUnlockTime(err);
 	return [
 		"  Roblox allows 30 task creates per hour per account; " +
 			`this account can create tasks again at ${unlock.toISOString().replace(ISO_MILLISECONDS, "Z")}.`,
@@ -880,17 +893,38 @@ function describeRateLimit(err: RateLimitError): Array<string> {
 	];
 }
 
+function toQuotaError({
+	err,
+	headline,
+	rateLimit,
+	task,
+}: {
+	err: OpenCloudError;
+	headline: string;
+	rateLimit: RateLimitError;
+	task: RefusedCreate;
+}): TaskQuotaError {
+	const message = [headline, ...describeRateLimit(rateLimit)].join("\n");
+	return new TaskQuotaError({
+		cause: err,
+		evidence: collectQuotaEvidence(rateLimit, task),
+		message: redactSecret(message, task.apiKey),
+	});
+}
+
 /**
  * Names a submit that never created a task. Kept apart from the poll path
  * because a submit failure has no task to point at — there is nothing to look
- * up and nothing to log.
+ * up and nothing to log. A 429 is the quota's refusal, and carries its
+ * evidence.
  *
  * @param err - The error the submit returned.
+ * @param task - The refused task, and the API key its evidence must not carry.
  * @returns The error to throw, carrying the ocale error as its cause.
  */
-function toSubmitError(err: OpenCloudError): Error {
+function toSubmitError(err: OpenCloudError, task: RefusedCreate): Error {
 	if (err instanceof RetryDelayExceededError && err.cause instanceof RateLimitError) {
-		return new TaskSubmitError(err, [err.message, ...describeRateLimit(err.cause)].join("\n"));
+		return toQuotaError({ err, headline: err.message, rateLimit: err.cause, task });
 	}
 
 	if (!(err instanceof RateLimitError)) {
@@ -900,7 +934,7 @@ function toSubmitError(err: OpenCloudError): Error {
 	const headline = isServerErrorDetails(err.details)
 		? `${err.details.code}: ${err.details.message}`
 		: err.message;
-	return new TaskSubmitError(err, [headline, ...describeRateLimit(err)].join("\n"));
+	return toQuotaError({ err, headline, rateLimit: err, task });
 }
 
 function toArrayBufferView(data: buffer.Buffer): Uint8Array<ArrayBuffer> {

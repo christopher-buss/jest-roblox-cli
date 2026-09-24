@@ -24,6 +24,8 @@ import {
 	maximumSubmitDuration,
 	OcaleRunner,
 } from "./ocale-runner.ts";
+import { TaskQuotaError } from "./task-quota-error.ts";
+import { TaskStallError } from "./task-stall-error.ts";
 import { TaskSubmitError } from "./task-submit-error.ts";
 
 function createResetThenSuccessServer(onRequest: () => void) {
@@ -2451,6 +2453,92 @@ describe(OcaleRunner, () => {
 			assert(thrown instanceof Error);
 
 			expect(thrown.cause).toBe(failure);
+		});
+	});
+
+	describe("infrastructure failures", () => {
+		it("should classify a task still unfinished at its deadline as a stall, with its evidence", async () => {
+			expect.assertions(1);
+
+			const stalled = taskBody({ state: "PROCESSING", updateTime: "2026-01-01T00:00:00Z" });
+			const http = createFakeHttpClient();
+			for (let index = 0; index < POLLS_PER_GRACE; index += 1) {
+				http.mockResponse({ body: stalled, status: 200 });
+			}
+
+			const caught: unknown = await makeAdvancingRunner(http)
+				.executeScriptAsync({ placeVersion: 1, script: "return 1", timeout: 1000 })
+				.catch((err: unknown) => err);
+			assert(caught instanceof TaskStallError);
+
+			expect(caught.evidence).toStrictEqual({
+				createTime: "2026-01-01T00:00:00.000Z",
+				kind: "task-stall",
+				observedStates: ["PROCESSING"],
+				placeVersion: 1,
+				task: "universes/123/places/456/versions/1/luau-execution-sessions/session-1/tasks/task-1",
+				timeoutSeconds: 1,
+				updateTime: "2026-01-01T00:00:00.000Z",
+			});
+		});
+
+		it("should classify a create the quota refused, with its unlock time and 429 evidence", async () => {
+			expect.assertions(1);
+
+			vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					code: "RESOURCE_EXHAUSTED",
+					details: { code: "RESOURCE_EXHAUSTED", message: "dmaas (Too Many Requests)" },
+					responseHeaders: { "retry-after": "1856", "x-ratelimit-remaining": "3" },
+					retryAfterSeconds: 1856,
+					statusCode: 429,
+				}),
+			);
+
+			const caught: unknown = await makeRunner(http)
+				.executeScriptAsync({ placeVersion: 7, script: "return 1", timeout: 30_000 })
+				.catch((err: unknown) => err);
+			assert(caught instanceof TaskQuotaError);
+
+			expect(caught.evidence).toStrictEqual({
+				code: "RESOURCE_EXHAUSTED",
+				headers: { "retry-after": "1856", "x-ratelimit-remaining": "3" },
+				kind: "create-quota",
+				placeVersion: 7,
+				retryAfterSeconds: 1856,
+				timeoutSeconds: 30,
+				unlockTime: "2026-09-22T12:31:47.000Z",
+			});
+		});
+
+		it("should remove the API key from a quota refusal's evidence and message", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					details: { code: "RESOURCE_EXHAUSTED", message: "Too many tasks for test-key" },
+					responseHeaders: { "retry-after": "3", "x-roblox-echo": "key=test-key" },
+					retryAfterSeconds: 3,
+					statusCode: 429,
+				}),
+			);
+
+			const caught: unknown = await makeRunner(http)
+				.executeScriptAsync({ script: "return 1", timeout: 30_000 })
+				.catch((err: unknown) => err);
+			assert(caught instanceof TaskQuotaError);
+
+			expect(caught.evidence.headers).toStrictEqual({
+				"retry-after": "3",
+				"x-roblox-echo": "key=[REDACTED]",
+			});
+			expect(caught.message).not.toContain("test-key");
 		});
 	});
 
