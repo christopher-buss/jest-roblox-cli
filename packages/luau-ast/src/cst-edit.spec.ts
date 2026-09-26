@@ -4,7 +4,7 @@ import { createCstEdits, renameBinding, renameBindings } from "./cst-edit.ts";
 import { printCst, printCstMapped } from "./cst-print.ts";
 import type { CstPosition, CstSourcemapSegment } from "./cst-print.ts";
 import { forEachCstNode } from "./cst.ts";
-import type { CstLocalDeclaration, CstNode, CstRoot } from "./cst.ts";
+import type { CstIndexName, CstLocalDeclaration, CstNode, CstRoot } from "./cst.ts";
 import { loadLuauParser } from "./parser.ts";
 import { indexSourceBytes } from "./source-bytes.ts";
 
@@ -61,6 +61,10 @@ function isKind<Kind extends CstNode["type"]>(
 	return node.type === type;
 }
 
+function isConfigAccess(node: CstNode): node is CstIndexName {
+	return node.type === "IndexName" && node.index.text === "cfg";
+}
+
 /** The binding number of the first declaration named `name`. */
 function bindingOf(root: CstRoot, name: string): number {
 	return findNode(
@@ -102,6 +106,118 @@ describe(printCstMapped, () => {
 			{ column: source.indexOf("x = 1"), line: 1 },
 			{ column: "return ".length, line: 2 },
 		]);
+	});
+
+	it("should map a token after an inserted statement separator to its original position", () => {
+		expect.assertions(1);
+
+		const source = "f()\n_G.cfg.x = 1\n";
+		const root = parseCst(source);
+		const edits = createCstEdits();
+		edits.replace({
+			caller: "define",
+			replacement: { text: "(true)" },
+			target: findNode(root, isConfigAccess),
+		});
+
+		const { code, segments } = printCstMapped(root, {
+			edits,
+			source: indexSourceBytes(source),
+		});
+
+		expect({
+			code,
+			original: segmentAt(segments, { column: 7, line: 2 }).original,
+		}).toStrictEqual({
+			code: "f()\n;(true).x = 1\n",
+			original: { column: 6, line: 2 },
+		});
+	});
+});
+
+describe(printCst, () => {
+	it("should separate a printed parenthesized statement from the preceding call", () => {
+		expect.assertions(1);
+
+		const root = parseCst("f()\n_G.cfg.x = 1\n");
+		const edits = createCstEdits();
+		const access = findNode(root, isConfigAccess);
+		edits.replace({ caller: "define", replacement: { text: "(nil)" }, target: access });
+
+		expect(printCst(root, edits)).toBe("f()\n;(nil).x = 1\n");
+	});
+
+	it("should leave a parenthesized first statement without a separator", () => {
+		expect.assertions(1);
+
+		const root = parseCst("_G.cfg.x = 1\n");
+		const edits = createCstEdits();
+		const access = findNode(root, isConfigAccess);
+		edits.replace({ caller: "define", replacement: { text: "(nil)" }, target: access });
+
+		expect(printCst(root, edits)).toBe("(nil).x = 1\n");
+	});
+
+	it("should ignore a removed predecessor when separating statements", () => {
+		expect.assertions(1);
+
+		const root = parseCst("local y = 1\n_G.cfg.x = 1\n");
+		const edits = createCstEdits();
+		const access = findNode(root, isConfigAccess);
+		edits.remove({ caller: "constants", preserveLeading: true, statement: root.body.body[0]! });
+		edits.replace({ caller: "define", replacement: { text: "(nil)" }, target: access });
+
+		expect(printCst(root, edits)).toBe("(nil).x = 1\n");
+	});
+
+	it("should separate statements that become neighbors after a removal", () => {
+		expect.assertions(1);
+
+		const root = parseCst("f()\nlocal y = 1\n_G.cfg.x = 1\n");
+		const edits = createCstEdits();
+		const access = findNode(root, isConfigAccess);
+		edits.remove({ caller: "constants", preserveLeading: true, statement: root.body.body[1]! });
+		edits.replace({ caller: "define", replacement: { text: "(nil)" }, target: access });
+
+		expect(printCst(root, edits)).toBe("f()\n;(nil).x = 1\n");
+	});
+
+	it("should count a constructed statement block as a printed predecessor", () => {
+		expect.assertions(1);
+
+		const root = parseCst("f()\n_G.cfg.x = 1\n");
+		const edits = createCstEdits();
+		edits.replace({
+			caller: "inline",
+			replacement: loadLuauParser().constructStatements("g()"),
+			target: root.body.body[0]!,
+		});
+		edits.replace({
+			caller: "define",
+			replacement: { text: "(nil)" },
+			target: findNode(root, isConfigAccess),
+		});
+
+		expect(printCst(root, edits)).toBe("g()\n;(nil).x = 1\n");
+	});
+
+	it("should ignore a whitespace-only statement replacement as a predecessor", () => {
+		expect.assertions(1);
+
+		const root = parseCst("f()\n_G.cfg.x = 1\n");
+		const edits = createCstEdits();
+		edits.replace({
+			caller: "remove-call",
+			replacement: { text: "  " },
+			target: root.body.body[0]!,
+		});
+		edits.replace({
+			caller: "define",
+			replacement: { text: "(nil)" },
+			target: findNode(root, isConfigAccess),
+		});
+
+		expect(printCst(root, edits)).toBe("  \n(nil).x = 1\n");
 	});
 });
 

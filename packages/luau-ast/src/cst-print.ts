@@ -39,9 +39,16 @@ interface Writer {
 	write: (text: string) => void;
 }
 
+interface StatementPrint {
+	preceded: boolean;
+	started: boolean;
+}
+
 /** One print pass: where output stands, and what to consult on the way. */
 interface Printer extends PrintOptions {
+	lastCode: string | undefined;
 	segments: Array<CstSourcemapSegment>;
+	statement: StatementPrint | undefined;
 	writer: Writer;
 }
 
@@ -101,7 +108,13 @@ function createWriter(): Writer {
 }
 
 function print(root: CstNode, options: PrintOptions): PrintedCst {
-	const printer = { ...options, segments: [], writer: createWriter() } satisfies Printer;
+	const printer = {
+		...options,
+		lastCode: undefined,
+		segments: [],
+		statement: undefined,
+		writer: createWriter(),
+	} satisfies Printer;
 	walk(printer, root);
 	return { code: printer.writer.code(), segments: printer.segments };
 }
@@ -112,8 +125,38 @@ function writeTrivia(printer: Printer, items: Array<Trivia>): void {
 	}
 }
 
+function startCode(printer: Printer, text: string): string {
+	const { statement } = printer;
+	if (statement === undefined || statement.started) {
+		return text;
+	}
+
+	const code = text.trimStart();
+	if (code.length === 0) {
+		return text;
+	}
+
+	const prefixLength = text.length - code.length;
+	printer.writer.write(text.slice(0, prefixLength));
+	if (statement.preceded && printer.lastCode !== ";" && code.startsWith("(")) {
+		printer.writer.write(";");
+	}
+
+	statement.started = true;
+	return code;
+}
+
+function writeCode(printer: Printer, text: string): void {
+	printer.writer.write(startCode(printer, text));
+	const lastCode = text.trimEnd().at(-1);
+	if (lastCode !== undefined) {
+		printer.lastCode = lastCode;
+	}
+}
+
 function emitToken(printer: Printer, token: Token): void {
 	writeTrivia(printer, token.leading);
+	const text = startCode(printer, token.text);
 	if (printer.source !== undefined && token.origin !== undefined && token.text.length > 0) {
 		const { beginColumn, beginLine } = token.origin;
 		printer.segments.push({
@@ -125,7 +168,12 @@ function emitToken(printer: Printer, token: Token): void {
 		});
 	}
 
-	printer.writer.write(token.text);
+	printer.writer.write(text);
+	const lastCode = token.text.at(-1);
+	if (lastCode !== undefined) {
+		printer.lastCode = lastCode;
+	}
+
 	writeTrivia(printer, token.trailing);
 }
 
@@ -135,7 +183,25 @@ function walk(printer: Printer, value: unknown): void {
 		onNode: (target) => {
 			const replacement = printer.edits?.replacementFor(target);
 			if (replacement === undefined) {
-				return;
+				if (target.type !== "Block") {
+					return;
+				}
+
+				const enclosing = printer.statement;
+				let hasPredecessor = false;
+				for (const statement of target.body) {
+					const current: StatementPrint = { preceded: hasPredecessor, started: false };
+					printer.statement = current;
+					walk(printer, statement);
+					hasPredecessor ||= current.started;
+				}
+
+				if (enclosing !== undefined) {
+					enclosing.started ||= hasPredecessor;
+				}
+
+				printer.statement = enclosing;
+				return true;
 			}
 
 			printReplacement(printer, { replacement, target });
@@ -196,7 +262,7 @@ function printReplacement(printer: Printer, { replacement, target }: Replaced): 
 		writeTrivia(printer, first.leading);
 	}
 
-	printer.writer.write(replacement.text);
+	writeCode(printer, replacement.text);
 	if (replacement.preserveTrailing !== false) {
 		writeTrivia(printer, last.trailing);
 	}
