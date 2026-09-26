@@ -5,6 +5,7 @@ import process from "node:process";
 import { assert, describe, expect, it, onTestFinished } from "vitest";
 
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
+import { PLACE_DIR } from "../../../src/coverage-pipeline/prepare.ts";
 import { loadConfig, prepareArtifactsAsync, readCoverageManifest } from "../../../src/index.ts";
 import { createFixtureSandbox, runCliAsync } from "../cli/helpers.ts";
 import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
@@ -70,22 +71,20 @@ const gameOutputSchema = type({
 	"project": "string",
 }).array();
 
-/** Where a coverage run leaves the project it built the place from. */
-const COVERAGE_DIR = ".jest-roblox/coverage";
 const placeProjectSchema = type({
 	tree: { ReplicatedStorage: { "PkgShared?": "object" } },
 });
 
 /** The node the built place serves the shared mount at, if it serves one. */
 function readSharedMount(sandbox: string): object | undefined {
-	const projectFile = path.join(sandbox, COVERAGE_DIR, "default.project.json");
+	const projectFile = path.join(sandbox, PLACE_DIR, "default.project.json");
 	return placeProjectSchema.assert(JSON.parse(fs.readFileSync(projectFile, "utf-8"))).tree
 		.ReplicatedStorage.PkgShared;
 }
 
 /** Whether a Code Bundle was written beside the place. */
 function hasCodeBundle(sandbox: string): boolean {
-	return fs.existsSync(path.join(sandbox, COVERAGE_DIR, "game.code-bundle.json"));
+	return fs.existsSync(path.join(sandbox, PLACE_DIR, "game.code-bundle.json"));
 }
 
 describe("live pipeline", () => {
@@ -183,10 +182,10 @@ describe("live pipeline", () => {
 			);
 
 			// A Shared Place run builds its code into the place: the shared
-			// mount is served from the place itself, and nothing travels beside
-			// it as a Binary Input.
+			// mount is served from the instrumented shadow, and nothing travels
+			// beside it as a Binary Input.
 			expect(readSharedMount(sandbox), "the place mounts the code").toStrictEqual({
-				$path: "out/shared",
+				$path: "../coverage/out/shared",
 			});
 			expect(hasCodeBundle(sandbox), "no Code Bundle beside the place").toBeFalse();
 		},
