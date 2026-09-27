@@ -58,6 +58,8 @@ export interface RenameOptions {
  * that replace the same node are a conflict, reported by both names.
  */
 export interface CstEdits {
+	/** Caller that registered a node's replacement. */
+	callerFor: (node: CstNode) => string | undefined;
 	/** Print nothing in the statement's place; see {@link Removal}. */
 	remove: (options: RemoveOptions) => void;
 	replace: (options: ReplaceOptions) => void;
@@ -96,6 +98,10 @@ export function createCstEdits(): CstEdits {
 
 		// A target that is itself an unanchored subtree has no origin to give
 		// yet; its own registration anchors both.
+		if (isCstNode(replacement)) {
+			markGenerated(replacement, caller);
+		}
+
 		const origin = tokenBounds(target)?.first.origin;
 		if (origin !== undefined && isCstNode(replacement)) {
 			anchor({ origin, replacements, subtree: replacement });
@@ -105,6 +111,7 @@ export function createCstEdits(): CstEdits {
 	}
 
 	return {
+		callerFor: (node) => replacements.get(node)?.caller,
 		remove: ({ caller, preserveLeading, statement }) => {
 			replace({ caller, replacement: { preserveLeading, remove: true }, target: statement });
 		},
@@ -137,6 +144,16 @@ export function renameBindings(root: CstNode, names: ReadonlyMap<number, string>
  */
 export function renameBinding(root: CstNode, { name, binding }: RenameOptions): void {
 	renameBindings(root, new Map([[binding, name]]));
+}
+
+function markGenerated(subtree: CstNode, caller: string): void {
+	walkCst(subtree, {
+		onToken: (token) => {
+			if (token.origin === undefined) {
+				token.generatedBy ??= caller;
+			}
+		},
+	});
 }
 
 /**

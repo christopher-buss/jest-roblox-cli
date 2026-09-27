@@ -7,6 +7,10 @@ export interface Trivia {
 
 /** A source token: its text, where it came from, and the trivia around it. */
 export interface Token {
+	/**
+	 * Rule that constructed this token, retained across the checkpoint parse.
+	 */
+	generatedBy?: string;
 	/** Trivia between the previous token's trailing trivia and this token. */
 	leading: Array<Trivia>;
 	/**

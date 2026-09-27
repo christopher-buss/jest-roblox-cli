@@ -127,15 +127,53 @@ describe(printCstMapped, () => {
 
 		expect({
 			code,
+			generatedBy: segmentAt(segments, { column: 1, line: 2 }).generatedBy,
 			original: segmentAt(segments, { column: 7, line: 2 }).original,
 		}).toStrictEqual({
 			code: "f()\n;(true).x = 1\n",
+			generatedBy: "define",
 			original: { column: 6, line: 2 },
+		});
+	});
+
+	it("should omit attribution when an edit surface does not expose a caller", () => {
+		expect.assertions(1);
+
+		const source = "return value\n";
+		const root = parseCst(source);
+		const registered = createCstEdits();
+		registered.replace({
+			caller: "hidden",
+			replacement: { text: "return other" },
+			target: root.body.body[0]!,
+		});
+		const noCaller = registered.callerFor(root);
+		const edits = { ...registered, callerFor: () => noCaller };
+
+		const { segments } = printCstMapped(root, { edits, source: indexSourceBytes(source) });
+
+		expect(segments[0]).toStrictEqual({
+			generated: { column: 0, line: 1 },
+			original: { column: 0, line: 1 },
 		});
 	});
 });
 
 describe(printCst, () => {
+	it("should preserve the origins of an existing replacement subtree", () => {
+		expect.assertions(1);
+
+		const root = parseCst("local value = 1\nreturn value\n");
+		const edits = createCstEdits();
+		edits.replace({
+			caller: "reuse",
+			replacement: root.body.body[1]!,
+			target: root.body.body[0]!,
+		});
+
+		expect(printCst(root, edits)).toContain("return value");
+	});
+
 	it("should separate a printed parenthesized statement from the preceding call", () => {
 		expect.assertions(1);
 
@@ -461,9 +499,9 @@ describe("node construction", () => {
 		});
 
 		expect(code).toBe("local v = 1\nreturn v\n");
-		expect(segmentAt(segments, { column: code.indexOf("1"), line: 1 }).original).toStrictEqual({
-			column: 0,
-			line: 1,
+		expect(segmentAt(segments, { column: code.indexOf("1"), line: 1 })).toMatchObject({
+			generatedBy: "inner",
+			original: { column: 0, line: 1 },
 		});
 	});
 

@@ -17,6 +17,8 @@ export interface CstPosition {
 /** One printed token traced back to where it came from. */
 export interface CstSourcemapSegment {
 	generated: CstPosition;
+	/** Rule that constructed the token at this generated position. */
+	generatedBy?: string;
 	original: CstPosition;
 }
 
@@ -146,14 +148,6 @@ function startCode(printer: Printer, text: string): string {
 	return code;
 }
 
-function writeCode(printer: Printer, text: string): void {
-	printer.writer.write(startCode(printer, text));
-	const lastCode = text.trimEnd().at(-1);
-	if (lastCode !== undefined) {
-		printer.lastCode = lastCode;
-	}
-}
-
 function emitToken(printer: Printer, token: Token): void {
 	writeTrivia(printer, token.leading);
 	const text = startCode(printer, token.text);
@@ -161,6 +155,7 @@ function emitToken(printer: Printer, token: Token): void {
 		const { beginColumn, beginLine } = token.origin;
 		printer.segments.push({
 			generated: printer.writer.position(),
+			...(token.generatedBy === undefined ? {} : { generatedBy: token.generatedBy }),
 			original: {
 				column: printer.source.toUtf16Column(beginLine, beginColumn) - 1,
 				line: beginLine,
@@ -242,6 +237,47 @@ function printRemoval(printer: Printer, removal: Removal, { first, last }: Token
 	writeTrivia(printer, last.trailing);
 }
 
+function printTextReplacement(
+	printer: Printer,
+	{
+		first,
+		last,
+		replacement,
+		target,
+	}: Pick<Replaced, "target"> &
+		TokenBounds & { replacement: Exclude<Replacement, CstNode | Removal> },
+): void {
+	if (replacement.preserveLeading !== false) {
+		writeTrivia(printer, first.leading);
+	}
+
+	const startedText = startCode(printer, replacement.text);
+	const code = startedText.trimStart();
+	printer.writer.write(startedText.slice(0, startedText.length - code.length));
+	if (printer.source !== undefined && first.origin !== undefined && code.length > 0) {
+		const { beginColumn, beginLine } = first.origin;
+		const generatedBy = printer.edits?.callerFor(target);
+		printer.segments.push({
+			generated: printer.writer.position(),
+			...(generatedBy === undefined ? {} : { generatedBy }),
+			original: {
+				column: printer.source.toUtf16Column(beginLine, beginColumn) - 1,
+				line: beginLine,
+			},
+		});
+	}
+
+	printer.writer.write(code);
+	const lastCode = code.trimEnd().at(-1);
+	if (lastCode !== undefined) {
+		printer.lastCode = lastCode;
+	}
+
+	if (replacement.preserveTrailing !== false) {
+		writeTrivia(printer, last.trailing);
+	}
+}
+
 function printReplacement(printer: Printer, { replacement, target }: Replaced): void {
 	const bounds = tokenBounds(target);
 	assert(bounds !== undefined, "a replaced node has no tokens");
@@ -258,12 +294,5 @@ function printReplacement(printer: Printer, { replacement, target }: Replaced): 
 		return;
 	}
 
-	if (replacement.preserveLeading !== false) {
-		writeTrivia(printer, first.leading);
-	}
-
-	writeCode(printer, replacement.text);
-	if (replacement.preserveTrailing !== false) {
-		writeTrivia(printer, last.trailing);
-	}
+	printTextReplacement(printer, { first, last, replacement, target });
 }
