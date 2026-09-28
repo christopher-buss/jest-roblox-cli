@@ -22,6 +22,7 @@ const CLAIM_URL = pathToFileURL(
 );
 const STORAGE_URL = import.meta.resolve("@bedrock-rbx/ocale/storage");
 const OCALE_URL = import.meta.resolve("@bedrock-rbx/ocale");
+const CHILD_TIMEOUT_MS = 5_000;
 
 const CHILD_SCRIPT = `
 import assert from "node:assert/strict";
@@ -34,6 +35,17 @@ const { createFakeHttpClient } = await import(${JSON.stringify(OCALE_TESTING_URL
 const { ExecutionClaimObserver } = await import(${JSON.stringify(CLAIM_URL.href)});
 const { StorageClient } = await import(${JSON.stringify(STORAGE_URL)});
 const { RateLimitError } = await import(${JSON.stringify(OCALE_URL)});
+const blockUntilAborted = (signal) => new Promise((_, reject) => {
+  if (signal.aborted) {
+    reject(signal.reason);
+    return;
+  }
+  const keepAlive = setInterval(() => {}, 1_000);
+  signal.addEventListener("abort", () => {
+    clearInterval(keepAlive);
+    reject(signal.reason);
+  }, { once: true });
+});
 const mode = process.argv[1];
 const task = {
   createTime: "2026-01-01T00:00:00Z",
@@ -67,14 +79,17 @@ const transport = {
     if (((mode === "request" || mode === "claim") && request.method === "GET") ||
         ((mode === "submit" || mode === "budget") && request.method === "POST") ||
         (mode === "logs" && request.url.includes("/logs"))) {
-      await delay(1_500, undefined, { signal: config.signal });
+      await blockUntilAborted(config.signal);
     }
     return http.request(request, config);
   },
 };
 const runner = new OcaleRunner(
   { apiKey: "test-key", placeId: "456", universeId: "123" },
-  { httpClient: transport },
+  {
+    httpClient: transport,
+    sleep: (ms, signal) => mode === "sleep" ? blockUntilAborted(signal) : delay(ms, undefined, { signal }),
+  },
 );
 let attempt = 0;
 const observer = new ExecutionClaimObserver({
@@ -98,7 +113,7 @@ if (mode === "recovery") {
             if (request.method === "GET" && ++reads > 1) {
               if (isOriginal) {
                 originalReadStarted.resolve();
-                await delay(1_500, undefined, { signal: config.signal });
+                await blockUntilAborted(config.signal);
               } else {
                 await originalReadStarted.promise;
               }
@@ -155,10 +170,7 @@ if (mode === "recovery") {
     assert.equal(http.requests.length, 1, "aborted retry sent another request");
   }
 }
-const resolvedAt = performance.now();
-process.once("beforeExit", () => {
-  assert.ok(performance.now() - resolvedAt < 200, "superseded observation kept the process alive");
-});`;
+`;
 
 describe("execution recovery process lifecycle", () => {
 	it("should exit after canceling a losing native recovery read", () => {
@@ -167,11 +179,11 @@ describe("execution recovery process lifecycle", () => {
 		const child = spawnSync(
 			process.execPath,
 			["--conditions=source", "--input-type=module", "--eval", CHILD_SCRIPT, "recovery"],
-			{ encoding: "utf8", timeout: 5000, windowsHide: true },
+			{ encoding: "utf8", timeout: CHILD_TIMEOUT_MS, windowsHide: true },
 		);
 
 		expect(child.stderr).toContain("retrying once with the same execution claim");
-		expect(child.status).toBe(0);
+		expect(child).toMatchObject({ status: 0 });
 	});
 
 	it.for(["sleep", "request", "submit", "logs"])(
@@ -181,14 +193,15 @@ describe("execution recovery process lifecycle", () => {
 
 			const child = spawnSync(
 				process.execPath,
-				["--input-type=module", "--eval", CHILD_SCRIPT, mode],
+				["--conditions=source", "--input-type=module", "--eval", CHILD_SCRIPT, mode],
 				{
 					encoding: "utf8",
+					timeout: CHILD_TIMEOUT_MS,
 					windowsHide: true,
 				},
 			);
 
-			expect(child.status).toBe(0);
+			expect(child).toMatchObject({ status: 0 });
 			expect(child.stderr).toContain("starting a replacement with the same execution claim");
 		},
 	);
@@ -198,14 +211,15 @@ describe("execution recovery process lifecycle", () => {
 
 		const child = spawnSync(
 			process.execPath,
-			["--input-type=module", "--eval", CHILD_SCRIPT, "normal"],
+			["--conditions=source", "--input-type=module", "--eval", CHILD_SCRIPT, "normal"],
 			{
 				encoding: "utf8",
+				timeout: CHILD_TIMEOUT_MS,
 				windowsHide: true,
 			},
 		);
 
-		expect(child.status).toBe(0);
+		expect(child).toMatchObject({ status: 0 });
 	});
 
 	it("should cancel a 429 retry wait before another request is sent", () => {
@@ -213,14 +227,15 @@ describe("execution recovery process lifecycle", () => {
 
 		const child = spawnSync(
 			process.execPath,
-			["--input-type=module", "--eval", CHILD_SCRIPT, "retry"],
+			["--conditions=source", "--input-type=module", "--eval", CHILD_SCRIPT, "retry"],
 			{
 				encoding: "utf8",
+				timeout: CHILD_TIMEOUT_MS,
 				windowsHide: true,
 			},
 		);
 
-		expect(child.status).toBe(0);
+		expect(child).toMatchObject({ status: 0 });
 		expect(child.stderr).toContain("starting a replacement with the same execution claim");
 	});
 
@@ -229,13 +244,14 @@ describe("execution recovery process lifecycle", () => {
 
 		const child = spawnSync(
 			process.execPath,
-			["--input-type=module", "--eval", CHILD_SCRIPT, mode],
+			["--conditions=source", "--input-type=module", "--eval", CHILD_SCRIPT, mode],
 			{
 				encoding: "utf8",
+				timeout: CHILD_TIMEOUT_MS,
 				windowsHide: true,
 			},
 		);
 
-		expect(child.status).toBe(0);
+		expect(child).toMatchObject({ status: 0 });
 	});
 });
