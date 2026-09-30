@@ -196,7 +196,7 @@ describe(runTaskPoolAsync, () => {
 			places: [{ runTask }],
 		});
 
-		expect(runTask).toHaveBeenCalledOnce();
+		expect(runTask).toHaveBeenCalledExactlyOnceWith();
 
 		pending[0]!.resolve(makeScriptResult());
 		await flushAsync();
@@ -286,7 +286,7 @@ describe(runTaskPoolAsync, () => {
 	});
 
 	it("should normalize a non-Error task rejection before surfacing it", async () => {
-		expect.assertions(3);
+		expect.assertions(1);
 
 		const counter = { attempt: 0 };
 		const rejection = { code: "transient" };
@@ -303,12 +303,13 @@ describe(runTaskPoolAsync, () => {
 			places: [{ runTask }],
 		});
 
-		expect(onError).toHaveBeenCalledOnce();
-
-		const error = onError.mock.calls[0]![0];
-
-		expect(error.message).toBe("Task failed with a non-Error rejection");
-		expect(error.cause).toBe(rejection);
+		expect(onError).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				cause: rejection,
+				message: "Task failed with a non-Error rejection",
+			}),
+			0,
+		);
 	});
 
 	it("should swallow a task error when no onError handler is provided", async () => {
@@ -449,7 +450,7 @@ describe("runTaskPool multi-place fan-out", () => {
 			places: [{ runTask }],
 		});
 
-		expect(consoleWarn).toHaveBeenCalledOnce();
+		expect(consoleWarn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("exceeds"));
 	});
 });
 

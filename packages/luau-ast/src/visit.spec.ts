@@ -2,7 +2,7 @@ import { fromAny } from "@total-typescript/shoehorn";
 
 import { assert, describe, expect, it, vi } from "vitest";
 
-import type { AstStatBlock } from "./ast.ts";
+import type { AstExpr, AstStatBlock } from "./ast.ts";
 import { loadLuauParser } from "./parser.ts";
 import type { LuauVisitor } from "./visit.ts";
 import { visitBlock, visitExpression, visitStatement } from "./visit.ts";
@@ -23,8 +23,8 @@ describe(visitBlock, () => {
 
 		visitBlock(root, { visitStatBlock: enter, visitStatBlockEnd: leave });
 
-		expect(enter).toHaveBeenCalledOnce();
-		expect(leave).toHaveBeenCalledOnce();
+		expect(enter).toHaveBeenCalledExactlyOnceWith(root);
+		expect(leave).toHaveBeenCalledExactlyOnceWith(root);
 	});
 
 	it("should skip children when visitStatBlock returns false", async () => {
@@ -236,11 +236,12 @@ describe(visitExpression, () => {
 	it("should ignore an expression kind it does not model", () => {
 		expect.assertions(1);
 
+		const expression: AstExpr = fromAny({ type: "AstExprError" });
 		const onEnd = vi.fn<() => void>();
 
-		visitExpression(fromAny({ type: "AstExprError" }), { visitExprEnd: onEnd });
+		visitExpression(expression, { visitExprEnd: onEnd });
 
-		expect(onEnd).toHaveBeenCalledOnce();
+		expect(onEnd).toHaveBeenCalledExactlyOnceWith(expression);
 	});
 });
 
@@ -338,7 +339,9 @@ describe("optional branches", () => {
 
 		visitBlock(root, { visitExprGlobal: onGlobal });
 
-		expect(onGlobal).toHaveBeenCalledOnce();
+		expect(onGlobal).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ global: "a", type: "AstExprGlobal" }),
+		);
 	});
 
 	it("should recurse into a plain else block", async () => {
@@ -349,7 +352,12 @@ describe("optional branches", () => {
 
 		visitBlock(root, { visitExprCall: onCall });
 
-		expect(onCall).toHaveBeenCalledOnce();
+		expect(onCall).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				func: expect.objectContaining({ global: "b" }),
+				type: "AstExprCall",
+			}),
+		);
 	});
 
 	it("should recurse through an elseif chain", async () => {

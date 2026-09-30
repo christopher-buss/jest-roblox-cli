@@ -174,7 +174,11 @@ describe(buildCoveragePlaceAsync, () => {
 
 			await buildCoveragePlaceAsync(makeConfig({ projects }), harness);
 
-			expect(harness.dispatch.buildImplicitProject).toHaveBeenCalledOnce();
+			expect(harness.dispatch.buildImplicitProject).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({ rootDir: ROOT_DIR }),
+				{ $className: "DataModel" },
+				expect.objectContaining({ fileSystem: harness.fileSystem }),
+			);
 			expect(harness.seams.resolveAllProjects).not.toHaveBeenCalled();
 		},
 	);
@@ -185,12 +189,17 @@ describe(buildCoveragePlaceAsync, () => {
 		const harness = seed();
 		vi.mocked(harness.seams.resolveAllProjects).mockResolvedValue([makeProject()]);
 
-		await buildCoveragePlaceAsync(
-			makeConfig({ projects: [fromAny({ test: { displayName: "c" } })] }),
-			harness,
-		);
+		const projects: NonNullable<ResolvedConfig["projects"]> = [
+			fromAny({ test: { displayName: "c" } }),
+		];
 
-		expect(harness.seams.resolveAllProjects).toHaveBeenCalledOnce();
+		await buildCoveragePlaceAsync(makeConfig({ projects }), harness);
+
+		expect(harness.seams.resolveAllProjects).toHaveBeenCalledExactlyOnceWith(
+			projects,
+			expect.objectContaining({ rootDir: ROOT_DIR }),
+			expect.objectContaining({ cwd: ROOT_DIR, fileSystem: harness.fileSystem }),
+		);
 		expect(harness.dispatch.buildImplicitProject).not.toHaveBeenCalled();
 	});
 

@@ -655,7 +655,11 @@ describe(outputMultiResultAsync, () => {
 
 		expect(code).toBe(0);
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-multi");
-		expect(renderer.formatMultiProjectResult).toHaveBeenCalledOnce();
+		expect(renderer.formatMultiProjectResult).toHaveBeenCalledExactlyOnceWith(
+			expect.any(Array),
+			expect.anything(),
+			expect.anything(),
+		);
 	});
 
 	it("should return 1 when any project result fails", async () => {
@@ -1489,7 +1493,8 @@ describe("processCoverage via outputSingleResult", () => {
 
 		const { dependencies } = setupOutput();
 		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
-		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const mapped: MappedCoverageResult = fromAny({});
+		pipeline.mapCoverageToTypeScript.mockReturnValue(mapped);
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -1502,7 +1507,9 @@ describe("processCoverage via outputSingleResult", () => {
 
 		expect(spies.stdout).toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
 		expect(spies.stdout).not.toHaveBeenCalledWith("\nundefined\n");
-		expect(pipeline.generateReports).toHaveBeenCalledOnce();
+		expect(pipeline.generateReports).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ mapped }),
+		);
 	});
 
 	it("should suppress coverage header under silent", async () => {
@@ -1510,7 +1517,8 @@ describe("processCoverage via outputSingleResult", () => {
 
 		const { dependencies } = setupOutput();
 		pipeline.loadCoverageManifest.mockReturnValue(fromAny({}));
-		pipeline.mapCoverageToTypeScript.mockReturnValue(fromAny({}));
+		const mapped: MappedCoverageResult = fromAny({});
+		pipeline.mapCoverageToTypeScript.mockReturnValue(mapped);
 		const spies = setupOutputSpies();
 
 		await outputSingleResultAsync(
@@ -1522,7 +1530,9 @@ describe("processCoverage via outputSingleResult", () => {
 		);
 
 		expect(spies.stdout).not.toHaveBeenCalledWith(expect.stringContaining(COVERAGE_HEADER));
-		expect(pipeline.generateReports).toHaveBeenCalledOnce();
+		expect(pipeline.generateReports).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ mapped }),
+		);
 	});
 
 	it("should fail when coverage threshold not met", async () => {
@@ -1780,7 +1790,12 @@ describe("per-package coverage reports via outputMultiResult", () => {
 		);
 
 		expect(spies.stdout).not.toHaveBeenCalled();
-		expect(pipeline.generateReports).toHaveBeenCalledOnce();
+		expect(pipeline.generateReports).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				coverageDirectory: "/workspace/packages/foo/coverage",
+				reporters: ["text", "lcov"],
+			}),
+		);
 	});
 
 	it("should emit one report per package, each into its own directory with its own reporters", async () => {

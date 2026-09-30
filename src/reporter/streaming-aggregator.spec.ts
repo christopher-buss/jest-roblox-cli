@@ -36,10 +36,11 @@ describe(StreamingAggregator, () => {
 			const onEntry = vi.fn<StreamingAggregatorOnEntry>();
 			const aggregator = new StreamingAggregator({ onEntry });
 
-			aggregator.accept(makeEntry({ elapsedMs: 1, pkg: "a", project: "p" }));
+			const first = makeEntry({ elapsedMs: 1, pkg: "a", project: "p" });
+			aggregator.accept(first);
 			aggregator.accept(makeEntry({ elapsedMs: 2, pkg: "a", project: "p" }));
 
-			expect(onEntry).toHaveBeenCalledOnce();
+			expect(onEntry).toHaveBeenCalledExactlyOnceWith(first);
 			expect(aggregator.drain()).toHaveLength(1);
 		});
 
@@ -58,10 +59,11 @@ describe(StreamingAggregator, () => {
 			const onEntry = vi.fn<StreamingAggregatorOnEntry>();
 			const aggregator = new StreamingAggregator({ onEntry });
 
-			aggregator.accept(makeEntry({ pkg: "a", project: "p" }));
+			const first = makeEntry({ pkg: "a", project: "p" });
+			aggregator.accept(first);
 			aggregator.accept(makeEntry({ pkg: "a", project: "p" }));
 
-			expect(onEntry).toHaveBeenCalledOnce();
+			expect(onEntry).toHaveBeenCalledExactlyOnceWith(first);
 		});
 
 		it("should treat different projects under the same pkg as distinct entries", () => {

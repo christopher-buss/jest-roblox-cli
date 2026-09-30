@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from "vitest";
 
 import { printCst } from "./cst-print.ts";
-import { forEachCstNode, someCstNode, walkCst } from "./cst.ts";
+import { forEachCstNode, isRecord, isToken, someCstNode, walkCst } from "./cst.ts";
 import type { CstNode, CstRoot } from "./cst.ts";
 import { loadLuauParser } from "./parser.ts";
 
@@ -27,6 +27,24 @@ function bindingsNamed(root: CstRoot, name: string): Array<number> {
 	});
 
 	return bindings;
+}
+
+/** A copy of a tree with every node's and entry's keys in reverse order. */
+function reverseKeys<T>(value: T): T;
+function reverseKeys(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.map(reverseKeys);
+	}
+
+	if (isToken(value) || !isRecord(value)) {
+		return value;
+	}
+
+	return Object.fromEntries(
+		Object.entries(value)
+			.reverse()
+			.map(([key, slot]) => [key, reverseKeys(slot)]),
+	);
 }
 
 describe("parseCst", () => {
@@ -106,6 +124,14 @@ function isStringNode(node: CstNode): boolean {
 }
 
 describe(walkCst, () => {
+	it("should visit slots in lexical order whatever the key order", () => {
+		expect.assertions(1);
+
+		const source = "type T = A | B\nlocal x = f(1, 2)\n";
+
+		expect(printCst(reverseKeys(parseCst(source)))).toBe(source);
+	});
+
 	it("should enter nodes before their children and exit after them", () => {
 		expect.assertions(1);
 
@@ -151,6 +177,17 @@ describe(walkCst, () => {
 			"Return",
 			"LocalRef",
 		]);
+	});
+
+	it("should name a slot that holds no node, token, or list", () => {
+		expect.assertions(1);
+
+		const root = parseCst("return 1\n");
+		const statement = root.body.body[0]!;
+		assert(statement.type === "Return", "expected a return statement");
+		Object.assign(statement.values[0]!.node, { token: 1 });
+
+		expect(() => printCst(root)).toThrow("Number.token holds no node, token, or list");
 	});
 });
 

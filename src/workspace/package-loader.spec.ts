@@ -72,7 +72,10 @@ describe(loadWorkspacePackagesAsync, () => {
 				fileSystem,
 			},
 		);
-		expect(timing.profileAsync).toHaveBeenCalledOnce();
+		expect(timing.profileAsync).toHaveBeenCalledExactlyOnceWith(
+			"load-config:@halcyon/example",
+			expect.any(Function),
+		);
 	});
 
 	it("should preserve every explicit per-package coverage and Rojo override", async () => {

@@ -121,11 +121,18 @@ describe(runJestRobloxAsync, () => {
 
 		const dispatch = makeDispatch();
 
-		await runJestRobloxAsync(makeCli({ packages: "foo,bar" }), makeConfig(), undefined, {
+		const cli = makeCli({ packages: "foo,bar" });
+
+		await runJestRobloxAsync(cli, makeConfig(), undefined, {
 			dispatch,
 		});
 
-		expect(dispatch.runWorkspaceMode).toHaveBeenCalledOnce();
+		expect(dispatch.runWorkspaceMode).toHaveBeenCalledExactlyOnceWith(
+			cli,
+			undefined,
+			expect.anything(),
+			expect.anything(),
+		);
 	});
 
 	it("should dispatch to runWorkspaceMode when --affected-since is set", async () => {
@@ -133,11 +140,18 @@ describe(runJestRobloxAsync, () => {
 
 		const dispatch = makeDispatch();
 
-		await runJestRobloxAsync(makeCli({ affectedSince: "main" }), makeConfig(), undefined, {
+		const cli = makeCli({ affectedSince: "main" });
+
+		await runJestRobloxAsync(cli, makeConfig(), undefined, {
 			dispatch,
 		});
 
-		expect(dispatch.runWorkspaceMode).toHaveBeenCalledOnce();
+		expect(dispatch.runWorkspaceMode).toHaveBeenCalledExactlyOnceWith(
+			cli,
+			undefined,
+			expect.anything(),
+			expect.anything(),
+		);
 	});
 
 	it("should dispatch to runMultiProject when config.projects is non-empty", async () => {
@@ -151,7 +165,9 @@ describe(runJestRobloxAsync, () => {
 		const result = await runJestRobloxAsync(makeCli(), config, undefined, { dispatch });
 
 		expect(result).toBe(MULTI);
-		expect(dispatch.runMultiProject).toHaveBeenCalledOnce();
+		expect(dispatch.runMultiProject).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ rawProjects: config.projects }),
+		);
 	});
 
 	it("should collapse a no-projects runtime run into runResolvedProjects", async () => {
@@ -167,7 +183,10 @@ describe(runJestRobloxAsync, () => {
 			expect.anything(),
 			expect.anything(),
 		);
-		expect(dispatch.loadRojoTree).toHaveBeenCalledOnce();
+		expect(dispatch.loadRojoTree).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ rootDir: "/test" }),
+			expect.anything(),
+		);
 		expect(timingLines(stderr)).toContain("[TIMING] loadRojoTree: start\n");
 		expect(timingLines(stderr).at(-1)).toContain("TOTAL (host)");
 	});
@@ -234,7 +253,11 @@ describe(runJestRobloxAsync, () => {
 
 		await runJestRobloxAsync(makeCli(), makeConfig({ projects: [] }), undefined, { dispatch });
 
-		expect(dispatch.runResolvedProjects).toHaveBeenCalledOnce();
+		expect(dispatch.runResolvedProjects).toHaveBeenCalledExactlyOnceWith(
+			[IMPLICIT_PROJECT],
+			expect.anything(),
+			expect.anything(),
+		);
 	});
 
 	// `--typecheckOnly` is pure-local tsgo, so the collapse must not require a
@@ -253,7 +276,11 @@ describe(runJestRobloxAsync, () => {
 		);
 
 		expect(result).toBe(MULTI);
-		expect(dispatch.runResolvedProjects).toHaveBeenCalledOnce();
+		expect(dispatch.runResolvedProjects).toHaveBeenCalledExactlyOnceWith(
+			[IMPLICIT_PROJECT],
+			expect.anything(),
+			expect.anything(),
+		);
 		expect(dispatch.loadRojoTree).not.toHaveBeenCalled();
 	});
 

@@ -349,11 +349,21 @@ describe("place reuse", () => {
 		const rojo = seedBuild();
 		const first = await buildAsync(rojo);
 
-		expect(rojo.execFile).toHaveBeenCalledOnce();
+		expect(rojo.execFile).toHaveBeenCalledExactlyOnceWith(
+			"rojo",
+			["build", PROJECT_FILE, "-o", PLACE_FILE],
+			{ windowsHide: true },
+			expect.any(Function),
+		);
 
 		const second = await buildAsync(rojo);
 
-		expect(rojo.execFile).toHaveBeenCalledOnce();
+		expect(rojo.execFile).toHaveBeenCalledExactlyOnceWith(
+			"rojo",
+			["build", PROJECT_FILE, "-o", PLACE_FILE],
+			{ windowsHide: true },
+			expect.any(Function),
+		);
 		expect(second).toStrictEqual(first);
 	});
 
@@ -636,7 +646,12 @@ describe("code bundle", () => {
 
 		// The harness never held that file, so its key cannot have moved — and
 		// the bundle is written from disk either way, reuse or no reuse.
-		expect(rojo.execFile).toHaveBeenCalledOnce();
+		expect(rojo.execFile).toHaveBeenCalledExactlyOnceWith(
+			"rojo",
+			["build", PROJECT_FILE, "-o", PLACE_FILE],
+			{ windowsHide: true },
+			expect.any(Function),
+		);
 		// `out/init.luau` promotes the mount itself, so the edit lands on the
 		// mount root rather than on an entry beneath it.
 		expect(readBundle(rojo).mounts[0]!.root.source).toBe("return 2");

@@ -479,7 +479,12 @@ describe(prepareWorkspaceCoverage, () => {
 
 		// Cache disabled → cold path: instrumenter runs even though the manifest
 		// matched.
-		expect(instrumenter).toHaveBeenCalledOnce();
+		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")),
+				skipFiles: undefined,
+			}),
+		);
 	});
 
 	it("should discard a manifest whose coverage universe no longer matches", async () => {
@@ -591,7 +596,12 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		expect(instrumenter).toHaveBeenCalledOnce();
+		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")),
+				skipFiles: undefined,
+			}),
+		);
 	});
 
 	it.for([
@@ -629,7 +639,12 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		expect(instrumenter).toHaveBeenCalledOnce();
+		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")),
+				skipFiles: undefined,
+			}),
+		);
 		expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining(expectedWarning));
 	});
 
@@ -701,7 +716,12 @@ describe(prepareWorkspaceCoverage, () => {
 
 		// Cache record points at a missing file → drop it from skipFiles
 		// and call the instrumenter for a fresh run.
-		expect(instrumenter).toHaveBeenCalledOnce();
+		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")),
+				skipFiles: new Set(),
+			}),
+		);
 	});
 
 	// Workspace incremental cache: when the per-package manifest already
@@ -1185,7 +1205,9 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		expect(instrumenter).toHaveBeenCalledOnce();
+		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")) }),
+		);
 		expect(result[0]!.coverageRoots).toStrictEqual([
 			{
 				luauRoot: toPosixRoot("out"),
@@ -1221,7 +1243,9 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		expect(instrumenter).toHaveBeenCalledOnce();
+		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")) }),
+		);
 	});
 
 	it("should treat an empty coveragePathIgnorePatterns list as ignoring nothing", async () => {
@@ -1240,7 +1264,9 @@ describe(prepareWorkspaceCoverage, () => {
 			workspaceRoot: WORKSPACE_ROOT,
 		});
 
-		expect(instrumenter).toHaveBeenCalledOnce();
+		expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "out")) }),
+		);
 	});
 
 	it("should require explicit luauRoots to correspond to collected rojo mounts", async () => {
@@ -1454,7 +1480,11 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
+				}),
+			);
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
@@ -1600,7 +1630,11 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
+				}),
+			);
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
@@ -1708,7 +1742,11 @@ describe(prepareWorkspaceCoverage, () => {
 
 			expect(volume.existsSync(`${packageShadow}/src/init.cov-map.json`)).toBeFalse();
 			expect(result!.manifest.nonInstrumentedFiles).not.toHaveProperty(mirroredKey);
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
+				}),
+			);
 		});
 
 		it("should instrument every mount when the descriptor opts out of every pattern via an empty array", async () => {
@@ -1777,7 +1815,11 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src/client")),
+				}),
+			);
 			expect(result!.coverageRoots.map((root): string => root.luauRoot)).toStrictEqual([
 				"src/client",
 			]);
@@ -1976,7 +2018,11 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "..cache")),
+				}),
+			);
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"..cache",
 			]);
@@ -2054,7 +2100,11 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src/client")),
+				}),
+			);
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src/client",
 			]);
@@ -2094,7 +2144,11 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
+				}),
+			);
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
@@ -2121,7 +2175,11 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
+				}),
+			);
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);
@@ -2164,7 +2222,11 @@ describe(prepareWorkspaceCoverage, () => {
 				workspaceRoot: WORKSPACE_ROOT,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: normalizeWindowsPath(path.join(FOO_DIR, "src")),
+				}),
+			);
 			expect(result!.coverageRoots.map((entry): string => entry.luauRoot)).toStrictEqual([
 				"src",
 			]);

@@ -553,7 +553,17 @@ describe(demotePinnedMountsAsync, () => {
 			}),
 		);
 
-		expect(rojo.execFile).toHaveBeenCalledOnce();
+		expect(rojo.execFile).toHaveBeenCalledExactlyOnceWith(
+			"rojo",
+			[
+				"build",
+				expect.any(String),
+				"-o",
+				expect.stringMatching(/StarterPlayerScripts-[\da-f]{8}\.rbxmx$/),
+			],
+			{ windowsHide: true },
+			expect.any(Function),
+		);
 	});
 
 	it("should not recurse into reserved dollar-prefixed metadata nodes", async () => {

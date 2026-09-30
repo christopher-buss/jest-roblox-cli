@@ -96,6 +96,12 @@ function changingMetadata(field: "chunkCount" | "uncompressedLength") {
 }
 
 const credentials = { apiKey: "key", universeId: "universe" };
+const firstChunk = {
+	itemId: expect.stringMatching(/:1$/u),
+	mapId: "jest-roblox-result-relay-v1",
+	universeId: credentials.universeId,
+};
+const signalOption: Record<string, unknown> = { signal: expect.any(AbortSignal) };
 
 describe("ambiguous submissions", () => {
 	it("should give a delayed accepted relay the remaining observation time", async () => {
@@ -520,8 +526,11 @@ describe(executeWithResultRelayAsync, () => {
 		run.published.resolve();
 
 		await expect(run.outcome).resolves.toMatchObject({ outputs: run.outputs });
-		expect(originalReader).toHaveBeenCalledOnce();
-		expect(run.submit).toHaveBeenCalledOnce();
+		expect(originalReader).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
+		expect(run.submit).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining("return 'complete result'"),
+			expect.any(AbortSignal),
+		);
 		expect(
 			run.executeAsync.mock.calls.map(([context]) => context.observationSignal.aborted),
 		).toStrictEqual([true, true]);
@@ -559,7 +568,7 @@ describe(executeWithResultRelayAsync, () => {
 		assert.instanceOf(timeout, ExecutionTimeoutError);
 
 		await expect(timeout.readResultAsync()).resolves.toMatchObject({ outputs: ["complete"] });
-		expect(relay.get).toHaveBeenCalledOnce();
+		expect(relay.get).toHaveBeenCalledExactlyOnceWith(firstChunk, signalOption);
 		expect(relay.remove).toHaveBeenCalledTimes(2);
 		expect(relay.remove.mock.calls[1]![1]!.signal!.aborted).toBeTrue();
 	});
@@ -627,14 +636,17 @@ describe(executeWithResultRelayAsync, () => {
 		expect(
 			run.remove.mock.calls.filter(([parameters]) => parameters.itemId.endsWith(":1")),
 		).toHaveLength(1);
-		expect(run.submit).toHaveBeenCalledOnce();
+		expect(run.submit).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining("return 'complete result'"),
+			expect.any(AbortSignal),
+		);
 		expect(
 			run.executeAsync.mock.calls.map(([context]) => context.observationSignal.aborted),
 		).toStrictEqual([true, true]);
 	});
 
 	it("should receive the original relay after native recovery starts", async () => {
-		expect.assertions(4);
+		expect.assertions(3);
 
 		const run = recoveringRelay();
 		const stopped = Promise.withResolvers<void>();
@@ -657,9 +669,13 @@ describe(executeWithResultRelayAsync, () => {
 
 		await stopped.promise;
 
-		expect(run.readResultAsync.mock.calls[0]![0]!.aborted).toBeTrue();
-		expect(run.readResultAsync).toHaveBeenCalledOnce();
-		expect(run.submit).toHaveBeenCalledOnce();
+		expect(run.readResultAsync).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ aborted: true }),
+		);
+		expect(run.submit).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining("return 'complete result'"),
+			expect.any(AbortSignal),
+		);
 	});
 
 	it("should resume buffered relay chunks when the hedge outlasts the retained reader", async () => {
@@ -678,7 +694,10 @@ describe(executeWithResultRelayAsync, () => {
 		run.hedge.resolve({ durationMs: 1, outputs: [EXECUTION_NOT_CLAIMED] });
 
 		await expect(run.outcome).resolves.toMatchObject({ outputs: run.outputs });
-		expect(run.submit).toHaveBeenCalledOnce();
+		expect(run.submit).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining("return 'complete result'"),
+			expect.any(AbortSignal),
+		);
 		expect(
 			run.remove.mock.calls.filter(([parameters]) => parameters.itemId.endsWith(":1")),
 		).toHaveLength(1);
@@ -917,7 +936,7 @@ describe(executeWithResultRelayAsync, () => {
 				timeout: 1000,
 			}),
 		).resolves.toMatchObject({ outputs: ["native"] });
-		expect(relay.get).toHaveBeenCalledOnce();
+		expect(relay.get).toHaveBeenCalledExactlyOnceWith(firstChunk, signalOption);
 		expect(relay.remove).not.toHaveBeenCalled();
 	});
 
@@ -1071,7 +1090,7 @@ describe(executeWithResultRelayAsync, () => {
 				},
 			}),
 		).resolves.toMatchObject({ outputs: ["native"] });
-		expect(get).toHaveBeenCalledOnce();
+		expect(get).toHaveBeenCalledExactlyOnceWith(firstChunk, signalOption);
 	});
 
 	it("should fall back when deleting an acknowledged chunk fails", async () => {
@@ -1092,7 +1111,7 @@ describe(executeWithResultRelayAsync, () => {
 				timeout: 1000,
 			}),
 		).resolves.toMatchObject({ outputs: ["native"] });
-		expect(relay.remove).toHaveBeenCalledOnce();
+		expect(relay.remove).toHaveBeenCalledExactlyOnceWith(firstChunk, signalOption);
 	});
 
 	it("should never return an incomplete relay when a later chunk is missing", async () => {
@@ -1117,7 +1136,7 @@ describe(executeWithResultRelayAsync, () => {
 			}),
 		).resolves.toMatchObject({ outputs: ["native"] });
 		expect(relay.get).toHaveBeenCalledTimes(2);
-		expect(relay.remove).toHaveBeenCalledOnce();
+		expect(relay.remove).toHaveBeenCalledExactlyOnceWith(firstChunk, signalOption);
 	});
 
 	it("should poll again after the default wait settles", async () => {
@@ -1188,7 +1207,7 @@ describe(executeWithResultRelayAsync, () => {
 				timeout: 1000,
 			}),
 		).resolves.toMatchObject({ outputs: ["native"] });
-		expect(relay.remove).toHaveBeenCalledOnce();
+		expect(relay.remove).toHaveBeenCalledExactlyOnceWith(firstChunk, signalOption);
 	});
 
 	it.for(["chunkCount", "uncompressedLength"] as const)(
@@ -1208,7 +1227,7 @@ describe(executeWithResultRelayAsync, () => {
 				}),
 			).resolves.toMatchObject({ outputs: ["native"] });
 			expect(relay.get).toHaveBeenCalledTimes(2);
-			expect(relay.remove).toHaveBeenCalledOnce();
+			expect(relay.remove).toHaveBeenCalledExactlyOnceWith(firstChunk, signalOption);
 		},
 	);
 
@@ -1233,6 +1252,6 @@ describe(executeWithResultRelayAsync, () => {
 				timeout: 1000,
 			}),
 		).resolves.toMatchObject({ outputs: ["native"] });
-		expect(relay.remove).toHaveBeenCalledOnce();
+		expect(relay.remove).toHaveBeenCalledExactlyOnceWith(firstChunk, signalOption);
 	});
 });

@@ -1769,7 +1769,17 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(execFile).toHaveBeenCalledOnce();
+			expect(execFile).toHaveBeenCalledExactlyOnceWith(
+				"rojo",
+				[
+					"build",
+					expect.any(String),
+					"-o",
+					path.join(".jest-roblox", "place", "game.rbxl"),
+				],
+				{ windowsHide: true },
+				expect.any(Function),
+			);
 		});
 
 		it("should rebuild when the prior place sits outside the place directory", async () => {
@@ -1792,7 +1802,17 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(execFile).toHaveBeenCalledOnce();
+			expect(execFile).toHaveBeenCalledExactlyOnceWith(
+				"rojo",
+				[
+					"build",
+					expect.any(String),
+					"-o",
+					path.join(".jest-roblox", "place", "game.rbxl"),
+				],
+				{ windowsHide: true },
+				expect.any(Function),
+			);
 		});
 
 		it("should rebuild when no files changed but the prior place hash drifted", async () => {
@@ -1830,7 +1850,17 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(execFile).toHaveBeenCalledOnce();
+			expect(execFile).toHaveBeenCalledExactlyOnceWith(
+				"rojo",
+				[
+					"build",
+					expect.any(String),
+					"-o",
+					path.join(".jest-roblox", "place", "game.rbxl"),
+				],
+				{ windowsHide: true },
+				expect.any(Function),
+			);
 			expect(stderr).toHaveBeenCalledWith(
 				"Warning: Previous build manifest is unusable (coverage-place-hash-mismatch); rebuilding place.\n",
 			);
@@ -1933,7 +1963,12 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: "out-tsc/test",
+					skipFiles: new Set(["init.luau"]),
+				}),
+			);
 		});
 
 		it("should call instrumentRoot when a file is deleted", async () => {
@@ -1972,7 +2007,12 @@ describe(prepareCoverageAsync, () => {
 				tsconfigReader: noTsconfig,
 			});
 
-			expect(instrumenter).toHaveBeenCalledOnce();
+			expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					luauRoot: "out-tsc/test",
+					skipFiles: new Set(["a.luau"]),
+				}),
+			);
 		});
 
 		it("should still rebuild rojo when only non-instrumented file changed", async () => {
@@ -2005,7 +2045,17 @@ describe(prepareCoverageAsync, () => {
 			});
 
 			expect(instrumenter).not.toHaveBeenCalled();
-			expect(execFile).toHaveBeenCalledOnce();
+			expect(execFile).toHaveBeenCalledExactlyOnceWith(
+				"rojo",
+				[
+					"build",
+					expect.any(String),
+					"-o",
+					path.join(".jest-roblox", "place", "game.rbxl"),
+				],
+				{ windowsHide: true },
+				expect.any(Function),
+			);
 		});
 
 		it("should wipe and re-instrument all when cache is disabled", async () => {
@@ -2415,7 +2465,17 @@ describe(prepareCoverageAsync, () => {
 					tsconfigReader: noTsconfig,
 				});
 
-				expect(execFile).toHaveBeenCalledOnce();
+				expect(execFile).toHaveBeenCalledExactlyOnceWith(
+					"rojo",
+					[
+						"build",
+						expect.any(String),
+						"-o",
+						path.join(".jest-roblox", "place", "game.rbxl"),
+					],
+					{ windowsHide: true },
+					expect.any(Function),
+				);
 			});
 
 			it("should reuse the place and log when rojo inputs are unchanged", async () => {
@@ -2853,7 +2913,9 @@ describe(prepareCoverageAsync, () => {
 				// Warm, `instrumentable.size === previousCount` can cancel a
 				// newly-ignored file against a newly-added one and short-circuit
 				// into a full cache hit, which never instruments at all.
-				expect(instrumenter).toHaveBeenCalledOnce();
+				expect(instrumenter).toHaveBeenCalledExactlyOnceWith(
+					expect.objectContaining({ luauRoot: "out-tsc/test", skipFiles: undefined }),
+				);
 			});
 
 			it("should reuse the cache when the copy-ignore list only reorders", async () => {
@@ -5220,7 +5282,12 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		});
 
 		expect(second.rebuilt).toBeFalse();
-		expect(execFile).toHaveBeenCalledOnce();
+		expect(execFile).toHaveBeenCalledExactlyOnceWith(
+			"rojo",
+			["build", expect.any(String), "-o", path.join(".jest-roblox", "place", "game.rbxl")],
+			{ windowsHide: true },
+			expect.any(Function),
+		);
 		// A buildId that moves on an unchanged rerun is what the mutation
 		// tester reads as a fresh place, so reuse is only half the contract.
 		expect(second.buildId).toBe(first.buildId);
@@ -5256,7 +5323,12 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		// the same run — the churn a stub the sweep spares does not have.
 		expect(second.rebuilt).toBeFalse();
 		expect(second.buildId).toBe(first.buildId);
-		expect(execFile).toHaveBeenCalledOnce();
+		expect(execFile).toHaveBeenCalledExactlyOnceWith(
+			"rojo",
+			["build", expect.any(String), "-o", path.join(".jest-roblox", "place", "game.rbxl")],
+			{ windowsHide: true },
+			expect.any(Function),
+		);
 	});
 
 	it("should clear an orphan mount directory of all but the baked stub", async () => {
@@ -5393,7 +5465,12 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		});
 
 		expect(second.rebuilt).toBeFalse();
-		expect(execFile).toHaveBeenCalledOnce();
+		expect(execFile).toHaveBeenCalledExactlyOnceWith(
+			"rojo",
+			["build", expect.any(String), "-o", path.join(".jest-roblox", "place", "game.rbxl")],
+			{ windowsHide: true },
+			expect.any(Function),
+		);
 		expect(
 			volume.existsSync(".jest-roblox/coverage/out/absent/deep/jest.config.luau"),
 		).toBeTrue();

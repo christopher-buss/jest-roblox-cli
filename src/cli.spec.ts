@@ -6,6 +6,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { MockInstance } from "vitest";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
+import packageJson from "../package.json" with { type: "json" };
 import { createMemoryFileSystem } from "../test/mocks/memory-file-system.ts";
 import type { CliDependencies } from "./cli.ts";
 import { main, parseArgs, REPEATABLE_FLAGS, runAsync } from "./cli.ts";
@@ -1515,7 +1516,7 @@ describe("runInner orchestration", () => {
 		const code = await runAsync(["--version"], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(spies.consoleLog).toHaveBeenCalledOnce();
+		expect(spies.consoleLog).toHaveBeenCalledExactlyOnceWith(packageJson.version);
 		expect(cli.loadConfig).not.toHaveBeenCalled();
 	});
 
@@ -1589,18 +1590,19 @@ describe("runInner orchestration", () => {
 	});
 
 	it("should pass cli flags into runJestRoblox", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		setupOutputSpies();
 		const cli = setupDefaults();
 
 		await runAsync(["--verbose"], cli.dependencies);
 
-		expect(cli.runJestRoblox).toHaveBeenCalledOnce();
-
-		const [options] = cli.runJestRoblox.mock.calls[0]!;
-
-		expect(options.verbose).toBeTrue();
+		expect(cli.runJestRoblox).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ verbose: true }),
+			expect.anything(),
+			expect.anything(),
+			{ fileSystem: cli.fileSystem },
+		);
 	});
 
 	it("should propagate a non-zero exit code from outputMultiResult", async () => {
@@ -1713,14 +1715,15 @@ describe("runInner orchestration", () => {
 
 		setupOutputSpies();
 		const cli = setupDefaults();
-		cli.runJestRoblox.mockResolvedValue(
-			makeMultiResult({ projectResults: [], typecheckResult: makeJestResult() }),
-		);
+		const result = makeMultiResult({ projectResults: [], typecheckResult: makeJestResult() });
+		cli.runJestRoblox.mockResolvedValue(result);
 
 		const code = await runAsync([], cli.dependencies);
 
 		expect(code).toBe(0);
-		expect(cli.outputMultiResult).toHaveBeenCalledOnce();
+		expect(cli.outputMultiResult).toHaveBeenCalledExactlyOnceWith(expect.anything(), result, {
+			fileSystem: cli.fileSystem,
+		});
 	});
 
 	it("should let --no-coverage override config that enables coverage", async () => {

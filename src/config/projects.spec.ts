@@ -1159,7 +1159,9 @@ describe(loadProjectConfigFile, () => {
 			"Failed to load project config file ./broken.config.ts: Syntax error in config",
 		);
 		await expect(promise).rejects.toHaveProperty("cause", cause);
-		expect(configLoader).toHaveBeenCalledOnce();
+		expect(configLoader).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ configFile: "./broken.config.ts", cwd: "/project" }),
+		);
 	});
 
 	it("should extract displayName from object-style displayName", async () => {

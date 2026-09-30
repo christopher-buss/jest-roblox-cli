@@ -827,7 +827,12 @@ describe(runMultiProjectAsync, () => {
 			seams,
 		});
 
-		expect(mocks.execFile).toHaveBeenCalledOnce();
+		expect(mocks.execFile).toHaveBeenCalledExactlyOnceWith(
+			"rojo",
+			["build", SYNTH_PROJECT, "-o", expect.any(String)],
+			{ windowsHide: true },
+			expect.any(Function),
+		);
 		expect(volume.existsSync(SYNTH_PROJECT)).toBeTrue();
 	});
 
@@ -847,7 +852,7 @@ describe(runMultiProjectAsync, () => {
 		});
 
 		expect(mocks.execFile).not.toHaveBeenCalled();
-		expect(mocks.prepareCoverage).toHaveBeenCalledOnce();
+		expect(mocks.prepareCoverage).toHaveBeenCalledExactlyOnceWith(config, expect.anything());
 		expect(result.coverageMs).toBeGreaterThanOrEqual(0);
 	});
 
@@ -1029,7 +1034,7 @@ describe(runMultiProjectAsync, () => {
 		// already-present `jest.config` ("Structural collision …"). So coverage
 		// prep must skip the stub bake for this backend and let
 		// runtime injection be the sole config source.
-		expect.assertions(2);
+		expect.assertions(1);
 
 		// Auto, so the resolved backend rather than the config decides.
 		const { config, fileSystem, volume } = setupDefaults({
@@ -1037,12 +1042,7 @@ describe(runMultiProjectAsync, () => {
 			collectCoverage: true,
 		});
 		mocks.resolveBackend.mockResolvedValue(makeBackend("studio-cli"));
-		mocks.prepareCoverage.mockImplementation(async (_config, options) => {
-			// The absent bake *is* the contract: no hook, no stub in the place.
-			expect(options!.bake).toBeUndefined();
-
-			return fromAny(makeCoverageResult());
-		});
+		mocks.prepareCoverage.mockResolvedValue(fromAny(makeCoverageResult()));
 		seedProjectFiles(volume);
 
 		await runMultiProjectAsync({
@@ -1053,7 +1053,11 @@ describe(runMultiProjectAsync, () => {
 			seams,
 		});
 
-		expect(mocks.prepareCoverage).toHaveBeenCalledOnce();
+		// The absent bake *is* the contract: no hook, no stub in the place.
+		expect(mocks.prepareCoverage).toHaveBeenCalledExactlyOnceWith(
+			config,
+			expect.objectContaining({ bake: undefined }),
+		);
 	});
 
 	it("should return validationExitCode 2 with message when no test files found", async () => {
@@ -1304,7 +1308,11 @@ describe(runMultiProjectAsync, () => {
 				tsconfig: "tsconfig.cli.json",
 			}),
 		);
-		expect(mocks.runProjects).toHaveBeenCalledOnce();
+		expect(mocks.runProjects).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				projects: [expect.objectContaining({ displayName: "client" })],
+			}),
+		);
 	});
 
 	it("should run typecheck-only without resolving a backend or runtime jobs", async () => {
@@ -1358,17 +1366,22 @@ describe(runMultiProjectAsync, () => {
 				typecheck: { enabled: true, only: false },
 			}),
 		]);
+		const cli = makeCli();
 
 		await runMultiProjectAsync({
-			cli: makeCli(),
+			cli,
 			config,
 			fileSystem,
 			rawProjects: [makeProjectEntry("client"), makeProjectEntry("server")],
 			seams,
 		});
 
-		expect(mocks.resolveBackend).toHaveBeenCalledOnce();
-		expect(mocks.runProjects).toHaveBeenCalledOnce();
+		expect(mocks.resolveBackend).toHaveBeenCalledExactlyOnceWith(cli, config);
+		expect(mocks.runProjects).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				projects: [expect.objectContaining({ displayName: "server" })],
+			}),
+		);
 	});
 
 	it("should carry the configured timeout into the typecheck-only pass", async () => {
@@ -2146,11 +2159,11 @@ describe(runMultiProjectAsync, () => {
 				seams,
 			}),
 		).rejects.toBe(error);
-		expect(backend.closeAsync).toHaveBeenCalledOnce();
+		expect(backend.closeAsync).toHaveBeenCalledExactlyOnceWith();
 	});
 
 	it("should emit a stderr notice listing the leftover stubs cleaned", async () => {
-		expect.assertions(2);
+		expect.assertions(1);
 
 		const { config, fileSystem, volume } = setupDefaults();
 		const leftover = seedLeftoverStubs(volume);
@@ -2165,12 +2178,7 @@ describe(runMultiProjectAsync, () => {
 			seams,
 		});
 
-		expect(stderr).toHaveBeenCalledOnce();
-
-		const written = stderr.mock.calls[0]![0];
-		assert(typeof written === "string", "stderr.write called with non-string");
-
-		expect(written).toBe(
+		expect(stderr).toHaveBeenCalledExactlyOnceWith(
 			`jest-roblox: cleaned 2 leftover stub(s):\n  ${leftover[0]}\n  ${leftover[1]}\n`,
 		);
 	});

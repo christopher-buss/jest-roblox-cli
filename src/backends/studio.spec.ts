@@ -328,7 +328,9 @@ describe("protocol version handshake", () => {
 
 		await promise;
 
-		expect(current.send).toHaveBeenCalledOnce();
+		expect(current.send).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining('"action":"run_tests"'),
+		);
 		expect(stale.send).not.toHaveBeenCalled();
 		expect(ancient.send).not.toHaveBeenCalled();
 	});
@@ -471,7 +473,9 @@ describe(StudioBackend, () => {
 
 		await promise;
 
-		expect(socket.send).toHaveBeenCalledOnce();
+		expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining('"action":"run_tests"'),
+		);
 		expect(capturedConfig!.configs).toHaveLength(2);
 		expect(capturedConfig!.configs[0]!.testNamePattern).toBe("alpha-pattern");
 		expect(capturedConfig!.configs[1]!.testNamePattern).toBe("beta-pattern");
@@ -681,7 +685,7 @@ describe(StudioBackend, () => {
 		await promise;
 
 		expect(begin).toHaveBeenCalledExactlyOnceWith("tests", "1 project");
-		expect(done).toHaveBeenCalledOnce();
+		expect(done).toHaveBeenCalledExactlyOnceWith();
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
@@ -993,12 +997,12 @@ describe(StudioBackend, () => {
 
 		backend.closeAsync();
 
-		expect(wss.close).toHaveBeenCalledOnce();
+		expect(wss.close).toHaveBeenCalledExactlyOnceWith();
 
 		// A second close() should no-op rather than double-closing.
 		backend.closeAsync();
 
-		expect(wss.close).toHaveBeenCalledOnce();
+		expect(wss.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
 	it("should listen on a real server when given no server factory", async () => {
@@ -1029,7 +1033,7 @@ describe(StudioBackend, () => {
 
 		backend.closeAsync();
 
-		expect(socket.terminate).toHaveBeenCalledOnce();
+		expect(socket.terminate).toHaveBeenCalledExactlyOnceWith();
 	});
 
 	it("should stop the pending selection on close so the CLI can exit", async () => {

@@ -60,8 +60,8 @@ describe(createV3Mapper, () => {
 		mapper.mapFromSourceMap("/cached.luau", 1);
 		mapper.mapFromSourceMap("/cached.luau", 1);
 
-		expect(readFile).toHaveBeenCalledOnce();
-		expect(exists).toHaveBeenCalledOnce();
+		expect(readFile).toHaveBeenCalledExactlyOnceWith("/cached.luau.map", "utf-8");
+		expect(exists).toHaveBeenCalledExactlyOnceWith("/cached.luau.map");
 	});
 
 	// Two mappers must not share a parse cache: one spec file's reads would
@@ -75,7 +75,7 @@ describe(createV3Mapper, () => {
 
 		createV3Mapper(fileSystem).mapFromSourceMap("/cached.luau", 1);
 
-		expect(readFile).toHaveBeenCalledOnce();
+		expect(readFile).toHaveBeenCalledExactlyOnceWith("/cached.luau.map", "utf-8");
 	});
 
 	it("should return undefined for source content when the map file is missing", () => {

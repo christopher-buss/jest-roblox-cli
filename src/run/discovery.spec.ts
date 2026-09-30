@@ -240,7 +240,12 @@ describe(resolveAllSetupFilePaths, () => {
 		const b = makeConfig({ setupFilesAfterEnv: ["./b.ts"] });
 		resolveAllSetupFilePaths([a, b], createResolver);
 
-		expect(createResolver).toHaveBeenCalledOnce();
+		expect(createResolver).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				configDirectory: "/project",
+				rojoConfigPath: path.resolve("/project", "default.project.json"),
+			}),
+		);
 		expect([a.setupFiles, b.setupFilesAfterEnv]).toStrictEqual([["r:./a.ts"], ["r:./b.ts"]]);
 	});
 
@@ -267,7 +272,12 @@ describe(resolveAllSetupFilePaths, () => {
 		const withSetup = makeConfig({ setupFiles: ["./a.ts"] });
 		resolveAllSetupFilePaths([empty, withSetup], createResolver);
 
-		expect(createResolver).toHaveBeenCalledOnce();
+		expect(createResolver).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				configDirectory: "/project",
+				rojoConfigPath: path.resolve("/project", "default.project.json"),
+			}),
+		);
 		expect(withSetup.setupFiles).toStrictEqual(["r:./a.ts"]);
 	});
 });

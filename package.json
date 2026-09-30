@@ -108,7 +108,7 @@
 		"@typescript/native": "npm:typescript@7.0.2",
 		"@typescript/native-preview": "7.0.0-dev.20260707.2",
 		"@vitest/coverage-v8": "5.0.1",
-		"@vitest/eslint-plugin": "1.6.19",
+		"@vitest/eslint-plugin": "1.6.27",
 		"better-typescript-lib": "2.12.0",
 		"bumpp": "11.1.0",
 		"eslint": "10.9.0",

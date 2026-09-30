@@ -2,7 +2,7 @@ import assert from "node:assert";
 
 import type { CstEdits, Removal, Replacement } from "./cst-edit.ts";
 import { isCstNode, tokenBounds, walkCst } from "./cst.ts";
-import type { CstNode, CstRoot, Token, TokenBounds, Trivia } from "./cst.ts";
+import type { CstNode, CstRoot, CstValue, Token, TokenBounds, Trivia } from "./cst.ts";
 import type { SourceBytes } from "./source-bytes.ts";
 
 /**
@@ -173,7 +173,7 @@ function emitToken(printer: Printer, token: Token): void {
 }
 
 /** The tree walk; a replaced node prints its replacement and is not entered. */
-function walk(printer: Printer, value: unknown): void {
+function walk(printer: Printer, value: CstValue): void {
 	walkCst(value, {
 		onNode: (target) => {
 			const replacement = printer.edits?.replacementFor(target);

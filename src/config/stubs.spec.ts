@@ -1666,7 +1666,7 @@ describe(isGeneratedStub, () => {
 		);
 
 		expect(isGeneratedStub("/root/out/Server/jest.config.luau", fileSystem)).toBeTrue();
-		expect(closeSpy).toHaveBeenCalledOnce();
+		expect(closeSpy).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
 	});
 
 	it("should return false for a user-authored file without the marker", () => {

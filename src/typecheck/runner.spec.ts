@@ -923,7 +923,7 @@ describe(runTypecheckAsync, () => {
 			}),
 		).rejects.toThrow(/spawn timed out after 1ms \(spawnTimeout\)/);
 
-		expect(kill).toHaveBeenCalledOnce();
+		expect(kill).toHaveBeenCalledExactlyOnceWith();
 
 		// The kill's late `killed` callback arrives after the launch timer
 		// already settled the promise — it must be a silent no-op.

@@ -118,7 +118,10 @@ describe(runDispatchedProjectsAsync, () => {
 			tsconfigCache,
 			version: "1.2.3",
 		});
-		expect(timing.profileAsync).toHaveBeenCalledOnce();
+		expect(timing.profileAsync).toHaveBeenCalledExactlyOnceWith(
+			"runProjects",
+			expect.any(Function),
+		);
 	});
 });
 

@@ -1,7 +1,6 @@
 /**
  * Expression nodes of the concrete syntax tree. Slots are listed here in
- * alphabetical order; the serializer emits them in lexical order, which is
- * the order a walk over a node's values visits them.
+ * alphabetical order; `CST_SLOTS` holds the lexical order walks visit them in.
  */
 
 import type { LuauSpan } from "./ast.ts";

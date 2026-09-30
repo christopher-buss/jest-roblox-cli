@@ -819,7 +819,11 @@ describe(getAffectedPackages, () => {
 		expect(getAffectedPackages(ROOT, "develop", { childProcess, fileSystem })).toStrictEqual(
 			[],
 		);
-		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledOnce();
+		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledExactlyOnceWith(
+			expect.any(String),
+			expect.any(Array),
+			expect.objectContaining({ cwd: ROOT }),
+		);
 	});
 
 	it("should accept any jest.config.<ext> as the marker", () => {

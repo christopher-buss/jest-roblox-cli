@@ -21,6 +21,13 @@ const DECLINED: ScriptResult = {
 	durationMs: 1,
 	outputs: [EXECUTION_NOT_CLAIMED],
 };
+const ATTEMPT_CONTEXT: unknown = expect.objectContaining<Record<string, unknown>>({
+	claim: expect.any(String),
+	observationSignal: expect.any(AbortSignal),
+	submission: expect.objectContaining<Record<string, unknown>>({
+		accepted: expect.any(Function),
+	}),
+});
 
 function timeoutFailure(message = "Execution timed out"): Error {
 	return new Error(message, {
@@ -97,7 +104,10 @@ describe("open Cloud execution recovery", () => {
 		});
 		await vi.advanceTimersByTimeAsync(1_000);
 
-		expect(readClaimAsync).toHaveBeenCalledOnce();
+		expect(readClaimAsync).toHaveBeenCalledExactlyOnceWith(
+			expect.any(String),
+			expect.any(AbortSignal),
+		);
 
 		original.reject(timeoutFailure());
 		await vi.advanceTimersByTimeAsync(0);
@@ -312,7 +322,10 @@ describe("open Cloud execution recovery", () => {
 
 		await vi.advanceTimersByTimeAsync(1_000);
 
-		expect(readClaimAsync).toHaveBeenCalledOnce();
+		expect(readClaimAsync).toHaveBeenCalledExactlyOnceWith(
+			expect.any(String),
+			expect.any(AbortSignal),
+		);
 	});
 
 	it("should cancel a claim read when the original returns during observation", async () => {
@@ -402,7 +415,7 @@ describe("open Cloud execution recovery", () => {
 		});
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 		expect(readClaimAsync).not.toHaveBeenCalled();
 
 		accept!();
@@ -501,13 +514,16 @@ describe("open Cloud execution recovery", () => {
 
 		await vi.advanceTimersByTimeAsync(1_000);
 
-		expect(readClaimAsync).toHaveBeenCalledOnce();
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(readClaimAsync).toHaveBeenCalledExactlyOnceWith(
+			expect.any(String),
+			expect.any(AbortSignal),
+		);
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 
 		original.resolve(SUCCESS);
 
 		await expect(recovered).resolves.toBe(SUCCESS);
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 	});
 
 	it("should keep polling when the execution claim cannot be observed", async () => {
@@ -532,12 +548,12 @@ describe("open Cloud execution recovery", () => {
 
 		await vi.advanceTimersByTimeAsync(1_000);
 
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 
 		original.resolve(SUCCESS);
 
 		await expect(recovered).resolves.toBe(SUCCESS);
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 		expect(warning).toHaveBeenCalledExactlyOnceWith(
 			"Warning: could not observe the Open Cloud execution claim; keeping the original task.\n",
 		);
@@ -559,7 +575,7 @@ describe("open Cloud execution recovery", () => {
 
 		await vi.advanceTimersByTimeAsync(45_000);
 
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 
 		original.resolve(SUCCESS);
 
@@ -847,7 +863,7 @@ describe("open Cloud execution recovery", () => {
 		await expect(executeWithRecoveryAsync({ executeAsync, timeout: 30_000 })).resolves.toBe(
 			SUCCESS,
 		);
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 		expect(warning).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
 	});
@@ -920,7 +936,7 @@ describe("open Cloud execution recovery", () => {
 			await expect(executeWithRecoveryAsync({ executeAsync, timeout: 30_000 })).rejects.toBe(
 				failure,
 			);
-			expect(executeAsync).toHaveBeenCalledOnce();
+			expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 		},
 	);
 
@@ -976,7 +992,7 @@ describe("open Cloud execution recovery", () => {
 		await expect(executeWithRecoveryAsync({ executeAsync, timeout: 30_000 })).resolves.toBe(
 			SUCCESS,
 		);
-		expect(readResultAsync).toHaveBeenCalledOnce();
+		expect(readResultAsync).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
 		expect(executeAsync).toHaveBeenCalledTimes(2);
 	});
 
@@ -1011,11 +1027,11 @@ describe("open Cloud execution recovery", () => {
 		await expect(executeWithRecoveryAsync({ executeAsync, timeout: 30_000 })).resolves.toBe(
 			SUCCESS,
 		);
-		expect(readResultAsync).toHaveBeenCalledOnce();
+		expect(readResultAsync).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
 	});
 
 	it("should accept a recovered replacement while the original reader is still pending", async () => {
-		expect.assertions(5);
+		expect.assertions(4);
 
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		const stopped = Promise.withResolvers<void>();
@@ -1041,9 +1057,10 @@ describe("open Cloud execution recovery", () => {
 
 		await stopped.promise;
 
-		expect(originalReader.mock.calls[0]![0]!.aborted).toBeTrue();
-		expect(originalReader).toHaveBeenCalledOnce();
-		expect(replacementReader).toHaveBeenCalledOnce();
+		expect(originalReader).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ aborted: true }),
+		);
+		expect(replacementReader).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
 		expect(
 			executeAsync.mock.calls.map(([context]) => context.observationSignal.aborted),
 		).toStrictEqual([true, true]);
@@ -1126,7 +1143,7 @@ describe("open Cloud execution recovery", () => {
 		).rejects.toMatchObject({
 			message: "Test execution was already claimed; refusing to run tests twice.",
 		});
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 	});
 
 	it("should leave missing outputs and test failures to the result parser", async () => {
@@ -1150,7 +1167,7 @@ describe("open Cloud execution recovery", () => {
 		await expect(executeWithRecoveryAsync({ executeAsync, timeout: 30_000 })).rejects.toThrow(
 			"Test execution's start window expired; check the client clock and Open Cloud queue delay.",
 		);
-		expect(executeAsync).toHaveBeenCalledOnce();
+		expect(executeAsync).toHaveBeenCalledExactlyOnceWith(ATTEMPT_CONTEXT);
 	});
 
 	it("should preserve the original, replacement and read failures", async () => {

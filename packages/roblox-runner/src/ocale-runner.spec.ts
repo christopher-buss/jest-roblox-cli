@@ -577,7 +577,7 @@ describe(OcaleRunner, () => {
 				timeout: 30_000,
 			});
 
-			expect(onSubmitted).toHaveBeenCalledOnce();
+			expect(onSubmitted).toHaveBeenCalledExactlyOnceWith();
 			expect(result.outputs).toStrictEqual(["ok"]);
 		});
 
@@ -671,7 +671,7 @@ describe(OcaleRunner, () => {
 				await vi.advanceTimersByTimeAsync(75_000);
 
 				await expect(outcome).resolves.toContain("75s inactivity limit");
-				expect(cancelSubmitting).toHaveBeenCalledOnce();
+				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 			} finally {
 				vi.useRealTimers();
 			}
@@ -699,7 +699,7 @@ describe(OcaleRunner, () => {
 				await vi.advanceTimersByTimeAsync(60_000);
 
 				await expect(outcome).resolves.toContain("480s maximum");
-				expect(cancelSubmitting).toHaveBeenCalledOnce();
+				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 			} finally {
 				vi.useRealTimers();
 			}
@@ -751,7 +751,7 @@ describe(OcaleRunner, () => {
 
 				await vi.advanceTimersByTimeAsync(1);
 
-				expect(cancelSubmitting).toHaveBeenCalledOnce();
+				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 				await expect(observed).resolves.toContain("90s inactivity limit");
 			} finally {
 				vi.useRealTimers();
@@ -775,7 +775,7 @@ describe(OcaleRunner, () => {
 				await vi.advanceTimersByTimeAsync(495_000);
 
 				await expect(observed).resolves.toContain("495s maximum");
-				expect(cancelSubmitting).toHaveBeenCalledOnce();
+				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 			} finally {
 				vi.useRealTimers();
 			}
@@ -798,7 +798,7 @@ describe(OcaleRunner, () => {
 				await vi.advanceTimersByTimeAsync(90_000);
 
 				await expect(observed).resolves.toContain("within 90s");
-				expect(cancelSubmitting).toHaveBeenCalledOnce();
+				expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 			} finally {
 				vi.useRealTimers();
 			}

@@ -933,7 +933,9 @@ describe(OpenCloudBackend, () => {
 			const scripts = new Set(stub.executeCalls.map((call) => call.script));
 
 			expect(stub.executeCalls).toHaveLength(3);
-			expect(prepareScript).toHaveBeenCalledOnce();
+			expect(prepareScript).toHaveBeenCalledExactlyOnceWith({
+				script: "-- shared\nreturn nil",
+			});
 			expect(scripts.size).toBe(3);
 		});
 	});

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { createCstEdits } from "./cst-edit.ts";
 import { printCst, printCstMapped } from "./cst-print.ts";
+import { CST_SLOTS } from "./cst-slots.ts";
 import { CST_NODE_KINDS, forEachCstNode } from "./cst.ts";
 import type { CstRoot } from "./cst.ts";
 import { loadLuauParser } from "./parser.ts";
@@ -26,6 +27,8 @@ const fixtures = fs
 			source: fs.readFileSync(path.join(FIXTURE_DIRECTORY, fileName), "utf8"),
 		};
 	});
+
+const NOT_SLOTS: ReadonlySet<string> = new Set(["binding", "location", "type"]);
 
 function parseFixture(fileName: string, source: string): CstRoot {
 	const result = loadLuauParser().parseCst({ fileName, source });
@@ -56,6 +59,23 @@ describe("fidelity fixtures", () => {
 		}
 
 		expect(seen).toStrictEqual(new Set(CST_NODE_KINDS));
+	});
+
+	it("should write every node's slots in the order CST_SLOTS lists them", () => {
+		expect.assertions(1);
+
+		const written = new Set<string>();
+		const listed = new Set<string>();
+		for (const { fileName, source } of fixtures) {
+			forEachCstNode(parseFixture(fileName, source), (node) => {
+				const keys = Object.keys(node).filter((key) => !NOT_SLOTS.has(key));
+				const slots: ReadonlyArray<string> = CST_SLOTS[node.type];
+				written.add(`${node.type}: ${keys.join()}`);
+				listed.add(`${node.type}: ${slots.filter((slot) => slot in node).join()}`);
+			});
+		}
+
+		expect([...written]).toStrictEqual([...listed]);
 	});
 
 	it.for(fixtures)("should print $fileName byte-identical", ({ fileName, source }) => {

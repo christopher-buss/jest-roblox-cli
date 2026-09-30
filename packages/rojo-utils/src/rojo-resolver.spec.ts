@@ -1,9 +1,12 @@
+import type { PathLike } from "node:fs";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { platform } from "node:process";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import type { FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
 import { RbxPathParent } from "./rbx-path.ts";
 import { FileRelation, NetworkType, RbxType, RojoResolver } from "./rojo-resolver.ts";
 import type { RojoTree } from "./rojo-walker.ts";
@@ -81,6 +84,19 @@ describe("findRojoConfigFilePath", () => {
 		expect(RojoResolver.findRojoConfigFilePath(directory).warnings[0]).toInclude(
 			"Multiple *.project.json files found",
 		);
+	});
+
+	it("should probe the given file system rather than the disk", () => {
+		expect.assertions(1);
+
+		const directory = path.join(tmpdir(), "rojo-resolver-virtual");
+		const defaultPath = path.join(directory, "default.project.json");
+		const fileSystem = {
+			...nodeFileSystem,
+			existsSync: (candidate: PathLike) => candidate === defaultPath,
+		} satisfies FileSystem;
+
+		expect(RojoResolver.findRojoConfigFilePath(directory, fileSystem).path).toBe(defaultPath);
 	});
 
 	it("should return undefined when no project file is present", () => {

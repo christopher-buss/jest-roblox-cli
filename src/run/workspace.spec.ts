@@ -11,7 +11,7 @@ import type { createOpenCloudBackend } from "../backends/open-cloud.ts";
 import type { createStudioCliBackend } from "../backends/studio-cli.ts";
 import type { createStudioBackend } from "../backends/studio.ts";
 import type { loadRawConfig } from "../config/loader.ts";
-import type { CliOptions } from "../config/schema.ts";
+import { type CliOptions, DEFAULT_CONFIG } from "../config/schema.ts";
 import { MANIFEST_VERSION } from "../coverage-pipeline/manifest.ts";
 import type { aggregateWorkspaceCoverage } from "../coverage-pipeline/workspace-aggregate.ts";
 import type { ExecuteResult } from "../executor.ts";
@@ -411,7 +411,10 @@ describe(runWorkspaceModeAsync, () => {
 				{ ...harness.dependencies, isStudioInstalled: () => true },
 			);
 
-			expect(harness.studioCliBackend).toHaveBeenCalledOnce();
+			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
+				headed: undefined,
+				studioPath: undefined,
+			});
 			expect(harness.openCloudBackend).not.toHaveBeenCalled();
 		});
 
@@ -428,7 +431,10 @@ describe(runWorkspaceModeAsync, () => {
 			);
 
 			expect(result.validationExitCode).toBeUndefined();
-			expect(harness.studioCliBackend).toHaveBeenCalledOnce();
+			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
+				headed: undefined,
+				studioPath: undefined,
+			});
 		});
 
 		it("should resolve the studio-cli backend without Open Cloud credentials", async () => {
@@ -446,7 +452,10 @@ describe(runWorkspaceModeAsync, () => {
 				harness.dependencies,
 			);
 
-			expect(harness.studioCliBackend).toHaveBeenCalledOnce();
+			expect(harness.studioCliBackend).toHaveBeenCalledExactlyOnceWith({
+				headed: undefined,
+				studioPath: undefined,
+			});
 			expect(harness.openCloudBackend).not.toHaveBeenCalled();
 			expect(runnerCall(harness).backend!.kind).toBe("studio-cli");
 		});
@@ -507,7 +516,9 @@ describe(runWorkspaceModeAsync, () => {
 				harness.dependencies,
 			);
 
-			expect(harness.studioBackend).toHaveBeenCalledOnce();
+			expect(harness.studioBackend).toHaveBeenCalledExactlyOnceWith({
+				port: DEFAULT_CONFIG.port,
+			});
 			expect(harness.openCloudBackend).not.toHaveBeenCalled();
 		});
 	});

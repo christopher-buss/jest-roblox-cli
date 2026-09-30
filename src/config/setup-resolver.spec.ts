@@ -291,7 +291,7 @@ describe("resolver caching", () => {
 		const first = makeResolver({ cache });
 		const second = makeResolver({ cache });
 
-		expect(createResolver).toHaveBeenCalledOnce();
+		expect(createResolver).toHaveBeenCalledExactlyOnceWith(ROJO_CONFIG_PATH);
 		expect(first("./setup.luau")).toBe("ReplicatedStorage/setup");
 		expect(second("./setup.luau")).toBe("ReplicatedStorage/setup");
 	});

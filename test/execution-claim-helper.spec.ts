@@ -62,7 +62,7 @@ describe("delayed original fixture", () => {
 				recoverAsync: async () => RECOVERED,
 			}),
 		).resolves.toStrictEqual([RECOVERED, DENIED]);
-		expect(executeDelayedAsync).toHaveBeenCalledOnce();
+		expect(executeDelayedAsync).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
 		expect(readResultAsync).toHaveBeenCalledExactlyOnceWith(
 			executeDelayedAsync.mock.calls[0]![0],
 		);
@@ -93,8 +93,8 @@ describe("delayed original fixture", () => {
 		await expect(
 			observeDelayedOriginalAsync({ executeDelayedAsync, recoverAsync }),
 		).rejects.toBe(failure);
-		expect(recoverAsync).toHaveBeenCalledOnce();
-		expect(executeDelayedAsync).toHaveBeenCalledOnce();
+		expect(recoverAsync).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
+		expect(executeDelayedAsync).toHaveBeenCalledExactlyOnceWith(recoverAsync.mock.calls[0]![0]);
 		expect(executeDelayedAsync.mock.calls[0]![0].aborted).toBeTrue();
 	});
 
@@ -116,7 +116,7 @@ describe("delayed original fixture", () => {
 				recoverAsync: async () => RECOVERED,
 			}),
 		).rejects.toBe(failure);
-		expect(readResultAsync).toHaveBeenCalledOnce();
+		expect(readResultAsync).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
 		expect(readResultAsync.mock.calls[0]![0]!.aborted).toBeTrue();
 	});
 });

@@ -2382,7 +2382,7 @@ describe(runWorkspaceAsync, () => {
 
 	describe("coverage", () => {
 		it("should call prepareWorkspaceCoverage with the workspace packages when collectCoverage is set", async () => {
-			expect.assertions(2);
+			expect.assertions(1);
 
 			const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -2433,11 +2433,11 @@ describe(runWorkspaceAsync, () => {
 				workspaceRoot: ROOT,
 			});
 
-			expect(prepareCoverage).toHaveBeenCalledOnce();
-
-			const callArgs = prepareCoverage.mock.calls[0]![0];
-
-			expect(callArgs.packages.map((entry) => entry.name)).toStrictEqual(["@halcyon/foo"]);
+			expect(prepareCoverage).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					packages: [expect.objectContaining({ name: "@halcyon/foo" })],
+				}),
+			);
 		});
 
 		// The per-package coverage knobs must reach the descriptor so
@@ -5388,7 +5388,7 @@ describe("workspace type tests", () => {
 	});
 
 	it("should collapse multi-project packages sharing a tsconfig into one tsgo group at the package directory", async () => {
-		expect.assertions(3);
+		expect.assertions(1);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
 
@@ -5440,12 +5440,12 @@ describe("workspace type tests", () => {
 			workspaceRoot: ROOT,
 		});
 
-		expect(runTypecheck).toHaveBeenCalledOnce();
-
-		const call = runTypecheck.mock.calls[0]![0];
-
-		expect(call.rootDir).toBe(FOO_DIR);
-		expect(call.files).toHaveLength(2);
+		expect(runTypecheck).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				files: [expect.any(String), expect.any(String)],
+				rootDir: FOO_DIR,
+			}),
+		);
 	});
 
 	it("should form distinct groups per package even when they share the same relative tsconfig name", async () => {

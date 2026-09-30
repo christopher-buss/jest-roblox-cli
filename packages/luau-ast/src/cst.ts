@@ -1,11 +1,13 @@
 /**
  * The concrete syntax tree `parse_to_cst_json` (wasm/wrapper.cpp) emits, once
  * `cst-materialize.ts` has sliced token text and trivia from the source.
- * Every node's slots sit in lexical order, so a walk over a node's values
- * visits its tokens in source order; the printer and the gap detector both
- * rely on that. Every node kind at the pinned Luau version is modelled; a
- * slot is never named `type`, which is the kind.
+ * The serializer writes every node's slots in lexical order, which the gap
+ * detector relies on; walks take that order from `CST_SLOTS`, not key order.
+ * Every node kind at the pinned Luau version is modelled; a slot is never
+ * named `type`, which is the kind.
  */
+
+import assert from "node:assert";
 
 import type {
 	CstElseIfExpr,
@@ -14,7 +16,9 @@ import type {
 	CstLocalDeclaration,
 	CstTableItem,
 	CstTypeArguments,
+	Punctuated,
 } from "./cst-expressions.ts";
+import { CST_SLOTS, punctuatedSlots } from "./cst-slots.ts";
 import type {
 	CstBlock,
 	CstElseIf,
@@ -140,6 +144,12 @@ export type CstNode =
 	| CstTypePack
 	| CstTypeTableItem;
 
+/**
+ * What a walk enters: a tree or subtree, a token, a list slot and its
+ * punctuated entries, or `undefined` for an absent optional slot.
+ */
+export type CstValue = CstNode | Punctuated<CstNode> | ReadonlyArray<CstValue> | Token | undefined;
+
 const kindSet: ReadonlySet<string> = new Set(CST_NODE_KINDS);
 
 /** The first and last token under a node. */
@@ -195,13 +205,13 @@ export function isCstNode(value: unknown): value is CstNode {
 }
 
 /**
- * Pre-order walk over every value under a tree in lexical order. A node's
- * `location` is its span, not a slot, so it is the one key always skipped.
+ * Pre-order walk over every value under a tree in lexical order, visiting
+ * each node's slots in `CST_SLOTS` order whatever order its keys are in.
  *
  * @param value - The tree, subtree, or slot to walk.
  * @param walker - The hooks to call.
  */
-export function walkCst(value: unknown, walker: CstWalker): void {
+export function walkCst(value: CstValue, walker: CstWalker): void {
 	walk(value, walker);
 }
 
@@ -213,7 +223,7 @@ export function walkCst(value: unknown, walker: CstWalker): void {
  * @param predicate - Tested against every node, the root included.
  * @returns Whether any node matched.
  */
-export function someCstNode(value: unknown, predicate: (node: CstNode) => boolean): boolean {
+export function someCstNode(value: CstValue, predicate: (node: CstNode) => boolean): boolean {
 	let isFound = false;
 	walk(value, {
 		isDone: () => isFound,
@@ -232,7 +242,7 @@ export function someCstNode(value: unknown, predicate: (node: CstNode) => boolea
  * @param value - The tree, subtree, or slot to walk.
  * @param visit - Called on each token.
  */
-export function forEachToken(value: unknown, visit: (token: Token) => void): void {
+export function forEachToken(value: CstValue, visit: (token: Token) => void): void {
 	walkCst(value, { onToken: visit });
 }
 
@@ -262,7 +272,7 @@ export function tokenBounds(node: CstNode): TokenBounds | undefined {
  * @param value - The tree, subtree, or slot to walk.
  * @param visit - Called on each node.
  */
-export function forEachCstNode(value: unknown, visit: (node: CstNode) => void): void {
+export function forEachCstNode(value: CstValue, visit: (node: CstNode) => void): void {
 	walkCst(value, {
 		onNode: (node) => {
 			visit(node);
@@ -270,44 +280,66 @@ export function forEachCstNode(value: unknown, visit: (node: CstNode) => void): 
 	});
 }
 
-function isSkippedSlot(node: CstNode | undefined, slot: string, hooks: WalkHooks): boolean {
-	return node !== undefined && hooks.skipSlot?.(node, slot) === true;
+function isCstList(value: CstValue): value is ReadonlyArray<CstValue> {
+	return Array.isArray(value);
 }
 
-function walk(value: unknown, hooks: WalkHooks): void {
-	if (hooks.isDone?.() === true) {
+/** `parent`, the nearest enclosing node's kind, orders a punctuated entry. */
+function walk(value: CstValue, hooks: WalkHooks, parent?: CstNodeKind): void {
+	if (value === undefined || hooks.isDone?.() === true) {
 		return;
 	}
 
-	if (isToken(value)) {
+	if (isCstList(value)) {
+		for (const element of value) {
+			walk(element, hooks, parent);
+		}
+
+		return;
+	}
+
+	// Only a node has `type` and only a token has `text`; the walk is hot.
+	if ("type" in value) {
+		walkNode(value, hooks);
+		return;
+	}
+
+	if ("text" in value) {
 		hooks.onToken?.(value);
 		return;
 	}
 
-	if (Array.isArray(value)) {
-		for (const element of value) {
-			walk(element, hooks);
+	for (const slot of punctuatedSlots(parent)) {
+		walk(value[slot], hooks, parent);
+	}
+}
+
+/** A slot never holds a bare punctuated entry, only a list of them. */
+function isCstValue(value: unknown): value is CstValue {
+	return value === undefined || isToken(value) || isCstNode(value) || Array.isArray(value);
+}
+
+/** `CST_SLOTS` lists only slots, and every slot holds a walkable value. */
+function readSlot(node: CstNode, slot: string): CstValue {
+	const value: unknown = Reflect.get(node, slot);
+	if (!isCstValue(value)) {
+		assert.fail(`${node.type}.${slot} holds no node, token, or list`);
+	}
+
+	return value;
+}
+
+function walkNode(node: CstNode, hooks: WalkHooks): void {
+	if (hooks.onNode?.(node) === true) {
+		return;
+	}
+
+	const slots: ReadonlyArray<string> = CST_SLOTS[node.type];
+	for (const slot of slots) {
+		if (hooks.skipSlot?.(node, slot) !== true) {
+			walk(readSlot(node, slot), hooks, node.type);
 		}
-
-		return;
 	}
 
-	if (!isRecord(value)) {
-		return;
-	}
-
-	const node = isCstNode(value) ? value : undefined;
-	if (node !== undefined && hooks.onNode?.(node) === true) {
-		return;
-	}
-
-	for (const key in value) {
-		if (key !== "location" && !isSkippedSlot(node, key, hooks)) {
-			walk(value[key], hooks);
-		}
-	}
-
-	if (node !== undefined) {
-		hooks.onExit?.(node);
-	}
+	hooks.onExit?.(node);
 }

@@ -281,7 +281,7 @@ describe(StudioCliBackend, () => {
 		});
 
 		expect(begin).toHaveBeenCalledExactlyOnceWith("tests", "1 project");
-		expect(done).toHaveBeenCalledOnce();
+		expect(done).toHaveBeenCalledExactlyOnceWith();
 	});
 
 	it("should return one rawResult per job, in submitted order, for a multi-project run", async () => {
@@ -725,8 +725,8 @@ describe(StudioCliBackend, () => {
 		expect(rawResults).toHaveLength(1);
 		expect(rawResults[0]!.entry.jestOutput).toBe(successResult());
 		expect(vi.getTimerCount()).toBe(0);
-		expect(socket!.terminate).toHaveBeenCalledOnce();
-		expect(getLastCreatedServer()!.close).toHaveBeenCalledOnce();
+		expect(socket!.terminate).toHaveBeenCalledExactlyOnceWith();
+		expect(getLastCreatedServer()!.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
 	it("should reject with a timeout when no result frame arrives", async () => {
@@ -765,8 +765,8 @@ describe(StudioCliBackend, () => {
 			].join("\n"),
 		);
 		// The run kills Studio on the way out even on the timeout path.
-		expect(process.kill).toHaveBeenCalledOnce();
-		expect(getLastCreatedServer()!.close).toHaveBeenCalledOnce();
+		expect(process.kill).toHaveBeenCalledExactlyOnceWith();
+		expect(getLastCreatedServer()!.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
 	it("should quote Studio's own log when no result frame arrives", async () => {
@@ -837,8 +837,8 @@ describe(StudioCliBackend, () => {
 				return process;
 			}).runTestsAsync(singleJob),
 		).rejects.toThrow(/EADDRINUSE/);
-		expect(process.kill).toHaveBeenCalledOnce();
-		expect(getLastCreatedServer()!.close).toHaveBeenCalledOnce();
+		expect(process.kill).toHaveBeenCalledExactlyOnceWith();
+		expect(getLastCreatedServer()!.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
 	it("should reject when Studio fails to spawn", async () => {
@@ -1495,7 +1495,7 @@ describe(StudioCliBackend, () => {
 			// Default ON: hand teardown to the lock-release watch (which lets
 			// edit- mode BindToClose run + frees the lock) instead of
 			// TerminateProcess.
-			expect(process.killOnLockRelease).toHaveBeenCalledOnce();
+			expect(process.killOnLockRelease).toHaveBeenCalledExactlyOnceWith(15_000);
 			expect(process.kill).not.toHaveBeenCalled();
 		});
 
@@ -1527,7 +1527,7 @@ describe(StudioCliBackend, () => {
 			await expect(makeBackend(fileSystem, launch).runTestsAsync(singleJob)).rejects.toThrow(
 				/protocol.*mismatch/i,
 			);
-			expect(process.killOnLockRelease).toHaveBeenCalledOnce();
+			expect(process.killOnLockRelease).toHaveBeenCalledExactlyOnceWith(15_000);
 			expect(process.kill).not.toHaveBeenCalled();
 		});
 	});
@@ -1744,7 +1744,7 @@ describe(StudioCliBackend, () => {
 			assert(caught instanceof Error);
 
 			expect(caught.message).toMatch(/timed out after 40ms and was terminated/);
-			expect(child.kill).toHaveBeenCalledOnce();
+			expect(child.kill).toHaveBeenCalledExactlyOnceWith();
 		});
 
 		describe("graceful kill on lock release", () => {
@@ -1775,7 +1775,7 @@ describe(StudioCliBackend, () => {
 				fileSystem.rmSync(lockPath);
 				await vi.advanceTimersByTimeAsync(1000);
 
-				expect(child.kill).toHaveBeenCalledOnce();
+				expect(child.kill).toHaveBeenCalledExactlyOnceWith();
 			});
 
 			it("should hard-kill after the grace cap when the lock is never released", async () => {
@@ -1802,7 +1802,7 @@ describe(StudioCliBackend, () => {
 
 				await vi.advanceTimersByTimeAsync(1000);
 
-				expect(child.kill).toHaveBeenCalledOnce();
+				expect(child.kill).toHaveBeenCalledExactlyOnceWith();
 			});
 		});
 	});

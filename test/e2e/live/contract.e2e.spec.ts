@@ -369,7 +369,10 @@ describe("rate-limited contract HTTP", () => {
 		observation.abort(failure);
 
 		await expect(request).resolves.toBe(failure);
-		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+			"https://example.invalid",
+			expect.objectContaining({ method: "POST" }),
+		);
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
@@ -425,7 +428,10 @@ describe("rate-limited contract HTTP", () => {
 		observation.abort(failure);
 
 		await expect(polling).resolves.toBe(failure);
-		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+			"https://example.invalid/cloud/v2/task-1",
+			expect.objectContaining({ method: "GET" }),
+		);
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
@@ -530,7 +536,13 @@ describe("rate-limited contract HTTP", () => {
 
 		await vi.advanceTimersByTimeAsync(1999);
 
-		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+			"https://apis.roblox.com/cloud/v2/universes/123/places/456/luau-execution-session-tasks",
+			expect.objectContaining({
+				body: JSON.stringify({ script: "return nil", timeout: "30s" }),
+				method: "POST",
+			}),
+		);
 
 		await vi.advanceTimersByTimeAsync(1);
 		const response = await request;
@@ -596,7 +608,13 @@ describe("rate-limited contract HTTP", () => {
 
 			await vi.advanceTimersByTimeAsync(waitMs - 1);
 
-			expect(fetchMock).toHaveBeenCalledOnce();
+			expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+				"https://apis.roblox.com/cloud/v2/universes/123/places/456/luau-execution-session-tasks",
+				expect.objectContaining({
+					body: JSON.stringify({ script: "return nil", timeout: "10s" }),
+					method: "POST",
+				}),
+			);
 
 			await vi.advanceTimersByTimeAsync(1);
 			await request;

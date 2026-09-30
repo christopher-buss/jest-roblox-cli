@@ -58,7 +58,7 @@ describe(resolveSeaExecutable, () => {
 
 		resolveSeaExecutable(options(memory, { strip }));
 
-		expect(strip).toHaveBeenCalledOnce();
+		expect(strip).toHaveBeenCalledExactlyOnceWith("/cache/node-v26.5.0-linux-stripped.pending");
 	});
 
 	it("should not publish a copy whose strip failed", () => {

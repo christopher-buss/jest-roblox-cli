@@ -178,7 +178,9 @@ describe(PluginConnectionPool, () => {
 
 		await vi.advanceTimersByTimeAsync(1);
 
-		expect(settled).toHaveBeenCalledOnce();
+		expect(settled).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ kind: "incompatible" }),
+		);
 	});
 
 	it("should give a late plugin the whole grace window past the connect timeout", async () => {
@@ -386,8 +388,8 @@ describe(closePluginServer, () => {
 
 		closePluginServer(fromPartial<WebSocketServer>(wss));
 
-		expect(socket.terminate).toHaveBeenCalledOnce();
-		expect(wss.close).toHaveBeenCalledOnce();
+		expect(socket.terminate).toHaveBeenCalledExactlyOnceWith();
+		expect(wss.close).toHaveBeenCalledExactlyOnceWith();
 	});
 });
 

@@ -1,7 +1,7 @@
 /**
  * Type-level nodes of the concrete syntax tree: type annotations, type
  * packs, generics, and attributes. Slots are listed in alphabetical order;
- * the serializer emits them in lexical order.
+ * `CST_SLOTS` holds the lexical order.
  */
 
 import type {

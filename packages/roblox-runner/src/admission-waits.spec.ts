@@ -291,7 +291,7 @@ describe("submission wait accounting", () => {
 
 		await vi.advanceTimersByTimeAsync(1);
 
-		expect(cancelSubmitting).toHaveBeenCalledOnce();
+		expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 		await expect(observed).resolves.toContain("90s inactivity limit");
 	});
 
@@ -318,7 +318,7 @@ describe("submission wait accounting", () => {
 
 		await vi.advanceTimersByTimeAsync(1);
 
-		expect(cancelSubmitting).toHaveBeenCalledOnce();
+		expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 		await expect(observed).resolves.toContain("90s inactivity limit");
 	});
 
@@ -341,7 +341,7 @@ describe("submission wait accounting", () => {
 
 		await expect(observed).resolves.toContain("495s maximum");
 		expect(budget.pause()).toBeUndefined();
-		expect(cancelSubmitting).toHaveBeenCalledOnce();
+		expect(cancelSubmitting).toHaveBeenCalledExactlyOnceWith();
 		expect(vi.getTimerCount()).toBe(0);
 	});
 });

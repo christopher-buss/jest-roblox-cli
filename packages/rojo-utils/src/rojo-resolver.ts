@@ -1,6 +1,7 @@
-import * as fs from "node:fs";
 import path from "node:path";
 
+import type { FileSystem } from "./file-system.ts";
+import { nodeFileSystem } from "./file-system.ts";
 import type { PartitionInfo, RbxPath, RelativeRbxPath } from "./rbx-path.ts";
 import { RbxPathParent } from "./rbx-path.ts";
 import {
@@ -89,16 +90,19 @@ export class RojoResolver {
 
 	public isGame = false;
 
-	public static findRojoConfigFilePath(projectPath: string): RojoConfigFileResult {
+	public static findRojoConfigFilePath(
+		projectPath: string,
+		fileSystem: FileSystem = nodeFileSystem,
+	): RojoConfigFileResult {
 		const warnings = new Array<string>();
 
 		const defaultPath = path.join(projectPath, ROJO_DEFAULT_NAME);
-		if (fs.existsSync(defaultPath)) {
+		if (fileSystem.existsSync(defaultPath)) {
 			return { path: defaultPath, warnings };
 		}
 
 		const candidates = new Array<string | undefined>();
-		for (const fileName of fs.readdirSync(projectPath)) {
+		for (const fileName of fileSystem.readdirSync(projectPath)) {
 			if (
 				fileName !== ROJO_DEFAULT_NAME &&
 				(fileName === ROJO_OLD_NAME || isRojoProjectFileName(fileName))

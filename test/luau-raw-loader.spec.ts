@@ -124,8 +124,9 @@ describe(load, () => {
 		expect.assertions(1);
 
 		const next = mockNextLoad();
-		load("file:///index.js", { format: "module" }, next);
+		const context = { format: "module" };
+		load("file:///index.js", context, next);
 
-		expect(next).toHaveBeenCalledOnce();
+		expect(next).toHaveBeenCalledExactlyOnceWith("file:///index.js", context);
 	});
 });
