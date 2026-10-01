@@ -606,6 +606,11 @@ per-OS; override the executable with `studioPath` (config key), `--studioPath`,
 or `JEST_ROBLOX_STUDIO_PATH`. The backend is serial: it ignores `--parallel` and
 runs one session.
 
+`timeout` starts once Studio has opened the place and begun the run, as on Open
+Cloud, so a slow Studio launch does not eat into the test budget. The launch has
+its own 45s window; on a slow machine, raise it with
+`JEST_ROBLOX_STUDIO_BOOT_TIMEOUT` (milliseconds).
+
 Pass `--headed` to show the Studio window during the run instead of the default
 hidden one — useful for watching a slow run or a hang (Studio still self-quits
 when tests finish, so a fast run just flashes). It is a per-run debugging flag,

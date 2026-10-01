@@ -6,6 +6,19 @@ local StudioTestService = game:GetService("StudioTestService")
 local payload = HttpService:JSONDecode([=[{"pluginKey":"1.2.3-abcdef01","protocolVersion":9,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec-d","**/*.test-d","**/*.spec","**/*.spec","**/*.test","**/*.test"],"passWithNoTests":false,"silent":false,"testPathIgnorePatterns":["/node_modules/","/dist/","/out/"],"verbose":false,"testNamePattern":"alpha-pattern","runnerTimeoutMs":60000,"reporters":[]}]},"runtimeStubMounts":[[]]}]=])
 local URL = "ws://localhost:<port>"
 local REQUEST_ID = [=[<request-id>]=]
+local startedOpened, startedSocket = pcall(function()
+	return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = URL })
+end)
+if startedOpened then
+	startedSocket.Opened:Once(function()
+		startedSocket:Send(HttpService:JSONEncode({ type = "started", requestId = REQUEST_ID }))
+	end)
+	startedSocket.Error:Once(function(_statusCode, errorMessage)
+		print("studio-cli: start socket error: " .. tostring(errorMessage))
+	end)
+else
+	print("studio-cli: failed to open start socket: " .. tostring(startedSocket))
+end
 local ok, result = pcall(function()
 	return StudioTestService:ExecuteRunModeAsync(payload)
 end)

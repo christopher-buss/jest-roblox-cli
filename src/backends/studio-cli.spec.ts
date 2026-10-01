@@ -136,6 +136,10 @@ function readOutputFile(args: Array<string>): string {
 	return args[args.indexOf("--outputFile") + 1]!;
 }
 
+function startedFrame(requestId: string): string {
+	return JSON.stringify({ requestId, type: "started" });
+}
+
 function resultFrame(requestId: string, reply: ReplyOptions): string {
 	const frame = {
 		gameOutput: reply.gameOutput ?? "[]",
@@ -186,6 +190,36 @@ function replyWith(
 			return process;
 		},
 		process,
+	};
+}
+
+/**
+ * A Studio whose bootstrap frames the test sends by hand, so the clock can
+ * advance between launch, run start, and result.
+ */
+function bootingStudio(fileSystem: FileSystem) {
+	const process = makeFakeProcess();
+	const socket = new MockWebSocket();
+	let args: Array<string> = [];
+	return {
+		launch: (request: Parameters<StudioCliLauncher>[0]) => {
+			({ args } = request);
+			queueMicrotask(() => {
+				getLastCreatedServer()!.emit("connection", socket);
+			});
+			return process;
+		},
+		outputFile: () => readOutputFile(args),
+		process,
+		send: (frame: "results" | "started") => {
+			const requestId = readRequestId(fileSystem, args);
+			socket.emit(
+				"message",
+				Buffer.from(
+					frame === "results" ? resultFrame(requestId, {}) : startedFrame(requestId),
+				),
+			);
+		},
 	};
 }
 
@@ -729,30 +763,19 @@ describe(StudioCliBackend, () => {
 		expect(getLastCreatedServer()!.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
-	it("should reject with a timeout when no result frame arrives", async () => {
+	it("should reject with a timeout when a started run sends no result frame", async () => {
 		expect.assertions(3);
 
 		const { fileSystem } = createMemoryFileSystem();
 
 		useResultDeadlineTimers();
 
-		// A Studio that never sends a result drives the timeout path.
-		const process = makeFakeProcess();
-		let outputFile = "";
-		const backend = new StudioCliBackend({
-			buildPlaceAsync: fakeBuildPlace(),
-			discover: () => "C:/Studio/RobloxStudioBeta.exe",
-			fileSystem,
-			installPluginAsync: installed(),
-			launch: (request) => {
-				outputFile = readOutputFile(request.args);
-				return process;
-			},
-			timeout: 40,
-			webSocketServerFactory,
-		});
+		const studio = bootingStudio(fileSystem);
+		const backend = makeBackend(fileSystem, studio.launch, { timeout: 40 });
 
 		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+		await vi.advanceTimersByTimeAsync(0);
+		studio.send("started");
 		await vi.runAllTimersAsync();
 		const caught: unknown = await settled;
 
@@ -761,11 +784,11 @@ describe(StudioCliBackend, () => {
 		expect(caught.message).toBe(
 			[
 				"studio-cli: Studio run timed out after 40ms and was terminated.",
-				`  Studio log: ${path.normalize(outputFile)}`,
+				`  Studio log: ${path.normalize(studio.outputFile())}`,
 			].join("\n"),
 		);
 		// The run kills Studio on the way out even on the timeout path.
-		expect(process.kill).toHaveBeenCalledExactlyOnceWith();
+		expect(studio.process.kill).toHaveBeenCalledExactlyOnceWith();
 		expect(getLastCreatedServer()!.close).toHaveBeenCalledExactlyOnceWith();
 	});
 
@@ -780,6 +803,7 @@ describe(StudioCliBackend, () => {
 		// to say what the run was doing when it stopped answering.
 		let outputFile = "";
 		const backend = new StudioCliBackend({
+			bootTimeout: 40,
 			buildPlaceAsync: fakeBuildPlace(),
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
@@ -800,7 +824,6 @@ describe(StudioCliBackend, () => {
 				);
 				return makeFakeProcess();
 			},
-			timeout: 40,
 		});
 
 		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
@@ -811,7 +834,7 @@ describe(StudioCliBackend, () => {
 
 		expect(caught.message).toBe(
 			[
-				"studio-cli: Studio run timed out after 40ms and was terminated.",
+				"studio-cli: Studio did not start the run within 40ms and was terminated. Set JEST_ROBLOX_STUDIO_BOOT_TIMEOUT to allow a slower boot.",
 				`  Studio log: ${path.normalize(outputFile)}`,
 				"  Last lines Studio logged:",
 				...Array.from({ length: 12 }, (_, index) => `    line ${String(index + 1)}`),
@@ -820,6 +843,157 @@ describe(StudioCliBackend, () => {
 				"    final line",
 			].join("\n"),
 		);
+	});
+
+	it("should start the run timeout once the bootstrap reports the run started", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		useResultDeadlineTimers();
+
+		const studio = bootingStudio(fileSystem);
+		const backend = makeBackend(fileSystem, studio.launch, { bootTimeout: 100, timeout: 40 });
+
+		const settled = backend.runTestsAsync(singleJob);
+		await vi.advanceTimersByTimeAsync(60);
+		studio.send("started");
+		await vi.advanceTimersByTimeAsync(30);
+		studio.send("results");
+		const { rawResults } = await settled;
+
+		expect(rawResults).toHaveLength(1);
+	});
+
+	it("should not restart the run timeout on a repeated started frame", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		useResultDeadlineTimers();
+
+		const studio = bootingStudio(fileSystem);
+		const backend = makeBackend(fileSystem, studio.launch, { timeout: 40 });
+
+		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+		await vi.advanceTimersByTimeAsync(0);
+		studio.send("started");
+		await vi.advanceTimersByTimeAsync(30);
+		studio.send("started");
+		await vi.advanceTimersByTimeAsync(10);
+		const caught: unknown = await Promise.race([settled, Promise.resolve("still running")]);
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toMatch(/run timed out after 40ms/);
+	});
+
+	it("should reject when the run never starts within the boot timeout", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+		useResultDeadlineTimers();
+
+		const studio = bootingStudio(fileSystem);
+		const backend = makeBackend(fileSystem, studio.launch, { bootTimeout: 100, timeout: 400 });
+
+		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+		await vi.advanceTimersByTimeAsync(100);
+		const caught: unknown = await settled;
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toBe(
+			[
+				"studio-cli: Studio did not start the run within 100ms and was terminated. Set JEST_ROBLOX_STUDIO_BOOT_TIMEOUT to allow a slower boot.",
+				`  Studio log: ${path.normalize(studio.outputFile())}`,
+			].join("\n"),
+		);
+		expect(studio.process.kill).toHaveBeenCalledExactlyOnceWith();
+	});
+
+	it("should read the boot timeout from JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		useResultDeadlineTimers();
+		vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", "70");
+
+		const studio = bootingStudio(fileSystem);
+		const backend = makeBackend(fileSystem, studio.launch, { timeout: 400 });
+
+		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+		await vi.advanceTimersByTimeAsync(70);
+		const caught: unknown = await settled;
+
+		assert(caught instanceof Error);
+
+		expect(caught.message).toMatch(/did not start the run within 70ms/);
+	});
+
+	it.for(["45s", "0"])("should reject a JEST_ROBLOX_STUDIO_BOOT_TIMEOUT of %j", (value) => {
+		expect.assertions(1);
+
+		vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", value);
+
+		expect(() => createStudioCliBackend()).toThrow(
+			`JEST_ROBLOX_STUDIO_BOOT_TIMEOUT must be a positive integer of milliseconds, got "${value}".`,
+		);
+	});
+
+	it.for([undefined, ""])(
+		"should give Studio 45s to start the run when JEST_ROBLOX_STUDIO_BOOT_TIMEOUT is %j",
+		async (value) => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+			vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", value);
+
+			const studio = bootingStudio(fileSystem);
+			const backend = makeBackend(fileSystem, studio.launch, { timeout: 400 });
+
+			const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+			await vi.advanceTimersByTimeAsync(45_000);
+			const caught: unknown = await settled;
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toMatch(/did not start the run within 45000ms/);
+		},
+	);
+
+	it("should stop the boot timeout once the run starts", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		useResultDeadlineTimers();
+
+		const studio = bootingStudio(fileSystem);
+		const backend = makeBackend(fileSystem, studio.launch, { bootTimeout: 100, timeout: 400 });
+
+		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
+		await vi.advanceTimersByTimeAsync(0);
+		studio.send("started");
+		await vi.advanceTimersByTimeAsync(100);
+
+		await expect(Promise.race([settled, Promise.resolve("still running")])).resolves.toBe(
+			"still running",
+		);
+	});
+
+	it("should leave no deadline armed when a started frame follows the result", async () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem();
+		useResultDeadlineTimers();
+
+		const studio = bootingStudio(fileSystem);
+		const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+		await vi.advanceTimersByTimeAsync(0);
+		studio.send("results");
+		await settled;
+		studio.send("started");
+
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("should reject when the result server errors", async () => {
@@ -1735,7 +1909,7 @@ describe(StudioCliBackend, () => {
 
 			const { child, childProcess } = stubSpawn();
 
-			const settled = backendWithDefaultLaunch(fileSystem, childProcess, { timeout: 40 })
+			const settled = backendWithDefaultLaunch(fileSystem, childProcess, { bootTimeout: 40 })
 				.runTestsAsync(singleJob)
 				.catch((err: unknown) => err);
 			await vi.runAllTimersAsync();
@@ -1743,7 +1917,7 @@ describe(StudioCliBackend, () => {
 
 			assert(caught instanceof Error);
 
-			expect(caught.message).toMatch(/timed out after 40ms and was terminated/);
+			expect(caught.message).toMatch(/within 40ms and was terminated/);
 			expect(child.kill).toHaveBeenCalledExactlyOnceWith();
 		});
 

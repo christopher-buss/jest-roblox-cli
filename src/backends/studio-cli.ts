@@ -3,6 +3,7 @@ import type buffer from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import * as path from "node:path";
+import process from "node:process";
 import type { Except } from "type-fest";
 import type { WebSocket, WebSocketServer } from "ws";
 
@@ -22,6 +23,7 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { normalizeWindowsPath } from "../utils/normalize-windows-path.ts";
 import { decodeEnvelope } from "./envelope.ts";
+import { DEFAULT_BOOT_WATCH_MS } from "./execution-recovery.ts";
 import {
 	type Backend,
 	type BackendOptions,
@@ -42,6 +44,9 @@ import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 
 const DEFAULT_STUDIO_CLI_TIMEOUT = 300_000;
+
+/** Overrides how long Studio may take to start the run, in milliseconds. */
+const BOOT_TIMEOUT_ENV = "JEST_ROBLOX_STUDIO_BOOT_TIMEOUT";
 
 /**
  * Lowest-precedence Studio-executable override (below config key / CLI flag).
@@ -143,6 +148,31 @@ const BOOTSTRAP_SEND_LINES = [
 ];
 
 /**
+ * Bootstrap start report: a `started` frame on its own socket, sent without
+ * waiting. A failure is printed so the boot timeout's log tail names it.
+ */
+const BOOTSTRAP_STARTED_LINES = [
+	"local startedOpened, startedSocket = pcall(function()",
+	"\treturn HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = URL })",
+	"end)",
+	"if startedOpened then",
+	"\tstartedSocket.Opened:Once(function()",
+	'\t\tstartedSocket:Send(HttpService:JSONEncode({ type = "started", requestId = REQUEST_ID }))',
+	"\tend)",
+	"\tstartedSocket.Error:Once(function(_statusCode, errorMessage)",
+	'\t\tprint("studio-cli: start socket error: " .. tostring(errorMessage))',
+	"\tend)",
+	"else",
+	'\tprint("studio-cli: failed to open start socket: " .. tostring(startedSocket))',
+	"end",
+];
+
+const startedMessageSchema = type({
+	requestId: "string",
+	type: "'started'",
+});
+
+/**
  * The result frame the bootstrap pushes back over the localhost WebSocket.
  * Same shape the plugin's `init.server.luau` sends the WebSocket `studio`
  * backend (`type: "results"` + `requestId` correlation), so the two result
@@ -158,6 +188,8 @@ const resultMessageSchema = type({
 	"requestId": "string",
 	"type": "'results'",
 });
+
+const runFrameSchema = startedMessageSchema.or(resultMessageSchema);
 
 /**
  * A launched Studio the host can kill once the result arrives (or on timeout).
@@ -191,6 +223,12 @@ export interface StudioCliProcess {
 export type StudioCliLauncher = (request: StudioCliLaunchRequest) => StudioCliProcess;
 
 export interface StudioCliOptions {
+	/**
+	 * How long Studio may take from launch to starting the run, in
+	 * milliseconds. Defaults to {@link BOOT_TIMEOUT_ENV}, else
+	 * {@link DEFAULT_BOOT_WATCH_MS}.
+	 */
+	bootTimeout?: number | undefined;
 	/** Place Builder seam; defaults to the real {@link defaultBuildPlace}. */
 	buildPlaceAsync?: ((options: BuildPlaceOptions) => Promise<BuildManifestArtifact>) | undefined;
 	/** What launches Studio. Defaults to the real launcher. */
@@ -271,22 +309,21 @@ type ResultMessage = typeof resultMessageSchema.infer;
 
 /** How long a run may go unanswered, and where to look when it does. */
 interface ResultDeadline {
+	/** Wall clock in milliseconds from launch to the run starting. */
+	bootTimeout: number;
 	/** Studio's engine log, quoted back when the run never answers. */
 	outputFile: string;
-	/** Wall clock in milliseconds before the run is killed. */
+	/** Wall clock in milliseconds from the run starting to its result. */
 	timeout: number;
 }
 
-interface StudioCliResultWait {
+interface StudioCliResultWait extends ResultDeadline {
 	child: StudioCliProcess;
 	fileSystem: FileSystem;
-	/** Where Studio logs, quoted back when the run never answers. */
-	outputFile: string;
 	reject: (error: Error) => void;
 	requestId: string;
 	resolve: (message: ResultMessage) => void;
 	server: WebSocketServer;
-	timeout: number;
 }
 
 /**
@@ -324,6 +361,7 @@ interface StudioCliSession {
 }
 
 export class StudioCliBackend implements Backend {
+	private readonly bootTimeout: number;
 	private readonly buildPlaceAsync: (
 		options: BuildPlaceOptions,
 	) => Promise<BuildManifestArtifact>;
@@ -344,6 +382,7 @@ export class StudioCliBackend implements Backend {
 	public readonly placeInput = "own" as const;
 
 	constructor(options: StudioCliOptions = {}) {
+		this.bootTimeout = options.bootTimeout ?? resolveBootTimeout();
 		this.buildPlaceAsync = options.buildPlaceAsync ?? defaultBuildPlace;
 		const fileSystem = options.fileSystem ?? nodeFileSystem;
 		this.discover =
@@ -436,7 +475,11 @@ export class StudioCliBackend implements Backend {
 
 	/** Where a run's result lands, and how long Studio has to put it there. */
 	private deadlineFor(workDirectory: string): ResultDeadline {
-		return { outputFile: studioOutputFile(workDirectory), timeout: this.timeout };
+		return {
+			bootTimeout: this.bootTimeout,
+			outputFile: studioOutputFile(workDirectory),
+			timeout: this.timeout,
+		};
 	}
 
 	/**
@@ -557,6 +600,26 @@ export function createStudioCliBackend(options: StudioCliOptions = {}): StudioCl
 }
 
 /**
+ * The boot window {@link BOOT_TIMEOUT_ENV} asks for, else the default. Throws
+ * on a value that is not a positive integer.
+ */
+function resolveBootTimeout(): number {
+	const raw = process.env[BOOT_TIMEOUT_ENV];
+	if (raw === undefined || raw === "") {
+		return DEFAULT_BOOT_WATCH_MS;
+	}
+
+	const parsed = Number(raw);
+	if (!Number.isInteger(parsed) || parsed <= 0) {
+		throw new Error(
+			`${BOOT_TIMEOUT_ENV} must be a positive integer of milliseconds, got "${raw}".`,
+		);
+	}
+
+	return parsed;
+}
+
+/**
  * studio-cli drives one Studio instance serially, so reject a request it
  * structurally cannot serve before anything is built or launched. A
  * `parallel` count is not such a request: the run is one session whatever
@@ -627,6 +690,7 @@ function bootstrapRunLines(
 		`local payload = HttpService:JSONDecode(${luauLongString(JSON.stringify(payload))})`,
 		`local URL = "ws://localhost:${port.toString()}"`,
 		`local REQUEST_ID = ${luauLongString(requestId)}`,
+		...BOOTSTRAP_STARTED_LINES,
 		"local ok, result = pcall(function()",
 		"\treturn StudioTestService:ExecuteRunModeAsync(payload)",
 		"end)",
@@ -775,6 +839,45 @@ async function serverPortAsync(server: WebSocketServer): Promise<number> {
 }
 
 /**
+ * Forward this run's `started` and `results` frames. Frames that aren't
+ * valid JSON, aren't either message, or belong to another run are ignored
+ * (engine/plugin chatter).
+ */
+function listenForRunFrames({
+	onResult,
+	onStarted,
+	requestId,
+	server,
+}: {
+	onResult: (message: ResultMessage) => void;
+	onStarted: () => void;
+	requestId: string;
+	server: WebSocketServer;
+}): void {
+	server.on("connection", (socket: WebSocket) => {
+		socket.on("message", (data: buffer.Buffer) => {
+			let raw: JSONValue;
+			try {
+				raw = JSON.parse(data.toString());
+			} catch {
+				return;
+			}
+
+			const message = runFrameSchema(raw);
+			if (message instanceof type.errors || message.requestId !== requestId) {
+				return;
+			}
+
+			if (message.type === "started") {
+				onStarted();
+			} else {
+				onResult(message);
+			}
+		});
+	});
+}
+
+/**
  * The tail of Studio's own engine log, or nothing when it holds nothing worth
  * printing.
  *
@@ -814,15 +917,20 @@ function readStudioLogTail(fileSystem: FileSystem, outputFile: string): Array<st
  * could have wedged in a test, failed to open the place, or died behind a
  * dialog, and Studio's engine log is the only place those read differently.
  *
- * @param timeout - The budget the run was given, in milliseconds.
+ * @param headline - What ran out, as the first line of the error.
  * @param outputFile - Path Studio was told to log to.
  * @returns The error to reject the run with.
  */
-function timedOutError(fileSystem: FileSystem, timeout: number, outputFile: string): Error {
-	const lines = [
-		`studio-cli: Studio run timed out after ${timeout.toString()}ms and was terminated.`,
-		`  Studio log: ${outputFile}`,
-	];
+function unansweredError({
+	fileSystem,
+	headline,
+	outputFile,
+}: {
+	fileSystem: FileSystem;
+	headline: string;
+	outputFile: string;
+}): Error {
+	const lines = [headline, `  Studio log: ${outputFile}`];
 	const tail = readStudioLogTail(fileSystem, outputFile);
 	if (tail.length > 0) {
 		lines.push("  Last lines Studio logged:");
@@ -835,58 +943,69 @@ function timedOutError(fileSystem: FileSystem, timeout: number, outputFile: stri
 }
 
 /**
- * Forward every `results` frame carrying `requestId` to `onResult`. Frames
- * that aren't valid JSON, aren't a `results` message, or belong to another run
- * are ignored (engine/plugin chatter).
+ * The boot deadline runs from launch until the run starts; the run deadline
+ * from then until the result. Either one expiring hands `onExpired` the
+ * error.
  */
-function listenForResultFrame(
-	server: WebSocketServer,
-	requestId: string,
-	onResult: (message: ResultMessage) => void,
-): void {
-	server.on("connection", (socket: WebSocket) => {
-		socket.on("message", (data: buffer.Buffer) => {
-			let raw: JSONValue;
-			try {
-				raw = JSON.parse(data.toString());
-			} catch {
+function startRunDeadlines({
+	bootTimeout,
+	fileSystem,
+	onExpired,
+	outputFile,
+	timeout,
+}: ResultDeadline & {
+	fileSystem: FileSystem;
+	onExpired: (error: Error) => void;
+}): { clear: () => void; markStarted: () => void } {
+	function arm(ms: number, headline: string): NodeJS.Timeout {
+		return setTimeout(() => {
+			onExpired(unansweredError({ fileSystem, headline, outputFile }));
+		}, ms);
+	}
+
+	let isBooting = true;
+	let timer = arm(
+		bootTimeout,
+		`studio-cli: Studio did not start the run within ${bootTimeout.toString()}ms and was terminated. ` +
+			`Set ${BOOT_TIMEOUT_ENV} to allow a slower boot.`,
+	);
+
+	return {
+		clear: () => {
+			isBooting = false;
+			clearTimeout(timer);
+		},
+		markStarted: () => {
+			if (!isBooting) {
 				return;
 			}
 
-			const message = resultMessageSchema(raw);
-			if (message instanceof type.errors) {
-				return;
-			}
-
-			if (message.requestId !== requestId) {
-				return;
-			}
-
-			onResult(message);
-		});
-	});
+			isBooting = false;
+			clearTimeout(timer);
+			timer = arm(
+				timeout,
+				`studio-cli: Studio run timed out after ${timeout.toString()}ms and was terminated.`,
+			);
+		},
+	};
 }
 
 /**
  * Wire every settle source onto the Promise's one-shot resolve/reject pair and
- * clear the deadline before forwarding it.
+ * clear the deadlines before forwarding it.
  */
 function awaitStudioCliResult({
 	child,
-	fileSystem,
-	outputFile,
 	reject,
 	requestId,
 	resolve,
 	server,
-	timeout,
+	...deadlineOptions
 }: StudioCliResultWait): void {
-	const timer = setTimeout(() => {
-		bail(timedOutError(fileSystem, timeout, outputFile));
-	}, timeout);
+	const deadlines = startRunDeadlines({ ...deadlineOptions, onExpired: bail });
 
 	function settle(action: () => void): void {
-		clearTimeout(timer);
+		deadlines.clear();
 		action();
 	}
 
@@ -900,10 +1019,15 @@ function awaitStudioCliResult({
 		bail(new Error(error.message, { cause: error }));
 	});
 
-	listenForResultFrame(server, requestId, (message) => {
-		settle(() => {
-			resolve(message);
-		});
+	listenForRunFrames({
+		onResult: (message) => {
+			settle(() => {
+				resolve(message);
+			});
+		},
+		onStarted: deadlines.markStarted,
+		requestId,
+		server,
 	});
 
 	server.on("error", bail);
@@ -922,14 +1046,13 @@ async function waitForResultAsync(
 ): Promise<ResultMessage> {
 	return new Promise<ResultMessage>((resolve, reject) => {
 		awaitStudioCliResult({
+			...deadline,
 			child,
 			fileSystem,
-			outputFile: deadline.outputFile,
 			reject,
 			requestId,
 			resolve,
 			server,
-			timeout: deadline.timeout,
 		});
 	});
 }
