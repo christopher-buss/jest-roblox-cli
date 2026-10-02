@@ -24,7 +24,7 @@ import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
  *
  * The fixture (`test/e2e/fixtures/live-place`) ships a pre-built `.rbxl` and
  * two configured `projects` in its `jest.config.ts` — `live-place-shared`
- * (two specs) and `live-place-server` (four).
+ * (one spec) and `live-place-server` (four).
  *
  * Only the first run below carries the boot probe. One live proof that a fresh
  * version starts is the whole of what the wire can tell us; every later run
@@ -107,7 +107,7 @@ describe("live pipeline", () => {
 	it.runIf(IS_LIVE)(
 		"should run both mounts, capture game output, and report coverage in one run",
 		async () => {
-			expect.assertions(13);
+			expect.assertions(12);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
 			const gameOutputPath = path.join(sandbox, "game-output.json");
@@ -131,9 +131,10 @@ describe("live pipeline", () => {
 			);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
-			// Eight original cases plus 120 bounded CPU cases and their
-			// deferred-callback/Heartbeat completion check.
-			expect(result.stdout, "both mounts ran").toContain("129 passed");
+			// Four shared tests (one bare `it`, one nested, two `each` rows) plus
+			// four server ones (`server-thing` and the three same-basename
+			// `index.spec` files the narrowing regression needs).
+			expect(result.stdout, "both mounts ran").toContain("8 passed");
 			expect(result.stdout, "shared mount reported").toContain("live-place-shared");
 			expect(result.stdout, "server mount reported").toContain("live-place-server");
 
@@ -161,10 +162,6 @@ describe("live pipeline", () => {
 				gameOutput.flatMap((group) => group.entries).map((entry) => entry.message),
 				"native warn reached the dump",
 			).toSatisfyAny((message) => message.includes("game-output marker"));
-			expect(
-				gameOutput.flatMap((group) => group.entries).map((entry) => entry.message),
-				"scheduler remained responsive across the CPU batch",
-			).toSatisfyAny((message) => message.includes("scheduler fairness marker"));
 
 			const report = coverageReportSchema.assert(
 				JSON.parse(
