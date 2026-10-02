@@ -22,7 +22,7 @@ export class LuauScriptError extends Error {
 	 * Jest's own process.stdout/stderr writes captured via InterceptWriteable.
 	 * Used by the CLI error banner to surface synchronous exit messages
 	 * (e.g. "No tests found, exiting with code 1"). Narrower than
-	 * {@link gameOutput}; see CONTEXT.md for the split.
+	 * {@link gameOutput}; see GLOSSARY.md for the split.
 	 */
 	public bannerOutput: string | undefined;
 	/**

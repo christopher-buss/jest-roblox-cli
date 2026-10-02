@@ -120,7 +120,7 @@ export function buildProjectResult(
 			// Both captures travel on the error so the exec-error path can
 			// surface the banner cause (bannerOutput) AND still write the
 			// full Game Output dump (gameOutput) to --gameOutput. See
-			// CONTEXT.md for the Game Output / Banner Output split.
+			// GLOSSARY.md for the Game Output / Banner Output split.
 			err.bannerOutput = bannerOutput;
 			err.gameOutput = gameOutput;
 		}
