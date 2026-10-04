@@ -16,6 +16,9 @@
 #include <unordered_map>
 #include <vector>
 
+// Defined in Analysis, which this build does not link; AstJsonEncoder reads it.
+LUAU_FASTFLAGVARIABLE(LuauExperimentalIfLocalAnalysis)
+
 static bool flagsInitialized = false;
 
 // Force-enable every Luau* bool FFlag, same as upstream's luau-ast CLI
@@ -964,6 +967,30 @@ struct CstWriter
         });
     }
 
+    void conditionLocal(Luau::AstLocal* local, const std::optional<Luau::Location>& keywordLocation,
+        const std::optional<Luau::Location>& equalsLocation, Luau::Position colon)
+    {
+        if (!local)
+            return;
+        if (!keywordLocation || !equalsLocation)
+        {
+            fail("cst writer: if local without keyword or '=' at line " + std::to_string(local->location.begin.line + 1));
+            return;
+        }
+        keyword("localKeyword", keywordLocation->begin, local->isConst ? "const" : "local");
+        key("local");
+        localDecl(local, colon);
+        tok("equals", equalsLocation->begin, 1);
+    }
+
+    Luau::Position ifStatColon(Luau::AstStatIf* n)
+    {
+        if (!n->conditionLocal || !n->conditionLocal->annotation)
+            return Luau::Position::missing();
+        Luau::CstStatIf* data = cstOf<Luau::CstStatIf>(n, "if local");
+        return data ? data->annotationColonPosition : Luau::Position::missing();
+    }
+
     void localDecl(Luau::AstLocal* local, Luau::Position colon)
     {
         begin("LocalDecl", local->location);
@@ -1351,6 +1378,7 @@ struct CstWriter
                 return;
             begin("IfElse", n->location);
             keyword("if", n->location.begin, "if");
+            conditionLocal(n->conditionLocal, n->conditionKeywordLocation, n->conditionEqualsLocation, data->annotationColonPosition);
             key("condition");
             expr(n->condition);
             if (n->hasThen)
@@ -1367,6 +1395,7 @@ struct CstWriter
                     return;
                 begin("ElseIfExpr", n->location);
                 keyword("keyword", n->location.begin, "elseif");
+                conditionLocal(n->conditionLocal, n->conditionKeywordLocation, n->conditionEqualsLocation, data->annotationColonPosition);
                 key("condition");
                 expr(n->condition);
                 if (n->hasThen)
@@ -1544,6 +1573,7 @@ struct CstWriter
         {
             begin("If", n->location);
             keyword("if", n->location.begin, "if");
+            conditionLocal(n->conditionLocal, n->conditionKeywordLocation, n->conditionEqualsLocation, ifStatColon(n));
             key("condition");
             expr(n->condition);
             if (n->thenLocation)
@@ -1556,6 +1586,7 @@ struct CstWriter
                 n = n->elsebody->as<Luau::AstStatIf>();
                 begin("ElseIf", n->location);
                 keyword("keyword", n->location.begin, "elseif");
+                conditionLocal(n->conditionLocal, n->conditionKeywordLocation, n->conditionEqualsLocation, ifStatColon(n));
                 key("condition");
                 expr(n->condition);
                 if (n->thenLocation)

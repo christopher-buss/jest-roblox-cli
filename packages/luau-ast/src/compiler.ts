@@ -6,6 +6,11 @@ import { createCompilerWasmRuntime } from "./compiler-wasm-runtime.ts";
 export type LuauCompileLevel = 0 | 1 | 2;
 
 export interface LuauCompileOptions {
+	/**
+	 * Also return the compiler's bytecode text with code and remarks, as
+	 * `luau-compile --remarks --text` prints it.
+	 */
+	bytecodeText?: boolean;
 	debugLevel: LuauCompileLevel;
 	optimizationLevel: LuauCompileLevel;
 }
@@ -29,6 +34,7 @@ export interface LuauCompileFailure {
 }
 
 export interface LuauCompileSuccess {
+	bytecodeText?: string;
 	frames: Array<LuauFrameStatistics>;
 	ok: true;
 }
@@ -49,9 +55,14 @@ export function loadLuauCompiler(): LuauCompiler {
 	if (cachedCompiler === undefined) {
 		const runtime = createCompilerWasmRuntime();
 		cachedCompiler = {
-			compile(source, { debugLevel, optimizationLevel }) {
+			compile(source, { bytecodeText = false, debugLevel, optimizationLevel }) {
 				const parsed: JSONValue = JSON.parse(
-					runtime.compileWithStatistics({ debugLevel, optimizationLevel, source }),
+					runtime.compileWithStatistics({
+						bytecodeText,
+						debugLevel,
+						optimizationLevel,
+						source,
+					}),
 				);
 				assert(
 					isLuauCompileResult(parsed),
@@ -79,6 +90,15 @@ function isLuauSpan(value: JSONValue | undefined): value is JSONValue & LuauSpan
 	);
 }
 
+function isCompileError(value: JSONValue | undefined): value is JSONValue & LuauCompileError {
+	return (
+		isRecord(value) &&
+		isLuauSpan(value["location"]) &&
+		typeof value["message"] === "string" &&
+		(value["localName"] === undefined || typeof value["localName"] === "string")
+	);
+}
+
 function isFrameStatistics(value: JSONValue | undefined): value is JSONValue & LuauFrameStatistics {
 	return (
 		isRecord(value) &&
@@ -89,12 +109,11 @@ function isFrameStatistics(value: JSONValue | undefined): value is JSONValue & L
 	);
 }
 
-function isCompileError(value: JSONValue | undefined): value is JSONValue & LuauCompileError {
+function isCompileSuccess(value: JSONObject): boolean {
 	return (
-		isRecord(value) &&
-		isLuauSpan(value["location"]) &&
-		typeof value["message"] === "string" &&
-		(value["localName"] === undefined || typeof value["localName"] === "string")
+		Array.isArray(value["frames"]) &&
+		value["frames"].every(isFrameStatistics) &&
+		(value["bytecodeText"] === undefined || typeof value["bytecodeText"] === "string")
 	);
 }
 
@@ -104,6 +123,6 @@ function isLuauCompileResult(value: JSONValue): value is JSONValue & LuauCompile
 	}
 
 	return value["ok"] === true
-		? Array.isArray(value["frames"]) && value["frames"].every(isFrameStatistics)
+		? isCompileSuccess(value)
 		: value["ok"] === false && isCompileError(value["error"]);
 }

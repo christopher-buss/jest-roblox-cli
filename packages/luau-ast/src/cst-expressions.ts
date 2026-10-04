@@ -148,7 +148,10 @@ export interface CstTypeAssertion extends CstNodeBase<"TypeAssertion"> {
 
 export interface CstElseIfExpr extends CstNodeBase<"ElseIfExpr"> {
 	condition: CstExpr;
+	equals?: Token;
 	keyword: Token;
+	local?: CstLocalDeclaration;
+	localKeyword?: Token;
 	then?: Token;
 	trueExpr: CstExpr;
 }
@@ -157,8 +160,11 @@ export interface CstIfElse extends CstNodeBase<"IfElse"> {
 	condition: CstExpr;
 	else?: Token;
 	elseifs: Array<CstElseIfExpr>;
+	equals?: Token;
 	falseExpr?: CstExpr;
 	if: Token;
+	local?: CstLocalDeclaration;
+	localKeyword?: Token;
 	then?: Token;
 	trueExpr: CstExpr;
 }

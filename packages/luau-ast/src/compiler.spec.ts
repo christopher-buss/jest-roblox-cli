@@ -254,6 +254,41 @@ describe("compile", () => {
 		expect(result.frames).toHaveLength(1);
 	});
 
+	it("should report a successful inline in the bytecode text when asked", () => {
+		expect.assertions(2);
+
+		const compiler = loadLuauCompiler();
+
+		const source = [
+			"local function double(value)",
+			"\treturn value * 2",
+			"end",
+			"return double(input())",
+		].join("\n");
+		const result = compiler.compile(source, {
+			bytecodeText: true,
+			debugLevel: 1,
+			optimizationLevel: 2,
+		});
+
+		assert(result.ok);
+
+		expect(result.bytecodeText).toMatch(/inlining succeeded/);
+		expect(result.bytecodeText).toMatch(/^ *4: return double\(input\(\)\)$/m);
+	});
+
+	it("should omit the bytecode text by default", () => {
+		expect.assertions(1);
+
+		const compiler = loadLuauCompiler();
+
+		const result = compiler.compile("return input()", { debugLevel: 1, optimizationLevel: 2 });
+
+		assert(result.ok);
+
+		expect(result.bytecodeText).toBeUndefined();
+	});
+
 	it("should return the same compiler instance on repeat loads", () => {
 		expect.assertions(1);
 

@@ -97,9 +97,16 @@ void appendLocation(std::string& output, const Luau::Location& location)
     output += ",\"endLine\":" + std::to_string(location.end.line + 1) + "}";
 }
 
-std::string success()
+std::string success(const std::string* bytecodeText)
 {
-    std::string output = "{\"frames\":[";
+    std::string output = "{";
+    if (bytecodeText)
+    {
+        output += "\"bytecodeText\":";
+        appendEscaped(output, bytecodeText->c_str());
+        output.push_back(',');
+    }
+    output += "\"frames\":[";
     for (size_t frameIndex = 0; frameIndex < frames.size(); ++frameIndex)
     {
         if (frameIndex != 0)
@@ -200,7 +207,7 @@ extern "C"
 
 // Returns a malloc'd NUL-terminated JSON result. Ownership transfers to the
 // caller, which releases it with free_result.
-const char* compile_with_statistics(const char* src, size_t len, int optimizationLevel, int debugLevel)
+const char* compile_with_statistics(const char* src, size_t len, int optimizationLevel, int debugLevel, int bytecodeText)
 {
     initFlags();
     frames.clear();
@@ -222,8 +229,16 @@ const char* compile_with_statistics(const char* src, size_t len, int optimizatio
     try
     {
         Luau::BytecodeBuilder bytecode;
+        if (bytecodeText)
+        {
+            bytecode.setDumpFlags(Luau::BytecodeBuilder::Dump_Code | Luau::BytecodeBuilder::Dump_Source | Luau::BytecodeBuilder::Dump_Remarks);
+            bytecode.setDumpSource(std::string(src, len));
+        }
         Luau::compileOrThrow(bytecode, parseResult, names, options);
-        return transfer(success());
+        if (!bytecodeText)
+            return transfer(success(nullptr));
+        const std::string dump = bytecode.dumpEverything();
+        return transfer(success(&dump));
     }
     catch (const Luau::CompileError& error)
     {

@@ -89,6 +89,19 @@ describe("binding identity", () => {
 		expect(inner).not.toBe(outer);
 	});
 
+	it("should scope an `if local` binding to its then branch", () => {
+		expect.assertions(2);
+
+		const root = parseCst(
+			"local x = 1\nif local x = f() then\n\tprint(x)\nelse\n\tprint(x)\nend\n",
+		);
+
+		const [outer, condition, thenRef, elseRef] = bindingsNamed(root, "x");
+
+		expect([thenRef, elseRef]).toStrictEqual([condition, outer]);
+		expect(condition).not.toBe(outer);
+	});
+
 	it("should bind a parameter separately from a same-named outer local", () => {
 		expect.assertions(2);
 

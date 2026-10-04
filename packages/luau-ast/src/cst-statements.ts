@@ -38,7 +38,10 @@ export interface CstDo extends CstStatBase<"Do"> {
 export interface CstElseIf extends CstNodeBase<"ElseIf"> {
 	body: CstBlock;
 	condition: CstExpr;
+	equals?: Token;
 	keyword: Token;
+	local?: CstLocalDeclaration;
+	localKeyword?: Token;
 	then?: Token;
 }
 
@@ -49,7 +52,10 @@ export interface CstIf extends CstStatBase<"If"> {
 	elseBody?: CstBlock;
 	elseifs: Array<CstElseIf>;
 	end: Token;
+	equals?: Token;
 	if: Token;
+	local?: CstLocalDeclaration;
+	localKeyword?: Token;
 	then?: Token;
 }
 

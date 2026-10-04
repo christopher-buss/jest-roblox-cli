@@ -30,6 +30,26 @@ describe("parse", () => {
 		expect(statement.vars[0]!.name).toBe("x");
 	});
 
+	it("should carry the `if local` binding on the statement and the expression", () => {
+		expect.assertions(2);
+
+		const parser = loadLuauParser();
+
+		const result = parser.parse(
+			"if local found = f() then end\nreturn if const id = g() then id else nil",
+		);
+
+		assert(result.ok);
+
+		const [statement, returned] = result.root.body;
+		assert(statement!.type === "AstStatIf" && returned!.type === "AstStatReturn");
+		const [expression] = returned.list;
+		assert(expression!.type === "AstExprIfElse");
+
+		expect(statement.conditionLocal!.name).toBe("found");
+		expect(expression.conditionLocal!.isConst).toBe(true);
+	});
+
 	it("should decode every location into a 1-based exclusive-end span", () => {
 		expect.assertions(1);
 

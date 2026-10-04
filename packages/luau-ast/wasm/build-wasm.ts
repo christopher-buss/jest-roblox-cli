@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-const LUAU_TAG = "0.731";
+const LUAU_TAG = "0.740";
 const EMSDK_VERSION = "6.0.8";
 
 const EMCC_VERSION = /^emcc \D*(\d+\.\d+\.\d+)/;
@@ -165,7 +165,7 @@ function insertBefore(source: string, anchor: string, insertion: string): string
 	return `${source.slice(0, index)}${insertion}${source.slice(index)}`;
 }
 
-// Luau 0.731 has no AstExprInstantiate encoder override, so its generic visitor
+// Luau 0.740 has no AstExprInstantiate encoder override, so its generic visitor
 // concatenates that node's children into invalid JSON.
 function patchAstJsonEncoder(luauSource: string, temporaryRoot: string): string {
 	const filePath = path.join(temporaryRoot, "AstJsonEncoder.cpp");

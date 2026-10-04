@@ -4,6 +4,7 @@ import { Buffer } from "node:buffer";
 import { luauCompilerWasmBase64 } from "./luau-compiler-wasm.ts";
 
 export interface CompilerWasmRequest {
+	bytecodeText: boolean;
 	debugLevel: number;
 	optimizationLevel: number;
 	source: string;
@@ -21,6 +22,7 @@ interface CompilerWasmExports {
 		sourceLength: number,
 		optimizationLevel: number,
 		debugLevel: number,
+		bytecodeText: number,
 	) => number;
 	free: (pointer: number) => void;
 	free_result: (pointer: number) => void;
@@ -69,7 +71,7 @@ export function createCompilerWasmRuntime(): CompilerWasmRuntime {
 
 function callCompiler(
 	wasm: CompilerWasmExports,
-	{ debugLevel, optimizationLevel, source }: CompilerWasmRequest,
+	{ bytecodeText, debugLevel, optimizationLevel, source }: CompilerWasmRequest,
 ): string {
 	const sourceBytes = encoder.encode(source);
 	const sourcePointer = wasm.malloc(sourceBytes.length + 1);
@@ -82,6 +84,7 @@ function callCompiler(
 		sourceBytes.length,
 		optimizationLevel,
 		debugLevel,
+		bytecodeText ? 1 : 0,
 	);
 	const heapForRead = new Uint8Array(wasm.memory.buffer);
 	const resultEnd = heapForRead.indexOf(0, resultPointer);

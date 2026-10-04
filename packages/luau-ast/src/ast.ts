@@ -201,6 +201,8 @@ export interface AstExprGroup {
 
 export interface AstExprIfElse {
 	condition: AstExpr;
+	/** Present on `if local` and `if const`; in scope for `trueExpr` only. */
+	conditionLocal?: AstLocal;
 	falseExpr: AstExpr;
 	hasElse: boolean;
 	hasThen: boolean;
@@ -327,6 +329,8 @@ export interface AstStatFunction {
 
 export interface AstStatIf {
 	condition: AstExpr;
+	/** Present on `if local` and `if const`; in scope for `thenbody` only. */
+	conditionLocal?: AstLocal;
 	elsebody?: AstStatBlock | AstStatIf;
 	hasThen: boolean;
 	location: LuauSpan;
