@@ -931,10 +931,9 @@ export function resolveOpenCloudBaseUrl(): string | undefined {
 }
 
 /**
- * Reads {@link MAX_RETRIES_ENV} for an Open Cloud retry-budget override. Lets
- * the live e2e suite raise the per-request retry count so concurrent place
- * uploads (which share one per-minute quota across processes) ride out a
- * transient 429 instead of failing. Returns undefined for unset, empty, or
+ * Reads {@link MAX_RETRIES_ENV} for an Open Cloud per-request retry override,
+ * which bounds unguided 429s, 5xx and transport retries; a 429 with
+ * `retry-after` > 0 spends none. Returns undefined for unset, empty, or
  * non-integer values so the client keeps its own default.
  */
 export function resolveOcaleMaxRetries(): number | undefined {

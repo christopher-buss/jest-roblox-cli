@@ -126,6 +126,12 @@ function capacityError(blocker = CAPACITY_BLOCKER): RateLimitError {
 	});
 }
 
+async function fakeTimerSleepAsync(ms: number): Promise<void> {
+	await new Promise<void>((resolve) => {
+		setTimeout(resolve, ms);
+	});
+}
+
 async function scaledAdmissionSleepAsync(ms: number): Promise<void> {
 	await new Promise<void>((resolve) => {
 		setTimeout(resolve, ms >= 60_000 ? 65_000 : 5000);
@@ -1074,11 +1080,7 @@ describe(OcaleRunner, () => {
 				const runner = new OcaleRunner(
 					{ apiKey: "test-key", placeId: "456", universeId: "123" },
 					{
-						capacityWaitAsync: async (ms) => {
-							await new Promise<void>((resolve) => {
-								setTimeout(resolve, ms);
-							});
-						},
+						capacityWaitAsync: fakeTimerSleepAsync,
 						httpClient: http,
 						sleep: scaledAdmissionSleepAsync,
 					},
@@ -1127,10 +1129,10 @@ describe(OcaleRunner, () => {
 				expect.assertions(1);
 
 				const http = createFakeHttpClient();
-				// Six 429s outlast ocale's create default (maxRetries 3), so
+				// Six unguided 429s outlast ocale's default (maxRetries 3), so
 				// only a budget-bounded submit reaches the response behind them.
 				for (let index = 0; index < 6; index += 1) {
-					http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
+					http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
 				}
 
 				http.mockResponse({ body: taskBody({ state: "QUEUED" }), status: 200 });
@@ -1301,11 +1303,7 @@ describe(OcaleRunner, () => {
 				{
 					httpClient: http,
 					// ocale's default sleep sits on timers vitest does not fake.
-					sleep: async (ms) => {
-						await new Promise((resolve) => {
-							setTimeout(resolve, ms);
-						});
-					},
+					sleep: fakeTimerSleepAsync,
 				},
 			);
 			const execution = runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
@@ -2524,7 +2522,7 @@ describe(OcaleRunner, () => {
 			});
 		});
 
-		it("should classify a quota refusal an idempotent submit refused to wait out", async () => {
+		it("should classify a refused long 429 wait on an idempotent submit as a quota error", async () => {
 			expect.assertions(2);
 
 			vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });

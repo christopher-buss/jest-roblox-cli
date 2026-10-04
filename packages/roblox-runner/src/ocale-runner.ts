@@ -152,6 +152,12 @@ const ISO_MILLISECONDS = /\.\d{3}Z$/u;
 const EDGE_RETRY_FLOOR_MS = 1000;
 
 /**
+ * High so the {@link ExecuteScriptOptions.submitBudget}, not a retry count,
+ * bounds a budgeted submit's unguided retries.
+ */
+const BUDGETED_SUBMIT_MAX_RETRIES = 32;
+
+/**
  * Race marker for a submit that outlived its
  * {@link ExecuteScriptOptions.submitBudget}.
  */
@@ -184,10 +190,8 @@ export interface OcaleRunnerOptions {
 	httpClient?: HttpClient;
 	/**
 	 * Max retry attempts the underlying Open Cloud client makes per request.
-	 * Defaults to the client's own default (3). Raising it lets place uploads
-	 * and task submits ride out a transient 429 throttle (the server's
-	 * `retry-after` is honored) instead of surfacing the rate limit — useful
-	 * when many runs share one place's per-minute upload quota.
+	 * Defaults to the client's own default (3). Counts unguided 429s, 5xx and
+	 * transport retries; a 429 with `retry-after` > 0 spends none.
 	 */
 	maxRetries?: number | undefined;
 	readFile?: (filePath: string) => buffer.Buffer;
@@ -519,6 +523,7 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		const budgetAbort = new AbortController();
 		const submitSignal = combineSignals(signal, budgetAbort.signal);
 		const submitOptions = {
+			...(submitBudget === undefined ? {} : { maxRetries: BUDGETED_SUBMIT_MAX_RETRIES }),
 			...(isSubmitIdempotent ? { retryableStatuses: SAFE_SUBMIT_RETRY_STATUSES } : {}),
 			retryableTransportCodes: retrySubmitTransportErrors ? TRANSIENT_TRANSPORT_CODES : [],
 			signal: submitSignal,
