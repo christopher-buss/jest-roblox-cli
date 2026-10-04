@@ -7,6 +7,7 @@ import { assert, describe, expect, it, onTestFinished } from "vitest";
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import { PLACE_DIR } from "../../../src/coverage-pipeline/prepare.ts";
 import { loadConfig, prepareArtifactsAsync, readCoverageManifest } from "../../../src/index.ts";
+import { quotaSkipNote, skipOnQuotaAsync } from "../../setup/quota-skip.ts";
 import { createFixtureSandbox, runCliAsync } from "../cli/helpers.ts";
 import { IS_LIVE, liveEnvironment } from "./live-gate.ts";
 
@@ -106,7 +107,7 @@ describe("live pipeline", () => {
 	// global-setup's sentinel cache re-compiles the spec with the marker warn.
 	it.runIf(IS_LIVE)(
 		"should run both mounts, capture game output, and report coverage in one run",
-		async () => {
+		async (context) => {
 			expect.assertions(12);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
@@ -129,6 +130,9 @@ describe("live pipeline", () => {
 					timeoutMs: CLI_RUN_TIMEOUT_MS,
 				},
 			);
+
+			const quotaNote = quotaSkipNote(result);
+			context.skip(quotaNote !== undefined, quotaNote);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
 			// Four shared tests (one bare `it`, one nested, two `each` rows) plus
@@ -198,7 +202,7 @@ describe("live pipeline", () => {
 	// `tests[]`.
 	it.runIf(IS_LIVE)(
 		"should record each test's own it( line and range hash, whichever way it was declared",
-		async () => {
+		async (context) => {
 			expect.assertions(7);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
@@ -208,10 +212,13 @@ describe("live pipeline", () => {
 				process.chdir(previousCwd);
 			});
 
-			const bundle = await prepareArtifactsAsync({
-				...(await loadConfig("jest.no-probe.config.ts", sandbox)),
-				backend: "open-cloud",
-			});
+			const bundle = await skipOnQuotaAsync(
+				context,
+				prepareArtifactsAsync({
+					...(await loadConfig("jest.no-probe.config.ts", sandbox)),
+					backend: "open-cloud",
+				}),
+			);
 			const read = readCoverageManifest(bundle.coverageManifestPath);
 			assert(read.kind === "ok", `coverage manifest unreadable: ${read.kind}`);
 			assert(read.manifest.tests !== undefined, "the manifest carries no tests[]");
@@ -269,7 +276,7 @@ describe("live pipeline", () => {
 	// `src/config/narrow-by-files.spec.ts`.
 	it.runIf(IS_LIVE)(
 		"should run only the named file when a namesake shares its basename",
-		async () => {
+		async (context) => {
 			expect.assertions(4);
 
 			const sandbox = createFixtureSandbox(LIVE_FIXTURE_PATH);
@@ -287,6 +294,9 @@ describe("live pipeline", () => {
 					timeoutMs: RECOVERY_DEADLINE_MS,
 				},
 			);
+
+			const quotaNote = quotaSkipNote(result);
+			context.skip(quotaNote !== undefined, quotaNote);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
 			expect(result.stdout).toContain("1 passed");

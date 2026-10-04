@@ -1,12 +1,16 @@
+import { fromPartial } from "@total-typescript/shoehorn";
+
 import { type } from "arktype";
 import buffer from "node:buffer";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
+import type { TestContext } from "vitest";
 import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { openCloudExecutionBudgets } from "../../../src/backends/open-cloud-budgets.ts";
 import type { JestResult } from "../../../src/types/jest-result.ts";
+import { skipOnQuotaAsync } from "../../setup/quota-skip.ts";
 import { type FakeOpenCloudTask, startFakeOpenCloudServerAsync } from "../cli/fake-open-cloud.ts";
 import { IS_BINARY_INPUT, IS_LIVE } from "./live-gate.ts";
 
@@ -50,6 +54,7 @@ const IDEMPOTENT_TEST_TIMEOUT_MS = (TASK_CREATE_RETRY_BUDGET_MS + TASK_POLL_TIME
 const RATE_LIMIT_RETRY_COUNT = 8;
 const RATE_LIMIT_BASE_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 10_000;
+const MINUTE_WINDOW_SECONDS = 60;
 
 const PLACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/live-place/game.rbxl");
 
@@ -92,15 +97,14 @@ const fake: ContractCase = {
 		return { baseUrl: server.baseUrl, placeId: "456", universeId: "123" };
 	},
 };
+// The fake must never skip on quota.
+const fakeEntry = { name: "fake", settleTaskAsync: awaitTaskAsync, testCase: fake };
 const cases =
 	liveCase === undefined
-		? [{ name: "fake", testCase: fake }]
-		: [
-				{ name: "fake", testCase: fake },
-				{ name: "live", testCase: liveCase },
-			];
+		? [fakeEntry]
+		: [fakeEntry, { name: "live", settleTaskAsync: skipOnQuotaAsync, testCase: liveCase }];
 
-describe.for(cases)("open Cloud contract ($name)", ({ name, testCase }) => {
+describe.for(cases)("open Cloud contract ($name)", ({ name, settleTaskAsync, testCase }) => {
 	it(
 		"should return a numeric versionNumber from a place upload",
 		{ timeout: TASK_CREATE_RETRY_BUDGET_MS + 5000 },
@@ -153,7 +157,7 @@ describe.for(cases)("open Cloud contract ($name)", ({ name, testCase }) => {
 
 	it(
 		"should return an envelope-shaped results[0] when the script completes",
-		async () => {
+		async (context) => {
 			expect.assertions(4);
 
 			const { baseUrl, placeId, universeId } = await testCase.resolve([
@@ -163,13 +167,14 @@ describe.for(cases)("open Cloud contract ($name)", ({ name, testCase }) => {
 				{ jestOutput: JSON.stringify(buildPassingJestPayload()) },
 			]);
 			const http = createHttpClient(testCase.apiKey);
-			const status = await executeIdempotentScriptAsync({
+			const execution = executeIdempotentScriptAsync({
 				baseUrl,
 				http,
 				placeId,
 				script: buildSuccessLuauScript(),
 				universeId,
 			});
+			const status = await settleTaskAsync(context, execution);
 
 			expect(status.state).toBe("COMPLETE");
 
@@ -191,20 +196,21 @@ describe.for(cases)("open Cloud contract ($name)", ({ name, testCase }) => {
 
 	it(
 		"should return state=FAILED with a string error.message when the script errors",
-		async () => {
+		async (context) => {
 			expect.assertions(2);
 
 			const { baseUrl, placeId, universeId } = await testCase.resolve([
 				{ errorMessage: "contract-failure", jestOutput: "", state: "FAILED" },
 			]);
 			const http = createHttpClient(testCase.apiKey);
-			const status = await executeIdempotentScriptAsync({
+			const execution = executeIdempotentScriptAsync({
 				baseUrl,
 				http,
 				placeId,
 				script: 'error("contract-failure")',
 				universeId,
 			});
+			const status = await settleTaskAsync(context, execution);
 
 			expect(status.state).toBe("FAILED");
 			expect(status.error!.message).toBeString();
@@ -663,6 +669,42 @@ describe("rate-limited contract HTTP", () => {
 		);
 		expect(fetchMock).toHaveBeenCalledTimes(9);
 	});
+
+	it("should fail at once on a 429 whose retry-after outlasts the minute window", async () => {
+		expect.assertions(3);
+
+		const fetchMock = vi.fn<typeof fetch>(async () => {
+			return Response.json(
+				{ code: "RESOURCE_EXHAUSTED", message: "dmaas" },
+				{ headers: { "Retry-After": "1856" }, status: 429 },
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		onTestFinished(() => {
+			vi.unstubAllGlobals();
+		});
+		const skip = vi.fn<(condition: boolean, note?: string) => void>();
+
+		const task = createTaskAsync({
+			baseUrl: "https://apis.roblox.com",
+			http: createHttpClient("test-api-key"),
+			placeId: "456",
+			script: "return nil",
+			universeId: "123",
+		});
+
+		await expect(skipOnQuotaAsync(fromPartial<TestContext>({ skip }), task)).rejects.toThrow(
+			/^Task creation failed: status=429; retry-after=1856;/,
+		);
+		expect(skip).toHaveBeenCalledWith(
+			true,
+			"open-cloud-quota: Roblox refused the task create on its hourly quota",
+		);
+		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+			"https://apis.roblox.com/cloud/v2/universes/123/places/456/luau-execution-session-tasks",
+			expect.objectContaining({ method: "POST" }),
+		);
+	});
 });
 
 class ContractPollTimeoutError extends Error {
@@ -693,6 +735,10 @@ function numericHeaderValues(headers: Headers, name: string): Array<number> {
 		.split(",")
 		.map((entry) => Number(entry.trim()))
 		.filter((entry) => Number.isFinite(entry));
+}
+
+function isHourlyQuotaResponse(headers: Headers): boolean {
+	return Math.max(0, ...numericHeaderValues(headers, "retry-after")) > MINUTE_WINDOW_SECONDS;
 }
 
 function resolveRateLimitRetryDelayMs(headers: Headers, retryCount: number): number {
@@ -834,7 +880,11 @@ function createHttpClient(apiKey: string): HttpClient {
 							response.status === 429 ||
 							((method === "GET" || options?.isIdempotent === true) &&
 								[500, 502, 503, 504].includes(response.status));
-						if (!isRetryable || retryCount >= RATE_LIMIT_RETRY_COUNT) {
+						if (
+							!isRetryable ||
+							retryCount >= RATE_LIMIT_RETRY_COUNT ||
+							isHourlyQuotaResponse(response.headers)
+						) {
 							return result;
 						}
 
@@ -902,6 +952,10 @@ function resolveLiveCase(): ContractCase | undefined {
 			};
 		},
 	};
+}
+
+async function awaitTaskAsync<T>(_context: TestContext, run: Promise<T>): Promise<T> {
+	return run;
 }
 
 async function createTaskAsync({
