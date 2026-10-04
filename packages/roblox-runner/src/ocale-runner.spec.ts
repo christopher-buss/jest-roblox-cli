@@ -481,11 +481,11 @@ describe(OcaleRunner, () => {
 			expect.assertions(1);
 
 			const http = createFakeHttpClient();
-			// maxRetries defaults to 3, so a fourth 429 has no attempt left.
-			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
-			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
-			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
-			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 1 });
+			// Only an unguided 429 spends one of the default 3 retries.
+			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
+			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
+			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
+			http.mockRateLimit({ message: "Rate limited", retryAfterSeconds: 0 });
 
 			const runner = makeRunner(http);
 
@@ -1298,7 +1298,15 @@ describe(OcaleRunner, () => {
 
 			const runner = new OcaleRunner(
 				{ apiKey: "test-key", placeId: "456", universeId: "123" },
-				{ httpClient: http },
+				{
+					httpClient: http,
+					// ocale's default sleep sits on timers vitest does not fake.
+					sleep: async (ms) => {
+						await new Promise((resolve) => {
+							setTimeout(resolve, ms);
+						});
+					},
+				},
 			);
 			const execution = runner.executeScriptAsync({ script: "return 1", timeout: 30_000 });
 			await vi.advanceTimersByTimeAsync(4999);
@@ -2514,6 +2522,46 @@ describe(OcaleRunner, () => {
 				timeoutSeconds: 30,
 				unlockTime: "2026-09-22T12:31:47.000Z",
 			});
+		});
+
+		it("should classify a quota refusal an idempotent submit refused to wait out", async () => {
+			expect.assertions(2);
+
+			vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
+			onTestFinished(() => {
+				vi.useRealTimers();
+			});
+			const http = createFakeHttpClient();
+			http.mockError(
+				new RateLimitError("Rate limited", {
+					code: "RESOURCE_EXHAUSTED",
+					details: { code: "RESOURCE_EXHAUSTED", message: "dmaas (Too Many Requests)" },
+					responseHeaders: { "retry-after": "515" },
+					retryAfterSeconds: 515,
+					statusCode: 429,
+				}),
+			);
+
+			const caught: unknown = await makeRunner(http)
+				.executeScriptAsync({
+					isSubmitIdempotent: true,
+					placeVersion: 7,
+					script: "return 1",
+					timeout: 30_000,
+				})
+				.catch((err: unknown) => err);
+			assert(caught instanceof TaskQuotaError);
+
+			expect(caught.evidence).toStrictEqual({
+				code: "RESOURCE_EXHAUSTED",
+				headers: { "retry-after": "515" },
+				kind: "create-quota",
+				placeVersion: 7,
+				retryAfterSeconds: 515,
+				timeoutSeconds: 30,
+				unlockTime: "2026-09-22T12:09:26.000Z",
+			});
+			expect(http.requests).toHaveLength(1);
 		});
 
 		it("should remove the API key from a quota refusal's evidence and message", async () => {

@@ -11,6 +11,7 @@ import {
 	createFetchHttpClient,
 	PollTimeoutError,
 	RateLimitError,
+	RateLimitWaitRefusedError,
 	RequestDeadlineExceededError,
 	RESPONSE_UNPARSEABLE,
 	RetryDelayExceededError,
@@ -149,15 +150,6 @@ const ISO_MILLISECONDS = /\.\d{3}Z$/u;
 
 /** The least an edge-refused create waits before it is sent again. */
 const EDGE_RETRY_FLOOR_MS = 1000;
-
-/**
- * Attempts a submit under an {@link ExecuteScriptOptions.submitBudget} is
- * allowed. High on purpose: the budget is the bound, and a count that bites
- * first would fail a submit the caller still had seconds to spend. Roblox's
- * `retry-after` on a metered create runs a few seconds, so this outlasts any
- * budget a caller would set.
- */
-const BUDGETED_SUBMIT_MAX_RETRIES = 32;
 
 /**
  * Race marker for a submit that outlived its
@@ -527,7 +519,6 @@ export class OcaleRunner implements BinaryInputUploader, RemoteRunner {
 		const budgetAbort = new AbortController();
 		const submitSignal = combineSignals(signal, budgetAbort.signal);
 		const submitOptions = {
-			...(submitBudget === undefined ? {} : { maxRetries: BUDGETED_SUBMIT_MAX_RETRIES }),
 			...(isSubmitIdempotent ? { retryableStatuses: SAFE_SUBMIT_RETRY_STATUSES } : {}),
 			retryableTransportCodes: retrySubmitTransportErrors ? TRANSIENT_TRANSPORT_CODES : [],
 			signal: submitSignal,
@@ -923,7 +914,10 @@ function toQuotaError({
  * @returns The error to throw, carrying the ocale error as its cause.
  */
 function toSubmitError(err: OpenCloudError, task: RefusedCreate): Error {
-	if (err instanceof RetryDelayExceededError && err.cause instanceof RateLimitError) {
+	if (
+		(err instanceof RetryDelayExceededError || err instanceof RateLimitWaitRefusedError) &&
+		err.cause instanceof RateLimitError
+	) {
 		return toQuotaError({ err, headline: err.message, rateLimit: err.cause, task });
 	}
 

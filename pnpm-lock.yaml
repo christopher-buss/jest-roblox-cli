@@ -21,8 +21,8 @@ importers:
   .:
     dependencies:
       '@bedrock-rbx/ocale':
-        specifier: 0.3.3
-        version: 0.3.3
+        specifier: 0.3.4
+        version: 0.3.4
       '@jridgewell/trace-mapping':
         specifier: 0.3.31
         version: 0.3.31
@@ -232,8 +232,8 @@ importers:
   packages/roblox-runner:
     dependencies:
       '@bedrock-rbx/ocale':
-        specifier: 0.3.3
-        version: 0.3.3
+        specifier: 0.3.4
+        version: 0.3.4
       arktype:
         specifier: 2.2.3
         version: 2.2.3
@@ -559,8 +559,8 @@ packages:
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
 
-  '@bedrock-rbx/ocale@0.3.3':
-    resolution: {integrity: sha512-slddPzFS78tzOWCeSHWT0WUBnDE9VazVB5JP10LIB7KU/Ad7L1hJpF94ThD0MxJ+pkUz8LKWm0zohGUCnCVWLA==}
+  '@bedrock-rbx/ocale@0.3.4':
+    resolution: {integrity: sha512-tbhbx7K4fXSC/v8ByWL9oCdHq3WRT1zXuTNs/3OvkXNZfe0t1qYFns/A9ZELdv96JXsGgCBRqcpzSEZzrM3sVQ==}
     engines: {bun: '>=1.3.0', node: '>=24.12.0'}
 
   '@better-typescript-lib/decorators@2.12.0':
@@ -3558,8 +3558,8 @@ packages:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
 
-  exsolve@1.1.1:
-    resolution: {integrity: sha512-9U/jZUgjnSGyntRr6y5Muu1MJcwFl6kPu7k8qLF0IMNfLqvw0NZ4nnVDq0RVoZ0RvCyumib4Ez3KYrVfilrw+g==}
+  exsolve@1.1.3:
+    resolution: {integrity: sha512-kuzL9zherLQoqDeQaS55AiiIg1kb4KYXaSusTtgZTPlvKP2gGCI82LNmBNh5RjDVUXIcmgx+/Mx7vPwRzBbhJA==}
 
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
@@ -5373,7 +5373,7 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@bedrock-rbx/ocale@0.3.3': {}
+  '@bedrock-rbx/ocale@0.3.4': {}
 
   '@better-typescript-lib/decorators@2.12.0(typescript@6.0.3)':
     dependencies:
@@ -7637,7 +7637,7 @@ snapshots:
     dependencies:
       confbox: 0.2.4
       defu: 6.1.7
-      exsolve: 1.1.1
+      exsolve: 1.1.3
       pathe: 2.0.3
       pkg-types: 2.3.3
       rc9: 3.1.0
@@ -8311,7 +8311,7 @@ snapshots:
 
   expect-type@1.4.0: {}
 
-  exsolve@1.1.1: {}
+  exsolve@1.1.3: {}
 
   fast-deep-equal@3.1.3: {}
 
@@ -9333,7 +9333,7 @@ snapshots:
   pkg-types@2.3.3:
     dependencies:
       confbox: 0.3.1
-      exsolve: 1.1.1
+      exsolve: 1.1.3
       pathe: 2.0.3
 
   pluralize@8.0.0: {}

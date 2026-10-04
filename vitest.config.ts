@@ -360,12 +360,6 @@ export default defineConfig({
 					// identity guards execution, streaming keys are per-run
 					// UUIDs, and each test builds its own sandbox. Nothing may
 					// serialize this project to keep that true.
-					env: {
-						// Concurrent runs share one place's per-minute upload
-						// quota, so a burst can 429 with a short retry-after.
-						// Budget enough retries to ride that out in place.
-						JEST_ROBLOX_OCALE_MAX_RETRIES: "8",
-					},
 					globalSetup: ["./test/e2e/fixtures/live-place/global-setup.ts"],
 					// Every spec that reaches real Open Cloud lives here and
 					// nowhere else; the `e2e` project globs the complement.
