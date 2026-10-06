@@ -13,7 +13,7 @@ const QUOTA_STDERR = [
 	"    kind: create-quota",
 	"    unlockTime: 2026-10-04T13:20:10.627Z",
 ].join("\n");
-const HOURLY_REFUSAL =
+const LOCKOUT_REFUSAL =
 	"Task creation failed: status=429; retry-after=1856; x-envoy-ratelimited=<absent>; " +
 	"x-ratelimit-remaining=<absent>; x-ratelimit-reset=<absent>; " +
 	"x-roblox-system-reason=<absent>; x-retry-after-coverage=<absent>; " +
@@ -94,25 +94,25 @@ describe(skipOnQuotaAsync, () => {
 		expect.assertions(1);
 
 		const { context, skip } = fakeContext();
-		await skipOnQuotaAsync(context, Promise.reject(new Error(HOURLY_REFUSAL))).catch(() => {});
+		await skipOnQuotaAsync(context, Promise.reject(new Error(LOCKOUT_REFUSAL))).catch(() => {});
 
 		expect(skip).toHaveBeenCalledWith(
 			true,
-			"open-cloud-quota: Roblox refused the task create on its hourly quota",
+			"open-cloud-quota: Roblox refused the task create beyond its per-minute limit",
 		);
 	});
 
 	it.for([
-		["the per-key minute limit", HOURLY_REFUSAL.replace("1856", "42")],
+		["the per-key minute limit", LOCKOUT_REFUSAL.replace("1856", "42")],
 		[
 			"a 429 without a retry-after",
-			HOURLY_REFUSAL.replace("retry-after=1856", "retry-after=<absent>"),
+			LOCKOUT_REFUSAL.replace("retry-after=1856", "retry-after=<absent>"),
 		],
 		[
 			"a 429 that is not RESOURCE_EXHAUSTED",
-			HOURLY_REFUSAL.replace("RESOURCE_EXHAUSTED", "OTHER"),
+			LOCKOUT_REFUSAL.replace("RESOURCE_EXHAUSTED", "OTHER"),
 		],
-		["another status", HOURLY_REFUSAL.replace("status=429", "status=500")],
+		["another status", LOCKOUT_REFUSAL.replace("status=429", "status=500")],
 	])("should rethrow without skipping on %s", async ([, message]) => {
 		expect.assertions(2);
 

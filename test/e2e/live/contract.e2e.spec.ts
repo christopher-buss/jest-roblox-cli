@@ -698,7 +698,7 @@ describe("rate-limited contract HTTP", () => {
 		);
 		expect(skip).toHaveBeenCalledWith(
 			true,
-			"open-cloud-quota: Roblox refused the task create on its hourly quota",
+			"open-cloud-quota: Roblox refused the task create beyond its per-minute limit",
 		);
 		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
 			"https://apis.roblox.com/cloud/v2/universes/123/places/456/luau-execution-session-tasks",
@@ -737,7 +737,7 @@ function numericHeaderValues(headers: Headers, name: string): Array<number> {
 		.filter((entry) => Number.isFinite(entry));
 }
 
-function isHourlyQuotaResponse(headers: Headers): boolean {
+function isLockoutResponse(headers: Headers): boolean {
 	return Math.max(0, ...numericHeaderValues(headers, "retry-after")) > MINUTE_WINDOW_SECONDS;
 }
 
@@ -883,7 +883,7 @@ function createHttpClient(apiKey: string): HttpClient {
 						if (
 							!isRetryable ||
 							retryCount >= RATE_LIMIT_RETRY_COUNT ||
-							isHourlyQuotaResponse(response.headers)
+							isLockoutResponse(response.headers)
 						) {
 							return result;
 						}

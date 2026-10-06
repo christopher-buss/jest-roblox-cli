@@ -172,7 +172,7 @@ per-package declarations error loudly.
 | `workspace.exclude`    | Globs (workspace-root-relative) naming package directories an enumerated run must skip; `--packages` overrides it                                                            | —             |
 | `workspace.gameOutput` | `true` to also emit per-package Game Output files under `.jest-roblox/output/` (`--workspace` only)                                                                          | —             |
 | `workspace.outputFile` | `true` to also emit per-package result files under `.jest-roblox/output/` (`--workspace` only)                                                                               | —             |
-| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). Each session costs one task create against Roblox's hourly limit. studio-cli ignores it and runs one session | one session   |
+| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`). Each session costs one task create against Roblox's create limit. studio-cli ignores it and runs one session | one session   |
 | `placeId`              | Open Cloud place ID                                                                                                                                                          | —             |
 | `port`                 | WebSocket port for Studio backend                                                                                                                                            | `3001`        |
 | `silent`               | Suppress console output                                                                                                                                                      | `false`       |
@@ -245,19 +245,20 @@ The probe's submit and poll share one `bootProbeTimeout` deadline, with a short
 script deadline. Set `bootProbeTimeout` to `0` to skip the probe; no new
 upload-cache entry is written in that case.
 
-Each logical execution creates exactly one Open Cloud task. Roblox allows about
-30 task creates per rolling hour per account, shared by every key, universe and
-place the account owns, so the backend never starts a replacement task: a
-stalled task, a poll timeout or an uncertain create fails the run instead of
-spending another create. Retries stay inside one request. A task create is sent
-again only when the edge rate limit refused it before Roblox's task service saw
-it; a 429 or 5xx from the task service itself is final, because that attempt
-already counted against the hourly limit. A 429 fails with its code and its
-rate-limit headers; when the hourly limit refused it, the error names the UTC
-time the account can create tasks again. A create that loses its connection is
-also sent again, as it was before replacement tasks existed. Place uploads retry
-429, 5xx and transport errors; task polls retry transient read failures. Test
-failures and terminal task errors are never retried.
+Each logical execution creates exactly one Open Cloud task. Roblox can refuse
+task creates for longer than its per-minute limit, and the refusal covers every
+key, universe and place the account owns, so the backend never starts a
+replacement task: a stalled task, a poll timeout or an uncertain create fails
+the run instead of spending another create. Retries stay inside one request. A
+task create is sent again only when the edge rate limit refused it before
+Roblox's task service saw it; a 429 or 5xx from the task service itself is
+final, because that attempt already counted against the create limit. A 429
+fails with its code and its rate-limit headers; when its `retry-after` outlasts
+the per-minute window, the error names the UTC time the account can create tasks
+again. A create that loses its connection is also sent again, as it was before
+replacement tasks existed. Place uploads retry 429, 5xx and transport errors;
+task polls retry transient read failures. Test failures and terminal task errors
+are never retried.
 
 A test task that reaches its deadline without a terminal state, or a task create
 refused with a 429, is a Roblox infrastructure failure, not a test result. The
@@ -946,7 +947,7 @@ project) under `.jest-roblox/output/`.
 | `--no-color`                     | Turn off colors                                                                                                                                                 |
 | `--no-coverage-cache`            | Force a clean coverage re-instrumentation                                                                                                                       |
 | `--no-upload-cache`              | Always upload the place, even when its bytes are unchanged                                                                                                      |
-| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one by default, each costing one task create against Roblox's hourly limit; ignored on studio-cli |
+| `--parallel [n]`                 | Open Cloud concurrent sessions, or `auto` (= `min(jobs, 3)`); one by default, each costing one task create against Roblox's create limit; ignored on studio-cli |
 | `--experimental-vm-parallel [n]` | Studio-only: run the projects across `n` Luau VMs in one session (see [Experimental: in-session VM parallelism](#experimental-in-session-vm-parallelism))       |
 | `--project <name>`               | Filter which named projects to run (repeatable)                                                                                                                 |
 | `--setupFiles <path>`            | Script to run before env (repeatable)                                                                                                                           |

@@ -138,8 +138,8 @@ const edgeRateLimitSchema = type({ errors: "unknown[]" });
 const DEFAULT_MAX_RETRIES = 3;
 
 /**
- * The longest `retry-after` of dmaas's per-minute limits. Longer is the
- * account's hourly create limit, whose `retry-after` names its unlock.
+ * The longest `retry-after` of dmaas's per-minute limits. A longer one is an
+ * account lockout, whose `retry-after` names its unlock.
  */
 const MINUTE_WINDOW_SECONDS = 60;
 
@@ -865,25 +865,25 @@ function isServerErrorDetails(value: unknown): value is { code: string; message:
 }
 
 /**
- * The unlock of the account's hourly create limit, when the 429 is one: a
- * dmaas refusal whose wait outlasts the per-minute window.
+ * The unlock of an account lockout, when the 429 is one: a dmaas refusal whose
+ * wait outlasts the per-minute window.
  */
-function describeHourlyUnlock(err: RateLimitError): Array<string> {
+function describeLockoutUnlock(err: RateLimitError): Array<string> {
 	if (isEdgeRefusal(err) || err.retryAfterSeconds <= MINUTE_WINDOW_SECONDS) {
 		return [];
 	}
 
 	const unlock = computeUnlockTime(err);
 	return [
-		"  Roblox allows 30 task creates per hour per account; " +
+		"  Roblox refused task creates for longer than its per-minute limit; " +
 			`this account can create tasks again at ${unlock.toISOString().replace(ISO_MILLISECONDS, "Z")}.`,
 	];
 }
 
-/** The 429's evidence, one line each: the hourly unlock, code and headers. */
+/** The 429's evidence, one line each: the lockout unlock, code and headers. */
 function describeRateLimit(err: RateLimitError): Array<string> {
 	return [
-		...describeHourlyUnlock(err),
+		...describeLockoutUnlock(err),
 		...(err.code === undefined ? [] : [`  code: ${err.code}`]),
 		...Object.entries(err.responseHeaders ?? {}).map(([name, value]) => `  ${name}: ${value}`),
 	];

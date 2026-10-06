@@ -77,7 +77,7 @@ Options:
   --parallel [n]                    Open-Cloud-only: number of concurrent sessions
                                     (or "auto" = min(jobs, 3); default: 1 session).
                                     Each session costs one task create against
-                                    Roblox's hourly limit
+                                    Roblox's create limit
   --experimental-vm-parallel [n]    Studio-only, experimental: run the configs across
                                     n Luau VMs in one Studio session (default: one
                                     VM per config; max 4, the hosts the plugin

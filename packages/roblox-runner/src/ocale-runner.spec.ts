@@ -2118,7 +2118,7 @@ describe(OcaleRunner, () => {
 			);
 		});
 
-		it("should name the unlock time and the hourly limit when the account's creates are spent", async () => {
+		it("should name the unlock time when a refusal outlasts the minute window", async () => {
 			expect.assertions(2);
 
 			vi.useFakeTimers({ now: new Date("2026-09-22T12:00:51Z") });
@@ -2143,7 +2143,7 @@ describe(OcaleRunner, () => {
 			assert(caught instanceof TaskSubmitError);
 
 			expect(caught.message).toContain(
-				"Roblox allows 30 task creates per hour per account; " +
+				"Roblox refused task creates for longer than its per-minute limit; " +
 					"this account can create tasks again at 2026-09-22T12:31:47Z.",
 			);
 			expect(http.requests).toHaveLength(1);

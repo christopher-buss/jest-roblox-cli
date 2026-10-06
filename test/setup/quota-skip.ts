@@ -38,7 +38,7 @@ export async function skipOnQuotaAsync<T>(context: TestContext, run: Promise<T>)
 	}
 }
 
-function isHourlyQuotaRefusal(message: string): boolean {
+function isLockoutRefusal(message: string): boolean {
 	const retryAfter = Number(RETRY_AFTER_PATTERN.exec(message)?.[1]);
 	return (
 		message.includes("status=429;") &&
@@ -52,9 +52,9 @@ function quotaErrorNote(err: unknown): string | undefined {
 		return `${NOTE_PREFIX} Roblox refused the task create until ${err.evidence.unlockTime}`;
 	}
 
-	if (!(err instanceof Error) || !isHourlyQuotaRefusal(err.message)) {
+	if (!(err instanceof Error) || !isLockoutRefusal(err.message)) {
 		return undefined;
 	}
 
-	return `${NOTE_PREFIX} Roblox refused the task create on its hourly quota`;
+	return `${NOTE_PREFIX} Roblox refused the task create beyond its per-minute limit`;
 }

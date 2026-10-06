@@ -2465,7 +2465,7 @@ describe("exact version submission", { timeout: 1000 }, () => {
 		});
 	});
 
-	/** A 5xx create may still have counted against the hourly create budget. */
+	/** A 5xx create may still have counted against the create limit. */
 	it("should not re-send a probe create that Open Cloud answered with a 5xx", async () => {
 		expect.assertions(1);
 
