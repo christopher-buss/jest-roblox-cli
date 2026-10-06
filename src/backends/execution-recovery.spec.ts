@@ -176,6 +176,7 @@ describe("open Cloud execution recovery", () => {
 		const hedgeStarted = Promise.withResolvers<void>();
 		const rescued = Promise.withResolvers<ScriptResult>();
 		const rescueStarted = Promise.withResolvers<void>();
+		const rescueAborted = vi.fn<(event: Event) => void>();
 		const executeAsync = vi
 			.fn<ExecuteAttempt>()
 			.mockImplementationOnce(async ({ submission }) => {
@@ -186,7 +187,8 @@ describe("open Cloud execution recovery", () => {
 				hedgeStarted.resolve();
 				return hedge.promise;
 			})
-			.mockImplementationOnce(async () => {
+			.mockImplementationOnce(async ({ observationSignal }) => {
+				observationSignal.addEventListener("abort", rescueAborted);
 				rescueStarted.resolve();
 				return rescued.promise;
 			})
@@ -208,7 +210,9 @@ describe("open Cloud execution recovery", () => {
 		rescued.reject(new Error("rescue refused"));
 		await nextTurn();
 
-		expect(executeAsync.mock.calls[2]![0].observationSignal.aborted).toBeTrue();
+		expect(rescueAborted).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ type: "abort" }),
+		);
 		expect(executeAsync.mock.calls[0]![0].observationSignal.aborted).toBeFalse();
 
 		hedge.reject(

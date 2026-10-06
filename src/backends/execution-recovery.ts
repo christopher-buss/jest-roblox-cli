@@ -264,8 +264,13 @@ async function rescueSubmissionAsync(
 	readResultAsync: ReadResult,
 ): Promise<ScriptResult> {
 	context.observationSignal.throwIfAborted();
+	// Not AbortSignal.any: a listener-free composite loses its abort once the
+	// aborted source is collected.
 	const observation = new AbortController();
-	const signal = AbortSignal.any([context.observationSignal, observation.signal]);
+	const { signal } = observation;
+	context.observationSignal.addEventListener("abort", () => {
+		observation.abort(context.observationSignal.reason);
+	});
 	function cancel(): void {
 		observation.abort();
 	}
