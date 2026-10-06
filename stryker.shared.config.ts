@@ -24,6 +24,9 @@ export const sharedConfig: PartialStrykerOptions = {
 	concurrency: "75%",
 	coverageAnalysis: "perTest",
 	htmlReporter: { fileName: "reports/mutation/index.html" },
+	// Stryker does not read `.gitignore`; a cache another target rewrites
+	// mid-copy fails the sandbox with ENOENT.
+	ignorePatterns: [".eslintcache", "coverage", "projectStructure.cache.json"],
 	ignoreStatic: true,
 	incremental: true,
 	incrementalFile: "reports/stryker-incremental.json",
