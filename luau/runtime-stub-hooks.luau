@@ -63,7 +63,8 @@ function module.create(runtimeStubMounts: { { string } }): (Hooks, () -> ())
 
 	local function injectStubsForConfig(cfg: any, configIndex: number, injectionPaths: { string })
 		local sessionTable = _G[sessionKey]
-		sessionTable.configs[configIndex] = cfg
+		local mountConfigs = {}
+		sessionTable.configs[configIndex] = mountConfigs
 		-- Register the slot BEFORE parenting any stub. If a later mount
 		-- throws (findInstance miss, structural collision), the partially-
 		-- parented stubs are already tracked so cleanup can find and destroy
@@ -71,7 +72,7 @@ function module.create(runtimeStubMounts: { { string } }): (Hooks, () -> ())
 		local injected: { Instance } = {}
 		injectedPerConfig[configIndex] = injected
 
-		for _, projectPath in injectionPaths do
+		for mountIndex, projectPath in injectionPaths do
 			local leaf = findInstance(projectPath)
 			assert(
 				leaf:FindFirstChild("jest.config") == nil,
@@ -82,7 +83,10 @@ function module.create(runtimeStubMounts: { { string } }): (Hooks, () -> ())
 			)
 			local stub = Instance.new("ModuleScript")
 			stub.Name = "jest.config"
-			stub.Source = string.format('return _G["%s"].configs[%d]', sessionKey, configIndex)
+			-- Jest sets rootDir on the required table in place, so a shared table
+			-- would pin every mount to the first mount's rootDir.
+			mountConfigs[mountIndex] = table.clone(cfg)
+			stub.Source = string.format('return _G["%s"].configs[%d][%d]', sessionKey, configIndex, mountIndex)
 			stub.Parent = leaf
 			-- Record immediately after parenting so a subsequent mount's
 			-- failure does not strand this one.
