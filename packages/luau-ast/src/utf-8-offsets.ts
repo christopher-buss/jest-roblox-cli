@@ -17,7 +17,7 @@ export interface Utf8OffsetMap {
 /**
  * Index `text` so lute's byte offsets can address it as a JavaScript string.
  *
- * Every position lute reports — a {@link LuauSpan} column, a node offset —
+ * Every position lute reports — a source-span column, a node offset —
  * counts UTF-8 bytes, Luau's convention across its tooling, while
  * `String.prototype` counts UTF-16 code units. The two agree only while the
  * text stays ASCII: a `∞` is three bytes and one unit, an emoji four bytes and
@@ -27,6 +27,8 @@ export interface Utf8OffsetMap {
  * The map is eager — one pass over `text`, one `Int32Array` of its byte length
  * — so each lookup afterwards is a single array read. Callers that convert only
  * part of a file build one map per part rather than one for the whole.
+ * @param text - The source text to index.
+ * @returns The map from UTF-8 byte offsets to UTF-16 string offsets.
  */
 export function createUtf8OffsetMap(text: string): Utf8OffsetMap {
 	const byteLength = Buffer.byteLength(text, "utf-8");
@@ -60,7 +62,11 @@ export function createUtf8OffsetMap(text: string): Utf8OffsetMap {
 	};
 }
 
-/** How many UTF-8 bytes encode `codePoint` (0..0x10FFFF). */
+/**
+ * How many UTF-8 bytes encode `codePoint` (0..0x10FFFF).
+ * @param codePoint - The Unicode scalar value to measure.
+ * @returns The number of bytes needed to encode the scalar value.
+ */
 function utf8Width(codePoint: number): number {
 	if (codePoint < 0x80) {
 		return 1;

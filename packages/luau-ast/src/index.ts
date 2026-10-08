@@ -43,7 +43,7 @@ export type {
 	CompoundOp,
 	LuauSpan,
 	UnaryOp,
-} from "./ast.ts";
+} from "./ast-types.ts";
 
 // Edit surface: replacements the printer consults, and binding renames
 export type {
@@ -100,8 +100,8 @@ export {
 // String literals
 export { decodeLuauString } from "./string-literal.ts";
 
-export type { Utf8OffsetMap } from "./utf8-offsets.ts";
-export { createUtf8OffsetMap } from "./utf8-offsets.ts";
+export type { Utf8OffsetMap } from "./utf-8-offsets.ts";
+export { createUtf8OffsetMap } from "./utf-8-offsets.ts";
 
 // Visitor
 export type { LuauVisitor } from "./visit.ts";

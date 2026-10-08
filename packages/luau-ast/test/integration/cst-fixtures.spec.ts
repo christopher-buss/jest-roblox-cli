@@ -1,21 +1,23 @@
+import {
+	createCstEdits,
+	indexSourceBytes,
+	loadLuauParser,
+	printCst,
+	printCstMapped,
+} from "@isentinel/luau-ast";
+import { CST_NODE_KINDS, forEachCstNode, walkCst } from "@isentinel/luau-ast/cst";
+import type { CstRoot } from "@isentinel/luau-ast/cst";
+
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-
-import { createCstEdits } from "./cst-edit.ts";
-import { printCst, printCstMapped } from "./cst-print.ts";
-import { CST_SLOTS } from "./cst-slots.ts";
-import { CST_NODE_KINDS, forEachCstNode } from "./cst.ts";
-import type { CstRoot } from "./cst.ts";
-import { loadLuauParser } from "./parser.ts";
-import { indexSourceBytes } from "./source-bytes.ts";
 
 // Handwritten Luau covering comments, tabs, trailing whitespace, CRLF, every
 // number and string spelling, parentheses, semicolons, interpolated strings,
 // type annotations, attributes, declarations, and type functions. Byte
 // identity on a zero-edit pass is the whole claim; a fixture that breaks it
 // names the construct the serializer mishandles.
-const FIXTURE_DIRECTORY = path.join(import.meta.dirname, "..", "test", "fixtures", "cst");
+const FIXTURE_DIRECTORY = path.join(import.meta.dirname, "..", "fixtures", "cst");
 
 const fixtures = fs
 	.readdirSync(FIXTURE_DIRECTORY)
@@ -61,7 +63,7 @@ describe("fidelity fixtures", () => {
 		expect(seen).toStrictEqual(new Set(CST_NODE_KINDS));
 	});
 
-	it("should write every node's slots in the order CST_SLOTS lists them", () => {
+	it("should walk every node's slots in serializer order", () => {
 		expect.assertions(1);
 
 		const written = new Set<string>();
@@ -69,7 +71,14 @@ describe("fidelity fixtures", () => {
 		for (const { fileName, source } of fixtures) {
 			forEachCstNode(parseFixture(fileName, source), (node) => {
 				const keys = Object.keys(node).filter((key) => !NOT_SLOTS.has(key));
-				const slots: ReadonlyArray<string> = CST_SLOTS[node.type];
+				const slots: Array<string> = [];
+				walkCst(node, {
+					skipSlot: (owner, slot) => {
+						slots.push(...[slot].filter(() => owner === node));
+
+						return false;
+					},
+				});
 				written.add(`${node.type}: ${keys.join()}`);
 				listed.add(`${node.type}: ${slots.filter((slot) => slot in node).join()}`);
 			});
@@ -91,7 +100,7 @@ describe("fidelity fixtures", () => {
 
 		const printed = printCst(parseFixture(fileName, source));
 
-		expect(loadLuauParser().parse(printed).ok).toBe(true);
+		expect(loadLuauParser().parse(printed).ok).toBeTrue();
 	});
 });
 

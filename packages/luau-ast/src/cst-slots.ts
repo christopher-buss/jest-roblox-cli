@@ -1,6 +1,9 @@
 import type { CstNode, CstNodeKind, Punctuated } from "./cst.ts";
 
-/** A node kind's slots: every key but its kind, span, and binding. */
+/**
+ * A node kind's slots: every key but its kind, span, and binding.
+ * @template Kind - The serializer discriminator selecting a node shape.
+ */
 type Slot<Kind extends CstNodeKind> = Exclude<
 	keyof Extract<CstNode, { type: Kind }>,
 	"binding" | "location" | "type"
@@ -8,7 +11,10 @@ type Slot<Kind extends CstNodeKind> = Exclude<
 
 type SlotTable = { readonly [Kind in CstNodeKind]: ReadonlyArray<Slot<Kind>> };
 
-/** Each kind lists all its slots; the error names an unlisted one. */
+/**
+ * Each kind lists all its slots; the error names an unlisted one.
+ * @template Table - The proposed lexical slot lists.
+ */
 type ListsEverySlot<Table extends SlotTable> = {
 	[Kind in CstNodeKind]: [Exclude<Slot<Kind>, Table[Kind][number]>] extends [never]
 		? Table[Kind]

@@ -1,27 +1,21 @@
-import cp from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
 import { describe, expect, it, vi } from "vitest";
 
-import { spawnLute, writeTemporaryLuauScript } from "./lute-spawner.ts";
-
-vi.mock(import("node:child_process"));
-vi.mock(import("node:fs"));
-vi.mock(import("node:os"));
+import { spawnLute } from "./lute-spawner.ts";
 
 describe(spawnLute, () => {
 	it("should return stdout on successful execution", () => {
 		expect.assertions(2);
 
-		vi.mocked(cp.execFileSync).mockReturnValue("output data");
-
-		const result = spawnLute({
-			args: ["arg1", "arg2"],
-			scriptPath: "/tmp/script.luau",
-		});
+		const execute = vi
+			.fn<NonNullable<Parameters<typeof spawnLute>[1]>>()
+			.mockReturnValue("output data");
+		const result = spawnLute(
+			{ args: ["arg1", "arg2"], scriptPath: "/tmp/script.luau" },
+			execute,
+		);
 
 		expect(result).toBe("output data");
-		expect(cp.execFileSync).toHaveBeenCalledWith(
+		expect(execute).toHaveBeenCalledWith(
 			"lute",
 			["run", "/tmp/script.luau", "--", "arg1", "arg2"],
 			{
@@ -36,13 +30,12 @@ describe(spawnLute, () => {
 	it("should throw helpful message when lute is not found (ENOENT)", () => {
 		expect.assertions(1);
 
-		const error = new Error("spawn lute ENOENT");
-		Object.assign(error, { code: "ENOENT" });
-		vi.mocked(cp.execFileSync).mockImplementation(() => {
+		const error = Object.assign(new Error("spawn lute ENOENT"), { code: "ENOENT" });
+		const execute = vi.fn<NonNullable<Parameters<typeof spawnLute>[1]>>(() => {
 			throw error;
 		});
 
-		expect(() => spawnLute({ args: [], scriptPath: "/tmp/script.luau" })).toThrow(
+		expect(() => spawnLute({ args: [], scriptPath: "/tmp/script.luau" }, execute)).toThrow(
 			"lute is required but was not found on PATH",
 		);
 	});
@@ -51,53 +44,34 @@ describe(spawnLute, () => {
 		expect.assertions(1);
 
 		const error = new Error("some other error");
-		vi.mocked(cp.execFileSync).mockImplementation(() => {
+		const execute = vi.fn<NonNullable<Parameters<typeof spawnLute>[1]>>(() => {
 			throw error;
 		});
 
-		expect(() => spawnLute({ args: [], scriptPath: "/tmp/script.luau" })).toThrow(error);
+		expect(() => spawnLute({ args: [], scriptPath: "/tmp/script.luau" }, execute)).toThrow(
+			error,
+		);
 	});
 
 	it("should pass custom maxBuffer and timeout", () => {
 		expect.assertions(1);
 
-		vi.mocked(cp.execFileSync).mockReturnValue("");
-
-		spawnLute({
-			args: ["x"],
-			maxBuffer: 5 * 1024 * 1024,
-			scriptPath: "/tmp/script.luau",
-			timeout: 60_000,
-		});
-
-		expect(cp.execFileSync).toHaveBeenCalledWith(
-			"lute",
-			["run", "/tmp/script.luau", "--", "x"],
+		const execute = vi.fn<NonNullable<Parameters<typeof spawnLute>[1]>>().mockReturnValue("");
+		spawnLute(
 			{
-				encoding: "utf-8",
+				args: ["x"],
 				maxBuffer: 5 * 1024 * 1024,
+				scriptPath: "/tmp/script.luau",
 				timeout: 60_000,
-				windowsHide: true,
 			},
+			execute,
 		);
-	});
-});
 
-describe(writeTemporaryLuauScript, () => {
-	it("should create directory, write file, and return path", () => {
-		expect.assertions(3);
-
-		vi.mocked(os.tmpdir).mockReturnValue("/tmp");
-
-		const result = writeTemporaryLuauScript("print('hello')", "test-script");
-
-		expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining("luau-ast"), {
-			recursive: true,
+		expect(execute).toHaveBeenCalledWith("lute", ["run", "/tmp/script.luau", "--", "x"], {
+			encoding: "utf-8",
+			maxBuffer: 5 * 1024 * 1024,
+			timeout: 60_000,
+			windowsHide: true,
 		});
-		expect(fs.writeFileSync).toHaveBeenCalledWith(
-			expect.stringMatching(/test-script\.\d+\.luau$/),
-			"print('hello')",
-		);
-		expect(result).toMatch(/test-script\.\d+\.luau$/);
 	});
 });

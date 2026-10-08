@@ -1,35 +1,47 @@
 import assert from "node:assert";
 
-import type { AstStatBlock, LuauSpan } from "./ast.ts";
+import type { AstStatBlock, LuauSpan } from "./ast-types.ts";
 import { constructExpression, constructStatements } from "./cst-construct.ts";
 import { materializeCst } from "./cst-materialize.ts";
 import type { CstParseResult } from "./cst-materialize.ts";
 import type { CstBlock, CstExpr } from "./cst.ts";
 import { createWasmRuntime, DEFECT_MARKER, PARSE_ERROR_MARKER } from "./wasm-runtime.ts";
+import type { WasmRuntime } from "./wasm-runtime.ts";
 
 /** A comment's span; the encoder gives no text, only where it sits. */
 export interface CommentSpan {
+	/** The source region, with one-based lines and UTF-8 byte columns. */
 	location: LuauSpan;
+	/** The discriminator identifying this variant. */
 	type: "BlockComment" | "Comment";
 }
 
+/** Parser diagnostics for a source that could not be parsed. */
 export interface ParseFailure {
 	/** Parser error messages, one per reported error. */
 	errors: Array<string>;
+	/** Whether the parse or compilation succeeded. */
 	ok: false;
 }
 
+/** The normalized AST and comment spans from a successful parse. */
 export interface ParseSuccess {
+	/** Comment positions in source order. */
 	comments: Array<CommentSpan>;
+	/** Whether the parse or compilation succeeded. */
 	ok: true;
+	/** The normalized root node of the parsed source. */
 	root: AstStatBlock;
 }
 
+/** The normalized AST or the parser diagnostics. */
 export type ParseResult = ParseFailure | ParseSuccess;
 
+/** The source and diagnostic filename for a lossless parse. */
 export interface CstParseOptions {
 	/** Names the file in a defect message. */
 	fileName: string;
+	/** The Luau source passed to the backend. */
 	source: string;
 }
 
@@ -43,6 +55,7 @@ export interface LuauParser {
 	constructExpression: (snippet: string) => CstExpr;
 	/** Parse a statement list into a block ready to splice over a statement. */
 	constructStatements: (snippet: string) => CstBlock;
+	/** Parse source into a normalized AST or parser diagnostics. */
 	parse: (source: string) => ParseResult;
 	/**
 	 * Parse into the lossless concrete syntax tree: tokens carry their text
@@ -59,38 +72,15 @@ let cachedParser: LuauParser | undefined;
  * synchronous (the module is embedded, not fetched) and the instance is
  * cached for the process; repeat calls return the same parser.
  *
- * @returns The shared parser instance.
+ * @param runtime - The backend for an uncached instance; omit it to use the shared wasm instance.
+ * @returns The shared parser or an uncached instance over the supplied runtime.
  */
-export function loadLuauParser(): LuauParser {
-	if (cachedParser === undefined) {
-		const runtime = createWasmRuntime();
-
-		function parseCst({ fileName, source }: CstParseOptions): CstParseResult {
-			const raw = runtime.parseToCstJson(source);
-			if (raw.startsWith(PARSE_ERROR_MARKER)) {
-				return { errors: decodeErrors(raw), ok: false };
-			}
-
-			// A defect names the file once, here, whether the serializer
-			// or the gap detector found it.
-			const result = raw.startsWith(DEFECT_MARKER)
-				? { errors: [raw.slice(DEFECT_MARKER.length)], ok: false as const }
-				: materializeCst({ json: raw, source });
-			return result.ok
-				? result
-				: { errors: result.errors.map((error) => `${fileName}: ${error}`), ok: false };
-		}
-
-		cachedParser = {
-			constructExpression: (snippet) => constructExpression(parseCst, snippet),
-			constructStatements: (snippet) => constructStatements(parseCst, snippet),
-			parse(source) {
-				return decodeResult(runtime.parseToJson(source));
-			},
-			parseCst,
-		};
+export function loadLuauParser(runtime?: WasmRuntime): LuauParser {
+	if (runtime !== undefined) {
+		return createLuauParser(runtime);
 	}
 
+	cachedParser ??= createLuauParser(createWasmRuntime());
 	return cachedParser;
 }
 
@@ -106,6 +96,8 @@ function decodeErrors(raw: string): Array<string> {
  * which is invalid JSON. Rewrite each bare occurrence to `1e999` — which
  * `JSON.parse` overflows back to the same infinity, sign included — while
  * leaving occurrences inside JSON strings untouched.
+ * @param json - The raw serializer JSON to rewrite.
+ * @returns Valid JSON retaining the original numeric values.
  */
 function sanitizeNonFinite(json: string): string {
 	if (!json.includes("Infinity")) {
@@ -142,10 +134,11 @@ function sanitizeNonFinite(json: string): string {
 	return output + json.slice(segmentStart);
 }
 
-// Brands the wrapper's decoded output. The JSON comes from our own vendored
-// parser (wrapper.cpp), so per-node validation would only re-check what the
-// encoder just produced; the root check carries the invariant at the type
-// level like mutation-tester's isAstStatBlock does.
+/**
+ * Brand the root shape emitted by the vendored parser wrapper.
+ * @param value - The value reached in the parsed tree.
+ * @returns Whether the payload carries the expected root discriminator and comments list.
+ */
 function isRawParseOutput(
 	value: JSONValue,
 ): value is JSONValue & { commentLocations: Array<CommentSpan>; root: AstStatBlock } {
@@ -174,6 +167,39 @@ function decodeResult(raw: string): ParseResult {
 	return { comments: parsed.commentLocations, ok: true, root: parsed.root };
 }
 
+/**
+ * Decode parser payloads through the supplied runtime.
+ *
+ * @param runtime - The parser backend for this instance.
+ * @returns An independent parser over the backend.
+ */
+function createLuauParser(runtime: WasmRuntime): LuauParser {
+	function parseCst({ fileName, source }: CstParseOptions): CstParseResult {
+		const raw = runtime.parseToCstJson(source);
+		if (raw.startsWith(PARSE_ERROR_MARKER)) {
+			return { errors: decodeErrors(raw), ok: false };
+		}
+
+		// A defect names the file once, here, whether the serializer
+		// or the gap detector found it.
+		const result = raw.startsWith(DEFECT_MARKER)
+			? { errors: [raw.slice(DEFECT_MARKER.length)], ok: false as const }
+			: materializeCst({ json: raw, source });
+		return result.ok
+			? result
+			: { errors: result.errors.map((error) => `${fileName}: ${error}`), ok: false };
+	}
+
+	return {
+		constructExpression: (snippet) => constructExpression(parseCst, snippet),
+		constructStatements: (snippet) => constructStatements(parseCst, snippet),
+		parse(source) {
+			return decodeResult(runtime.parseToJson(source));
+		},
+		parseCst,
+	};
+}
+
 const SPAN_PATTERN = /^(\d+),(\d+) - (\d+),(\d+)$/;
 
 function isRecord(value: JSONValue): value is JSONObject {
@@ -185,6 +211,7 @@ function isRecord(value: JSONValue): value is JSONObject {
  * `location` and `*Location` keys. Rewrite them in place into 1-based
  * {@link LuauSpan} objects (the workspace convention the Lute-era span helpers
  * expect); the +1 keeps the exclusive end exclusive.
+ * @param node - The subtree or container to inspect.
  */
 function normalizeSpans(node: JSONValue): void {
 	if (Array.isArray(node)) {

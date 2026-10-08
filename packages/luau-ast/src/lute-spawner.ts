@@ -7,6 +7,7 @@ import process from "node:process";
 const DEFAULT_MAX_BUFFER = 1024 * 1024;
 const DEFAULT_TIMEOUT = 30_000;
 
+/** The script invocation and limits applied to the Lute subprocess. */
 export interface LuteSpawnOptions {
 	/** Arguments to pass after -- separator. */
 	args: Array<string>;
@@ -22,16 +23,24 @@ export interface LuteSpawnOptions {
  * Spawn lute to run a Luau script and return its stdout.
  *
  * @param options - Spawn configuration.
+ * @param execute - The subprocess host, defaulting to Node's synchronous executor.
  * @returns The stdout output from lute.
  */
-export function spawnLute({
-	args,
-	maxBuffer = DEFAULT_MAX_BUFFER,
-	scriptPath,
-	timeout = DEFAULT_TIMEOUT,
-}: LuteSpawnOptions): string {
+export function spawnLute(
+	{
+		args,
+		maxBuffer = DEFAULT_MAX_BUFFER,
+		scriptPath,
+		timeout = DEFAULT_TIMEOUT,
+	}: LuteSpawnOptions,
+	execute: (
+		file: string,
+		args: ReadonlyArray<string>,
+		options: cp.ExecFileSyncOptionsWithStringEncoding,
+	) => string = cp.execFileSync,
+): string {
 	try {
-		return cp.execFileSync("lute", ["run", scriptPath, "--", ...args], {
+		return execute("lute", ["run", scriptPath, "--", ...args], {
 			encoding: "utf-8",
 			maxBuffer,
 			timeout,

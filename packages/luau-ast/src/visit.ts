@@ -1,101 +1,217 @@
 /* eslint-disable max-lines -- Visitor pattern is inherently verbose. */
 /**
- * Visitor over the official parser's AST (see ast.ts). Each enter callback
- * returns boolean — false skips the node's children. All callbacks optional,
- * default true. Type-annotation nodes are not visited.
+ * Visitor over the official parser's AST (see ast-types.ts). Each enter
+ * callback returns boolean — false skips the node's children. All callbacks
+ * optional, default true. Type-annotation nodes are not visited.
  */
-import type {
-	AstExpr,
-	AstExprBinary,
-	AstExprCall,
-	AstExprConstantBool,
-	AstExprConstantNil,
-	AstExprConstantNumber,
-	AstExprConstantString,
-	AstExprFunction,
-	AstExprGlobal,
-	AstExprGroup,
-	AstExprIfElse,
-	AstExprIndexExpr,
-	AstExprIndexName,
-	AstExprInstantiate,
-	AstExprInterpString,
-	AstExprLocal,
-	AstExprTable,
-	AstExprTableItem,
-	AstExprTypeAssertion,
-	AstExprUnary,
-	AstExprVarargs,
-	AstStat,
-	AstStatAssign,
-	AstStatBlock,
-	AstStatBreak,
-	AstStatCompoundAssign,
-	AstStatContinue,
-	AstStatExpr,
-	AstStatFor,
-	AstStatForIn,
-	AstStatFunction,
-	AstStatIf,
-	AstStatLocal,
-	AstStatLocalFunction,
-	AstStatRepeat,
-	AstStatReturn,
-	AstStatTypeAlias,
-	AstStatWhile,
-} from "./ast.ts";
+import type * as Ast from "./ast-types.ts";
 
+/** Callbacks controlling AST descent and observing completed nodes. */
 export interface LuauVisitor {
-	visitExpr?: (node: AstExpr) => boolean;
-	visitExprBinary?: (node: AstExprBinary) => boolean;
-	visitExprCall?: (node: AstExprCall) => boolean;
-	visitExprConstantBool?: (node: AstExprConstantBool) => boolean;
-	visitExprConstantNil?: (node: AstExprConstantNil) => boolean;
-	visitExprConstantNumber?: (node: AstExprConstantNumber) => boolean;
-	visitExprConstantString?: (node: AstExprConstantString) => boolean;
-	visitExprEnd?: (node: AstExpr) => void;
-	visitExprFunction?: (node: AstExprFunction) => boolean;
-	visitExprFunctionEnd?: (node: AstExprFunction) => void;
-	visitExprGlobal?: (node: AstExprGlobal) => boolean;
-	visitExprGroup?: (node: AstExprGroup) => boolean;
-	visitExprIfElse?: (node: AstExprIfElse) => boolean;
-	visitExprIndexExpr?: (node: AstExprIndexExpr) => boolean;
-	visitExprIndexName?: (node: AstExprIndexName) => boolean;
-	visitExprInstantiate?: (node: AstExprInstantiate) => boolean;
-	visitExprInterpString?: (node: AstExprInterpString) => boolean;
-	visitExprLocal?: (node: AstExprLocal) => boolean;
-	visitExprTable?: (node: AstExprTable) => boolean;
-	visitExprTypeAssertion?: (node: AstExprTypeAssertion) => boolean;
-	visitExprUnary?: (node: AstExprUnary) => boolean;
-	visitExprVarargs?: (node: AstExprVarargs) => boolean;
+	/** Called before descending into Ast.AstExpr; false skips its children. */
+	visitExpr?: (node: Ast.AstExpr) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprBinary; false skips its
+	 * children.
+	 */
+	visitExprBinary?: (node: Ast.AstExprBinary) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprCall; false skips its children.
+	 */
+	visitExprCall?: (node: Ast.AstExprCall) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprConstantBool; false skips its
+	 * children.
+	 */
+	visitExprConstantBool?: (node: Ast.AstExprConstantBool) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprConstantNil; false skips its
+	 * children.
+	 */
+	visitExprConstantNil?: (node: Ast.AstExprConstantNil) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprConstantNumber; false skips its
+	 * children.
+	 */
+	visitExprConstantNumber?: (node: Ast.AstExprConstantNumber) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprConstantString; false skips its
+	 * children.
+	 */
+	visitExprConstantString?: (node: Ast.AstExprConstantString) => boolean;
+	/** Called after the children of Ast.AstExpr have been visited. */
+	visitExprEnd?: (node: Ast.AstExpr) => void;
+	/**
+	 * Called before descending into Ast.AstExprFunction; false skips its
+	 * children.
+	 */
+	visitExprFunction?: (node: Ast.AstExprFunction) => boolean;
+	/** Called after the children of Ast.AstExprFunction have been visited. */
+	visitExprFunctionEnd?: (node: Ast.AstExprFunction) => void;
+	/**
+	 * Called before descending into Ast.AstExprGlobal; false skips its
+	 * children.
+	 */
+	visitExprGlobal?: (node: Ast.AstExprGlobal) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprGroup; false skips its
+	 * children.
+	 */
+	visitExprGroup?: (node: Ast.AstExprGroup) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprIfElse; false skips its
+	 * children.
+	 */
+	visitExprIfElse?: (node: Ast.AstExprIfElse) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprIndexExpr; false skips its
+	 * children.
+	 */
+	visitExprIndexExpr?: (node: Ast.AstExprIndexExpr) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprIndexName; false skips its
+	 * children.
+	 */
+	visitExprIndexName?: (node: Ast.AstExprIndexName) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprInstantiate; false skips its
+	 * children.
+	 */
+	visitExprInstantiate?: (node: Ast.AstExprInstantiate) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprInterpString; false skips its
+	 * children.
+	 */
+	visitExprInterpString?: (node: Ast.AstExprInterpString) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprLocal; false skips its
+	 * children.
+	 */
+	visitExprLocal?: (node: Ast.AstExprLocal) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprTable; false skips its
+	 * children.
+	 */
+	visitExprTable?: (node: Ast.AstExprTable) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprTypeAssertion; false skips its
+	 * children.
+	 */
+	visitExprTypeAssertion?: (node: Ast.AstExprTypeAssertion) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprUnary; false skips its
+	 * children.
+	 */
+	visitExprUnary?: (node: Ast.AstExprUnary) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprVarargs; false skips its
+	 * children.
+	 */
+	visitExprVarargs?: (node: Ast.AstExprVarargs) => boolean;
 
-	visitStatAssign?: (node: AstStatAssign) => boolean;
-	visitStatBlock?: (node: AstStatBlock) => boolean;
-	visitStatBlockEnd?: (node: AstStatBlock) => void;
-	visitStatBreak?: (node: AstStatBreak) => boolean;
-	visitStatCompoundAssign?: (node: AstStatCompoundAssign) => boolean;
-	visitStatContinue?: (node: AstStatContinue) => boolean;
-	visitStatExpr?: (node: AstStatExpr) => boolean;
-	visitStatFor?: (node: AstStatFor) => boolean;
-	visitStatForIn?: (node: AstStatForIn) => boolean;
-	visitStatFunction?: (node: AstStatFunction) => boolean;
-	visitStatIf?: (node: AstStatIf) => boolean;
-	visitStatLocal?: (node: AstStatLocal) => boolean;
-	visitStatLocalFunction?: (node: AstStatLocalFunction) => boolean;
-	visitStatRepeat?: (node: AstStatRepeat) => boolean;
-	visitStatReturn?: (node: AstStatReturn) => boolean;
-	visitStatTypeAlias?: (node: AstStatTypeAlias) => boolean;
-	visitStatWhile?: (node: AstStatWhile) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatAssign; false skips its
+	 * children.
+	 */
+	visitStatAssign?: (node: Ast.AstStatAssign) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatBlock; false skips its
+	 * children.
+	 */
+	visitStatBlock?: (node: Ast.AstStatBlock) => boolean;
+	/** Called after the children of Ast.AstStatBlock have been visited. */
+	visitStatBlockEnd?: (node: Ast.AstStatBlock) => void;
+	/**
+	 * Called before descending into Ast.AstStatBreak; false skips its
+	 * children.
+	 */
+	visitStatBreak?: (node: Ast.AstStatBreak) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatCompoundAssign; false skips its
+	 * children.
+	 */
+	visitStatCompoundAssign?: (node: Ast.AstStatCompoundAssign) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatContinue; false skips its
+	 * children.
+	 */
+	visitStatContinue?: (node: Ast.AstStatContinue) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatExpr; false skips its children.
+	 */
+	visitStatExpr?: (node: Ast.AstStatExpr) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatFor; false skips its children.
+	 */
+	visitStatFor?: (node: Ast.AstStatFor) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatForIn; false skips its
+	 * children.
+	 */
+	visitStatForIn?: (node: Ast.AstStatForIn) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatFunction; false skips its
+	 * children.
+	 */
+	visitStatFunction?: (node: Ast.AstStatFunction) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatIf; false skips its children.
+	 */
+	visitStatIf?: (node: Ast.AstStatIf) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatLocal; false skips its
+	 * children.
+	 */
+	visitStatLocal?: (node: Ast.AstStatLocal) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatLocalFunction; false skips its
+	 * children.
+	 */
+	visitStatLocalFunction?: (node: Ast.AstStatLocalFunction) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatRepeat; false skips its
+	 * children.
+	 */
+	visitStatRepeat?: (node: Ast.AstStatRepeat) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatReturn; false skips its
+	 * children.
+	 */
+	visitStatReturn?: (node: Ast.AstStatReturn) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatTypeAlias; false skips its
+	 * children.
+	 */
+	visitStatTypeAlias?: (node: Ast.AstStatTypeAlias) => boolean;
+	/**
+	 * Called before descending into Ast.AstStatWhile; false skips its
+	 * children.
+	 */
+	visitStatWhile?: (node: Ast.AstStatWhile) => boolean;
 
-	visitTableItem?: (node: AstExprTableItem) => boolean;
+	/**
+	 * Called before descending into Ast.AstExprTableItem; false skips its
+	 * children.
+	 */
+	visitTableItem?: (node: Ast.AstExprTableItem) => boolean;
 }
 
-export function visitBlock(block: AstStatBlock, visitor: LuauVisitor): void {
+/**
+ * Visit a block and its statements using the supplied callbacks.
+ * @param block - The AST block whose statements are visited.
+ * @param visitor - The callbacks controlling descent through the AST.
+ */
+export function visitBlock(block: Ast.AstStatBlock, visitor: LuauVisitor): void {
 	visitStatBlock(block, visitor);
 }
 
-// eslint-disable-next-line flawless/max-lines-per-function -- Visitor pattern is inherently verbose.
-export function visitExpression(expression: AstExpr, visitor: LuauVisitor): void {
+/**
+ * Visit an expression, skipping children when an enter callback returns false.
+ * @param expression - The AST expression whose children are visited.
+ * @param visitor - The callbacks controlling descent through the AST.
+ */
+// eslint-disable-next-line flawless/max-lines-per-function -- Exhaustive visitor dispatch follows the AST union.
+export function visitExpression(expression: Ast.AstExpr, visitor: LuauVisitor): void {
 	if (visitor.visitExpr?.(expression) === false) {
 		return;
 	}
@@ -185,8 +301,13 @@ export function visitExpression(expression: AstExpr, visitor: LuauVisitor): void
 	visitor.visitExprEnd?.(expression);
 }
 
-// eslint-disable-next-line flawless/max-lines-per-function -- Visitor pattern is inherently verbose.
-export function visitStatement(statement: AstStat, visitor: LuauVisitor): void {
+/**
+ * Visit a statement, skipping children when its callback returns false.
+ * @param statement - The AST statement whose children are visited.
+ * @param visitor - The callbacks controlling descent through the AST.
+ */
+// eslint-disable-next-line flawless/max-lines-per-function -- Exhaustive visitor dispatch follows the AST union.
+export function visitStatement(statement: Ast.AstStat, visitor: LuauVisitor): void {
 	switch (statement.type) {
 		case "AstStatAssign": {
 			visitStatAssign(statement, visitor);
@@ -258,7 +379,7 @@ export function visitStatement(statement: AstStat, visitor: LuauVisitor): void {
 	}
 }
 
-function visitStatCompoundAssign(node: AstStatCompoundAssign, visitor: LuauVisitor): void {
+function visitStatCompoundAssign(node: Ast.AstStatCompoundAssign, visitor: LuauVisitor): void {
 	if (visitor.visitStatCompoundAssign?.(node) === false) {
 		return;
 	}
@@ -267,7 +388,7 @@ function visitStatCompoundAssign(node: AstStatCompoundAssign, visitor: LuauVisit
 	visitExpression(node.value, visitor);
 }
 
-function visitStatExpr(node: AstStatExpr, visitor: LuauVisitor): void {
+function visitStatExpr(node: Ast.AstStatExpr, visitor: LuauVisitor): void {
 	if (visitor.visitStatExpr?.(node) === false) {
 		return;
 	}
@@ -275,7 +396,7 @@ function visitStatExpr(node: AstStatExpr, visitor: LuauVisitor): void {
 	visitExpression(node.expr, visitor);
 }
 
-function visitStatFunction(node: AstStatFunction, visitor: LuauVisitor): void {
+function visitStatFunction(node: Ast.AstStatFunction, visitor: LuauVisitor): void {
 	if (visitor.visitStatFunction?.(node) === false) {
 		return;
 	}
@@ -284,7 +405,7 @@ function visitStatFunction(node: AstStatFunction, visitor: LuauVisitor): void {
 	visitExprFunction(node.func, visitor);
 }
 
-function visitStatLocal(node: AstStatLocal, visitor: LuauVisitor): void {
+function visitStatLocal(node: Ast.AstStatLocal, visitor: LuauVisitor): void {
 	if (visitor.visitStatLocal?.(node) === false) {
 		return;
 	}
@@ -294,7 +415,7 @@ function visitStatLocal(node: AstStatLocal, visitor: LuauVisitor): void {
 	}
 }
 
-function visitStatLocalFunction(node: AstStatLocalFunction, visitor: LuauVisitor): void {
+function visitStatLocalFunction(node: Ast.AstStatLocalFunction, visitor: LuauVisitor): void {
 	if (visitor.visitStatLocalFunction?.(node) === false) {
 		return;
 	}
@@ -302,7 +423,7 @@ function visitStatLocalFunction(node: AstStatLocalFunction, visitor: LuauVisitor
 	visitExprFunction(node.func, visitor);
 }
 
-function visitStatReturn(node: AstStatReturn, visitor: LuauVisitor): void {
+function visitStatReturn(node: Ast.AstStatReturn, visitor: LuauVisitor): void {
 	if (visitor.visitStatReturn?.(node) === false) {
 		return;
 	}
@@ -312,7 +433,7 @@ function visitStatReturn(node: AstStatReturn, visitor: LuauVisitor): void {
 	}
 }
 
-function visitExprBinary(node: AstExprBinary, visitor: LuauVisitor): void {
+function visitExprBinary(node: Ast.AstExprBinary, visitor: LuauVisitor): void {
 	if (visitor.visitExprBinary?.(node) === false) {
 		return;
 	}
@@ -321,7 +442,7 @@ function visitExprBinary(node: AstExprBinary, visitor: LuauVisitor): void {
 	visitExpression(node.right, visitor);
 }
 
-function visitExprCall(node: AstExprCall, visitor: LuauVisitor): void {
+function visitExprCall(node: Ast.AstExprCall, visitor: LuauVisitor): void {
 	if (visitor.visitExprCall?.(node) === false) {
 		return;
 	}
@@ -332,7 +453,7 @@ function visitExprCall(node: AstExprCall, visitor: LuauVisitor): void {
 	}
 }
 
-function visitExprFunction(node: AstExprFunction, visitor: LuauVisitor): void {
+function visitExprFunction(node: Ast.AstExprFunction, visitor: LuauVisitor): void {
 	if (visitor.visitExprFunction?.(node) === false) {
 		return;
 	}
@@ -341,7 +462,7 @@ function visitExprFunction(node: AstExprFunction, visitor: LuauVisitor): void {
 	visitor.visitExprFunctionEnd?.(node);
 }
 
-function visitExprGroup(node: AstExprGroup, visitor: LuauVisitor): void {
+function visitExprGroup(node: Ast.AstExprGroup, visitor: LuauVisitor): void {
 	if (visitor.visitExprGroup?.(node) === false) {
 		return;
 	}
@@ -349,7 +470,7 @@ function visitExprGroup(node: AstExprGroup, visitor: LuauVisitor): void {
 	visitExpression(node.expr, visitor);
 }
 
-function visitExprIfElse(node: AstExprIfElse, visitor: LuauVisitor): void {
+function visitExprIfElse(node: Ast.AstExprIfElse, visitor: LuauVisitor): void {
 	if (visitor.visitExprIfElse?.(node) === false) {
 		return;
 	}
@@ -359,7 +480,7 @@ function visitExprIfElse(node: AstExprIfElse, visitor: LuauVisitor): void {
 	visitExpression(node.falseExpr, visitor);
 }
 
-function visitExprIndexExpr(node: AstExprIndexExpr, visitor: LuauVisitor): void {
+function visitExprIndexExpr(node: Ast.AstExprIndexExpr, visitor: LuauVisitor): void {
 	if (visitor.visitExprIndexExpr?.(node) === false) {
 		return;
 	}
@@ -368,7 +489,7 @@ function visitExprIndexExpr(node: AstExprIndexExpr, visitor: LuauVisitor): void 
 	visitExpression(node.index, visitor);
 }
 
-function visitExprIndexName(node: AstExprIndexName, visitor: LuauVisitor): void {
+function visitExprIndexName(node: Ast.AstExprIndexName, visitor: LuauVisitor): void {
 	if (visitor.visitExprIndexName?.(node) === false) {
 		return;
 	}
@@ -376,7 +497,7 @@ function visitExprIndexName(node: AstExprIndexName, visitor: LuauVisitor): void 
 	visitExpression(node.expr, visitor);
 }
 
-function visitExprInstantiate(node: AstExprInstantiate, visitor: LuauVisitor): void {
+function visitExprInstantiate(node: Ast.AstExprInstantiate, visitor: LuauVisitor): void {
 	if (visitor.visitExprInstantiate?.(node) === false) {
 		return;
 	}
@@ -384,7 +505,7 @@ function visitExprInstantiate(node: AstExprInstantiate, visitor: LuauVisitor): v
 	visitExpression(node.expr, visitor);
 }
 
-function visitExprInterpString(node: AstExprInterpString, visitor: LuauVisitor): void {
+function visitExprInterpString(node: Ast.AstExprInterpString, visitor: LuauVisitor): void {
 	if (visitor.visitExprInterpString?.(node) === false) {
 		return;
 	}
@@ -394,7 +515,7 @@ function visitExprInterpString(node: AstExprInterpString, visitor: LuauVisitor):
 	}
 }
 
-function visitExprTable(node: AstExprTable, visitor: LuauVisitor): void {
+function visitExprTable(node: Ast.AstExprTable, visitor: LuauVisitor): void {
 	if (visitor.visitExprTable?.(node) === false) {
 		return;
 	}
@@ -412,7 +533,7 @@ function visitExprTable(node: AstExprTable, visitor: LuauVisitor): void {
 	}
 }
 
-function visitExprTypeAssertion(node: AstExprTypeAssertion, visitor: LuauVisitor): void {
+function visitExprTypeAssertion(node: Ast.AstExprTypeAssertion, visitor: LuauVisitor): void {
 	if (visitor.visitExprTypeAssertion?.(node) === false) {
 		return;
 	}
@@ -420,7 +541,7 @@ function visitExprTypeAssertion(node: AstExprTypeAssertion, visitor: LuauVisitor
 	visitExpression(node.expr, visitor);
 }
 
-function visitExprUnary(node: AstExprUnary, visitor: LuauVisitor): void {
+function visitExprUnary(node: Ast.AstExprUnary, visitor: LuauVisitor): void {
 	if (visitor.visitExprUnary?.(node) === false) {
 		return;
 	}
@@ -428,7 +549,7 @@ function visitExprUnary(node: AstExprUnary, visitor: LuauVisitor): void {
 	visitExpression(node.expr, visitor);
 }
 
-function visitStatAssign(node: AstStatAssign, visitor: LuauVisitor): void {
+function visitStatAssign(node: Ast.AstStatAssign, visitor: LuauVisitor): void {
 	if (visitor.visitStatAssign?.(node) === false) {
 		return;
 	}
@@ -442,7 +563,7 @@ function visitStatAssign(node: AstStatAssign, visitor: LuauVisitor): void {
 	}
 }
 
-function visitStatBlock(node: AstStatBlock, visitor: LuauVisitor): void {
+function visitStatBlock(node: Ast.AstStatBlock, visitor: LuauVisitor): void {
 	if (visitor.visitStatBlock?.(node) === false) {
 		return;
 	}
@@ -454,7 +575,7 @@ function visitStatBlock(node: AstStatBlock, visitor: LuauVisitor): void {
 	visitor.visitStatBlockEnd?.(node);
 }
 
-function visitStatFor(node: AstStatFor, visitor: LuauVisitor): void {
+function visitStatFor(node: Ast.AstStatFor, visitor: LuauVisitor): void {
 	if (visitor.visitStatFor?.(node) === false) {
 		return;
 	}
@@ -468,7 +589,7 @@ function visitStatFor(node: AstStatFor, visitor: LuauVisitor): void {
 	visitStatBlock(node.body, visitor);
 }
 
-function visitStatForIn(node: AstStatForIn, visitor: LuauVisitor): void {
+function visitStatForIn(node: Ast.AstStatForIn, visitor: LuauVisitor): void {
 	if (visitor.visitStatForIn?.(node) === false) {
 		return;
 	}
@@ -480,7 +601,7 @@ function visitStatForIn(node: AstStatForIn, visitor: LuauVisitor): void {
 	visitStatBlock(node.body, visitor);
 }
 
-function visitStatIf(node: AstStatIf, visitor: LuauVisitor): void {
+function visitStatIf(node: Ast.AstStatIf, visitor: LuauVisitor): void {
 	if (visitor.visitStatIf?.(node) === false) {
 		return;
 	}
@@ -498,7 +619,7 @@ function visitStatIf(node: AstStatIf, visitor: LuauVisitor): void {
 	}
 }
 
-function visitStatRepeat(node: AstStatRepeat, visitor: LuauVisitor): void {
+function visitStatRepeat(node: Ast.AstStatRepeat, visitor: LuauVisitor): void {
 	if (visitor.visitStatRepeat?.(node) === false) {
 		return;
 	}
@@ -507,7 +628,7 @@ function visitStatRepeat(node: AstStatRepeat, visitor: LuauVisitor): void {
 	visitExpression(node.condition, visitor);
 }
 
-function visitStatWhile(node: AstStatWhile, visitor: LuauVisitor): void {
+function visitStatWhile(node: Ast.AstStatWhile, visitor: LuauVisitor): void {
 	if (visitor.visitStatWhile?.(node) === false) {
 		return;
 	}

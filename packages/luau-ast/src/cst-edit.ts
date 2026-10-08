@@ -1,4 +1,4 @@
-import type { LuauSpan } from "./ast.ts";
+import type { LuauSpan } from "./ast-types.ts";
 import { forEachCstNode, isCstNode, tokenBounds, walkCst } from "./cst.ts";
 import type { CstNode } from "./cst.ts";
 
@@ -7,8 +7,11 @@ import type { CstNode } from "./cst.ts";
  * sides unless a switch says otherwise.
  */
 export interface TextReplacement {
+	/** Whether to retain the trivia before the replaced node. */
 	preserveLeading?: boolean;
+	/** Whether to retain the trivia after the replaced node. */
 	preserveTrailing?: boolean;
+	/** The literal source printed in the target node's place. */
 	text: string;
 }
 
@@ -19,7 +22,9 @@ export interface TextReplacement {
  * keeps the whitespace on both sides.
  */
 export interface Removal {
+	/** Whether to retain the trivia before the replaced node. */
 	preserveLeading: boolean;
+	/** The discriminator selecting omission of the target node. */
 	remove: true;
 }
 
@@ -31,14 +36,19 @@ export interface Removal {
  */
 export type Replacement = CstNode | Removal | TextReplacement;
 
+/** A target node and the caller registering its replacement. */
 export interface ReplaceOptions {
 	/** Named in the error when a second caller replaces the same node. */
 	caller: string;
+	/** The subtree, text, or removal to print in the target's place. */
 	replacement: Replacement;
+	/** The node whose printed output is replaced. */
 	target: CstNode;
 }
 
+/** The statement to remove and the trivia retention policy. */
 export interface RemoveOptions {
+	/** The rule name used to identify conflicting registrations. */
 	caller: string;
 	/** Whether the comments above the node survive. */
 	preserveLeading: boolean;
@@ -46,6 +56,7 @@ export interface RemoveOptions {
 	statement: CstNode;
 }
 
+/** A binding identity paired with its new spelling. */
 export interface RenameOptions {
 	/** The new identifier. */
 	name: string;
@@ -62,7 +73,11 @@ export interface CstEdits {
 	callerFor: (node: CstNode) => string | undefined;
 	/** Print nothing in the statement's place; see {@link Removal}. */
 	remove: (options: RemoveOptions) => void;
+	/**
+	 * Register a replacement, rejecting a second registration for the target.
+	 */
 	replace: (options: ReplaceOptions) => void;
+	/** Read the replacement registered for a node, if any. */
 	replacementFor: (node: CstNode) => Replacement | undefined;
 }
 
@@ -159,6 +174,7 @@ function markGenerated(subtree: CstNode, caller: string): void {
 /**
  * Give a subtree's origin-less tokens one origin, through any subtree already
  * registered to replace a node inside it.
+ * @param options - The subtree, inherited origin, and registered replacements.
  */
 function anchor({ origin, replacements, subtree }: AnchorOptions): void {
 	walkCst(subtree, {

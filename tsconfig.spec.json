@@ -2,6 +2,7 @@
 	"extends": "@isentinel/tsconfig/typescript",
 	"compilerOptions": {
 		"composite": true,
+		"lib": ["es2025", "dom", "webworker"],
 		"libReplacement": true,
 		"paths": {
 			"jest-extended": ["./types/jest-extended.d.ts"]
@@ -25,7 +26,10 @@
 		"test/**/*.*",
 		"types/**/*.d.ts",
 		"loaders/**/*.d.mts",
-		"*.config.ts"
+		"*.config.ts",
+		"vitest.shared.ts",
+		"vitest.stryker.shared.ts",
+		"dependency-cruiser.shared.ts"
 	],
 	"exclude": ["${configDir}/node_modules", "**/fixtures/"]
 }

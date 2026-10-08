@@ -1,7 +1,10 @@
-import type { LuauSpan } from "./ast.ts";
+import type { LuauSpan } from "./ast-types.ts";
 
+/** Whitespace or a comment between source tokens. */
 export interface Trivia {
+	/** Whether the trivia is whitespace, a line comment, or a block comment. */
 	kind: "blockComment" | "comment" | "whitespace";
+	/** Source spelling of this trivia segment. */
 	text: string;
 }
 
@@ -27,9 +30,9 @@ export interface Token {
 /**
  * A token with no trivia yet; materialization attaches it.
  *
- * @param text - The token's text.
+ * @param text - Source spelling emitted by the printer.
  * @param origin - Where the token sat in the source.
- * @returns The token.
+ * @returns A printable source element with empty trivia lists.
  */
 export function createToken(text: string, origin: LuauSpan): Token {
 	return { leading: [], origin, text, trailing: [] };

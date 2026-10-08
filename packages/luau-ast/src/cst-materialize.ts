@@ -1,26 +1,33 @@
 import assert from "node:assert";
 
-import type { LuauSpan } from "./ast.ts";
-import type { CstRoot } from "./cst-statements.ts";
+import type { LuauSpan } from "./ast-types.ts";
+import type { CstRoot } from "./cst-statement-types.ts";
 import { createToken } from "./cst-token.ts";
 import type { Token, Trivia } from "./cst-token.ts";
 import { isCstNode, isRecord } from "./cst.ts";
 import { indexSourceBytes } from "./source-bytes.ts";
 import type { ByteRange, SourceBytes } from "./source-bytes.ts";
 
+/** A rejected CST parse or materialization defect. */
 export interface CstFailure {
 	/** Parser errors, or one message describing a serializer defect. */
 	errors: Array<string>;
+	/** Whether lossless parsing and materialization succeeded. */
 	ok: false;
 }
 
+/** A lossless tree materialized from the parser output. */
 export interface CstSuccess {
+	/** Whether lossless parsing and materialization succeeded. */
 	ok: true;
+	/** The normalized root node of the parsed source. */
 	root: CstRoot;
 }
 
+/** The lossless tree or errors returned by CST parsing. */
 export type CstParseResult = CstFailure | CstSuccess;
 
+/** The serializer payload paired with the source it describes. */
 export interface MaterializeOptions {
 	/** The position-only tree from `parse_to_cst_json`. */
 	json: string;
@@ -68,7 +75,7 @@ export function materializeCst(options: MaterializeOptions): CstParseResult {
 	const placed: Array<PlacedToken> = [];
 	const slicer: Slicer = { bytes, placed };
 	const parsed: JSONValue = JSON.parse(options.json);
-	const root = materializeInPlace(parsed, "", slicer);
+	const root = materializeInPlace(parsed, { key: undefined, slicer });
 	assert(
 		isCstNode(root) && root.type === "Root",
 		"wasm wrapper returned an unrecognized CST shape",
@@ -86,16 +93,28 @@ export function materializeCst(options: MaterializeOptions): CstParseResult {
 	return { ok: true, root };
 }
 
-// The serializer only emits four-number arrays as positions.
+/**
+ * The serializer only emits four-number arrays as positions.
+ * @param value - The value reached in the parsed tree.
+ * @returns Whether the value is the serializer's position tuple.
+ */
 function isPosition(value: JSONValue): value is Position {
-	return Array.isArray(value) && value.length === 4 && typeof value[0] === "number";
+	return (
+		Array.isArray(value) &&
+		value.length === 4 &&
+		value.every((coordinate) => typeof coordinate === "number")
+	);
 }
 
 function isJsonObject(value: JSONValue): value is JSONObject {
 	return isRecord(value);
 }
 
-/** The serializer's 0-based position to the workspace's 1-based span. */
+/**
+ * The serializer's 0-based position to the workspace's 1-based span.
+ * @param position - The serializer's four zero-based coordinates.
+ * @returns The corresponding one-based, exclusive-end source span.
+ */
 function toSpan(position: Position): LuauSpan {
 	return {
 		beginColumn: position[1] + 1,
@@ -109,12 +128,18 @@ function toSpan(position: Position): LuauSpan {
  * Rebuild the parsed JSON in place: a position under `location` becomes a
  * span, any other position becomes a token, and containers recurse in slot
  * order so the tokens land in `placed` in source order.
+ * @param value - The value reached in the parsed tree.
+ * @param options - The slot name and source materialization state.
+ * @returns The original container with positions replaced by spans or tokens.
  */
 function materializeInPlace(
 	value: JSONValue,
-	key: string,
-	slicer: Slicer,
+	{ key, slicer }: { key: string | undefined; slicer: Slicer },
 ): JSONValue | LuauSpan | Token {
+	if (key === "location") {
+		assert(isPosition(value), "wasm wrapper returned an invalid CST location");
+	}
+
 	if (isPosition(value)) {
 		const span = toSpan(value);
 		if (key === "location") {
@@ -132,12 +157,12 @@ function materializeInPlace(
 	if (Array.isArray(value)) {
 		const list: Array<unknown> = value;
 		for (const [index, element] of value.entries()) {
-			list[index] = materializeInPlace(element, "", slicer);
+			list[index] = materializeInPlace(element, { key: undefined, slicer });
 		}
 	} else if (isJsonObject(value)) {
 		const slots: Record<string, unknown> = value;
 		for (const [slot, element] of Object.entries(value)) {
-			slots[slot] = materializeInPlace(element, slot, slicer);
+			slots[slot] = materializeInPlace(element, { key: slot, slicer });
 		}
 	}
 
@@ -147,8 +172,13 @@ function materializeInPlace(
 /**
  * Lute's rule: everything up to and including the first newline trails the
  * previous token.
+ * @param items - The trivia between the two surrounding tokens.
+ * @param options - The traversal state and surrounding node context.
  */
-function splitTrivia(items: Array<Trivia>, previous: Token | undefined, token: Token): void {
+function splitTrivia(
+	items: Array<Trivia>,
+	{ previous, token }: { previous: Token | undefined; token: Token },
+): void {
 	if (previous === undefined) {
 		token.leading = items;
 		return;
@@ -181,6 +211,8 @@ function describeToken(placed: PlacedToken | undefined, bytes: SourceBytes): str
  * Slice every inter-token gap into trivia and hand it to the tokens on
  * either side.
  *
+ * @param placed - The tokens in their original source order.
+ * @param bytes - The indexed source used to resolve byte locations.
  * @returns The first defect found, if any.
  */
 function attachTrivia(placed: Array<PlacedToken>, bytes: SourceBytes): string | undefined {
@@ -198,7 +230,7 @@ function attachTrivia(placed: Array<PlacedToken>, bytes: SourceBytes): string | 
 				return `bytes ${JSON.stringify(scanned.offending)} between ${describeToken(previous, bytes)} and ${describeToken(current, bytes)} are not whitespace or a comment`;
 			}
 
-			splitTrivia(scanned.items, previous?.token, token);
+			splitTrivia(scanned.items, { previous: previous?.token, token });
 		}
 
 		previous = current;
@@ -216,7 +248,12 @@ const BLOCK_COMMENT_OPEN = /--\[(=*)\[/y;
 const WHITESPACE = /[ \t\r\f\v]*\n|[ \t\r\f\v]+/y;
 const TRIVIA_START = /[ \t\r\n\f\v]|--/g;
 
-/** The comment at `cursor`, or `undefined` for an unterminated block. */
+/**
+ * The comment at `cursor`, or `undefined` for an unterminated block.
+ * @param gap - The source text between consecutive tokens.
+ * @param cursor - The zero-based string offset to scan.
+ * @returns The complete comment, or undefined for an unterminated block.
+ */
 function scanComment(gap: string, cursor: number): Trivia | undefined {
 	BLOCK_COMMENT_OPEN.lastIndex = cursor;
 	const block = BLOCK_COMMENT_OPEN.exec(gap);
@@ -235,7 +272,12 @@ function scanComment(gap: string, cursor: number): Trivia | undefined {
 	return { kind: "blockComment", text: gap.slice(cursor, closeIndex + close.length) };
 }
 
-/** The whitespace at `cursor`, or `undefined` when there is none. */
+/**
+ * The whitespace at `cursor`, or `undefined` when there is none.
+ * @param gap - The source text between consecutive tokens.
+ * @param cursor - The zero-based string offset to scan.
+ * @returns The whitespace run, or undefined when none begins here.
+ */
 function scanWhitespace(gap: string, cursor: number): Trivia | undefined {
 	WHITESPACE.lastIndex = cursor;
 	const text = WHITESPACE.exec(gap)?.[0];

@@ -51,7 +51,12 @@ function parseSnippet(parse: ParseCst, source: string): CstRoot {
 	return result.root;
 }
 
-/** Strip the snippet positions: they mean nothing in the host tree. */
+/**
+ * Strip the snippet positions: they mean nothing in the host tree.
+ * @template Node - The subtree kind retained after detaching origins.
+ * @returns The subtree with snippet origins removed.
+ * @param node - The subtree or container to inspect.
+ */
 function detach<Node extends CstNode>(node: Node): Node {
 	forEachToken(node, (token) => {
 		delete token.origin;

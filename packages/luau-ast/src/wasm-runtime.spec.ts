@@ -13,6 +13,6 @@ describe("serializer fault", () => {
 		const recovered = runtime.parseToCstJson("local x = 1");
 
 		expect(faulted).toBe(`${DEFECT_MARKER}cst writer: close without a matching open`);
-		expect(recovered.startsWith("{")).toBe(true);
+		expect(recovered.startsWith("{")).toBeTrue();
 	});
 });

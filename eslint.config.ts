@@ -43,6 +43,14 @@ export default isentinel(
 		},
 	},
 	{
+		name: "project/shared-dependency-cruiser",
+		files: ["dependency-cruiser.shared.ts"],
+		rules: {
+			"flawless/max-lines-per-function": "off",
+			"perfectionist/sort-modules": "off",
+		},
+	},
+	{
 		name: "project/ambient-declarations",
 		files: ["src/luau.d.ts", "src/coverage-pipeline/istanbul-modules.d.ts"],
 		rules: {

@@ -1,14 +1,14 @@
+import { CST_NODE_KINDS } from "@isentinel/luau-ast/cst";
+import type { CstNode, CstNodeKind } from "@isentinel/luau-ast/cst";
+
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { CST_NODE_KINDS } from "./cst.ts";
-import type { CstNode, CstNodeKind } from "./cst.ts";
-
 // The serializer names a node kind exactly once, in `begin("Kind", ...)`.
 // Reading the C++ source keeps the TypeScript union from drifting without a
 // wasm rebuild in the loop.
-const WRAPPER_SOURCE = path.join(import.meta.dirname, "..", "wasm", "wrapper.cpp");
+const WRAPPER_SOURCE = path.join(import.meta.dirname, "..", "..", "wasm", "wrapper.cpp");
 const BEGIN_CALL = /begin\(\s*"([A-Za-z]+)"/g;
 
 describe("node kinds", () => {

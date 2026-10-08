@@ -3,16 +3,22 @@ import isentinel from "@isentinel/eslint-config";
 export default isentinel(
 	{
 		name: "packages/luau-ast",
-		jsdoc: false,
+		jsdoc: true,
 		namedConfigs: true,
 		naming: true,
+		projectStructure: {
+			files: ["src/**/*.ts"],
+			ignores: ["src/**/*.spec.ts", "src/**/*.d.ts", "src/**/*-types.ts"],
+			projectRoot: import.meta.dirname,
+			structureRoot: "src",
+		},
 		roblox: false,
 		rules: {
 			"package-json/restrict-private-properties": "off",
 		},
 		test: {
 			vitest: {
-				extended: false,
+				extended: true,
 				typecheck: true,
 			},
 		},

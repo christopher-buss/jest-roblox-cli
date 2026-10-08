@@ -147,7 +147,11 @@ function checkoutLuau(): LuauCheckout {
 }
 
 // readdir order is filesystem-dependent, and link order decides the layout of
-// the wasm. Sorting is what keeps the output byte-identical across machines.
+/**
+ * The wasm. Sorting is what keeps the output byte-identical across machines.
+ * @returns Absolute C++ source paths in stable link order.
+ * @param sourceDirectory - The compiler or parser source directory.
+ */
 function cppSources(sourceDirectory: string): Array<string> {
 	return fs
 		.readdirSync(sourceDirectory)
@@ -166,7 +170,12 @@ function insertBefore(source: string, anchor: string, insertion: string): string
 }
 
 // Luau 0.740 has no AstExprInstantiate encoder override, so its generic visitor
-// concatenates that node's children into invalid JSON.
+/**
+ * Concatenates that node's children into invalid JSON.
+ * @returns The patched encoder source file path.
+ * @param luauSource - The pinned upstream Luau source checkout.
+ * @param temporaryRoot - The build directory receiving the patched encoder.
+ */
 function patchAstJsonEncoder(luauSource: string, temporaryRoot: string): string {
 	const filePath = path.join(temporaryRoot, "AstJsonEncoder.cpp");
 	const encoderPath = path.join(luauSource, "Analysis/src/AstJsonEncoder.cpp");

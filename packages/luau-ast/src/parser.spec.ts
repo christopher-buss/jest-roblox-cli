@@ -1,207 +1,222 @@
 import { assert, describe, expect, it } from "vitest";
 
+import type { CstParseResult } from "./cst-materialize.ts";
 import { loadLuauParser } from "./parser.ts";
 
-describe(loadLuauParser, () => {
-	it("should return the same parser instance on repeat loads", () => {
+describe("parser diagnostics", () => {
+	it("should decode marked AST errors and discard empty lines", () => {
 		expect.assertions(1);
 
-		const [first, second] = [loadLuauParser(), loadLuauParser()];
+		const parser = loadLuauParser({
+			injectCstFault: () => {},
+			parseToCstJson: (source) => source,
+			parseToJson: () => "\u0001first parse error\n\nsecond parse error\n",
+		});
 
-		expect(first).toBe(second);
+		expect(parser.parse("local =")).toStrictEqual({
+			errors: ["first parse error", "second parse error"],
+			ok: false,
+		});
+	});
+
+	it("should decode marked CST errors without treating them as tree JSON", () => {
+		expect.assertions(1);
+
+		const parser = loadLuauParser({
+			injectCstFault: () => {},
+			parseToCstJson: () => "\u0001first parse error\n\nsecond parse error\n",
+			parseToJson: (source) => source,
+		});
+
+		expect(parser.parseCst({ fileName: "invalid.luau", source: "local =" })).toStrictEqual({
+			errors: ["first parse error", "second parse error"],
+			ok: false,
+		});
 	});
 });
 
-describe("parse", () => {
-	it("should parse a local declaration into an AstStatBlock root", () => {
-		expect.assertions(2);
-
-		const parser = loadLuauParser();
-
-		const result = parser.parse("local x = 1");
-
-		assert(result.ok);
-
-		expect(result.root.type).toBe("AstStatBlock");
-
-		const [statement] = result.root.body;
-		assert(statement!.type === "AstStatLocal");
-
-		expect(statement.vars[0]!.name).toBe("x");
-	});
-
-	it("should carry the `if local` binding on the statement and the expression", () => {
-		expect.assertions(2);
-
-		const parser = loadLuauParser();
-
-		const result = parser.parse(
-			"if local found = f() then end\nreturn if const id = g() then id else nil",
-		);
-
-		assert(result.ok);
-
-		const [statement, returned] = result.root.body;
-		assert(statement!.type === "AstStatIf" && returned!.type === "AstStatReturn");
-		const [expression] = returned.list;
-		assert(expression!.type === "AstExprIfElse");
-
-		expect(statement.conditionLocal!.name).toBe("found");
-		expect(expression.conditionLocal!.isConst).toBe(true);
-	});
-
-	it("should decode every location into a 1-based exclusive-end span", () => {
+describe("decode of a malformed wrapper payload", () => {
+	it("should fail loudly when the JSON is not a parse output", () => {
 		expect.assertions(1);
 
-		const parser = loadLuauParser();
-
-		const result = parser.parse("local x = 1");
-
-		assert(result.ok);
-
-		// "local x = 1" spans columns 1-11, so the exclusive end is 12.
-		expect(result.root.body[0]!.location).toStrictEqual({
-			beginColumn: 1,
-			beginLine: 1,
-			endColumn: 12,
-			endLine: 1,
+		const parser = loadLuauParser({
+			injectCstFault: () => {},
+			parseToCstJson: (source) => source,
+			parseToJson: (source) => source,
 		});
-	});
 
-	it("should decode nested location fields such as indexLocation", () => {
-		expect.assertions(1);
-
-		const parser = loadLuauParser();
-
-		const result = parser.parse("return t.field");
-
-		assert(result.ok);
-		const [statement] = result.root.body;
-		assert(statement!.type === "AstStatReturn");
-		const [expression] = statement.list;
-		assert(expression!.type === "AstExprIndexName");
-
-		// ".field" places "field" at columns 10-14, exclusive end 15.
-		expect(expression.indexLocation).toStrictEqual({
-			beginColumn: 10,
-			beginLine: 1,
-			endColumn: 15,
-			endLine: 1,
-		});
-	});
-
-	it("should decode comment spans", () => {
-		expect.assertions(1);
-
-		const parser = loadLuauParser();
-
-		const result = parser.parse("-- note\nlocal x = 1");
-
-		assert(result.ok);
-
-		expect(result.comments).toStrictEqual([
-			{
-				location: { beginColumn: 1, beginLine: 1, endColumn: 8, endLine: 1 },
-				type: "Comment",
-			},
-		]);
-	});
-
-	it("should survive the encoder's bare Infinity for overflowing literals", () => {
-		expect.assertions(1);
-
-		const parser = loadLuauParser();
-
-		const result = parser.parse("local a = 1e999");
-
-		assert(result.ok);
-		const [statement] = result.root.body;
-		assert(statement!.type === "AstStatLocal");
-		const [value] = statement.values;
-		assert(value!.type === "AstExprConstantNumber");
-
-		expect(value.value).toBe(Infinity);
-	});
-
-	it("should leave the word Infinity alone inside string constants", () => {
-		expect.assertions(1);
-
-		const parser = loadLuauParser();
-
-		const result = parser.parse('local s = "to Infinity!"');
-
-		assert(result.ok);
-		const [statement] = result.root.body;
-		assert(statement!.type === "AstStatLocal");
-		const [value] = statement.values;
-		assert(value!.type === "AstExprConstantString");
-
-		expect(value.value).toBe("to Infinity!");
-	});
-
-	it("should track escaped quotes when scanning for bare Infinity", () => {
-		expect.assertions(2);
-
-		const parser = loadLuauParser();
-
-		const result = parser.parse('local s = "she said \\"Infinity\\"" local a = 1e999');
-
-		assert(result.ok);
-		const [stringStatement, numberStatement] = result.root.body;
-		assert(stringStatement!.type === "AstStatLocal");
-		const [stringValue] = stringStatement.values;
-		assert(stringValue!.type === "AstExprConstantString");
-
-		expect(stringValue.value).toBe('she said "Infinity"');
-
-		assert(numberStatement!.type === "AstStatLocal");
-		const [numberValue] = numberStatement.values;
-		assert(numberValue!.type === "AstExprConstantNumber");
-
-		expect(numberValue.value).toBe(Infinity);
-	});
-
-	it("should parse explicit type instantiations", () => {
-		expect.assertions(1);
-
-		const parser = loadLuauParser();
-
-		const result = parser.parse("f<<T>>()");
-
-		assert(result.ok);
-
-		expect(result.root.body).toHaveLength(1);
-	});
-
-	it("should survive a parse whose output outgrows the initial wasm heap", () => {
-		expect.assertions(1);
-
-		const parser = loadLuauParser();
-
-		// ~2 MB of statements produce >20 MB of AST JSON, past the default
-		// 16 MB initial heap — exercising ALLOW_MEMORY_GROWTH end to end.
-		const lines = Array.from(
-			{ length: 60_000 },
-			(_unused, index) => `local variable${index} = ${index} + ${index}`,
+		expect(() => parser.parse('{"unexpected": true}')).toThrow(
+			"wasm wrapper returned an unrecognized JSON shape",
 		);
-
-		const result = parser.parse(lines.join("\n"));
-
-		assert(result.ok);
-
-		expect(result.root.body).toHaveLength(60_000);
 	});
 
-	it("should report each parse error as a message", () => {
-		expect.assertions(2);
+	it("should fail loudly when the JSON is not even an object", () => {
+		expect.assertions(1);
 
-		const parser = loadLuauParser();
+		const parser = loadLuauParser({
+			injectCstFault: () => {},
+			parseToCstJson: (source) => source,
+			parseToJson: (source) => source,
+		});
 
-		const result = parser.parse("local = =");
+		expect(() => parser.parse("[1, 2]")).toThrow(
+			"wasm wrapper returned an unrecognized JSON shape",
+		);
+	});
+
+	it("should fail loudly on an unrecognized location string", () => {
+		expect.assertions(1);
+
+		const parser = loadLuauParser({
+			injectCstFault: () => {},
+			parseToCstJson: (source) => source,
+			parseToJson: (source) => source,
+		});
+
+		expect(() => parser.parse('{"location": "not a span"}')).toThrow(
+			"unrecognized location string",
+		);
+	});
+});
+
+const SOURCE = "local x = 1";
+
+interface TreeOverrides {
+	name?: string;
+	keyword?: string;
+}
+
+/**
+ * Parse one serializer payload against its original source.
+ * @param options - The diagnostic file name and source text.
+ * @param payload - The serializer JSON or failure message.
+ * @returns The materialized tree or serializer errors.
+ */
+function parseWithPayload(
+	{ fileName, source = SOURCE }: { fileName: string; source?: string },
+	payload: string,
+): CstParseResult {
+	return loadLuauParser({
+		injectCstFault: () => {},
+		parseToCstJson: () => payload,
+		parseToJson: (input) => input,
+	}).parseCst({ fileName, source });
+}
+
+/**
+ * The tree for `local x = 1`, with chosen token positions substituted.
+ * @returns The serializer JSON for a local declaration.
+ * @param overrides - Substituted token positions.
+ */
+function localStatement(overrides: TreeOverrides): string {
+	const keyword = overrides.keyword ?? "[0,0,0,5]";
+	const name = overrides.name ?? "[0,6,0,7]";
+	return `{"type":"Root","location":[0,0,0,11],"body":{"type":"Block","location":[0,0,0,11],"body":[{"type":"Local","location":[0,0,0,11],"keyword":${keyword},"variables":[{"node":{"type":"LocalDecl","location":[0,6,0,7],"binding":1,"name":${name}}}],"equals":[0,8,0,9],"values":[{"node":{"type":"Number","location":[0,10,0,11],"token":[0,10,0,11]}}]}]}}`;
+}
+
+describe("gap detector", () => {
+	it("should name the file, the two tokens, and the bytes when a token is skipped", () => {
+		expect.assertions(1);
+
+		// The name token points at the `=`, so `x` falls into the gap between
+		// `local` and `=` with whitespace on both sides.
+		const result = parseWithPayload(
+			{ fileName: "skipped.luau" },
+			localStatement({ name: "[0,8,0,9]" }),
+		);
 
 		assert(!result.ok);
 
-		expect(result.errors.length).toBeGreaterThan(0);
-		expect(result.errors[0]).toContain("Expected identifier");
+		expect(result.errors).toStrictEqual([
+			'skipped.luau: bytes "x" between token "local" at 1:1 and token "=" at 1:9 are not whitespace or a comment',
+		]);
+	});
+
+	it("should name the start of the file when bytes precede the first token", () => {
+		expect.assertions(1);
+
+		const result = parseWithPayload(
+			{ fileName: "first.luau" },
+			localStatement({ keyword: "[0,2,0,5]" }),
+		);
+
+		assert(!result.ok);
+
+		expect(result.errors).toStrictEqual([
+			'first.luau: bytes "lo" between the start of the file and token "cal" at 1:3 are not whitespace or a comment',
+		]);
+	});
+
+	it("should treat an unterminated block comment as offending bytes", () => {
+		expect.assertions(1);
+
+		const source = `${SOURCE} --[[ open`;
+		const result = parseWithPayload({ fileName: "open.luau", source }, localStatement({}));
+
+		assert(!result.ok);
+
+		expect(result.errors).toStrictEqual([
+			'open.luau: bytes "--[[ open" between token "1" at 1:11 and token "" at 1:22 are not whitespace or a comment',
+		]);
+	});
+
+	it("should report a token that overlaps the previous one", () => {
+		expect.assertions(1);
+
+		const result = parseWithPayload(
+			{ fileName: "overlap.luau" },
+			localStatement({ name: "[0,4,0,7]" }),
+		);
+
+		assert(!result.ok);
+
+		expect(result.errors).toStrictEqual([
+			'overlap.luau: token "l x" at 1:5 overlaps token "local" at 1:1',
+		]);
+	});
+});
+
+describe("decode of a malformed CST payload", () => {
+	it("should surface a serializer defect as an error result", () => {
+		expect.assertions(1);
+
+		const result = parseWithPayload(
+			{ fileName: "defect.luau" },
+			"\u0002cst writer: close without a matching open",
+		);
+
+		expect(result).toStrictEqual({
+			errors: ["defect.luau: cst writer: close without a matching open"],
+			ok: false,
+		});
+	});
+
+	it("should fail loudly when the JSON is not a tree", () => {
+		expect.assertions(1);
+
+		expect(() => parseWithPayload({ fileName: "shape.luau" }, '{"type":"Nope"}')).toThrow(
+			"wasm wrapper returned an unrecognized CST shape",
+		);
+	});
+});
+
+describe("cST location payload", () => {
+	it("should reject a location with a nonnumeric coordinate", () => {
+		expect.assertions(1);
+
+		const parser = loadLuauParser({
+			injectCstFault: () => {},
+			parseToCstJson: () => {
+				return localStatement({}).replace(
+					'"location":[0,0,0,11]',
+					'"location":[0,"bad",0,11]',
+				);
+			},
+			parseToJson: (source) => source,
+		});
+
+		expect(() => parser.parseCst({ fileName: "invalid.luau", source: SOURCE })).toThrow(
+			"wasm wrapper returned an invalid CST location",
+		);
 	});
 });

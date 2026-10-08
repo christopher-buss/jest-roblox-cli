@@ -10,23 +10,31 @@ import type { SourceBytes } from "./source-bytes.ts";
  * column.
  */
 export interface CstPosition {
+	/** The zero-based UTF-16 column within the line. */
 	column: number;
+	/** The one-based line number. */
 	line: number;
 }
 
 /** One printed token traced back to where it came from. */
 export interface CstSourcemapSegment {
+	/** The token position in the printed output. */
 	generated: CstPosition;
 	/** Rule that constructed the token at this generated position. */
 	generatedBy?: string;
+	/** The token position in the original source. */
 	original: CstPosition;
 }
 
+/** Printed source with the origins of its emitted tokens. */
 export interface PrintedCst {
+	/** The complete printed source. */
 	code: string;
+	/** Token origins in the order they were printed. */
 	segments: Array<CstSourcemapSegment>;
 }
 
+/** Replacement and source-index settings for one print pass. */
 export interface PrintOptions {
 	/** Replacements to print in place of nodes. */
 	edits?: CstEdits | undefined;
@@ -172,7 +180,11 @@ function emitToken(printer: Printer, token: Token): void {
 	writeTrivia(printer, token.trailing);
 }
 
-/** The tree walk; a replaced node prints its replacement and is not entered. */
+/**
+ * The tree walk; a replaced node prints its replacement and is not entered.
+ * @param printer - The state of the current output pass.
+ * @param value - The value reached in the parsed tree.
+ */
 function walk(printer: Printer, value: CstValue): void {
 	walkCst(value, {
 		onNode: (target) => {
@@ -217,8 +229,13 @@ function isNewlineWhitespace(trivia: Trivia): boolean {
  * precedes it on its line and a newline follows it; then the indentation
  * and the newline go with it. Otherwise the whitespace on both sides stays,
  * so what shared the line with it keeps its spacing.
+ * @param printer - The state of the current output pass.
+ * @param options - The removal policy and bounding tokens.
  */
-function printRemoval(printer: Printer, removal: Removal, { first, last }: TokenBounds): void {
+function printRemoval(
+	printer: Printer,
+	{ first, last, removal }: TokenBounds & { removal: Removal },
+): void {
 	const leading = removal.preserveLeading ? first.leading : [];
 	const lineStart = leading.findLastIndex(isNewlineWhitespace) + 1;
 	const indentation = leading.slice(lineStart);
@@ -283,7 +300,7 @@ function printReplacement(printer: Printer, { replacement, target }: Replaced): 
 	assert(bounds !== undefined, "a replaced node has no tokens");
 	const { first, last } = bounds;
 	if ("remove" in replacement) {
-		printRemoval(printer, replacement, bounds);
+		printRemoval(printer, { ...bounds, removal: replacement });
 		return;
 	}
 

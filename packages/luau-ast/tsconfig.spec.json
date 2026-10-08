@@ -3,6 +3,7 @@
 	"compilerOptions": {
 		"composite": true,
 		"libReplacement": true,
+		"rootDir": "../..",
 		"outDir": "./out-tsc/vitest"
 	},
 	"references": [
@@ -17,6 +18,15 @@
 		"tsdown.config.ts",
 		"wasm/build-wasm.ts",
 		"package.json",
-		"../../types/**/*.d.ts"
+		"../../types/**/*.d.ts",
+		"test/**/*.ts",
+		"stryker.config.ts",
+		"vitest.stryker.config.ts",
+		"dependency-cruiser.config.ts",
+		"../../vitest.shared.ts",
+		"../../vitest.stryker.shared.ts",
+		"../../dependency-cruiser.shared.ts",
+		"../../stryker.shared.config.ts",
+		"src/**/*.d.ts"
 	]
 }

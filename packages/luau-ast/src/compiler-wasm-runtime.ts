@@ -1,17 +1,24 @@
 import assert from "node:assert";
-import { Buffer } from "node:buffer";
 
 import { luauCompilerWasmBase64 } from "./luau-compiler-wasm.ts";
+import { callWasm, instantiateWasm } from "./wasm-host.ts";
 
-export interface CompilerWasmRequest {
-	bytecodeText: boolean;
-	debugLevel: number;
-	optimizationLevel: number;
-	source: string;
+/** The raw JSON surface exposed by the compiler wrapper. */
+export interface CompilerWasmRuntime {
+	/** Compile source and return the wrapper JSON payload. */
+	compileWithStatistics: (request: CompilerWasmRequest) => string;
 }
 
-export interface CompilerWasmRuntime {
-	compileWithStatistics: (request: CompilerWasmRequest) => string;
+/** The source and numeric settings passed to the compiler wrapper. */
+interface CompilerWasmRequest {
+	/** The optional bytecode listing with compiler remarks. */
+	bytecodeText: boolean;
+	/** The amount of debug information retained in the bytecode. */
+	debugLevel: number;
+	/** The optimization setting passed to the compiler. */
+	optimizationLevel: number;
+	/** The Luau source passed to the backend. */
+	source: string;
 }
 
 /* eslint-disable flawless/naming-convention -- C ABI symbol names from compiler-wrapper.cpp. */
@@ -31,6 +38,24 @@ interface CompilerWasmExports {
 }
 /* eslint-enable flawless/naming-convention */
 
+/**
+ * Instantiate the embedded compiler and expose its raw payloads.
+ * @returns The initialized compiler backend.
+ */
+export function createCompilerWasmRuntime(): CompilerWasmRuntime {
+	const exports = instantiateWasm(luauCompilerWasmBase64);
+	// Stryker disable next-line StringLiteral: Pinned wasm ABI never fails.
+	assert(isCompilerWasmExports(exports), "compiler wasm must export the wrapper surface");
+	exports._initialize();
+	const wasm: CompilerWasmExports = exports;
+
+	return {
+		compileWithStatistics(request) {
+			return callCompiler(wasm, request);
+		},
+	};
+}
+
 function isCompilerWasmExports(
 	value: Record<string, unknown>,
 ): value is CompilerWasmExports & Record<string, unknown> {
@@ -44,53 +69,20 @@ function isCompilerWasmExports(
 	);
 }
 
-const decoder = new TextDecoder();
-const encoder = new TextEncoder();
-
-export function createCompilerWasmRuntime(): CompilerWasmRuntime {
-	const wasmModule = new WebAssembly.Module(Buffer.from(luauCompilerWasmBase64, "base64"));
-	const instance = new WebAssembly.Instance(wasmModule, {
-		env: {
-			// eslint-disable-next-line flawless/naming-convention -- Emscripten import name.
-			emscripten_notify_memory_growth: () => {
-				// Heap views are rebuilt after every allocation.
-			},
-		},
-	});
-	const { exports } = instance;
-	assert(isCompilerWasmExports(exports), "compiler wasm must export the wrapper surface");
-	exports._initialize();
-	const wasm: CompilerWasmExports = exports;
-
-	return {
-		compileWithStatistics(request) {
-			return callCompiler(wasm, request);
-		},
-	};
-}
-
 function callCompiler(
 	wasm: CompilerWasmExports,
 	{ bytecodeText, debugLevel, optimizationLevel, source }: CompilerWasmRequest,
 ): string {
-	const sourceBytes = encoder.encode(source);
-	const sourcePointer = wasm.malloc(sourceBytes.length + 1);
-	const heapForWrite = new Uint8Array(wasm.memory.buffer);
-	heapForWrite.set(sourceBytes, sourcePointer);
-	heapForWrite[sourcePointer + sourceBytes.length] = 0;
-
-	const resultPointer = wasm.compile_with_statistics(
-		sourcePointer,
-		sourceBytes.length,
-		optimizationLevel,
-		debugLevel,
-		bytecodeText ? 1 : 0,
-	);
-	const heapForRead = new Uint8Array(wasm.memory.buffer);
-	const resultEnd = heapForRead.indexOf(0, resultPointer);
-	const raw = decoder.decode(heapForRead.subarray(resultPointer, resultEnd));
-
-	wasm.free_result(resultPointer);
-	wasm.free(sourcePointer);
-	return raw;
+	return callWasm(wasm, {
+		run: (sourcePointer, sourceLength) => {
+			return wasm.compile_with_statistics(
+				sourcePointer,
+				sourceLength,
+				optimizationLevel,
+				debugLevel,
+				bytecodeText ? 1 : 0,
+			);
+		},
+		source,
+	});
 }

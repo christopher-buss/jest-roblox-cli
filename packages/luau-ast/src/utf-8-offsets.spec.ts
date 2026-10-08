@@ -1,8 +1,33 @@
 import { describe, expect, it } from "vitest";
 
-import { createUtf8OffsetMap } from "./utf8-offsets.ts";
+import { createUtf8OffsetMap } from "./utf-8-offsets.ts";
 
 describe(createUtf8OffsetMap, () => {
+	it.for([
+		{ text: "\u007fx", utf16Width: 1, width: 1 },
+		{ text: "\u0080x", utf16Width: 1, width: 2 },
+		{ text: "\u07ffx", utf16Width: 1, width: 2 },
+		{ text: "\u0800x", utf16Width: 1, width: 3 },
+		{ text: "\uffffx", utf16Width: 1, width: 3 },
+		{ text: "\u{10000}x", utf16Width: 2, width: 4 },
+	])("should map UTF-8 width boundaries for $text", ({ text, utf16Width, width }) => {
+		expect.assertions(3);
+
+		const { byteLength, toUtf16 } = createUtf8OffsetMap(text);
+
+		expect(byteLength).toBe(width + 1);
+		expect(toUtf16(width - 1)).toBe(0);
+		expect(toUtf16(width)).toBe(utf16Width);
+	});
+
+	it.for([0.5, NaN])("should reject an unmappable byte offset %s", (offset) => {
+		expect.assertions(1);
+
+		const { toUtf16 } = createUtf8OffsetMap("hello");
+
+		expect(() => toUtf16(offset)).toThrow("Clamped byte offset must be within the map");
+	});
+
 	it("should map ASCII byte offsets one to one", () => {
 		expect.assertions(4);
 

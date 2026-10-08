@@ -1,8 +1,8 @@
 import assert from "node:assert";
 import { Buffer } from "node:buffer";
 
-import type { LuauSpan } from "./ast.ts";
-import { createUtf8OffsetMap } from "./utf8-offsets.ts";
+import type { LuauSpan } from "./ast-types.ts";
+import { createUtf8OffsetMap } from "./utf-8-offsets.ts";
 
 /** Byte-offset range within a source file. Start inclusive, end exclusive. */
 export interface ByteRange {
@@ -124,7 +124,7 @@ export function indexSourceBytes(source: string): SourceBytes {
  * walks a handful of lines rather than the whole file.
  *
  * @param readLine - Reads a 1-based line's text, trailing newline and all.
- * @returns The converter.
+ * @returns A function resolving byte columns to UTF-16 columns.
  */
 function createColumnConverter(
 	readLine: (line: number) => string,
@@ -141,7 +141,11 @@ function createColumnConverter(
 		}
 
 		const offsets = createUtf8OffsetMap(text);
-		// Both columns count from 1 and the offset map from 0.
+		/**
+		 * Both columns count from 1 and the offset map from 0.
+		 * @param column - The one-based UTF-8 byte column.
+		 * @returns The corresponding one-based UTF-16 column.
+		 */
 		return (column) => offsets.toUtf16(column - 1) + 1;
 	}
 
@@ -245,7 +249,7 @@ function lineAt(offset: number, lineStarts: Array<number>): number {
  *
  * @param offset - The 0-based byte offset.
  * @param lineStarts - One start offset per line, in line order.
- * @returns The position.
+ * @returns The one-based source coordinates.
  */
 function positionAt(offset: number, lineStarts: Array<number>): { column: number; line: number } {
 	const line = lineAt(offset, lineStarts);

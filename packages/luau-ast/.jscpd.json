@@ -1,0 +1,14 @@
+{
+	"path": ["src", "test/helpers"],
+	"format": ["typescript"],
+	"ignore": [
+		"**/*.spec.ts",
+		"**/*.spec-d.ts",
+		"test/fixtures/**",
+		"src/luau-parser-wasm.ts",
+		"src/luau-compiler-wasm.ts"
+	],
+	"minTokens": 40,
+	"reporters": ["console"],
+	"exitCode": 1
+}

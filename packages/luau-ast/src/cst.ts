@@ -17,7 +17,7 @@ import type {
 	CstTableItem,
 	CstTypeArguments,
 	Punctuated,
-} from "./cst-expressions.ts";
+} from "./cst-expression-types.ts";
 import { CST_SLOTS, punctuatedSlots } from "./cst-slots.ts";
 import type {
 	CstBlock,
@@ -25,7 +25,7 @@ import type {
 	CstExternTypeMethod,
 	CstRoot,
 	CstStat,
-} from "./cst-statements.ts";
+} from "./cst-statement-types.ts";
 import { isToken } from "./cst-token.ts";
 import type { Token } from "./cst-token.ts";
 import type {
@@ -40,8 +40,8 @@ import type {
 	CstTypeTableItem,
 } from "./cst-types.ts";
 
-export type * from "./cst-expressions.ts";
-export type * from "./cst-statements.ts";
+export type * from "./cst-expression-types.ts";
+export type * from "./cst-statement-types.ts";
 export type { Token, Trivia } from "./cst-token.ts";
 export { isToken } from "./cst-token.ts";
 export type * from "./cst-types.ts";
@@ -120,8 +120,10 @@ export const CST_NODE_KINDS = [
 	"While",
 ] as const;
 
+/** A discriminator emitted by the pinned CST serializer. */
 export type CstNodeKind = (typeof CST_NODE_KINDS)[number];
 
+/** Any node emitted by the pinned CST serializer. */
 export type CstNode =
 	| CstAttribute
 	| CstAttributeList
@@ -154,10 +156,13 @@ const kindSet: ReadonlySet<string> = new Set(CST_NODE_KINDS);
 
 /** The first and last token under a node. */
 export interface TokenBounds {
+	/** The earliest token in lexical order. */
 	first: Token;
+	/** The latest token in lexical order. */
 	last: Token;
 }
 
+/** Hooks for a traversal in lexical slot order. */
 export interface CstWalker {
 	/** Called after the children of each node `onNode` did not claim. */
 	onExit?: (node: CstNode) => void;
@@ -166,6 +171,7 @@ export interface CstWalker {
 	 * node and skip them.
 	 */
 	onNode?: (node: CstNode) => boolean | undefined;
+	/** Called for each token reached in lexical order. */
 	onToken?: (token: Token) => void;
 	/** Whether to leave one of a node's slots closed. */
 	skipSlot?: (node: CstNode, slot: string) => boolean;
@@ -212,7 +218,7 @@ export function isCstNode(value: unknown): value is CstNode {
  * @param walker - The hooks to call.
  */
 export function walkCst(value: CstValue, walker: CstWalker): void {
-	walk(value, walker);
+	walk(value, { hooks: walker });
 }
 
 /**
@@ -226,10 +232,12 @@ export function walkCst(value: CstValue, walker: CstWalker): void {
 export function someCstNode(value: CstValue, predicate: (node: CstNode) => boolean): boolean {
 	let isFound = false;
 	walk(value, {
-		isDone: () => isFound,
-		onNode: (node) => {
-			isFound = predicate(node);
-			return isFound;
+		hooks: {
+			isDone: () => isFound,
+			onNode: (node) => {
+				isFound = predicate(node);
+				return isFound;
+			},
 		},
 	});
 
@@ -250,7 +258,7 @@ export function forEachToken(value: CstValue, visit: (token: Token) => void): vo
  * The first and last token under a node, or `undefined` for a node with no
  * tokens, such as an empty block.
  *
- * @param node - The node.
+ * @param node - The subtree whose outermost tokens are read.
  * @returns Its outermost tokens.
  */
 export function tokenBounds(node: CstNode): TokenBounds | undefined {
@@ -284,15 +292,20 @@ function isCstList(value: CstValue): value is ReadonlyArray<CstValue> {
 	return Array.isArray(value);
 }
 
-/** `parent`, the nearest enclosing node's kind, orders a punctuated entry. */
-function walk(value: CstValue, hooks: WalkHooks, parent?: CstNodeKind): void {
+/**
+ * `parent`, the nearest enclosing node's kind, orders a punctuated entry.
+ * @param value - The value reached in the parsed tree.
+ * @param context - The traversal hooks and nearest enclosing node kind.
+ */
+function walk(value: CstValue, context: { hooks: WalkHooks; parent?: CstNodeKind }): void {
+	const { hooks, parent } = context;
 	if (value === undefined || hooks.isDone?.() === true) {
 		return;
 	}
 
 	if (isCstList(value)) {
 		for (const element of value) {
-			walk(element, hooks, parent);
+			walk(element, context);
 		}
 
 		return;
@@ -310,16 +323,25 @@ function walk(value: CstValue, hooks: WalkHooks, parent?: CstNodeKind): void {
 	}
 
 	for (const slot of punctuatedSlots(parent)) {
-		walk(value[slot], hooks, parent);
+		walk(value[slot], context);
 	}
 }
 
-/** A slot never holds a bare punctuated entry, only a list of them. */
+/**
+ * A slot never holds a bare punctuated entry, only a list of them.
+ * @param value - The value reached in the parsed tree.
+ * @returns Whether the value can be traversed by the CST walker.
+ */
 function isCstValue(value: unknown): value is CstValue {
 	return value === undefined || isToken(value) || isCstNode(value) || Array.isArray(value);
 }
 
-/** `CST_SLOTS` lists only slots, and every slot holds a walkable value. */
+/**
+ * `CST_SLOTS` lists only slots, and every slot holds a walkable value.
+ * @param node - The subtree or container to inspect.
+ * @param slot - The lexical child-slot name declared for this kind.
+ * @returns The child value stored in this lexical slot.
+ */
 function readSlot(node: CstNode, slot: string): CstValue {
 	const value: unknown = Reflect.get(node, slot);
 	if (!isCstValue(value)) {
@@ -335,9 +357,10 @@ function walkNode(node: CstNode, hooks: WalkHooks): void {
 	}
 
 	const slots: ReadonlyArray<string> = CST_SLOTS[node.type];
+	const context = { hooks, parent: node.type };
 	for (const slot of slots) {
 		if (hooks.skipSlot?.(node, slot) !== true) {
-			walk(readSlot(node, slot), hooks, node.type);
+			walk(readSlot(node, slot), context);
 		}
 	}
 

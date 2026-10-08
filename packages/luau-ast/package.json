@@ -13,6 +13,9 @@
 	"author": "Christopher Buss <christopher.buss@pm.me> (https://github.com/christopher-buss)",
 	"sideEffects": false,
 	"type": "module",
+	"imports": {
+		"#test/*": "./test/*.ts"
+	},
 	"exports": {
 		".": {
 			"source": "./src/index.ts",
@@ -20,7 +23,7 @@
 			"default": "./dist/index.mjs"
 		},
 		"./ast": {
-			"source": "./src/ast.ts",
+			"source": "./src/ast-types.ts",
 			"types": "./dist/ast.d.mts",
 			"default": "./dist/ast.mjs"
 		},
@@ -57,14 +60,21 @@
 	"devDependencies": {
 		"@isentinel/eslint-config": "6.0.0-beta.43",
 		"@isentinel/tsconfig": "2.0.0",
+		"@stryker-mutator/core": "10.0.0",
+		"@stryker-mutator/typescript-checker": "10.0.0",
+		"@stryker-mutator/vitest-runner": "10.0.0",
 		"@total-typescript/shoehorn": "0.1.2",
 		"@types/node": "24.12.3",
 		"@typescript/native": "npm:typescript@7.0.2",
 		"@vitest/coverage-v8": "5.0.1",
 		"@vitest/eslint-plugin": "1.6.27",
+		"dependency-cruiser": "18.4.0",
 		"eslint": "10.9.0",
+		"eslint-plugin-jest-extended": "3.0.1",
 		"eslint-plugin-n": "18.3.0",
 		"eslint-plugin-pnpm": "1.8.0",
+		"jest-extended": "7.0.0",
+		"jscpd": "5.4.0",
 		"tsdown": "0.23.0",
 		"typescript": "6.0.3",
 		"vitest": "5.0.1"

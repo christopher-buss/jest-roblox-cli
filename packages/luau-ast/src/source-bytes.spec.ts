@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
-import type { LuauSpan } from "./ast.ts";
+import type { LuauSpan } from "./ast-types.ts";
 import { indexSourceBytes } from "./source-bytes.ts";
 
 function span(overrides: Partial<LuauSpan>): LuauSpan {

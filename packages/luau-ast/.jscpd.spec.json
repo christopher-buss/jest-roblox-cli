@@ -1,0 +1,9 @@
+{
+	"path": ["src", "test"],
+	"pattern": "**/*.{spec,spec-d}.ts",
+	"format": ["typescript"],
+	"ignore": ["test/fixtures/**"],
+	"minTokens": 75,
+	"reporters": ["console"],
+	"exitCode": 1
+}
