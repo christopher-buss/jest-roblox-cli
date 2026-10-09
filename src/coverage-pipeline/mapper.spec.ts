@@ -1843,20 +1843,107 @@ describe(mapCoverageToTypeScript, () => {
 			expect(result.files["src/shared/player.ts"]!.b["0"]).toStrictEqual([2, 0]);
 		});
 
-		it("should drop phantom branch whose arm collapses onto another arm's start", () => {
+		it("should keep a single-line else-less statement if", () => {
 			expect.assertions(1);
 
-			// A roblox-ts Array polyfill (.filter/.includes/.some) emits a
-			// synthetic dispatch conditional with no source map entry. With
-			// trace-mapping's greatest-lower-bound bias, the source-less
-			// implicit-else position snaps to the nearest preceding segment —
-			// the then-arm's own start — producing a zero-width phantom else
-			// arm that can never be covered (counts [N, 0]).
 			const coverageMap = createCoverageMap({}, undefined, {
 				"1": {
 					locations: [
-						{ end: { column: 10, line: 3 }, start: { column: 1, line: 3 } },
-						{ end: { column: 1, line: 5 }, start: { column: 1, line: 5 } },
+						{ end: { column: 2, line: 5 }, start: { column: 11, line: 3 } },
+						{ end: { column: 2, line: 3 }, start: { column: 2, line: 3 } },
+					],
+					type: "if",
+				},
+			});
+			const fileSystem = setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+			setupSourceMapMappings({
+				"3:1": { column: 1, line: 2, source: "src/shared/player.ts" },
+				"3:10": { column: 1, line: 2, source: "src/shared/player.ts" },
+				"5:1": { column: 16, line: 2, source: "src/shared/player.ts" },
+			});
+
+			const result = mapCoverageToTypeScript(
+				{ "shared/player.luau": { b: { "1": [1, 2] }, s: {} } },
+				createManifest(createManifestFiles()),
+				{ fileSystem, traceMapFactory },
+			);
+
+			expect(result.files["src/shared/player.ts"]!.b["0"]).toStrictEqual([1, 2]);
+		});
+
+		it("should keep a multi-line else-less statement if", () => {
+			expect.assertions(1);
+
+			const coverageMap = createCoverageMap({}, undefined, {
+				"1": {
+					locations: [
+						{ end: { column: 2, line: 10 }, start: { column: 11, line: 8 } },
+						{ end: { column: 2, line: 8 }, start: { column: 2, line: 8 } },
+					],
+					type: "if",
+				},
+			});
+			const fileSystem = setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+			setupSourceMapMappings({
+				"8:1": { column: 1, line: 7, source: "src/shared/player.ts" },
+				"8:10": { column: 1, line: 7, source: "src/shared/player.ts" },
+				"10:1": { column: 1, line: 9, source: "src/shared/player.ts" },
+			});
+
+			const result = mapCoverageToTypeScript(
+				{ "shared/player.luau": { b: { "1": [1, 2] }, s: {} } },
+				createManifest(createManifestFiles()),
+				{ fileSystem, traceMapFactory },
+			);
+
+			expect(result.files["src/shared/player.ts"]!.b["0"]).toStrictEqual([1, 2]);
+		});
+
+		it("should keep a branch whose later arm starts elsewhere but ends at the first arm's start", () => {
+			expect.assertions(1);
+
+			const coverageMap = createCoverageMap({}, undefined, {
+				"1": {
+					locations: [
+						{ end: { column: 2, line: 3 }, start: { column: 2, line: 3 } },
+						{ end: { column: 2, line: 5 }, start: { column: 1, line: 5 } },
+					],
+					type: "if",
+				},
+			});
+			const fileSystem = setupFs({
+				"out/shared/player.luau.cov-map.json": JSON.stringify(coverageMap),
+				"out/shared/player.luau.map": '{"version":3}',
+			});
+			setupSourceMapMappings({
+				"3:1": { column: 1, line: 2, source: "src/shared/player.ts" },
+				"5:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"5:1": { column: 1, line: 2, source: "src/shared/player.ts" },
+			});
+
+			const result = mapCoverageToTypeScript(
+				{ "shared/player.luau": { b: { "1": [1, 2] }, s: {} } },
+				createManifest(createManifestFiles()),
+				{ fileSystem, traceMapFactory },
+			);
+
+			expect(result.files["src/shared/player.ts"]!.b["0"]).toStrictEqual([1, 2]);
+		});
+
+		it("should drop phantom branch whose arms all collapse to one point", () => {
+			expect.assertions(1);
+
+			const coverageMap = createCoverageMap({}, undefined, {
+				"1": {
+					locations: [
+						{ end: { column: 4, line: 13 }, start: { column: 40, line: 10 } },
+						{ end: { column: 2, line: 10 }, start: { column: 2, line: 10 } },
 					],
 					type: "if",
 				},
@@ -1867,11 +1954,10 @@ describe(mapCoverageToTypeScript, () => {
 				"out/shared/player.luau.map": '{"version":3}',
 			});
 
-			// Else-arm (Luau line 5) snaps to the then-arm's start (TS L2c0).
 			setupSourceMapMappings({
-				"3:0": { column: 0, line: 2, source: "src/shared/player.ts" },
-				"3:9": { column: 15, line: 2, source: "src/shared/player.ts" },
-				"5:0": { column: 0, line: 2, source: "src/shared/player.ts" },
+				"10:1": { column: 1, line: 2, source: "src/shared/player.ts" },
+				"10:39": { column: 1, line: 2, source: "src/shared/player.ts" },
+				"13:3": { column: 1, line: 2, source: "src/shared/player.ts" },
 			});
 
 			const coverageData: RawCoverageData = {
@@ -1900,8 +1986,8 @@ describe(mapCoverageToTypeScript, () => {
 				{
 					"1": {
 						locations: [
-							{ end: { column: 10, line: 3 }, start: { column: 1, line: 3 } },
-							{ end: { column: 1, line: 5 }, start: { column: 1, line: 5 } },
+							{ end: { column: 4, line: 13 }, start: { column: 40, line: 10 } },
+							{ end: { column: 2, line: 10 }, start: { column: 2, line: 10 } },
 						],
 						type: "if",
 					},
@@ -1914,11 +2000,11 @@ describe(mapCoverageToTypeScript, () => {
 			});
 
 			setupSourceMapMappings({
-				"3:0": { column: 0, line: 2, source: "src/shared/player.ts" },
-				"3:9": { column: 15, line: 2, source: "src/shared/player.ts" },
-				"5:0": { column: 0, line: 2, source: "src/shared/player.ts" },
 				"7:0": { column: 0, line: 3, source: "src/shared/player.ts" },
 				"7:9": { column: 25, line: 3, source: "src/shared/player.ts" },
+				"10:1": { column: 1, line: 2, source: "src/shared/player.ts" },
+				"10:39": { column: 1, line: 2, source: "src/shared/player.ts" },
+				"13:3": { column: 1, line: 2, source: "src/shared/player.ts" },
 			});
 
 			const coverageData: RawCoverageData = {
