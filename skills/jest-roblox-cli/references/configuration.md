@@ -1,7 +1,8 @@
 # Configuration
 
-Config file: `jest.config.ts` (also `.js`, `.mjs`). CLI flags override config
-file values.
+Config file: `jest.config.*`, in any format c12 loads (`.ts`, `.js`, `.mjs`,
+`.cjs`, `.json`, `.yaml`, `.toml`). A config can inherit a shared base with
+`extends: "../jest.shared.ts"`.
 
 ## Root Fields
 
@@ -9,12 +10,14 @@ Root fields control the CLI/runner. Jest passthrough fields live under `test:`.
 
 | Field                  | Purpose                                                                                   | Default                          |
 | ---------------------- | ----------------------------------------------------------------------------------------- | -------------------------------- |
-| `backend`              | `"auto"`, `"open-cloud"`, or `"studio"`                                                   | `"auto"`                         |
+| `backend`              | `"auto"`, `"studio-cli"`, `"open-cloud"`, or `"studio"`                                   | `"auto"`                         |
 | `placeFile`            | Path to `.rbxl` file                                                                      | `"./game.rbxl"`                  |
 | `jestPath`             | DataModel path to the Jest module (e.g. `"ReplicatedStorage/Packages/Jest"`)              | auto-detect in ReplicatedStorage |
 | `timeout`              | Max execution time (ms)                                                                   | `300000`                         |
 | `sourceMap`            | Map Luau traces → source                                                                  | `true`                           |
-| `port`                 | WebSocket port for Studio backend                                                         | `3001`                           |
+| `port`                 | WebSocket port for the attached `studio` backend                                          | `3001`                           |
+| `studioPath`           | Roblox Studio executable for `studio-cli` (also `JEST_ROBLOX_STUDIO_PATH`)                | auto-discovered                  |
+| `parallel`             | Concurrent Open Cloud sessions, or `"auto"` (= `min(jobs, 3)`)                            | one session                      |
 | `rojoProject`          | Path to Rojo project file                                                                 | auto-detected                    |
 | `formatters`           | Output formatters (`"default"`, `"agent"`, `"json"`, `"github-actions"`)                  | `["default"]`                    |
 | `gameOutput`           | Write game print/warn/error to a file: a path, or `true` for `game-output.log`.           | —                                |
@@ -23,8 +26,9 @@ Root fields control the CLI/runner. Jest passthrough fields live under `test:`.
 | `workspace.gameOutput` | `true` to emit per-package game output under `.jest-roblox/output/` (`--workspace` only)  | —                                |
 | `workspace.outputFile` | `true` to emit per-package result files under `.jest-roblox/output/` (`--workspace` only) | —                                |
 | `coverageCache`        | Reuse incrementally-instrumented coverage shadow dir between runs                         | `true`                           |
-| `uploadCache`          | Skip `places.save` when the place file's bytes already have a version                     | `true`                           |
+| `uploadCache`          | Skip the place upload when the place file's bytes are unchanged                           | `true`                           |
 | `luauRoots`            | Compiled Luau directories to instrument                                                   | auto from tsconfig `outDir`      |
+| `bootProbeTimeout`     | How long the Open Cloud boot probe may take to prove a place version starts (ms)          | `90000`                          |
 
 ## Test Fields
 
@@ -76,15 +80,8 @@ Host-only — never forwarded to the Roblox runtime.
 | `ignoreSourceErrors` | `false`: surface type errors in non-test source files; `true`: report only errors inside Type Test files          | `false` |
 | `spawnTimeout`       | Milliseconds to wait for the tsgo process to start before the run throws; bounds startup only, not the type-check | `10000` |
 
-The type pass runs concurrently with the Roblox runtime run, so the local
-CPU-bound tsgo work overlaps the network-bound Open Cloud upload/poll. Multiple
-tsconfig groups also run concurrently.
-
-`spawnTimeout` bounds only how long tsgo may take to start (until the process
-reports it has launched), so a slow type-check on a slow machine never trips it.
-The type-check itself is bounded by the run-level `timeout` (default `300000`) —
-the same deadline that abandons a non-responding Roblox run — which kills a
-wedged tsgo.
+The type pass runs concurrently with the Roblox run, as do multiple tsconfig
+groups. The run-level `timeout` bounds the type-check itself.
 
 tsgo type-checks the whole tsconfig program; the Type Test globs only select
 which files are collected as Type Tests and how diagnostics are attributed.
@@ -98,7 +95,6 @@ onto `enabled`, `only`, and `tsconfig`.
 import { defineConfig } from "@isentinel/jest-roblox";
 
 export default defineConfig({
-	backend: "open-cloud",
 	jestPath: "ReplicatedStorage/Packages/Jest",
 	placeFile: "./game.rbxl",
 	test: {
@@ -113,8 +109,9 @@ export default defineConfig({
 Configuration is resolved in this order (later wins):
 
 1. Built-in defaults
-2. Config file (`jest.config.ts`)
-3. CLI flags
+2. Extended config (`extends`)
+3. Config file
+4. CLI flags
 
-Many config fields have a corresponding CLI flag. For example, `backend` in
-config maps to `--backend` on the CLI.
+In `--workspace` mode the root fields resolve per run and the rest per package;
+see [workspace](workspace.md).

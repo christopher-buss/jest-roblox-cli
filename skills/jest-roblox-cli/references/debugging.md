@@ -2,26 +2,26 @@
 
 ## Common Errors
 
-| Symptom                                                          | Cause                                                  | Fix                                                                                                                                                    |
-| ---------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| "Failed to find Jest instance in ReplicatedStorage"              | jestPath not configured                                | Set `jestPath` in config to the DataModel path where the `Jest` module is located in your Rojo project tree (e.g. `"ReplicatedStorage/Packages/Jest"`) |
-| "Failed to find Jest instance at path"                           | jestPath doesn't match Rojo tree                       | Verify path matches your `*.project.json`                                                                                                              |
-| "Failed to find service"                                         | First segment of jestPath isn't a valid Roblox service | Check for typos (e.g. `ReplicatedStorage`, `ServerScriptService`)                                                                                      |
-| "No projects configured"                                         | Missing `projects` field                               | Set `projects` in jest.config.ts (e.g. `["ReplicatedStorage/tests"]`)                                                                                  |
-| "Infinite yield detected"                                        | WaitForChild for missing instance                      | Check DataModel paths align with Rojo project                                                                                                          |
-| "No backend available"                                           | No Studio plugin, no env vars                          | Set Open Cloud env vars or open Studio with plugin                                                                                                     |
-| Wrong source locations in errors                                 | Rojo project / source map mismatch                     | Check `rojoProject` path, verify rojo config matches compiled output                                                                                   |
-| Luau runtime errors with no context                              | Need to see print/warn/error output                    | Use `--gameOutput <path>` to capture all Luau output                                                                                                   |
-| "luauRoots must be relative paths"                               | Absolute path in config                                | Use relative paths for `luauRoots` or set relative `outDir` in tsconfig                                                                                |
-| "No Rojo project found"                                          | Can't auto-detect project file                         | Set `rojoProject` in config or add a `*.project.json` file                                                                                             |
-| "loadstring() is not available"                                  | LoadStringEnabled not set                              | Add `"LoadStringEnabled": true` to ServerScriptService.$properties in project.json                                                                     |
-| "lute is required for instrumentation but was not found on PATH" | Lute not installed                                     | Install lute via mise or rokit                                                                                                                         |
-| "rojo is required for --coverage but was not found on PATH"      | Rojo not installed                                     | Install rojo via mise, rokit, or aftman                                                                                                                |
-| "Rate limited by Open Cloud API after multiple retries"          | API rate limit                                         | Wait and retry; the Open Cloud client backs off automatically                                                                                          |
-| "Execution timed out"                                            | Test exceeded timeout                                  | Increase `--timeout` value                                                                                                                             |
-| "Execution was cancelled"                                        | Task cancelled externally                              | Check Roblox Open Cloud dashboard                                                                                                                      |
-| "Studio plugin disconnected before sending results"              | Studio closed mid-run                                  | Keep Studio open during test execution                                                                                                                 |
-| "Jest exited before returning a result"                          | The run exited writing no cause anywhere it was heard  | Read the report under it — see below                                                                                                                   |
+| Symptom                                             | Cause                                                  | Fix                                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "Failed to find Jest instance in ReplicatedStorage" | jestPath not configured                                | Set `jestPath` in config to the DataModel path where the `Jest` module is located in your Rojo project tree (e.g. `"ReplicatedStorage/Packages/Jest"`) |
+| "Failed to find Jest instance at path"              | jestPath doesn't match Rojo tree                       | Verify path matches your `*.project.json`                                                                                                              |
+| "Failed to find service"                            | First segment of jestPath isn't a valid Roblox service | Check for typos (e.g. `ReplicatedStorage`, `ServerScriptService`)                                                                                      |
+| "No projects configured"                            | Missing `projects` field                               | Set `projects` in jest.config.ts (e.g. `["ReplicatedStorage/tests"]`)                                                                                  |
+| "Infinite yield detected"                           | WaitForChild for missing instance                      | Check DataModel paths align with Rojo project                                                                                                          |
+| Wrong source locations in errors                    | Rojo project / source map mismatch                     | Check `rojoProject` path, verify rojo config matches compiled output                                                                                   |
+| Luau runtime errors with no context                 | Need to see print/warn/error output                    | Use `--gameOutput <path>` to capture all Luau output                                                                                                   |
+| "luauRoots must be relative paths"                  | Absolute path in config                                | Use relative paths for `luauRoots` or set relative `outDir` in tsconfig                                                                                |
+| "No Rojo project found"                             | Can't auto-detect project file                         | Set `rojoProject` in config or add a `*.project.json` file                                                                                             |
+| "loadstring() is not available"                     | LoadStringEnabled not set                              | Add `"LoadStringEnabled": true` to ServerScriptService.$properties in project.json                                                                     |
+| "lute is required but was not found on PATH"        | Lute not installed                                     | Install lute via mise or rokit                                                                                                                         |
+| "rojo was not found on PATH"                        | Rojo not installed (coverage and `studio-cli` need it) | Install rojo via mise, rokit, or aftman                                                                                                                |
+| "Open Cloud credentials are required"               | `auto` found no Studio, or `--backend open-cloud`      | On a machine with Studio, set `studioPath`; otherwise set the Open Cloud env vars (see [backends](backends.md))                                        |
+| "Studio did not start the run within Nms"           | `studio-cli`: likely Studio not logged in, or a modal  | Rerun with `--headed` and read the Studio log tail the error prints; raise `JEST_ROBLOX_STUDIO_BOOT_TIMEOUT` on a slow machine                         |
+| "Execution timed out"                               | Open Cloud task never reached a final state            | Read the task state and suspects it prints; raise `--timeout`                                                                                          |
+| "Execution was cancelled"                           | Open Cloud task cancelled externally                   | Check Roblox Open Cloud dashboard                                                                                                                      |
+| "Studio plugin disconnected before sending results" | Attached `studio`: Studio closed mid-run               | Keep Studio open during test execution                                                                                                                 |
+| "Jest exited before returning a result"             | The run exited writing no cause anywhere it was heard  | Read the report under it — see below                                                                                                                   |
 
 ## A run that came back with only an exit code
 
@@ -93,15 +93,15 @@ this line, and is usually the statement the test never returned from.
 
 ## Diagnostic Flags
 
-| Flag                  | Purpose                                                               |
-| --------------------- | --------------------------------------------------------------------- |
-| `--verbose`           | See individual test results                                           |
-| `--gameOutput <path>` | Capture all Luau print/warn/error to a file                           |
-| `--no-coverage-cache` | Force a clean coverage re-instrumentation (skip incremental cache)    |
-| `--no-upload-cache`   | Always upload the place, even when its bytes are unchanged            |
-| `--no-show-luau`      | Hide Luau code snippets in failure output (useful for AI consumption) |
-| `--formatters agent`  | Token-efficient output format for AI agents                           |
-| `--no-color`          | Disable colored output (useful for CI logs)                           |
+| Flag                  | Purpose                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| `--verbose`           | See individual test results                                        |
+| `--gameOutput <path>` | Capture all Luau print/warn/error to a file                        |
+| `--no-coverage-cache` | Force a clean coverage re-instrumentation (skip incremental cache) |
+| `--no-upload-cache`   | Always upload the place, even when its bytes are unchanged         |
+| `--no-show-luau`      | Hide Luau code snippets in failure output                          |
+| `--no-color`          | Disable colored output (useful for CI logs)                        |
+| `--headed`            | Show the `studio-cli` Studio window to watch a hang                |
 
 ## General Approach
 
@@ -110,15 +110,14 @@ this line, and is usually the statement the test never returned from.
    warn, error) that doesn't appear in test results
 3. For source mapping issues, verify your `rojoProject` path and that the Rojo
    project tree matches the compiled output structure
-4. For coverage issues, verify [lute](https://github.com/luau-lang/lute/) is
-   installed and on PATH
+4. For coverage issues, verify [lute](https://github.com/luau-lang/lute/) and
+   rojo are on PATH
 
 ## Where a run is right now
 
 Every step between the `RUN` header and the report announces itself:
-`instrument`, `build place`, `upload`, `boot probe`, `run tests`,
-`collect results`, `coverage`. A stage still marked `·` when the run ends is the
-one it died inside.
+`instrument`, `build place`, `upload`, `boot probe`, `bundle`, `run tests`. A
+stage still marked `·` when the run ends is the one it died inside.
 
 A terminal repaints one block with a running duration; a pipe or a CI log gets
 one line as a stage opens and another as it closes. Set `TIMING` for the full

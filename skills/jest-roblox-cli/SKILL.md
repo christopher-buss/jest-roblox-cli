@@ -4,45 +4,53 @@ description: |
   Run Jest tests inside Roblox, configure test execution, collect code
   coverage, and debug test runner failures for Roblox and roblox-ts
   projects. Use when setting up or running tests for a Roblox project,
-  executing the jest-roblox command, editing jest.config.ts, adding test
-  coverage, or debugging errors like "no backend available" or "failed to
-  find Jest instance".
+  executing the jest-roblox command, choosing a backend (studio-cli, Open
+  Cloud), editing jest.config.ts, adding test coverage, running a workspace
+  of packages, or debugging errors like "Open Cloud credentials are
+  required" or "failed to find Jest instance".
 ---
 
 # jest-roblox CLI
 
-CLI that executes Jest Roblox tests from Node.js. Uploads a Roblox place file,
-runs Luau tests inside Roblox, parses JSON results, and maps stack traces back
-to source. Two backends: **Open Cloud** (remote via Roblox API) and **Studio**
-(local via WebSocket plugin).
+CLI that executes Jest Roblox tests from Node.js. Builds a Roblox place, runs
+Luau tests inside Roblox, parses JSON results, and maps stack traces back to
+source. Three backends: **studio-cli** (local, self-launched hidden Studio),
+**Open Cloud** (remote, uploads the place), and **Studio** (local, attaches to
+an open Studio through a plugin).
 
-Do not assume a specific package manager or TypeScript toolchain when giving
-advice — jest-roblox is usable by both roblox-ts and Luau-only projects.
+## Choosing a backend
+
+Run `jest-roblox` with no `--backend` flag. `auto` picks `studio-cli` when
+Roblox Studio is installed: a local run that needs no API key, no upload, and no
+approval. The CLI prints the pick to stderr
+(`Backend: studio-cli (Studio installed)`). Pass `--backend open-cloud` for CI,
+when Studio is absent, or when the user asks for it.
+
+Inside an AI agent the default formatter is `agent`; `--verbose` opts out.
 
 ## Running Tests
 
-| Task                      | Command                                                              |
-| ------------------------- | -------------------------------------------------------------------- |
-| Run all tests             | `jest-roblox`                                                        |
-| Run specific files        | `jest-roblox src/player.spec.ts src/combat.spec.ts`                  |
-| Filter by test name       | `jest-roblox -t "should spawn"`                                      |
-| Filter by file path       | `jest-roblox --testPathPattern player`                               |
-| Verbose output            | `jest-roblox --verbose`                                              |
-| Update snapshots          | `jest-roblox -u`                                                     |
-| AI-friendly output        | `jest-roblox --formatters agent`                                     |
-| Limit agent failures      | `jest-roblox --formatters agent` (configure `maxFailures` in config) |
-| Type tests only           | `jest-roblox --typecheckOnly`                                        |
-| Enable type tests         | `jest-roblox --typecheck`                                            |
-| Custom tsconfig for types | `jest-roblox --typecheckTsconfig tsconfig.test.json`                 |
-| JSON output to file       | `jest-roblox --formatters json --outputFile results.json`            |
+| Task                      | Command                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| Run all tests             | `jest-roblox`                                             |
+| Run specific files        | `jest-roblox src/player.spec.ts src/combat.spec.ts`       |
+| Filter by test name       | `jest-roblox -t "should spawn"`                           |
+| Filter by file path       | `jest-roblox --testPathPattern player`                    |
+| Verbose output            | `jest-roblox --verbose`                                   |
+| Update snapshots          | `jest-roblox -u`                                          |
+| Type tests only           | `jest-roblox --typecheckOnly`                             |
+| Enable type tests         | `jest-roblox --typecheck`                                 |
+| Custom tsconfig for types | `jest-roblox --typecheckTsconfig tsconfig.test.json`      |
+| JSON output to file       | `jest-roblox --formatters json --outputFile results.json` |
+| Every workspace package   | `jest-roblox --workspace`                                 |
 
-**Filtering options** — three ways to narrow what runs:
+**Filtering options**: three ways to narrow what runs:
 
-1. **Positional file args** — pass specific files directly:
+1. **Positional file args**: pass specific files directly:
    `jest-roblox src/combat/damage.spec.ts`
-2. **`--testPathPattern <regex>`** — filter by file path (only matching tests
-   execute; the full place is still uploaded)
-3. **`-t <regex>`** / **`--testNamePattern`** — filter by test name within
+2. **`--testPathPattern <regex>`**: filter by file path (only matching tests
+   execute; the full place is still built)
+3. **`-t <regex>`** / **`--testNamePattern`**: filter by test name within
    describe/it blocks
 
 Combine them: `jest-roblox --testPathPattern combat -t "should deal damage"`
@@ -52,12 +60,13 @@ values.
 
 ## References
 
-| Topic         | Description                                                       | Reference                                    |
-| ------------- | ----------------------------------------------------------------- | -------------------------------------------- |
-| Backends      | Open Cloud vs Studio, auto-detection, env vars, fallback behavior | [backends](references/backends.md)           |
-| Configuration | jest.config.ts fields, defaults, CLI override behavior            | [configuration](references/configuration.md) |
-| Coverage      | Instrumentation pipeline, thresholds, reporters, lute setup       | [coverage](references/coverage.md)           |
-| Debugging     | Common errors, hints, diagnostic flags                            | [debugging](references/debugging.md)         |
+| Topic         | Description                                                        | Reference                                    |
+| ------------- | ------------------------------------------------------------------ | -------------------------------------------- |
+| Backends      | studio-cli, Open Cloud, Studio: requirements, `auto`, VM parallel  | [backends](references/backends.md)           |
+| Configuration | jest.config.ts fields, defaults, CLI override behavior             | [configuration](references/configuration.md) |
+| Coverage      | Instrumentation pipeline, thresholds, reporters, lute setup        | [coverage](references/coverage.md)           |
+| Workspace     | `--workspace` selection, per-package config, coverage, game output | [workspace](references/workspace.md)         |
+| Debugging     | Common errors, hints, diagnostic flags                             | [debugging](references/debugging.md)         |
 
 ## See Also
 
