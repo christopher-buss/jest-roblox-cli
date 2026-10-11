@@ -27,7 +27,7 @@ local MAX_RECONNECT_DELAY = 5
 -- mismatched CLI versions with a `version_mismatch` response so users see a
 -- clear upgrade message rather than running with stale behaviour or an opaque
 -- timeout.
-local PROTOCOL_VERSION = 9
+local PROTOCOL_VERSION = 10
 
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
 -- tree served straight out of source control. Diagnostic only: the CLI selects

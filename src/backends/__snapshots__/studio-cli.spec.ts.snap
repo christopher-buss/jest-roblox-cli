@@ -2,10 +2,17 @@
 
 exports[`StudioCliBackend > should write a bootstrap that drives ExecuteRunModeAsync over a result socket 1`] = `
 "local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StudioTestService = game:GetService("StudioTestService")
-local payload = HttpService:JSONDecode([=[{"pluginKey":"1.2.3-abcdef01","protocolVersion":9,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec-d","**/*.test-d","**/*.spec","**/*.spec","**/*.test","**/*.test"],"passWithNoTests":false,"silent":false,"testPathIgnorePatterns":["/node_modules/","/dist/","/out/"],"verbose":false,"testNamePattern":"alpha-pattern","runnerTimeoutMs":60000,"reporters":[]}]},"runtimeStubMounts":[[]]}]=])
+local payload = HttpService:JSONDecode([=[{"pluginKey":"1.2.3-abcdef01","protocolVersion":10,"test":true,"config":{"configs":[{"testMatch":["**/*.spec","**/*.spec","**/*.test","**/*.test","**/*.spec-d","**/*.test-d","**/*.spec","**/*.spec","**/*.test","**/*.test"],"passWithNoTests":false,"silent":false,"testPathIgnorePatterns":["/node_modules/","/dist/","/out/"],"verbose":false,"testNamePattern":"alpha-pattern","runnerTimeoutMs":60000,"reporters":[]}]},"runtimeStubMounts":[[]]}]=])
 local URL = "ws://localhost:<port>"
 local REQUEST_ID = [=[<request-id>]=]
+local sideChannelSet, sideChannelError = pcall(function()
+	ReplicatedStorage:SetAttribute("JestRobloxRunSideChannel", HttpService:JSONEncode({ payload = payload, requestId = REQUEST_ID, url = URL }))
+end)
+if not sideChannelSet then
+	print("studio-cli: failed to set the run side channel: " .. tostring(sideChannelError))
+end
 local startedOpened, startedSocket = pcall(function()
 	return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, { Url = URL })
 end)
@@ -23,8 +30,14 @@ local ok, result = pcall(function()
 	return StudioTestService:ExecuteRunModeAsync(payload)
 end)
 local message
+local keepAlive = false
 if not ok then
 	message = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = tostring(result), success = false }) }
+elseif result == nil then
+	-- Remove this keep-alive branch once Roblox fixes
+	-- https://devforum.roblox.com/t/executerunmodeasync-returns-nil-when-called-from-task-runscript-before-the-place-reaches-placeidle/4921336
+	message = { type = "nilReturn", requestId = REQUEST_ID }
+	keepAlive = true
 elseif typeof(result) ~= "table" or result.jestOutput == nil then
 	message = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = "studio-cli: the jest plugin produced no result. Install or update the jest-roblox Studio plugin.", success = false }) }
 else
@@ -50,7 +63,7 @@ socket.Closed:Once(function()
 	finished = true
 end)
 local start = os.clock()
-while not finished and os.clock() - start < 30 do
+while not finished and (keepAlive or os.clock() - start < 30) do
 	task.wait(0.05)
 end
 "

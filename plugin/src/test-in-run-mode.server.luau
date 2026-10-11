@@ -25,7 +25,7 @@ end
 -- the version the CLI sent and echoes its own in `EndTest`, so the CLI
 -- surfaces a clean error against a mismatched plugin rather than running with
 -- stale runtime semantics.
-local PROTOCOL_VERSION = 9
+local PROTOCOL_VERSION = 10
 
 -- Written by `scripts/stamp-plugin-version.ts` at build time, and absent from a
 -- tree served straight out of source control. Diagnostic only — see the same
@@ -65,17 +65,74 @@ local HOST_READY_TIMEOUT_SECONDS = 10
 -- `plugin/host/vm-host.server.luau`.
 local HOST_READY_ATTRIBUTE = "JestRobloxVmHostReady"
 
+-- Mirrors `src/backends/studio-cli.ts`.
+local SIDE_CHANNEL_ATTRIBUTE = "JestRobloxRunSideChannel"
+
+-- Must exceed `NIL_RETURN_PLUGIN_WAIT_MS` in `src/backends/studio-cli.ts`.
+local NIL_RELAY_WAIT_SECONDS = 60
+local ARGS_WAIT_SECONDS = 5
+
+local sideChannel: any = nil
+local rawSideChannel = ReplicatedStorage:GetAttribute(SIDE_CHANNEL_ATTRIBUTE)
+if typeof(rawSideChannel) == "string" then
+	local decodeOk, decoded = pcall(HttpService.JSONDecode, HttpService, rawSideChannel)
+	if decodeOk and typeof(decoded) == "table" then
+		sideChannel = decoded
+	end
+end
+
+local hostSocket: any = nil
+local hasNilRelay = false
+if sideChannel ~= nil then
+	local connectOk, socket = pcall(function()
+		return HttpService:CreateWebStreamClient(
+			Enum.WebStreamClientType.WebSocket,
+			{ Url = sideChannel.url }
+		)
+	end)
+	if connectOk then
+		hostSocket = socket
+		socket.Opened:Once(function()
+			socket:Send(
+				HttpService:JSONEncode({ type = "pluginReady", requestId = sideChannel.requestId })
+			)
+		end)
+		socket.MessageReceived:Connect(function(data: string)
+			local frameOk, frame = pcall(HttpService.JSONDecode, HttpService, data)
+			if
+				frameOk
+				and typeof(frame) == "table"
+				and frame.type == "nilRelay"
+				and frame.requestId == sideChannel.requestId
+			then
+				hasNilRelay = true
+			end
+		end)
+	else
+		warn("[jest-roblox] failed to open the studio-cli socket: " .. tostring(socket))
+	end
+end
+
+local usesSideChannel = false
+
 -- Every result (success or failure) echoes `protocolVersion` so the studio-cli
 -- host can detect a stale plugin: one predating this echo omits the field and
 -- the host rejects it as a version mismatch.
 local function endTest(jestOutput: string, gameOutput: string?): ()
+	local result = {
+		jestOutput = jestOutput,
+		gameOutput = gameOutput or "[]",
+		protocolVersion = PROTOCOL_VERSION,
+		pluginVersion = PluginVersion,
+	}
 	local ok, endErr = pcall(function()
-		StudioTestService:EndTest({
-			jestOutput = jestOutput,
-			gameOutput = gameOutput or "[]",
-			protocolVersion = PROTOCOL_VERSION,
-			pluginVersion = PluginVersion,
-		})
+		if usesSideChannel then
+			result.type = "results"
+			result.requestId = sideChannel.requestId
+			hostSocket:Send(HttpService:JSONEncode(result))
+		else
+			StudioTestService:EndTest(result)
+		end
 	end)
 	if not ok then
 		warn("[jest-roblox] EndTest failed: " .. tostring(endErr))
@@ -87,14 +144,18 @@ local function endWithError(err: string): ()
 end
 
 local testArgs = StudioTestService:GetTestArgs()
-if testArgs == nil then
-	for _ = 1, 50 do
-		task.wait(0.1)
-		testArgs = StudioTestService:GetTestArgs()
-		if testArgs ~= nil then
-			break
-		end
-	end
+local argsDeadline = os.clock()
+	+ if hostSocket ~= nil then NIL_RELAY_WAIT_SECONDS else ARGS_WAIT_SECONDS
+while testArgs == nil and not hasNilRelay and os.clock() < argsDeadline do
+	task.wait(0.1)
+	testArgs = StudioTestService:GetTestArgs()
+end
+
+-- Remove this fallback once Roblox fixes
+-- https://devforum.roblox.com/t/executerunmodeasync-returns-nil-when-called-from-task-runscript-before-the-place-reaches-placeidle/4921336
+if testArgs == nil and hasNilRelay then
+	testArgs = sideChannel.payload
+	usesSideChannel = true
 end
 
 if testArgs == nil then
@@ -147,6 +208,7 @@ end
 -- Claim the run before doing anything that takes time, so the copies that
 -- cannot serve it stand down rather than answering in our place.
 ReplicatedStorage:SetAttribute(RUN_CLAIM_ATTRIBUTE, PROTOCOL_VERSION)
+ReplicatedStorage:SetAttribute(SIDE_CHANNEL_ATTRIBUTE, nil)
 
 local loadStringEnabled = pcall(function()
 	loadstring("return true")

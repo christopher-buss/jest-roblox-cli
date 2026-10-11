@@ -52,9 +52,11 @@ interface ReplyOptions {
 	rawJestOutput?: string;
 }
 
+type ControlFrame = "nilReturn" | "pluginReady";
+
 // The protocol this CLI speaks, pinned here on purpose: the spec asserts the
 // wire, so a bump has to be made deliberately in both places.
-const PROTOCOL_VERSION = 9;
+const PROTOCOL_VERSION = 10;
 
 function job(displayName: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
 	return {
@@ -221,6 +223,41 @@ function bootingStudio(fileSystem: FileSystem) {
 			);
 		},
 	};
+}
+
+function earlyEndStudio(fileSystem: FileSystem) {
+	const process = makeFakeProcess();
+	let args: Array<string> = [];
+	function requestId(): string {
+		return readRequestId(fileSystem, args);
+	}
+
+	return {
+		args: (): Array<string> => args,
+		connect: (): MockWebSocket => {
+			const socket = new MockWebSocket();
+			getLastCreatedServer()!.emit("connection", socket);
+			return socket;
+		},
+		launch: (request: Parameters<StudioCliLauncher>[0]) => {
+			({ args } = request);
+			return process;
+		},
+		process,
+		send: (socket: MockWebSocket, frame: ControlFrame) => {
+			socket.emit(
+				"message",
+				Buffer.from(JSON.stringify({ requestId: requestId(), type: frame })),
+			);
+		},
+		sendResult: (socket: MockWebSocket, reply: ReplyOptions = {}) => {
+			socket.emit("message", Buffer.from(resultFrame(requestId(), reply)));
+		},
+	};
+}
+
+function relayFrame(requestId: string): string {
+	return JSON.stringify({ requestId, type: "nilRelay" });
 }
 
 function fakeBuildPlace(): (options: BuildPlaceOptions) => Promise<BuildManifestArtifact> {
@@ -570,6 +607,29 @@ describe(StudioCliBackend, () => {
 		expect(stableBootstrap).toMatchSnapshot();
 	});
 
+	it("should go on to ExecuteRunModeAsync when the side channel cannot be set", async () => {
+		expect.assertions(2);
+
+		const { fileSystem } = createMemoryFileSystem();
+
+		let bootstrap = "";
+		const { launch } = replyWith(fileSystem, {}, (request) => {
+			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		});
+		await makeBackend(fileSystem, launch).runTestsAsync(singleJob);
+
+		const guard = bootstrap.indexOf(
+			[
+				"if not sideChannelSet then",
+				'\tprint("studio-cli: failed to set the run side channel: " .. tostring(sideChannelError))',
+				"end",
+			].join("\n"),
+		);
+
+		expect(guard).toBeGreaterThan(-1);
+		expect(guard).toBeLessThan(bootstrap.indexOf("ExecuteRunModeAsync"));
+	});
+
 	it("should escape a config value containing the Luau long-string terminator", async () => {
 		// A config string with `]=]` would close a level-1 `[=[ … ]=]` long
 		// string early and produce invalid Luau (a silent no-result run). The
@@ -612,7 +672,7 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin reported no version, CLI expects v9). " +
+				"(plugin reported no version, CLI expects v10). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -627,7 +687,7 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin reported v2, CLI expects v9). " +
+				"(plugin reported v2, CLI expects v10). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -647,7 +707,7 @@ describe(StudioCliBackend, () => {
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
 			"studio-cli: jest-roblox Studio plugin protocol version mismatch " +
-				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v9). " +
+				"(plugin from jest-roblox 0.3.18 reported v5, CLI expects v10). " +
 				"Update the jest-roblox Studio plugin to match this CLI version.",
 		);
 	});
@@ -1524,6 +1584,197 @@ describe(StudioCliBackend, () => {
 		await backend.runTestsAsync(singleJob);
 
 		expect(launchedPath).toBe("C:/from-env/RobloxStudioBeta.exe");
+	});
+
+	describe("early-ended run mode", () => {
+		it("should run with the result the plugin sends over the side channel after a nil return", async () => {
+			expect.assertions(2);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			studio.sendResult(plugin, {
+				entries: [{ jestOutput: successResult({ numPassedTests: 7 }) }],
+			});
+			const { rawResults } = await settled;
+
+			expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":7');
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it("should name the early-end race when no plugin answers after a nil return", async () => {
+			expect.assertions(3);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch, { timeout: 600_000 })
+				.runTestsAsync(singleJob)
+				.catch((err: unknown) => err);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			await vi.advanceTimersByTimeAsync(30_000);
+			const caught: unknown = await settled;
+
+			assert(caught instanceof Error);
+
+			expect(caught.message).toMatch(/ExecuteRunModeAsync ended the test session early/);
+			expect(caught.message).not.toMatch(/Install or update/);
+			expect(studio.process.kill).toHaveBeenCalledExactlyOnceWith();
+		});
+
+		it("should keep the run going while a plugin that took the relay runs the suite", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch, {
+				timeout: 600_000,
+			}).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			await vi.advanceTimersByTimeAsync(60_000);
+			studio.sendResult(plugin);
+
+			await expect(settled).resolves.toHaveProperty("rawResults.length", 1);
+		});
+
+		it("should use the first result for a request and ignore a second", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			studio.sendResult(plugin, {
+				entries: [{ jestOutput: successResult({ numPassedTests: 1 }) }],
+			});
+			studio.sendResult(bootstrap, {
+				entries: [{ jestOutput: successResult({ numPassedTests: 2 }) }],
+			});
+			const { rawResults } = await settled;
+
+			expect(rawResults[0]!.entry.jestOutput).toContain('"numPassedTests":1');
+		});
+
+		it("should relay the nil return to a plugin socket that connects after it", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			const sent = plugin.send.mock.calls.map(([data]) => data);
+			studio.sendResult(plugin);
+			await settled;
+
+			expect(sent).toStrictEqual([relayFrame(readRequestId(fileSystem, studio.args()))]);
+		});
+
+		it("should relay the nil return to a plugin socket that connected before it", async () => {
+			expect.assertions(2);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			const sentBefore = plugin.send.mock.calls.length;
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			const sent = plugin.send.mock.calls.map(([data]) => data);
+			studio.sendResult(plugin);
+			await settled;
+
+			expect(sentBefore).toBe(0);
+			expect(sent).toStrictEqual([relayFrame(readRequestId(fileSystem, studio.args()))]);
+		});
+
+		it("should drop the plugin wait when a result settles the run before any plugin takes the relay", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			studio.sendResult(bootstrap);
+			await settled;
+
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it("should arm one plugin wait however many nil returns arrive", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			studio.send(bootstrap, "nilReturn");
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			studio.sendResult(plugin);
+			await settled;
+
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it("should reject an old-protocol plugin result on the side channel with the mismatch error", async () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem();
+			useResultDeadlineTimers();
+
+			const studio = earlyEndStudio(fileSystem);
+			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			await vi.advanceTimersByTimeAsync(0);
+			const bootstrap = studio.connect();
+			studio.send(bootstrap, "nilReturn");
+			const plugin = studio.connect();
+			studio.send(plugin, "pluginReady");
+			studio.sendResult(plugin, { protocolVersion: 9 });
+
+			await expect(settled).rejects.toThrow(
+				/protocol version mismatch \(plugin reported v9, CLI expects v10\)/,
+			);
+		});
 	});
 
 	describe("result server port", () => {

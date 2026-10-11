@@ -60,7 +60,7 @@ const BOOT_TIMEOUT_ENV = "JEST_ROBLOX_STUDIO_BOOT_TIMEOUT";
  * omits the echo (a stale runner predating the handshake) or returns a
  * different number, surfacing a clean "update the plugin" error.
  */
-export const STUDIO_CLI_PROTOCOL_VERSION = 9;
+export const STUDIO_CLI_PROTOCOL_VERSION = 10;
 
 type StudioCliPayload = RunPayload & {
 	/**
@@ -107,6 +107,16 @@ const STUDIO_LOG_TAIL = 15;
 /** Per-line cap on the quoted Studio log tail, in characters. */
 const STUDIO_LOG_LINE_LIMIT = 300;
 
+// Must stay below `NIL_RELAY_WAIT_SECONDS` in
+// `plugin/src/test-in-run-mode.server.luau`.
+const NIL_RETURN_PLUGIN_WAIT_MS = 30_000;
+
+const NIL_RETURN_HEADLINE =
+	"studio-cli: ExecuteRunModeAsync ended the test session early (it returned nil), " +
+	`and no run-mode plugin took the run over within ${NIL_RETURN_PLUGIN_WAIT_MS.toString()}ms.`;
+
+const RUN_SIDE_CHANNEL_ATTRIBUTE = "JestRobloxRunSideChannel";
+
 const BACKEND_NAME = "studio-cli";
 const WORK_DIR = path.join(".jest-roblox", BACKEND_NAME);
 const PLACE_FILE = "place.rbxl";
@@ -142,8 +152,21 @@ const BOOTSTRAP_SEND_LINES = [
 	"\tfinished = true",
 	"end)",
 	"local start = os.clock()",
-	`while not finished and os.clock() - start < ${SOCKET_LINGER_SECONDS.toString()} do`,
+	`while not finished and (keepAlive or os.clock() - start < ${SOCKET_LINGER_SECONDS.toString()}) do`,
 	"\ttask.wait(0.05)",
+	"end",
+];
+
+/**
+ * Bootstrap hand-off of the payload to the play session, read when
+ * `ExecuteRunModeAsync` returns nil. A failure is printed and the run goes on.
+ */
+const BOOTSTRAP_SIDE_CHANNEL_LINES = [
+	"local sideChannelSet, sideChannelError = pcall(function()",
+	`\tReplicatedStorage:SetAttribute("${RUN_SIDE_CHANNEL_ATTRIBUTE}", HttpService:JSONEncode({ payload = payload, requestId = REQUEST_ID, url = URL }))`,
+	"end)",
+	"if not sideChannelSet then",
+	'\tprint("studio-cli: failed to set the run side channel: " .. tostring(sideChannelError))',
 	"end",
 ];
 
@@ -189,7 +212,14 @@ const resultMessageSchema = type({
 	"type": "'results'",
 });
 
-const runFrameSchema = startedMessageSchema.or(resultMessageSchema);
+const nilReturnMessageSchema = type({ requestId: "string", type: "'nilReturn'" });
+
+const pluginReadyMessageSchema = type({ requestId: "string", type: "'pluginReady'" });
+
+const runFrameSchema = startedMessageSchema
+	.or(resultMessageSchema)
+	.or(nilReturnMessageSchema)
+	.or(pluginReadyMessageSchema);
 
 /**
  * A launched Studio the host can kill once the result arrives (or on timeout).
@@ -307,6 +337,21 @@ interface StudioArgsOptions extends RunPayloadRequest, RunPlace {
 
 type ResultMessage = typeof resultMessageSchema.infer;
 
+type RunFrame = typeof runFrameSchema.infer;
+
+interface NilReturnRelay {
+	clear: () => void;
+	onNilReturn: () => void;
+	onPluginReady: (socket: WebSocket) => void;
+}
+
+interface RunFrameRoute {
+	deadlines: { markStarted: () => void };
+	nilRelay: Except<NilReturnRelay, "clear">;
+	onResult: (message: ResultMessage) => void;
+	socket: WebSocket;
+}
+
 /** How long a run may go unanswered, and where to look when it does. */
 interface ResultDeadline {
 	/** Wall clock in milliseconds from launch to the run starting. */
@@ -315,6 +360,12 @@ interface ResultDeadline {
 	outputFile: string;
 	/** Wall clock in milliseconds from the run starting to its result. */
 	timeout: number;
+}
+
+interface NilReturnRelayOptions extends Pick<ResultDeadline, "outputFile"> {
+	fileSystem: FileSystem;
+	onExpired: (error: Error) => void;
+	requestId: string;
 }
 
 interface StudioCliResultWait extends ResultDeadline {
@@ -675,9 +726,9 @@ function luauLongString(content: string): string {
 
 /**
  * Bootstrap prologue: decode the payload, drive the plugin's Run-mode runner
- * via `ExecuteRunModeAsync`, and assemble the `message` result frame — a
- * plugin that threw or returned nothing yields a `{ success = false }`
- * envelope, so the host surfaces a clean error rather than hanging.
+ * via `ExecuteRunModeAsync`, and assemble the `message` frame — a plugin
+ * that threw or returned a non-result yields a `{ success = false }`
+ * envelope, and a nil return sends `nilReturn` and keeps the socket alive.
  */
 function bootstrapRunLines(
 	payload: StudioCliPayload,
@@ -686,17 +737,25 @@ function bootstrapRunLines(
 ): Array<string> {
 	return [
 		'local HttpService = game:GetService("HttpService")',
+		'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
 		'local StudioTestService = game:GetService("StudioTestService")',
 		`local payload = HttpService:JSONDecode(${luauLongString(JSON.stringify(payload))})`,
 		`local URL = "ws://localhost:${port.toString()}"`,
 		`local REQUEST_ID = ${luauLongString(requestId)}`,
+		...BOOTSTRAP_SIDE_CHANNEL_LINES,
 		...BOOTSTRAP_STARTED_LINES,
 		"local ok, result = pcall(function()",
 		"\treturn StudioTestService:ExecuteRunModeAsync(payload)",
 		"end)",
 		"local message",
+		"local keepAlive = false",
 		"if not ok then",
 		'\tmessage = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = tostring(result), success = false }) }',
+		"elseif result == nil then",
+		"\t-- Remove this keep-alive branch once Roblox fixes",
+		"\t-- https://devforum.roblox.com/t/executerunmodeasync-returns-nil-when-called-from-task-runscript-before-the-place-reaches-placeidle/4921336",
+		'\tmessage = { type = "nilReturn", requestId = REQUEST_ID }',
+		"\tkeepAlive = true",
 		'elseif typeof(result) ~= "table" or result.jestOutput == nil then',
 		'\tmessage = { type = "results", requestId = REQUEST_ID, gameOutput = "[]", jestOutput = HttpService:JSONEncode({ err = "studio-cli: the jest plugin produced no result. Install or update the jest-roblox Studio plugin.", success = false }) }',
 		"else",
@@ -838,19 +897,41 @@ async function serverPortAsync(server: WebSocketServer): Promise<number> {
 	return bound.port;
 }
 
+function routeRunFrame(
+	message: RunFrame,
+	{ deadlines, nilRelay, onResult, socket }: RunFrameRoute,
+): void {
+	switch (message.type) {
+		case "nilReturn": {
+			deadlines.markStarted();
+			nilRelay.onNilReturn();
+			break;
+		}
+		case "pluginReady": {
+			nilRelay.onPluginReady(socket);
+			break;
+		}
+		case "results": {
+			onResult(message);
+			break;
+		}
+		case "started": {
+			deadlines.markStarted();
+			break;
+		}
+	}
+}
+
 /**
- * Forward this run's `started` and `results` frames. Frames that aren't
- * valid JSON, aren't either message, or belong to another run are ignored
+ * Forward this run's frames. Frames that aren't valid JSON, aren't a run
+ * frame, or belong to another run are ignored
  * (engine/plugin chatter).
  */
 function listenForRunFrames({
-	onResult,
-	onStarted,
 	requestId,
 	server,
-}: {
-	onResult: (message: ResultMessage) => void;
-	onStarted: () => void;
+	...route
+}: Except<RunFrameRoute, "socket"> & {
 	requestId: string;
 	server: WebSocketServer;
 }): void {
@@ -868,11 +949,7 @@ function listenForRunFrames({
 				return;
 			}
 
-			if (message.type === "started") {
-				onStarted();
-			} else {
-				onResult(message);
-			}
+			routeRunFrame(message, { ...route, socket });
 		});
 	});
 }
@@ -990,6 +1067,45 @@ function startRunDeadlines({
 	};
 }
 
+function startNilReturnRelay({
+	onExpired,
+	requestId,
+	...unanswered
+}: NilReturnRelayOptions): NilReturnRelay {
+	// Remove the nil relay once Roblox fixes
+	// https://devforum.roblox.com/t/executerunmodeasync-returns-nil-when-called-from-task-runscript-before-the-place-reaches-placeidle/4921336
+	const relay = JSON.stringify({ requestId, type: "nilRelay" });
+	const pluginSockets = new Set<WebSocket>();
+	let timer: NodeJS.Timeout | undefined;
+
+	function relayTo(socket: WebSocket): void {
+		socket.send(relay);
+		clearTimeout(timer);
+	}
+
+	return {
+		clear: () => {
+			clearTimeout(timer);
+		},
+		onNilReturn: () => {
+			if (timer !== undefined) {
+				return;
+			}
+
+			timer = setTimeout(() => {
+				onExpired(unansweredError({ ...unanswered, headline: NIL_RETURN_HEADLINE }));
+			}, NIL_RETURN_PLUGIN_WAIT_MS);
+			pluginSockets.forEach(relayTo);
+		},
+		onPluginReady: (socket) => {
+			pluginSockets.add(socket);
+			if (timer !== undefined) {
+				relayTo(socket);
+			}
+		},
+	};
+}
+
 /**
  * Wire every settle source onto the Promise's one-shot resolve/reject pair and
  * clear the deadlines before forwarding it.
@@ -1003,9 +1119,11 @@ function awaitStudioCliResult({
 	...deadlineOptions
 }: StudioCliResultWait): void {
 	const deadlines = startRunDeadlines({ ...deadlineOptions, onExpired: bail });
+	const nilRelay = startNilReturnRelay({ ...deadlineOptions, onExpired: bail, requestId });
 
 	function settle(action: () => void): void {
 		deadlines.clear();
+		nilRelay.clear();
 		action();
 	}
 
@@ -1020,12 +1138,13 @@ function awaitStudioCliResult({
 	});
 
 	listenForRunFrames({
-		onResult: (message) => {
+		deadlines,
+		nilRelay,
+		onResult: (result) => {
 			settle(() => {
-				resolve(message);
+				resolve(result);
 			});
 		},
-		onStarted: deadlines.markStarted,
 		requestId,
 		server,
 	});
@@ -1034,10 +1153,9 @@ function awaitStudioCliResult({
 }
 
 /**
- * Resolve with the run-mode result frame the bootstrap pushes over the socket,
- * or reject on timeout / spawn failure. Only a `results` message for this
- * `requestId` resolves the run, so a stray frame never settles it with the
- * wrong payload.
+ * Resolve with the first `results` frame for this `requestId` — from the
+ * bootstrap, or from the plugin after a nil return — or reject on timeout /
+ * spawn failure. A stray frame never settles it with the wrong payload.
  */
 async function waitForResultAsync(
 	{ child, fileSystem, server }: ResultChannel,

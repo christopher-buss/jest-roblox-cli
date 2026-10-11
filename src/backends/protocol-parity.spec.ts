@@ -44,6 +44,33 @@ describe("protocol version parity", () => {
 		expect(runner).toContain("testArgs.pluginKey");
 	});
 
+	it.for([
+		'"JestRobloxRunSideChannel"',
+		'type = "pluginReady"',
+		'result.type = "results"',
+		'"nilRelay"',
+	])("should speak the studio-cli side-channel frame %s", (fragment) => {
+		expect.assertions(1);
+
+		const runner = fs.readFileSync(
+			new URL("../../plugin/src/test-in-run-mode.server.luau", import.meta.url),
+			"utf8",
+		);
+
+		expect(runner).toContain(fragment);
+	});
+
+	it("should hand the studio-cli bootstrap payload over the attribute the runner reads", () => {
+		expect.assertions(1);
+
+		const bootstrap = fs.readFileSync(
+			new URL("__snapshots__/studio-cli.spec.ts.snap", import.meta.url),
+			"utf8",
+		);
+
+		expect(bootstrap).toContain('ReplicatedStorage:SetAttribute("JestRobloxRunSideChannel",');
+	});
+
 	it("should use one protocol version across both Studio backends", () => {
 		expect.assertions(1);
 

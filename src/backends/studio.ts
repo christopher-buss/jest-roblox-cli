@@ -41,7 +41,7 @@ interface StudioOptions {
  * `version_mismatch` is now only reachable from a plugin whose announcement
  * and request handling disagree.
  */
-export const STUDIO_PROTOCOL_VERSION = 9;
+export const STUDIO_PROTOCOL_VERSION = 10;
 
 const pluginResultSchema = type({
 	"gameOutput?": "string",
