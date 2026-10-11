@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { createFixtureSandbox, runCliAsync } from "./helpers.ts";
 
-const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace");
+const WORKSPACE_FIXTURE_PATH = path.resolve(__dirname, "../fixtures/workspace-studio");
 const RUN_TIMEOUT_MS = 180_000;
 
 // studio-cli launches a real Roblox Studio process and drives the Run-mode
@@ -23,19 +23,24 @@ describe("workspace studio-cli smoke", () => {
 		async () => {
 			expect.assertions(3);
 
-			// Two-package workspace fixture (@e2e/foo, @e2e/bar). studio-cli
-			// builds the synthesized mega-place (with `__pkg_stage` staging) and
-			// the plugin runner clones each package from it, runs Jest, resets —
-			// all in one Studio process (no sharding).
+			// Two-package workspace fixture (@e2e/studio-foo, @e2e/studio-bar).
+			// studio-cli builds the synthesized mega-place (with `__pkg_stage`
+			// staging) and the plugin runner clones each package from it, runs
+			// Jest, resets — all in one Studio process (no sharding).
 			const sandbox = createFixtureSandbox(WORKSPACE_FIXTURE_PATH);
 			const result = await runCliAsync(
-				["--workspace", "--packages=@e2e/foo,@e2e/bar", "--backend", "studio-cli"],
+				[
+					"--workspace",
+					"--packages=@e2e/studio-foo,@e2e/studio-bar",
+					"--backend",
+					"studio-cli",
+				],
 				{ cwd: sandbox, timeoutMs: RUN_TIMEOUT_MS },
 			);
 
 			expect(result.exitCode, `stderr: ${result.stderr}\nstdout: ${result.stdout}`).toBe(0);
-			expect(result.stdout).toContain("@e2e/foo");
-			expect(result.stdout).toContain("@e2e/bar");
+			expect(result.stdout).toContain("@e2e/studio-foo");
+			expect(result.stdout).toContain("@e2e/studio-bar");
 		},
 		RUN_TIMEOUT_MS + 5000,
 	);

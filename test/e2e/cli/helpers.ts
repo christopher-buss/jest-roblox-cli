@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import { Buffer } from "node:buffer";
 import { execFile, execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import nodeProcess from "node:process";
 import { assert, onTestFinished } from "vitest";
@@ -315,17 +315,22 @@ function rewriteEscapingPaths(
 // Sandbox-relative (rather than absolute) lets downstream consumers like the
 // coverage rewriter still relocate the project tree without mangling the path.
 function absolutizeEscapingProjectPaths(sourceDirectory: string, sandboxDirectory: string): void {
-	const projectFile = path.join(sandboxDirectory, "default.project.json");
-	if (!existsSync(projectFile)) {
-		return;
+	const projectFiles = readdirSync(sandboxDirectory, { encoding: "utf-8", recursive: true })
+		.filter((entry) => entry.endsWith(".project.json"))
+		.filter((entry) => !entry.split(path.sep).includes("node_modules"));
+
+	for (const relativeFile of projectFiles) {
+		const projectFile = path.join(sandboxDirectory, relativeFile);
+		const sourceResolved = path.resolve(sourceDirectory, path.dirname(relativeFile));
+		const sandboxResolved = path.resolve(sandboxDirectory, path.dirname(relativeFile));
+		const raw = JSON.parse(readFileSync(projectFile, "utf-8"));
+		const before = JSON.stringify(raw);
+
+		rewriteEscapingPaths(raw, sourceResolved, sandboxResolved);
+		if (JSON.stringify(raw) !== before) {
+			writeFileSync(projectFile, `${JSON.stringify(raw, null, "\t")}\n`);
+		}
 	}
-
-	const sourceResolved = path.resolve(sourceDirectory);
-	const sandboxResolved = path.resolve(sandboxDirectory);
-	const raw = JSON.parse(readFileSync(projectFile, "utf-8"));
-
-	rewriteEscapingPaths(raw, sourceResolved, sandboxResolved);
-	writeFileSync(projectFile, `${JSON.stringify(raw, null, "\t")}\n`);
 }
 
 // Pins Open Cloud, so auto never launches a local Studio, unless the caller

@@ -1,0 +1,6 @@
+{
+	"name": "@e2e/studio-bar",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module"
+}

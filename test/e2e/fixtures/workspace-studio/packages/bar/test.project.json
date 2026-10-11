@@ -1,0 +1,11 @@
+{
+	"name": "bar-test",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Bar": { "$path": "src" },
+			"Packages": { "$path": "../../../../../../../../node_modules/@rbxts-js.project.json" }
+		}
+	}
+}

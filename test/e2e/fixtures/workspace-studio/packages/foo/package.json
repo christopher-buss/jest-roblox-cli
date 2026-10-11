@@ -1,0 +1,6 @@
+{
+	"name": "@e2e/studio-foo",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module"
+}

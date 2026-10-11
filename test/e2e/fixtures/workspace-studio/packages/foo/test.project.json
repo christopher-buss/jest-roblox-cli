@@ -1,0 +1,11 @@
+{
+	"name": "foo-test",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Foo": { "$path": "src" },
+			"Packages": { "$path": "../../../../../../../../node_modules/@rbxts-js.project.json" }
+		}
+	}
+}
