@@ -532,6 +532,9 @@ Connects to Roblox Studio over WebSocket. Faster than Open Cloud (no upload
 step), but Studio must be open with the plugin running. Studio doesn't expose
 which place is open, so multiple concurrent projects aren't supported yet.
 
+While no CLI is listening, the plugin retries at growing intervals, up to 5
+seconds apart, so a run can wait a few seconds for the plugin to connect.
+
 <!-- prettier-ignore -->
 > [!NOTE]
 > For `--coverage`, prefer `--backend open-cloud` since the coverage

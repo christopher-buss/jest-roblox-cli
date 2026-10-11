@@ -10,6 +10,7 @@ end
 
 local WEBSOCKET_URL = "ws://localhost:3001"
 local RECONNECT_DELAY = 0.1
+local MAX_RECONNECT_DELAY = 5
 
 -- Plugin/CLI protocol version. Must match `STUDIO_PROTOCOL_VERSION` in
 -- `src/backends/studio.ts` and `PROTOCOL_VERSION` in the run-mode runner
@@ -41,6 +42,8 @@ if not versionOk or typeof(PluginVersion) ~= "string" then
 	PluginVersion = "unknown"
 end
 
+local ReconnectLoop = require(script:WaitForChild("reconnect-loop") :: any)
+
 local IsDebug = ReplicatedStorage:GetAttribute("JEST_ROBLOX_DEBUG") == true
 ReplicatedStorage:GetAttributeChangedSignal("JEST_ROBLOX_DEBUG"):Connect(function(): ()
 	IsDebug = ReplicatedStorage:GetAttribute("JEST_ROBLOX_DEBUG") == true
@@ -53,7 +56,6 @@ local stopButton =
 	toolbar:CreateButton("Stop", "Disconnect from jest-roblox CLI", "rbxassetid://4458901886")
 startButton.Enabled = false
 
-local autoReconnect = true
 local ws: WebStreamClient? = nil
 local connections: { RBXScriptConnection } = {}
 
@@ -92,8 +94,8 @@ local function disconnect(): ()
 	end
 end
 
-local function connect(): ()
-	clearConnections()
+local function connect(attempt: any): ()
+	disconnect()
 
 	print("[jest-roblox] Connecting to " .. WEBSOCKET_URL .. "...")
 
@@ -106,6 +108,7 @@ local function connect(): ()
 
 	if not success then
 		warn("[jest-roblox] Failed to connect: " .. tostring(socket))
+		attempt.failed()
 		return
 	end
 
@@ -212,6 +215,7 @@ local function connect(): ()
 
 	local opened = ws.Opened:Once(function(): ()
 		print("[jest-roblox] Connected to CLI")
+		attempt.opened()
 
 		-- Announce unprompted, as early as a send is legal. Studio runs every
 		-- installed copy of this plugin and each one dials the same port, so
@@ -230,53 +234,45 @@ local function connect(): ()
 
 	local err = ws.Error:Once(function(_statusCode: number, errorMessage: string): ()
 		warn("[jest-roblox] Connection error: " .. errorMessage)
+		disconnect()
+		attempt.failed()
 	end)
 	table.insert(connections, err)
 
 	local closed = ws.Closed:Once(function(): ()
-		ws = nil
-		if autoReconnect then
-			print("[jest-roblox] Disconnected, reconnecting in " .. RECONNECT_DELAY .. "s...")
-			local thread = task.delay(RECONNECT_DELAY, function(): ()
-				connect()
-			end)
-			table.insert(connections :: any, {
-				Disconnect = function(): ()
-					if coroutine.running() then
-						local wasCancelled = pcall(function()
-							task.cancel(thread)
-						end)
-
-						if not wasCancelled then
-							task.defer(function()
-								task.cancel(thread)
-							end)
-						end
-					end
-				end,
-			})
-		end
+		print("[jest-roblox] Disconnected")
+		disconnect()
+		attempt.failed()
 	end)
 	table.insert(connections, closed)
 end
 
+local reconnectLoop = ReconnectLoop.new({
+	cancel = task.cancel,
+	connect = connect,
+	delay = task.delay,
+	initialDelay = RECONNECT_DELAY,
+	maxDelay = MAX_RECONNECT_DELAY,
+})
+
 startButton.Click:Connect(function(): ()
 	startButton.Enabled = false
 	stopButton.Enabled = true
-	autoReconnect = true
-	connect()
+	reconnectLoop:start()
 end)
 
 stopButton.Click:Connect(function(): ()
 	stopButton.Enabled = false
 	startButton.Enabled = true
-	autoReconnect = false
+	reconnectLoop:stop()
 	disconnect()
 end)
 
 plugin.Unloading:Connect(function(): ()
-	autoReconnect = false
+	reconnectLoop:stop()
 	disconnect()
 end)
 
-task.defer(connect)
+task.defer(function(): ()
+	reconnectLoop:start()
+end)
