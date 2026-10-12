@@ -21,7 +21,7 @@ function isErrorWithoutNotFoundMessage(error: unknown): boolean {
 }
 
 function makeTemporaryDirectory(prefix = "config-test-"): string {
-	const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+	const temporaryDirectory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 	onTestFinished(() => {
 		fs.rmSync(temporaryDirectory, { force: true, recursive: true });
 	});
@@ -845,11 +845,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 
 			const result = await loadConfig(undefined, childDirectory);
 
-			// c12 canonicalizes the discovered config path (realpath), so on
-			// macOS the anchored root resolves under /private/tmp; realpath the
-			// expected dir to match on symlinked-tmp hosts (a no-op where tmp is
-			// not a link).
-			expect(result.workspace!.root).toBe(fs.realpathSync(temporaryDirectory));
+			expect(result.workspace!.root).toBe(temporaryDirectory);
 		});
 
 		it("should anchor a relative workspace.root declared without extends", async () => {
@@ -863,9 +859,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 
 			const result = await loadConfig(undefined, temporaryDirectory);
 
-			// realpath the expected dir so the assertion holds on symlinked-tmp
-			// hosts (macOS resolves the loaded config path under /private/tmp).
-			expect(result.workspace!.root).toBe(fs.realpathSync(temporaryDirectory));
+			expect(result.workspace!.root).toBe(temporaryDirectory);
 		});
 
 		it("should leave an absolute workspace.root untouched", async () => {

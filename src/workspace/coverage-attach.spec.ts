@@ -1,14 +1,14 @@
 import { fromAny } from "@total-typescript/shoehorn";
 
-import * as fs from "node:fs";
-import * as os from "node:os";
+import type { ResolvedConfig as C12ResolvedConfig, LoadConfigOptions } from "c12";
 import * as path from "node:path";
 import process from "node:process";
-import { assert, describe, expect, it, onTestFinished, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 
 import { fakeTimingCollector, phaseNamesOf } from "../../test/mocks/fake-timing-collector.ts";
 import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { loadConfig } from "../config/loader.ts";
+import type { ResolvedConfig } from "../config/schema.ts";
 import type { WorkspacePackageCoverage } from "../coverage-pipeline/workspace-prepare.ts";
 import type { ExecuteResult } from "../executor.ts";
 import {
@@ -20,14 +20,19 @@ import type { PendingEntry } from "./test-selection.ts";
 
 const PACKAGE_NAME = "@halcyon/example";
 
-function makePackageDirectory(config: string): string {
-	const packageDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "coverage-attach-"));
-	onTestFinished(() => {
-		fs.rmSync(packageDirectory, { force: true, recursive: true });
-	});
-	fs.writeFileSync(path.join(packageDirectory, "jest.config.mjs"), config);
+const WORKSPACE_ROOT = path.resolve("/repo");
+const PACKAGE_DIRECTORY = path.join(WORKSPACE_ROOT, "packages", "example");
 
-	return packageDirectory;
+async function loadPackageConfigAsync(config: Record<string, unknown>): Promise<ResolvedConfig> {
+	const configFile = path.join(PACKAGE_DIRECTORY, "jest.config.mjs");
+	const { fileSystem } = createMemoryFileSystem({ [configFile]: "" });
+	const configLoader = vi.fn<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>();
+	configLoader.mockResolvedValue({ config, configFile, cwd: PACKAGE_DIRECTORY, layers: [] });
+
+	return loadConfig(undefined, WORKSPACE_ROOT, {
+		configLoader: fromAny(configLoader),
+		fileSystem,
+	});
 }
 
 describe(attachCoverageManifests, () => {
@@ -39,10 +44,10 @@ describe(attachCoverageManifests, () => {
 	it("should resolve the coverage directory under a relative rootDir's package", async () => {
 		expect.assertions(1);
 
-		const packageDirectory = makePackageDirectory(
-			'export default { rootDir: ".", test: { coverageDirectory: "coverage" } };',
-		);
-		const projectConfig = await loadConfig(undefined, packageDirectory);
+		const projectConfig = await loadPackageConfigAsync({
+			rootDir: ".",
+			test: { coverageDirectory: "coverage" },
+		});
 		const pending: Array<PendingEntry> = [
 			fromAny({
 				pkg: PACKAGE_NAME,
@@ -53,7 +58,7 @@ describe(attachCoverageManifests, () => {
 		];
 		const coverage: WorkspacePackageCoverage = fromAny({
 			pkg: PACKAGE_NAME,
-			rootDir: packageDirectory,
+			rootDir: PACKAGE_DIRECTORY,
 		});
 
 		const results: Array<ExecuteResult> = [fromAny({})];
@@ -68,7 +73,7 @@ describe(attachCoverageManifests, () => {
 		assert(attached.coverageSettings !== undefined);
 
 		expect(attached.coverageSettings.coverageDirectory).toBe(
-			path.join(packageDirectory, "coverage"),
+			path.join(PACKAGE_DIRECTORY, "coverage"),
 		);
 	});
 });
