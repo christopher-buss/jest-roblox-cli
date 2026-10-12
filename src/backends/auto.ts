@@ -91,7 +91,7 @@ export function assertVmParallel(kind: BackendKind, vmParallel: ParallelOption):
 	}
 }
 
-// eslint-disable-next-line ts/require-await -- Async so a bad config rejects rather than throws: `RunSeams.resolveBackend` is awaited, and its fakes resolve.
+// oxlint-disable-next-line typescript/require-await -- Async so a bad config rejects rather than throws: `RunSeams.resolveBackend` is awaited, and its fakes resolve.
 export async function resolveBackendAsync(
 	cli: CliOptions,
 	config: ResolvedConfig,

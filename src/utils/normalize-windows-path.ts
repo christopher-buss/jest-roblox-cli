@@ -176,6 +176,6 @@ function splitNamespace(normalizedPath: string): NamespaceSplit | undefined {
  * attached.
  */
 function asPosixRoot(canonical: string): PosixRoot {
-	// eslint-disable-next-line ts/no-unsafe-type-assertion -- see above
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above
 	return canonical as PosixRoot;
 }

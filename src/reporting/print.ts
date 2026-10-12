@@ -150,7 +150,7 @@ function addPreDispatchTiming(
 
 function printOutput(out: string): void {
 	if (out !== "") {
-		// eslint-disable-next-line no-console -- CLI result output belongs on stdout.
+		// oxlint-disable-next-line no-console -- CLI result output belongs on stdout.
 		console.log(out);
 	}
 }

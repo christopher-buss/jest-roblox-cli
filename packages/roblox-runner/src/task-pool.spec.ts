@@ -96,7 +96,7 @@ function makeThrowingTask(
 		counter.attempt += 1;
 		if (counter.attempt === throwingAttempt) {
 			// A non-Error rejection is one of the cases the pool normalizes.
-			// eslint-disable-next-line ts/only-throw-error -- see above
+			// oxlint-disable-next-line typescript/only-throw-error -- see above
 			throw makeError();
 		}
 

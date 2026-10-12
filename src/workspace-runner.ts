@@ -40,8 +40,11 @@ import type { PackageInfo } from "./workspace/package-resolver.ts";
 import { type StagedWorkspacePlace, stageWorkspacePlaceAsync } from "./workspace/place-staging.ts";
 import { type PreflightError, validatePackages } from "./workspace/preflight.ts";
 import { resolvePackageContextsAsync } from "./workspace/project-contexts.ts";
-import type { PendingEntry } from "./workspace/test-selection.ts";
-import { selectWorkspaceTests, type WorkspaceTestSelection } from "./workspace/test-selection.ts";
+import {
+	type PendingEntry,
+	selectWorkspaceTests,
+	type WorkspaceTestSelection,
+} from "./workspace/test-selection.ts";
 import {
 	attachTypecheck,
 	runTypecheckOnlyWorkspaceAsync,

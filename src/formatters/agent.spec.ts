@@ -15,8 +15,12 @@ import {
 	SNAPSHOT_FAILING_RESULT,
 	TIMED_OUT_RESULT,
 } from "./__fixtures__/results.ts";
-import type { SourceSnippetReader } from "./agent.ts";
-import { type AgentOptions, formatAgent, formatAgentMultiProject } from "./agent.ts";
+import {
+	type AgentOptions,
+	formatAgent,
+	formatAgentMultiProject,
+	type SourceSnippetReader,
+} from "./agent.ts";
 
 const mockedGetSourceSnippet = vi.fn<SourceSnippetReader>(getSourceSnippet);
 

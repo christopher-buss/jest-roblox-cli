@@ -29,7 +29,9 @@
 		"*.config.ts",
 		"vitest.shared.ts",
 		"vitest.stryker.shared.ts",
-		"dependency-cruiser.shared.ts"
+		"dependency-cruiser.shared.ts",
+		"oxlint.mirror.ts",
+		"oxlint.shared.ts"
 	],
 	"exclude": ["${configDir}/node_modules", "**/fixtures/"]
 }

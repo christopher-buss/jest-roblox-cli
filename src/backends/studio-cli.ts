@@ -609,7 +609,7 @@ export class StudioCliBackend implements Backend {
 	 */
 	private async prepareRunPlaceAsync(jobs: Array<ProjectJob>): Promise<RunPlace> {
 		// jobs[0] is the per-run knob source (rootDir, rojoProject, timeout).
-		// eslint-disable-next-line ts/no-non-null-assertion -- assertSerialJobs checked length
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- assertSerialJobs checked length
 		const primary = jobs[0]!;
 
 		const rootDirectory = path.resolve(primary.config.rootDir);
@@ -1074,12 +1074,11 @@ function startNilReturnRelay({
 }: NilReturnRelayOptions): NilReturnRelay {
 	// Remove the nil relay once Roblox fixes
 	// https://devforum.roblox.com/t/executerunmodeasync-returns-nil-when-called-from-task-runscript-before-the-place-reaches-placeidle/4921336
-	const relay = JSON.stringify({ requestId, type: "nilRelay" });
 	const pluginSockets = new Set<WebSocket>();
 	let timer: NodeJS.Timeout | undefined;
 
 	function relayTo(socket: WebSocket): void {
-		socket.send(relay);
+		socket.send(JSON.stringify({ requestId, type: "nilRelay" }));
 		clearTimeout(timer);
 	}
 
@@ -1095,7 +1094,9 @@ function startNilReturnRelay({
 			timer = setTimeout(() => {
 				onExpired(unansweredError({ ...unanswered, headline: NIL_RETURN_HEADLINE }));
 			}, NIL_RETURN_PLUGIN_WAIT_MS);
-			pluginSockets.forEach(relayTo);
+			for (const socket of pluginSockets) {
+				relayTo(socket);
+			}
 		},
 		onPluginReady: (socket) => {
 			pluginSockets.add(socket);

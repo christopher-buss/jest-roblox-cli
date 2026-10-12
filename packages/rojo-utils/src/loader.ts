@@ -1,5 +1,4 @@
-import type { ArkErrors } from "arktype";
-import { type, type Type } from "arktype";
+import { type ArkErrors, type, type Type } from "arktype";
 import { dirname } from "node:path";
 
 import type { FileSystem } from "./file-system.ts";

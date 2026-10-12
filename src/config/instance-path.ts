@@ -183,7 +183,7 @@ function toMountPrefixes(mounts: ReadonlyArray<Mount>, base: string): Array<Moun
 			const segments = mount.dataModelPath.split("/");
 			return {
 				fsPrefix: toAbsolute(mount.fsPath, base),
-				// eslint-disable-next-line ts/no-non-null-assertion -- split always yields one
+				// oxlint-disable-next-line typescript/no-non-null-assertion -- split always yields one
 				instanceName: segments.at(-1)!,
 			};
 		})

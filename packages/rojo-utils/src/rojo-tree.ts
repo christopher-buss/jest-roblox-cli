@@ -196,8 +196,7 @@ function inlineNestedProject(
 	originalRoot: string,
 	context: ResolveContext,
 ): RojoTreeNode {
-	const chain = new Set(context.visited);
-	chain.add(projectPath);
+	const chain = new Set([...context.visited, projectPath]);
 	context.sources.add(projectPath);
 
 	let content: string;

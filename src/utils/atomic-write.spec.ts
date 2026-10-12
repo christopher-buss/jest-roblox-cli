@@ -184,7 +184,7 @@ describe(atomicWrite, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		vi.spyOn(fileSystem, "renameSync").mockImplementation(() => {
-			// eslint-disable-next-line ts/only-throw-error -- exercises the non-Error normalization branch
+			// oxlint-disable-next-line typescript/only-throw-error -- exercises the non-Error normalization branch
 			throw "disk gone";
 		});
 

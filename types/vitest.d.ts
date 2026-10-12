@@ -21,7 +21,7 @@
 // infers from the parameter (`fromPartial`, a bare arrow) needs its type
 // argument written out.
 
-/* eslint-disable ts/no-unnecessary-type-parameters -- see the note above */
+/* oxlint-disable typescript/no-unnecessary-type-parameters -- see the note above */
 
 import type { DeeplyAllowMatchers, MockInstance } from "vitest";
 

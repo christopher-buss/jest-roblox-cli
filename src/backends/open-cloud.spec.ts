@@ -1959,7 +1959,7 @@ describe(OpenCloudBackend, () => {
 				readAllAsync: async (): Promise<never> => {
 					reader.readCalls += 1;
 
-					// eslint-disable-next-line ts/only-throw-error -- exercising the non-Error branch in drainOnce's catch.
+					// oxlint-disable-next-line typescript/only-throw-error -- exercising the non-Error branch in drainOnce's catch.
 					throw "string-error";
 				},
 				readCalls: 0,

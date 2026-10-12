@@ -54,8 +54,8 @@
 		"build:bundle": "weld",
 		"build:packages": "pnpm -r --filter !@isentinel/jest-roblox run build",
 		"build:plugin": "node scripts/stamp-plugin-version.run.ts && rojo build plugin/plugin.project.json -o plugin/JestRobloxRunner.rbxm",
-		"lint": "eslint --cache",
-		"lint:ci": "eslint --cache --cache-strategy content",
+		"lint": "oxlint && eslint --cache",
+		"lint:ci": "oxlint && eslint --cache --cache-strategy content",
 		"mutation": "pnpm build:bundle && stryker run",
 		"prepack": "pnpm build",
 		"prepublishOnly": "pnpm build",
@@ -83,7 +83,7 @@
 		"ws": "8.21.3"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "6.0.0-beta.43",
+		"@isentinel/eslint-config": "6.0.0",
 		"@isentinel/luau-ast": "workspace:*",
 		"@isentinel/roblox-runner": "workspace:*",
 		"@isentinel/roblox-ts": "4.0.11",
@@ -119,6 +119,8 @@
 		"eslint-plugin-project-structure": "3.14.4",
 		"jest-extended": "7.0.0",
 		"memfs": "4.68.1",
+		"oxlint": "1.87.0",
+		"oxlint-tsgolint": "7.0.2003",
 		"publint": "0.3.24",
 		"tsdown": "0.23.0",
 		"type-fest": "5.7.0",

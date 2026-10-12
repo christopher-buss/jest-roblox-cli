@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Visitor pattern is inherently verbose. */
+/* oxlint-disable max-lines -- Visitor pattern is inherently verbose. */
 /**
  * Visitor over the official parser's AST (see ast-types.ts). Each enter
  * callback returns boolean — false skips the node's children. All callbacks

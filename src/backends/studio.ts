@@ -12,8 +12,12 @@ import {
 	describePluginMismatch,
 	PluginConnectionPool,
 } from "./plugin-connections.ts";
-import { buildRunPayload, pairPluginEntries, type RunPayloadRequest } from "./plugin-payload.ts";
-import type { RunPayload } from "./plugin-payload.ts";
+import {
+	buildRunPayload,
+	pairPluginEntries,
+	type RunPayload,
+	type RunPayloadRequest,
+} from "./plugin-payload.ts";
 import { nodeWebSocketServerFactory } from "./web-socket-server-factory.ts";
 import type { WebSocketServerFactory } from "./web-socket-server-factory.ts";
 

@@ -297,7 +297,7 @@ type ParsedCliValues = ReturnType<typeof parseWithOptionSpec>["values"];
 function normalizeOptionalValueFlags(args: Array<string>): Array<string> {
 	const out: Array<string> = [];
 	for (let index = 0; index < args.length; index++) {
-		// eslint-disable-next-line ts/no-non-null-assertion -- index bounded by args.length
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- index bounded by args.length
 		const current = args[index]!;
 		const flag = OPTIONAL_VALUE_FLAGS.find((entry) => entry.name === current);
 		if (flag === undefined) {

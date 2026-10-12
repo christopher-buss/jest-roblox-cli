@@ -116,7 +116,7 @@ export function combineSourceMappers(
 
 	if (mappers.length === 1) {
 		// Safe: length checked above.
-		// eslint-disable-next-line ts/no-non-null-assertion -- length check
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- length check
 		return mappers[0]!;
 	}
 

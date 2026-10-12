@@ -1,4 +1,4 @@
-import isentinel from "@isentinel/eslint-config";
+import { isentinel } from "@isentinel/eslint-config";
 
 export default isentinel(
 	{
@@ -18,10 +18,14 @@ export default isentinel(
 		jsdoc: false,
 		namedConfigs: true,
 		naming: true,
+		oxlint: "native",
 		pnpm: false,
 		roblox: false,
 		rules: {
-			"max-lines": "off",
+			"flawless/no-redundant-type-annotation": "off",
+			"flawless/no-shared-mocks": "off",
+			"flawless/prefer-mock-throw": "off",
+			"flawless/prefer-vitest-local-context": "off",
 		},
 		test: {
 			vitest: {
@@ -62,13 +66,6 @@ export default isentinel(
 		files: ["./bin/**/*"],
 		rules: {
 			"antfu/no-top-level-await": "off",
-		},
-	},
-	{
-		name: "project/e2e",
-		files: ["test/e2e/**/*"],
-		rules: {
-			"vitest/max-expects": "off",
 		},
 	},
 );

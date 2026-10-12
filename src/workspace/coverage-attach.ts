@@ -118,7 +118,7 @@ export function attachCoverageManifests(
 	coverageByPackage: Map<string, WorkspacePackageCoverage>,
 ): Array<WorkspaceProjectResult> {
 	return results.map((result, index) => {
-		// eslint-disable-next-line ts/no-non-null-assertion -- runProjects preserves order
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- runProjects preserves order
 		const pendingEntry = pending[index]!;
 		const coverage = coverageByPackage.get(pendingEntry.pkg);
 		const projectResult = {

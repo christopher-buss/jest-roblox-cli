@@ -232,7 +232,7 @@ async function runJobsAsync({
 	// Multi cannot bail today, so this is the identity mapping — reading the
 	// index is what keeps it right if that ever changes.
 	return runResult.results.map((executeResult, index) => {
-		// eslint-disable-next-line ts/no-non-null-assertion -- parallel to results
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- parallel to results
 		const job = jobs[runResult.ranProjectIndices[index]!]!;
 		return {
 			displayColor: job.displayColor,

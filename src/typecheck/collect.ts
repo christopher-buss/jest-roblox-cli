@@ -48,7 +48,8 @@ function buildAncestorChain(sorted: Array<RawDefinition>): Array<TestDefinition>
 	for (const definition of sorted) {
 		while (
 			suiteStack.length > 0 &&
-			suiteStack.at(-1)!.end <= definition.start // eslint-disable-line ts/no-non-null-assertion -- stack length > 0
+			// Stryker disable next-line EqualityOperator: calls never abut.
+			suiteStack.at(-1)!.end <= definition.start // oxlint-disable-line typescript/no-non-null-assertion -- stack length > 0
 		) {
 			suiteStack.pop();
 		}

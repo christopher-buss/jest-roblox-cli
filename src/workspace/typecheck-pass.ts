@@ -71,7 +71,7 @@ export async function runWorkspaceTypecheckPassAsync(
 		// Every group's cwd is a package directory recorded in
 		// `typecheckByDirectory` in the same loop iteration that pushed the
 		// entry, so the lookup is always present.
-		// eslint-disable-next-line ts/no-non-null-assertion -- invariant: cwd ∈ typecheckByDirectory
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- invariant: cwd ∈ typecheckByDirectory
 		const policy = typecheckByDirectory.get(group.cwd)!;
 		const raw = await runTypecheck({
 			files: group.files,

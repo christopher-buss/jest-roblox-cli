@@ -1,4 +1,4 @@
-import isentinel from "@isentinel/eslint-config";
+import { isentinel } from "@isentinel/eslint-config";
 
 export default isentinel(
 	{
@@ -6,6 +6,7 @@ export default isentinel(
 		jsdoc: true,
 		namedConfigs: true,
 		naming: true,
+		oxlint: "native",
 		projectStructure: {
 			files: ["src/**/*.ts"],
 			ignores: ["src/**/*.spec.ts", "src/**/*.d.ts", "src/**/*-types.ts"],
@@ -14,6 +15,10 @@ export default isentinel(
 		},
 		roblox: false,
 		rules: {
+			"flawless/no-redundant-type-annotation": "off",
+			"flawless/no-shared-mocks": "off",
+			"flawless/prefer-mock-throw": "off",
+			"flawless/prefer-vitest-local-context": "off",
 			"package-json/restrict-private-properties": "off",
 		},
 		test: {

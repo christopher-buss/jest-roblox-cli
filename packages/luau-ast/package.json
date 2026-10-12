@@ -58,7 +58,7 @@
 		"build": "tsdown"
 	},
 	"devDependencies": {
-		"@isentinel/eslint-config": "6.0.0-beta.43",
+		"@isentinel/eslint-config": "6.0.0",
 		"@isentinel/tsconfig": "2.0.0",
 		"@stryker-mutator/core": "10.0.0",
 		"@stryker-mutator/typescript-checker": "10.0.0",

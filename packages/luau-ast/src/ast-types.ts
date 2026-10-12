@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- The official AST shape is inherently verbose. */
+/* oxlint-disable max-lines -- The official AST shape is inherently verbose. */
 /**
  * TypeScript types mirroring the official Luau parser's AST JSON, as emitted
  * by wasm/wrapper.cpp (Luau's AstJsonEncoder at the pinned version). Node

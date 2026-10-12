@@ -107,7 +107,7 @@ function mapToSource(
 	frame: StackFrame,
 ): MappedSource | undefined {
 	const v3Result = v3Mapper.mapFromSourceMap(luauPath, frame.line, frame.column);
-	// eslint-disable-next-line ts/prefer-optional-chain -- explicit checks needed for type narrowing
+	// oxlint-disable-next-line typescript/prefer-optional-chain -- explicit checks needed for type narrowing
 	if (v3Result === undefined || v3Result.source === null || v3Result.line === null) {
 		return undefined;
 	}

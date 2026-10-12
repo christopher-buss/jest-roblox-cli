@@ -8,9 +8,9 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { createMemoryFileSystem, type MemoryVolume } from "../test/mocks/memory-file-system.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import type { loadCoverageManifest } from "./coverage-pipeline/manifest-load.ts";
-import type { mapCoverageToTypeScript } from "./coverage-pipeline/mapper.ts";
 import {
 	CoverageMapMalformedError,
+	type mapCoverageToTypeScript,
 	type MappedCoverageResult,
 } from "./coverage-pipeline/mapper.ts";
 import type { checkThresholds, generateReports } from "./coverage-pipeline/reporter.ts";

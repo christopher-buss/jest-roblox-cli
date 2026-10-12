@@ -1185,7 +1185,7 @@ describe(runWorkspaceModeAsync, () => {
 
 			const harness = setupHappyPath();
 			harness.openCloudBackend.mockImplementation(() => {
-				// eslint-disable-next-line ts/only-throw-error -- exercising the non-Error branch
+				// oxlint-disable-next-line typescript/only-throw-error -- exercising the non-Error branch
 				throw "raw credential failure";
 			});
 

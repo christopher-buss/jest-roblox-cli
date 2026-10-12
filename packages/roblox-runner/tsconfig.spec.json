@@ -24,6 +24,9 @@
 	],
 	"include": [
 		"eslint.config.ts",
+		"oxlint.config.ts",
+		"oxlint.mirror.ts",
+		"../../oxlint.shared.ts",
 		"vitest.config.ts",
 		"tsdown.config.ts",
 		"package.json",

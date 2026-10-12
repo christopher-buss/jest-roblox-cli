@@ -611,9 +611,9 @@ async function runSelectedPackagesAsync({
 	resolved: ResolvedPackages;
 	timing?: TimingCollector | undefined;
 }): Promise<WorkspaceRunResult> {
-	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
+	// oxlint-disable-next-line typescript/no-non-null-assertion -- guaranteed when no error/noAffected
 	const packageInfos = resolved.packageInfos!;
-	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when no error/noAffected
+	// oxlint-disable-next-line typescript/no-non-null-assertion -- guaranteed when no error/noAffected
 	const workspaceRoot = resolved.workspaceRoot!;
 
 	const optionsResolution = await resolveWorkspaceOptionsAsync({
@@ -628,7 +628,7 @@ async function runSelectedPackagesAsync({
 		return bail(optionsResolution.error.exitCode, optionsResolution.error.message);
 	}
 
-	// eslint-disable-next-line ts/no-non-null-assertion -- guaranteed when there is no error
+	// oxlint-disable-next-line typescript/no-non-null-assertion -- guaranteed when there is no error
 	const runOptions = optionsResolution.runOptions!;
 
 	return executeWorkspaceRunAsync({

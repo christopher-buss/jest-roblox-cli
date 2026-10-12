@@ -285,7 +285,7 @@ function formatAgentTotals(coverageMap: CoverageMap): string {
 }
 
 function getTerminalColumns(): number | undefined {
-	// eslint-disable-next-line ts/no-unnecessary-condition -- some environments might not have this property
+	// oxlint-disable-next-line typescript/no-unnecessary-condition -- some environments might not have this property
 	if (process.stdout.columns !== undefined) {
 		return process.stdout.columns;
 	}

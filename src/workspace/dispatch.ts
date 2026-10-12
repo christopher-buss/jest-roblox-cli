@@ -137,7 +137,7 @@ export async function runDispatchedProjectsAsync(
 			// Defined whenever runtime jobs exist: only `--typecheckOnly`
 			// omits the backend, and that path short-circuits before
 			// reaching any runtime dispatch.
-			// eslint-disable-next-line ts/no-non-null-assertion -- backend present for runtime jobs
+			// oxlint-disable-next-line typescript/no-non-null-assertion -- backend present for runtime jobs
 			backend: input.backend!,
 			codeBundle: input.codeBundle,
 			deferFormatting: true,
@@ -248,7 +248,7 @@ function longestPackageSeconds(inputs: ReadonlyArray<MaterializerInput>): number
 		// Read here rather than above the loop because this is where the batch
 		// is known to have a first entry: an empty one never reaches the body,
 		// and answers with the zero below rather than with a deadline.
-		// eslint-disable-next-line ts/no-non-null-assertion -- non-empty inside its own loop
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- non-empty inside its own loop
 		const taskDeadlineMs = inputs[0]!.config.timeout;
 		longestMs = Math.max(
 			longestMs,

@@ -235,7 +235,7 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 
 	const results = timing.profile("processResults", () => {
 		return rawResults.map((raw, index) => {
-			// eslint-disable-next-line ts/no-non-null-assertion -- length equality asserted above
+			// oxlint-disable-next-line typescript/no-non-null-assertion -- length equality asserted above
 			const job = jobs[ranProjectIndices[index]!]!;
 			return processOrRecoverEntry(raw, job, context);
 		});

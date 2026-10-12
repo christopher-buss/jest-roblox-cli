@@ -60,7 +60,7 @@ function inferSourceExtension(pattern: string): string {
 	}
 
 	const [, extension] = match;
-	// eslint-disable-next-line ts/no-non-null-assertion -- capture group 1 always present when match succeeds
+	// oxlint-disable-next-line typescript/no-non-null-assertion -- capture group 1 always present when match succeeds
 	return extension!;
 }
 

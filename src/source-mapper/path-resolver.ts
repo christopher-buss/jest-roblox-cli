@@ -93,7 +93,7 @@ function convertToFilePath(suffix: string): string {
 	const result: Array<string> = [];
 
 	for (let index = 0; index < parts.length; index++) {
-		// eslint-disable-next-line ts/no-non-null-assertion -- Loop
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- Loop
 		const part = parts[index]!;
 		const nextPart = parts[index + 1];
 

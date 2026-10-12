@@ -386,7 +386,7 @@ function readVisibleEntries(directory: string, split: Split): Array<Dirent> {
 		.filter((child) => !split.ignored(path.posix.join(directory, child.name)));
 	const byName = new Map(children.map((child) => [child.name, child]));
 	return [...byName.keys()].sort().map((name) => {
-		// eslint-disable-next-line ts/no-non-null-assertion -- every key came out of this map
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- every key came out of this map
 		return byName.get(name)!;
 	});
 }

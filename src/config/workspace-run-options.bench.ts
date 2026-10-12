@@ -1,4 +1,5 @@
-/* eslint-disable flawless/prefer-ending-with-an-expect, vitest/consistent-test-it, vitest/expect-expect, vitest/prefer-expect-assertions, vitest/valid-title -- the eslint plugin still models `bench` as a Vitest 4 top-level test. It now registers a measurement inside the host test, so the assertion and title rules aim at the wrong call, and the host itself measures rather than asserts. */
+/* oxlint-disable vitest/expect-expect, vitest/prefer-expect-assertions -- the host test measures rather than asserts. */
+/* eslint-disable flawless/prefer-ending-with-an-expect -- the host test measures rather than asserts. */
 import { describe, it } from "vitest";
 
 import type { Config } from "./schema.ts";

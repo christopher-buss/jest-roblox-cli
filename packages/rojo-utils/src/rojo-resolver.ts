@@ -280,7 +280,7 @@ export class RojoResolver {
 		}
 
 		for (let index = diffIndex; index < rbxTo.length; index++) {
-			// eslint-disable-next-line ts/no-non-null-assertion -- Loop index
+			// oxlint-disable-next-line typescript/no-non-null-assertion -- Loop index
 			result.push(rbxTo[index]!);
 		}
 

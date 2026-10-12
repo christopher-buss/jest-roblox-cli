@@ -1,3 +1,5 @@
+/* oxlint-disable max-lines -- transport orchestration stays cohesive in the runner */
+
 import type {
 	AdmissionWaitObserver,
 	HttpClient,
@@ -64,8 +66,6 @@ import type {
 	UploadPlaceOptions,
 	UploadPlaceResult,
 } from "./types.ts";
-
-/* eslint-disable max-lines -- transport orchestration stays cohesive in the runner */
 
 export interface SubmitDurationOptions {
 	submitBudget?: number;
@@ -945,5 +945,3 @@ function toArrayBufferView(data: buffer.Buffer): Uint8Array<ArrayBuffer> {
 function deriveFormat(filePath: string): "rbxl" | "rbxlx" {
 	return path.extname(filePath).toLowerCase() === ".rbxlx" ? "rbxlx" : "rbxl";
 }
-
-/* eslint-enable max-lines */

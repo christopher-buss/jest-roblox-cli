@@ -523,7 +523,7 @@ export class OpenCloudBackend implements Backend {
 		version: VersionContext;
 	}): Promise<{ indices: Array<number>; rawResults: Array<RawBackendEntry> }> {
 		// A bucket is only created for at least one job, so jobs[0] is defined.
-		// eslint-disable-next-line ts/no-non-null-assertion -- bucket non-empty
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- bucket non-empty
 		const primary = jobs[0]!;
 		const script = scriptOverride ?? bucketScript(jobs);
 		const scriptResult = await this.executeAsync({
@@ -627,7 +627,7 @@ export class OpenCloudBackend implements Backend {
 		const flattened: Array<RawBackendEntry> = Array.from({ length: jobs.length });
 		for (const { indices, rawResults } of bucketResults) {
 			for (const [positionInBucket, originalIndex] of indices.entries()) {
-				// eslint-disable-next-line ts/no-non-null-assertion -- length invariant
+				// oxlint-disable-next-line typescript/no-non-null-assertion -- length invariant
 				flattened[originalIndex] = rawResults[positionInBucket]!;
 			}
 		}
@@ -695,7 +695,7 @@ export class OpenCloudBackend implements Backend {
 				jobs,
 				parallel,
 				primaryConfig,
-				// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
+				// oxlint-disable-next-line typescript/no-non-null-assertion -- length checked above
 				scriptOverride: scriptOverride!,
 				streaming,
 				version,
@@ -1110,7 +1110,7 @@ function bucketJobs(
 	// original request order via the recorded indices. Smart LPT bucketing is
 	// future work (F1 in the plan).
 	for (const [originalIndex, job] of jobs.entries()) {
-		// eslint-disable-next-line ts/no-non-null-assertion -- index always valid
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- index always valid
 		const bucket = buckets[originalIndex % bucketCount]!;
 		bucket.indices.push(originalIndex);
 		bucket.jobs.push(job);

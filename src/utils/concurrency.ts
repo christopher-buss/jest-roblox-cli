@@ -18,7 +18,7 @@ export async function mapWithLimitAsync<T, R>(
 	async function drainAsync(): Promise<void> {
 		for (let index = next; index < items.length; index = next) {
 			next = index + 1;
-			// eslint-disable-next-line ts/no-non-null-assertion -- index is below items.length
+			// oxlint-disable-next-line typescript/no-non-null-assertion -- index is below items.length
 			results[index] = await func(items[index]!, index);
 		}
 	}

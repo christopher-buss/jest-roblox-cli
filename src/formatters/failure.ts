@@ -50,7 +50,7 @@ export function parseErrorMessage(message: string): ParsedError {
 	if (snapshotHeaderIndex !== -1) {
 		const diffLines: Array<string> = [];
 		for (let index = snapshotHeaderIndex; index < lines.length; index++) {
-			// eslint-disable-next-line ts/no-non-null-assertion -- Loop condition
+			// oxlint-disable-next-line typescript/no-non-null-assertion -- Loop condition
 			const line = lines[index]!;
 			if (line.startsWith("[string ")) {
 				break;

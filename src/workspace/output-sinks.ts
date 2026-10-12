@@ -143,7 +143,7 @@ function buildPerPackageResults(
 	const byKey = new Map<string, PerPackageResultEntry>();
 
 	for (const [index, result] of results.entries()) {
-		// eslint-disable-next-line ts/no-non-null-assertion -- runProjects preserves order
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- runProjects preserves order
 		const entry = pending[index]!;
 		const { displayName } = entry.project;
 		byKey.set(projectKey(entry.pkg, displayName), {
@@ -155,7 +155,7 @@ function buildPerPackageResults(
 
 	for (const { pkg, project } of typeTestProjects) {
 		// Every type-test project's package ran a group, so `byPackage` has it.
-		// eslint-disable-next-line ts/no-non-null-assertion -- invariant: pkg ran a type pass
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- invariant: pkg ran a type pass
 		const typeResult = typeByPackage.get(pkg)!;
 		const key = projectKey(pkg, project);
 		byKey.set(key, {
@@ -208,7 +208,7 @@ function writePerPackageGameOutputFiles(
 	const directory = path.join(workspaceRoot, PER_PACKAGE_OUTPUT_DIRECTORY);
 
 	return results.map((result, index) => {
-		// eslint-disable-next-line ts/no-non-null-assertion -- runProjects preserves order
+		// oxlint-disable-next-line typescript/no-non-null-assertion -- runProjects preserves order
 		const entry = pending[index]!;
 		const filename = `${sanitizePathSegment(entry.pkg)}--${sanitizePathSegment(
 			entry.project.displayName,

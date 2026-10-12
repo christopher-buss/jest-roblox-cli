@@ -287,7 +287,7 @@ function formatSnapshotCallSnippet(
 		return [];
 	}
 
-	// eslint-disable-next-line ts/no-non-null-assertion -- length checked above
+	// oxlint-disable-next-line typescript/no-non-null-assertion -- length checked above
 	const line = snapshotIndices[0]! + 1;
 	const snippet = getSourceSnippet({ context: 2, filePath, line, sourceContent: content });
 	assert(snippet !== undefined);

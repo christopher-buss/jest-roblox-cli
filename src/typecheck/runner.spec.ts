@@ -629,7 +629,6 @@ describe(runTypecheckAsync, () => {
 		let spawnListener: (() => void) | undefined;
 		const invocations: Array<TsgoInvocation> = [];
 		const kill = vi.fn<() => void>();
-		let child: childProcess.ChildProcess;
 		const once = vi.fn<(event: string, listener: () => void) => childProcess.ChildProcess>(
 			(event, listener) => {
 				if (event === "spawn") {
@@ -639,7 +638,7 @@ describe(runTypecheckAsync, () => {
 				return child;
 			},
 		);
-		child = fromAny({ kill, once });
+		const child: childProcess.ChildProcess = fromAny({ kill, once });
 		const execFileStub: typeof childProcess.execFile = fromAny(
 			(
 				_file: string,

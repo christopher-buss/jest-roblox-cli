@@ -152,11 +152,11 @@ describe("second", () => { it("should b", () => {}); });`;
 	it("should handle template literal with interpolation", () => {
 		expect.assertions(1);
 
-		// eslint-disable-next-line no-template-curly-in-string -- testing template literal parsing
+		// oxlint-disable-next-line no-template-curly-in-string -- testing template literal parsing
 		const source = "const x = 'y'; it(`should handle ${x}`, () => {});";
 		const definitions = collectTestDefinitions(source);
 
-		// eslint-disable-next-line no-template-curly-in-string -- expected source text
+		// oxlint-disable-next-line no-template-curly-in-string -- expected source text
 		expect(definitions[0]!.name).toBe("should handle ${x}");
 	});
 

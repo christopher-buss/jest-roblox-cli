@@ -10,7 +10,7 @@ import { createGlobCache, globSync } from "../utils/glob.ts";
 
 const DEFAULT_ROJO_PROJECT = "default.project.json";
 
-// eslint-disable-next-line ts/no-inferrable-types -- isolatedDeclarations requires explicit annotation
+// oxlint-disable-next-line typescript/no-inferrable-types -- isolatedDeclarations requires explicit annotation
 export const TYPE_TEST_PATTERN: RegExp = /\.(test-d|spec-d)\.ts$/;
 
 export interface ClassifiedTestFiles {

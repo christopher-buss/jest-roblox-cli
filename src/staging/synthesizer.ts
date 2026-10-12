@@ -512,7 +512,7 @@ function isProperties(value: RojoTreeNode[string]): value is JSONObject {
 	// `Object.entries(null)` and throw. The static type excludes null (it's a
 	// JSON-deserialization boundary), so the lint rule can't see the runtime
 	// case the guard exists for.
-	// eslint-disable-next-line ts/no-unnecessary-condition -- runtime JSON may be null
+	// oxlint-disable-next-line typescript/no-unnecessary-condition -- runtime JSON may be null
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -723,7 +723,7 @@ function synthesizeNoWrap({
 		);
 	}
 
-	// eslint-disable-next-line ts/no-non-null-assertion -- length-1 invariant
+	// oxlint-disable-next-line typescript/no-non-null-assertion -- length-1 invariant
 	const descriptor = packages[0]!;
 	const project = loadRojoProject(descriptor.rojoProjectPath, fileSystem);
 	const tree = absolutizePackagePaths(fileSystem, project.tree, descriptor);
@@ -927,7 +927,7 @@ function hoistedServicePath(
 	nodePath: Array<string>,
 	declaredClass: string | undefined,
 ): Array<HoistedServiceSegment> {
-	// eslint-disable-next-line ts/no-non-null-assertion -- only non-root nodes call this helper
+	// oxlint-disable-next-line typescript/no-non-null-assertion -- only non-root nodes call this helper
 	const leafName = nodePath.at(-1)!;
 	const parents = nodePath.slice(0, -1).map((name) => ({ name, serviceClass: name }));
 	return [...parents, { name: leafName, serviceClass: declaredClass ?? leafName }];
