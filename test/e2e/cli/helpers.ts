@@ -314,10 +314,21 @@ function rewriteEscapingPaths(
 // to a sandbox-relative path that points back at the original target.
 // Sandbox-relative (rather than absolute) lets downstream consumers like the
 // coverage rewriter still relocate the project tree without mangling the path.
+function findProjectFiles(root: string, relativeDirectory = ""): Array<string> {
+	return readdirSync(path.join(root, relativeDirectory), { withFileTypes: true }).flatMap(
+		(entry) => {
+			const relativePath = path.join(relativeDirectory, entry.name);
+			if (entry.isDirectory() && entry.name !== "node_modules") {
+				return findProjectFiles(root, relativePath);
+			}
+
+			return entry.isFile() && entry.name.endsWith(".project.json") ? [relativePath] : [];
+		},
+	);
+}
+
 function absolutizeEscapingProjectPaths(sourceDirectory: string, sandboxDirectory: string): void {
-	const projectFiles = readdirSync(sandboxDirectory, { encoding: "utf-8", recursive: true })
-		.filter((entry) => entry.endsWith(".project.json"))
-		.filter((entry) => !entry.split(path.sep).includes("node_modules"));
+	const projectFiles = findProjectFiles(sandboxDirectory);
 
 	for (const relativeFile of projectFiles) {
 		const projectFile = path.join(sandboxDirectory, relativeFile);
