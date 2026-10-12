@@ -158,7 +158,7 @@ if testArgs == nil and hasNilRelay then
 	usesSideChannel = true
 end
 
-if testArgs == nil then
+if typeof(testArgs) ~= "table" or testArgs.test ~= true then
 	return
 end
 
