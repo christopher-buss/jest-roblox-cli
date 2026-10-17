@@ -894,7 +894,9 @@ describe(StudioCliBackend, () => {
 
 		expect(caught.message).toBe(
 			[
-				"studio-cli: Studio did not start the run within 40ms and was terminated. Set JEST_ROBLOX_STUDIO_BOOT_TIMEOUT to allow a slower boot.",
+				"studio-cli: Studio did not start the run within 40ms and was terminated.",
+				"  Probable cause: Studio is not logged in. Open Roblox Studio, log in, then run again.",
+				"  On a slow machine, set JEST_ROBLOX_STUDIO_BOOT_TIMEOUT to allow a slower boot.",
 				`  Studio log: ${path.normalize(outputFile)}`,
 				"  Last lines Studio logged:",
 				...Array.from({ length: 12 }, (_, index) => `    line ${String(index + 1)}`),
@@ -963,7 +965,9 @@ describe(StudioCliBackend, () => {
 
 		expect(caught.message).toBe(
 			[
-				"studio-cli: Studio did not start the run within 100ms and was terminated. Set JEST_ROBLOX_STUDIO_BOOT_TIMEOUT to allow a slower boot.",
+				"studio-cli: Studio did not start the run within 100ms and was terminated.",
+				"  Probable cause: Studio is not logged in. Open Roblox Studio, log in, then run again.",
+				"  On a slow machine, set JEST_ROBLOX_STUDIO_BOOT_TIMEOUT to allow a slower boot.",
 				`  Studio log: ${path.normalize(studio.outputFile())}`,
 			].join("\n"),
 		);

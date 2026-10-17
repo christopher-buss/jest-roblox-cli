@@ -50,15 +50,6 @@ index 84f1ca026503b8e92b7adc952ec6c6a401943656..1f4f7c979592d9292999f9f4f8454377
              maxConcurrency: 1,
              watch: false,
              dir: this.options.vitest.dir,
-@@ -82,7 +83,7 @@ export class VitestTestRunner {
-             onConsoleLog: () => false,
-         });
-         this.ctx.provide('globalNamespace', this.globalNamespace);
--        this.ctx.provide('isGreaterThanVitest4Point1', semver.satisfies(vitestWrapper.version, '>=4.1.0'));
-+        this.ctx.provide('isGreaterThanVitest4Point1', semver.satisfies(vitestWrapper.version, '>=4.1.0', { includePrerelease: true }));
-         this.ctx.config.browser.screenshotFailures = false;
-         this.ctx.projects.forEach((project) => {
-             project.config.setupFiles = [
 diff --git a/src/stryker-setup.ts b/src/stryker-setup.ts
 index ff31bed1ea6cdd23d3b9e195d53303dde43526e4..6211381454ea9609c631f095cd8881b181fa3e3a 100644
 --- a/src/stryker-setup.ts
@@ -111,14 +102,3 @@ index b54e16ae236118113d78931dab44a2252825cde4..0105ba7cb487dfe318903d576a6f04aa
        maxConcurrency: 1,
        watch: false,
        dir: this.options.vitest.dir,
-@@ -153,7 +154,9 @@ export class VitestTestRunner implements TestRunner {
-     this.ctx.provide('globalNamespace', this.globalNamespace);
-     this.ctx.provide(
-       'isGreaterThanVitest4Point1',
--      semver.satisfies(vitestWrapper.version, '>=4.1.0'),
-+      semver.satisfies(vitestWrapper.version, '>=4.1.0', {
-+        includePrerelease: true,
-+      }),
-     );
-     this.ctx.config.browser.screenshotFailures = false;
-     this.ctx.projects.forEach((project) => {

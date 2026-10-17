@@ -994,7 +994,8 @@ function readStudioLogTail(fileSystem: FileSystem, outputFile: string): Array<st
  * could have wedged in a test, failed to open the place, or died behind a
  * dialog, and Studio's engine log is the only place those read differently.
  *
- * @param headline - What ran out, as the first line of the error.
+ * @param headline - What ran out, and any probable cause, as the opening lines
+ *   of the error.
  * @param outputFile - Path Studio was told to log to.
  * @returns The error to reject the run with.
  */
@@ -1019,6 +1020,14 @@ function unansweredError({
 	return new Error(lines.join("\n"));
 }
 
+function bootTimeoutHeadline(bootTimeout: number): string {
+	return [
+		`studio-cli: Studio did not start the run within ${bootTimeout.toString()}ms and was terminated.`,
+		"  Probable cause: Studio is not logged in. Open Roblox Studio, log in, then run again.",
+		`  On a slow machine, set ${BOOT_TIMEOUT_ENV} to allow a slower boot.`,
+	].join("\n");
+}
+
 /**
  * The boot deadline runs from launch until the run starts; the run deadline
  * from then until the result. Either one expiring hands `onExpired` the
@@ -1041,11 +1050,7 @@ function startRunDeadlines({
 	}
 
 	let isBooting = true;
-	let timer = arm(
-		bootTimeout,
-		`studio-cli: Studio did not start the run within ${bootTimeout.toString()}ms and was terminated. ` +
-			`Set ${BOOT_TIMEOUT_ENV} to allow a slower boot.`,
-	);
+	let timer = arm(bootTimeout, bootTimeoutHeadline(bootTimeout));
 
 	return {
 		clear: () => {
