@@ -105,6 +105,9 @@ importers:
       '@stryker-mutator/core':
         specifier: 10.0.0
         version: 10.0.0(@types/node@24.12.3)
+      '@stryker-mutator/instrumenter':
+        specifier: 10.0.0
+        version: 10.0.0
       '@stryker-mutator/typescript-checker':
         specifier: 10.0.0
         version: 10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.12.3))(typescript@6.0.3)

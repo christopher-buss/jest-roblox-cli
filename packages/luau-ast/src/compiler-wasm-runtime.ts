@@ -44,7 +44,6 @@ interface CompilerWasmExports {
  */
 export function createCompilerWasmRuntime(): CompilerWasmRuntime {
 	const exports = instantiateWasm(luauCompilerWasmBase64);
-	// Stryker disable next-line StringLiteral: Pinned wasm ABI never fails.
 	assert(isCompilerWasmExports(exports), "compiler wasm must export the wrapper surface");
 	exports._initialize();
 	const wasm: CompilerWasmExports = exports;

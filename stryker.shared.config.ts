@@ -2,8 +2,35 @@
 // mutation-tested project. Edits here are overwritten on the next sync.
 
 import type { PartialStrykerOptions } from "@stryker-mutator/api/core";
+import { declareValuePlugin, PluginKind, type ValuePlugin } from "@stryker-mutator/api/plugin";
+import type { babel } from "@stryker-mutator/instrumenter";
 
 import process from "node:process";
+
+const ASSERT_MESSAGE_IGNORER = "assert-message";
+
+/**
+ * Stryker's plugin loader reads this export by name.
+ */
+export const strykerPlugins: Array<ValuePlugin<PluginKind.Ignore>> = [
+	declareValuePlugin(PluginKind.Ignore, ASSERT_MESSAGE_IGNORER, {
+		shouldIgnore(path: babel.NodePath): string | undefined {
+			if (path.listKey !== "arguments" || path.key !== 1) {
+				return undefined;
+			}
+
+			const call = path.parentPath as babel.NodePath | null;
+			if (
+				call?.isCallExpression() !== true ||
+				!call.get("callee").isIdentifier({ name: "assert" })
+			) {
+				return undefined;
+			}
+
+			return "An assert message is developer-facing text, not behavior.";
+		},
+	}),
+];
 
 /**
  * The `break` threshold a run should enforce, given a package's own floor.
@@ -27,6 +54,7 @@ export const sharedConfig: PartialStrykerOptions = {
 	// Stryker does not read `.gitignore`; a cache another target rewrites
 	// mid-copy fails the sandbox with ENOENT.
 	ignorePatterns: [".eslintcache", "coverage", "projectStructure.cache.json"],
+	ignorers: [ASSERT_MESSAGE_IGNORER],
 	ignoreStatic: true,
 	incremental: true,
 	incrementalFile: "reports/stryker-incremental.json",
@@ -41,7 +69,11 @@ export const sharedConfig: PartialStrykerOptions = {
 		"!src/**/*.bench.ts",
 		"!src/**/*.d.ts",
 	],
-	plugins: ["@stryker-mutator/vitest-runner", "@stryker-mutator/typescript-checker"],
+	plugins: [
+		"@stryker-mutator/vitest-runner",
+		"@stryker-mutator/typescript-checker",
+		import.meta.url,
+	],
 	reporters: ["html", "clear-text", "progress"],
 	testRunner: "vitest",
 	thresholds: { break: scopedBreak(100), high: 100, low: 100 },

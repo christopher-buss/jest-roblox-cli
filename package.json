@@ -95,6 +95,7 @@
 		"@rbxts/types": "latest",
 		"@stryker-mutator/api": "10.0.0",
 		"@stryker-mutator/core": "10.0.0",
+		"@stryker-mutator/instrumenter": "10.0.0",
 		"@stryker-mutator/typescript-checker": "10.0.0",
 		"@stryker-mutator/vitest-runner": "10.0.0",
 		"@total-typescript/shoehorn": "0.1.2",
