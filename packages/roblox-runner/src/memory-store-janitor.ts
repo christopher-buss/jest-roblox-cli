@@ -17,8 +17,8 @@ export interface MemoryStoreJanitorOptions {
 	readonly httpClient?: HttpClient;
 	/** Receives one line per swallowed failure. Omitted ⇒ silent. */
 	readonly log?: ((message: string) => void) | undefined;
-	/** The run's progress SortedMap id. */
-	readonly mapId: string;
+	/** Every SortedMap the run's tasks write; each key in each is deleted. */
+	readonly mapIds: ReadonlyArray<string>;
 	/** The run's own work queue id. */
 	readonly queueId: string;
 	/**
@@ -60,9 +60,9 @@ const DISCARD_CLAIM_SECONDS = 1;
 const MAX_DRAIN_SWEEPS = 50;
 
 /**
- * Best-effort teardown for the two MemoryStore structures a cancelled run
- * leaves behind: its work queue and its progress SortedMap. Bound to one
- * `queueId`/`mapId` at construction, so it structurally cannot touch a
+ * Best-effort teardown for the MemoryStore structures a cancelled run leaves
+ * behind: its work queue and the SortedMaps its tasks write. Bound to one
+ * `queueId` and its `mapIds` at construction, so it structurally cannot touch a
  * concurrent sibling run's data — and it never issues the universe-wide
  * `memory-store:flush`. Every failure is logged and swallowed: leftovers the
  * janitor cannot reach (a mid-drain API error, a claim that outlives the
@@ -71,7 +71,7 @@ const MAX_DRAIN_SWEEPS = 50;
 class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	private readonly claimWindowSeconds: number;
 	private readonly log: ((message: string) => void) | undefined;
-	private readonly mapId: string;
+	private readonly mapIds: ReadonlyArray<string>;
 	private readonly queueId: string;
 	private readonly reclaimBudgetSeconds: number;
 	private readonly sleep: (ms: number) => Promise<void>;
@@ -81,7 +81,7 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	constructor(options: MemoryStoreJanitorOptions) {
 		this.claimWindowSeconds = options.claimWindowSeconds;
 		this.log = options.log;
-		this.mapId = options.mapId;
+		this.mapIds = options.mapIds;
 		this.queueId = options.queueId;
 		this.reclaimBudgetSeconds = options.reclaimBudgetSeconds;
 		this.sleep = options.sleep ?? delay;
@@ -93,7 +93,9 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 
 	public async cleanupAsync(): Promise<void> {
 		await this.drainQueueAsync();
-		await this.deleteProgressKeysAsync();
+		for (const mapId of this.mapIds) {
+			await this.deleteMapKeysAsync(mapId);
+		}
 	}
 
 	/**
@@ -123,20 +125,20 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	}
 
 	/**
-	 * Delete every progress key the list surfaces. An individual delete
-	 * failure skips to the next key — the survivors self-expire.
+	 * Delete every key the list surfaces. An individual delete failure skips to
+	 * the next key — the survivors self-expire.
 	 */
-	private async deleteProgressKeysAsync(): Promise<void> {
-		const itemIds = await this.listProgressKeyIdsAsync();
+	private async deleteMapKeysAsync(mapId: string): Promise<void> {
+		const itemIds = await this.listMapKeyIdsAsync(mapId);
 		for (const itemId of itemIds) {
 			const deleted = await this.storage.sortedMaps.delete({
 				itemId,
-				mapId: this.mapId,
+				mapId,
 				universeId: this.universeId,
 			});
 			if (!deleted.success) {
 				this.log?.(
-					`memory-store teardown: progress key delete failed: ${deleted.err.message}`,
+					`memory-store teardown: ${mapId} key delete failed: ${deleted.err.message}`,
 				);
 			}
 		}
@@ -161,22 +163,22 @@ class OpenCloudMemoryStoreJanitor implements MemoryStoreJanitor {
 	}
 
 	/**
-	 * Page through the progress map collecting key ids. A list failure
-	 * abandons the unseen pages (their keys self-expire).
+	 * Page through one map collecting key ids. A list failure abandons the
+	 * unseen pages (their keys self-expire).
 	 */
-	private async listProgressKeyIdsAsync(): Promise<Array<string>> {
+	private async listMapKeyIdsAsync(mapId: string): Promise<Array<string>> {
 		const itemIds: Array<string> = [];
 		let pageToken: string | undefined;
 
 		do {
 			const page = await this.storage.sortedMaps.list({
-				mapId: this.mapId,
+				mapId,
 				maxPageSize: PAGE_SIZE,
 				universeId: this.universeId,
 				...(pageToken === undefined ? {} : { pageToken }),
 			});
 			if (!page.success) {
-				this.log?.(`memory-store teardown: progress list failed: ${page.err.message}`);
+				this.log?.(`memory-store teardown: ${mapId} list failed: ${page.err.message}`);
 				return itemIds;
 			}
 

@@ -24,6 +24,7 @@ function makeJanitor(
 	overrides: {
 		claimWindowSeconds?: number;
 		log?: (message: string) => void;
+		mapIds?: ReadonlyArray<string>;
 		reclaimBudgetSeconds?: number;
 		sleep?: FakeSleep;
 	} = {},
@@ -32,7 +33,7 @@ function makeJanitor(
 		apiKey: "test-key",
 		claimWindowSeconds: 45,
 		httpClient,
-		mapId: "run-a-progress",
+		mapIds: ["run-a-progress"],
 		queueId: "run-a-queue",
 		reclaimBudgetSeconds: 60,
 		...overrides,
@@ -40,12 +41,12 @@ function makeJanitor(
 	});
 }
 
-function validProgressItemBody(id: string): SortedMapItemBody {
+function validMapItemBody({ id, mapId }: { id: string; mapId: string }): SortedMapItemBody {
 	return {
 		id,
 		etag: "etag-1",
 		expireTime: "2026-06-21T15:08:58.4806559Z",
-		path: `cloud/v2/universes/123/memory-store/sorted-maps/run-a-progress/items/${id}`,
+		path: `cloud/v2/universes/123/memory-store/sorted-maps/${mapId}/items/${id}`,
 		value: { tested: 1 },
 	};
 }
@@ -149,7 +150,7 @@ describe("memory store janitor", () => {
 			mockLeftoverSweep(http, "read-1");
 			mockEmptyQueue(http);
 			http.mockResponse({
-				body: { items: [validProgressItemBody("task-a")] },
+				body: { items: [validMapItemBody({ id: "task-a", mapId: "run-a-progress" })] },
 				status: 200,
 			});
 			http.mockResponse({ body: {}, status: 200 });
@@ -230,11 +231,14 @@ describe("memory store janitor", () => {
 			const http = createFakeHttpClient();
 			mockEmptyQueue(http);
 			http.mockResponse({
-				body: { items: [validProgressItemBody("task-a")], nextPageToken: "page-2" },
+				body: {
+					items: [validMapItemBody({ id: "task-a", mapId: "run-a-progress" })],
+					nextPageToken: "page-2",
+				},
 				status: 200,
 			});
 			http.mockResponse({
-				body: { items: [validProgressItemBody("task-b")] },
+				body: { items: [validMapItemBody({ id: "task-b", mapId: "run-a-progress" })] },
 				status: 200,
 			});
 			http.mockResponse({ body: {}, status: 200 });
@@ -252,6 +256,51 @@ describe("memory store janitor", () => {
 			);
 		});
 
+		it("should delete the keys of every map it was given", async () => {
+			expect.assertions(3);
+
+			const http = createFakeHttpClient();
+			mockEmptyQueue(http);
+			http.mockResponse({
+				body: { items: [validMapItemBody({ id: "task-a", mapId: "run-a-progress" })] },
+				status: 200,
+			});
+			http.mockResponse({ body: {}, status: 200 });
+			http.mockResponse({
+				body: { items: [validMapItemBody({ id: "task-a-1", mapId: "run-a-settle" })] },
+				status: 200,
+			});
+			http.mockResponse({ body: {}, status: 200 });
+
+			await makeJanitor(http, { mapIds: ["run-a-progress", "run-a-settle"] }).cleanupAsync();
+
+			expect(http.requests).toHaveLength(5);
+			expect(http.requests[2]!.request.url).toContain(
+				"/sorted-maps/run-a-progress/items/task-a",
+			);
+			expect(http.requests[4]!.request.url).toContain(
+				"/sorted-maps/run-a-settle/items/task-a-1",
+			);
+		});
+
+		it("should clean the next map when one map's list fails", async () => {
+			expect.assertions(2);
+
+			const http = createFakeHttpClient();
+			mockEmptyQueue(http);
+			http.mockApiError({ message: "Forbidden", statusCode: 403 });
+			mockEmptyProgress(http);
+			const log = vi.fn<(message: string) => void>();
+
+			await makeJanitor(http, {
+				log,
+				mapIds: ["run-a-progress", "run-a-settle"],
+			}).cleanupAsync();
+
+			expect(log).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("Forbidden"));
+			expect(http.requests[2]!.request.url).toContain("/sorted-maps/run-a-settle/");
+		});
+
 		it("should log a failed delete and continue with the remaining keys", async () => {
 			expect.assertions(3);
 
@@ -259,7 +308,10 @@ describe("memory store janitor", () => {
 			mockEmptyQueue(http);
 			http.mockResponse({
 				body: {
-					items: [validProgressItemBody("task-a"), validProgressItemBody("task-b")],
+					items: [
+						validMapItemBody({ id: "task-a", mapId: "run-a-progress" }),
+						validMapItemBody({ id: "task-b", mapId: "run-a-progress" }),
+					],
 				},
 				status: 200,
 			});
@@ -299,7 +351,10 @@ describe("memory store janitor", () => {
 
 			const http = createFakeHttpClient();
 			mockEmptyQueue(http);
-			http.mockResponse({ body: { items: [validProgressItemBody("task-a")] }, status: 200 });
+			http.mockResponse({
+				body: { items: [validMapItemBody({ id: "task-a", mapId: "run-a-progress" })] },
+				status: 200,
+			});
 			http.mockResponse({ body: {}, status: 200 });
 			const sleep = createFakeSleep();
 

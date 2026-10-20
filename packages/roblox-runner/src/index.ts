@@ -23,6 +23,8 @@ export {
 export type { ExpectedPlaceIdentity } from "./place-identity-guard.ts";
 export { ProgressMap } from "./progress-map.ts";
 export type { ProgressMapOptions } from "./progress-map.ts";
+export { SortedMapInbox } from "./sorted-map-inbox.ts";
+export type { SortedMapEntry, SortedMapInboxOptions } from "./sorted-map-inbox.ts";
 export { runTaskPoolAsync as runTaskPool } from "./task-pool.ts";
 export type { TaskPoolBackoff, TaskPoolOptions, TaskPoolPlace } from "./task-pool.ts";
 export { TaskQuotaError } from "./task-quota-error.ts";
