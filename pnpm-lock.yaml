@@ -1211,12 +1211,12 @@ packages:
       '@types/node':
         optional: true
 
-  '@isentinel/dict-rbxts@1.0.27':
-    resolution: {integrity: sha512-TquuJqB5uTv1n9v2zFXAAp+nFGJms+W34gKZHcQMxQWedBWxFEJJQSJH9p6k14vllPjZ/0gA3l4xoU+YKMXmtA==}
+  '@isentinel/dict-rbxts@1.0.28':
+    resolution: {integrity: sha512-lqJ9CYSxASPAMBTKKi49edgDZ9MDiWtpJzgk55h9IG6hyEZTlAf6OZGgw9y7GXT+Y6xQTc7bqf9Brxl2EX9MrQ==}
     engines: {node: '>=22'}
 
-  '@isentinel/dict-roblox@1.0.20':
-    resolution: {integrity: sha512-1aY/288gKOPy9FP7/kYFnLa4MX6p2ZRnjmbYBvoCytT6034hflvdXtmAUcxiE19tOXx5arHAJRj7BuWRFpJQWA==}
+  '@isentinel/dict-roblox@1.0.21':
+    resolution: {integrity: sha512-rGl23rh/RQ5svoqKhiRR+tjRHNv334VNfNP10vgyUhXCM7T0V9U/93FPTSQhEP8oF+oXDKN5r9pFG5yqyfx9+Q==}
     engines: {node: '>=20.18.0'}
 
   '@isentinel/eslint-config@6.0.0':
@@ -6173,9 +6173,9 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.12.3
 
-  '@isentinel/dict-rbxts@1.0.27': {}
+  '@isentinel/dict-rbxts@1.0.28': {}
 
-  '@isentinel/dict-roblox@1.0.20': {}
+  '@isentinel/dict-roblox@1.0.21': {}
 
   '@isentinel/eslint-config@6.0.0(@vitest/eslint-plugin@1.6.27(@typescript-eslint/eslint-plugin@8.62.1(@typescript-eslint/parser@8.62.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)(vitest@5.0.1))(eslint-plugin-jest-extended@3.0.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-plugin-n@18.3.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(typescript@6.0.3))(eslint-plugin-project-structure@3.14.4(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxc-parser@0.146.0)(oxlint-tsgolint@7.0.2003)(oxlint@1.87.0(oxlint-tsgolint@7.0.2003))(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
@@ -6185,8 +6185,8 @@ snapshots:
       '@e18e/eslint-plugin': 0.5.1(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))(oxlint@1.87.0(oxlint-tsgolint@7.0.2003))
       '@eslint-community/eslint-plugin-eslint-comments': 4.7.2(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))
       '@eslint/markdown': 8.0.3(supports-color@10.2.2)
-      '@isentinel/dict-rbxts': 1.0.27
-      '@isentinel/dict-roblox': 1.0.20
+      '@isentinel/dict-rbxts': 1.0.28
+      '@isentinel/dict-roblox': 1.0.21
       '@oxlint/plugins': 1.78.0
       '@pobammer-ts/small-rules': 2.14.0(typescript@6.0.3)
       '@stylistic/eslint-plugin': 5.10.0(eslint@10.9.0(jiti@2.7.0)(supports-color@10.2.2))

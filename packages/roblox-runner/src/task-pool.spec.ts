@@ -196,7 +196,7 @@ describe(runTaskPoolAsync, () => {
 			places: [{ runTask }],
 		});
 
-		expect(runTask).toHaveBeenCalledExactlyOnceWith();
+		expect(runTask).toHaveBeenCalledExactlyOnceWith(0);
 
 		pending[0]!.resolve(makeScriptResult());
 		await flushAsync();
@@ -371,6 +371,61 @@ describe(runTaskPoolAsync, () => {
 
 		expect(runTask).not.toHaveBeenCalled();
 	});
+
+	it("should skip a launch while the consumer reports the remaining work covered", async () => {
+		expect.assertions(3);
+
+		const pending: Array<Deferred> = [];
+		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
+			const deferred = makeDeferred();
+			pending.push(deferred);
+			return deferred.promise;
+		});
+		const isWorkCovered = vi.fn<(liveTasks: number) => boolean>((liveTasks) => liveTasks >= 1);
+
+		let isDone = false;
+		const pool = runTaskPoolAsync({
+			concurrency: 3,
+			isDone: () => isDone,
+			isWorkCovered,
+			onResult: () => {},
+			places: [{ runTask }],
+		});
+
+		expect(runTask).toHaveBeenCalledOnce();
+
+		pending[0]!.resolve(makeScriptResult());
+		await flushAsync();
+
+		expect(runTask).toHaveBeenCalledTimes(2);
+
+		isDone = true;
+		pending[1]!.resolve(makeScriptResult());
+		await pool;
+
+		expect(isWorkCovered).not.toHaveBeenCalledWith(0);
+	});
+
+	it("should launch while covered when no task is live", async () => {
+		expect.assertions(2);
+
+		const counter = { attempt: 0 };
+		const runTask = vi.fn<(slot: number) => Promise<ScriptResult>>(async () => {
+			counter.attempt += 1;
+			return makeScriptResult();
+		});
+
+		await runTaskPoolAsync({
+			concurrency: 2,
+			isDone: () => counter.attempt >= 3,
+			isWorkCovered: () => true,
+			onResult: () => {},
+			places: [{ runTask }],
+		});
+
+		expect(runTask).toHaveBeenCalledTimes(3);
+		expect(runTask.mock.calls).toStrictEqual([[0], [0], [0]]);
+	});
 });
 
 describe("runTaskPool multi-place fan-out", () => {
@@ -479,8 +534,54 @@ describe("runTaskPool backoff", () => {
 		});
 
 		expect(runTask).toHaveBeenCalledTimes(2);
-		expect(sleep).toHaveBeenCalledExactlyOnceWith(7000);
+		expect(sleep).toHaveBeenCalledExactlyOnceWith(7000, undefined);
 		expect(onError).not.toHaveBeenCalled();
+	});
+
+	it("should end a backoff wait once the signal aborts", async () => {
+		expect.assertions(2);
+
+		const controller = new AbortController();
+		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
+			throw new RateLimitError("slow down", { retryAfterSeconds: 600 });
+		});
+
+		const pool = runTaskPoolAsync({
+			concurrency: 1,
+			isDone: () => controller.signal.aborted,
+			now: () => 0,
+			onResult: () => {},
+			places: [{ runTask }],
+			signal: controller.signal,
+		});
+		await flushAsync();
+		controller.abort();
+
+		await expect(pool).resolves.toBeUndefined();
+		expect(runTask).toHaveBeenCalledOnce();
+	});
+
+	it("should surface a backoff sleep failure that is not an abort", async () => {
+		expect.assertions(1);
+
+		const controller = new AbortController();
+		const runTask = vi.fn<() => Promise<ScriptResult>>(async () => {
+			throw new RateLimitError("slow down", { retryAfterSeconds: 7 });
+		});
+
+		const pool = runTaskPoolAsync({
+			concurrency: 1,
+			isDone: () => false,
+			now: () => 0,
+			onResult: () => {},
+			places: [{ runTask }],
+			signal: controller.signal,
+			sleep: async () => {
+				throw new Error("timer broke");
+			},
+		});
+
+		await expect(pool).rejects.toThrow("timer broke");
 	});
 
 	it("should floor a zero retry-after to the default delay, not spin", async () => {
@@ -506,7 +607,7 @@ describe("runTaskPool backoff", () => {
 		});
 
 		expect(runTask).toHaveBeenCalledTimes(2);
-		expect(sleep).toHaveBeenCalledExactlyOnceWith(5000);
+		expect(sleep).toHaveBeenCalledExactlyOnceWith(5000, undefined);
 	});
 
 	it("should back off a genuinely-full place by the default delay and retry", async () => {
@@ -531,7 +632,7 @@ describe("runTaskPool backoff", () => {
 		});
 
 		expect(runTask).toHaveBeenCalledTimes(2);
-		expect(sleep).toHaveBeenCalledExactlyOnceWith(5000);
+		expect(sleep).toHaveBeenCalledExactlyOnceWith(5000, undefined);
 	});
 
 	it("should treat a backoff signal right after a completion as recycle lag, not place-full", async () => {
@@ -560,7 +661,7 @@ describe("runTaskPool backoff", () => {
 
 		expect(runTask).toHaveBeenCalledTimes(3);
 		// Recycle remainder (10s − 2s elapsed), not the 30s rate-limit delay.
-		expect(sleep).toHaveBeenCalledExactlyOnceWith(8000);
+		expect(sleep).toHaveBeenCalledExactlyOnceWith(8000, undefined);
 	});
 
 	it("should unwrap a backoff signal carried on the error cause chain", async () => {
@@ -587,7 +688,7 @@ describe("runTaskPool backoff", () => {
 		});
 
 		expect(runTask).toHaveBeenCalledTimes(2);
-		expect(sleep).toHaveBeenCalledExactlyOnceWith(3000);
+		expect(sleep).toHaveBeenCalledExactlyOnceWith(3000, undefined);
 	});
 
 	it("should surface an API error it does not back off on rather than backing off", async () => {
