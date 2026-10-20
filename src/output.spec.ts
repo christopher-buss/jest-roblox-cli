@@ -264,6 +264,40 @@ describe(outputSingleResultAsync, () => {
 		expect(spies.consoleLog).toHaveBeenCalledWith("formatted-execute");
 	});
 
+	it("should print the gap summary on stderr", async () => {
+		expect.assertions(1);
+
+		const { dependencies } = setupOutput();
+		const spies = setupOutputSpies();
+
+		await outputSingleResultAsync(
+			makeConfig(),
+			makeSingleResult({ runtimeResult: makeExecuteResult({ gaps: { script: 1 } }) }),
+			dependencies,
+		);
+
+		expect(spies.consoleError).toHaveBeenCalledWith(
+			"Not emulated (1):\n  script  0 tests blocked, 1 raise",
+		);
+	});
+
+	it("should not print the gap summary when silent", async () => {
+		expect.assertions(1);
+
+		const { dependencies } = setupOutput();
+		const spies = setupOutputSpies();
+
+		await outputSingleResultAsync(
+			makeConfig({ silent: true }),
+			makeSingleResult({ runtimeResult: makeExecuteResult({ gaps: { script: 1 } }) }),
+			dependencies,
+		);
+
+		expect(spies.consoleError).not.toHaveBeenCalledWith(
+			expect.stringContaining("Not emulated"),
+		);
+	});
+
 	it("should return 1 when runtime fails", async () => {
 		expect.assertions(1);
 
@@ -659,6 +693,28 @@ describe(outputMultiResultAsync, () => {
 			expect.any(Array),
 			expect.anything(),
 			expect.anything(),
+		);
+	});
+
+	it("should print one gap summary for every project", async () => {
+		expect.assertions(1);
+
+		const { dependencies } = setupOutput();
+		const spies = setupOutputSpies();
+
+		await outputMultiResultAsync(
+			makeConfig(),
+			makeMultiResult({
+				projectResults: [
+					{ displayName: "client", result: makeExecuteResult({ gaps: { script: 1 } }) },
+					{ displayName: "server", result: makeExecuteResult({ gaps: { script: 2 } }) },
+				],
+			}),
+			dependencies,
+		);
+
+		expect(spies.consoleError).toHaveBeenCalledWith(
+			"Not emulated (1):\n  script  0 tests blocked, 3 raises",
 		);
 	});
 
@@ -2541,6 +2597,7 @@ describe(mergeProjectResults, () => {
 		expect(mergeProjectResults([first, second])).toStrictEqual({
 			coverageData: undefined,
 			exitCode: 1,
+			gaps: undefined,
 			output: "",
 			result: {
 				numFailedTests: 6,
@@ -2565,6 +2622,18 @@ describe(mergeProjectResults, () => {
 				uploadMs: 55,
 			},
 		});
+	});
+
+	it("should sum the gap tallies of the projects that have one", () => {
+		expect.assertions(1);
+
+		const merged = mergeProjectResults([
+			makeExecuteResult({ gaps: { "script": 2, "Sound.Pitch": 1 } }),
+			makeExecuteResult(),
+			makeExecuteResult({ gaps: { "Sound.Pitch": 3 } }),
+		]);
+
+		expect(merged.gaps).toStrictEqual({ "script": 2, "Sound.Pitch": 4 });
 	});
 
 	it("should return the single result unchanged", () => {

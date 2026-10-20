@@ -47,6 +47,7 @@ words:
   - ldexp
   - lhsOperand
   - localfunction
+  - luaurc
   - materializer
   - maxn
   - misresolution

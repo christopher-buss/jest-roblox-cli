@@ -3483,6 +3483,40 @@ describe(runProjectsAsync, () => {
 			expect(results[1]!.exitCode).toBe(1);
 		});
 
+		it("should carry each entry's gap tally onto its result, parsed or recovered", async () => {
+			expect.assertions(3);
+
+			const { fileSystem } = memoryFileSystem();
+
+			const passingPayload = buildJestOutputPayload({ result: createPassingResult() });
+			const backendResult: BackendResult = {
+				rawResults: [
+					{ entry: { jestOutput: passingPayload }, gaps: { "Sound.Pitch": 1 } },
+					{ entry: { jestOutput: failureEnvelope }, gaps: { script: 2 } },
+					{ entry: { jestOutput: passingPayload } },
+				],
+				timing: DEFAULT_TIMING,
+			};
+
+			const { results } = await runProjectsAsync({
+				backend: backendReturning(backendResult),
+				deferFormatting: true,
+				fileSystem,
+				projects: [
+					{ config: DEFAULT_CONFIG, displayName: "ok", testFiles: ["src/a.spec.ts"] },
+					{ config: DEFAULT_CONFIG, displayName: "boom", testFiles: ["src/b.spec.ts"] },
+					{ config: DEFAULT_CONFIG, displayName: "plain", testFiles: ["src/c.spec.ts"] },
+				],
+				startTime: Date.now(),
+				tsconfigReader: readingVolume(fileSystem),
+				version: "0.0.0-test",
+			});
+
+			expect(results[0]!.gaps).toStrictEqual({ "Sound.Pitch": 1 });
+			expect(results[1]!.gaps).toStrictEqual({ script: 2 });
+			expect(results[2]).not.toHaveProperty("gaps");
+		});
+
 		it("should use the exec-error result contract on the synthetic failure (failureMessage + empty testResults, counts stay 0)", async () => {
 			expect.assertions(4);
 

@@ -9,6 +9,7 @@ import type {
 	Backend,
 	BackendResult,
 	BackendTiming,
+	GapTally,
 	ParallelOption,
 	ProjectBackendResult,
 	ProjectJob,
@@ -237,7 +238,7 @@ export async function runProjectsAsync(options: RunProjectsOptions): Promise<Run
 		return rawResults.map((raw, index) => {
 			// oxlint-disable-next-line typescript/no-non-null-assertion -- length equality asserted above
 			const job = jobs[ranProjectIndices[index]!]!;
-			return processOrRecoverEntry(raw, job, context);
+			return withGaps(processOrRecoverEntry(raw, job, context), raw.gaps);
 		});
 	});
 
@@ -314,6 +315,10 @@ function assertResultParity(resultCount: number, jobCount: number): void {
 			`Backend returned ${resultCount.toString()} results for ${jobCount.toString()} jobs — rawResults must be parallel to jobs`,
 		);
 	}
+}
+
+function withGaps(result: ExecuteResult, gaps: GapTally | undefined): ExecuteResult {
+	return gaps === undefined ? result : { ...result, gaps };
 }
 
 function writeProjectSnapshots({

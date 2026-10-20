@@ -1,11 +1,13 @@
 import assert from "node:assert";
 import process from "node:process";
 
+import type { GapTally } from "./backends/interface.ts";
 import { DEFAULT_CONFIG, type ResolvedConfig } from "./config/schema.ts";
 import { mergeRawCoverage } from "./coverage-pipeline/merge-raw-coverage.ts";
 import type { RawCoverageData } from "./coverage-pipeline/types.ts";
 import type { ExecuteResult } from "./executor/types.ts";
 import { mergeSnapshotSummaries } from "./formatters/formatter.ts";
+import { formatGapSummary } from "./formatters/gap-summary.ts";
 import {
 	formatAnnotations,
 	formatJobSummary,
@@ -175,6 +177,7 @@ export function mergeProjectResults(results: Array<ExecuteResult>): ExecuteResul
 	return {
 		coverageData: extras.coverageData,
 		exitCode: totals.success && extras.snapshotWriteFailures === 0 ? 0 : 1,
+		gaps: mergeGaps(results),
 		output: "",
 		result: { ...totals, snapshot: mergeSnapshotSummaries(snapshots) },
 		snapshotWriteFailures:
@@ -206,6 +209,17 @@ export async function outputMultiResultAsync(
 
 function resolveDependencies(dependencies: OutputDependencies): ResolvedDependencies {
 	return { ...NODE_OUTPUT_DEPENDENCIES, ...dependencies };
+}
+
+function printGapSummary(config: ResolvedConfig, result: ExecuteResult | undefined): void {
+	if (result === undefined) {
+		return;
+	}
+
+	const summary = formatGapSummary(result.gaps, result.result);
+	if (summary !== undefined && !config.silent) {
+		console.error(summary);
+	}
 }
 
 // In agent mode the run summary must survive an agent trimming the tail of the
@@ -402,6 +416,8 @@ async function emitSingleResultAsync(
 		dependencies,
 	);
 
+	printGapSummary(config, runtimeResult);
+
 	await writeSingleRunSinksAsync(dependencies.fileSystem, config, {
 		mergedResult,
 		runtimeResult,
@@ -413,6 +429,21 @@ async function emitSingleResultAsync(
 		mergedResult,
 		snapshotWriteFailures: runtimeResult?.snapshotWriteFailures,
 	});
+}
+
+function mergeGaps(results: Array<ExecuteResult>): GapTally | undefined {
+	const tallies = results.map((entry) => entry.gaps).filter((gaps) => gaps !== undefined);
+	if (tallies.length === 0) {
+		return undefined;
+	}
+
+	const merged: GapTally = {};
+	const counts = tallies.flatMap((gaps) => Object.entries(gaps));
+	for (const [member, count] of counts) {
+		merged[member] = (merged[member] ?? 0) + count;
+	}
+
+	return merged;
 }
 
 function mergeProjectExtras(results: Array<ExecuteResult>): ProjectExtras {
@@ -580,6 +611,8 @@ async function emitMultiResultAsync(
 		result,
 		coveragePipeline,
 	);
+
+	printGapSummary(config, merged);
 
 	await writeMultiRunSinksAsync(fileSystem, config, {
 		hintsShown: !mergedResult.success,

@@ -175,11 +175,15 @@ export interface ProjectBackendResult {
 	snapshotWrites?: SnapshotWrites | undefined;
 }
 
+/** How often a run raised `NotEmulated` for each member, by `Class.Member`. */
+export type GapTally = Record<string, number>;
+
 export interface RawBackendEntry {
 	entry: EnvelopeEntry;
 	fallbackGameOutput?: string | undefined;
 	/** Carried from the envelope; see {@link ProjectBackendResult}. */
 	gameOutputScope?: "batch" | undefined;
+	gaps?: GapTally | undefined;
 }
 
 export interface BackendResult {
