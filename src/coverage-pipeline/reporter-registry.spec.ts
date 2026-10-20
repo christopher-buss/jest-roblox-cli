@@ -1,6 +1,7 @@
 import istanbulCoverage from "istanbul-lib-coverage";
 import istanbulReport from "istanbul-lib-report";
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as os from "node:os";
@@ -62,6 +63,14 @@ function readWrittenAssets(directory: string): Map<string, Buffer> {
 	return new Map(names.map((name) => [name, fs.readFileSync(path.join(directory, name))]));
 }
 
+function digestAssets(assets: Map<string, Buffer>): Map<string, string> {
+	return new Map(
+		Array.from(assets, ([name, content]) => {
+			return [name, createHash("sha256").update(content).digest("hex")];
+		}),
+	);
+}
+
 /**
  * A real istanbul file writer rooted at `directory`. Reached through
  * `createContext` because that is how a reporter gets one, and the write it
@@ -107,10 +116,7 @@ describe(createReporter, () => {
 	});
 });
 
-// Copying istanbul's own asset bundle and reading every byte back is real disk
-// work — past the mutation run's 100ms default, and slowest for `html-spa`,
-// whose prebuilt bundle dwarfs the other group.
-describe(writeIstanbulHtmlAssets, { timeout: 2000 }, () => {
+describe(writeIstanbulHtmlAssets, () => {
 	it.for<HtmlAssetGroup>(["html", "html-spa"])(
 		"should write the %s assets byte-identical to istanbul's own",
 		(group) => {
@@ -122,7 +128,9 @@ describe(writeIstanbulHtmlAssets, { timeout: 2000 }, () => {
 
 			// Names as well as bytes: an istanbul upgrade that adds an asset
 			// has to reach the bundle, and nothing else here would notice.
-			expect(readWrittenAssets(directory)).toStrictEqual(readSourceAssets(group));
+			expect(digestAssets(readWrittenAssets(directory))).toStrictEqual(
+				digestAssets(readSourceAssets(group)),
+			);
 		},
 	);
 
