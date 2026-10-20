@@ -32,7 +32,10 @@ export interface StudioDiscoveryOptions {
 const STUDIO_PATH_ENV = "JEST_ROBLOX_STUDIO_PATH";
 
 const WINDOWS_STUDIO_EXECUTABLE = "RobloxStudioBeta.exe";
-const MACOS_STUDIO_EXECUTABLE = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta";
+const MACOS_STUDIO_EXECUTABLES = [
+	"/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio",
+	"/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta",
+];
 
 const NOT_FOUND_HINT =
 	"Install Roblox Studio, or set studioPath (config key, --studioPath, or " +
@@ -69,9 +72,9 @@ export function configuredStudioPath(
 /**
  * Resolve the Roblox Studio executable studio-cli should launch. An explicit
  * `override` wins; otherwise probe the known per-OS install locations and pick
- * the newest `RobloxStudioBeta.exe`. Throws a clear, actionable error when no
- * executable can be found so the CLI surfaces "install Studio or set
- * studioPath" rather than a downstream spawn failure.
+ * the newest `RobloxStudioBeta.exe` on Windows. Throws a clear, actionable
+ * error when no executable can be found so the CLI surfaces "install Studio or
+ * set studioPath" rather than a downstream spawn failure.
  */
 export function discoverStudioPath({
 	environment = process.env,
@@ -192,9 +195,12 @@ function discoverWindows(fileSystem: FileSystem, environment: NodeJS.ProcessEnv)
 }
 
 function discoverMacOs(fileSystem: FileSystem): string {
-	if (!fileSystem.existsSync(MACOS_STUDIO_EXECUTABLE)) {
+	const executable = MACOS_STUDIO_EXECUTABLES.find((candidate) => {
+		return fileSystem.existsSync(candidate);
+	});
+	if (executable === undefined) {
 		throw notFound();
 	}
 
-	return MACOS_STUDIO_EXECUTABLE;
+	return executable;
 }

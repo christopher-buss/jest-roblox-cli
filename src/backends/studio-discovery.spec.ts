@@ -6,6 +6,8 @@ import { createMemoryFileSystem } from "../../test/mocks/memory-file-system.ts";
 import { discoverStudioPath, discoverUserDirectories } from "./studio-discovery.ts";
 
 const WIN_ENV = { LOCALAPPDATA: "C:/Users/dev/AppData/Local" };
+const MACOS_EXE = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio";
+const MACOS_BETA_EXE = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta";
 
 /**
  * A volume holding the installs the probe should find.
@@ -168,13 +170,25 @@ describe(discoverStudioPath, () => {
 	it("should return the macOS app-bundle executable when present", () => {
 		expect.assertions(1);
 
-		const { fileSystem } = seed({
-			"/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta": "binary",
-		});
+		const { fileSystem } = seed({ [MACOS_EXE]: "binary" });
 
-		expect(discoverStudioPath({ fileSystem, platform: "darwin" })).toBe(
-			"/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudioBeta",
-		);
+		expect(discoverStudioPath({ fileSystem, platform: "darwin" })).toBe(MACOS_EXE);
+	});
+
+	it("should prefer RobloxStudio over RobloxStudioBeta when both exist on macOS", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = seed({ [MACOS_BETA_EXE]: "old", [MACOS_EXE]: "binary" });
+
+		expect(discoverStudioPath({ fileSystem, platform: "darwin" })).toBe(MACOS_EXE);
+	});
+
+	it("should fall back to RobloxStudioBeta when only it exists on macOS", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = seed({ [MACOS_BETA_EXE]: "binary" });
+
+		expect(discoverStudioPath({ fileSystem, platform: "darwin" })).toBe(MACOS_BETA_EXE);
 	});
 
 	it("should throw a not-found error when Studio is absent on macOS", () => {
