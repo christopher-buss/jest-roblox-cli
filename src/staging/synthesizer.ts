@@ -1,5 +1,10 @@
 import { PLACE_CONTENT_ID_NAME, PLACE_CONTENT_ID_SERVICE } from "@isentinel/roblox-runner";
-import { loadRojoProject, resolveMountPath } from "@isentinel/rojo-utils";
+import {
+	isOptionalPath,
+	isRojoTreeNode,
+	loadRojoProject,
+	resolveMountPath,
+} from "@isentinel/rojo-utils";
 
 import * as path from "node:path";
 import process from "node:process";
@@ -315,7 +320,7 @@ function warnUnreachableCoverageRoots(
 }
 
 function isTreeNode(value: RojoTreeNode[string]): value is RojoTreeNode {
-	return typeof value === "object" && !("optional" in value);
+	return isRojoTreeNode(value) && !isOptionalPath(value);
 }
 
 function resolveDollarPath(absoluteTarget: string, options: AbsolutizeOptions): string {
@@ -337,6 +342,12 @@ function absolutizePaths(
 		if (key === "$path" && typeof value === "string") {
 			mountTarget = normalizeWindowsPath(resolveMountPath(treeBase, value));
 			result[key] = resolveDollarPath(mountTarget, options);
+			continue;
+		}
+
+		if (key === "$path" && isOptionalPath(value)) {
+			mountTarget = normalizeWindowsPath(resolveMountPath(treeBase, value.optional));
+			result[key] = { optional: resolveDollarPath(mountTarget, options) };
 			continue;
 		}
 

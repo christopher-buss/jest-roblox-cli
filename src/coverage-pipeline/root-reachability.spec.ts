@@ -25,4 +25,18 @@ describe(collectRojoMounts, () => {
 			),
 		).toStrictEqual(new Set(["D:/project/out"]));
 	});
+
+	it("should return the inner path of an optional mount", () => {
+		expect.assertions(1);
+
+		expect(
+			collectRojoMounts(
+				{
+					$className: "DataModel",
+					DevPackages: { $path: { optional: "DevPackages" } },
+				},
+				"D:/project",
+			),
+		).toStrictEqual(new Set(["D:/project/DevPackages"]));
+	});
 });

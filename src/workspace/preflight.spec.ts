@@ -118,6 +118,37 @@ describe(validatePackages, () => {
 		]);
 	});
 
+	it("should not report a missing optional $path target", () => {
+		expect.assertions(1);
+
+		const { fileSystem } = createMemoryFileSystem({
+			[path.join(FOO_DIR, "src/init.luau")]: "",
+			[path.join(FOO_DIR, "test.project.json")]: projectJson({
+				name: "foo-test",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: {
+						$path: "src",
+						DevPackages: { $path: { optional: "DevPackages" } },
+					},
+				},
+			}),
+		});
+
+		const errors = validatePackages(
+			[
+				{
+					name: "@halcyon/foo",
+					packageDirectory: FOO_DIR,
+					rojoProjectPath: path.join(FOO_DIR, "test.project.json"),
+				},
+			],
+			fileSystem,
+		);
+
+		expect(errors).toStrictEqual([]);
+	});
+
 	it("should validate multiple packages and aggregate errors", () => {
 		expect.assertions(1);
 

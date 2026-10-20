@@ -34,3 +34,7 @@ export interface LoadedRojoProject extends RojoProject {
 export function isRojoTreeNode(value: unknown): value is RojoTreeNode {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+export function isOptionalPath(value: RojoTreeNode[string]): value is { optional: string } {
+	return isRojoTreeNode(value) && typeof value["optional"] === "string";
+}

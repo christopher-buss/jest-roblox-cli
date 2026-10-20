@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import {
 	collectPaths,
+	collectRequiredPaths,
 	rebaseTreePaths,
 	resolveMountPath,
 	resolveNestedProjects,
@@ -54,18 +55,32 @@ describe(collectPaths, () => {
 		expect(result).toStrictEqual(["out/workspace"]);
 	});
 
-	it("should skip non-string $path values", () => {
+	it("should collect the inner path of an optional $path", () => {
 		expect.assertions(1);
 
 		const tree: RojoTreeNode = {
 			$className: "DataModel",
-			Workspace: { $path: { optional: "maybe" } },
+			Workspace: { $path: { optional: "maybe\\workspace" } },
 		};
 
 		const result: Array<string> = [];
 		collectPaths(tree, result);
 
-		expect(result).toStrictEqual([]);
+		expect(result).toStrictEqual(["maybe/workspace"]);
+	});
+
+	it("should descend into a child named optional", () => {
+		expect.assertions(1);
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			Workspace: { optional: { $path: "out/optional" } },
+		};
+
+		const result: Array<string> = [];
+		collectPaths(tree, result);
+
+		expect(result).toStrictEqual(["out/optional"]);
 	});
 
 	it("should return empty for a tree with no $path entries", () => {
@@ -79,6 +94,25 @@ describe(collectPaths, () => {
 		collectPaths(tree, result);
 
 		expect(result).toStrictEqual([]);
+	});
+});
+
+describe(collectRequiredPaths, () => {
+	it("should skip an optional $path", () => {
+		expect.assertions(1);
+
+		const tree: RojoTreeNode = {
+			$className: "DataModel",
+			ReplicatedStorage: {
+				DevPackages: { $path: { optional: "DevPackages" } },
+				lib: { $path: "out\\lib" },
+			},
+		};
+
+		const result: Array<string> = [];
+		collectRequiredPaths(tree, result);
+
+		expect(result).toStrictEqual(["out/lib"]);
 	});
 });
 

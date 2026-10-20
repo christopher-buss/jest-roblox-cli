@@ -214,6 +214,22 @@ describe(computeRojoInputsHashAsync, () => {
 		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
 	});
 
+	it("should change when a file under an optional mount changes", async () => {
+		expect.assertions(1);
+
+		const { fileSystem, volume } = writeProject({
+			$className: "DataModel",
+			DevPackages: { $path: { optional: "DevPackages" } },
+		});
+		volume.mkdirSync("/project/DevPackages", { recursive: true });
+		volume.writeFileSync("/project/DevPackages/Jest.lua", "-- v1");
+		const before = await hashOfAsync(fileSystem);
+
+		volume.writeFileSync("/project/DevPackages/Jest.lua", "-- v2");
+
+		await expect(hashOfAsync(fileSystem)).resolves.not.toBe(before);
+	});
+
 	it("should change when a directly mounted file changes", async () => {
 		expect.assertions(1);
 

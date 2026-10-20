@@ -3175,6 +3175,126 @@ describe(synthesize, () => {
 			);
 		});
 
+		it("should rebase an optional $path and keep its optional wrapper", () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							$className: "ReplicatedStorage",
+							DevPackages: { $path: { optional: "DevPackages" } },
+						},
+					},
+				}),
+			});
+
+			const result = synthesize({
+				fileSystem,
+				packages: [{ packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT }],
+				wrap: false,
+			});
+
+			expect(
+				descend(parseFixture(result).tree, "ReplicatedStorage", "DevPackages")!.$path,
+			).toStrictEqual({
+				optional: normalizeWindowsPath(path.join(FOO_DIR, "DevPackages")),
+			});
+		});
+
+		it("should rebase the $path of a child named optional", () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							$className: "ReplicatedStorage",
+							optional: { $path: "src" },
+						},
+					},
+				}),
+			});
+
+			const result = synthesize({
+				fileSystem,
+				packages: [{ packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT }],
+				wrap: false,
+			});
+
+			expect(descend(parseFixture(result).tree, "ReplicatedStorage", "optional")!.$path).toBe(
+				normalizeWindowsPath(path.join(FOO_DIR, "src")),
+			);
+		});
+
+		it("should leave an attribute named optional as written", () => {
+			expect.assertions(1);
+
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							$attributes: { optional: "src" },
+							$className: "ReplicatedStorage",
+						},
+					},
+				}),
+			});
+
+			const result = synthesize({
+				fileSystem,
+				packages: [{ packageDirectory: FOO_DIR, rojoProjectPath: FOO_PROJECT }],
+				wrap: false,
+			});
+
+			expect(
+				child(parseFixture(result).tree, "ReplicatedStorage")!["$attributes"],
+			).toStrictEqual({ optional: "src" });
+		});
+
+		it("should redirect the inner path of an optional $path under coverageRoots[].luauRoot", () => {
+			expect.assertions(1);
+
+			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src");
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							$className: "ReplicatedStorage",
+							$path: { optional: "src" },
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "src/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				fileSystem,
+				packages: [
+					{
+						coverageRoots: [
+							{ luauRoot: toPosixRoot("src"), shadowDir: shadowDirectory },
+						],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			expect(child(parseFixture(result).tree, "ReplicatedStorage")!.$path).toStrictEqual({
+				optional: normalizeWindowsPath(shadowDirectory),
+			});
+		});
+
 		it("should redirect $path entries under coverageRoots[].luauRoot to the shadow directory", () => {
 			expect.assertions(1);
 
@@ -3718,6 +3838,48 @@ describe(synthesize, () => {
 	});
 
 	describe("coverage roots below a $path mount", () => {
+		it("should demote an optional mount onto the spine", () => {
+			expect.assertions(2);
+
+			const shadowDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/src/server");
+			const spineDirectory = path.join(FOO_DIR, ".jest-roblox/coverage/.spine/src");
+			const { fileSystem } = createMemoryFileSystem({
+				[FOO_PROJECT]: projectJson({
+					name: "foo-test",
+					tree: {
+						$className: "DataModel",
+						ReplicatedStorage: {
+							$className: "ReplicatedStorage",
+							$path: { optional: "src" },
+						},
+					},
+				}),
+				[path.join(FOO_DIR, "src/server/init.luau")]: "",
+			});
+
+			const result = synthesize({
+				fileSystem,
+				packages: [
+					{
+						coverageRoots: [
+							{ luauRoot: toPosixRoot("src/server"), shadowDir: shadowDirectory },
+						],
+						coverageSpine: [
+							{ luauRoot: toPosixRoot("src"), shadowDir: spineDirectory },
+						],
+						packageDirectory: FOO_DIR,
+						rojoProjectPath: FOO_PROJECT,
+					},
+				],
+				wrap: false,
+			});
+
+			const mount = child(parseFixture(result).tree, "ReplicatedStorage")!;
+
+			expect(mount.$path).toBe(normalizeWindowsPath(spineDirectory));
+			expect(child(mount, "server")!.$path).toBe(normalizeWindowsPath(shadowDirectory));
+		});
+
 		it("should demote the containing mount onto the spine and hang the root off it", () => {
 			expect.assertions(4);
 

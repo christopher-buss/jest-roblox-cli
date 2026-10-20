@@ -18,6 +18,7 @@ export { FileRelation, NetworkType, RbxType, RojoResolver } from "./rojo-resolve
 export type { RojoConfigFileResult, RojoResolverState } from "./rojo-resolver.ts";
 export {
 	collectPaths,
+	collectRequiredPaths,
 	rebaseTreePaths,
 	resolveMountPath,
 	resolveNestedProjects,
@@ -26,5 +27,5 @@ export {
 export type { ResolvedNestedProjectSources } from "./rojo-tree.ts";
 export type { RojoTree } from "./rojo-walker.ts";
 export { findInTree, matchNodePath } from "./tree-mapper.ts";
-export { isRojoTreeNode } from "./types.ts";
+export { isOptionalPath, isRojoTreeNode } from "./types.ts";
 export type { LoadedRojoProject, RojoProject, RojoTreeNode } from "./types.ts";

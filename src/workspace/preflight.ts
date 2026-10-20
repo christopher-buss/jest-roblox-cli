@@ -1,5 +1,5 @@
 import {
-	collectPaths,
+	collectRequiredPaths,
 	type LoadedRojoProject,
 	loadRojoProject,
 	resolveMountPath,
@@ -58,7 +58,7 @@ function validatePackage(
 	}
 
 	const paths: Array<string> = [];
-	collectPaths(project.tree, paths);
+	collectRequiredPaths(project.tree, paths);
 
 	const projectDirectory = path.dirname(descriptor.rojoProjectPath);
 	for (const relative of paths) {

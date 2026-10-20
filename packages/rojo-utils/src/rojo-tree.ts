@@ -4,7 +4,7 @@ import { dirname, join, relative } from "node:path";
 import type { FileSystem } from "./file-system.ts";
 import { nodeFileSystem } from "./file-system.ts";
 import type { RojoTreeNode } from "./types.ts";
-import { isRojoTreeNode } from "./types.ts";
+import { isOptionalPath, isRojoTreeNode } from "./types.ts";
 
 // Validate only the field the resolver reads; resolveTree handles arbitrary
 // tree shapes defensively (same contract as `isValidRojoConfig`).
@@ -59,19 +59,18 @@ export function resolveNestedProjects(
 }
 
 /**
- * Every `$path` in the tree, with backslashes normalized.
+ * Every `$path` in the tree, optional mounts included, with backslashes
+ * normalized.
  *
  * A mount is relative to the project file's directory unless the project wrote
  * it absolute, which is preserved as written.
  */
 export function collectPaths(node: RojoTreeNode, result: Array<string>): void {
-	for (const [key, value] of Object.entries(node)) {
-		if (key === "$path" && typeof value === "string") {
-			result.push(value.replaceAll("\\", "/"));
-		} else if (!key.startsWith("$") && isRojoTreeNode(value)) {
-			collectPaths(value, result);
-		}
-	}
+	collectMountPaths(node, result, { optional: true });
+}
+
+export function collectRequiredPaths(node: RojoTreeNode, result: Array<string>): void {
+	collectMountPaths(node, result, { optional: false });
 }
 
 /**
@@ -123,6 +122,22 @@ export function rebaseTreePaths(
 	}
 
 	return result;
+}
+
+function collectMountPaths(
+	node: RojoTreeNode,
+	result: Array<string>,
+	options: { optional: boolean },
+): void {
+	for (const [key, value] of Object.entries(node)) {
+		if (key === "$path" && typeof value === "string") {
+			result.push(value.replaceAll("\\", "/"));
+		} else if (key === "$path" && options.optional && isOptionalPath(value)) {
+			result.push(value.optional.replaceAll("\\", "/"));
+		} else if (!key.startsWith("$") && isRojoTreeNode(value)) {
+			collectMountPaths(value, result, options);
+		}
+	}
 }
 
 /**

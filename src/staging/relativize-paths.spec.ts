@@ -30,6 +30,32 @@ describe(relativizeProjectPaths, () => {
 		expect(result.tree).toStrictEqual({ $path: "../../out/client" });
 	});
 
+	it("should express the inner path of an optional $path relative to the project directory", () => {
+		expect.assertions(1);
+
+		const result = parse(
+			relativizeProjectPaths(
+				JSON.stringify({ tree: { $path: { optional: OUT_DIR } } }),
+				PROJECT_DIR,
+			),
+		);
+
+		expect(result.tree).toStrictEqual({ $path: { optional: "../../out/client" } });
+	});
+
+	it("should leave an attribute named optional as written", () => {
+		expect.assertions(1);
+
+		const result = parse(
+			relativizeProjectPaths(
+				JSON.stringify({ tree: { $attributes: { optional: OUT_DIR } } }),
+				PROJECT_DIR,
+			),
+		);
+
+		expect(result.tree).toStrictEqual({ $attributes: { optional: OUT_DIR } });
+	});
+
 	it("should rewrite $path entries at every depth", () => {
 		expect.assertions(1);
 
