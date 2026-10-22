@@ -1,5 +1,6 @@
 import { assert, describe, expect, it } from "vitest";
 
+import { astTree, cstTree, rawTree } from "#test/helpers/unit/trees";
 import type { CstParseResult } from "./cst-materialize.ts";
 import { loadLuauParser } from "./parser.ts";
 
@@ -218,5 +219,123 @@ describe("cST location payload", () => {
 		expect(() => parser.parseCst({ fileName: "invalid.luau", source: SOURCE })).toThrow(
 			"wasm wrapper returned an invalid CST location",
 		);
+	});
+});
+
+function parserForPayload(payload: string) {
+	return loadLuauParser({
+		injectCstFault: () => {},
+		parseToCstJson: () => payload,
+		parseToJson: () => payload,
+	});
+}
+
+describe("normalized parser output", () => {
+	it.for([
+		{ remaining: [], suffix: "" },
+		{ remaining: [{ type: "AstExprConstantNumber", value: Infinity }], suffix: ", 1e999" },
+	])("should parse a large string alongside $suffix", ({ remaining, suffix }) => {
+		expect.assertions(2);
+
+		const value = "x".repeat(10_000_000);
+		const result = loadLuauParser().parse(`return "${value}"${suffix}`);
+		assert(result.ok);
+		const statement = result.root.body[0];
+		assert(statement!.type === "AstStatReturn");
+
+		expect(statement.list[0]).toMatchObject({ type: "AstExprConstantString", value });
+		expect(statement.list.slice(1)).toStrictEqual(
+			remaining.map((node) => expect.objectContaining(node)),
+		);
+	});
+
+	it.for(["local x = 1", "return t.field"])("should normalize all spans in %s", (source) => {
+		expect.assertions(1);
+
+		const result = parserForPayload(rawTree(source, "ast")).parse(source);
+
+		expect(result).toStrictEqual({
+			comments: [],
+			ok: true,
+			root: astTree(source),
+		});
+	});
+
+	it.for([
+		"null",
+		"0",
+		'"text"',
+		"{}",
+		'{"root":null,"commentLocations":[]}',
+		'{"root":[],"commentLocations":[]}',
+		'{"root":{},"commentLocations":[]}',
+		'{"root":{"type":"AstStatBlock"},"commentLocations":null}',
+	])("should reject an invalid parse result %s", (payload) => {
+		expect.assertions(1);
+
+		expect(() => parserForPayload(payload).parse("source")).toThrow("unrecognized JSON shape");
+	});
+
+	it("should normalize suffix locations while preserving escaped Infinity strings and numeric signs", () => {
+		expect.assertions(1);
+
+		const payload =
+			'{"root":{"type":"AstStatBlock","location":"2,3 - 4,5","body":[],"indexLocation":"5,6 - 7,8","label":"escaped \\"Infinity\\" and Infinite","values":[Infinity,-Infinity,0]},"commentLocations":[]}';
+
+		expect(parserForPayload(payload).parse("source")).toMatchObject({
+			ok: true,
+			root: {
+				indexLocation: { beginColumn: 7, beginLine: 6, endColumn: 9, endLine: 8 },
+				label: 'escaped "Infinity" and Infinite',
+				location: { beginColumn: 4, beginLine: 3, endColumn: 6, endLine: 5 },
+				values: [Infinity, -Infinity, 0],
+			},
+		});
+	});
+
+	it("should prefix a serializer defect with its filename", () => {
+		expect.assertions(1);
+
+		expect(
+			parserForPayload("\u0002broken writer").parseCst({
+				fileName: "fault.luau",
+				source: "",
+			}),
+		).toStrictEqual({
+			errors: ["fault.luau: broken writer"],
+			ok: false,
+		});
+	});
+
+	it("should materialize valid CST output", () => {
+		expect.assertions(1);
+
+		const source = "return 1\n";
+
+		expect(
+			parserForPayload(rawTree(source, "cst")).parseCst({ fileName: "test.luau", source }),
+		).toStrictEqual({ ok: true, root: cstTree(source) });
+	});
+
+	it("should expose constructed expressions and statements through the parser", () => {
+		expect.assertions(2);
+
+		const parser = parserForPayload(rawTree("return 1\n", "cst"));
+
+		expect(parser.constructExpression("1\n")).toMatchObject({
+			token: { text: "1" },
+			type: "Number",
+		});
+		expect(parser.constructStatements("return 1\n")).toMatchObject({
+			body: [{ type: "Return" }],
+			type: "Block",
+		});
+	});
+
+	it("should share the default parser and keep supplied backends independent", () => {
+		expect.assertions(2);
+
+		expect(loadLuauParser()).toBe(loadLuauParser());
+		expect(loadLuauParser()).not.toBe(parserForPayload(""));
 	});
 });

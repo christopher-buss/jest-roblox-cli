@@ -8,7 +8,10 @@ describe(writeTemporaryLuauScript, () => {
 	it("should create a temporary script containing the supplied source", () => {
 		expect.assertions(3);
 
-		const scriptPath = writeTemporaryLuauScript("print('hello')", "luau-ast-standards-test");
+		const scriptPath = writeTemporaryLuauScript({
+			name: "luau-ast-standards-test",
+			source: "print('hello')",
+		});
 		onTestFinished(() => {
 			fs.rmSync(scriptPath);
 		});

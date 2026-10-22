@@ -1,3 +1,5 @@
+import { fromAny } from "@total-typescript/shoehorn";
+
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
@@ -77,5 +79,43 @@ describe(instantiateWasm, () => {
 		const bytes = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
 
 		expect(Object.keys(instantiateWasm(bytes.toString("base64")))).toStrictEqual([]);
+	});
+});
+
+function wasmSection(id: number, payload: Array<number>): Array<number> {
+	return [id, payload.length, ...payload];
+}
+
+function wasmName(value: string): Array<number> {
+	return [value.length, ...Buffer.from(value)];
+}
+
+describe("emscripten host imports", () => {
+	it("should accept the memory-growth notification without retaining heap views", () => {
+		expect.assertions(1);
+
+		const bytes = Buffer.from([
+			0,
+			97,
+			115,
+			109,
+			1,
+			0,
+			0,
+			0,
+			...wasmSection(1, [1, 96, 0, 0]),
+			...wasmSection(2, [
+				1,
+				...wasmName("env"),
+				...wasmName("emscripten_notify_memory_growth"),
+				0,
+				0,
+			]),
+			...wasmSection(7, [1, ...wasmName("notify"), 0, 0]),
+		]);
+		const exports = instantiateWasm(bytes.toString("base64"));
+		const notify: () => unknown = fromAny(exports["notify"]);
+
+		expect(notify()).toBeUndefined();
 	});
 });

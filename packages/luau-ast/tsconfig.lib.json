@@ -3,8 +3,9 @@
 	"compilerOptions": {
 		"composite": true,
 		"tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
-		"lib": ["esnext"],
+		"lib": ["es2025", "esnext"],
 		"libReplacement": true,
+		"customConditions": ["source"],
 		"allowJs": false,
 		"emitDeclarationOnly": true,
 		"noEmit": false,
@@ -12,5 +13,5 @@
 		"isolatedDeclarations": true
 	},
 	"include": ["src/**/*.ts", "package.json"],
-	"exclude": ["vitest.config.ts", "src/**/*.spec.ts"]
+	"exclude": ["vitest.config.ts", "src/**/*.spec.ts", "src/**/*.spec-d.ts"]
 }

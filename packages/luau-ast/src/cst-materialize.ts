@@ -224,14 +224,12 @@ function attachTrivia(placed: Array<PlacedToken>, bytes: SourceBytes): string | 
 			return `${describeToken(current, bytes)} overlaps ${describeToken(previous, bytes)}`;
 		}
 
-		if (range.start > previousEnd) {
-			const scanned = scanTrivia(bytes.slice(previousEnd, range.start));
-			if (scanned.offending !== undefined) {
-				return `bytes ${JSON.stringify(scanned.offending)} between ${describeToken(previous, bytes)} and ${describeToken(current, bytes)} are not whitespace or a comment`;
-			}
-
-			splitTrivia(scanned.items, { previous: previous?.token, token });
+		const scanned = scanTrivia(bytes.slice(previousEnd, range.start));
+		if (scanned.offending !== undefined) {
+			return `bytes ${JSON.stringify(scanned.offending)} between ${describeToken(previous, bytes)} and ${describeToken(current, bytes)} are not whitespace or a comment`;
 		}
+
+		splitTrivia(scanned.items, { previous: previous?.token, token });
 
 		previous = current;
 		previousEnd = range.end;

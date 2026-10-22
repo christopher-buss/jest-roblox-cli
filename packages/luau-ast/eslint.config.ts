@@ -9,7 +9,12 @@ export default isentinel(
 		oxlint: "native",
 		projectStructure: {
 			files: ["src/**/*.ts"],
-			ignores: ["src/**/*.spec.ts", "src/**/*.d.ts", "src/**/*-types.ts"],
+			ignores: [
+				"src/**/*.spec.ts",
+				"src/**/*.spec-d.ts",
+				"src/**/*.d.ts",
+				"src/**/*-types.ts",
+			],
 			projectRoot: import.meta.dirname,
 			structureRoot: "src",
 		},
@@ -37,6 +42,11 @@ export default isentinel(
 		unicorn: {
 			nameReplacements: { expr: false },
 		},
+	},
+	{
+		name: "project/src-max-params",
+		files: ["src/**/*.ts"],
+		rules: { "better-max-params/better-max-params": ["error", { func: 2 }] },
 	},
 	{
 		name: "project/generated-wasm-module",

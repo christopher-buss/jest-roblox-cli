@@ -9,4 +9,10 @@ describe(punctuatedSlots, () => {
 		expect(punctuatedSlots("TypeUnion")).toStrictEqual(["separator", "node"]);
 		expect(punctuatedSlots("Call")).toStrictEqual(["node", "separator"]);
 	});
+
+	it("should place an intersection separator before its member", () => {
+		expect.assertions(1);
+
+		expect(punctuatedSlots("TypeIntersection")).toStrictEqual(["separator", "node"]);
+	});
 });

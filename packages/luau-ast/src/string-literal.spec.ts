@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { decodeLuauString } from "./string-literal.ts";
 
@@ -32,5 +32,19 @@ describe(decodeLuauString, () => {
 		expect(decodeLuauString("[[plain]]")).toBe("plain");
 		expect(decodeLuauString("[==[\r\nkeep\n]==]")).toBe("keep\n");
 		expect(decodeLuauString("[=[a]]b]=]")).toBe("a]]b");
+	});
+
+	it("should return an unescaped literal without a UTF-8 encode pass", () => {
+		expect.assertions(2);
+
+		const encode = vi.spyOn(TextEncoder.prototype, "encode");
+		onTestFinished(() => {
+			encode.mockRestore();
+		});
+		const result = decodeLuauString('"simple"');
+		const calls = encode.mock.calls.length;
+
+		expect(result).toBe("simple");
+		expect(calls).toBe(0);
 	});
 });

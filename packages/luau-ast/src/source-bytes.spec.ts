@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { LuauSpan } from "./ast-types.ts";
 import { indexSourceBytes } from "./source-bytes.ts";
@@ -215,4 +215,42 @@ describe("byte columns as UTF-16 columns", () => {
 
 		expect(bytes.rangeToSpan(bytes.spanToRange(original))).toStrictEqual(original);
 	});
+});
+
+describe("buffer work", () => {
+	it("should slice ASCII source without decoding a buffer", () => {
+		expect.assertions(2);
+
+		const bytes = indexSourceBytes("first\nsecond");
+		const subarray = vi.spyOn(Buffer.prototype, "subarray");
+		onTestFinished(() => {
+			subarray.mockRestore();
+		});
+		const text = bytes.slice(1, 4);
+		const calls = subarray.mock.calls.length;
+
+		expect(text).toBe("irs");
+		expect(calls).toBe(0);
+	});
+
+	it.for([
+		{ columns: [2, 4], expectedCalls: 1, source: "first\n" },
+		{ columns: [3, 5], expectedCalls: 2, source: "éé\n" },
+	])(
+		"should build one cached column converter for $source",
+		({ columns, expectedCalls, source }) => {
+			expect.assertions(1);
+
+			const bytes = indexSourceBytes(source);
+			const byteLength = vi.spyOn(Buffer, "byteLength");
+			onTestFinished(() => {
+				byteLength.mockRestore();
+			});
+			bytes.toUtf16Column(1, columns[0]!);
+			bytes.toUtf16Column(1, columns[1]!);
+			const calls = byteLength.mock.calls.length;
+
+			expect(calls).toBe(expectedCalls);
+		},
+	);
 });

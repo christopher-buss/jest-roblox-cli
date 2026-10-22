@@ -73,7 +73,7 @@ export {
 } from "./cst.ts";
 
 // Lute spawner (for running Luau scripts; parsing is in-process via ./parser.ts)
-export type { LuteSpawnOptions } from "./lute-spawner.ts";
+export type { LuteSpawnOptions, TemporaryLuauScriptOptions } from "./lute-spawner.ts";
 export { spawnLute, writeTemporaryLuauScript } from "./lute-spawner.ts";
 
 // Parser

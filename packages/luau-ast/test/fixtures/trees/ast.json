@@ -1,0 +1,4208 @@
+{
+	"local x = 1": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 12,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 12,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "x",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 12,
+							"endLine": 1
+						},
+						"value": 1
+					}
+				]
+			}
+		]
+	},
+	"local x = 1\nx = 2\nx += 1\ndo end\nwhile x do break end\nrepeat continue until x\nfor i = 1, 2 do end\nfor k, v in x do end\nif x then elseif x then else end\nfunction x.method() end\nlocal function helper() end\ntype Alias = number\nprint(x)\nreturn x": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 9,
+			"endLine": 14
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 12,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "x",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 12,
+							"endLine": 1
+						},
+						"value": 1
+					}
+				]
+			},
+			{
+				"type": "AstStatAssign",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 6,
+					"endLine": 2
+				},
+				"vars": [
+					{
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 2,
+							"endColumn": 2,
+							"endLine": 2
+						},
+						"local": {
+							"luauType": null,
+							"name": "x",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							}
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 5,
+							"beginLine": 2,
+							"endColumn": 6,
+							"endLine": 2
+						},
+						"value": 2
+					}
+				]
+			},
+			{
+				"type": "AstStatCompoundAssign",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 7,
+					"endLine": 3
+				},
+				"op": "Add",
+				"var": {
+					"type": "AstExprLocal",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 3,
+						"endColumn": 2,
+						"endLine": 3
+					},
+					"local": {
+						"luauType": null,
+						"name": "x",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				},
+				"value": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 6,
+						"beginLine": 3,
+						"endColumn": 7,
+						"endLine": 3
+					},
+					"value": 1
+				}
+			},
+			{
+				"type": "AstStatBlock",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 4,
+					"endColumn": 7,
+					"endLine": 4
+				},
+				"hasEnd": true,
+				"body": []
+			},
+			{
+				"type": "AstStatWhile",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 5,
+					"endColumn": 21,
+					"endLine": 5
+				},
+				"condition": {
+					"type": "AstExprLocal",
+					"location": {
+						"beginColumn": 7,
+						"beginLine": 5,
+						"endColumn": 8,
+						"endLine": 5
+					},
+					"local": {
+						"luauType": null,
+						"name": "x",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				},
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 11,
+						"beginLine": 5,
+						"endColumn": 18,
+						"endLine": 5
+					},
+					"hasEnd": true,
+					"body": [
+						{
+							"type": "AstStatBreak",
+							"location": {
+								"beginColumn": 12,
+								"beginLine": 5,
+								"endColumn": 17,
+								"endLine": 5
+							}
+						}
+					]
+				},
+				"hasDo": true
+			},
+			{
+				"type": "AstStatRepeat",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 6,
+					"endColumn": 24,
+					"endLine": 6
+				},
+				"condition": {
+					"type": "AstExprLocal",
+					"location": {
+						"beginColumn": 23,
+						"beginLine": 6,
+						"endColumn": 24,
+						"endLine": 6
+					},
+					"local": {
+						"luauType": null,
+						"name": "x",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				},
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 7,
+						"beginLine": 6,
+						"endColumn": 17,
+						"endLine": 6
+					},
+					"hasEnd": true,
+					"body": [
+						{
+							"type": "AstStatContinue",
+							"location": {
+								"beginColumn": 8,
+								"beginLine": 6,
+								"endColumn": 16,
+								"endLine": 6
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "AstStatFor",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 7,
+					"endColumn": 20,
+					"endLine": 7
+				},
+				"var": {
+					"luauType": null,
+					"name": "i",
+					"isConst": false,
+					"type": "AstLocal",
+					"location": {
+						"beginColumn": 5,
+						"beginLine": 7,
+						"endColumn": 6,
+						"endLine": 7
+					}
+				},
+				"from": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 9,
+						"beginLine": 7,
+						"endColumn": 10,
+						"endLine": 7
+					},
+					"value": 1
+				},
+				"to": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 12,
+						"beginLine": 7,
+						"endColumn": 13,
+						"endLine": 7
+					},
+					"value": 2
+				},
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 16,
+						"beginLine": 7,
+						"endColumn": 17,
+						"endLine": 7
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"hasDo": true
+			},
+			{
+				"type": "AstStatForIn",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 8,
+					"endColumn": 21,
+					"endLine": 8
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "k",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 5,
+							"beginLine": 8,
+							"endColumn": 6,
+							"endLine": 8
+						}
+					},
+					{
+						"luauType": null,
+						"name": "v",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 8,
+							"beginLine": 8,
+							"endColumn": 9,
+							"endLine": 8
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 13,
+							"beginLine": 8,
+							"endColumn": 14,
+							"endLine": 8
+						},
+						"local": {
+							"luauType": null,
+							"name": "x",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							}
+						}
+					}
+				],
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 17,
+						"beginLine": 8,
+						"endColumn": 18,
+						"endLine": 8
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"hasIn": true,
+				"hasDo": true
+			},
+			{
+				"type": "AstStatIf",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 9,
+					"endColumn": 33,
+					"endLine": 9
+				},
+				"condition": {
+					"type": "AstExprLocal",
+					"location": {
+						"beginColumn": 4,
+						"beginLine": 9,
+						"endColumn": 5,
+						"endLine": 9
+					},
+					"local": {
+						"luauType": null,
+						"name": "x",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				},
+				"thenbody": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 10,
+						"beginLine": 9,
+						"endColumn": 11,
+						"endLine": 9
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"elsebody": {
+					"type": "AstStatIf",
+					"location": {
+						"beginColumn": 11,
+						"beginLine": 9,
+						"endColumn": 33,
+						"endLine": 9
+					},
+					"condition": {
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 18,
+							"beginLine": 9,
+							"endColumn": 19,
+							"endLine": 9
+						},
+						"local": {
+							"luauType": null,
+							"name": "x",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							}
+						}
+					},
+					"thenbody": {
+						"type": "AstStatBlock",
+						"location": {
+							"beginColumn": 24,
+							"beginLine": 9,
+							"endColumn": 25,
+							"endLine": 9
+						},
+						"hasEnd": true,
+						"body": []
+					},
+					"elsebody": {
+						"type": "AstStatBlock",
+						"location": {
+							"beginColumn": 29,
+							"beginLine": 9,
+							"endColumn": 30,
+							"endLine": 9
+						},
+						"hasEnd": true,
+						"body": []
+					},
+					"hasThen": true
+				},
+				"hasThen": true
+			},
+			{
+				"type": "AstStatFunction",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 10,
+					"endColumn": 24,
+					"endLine": 10
+				},
+				"name": {
+					"type": "AstExprIndexName",
+					"location": {
+						"beginColumn": 10,
+						"beginLine": 10,
+						"endColumn": 18,
+						"endLine": 10
+					},
+					"expr": {
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 10,
+							"beginLine": 10,
+							"endColumn": 11,
+							"endLine": 10
+						},
+						"local": {
+							"luauType": null,
+							"name": "x",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							}
+						}
+					},
+					"index": "method",
+					"indexLocation": {
+						"beginColumn": 12,
+						"beginLine": 10,
+						"endColumn": 18,
+						"endLine": 10
+					},
+					"op": "."
+				},
+				"func": {
+					"type": "AstExprFunction",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 10,
+						"endColumn": 24,
+						"endLine": 10
+					},
+					"attributes": [],
+					"generics": [],
+					"genericPacks": [],
+					"args": [],
+					"vararg": false,
+					"varargLocation": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 1,
+						"endLine": 1
+					},
+					"body": {
+						"type": "AstStatBlock",
+						"location": {
+							"beginColumn": 20,
+							"beginLine": 10,
+							"endColumn": 21,
+							"endLine": 10
+						},
+						"hasEnd": true,
+						"body": []
+					},
+					"functionDepth": 1,
+					"debugname": "method"
+				}
+			},
+			{
+				"type": "AstStatLocalFunction",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 11,
+					"endColumn": 28,
+					"endLine": 11
+				},
+				"name": {
+					"luauType": null,
+					"name": "helper",
+					"isConst": false,
+					"type": "AstLocal",
+					"location": {
+						"beginColumn": 16,
+						"beginLine": 11,
+						"endColumn": 22,
+						"endLine": 11
+					}
+				},
+				"func": {
+					"type": "AstExprFunction",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 11,
+						"endColumn": 28,
+						"endLine": 11
+					},
+					"attributes": [],
+					"generics": [],
+					"genericPacks": [],
+					"args": [],
+					"vararg": false,
+					"varargLocation": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 1,
+						"endLine": 1
+					},
+					"body": {
+						"type": "AstStatBlock",
+						"location": {
+							"beginColumn": 24,
+							"beginLine": 11,
+							"endColumn": 25,
+							"endLine": 11
+						},
+						"hasEnd": true,
+						"body": []
+					},
+					"functionDepth": 1,
+					"debugname": "helper"
+				}
+			},
+			{
+				"type": "AstStatTypeAlias",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 12,
+					"endColumn": 20,
+					"endLine": 12
+				},
+				"name": "Alias",
+				"generics": [],
+				"genericPacks": [],
+				"value": {
+					"type": "AstTypeReference",
+					"location": {
+						"beginColumn": 14,
+						"beginLine": 12,
+						"endColumn": 20,
+						"endLine": 12
+					},
+					"name": "number",
+					"nameLocation": {
+						"beginColumn": 14,
+						"beginLine": 12,
+						"endColumn": 20,
+						"endLine": 12
+					},
+					"parameters": []
+				},
+				"exported": false
+			},
+			{
+				"type": "AstStatExpr",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 13,
+					"endColumn": 9,
+					"endLine": 13
+				},
+				"expr": {
+					"type": "AstExprCall",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 13,
+						"endColumn": 9,
+						"endLine": 13
+					},
+					"func": {
+						"type": "AstExprGlobal",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 13,
+							"endColumn": 6,
+							"endLine": 13
+						},
+						"global": "print"
+					},
+					"args": [
+						{
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 13,
+								"endColumn": 8,
+								"endLine": 13
+							},
+							"local": {
+								"luauType": null,
+								"name": "x",
+								"isConst": false,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								}
+							}
+						}
+					],
+					"self": false,
+					"argLocation": {
+						"beginColumn": 7,
+						"beginLine": 13,
+						"endColumn": 9,
+						"endLine": 13
+					}
+				}
+			},
+			{
+				"type": "AstStatReturn",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 14,
+					"endColumn": 9,
+					"endLine": 14
+				},
+				"list": [
+					{
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 8,
+							"beginLine": 14,
+							"endColumn": 9,
+							"endLine": 14
+						},
+						"local": {
+							"luauType": null,
+							"name": "x",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							}
+						}
+					}
+				]
+			}
+		]
+	},
+	"local a = 1 + 2\nlocal b = f(a)\nlocal c = true\nlocal d = nil\nlocal e = 3\nlocal s = \"text\"\nlocal fn = function() end\nlocal g = globalValue\nlocal h = (a)\nlocal i = if a then b else c\nlocal j = t[a]\nlocal k = t.name\nlocal l = f<<T>>\nlocal m = `interp {a}`\nlocal n = a\nlocal o = { 1 }\nlocal p = a :: number\nlocal q = -a\nlocal r = ...": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 14,
+			"endLine": 19
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 16,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprBinary",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 16,
+							"endLine": 1
+						},
+						"op": "Add",
+						"left": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 1,
+								"endColumn": 12,
+								"endLine": 1
+							},
+							"value": 1
+						},
+						"right": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 15,
+								"beginLine": 1,
+								"endColumn": 16,
+								"endLine": 1
+							},
+							"value": 2
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 15,
+					"endLine": 2
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "b",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 2,
+							"endColumn": 8,
+							"endLine": 2
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprCall",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 2,
+							"endColumn": 15,
+							"endLine": 2
+						},
+						"func": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 2,
+								"endColumn": 12,
+								"endLine": 2
+							},
+							"global": "f"
+						},
+						"args": [
+							{
+								"type": "AstExprLocal",
+								"location": {
+									"beginColumn": 13,
+									"beginLine": 2,
+									"endColumn": 14,
+									"endLine": 2
+								},
+								"local": {
+									"luauType": null,
+									"name": "a",
+									"isConst": false,
+									"type": "AstLocal",
+									"location": {
+										"beginColumn": 7,
+										"beginLine": 1,
+										"endColumn": 8,
+										"endLine": 1
+									}
+								}
+							}
+						],
+						"self": false,
+						"argLocation": {
+							"beginColumn": 13,
+							"beginLine": 2,
+							"endColumn": 15,
+							"endLine": 2
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 15,
+					"endLine": 3
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "c",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 3,
+							"endColumn": 8,
+							"endLine": 3
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantBool",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 3,
+							"endColumn": 15,
+							"endLine": 3
+						},
+						"value": true
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 4,
+					"endColumn": 14,
+					"endLine": 4
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "d",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 4,
+							"endColumn": 8,
+							"endLine": 4
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNil",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 4,
+							"endColumn": 14,
+							"endLine": 4
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 5,
+					"endColumn": 12,
+					"endLine": 5
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "e",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 5,
+							"endColumn": 8,
+							"endLine": 5
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 5,
+							"endColumn": 12,
+							"endLine": 5
+						},
+						"value": 3
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 6,
+					"endColumn": 17,
+					"endLine": 6
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "s",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 6,
+							"endColumn": 8,
+							"endLine": 6
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantString",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 6,
+							"endColumn": 17,
+							"endLine": 6
+						},
+						"value": "text"
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 7,
+					"endColumn": 26,
+					"endLine": 7
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "fn",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 7,
+							"endColumn": 9,
+							"endLine": 7
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprFunction",
+						"location": {
+							"beginColumn": 12,
+							"beginLine": 7,
+							"endColumn": 26,
+							"endLine": 7
+						},
+						"attributes": [],
+						"generics": [],
+						"genericPacks": [],
+						"args": [],
+						"vararg": false,
+						"varargLocation": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 1,
+							"endLine": 1
+						},
+						"body": {
+							"type": "AstStatBlock",
+							"location": {
+								"beginColumn": 22,
+								"beginLine": 7,
+								"endColumn": 23,
+								"endLine": 7
+							},
+							"hasEnd": true,
+							"body": []
+						},
+						"functionDepth": 1,
+						"debugname": ""
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 8,
+					"endColumn": 22,
+					"endLine": 8
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "g",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 8,
+							"endColumn": 8,
+							"endLine": 8
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprGlobal",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 8,
+							"endColumn": 22,
+							"endLine": 8
+						},
+						"global": "globalValue"
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 9,
+					"endColumn": 14,
+					"endLine": 9
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "h",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 9,
+							"endColumn": 8,
+							"endLine": 9
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprGroup",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 9,
+							"endColumn": 14,
+							"endLine": 9
+						},
+						"expr": {
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 12,
+								"beginLine": 9,
+								"endColumn": 13,
+								"endLine": 9
+							},
+							"local": {
+								"luauType": null,
+								"name": "a",
+								"isConst": false,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								}
+							}
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 10,
+					"endColumn": 29,
+					"endLine": 10
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "i",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 10,
+							"endColumn": 8,
+							"endLine": 10
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprIfElse",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 10,
+							"endColumn": 29,
+							"endLine": 10
+						},
+						"condition": {
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 14,
+								"beginLine": 10,
+								"endColumn": 15,
+								"endLine": 10
+							},
+							"local": {
+								"luauType": null,
+								"name": "a",
+								"isConst": false,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								}
+							}
+						},
+						"hasThen": true,
+						"trueExpr": {
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 21,
+								"beginLine": 10,
+								"endColumn": 22,
+								"endLine": 10
+							},
+							"local": {
+								"luauType": null,
+								"name": "b",
+								"isConst": false,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 2,
+									"endColumn": 8,
+									"endLine": 2
+								}
+							}
+						},
+						"hasElse": true,
+						"falseExpr": {
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 28,
+								"beginLine": 10,
+								"endColumn": 29,
+								"endLine": 10
+							},
+							"local": {
+								"luauType": null,
+								"name": "c",
+								"isConst": false,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 3,
+									"endColumn": 8,
+									"endLine": 3
+								}
+							}
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 11,
+					"endColumn": 15,
+					"endLine": 11
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "j",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 11,
+							"endColumn": 8,
+							"endLine": 11
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprIndexExpr",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 11,
+							"endColumn": 15,
+							"endLine": 11
+						},
+						"expr": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 11,
+								"endColumn": 12,
+								"endLine": 11
+							},
+							"global": "t"
+						},
+						"index": {
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 13,
+								"beginLine": 11,
+								"endColumn": 14,
+								"endLine": 11
+							},
+							"local": {
+								"luauType": null,
+								"name": "a",
+								"isConst": false,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								}
+							}
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 12,
+					"endColumn": 17,
+					"endLine": 12
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "k",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 12,
+							"endColumn": 8,
+							"endLine": 12
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprIndexName",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 12,
+							"endColumn": 17,
+							"endLine": 12
+						},
+						"expr": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 12,
+								"endColumn": 12,
+								"endLine": 12
+							},
+							"global": "t"
+						},
+						"index": "name",
+						"indexLocation": {
+							"beginColumn": 13,
+							"beginLine": 12,
+							"endColumn": 17,
+							"endLine": 12
+						},
+						"op": "."
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 13,
+					"endColumn": 17,
+					"endLine": 13
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "l",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 13,
+							"endColumn": 8,
+							"endLine": 13
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprInstantiate",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 13,
+							"endColumn": 17,
+							"endLine": 13
+						},
+						"expr": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 13,
+								"endColumn": 12,
+								"endLine": 13
+							},
+							"global": "f"
+						},
+						"typeArguments": [
+							{
+								"type": "AstTypeReference",
+								"location": {
+									"beginColumn": 14,
+									"beginLine": 13,
+									"endColumn": 15,
+									"endLine": 13
+								},
+								"name": "T",
+								"nameLocation": {
+									"beginColumn": 14,
+									"beginLine": 13,
+									"endColumn": 15,
+									"endLine": 13
+								},
+								"parameters": []
+							}
+						]
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 14,
+					"endColumn": 23,
+					"endLine": 14
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "m",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 14,
+							"endColumn": 8,
+							"endLine": 14
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprInterpString",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 14,
+							"endColumn": 23,
+							"endLine": 14
+						},
+						"strings": ["interp ", ""],
+						"expressions": [
+							{
+								"type": "AstExprLocal",
+								"location": {
+									"beginColumn": 20,
+									"beginLine": 14,
+									"endColumn": 21,
+									"endLine": 14
+								},
+								"local": {
+									"luauType": null,
+									"name": "a",
+									"isConst": false,
+									"type": "AstLocal",
+									"location": {
+										"beginColumn": 7,
+										"beginLine": 1,
+										"endColumn": 8,
+										"endLine": 1
+									}
+								}
+							}
+						]
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 15,
+					"endColumn": 12,
+					"endLine": 15
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "n",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 15,
+							"endColumn": 8,
+							"endLine": 15
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 15,
+							"endColumn": 12,
+							"endLine": 15
+						},
+						"local": {
+							"luauType": null,
+							"name": "a",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							}
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 16,
+					"endColumn": 16,
+					"endLine": 16
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "o",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 16,
+							"endColumn": 8,
+							"endLine": 16
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprTable",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 16,
+							"endColumn": 16,
+							"endLine": 16
+						},
+						"items": [
+							{
+								"type": "AstExprTableItem",
+								"kind": "item",
+								"value": {
+									"type": "AstExprConstantNumber",
+									"location": {
+										"beginColumn": 13,
+										"beginLine": 16,
+										"endColumn": 14,
+										"endLine": 16
+									},
+									"value": 1
+								}
+							}
+						]
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 17,
+					"endColumn": 22,
+					"endLine": 17
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "p",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 17,
+							"endColumn": 8,
+							"endLine": 17
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprTypeAssertion",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 17,
+							"endColumn": 22,
+							"endLine": 17
+						},
+						"expr": {
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 17,
+								"endColumn": 12,
+								"endLine": 17
+							},
+							"local": {
+								"luauType": null,
+								"name": "a",
+								"isConst": false,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								}
+							}
+						},
+						"annotation": {
+							"type": "AstTypeReference",
+							"location": {
+								"beginColumn": 16,
+								"beginLine": 17,
+								"endColumn": 22,
+								"endLine": 17
+							},
+							"name": "number",
+							"nameLocation": {
+								"beginColumn": 16,
+								"beginLine": 17,
+								"endColumn": 22,
+								"endLine": 17
+							},
+							"parameters": []
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 18,
+					"endColumn": 13,
+					"endLine": 18
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "q",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 18,
+							"endColumn": 8,
+							"endLine": 18
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprUnary",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 18,
+							"endColumn": 13,
+							"endLine": 18
+						},
+						"op": "Minus",
+						"expr": {
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 12,
+								"beginLine": 18,
+								"endColumn": 13,
+								"endLine": 18
+							},
+							"local": {
+								"luauType": null,
+								"name": "a",
+								"isConst": false,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 7,
+									"beginLine": 1,
+									"endColumn": 8,
+									"endLine": 1
+								}
+							}
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 19,
+					"endColumn": 14,
+					"endLine": 19
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "r",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 19,
+							"endColumn": 8,
+							"endLine": 19
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprVarargs",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 19,
+							"endColumn": 14,
+							"endLine": 19
+						}
+					}
+				]
+			}
+		]
+	},
+	"local a = 1 + 2": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 16,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 16,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprBinary",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 16,
+							"endLine": 1
+						},
+						"op": "Add",
+						"left": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 1,
+								"endColumn": 12,
+								"endLine": 1
+							},
+							"value": 1
+						},
+						"right": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 15,
+								"beginLine": 1,
+								"endColumn": 16,
+								"endLine": 1
+							},
+							"value": 2
+						}
+					}
+				]
+			}
+		]
+	},
+	"local fn = function() end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 26,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 26,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "fn",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 9,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprFunction",
+						"location": {
+							"beginColumn": 12,
+							"beginLine": 1,
+							"endColumn": 26,
+							"endLine": 1
+						},
+						"attributes": [],
+						"generics": [],
+						"genericPacks": [],
+						"args": [],
+						"vararg": false,
+						"varargLocation": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 1,
+							"endLine": 1
+						},
+						"body": {
+							"type": "AstStatBlock",
+							"location": {
+								"beginColumn": 22,
+								"beginLine": 1,
+								"endColumn": 23,
+								"endLine": 1
+							},
+							"hasEnd": true,
+							"body": []
+						},
+						"functionDepth": 1,
+						"debugname": ""
+					}
+				]
+			}
+		]
+	},
+	"f(1)": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 5,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatExpr",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 5,
+					"endLine": 1
+				},
+				"expr": {
+					"type": "AstExprCall",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 5,
+						"endLine": 1
+					},
+					"func": {
+						"type": "AstExprGlobal",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 2,
+							"endLine": 1
+						},
+						"global": "f"
+					},
+					"args": [
+						{
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 3,
+								"beginLine": 1,
+								"endColumn": 4,
+								"endLine": 1
+							},
+							"value": 1
+						}
+					],
+					"self": false,
+					"argLocation": {
+						"beginColumn": 3,
+						"beginLine": 1,
+						"endColumn": 5,
+						"endLine": 1
+					}
+				}
+			}
+		]
+	},
+	"local f = function() return 1 end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 34,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 34,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "f",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprFunction",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 34,
+							"endLine": 1
+						},
+						"attributes": [],
+						"generics": [],
+						"genericPacks": [],
+						"args": [],
+						"vararg": false,
+						"varargLocation": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 1,
+							"endLine": 1
+						},
+						"body": {
+							"type": "AstStatBlock",
+							"location": {
+								"beginColumn": 21,
+								"beginLine": 1,
+								"endColumn": 31,
+								"endLine": 1
+							},
+							"hasEnd": true,
+							"body": [
+								{
+									"type": "AstStatReturn",
+									"location": {
+										"beginColumn": 22,
+										"beginLine": 1,
+										"endColumn": 30,
+										"endLine": 1
+									},
+									"list": [
+										{
+											"type": "AstExprConstantNumber",
+											"location": {
+												"beginColumn": 29,
+												"beginLine": 1,
+												"endColumn": 30,
+												"endLine": 1
+											},
+											"value": 1
+										}
+									]
+								}
+							]
+						},
+						"functionDepth": 1,
+						"debugname": ""
+					}
+				]
+			}
+		]
+	},
+	"local a = (1)": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 14,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 14,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprGroup",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 14,
+							"endLine": 1
+						},
+						"expr": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 12,
+								"beginLine": 1,
+								"endColumn": 13,
+								"endLine": 1
+							},
+							"value": 1
+						}
+					}
+				]
+			}
+		]
+	},
+	"local a = if b then 1 else 2": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 29,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 29,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprIfElse",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 29,
+							"endLine": 1
+						},
+						"condition": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 14,
+								"beginLine": 1,
+								"endColumn": 15,
+								"endLine": 1
+							},
+							"global": "b"
+						},
+						"hasThen": true,
+						"trueExpr": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 21,
+								"beginLine": 1,
+								"endColumn": 22,
+								"endLine": 1
+							},
+							"value": 1
+						},
+						"hasElse": true,
+						"falseExpr": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 28,
+								"beginLine": 1,
+								"endColumn": 29,
+								"endLine": 1
+							},
+							"value": 2
+						}
+					}
+				]
+			}
+		]
+	},
+	"local a = t[1]": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 15,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 15,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprIndexExpr",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 15,
+							"endLine": 1
+						},
+						"expr": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 1,
+								"endColumn": 12,
+								"endLine": 1
+							},
+							"global": "t"
+						},
+						"index": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 13,
+								"beginLine": 1,
+								"endColumn": 14,
+								"endLine": 1
+							},
+							"value": 1
+						}
+					}
+				]
+			}
+		]
+	},
+	"local a = t.x": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 14,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 14,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprIndexName",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 14,
+							"endLine": 1
+						},
+						"expr": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 1,
+								"endColumn": 12,
+								"endLine": 1
+							},
+							"global": "t"
+						},
+						"index": "x",
+						"indexLocation": {
+							"beginColumn": 13,
+							"beginLine": 1,
+							"endColumn": 14,
+							"endLine": 1
+						},
+						"op": "."
+					}
+				]
+			}
+		]
+	},
+	"local a = f<<T>>": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 17,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 17,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprInstantiate",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 17,
+							"endLine": 1
+						},
+						"expr": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 1,
+								"endColumn": 12,
+								"endLine": 1
+							},
+							"global": "f"
+						},
+						"typeArguments": [
+							{
+								"type": "AstTypeReference",
+								"location": {
+									"beginColumn": 14,
+									"beginLine": 1,
+									"endColumn": 15,
+									"endLine": 1
+								},
+								"name": "T",
+								"nameLocation": {
+									"beginColumn": 14,
+									"beginLine": 1,
+									"endColumn": 15,
+									"endLine": 1
+								},
+								"parameters": []
+							}
+						]
+					}
+				]
+			}
+		]
+	},
+	"local a = `x{1}`": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 17,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 17,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprInterpString",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 17,
+							"endLine": 1
+						},
+						"strings": ["x", ""],
+						"expressions": [
+							{
+								"type": "AstExprConstantNumber",
+								"location": {
+									"beginColumn": 14,
+									"beginLine": 1,
+									"endColumn": 15,
+									"endLine": 1
+								},
+								"value": 1
+							}
+						]
+					}
+				]
+			}
+		]
+	},
+	"local a = { 1 }": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 16,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 16,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprTable",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 16,
+							"endLine": 1
+						},
+						"items": [
+							{
+								"type": "AstExprTableItem",
+								"kind": "item",
+								"value": {
+									"type": "AstExprConstantNumber",
+									"location": {
+										"beginColumn": 13,
+										"beginLine": 1,
+										"endColumn": 14,
+										"endLine": 1
+									},
+									"value": 1
+								}
+							}
+						]
+					}
+				]
+			}
+		]
+	},
+	"local a = 1 :: number": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 22,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 22,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprTypeAssertion",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 22,
+							"endLine": 1
+						},
+						"expr": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 1,
+								"endColumn": 12,
+								"endLine": 1
+							},
+							"value": 1
+						},
+						"annotation": {
+							"type": "AstTypeReference",
+							"location": {
+								"beginColumn": 16,
+								"beginLine": 1,
+								"endColumn": 22,
+								"endLine": 1
+							},
+							"name": "number",
+							"nameLocation": {
+								"beginColumn": 16,
+								"beginLine": 1,
+								"endColumn": 22,
+								"endLine": 1
+							},
+							"parameters": []
+						}
+					}
+				]
+			}
+		]
+	},
+	"local a = -1": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 13,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 13,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprUnary",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 13,
+							"endLine": 1
+						},
+						"op": "Minus",
+						"expr": {
+							"type": "AstExprConstantNumber",
+							"location": {
+								"beginColumn": 12,
+								"beginLine": 1,
+								"endColumn": 13,
+								"endLine": 1
+							},
+							"value": 1
+						}
+					}
+				]
+			}
+		]
+	},
+	"a = 1": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 6,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatAssign",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 6,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"type": "AstExprGlobal",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 2,
+							"endLine": 1
+						},
+						"global": "a"
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 5,
+							"beginLine": 1,
+							"endColumn": 6,
+							"endLine": 1
+						},
+						"value": 1
+					}
+				]
+			}
+		]
+	},
+	"a += 1": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 7,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatCompoundAssign",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 7,
+					"endLine": 1
+				},
+				"op": "Add",
+				"var": {
+					"type": "AstExprGlobal",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 2,
+						"endLine": 1
+					},
+					"global": "a"
+				},
+				"value": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 6,
+						"beginLine": 1,
+						"endColumn": 7,
+						"endLine": 1
+					},
+					"value": 1
+				}
+			}
+		]
+	},
+	"for i = 1, 2 do end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 20,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatFor",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 20,
+					"endLine": 1
+				},
+				"var": {
+					"luauType": null,
+					"name": "i",
+					"isConst": false,
+					"type": "AstLocal",
+					"location": {
+						"beginColumn": 5,
+						"beginLine": 1,
+						"endColumn": 6,
+						"endLine": 1
+					}
+				},
+				"from": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 9,
+						"beginLine": 1,
+						"endColumn": 10,
+						"endLine": 1
+					},
+					"value": 1
+				},
+				"to": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 12,
+						"beginLine": 1,
+						"endColumn": 13,
+						"endLine": 1
+					},
+					"value": 2
+				},
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 16,
+						"beginLine": 1,
+						"endColumn": 17,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"hasDo": true
+			}
+		]
+	},
+	"for k in f do end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 18,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatForIn",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 18,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "k",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 5,
+							"beginLine": 1,
+							"endColumn": 6,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprGlobal",
+						"location": {
+							"beginColumn": 10,
+							"beginLine": 1,
+							"endColumn": 11,
+							"endLine": 1
+						},
+						"global": "f"
+					}
+				],
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 14,
+						"beginLine": 1,
+						"endColumn": 15,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"hasIn": true,
+				"hasDo": true
+			}
+		]
+	},
+	"function t.m() end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 19,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatFunction",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 19,
+					"endLine": 1
+				},
+				"name": {
+					"type": "AstExprIndexName",
+					"location": {
+						"beginColumn": 10,
+						"beginLine": 1,
+						"endColumn": 13,
+						"endLine": 1
+					},
+					"expr": {
+						"type": "AstExprGlobal",
+						"location": {
+							"beginColumn": 10,
+							"beginLine": 1,
+							"endColumn": 11,
+							"endLine": 1
+						},
+						"global": "t"
+					},
+					"index": "m",
+					"indexLocation": {
+						"beginColumn": 12,
+						"beginLine": 1,
+						"endColumn": 13,
+						"endLine": 1
+					},
+					"op": "."
+				},
+				"func": {
+					"type": "AstExprFunction",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 19,
+						"endLine": 1
+					},
+					"attributes": [],
+					"generics": [],
+					"genericPacks": [],
+					"args": [],
+					"vararg": false,
+					"varargLocation": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 1,
+						"endLine": 1
+					},
+					"body": {
+						"type": "AstStatBlock",
+						"location": {
+							"beginColumn": 15,
+							"beginLine": 1,
+							"endColumn": 16,
+							"endLine": 1
+						},
+						"hasEnd": true,
+						"body": []
+					},
+					"functionDepth": 1,
+					"debugname": "m"
+				}
+			}
+		]
+	},
+	"if a then end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 14,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatIf",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 14,
+					"endLine": 1
+				},
+				"condition": {
+					"type": "AstExprGlobal",
+					"location": {
+						"beginColumn": 4,
+						"beginLine": 1,
+						"endColumn": 5,
+						"endLine": 1
+					},
+					"global": "a"
+				},
+				"thenbody": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 10,
+						"beginLine": 1,
+						"endColumn": 11,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"hasThen": true
+			}
+		]
+	},
+	"local a = 1": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 12,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 12,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 12,
+							"endLine": 1
+						},
+						"value": 1
+					}
+				]
+			}
+		]
+	},
+	"local function f() return 1 end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 32,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocalFunction",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 32,
+					"endLine": 1
+				},
+				"name": {
+					"luauType": null,
+					"name": "f",
+					"isConst": false,
+					"type": "AstLocal",
+					"location": {
+						"beginColumn": 16,
+						"beginLine": 1,
+						"endColumn": 17,
+						"endLine": 1
+					}
+				},
+				"func": {
+					"type": "AstExprFunction",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 32,
+						"endLine": 1
+					},
+					"attributes": [],
+					"generics": [],
+					"genericPacks": [],
+					"args": [],
+					"vararg": false,
+					"varargLocation": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 1,
+						"endLine": 1
+					},
+					"body": {
+						"type": "AstStatBlock",
+						"location": {
+							"beginColumn": 19,
+							"beginLine": 1,
+							"endColumn": 29,
+							"endLine": 1
+						},
+						"hasEnd": true,
+						"body": [
+							{
+								"type": "AstStatReturn",
+								"location": {
+									"beginColumn": 20,
+									"beginLine": 1,
+									"endColumn": 28,
+									"endLine": 1
+								},
+								"list": [
+									{
+										"type": "AstExprConstantNumber",
+										"location": {
+											"beginColumn": 27,
+											"beginLine": 1,
+											"endColumn": 28,
+											"endLine": 1
+										},
+										"value": 1
+									}
+								]
+							}
+						]
+					},
+					"functionDepth": 1,
+					"debugname": "f"
+				}
+			}
+		]
+	},
+	"repeat until a": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 15,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatRepeat",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 15,
+					"endLine": 1
+				},
+				"condition": {
+					"type": "AstExprGlobal",
+					"location": {
+						"beginColumn": 14,
+						"beginLine": 1,
+						"endColumn": 15,
+						"endLine": 1
+					},
+					"global": "a"
+				},
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 7,
+						"beginLine": 1,
+						"endColumn": 8,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				}
+			}
+		]
+	},
+	"return 1": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 9,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatReturn",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 9,
+					"endLine": 1
+				},
+				"list": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 8,
+							"beginLine": 1,
+							"endColumn": 9,
+							"endLine": 1
+						},
+						"value": 1
+					}
+				]
+			}
+		]
+	},
+	"while a do end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 15,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatWhile",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 15,
+					"endLine": 1
+				},
+				"condition": {
+					"type": "AstExprGlobal",
+					"location": {
+						"beginColumn": 7,
+						"beginLine": 1,
+						"endColumn": 8,
+						"endLine": 1
+					},
+					"global": "a"
+				},
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 11,
+						"beginLine": 1,
+						"endColumn": 12,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"hasDo": true
+			}
+		]
+	},
+	"for i = 1, 10, 2 do end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 24,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatFor",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 24,
+					"endLine": 1
+				},
+				"var": {
+					"luauType": null,
+					"name": "i",
+					"isConst": false,
+					"type": "AstLocal",
+					"location": {
+						"beginColumn": 5,
+						"beginLine": 1,
+						"endColumn": 6,
+						"endLine": 1
+					}
+				},
+				"from": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 9,
+						"beginLine": 1,
+						"endColumn": 10,
+						"endLine": 1
+					},
+					"value": 1
+				},
+				"to": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 12,
+						"beginLine": 1,
+						"endColumn": 14,
+						"endLine": 1
+					},
+					"value": 10
+				},
+				"step": {
+					"type": "AstExprConstantNumber",
+					"location": {
+						"beginColumn": 16,
+						"beginLine": 1,
+						"endColumn": 17,
+						"endLine": 1
+					},
+					"value": 2
+				},
+				"body": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 20,
+						"beginLine": 1,
+						"endColumn": 21,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"hasDo": true
+			}
+		]
+	},
+	"local t = { [a] = 1 }": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 22,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 22,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "t",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprTable",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 22,
+							"endLine": 1
+						},
+						"items": [
+							{
+								"type": "AstExprTableItem",
+								"kind": "general",
+								"key": {
+									"type": "AstExprGlobal",
+									"location": {
+										"beginColumn": 14,
+										"beginLine": 1,
+										"endColumn": 15,
+										"endLine": 1
+									},
+									"global": "a"
+								},
+								"value": {
+									"type": "AstExprConstantNumber",
+									"location": {
+										"beginColumn": 19,
+										"beginLine": 1,
+										"endColumn": 20,
+										"endLine": 1
+									},
+									"value": 1
+								}
+							}
+						]
+					}
+				]
+			}
+		]
+	},
+	"if a then else b() end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 23,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatIf",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 23,
+					"endLine": 1
+				},
+				"condition": {
+					"type": "AstExprGlobal",
+					"location": {
+						"beginColumn": 4,
+						"beginLine": 1,
+						"endColumn": 5,
+						"endLine": 1
+					},
+					"global": "a"
+				},
+				"thenbody": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 10,
+						"beginLine": 1,
+						"endColumn": 11,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"elsebody": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 15,
+						"beginLine": 1,
+						"endColumn": 20,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": [
+						{
+							"type": "AstStatExpr",
+							"location": {
+								"beginColumn": 16,
+								"beginLine": 1,
+								"endColumn": 19,
+								"endLine": 1
+							},
+							"expr": {
+								"type": "AstExprCall",
+								"location": {
+									"beginColumn": 16,
+									"beginLine": 1,
+									"endColumn": 19,
+									"endLine": 1
+								},
+								"func": {
+									"type": "AstExprGlobal",
+									"location": {
+										"beginColumn": 16,
+										"beginLine": 1,
+										"endColumn": 17,
+										"endLine": 1
+									},
+									"global": "b"
+								},
+								"args": [],
+								"self": false,
+								"argLocation": {
+									"beginColumn": 18,
+									"beginLine": 1,
+									"endColumn": 19,
+									"endLine": 1
+								}
+							}
+						}
+					]
+				},
+				"hasThen": true
+			}
+		]
+	},
+	"if a then elseif b then elseif c then end": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 42,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatIf",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 42,
+					"endLine": 1
+				},
+				"condition": {
+					"type": "AstExprGlobal",
+					"location": {
+						"beginColumn": 4,
+						"beginLine": 1,
+						"endColumn": 5,
+						"endLine": 1
+					},
+					"global": "a"
+				},
+				"thenbody": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 10,
+						"beginLine": 1,
+						"endColumn": 11,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"elsebody": {
+					"type": "AstStatIf",
+					"location": {
+						"beginColumn": 11,
+						"beginLine": 1,
+						"endColumn": 42,
+						"endLine": 1
+					},
+					"condition": {
+						"type": "AstExprGlobal",
+						"location": {
+							"beginColumn": 18,
+							"beginLine": 1,
+							"endColumn": 19,
+							"endLine": 1
+						},
+						"global": "b"
+					},
+					"thenbody": {
+						"type": "AstStatBlock",
+						"location": {
+							"beginColumn": 24,
+							"beginLine": 1,
+							"endColumn": 25,
+							"endLine": 1
+						},
+						"hasEnd": true,
+						"body": []
+					},
+					"elsebody": {
+						"type": "AstStatIf",
+						"location": {
+							"beginColumn": 25,
+							"beginLine": 1,
+							"endColumn": 42,
+							"endLine": 1
+						},
+						"condition": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 32,
+								"beginLine": 1,
+								"endColumn": 33,
+								"endLine": 1
+							},
+							"global": "c"
+						},
+						"thenbody": {
+							"type": "AstStatBlock",
+							"location": {
+								"beginColumn": 38,
+								"beginLine": 1,
+								"endColumn": 39,
+								"endLine": 1
+							},
+							"hasEnd": true,
+							"body": []
+						},
+						"hasThen": true
+					},
+					"hasThen": true
+				},
+				"hasThen": true
+			}
+		]
+	},
+	"-- header\nlocal a = 1\nlocal v = a\nreturn v\n": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 5
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 12,
+					"endLine": 2
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "a",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 2,
+							"endColumn": 8,
+							"endLine": 2
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 2,
+							"endColumn": 12,
+							"endLine": 2
+						},
+						"value": 1
+					}
+				]
+			},
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 3,
+					"endColumn": 12,
+					"endLine": 3
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "v",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 3,
+							"endColumn": 8,
+							"endLine": 3
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 3,
+							"endColumn": 12,
+							"endLine": 3
+						},
+						"local": {
+							"luauType": null,
+							"name": "a",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 2,
+								"endColumn": 8,
+								"endLine": 2
+							}
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatReturn",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 4,
+					"endColumn": 9,
+					"endLine": 4
+				},
+				"list": [
+					{
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 8,
+							"beginLine": 4,
+							"endColumn": 9,
+							"endLine": 4
+						},
+						"local": {
+							"luauType": null,
+							"name": "v",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 3,
+								"endColumn": 8,
+								"endLine": 3
+							}
+						}
+					}
+				]
+			}
+		]
+	},
+	"local v = a + b -- note\nreturn v\n": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 1,
+			"endLine": 3
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 16,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "v",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprBinary",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 16,
+							"endLine": 1
+						},
+						"op": "Add",
+						"left": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 11,
+								"beginLine": 1,
+								"endColumn": 12,
+								"endLine": 1
+							},
+							"global": "a"
+						},
+						"right": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 15,
+								"beginLine": 1,
+								"endColumn": 16,
+								"endLine": 1
+							},
+							"global": "b"
+						}
+					}
+				]
+			},
+			{
+				"type": "AstStatReturn",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 9,
+					"endLine": 2
+				},
+				"list": [
+					{
+						"type": "AstExprLocal",
+						"location": {
+							"beginColumn": 8,
+							"beginLine": 2,
+							"endColumn": 9,
+							"endLine": 2
+						},
+						"local": {
+							"luauType": null,
+							"name": "v",
+							"isConst": false,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 7,
+								"beginLine": 1,
+								"endColumn": 8,
+								"endLine": 1
+							}
+						}
+					}
+				]
+			}
+		]
+	},
+	"if local found = f() then end\nreturn if const id = g() then id else nil": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 42,
+			"endLine": 2
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatIf",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 30,
+					"endLine": 1
+				},
+				"condition": {
+					"type": "AstExprCall",
+					"location": {
+						"beginColumn": 18,
+						"beginLine": 1,
+						"endColumn": 21,
+						"endLine": 1
+					},
+					"func": {
+						"type": "AstExprGlobal",
+						"location": {
+							"beginColumn": 18,
+							"beginLine": 1,
+							"endColumn": 19,
+							"endLine": 1
+						},
+						"global": "f"
+					},
+					"args": [],
+					"self": false,
+					"argLocation": {
+						"beginColumn": 20,
+						"beginLine": 1,
+						"endColumn": 21,
+						"endLine": 1
+					}
+				},
+				"thenbody": {
+					"type": "AstStatBlock",
+					"location": {
+						"beginColumn": 26,
+						"beginLine": 1,
+						"endColumn": 27,
+						"endLine": 1
+					},
+					"hasEnd": true,
+					"body": []
+				},
+				"hasThen": true,
+				"conditionLocal": {
+					"luauType": null,
+					"name": "found",
+					"isConst": false,
+					"type": "AstLocal",
+					"location": {
+						"beginColumn": 10,
+						"beginLine": 1,
+						"endColumn": 15,
+						"endLine": 1
+					}
+				}
+			},
+			{
+				"type": "AstStatReturn",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 42,
+					"endLine": 2
+				},
+				"list": [
+					{
+						"type": "AstExprIfElse",
+						"location": {
+							"beginColumn": 8,
+							"beginLine": 2,
+							"endColumn": 42,
+							"endLine": 2
+						},
+						"condition": {
+							"type": "AstExprCall",
+							"location": {
+								"beginColumn": 22,
+								"beginLine": 2,
+								"endColumn": 25,
+								"endLine": 2
+							},
+							"func": {
+								"type": "AstExprGlobal",
+								"location": {
+									"beginColumn": 22,
+									"beginLine": 2,
+									"endColumn": 23,
+									"endLine": 2
+								},
+								"global": "g"
+							},
+							"args": [],
+							"self": false,
+							"argLocation": {
+								"beginColumn": 24,
+								"beginLine": 2,
+								"endColumn": 25,
+								"endLine": 2
+							}
+						},
+						"hasThen": true,
+						"trueExpr": {
+							"type": "AstExprLocal",
+							"location": {
+								"beginColumn": 31,
+								"beginLine": 2,
+								"endColumn": 33,
+								"endLine": 2
+							},
+							"local": {
+								"luauType": null,
+								"name": "id",
+								"isConst": true,
+								"type": "AstLocal",
+								"location": {
+									"beginColumn": 17,
+									"beginLine": 2,
+									"endColumn": 19,
+									"endLine": 2
+								}
+							}
+						},
+						"hasElse": true,
+						"falseExpr": {
+							"type": "AstExprConstantNil",
+							"location": {
+								"beginColumn": 39,
+								"beginLine": 2,
+								"endColumn": 42,
+								"endLine": 2
+							}
+						},
+						"conditionLocal": {
+							"luauType": null,
+							"name": "id",
+							"isConst": true,
+							"type": "AstLocal",
+							"location": {
+								"beginColumn": 17,
+								"beginLine": 2,
+								"endColumn": 19,
+								"endLine": 2
+							}
+						}
+					}
+				]
+			}
+		]
+	},
+	"return t.field": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 15,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatReturn",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 15,
+					"endLine": 1
+				},
+				"list": [
+					{
+						"type": "AstExprIndexName",
+						"location": {
+							"beginColumn": 8,
+							"beginLine": 1,
+							"endColumn": 15,
+							"endLine": 1
+						},
+						"expr": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 8,
+								"beginLine": 1,
+								"endColumn": 9,
+								"endLine": 1
+							},
+							"global": "t"
+						},
+						"index": "field",
+						"indexLocation": {
+							"beginColumn": 10,
+							"beginLine": 1,
+							"endColumn": 15,
+							"endLine": 1
+						},
+						"op": "."
+					}
+				]
+			}
+		]
+	},
+	"-- note\nlocal x = 1": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 12,
+			"endLine": 2
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 2,
+					"endColumn": 12,
+					"endLine": 2
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "x",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 2,
+							"endColumn": 8,
+							"endLine": 2
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantNumber",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 2,
+							"endColumn": 12,
+							"endLine": 2
+						},
+						"value": 1
+					}
+				]
+			}
+		]
+	},
+	"local s = \"to Infinity!\"": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 25,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatLocal",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 25,
+					"endLine": 1
+				},
+				"vars": [
+					{
+						"luauType": null,
+						"name": "s",
+						"isConst": false,
+						"type": "AstLocal",
+						"location": {
+							"beginColumn": 7,
+							"beginLine": 1,
+							"endColumn": 8,
+							"endLine": 1
+						}
+					}
+				],
+				"values": [
+					{
+						"type": "AstExprConstantString",
+						"location": {
+							"beginColumn": 11,
+							"beginLine": 1,
+							"endColumn": 25,
+							"endLine": 1
+						},
+						"value": "to Infinity!"
+					}
+				]
+			}
+		]
+	},
+	"f<<T>>()": {
+		"type": "AstStatBlock",
+		"location": {
+			"beginColumn": 1,
+			"beginLine": 1,
+			"endColumn": 9,
+			"endLine": 1
+		},
+		"hasEnd": true,
+		"body": [
+			{
+				"type": "AstStatExpr",
+				"location": {
+					"beginColumn": 1,
+					"beginLine": 1,
+					"endColumn": 9,
+					"endLine": 1
+				},
+				"expr": {
+					"type": "AstExprCall",
+					"location": {
+						"beginColumn": 1,
+						"beginLine": 1,
+						"endColumn": 9,
+						"endLine": 1
+					},
+					"func": {
+						"type": "AstExprInstantiate",
+						"location": {
+							"beginColumn": 1,
+							"beginLine": 1,
+							"endColumn": 7,
+							"endLine": 1
+						},
+						"expr": {
+							"type": "AstExprGlobal",
+							"location": {
+								"beginColumn": 1,
+								"beginLine": 1,
+								"endColumn": 2,
+								"endLine": 1
+							},
+							"global": "f"
+						},
+						"typeArguments": [
+							{
+								"type": "AstTypeReference",
+								"location": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 5,
+									"endLine": 1
+								},
+								"name": "T",
+								"nameLocation": {
+									"beginColumn": 4,
+									"beginLine": 1,
+									"endColumn": 5,
+									"endLine": 1
+								},
+								"parameters": []
+							}
+						]
+					},
+					"args": [],
+					"self": false,
+					"argLocation": {
+						"beginColumn": 8,
+						"beginLine": 1,
+						"endColumn": 9,
+						"endLine": 1
+					}
+				}
+			}
+		]
+	}
+}

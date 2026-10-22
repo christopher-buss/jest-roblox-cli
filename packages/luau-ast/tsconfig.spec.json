@@ -2,8 +2,11 @@
 	"extends": "@isentinel/tsconfig/typescript",
 	"compilerOptions": {
 		"composite": true,
+		"lib": ["es2025", "esnext"],
 		"libReplacement": true,
 		"rootDir": "../..",
+		"customConditions": ["source"],
+		"paths": { "jest-extended": ["../../types/jest-extended.d.ts"] },
 		"outDir": "./out-tsc/vitest"
 	},
 	"references": [
@@ -13,6 +16,7 @@
 	],
 	"include": [
 		"src/**/*.spec.ts",
+		"src/**/*.spec-d.ts",
 		"eslint.config.ts",
 		"oxlint.config.ts",
 		"oxlint.mirror.ts",
@@ -23,6 +27,7 @@
 		"package.json",
 		"../../types/**/*.d.ts",
 		"test/**/*.ts",
+		"test/fixtures/trees/*.json",
 		"stryker.config.ts",
 		"vitest.stryker.config.ts",
 		"dependency-cruiser.config.ts",

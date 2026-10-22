@@ -30,8 +30,7 @@ export interface WasmRuntime {
 	parseToJson: (source: string) => string;
 }
 
-/** The C symbols wrapper.cpp exports (see wasm/build-wasm.ts). */
-/* eslint-disable flawless/naming-convention -- C ABI symbol names from wrapper.cpp. */
+/** @external C ABI symbol names from wrapper.cpp. */
 interface WasmExports {
 	_initialize: () => void;
 	free: (pointer: number) => void;
@@ -42,7 +41,6 @@ interface WasmExports {
 	parse_to_cst_json: (sourcePointer: number, sourceLength: number) => number;
 	parse_to_json: (sourcePointer: number, sourceLength: number) => number;
 }
-/* eslint-enable flawless/naming-convention */
 
 /**
  * Instantiate the embedded wasm parser synchronously. The module is a
@@ -50,10 +48,13 @@ interface WasmExports {
  * growth notification, which needs no action because heap views are created
  * fresh per call.
  *
+ * @param instantiate - Host for the generated parser module's C ABI.
  * @returns The low-level parse surface.
  */
-export function createWasmRuntime(): WasmRuntime {
-	const exports = instantiateWasm(luauParserWasmBase64);
+export function createWasmRuntime(
+	instantiate: typeof instantiateWasm = instantiateWasm,
+): WasmRuntime {
+	const exports = instantiate(luauParserWasmBase64);
 	assert(isWasmExports(exports), "wasm module must export the wrapper surface");
 	exports._initialize();
 	const wasm: WasmExports = exports;

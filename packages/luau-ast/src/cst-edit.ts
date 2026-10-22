@@ -180,7 +180,7 @@ function anchor({ origin, replacements, subtree }: AnchorOptions): void {
 	walkCst(subtree, {
 		onNode: (node) => {
 			const inner = replacements.get(node)?.replacement;
-			if (inner !== undefined && isCstNode(inner)) {
+			if (isCstNode(inner)) {
 				anchor({ origin, replacements, subtree: inner });
 			}
 		},

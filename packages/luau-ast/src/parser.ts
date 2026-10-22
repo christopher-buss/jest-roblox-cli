@@ -100,39 +100,23 @@ function decodeErrors(raw: string): Array<string> {
  * @returns Valid JSON retaining the original numeric values.
  */
 function sanitizeNonFinite(json: string): string {
+	// Stryker disable next-line ConditionalExpression,BlockStatement: same JSON
+	// Stryker disable next-line StringLiteral: an empty probe always scans
 	if (!json.includes("Infinity")) {
 		return json;
 	}
 
-	let output = "";
-	let segmentStart = 0;
 	let isInString = false;
-	for (let index = 0; index < json.length; index += 1) {
-		const character = json[index];
-		if (isInString) {
-			if (character === "\\") {
-				index += 1;
-			} else if (character === '"') {
-				isInString = false;
-			}
-
-			continue;
+	return json.replaceAll(JSON_ESCAPE_QUOTE_OR_INFINITY, (token) => {
+		if (token === '"') {
+			isInString = !isInString;
 		}
 
-		if (character === '"') {
-			isInString = true;
-			continue;
-		}
-
-		if (character === "I" && json.startsWith("Infinity", index)) {
-			output += `${json.slice(segmentStart, index)}1e999`;
-			index += "Infinity".length - 1;
-			segmentStart = index + 1;
-		}
-	}
-
-	return output + json.slice(segmentStart);
+		return token === "Infinity" && !isInString ? "1e999" : token;
+	});
 }
+
+const JSON_ESCAPE_QUOTE_OR_INFINITY = /\\[\s\S]|"|Infinity/g;
 
 /**
  * Brand the root shape emitted by the vendored parser wrapper.

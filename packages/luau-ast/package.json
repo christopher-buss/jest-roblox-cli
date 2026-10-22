@@ -55,7 +55,21 @@
 		"src"
 	],
 	"scripts": {
-		"build": "tsdown"
+		"boundaries": "cd ../.. && dependency-cruiser --config packages/luau-ast/dependency-cruiser.config.ts --output-type err -- packages/luau-ast/src packages/luau-ast/test",
+		"build": "tsdown",
+		"cpd": "pnpm cpd-production && pnpm cpd-spec",
+		"cpd-production": "jscpd --config .jscpd.json --no-tips",
+		"cpd-spec": "jscpd --config .jscpd.spec.json --no-tips",
+		"e2e": "vitest run --project end-to-end --coverage.enabled=false",
+		"integration": "vitest run --project integration --coverage.enabled=false",
+		"knip": "pnpm knip-production && cd ../.. && knip --config packages/luau-ast/knip.json --workspace packages/luau-ast",
+		"knip-production": "cd ../.. && knip --production --config packages/luau-ast/knip.json --workspace packages/luau-ast",
+		"lint": "oxlint && eslint --cache",
+		"mutation": "stryker run stryker.config.ts",
+		"test": "vitest run --project unit --project type --coverage",
+		"test-type": "vitest run --project type",
+		"test-unit": "vitest run --project unit --coverage.enabled=false",
+		"typecheck": "tsc -b"
 	},
 	"devDependencies": {
 		"@isentinel/eslint-config": "6.0.0",
@@ -75,6 +89,7 @@
 		"eslint-plugin-pnpm": "1.8.0",
 		"jest-extended": "7.0.0",
 		"jscpd": "5.4.0",
+		"knip": "6.29.0",
 		"tsdown": "0.23.0",
 		"typescript": "6.0.3",
 		"vitest": "5.0.5"

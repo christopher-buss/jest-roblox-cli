@@ -21,7 +21,7 @@ interface CompilerWasmRequest {
 	source: string;
 }
 
-/* eslint-disable flawless/naming-convention -- C ABI symbol names from compiler-wrapper.cpp. */
+/** @external C ABI symbol names from compiler-wrapper.cpp. */
 interface CompilerWasmExports {
 	_initialize: () => void;
 	compile_with_statistics: (
@@ -36,14 +36,16 @@ interface CompilerWasmExports {
 	malloc: (size: number) => number;
 	memory: WebAssembly.Memory;
 }
-/* eslint-enable flawless/naming-convention */
 
 /**
  * Instantiate the embedded compiler and expose its raw payloads.
+ * @param instantiate - Host for the generated compiler module's C ABI.
  * @returns The initialized compiler backend.
  */
-export function createCompilerWasmRuntime(): CompilerWasmRuntime {
-	const exports = instantiateWasm(luauCompilerWasmBase64);
+export function createCompilerWasmRuntime(
+	instantiate: typeof instantiateWasm = instantiateWasm,
+): CompilerWasmRuntime {
+	const exports = instantiate(luauCompilerWasmBase64);
 	assert(isCompilerWasmExports(exports), "compiler wasm must export the wrapper surface");
 	exports._initialize();
 	const wasm: CompilerWasmExports = exports;

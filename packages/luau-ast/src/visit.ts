@@ -293,9 +293,6 @@ export function visitExpression(expression: Ast.AstExpr, visitor: LuauVisitor): 
 			visitor.visitExprVarargs?.(expression);
 			break;
 		}
-		default: {
-			break;
-		}
 	}
 
 	visitor.visitExprEnd?.(expression);
@@ -371,9 +368,6 @@ export function visitStatement(statement: Ast.AstStat, visitor: LuauVisitor): vo
 		}
 		case "AstStatWhile": {
 			visitStatWhile(statement, visitor);
-			break;
-		}
-		default: {
 			break;
 		}
 	}
