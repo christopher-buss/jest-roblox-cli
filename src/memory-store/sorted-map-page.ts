@@ -2,7 +2,7 @@ import type { OpenCloudClientOptions } from "@bedrock-rbx/ocale";
 import type { SortedMapItem } from "@bedrock-rbx/ocale/storage";
 import { StorageClient } from "@bedrock-rbx/ocale/storage";
 
-import { omitUndefined } from "../utils/omit-undefined.ts";
+import { isDefined, pickBy } from "remeda";
 
 const LIST_PAGE_SIZE = 100;
 
@@ -23,10 +23,13 @@ export function resolveStorageClient(options: {
 		return options.storageFactory();
 	}
 
-	const clientOptions: OpenCloudClientOptions = omitUndefined({
-		apiKey: options.credentials.apiKey,
-		baseUrl: options.baseUrl,
-	});
+	const clientOptions: OpenCloudClientOptions = pickBy(
+		{
+			apiKey: options.credentials.apiKey,
+			baseUrl: options.baseUrl,
+		},
+		isDefined,
+	);
 	return new StorageClient(clientOptions);
 }
 
@@ -62,12 +65,15 @@ export async function listSortedMapItemsAsync<T>({
 
 	do {
 		const result = await storage.sortedMaps.list(
-			omitUndefined({
-				mapId,
-				maxPageSize: LIST_PAGE_SIZE,
-				pageToken,
-				universeId,
-			}),
+			pickBy(
+				{
+					mapId,
+					maxPageSize: LIST_PAGE_SIZE,
+					pageToken,
+					universeId,
+				},
+				isDefined,
+			),
 		);
 		if (!result.success) {
 			throw new Error(`Failed to read ${failureLabel}: ${result.err.message}`, {

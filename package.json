@@ -123,6 +123,7 @@
 		"oxlint": "1.87.0",
 		"oxlint-tsgolint": "7.0.2003",
 		"publint": "0.3.24",
+		"remeda": "2.52.0",
 		"tsdown": "0.23.0",
 		"type-fest": "5.7.0",
 		"typescript": "6.0.3",

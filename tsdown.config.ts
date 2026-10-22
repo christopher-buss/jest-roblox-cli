@@ -96,7 +96,7 @@ export default defineConfig([
 				"typescript",
 				"ws",
 			],
-			onlyBundle: ["@rbxts/jest", "type-fest"],
+			onlyBundle: ["@rbxts/jest", "remeda", "type-fest"],
 		},
 		dts: {
 			build: true,

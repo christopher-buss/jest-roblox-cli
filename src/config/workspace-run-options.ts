@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import process from "node:process";
+import { isDefined, pickBy } from "remeda";
 
-import { omitUndefined } from "../utils/omit-undefined.ts";
 import { defaultFormatters } from "./default-formatters.ts";
 import type { CliOptions, FormatterEntry, WorkspaceRunOptions } from "./schema.ts";
 import { DEFAULT_CONFIG } from "./schema.ts";
@@ -147,7 +147,7 @@ export function buildWorkspaceRunOptions({
 	return {
 		...resolveDefaultedFields({ cli, perPackageConfigs }),
 		...resolveConsensusOnlyFields(perPackageConfigs),
-		...omitUndefined(resolveOptionalFields({ cli, perPackageConfigs, workspaceRoot })),
+		...pickBy(resolveOptionalFields({ cli, perPackageConfigs, workspaceRoot }), isDefined),
 	};
 }
 

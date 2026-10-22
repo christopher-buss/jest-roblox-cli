@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import * as path from "node:path";
+import { isDefined, pickBy } from "remeda";
 import type { Except } from "type-fest";
 
 import { ConfigError } from "../config/errors.ts";
@@ -12,7 +13,6 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import { hashFileAsync } from "../utils/hash.ts";
 import type { PosixRoot } from "../utils/normalize-windows-path.ts";
-import { omitUndefined } from "../utils/omit-undefined.ts";
 import { buildWithRojoAsync } from "../utils/rojo-builder.ts";
 import type { CodeSplit } from "./code-split.ts";
 import { CODE_SPLIT_PASS_VERSION, splitCodeMounts } from "./code-split.ts";
@@ -210,7 +210,7 @@ export async function buildPlaceAsync(options: BuildPlaceOptions): Promise<Place
 		projectFile,
 		projectJson,
 	});
-	return omitUndefined({ ...artifact, codeBundle, contentId });
+	return pickBy({ ...artifact, codeBundle, contentId }, isDefined);
 }
 
 /**
