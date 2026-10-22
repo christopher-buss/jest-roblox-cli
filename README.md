@@ -1,10 +1,16 @@
 <h1 align="center">jest-roblox-cli</h1>
 
-<p align="center">
-  <a href="https://www.npmx.dev/package/@isentinel/jest-roblox"><img src="https://img.shields.io/npm/v/@isentinel/jest-roblox" alt="npm version"></a>
-  <a href="https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml"><img src="https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/christopher-buss/jest-roblox-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
-</p>
+<div align="center">
+
+[![npm](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/5959dc76990e4dc70d697f8b39db48da5a282837/Badges/Community/Package/link-npm.svg)](https://npmx.dev/package/@isentinel/jest-roblox)
+[![Roblox OSS Discord](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/5f7377f6de78a403fb2d49a34fc67d685f8eda3d/Badges/Community/Discord/link-discord-roblox-oss.svg)](https://discord.com/channels/385151591524597761/1508303470627651694)
+[![Sponsor me](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/b880ff3b8ca27e95914b12adcb784e29ef5c7222/Badges/Roblox-Styled/Original/sponsor-me-var2.svg)](https://github.com/sponsors/christopher-buss)
+[![Rokit](https://raw.githubusercontent.com/maneetoo/Roblox-OSS-Badges/5959dc76990e4dc70d697f8b39db48da5a282837/Badges/Community/Package/rokit.svg)](#standalone-binary-no-nodejs-required)
+
+[![CI](https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/christopher-buss/jest-roblox-cli/actions/workflows/ci.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/christopher-buss/jest-roblox-cli/blob/main/LICENSE)
+
+</div>
 
 Run your roblox-ts and Luau tests inside Roblox, get results in your terminal.
 
