@@ -26,7 +26,26 @@ export interface AffectedContext {
 /** The same, with both seams settled. */
 type ResolvedAffectedContext = Required<AffectedContext>;
 
-function resolvePosixShim(fileSystem: FileSystem, binDirectory: string, command: string): string {
+interface AffectedTarget {
+	readonly ref: string;
+	readonly workspaceRoot: string;
+}
+
+interface ToolInvocation {
+	readonly args: Array<string>;
+	readonly command: string;
+	readonly cwd: string;
+}
+
+function resolvePosixShim({
+	binDirectory,
+	command,
+	fileSystem,
+}: {
+	readonly binDirectory: string;
+	readonly command: string;
+	readonly fileSystem: FileSystem;
+}): string {
 	const candidate = path.join(binDirectory, command);
 	return fileSystem.existsSync(candidate) ? candidate : command;
 }
@@ -89,11 +108,12 @@ interface TurboPackage {
 // name must match `package.json#name` so downstream resolution doesn't fail,
 // and turbo/nx already hand us the directory, so resolving it here skips a
 // redundant `resolvePackage` round-trip in the caller.
-export function getAffectedPackages(
-	workspaceRoot: string,
-	ref: string,
-	{ childProcess = nodeChildProcessRunner, fileSystem = nodeFileSystem }: AffectedContext = {},
-): Array<PackageInfo> {
+export function getAffectedPackages({
+	childProcess = nodeChildProcessRunner,
+	fileSystem = nodeFileSystem,
+	ref,
+	workspaceRoot,
+}: AffectedContext & AffectedTarget): Array<PackageInfo> {
 	if (!validRefPattern.test(ref) || ref.startsWith("-")) {
 		throw new Error(
 			`Invalid --affected-since ref ${JSON.stringify(ref)}. ` +
@@ -104,11 +124,11 @@ export function getAffectedPackages(
 	const resolved = { childProcess, fileSystem } satisfies ResolvedAffectedContext;
 
 	if (resolved.fileSystem.existsSync(path.join(workspaceRoot, TURBO_MARKER))) {
-		return resolveTurboAffected(resolved, workspaceRoot, ref);
+		return resolveTurboAffected({ ...resolved, ref, workspaceRoot });
 	}
 
 	if (resolved.fileSystem.existsSync(path.join(workspaceRoot, NX_MARKER))) {
-		return resolveNxAffected(resolved, workspaceRoot, ref);
+		return resolveNxAffected({ ...resolved, ref, workspaceRoot });
 	}
 
 	throw new Error(
@@ -167,18 +187,19 @@ function toToolError(command: string, err: unknown): Error {
 //   - POSIX: pin the absolute path of the locally installed shim. Scripts
 //     in `.bin` are directly executable (`#!/usr/bin/env node`), so no
 //     shell is needed and the bare-PATH lookup isn't required.
-function runTool(
-	{ childProcess, fileSystem }: ResolvedAffectedContext,
-	command: string,
-	args: Array<string>,
-	cwd: string,
-): string {
+function runTool({
+	args,
+	childProcess,
+	command,
+	cwd,
+	fileSystem,
+}: ResolvedAffectedContext & ToolInvocation): string {
 	const binDirectory = path.join(cwd, "node_modules", ".bin");
 	const isWindows = process.platform === "win32";
 	const childEnvironment = isWindows
 		? { ...process.env, PATH: `${binDirectory}${path.delimiter}${process.env["PATH"]}` }
 		: process.env;
-	const file = isWindows ? "cmd.exe" : resolvePosixShim(fileSystem, binDirectory, command);
+	const file = isWindows ? "cmd.exe" : resolvePosixShim({ binDirectory, command, fileSystem });
 	const spawnArgs = isWindows ? buildCommandExeArgs(command, args) : args;
 	const options = {
 		cwd,
@@ -222,11 +243,11 @@ function parseTurboOutput(stdout: string): Array<TurboPackage> {
 	return validated.packages.items.map((item) => ({ name: item.name, relativePath: item.path }));
 }
 
-function resolveTurboAffected(
-	context: ResolvedAffectedContext,
-	workspaceRoot: string,
-	ref: string,
-): Array<PackageInfo> {
+function resolveTurboAffected({
+	ref,
+	workspaceRoot,
+	...context
+}: AffectedTarget & ResolvedAffectedContext): Array<PackageInfo> {
 	// `--filter=...[<ref>]` = packages changed since <ref> plus their
 	// dependents. That's exactly the set the user asked for.
 	//
@@ -237,12 +258,12 @@ function resolveTurboAffected(
 	// intersection silently narrows the result. Some turbo versions
 	// (e.g. 2.8.x) also reject the combination outright. The filter alone
 	// is the precise expression of intent and works on every 2.x.
-	const stdout = runTool(
-		context,
-		"turbo",
-		["ls", `--filter=...[${ref}]`, "--output=json"],
-		workspaceRoot,
-	);
+	const stdout = runTool({
+		...context,
+		args: ["ls", `--filter=...[${ref}]`, "--output=json"],
+		command: "turbo",
+		cwd: workspaceRoot,
+	});
 	// turbo names projects by `package.json#name` by convention, so the
 	// name needs no further resolution — just anchor the directory. Filter
 	// before mapping so dropped packages don't pay for an extra alloc.
@@ -271,15 +292,23 @@ function parseNxOutput(stdout: string): Array<string> {
 // in the message regardless of failure mode (exec failure, non-JSON output,
 // schema mismatch) — nx reporting an affected project it can't subsequently
 // locate is a real inconsistency the user needs to see, not silently drop.
-function nxProjectRoot(
-	context: ResolvedAffectedContext,
-	workspaceRoot: string,
-	name: string,
-): string {
+function nxProjectRoot({
+	name,
+	workspaceRoot,
+	...context
+}: ResolvedAffectedContext & {
+	readonly name: string;
+	readonly workspaceRoot: string;
+}): string {
 	const errorContext = `nx show project ${JSON.stringify(name)}`;
 	let parsed: JSONValue;
 	try {
-		const stdout = runTool(context, "nx", ["show", "project", name, "--json"], workspaceRoot);
+		const stdout = runTool({
+			...context,
+			args: ["show", "project", name, "--json"],
+			command: "nx",
+			cwd: workspaceRoot,
+		});
 		parsed = parseJson(stdout, "nx");
 	} catch (err) {
 		// Both runTool and parseJson surface failures as Error instances —
@@ -296,11 +325,11 @@ function nxProjectRoot(
 	return validated.root;
 }
 
-function resolveNxAffected(
-	context: ResolvedAffectedContext,
-	workspaceRoot: string,
-	ref: string,
-): Array<PackageInfo> {
+function resolveNxAffected({
+	ref,
+	workspaceRoot,
+	...context
+}: AffectedTarget & ResolvedAffectedContext): Array<PackageInfo> {
 	// nx project names live in a separate namespace from `package.json.name`,
 	// so we can't map them via pnpm-workspace.yaml without false-green-ing
 	// affected projects whose two names diverge. Ask nx itself for each
@@ -309,17 +338,17 @@ function resolveNxAffected(
 	// package.json exists). Mirrors the turbo path, which gets `path` and the
 	// package name for free from `turbo ls`.
 	const affected = parseNxOutput(
-		runTool(
-			context,
-			"nx",
-			["show", "projects", "--affected", `--base=${ref}`, "--json"],
-			workspaceRoot,
-		),
+		runTool({
+			...context,
+			args: ["show", "projects", "--affected", `--base=${ref}`, "--json"],
+			command: "nx",
+			cwd: workspaceRoot,
+		}),
 	);
 	return affected.flatMap((nxName) => {
 		const packageDirectory = path.join(
 			workspaceRoot,
-			nxProjectRoot(context, workspaceRoot, nxName),
+			nxProjectRoot({ ...context, name: nxName, workspaceRoot }),
 		);
 		if (!hasJestConfig(context.fileSystem, packageDirectory)) {
 			return [];

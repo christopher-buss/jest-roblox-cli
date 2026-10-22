@@ -49,11 +49,14 @@ export function readPnpmWorkspaceProjects(
 	fileSystem: FileSystem = nodeFileSystem,
 ): Array<PackageInfo> | undefined {
 	const state = readState(fileSystem, path.join(workspaceRoot, STATE_PATH));
-	if (state === undefined) {
-		return undefined;
-	}
-
-	if (!manifestPredatesInstall(fileSystem, workspaceRoot, state.lastValidatedTimestamp)) {
+	if (
+		state === undefined ||
+		!manifestPredatesInstall({
+			fileSystem,
+			lastValidatedTimestamp: state.lastValidatedTimestamp,
+			workspaceRoot,
+		})
+	) {
 		return undefined;
 	}
 
@@ -109,11 +112,15 @@ function readState(
  * invalidates -- and deliberately so: the cost of a false stale is one walk,
  * while the cost of a false fresh is a package the CLI cannot find.
  */
-function manifestPredatesInstall(
-	fileSystem: FileSystem,
-	workspaceRoot: string,
-	lastValidatedTimestamp: number,
-): boolean {
+function manifestPredatesInstall({
+	fileSystem,
+	lastValidatedTimestamp,
+	workspaceRoot,
+}: {
+	readonly fileSystem: FileSystem;
+	readonly lastValidatedTimestamp: number;
+	readonly workspaceRoot: string;
+}): boolean {
 	const stat = fileSystem.statSync(path.join(workspaceRoot, PNPM_MARKER), {
 		throwIfNoEntry: false,
 	});

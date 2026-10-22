@@ -127,7 +127,7 @@ export async function resolveRunBackendAsync({
 	seams: RunSeams;
 	timing: TimingCollector;
 }): Promise<Backend> {
-	return timing.profileAsync("resolveBackend", async () => seams.resolveBackend(cli, config));
+	return timing.profileAsync("resolveBackend", async () => seams.resolveBackend({ cli, config }));
 }
 
 /**

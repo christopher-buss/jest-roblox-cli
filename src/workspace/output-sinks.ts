@@ -65,11 +65,16 @@ export async function writeWorkspaceSinksAsync(input: WorkspaceSinkInput): Promi
 	const fileSystem = input.fileSystem ?? nodeFileSystem;
 
 	if (runOptions.workspaceOutputFile) {
-		writePerPackageOutputFiles(
+		writePerPackageOutputFiles({
+			entries: buildPerPackageResults({
+				pending,
+				results,
+				typeByPackage: input.typecheckByPackage,
+				typeTestProjects,
+			}),
 			fileSystem,
 			workspaceRoot,
-			buildPerPackageResults(pending, results, input.typecheckByPackage, typeTestProjects),
-		);
+		});
 	}
 
 	// Only merge the runtime side when there's a sink to write it to:
@@ -119,11 +124,16 @@ export async function writeTypecheckOnlySinksAsync(
 
 	// Per-package files route through the same writer as the runtime path.
 	if (input.runOptions.workspaceOutputFile) {
-		writePerPackageOutputFiles(
+		writePerPackageOutputFiles({
+			entries: buildPerPackageResults({
+				pending: [],
+				results: [],
+				typeByPackage: input.typecheckByPackage,
+				typeTestProjects: input.typeTestProjects,
+			}),
 			fileSystem,
-			input.workspaceRoot,
-			buildPerPackageResults([], [], input.typecheckByPackage, input.typeTestProjects),
-		);
+			workspaceRoot: input.workspaceRoot,
+		});
 	}
 }
 
@@ -134,12 +144,17 @@ export async function writeTypecheckOnlySinksAsync(
 // pairs reuse each package's whole type result (the tsgo pass collapses a
 // package's projects, so package-level is the finest honest split) under every
 // project that owns Type Tests. A pair present on both sides merges.
-function buildPerPackageResults(
-	pending: Array<PendingEntry>,
-	results: Array<ExecuteResult>,
-	typeByPackage: Map<string, JestResult>,
-	typeTestProjects: Array<TypeTestProject>,
-): Array<PerPackageResultEntry> {
+function buildPerPackageResults({
+	pending,
+	results,
+	typeByPackage,
+	typeTestProjects,
+}: {
+	readonly pending: Array<PendingEntry>;
+	readonly results: Array<ExecuteResult>;
+	readonly typeByPackage: Map<string, JestResult>;
+	readonly typeTestProjects: Array<TypeTestProject>;
+}): Array<PerPackageResultEntry> {
 	const byKey = new Map<string, PerPackageResultEntry>();
 
 	for (const [index, result] of results.entries()) {
@@ -172,11 +187,15 @@ function sanitizePathSegment(segment: string): string {
 	return segment.replace(FILESYSTEM_UNSAFE, "-");
 }
 
-function writePerPackageOutputFiles(
-	fileSystem: FileSystem,
-	workspaceRoot: string,
-	entries: Array<PerPackageResultEntry>,
-): void {
+function writePerPackageOutputFiles({
+	entries,
+	fileSystem,
+	workspaceRoot,
+}: {
+	readonly entries: Array<PerPackageResultEntry>;
+	readonly fileSystem: FileSystem;
+	readonly workspaceRoot: string;
+}): void {
 	const directory = path.join(workspaceRoot, PER_PACKAGE_OUTPUT_DIRECTORY);
 	fileSystem.mkdirSync(directory, { recursive: true });
 
@@ -199,12 +218,17 @@ function writePerPackageOutputFiles(
 // would otherwise fall back to process.cwd() and silently mis-route files.
 // Returns each written file's path and entry count so the caller can build
 // notices for the non-empty ones.
-function writePerPackageGameOutputFiles(
-	fileSystem: FileSystem,
-	workspaceRoot: string,
-	pending: Array<PendingEntry>,
-	results: Array<ExecuteResult>,
-): Array<PerPackageGameOutputFile> {
+function writePerPackageGameOutputFiles({
+	fileSystem,
+	pending,
+	results,
+	workspaceRoot,
+}: {
+	readonly fileSystem: FileSystem;
+	readonly pending: Array<PendingEntry>;
+	readonly results: Array<ExecuteResult>;
+	readonly workspaceRoot: string;
+}): Array<PerPackageGameOutputFile> {
 	const directory = path.join(workspaceRoot, PER_PACKAGE_OUTPUT_DIRECTORY);
 
 	return results.map((result, index) => {
@@ -222,12 +246,17 @@ function writePerPackageGameOutputFiles(
 
 // The single grouped Game Output file (top-level `gameOutput`). Returns the
 // notice announcing it so the caller can pick which sink to advertise.
-function writeAggregateGameOutput(
-	fileSystem: FileSystem,
-	aggregatePath: string,
-	pending: Array<PendingEntry>,
-	results: Array<ExecuteResult>,
-): string {
+function writeAggregateGameOutput({
+	aggregatePath,
+	fileSystem,
+	pending,
+	results,
+}: {
+	readonly aggregatePath: string;
+	readonly fileSystem: FileSystem;
+	readonly pending: Array<PendingEntry>;
+	readonly results: Array<ExecuteResult>;
+}): string {
 	const groups = buildGroupedGameOutput(
 		results.map((result, index) => {
 			const entry = pending[index];
@@ -248,17 +277,17 @@ function writeAggregateGameOutput(
  * per-package files whenever they were written; every other formatter names
  * them only when there is no aggregate to name instead.
  */
-function announceGameOutput(
-	{
-		aggregateNotice,
-		perPackageNotices,
-	}: {
-		aggregateNotice: string | undefined;
-		perPackageNotices: Array<string> | undefined;
-	},
-	runOptions: WorkspaceRunOptions,
+function announceGameOutput({
+	aggregateNotice,
+	perPackageNotices,
+	runOptions,
 	verbose = false,
-): void {
+}: {
+	aggregateNotice: string | undefined;
+	perPackageNotices: Array<string> | undefined;
+	runOptions: WorkspaceRunOptions;
+	verbose?: boolean | undefined;
+}): void {
 	if (
 		perPackageNotices !== undefined &&
 		(aggregateNotice === undefined || usesAgentFormatter(runOptions.formatters, verbose))
@@ -288,22 +317,27 @@ function emitWorkspaceGameOutput({
 	const aggregatePath = runOptions.gameOutput;
 	const aggregateNotice =
 		aggregatePath !== undefined
-			? writeAggregateGameOutput(fileSystem, aggregatePath, pending, results)
+			? writeAggregateGameOutput({
+					aggregatePath,
+					fileSystem,
+					pending,
+					results,
+				})
 			: undefined;
 
 	let perPackageNotices: Array<string> | undefined;
 	if (runOptions.workspaceGameOutput) {
-		perPackageNotices = writePerPackageGameOutputFiles(
+		perPackageNotices = writePerPackageGameOutputFiles({
 			fileSystem,
-			workspaceRoot,
 			pending,
 			results,
-		)
+			workspaceRoot,
+		})
 			.map((file) => formatGameOutputNotice(file.path, file.count))
 			.filter((notice) => notice !== "");
 	}
 
 	if (!runOptions.silent) {
-		announceGameOutput({ aggregateNotice, perPackageNotices }, runOptions, verbose);
+		announceGameOutput({ aggregateNotice, perPackageNotices, runOptions, verbose });
 	}
 }

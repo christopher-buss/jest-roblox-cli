@@ -38,7 +38,7 @@ export async function loadWorkspacePackagesAsync({
 
 	for (const info of packageInfos) {
 		const fileConfig = await timing.profileAsync(`load-config:${info.name}`, async () => {
-			return loadPackageConfig(undefined, info.packageDirectory, { fileSystem });
+			return loadPackageConfig({ cwd: info.packageDirectory, fileSystem });
 		});
 		// The `--testPathPattern` narrow happens per project in
 		// `selectWorkspaceTests`, where the project's resolved Rojo mounts are

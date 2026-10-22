@@ -113,7 +113,15 @@ function stepFromCode(rest: string): CodeStep {
  * it: the count is in whole lines, so a caller cannot lift such a directive
  * away without carrying the code up too.
  */
-function advanceOnce(line: string, column: number, state: HeaderLineScan): HeaderAdvance {
+function advanceOnce({
+	column,
+	line,
+	state,
+}: {
+	readonly column: number;
+	readonly line: string;
+	readonly state: HeaderLineScan;
+}): HeaderAdvance {
 	const { closer, isDirective } = state;
 	if (closer !== undefined) {
 		const closeAt = line.indexOf(closer, column);
@@ -152,7 +160,7 @@ function scanHeaderLine(line: string, openCloser: string | undefined): HeaderLin
 	let column = 0;
 
 	while (column < line.length) {
-		const { state: nextState, width } = advanceOnce(line, column, state);
+		const { state: nextState, width } = advanceOnce({ column, line, state });
 		state = nextState;
 		if (width === undefined) {
 			return state;

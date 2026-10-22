@@ -61,15 +61,16 @@ function buildMergedJestResult(): JestResult {
 }
 
 async function resolveMultiRootProjectAsync() {
-	const config = await loadConfig(undefined, MULTI_ROOT_FIXTURE);
+	const config = await loadConfig({ cwd: MULTI_ROOT_FIXTURE });
 	const rojoData = readJsonSync(path.join(MULTI_ROOT_FIXTURE, "default.project.json"));
 	const rojo = rojoProjectSchema.assert(rojoData);
 
-	const resolved = await resolveAllProjects(
-		config.projects ?? [],
-		{ ...config, rootDir: MULTI_ROOT_FIXTURE },
-		{ cwd: MULTI_ROOT_FIXTURE, rojoTree: rojo.tree },
-	);
+	const resolved = await resolveAllProjects({
+		cwd: MULTI_ROOT_FIXTURE,
+		entries: config.projects ?? [],
+		rojoTree: rojo.tree,
+		rootConfig: { ...config, rootDir: MULTI_ROOT_FIXTURE },
+	});
 
 	const project = resolved[0];
 	if (project === undefined) {

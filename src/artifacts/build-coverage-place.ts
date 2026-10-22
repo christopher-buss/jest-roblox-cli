@@ -76,8 +76,9 @@ export async function buildCoveragePlaceAsync(
 	// Mirror the run path's pre-flight: drop marker-bearing leftover stubs, then
 	// regenerate the current set into the cache (never the user's source tree) so
 	// `prepareBakedCoverage` can bake them into the place.
-	cleanLeftoverStubs(projects, merged.rootDir, fileSystem);
-	generateProjectStubs(projects, merged.rootDir, cacheRoot, fileSystem);
+	const stubRoot = { fileSystem, rootDirectory: merged.rootDir };
+	cleanLeftoverStubs({ projects, ...stubRoot });
+	generateProjectStubs({ projects, ...stubRoot, outputRoot: cacheRoot });
 
 	const { artifacts } = await prepareBakedCoverageAsync({
 		bakeStubs: true,
@@ -119,10 +120,12 @@ async function resolveProjectsAsync(
 	const rojoTree = dispatch.loadRojoTree(config, fileSystem);
 	const rawProjects = config.projects;
 	if (rawProjects !== undefined && rawProjects.length > 0) {
-		return seams.resolveAllProjects(rawProjects, config, {
+		return seams.resolveAllProjects({
 			cwd: config.rootDir,
+			entries: rawProjects,
 			fileSystem,
 			rojoTree,
+			rootConfig: config,
 			tsconfigReader: seams.tsconfigReader,
 		});
 	}

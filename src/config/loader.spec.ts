@@ -194,7 +194,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		expect.assertions(2);
 
 		const temporaryDirectory = makeTemporaryDirectory();
-		const result = await loadConfig(undefined, temporaryDirectory);
+		const result = await loadConfig({ cwd: temporaryDirectory });
 
 		expect(result.rootDir).toBe(temporaryDirectory);
 		expect(result.verbose).toBe(DEFAULT_CONFIG.verbose);
@@ -207,7 +207,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(temporaryDirectory, "custom.config.mjs");
 		fs.writeFileSync(configPath, "export default { test: { verbose: true } };");
 
-		const result = await loadConfig(configPath, temporaryDirectory);
+		const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 		expect(result.verbose).toBeTrue();
 	});
@@ -216,7 +216,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		expect.assertions(1);
 
 		const temporaryDirectory = makeTemporaryDirectory();
-		const result = await loadConfig(undefined, temporaryDirectory);
+		const result = await loadConfig({ cwd: temporaryDirectory });
 
 		expect(result.rootDir).toBe(temporaryDirectory);
 	});
@@ -227,7 +227,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const temporaryDirectory = makeTemporaryDirectory();
 		const missingPath = path.join(temporaryDirectory, "nonexistent.config.ts");
 
-		const error = await loadConfig(missingPath, temporaryDirectory).catch((err) => err);
+		const error = await loadConfig({ configPath: missingPath, cwd: temporaryDirectory }).catch(
+			(err) => err,
+		);
 
 		assert(error instanceof Error);
 
@@ -241,7 +243,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const temporaryDirectory = makeTemporaryDirectory();
 		fs.writeFileSync(path.join(temporaryDirectory, "jest.config.mjs"), "export default {{{");
 
-		await expect(loadConfig(undefined, temporaryDirectory)).rejects.toSatisfy(
+		await expect(loadConfig({ cwd: temporaryDirectory })).rejects.toSatisfy(
 			isErrorWithoutNotFoundMessage,
 		);
 	});
@@ -253,7 +255,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(temporaryDirectory, "jest.config.mjs");
 		fs.writeFileSync(configPath, 'export default { backend: "not-a-backend" };');
 
-		await expect(loadConfig(configPath, temporaryDirectory)).rejects.toThrow("Invalid config");
+		await expect(loadConfig({ configPath, cwd: temporaryDirectory })).rejects.toThrow(
+			"Invalid config",
+		);
 	});
 
 	it("should reject config file with invalid port type", async () => {
@@ -263,7 +267,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(temporaryDirectory, "jest.config.mjs");
 		fs.writeFileSync(configPath, 'export default { port: "not-a-number" };');
 
-		await expect(loadConfig(configPath, temporaryDirectory)).rejects.toThrow("Invalid config");
+		await expect(loadConfig({ configPath, cwd: temporaryDirectory })).rejects.toThrow(
+			"Invalid config",
+		);
 	});
 
 	it("should reject config file with undeclared keys", async () => {
@@ -275,7 +281,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		// cspell:disable-next-line
 		fs.writeFileSync(configPath, 'export default { bakcend: "studio" };');
 
-		await expect(loadConfig(configPath, temporaryDirectory)).rejects.toThrow("Invalid config");
+		await expect(loadConfig({ configPath, cwd: temporaryDirectory })).rejects.toThrow(
+			"Invalid config",
+		);
 	});
 
 	it("should default rootDir to cwd even when config file is in a subdirectory", async () => {
@@ -287,7 +295,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(subdirectory, "jest.config.mjs");
 		fs.writeFileSync(configPath, "export default { test: { verbose: true } };");
 
-		const result = await loadConfig(configPath, parentDirectory);
+		const result = await loadConfig({ configPath, cwd: parentDirectory });
 
 		expect(path.normalize(result.rootDir)).toBe(path.normalize(parentDirectory));
 	});
@@ -301,7 +309,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(packageDirectory, "jest.config.mjs");
 		fs.writeFileSync(configPath, 'export default { rootDir: "." };');
 
-		const result = await loadConfig(configPath, workspaceRoot);
+		const result = await loadConfig({ configPath, cwd: workspaceRoot });
 
 		expect(result.rootDir).toBe(packageDirectory);
 	});
@@ -315,7 +323,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			'export default { rootDir: "." };',
 		);
 
-		const result = await loadConfig(undefined, packageDirectory);
+		const result = await loadConfig({ cwd: packageDirectory });
 
 		expect(result.rootDir).toBe(packageDirectory);
 	});
@@ -329,7 +337,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			'export default { gameOutput: true, outputFile: true, rootDir: "." };',
 		);
 
-		const result = await loadConfig(undefined, packageDirectory);
+		const result = await loadConfig({ cwd: packageDirectory });
 
 		expect(result.gameOutput).toBe(path.join(packageDirectory, "game-output.log"));
 		expect(result.outputFile).toBe(path.join(packageDirectory, "jest-output.log"));
@@ -344,7 +352,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			'export default { placeFile: "build/test.rbxl", rootDir: "." };',
 		);
 
-		const result = await loadConfig(undefined, packageDirectory);
+		const result = await loadConfig({ cwd: packageDirectory });
 
 		expect(resolvePlaceFilePath(result)).toBe(path.join(packageDirectory, "build/test.rbxl"));
 	});
@@ -358,7 +366,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			'export default { rootDir: "." };',
 		);
 
-		const result = await loadConfig(undefined, packageDirectory);
+		const result = await loadConfig({ cwd: packageDirectory });
 		// A plain string, so the assertion can name one: the
 		// anchor is a branded PosixRoot.
 		const anchor: string = resolveUniverseAnchor(result.rootDir);
@@ -369,7 +377,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 	it("should absolutize a relative cwd when no rootDir is declared", async () => {
 		expect.assertions(1);
 
-		const result = await loadConfig(undefined, ".");
+		const result = await loadConfig({ cwd: "." });
 
 		expect(result.rootDir).toBe(process.cwd());
 	});
@@ -381,9 +389,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(packageDirectory, "jest.config.mjs");
 
 		fs.writeFileSync(configPath, 'export default { rootDir: "D:/repo/foo" };');
-		const windowsRoot = await loadConfig(undefined, packageDirectory);
+		const windowsRoot = await loadConfig({ cwd: packageDirectory });
 		fs.writeFileSync(configPath, 'export default { rootDir: "/repo/foo" };');
-		const posixRoot = await loadConfig(undefined, packageDirectory);
+		const posixRoot = await loadConfig({ cwd: packageDirectory });
 
 		expect(windowsRoot.rootDir).toBe("D:/repo/foo");
 		expect(posixRoot.rootDir).toBe("/repo/foo");
@@ -408,7 +416,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: "./parent.config.mjs", test: { setupFiles: () => ["child-setup.luau"] } };',
 			);
 
-			const result = await loadConfig(childPath, temporaryDirectory);
+			const result = await loadConfig({ configPath: childPath, cwd: temporaryDirectory });
 
 			expect(result.setupFiles).toStrictEqual(["child-setup.luau"]);
 		});
@@ -429,7 +437,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: "./parent.config.mjs", test: { setupFiles: (defaults) => defaults.filter(f => !f.includes("remove")) } };',
 			);
 
-			const result = await loadConfig(childPath, temporaryDirectory);
+			const result = await loadConfig({ configPath: childPath, cwd: temporaryDirectory });
 
 			expect(result.setupFiles).toStrictEqual(["keep.luau"]);
 		});
@@ -450,7 +458,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: "./parent.config.mjs", test: { setupFiles: ["child-setup.luau"] } };',
 			);
 
-			const result = await loadConfig(childPath, temporaryDirectory);
+			const result = await loadConfig({ configPath: childPath, cwd: temporaryDirectory });
 
 			expect(result.setupFiles).toStrictEqual(["child-setup.luau", "parent-setup.luau"]);
 		});
@@ -471,7 +479,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: "./parent.config.mjs", timeout: 10000 };',
 			);
 
-			const result = await loadConfig(childPath, temporaryDirectory);
+			const result = await loadConfig({ configPath: childPath, cwd: temporaryDirectory });
 
 			expect(result.timeout).toBe(10000);
 			expect(result.verbose).toBeTrue();
@@ -493,7 +501,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: "./parent.config.mjs", test: { snapshotFormat: { min: true } } };',
 			);
 
-			const result = await loadConfig(childPath, temporaryDirectory);
+			const result = await loadConfig({ configPath: childPath, cwd: temporaryDirectory });
 
 			expect(result.snapshotFormat).toStrictEqual({ indent: 4, min: true });
 		});
@@ -508,7 +516,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { test: { setupFiles: () => ["standalone.luau"] } };',
 			);
 
-			const result = await loadConfig(configPath, temporaryDirectory);
+			const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 			expect(result.setupFiles).toStrictEqual(["standalone.luau"]);
 		});
@@ -523,7 +531,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { test: { setupFiles: defaults => [...defaults, "standalone.luau"] } };',
 			);
 
-			const result = await loadConfig(configPath, temporaryDirectory);
+			const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 			expect(result.setupFiles).toStrictEqual(["standalone.luau"]);
 		});
@@ -538,7 +546,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { test: { testMatch: defaults => [...defaults, "**/*.custom.ts"] } };',
 			);
 
-			const result = await loadConfig(configPath, temporaryDirectory);
+			const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 			expect(result.testMatch).toContain("**/*.spec.ts");
 			expect(result.testMatch).toContain("**/*.custom.ts");
@@ -554,7 +562,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { test: { coverageCopyIgnorePatterns: defaults => [...defaults, "**/*.tsbuildinfo"] } };',
 			);
 
-			const result = await loadConfig(configPath, temporaryDirectory);
+			const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 			expect(result.coverageCopyIgnorePatterns).toContain("**/*.d.ts");
 			expect(result.coverageCopyIgnorePatterns).toContain("**/*.d.ts.map");
@@ -571,7 +579,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				"export default { test: { snapshotFormat: defaults => ({ ...defaults, min: true }) } };",
 			);
 
-			const result = await loadConfig(configPath, temporaryDirectory);
+			const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 			expect(result.snapshotFormat).toStrictEqual({ min: true });
 		});
@@ -586,7 +594,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				"export default { test: { snapshotFormat: defaults => ({ indent: Array.isArray(defaults) ? 99 : 2 }) } };",
 			);
 
-			const result = await loadConfig(configPath, temporaryDirectory);
+			const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 			expect(result.snapshotFormat).toStrictEqual({ indent: 2 });
 		});
@@ -598,7 +606,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			const configPath = path.join(temporaryDirectory, "jest.config.mjs");
 			fs.writeFileSync(configPath, 'export default { backend: () => "studio" };');
 
-			await expect(loadConfig(configPath, temporaryDirectory)).rejects.toThrow(
+			await expect(loadConfig({ configPath, cwd: temporaryDirectory })).rejects.toThrow(
 				"Invalid config",
 			);
 		});
@@ -613,7 +621,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { luauRoots: defaults => [...defaults, "child-out"] };',
 			);
 
-			const result = await loadConfig(configPath, temporaryDirectory);
+			const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 			expect(result.luauRoots).toStrictEqual(["child-out"]);
 		});
@@ -636,7 +644,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: "../../jest.shared.mjs", test: { passWithNoTests: true } };',
 			);
 
-			const result = await loadConfig(undefined, childDirectory);
+			const result = await loadConfig({ cwd: childDirectory });
 
 			expect(result.timeout).toBe(12345);
 			expect(result.verbose).toBeTrue();
@@ -662,7 +670,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			// worker-thread pool, which is what Stryker runs the suite in.
 			vi.spyOn(process, "cwd").mockReturnValue(os.tmpdir());
 
-			const result = await loadConfig(undefined, childDirectory);
+			const result = await loadConfig({ cwd: childDirectory });
 
 			expect(result.timeout).toBe(54321);
 		});
@@ -690,7 +698,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: "../../shared/jest.shared.mjs", test: { verbose: true } };',
 			);
 
-			const result = await loadConfig(undefined, childDirectory);
+			const result = await loadConfig({ cwd: childDirectory });
 
 			expect(result.backend).toBe("open-cloud");
 			expect(result.timeout).toBe(9999);
@@ -719,7 +727,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: ["./left.mjs", "./right.mjs"] };',
 			);
 
-			const result = await loadConfig(undefined, temporaryDirectory);
+			const result = await loadConfig({ cwd: temporaryDirectory });
 
 			expect(result.backend).toBe("open-cloud");
 			expect(result.timeout).toBe(1111);
@@ -740,7 +748,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				`export default { extends: ${JSON.stringify(parentPath)} };`,
 			);
 
-			const result = await loadConfig(undefined, childDirectory);
+			const result = await loadConfig({ cwd: childDirectory });
 
 			expect(result.timeout).toBe(2222);
 		});
@@ -754,7 +762,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			fs.writeFileSync(firstPath, 'export default { extends: "./b.mjs" };');
 			fs.writeFileSync(secondPath, 'export default { extends: "./a.mjs" };');
 
-			await expect(loadConfig(firstPath, temporaryDirectory)).rejects.toThrowWithMessage(
+			await expect(
+				loadConfig({ configPath: firstPath, cwd: temporaryDirectory }),
+			).rejects.toThrowWithMessage(
 				Error,
 				`Circular extends detected: ${firstPath} -> ${secondPath} -> ${firstPath}.`,
 			);
@@ -773,7 +783,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			const childPath = path.join(temporaryDirectory, "jest.config.mjs");
 			fs.writeFileSync(childPath, 'export default { extends: "./jest.shared" };');
 
-			const result = await loadConfig(childPath, temporaryDirectory);
+			const result = await loadConfig({ configPath: childPath, cwd: temporaryDirectory });
 
 			expect(result.timeout).toBe(7777);
 		});
@@ -790,7 +800,10 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			const childPath = path.join(temporaryDirectory, "jest.config.mjs");
 			fs.writeFileSync(childPath, 'export default { extends: "./jest.shared.mjs" };');
 
-			const error = await loadConfig(childPath, temporaryDirectory).catch((err) => err);
+			const error = await loadConfig({
+				configPath: childPath,
+				cwd: temporaryDirectory,
+			}).catch((err) => err);
 
 			assert(error instanceof Error);
 
@@ -809,7 +822,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			const configPath = path.join(temporaryDirectory, "jest.config.mjs");
 			fs.writeFileSync(configPath, "export default {{{");
 
-			const error = await loadConfig(configPath, temporaryDirectory).catch((err) => err);
+			const error = await loadConfig({ configPath, cwd: temporaryDirectory }).catch(
+				(err) => err,
+			);
 
 			assert(error instanceof Error);
 
@@ -824,7 +839,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				throw error;
 			}
 
-			await expect(loadRawConfig(undefined, "/repo", { configLoader })).rejects.toBe(error);
+			await expect(
+				loadRawConfig({ configLoader, configPath: undefined, cwd: "/repo" }),
+			).rejects.toBe(error);
 		});
 
 		it("should anchor a relative workspace.root to the declaring shared config dir", async () => {
@@ -843,7 +860,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { extends: "../../jest.shared.mjs" };',
 			);
 
-			const result = await loadConfig(undefined, childDirectory);
+			const result = await loadConfig({ cwd: childDirectory });
 
 			expect(result.workspace!.root).toBe(temporaryDirectory);
 		});
@@ -857,7 +874,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				'export default { workspace: { packages: ["packages/*"], root: "." } };',
 			);
 
-			const result = await loadConfig(undefined, temporaryDirectory);
+			const result = await loadConfig({ cwd: temporaryDirectory });
 
 			expect(result.workspace!.root).toBe(temporaryDirectory);
 		});
@@ -872,7 +889,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				`export default { workspace: { packages: ["packages/*"], root: ${JSON.stringify(absoluteRoot)} } };`,
 			);
 
-			const result = await loadConfig(undefined, temporaryDirectory);
+			const result = await loadConfig({ cwd: temporaryDirectory });
 
 			expect(result.workspace!.root).toBe(absoluteRoot);
 		});
@@ -898,7 +915,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		};
 
 		try {
-			await loadConfig(configPath, temporaryDirectory);
+			await loadConfig({ configPath, cwd: temporaryDirectory });
 		} finally {
 			console.warn = originalWarn;
 		}
@@ -915,9 +932,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(temporaryDirectory, "jest.config.json");
 		fs.writeFileSync(configPath, JSON.stringify({ test: { verbose: true } }));
 
-		const first = await loadConfig(configPath, temporaryDirectory);
+		const first = await loadConfig({ configPath, cwd: temporaryDirectory });
 		fs.writeFileSync(configPath, JSON.stringify({ test: { verbose: false } }));
-		const second = await loadConfig(configPath, temporaryDirectory);
+		const second = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 		expect(first.verbose).toBeTrue();
 		expect(second.verbose).toBeFalse();
@@ -932,7 +949,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 		const configPath = path.join(temporaryDirectory, "jest.config.mjs");
 		fs.writeFileSync(configPath, "export default { test: { verbose: true } };");
 
-		const result = await loadConfig(configPath, temporaryDirectory);
+		const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 		expect(result.verbose).toBeTrue();
 	});
@@ -950,7 +967,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				"export default { test: { verbose: true } } satisfies C;\n",
 		);
 
-		const result = await loadConfig(configPath, temporaryDirectory);
+		const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 		expect(result.verbose).toBeTrue();
 	});
@@ -968,7 +985,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				"export default { test: { verbose: true } } satisfies C;\n",
 		);
 
-		const result = await loadConfig(configPath, temporaryDirectory);
+		const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 		expect(result.verbose).toBeTrue();
 	});
@@ -989,7 +1006,7 @@ describe(loadConfig, { timeout: 1000 }, () => {
 				"module.exports = config;\n",
 		);
 
-		const result = await loadConfig(configPath, temporaryDirectory);
+		const result = await loadConfig({ configPath, cwd: temporaryDirectory });
 
 		expect(result.verbose).toBeTrue();
 	});
@@ -1004,10 +1021,9 @@ describe(loadConfig, { timeout: 1000 }, () => {
 			'export default { extends: "./does-not-exist.mjs", test: { verbose: true } };',
 		);
 
-		await expect(loadConfig(configPath, temporaryDirectory)).rejects.toThrowWithMessage(
-			Error,
-			/Failed to resolve extends.*does-not-exist\.mjs/,
-		);
+		await expect(
+			loadConfig({ configPath, cwd: temporaryDirectory }),
+		).rejects.toThrowWithMessage(Error, /Failed to resolve extends.*does-not-exist\.mjs/);
 	});
 });
 
@@ -1019,7 +1035,7 @@ describe(loadRawConfig, () => {
 		const configPath = path.join(temporaryDirectory, "jest.config.mjs");
 		fs.writeFileSync(configPath, "export default { test: { verbose: true } };");
 
-		const result = await loadRawConfig(configPath, temporaryDirectory);
+		const result = await loadRawConfig({ configPath, cwd: temporaryDirectory });
 
 		expect(result.test!.verbose).toBeTrue();
 		expect(result.backend).toBeUndefined();
@@ -1031,7 +1047,7 @@ describe(loadRawConfig, () => {
 		expect.assertions(2);
 
 		const temporaryDirectory = makeTemporaryDirectory("raw-config-test-");
-		const result = await loadRawConfig(undefined, temporaryDirectory);
+		const result = await loadRawConfig({ configPath: undefined, cwd: temporaryDirectory });
 
 		expect(result.backend).toBeUndefined();
 		expect(result.test).toBeUndefined();
@@ -1043,9 +1059,9 @@ describe(loadRawConfig, () => {
 		const temporaryDirectory = makeTemporaryDirectory("raw-config-test-");
 		const missingPath = path.join(temporaryDirectory, "nonexistent.config.ts");
 
-		await expect(loadRawConfig(missingPath, temporaryDirectory)).rejects.toThrow(
-			"Config file not found",
-		);
+		await expect(
+			loadRawConfig({ configPath: missingPath, cwd: temporaryDirectory }),
+		).rejects.toThrow("Config file not found");
 	});
 
 	it("should resolve extends chains the same as loadConfig", async () => {
@@ -1064,7 +1080,7 @@ describe(loadRawConfig, () => {
 			'export default { extends: "./parent.config.mjs", test: { verbose: true } };',
 		);
 
-		const result = await loadRawConfig(childPath, temporaryDirectory);
+		const result = await loadRawConfig({ configPath: childPath, cwd: temporaryDirectory });
 
 		expect(result.test!.setupFiles).toStrictEqual(["parent-setup.luau"]);
 		expect(result.test!.verbose).toBeTrue();
@@ -1080,7 +1096,7 @@ describe(loadRawConfig, () => {
 			'export default { test: { setupFiles: () => ["child-setup.luau"] } };',
 		);
 
-		const result = await loadRawConfig(configPath, temporaryDirectory);
+		const result = await loadRawConfig({ configPath, cwd: temporaryDirectory });
 
 		expect(result.test!.setupFiles).toStrictEqual(["child-setup.luau"]);
 	});

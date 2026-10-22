@@ -176,11 +176,15 @@ function resultFrame(requestId: string, reply: ReplyOptions): string {
  * bootstrap pushing its envelope. `onLaunch` runs synchronously with the
  * launch request (to capture args/bootstrap before the reply).
  */
-function replyWith(
-	fileSystem: FileSystem,
-	reply: ReplyOptions = {},
-	onLaunch?: (request: Parameters<StudioCliLauncher>[0]) => void,
-) {
+function replyWith({
+	fileSystem,
+	onLaunch,
+	reply = {},
+}: {
+	readonly fileSystem: FileSystem;
+	readonly onLaunch?: ((request: Parameters<StudioCliLauncher>[0]) => void) | undefined;
+	readonly reply?: ReplyOptions;
+}) {
 	const process = makeFakeProcess();
 	return {
 		launch: (request: Parameters<StudioCliLauncher>[0]) => {
@@ -288,11 +292,15 @@ function installed(
 	return async () => ({ key: PLUGIN_KEY, manualPlugins });
 }
 
-function makeBackend(
-	fileSystem: FileSystem,
-	launch: StudioCliLauncher,
-	extra: Partial<ConstructorParameters<typeof StudioCliBackend>[0]> = {},
-): StudioCliBackend {
+function makeBackend({
+	extra = {},
+	fileSystem,
+	launch,
+}: {
+	readonly extra?: Partial<ConstructorParameters<typeof StudioCliBackend>[0]>;
+	readonly fileSystem: FileSystem;
+	readonly launch: StudioCliLauncher;
+}): StudioCliBackend {
 	return new StudioCliBackend({
 		buildPlaceAsync: fakeBuildPlace(),
 		discover: () => "C:/Studio/RobloxStudioBeta.exe",
@@ -305,17 +313,21 @@ function makeBackend(
 }
 
 function backendReplying(fileSystem: FileSystem, reply: ReplyOptions = {}): StudioCliBackend {
-	return makeBackend(fileSystem, replyWith(fileSystem, reply).launch);
+	return makeBackend({ fileSystem, launch: replyWith({ fileSystem, reply }).launch });
 }
 
 // Workspace jobs carry `pkg` (set only in workspace mode) and a `placeFile`
 // pointing at the mega-place the workspace runner already built. studio-cli
 // keys off `pkg` to switch into the staged/materializer dispatch.
-function workspaceJob(
-	packageName: string,
-	displayName: string,
-	overrides: Partial<ResolvedConfig> = {},
-): ProjectJob {
+function workspaceJob({
+	displayName,
+	overrides = {},
+	packageName,
+}: {
+	readonly displayName: string;
+	readonly overrides?: Partial<ResolvedConfig>;
+	readonly packageName: string;
+}): ProjectJob {
 	return {
 		...job(displayName, {
 			placeFile: "/repo/.jest-roblox/workspace/synthesized.rbxl",
@@ -388,8 +400,12 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 		const factory = vi.fn<WebSocketServerFactory>(webSocketServerFactory);
 
-		await makeBackend(fileSystem, replyWith(fileSystem).launch, {
-			webSocketServerFactory: factory,
+		await makeBackend({
+			extra: {
+				webSocketServerFactory: factory,
+			},
+			fileSystem,
+			launch: replyWith({ fileSystem }).launch,
 		}).runTestsAsync(singleJob);
 
 		expect(factory).toHaveBeenCalledExactlyOnceWith({ host: "127.0.0.1", port: 0 });
@@ -417,18 +433,18 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(
+		const { launch } = replyWith({
 			fileSystem,
-			{ entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }] },
-			(request) => {
+			onLaunch: (request) => {
 				bootstrap = fileSystem.readFileSync(
 					request.args[request.args.indexOf("--runScriptFile") + 1]!,
 					"utf8",
 				);
 			},
-		);
+			reply: { entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }] },
+		});
 
-		await makeBackend(fileSystem, launch).runTestsAsync({
+		await makeBackend({ fileSystem, launch }).runTestsAsync({
 			jobs: [job("alpha"), job("beta")],
 			vmParallel: 2,
 		});
@@ -442,11 +458,15 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(fileSystem, {}, (request) => {
-			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+			},
+			reply: {},
 		});
 
-		await makeBackend(fileSystem, launch).runTestsAsync(singleJob);
+		await makeBackend({ fileSystem, launch }).runTestsAsync(singleJob);
 
 		expect(bootstrap).toContain(`"pluginKey":"${PLUGIN_KEY}"`);
 	});
@@ -457,12 +477,20 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(fileSystem, {}, (request) => {
-			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+			},
+			reply: {},
 		});
 
-		await makeBackend(fileSystem, launch, {
-			installPluginAsync: async () => {},
+		await makeBackend({
+			extra: {
+				installPluginAsync: async () => {},
+			},
+			fileSystem,
+			launch,
 		}).runTestsAsync(singleJob);
 
 		expect(bootstrap).not.toContain("pluginKey");
@@ -475,11 +503,15 @@ describe(StudioCliBackend, () => {
 		const installPluginAsync = vi.fn<() => Promise<undefined>>(async () => {});
 
 		await expect(
-			makeBackend(fileSystem, replyWith(fileSystem).launch, {
-				discover: () => {
-					throw new Error("Roblox Studio not found.");
+			makeBackend({
+				extra: {
+					discover: () => {
+						throw new Error("Roblox Studio not found.");
+					},
+					installPluginAsync,
 				},
-				installPluginAsync,
+				fileSystem,
+				launch: replyWith({ fileSystem }).launch,
 			}).runTestsAsync(singleJob),
 		).rejects.toThrowWithMessage(Error, "Roblox Studio not found.");
 		expect(installPluginAsync).not.toHaveBeenCalled();
@@ -490,14 +522,22 @@ describe(StudioCliBackend, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 		const order: Array<string> = [];
-		const { launch } = replyWith(fileSystem, {}, () => {
-			order.push("launch");
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: () => {
+				order.push("launch");
+			},
+			reply: {},
 		});
 
-		await makeBackend(fileSystem, launch, {
-			installPluginAsync: async (workDirectory) => {
-				order.push(`install ${normalizeWindowsPath(workDirectory)}`);
+		await makeBackend({
+			extra: {
+				installPluginAsync: async (workDirectory) => {
+					order.push(`install ${normalizeWindowsPath(workDirectory)}`);
+				},
 			},
+			fileSystem,
+			launch,
 		}).runTestsAsync(singleJob);
 
 		expect(order).toStrictEqual([
@@ -512,18 +552,18 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(
+		const { launch } = replyWith({
 			fileSystem,
-			{ entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }] },
-			(request) => {
+			onLaunch: (request) => {
 				bootstrap = fileSystem.readFileSync(
 					request.args[request.args.indexOf("--runScriptFile") + 1]!,
 					"utf8",
 				);
 			},
-		);
+			reply: { entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }] },
+		});
 
-		await makeBackend(fileSystem, launch, { timeout: 120_000 }).runTestsAsync({
+		await makeBackend({ extra: { timeout: 120_000 }, fileSystem, launch }).runTestsAsync({
 			jobs: [job("alpha"), job("beta")],
 			vmParallel: 2,
 		});
@@ -537,18 +577,18 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(
+		const { launch } = replyWith({
 			fileSystem,
-			{ entries: [{ jestOutput: successResult() }] },
-			(request) => {
+			onLaunch: (request) => {
 				bootstrap = fileSystem.readFileSync(
 					request.args[request.args.indexOf("--runScriptFile") + 1]!,
 					"utf8",
 				);
 			},
-		);
+			reply: { entries: [{ jestOutput: successResult() }] },
+		});
 
-		await makeBackend(fileSystem, launch).runTestsAsync(singleJob);
+		await makeBackend({ fileSystem, launch }).runTestsAsync(singleJob);
 
 		expect(bootstrap).not.toContain("vmParallel");
 	});
@@ -565,7 +605,7 @@ describe(StudioCliBackend, () => {
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
 			installPluginAsync: installed(),
-			launch: replyWith(fileSystem).launch,
+			launch: replyWith({ fileSystem }).launch,
 			webSocketServerFactory,
 		});
 
@@ -585,17 +625,17 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(
+		const { launch } = replyWith({
 			fileSystem,
-			{ entries: [{ jestOutput: successResult() }] },
-			(request) => {
+			onLaunch: (request) => {
 				bootstrap = fileSystem.readFileSync(
 					request.args[request.args.indexOf("--runScriptFile") + 1]!,
 					"utf8",
 				);
 			},
-		);
-		const backend = makeBackend(fileSystem, launch);
+			reply: { entries: [{ jestOutput: successResult() }] },
+		});
+		const backend = makeBackend({ fileSystem, launch });
 
 		await backend.runTestsAsync({ jobs: [job("alpha", { testNamePattern: "alpha-pattern" })] });
 
@@ -622,10 +662,14 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(fileSystem, {}, (request) => {
-			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+			},
+			reply: {},
 		});
-		await makeBackend(fileSystem, launch).runTestsAsync(singleJob);
+		await makeBackend({ fileSystem, launch }).runTestsAsync(singleJob);
 
 		const guard = bootstrap.indexOf(
 			[
@@ -648,17 +692,17 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(
+		const { launch } = replyWith({
 			fileSystem,
-			{ entries: [{ jestOutput: successResult() }] },
-			(request) => {
+			onLaunch: (request) => {
 				bootstrap = fileSystem.readFileSync(
 					request.args[request.args.indexOf("--runScriptFile") + 1]!,
 					"utf8",
 				);
 			},
-		);
-		const backend = makeBackend(fileSystem, launch);
+			reply: { entries: [{ jestOutput: successResult() }] },
+		});
+		const backend = makeBackend({ fileSystem, launch });
 
 		await backend.runTestsAsync({ jobs: [job("alpha", { testNamePattern: "x]=]y" })] });
 
@@ -726,11 +770,14 @@ describe(StudioCliBackend, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		const backend = makeBackend(
+		const backend = makeBackend({
+			extra: { installPluginAsync: installed(["JestRobloxRunner.rbxm", "jest-old.rbxm"]) },
 			fileSystem,
-			replyWith(fileSystem, { pluginVersion: "0.3.18", protocolVersion: 5 }).launch,
-			{ installPluginAsync: installed(["JestRobloxRunner.rbxm", "jest-old.rbxm"]) },
-		);
+			launch: replyWith({
+				fileSystem,
+				reply: { pluginVersion: "0.3.18", protocolVersion: 5 },
+			}).launch,
+		});
 
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrowWithMessage(
 			Error,
@@ -746,13 +793,13 @@ describe(StudioCliBackend, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		const backend = makeBackend(
-			fileSystem,
-			replyWith(fileSystem, { protocolVersion: 2 }).launch,
-			{
+		const backend = makeBackend({
+			extra: {
 				installPluginAsync: async () => {},
 			},
-		);
+			fileSystem,
+			launch: replyWith({ fileSystem, reply: { protocolVersion: 2 } }).launch,
+		});
 
 		await expect(backend.runTestsAsync(singleJob)).rejects.toThrow(
 			"Update the jest-roblox Studio plugin to match this CLI version.",
@@ -799,30 +846,35 @@ describe(StudioCliBackend, () => {
 
 		const process = makeFakeProcess();
 		let socket: MockWebSocket | undefined;
-		const { rawResults } = await makeBackend(fileSystem, (request) => {
-			queueMicrotask(() => {
-				const server = getLastCreatedServer()!;
-				socket = new MockWebSocket();
-				server.emit("connection", socket);
-				// Non-JSON noise, a non-results frame, and a result for a
-				// different request — each ignored — then the real one.
-				socket.emit("message", Buffer.from("not json {{"));
-				socket.emit("message", Buffer.from(JSON.stringify({ hello: 1, type: "log" })));
-				socket.emit(
-					"message",
-					Buffer.from(
-						resultFrame("a-different-request", {
-							entries: [{ jestOutput: successResult({ numPassedTests: 99 }) }],
-						}),
-					),
-				);
-				const frame = Buffer.from(resultFrame(readRequestId(fileSystem, request.args), {}));
-				socket.emit("message", frame);
-				// A duplicate frame after the first resolves must be ignored, not
-				// re-settle the run.
-				socket.emit("message", frame);
-			});
-			return process;
+		const { rawResults } = await makeBackend({
+			fileSystem,
+			launch: (request) => {
+				queueMicrotask(() => {
+					const server = getLastCreatedServer()!;
+					socket = new MockWebSocket();
+					server.emit("connection", socket);
+					// Non-JSON noise, a non-results frame, and a result for a
+					// different request — each ignored — then the real one.
+					socket.emit("message", Buffer.from("not json {{"));
+					socket.emit("message", Buffer.from(JSON.stringify({ hello: 1, type: "log" })));
+					socket.emit(
+						"message",
+						Buffer.from(
+							resultFrame("a-different-request", {
+								entries: [{ jestOutput: successResult({ numPassedTests: 99 }) }],
+							}),
+						),
+					);
+					const frame = Buffer.from(
+						resultFrame(readRequestId(fileSystem, request.args), {}),
+					);
+					socket.emit("message", frame);
+					// A duplicate frame after the first resolves must be
+					// ignored, not re-settle the run.
+					socket.emit("message", frame);
+				});
+				return process;
+			},
 		}).runTestsAsync(singleJob);
 
 		expect(rawResults).toHaveLength(1);
@@ -840,7 +892,7 @@ describe(StudioCliBackend, () => {
 		useResultDeadlineTimers();
 
 		const studio = bootingStudio(fileSystem);
-		const backend = makeBackend(fileSystem, studio.launch, { timeout: 40 });
+		const backend = makeBackend({ extra: { timeout: 40 }, fileSystem, launch: studio.launch });
 
 		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
 		await vi.advanceTimersByTimeAsync(0);
@@ -923,7 +975,11 @@ describe(StudioCliBackend, () => {
 		useResultDeadlineTimers();
 
 		const studio = bootingStudio(fileSystem);
-		const backend = makeBackend(fileSystem, studio.launch, { bootTimeout: 100, timeout: 40 });
+		const backend = makeBackend({
+			extra: { bootTimeout: 100, timeout: 40 },
+			fileSystem,
+			launch: studio.launch,
+		});
 
 		const settled = backend.runTestsAsync(singleJob);
 		await vi.advanceTimersByTimeAsync(60);
@@ -942,7 +998,7 @@ describe(StudioCliBackend, () => {
 		useResultDeadlineTimers();
 
 		const studio = bootingStudio(fileSystem);
-		const backend = makeBackend(fileSystem, studio.launch, { timeout: 40 });
+		const backend = makeBackend({ extra: { timeout: 40 }, fileSystem, launch: studio.launch });
 
 		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
 		await vi.advanceTimersByTimeAsync(0);
@@ -964,7 +1020,11 @@ describe(StudioCliBackend, () => {
 		useResultDeadlineTimers();
 
 		const studio = bootingStudio(fileSystem);
-		const backend = makeBackend(fileSystem, studio.launch, { bootTimeout: 100, timeout: 400 });
+		const backend = makeBackend({
+			extra: { bootTimeout: 100, timeout: 400 },
+			fileSystem,
+			launch: studio.launch,
+		});
 
 		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
 		await vi.advanceTimersByTimeAsync(100);
@@ -991,7 +1051,7 @@ describe(StudioCliBackend, () => {
 		vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", "70");
 
 		const studio = bootingStudio(fileSystem);
-		const backend = makeBackend(fileSystem, studio.launch, { timeout: 400 });
+		const backend = makeBackend({ extra: { timeout: 400 }, fileSystem, launch: studio.launch });
 
 		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
 		await vi.advanceTimersByTimeAsync(70);
@@ -1022,7 +1082,11 @@ describe(StudioCliBackend, () => {
 			vi.stubEnv("JEST_ROBLOX_STUDIO_BOOT_TIMEOUT", value);
 
 			const studio = bootingStudio(fileSystem);
-			const backend = makeBackend(fileSystem, studio.launch, { timeout: 400 });
+			const backend = makeBackend({
+				extra: { timeout: 400 },
+				fileSystem,
+				launch: studio.launch,
+			});
 
 			const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
 			await vi.advanceTimersByTimeAsync(45_000);
@@ -1041,7 +1105,11 @@ describe(StudioCliBackend, () => {
 		useResultDeadlineTimers();
 
 		const studio = bootingStudio(fileSystem);
-		const backend = makeBackend(fileSystem, studio.launch, { bootTimeout: 100, timeout: 400 });
+		const backend = makeBackend({
+			extra: { bootTimeout: 100, timeout: 400 },
+			fileSystem,
+			launch: studio.launch,
+		});
 
 		const settled = backend.runTestsAsync(singleJob).catch((err: unknown) => err);
 		await vi.advanceTimersByTimeAsync(0);
@@ -1060,7 +1128,7 @@ describe(StudioCliBackend, () => {
 		useResultDeadlineTimers();
 
 		const studio = bootingStudio(fileSystem);
-		const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+		const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(singleJob);
 		await vi.advanceTimersByTimeAsync(0);
 		studio.send("results");
 		await settled;
@@ -1077,11 +1145,14 @@ describe(StudioCliBackend, () => {
 		const process = makeFakeProcess();
 
 		await expect(
-			makeBackend(fileSystem, () => {
-				queueMicrotask(() => {
-					getLastCreatedServer()!.emit("error", new Error("EADDRINUSE"));
-				});
-				return process;
+			makeBackend({
+				fileSystem,
+				launch: () => {
+					queueMicrotask(() => {
+						getLastCreatedServer()!.emit("error", new Error("EADDRINUSE"));
+					});
+					return process;
+				},
 			}).runTestsAsync(singleJob),
 		).rejects.toThrow(/EADDRINUSE/);
 		expect(process.kill).toHaveBeenCalledExactlyOnceWith();
@@ -1096,11 +1167,14 @@ describe(StudioCliBackend, () => {
 		const process = makeFakeProcess();
 
 		const cause = new Error("spawn ENOENT");
-		const caught = await makeBackend(fileSystem, () => {
-			queueMicrotask(() => {
-				process.emitError(cause);
-			});
-			return process;
+		const caught = await makeBackend({
+			fileSystem,
+			launch: () => {
+				queueMicrotask(() => {
+					process.emitError(cause);
+				});
+				return process;
+			},
 		})
 			.runTestsAsync(singleJob)
 			.catch((err: unknown) => err);
@@ -1117,10 +1191,14 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let captured: undefined | { args: Array<string>; studioPath: string };
-		const { launch } = replyWith(fileSystem, {}, (request) => {
-			captured = { args: request.args, studioPath: request.studioPath };
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				captured = { args: request.args, studioPath: request.studioPath };
+			},
+			reply: {},
 		});
-		const backend = makeBackend(fileSystem, launch);
+		const backend = makeBackend({ fileSystem, launch });
 
 		await backend.runTestsAsync(singleJob);
 
@@ -1143,11 +1221,15 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let wasHeadedRequested: boolean | undefined;
-		const { launch } = replyWith(fileSystem, {}, (request) => {
-			wasHeadedRequested = request.headed;
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				wasHeadedRequested = request.headed;
+			},
+			reply: {},
 		});
 
-		await makeBackend(fileSystem, launch, { headed: true }).runTestsAsync(singleJob);
+		await makeBackend({ extra: { headed: true }, fileSystem, launch }).runTestsAsync(singleJob);
 
 		expect(wasHeadedRequested).toBeTrue();
 	});
@@ -1158,11 +1240,15 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let wasHeadedRequested: boolean | undefined;
-		const { launch } = replyWith(fileSystem, {}, (request) => {
-			wasHeadedRequested = request.headed;
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				wasHeadedRequested = request.headed;
+			},
+			reply: {},
 		});
 
-		await makeBackend(fileSystem, launch).runTestsAsync(singleJob);
+		await makeBackend({ fileSystem, launch }).runTestsAsync(singleJob);
 
 		expect(wasHeadedRequested).toBeFalse();
 	});
@@ -1180,7 +1266,7 @@ describe(StudioCliBackend, () => {
 			discover,
 			fileSystem,
 			installPluginAsync: installed(),
-			launch: replyWith(fileSystem).launch,
+			launch: replyWith({ fileSystem }).launch,
 			studioPath: "C:/override/RobloxStudioBeta.exe",
 			webSocketServerFactory,
 		});
@@ -1274,7 +1360,10 @@ describe(StudioCliBackend, () => {
 
 		await expect(
 			backend.runTestsAsync({
-				jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+				jobs: [
+					workspaceJob({ displayName: "a", packageName: "@scope/a" }),
+					workspaceJob({ displayName: "b", packageName: "@scope/b" }),
+				],
 			}),
 		).rejects.toThrow(/^studio-cli backend deferred 1 of 2 jobs/);
 	});
@@ -1287,13 +1376,13 @@ describe(StudioCliBackend, () => {
 		const buildPlaceAsync =
 			vi.fn<(options: BuildPlaceOptions) => Promise<BuildManifestArtifact>>(fakeBuildPlace());
 		let localPlaceFile = "";
-		const { launch } = replyWith(
+		const { launch } = replyWith({
 			fileSystem,
-			{ entries: [{ jestOutput: successResult() }] },
-			(request) => {
+			onLaunch: (request) => {
 				localPlaceFile = request.args[request.args.indexOf("--localPlaceFile") + 1]!;
 			},
-		);
+			reply: { entries: [{ jestOutput: successResult() }] },
+		});
 		const backend = new StudioCliBackend({
 			buildPlaceAsync,
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
@@ -1303,7 +1392,9 @@ describe(StudioCliBackend, () => {
 			webSocketServerFactory,
 		});
 
-		await backend.runTestsAsync({ jobs: [workspaceJob("@scope/a", "a")] });
+		await backend.runTestsAsync({
+			jobs: [workspaceJob({ displayName: "a", packageName: "@scope/a" })],
+		});
 
 		// The mega-place is already built by the workspace runner; studio-cli
 		// must drive it, not build a second place from one package's rojo
@@ -1318,22 +1409,25 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(
+		const { launch } = replyWith({
 			fileSystem,
-			{
-				entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }],
-			},
-			(request) => {
+			onLaunch: (request) => {
 				bootstrap = fileSystem.readFileSync(
 					request.args[request.args.indexOf("--runScriptFile") + 1]!,
 					"utf8",
 				);
 			},
-		);
-		const backend = makeBackend(fileSystem, launch);
+			reply: {
+				entries: [{ jestOutput: successResult() }, { jestOutput: successResult() }],
+			},
+		});
+		const backend = makeBackend({ fileSystem, launch });
 
 		await backend.runTestsAsync({
-			jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+			jobs: [
+				workspaceJob({ displayName: "a", packageName: "@scope/a" }),
+				workspaceJob({ displayName: "b", packageName: "@scope/b" }),
+			],
 		});
 
 		expect(bootstrap).toContain("workspace");
@@ -1348,20 +1442,20 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(
+		const { launch } = replyWith({
 			fileSystem,
-			{ entries: [{ jestOutput: successResult() }] },
-			(request) => {
+			onLaunch: (request) => {
 				bootstrap = fileSystem.readFileSync(
 					request.args[request.args.indexOf("--runScriptFile") + 1]!,
 					"utf8",
 				);
 			},
-		);
+			reply: { entries: [{ jestOutput: successResult() }] },
+		});
 
-		await makeBackend(fileSystem, launch).runTestsAsync({
+		await makeBackend({ fileSystem, launch }).runTestsAsync({
 			bail: true,
-			jobs: [workspaceJob("@scope/a", "a")],
+			jobs: [workspaceJob({ displayName: "a", packageName: "@scope/a" })],
 		});
 
 		const payload = /JSONDecode\(\[=*\[(.+?)\]=*\]\)/.exec(bootstrap)![1]!;
@@ -1376,17 +1470,21 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(fileSystem, { entries: [] }, (request) => {
-			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+			},
+			reply: { entries: [] },
 		});
 
-		await makeBackend(fileSystem, launch, { timeout: 120_000 })
+		await makeBackend({ extra: { timeout: 120_000 }, fileSystem, launch })
 			.runTestsAsync({
 				jobs: [
-					workspaceJob("@scope/a", "client"),
-					workspaceJob("@scope/a", "server"),
-					workspaceJob("@scope/a", "shared"),
-					workspaceJob("@scope/b", "b"),
+					workspaceJob({ displayName: "client", packageName: "@scope/a" }),
+					workspaceJob({ displayName: "server", packageName: "@scope/a" }),
+					workspaceJob({ displayName: "shared", packageName: "@scope/a" }),
+					workspaceJob({ displayName: "b", packageName: "@scope/b" }),
 				],
 				vmParallel: "auto",
 			})
@@ -1406,13 +1504,20 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(fileSystem, { entries: [] }, (request) => {
-			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+			},
+			reply: { entries: [] },
 		});
 
-		await makeBackend(fileSystem, launch)
+		await makeBackend({ fileSystem, launch })
 			.runTestsAsync({
-				jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+				jobs: [
+					workspaceJob({ displayName: "a", packageName: "@scope/a" }),
+					workspaceJob({ displayName: "b", packageName: "@scope/b" }),
+				],
 				vmParallel: "auto",
 			})
 			.catch(() => {});
@@ -1426,16 +1531,20 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		let bootstrap = "";
-		const { launch } = replyWith(fileSystem, { entries: [] }, (request) => {
-			bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+			},
+			reply: { entries: [] },
 		});
 
-		await makeBackend(fileSystem, launch)
+		await makeBackend({ fileSystem, launch })
 			.runTestsAsync({
 				jobs: [
-					workspaceJob("@scope/a", "client"),
-					workspaceJob("@scope/b", "b"),
-					workspaceJob("@scope/a", "server"),
+					workspaceJob({ displayName: "client", packageName: "@scope/a" }),
+					workspaceJob({ displayName: "b", packageName: "@scope/b" }),
+					workspaceJob({ displayName: "server", packageName: "@scope/a" }),
 				],
 				vmParallel: "auto",
 			})
@@ -1457,7 +1566,10 @@ describe(StudioCliBackend, () => {
 		});
 
 		const { rawResults } = await backend.runTestsAsync({
-			jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+			jobs: [
+				workspaceJob({ displayName: "a", packageName: "@scope/a" }),
+				workspaceJob({ displayName: "b", packageName: "@scope/b" }),
+			],
 		});
 
 		expect(rawResults).toHaveLength(2);
@@ -1478,9 +1590,9 @@ describe(StudioCliBackend, () => {
 
 		const { bailedJobIndices, rawResults } = await backend.runTestsAsync({
 			jobs: [
-				workspaceJob("@scope/a", "a"),
-				workspaceJob("@scope/b", "b"),
-				workspaceJob("@scope/c", "c"),
+				workspaceJob({ displayName: "a", packageName: "@scope/a" }),
+				workspaceJob({ displayName: "b", packageName: "@scope/b" }),
+				workspaceJob({ displayName: "c", packageName: "@scope/c" }),
 			],
 		});
 
@@ -1501,7 +1613,10 @@ describe(StudioCliBackend, () => {
 		});
 
 		const result = await backend.runTestsAsync({
-			jobs: [workspaceJob("@scope/a", "a"), workspaceJob("@scope/b", "b")],
+			jobs: [
+				workspaceJob({ displayName: "a", packageName: "@scope/a" }),
+				workspaceJob({ displayName: "b", packageName: "@scope/b" }),
+			],
 		});
 
 		expect(result.bailedJobIndices).toBeUndefined();
@@ -1522,8 +1637,12 @@ describe(StudioCliBackend, () => {
 
 		volume.fromJSON({ "C:/seeded/RobloxStudioBeta.exe": "binary" });
 		let launchedPath = "";
-		const { launch } = replyWith(fileSystem, {}, (request) => {
-			launchedPath = request.studioPath;
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				launchedPath = request.studioPath;
+			},
+			reply: {},
 		});
 		const backend = new StudioCliBackend({
 			buildPlaceAsync: fakeBuildPlace(),
@@ -1546,7 +1665,7 @@ describe(StudioCliBackend, () => {
 		vi.stubEnv("LOCALAPPDATA", "/local");
 		stubPlatform("win32");
 		let bootstrap = "";
-		const execFile = vi.fn<RojoExec>((_file, args, _options, done) => {
+		const execFile = vi.fn<RojoExec>((...[, args, , done]) => {
 			fileSystem.writeFileSync(args[3]!, "rbxm-bytes");
 			done(null, "", "");
 		});
@@ -1555,8 +1674,12 @@ describe(StudioCliBackend, () => {
 			childProcess: fromAny({ execFile }),
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
-			launch: replyWith(fileSystem, {}, (request) => {
-				bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+			launch: replyWith({
+				fileSystem,
+				onLaunch: (request) => {
+					bootstrap = fileSystem.readFileSync(readRunScriptFile(request.args), "utf8");
+				},
+				reply: {},
 			}).launch,
 			webSocketServerFactory,
 		});
@@ -1577,7 +1700,7 @@ describe(StudioCliBackend, () => {
 		const { fileSystem } = createMemoryFileSystem();
 		vi.stubEnv("LOCALAPPDATA", "/local");
 		stubPlatform("win32");
-		const execFile = vi.fn<RojoExec>((_file, args, _options, done) => {
+		const execFile = vi.fn<RojoExec>((...[, args, , done]) => {
 			fileSystem.writeFileSync(args[3]!, "rbxm-bytes");
 			done(null, "", "");
 		});
@@ -1586,7 +1709,7 @@ describe(StudioCliBackend, () => {
 			childProcess: fromAny({ execFile }),
 			discover: () => "C:/Studio/RobloxStudioBeta.exe",
 			fileSystem,
-			launch: replyWith(fileSystem, {}).launch,
+			launch: replyWith({ fileSystem, reply: {} }).launch,
 			pluginsDirectory: "D:/Studio/Plugins",
 			webSocketServerFactory,
 		});
@@ -1606,8 +1729,12 @@ describe(StudioCliBackend, () => {
 		vi.stubEnv("JEST_ROBLOX_STUDIO_PATH", "C:/from-env/RobloxStudioBeta.exe");
 		volume.fromJSON({ "C:/from-env/RobloxStudioBeta.exe": "binary" });
 		let launchedPath = "";
-		const { launch } = replyWith(fileSystem, {}, (request) => {
-			launchedPath = request.studioPath;
+		const { launch } = replyWith({
+			fileSystem,
+			onLaunch: (request) => {
+				launchedPath = request.studioPath;
+			},
+			reply: {},
 		});
 		const backend = new StudioCliBackend({
 			buildPlaceAsync: fakeBuildPlace(),
@@ -1630,7 +1757,9 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(
+				singleJob,
+			);
 			await vi.advanceTimersByTimeAsync(0);
 			const bootstrap = studio.connect();
 			studio.send(bootstrap, "nilReturn");
@@ -1652,7 +1781,11 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch, { timeout: 600_000 })
+			const settled = makeBackend({
+				extra: { timeout: 600_000 },
+				fileSystem,
+				launch: studio.launch,
+			})
 				.runTestsAsync(singleJob)
 				.catch((err: unknown) => err);
 			await vi.advanceTimersByTimeAsync(0);
@@ -1675,8 +1808,12 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch, {
-				timeout: 600_000,
+			const settled = makeBackend({
+				extra: {
+					timeout: 600_000,
+				},
+				fileSystem,
+				launch: studio.launch,
 			}).runTestsAsync(singleJob);
 			await vi.advanceTimersByTimeAsync(0);
 			const bootstrap = studio.connect();
@@ -1696,7 +1833,9 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(
+				singleJob,
+			);
 			await vi.advanceTimersByTimeAsync(0);
 			const bootstrap = studio.connect();
 			studio.send(bootstrap, "nilReturn");
@@ -1720,7 +1859,9 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(
+				singleJob,
+			);
 			await vi.advanceTimersByTimeAsync(0);
 			const bootstrap = studio.connect();
 			studio.send(bootstrap, "nilReturn");
@@ -1740,7 +1881,9 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(
+				singleJob,
+			);
 			await vi.advanceTimersByTimeAsync(0);
 			const plugin = studio.connect();
 			studio.send(plugin, "pluginReady");
@@ -1762,7 +1905,9 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(
+				singleJob,
+			);
 			await vi.advanceTimersByTimeAsync(0);
 			const bootstrap = studio.connect();
 			studio.send(bootstrap, "nilReturn");
@@ -1779,7 +1924,9 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(
+				singleJob,
+			);
 			await vi.advanceTimersByTimeAsync(0);
 			const bootstrap = studio.connect();
 			studio.send(bootstrap, "nilReturn");
@@ -1799,7 +1946,9 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const studio = earlyEndStudio(fileSystem);
-			const settled = makeBackend(fileSystem, studio.launch).runTestsAsync(singleJob);
+			const settled = makeBackend({ fileSystem, launch: studio.launch }).runTestsAsync(
+				singleJob,
+			);
 			await vi.advanceTimersByTimeAsync(0);
 			const bootstrap = studio.connect();
 			studio.send(bootstrap, "nilReturn");
@@ -1843,11 +1992,15 @@ describe(StudioCliBackend, () => {
 			const { fileSystem } = createMemoryFileSystem();
 
 			let bootstrap = "";
-			const { launch } = replyWith(fileSystem, {}, (request) => {
-				bootstrap = fileSystem.readFileSync(
-					request.args[request.args.indexOf("--runScriptFile") + 1]!,
-					"utf8",
-				);
+			const { launch } = replyWith({
+				fileSystem,
+				onLaunch: (request) => {
+					bootstrap = fileSystem.readFileSync(
+						request.args[request.args.indexOf("--runScriptFile") + 1]!,
+						"utf8",
+					);
+				},
+				reply: {},
 			});
 			const backend = new StudioCliBackend({
 				buildPlaceAsync: fakeBuildPlace(),
@@ -1873,7 +2026,7 @@ describe(StudioCliBackend, () => {
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
 				fileSystem,
 				installPluginAsync: installed(),
-				launch: replyWith(fileSystem).launch,
+				launch: replyWith({ fileSystem }).launch,
 				webSocketServerFactory: pendingServerFactory(undefined),
 			});
 
@@ -1899,13 +2052,13 @@ describe(StudioCliBackend, () => {
 					fakeBuildPlace(),
 				);
 			let localPlaceFile = "";
-			const { launch } = replyWith(
+			const { launch } = replyWith({
 				fileSystem,
-				{ entries: [{ jestOutput: successResult() }] },
-				(request) => {
+				onLaunch: (request) => {
 					localPlaceFile = request.args[request.args.indexOf("--localPlaceFile") + 1]!;
 				},
-			);
+				reply: { entries: [{ jestOutput: successResult() }] },
+			});
 			const backend = new StudioCliBackend({
 				buildPlaceAsync,
 				discover: () => "C:/Studio/RobloxStudioBeta.exe",
@@ -1949,9 +2102,9 @@ describe(StudioCliBackend, () => {
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			const { launch, process } = replyWith(fileSystem);
+			const { launch, process } = replyWith({ fileSystem });
 
-			await makeBackend(fileSystem, launch).runTestsAsync(singleJob);
+			await makeBackend({ fileSystem, launch }).runTestsAsync(singleJob);
 
 			// Default ON: hand teardown to the lock-release watch (which lets
 			// edit- mode BindToClose run + frees the lock) instead of
@@ -1965,11 +2118,13 @@ describe(StudioCliBackend, () => {
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			const { launch, process } = replyWith(fileSystem);
+			const { launch, process } = replyWith({ fileSystem });
 
-			await makeBackend(fileSystem, launch, { gracefulShutdownTimeout: 9999 }).runTestsAsync(
-				singleJob,
-			);
+			await makeBackend({
+				extra: { gracefulShutdownTimeout: 9999 },
+				fileSystem,
+				launch,
+			}).runTestsAsync(singleJob);
 
 			expect(process.killOnLockRelease).toHaveBeenCalledWith(9999);
 		});
@@ -1983,11 +2138,11 @@ describe(StudioCliBackend, () => {
 
 			const { fileSystem } = createMemoryFileSystem();
 
-			const { launch, process } = replyWith(fileSystem, { protocolVersion: 2 });
+			const { launch, process } = replyWith({ fileSystem, reply: { protocolVersion: 2 } });
 
-			await expect(makeBackend(fileSystem, launch).runTestsAsync(singleJob)).rejects.toThrow(
-				/protocol.*mismatch/i,
-			);
+			await expect(
+				makeBackend({ fileSystem, launch }).runTestsAsync(singleJob),
+			).rejects.toThrow(/protocol.*mismatch/i);
 			expect(process.killOnLockRelease).toHaveBeenCalledExactlyOnceWith(15_000);
 			expect(process.kill).not.toHaveBeenCalled();
 		});
@@ -2024,9 +2179,11 @@ describe(StudioCliBackend, () => {
 			let capturedOptions: { stdio?: string; windowsHide?: boolean } = {};
 			const childProcess: ChildProcessRunner = fromAny({
 				spawn: (
-					file: string,
-					args: Array<string>,
-					options: { stdio?: string; windowsHide?: boolean },
+					...[file, args, options]: [
+						string,
+						Array<string>,
+						{ stdio?: string; windowsHide?: boolean },
+					]
 				) => {
 					capturedFile = file;
 					capturedOptions = options;
@@ -2042,11 +2199,15 @@ describe(StudioCliBackend, () => {
 			};
 		}
 
-		function backendWithDefaultLaunch(
-			fileSystem: FileSystem,
-			childProcess: ChildProcessRunner,
-			extra: Partial<ConstructorParameters<typeof StudioCliBackend>[0]> = {},
-		): StudioCliBackend {
+		function backendWithDefaultLaunch({
+			childProcess,
+			extra = {},
+			fileSystem,
+		}: {
+			readonly childProcess: ChildProcessRunner;
+			readonly extra?: Partial<ConstructorParameters<typeof StudioCliBackend>[0]>;
+			readonly fileSystem: FileSystem;
+		}): StudioCliBackend {
 			return new StudioCliBackend({
 				buildPlaceAsync: fakeBuildPlace(),
 				childProcess,
@@ -2064,11 +2225,15 @@ describe(StudioCliBackend, () => {
 
 		// Drive the result frame back over the server once the backend is
 		// listening (the real spawnStudio does not reply on its own).
-		async function replyOverServerAsync(
-			fileSystem: FileSystem,
-			args: () => Array<string>,
-			previous: InstanceType<typeof MockWebSocketServer> | undefined,
-		): Promise<void> {
+		async function replyOverServerAsync({
+			args,
+			fileSystem,
+			previous,
+		}: {
+			readonly args: () => Array<string>;
+			readonly fileSystem: FileSystem;
+			readonly previous: InstanceType<typeof MockWebSocketServer> | undefined;
+		}): Promise<void> {
 			const server = await settledServerAsync(previous);
 			const socket = new MockWebSocket();
 			server.emit("connection", socket);
@@ -2135,10 +2300,10 @@ describe(StudioCliBackend, () => {
 
 			const { args, childProcess, request } = stubSpawn();
 			const previousServer = getLastCreatedServer();
-			const promise = backendWithDefaultLaunch(fileSystem, childProcess).runTestsAsync(
+			const promise = backendWithDefaultLaunch({ childProcess, fileSystem }).runTestsAsync(
 				singleJob,
 			);
-			await replyOverServerAsync(fileSystem, args, previousServer);
+			await replyOverServerAsync({ args, fileSystem, previous: previousServer });
 			const { rawResults } = await promise;
 
 			expect(rawResults).toHaveLength(1);
@@ -2158,10 +2323,14 @@ describe(StudioCliBackend, () => {
 
 			const { args, childProcess, request } = stubSpawn();
 			const previousServer = getLastCreatedServer();
-			const promise = backendWithDefaultLaunch(fileSystem, childProcess, {
-				headed: true,
+			const promise = backendWithDefaultLaunch({
+				childProcess,
+				extra: {
+					headed: true,
+				},
+				fileSystem,
 			}).runTestsAsync(singleJob);
-			await replyOverServerAsync(fileSystem, args, previousServer);
+			await replyOverServerAsync({ args, fileSystem, previous: previousServer });
 			await promise;
 
 			expect(request().options.windowsHide).toBeFalse();
@@ -2181,10 +2350,10 @@ describe(StudioCliBackend, () => {
 
 			const { args, childProcess } = stubSpawn();
 			const previousServer = getLastCreatedServer();
-			const promise = backendWithDefaultLaunch(fileSystem, childProcess).runTestsAsync(
+			const promise = backendWithDefaultLaunch({ childProcess, fileSystem }).runTestsAsync(
 				singleJob,
 			);
-			await replyOverServerAsync(fileSystem, args, previousServer);
+			await replyOverServerAsync({ args, fileSystem, previous: previousServer });
 			await promise;
 
 			expect(fileSystem.existsSync(lockPath)).toBeFalse();
@@ -2196,7 +2365,7 @@ describe(StudioCliBackend, () => {
 			const { fileSystem } = createMemoryFileSystem();
 
 			const { args, child, childProcess } = stubSpawn();
-			const promise = backendWithDefaultLaunch(fileSystem, childProcess).runTestsAsync(
+			const promise = backendWithDefaultLaunch({ childProcess, fileSystem }).runTestsAsync(
 				singleJob,
 			);
 			await settledSpawnAsync(() => args().length > 0);
@@ -2214,7 +2383,11 @@ describe(StudioCliBackend, () => {
 
 			const { child, childProcess } = stubSpawn();
 
-			const settled = backendWithDefaultLaunch(fileSystem, childProcess, { bootTimeout: 40 })
+			const settled = backendWithDefaultLaunch({
+				childProcess,
+				extra: { bootTimeout: 40 },
+				fileSystem,
+			})
 				.runTestsAsync(singleJob)
 				.catch((err: unknown) => err);
 			await vi.runAllTimersAsync();
@@ -2234,7 +2407,11 @@ describe(StudioCliBackend, () => {
 			useResultDeadlineTimers();
 
 			const { args, child, childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
-			const settled = backendWithDefaultLaunch(fileSystem, childProcess, { bootTimeout: 40 })
+			const settled = backendWithDefaultLaunch({
+				childProcess,
+				extra: { bootTimeout: 40 },
+				fileSystem,
+			})
 				.runTestsAsync(singleJob)
 				.catch((err: unknown) => err);
 			await settledSpawnAsync(() => args().length > 0);
@@ -2257,7 +2434,7 @@ describe(StudioCliBackend, () => {
 			const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
 
 			const { childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
-			await backendWithDefaultLaunch(fileSystem, childProcess, { bootTimeout: 40 })
+			await backendWithDefaultLaunch({ childProcess, extra: { bootTimeout: 40 }, fileSystem })
 				.runTestsAsync(singleJob)
 				.catch((err: unknown) => err);
 			const graceIndex = setTimeoutSpy.mock.calls.findIndex(([, delay]) => delay === 5000);
@@ -2283,7 +2460,11 @@ describe(StudioCliBackend, () => {
 			const { args, child, childProcess } = stubSpawn({
 				ignoredSignals: ["SIGTERM", "SIGKILL"],
 			});
-			const backend = backendWithDefaultLaunch(fileSystem, childProcess, { bootTimeout: 40 });
+			const backend = backendWithDefaultLaunch({
+				childProcess,
+				extra: { bootTimeout: 40 },
+				fileSystem,
+			});
 			const exitCode = runAsync([], {
 				fileSystem,
 				loadConfig: async () => singleJob.jobs[0]!.config,
@@ -2310,10 +2491,11 @@ describe(StudioCliBackend, () => {
 
 				const { args, child, childProcess } = stubSpawn();
 				const previousServer = getLastCreatedServer();
-				const promise = backendWithDefaultLaunch(fileSystem, childProcess).runTestsAsync(
-					singleJob,
-				);
-				await replyOverServerAsync(fileSystem, args, previousServer);
+				const promise = backendWithDefaultLaunch({
+					childProcess,
+					fileSystem,
+				}).runTestsAsync(singleJob);
+				await replyOverServerAsync({ args, fileSystem, previous: previousServer });
 				await promise;
 
 				// Studio holds the lock through the graceful ClosePlace; the
@@ -2340,10 +2522,11 @@ describe(StudioCliBackend, () => {
 
 				const { args, child, childProcess } = stubSpawn({ ignoredSignals: ["SIGTERM"] });
 				const previousServer = getLastCreatedServer();
-				const promise = backendWithDefaultLaunch(fileSystem, childProcess).runTestsAsync(
-					singleJob,
-				);
-				await replyOverServerAsync(fileSystem, args, previousServer);
+				const promise = backendWithDefaultLaunch({
+					childProcess,
+					fileSystem,
+				}).runTestsAsync(singleJob);
+				await replyOverServerAsync({ args, fileSystem, previous: previousServer });
 				await promise;
 				await vi.advanceTimersByTimeAsync(5000);
 
@@ -2363,10 +2546,14 @@ describe(StudioCliBackend, () => {
 
 				const { args, child, childProcess } = stubSpawn();
 				const previousServer = getLastCreatedServer();
-				const promise = backendWithDefaultLaunch(fileSystem, childProcess, {
-					gracefulShutdownTimeout: 5000,
+				const promise = backendWithDefaultLaunch({
+					childProcess,
+					extra: {
+						gracefulShutdownTimeout: 5000,
+					},
+					fileSystem,
 				}).runTestsAsync(singleJob);
-				await replyOverServerAsync(fileSystem, args, previousServer);
+				await replyOverServerAsync({ args, fileSystem, previous: previousServer });
 				await promise;
 
 				// A long-yielding BindToClose keeps the lock held past the cap.

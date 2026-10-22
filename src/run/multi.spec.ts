@@ -422,8 +422,6 @@ describe(runMultiProjectAsync, () => {
 		});
 
 		expect(mocks.resolveAllProjects).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.anything(),
 			expect.objectContaining({ fileSystem }),
 		);
 	});
@@ -1376,7 +1374,7 @@ describe(runMultiProjectAsync, () => {
 			seams,
 		});
 
-		expect(mocks.resolveBackend).toHaveBeenCalledExactlyOnceWith(cli, config);
+		expect(mocks.resolveBackend).toHaveBeenCalledExactlyOnceWith({ cli, config });
 		expect(mocks.runProjects).toHaveBeenCalledExactlyOnceWith(
 			expect.objectContaining({
 				projects: [expect.objectContaining({ displayName: "server" })],

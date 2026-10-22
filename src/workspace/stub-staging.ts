@@ -42,11 +42,19 @@ export function stageWorkspaceStubs({
 }): TimedPhase<Array<PackageDescriptor>> {
 	const liveProjects = liveProjectsByPackage(pending);
 	const { elapsedMs: cleanMs } = timing.profileTimed("cleanLeftoverStubs", () => {
-		cleanLeftoverWorkspaceStubs(contexts, liveProjects, fileSystem);
+		cleanLeftoverWorkspaceStubs({
+			contexts,
+			fileSystem,
+			liveProjects,
+		});
 	});
 
 	const { elapsedMs: writeMs, value: written } = timing.profileTimed("buildStubs", () => {
-		return writeStubsAndBuildDescriptors(contexts, liveProjects, fileSystem);
+		return writeStubsAndBuildDescriptors({
+			contexts,
+			fileSystem,
+			liveProjects,
+		});
 	});
 
 	const descriptors = written.map((descriptor) => {
@@ -90,17 +98,21 @@ function liveProjectsFor(
 // multi-project runs. Without this, the synthesizer's `assertNoSourceCollision`
 // would reject them and re-trigger the original cross-mode bug this refactor
 // exists to fix.
-function cleanLeftoverWorkspaceStubs(
-	contexts: Array<PackageContext>,
-	liveProjects: Map<string, Set<string>>,
-	fileSystem: FileSystem,
-): void {
+function cleanLeftoverWorkspaceStubs({
+	contexts,
+	fileSystem,
+	liveProjects,
+}: {
+	readonly contexts: Array<PackageContext>;
+	readonly fileSystem: FileSystem;
+	readonly liveProjects: Map<string, Set<string>>;
+}): void {
 	for (const ctx of contexts) {
-		const cleaned = cleanLeftoverStubs(
-			liveProjectsFor(ctx, liveProjects),
-			ctx.info.packageDirectory,
+		const cleaned = cleanLeftoverStubs({
 			fileSystem,
-		);
+			projects: liveProjectsFor(ctx, liveProjects),
+			rootDirectory: ctx.info.packageDirectory,
+		});
 		if (cleaned.length > 0) {
 			process.stderr.write(
 				`jest-roblox: cleaned ${String(cleaned.length)} leftover stub(s) from ${ctx.info.name}:\n${cleaned
@@ -111,11 +123,15 @@ function cleanLeftoverWorkspaceStubs(
 	}
 }
 
-function collectLiveProjectStubMounts(
-	project: ResolvedProjectConfig,
-	ctx: PackageContext,
-	fileSystem: FileSystem,
-): Array<StubMount> {
+function collectLiveProjectStubMounts({
+	ctx,
+	fileSystem,
+	project,
+}: {
+	readonly ctx: PackageContext;
+	readonly fileSystem: FileSystem;
+	readonly project: ResolvedProjectConfig;
+}): Array<StubMount> {
 	const stubMounts: Array<StubMount> = [];
 	for (const mount of project.rojoMounts) {
 		const sourceMount = path.resolve(ctx.info.packageDirectory, mount.fsPath);
@@ -140,11 +156,15 @@ function collectLiveProjectStubMounts(
 // (e.g. `out-test/src` when no specs exist). Skip stub emission for non-live
 // projects; the package's own rojo tree still mounts so cross-package consumers
 // resolve normally.
-function writeStubsAndBuildDescriptors(
-	contexts: Array<PackageContext>,
-	liveProjects: Map<string, Set<string>>,
-	fileSystem: FileSystem,
-): Array<PackageDescriptor> {
+function writeStubsAndBuildDescriptors({
+	contexts,
+	fileSystem,
+	liveProjects,
+}: {
+	readonly contexts: Array<PackageContext>;
+	readonly fileSystem: FileSystem;
+	readonly liveProjects: Map<string, Set<string>>;
+}): Array<PackageDescriptor> {
 	return contexts.map((ctx) => {
 		const liveProjectsForPackage = liveProjectsFor(ctx, liveProjects);
 
@@ -153,16 +173,16 @@ function writeStubsAndBuildDescriptors(
 		// live list. The `stubMounts` loop below applies the same filter
 		// so we only emit `$path` references for mounts that actually got
 		// a cache stub written.
-		generateProjectStubs(
-			liveProjectsForPackage,
-			ctx.info.packageDirectory,
-			ctx.cacheRoot,
+		generateProjectStubs({
 			fileSystem,
-		);
+			outputRoot: ctx.cacheRoot,
+			projects: liveProjectsForPackage,
+			rootDirectory: ctx.info.packageDirectory,
+		});
 
 		const stubMounts: Array<StubMount> = [];
 		for (const project of liveProjectsForPackage) {
-			stubMounts.push(...collectLiveProjectStubMounts(project, ctx, fileSystem));
+			stubMounts.push(...collectLiveProjectStubMounts({ ctx, fileSystem, project }));
 		}
 
 		return { ...ctx.descriptor, stubMounts };

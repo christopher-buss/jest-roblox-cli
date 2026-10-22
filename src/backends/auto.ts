@@ -17,7 +17,12 @@ const ENV_PREFIX = "JEST_";
 
 export type StudioInstalledCheck = () => boolean;
 
-export interface BackendResolutionOptions {
+export interface BackendResolutionRequest extends BackendResolutionOptions {
+	readonly cli: CliOptions;
+	readonly config: ResolvedConfig;
+}
+
+interface BackendResolutionOptions {
 	isStudioInstalled?: StudioInstalledCheck;
 	webSocketServerFactory?: WebSocketServerFactory;
 }
@@ -92,16 +97,14 @@ export function assertVmParallel(kind: BackendKind, vmParallel: ParallelOption):
 }
 
 // oxlint-disable-next-line typescript/require-await -- Async so a bad config rejects rather than throws: `RunSeams.resolveBackend` is awaited, and its fakes resolve.
-export async function resolveBackendAsync(
-	cli: CliOptions,
-	config: ResolvedConfig,
-	{
-		isStudioInstalled = isStudioDiscoverable,
-		webSocketServerFactory = nodeWebSocketServerFactory,
-	}: BackendResolutionOptions = {},
-): Promise<Backend> {
+export async function resolveBackendAsync({
+	cli,
+	config,
+	isStudioInstalled = isStudioDiscoverable,
+	webSocketServerFactory = nodeWebSocketServerFactory,
+}: BackendResolutionRequest): Promise<Backend> {
 	const kind = resolveAutoBackend(config, isStudioInstalled);
-	const backend = createBackend(kind, cli, config, webSocketServerFactory);
+	const backend = createBackend({ cli, config, kind, webSocketServerFactory });
 	assertVmParallel(backend.kind, config.experimentalVmParallel);
 	return backend;
 }
@@ -114,12 +117,17 @@ function buildCredentials(cli: CliOptions, config: ResolvedConfig): RunnerCreden
 	});
 }
 
-function createBackend(
-	kind: BackendKind,
-	cli: CliOptions,
-	config: ResolvedConfig,
-	webSocketServerFactory: WebSocketServerFactory,
-): Backend {
+function createBackend({
+	cli,
+	config,
+	kind,
+	webSocketServerFactory,
+}: {
+	readonly cli: CliOptions;
+	readonly config: ResolvedConfig;
+	readonly kind: BackendKind;
+	readonly webSocketServerFactory: WebSocketServerFactory;
+}): Backend {
 	if (kind === "studio") {
 		return createStudioBackend({
 			port: config.port,

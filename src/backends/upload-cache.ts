@@ -84,22 +84,32 @@ export function hashPlaceFile(
  * The version already holding `hash` for this target, or undefined when these
  * bytes have never been uploaded from this machine.
  */
-export function readCachedVersion(
-	rootDirectory: string,
-	target: UploadCacheTarget,
-	hash: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): number | undefined {
+export function readCachedVersion({
+	fileSystem = nodeFileSystem,
+	hash,
+	rootDirectory,
+	target,
+}: {
+	readonly fileSystem?: FileSystem;
+	readonly hash: string;
+	readonly rootDirectory: string;
+	readonly target: UploadCacheTarget;
+}): number | undefined {
 	const entry = readCacheFile(fileSystem, rootDirectory).entries[entryKey(target)];
 	return entry?.hash === hash ? entry.versionNumber : undefined;
 }
 
-export function writeCachedVersion(
-	rootDirectory: string,
-	target: UploadCacheTarget,
-	{ hash, versionNumber }: CacheEntry,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
+export function writeCachedVersion({
+	entry: { hash, versionNumber },
+	fileSystem = nodeFileSystem,
+	rootDirectory,
+	target,
+}: {
+	readonly entry: CacheEntry;
+	readonly fileSystem?: FileSystem;
+	readonly rootDirectory: string;
+	readonly target: UploadCacheTarget;
+}): void {
 	const cache = readCacheFile(fileSystem, rootDirectory);
 	cache.entries[entryKey(target)] = { hash, versionNumber };
 	try {
@@ -114,11 +124,15 @@ export function writeCachedVersion(
  * True once the entry is gone. A cache file that cannot be written keeps
  * serving the entry it already holds, so the caller hears no.
  */
-export function invalidateCachedVersion(
-	rootDirectory: string,
-	target: UploadCacheTarget,
-	fileSystem: FileSystem = nodeFileSystem,
-): boolean {
+export function invalidateCachedVersion({
+	fileSystem = nodeFileSystem,
+	rootDirectory,
+	target,
+}: {
+	readonly fileSystem?: FileSystem;
+	readonly rootDirectory: string;
+	readonly target: UploadCacheTarget;
+}): boolean {
 	const cache = readCacheFile(fileSystem, rootDirectory);
 	const key = entryKey(target);
 	// `deleteProperty` reports success for an absent key too, so ask first —

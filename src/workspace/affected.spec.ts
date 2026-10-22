@@ -58,8 +58,10 @@ function packageInfoFor(name: string, relativePath: string = packagePathFor(name
 // set up `execFileSync` manually and inspect the inner `/c` string.
 function mockNxResponses(
 	childProcess: ChildProcessRunner,
-	affected: Array<string>,
-	responsesByName: Record<string, NxResolveResult>,
+	{
+		affected,
+		responsesByName,
+	}: { affected: Array<string>; responsesByName: Record<string, NxResolveResult> },
 ): void {
 	vi.mocked(childProcess.execFileSync).mockImplementation((...callArgs) => {
 		const args = callArgs[1] ?? [];
@@ -97,8 +99,10 @@ function mockNxResponses(
 // instead.
 function mockWindowsNxResponses(
 	childProcess: ChildProcessRunner,
-	affected: Array<string>,
-	project: { name: string; root: string; type: string },
+	{
+		affected,
+		project,
+	}: { affected: Array<string>; project: { name: string; root: string; type: string } },
 ): void {
 	vi.mocked(childProcess.execFileSync).mockImplementation((...callArgs) => {
 		const args = callArgs[1] ?? [];
@@ -137,10 +141,9 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toStrictEqual([
-			packageInfoFor("@org/foo"),
-			packageInfoFor("@org/bar"),
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+		).toStrictEqual([packageInfoFor("@org/foo"), packageInfoFor("@org/bar")]);
 		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledWith(
 			"turbo",
 			["ls", "--filter=...[main]", "--output=json"],
@@ -156,9 +159,14 @@ describe(getAffectedPackages, () => {
 
 		vi.mocked(childProcess.execFileSync).mockReturnValue(JSON.stringify({ unexpected: true }));
 
-		expect(() => getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toThrow(
-			/Unexpected turbo ls output/,
-		);
+		expect(() => {
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "main",
+				workspaceRoot: ROOT,
+			});
+		}).toThrow(/Unexpected turbo ls output/);
 	});
 
 	it("should throw with a descriptive error when turbo output is not valid JSON", () => {
@@ -171,7 +179,7 @@ describe(getAffectedPackages, () => {
 
 		let caught: unknown;
 		try {
-			getAffectedPackages(ROOT, "main", { childProcess, fileSystem });
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT });
 		} catch (err) {
 			caught = err;
 		}
@@ -192,9 +200,14 @@ describe(getAffectedPackages, () => {
 
 		vi.mocked(childProcess.execFileSync).mockReturnValue(JSON.stringify({ unexpected: true }));
 
-		expect(() => getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toThrow(
-			/Unexpected nx show projects output/,
-		);
+		expect(() => {
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "main",
+				workspaceRoot: ROOT,
+			});
+		}).toThrow(/Unexpected nx show projects output/);
 	});
 
 	it("should throw with a descriptive error when nx output is not valid JSON", () => {
@@ -208,7 +221,7 @@ describe(getAffectedPackages, () => {
 
 		let caught: unknown;
 		try {
-			getAffectedPackages(ROOT, "main", { childProcess, fileSystem });
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT });
 		} catch (err) {
 			caught = err;
 		}
@@ -235,9 +248,9 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toStrictEqual([
-			packageInfoFor("@org/foo"),
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
 	it("should throw a friendly error when turbo is not on PATH", () => {
@@ -251,9 +264,14 @@ describe(getAffectedPackages, () => {
 			throw enoent;
 		});
 
-		expect(() => getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toThrow(
-			/turbo was not found on PATH/,
-		);
+		expect(() => {
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "main",
+				workspaceRoot: ROOT,
+			});
+		}).toThrow(/turbo was not found on PATH/);
 	});
 
 	it("should include stderr content in the error when turbo exits non-zero", () => {
@@ -271,7 +289,12 @@ describe(getAffectedPackages, () => {
 		});
 
 		expect(() => {
-			return getAffectedPackages(ROOT, "main", { childProcess, fileSystem });
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "main",
+				workspaceRoot: ROOT,
+			});
 		}).toThrowWithMessage(Error, "turbo failed: invalid filter syntax");
 	});
 
@@ -289,9 +312,14 @@ describe(getAffectedPackages, () => {
 			throw stdoutError;
 		});
 
-		expect(() => getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toThrow(
-			/nx failed: NX {2}Command failed.*ambiguous argument 'main'/s,
-		);
+		expect(() => {
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "main",
+				workspaceRoot: ROOT,
+			});
+		}).toThrow(/nx failed: NX {2}Command failed.*ambiguous argument 'main'/s);
 	});
 
 	it("should fall back to a generic failure message when turbo stderr is not a string", () => {
@@ -308,7 +336,12 @@ describe(getAffectedPackages, () => {
 		});
 
 		expect(() => {
-			return getAffectedPackages(ROOT, "main", { childProcess, fileSystem });
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "main",
+				workspaceRoot: ROOT,
+			});
 		}).toThrowWithMessage(Error, "turbo failed");
 	});
 
@@ -325,7 +358,7 @@ describe(getAffectedPackages, () => {
 
 		let caught: unknown;
 		try {
-			getAffectedPackages(ROOT, "main", { childProcess, fileSystem });
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT });
 		} catch (err) {
 			caught = err;
 		}
@@ -352,7 +385,7 @@ describe(getAffectedPackages, () => {
 		const { fileSystem } = createMemoryFileSystem({ [path.join(ROOT, "turbo.json")]: "{}" });
 
 		expect(() => {
-			return getAffectedPackages(ROOT, ref, { childProcess, fileSystem });
+			return getAffectedPackages({ childProcess, fileSystem, ref, workspaceRoot: ROOT });
 		}).toThrowWithMessage(
 			Error,
 			`Invalid --affected-since ref ${JSON.stringify(ref)}. Allowed: letters, digits, _ . / ~ ^ -.`,
@@ -375,7 +408,7 @@ describe(getAffectedPackages, () => {
 			);
 
 			expect(() => {
-				return getAffectedPackages(ROOT, ref, { childProcess, fileSystem });
+				return getAffectedPackages({ childProcess, fileSystem, ref, workspaceRoot: ROOT });
 			}).not.toThrow();
 		},
 	);
@@ -388,9 +421,14 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "pnpm-workspace.yaml")]: "packages:\n",
 		});
 
-		expect(() => getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toThrow(
-			/--affected-since requires turbo or nx.*--packages/s,
-		);
+		expect(() => {
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "main",
+				workspaceRoot: ROOT,
+			});
+		}).toThrow(/--affected-since requires turbo or nx.*--packages/s);
 	});
 
 	it("should invoke cmd.exe directly with verbatim args on Windows (no shell:true to avoid DEP0190)", () => {
@@ -409,7 +447,7 @@ describe(getAffectedPackages, () => {
 			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
 		);
 
-		getAffectedPackages(ROOT, "main", { childProcess, fileSystem });
+		getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT });
 
 		const binDirectory = path.join(ROOT, "node_modules", ".bin");
 		const [file, args, options] = vi.mocked(childProcess.execFileSync).mock.calls[0]!;
@@ -449,7 +487,7 @@ describe(getAffectedPackages, () => {
 			JSON.stringify({ packages: { items: [] } }),
 		);
 
-		getAffectedPackages(ROOT, "main", { childProcess, fileSystem });
+		getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT });
 
 		const [, args] = vi.mocked(childProcess.execFileSync).mock.calls[0]!;
 
@@ -469,7 +507,7 @@ describe(getAffectedPackages, () => {
 			JSON.stringify({ packages: { items: [] } }),
 		);
 
-		getAffectedPackages(ROOT, "HEAD^", { childProcess, fileSystem });
+		getAffectedPackages({ childProcess, fileSystem, ref: "HEAD^", workspaceRoot: ROOT });
 
 		const [, args] = vi.mocked(childProcess.execFileSync).mock.calls[0]!;
 
@@ -490,9 +528,12 @@ describe(getAffectedPackages, () => {
 			[shimPath]: "#!/usr/bin/env node\n",
 			...seedRobloxWorkspace(["proj-a"]),
 		});
-		mockNxResponses(childProcess, ["proj-a"], { "proj-a": { root: packagePathFor("proj-a") } });
+		mockNxResponses(childProcess, {
+			affected: ["proj-a"],
+			responsesByName: { "proj-a": { root: packagePathFor("proj-a") } },
+		});
 
-		getAffectedPackages(ROOT, "develop", { childProcess, fileSystem });
+		getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT });
 
 		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledWith(
 			shimPath,
@@ -513,9 +554,12 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "nx.json")]: "{}",
 			...seedRobloxWorkspace(["proj-a"]),
 		});
-		mockNxResponses(childProcess, ["proj-a"], { "proj-a": { root: packagePathFor("proj-a") } });
+		mockNxResponses(childProcess, {
+			affected: ["proj-a"],
+			responsesByName: { "proj-a": { root: packagePathFor("proj-a") } },
+		});
 
-		getAffectedPackages(ROOT, "develop", { childProcess, fileSystem });
+		getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT });
 
 		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledWith(
 			"nx",
@@ -536,15 +580,17 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "nx.json")]: "{}",
 			...seedRobloxWorkspace(["proj-a", "proj-b"]),
 		});
-		mockNxResponses(childProcess, ["proj-a", "proj-b"], {
-			"proj-a": { root: packagePathFor("proj-a") },
-			"proj-b": { root: packagePathFor("proj-b") },
+		mockNxResponses(childProcess, {
+			affected: ["proj-a", "proj-b"],
+			responsesByName: {
+				"proj-a": { root: packagePathFor("proj-a") },
+				"proj-b": { root: packagePathFor("proj-b") },
+			},
 		});
 
-		expect(getAffectedPackages(ROOT, "develop", { childProcess, fileSystem })).toStrictEqual([
-			packageInfoFor("proj-a"),
-			packageInfoFor("proj-b"),
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT }),
+		).toStrictEqual([packageInfoFor("proj-a"), packageInfoFor("proj-b")]);
 		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledWith(
 			"nx",
 			["show", "projects", "--affected", "--base=develop", "--json"],
@@ -582,7 +628,9 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toStrictEqual([]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+		).toStrictEqual([]);
 	});
 
 	it("should silently drop turbo entries that live outside our known workspace globs", () => {
@@ -608,9 +656,9 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toStrictEqual([
-			packageInfoFor("@org/foo"),
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
 	it("should resolve the nx project to its package.json name when the two diverge", () => {
@@ -631,11 +679,14 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "apps/foo/package.json")]: '{"name":"@org/foo"}',
 			[path.join(ROOT, "nx.json")]: "{}",
 		});
-		mockNxResponses(childProcess, ["foo"], { foo: { root: "apps/foo" } });
+		mockNxResponses(childProcess, {
+			affected: ["foo"],
+			responsesByName: { foo: { root: "apps/foo" } },
+		});
 
-		expect(getAffectedPackages(ROOT, "develop", { childProcess, fileSystem })).toStrictEqual([
-			{ name: "@org/foo", packageDirectory: path.join(ROOT, "apps/foo") },
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT }),
+		).toStrictEqual([{ name: "@org/foo", packageDirectory: path.join(ROOT, "apps/foo") }]);
 	});
 
 	it("should fall back to the nx project name when the root has no package.json", () => {
@@ -653,11 +704,14 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
 			[path.join(ROOT, "nx.json")]: "{}",
 		});
-		mockNxResponses(childProcess, ["foo"], { foo: { root: "apps/foo" } });
+		mockNxResponses(childProcess, {
+			affected: ["foo"],
+			responsesByName: { foo: { root: "apps/foo" } },
+		});
 
-		expect(getAffectedPackages(ROOT, "develop", { childProcess, fileSystem })).toStrictEqual([
-			{ name: "foo", packageDirectory: path.join(ROOT, "apps/foo") },
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT }),
+		).toStrictEqual([{ name: "foo", packageDirectory: path.join(ROOT, "apps/foo") }]);
 	});
 
 	it("should drop nx projects whose root has no jest.config.*", () => {
@@ -672,11 +726,14 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "apps/plain/package.json")]: '{"name":"plain"}',
 			[path.join(ROOT, "nx.json")]: "{}",
 		});
-		mockNxResponses(childProcess, ["plain"], { plain: { root: "apps/plain" } });
+		mockNxResponses(childProcess, {
+			affected: ["plain"],
+			responsesByName: { plain: { root: "apps/plain" } },
+		});
 
-		expect(getAffectedPackages(ROOT, "develop", { childProcess, fileSystem })).toStrictEqual(
-			[],
-		);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT }),
+		).toStrictEqual([]);
 	});
 
 	it("should throw when 'nx show project' output is missing root, mentioning the project name", () => {
@@ -688,10 +745,18 @@ describe(getAffectedPackages, () => {
 		stubPlatform("linux");
 
 		volume.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
-		mockNxResponses(childProcess, ["foo"], { foo: "schema-violation" });
+		mockNxResponses(childProcess, {
+			affected: ["foo"],
+			responsesByName: { foo: "schema-violation" },
+		});
 
 		function act(): Array<PackageInfo> {
-			return getAffectedPackages(ROOT, "develop", { childProcess, fileSystem });
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "develop",
+				workspaceRoot: ROOT,
+			});
 		}
 
 		expect(act).toThrow(/nx show project "foo"/);
@@ -710,11 +775,19 @@ describe(getAffectedPackages, () => {
 		stubPlatform("linux");
 
 		volume.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
-		mockNxResponses(childProcess, ["ghost"], { ghost: "not-found" });
+		mockNxResponses(childProcess, {
+			affected: ["ghost"],
+			responsesByName: { ghost: "not-found" },
+		});
 
-		expect(() => getAffectedPackages(ROOT, "develop", { childProcess, fileSystem })).toThrow(
-			/nx show project "ghost"/,
-		);
+		expect(() => {
+			return getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: "develop",
+				workspaceRoot: ROOT,
+			});
+		}).toThrow(/nx show project "ghost"/);
 	});
 
 	it("should surface the project name when 'nx show project' returns non-JSON", () => {
@@ -729,11 +802,14 @@ describe(getAffectedPackages, () => {
 		stubPlatform("linux");
 
 		volume.fromJSON({ [path.join(ROOT, "nx.json")]: "{}" });
-		mockNxResponses(childProcess, ["weird"], { weird: "non-json" });
+		mockNxResponses(childProcess, {
+			affected: ["weird"],
+			responsesByName: { weird: "non-json" },
+		});
 
 		let caught: unknown;
 		try {
-			getAffectedPackages(ROOT, "develop", { childProcess, fileSystem });
+			getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT });
 		} catch (err) {
 			caught = err;
 		}
@@ -763,13 +839,16 @@ describe(getAffectedPackages, () => {
 			[path.join(ROOT, "apps/foo/jest.config.ts")]: "export default {};",
 			[path.join(ROOT, "nx.json")]: "{}",
 		});
-		mockWindowsNxResponses(childProcess, ["foo"], {
-			name: "foo",
-			root: "apps/foo",
-			type: "library",
+		mockWindowsNxResponses(childProcess, {
+			affected: ["foo"],
+			project: {
+				name: "foo",
+				root: "apps/foo",
+				type: "library",
+			},
 		});
 
-		getAffectedPackages(ROOT, "develop", { childProcess, fileSystem });
+		getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT });
 
 		const { calls } = vi.mocked(childProcess.execFileSync).mock;
 
@@ -801,9 +880,9 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toStrictEqual([
-			packageInfoFor("@org/foo"),
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
 	it("should short-circuit empty nx output without firing any 'nx show project' calls", () => {
@@ -816,9 +895,9 @@ describe(getAffectedPackages, () => {
 
 		vi.mocked(childProcess.execFileSync).mockReturnValue(JSON.stringify([]));
 
-		expect(getAffectedPackages(ROOT, "develop", { childProcess, fileSystem })).toStrictEqual(
-			[],
-		);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "develop", workspaceRoot: ROOT }),
+		).toStrictEqual([]);
 		expect(vi.mocked(childProcess.execFileSync)).toHaveBeenCalledExactlyOnceWith(
 			expect.any(String),
 			expect.any(Array),
@@ -841,9 +920,9 @@ describe(getAffectedPackages, () => {
 			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
 		);
 
-		expect(getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toStrictEqual([
-			packageInfoFor("@org/foo"),
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 
 	it("should require the whole filename to be jest.config.<ext>", () => {
@@ -862,7 +941,9 @@ describe(getAffectedPackages, () => {
 			JSON.stringify({ packages: { items: [turboItem("@org/foo")] } }),
 		);
 
-		expect(getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toStrictEqual([]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+		).toStrictEqual([]);
 	});
 
 	it("should drop affected packages that lack a jest.config.* marker", () => {
@@ -883,8 +964,8 @@ describe(getAffectedPackages, () => {
 			}),
 		);
 
-		expect(getAffectedPackages(ROOT, "main", { childProcess, fileSystem })).toStrictEqual([
-			packageInfoFor("@org/foo"),
-		]);
+		expect(
+			getAffectedPackages({ childProcess, fileSystem, ref: "main", workspaceRoot: ROOT }),
+		).toStrictEqual([packageInfoFor("@org/foo")]);
 	});
 });

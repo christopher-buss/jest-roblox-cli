@@ -45,7 +45,7 @@ function fakeRojo(fileSystem: FileSystem) {
 
 /** A `rojo build <project> -o <output>` that writes the output and succeeds. */
 function rojoChildProcess(fileSystem: FileSystem) {
-	const execFile = vi.fn<RojoExec>((_file, args, _options, callback) => {
+	const execFile = vi.fn<RojoExec>((...[, args, , callback]) => {
 		fileSystem.writeFileSync(args[3]!, "rbxm-bytes");
 		callback(null, "", "");
 	});

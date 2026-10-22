@@ -9,15 +9,16 @@ import { readJsonSync } from "../../e2e/cli/helpers.ts";
 const MULTI_ROOT_FIXTURE = path.resolve(__dirname, "../../e2e/fixtures/multi-root-project");
 
 async function resolveFixtureProjects() {
-	const config = await loadConfig(undefined, MULTI_ROOT_FIXTURE);
+	const config = await loadConfig({ cwd: MULTI_ROOT_FIXTURE });
 	const rojoData = readJsonSync(path.join(MULTI_ROOT_FIXTURE, "default.project.json"));
 	const rojo = rojoProjectSchema.assert(rojoData);
 
-	return resolveAllProjects(
-		config.projects ?? [],
-		{ ...config, rootDir: MULTI_ROOT_FIXTURE },
-		{ cwd: MULTI_ROOT_FIXTURE, rojoTree: rojo.tree },
-	);
+	return resolveAllProjects({
+		cwd: MULTI_ROOT_FIXTURE,
+		entries: config.projects ?? [],
+		rojoTree: rojo.tree,
+		rootConfig: { ...config, rootDir: MULTI_ROOT_FIXTURE },
+	});
 }
 
 describe("multi-root projects", () => {
@@ -55,12 +56,13 @@ describe("multi-root projects", () => {
 	it("should pin to a single mount when outDir is set on the project", async () => {
 		expect.assertions(2);
 
-		const config = await loadConfig(undefined, MULTI_ROOT_FIXTURE);
+		const config = await loadConfig({ cwd: MULTI_ROOT_FIXTURE });
 		const rojoData = readJsonSync(path.join(MULTI_ROOT_FIXTURE, "default.project.json"));
 		const rojo = rojoProjectSchema.assert(rojoData);
 
-		const resolved = await resolveAllProjects(
-			[
+		const resolved = await resolveAllProjects({
+			cwd: MULTI_ROOT_FIXTURE,
+			entries: [
 				{
 					test: {
 						displayName: "shared-only",
@@ -69,9 +71,9 @@ describe("multi-root projects", () => {
 					},
 				},
 			],
-			{ ...config, rootDir: MULTI_ROOT_FIXTURE },
-			{ cwd: MULTI_ROOT_FIXTURE, rojoTree: rojo.tree },
-		);
+			rojoTree: rojo.tree,
+			rootConfig: { ...config, rootDir: MULTI_ROOT_FIXTURE },
+		});
 
 		expect(resolved[0]!.rojoMounts).toHaveLength(1);
 		expect(resolved[0]!.rojoMounts[0]!.dataModelPath).toBe("ReplicatedStorage/PkgShared");

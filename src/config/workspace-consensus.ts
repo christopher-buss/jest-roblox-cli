@@ -2,14 +2,19 @@ import { isDeepStrictEqual } from "node:util";
 
 import type { CliOptions, Config } from "./schema.ts";
 
-interface ConsensusGroup<T> {
-	packages: Array<string>;
-	value: T;
+export interface FieldSources {
+	readonly cli: CliOptions;
+	readonly perPackageConfigs: ReadonlyArray<PackageConfigEntry>;
 }
 
 interface PackageConfigEntry {
 	name: string;
 	config: Config;
+}
+
+interface ConsensusGroup<T> {
+	packages: Array<string>;
+	value: T;
 }
 
 interface ConsensusSpec<T> {
@@ -37,7 +42,7 @@ export class WorkspaceConsensusError extends Error {
 		groups: ReadonlyArray<ConsensusGroup<unknown>>,
 		omittedBy: ReadonlyArray<string> = [],
 	) {
-		super(formatMessage(field, groups, omittedBy));
+		super(formatMessage({ field, groups, omittedBy }));
 		this.field = field;
 		this.groups = groups;
 		this.omittedBy = omittedBy;
@@ -87,11 +92,11 @@ export function assertConsensus(
 	computeConsensus(perPackageConfigs, spec);
 }
 
-export function resolveField<T>(
-	cli: CliOptions,
-	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
-	spec: RequiredFieldSpec<T>,
-): T {
+export function resolveField<T>({
+	cli,
+	perPackageConfigs,
+	spec,
+}: FieldSources & { readonly spec: RequiredFieldSpec<T> }): T {
 	const cliValue = spec.readCli(cli);
 	if (cliValue !== undefined) {
 		return cliValue;
@@ -101,11 +106,11 @@ export function resolveField<T>(
 	return consensus ?? spec.default;
 }
 
-export function resolveOptionalField<T>(
-	cli: CliOptions,
-	perPackageConfigs: ReadonlyArray<PackageConfigEntry>,
-	spec: OptionalFieldSpec<T>,
-): T | undefined {
+export function resolveOptionalField<T>({
+	cli,
+	perPackageConfigs,
+	spec,
+}: FieldSources & { readonly spec: OptionalFieldSpec<T> }): T | undefined {
 	const cliValue = spec.readCli(cli);
 	if (cliValue !== undefined) {
 		return cliValue;
@@ -114,11 +119,15 @@ export function resolveOptionalField<T>(
 	return computeConsensus(perPackageConfigs, spec);
 }
 
-function formatMessage(
-	field: string,
-	groups: ReadonlyArray<ConsensusGroup<unknown>>,
-	omittedBy: ReadonlyArray<string>,
-): string {
+function formatMessage({
+	field,
+	groups,
+	omittedBy,
+}: {
+	readonly field: string;
+	readonly groups: ReadonlyArray<ConsensusGroup<unknown>>;
+	readonly omittedBy: ReadonlyArray<string>;
+}): string {
 	const lines = [`workspace packages disagree on \`${field}\`.`, ""];
 
 	for (const group of groups) {

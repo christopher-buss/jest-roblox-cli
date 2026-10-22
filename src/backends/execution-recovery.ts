@@ -128,11 +128,15 @@ export async function executeWithRecoveryAsync({
 		process.stderr.write(
 			`Warning: Open Cloud task did not claim execution within ${String(Math.round(bootWatchMs / 1000))}s; starting a replacement with the same execution claim.\n`,
 		);
-		return await resolveHedgeAsync(
+		return await resolveHedgeAsync({
 			original,
-			createObservedAttempt({ claim, executeAsync, submission: watch.submission }),
 			readResultAsync,
-		);
+			replacement: createObservedAttempt({
+				claim,
+				executeAsync,
+				submission: watch.submission,
+			}),
+		});
 	} finally {
 		original.cancel();
 	}
@@ -213,11 +217,15 @@ function failureFrom(outcome: AttemptOutcome): unknown {
 	return outcome.failure;
 }
 
-async function resolveHedgeAsync(
-	original: ObservedAttempt,
-	replacement: ObservedAttempt,
-	readResultAsync: ReadResult,
-): Promise<ScriptResult> {
+async function resolveHedgeAsync({
+	original,
+	readResultAsync,
+	replacement,
+}: {
+	readonly original: ObservedAttempt;
+	readonly readResultAsync: ReadResult;
+	readonly replacement: ObservedAttempt;
+}): Promise<ScriptResult> {
 	try {
 		const taggedOriginal = original.outcome.then((outcome) => {
 			return { attempt: "original" as const, outcome };
@@ -257,12 +265,17 @@ async function settleAsync(promise: Promise<ScriptResult>): Promise<AttemptOutco
 	}
 }
 
-async function rescueSubmissionAsync(
-	error: UncertainSubmissionError,
-	context: ExecutionAttemptContext,
-	executeAsync: ExecuteAttempt,
-	readResultAsync: ReadResult,
-): Promise<ScriptResult> {
+async function rescueSubmissionAsync({
+	context,
+	error,
+	executeAsync,
+	readResultAsync,
+}: {
+	readonly context: ExecutionAttemptContext;
+	readonly error: UncertainSubmissionError;
+	readonly executeAsync: ExecuteAttempt;
+	readonly readResultAsync: ReadResult;
+}): Promise<ScriptResult> {
 	context.observationSignal.throwIfAborted();
 	// Not AbortSignal.any: a listener-free composite loses its abort once the
 	// aborted source is collected.
@@ -275,13 +288,16 @@ async function rescueSubmissionAsync(
 		observation.abort();
 	}
 
-	return resolveHedgeAsync(
-		{ cancel, outcome: settleAsync(error.readResultAsync(signal)) },
-		{ cancel, outcome: settleAsync(executeAsync({ ...context, observationSignal: signal })) },
-		async (failure, readingSignal) => {
+	return resolveHedgeAsync({
+		original: { cancel, outcome: settleAsync(error.readResultAsync(signal)) },
+		readResultAsync: async (failure, readingSignal) => {
 			return readResultAsync(failure, AbortSignal.any([signal, readingSignal]));
 		},
-	);
+		replacement: {
+			cancel,
+			outcome: settleAsync(executeAsync({ ...context, observationSignal: signal })),
+		},
+	});
 }
 
 function withSubmissionRescue(
@@ -305,7 +321,7 @@ function withSubmissionRescue(
 			}
 
 			canRescue = false;
-			return rescueSubmissionAsync(err, context, executeAsync, readResultAsync);
+			return rescueSubmissionAsync({ context, error: err, executeAsync, readResultAsync });
 		}
 	}
 

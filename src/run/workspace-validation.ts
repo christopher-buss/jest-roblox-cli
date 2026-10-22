@@ -106,11 +106,16 @@ export function resolveWorkspacePackages(
 	{ childProcess, exclude, fileSystem, patterns }: WorkspacePackageSelection,
 ): Array<PackageInfo> {
 	if (cli.affectedSince !== undefined) {
-		return excludePackages(
-			getAffectedPackages(workspaceRoot, cli.affectedSince, { childProcess, fileSystem }),
-			workspaceRoot,
+		return excludePackages({
 			exclude,
-		);
+			packages: getAffectedPackages({
+				childProcess,
+				fileSystem,
+				ref: cli.affectedSince,
+				workspaceRoot,
+			}),
+			workspaceRoot,
+		});
 	}
 
 	if (cli.packages === undefined) {
@@ -122,9 +127,11 @@ export function resolveWorkspacePackages(
 	//
 	// No exclude here. Naming a package is asking for it, whatever a
 	// workspace-wide default says.
-	return resolvePackages(workspaceRoot, splitPackageNames(cli.packages), {
+	return resolvePackages({
 		fileSystem,
+		names: splitPackageNames(cli.packages),
 		patterns,
+		workspaceRoot,
 	});
 }
 

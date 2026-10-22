@@ -5269,9 +5269,14 @@ describe("when a run bakes generated jest.config stubs into the shadow", () => {
 		const config = makeConfig({ luauRoots: ["out"], rootDir: process.cwd() });
 		const projects = makeStubProjects(config, { ...mounts, ...extraMounts });
 		const cacheRoot = path.resolve(".jest-roblox/cache");
-		generateProjectStubs(projects, process.cwd(), cacheRoot, fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: cacheRoot,
+			projects,
+			rootDirectory: process.cwd(),
+		});
 
-		return { bake: createStubBake(projects, cacheRoot, fileSystem), config };
+		return { bake: createStubBake({ cacheRoot, fileSystem, projects }), config };
 	}
 
 	const sharedStub = ".jest-roblox/coverage/out/shared/jest.config.luau";

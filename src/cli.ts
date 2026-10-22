@@ -669,7 +669,9 @@ async function runInnerAsync(
 	}
 
 	const { fileSystem } = dependencies;
-	const loadedConfig = await dependencies.loadConfig(cli.config, cli.workspaceRoot, {
+	const loadedConfig = await dependencies.loadConfig({
+		configPath: cli.config,
+		cwd: cli.workspaceRoot,
 		fileSystem,
 	});
 	const config = mergeCliWithConfig(cli, loadedConfig);

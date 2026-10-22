@@ -40,11 +40,15 @@ export function loadLuauConfig(
  * @param cwd - Base directory for resolution.
  * @returns The resolved config path, or `undefined`.
  */
-export function findLuauConfigFile(
-	directoryOrFile: string,
-	cwd: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): string | undefined {
+export function findLuauConfigFile({
+	cwd,
+	directoryOrFile,
+	fileSystem = nodeFileSystem,
+}: {
+	readonly cwd: string;
+	readonly directoryOrFile: string;
+	readonly fileSystem?: FileSystem;
+}): string | undefined {
 	const resolved = path.resolve(cwd, directoryOrFile, "jest.config.luau");
 	if (fileSystem.existsSync(resolved)) {
 		return resolved;

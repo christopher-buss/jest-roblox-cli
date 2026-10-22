@@ -60,14 +60,25 @@ const STUB_FILENAMES: ReadonlySet<string> = new Set([LEGACY_LUA_FILENAME, STUB_F
  * shadow, and declare them so the shadow's orphan sweeps leave them be. See
  * {@link ShadowBake} for why the two travel as one.
  */
-export function createStubBake(
-	projects: Array<ResolvedProjectConfig>,
-	cacheRoot: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): ShadowBake {
+export function createStubBake({
+	cacheRoot,
+	fileSystem = nodeFileSystem,
+	projects,
+}: {
+	readonly cacheRoot: string;
+	readonly fileSystem?: FileSystem;
+	readonly projects: Array<ResolvedProjectConfig>;
+}): ShadowBake {
 	return {
 		isBakeOwned: (shadowPath) => isBakedStub(fileSystem, shadowPath),
-		run: (shadow) => syncStubsToShadowDirectory(projects, cacheRoot, shadow, fileSystem),
+		run: (shadow) => {
+			return syncStubsToShadowDirectory({
+				fileSystem,
+				projects,
+				rootDirectory: cacheRoot,
+				shadow,
+			});
+		},
 	};
 }
 
@@ -191,16 +202,20 @@ export function hasUserAuthoredConfig(
  * FS path (or none). Throws `ConfigError` when the project has partial
  * coverage — some mounts have a user config and others don't.
  */
-export function assertStubCollisionRule(
-	project: ResolvedProjectConfig,
-	rootDirectory: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
+export function assertStubCollisionRule({
+	fileSystem = nodeFileSystem,
+	project,
+	rootDirectory,
+}: {
+	readonly fileSystem?: FileSystem;
+	readonly project: ResolvedProjectConfig;
+	readonly rootDirectory: string;
+}): void {
 	const withUser: Array<string> = [];
 	const withoutUser: Array<string> = [];
 
 	for (const mount of project.rojoMounts) {
-		assertMountContained(project, mount.fsPath, rootDirectory);
+		assertMountContained({ fsPath: mount.fsPath, project, rootDirectory });
 
 		const absolute = path.resolve(rootDirectory, mount.fsPath);
 		if (hasUserAuthoredConfig(absolute, fileSystem)) {
@@ -238,11 +253,15 @@ export function assertStubCollisionRule(
  *   it honours only the OS's separator, so a POSIX filename literally
  *   containing `\` doesn't pass as if it were a Windows escape.
  */
-export function cleanLeftoverStubs(
-	projects: Array<ResolvedProjectConfig>,
-	rootDirectory: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): Array<string> {
+export function cleanLeftoverStubs({
+	fileSystem = nodeFileSystem,
+	projects,
+	rootDirectory,
+}: {
+	readonly fileSystem?: FileSystem;
+	readonly projects: Array<ResolvedProjectConfig>;
+	readonly rootDirectory: string;
+}): Array<string> {
 	const cleaned: Array<string> = [];
 	let realRoot: string | undefined;
 	function realRootResolved(): string {
@@ -252,24 +271,34 @@ export function cleanLeftoverStubs(
 
 	for (const project of projects) {
 		cleaned.push(
-			...cleanLeftoverStubsForProject(fileSystem, project, rootDirectory, realRootResolved),
+			...cleanLeftoverStubsForProject({
+				fileSystem,
+				project,
+				realRootResolved,
+				rootDirectory,
+			}),
 		);
 	}
 
 	return cleaned;
 }
 
-export function generateProjectStubs(
-	projects: Array<ResolvedProjectConfig>,
-	rootDirectory: string,
-	outputRoot?: string,
-	fileSystem: FileSystem = nodeFileSystem,
-): void {
+export function generateProjectStubs({
+	fileSystem = nodeFileSystem,
+	outputRoot,
+	projects,
+	rootDirectory,
+}: {
+	readonly fileSystem?: FileSystem;
+	readonly outputRoot?: string | undefined;
+	readonly projects: Array<ResolvedProjectConfig>;
+	readonly rootDirectory: string;
+}): void {
 	const writeRoot = outputRoot ?? rootDirectory;
 	const entries: Array<{ config: StubConfig; outputPath: string }> = [];
 
 	for (const project of projects) {
-		assertStubCollisionRule(project, rootDirectory, fileSystem);
+		assertStubCollisionRule({ fileSystem, project, rootDirectory });
 
 		const stubConfig: StubConfig = {
 			...buildStubConfig(project.config),
@@ -278,33 +307,37 @@ export function generateProjectStubs(
 		};
 
 		entries.push(
-			...buildStubEntriesForProject(
-				{ fileSystem, rootDirectory, writeRoot },
+			...buildStubEntriesForProject({
+				fileSystem,
 				project,
+				rootDirectory,
 				stubConfig,
-			),
+				writeRoot,
+			}),
 		);
 	}
 
 	generateProjectConfigs(entries, fileSystem);
 }
 
-export function syncStubsToShadowDirectory(
-	projects: Array<ResolvedProjectConfig>,
-	rootDirectory: string,
-	shadow: ShadowLayout,
-	fileSystem: FileSystem = nodeFileSystem,
-): boolean {
+export function syncStubsToShadowDirectory({
+	fileSystem = nodeFileSystem,
+	projects,
+	rootDirectory,
+	shadow,
+}: {
+	readonly fileSystem?: FileSystem;
+	readonly projects: Array<ResolvedProjectConfig>;
+	readonly rootDirectory: string;
+	readonly shadow: ShadowLayout;
+}): boolean {
 	let hasChanged = false;
 	const expectedPaths = new Set<string>();
+	const target = { fileSystem, rootDirectory, shadow };
 
 	for (const project of projects) {
 		for (const mount of project.rojoMounts) {
-			const result = syncMountStub(
-				{ fileSystem, rootDirectory, shadow },
-				project,
-				mount.fsPath,
-			);
+			const result = syncMountStub({ ...target, fsPath: mount.fsPath, project });
 			if (result.targetPath !== undefined) {
 				expectedPaths.add(result.targetPath);
 			}
@@ -329,7 +362,7 @@ export function syncStubsToShadowDirectory(
 		}
 
 		fileSystem.unlinkSync(existing);
-		removeEmptyParents(fileSystem, path.dirname(existing), shadow.root);
+		removeEmptyParents({ directory: path.dirname(existing), fileSystem, stopAt: shadow.root });
 		hasChanged = true;
 	}
 
@@ -343,11 +376,15 @@ export function syncStubsToShadowDirectory(
  * `path.resolve` on Windows, a permissive fsPath could send stub writes to
  * `D:\outside\...`. Guard at every write-site.
  */
-function assertMountContained(
-	project: ResolvedProjectConfig,
-	fsPath: string,
-	rootDirectory: string,
-): void {
+function assertMountContained({
+	fsPath,
+	project,
+	rootDirectory,
+}: {
+	readonly fsPath: string;
+	readonly project: ResolvedProjectConfig;
+	readonly rootDirectory: string;
+}): void {
 	if (path.isAbsolute(fsPath)) {
 		throw new Error(
 			`Project "${project.displayName}" mount fsPath must be relative, got: ${fsPath}`,
@@ -363,15 +400,20 @@ function assertMountContained(
 	}
 }
 
-function cleanLeftoverStubsForProject(
-	fileSystem: FileSystem,
-	project: ResolvedProjectConfig,
-	rootDirectory: string,
-	realRootResolved: () => string,
-): Array<string> {
+function cleanLeftoverStubsForProject({
+	fileSystem,
+	project,
+	realRootResolved,
+	rootDirectory,
+}: {
+	readonly fileSystem: FileSystem;
+	readonly project: ResolvedProjectConfig;
+	readonly realRootResolved: () => string;
+	readonly rootDirectory: string;
+}): Array<string> {
 	const cleaned: Array<string> = [];
 	for (const mount of project.rojoMounts) {
-		assertMountContained(project, mount.fsPath, rootDirectory);
+		assertMountContained({ fsPath: mount.fsPath, project, rootDirectory });
 		const stubPath = path.resolve(rootDirectory, mount.fsPath, STUB_FILENAME);
 		if (!isGeneratedStub(stubPath, fileSystem)) {
 			continue;
@@ -394,11 +436,16 @@ function cleanLeftoverStubsForProject(
 	return cleaned;
 }
 
-function buildStubEntriesForProject(
-	{ fileSystem, rootDirectory, writeRoot }: StubRoots,
-	project: ResolvedProjectConfig,
-	stubConfig: StubConfig,
-): Array<{ config: StubConfig; outputPath: string }> {
+function buildStubEntriesForProject({
+	fileSystem,
+	project,
+	rootDirectory,
+	stubConfig,
+	writeRoot,
+}: StubRoots & {
+	readonly project: ResolvedProjectConfig;
+	readonly stubConfig: StubConfig;
+}): Array<{ config: StubConfig; outputPath: string }> {
 	const entries: Array<{ config: StubConfig; outputPath: string }> = [];
 	for (const mount of project.rojoMounts) {
 		// Per-mount FS check — skip generation when a non-marker
@@ -429,12 +476,17 @@ function buildStubConfig(config: ResolvedConfig): Partial<ProjectTestConfig> {
 	return result;
 }
 
-function syncMountStub(
-	{ fileSystem, rootDirectory, shadow }: SyncTarget,
-	project: ResolvedProjectConfig,
-	fsPath: string,
-): SyncMountStubResult {
-	assertMountContained(project, fsPath, rootDirectory);
+function syncMountStub({
+	fileSystem,
+	fsPath,
+	project,
+	rootDirectory,
+	shadow,
+}: SyncTarget & {
+	readonly fsPath: string;
+	readonly project: ResolvedProjectConfig;
+}): SyncMountStubResult {
+	assertMountContained({ fsPath, project, rootDirectory });
 
 	const sourcePath = path.resolve(rootDirectory, fsPath, STUB_FILENAME);
 	if (!fileSystem.existsSync(sourcePath)) {
@@ -475,7 +527,15 @@ function* findShadowStubs(fileSystem: FileSystem, directory: string): Generator<
 	}
 }
 
-function removeEmptyParents(fileSystem: FileSystem, directory: string, stopAt: string): void {
+function removeEmptyParents({
+	directory,
+	fileSystem,
+	stopAt,
+}: {
+	readonly directory: string;
+	readonly fileSystem: FileSystem;
+	readonly stopAt: string;
+}): void {
 	const resolved = path.resolve(directory);
 	const resolvedStop = path.resolve(stopAt);
 	if (resolved === resolvedStop || !resolved.startsWith(resolvedStop)) {
@@ -484,7 +544,7 @@ function removeEmptyParents(fileSystem: FileSystem, directory: string, stopAt: s
 
 	try {
 		fileSystem.rmdirSync(resolved);
-		removeEmptyParents(fileSystem, path.dirname(resolved), stopAt);
+		removeEmptyParents({ directory: path.dirname(resolved), fileSystem, stopAt });
 	} catch {
 		// Best-effort cleanup
 	}

@@ -192,11 +192,15 @@ function applySetupResolver(
 // when no project declares setup files, mirroring the guard in
 // `resolveSetupFilePaths` (run/discovery.ts). Packages with no setup files (the
 // common case) then pay nothing here.
-function resolvePackageSetupFiles(
-	projects: Array<ResolvedProjectConfig>,
-	entry: LoadedPackage,
-	{ createResolver, rojoCache }: PackageReaders,
-): void {
+function resolvePackageSetupFiles({
+	createResolver,
+	entry,
+	projects,
+	rojoCache,
+}: PackageReaders & {
+	readonly entry: LoadedPackage;
+	readonly projects: Array<ResolvedProjectConfig>;
+}): void {
 	const hasSetupFiles = projects.some((project) => {
 		return (
 			project.config.setupFiles !== undefined ||
@@ -224,11 +228,11 @@ async function resolvePackageProjectsAsync(
 ): Promise<Array<ResolvedProjectConfig>> {
 	const { fileSystem, tsconfigReader } = readers;
 	const { descriptor, info, pkgConfig } = entry;
-	const rojoTree = loadPackageRojoTree(
-		descriptor.rojoProjectPath,
-		descriptor.packageDirectory,
+	const rojoTree = loadPackageRojoTree({
 		fileSystem,
-	);
+		packageDirectory: descriptor.packageDirectory,
+		rojoProjectPath: descriptor.rojoProjectPath,
+	});
 	const projectEntries = resolveProjectEntries({
 		fileSystem,
 		packageConfig: pkgConfig,
@@ -236,13 +240,15 @@ async function resolvePackageProjectsAsync(
 		packageName: info.name,
 		rojoTree,
 	});
-	const projects = await resolveAllProjects(projectEntries, pkgConfig, {
+	const projects = await resolveAllProjects({
 		cwd: info.packageDirectory,
+		entries: projectEntries,
 		fileSystem,
 		rojoTree,
+		rootConfig: pkgConfig,
 		tsconfigReader,
 	});
 
-	resolvePackageSetupFiles(projects, entry, readers);
+	resolvePackageSetupFiles({ ...readers, entry, projects });
 	return projects;
 }

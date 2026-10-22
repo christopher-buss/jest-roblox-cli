@@ -11,23 +11,33 @@ function makeProject(displayName: string, include: Array<string>): ResolvedProje
 	return fromAny({ displayName, include });
 }
 
-function makeContext(
-	name: string,
-	packageDirectory: string,
-	projects: Array<ResolvedProjectConfig>,
-): PackageContext {
+function makeContext({
+	name,
+	packageDirectory,
+	projects,
+}: {
+	readonly name: string;
+	readonly packageDirectory: string;
+	readonly projects: Array<ResolvedProjectConfig>;
+}): PackageContext {
 	return fromAny({ info: { name, packageDirectory }, projects });
 }
 
 function makeWorkspace(): Array<PackageContext> {
 	return [
-		makeContext("@halcyon/app", "/repo", [
-			makeProject("client", ["src/client/**/*.spec.ts"]),
-			makeProject("server", ["src/server/**/*.spec.ts"]),
-		]),
-		makeContext("@halcyon/lib", "/repo/packages/lib", [
-			makeProject("lib", ["src/**/*.spec.ts"]),
-		]),
+		makeContext({
+			name: "@halcyon/app",
+			packageDirectory: "/repo",
+			projects: [
+				makeProject("client", ["src/client/**/*.spec.ts"]),
+				makeProject("server", ["src/server/**/*.spec.ts"]),
+			],
+		}),
+		makeContext({
+			name: "@halcyon/lib",
+			packageDirectory: "/repo/packages/lib",
+			projects: [makeProject("lib", ["src/**/*.spec.ts"])],
+		}),
 	];
 }
 
@@ -90,9 +100,11 @@ describe(applyFileFilter, () => {
 		expect.assertions(1);
 
 		const contexts = [
-			makeContext("@halcyon/app", "D:/repo", [
-				makeProject("client", ["src/client/**/*.spec.ts"]),
-			]),
+			makeContext({
+				name: "@halcyon/app",
+				packageDirectory: "D:/repo",
+				projects: [makeProject("client", ["src/client/**/*.spec.ts"])],
+			}),
 		];
 
 		const selection = applyFileFilter({

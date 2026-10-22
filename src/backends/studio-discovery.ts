@@ -150,11 +150,15 @@ function notFound(): Error {
  * directories, normalized. Undefined when no version directory holds one —
  * `Versions` exists but every entry is a stale/partial install.
  */
-function findNewestStudioExecutable(
-	fileSystem: FileSystem,
-	versionsDirectory: string,
-	entries: Array<Dirent>,
-): string | undefined {
+function findNewestStudioExecutable({
+	entries,
+	fileSystem,
+	versionsDirectory,
+}: {
+	readonly entries: Array<Dirent>;
+	readonly fileSystem: FileSystem;
+	readonly versionsDirectory: string;
+}): string | undefined {
 	let newest: undefined | { mtimeMs: number; path: string };
 	for (const entry of entries) {
 		if (!entry.isDirectory()) {
@@ -189,7 +193,7 @@ function discoverWindows(fileSystem: FileSystem, environment: NodeJS.ProcessEnv)
 		throw notFound();
 	}
 
-	const newest = findNewestStudioExecutable(fileSystem, versionsDirectory, entries);
+	const newest = findNewestStudioExecutable({ entries, fileSystem, versionsDirectory });
 	if (newest === undefined) {
 		throw notFound();
 	}

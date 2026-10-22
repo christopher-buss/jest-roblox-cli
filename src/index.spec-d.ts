@@ -113,15 +113,15 @@ describe(loadConfig, () => {
 		expectTypeOf(loadConfig).returns.toEqualTypeOf<Promise<ResolvedConfig>>();
 	});
 
-	it("should accept optional configPath and cwd", () => {
+	it("should accept optional configPath and cwd in one options object", () => {
 		expectTypeOf(loadConfig).toBeCallableWith();
-		expectTypeOf(loadConfig).toBeCallableWith("path");
-		expectTypeOf(loadConfig).toBeCallableWith("path", "cwd");
+		expectTypeOf(loadConfig).toBeCallableWith({ configPath: "path" });
+		expectTypeOf(loadConfig).toBeCallableWith({ configPath: "path", cwd: "cwd" });
 	});
 
-	it("should reject non-string arguments", () => {
-		// @ts-expect-error number is not a valid config path
-		void loadConfig(123);
+	it("should reject positional arguments", () => {
+		// @ts-expect-error configPath moved into the options object
+		void loadConfig("path", "cwd");
 	});
 });
 

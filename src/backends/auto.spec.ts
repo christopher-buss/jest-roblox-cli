@@ -157,7 +157,9 @@ describe(resolveBackendAsync, () => {
 
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend = await resolveBackendAsync(makeCli(), makeConfig({ backend: "auto" }), {
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "auto" }),
 			isStudioInstalled: () => true,
 		});
 
@@ -171,7 +173,9 @@ describe(resolveBackendAsync, () => {
 		stubCredentials();
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-		const backend = await resolveBackendAsync(makeCli(), makeConfig({ backend: "auto" }), {
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "auto" }),
 			isStudioInstalled: () => false,
 		});
 
@@ -186,7 +190,9 @@ describe(resolveBackendAsync, () => {
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		await expect(
-			resolveBackendAsync(makeCli(), makeConfig({ backend: "auto" }), {
+			resolveBackendAsync({
+				cli: makeCli(),
+				config: makeConfig({ backend: "auto" }),
 				isStudioInstalled: () => false,
 			}),
 		).rejects.toThrow(/Missing:/);
@@ -200,7 +206,10 @@ describe(resolveBackendAsync, () => {
 		vi.stubEnv("JEST_ROBLOX_UNIVERSE_ID", "888");
 		vi.stubEnv("JEST_ROBLOX_PLACE_ID", "999");
 
-		const backend = await resolveBackendAsync(makeCli(), makeConfig({ backend: "open-cloud" }));
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "open-cloud" }),
+		});
 
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
@@ -208,7 +217,10 @@ describe(resolveBackendAsync, () => {
 	it("should return studio backend for explicit studio config", async () => {
 		expect.assertions(1);
 
-		const backend = await resolveBackendAsync(makeCli(), makeConfig({ backend: "studio" }));
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio" }),
+		});
 
 		expect(backend).toBeInstanceOf(StudioBackend);
 	});
@@ -216,11 +228,11 @@ describe(resolveBackendAsync, () => {
 	it("should open an explicit studio backend's server through the server seam", async () => {
 		expect.assertions(2);
 
-		const backend = await resolveBackendAsync(
-			makeCli(),
-			makeConfig({ backend: "studio", timeout: 1 }),
-			{ webSocketServerFactory },
-		);
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio", timeout: 1 }),
+			webSocketServerFactory,
+		});
 
 		await expect(backend.runTestsAsync({ jobs: [] })).rejects.toThrowWithMessage(
 			Error,
@@ -233,7 +245,10 @@ describe(resolveBackendAsync, () => {
 	it("should return studio-cli backend for explicit studio-cli config", async () => {
 		expect.assertions(1);
 
-		const backend = await resolveBackendAsync(makeCli(), makeConfig({ backend: "studio-cli" }));
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio-cli" }),
+		});
 
 		expect(backend).toBeInstanceOf(StudioCliBackend);
 	});
@@ -252,7 +267,7 @@ describe(resolveBackendAsync, () => {
 			rootDir: rootDirectory,
 			studioPath: configuredPath,
 		});
-		const backend = await resolveBackendAsync(makeCli(), config);
+		const backend = await resolveBackendAsync({ cli: makeCli(), config });
 
 		await expect(
 			backend.runTestsAsync({
@@ -283,7 +298,7 @@ describe(resolveBackendAsync, () => {
 				rootDir: rootDirectory,
 				studioPath,
 			});
-			const backend = await resolveBackendAsync(makeCli(), config);
+			const backend = await resolveBackendAsync({ cli: makeCli(), config });
 			await backend.runTestsAsync({
 				jobs: [{ config, displayName: "project", testFiles: ["test.spec.ts"] }],
 			});
@@ -302,10 +317,10 @@ describe(resolveBackendAsync, () => {
 	it("should accept any --parallel for studio-cli, which runs one session", async () => {
 		expect.assertions(1);
 
-		const backend = await resolveBackendAsync(
-			makeCli(),
-			makeConfig({ backend: "studio-cli", parallel: 3 }),
-		);
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio-cli", parallel: 3 }),
+		});
 
 		expect(backend).toBeInstanceOf(StudioCliBackend);
 	});
@@ -316,10 +331,10 @@ describe(resolveBackendAsync, () => {
 		stubCredentials();
 
 		await expect(
-			resolveBackendAsync(
-				makeCli(),
-				makeConfig({ backend: "open-cloud", experimentalVmParallel: 2 }),
-			),
+			resolveBackendAsync({
+				cli: makeCli(),
+				config: makeConfig({ backend: "open-cloud", experimentalVmParallel: 2 }),
+			}),
 		).rejects.toThrowWithMessage(
 			Error,
 			"--experimental-vm-parallel is Studio-only: an Open Cloud session has no " +
@@ -331,10 +346,10 @@ describe(resolveBackendAsync, () => {
 	it("should accept --experimental-vm-parallel on the studio backend", async () => {
 		expect.assertions(1);
 
-		const backend = await resolveBackendAsync(
-			makeCli(),
-			makeConfig({ backend: "studio", experimentalVmParallel: "auto" }),
-		);
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio", experimentalVmParallel: "auto" }),
+		});
 
 		expect(backend.kind).toBe("studio");
 	});
@@ -343,10 +358,10 @@ describe(resolveBackendAsync, () => {
 		expect.assertions(1);
 
 		await expect(
-			resolveBackendAsync(
-				makeCli(),
-				makeConfig({ backend: "studio", experimentalVmParallel: 8 }),
-			),
+			resolveBackendAsync({
+				cli: makeCli(),
+				config: makeConfig({ backend: "studio", experimentalVmParallel: 8 }),
+			}),
 		).rejects.toThrowWithMessage(
 			Error,
 			"--experimental-vm-parallel 8 is more than the Studio plugin " +
@@ -358,10 +373,10 @@ describe(resolveBackendAsync, () => {
 	it("should accept a VM count equal to the host pool", async () => {
 		expect.assertions(1);
 
-		const backend = await resolveBackendAsync(
-			makeCli(),
-			makeConfig({ backend: "studio", experimentalVmParallel: 4 }),
-		);
+		const backend = await resolveBackendAsync({
+			cli: makeCli(),
+			config: makeConfig({ backend: "studio", experimentalVmParallel: 4 }),
+		});
 
 		expect(backend.kind).toBe("studio");
 	});
@@ -371,10 +386,10 @@ describe(resolveBackendAsync, () => {
 
 		stubNoCredentials();
 
-		const backend = await resolveBackendAsync(
-			makeCli({ apiKey: "test-key" }),
-			makeConfig({ backend: "open-cloud", placeId: "456", universeId: "123" }),
-		);
+		const backend = await resolveBackendAsync({
+			cli: makeCli({ apiKey: "test-key" }),
+			config: makeConfig({ backend: "open-cloud", placeId: "456", universeId: "123" }),
+		});
 
 		expect(backend).toBeInstanceOf(OpenCloudBackend);
 	});
@@ -389,7 +404,7 @@ describe(resolveBackendAsync, () => {
 		stubNoCredentials();
 
 		await expect(
-			resolveBackendAsync(cli, makeConfig({ backend: "open-cloud" })),
+			resolveBackendAsync({ cli, config: makeConfig({ backend: "open-cloud" }) }),
 		).rejects.toThrow(/Missing:/);
 	});
 });

@@ -127,11 +127,15 @@ export function matchFilesToProjects({
  * it actually owns (no leaking type-test files or runtime files across
  * projects).
  */
-export function filterProjectsByFiles(
-	projects: ReadonlyArray<ResolvedProjectConfig>,
-	files: ReadonlyArray<string>,
-	rootDirectory: string,
-): Array<ProjectFileMatch> {
+export function filterProjectsByFiles({
+	files,
+	projects,
+	rootDirectory,
+}: {
+	readonly files: ReadonlyArray<string>;
+	readonly projects: ReadonlyArray<ResolvedProjectConfig>;
+	readonly rootDirectory: string;
+}): Array<ProjectFileMatch> {
 	const scopes = projects.map((project) => ({ project, rootDirectory }));
 
 	return matchFilesToProjects({ fileBase: rootDirectory, files, scopes }).map((match) => {

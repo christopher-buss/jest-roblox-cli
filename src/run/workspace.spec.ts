@@ -1130,7 +1130,7 @@ describe(runWorkspaceModeAsync, () => {
 			expect.assertions(2);
 
 			const harness = setupHappyPath();
-			harness.loadPackageConfig.mockImplementation(async (_configPath, cwd) => {
+			harness.loadPackageConfig.mockImplementation(async ({ cwd }) => {
 				return colorForPackageDirectory(cwd);
 			});
 
@@ -1160,11 +1160,11 @@ describe(runWorkspaceModeAsync, () => {
 				harness.dependencies,
 			);
 
-			expect(harness.loadPackageConfig).toHaveBeenCalledExactlyOnceWith(
-				undefined,
-				packageDirectoryFor(ROOT, "@halcyon/foo"),
-				{ fileSystem: harness.dependencies.fileSystem },
-			);
+			expect(harness.loadPackageConfig).toHaveBeenCalledExactlyOnceWith({
+				configPath: undefined,
+				cwd: packageDirectoryFor(ROOT, "@halcyon/foo"),
+				fileSystem: harness.dependencies.fileSystem,
+			});
 		});
 
 		it("should surface loadRawConfig errors without double-prefixing Error:", async () => {

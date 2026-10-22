@@ -61,11 +61,15 @@ interface TypecheckOnlyInput {
 // `typecheckByDirectory` (keyed by `cwd = package`), and `composePackageIdentity`
 // stamps the package name onto every file result so two packages'
 // identically-named `-d` files stay distinct after the merge.
-export async function runWorkspaceTypecheckPassAsync(
-	entries: Array<TypecheckGroupEntry>,
-	typecheckByDirectory: Map<string, PackageTypecheck>,
-	runTypecheck: RunTypecheck,
-): Promise<WorkspaceTypecheckPass> {
+export async function runWorkspaceTypecheckPassAsync({
+	runTypecheck,
+	typecheckByDirectory,
+	typeTestEntries: entries,
+}: {
+	readonly runTypecheck: RunTypecheck;
+	readonly typecheckByDirectory: Map<string, PackageTypecheck>;
+	readonly typeTestEntries: Array<TypecheckGroupEntry>;
+}): Promise<WorkspaceTypecheckPass> {
 	const byPackage = new Map<string, JestResult>();
 	const outcome = await runTypecheckPassAsync(entries, async (group) => {
 		// Every group's cwd is a package directory recorded in
@@ -95,11 +99,15 @@ export async function runWorkspaceTypecheckPassAsync(
 // the overlap path (where the pass may be empty — typecheck off) and the
 // `--typecheckOnly` short-circuit, so both branches stay exercised regardless of
 // which path a given run takes.
-export function attachTypecheck(
-	results: Array<WorkspaceProjectResult>,
-	pass: TypecheckPassOutcome,
-	timing: TimingCollector,
-): WorkspaceRunnerOutput {
+export function attachTypecheck({
+	pass,
+	results,
+	timing,
+}: {
+	readonly pass: TypecheckPassOutcome;
+	readonly results: Array<WorkspaceProjectResult>;
+	readonly timing: TimingCollector;
+}): WorkspaceRunnerOutput {
 	if (pass.elapsedMs > 0) {
 		timing.record("runTypecheck", pass.elapsedMs);
 	}
@@ -117,11 +125,7 @@ export function attachTypecheck(
 export async function runTypecheckOnlyWorkspaceAsync(
 	input: TypecheckOnlyInput,
 ): Promise<WorkspaceRunnerOutput> {
-	const typecheckPass = await runWorkspaceTypecheckPassAsync(
-		input.typeTestEntries,
-		input.typecheckByDirectory,
-		input.runTypecheck,
-	);
+	const typecheckPass = await runWorkspaceTypecheckPassAsync(input);
 	await writeTypecheckOnlySinksAsync({
 		fileSystem: input.fileSystem,
 		runOptions: input.runOptions,
@@ -131,7 +135,7 @@ export async function runTypecheckOnlyWorkspaceAsync(
 		workspaceRoot: input.workspaceRoot,
 	});
 
-	return attachTypecheck([], typecheckPass.outcome, input.timing);
+	return attachTypecheck({ pass: typecheckPass.outcome, results: [], timing: input.timing });
 }
 
 // `runTypecheck` keys file results by `path.relative(cwd, file)` — package

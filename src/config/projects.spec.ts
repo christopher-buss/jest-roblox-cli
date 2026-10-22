@@ -62,11 +62,15 @@ function createProjectSeams(): ProjectSeamStubs {
 	};
 }
 
-function seedLuauProjectConfig(
-	directoryOrFile: string,
-	source: string,
+function seedLuauProjectConfig({
 	cwd = "/project",
-): ProjectConfigInput {
+	directoryOrFile,
+	source,
+}: {
+	readonly cwd?: string;
+	readonly directoryOrFile: string;
+	readonly source: string;
+}): ProjectConfigInput {
 	const { fileSystem } = createMemoryFileSystem({
 		[path.resolve(cwd, directoryOrFile, "jest.config.luau")]: source,
 	});
@@ -455,7 +459,12 @@ describe(resolveProjectConfig, () => {
 			outDir: "out/client",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.projects).toStrictEqual(["ReplicatedStorage/client"]);
 	});
@@ -475,7 +484,12 @@ describe(resolveProjectConfig, () => {
 			include: ["src/shared/**/*.spec.luau"],
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: tree,
+			rootConfig,
+		});
 
 		expect(result.projects).toStrictEqual(["ReplicatedStorage/shared"]);
 	});
@@ -497,7 +511,12 @@ describe(resolveProjectConfig, () => {
 			root: "packages/core",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, rojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree,
+			rootConfig,
+		});
 
 		expect(result.projects).toStrictEqual(["ReplicatedStorage/client"]);
 	});
@@ -511,7 +530,12 @@ describe(resolveProjectConfig, () => {
 			outDir: "out/client",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.outDir).toBe("out/client");
 	});
@@ -533,7 +557,12 @@ describe(resolveProjectConfig, () => {
 			root: "packages/core",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, rojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree,
+			rootConfig,
+		});
 
 		expect(result.outDir).toBe("packages/core/out/client");
 	});
@@ -547,7 +576,12 @@ describe(resolveProjectConfig, () => {
 			outDir: "out/client",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
 	});
@@ -557,7 +591,12 @@ describe(resolveProjectConfig, () => {
 
 		const project = makeProject({ displayName: "client", outDir: "out/client" });
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.config.verbose).toBeTrue();
 		expect(result.config.silent).toBeFalse();
@@ -568,7 +607,12 @@ describe(resolveProjectConfig, () => {
 
 		const project = makeProject({ displayName: "client", outDir: "out/client" });
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.config.backend).toBe(rootConfig.backend);
 		expect(result.config.rootDir).toBe(rootConfig.rootDir);
@@ -583,7 +627,12 @@ describe(resolveProjectConfig, () => {
 			testTimeout: 5000,
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.config.testTimeout).toBe(5000);
 	});
@@ -600,7 +649,12 @@ describe(resolveProjectConfig, () => {
 			typecheck: { enabled: true },
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect({
 			displayName: Reflect.get(result.config, "displayName"),
@@ -630,12 +684,12 @@ describe(resolveProjectConfig, () => {
 			testTimeout: undefined,
 		});
 
-		const result = resolveProjectConfig(
+		const result = resolveProjectConfig({
+			classify: allDirectories,
 			project,
-			{ ...rootConfig, testTimeout: 12_345 },
-			simpleRojoTree,
-			allDirectories,
-		);
+			rojoTree: simpleRojoTree,
+			rootConfig: { ...rootConfig, testTimeout: 12_345 },
+		});
 
 		expect(result.config.testTimeout).toBe(12_345);
 	});
@@ -648,7 +702,12 @@ describe(resolveProjectConfig, () => {
 			outDir: "out/client",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.displayName).toBe("client-tests");
 	});
@@ -670,7 +729,12 @@ describe(resolveProjectConfig, () => {
 			root: "packages/core",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, rojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree,
+			rootConfig,
+		});
 
 		expect(result.include).toStrictEqual(["packages/core/src/client/**/*.spec.ts"]);
 	});
@@ -693,7 +757,12 @@ describe(resolveProjectConfig, () => {
 			root: "packages/core",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, rojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree,
+			rootConfig,
+		});
 
 		expect(result.exclude).toStrictEqual(["packages/core/src/client/**/*.gen.spec.ts"]);
 	});
@@ -706,7 +775,12 @@ describe(resolveProjectConfig, () => {
 			include: [],
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.projects).toBeEmpty();
 	});
@@ -720,7 +794,12 @@ describe(resolveProjectConfig, () => {
 			outDir: "out/client",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.rojoMounts).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/client", fsPath: "out/client" },
@@ -747,7 +826,12 @@ describe(resolveProjectConfig, () => {
 			include: ["src/**/*.spec.luau"],
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: tree,
+			rootConfig,
+		});
 
 		expect(result.projects).toStrictEqual([
 			"ReplicatedStorage/Client",
@@ -780,7 +864,12 @@ describe(resolveProjectConfig, () => {
 		});
 
 		expect(() => {
-			return resolveProjectConfig(project, rootConfig, tree, allDirectories);
+			return resolveProjectConfig({
+				classify: allDirectories,
+				project,
+				rojoTree: tree,
+				rootConfig,
+			});
 		}).toThrowWithMessage(
 			ConfigError,
 			/include root "src\/Cli" did not match any Rojo \$path entry/,
@@ -802,7 +891,12 @@ describe(resolveProjectConfig, () => {
 			include: ["src/tests/**/*.spec.luau"],
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: tree,
+			rootConfig,
+		});
 
 		expect(result.rojoMounts).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/tests", fsPath: "src/tests" },
@@ -830,7 +924,7 @@ describe(resolveProjectConfig, () => {
 			"src/shared/Constants.luau": "file",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, classify);
+		const result = resolveProjectConfig({ classify, project, rojoTree: tree, rootConfig });
 
 		// The file-valued Constants.luau is not eligible; the exact-lookup
 		// match on src/shared wins.
@@ -859,7 +953,7 @@ describe(resolveProjectConfig, () => {
 			"src/Client": "directory",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, classify);
+		const result = resolveProjectConfig({ classify, project, rojoTree: tree, rootConfig });
 
 		expect(result.rojoMounts).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/Client", fsPath: "src/Client" },
@@ -884,7 +978,12 @@ describe(resolveProjectConfig, () => {
 			include: ["src/Client/**/*.spec.luau", "src/Client/Systems/**/*.spec.luau"],
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: tree,
+			rootConfig,
+		});
 
 		expect(result.rojoMounts).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/Client", fsPath: "src/Client" },
@@ -907,7 +1006,12 @@ describe(resolveProjectConfig, () => {
 			include: ["src/**/*.spec.luau", "src/Shared/**/*.test.luau"],
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: tree,
+			rootConfig,
+		});
 
 		expect(result.rojoMounts).toStrictEqual([
 			{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "src/Shared" },
@@ -930,7 +1034,12 @@ describe(resolveProjectConfig, () => {
 			include: ["src/a/**/*.spec.luau", "src/b/**/*.spec.luau"],
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: tree,
+			rootConfig,
+		});
 
 		expect(result.projects).toStrictEqual(["ReplicatedStorage/A", "ReplicatedStorage/B"]);
 	});
@@ -944,7 +1053,12 @@ describe(resolveProjectConfig, () => {
 			outDir: "out/client",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.rojoMounts).toHaveLength(1);
 		expect(result.rojoMounts).toStrictEqual([
@@ -962,7 +1076,12 @@ describe(resolveProjectConfig, () => {
 		});
 
 		expect(() => {
-			return resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+			return resolveProjectConfig({
+				classify: allDirectories,
+				project,
+				rojoTree: simpleRojoTree,
+				rootConfig,
+			});
 		}).toThrowWithMessage(ConfigError, /No Rojo tree mapping found for path: out\/nonexistent/);
 	});
 
@@ -982,7 +1101,12 @@ describe(resolveProjectConfig, () => {
 			root: "packages/friends",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, tree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: tree,
+			rootConfig,
+		});
 
 		expect(result.rojoMounts).toStrictEqual([
 			{
@@ -1009,7 +1133,12 @@ describe(resolveProjectConfig, () => {
 		});
 
 		expect(() => {
-			return resolveProjectConfig(project, rootConfig, tree, allDirectories);
+			return resolveProjectConfig({
+				classify: allDirectories,
+				project,
+				rojoTree: tree,
+				rootConfig,
+			});
 		}).toThrowWithMessage(ConfigError, /Available \$path entries: out\/Client, out\/Shared/);
 	});
 
@@ -1024,7 +1153,12 @@ describe(resolveProjectConfig, () => {
 		});
 
 		expect(() => {
-			resolveProjectConfig(project, rootConfig, emptyTree, allDirectories);
+			resolveProjectConfig({
+				classify: allDirectories,
+				project,
+				rojoTree: emptyTree,
+				rootConfig,
+			});
 		}).not.toThrow(/Available \$path entries/);
 	});
 
@@ -1045,7 +1179,7 @@ describe(resolveProjectConfig, () => {
 
 		let caught: unknown;
 		try {
-			resolveProjectConfig(project, rootConfig, tree, allDirectories);
+			resolveProjectConfig({ classify: allDirectories, project, rojoTree: tree, rootConfig });
 		} catch (err) {
 			caught = err;
 		}
@@ -1067,7 +1201,12 @@ describe(resolveProjectConfig, () => {
 
 		let caught: unknown;
 		try {
-			resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+			resolveProjectConfig({
+				classify: allDirectories,
+				project,
+				rojoTree: simpleRojoTree,
+				rootConfig,
+			});
 		} catch (err) {
 			caught = err;
 		}
@@ -1086,7 +1225,12 @@ describe(resolveProjectConfig, () => {
 			outDir: "out/client",
 		});
 
-		const result = resolveProjectConfig(project, rootConfig, simpleRojoTree, allDirectories);
+		const result = resolveProjectConfig({
+			classify: allDirectories,
+			project,
+			rojoTree: simpleRojoTree,
+			rootConfig,
+		});
 
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
 	});
@@ -1107,7 +1251,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./client.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./client.config.ts",
+			input: seams,
+		});
 
 		expect(result.displayName).toBe("client");
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
@@ -1140,7 +1288,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./client.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./client.config.ts",
+			input: seams,
+		});
 
 		expect(result.displayName).toBe("client");
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
@@ -1153,7 +1305,11 @@ describe(loadProjectConfigFile, () => {
 		configLoader.mockRejectedValueOnce(new Error("File not found"));
 
 		await expect(
-			loadProjectConfigFile("./missing.config.ts", "/project", seams),
+			loadProjectConfigFile({
+				cwd: "/project",
+				filePath: "./missing.config.ts",
+				input: seams,
+			}),
 		).rejects.toThrow("Failed to load project config file ./missing.config.ts: File not found");
 	});
 
@@ -1163,7 +1319,9 @@ describe(loadProjectConfigFile, () => {
 		const { configLoader, seams } = createProjectSeams();
 		configLoader.mockRejectedValueOnce("raw string rejection");
 
-		await expect(loadProjectConfigFile("./bad.config.ts", "/project", seams)).rejects.toThrow(
+		await expect(
+			loadProjectConfigFile({ cwd: "/project", filePath: "./bad.config.ts", input: seams }),
+		).rejects.toThrow(
 			"Failed to load project config file ./bad.config.ts: raw string rejection",
 		);
 	});
@@ -1175,7 +1333,11 @@ describe(loadProjectConfigFile, () => {
 		const cause = new Error("Syntax error in config");
 		configLoader.mockRejectedValueOnce(cause);
 
-		const promise = loadProjectConfigFile("./broken.config.ts", "/project", seams);
+		const promise = loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./broken.config.ts",
+			input: seams,
+		});
 
 		await expect(promise).rejects.toThrow(
 			"Failed to load project config file ./broken.config.ts: Syntax error in config",
@@ -1200,7 +1362,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./client.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./client.config.ts",
+			input: seams,
+		});
 
 		expect(result.displayName).toStrictEqual({ name: "client", color: "cyan" });
 	});
@@ -1220,7 +1386,11 @@ describe(loadProjectConfigFile, () => {
 		});
 
 		await expect(
-			loadProjectConfigFile("./no-name.config.ts", "/project", seams),
+			loadProjectConfigFile({
+				cwd: "/project",
+				filePath: "./no-name.config.ts",
+				input: seams,
+			}),
 		).rejects.toThrow('Project config file "./no-name.config.ts" must have a displayName');
 	});
 
@@ -1236,7 +1406,11 @@ describe(loadProjectConfigFile, () => {
 		});
 
 		await expect(
-			loadProjectConfigFile("./no-name.config.ts", "/project", seams),
+			loadProjectConfigFile({
+				cwd: "/project",
+				filePath: "./no-name.config.ts",
+				input: seams,
+			}),
 		).rejects.toThrow(/Invalid project config file "\.\/no-name\.config\.ts"/);
 	});
 
@@ -1251,9 +1425,9 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		await expect(loadProjectConfigFile("./typo.config.ts", "/project", seams)).rejects.toThrow(
-			/Invalid project config file "\.\/typo\.config\.ts".*includ/,
-		);
+		await expect(
+			loadProjectConfigFile({ cwd: "/project", filePath: "./typo.config.ts", input: seams }),
+		).rejects.toThrow(/Invalid project config file "\.\/typo\.config\.ts".*includ/);
 	});
 
 	it("should derive include from testMatch when include is missing", async () => {
@@ -1270,7 +1444,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./shared/jest.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./shared/jest.config.ts",
+			input: seams,
+		});
 
 		expect(result.include).toStrictEqual([
 			"shared/**/__tests__/**/*.test.ts",
@@ -1291,7 +1469,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./minimal.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./minimal.config.ts",
+			input: seams,
+		});
 
 		expect(result).not.toHaveProperty("include");
 	});
@@ -1310,7 +1492,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "src/shared/jest.config.ts",
+			input: seams,
+		});
 
 		expect(result.outDir).toBe("out/shared");
 	});
@@ -1333,7 +1519,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "src/shared/jest.config.ts",
+			input: seams,
+		});
 
 		expect(result.outDir).toBeUndefined();
 	});
@@ -1355,11 +1545,11 @@ describe(loadProjectConfigFile, () => {
 				layers: [],
 			});
 
-			const result = await loadProjectConfigFile(
-				"src/shared/jest.config.ts",
-				"/project",
-				seams,
-			);
+			const result = await loadProjectConfigFile({
+				cwd: "/project",
+				filePath: "src/shared/jest.config.ts",
+				input: seams,
+			});
 
 			expect(result).not.toHaveProperty("outDir");
 		},
@@ -1377,11 +1567,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile(
-			"undefined/shared/jest.config.ts",
-			"/project",
-			seams,
-		);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "undefined/shared/jest.config.ts",
+			input: seams,
+		});
 
 		expect(result).not.toHaveProperty("outDir");
 	});
@@ -1397,7 +1587,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("src/shared/jest.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "src/shared/jest.config.ts",
+			input: seams,
+		});
 
 		expect(result.outDir).toBe("custom-output");
 	});
@@ -1416,11 +1610,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile(
-			"packages/lib/jest.config.ts",
-			"/project",
-			seams,
-		);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "packages/lib/jest.config.ts",
+			input: seams,
+		});
 
 		expect(result.outDir).toBeUndefined();
 	});
@@ -1439,7 +1633,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./shared/mixed.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./shared/mixed.config.ts",
+			input: seams,
+		});
 
 		expect(result.include).toStrictEqual([
 			"shared/**/*.spec.ts",
@@ -1462,7 +1660,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./shared/luau.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./shared/luau.config.ts",
+			input: seams,
+		});
 
 		expect(result.include).toStrictEqual(["shared/**/*.spec.lua", "shared/**/*.test.luau"]);
 	});
@@ -1481,7 +1683,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./shared/suffix.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./shared/suffix.config.ts",
+			input: seams,
+		});
 
 		expect(result.include).toStrictEqual([
 			"shared/**/*.spec.ts.fixture.ts",
@@ -1504,7 +1710,11 @@ describe(loadProjectConfigFile, () => {
 			layers: [],
 		});
 
-		const result = await loadProjectConfigFile("./client.config.ts", "/project", seams);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "./client.config.ts",
+			input: seams,
+		});
 
 		expect(result.include).toStrictEqual(["src/client/**/*.spec.ts"]);
 	});
@@ -1512,12 +1722,16 @@ describe(loadProjectConfigFile, () => {
 	it("should load Luau config when jest.config.luau exists", async () => {
 		expect.assertions(2);
 
-		const input = seedLuauProjectConfig(
-			"packages/shared",
-			'return { displayName = "shared-luau", testMatch = { "**/*.spec" } }',
-		);
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "packages/shared",
+			source: 'return { displayName = "shared-luau", testMatch = { "**/*.spec" } }',
+		});
 
-		const result = await loadProjectConfigFile("packages/shared", "/project", input);
+		const result = await loadProjectConfigFile({
+			cwd: "/project",
+			filePath: "packages/shared",
+			input,
+		});
 
 		expect(result.displayName).toBe("shared-luau");
 		expect(result.include).toContain("packages/shared/**/*.spec.luau");
@@ -1526,31 +1740,35 @@ describe(loadProjectConfigFile, () => {
 	it("should throw when Luau config has empty displayName", async () => {
 		expect.assertions(1);
 
-		const input = seedLuauProjectConfig("lib", 'return { displayName = "" }');
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "lib",
+			source: 'return { displayName = "" }',
+		});
 
-		await expect(loadProjectConfigFile("lib", "/project", input)).rejects.toThrowWithMessage(
-			Error,
-			/must have a displayName string/,
-		);
+		await expect(
+			loadProjectConfigFile({ cwd: "/project", filePath: "lib", input }),
+		).rejects.toThrowWithMessage(Error, /must have a displayName string/);
 	});
 
 	it("should throw when Luau config has no displayName", async () => {
 		expect.assertions(1);
 
-		const input = seedLuauProjectConfig("lib", "return {}");
+		const input = seedLuauProjectConfig({ directoryOrFile: "lib", source: "return {}" });
 
-		await expect(loadProjectConfigFile("lib", "/project", input)).rejects.toThrowWithMessage(
-			Error,
-			/must have a displayName string/,
-		);
+		await expect(
+			loadProjectConfigFile({ cwd: "/project", filePath: "lib", input }),
+		).rejects.toThrowWithMessage(Error, /must have a displayName string/);
 	});
 
 	it("should derive default include pattern when Luau config has no testMatch", async () => {
 		expect.assertions(1);
 
-		const input = seedLuauProjectConfig("shared", 'return { displayName = "shared" }');
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "shared",
+			source: 'return { displayName = "shared" }',
+		});
 
-		const result = await loadProjectConfigFile("shared", "/project", input);
+		const result = await loadProjectConfigFile({ cwd: "/project", filePath: "shared", input });
 
 		expect(result.include).toStrictEqual(["shared/**/*.spec.luau"]);
 	});
@@ -1558,12 +1776,12 @@ describe(loadProjectConfigFile, () => {
 	it("should set testMatch on config when Luau config provides testMatch", async () => {
 		expect.assertions(1);
 
-		const input = seedLuauProjectConfig(
-			"shared",
-			'return { displayName = "shared", testMatch = { "**/*.spec", "**/*.test" } }',
-		);
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "shared",
+			source: 'return { displayName = "shared", testMatch = { "**/*.spec", "**/*.test" } }',
+		});
 
-		const result = await loadProjectConfigFile("shared", "/project", input);
+		const result = await loadProjectConfigFile({ cwd: "/project", filePath: "shared", input });
 
 		expect(result.testMatch).toStrictEqual(["**/*.spec", "**/*.test"]);
 	});
@@ -1571,12 +1789,12 @@ describe(loadProjectConfigFile, () => {
 	it("should copy boolean optional fields from Luau config", async () => {
 		expect.assertions(2);
 
-		const input = seedLuauProjectConfig(
-			"shared",
-			'return { clearMocks = true, displayName = "shared", resetMocks = false }',
-		);
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "shared",
+			source: 'return { clearMocks = true, displayName = "shared", resetMocks = false }',
+		});
 
-		const result = await loadProjectConfigFile("shared", "/project", input);
+		const result = await loadProjectConfigFile({ cwd: "/project", filePath: "shared", input });
 
 		expect(result.clearMocks).toBeTrue();
 		expect(result.resetMocks).toBeFalse();
@@ -1585,12 +1803,12 @@ describe(loadProjectConfigFile, () => {
 	it("should copy number optional fields from Luau config", async () => {
 		expect.assertions(1);
 
-		const input = seedLuauProjectConfig(
-			"shared",
-			'return { displayName = "shared", testTimeout = 5000 }',
-		);
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "shared",
+			source: 'return { displayName = "shared", testTimeout = 5000 }',
+		});
 
-		const result = await loadProjectConfigFile("shared", "/project", input);
+		const result = await loadProjectConfigFile({ cwd: "/project", filePath: "shared", input });
 
 		expect(result.testTimeout).toBe(5000);
 	});
@@ -1598,12 +1816,12 @@ describe(loadProjectConfigFile, () => {
 	it("should copy string optional fields from Luau config", async () => {
 		expect.assertions(1);
 
-		const input = seedLuauProjectConfig(
-			"shared",
-			'return { displayName = "shared", testEnvironment = "jest-environment-jsdom" }',
-		);
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "shared",
+			source: 'return { displayName = "shared", testEnvironment = "jest-environment-jsdom" }',
+		});
 
-		const result = await loadProjectConfigFile("shared", "/project", input);
+		const result = await loadProjectConfigFile({ cwd: "/project", filePath: "shared", input });
 
 		expect(result.testEnvironment).toBe("jest-environment-jsdom");
 	});
@@ -1611,12 +1829,12 @@ describe(loadProjectConfigFile, () => {
 	it("should copy string array optional fields from Luau config", async () => {
 		expect.assertions(1);
 
-		const input = seedLuauProjectConfig(
-			"shared",
-			'return { displayName = "shared", setupFiles = { "setup.luau" } }',
-		);
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "shared",
+			source: 'return { displayName = "shared", setupFiles = { "setup.luau" } }',
+		});
 
-		const result = await loadProjectConfigFile("shared", "/project", input);
+		const result = await loadProjectConfigFile({ cwd: "/project", filePath: "shared", input });
 
 		expect(result.setupFiles).toStrictEqual(["setup.luau"]);
 	});
@@ -1624,15 +1842,17 @@ describe(loadProjectConfigFile, () => {
 	it("should reject fields with wrong types in Luau config", async () => {
 		expect.assertions(1);
 
-		const input = seedLuauProjectConfig(
-			"shared",
-			[
+		const input = seedLuauProjectConfig({
+			directoryOrFile: "shared",
+			source: [
 				'return { clearMocks = "yes", displayName = "shared",',
 				'setupFiles = "not-an-array", testTimeout = "fast" }',
 			].join(" "),
-		);
+		});
 
-		await expect(loadProjectConfigFile("shared", "/project", input)).rejects.toThrow(
+		await expect(
+			loadProjectConfigFile({ cwd: "/project", filePath: "shared", input }),
+		).rejects.toThrow(
 			/clearMocks must be boolean.*setupFiles must be an array.*testTimeout must be a number/s,
 		);
 	});
@@ -1652,9 +1872,11 @@ describe(resolveAllProjects, () => {
 			},
 		];
 
-		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
+		const result = await resolveAllProjects({
 			cwd: "/project",
+			entries,
 			rojoTree: simpleRojoTree,
+			rootConfig: DEFAULT_CONFIG,
 		});
 
 		expect(result).toHaveLength(1);
@@ -1678,9 +1900,11 @@ describe(resolveAllProjects, () => {
 
 		const entries = ["./server.config.ts"];
 
-		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
+		const result = await resolveAllProjects({
 			cwd: "/project",
+			entries,
 			rojoTree: simpleRojoTree,
+			rootConfig: DEFAULT_CONFIG,
 			...seams,
 		});
 
@@ -1714,9 +1938,11 @@ describe(resolveAllProjects, () => {
 			"./server.config.ts",
 		];
 
-		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
+		const result = await resolveAllProjects({
 			cwd: "/project",
+			entries,
 			rojoTree: simpleRojoTree,
+			rootConfig: DEFAULT_CONFIG,
 			...seams,
 		});
 
@@ -1745,9 +1971,11 @@ describe(resolveAllProjects, () => {
 			},
 		];
 
-		const result = await resolveAllProjects(entries, DEFAULT_CONFIG, {
+		const result = await resolveAllProjects({
 			cwd: "/project",
+			entries,
 			rojoTree: tree,
+			rootConfig: DEFAULT_CONFIG,
 		});
 
 		expect(result[0]!.testMatch).toStrictEqual(["**/*.spec"]);
@@ -1774,9 +2002,11 @@ describe(resolveAllProjects, () => {
 		];
 
 		await expect(
-			resolveAllProjects(entries, DEFAULT_CONFIG, {
+			resolveAllProjects({
 				cwd: "/project",
+				entries,
 				rojoTree: simpleRojoTree,
+				rootConfig: DEFAULT_CONFIG,
 			}),
 		).rejects.toThrow("Duplicate project displayName: client");
 	});

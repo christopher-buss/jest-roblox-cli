@@ -12,7 +12,10 @@ describe("string-entry resolution of user-authored jest.config.luau", () => {
 	it("should preserve string-valued fields when loading a real Luau config via Lute", async () => {
 		expect.assertions(2);
 
-		const config = await loadProjectConfigFile("src/b", USER_AUTHORED_FIXTURE_PATH);
+		const config = await loadProjectConfigFile({
+			cwd: USER_AUTHORED_FIXTURE_PATH,
+			filePath: "src/b",
+		});
 
 		expect(config.displayName).toBe("b-user");
 		expect(config.testMatch).toStrictEqual(["**/*.spec"]);

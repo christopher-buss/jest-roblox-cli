@@ -505,11 +505,15 @@ export class StudioCliBackend implements Backend {
 	 * LoadString gate passes. Coverage runs skip this and open the instrumented
 	 * place instead.
 	 */
-	private async buildCleanPlaceAsync(
-		primary: ProjectJob,
-		rootDirectory: string,
-		workDirectory: string,
-	): Promise<string> {
+	private async buildCleanPlaceAsync({
+		primary,
+		rootDirectory,
+		workDirectory,
+	}: {
+		readonly primary: ProjectJob;
+		readonly rootDirectory: string;
+		readonly workDirectory: string;
+	}): Promise<string> {
 		const placeFile = path.join(workDirectory, PLACE_FILE);
 		await this.buildPlaceAsync({
 			loadStringEnabled: true,
@@ -569,16 +573,13 @@ export class StudioCliBackend implements Backend {
 		// alike: only a backend knows when its own dispatch window starts.
 		const done = progress.begin("tests", describeProjectCount(jobs.length));
 		const executionStart = Date.now();
-		const child = this.launchStudio(args, place.placeFile, studioPath);
+		const child = this.launchStudio({ args, placeFile: place.placeFile, studioPath });
 		session.child = child;
-		const message = await waitForResultAsync(
-			{ child, fileSystem: this.fileSystem, server },
-			requestId,
-			deadline,
-		);
+		const channel = { child, fileSystem: this.fileSystem, server };
+		const message = await waitForResultAsync({ ...channel, deadline, requestId });
 
 		done();
-		startGracefulTeardown(child, server, this.gracefulShutdownTimeout);
+		startGracefulTeardown({ child, graceCapMs: this.gracefulShutdownTimeout, server });
 		session.wasGracefulTeardownStarted = true;
 
 		return buildBackendResult(message, {
@@ -591,11 +592,15 @@ export class StudioCliBackend implements Backend {
 	/**
 	 * The Studio the run was pointed at, launched against the place it built.
 	 */
-	private launchStudio(
-		args: Array<string>,
-		placeFile: string,
-		studioPath: string,
-	): StudioCliProcess {
+	private launchStudio({
+		args,
+		placeFile,
+		studioPath,
+	}: {
+		readonly args: Array<string>;
+		readonly placeFile: string;
+		readonly studioPath: string;
+	}): StudioCliProcess {
 		return this.launch({
 			args,
 			childProcess: this.childProcess,
@@ -643,7 +648,7 @@ export class StudioCliBackend implements Backend {
 
 		return {
 			isWorkspace,
-			placeFile: await this.buildCleanPlaceAsync(primary, rootDirectory, workDirectory),
+			placeFile: await this.buildCleanPlaceAsync({ primary, rootDirectory, workDirectory }),
 			workDirectory,
 		};
 	}
@@ -739,11 +744,15 @@ function luauLongString(content: string): string {
  * that threw or returned a non-result yields a `{ success = false }`
  * envelope, and a nil return sends `nilReturn` and keeps the socket alive.
  */
-function bootstrapRunLines(
-	payload: StudioCliPayload,
-	port: number,
-	requestId: string,
-): Array<string> {
+function bootstrapRunLines({
+	payload,
+	port,
+	requestId,
+}: {
+	readonly payload: StudioCliPayload;
+	readonly port: number;
+	readonly requestId: string;
+}): Array<string> {
 	return [
 		'local HttpService = game:GetService("HttpService")',
 		'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
@@ -782,8 +791,18 @@ function bootstrapRunLines(
  * plugin that is absent or returns nothing sends a `{ success = false }`
  * envelope, so the host surfaces a clean error rather than hanging.
  */
-function buildBootstrap(payload: StudioCliPayload, port: number, requestId: string): string {
-	return [...bootstrapRunLines(payload, port, requestId), ...BOOTSTRAP_SEND_LINES, ""].join("\n");
+function buildBootstrap({
+	payload,
+	port,
+	requestId,
+}: {
+	readonly payload: StudioCliPayload;
+	readonly port: number;
+	readonly requestId: string;
+}): string {
+	return [...bootstrapRunLines({ payload, port, requestId }), ...BOOTSTRAP_SEND_LINES, ""].join(
+		"\n",
+	);
 }
 
 /**
@@ -806,11 +825,11 @@ function buildStudioArgs({
 	const outputFile = studioOutputFile(workDirectory);
 	fileSystem.writeFileSync(
 		bootstrapFile,
-		buildBootstrap(
-			buildStudioCliPayload({ bail, jobs, runBudgetMs, vmParallel }, pluginKey),
+		buildBootstrap({
+			payload: buildStudioCliPayload({ bail, jobs, runBudgetMs, vmParallel }, pluginKey),
 			port,
 			requestId,
-		),
+		}),
 	);
 
 	return [
@@ -1172,11 +1191,16 @@ function awaitStudioCliResult({
  * bootstrap, or from the plugin after a nil return — or reject on timeout /
  * spawn failure. A stray frame never settles it with the wrong payload.
  */
-async function waitForResultAsync(
-	{ child, fileSystem, server }: ResultChannel,
-	requestId: string,
-	deadline: ResultDeadline,
-): Promise<ResultMessage> {
+async function waitForResultAsync({
+	child,
+	deadline,
+	fileSystem,
+	requestId,
+	server,
+}: ResultChannel & {
+	readonly deadline: ResultDeadline;
+	readonly requestId: string;
+}): Promise<ResultMessage> {
 	return new Promise<ResultMessage>((resolve, reject) => {
 		awaitStudioCliResult({
 			...deadline,
@@ -1231,11 +1255,15 @@ function hardTeardown(child: StudioCliProcess | undefined, server: WebSocketServ
  * @param server - The loopback result server for this run.
  * @param graceCapMs - Backstop before the watch hard-kills anyway.
  */
-function startGracefulTeardown(
-	child: StudioCliProcess,
-	server: WebSocketServer,
-	graceCapMs: number,
-): void {
+function startGracefulTeardown({
+	child,
+	graceCapMs,
+	server,
+}: {
+	readonly child: StudioCliProcess;
+	readonly graceCapMs: number;
+	readonly server: WebSocketServer;
+}): void {
 	closeServer(server);
 	child.killOnLockRelease(graceCapMs);
 }

@@ -345,11 +345,15 @@ function captureStderr(): StderrCapture {
 	};
 }
 
-function job(
-	displayName: string,
-	overrides: Partial<ResolvedConfig> = {},
-	packageName?: string,
-): ProjectJob {
+function job({
+	displayName,
+	overrides = {},
+	packageName,
+}: {
+	readonly displayName: string;
+	readonly overrides?: Partial<ResolvedConfig>;
+	readonly packageName?: string | undefined;
+}): ProjectJob {
 	return {
 		config: {
 			...DEFAULT_CONFIG,
@@ -408,7 +412,10 @@ function localOnlyFetch(
 }
 
 function cacheJob(rootDirectory: string, overrides: Partial<ResolvedConfig> = {}): ProjectJob {
-	return job("alpha", { placeFile: "place.rbxl", rootDir: rootDirectory, ...overrides });
+	return job({
+		displayName: "alpha",
+		overrides: { placeFile: "place.rbxl", rootDir: rootDirectory, ...overrides },
+	});
 }
 
 /** The version an upload lands on wherever a spec drives {@link probeStub}. */
@@ -478,7 +485,7 @@ describe(OpenCloudBackend, () => {
 			});
 			const pending = backend.runTestsAsync({
 				codeBundle: bundleArtifact(),
-				jobs: [job("alpha", { timeout })],
+				jobs: [job({ displayName: "alpha", overrides: { timeout } })],
 			});
 			await vi.advanceTimersByTimeAsync(60_000);
 
@@ -515,7 +522,7 @@ describe(OpenCloudBackend, () => {
 		const backend = bundleBackend(stub, { now: () => 1234 });
 		await backend.runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha", { timeout: 30_000 })],
+			jobs: [job({ displayName: "alpha", overrides: { timeout: 30_000 } })],
 		});
 
 		expect(stub.executeCalls.map((call) => claimParameters(call.script))).toStrictEqual([
@@ -542,9 +549,9 @@ describe(OpenCloudBackend, () => {
 		);
 		const backend = createBackend({ runner: stub.runner });
 
-		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
-			failure().message,
-		);
+		await expect(
+			backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })])),
+		).rejects.toThrow(failure().message);
 		expect(stub.executeCalls).toHaveLength(1);
 	});
 
@@ -554,7 +561,10 @@ describe(OpenCloudBackend, () => {
 		const stub = probeStub();
 		const resultRelay = vi.fn<NonNullable<OpenCloudOptions["resultRelay"]>>();
 		const backend = createBackend({ resultRelay, runner: stub.runner });
-		await backend.runTestsAsync({ jobs: [job("alpha")], scriptOverride: "return run()" });
+		await backend.runTestsAsync({
+			jobs: [job({ displayName: "alpha" })],
+			scriptOverride: "return run()",
+		});
 
 		expect(resultRelay).not.toHaveBeenCalled();
 		expect(stub.executeCalls).toStrictEqual([
@@ -571,7 +581,9 @@ describe(OpenCloudBackend, () => {
 		expect.assertions(1);
 
 		const stub = probeStub();
-		await createBackend({ runner: stub.runner }).runTestsAsync(jobsOptions([job("alpha")]));
+		await createBackend({ runner: stub.runner }).runTestsAsync(
+			jobsOptions([job({ displayName: "alpha" })]),
+		);
 
 		expect(stub.probeCalls).toStrictEqual([
 			{
@@ -601,9 +613,9 @@ describe(OpenCloudBackend, () => {
 			const { runner } = createRunnerStub();
 			const backend = createBackend({ runner });
 
-			await expect(backend.runTestsAsync(jobsOptions([job("alpha")], 0))).rejects.toThrow(
-				/--parallel must be >= 1/,
-			);
+			await expect(
+				backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })], 0)),
+			).rejects.toThrow(/--parallel must be >= 1/);
 		});
 
 		it("should require scriptOverride when workStealing is true", async () => {
@@ -613,7 +625,10 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner });
 
 			await expect(
-				backend.runTestsAsync({ jobs: [job("alpha")], workStealing: true }),
+				backend.runTestsAsync({
+					jobs: [job({ displayName: "alpha" })],
+					workStealing: true,
+				}),
 			).rejects.toThrow(/work-stealing mode requires scriptOverride/);
 		});
 	});
@@ -636,9 +651,9 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(
 				jobsOptions([
-					job("alpha", { testNamePattern: "alpha-pattern" }),
-					job("beta", { testNamePattern: "beta-pattern" }),
-					job("gamma", { testNamePattern: "gamma-pattern" }),
+					job({ displayName: "alpha", overrides: { testNamePattern: "alpha-pattern" } }),
+					job({ displayName: "beta", overrides: { testNamePattern: "beta-pattern" } }),
+					job({ displayName: "gamma", overrides: { testNamePattern: "gamma-pattern" } }),
 				]),
 			);
 
@@ -668,11 +683,17 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(
 				jobsOptions([
-					job("alpha", {
-						snapshotFormat: { escapeString: true, printBasicPrototype: false },
+					job({
+						displayName: "alpha",
+						overrides: {
+							snapshotFormat: { escapeString: true, printBasicPrototype: false },
+						},
 					}),
-					job("beta", {
-						snapshotFormat: { escapeString: false, printBasicPrototype: true },
+					job({
+						displayName: "beta",
+						overrides: {
+							snapshotFormat: { escapeString: false, printBasicPrototype: true },
+						},
 					}),
 				]),
 			);
@@ -699,7 +720,14 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(
-				jobsOptions([job("alpha"), job("beta"), job("gamma")], 1),
+				jobsOptions(
+					[
+						job({ displayName: "alpha" }),
+						job({ displayName: "beta" }),
+						job({ displayName: "gamma" }),
+					],
+					1,
+				),
 			);
 
 			expect(stub.executeCalls).toHaveLength(1);
@@ -722,7 +750,9 @@ describe(OpenCloudBackend, () => {
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
 			const backend = createBackend({ runner: stub.runner });
-			const { timing } = await backend.runTestsAsync(jobsOptions([job("alpha")]));
+			const { timing } = await backend.runTestsAsync(
+				jobsOptions([job({ displayName: "alpha" })]),
+			);
 
 			expect(timing).toStrictEqual({ executionMs: 45, uploadMs: 12 });
 		});
@@ -747,7 +777,14 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(
-				jobsOptions([job("alpha"), job("beta"), job("gamma")], 3),
+				jobsOptions(
+					[
+						job({ displayName: "alpha" }),
+						job({ displayName: "beta" }),
+						job({ displayName: "gamma" }),
+					],
+					3,
+				),
 			);
 
 			expect(stub.executeCalls).toHaveLength(3);
@@ -783,8 +820,11 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const jobs = Array.from({ length: 10 }, (_, index) => {
-				return job(`p${index.toString()}`, {
-					testNamePattern: `pattern-${index.toString()}`,
+				return job({
+					displayName: `p${index.toString()}`,
+					overrides: {
+						testNamePattern: `pattern-${index.toString()}`,
+					},
 				});
 			});
 
@@ -819,7 +859,10 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const jobs = Array.from({ length: 5 }, (_, index) => {
-				return job(`p${index.toString()}`, { testNamePattern: `auto-${index.toString()}` });
+				return job({
+					displayName: `p${index.toString()}`,
+					overrides: { testNamePattern: `auto-${index.toString()}` },
+				});
 			});
 
 			await backend.runTestsAsync(jobsOptions(jobs, "auto"));
@@ -834,7 +877,9 @@ describe(OpenCloudBackend, () => {
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
 			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta")], "auto"));
+			await backend.runTestsAsync(
+				jobsOptions([job({ displayName: "alpha" }), job({ displayName: "beta" })], "auto"),
+			);
 
 			expect(stub.executeCalls).toHaveLength(2);
 		});
@@ -846,7 +891,9 @@ describe(OpenCloudBackend, () => {
 			stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
 			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta")], 10));
+			await backend.runTestsAsync(
+				jobsOptions([job({ displayName: "alpha" }), job({ displayName: "beta" })], 10),
+			);
 
 			expect(stub.executeCalls).toHaveLength(2);
 		});
@@ -863,9 +910,9 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 
-			await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
-				/Open Cloud backend returned 2 entries but bucket had 1 jobs/,
-			);
+			await expect(
+				backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })])),
+			).rejects.toThrow(/Open Cloud backend returned 2 entries but bucket had 1 jobs/);
 		});
 
 		it("should reject the whole call when any parallel bucket fails first", async () => {
@@ -885,7 +932,16 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 
 			await expect(
-				backend.runTestsAsync(jobsOptions([job("alpha"), job("beta"), job("gamma")], 3)),
+				backend.runTestsAsync(
+					jobsOptions(
+						[
+							job({ displayName: "alpha" }),
+							job({ displayName: "beta" }),
+							job({ displayName: "gamma" }),
+						],
+						3,
+					),
+				),
 			).rejects.toThrowWithMessage(Error, "bucket two blew up");
 		});
 
@@ -899,7 +955,10 @@ describe(OpenCloudBackend, () => {
 			});
 
 			const backend = createBackend({ runner: stub.runner });
-			await backend.runTestsAsync({ jobs: [job("alpha")], scriptOverride: customScript });
+			await backend.runTestsAsync({
+				jobs: [job({ displayName: "alpha" })],
+				scriptOverride: customScript,
+			});
 
 			expect(stub.executeCalls[0]!.script).toBe(customScript);
 			expect(stub.executeCalls[0]!.script).not.toContain("Jest.runCLI");
@@ -926,7 +985,11 @@ describe(OpenCloudBackend, () => {
 			const backend = bundleBackend(stub, { prepareScript });
 			await backend.runTestsAsync({
 				codeBundle: bundleArtifact(),
-				jobs: [job("alpha"), job("beta"), job("gamma")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+				],
 				parallel: 3,
 				scriptOverride: "-- shared\nreturn nil",
 			});
@@ -953,7 +1016,9 @@ describe(OpenCloudBackend, () => {
 			});
 
 			const backend = createBackend({ runner: stub.runner });
-			const { rawResults } = await backend.runTestsAsync(jobsOptions([job("alpha")]));
+			const { rawResults } = await backend.runTestsAsync(
+				jobsOptions([job({ displayName: "alpha" })]),
+			);
 
 			expect(rawResults[0]!.fallbackGameOutput).toBe(fallback);
 		});
@@ -966,9 +1031,9 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 
-			await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
-				/No test results in output/,
-			);
+			await expect(
+				backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })])),
+			).rejects.toThrow(/No test results in output/);
 		});
 
 		it("should expose multi-entry rawResults in input order", async () => {
@@ -987,7 +1052,11 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync(
-				jobsOptions([job("@halcyon/foo"), job("@halcyon/bar"), job("@halcyon/baz")]),
+				jobsOptions([
+					job({ displayName: "@halcyon/foo" }),
+					job({ displayName: "@halcyon/bar" }),
+					job({ displayName: "@halcyon/baz" }),
+				]),
 			);
 
 			expect(rawResults).toHaveLength(3);
@@ -1004,7 +1073,15 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync(
-				jobsOptions([job("alpha"), job("beta"), job("gamma"), job("delta")], 4),
+				jobsOptions(
+					[
+						job({ displayName: "alpha" }),
+						job({ displayName: "beta" }),
+						job({ displayName: "gamma" }),
+						job({ displayName: "delta" }),
+					],
+					4,
+				),
 			);
 
 			expect(stub.uploadCalls).toHaveLength(1);
@@ -1027,7 +1104,7 @@ describe(OpenCloudBackend, () => {
 			const backend = bundleBackend(stub);
 			await backend.runTestsAsync({
 				codeBundle: bundleArtifact(),
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				scriptOverride: `${directives}\nreturn nil`,
 			});
 
@@ -1049,9 +1126,9 @@ describe(OpenCloudBackend, () => {
 			});
 			const backend = createBackend({ runner: stub.runner });
 
-			await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
-				/Failed to upload place/,
-			);
+			await expect(
+				backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })])),
+			).rejects.toThrow(/Failed to upload place/);
 		});
 	});
 
@@ -1077,12 +1154,12 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
 				jobs: [
-					job("alpha"),
-					job("beta"),
-					job("gamma"),
-					job("delta"),
-					job("epsilon"),
-					job("zeta"),
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+					job({ displayName: "delta" }),
+					job({ displayName: "epsilon" }),
+					job({ displayName: "zeta" }),
 				],
 				parallel: 3,
 				scriptOverride: stealingScript,
@@ -1121,7 +1198,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta")],
+				jobs: [job({ displayName: "alpha" }), job({ displayName: "beta" })],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1141,7 +1218,11 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const results = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+				],
 				parallel: 3,
 				scriptFactory: scriptNaming,
 			});
@@ -1165,7 +1246,12 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const results = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+					job({ displayName: "delta" }),
+				],
 				parallel: 2,
 				scriptFactory: scriptNaming,
 			});
@@ -1190,7 +1276,12 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const results = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+					job({ displayName: "delta" }),
+				],
 				parallel: 2,
 				scriptFactory: scriptNaming,
 			});
@@ -1216,7 +1307,11 @@ describe(OpenCloudBackend, () => {
 			);
 
 			const backend = createBackend({ runner: stub.runner });
-			const jobs = [job("alpha"), job("beta"), job("gamma")];
+			const jobs = [
+				job({ displayName: "alpha" }),
+				job({ displayName: "beta" }),
+				job({ displayName: "gamma" }),
+			];
 			const results = await backend.runTestsAsync({ jobs, scriptFactory: scriptNaming });
 
 			expect(results.rawResults).toHaveLength(3);
@@ -1235,7 +1330,7 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 
 			const result = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta")],
+				jobs: [job({ displayName: "alpha" }), job({ displayName: "beta" })],
 				scriptFactory: () => "workspace-script",
 			});
 
@@ -1255,7 +1350,7 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 
 			const result = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta")],
+				jobs: [job({ displayName: "alpha" }), job({ displayName: "beta" })],
 				scriptFactory: () => "workspace-script",
 			});
 
@@ -1280,7 +1375,11 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 
 			const result = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+				],
 				scriptFactory: () => "workspace-script",
 			});
 
@@ -1305,7 +1404,11 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha"), job("beta"), job("gamma")],
+					jobs: [
+						job({ displayName: "alpha" }),
+						job({ displayName: "beta" }),
+						job({ displayName: "gamma" }),
+					],
 					scriptFactory: () => "retry-script",
 				}),
 			).rejects.toThrow("beta, gamma");
@@ -1321,7 +1424,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				scriptFactory: () => "factory-built",
 			});
 
@@ -1338,7 +1441,7 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha")],
+					jobs: [job({ displayName: "alpha" })],
 					scriptFactory: () => "factory-built",
 				}),
 			).rejects.toThrow("No test results in output");
@@ -1363,7 +1466,7 @@ describe(OpenCloudBackend, () => {
 
 			const thrown = await backend
 				.runTestsAsync({
-					jobs: [job("alpha")],
+					jobs: [job({ displayName: "alpha" })],
 					parallel: 2,
 					scriptOverride: "stealing-script",
 					workStealing: true,
@@ -1396,7 +1499,7 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha")],
+					jobs: [job({ displayName: "alpha" })],
 					parallel: 2,
 					scriptOverride: "stealing-script",
 					workStealing: true,
@@ -1422,7 +1525,11 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const results = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+				],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1450,7 +1557,11 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+				],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1477,7 +1588,7 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha"), job("beta")],
+					jobs: [job({ displayName: "alpha" }), job({ displayName: "beta" })],
 					parallel: 2,
 					scriptOverride: "stealing-script",
 					workStealing: true,
@@ -1509,7 +1620,7 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha"), job("beta")],
+					jobs: [job({ displayName: "alpha" }), job({ displayName: "beta" })],
 					parallel: 2,
 					scriptOverride: "stealing-script",
 					workStealing: true,
@@ -1541,7 +1652,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta")],
+				jobs: [job({ displayName: "alpha" }), job({ displayName: "beta" })],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1565,7 +1676,11 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha"), job("beta"), job("gamma")],
+					jobs: [
+						job({ displayName: "alpha" }),
+						job({ displayName: "beta" }),
+						job({ displayName: "gamma" }),
+					],
 					parallel: 1,
 					scriptOverride: "stealing-script",
 					workStealing: true,
@@ -1588,7 +1703,11 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { bailedJobIndices, rawResults } = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+				],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1616,7 +1735,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { bailedJobIndices, rawResults } = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta")],
+				jobs: [job({ displayName: "alpha" }), job({ displayName: "beta" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1639,7 +1758,11 @@ describe(OpenCloudBackend, () => {
 			const backend = createBackend({ runner: stub.runner });
 
 			const result = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+				],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1665,7 +1788,12 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
-				jobs: [job("alpha"), job("beta"), job("gamma"), job("delta")],
+				jobs: [
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+					job({ displayName: "delta" }),
+				],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1699,7 +1827,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1734,7 +1862,10 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
-				jobs: [job("client", {}, "@halcyon/foo"), job("server", {}, "@halcyon/foo")],
+				jobs: [
+					job({ displayName: "client", overrides: {}, packageName: "@halcyon/foo" }),
+					job({ displayName: "server", overrides: {}, packageName: "@halcyon/foo" }),
+				],
 				parallel: 2,
 				scriptOverride: "stealing-script",
 				workStealing: true,
@@ -1781,7 +1912,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
-				jobs: [job("client", {}, "alpha")],
+				jobs: [job({ displayName: "client", overrides: {}, packageName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				streaming: {
@@ -1831,7 +1962,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const promise = backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				streaming: {
@@ -1878,7 +2009,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				streaming: {
@@ -1929,7 +2060,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				streaming: {
@@ -1970,7 +2101,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				streaming: {
@@ -2009,7 +2140,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			await backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				streaming: {
@@ -2050,7 +2181,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				streaming: {
@@ -2103,7 +2234,7 @@ describe(OpenCloudBackend, () => {
 
 			const backend = createBackend({ runner: stub.runner });
 			const { rawResults } = await backend.runTestsAsync({
-				jobs: [job("alpha")],
+				jobs: [job({ displayName: "alpha" })],
 				parallel: 1,
 				scriptOverride: "stealing-script",
 				streaming: {
@@ -2136,7 +2267,7 @@ describe(OpenCloudBackend, () => {
 
 			await expect(
 				backend.runTestsAsync({
-					jobs: [job("alpha")],
+					jobs: [job({ displayName: "alpha" })],
 					parallel: 1,
 					scriptOverride: "stealing-script",
 					workStealing: true,
@@ -2456,7 +2587,7 @@ describe("exact version submission", { timeout: 1000 }, () => {
 
 		const stub = probeStub();
 		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		await backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })]));
 
 		expect(stub.probeCalls).toHaveLength(1);
 		expect(stub.probeCalls[0]).toMatchObject({
@@ -2471,7 +2602,7 @@ describe("exact version submission", { timeout: 1000 }, () => {
 
 		const stub = probeStub();
 		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		await backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })]));
 
 		expect(stub.probeCalls[0]!.isSubmitIdempotent).not.toBeTrue();
 	});
@@ -2481,7 +2612,16 @@ describe("exact version submission", { timeout: 1000 }, () => {
 
 		const stub = probeStub();
 		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha"), job("beta"), job("gamma")], 3));
+		await backend.runTestsAsync(
+			jobsOptions(
+				[
+					job({ displayName: "alpha" }),
+					job({ displayName: "beta" }),
+					job({ displayName: "gamma" }),
+				],
+				3,
+			),
+		);
 
 		// 3 jobs at parallel 3 => one bucket each => exactly 3 calls.
 		expect(stub.executeCalls.map((call) => call.placeVersion)).toStrictEqual([
@@ -2499,7 +2639,7 @@ describe("exact version submission", { timeout: 1000 }, () => {
 		stub.setExecute(() => scriptResult(envelope([packageEntry("alpha")])));
 		const backend = createBackend({ runner: stub.runner });
 		await backend.runTestsAsync({
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 			scriptOverride: "stealing-script",
 			workStealing: true,
 		});
@@ -2522,7 +2662,7 @@ describe("exact version submission", { timeout: 1000 }, () => {
 		const backend = bundleBackend(stub);
 		const result = await backend.runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 		});
 
 		expect(result.rawResults[0]!.entry.jestOutput).toBe(successJest());
@@ -2543,9 +2683,9 @@ describe("exact version submission", { timeout: 1000 }, () => {
 		stub.setExecute(versionMismatchOutput);
 		const backend = createBackend({ runner: stub.runner });
 
-		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
-			"is not valid JSON",
-		);
+		await expect(
+			backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })])),
+		).rejects.toThrow("is not valid JSON");
 		expect(stub.executeCalls).toHaveLength(1);
 	});
 });
@@ -2600,7 +2740,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		);
 		const backend = createBackend({ runner: stub.runner });
 
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		await backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })]));
 
 		expect(stub.probeCalls).toHaveLength(2);
 		expect(stub.probeCalls[1]!.placeVersion).toBe(PROBED_VERSION);
@@ -2617,7 +2757,9 @@ describe("boot probe", { timeout: 1000 }, () => {
 		});
 		const backend = createBackend({ runner: stub.runner });
 
-		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
+		await expect(
+			backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })])),
+		).rejects.toThrow(
 			"Place version 42 is boot unverified: no boot probe completed within 90s. No tests were submitted.",
 		);
 		expect(stub.probeCalls).toHaveLength(2);
@@ -2632,7 +2774,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		const backend = createBackend({ runner: stub.runner });
 
 		await backend.runTestsAsync({
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 			progress: {
 				...NOOP_RUN_PROGRESS,
 				begin: (id) => (result) => {
@@ -2691,7 +2833,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		const stub = probeStub();
 
 		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		await backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })]));
 
 		expect(stub.executeCalls).toHaveLength(1);
 		expect(stub.executeCalls[0]!.bootProven).toBeTrue();
@@ -2748,9 +2890,9 @@ describe("boot probe", { timeout: 1000 }, () => {
 
 		const backend = createBackend({ runner: stub.runner });
 
-		await expect(backend.runTestsAsync(jobsOptions([job("alpha")]))).rejects.toThrow(
-			"HTTP 429: Too Many Requests",
-		);
+		await expect(
+			backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })])),
+		).rejects.toThrow("HTTP 429: Too Many Requests");
 	});
 
 	/**
@@ -2770,7 +2912,7 @@ describe("boot probe", { timeout: 1000 }, () => {
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
 		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha")]));
+		await backend.runTestsAsync(jobsOptions([job({ displayName: "alpha" })]));
 
 		expect(stub.probeCalls[0]!.pollBudget).toBe(90_000);
 		expect(stub.probeCalls[0]!.timeout).toBeLessThan(90_000);
@@ -2784,7 +2926,9 @@ describe("boot probe", { timeout: 1000 }, () => {
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
 		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha", { bootProbeTimeout: 30_000 })]));
+		await backend.runTestsAsync(
+			jobsOptions([job({ displayName: "alpha", overrides: { bootProbeTimeout: 30_000 } })]),
+		);
 
 		expect(stub.probeCalls[0]!.pollBudget).toBe(30_000);
 	});
@@ -2800,7 +2944,9 @@ describe("boot probe", { timeout: 1000 }, () => {
 		stub.setExecute(() => scriptResult(envelope([{ jestOutput: successJest() }])));
 
 		const backend = createBackend({ runner: stub.runner });
-		await backend.runTestsAsync(jobsOptions([job("alpha", { bootProbeTimeout: 1000 })]));
+		await backend.runTestsAsync(
+			jobsOptions([job({ displayName: "alpha", overrides: { bootProbeTimeout: 1000 } })]),
+		);
 
 		expect(stub.probeCalls[0]!.pollBudget).toBe(1000);
 		expect(stub.probeCalls[0]!.timeout).toBe(1000);
@@ -2829,7 +2975,7 @@ describe("code bundle", () => {
 		const stub = passingStub();
 		await bundleBackend(stub).runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 			...options,
 		});
 		return stub;
@@ -2845,7 +2991,7 @@ describe("code bundle", () => {
 		});
 		await bundleBackend(passingStub(), { resultRelay }).runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 		});
 
 		expect(resultRelay).toHaveBeenCalledWith(
@@ -2880,7 +3026,7 @@ describe("code bundle", () => {
 			await expect(
 				bundleBackend(stub, { now: () => now }).runTestsAsync({
 					codeBundle: bundleArtifact(),
-					jobs: [job("alpha")],
+					jobs: [job({ displayName: "alpha" })],
 				}),
 			).rejects.toMatchObject({
 				hint: "Upload the code inside the place instead.",
@@ -2905,7 +3051,7 @@ describe("code bundle", () => {
 		});
 		await bundleBackend(stub, { now: () => now }).runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 		});
 
 		expect(stub.binaryInputCalls).toHaveLength(1);
@@ -2916,7 +3062,11 @@ describe("code bundle", () => {
 		expect.assertions(2);
 
 		const stub = await runBundledAsync({
-			jobs: [job("alpha"), job("beta"), job("gamma")],
+			jobs: [
+				job({ displayName: "alpha" }),
+				job({ displayName: "beta" }),
+				job({ displayName: "gamma" }),
+			],
 			parallel: 3,
 		});
 
@@ -2972,7 +3122,7 @@ describe("code bundle", () => {
 		onTestFinished(capture.restore);
 		await bundleBackend(stub).runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 		});
 
 		const replacement = stub.executeCalls[1]!;
@@ -2986,7 +3136,7 @@ describe("code bundle", () => {
 		expect.assertions(3);
 
 		const stub = passingStub();
-		await bundleBackend(stub).runTestsAsync({ jobs: [job("alpha")] });
+		await bundleBackend(stub).runTestsAsync({ jobs: [job({ displayName: "alpha" })] });
 
 		expect(stub.binaryInputCalls).toHaveLength(0);
 		expect(stub.executeCalls[0]!.binaryInput).toBeUndefined();
@@ -3007,8 +3157,11 @@ describe("code bundle", () => {
 		const { fileSystem } = createMemoryFileSystem({ [BUNDLE_FILE]: BUNDLE_JSON });
 		const backend = createBackend({ fileSystem, runner: stub.runner });
 
-		await backend.runTestsAsync({ codeBundle: bundleArtifact(), jobs: [job("alpha")] });
-		await backend.runTestsAsync({ jobs: [job("alpha")] });
+		await backend.runTestsAsync({
+			codeBundle: bundleArtifact(),
+			jobs: [job({ displayName: "alpha" })],
+		});
+		await backend.runTestsAsync({ jobs: [job({ displayName: "alpha" })] });
 
 		expect(stub.executeCalls[0]!.script).toContain(CODE_BUNDLE_REBUILD_SOURCE);
 		expect(stub.executeCalls[1]!.script).not.toContain(CODE_BUNDLE_REBUILD_SOURCE);
@@ -3039,7 +3192,7 @@ describe("code bundle", () => {
 		onTestFinished(capture.restore);
 		await bundleBackend(stub, { now: () => now }).runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 		});
 		return stub;
 	}
@@ -3087,7 +3240,7 @@ describe("code bundle", () => {
 
 		const result = await bundleBackend(stub).runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 		});
 
 		// The runner's own figure, not a second measurement around it: it spans
@@ -3105,7 +3258,7 @@ describe("code bundle", () => {
 		const stub = passingStub();
 		await bundleBackend(stub).runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 			progress: {
 				...NOOP_RUN_PROGRESS,
 				begin: (id, detail) => {
@@ -3140,7 +3293,7 @@ describe("code bundle", () => {
 					"ReplicatedStorage/__pkg_stage/shared/config",
 				],
 			}),
-			jobs: [job("alpha")],
+			jobs: [job({ displayName: "alpha" })],
 		});
 
 		expect(capture.writes).toStrictEqual([
@@ -3178,7 +3331,7 @@ describe("code bundle", () => {
 
 		await bundleBackend(stub, { now: () => clock }).runTestsAsync({
 			codeBundle: bundleArtifact(),
-			jobs: [job("alpha"), job("beta")],
+			jobs: [job({ displayName: "alpha" }), job({ displayName: "beta" })],
 			parallel: 2,
 			scriptFactory: (jobs) => {
 				clock = REFRESH_STEP_MS;
@@ -3202,7 +3355,7 @@ describe("code bundle", () => {
 		});
 
 		const failure = await bundleBackend(stub)
-			.runTestsAsync({ codeBundle: bundleArtifact(), jobs: [job("alpha")] })
+			.runTestsAsync({ codeBundle: bundleArtifact(), jobs: [job({ displayName: "alpha" })] })
 			.catch((err: unknown) => err);
 		assert(failure instanceof ConfigError, "expected a ConfigError");
 

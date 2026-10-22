@@ -230,7 +230,7 @@ export class OpenCloudBackend implements Backend {
 			workStealing: isStealing,
 		} = options;
 		this.beginRun(codeBundle, progress);
-		const primary = resolvePrimaryJob(jobs, scriptOverride, isStealing);
+		const primary = resolvePrimaryJob({ jobs, scriptOverride, workStealing: isStealing });
 		// timeout and bootProbeTimeout are picked from the first job — both are
 		// per-run knobs, and one run boots one version of one place.
 		const target = toCacheTarget(this.credentials, resolvePlaceFilePath(primary.config));
@@ -298,9 +298,13 @@ export class OpenCloudBackend implements Backend {
 		// Closed on success only: a dispatch that throws leaves the stage open,
 		// and the reporter then names it as the step the run died inside.
 		const done = progress.begin("tests", describeProjectCount(options.jobs.length));
-		const outcome = await this.selectDispatchAsync(options, primary.config, {
-			bootProven: isBootProven,
-			versionNumber: upload.versionNumber,
+		const outcome = await this.selectDispatchAsync({
+			...options,
+			primaryConfig: primary.config,
+			version: {
+				bootProven: isBootProven,
+				versionNumber: upload.versionNumber,
+			},
 		});
 		done();
 		return outcome;
@@ -332,7 +336,11 @@ export class OpenCloudBackend implements Backend {
 			const envelope = parseStealingEnvelope(
 				await this.executeAsync({ script, timeout, version }),
 			);
-			addEntriesToMap(collected, envelope.entries, envelope.gameOutput);
+			addEntriesToMap({
+				entries: envelope.entries,
+				entryByKey: collected,
+				gameOutput: envelope.gameOutput,
+			});
 			hasBailed ||= envelope.bailed;
 			if (!envelope.deferred) {
 				break;
@@ -481,7 +489,7 @@ export class OpenCloudBackend implements Backend {
 			process.stderr.write(
 				"Warning: Open Cloud returned 404; clearing the upload cache without restarting dispatched tests.\n",
 			);
-			invalidateCachedVersion(rootDirectory, target);
+			invalidateCachedVersion({ rootDirectory, target });
 			throw err;
 		}
 	}
@@ -650,9 +658,9 @@ export class OpenCloudBackend implements Backend {
 		streaming: StreamingHooks | undefined;
 		version: VersionContext;
 	}): Promise<DispatchOutcome> {
-		const taskResults = await drainStealingPoolAsync(
-			resolveBucketCount(parallel, jobs.length),
-			async () => {
+		const taskResults = await drainStealingPoolAsync({
+			requiredKeyCount: jobs.length,
+			runTask: async () => {
 				return this.executeAsync({
 					script: scriptOverride,
 					timeout: primaryConfig.timeout,
@@ -660,8 +668,8 @@ export class OpenCloudBackend implements Backend {
 				});
 			},
 			streaming,
-			jobs.length,
-		);
+			taskCount: resolveBucketCount(parallel, jobs.length),
+		});
 
 		// Parse after the pool settles so a task that returned no usable output
 		// throws here, in the normal flow, rather than being swallowed by the
@@ -685,11 +693,19 @@ export class OpenCloudBackend implements Backend {
 	 * task defers. Everything else generates a bucket's script from its jobs
 	 * and has no deferral to answer.
 	 */
-	private async selectDispatchAsync(
-		{ jobs, parallel, scriptFactory, scriptOverride, streaming, workStealing }: BackendOptions,
-		primaryConfig: ResolvedConfig,
-		version: VersionContext,
-	): Promise<DispatchOutcome> {
+	private async selectDispatchAsync({
+		jobs,
+		parallel,
+		primaryConfig,
+		scriptFactory,
+		scriptOverride,
+		streaming,
+		version,
+		workStealing,
+	}: BackendOptions & {
+		readonly primaryConfig: ResolvedConfig;
+		readonly version: VersionContext;
+	}): Promise<DispatchOutcome> {
 		if (workStealing === true) {
 			return this.runWorkStealingAsync({
 				jobs,
@@ -849,7 +865,7 @@ export class OpenCloudBackend implements Backend {
 		// A hash of undefined means "no cache this run" for both reads and
 		// writes: either the caller disabled it, or the file could not be read.
 		if (hash !== undefined) {
-			const cached = readCachedVersion(config.rootDir, target, hash);
+			const cached = readCachedVersion({ hash, rootDirectory: config.rootDir, target });
 			if (cached !== undefined) {
 				// Noted rather than opened: nothing went over the wire, so the
 				// stage has a result and never had a wait.
@@ -906,9 +922,13 @@ export class OpenCloudBackend implements Backend {
 
 		done();
 		if (upload.hash !== undefined) {
-			writeCachedVersion(config.rootDir, target, {
-				hash: upload.hash,
-				versionNumber: upload.versionNumber,
+			writeCachedVersion({
+				entry: {
+					hash: upload.hash,
+					versionNumber: upload.versionNumber,
+				},
+				rootDirectory: config.rootDir,
+				target,
 			});
 		}
 
@@ -1001,11 +1021,15 @@ function bucketScript(jobs: Array<ProjectJob>): string {
 	return generateTestScript(inputs);
 }
 
-function resolvePrimaryJob(
-	jobs: Array<ProjectJob>,
-	scriptOverride: string | undefined,
+function resolvePrimaryJob({
+	jobs,
+	scriptOverride,
 	workStealing = false,
-): ProjectJob {
+}: {
+	readonly jobs: Array<ProjectJob>;
+	readonly scriptOverride: string | undefined;
+	readonly workStealing?: boolean | undefined;
+}): ProjectJob {
 	const primary = jobs[0];
 	if (primary === undefined) {
 		throw new Error("OpenCloudBackend requires at least one job");
@@ -1257,12 +1281,17 @@ async function sleepAsync(ms: number): Promise<void> {
  * `maxLaunches` bounds that chain: a worker always takes at least one item, so
  * covering `jobCount` jobs can never need more than `jobCount` extra tasks.
  */
-async function runStealingTasksAsync(
-	taskCount: number,
-	runTask: () => Promise<ScriptResult>,
-	outcome: StealingPoolOutcome,
-	jobCount: number,
-): Promise<void> {
+async function runStealingTasksAsync({
+	jobCount,
+	outcome,
+	runTask,
+	taskCount,
+}: {
+	readonly jobCount: number;
+	readonly outcome: StealingPoolOutcome;
+	readonly runTask: () => Promise<ScriptResult>;
+	readonly taskCount: number;
+}): Promise<void> {
 	let launched = 0;
 	let pendingDeferrals = 0;
 	const maxLaunches = taskCount + jobCount;
@@ -1308,22 +1337,27 @@ async function runStealingTasksAsync(
  * streaming map alongside it. Returns every task's result once the wave has
  * settled; rethrows the first task failure the pool folded into a freed slot.
  */
-async function drainStealingPoolAsync(
-	taskCount: number,
-	runTask: () => Promise<ScriptResult>,
-	streaming: StreamingHooks | undefined,
-	requiredKeyCount: number,
-): Promise<Array<ScriptResult>> {
+async function drainStealingPoolAsync({
+	requiredKeyCount,
+	runTask,
+	streaming,
+	taskCount,
+}: {
+	readonly requiredKeyCount: number;
+	readonly runTask: () => Promise<ScriptResult>;
+	readonly streaming: StreamingHooks | undefined;
+	readonly taskCount: number;
+}): Promise<Array<ScriptResult>> {
 	// A holder, not a plain boolean, so the poll's `isDone` arrow reads the
 	// live value instead of capturing false forever.
 	const tasksDone = { value: false };
 	const outcome: StealingPoolOutcome = { results: [] };
-	const poolPromise = runStealingTasksAsync(
-		taskCount,
-		runTask,
+	const poolPromise = runStealingTasksAsync({
+		jobCount: requiredKeyCount,
 		outcome,
-		requiredKeyCount,
-	).finally(() => {
+		runTask,
+		taskCount,
+	}).finally(() => {
 		tasksDone.value = true;
 	});
 
@@ -1411,11 +1445,15 @@ function parseStealingEnvelope(result: ScriptResult): StealingEnvelope {
 	return { ...decodeEnvelope(requireJestOutput(result)), gameOutput: result.outputs[1] };
 }
 
-function addEntriesToMap(
-	entryByKey: Map<string, CollectedEntry>,
-	entries: Array<EnvelopeEntry>,
-	gameOutput: string | undefined,
-): void {
+function addEntriesToMap({
+	entries,
+	entryByKey,
+	gameOutput,
+}: {
+	readonly entries: Array<EnvelopeEntry>;
+	readonly entryByKey: Map<string, CollectedEntry>;
+	readonly gameOutput: string | undefined;
+}): void {
 	for (const entry of entries) {
 		if (entry.pkg === undefined) {
 			continue;
@@ -1437,7 +1475,7 @@ function aggregateEntriesByKey(
 ): Map<string, CollectedEntry> {
 	const entryByKey = new Map<string, CollectedEntry>();
 	for (const { entries, gameOutput } of taskEnvelopes) {
-		addEntriesToMap(entryByKey, entries, gameOutput);
+		addEntriesToMap({ entries, entryByKey, gameOutput });
 	}
 
 	return entryByKey;

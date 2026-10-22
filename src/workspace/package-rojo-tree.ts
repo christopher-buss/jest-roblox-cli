@@ -16,11 +16,15 @@ import type { FileSystem } from "../utils/file-system.ts";
  * rebase the tree to package-relative paths so mount resolution (findInTree /
  * collectMounts) compares like-for-like.
  */
-export function loadPackageRojoTree(
-	rojoProjectPath: string,
-	packageDirectory: string,
-	fileSystem?: FileSystem,
-): RojoTreeNode {
+export function loadPackageRojoTree({
+	fileSystem,
+	packageDirectory,
+	rojoProjectPath,
+}: {
+	readonly fileSystem?: FileSystem;
+	readonly packageDirectory: string;
+	readonly rojoProjectPath: string;
+}): RojoTreeNode {
 	const rojoDirectory = path.dirname(rojoProjectPath);
 	const project = loadRojoProject(rojoProjectPath, fileSystem);
 	return rebaseTreePaths(project.tree, rojoDirectory, packageDirectory);

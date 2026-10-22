@@ -16,7 +16,7 @@ function configWithRoot(overrides: Partial<typeof DEFAULT_CONFIG> = {}) {
 }
 
 function resolve(config: typeof DEFAULT_CONFIG, testFiles: Array<string>) {
-	return resolveSnapshotFormat(config, testFiles, { cache: createTsconfigMappingCache() });
+	return resolveSnapshotFormat({ cache: createTsconfigMappingCache(), config, testFiles });
 }
 
 describe(resolveSnapshotFormat, () => {

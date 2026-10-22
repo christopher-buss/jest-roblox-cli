@@ -120,10 +120,12 @@ export async function runMultiProjectAsync(options: MultiRunOptions): Promise<Mu
 	const rojoTree = timing.profile("loadRojoTree", () => loadRojoTree(rootConfig, fileSystem));
 
 	const allProjects = await timing.profileAsync("resolveAllProjects", async () => {
-		return seams.resolveAllProjects(rawProjects, rootConfig, {
+		return seams.resolveAllProjects({
 			cwd: rootConfig.rootDir,
+			entries: rawProjects,
 			fileSystem,
 			rojoTree,
+			rootConfig,
 			tsconfigReader: seams.tsconfigReader,
 		});
 	});
@@ -225,7 +227,11 @@ function selectProjects(
 	}
 
 	if (cliFiles !== undefined && cliFiles.length > 0) {
-		const matches = filterProjectsByFiles(allProjects, cliFiles, rootDirectory);
+		const matches = filterProjectsByFiles({
+			files: cliFiles,
+			projects: allProjects,
+			rootDirectory,
+		});
 		return {
 			filesByProject: new Map(
 				matches.map((match) => [match.project.displayName, match.matchingFiles]),

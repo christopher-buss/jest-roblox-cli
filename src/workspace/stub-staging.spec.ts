@@ -68,7 +68,15 @@ function cacheStub(context: PackageContext, mount: string): string {
 	return path.resolve(context.cacheRoot, mount, STUB_FILENAME);
 }
 
-function seed(volume: MemoryVolume, filePath: string, content: string): void {
+function seed({
+	content,
+	filePath,
+	volume,
+}: {
+	readonly content: string;
+	readonly filePath: string;
+	readonly volume: MemoryVolume;
+}): void {
 	volume.mkdirSync(path.dirname(filePath), { recursive: true });
 	volume.writeFileSync(filePath, content);
 }
@@ -82,8 +90,8 @@ function stageTwoPackages(): StagedWorkspace {
 	const timing = fakeTimingCollector(12);
 
 	const { fileSystem, volume } = createMemoryFileSystem();
-	seed(volume, sourceStub(foo, "src/Server"), GENERATED_STUB);
-	seed(volume, sourceStub(foo, "src/Dormant"), GENERATED_STUB);
+	seed({ content: GENERATED_STUB, filePath: sourceStub(foo, "src/Server"), volume });
+	seed({ content: GENERATED_STUB, filePath: sourceStub(foo, "src/Dormant"), volume });
 	vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 	const staged = stageWorkspaceStubs({
@@ -182,7 +190,7 @@ describe(stageWorkspaceStubs, () => {
 		const context = makeContext("@halcyon/foo", [server, shared]);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seed(volume, sourceStub(context, "src/Shared"), USER_STUB);
+		seed({ content: USER_STUB, filePath: sourceStub(context, "src/Shared"), volume });
 
 		const { value: descriptors } = stageWorkspaceStubs({
 			contexts: [context],
@@ -209,8 +217,16 @@ describe(stageWorkspaceStubs, () => {
 		const context = makeContext("@halcyon/foo", [project]);
 
 		const { fileSystem, volume } = createMemoryFileSystem();
-		seed(volume, sourceStub(context, "src/Server"), GENERATED_STUB);
-		seed(volume, sourceStub(context, "src/Shared"), GENERATED_STUB);
+		seed({
+			content: GENERATED_STUB,
+			filePath: sourceStub(context, "src/Server"),
+			volume,
+		});
+		seed({
+			content: GENERATED_STUB,
+			filePath: sourceStub(context, "src/Shared"),
+			volume,
+		});
 		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
 		stageWorkspaceStubs({

@@ -41,11 +41,15 @@ const PROTOCOL_VERSION = 10;
  * Dispatch waits for that announcement now, so a socket that only connects is
  * never asked to run anything.
  */
-function connectPlugin(
-	wss: MockWebSocketServer,
-	socket: MockWebSocket = new MockWebSocket(),
-	hello: Record<string, unknown> = {},
-): MockWebSocket {
+function connectPlugin({
+	hello = {},
+	socket = new MockWebSocket(),
+	wss,
+}: {
+	readonly hello?: Record<string, unknown>;
+	readonly socket?: MockWebSocket;
+	readonly wss: MockWebSocketServer;
+}): MockWebSocket {
 	wss.emit("connection", socket);
 	socket.emit(
 		"message",
@@ -158,7 +162,7 @@ async function captureVmRequestAsync(
 		});
 	});
 
-	connectPlugin(wss, socket);
+	connectPlugin({ socket, wss });
 	await promise;
 
 	return captured!;
@@ -192,7 +196,7 @@ function connectAndReply(wss: MockWebSocketServer, reply: ReplyOptions): MockWeb
 		}
 	});
 
-	connectPlugin(wss, socket);
+	connectPlugin({ socket, wss });
 	return socket;
 }
 
@@ -225,7 +229,7 @@ describe("protocol version handshake", () => {
 			});
 		});
 
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 		await promise;
 
 		expect(captured!.protocolVersion).toBeTypeOf("number");
@@ -265,7 +269,7 @@ describe("protocol version handshake", () => {
 			});
 		});
 
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrow(/invalid plugin message/i);
 		expect(vi.getTimerCount()).toBe(0);
@@ -301,7 +305,7 @@ describe("protocol version handshake", () => {
 			});
 		});
 
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrow(/invalid plugin message/i);
 	});
@@ -317,12 +321,20 @@ describe("protocol version handshake", () => {
 		const promise = backend.runTestsAsync(singleJobOptions);
 
 		const wss = getLastCreatedServer()!;
-		const stale = connectPlugin(wss, new MockWebSocket(), {
-			pluginVersion: "0.3.18",
-			protocolVersion: PROTOCOL_VERSION - 1,
+		const stale = connectPlugin({
+			hello: {
+				pluginVersion: "0.3.18",
+				protocolVersion: PROTOCOL_VERSION - 1,
+			},
+			socket: new MockWebSocket(),
+			wss,
 		});
-		const ancient = connectPlugin(wss, new MockWebSocket(), {
-			protocolVersion: PROTOCOL_VERSION - 3,
+		const ancient = connectPlugin({
+			hello: {
+				protocolVersion: PROTOCOL_VERSION - 3,
+			},
+			socket: new MockWebSocket(),
+			wss,
 		});
 		const current = connectAndReply(wss, {});
 
@@ -345,14 +357,22 @@ describe("protocol version handshake", () => {
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 
 		const wss = getLastCreatedServer()!;
-		connectPlugin(wss, new MockWebSocket(), {
-			pluginVersion: "0.3.18",
-			protocolVersion: PROTOCOL_VERSION - 1,
+		connectPlugin({
+			hello: {
+				pluginVersion: "0.3.18",
+				protocolVersion: PROTOCOL_VERSION - 1,
+			},
+			socket: new MockWebSocket(),
+			wss,
 		});
-		connectPlugin(wss, new MockWebSocket(), {
-			pluginName: "OldRunner",
-			pluginVersion: undefined,
-			protocolVersion: PROTOCOL_VERSION - 2,
+		connectPlugin({
+			hello: {
+				pluginName: "OldRunner",
+				pluginVersion: undefined,
+				protocolVersion: PROTOCOL_VERSION - 2,
+			},
+			socket: new MockWebSocket(),
+			wss,
 		});
 		await vi.runAllTimersAsync();
 
@@ -414,7 +434,7 @@ describe("protocol version handshake", () => {
 			});
 		});
 
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrowWithMessage(
 			Error,
@@ -469,7 +489,7 @@ describe(StudioBackend, () => {
 			});
 		});
 
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 
 		await promise;
 
@@ -568,7 +588,7 @@ describe(StudioBackend, () => {
 			});
 		});
 
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 		await promise;
 
 		expect(captured!.workspace.entries).toHaveLength(2);
@@ -761,7 +781,7 @@ describe(StudioBackend, () => {
 		const backend = new StudioBackend({ port: 0, timeout: 100, webSocketServerFactory });
 		const settled = backend.runTestsAsync(singleJobOptions).catch((err: unknown) => err);
 
-		connectPlugin(getLastCreatedServer()!);
+		connectPlugin({ wss: getLastCreatedServer()! });
 		await vi.runAllTimersAsync();
 		const caught: unknown = await settled;
 
@@ -785,7 +805,7 @@ describe(StudioBackend, () => {
 				socket.emit("close");
 			});
 		});
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrowWithMessage(
 			Error,
@@ -809,7 +829,7 @@ describe(StudioBackend, () => {
 			});
 		});
 
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrowWithMessage(Error, /Invalid plugin message/);
 	});
@@ -829,7 +849,7 @@ describe(StudioBackend, () => {
 				socket.emit("error", new Error("socket error"));
 			});
 		});
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 
 		await expect(promise).rejects.toThrowWithMessage(Error, "socket error");
 		expect(vi.getTimerCount()).toBe(0);
@@ -887,7 +907,7 @@ describe(StudioBackend, () => {
 			});
 		});
 
-		connectPlugin(wss, socket);
+		connectPlugin({ socket, wss });
 
 		const { rawResults } = await promise;
 

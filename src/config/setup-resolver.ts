@@ -45,7 +45,7 @@ export function createSetupResolver({
 }: SetupResolverOptions): (input: string) => string {
 	const resolve =
 		resolveModule ?? createRequire(pathToFileURL(configDirectory + path.sep)).resolve;
-	const rojoResolver = resolveRojo(rojoConfigPath, cache, createResolver);
+	const rojoResolver = resolveRojo({ cache, createResolver, rojoConfigPath });
 
 	return (input): string => {
 		let absolutePath: string;
@@ -79,11 +79,15 @@ export function createSetupResolver({
 // `out` from a package path where the tree mapper keeps it. That walk dominates
 // the cost of resolving a package's setup files, so a shared cache spares every
 // package after the first that mounts the same project file.
-function resolveRojo(
-	rojoConfigPath: string,
-	cache: RojoResolverCache | undefined,
-	createResolver: RojoResolverFactory,
-): RojoResolver {
+function resolveRojo({
+	cache,
+	createResolver,
+	rojoConfigPath,
+}: {
+	readonly cache: RojoResolverCache | undefined;
+	readonly createResolver: RojoResolverFactory;
+	readonly rojoConfigPath: string;
+}): RojoResolver {
 	const cached = cache?.get(rojoConfigPath);
 	if (cached !== undefined) {
 		return cached;

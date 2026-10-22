@@ -36,11 +36,15 @@ function dispatchedPairs(script: string): Array<string> {
 	return payloadOf(script).entries.map((entry) => `${entry.pkg}/${entry.project}`);
 }
 
-function makeJob(
-	packageName: string,
-	displayName: string,
-	config: { projectTimeout?: number; timeout?: number } = {},
-): WorkspaceJob {
+function makeJob({
+	config = {},
+	displayName,
+	packageName,
+}: {
+	readonly config?: { projectTimeout?: number; timeout?: number };
+	readonly displayName: string;
+	readonly packageName: string;
+}): WorkspaceJob {
 	return fromAny({
 		config: {
 			...DEFAULT_CONFIG,
@@ -77,7 +81,7 @@ describe(runDispatchedProjectsAsync, () => {
 	it("should run the exact prepared jobs and return both result arrays", async () => {
 		expect.assertions(3);
 
-		const jobs = [makeJob("pkg-a", "unit")];
+		const jobs = [makeJob({ displayName: "unit", packageName: "pkg-a" })];
 		const timing = createTiming();
 		const backend = fromAny<Backend, unknown>({ kind: "open-cloud" });
 		const tsconfigCache: TsconfigMappingCache = new Map();
@@ -169,9 +173,9 @@ describe(prepareWorkspaceDispatchAsync, () => {
 	it("should build a script from exact package and project matches", async () => {
 		expect.assertions(4);
 
-		const unitA = makeJob("pkg-a", "unit");
-		const unitB = makeJob("pkg-b", "unit");
-		const e2eA = makeJob("pkg-a", "e2e");
+		const unitA = makeJob({ displayName: "unit", packageName: "pkg-a" });
+		const unitB = makeJob({ displayName: "unit", packageName: "pkg-b" });
+		const e2eA = makeJob({ displayName: "e2e", packageName: "pkg-a" });
 
 		const spec = await prepareWorkspaceDispatchAsync({
 			bail: true,
@@ -198,7 +202,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 
 		const spec = await prepareWorkspaceDispatchAsync({
 			bail: true,
-			jobs: [makeJob("pkg-a", "unit")],
+			jobs: [makeJob({ displayName: "unit", packageName: "pkg-a" })],
 			parallel: 1,
 			workStealingCredentials: undefined,
 		});
@@ -210,7 +214,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		expect.assertions(1);
 
 		const spec = await prepareWorkspaceDispatchAsync({
-			jobs: [makeJob("pkg-a", "unit")],
+			jobs: [makeJob({ displayName: "unit", packageName: "pkg-a" })],
 			parallel: 1,
 			vmParallel: "auto",
 			workStealingCredentials: undefined,
@@ -222,7 +226,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 	it("should return a work-stealing script when queue setup succeeds", async () => {
 		expect.assertions(2);
 
-		const job = makeJob("pkg-a", "unit");
+		const job = makeJob({ displayName: "unit", packageName: "pkg-a" });
 		const prepareWorkStealingQueue = stubQueue();
 		const credentials = { apiKey: "key", baseUrl: "https://example.test", universeId: "42" };
 
@@ -259,7 +263,14 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		const prepareWorkStealingQueue = stubQueue();
 
 		await prepareWorkspaceDispatchAsync({
-			jobs: [makeJob("pkg-a", "unit"), makeJob("pkg-b", "unit", { projectTimeout: 180_000 })],
+			jobs: [
+				makeJob({ displayName: "unit", packageName: "pkg-a" }),
+				makeJob({
+					config: { projectTimeout: 180_000 },
+					displayName: "unit",
+					packageName: "pkg-b",
+				}),
+			],
 			parallel: "auto",
 			prepareWorkStealingQueue,
 			workStealingCredentials: { apiKey: "key", universeId: "42" },
@@ -279,7 +290,13 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		const prepareWorkStealingQueue = stubQueue();
 
 		await prepareWorkspaceDispatchAsync({
-			jobs: [makeJob("pkg-a", "unit", { projectTimeout: 0 })],
+			jobs: [
+				makeJob({
+					config: { projectTimeout: 0 },
+					displayName: "unit",
+					packageName: "pkg-a",
+				}),
+			],
 			parallel: "auto",
 			prepareWorkStealingQueue,
 			workStealingCredentials: { apiKey: "key", universeId: "42" },
@@ -301,8 +318,12 @@ describe(prepareWorkspaceDispatchAsync, () => {
 
 		await prepareWorkspaceDispatchAsync({
 			jobs: [
-				makeJob("pkg-a", "unit"),
-				makeJob("pkg-b", "unit", { projectTimeout: 0, timeout: 60_000 }),
+				makeJob({ displayName: "unit", packageName: "pkg-a" }),
+				makeJob({
+					config: { projectTimeout: 0, timeout: 60_000 },
+					displayName: "unit",
+					packageName: "pkg-b",
+				}),
 			],
 			parallel: "auto",
 			prepareWorkStealingQueue,
@@ -323,7 +344,13 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		const prepareWorkStealingQueue = stubQueue();
 
 		await prepareWorkspaceDispatchAsync({
-			jobs: [makeJob("pkg-a", "unit", { projectTimeout: 900_000 })],
+			jobs: [
+				makeJob({
+					config: { projectTimeout: 900_000 },
+					displayName: "unit",
+					packageName: "pkg-a",
+				}),
+			],
 			parallel: "auto",
 			prepareWorkStealingQueue,
 			workStealingCredentials: { apiKey: "key", universeId: "42" },
@@ -338,7 +365,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 		expect.assertions(1);
 
 		const spec = await prepareWorkspaceDispatchAsync({
-			jobs: [makeJob("pkg-a", "unit")],
+			jobs: [makeJob({ displayName: "unit", packageName: "pkg-a" })],
 			parallel: "auto",
 			prepareWorkStealingQueue: stubQueue(),
 			workStealingCredentials: { apiKey: "key", universeId: "42" },
@@ -361,7 +388,7 @@ describe(prepareWorkspaceDispatchAsync, () => {
 			stderr.mockRestore();
 		});
 		const spec = await prepareWorkspaceDispatchAsync({
-			jobs: [makeJob("pkg-a", "unit")],
+			jobs: [makeJob({ displayName: "unit", packageName: "pkg-a" })],
 			parallel: 2,
 			prepareWorkStealingQueue: vi.fn<typeof prepareWorkStealingQueueAsync>(async () => {
 				throw new Error("missing scope");

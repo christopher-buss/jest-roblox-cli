@@ -92,7 +92,9 @@ describe(findLuauConfigFile, () => {
 
 		const { fileSystem } = seedConfig("return {}", "/cwd/project/jest.config.luau");
 
-		expect(findLuauConfigFile("project", "/cwd", fileSystem)).toMatch(/jest\.config\.luau$/);
+		expect(findLuauConfigFile({ cwd: "/cwd", directoryOrFile: "project", fileSystem })).toMatch(
+			/jest\.config\.luau$/,
+		);
 	});
 
 	it("should return undefined when jest.config.luau does not exist", () => {
@@ -100,6 +102,8 @@ describe(findLuauConfigFile, () => {
 
 		const { fileSystem } = createMemoryFileSystem();
 
-		expect(findLuauConfigFile("project", "/cwd", fileSystem)).toBeUndefined();
+		expect(
+			findLuauConfigFile({ cwd: "/cwd", directoryOrFile: "project", fileSystem }),
+		).toBeUndefined();
 	});
 });

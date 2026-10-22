@@ -65,13 +65,10 @@ describe(loadWorkspacePackagesAsync, () => {
 			pkgConfig: expect.objectContaining({ rootDir: "/repo/packages/example" }),
 		});
 		expect(result[0]!.pkgConfig.verbose).toBeTrue();
-		expect(loadPackageConfig).toHaveBeenCalledExactlyOnceWith(
-			undefined,
-			"/repo/packages/example",
-			{
-				fileSystem,
-			},
-		);
+		expect(loadPackageConfig).toHaveBeenCalledExactlyOnceWith({
+			cwd: "/repo/packages/example",
+			fileSystem,
+		});
 		expect(timing.profileAsync).toHaveBeenCalledExactlyOnceWith(
 			"load-config:@halcyon/example",
 			expect.any(Function),

@@ -16,7 +16,7 @@ describe("config resolution", () => {
 		it("should load config from jest.config.luau", async () => {
 			expect.assertions(1);
 
-			const config = await loadConfig(undefined, LUAU_FIXTURE);
+			const config = await loadConfig({ cwd: LUAU_FIXTURE });
 
 			expect(config.rootDir).toBe(LUAU_FIXTURE);
 		});
@@ -43,7 +43,7 @@ describe("config resolution", () => {
 		it("should load config from jest.config.ts", async () => {
 			expect.assertions(1);
 
-			const config = await loadConfig(undefined, RBXTS_FIXTURE);
+			const config = await loadConfig({ cwd: RBXTS_FIXTURE });
 
 			expect(config.rootDir).toBe(RBXTS_FIXTURE);
 		});
@@ -70,15 +70,16 @@ describe("config resolution", () => {
 		it("should resolve projects from rojo tree", async () => {
 			expect.assertions(1);
 
-			const config = await loadConfig(undefined, RBXTS_FIXTURE);
+			const config = await loadConfig({ cwd: RBXTS_FIXTURE });
 			const rojoData = readJsonSync(path.join(RBXTS_FIXTURE, "default.project.json"));
 			const rojo = rojoProjectSchema.assert(rojoData);
 
-			const projects = await resolveAllProjects(
-				config.projects!,
-				{ ...config, rootDir: RBXTS_FIXTURE },
-				{ cwd: RBXTS_FIXTURE, rojoTree: rojo.tree },
-			);
+			const projects = await resolveAllProjects({
+				cwd: RBXTS_FIXTURE,
+				entries: config.projects!,
+				rojoTree: rojo.tree,
+				rootConfig: { ...config, rootDir: RBXTS_FIXTURE },
+			});
 
 			expect(projects.length).toBeGreaterThan(0);
 		});
@@ -88,7 +89,7 @@ describe("config resolution", () => {
 		it("should read parallel from jest.config.ts", async () => {
 			expect.assertions(1);
 
-			const config = await loadConfig(undefined, PARALLEL_FIXTURE);
+			const config = await loadConfig({ cwd: PARALLEL_FIXTURE });
 
 			expect(config.parallel).toBe(4);
 		});

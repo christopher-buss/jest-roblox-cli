@@ -1568,7 +1568,9 @@ describe("runInner orchestration", () => {
 
 		await runAsync(["--config", "./custom.ts"], cli.dependencies);
 
-		expect(cli.loadConfig).toHaveBeenCalledWith("./custom.ts", undefined, {
+		expect(cli.loadConfig).toHaveBeenCalledWith({
+			configPath: "./custom.ts",
+			cwd: undefined,
 			fileSystem: cli.fileSystem,
 		});
 	});
@@ -1584,7 +1586,9 @@ describe("runInner orchestration", () => {
 			cli.dependencies,
 		);
 
-		expect(cli.loadConfig).toHaveBeenCalledWith(undefined, "/ws", {
+		expect(cli.loadConfig).toHaveBeenCalledWith({
+			configPath: undefined,
+			cwd: "/ws",
 			fileSystem: cli.fileSystem,
 		});
 	});

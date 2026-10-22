@@ -162,7 +162,7 @@ export async function prepareBakedCoverageAsync({
 	timing?: TimingCollector | undefined;
 }): Promise<BakedCoverage> {
 	const coverage = await seams.prepareCoverage(config, {
-		bake: bakeStubs ? createStubBake(projects, cacheRoot, fileSystem) : undefined,
+		bake: bakeStubs ? createStubBake({ cacheRoot, fileSystem, projects }) : undefined,
 		childProcess: seams.childProcess,
 		codeRoots,
 		// The same globs `buildMultiRunResult` reports against, so a file is
@@ -198,6 +198,7 @@ export async function stageRunAsync({
 	// place build entirely and the plugin's Run Mode runner materializes
 	// `jest.config` ModuleScripts in DataModel from the JSON configs.
 	const cacheRoot = path.resolve(rootConfig.rootDir, ".jest-roblox", "cache");
+	const stubRoot = { fileSystem, rootDirectory: rootConfig.rootDir };
 
 	// Every backend does this work before the dispatch window opens, so each
 	// phase below is timed: unmeasured, it would land outside every reported
@@ -207,12 +208,12 @@ export async function stageRunAsync({
 	// plugin's runtime `FindFirstChild` check would both block the run
 	// otherwise.
 	const { elapsedMs: cleanMs, value: cleaned } = timing.profileTimed("cleanLeftoverStubs", () => {
-		return cleanLeftoverStubs(projects, rootConfig.rootDir, fileSystem);
+		return cleanLeftoverStubs({ projects, ...stubRoot });
 	});
 	reportCleanedStubs(cleaned);
 
 	const { elapsedMs: generateMs } = timing.profileTimed("generateProjectStubs", () => {
-		generateProjectStubs(projects, rootConfig.rootDir, cacheRoot, fileSystem);
+		generateProjectStubs({ projects, ...stubRoot, outputRoot: cacheRoot });
 	});
 
 	// Summed, so the stderr notice between the two phases is not charged here:

@@ -30,11 +30,15 @@ function isDirectoryPath(node: RojoTreeNode, pathValue: string): boolean {
 	return false;
 }
 
-function collectDirectoryPaths(
-	fileSystem: FileSystem,
-	node: RojoTreeNode,
-	projectDirectory: string,
-): void {
+function collectDirectoryPaths({
+	fileSystem,
+	node,
+	projectDirectory,
+}: {
+	readonly fileSystem: FileSystem;
+	readonly node: RojoTreeNode;
+	readonly projectDirectory: string;
+}): void {
 	for (const [key, value] of Object.entries(node)) {
 		if (key === "$path" && typeof value === "string" && isDirectoryPath(node, value)) {
 			const absolute = resolveMountPath(projectDirectory, value);
@@ -46,7 +50,11 @@ function collectDirectoryPaths(
 		}
 
 		if (isRojoTreeNode(value) && !key.startsWith("$")) {
-			collectDirectoryPaths(fileSystem, value, projectDirectory);
+			collectDirectoryPaths({
+				fileSystem,
+				node: value,
+				projectDirectory,
+			});
 		}
 	}
 }
@@ -64,5 +72,9 @@ function ensurePackageDirectory(fileSystem: FileSystem, descriptor: PackageDescr
 	}
 
 	const projectDirectory = path.dirname(descriptor.rojoProjectPath);
-	collectDirectoryPaths(fileSystem, project.tree, projectDirectory);
+	collectDirectoryPaths({
+		fileSystem,
+		node: project.tree,
+		projectDirectory,
+	});
 }

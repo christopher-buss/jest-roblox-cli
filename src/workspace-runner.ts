@@ -215,7 +215,7 @@ async function executeWorkspaceRunAsync({
 	results: Array<ExecuteResult>;
 	typecheckPass: WorkspaceTypecheckPass;
 }> {
-	const { pending, typecheckByDirectory, typeTestEntries } = selection;
+	const { pending } = selection;
 
 	// Resolved once, for both the script the runtime executes and the run that
 	// post-processes its results. The cache goes with them, so a package's
@@ -251,7 +251,7 @@ async function executeWorkspaceRunAsync({
 			tsconfigCache,
 			version: options.version,
 		}),
-		runWorkspaceTypecheckPassAsync(typeTestEntries, typecheckByDirectory, options.runTypecheck),
+		runWorkspaceTypecheckPassAsync({ ...selection, runTypecheck: options.runTypecheck }),
 	]);
 
 	return { ...dispatched, typecheckPass };
@@ -391,11 +391,15 @@ async function runWorkspaceRuntimeAsync(
 	});
 
 	return {
-		...attachTypecheck(
-			attachCoverageManifests(results, ran, staged.coverageByPackage),
-			typecheckPass.outcome,
+		...attachTypecheck({
+			pass: typecheckPass.outcome,
+			results: attachCoverageManifests({
+				coverageByPackage: staged.coverageByPackage,
+				pending: ran,
+				results,
+			}),
 			timing,
-		),
+		}),
 		...(bailedPackages.length > 0 ? { bailedPackages } : {}),
 		coverageMs: staged.coverageMs,
 		stagingMs: staged.stagingMs,

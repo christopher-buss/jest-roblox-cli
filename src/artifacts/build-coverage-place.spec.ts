@@ -196,9 +196,12 @@ describe(buildCoveragePlaceAsync, () => {
 		await buildCoveragePlaceAsync(makeConfig({ projects }), harness);
 
 		expect(harness.seams.resolveAllProjects).toHaveBeenCalledExactlyOnceWith(
-			projects,
-			expect.objectContaining({ rootDir: ROOT_DIR }),
-			expect.objectContaining({ cwd: ROOT_DIR, fileSystem: harness.fileSystem }),
+			expect.objectContaining({
+				cwd: ROOT_DIR,
+				entries: projects,
+				fileSystem: harness.fileSystem,
+				rootConfig: expect.objectContaining({ rootDir: ROOT_DIR }),
+			}),
 		);
 		expect(harness.dispatch.buildImplicitProject).not.toHaveBeenCalled();
 	});

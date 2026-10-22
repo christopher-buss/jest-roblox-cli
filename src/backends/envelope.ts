@@ -44,6 +44,12 @@ export interface DecodedEnvelope {
 	gameOutputScope?: "batch" | undefined;
 }
 
+export interface ProjectResultInput extends EnvelopeEntry {
+	readonly fallbackGameOutput: string | undefined;
+	readonly gameOutputScope?: "batch" | undefined;
+	readonly job: ProjectJob;
+}
+
 /**
  * Decode a task's return envelope in one pass.
  *
@@ -98,18 +104,16 @@ export function isEnvelopeDeferred(jestOutput: string): boolean {
 	}
 }
 
-export function buildProjectResult(
-	{
-		bannerOutput,
-		elapsedMs,
-		gameOutput: entryGameOutput,
-		jestOutput,
-		snapshotWrites,
-	}: EnvelopeEntry,
-	job: ProjectJob,
-	fallbackGameOutput: string | undefined,
-	gameOutputScope?: "batch",
-): ProjectBackendResult {
+export function buildProjectResult({
+	bannerOutput,
+	elapsedMs,
+	fallbackGameOutput,
+	gameOutput: entryGameOutput,
+	gameOutputScope,
+	jestOutput,
+	job,
+	snapshotWrites,
+}: ProjectResultInput): ProjectBackendResult {
 	const gameOutput = entryGameOutput ?? fallbackGameOutput;
 
 	let parsed;

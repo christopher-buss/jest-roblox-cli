@@ -8,10 +8,15 @@ import type { FileSystem } from "../utils/file-system.ts";
 import { nodeFileSystem } from "../utils/file-system.ts";
 import type { ResolvedConfig } from "./schema.ts";
 
+export interface SnapshotFormatRequest extends TsconfigLookup {
+	readonly config: ResolvedConfig;
+	readonly testFiles: ReadonlyArray<string>;
+}
+
 /**
  * How a project's tsconfigs are found, read, and remembered across projects.
  */
-export interface TsconfigLookup {
+interface TsconfigLookup {
 	cache: TsconfigMappingCache;
 	/** Where the tsconfigs are read. Defaults to the real filesystem. */
 	fileSystem?: FileSystem;
@@ -25,11 +30,13 @@ export interface TsconfigLookup {
  * JS Jest prints `{`. Idempotent — a config that already carries the flag
  * (user-declared, or resolved by an earlier caller) comes back untouched.
  */
-export function resolveSnapshotFormat(
-	config: ResolvedConfig,
-	testFiles: ReadonlyArray<string>,
-	{ cache, fileSystem = nodeFileSystem, tsconfigReader = nodeTsconfigReader }: TsconfigLookup,
-): ResolvedConfig {
+export function resolveSnapshotFormat({
+	cache,
+	config,
+	fileSystem = nodeFileSystem,
+	testFiles,
+	tsconfigReader = nodeTsconfigReader,
+}: SnapshotFormatRequest): ResolvedConfig {
 	if (config.snapshotFormat?.printBasicPrototype !== undefined) {
 		return config;
 	}

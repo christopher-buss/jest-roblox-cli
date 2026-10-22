@@ -29,10 +29,7 @@ async function loadPackageConfigAsync(config: Record<string, unknown>): Promise<
 	const configLoader = vi.fn<(options: LoadConfigOptions) => Promise<C12ResolvedConfig>>();
 	configLoader.mockResolvedValue({ config, configFile, cwd: PACKAGE_DIRECTORY, layers: [] });
 
-	return loadConfig(undefined, WORKSPACE_ROOT, {
-		configLoader: fromAny(configLoader),
-		fileSystem,
-	});
+	return loadConfig({ configLoader: fromAny(configLoader), cwd: WORKSPACE_ROOT, fileSystem });
 }
 
 describe(attachCoverageManifests, () => {
@@ -63,11 +60,11 @@ describe(attachCoverageManifests, () => {
 
 		const results: Array<ExecuteResult> = [fromAny({})];
 
-		const [attached] = attachCoverageManifests(
-			results,
+		const [attached] = attachCoverageManifests({
+			coverageByPackage: new Map([[PACKAGE_NAME, coverage]]),
 			pending,
-			new Map([[PACKAGE_NAME, coverage]]),
-		);
+			results,
+		});
 
 		assert(attached !== undefined);
 		assert(attached.coverageSettings !== undefined);

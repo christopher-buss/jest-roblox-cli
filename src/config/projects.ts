@@ -230,11 +230,16 @@ const NODE_PROJECT_CONFIG_INPUT: Required<ProjectConfigInput> = {
 	tsconfigReader: nodeTsconfigReader,
 };
 
+export interface ProjectResolutionRequest extends ProjectResolutionFrame {
+	readonly entries: Array<ProjectEntry>;
+	readonly rootConfig: ResolvedConfig;
+}
+
 /**
  * The frame a project resolves in: its rojo tree, its cwd, and what reads
  * them.
  */
-export interface ProjectResolutionFrame extends ProjectConfigInput {
+interface ProjectResolutionFrame extends ProjectConfigInput {
 	cwd: string;
 	rojoTree: RojoTreeNode;
 }
@@ -254,18 +259,23 @@ export function dedupeMounts(mounts: Array<Mount>): Array<Mount> {
 	return result;
 }
 
-export function resolveProjectConfig(
-	project: ProjectTestConfig,
-	rootConfig: ResolvedConfig,
-	rojoTree: RojoTreeNode,
-	classify: PathClassifier,
-): ResolvedProjectConfig {
+export function resolveProjectConfig({
+	classify,
+	project,
+	rojoTree,
+	rootConfig,
+}: {
+	readonly classify: PathClassifier;
+	readonly project: ProjectTestConfig;
+	readonly rojoTree: RojoTreeNode;
+	readonly rootConfig: ResolvedConfig;
+}): ResolvedProjectConfig {
 	const rootPrefixedInclude = applyProjectRoot(project.include, project.root);
 	const rootPrefixedExclude = applyProjectRoot(project.exclude ?? [], project.root);
 	const roots = extractProjectRoots(rootPrefixedInclude);
 	const testMatch = [...new Set(roots.flatMap((entry) => entry.testMatch))];
 
-	const rojoMounts = resolveMounts(project, roots, rojoTree, classify);
+	const rojoMounts = resolveMounts({ classify, project, rojoTree, roots });
 
 	const projects = rojoMounts.map((mount) => mount.dataModelPath);
 	const singleMount = rojoMounts.length === 1 ? rojoMounts[0] : undefined;
@@ -290,20 +300,32 @@ export function resolveProjectConfig(
 	};
 }
 
-export async function loadProjectConfigFile(
-	filePath: string,
-	cwd: string,
-	input?: ProjectConfigInput,
-): Promise<ProjectConfigFile> {
+export async function loadProjectConfigFile({
+	cwd,
+	filePath,
+	input,
+}: {
+	readonly cwd: string;
+	readonly filePath: string;
+	readonly input?: ProjectConfigInput | undefined;
+}): Promise<ProjectConfigFile> {
 	const settled = { ...NODE_PROJECT_CONFIG_INPUT, ...input };
 
-	const luauConfigPath = findLuauConfigFile(filePath, cwd, settled.fileSystem);
+	const luauConfigPath = findLuauConfigFile({
+		cwd,
+		directoryOrFile: filePath,
+		fileSystem: settled.fileSystem,
+	});
 	if (luauConfigPath !== undefined) {
-		return buildProjectConfigFromLuau(luauConfigPath, filePath, settled.fileSystem);
+		return buildProjectConfigFromLuau({
+			directoryPath: filePath,
+			fileSystem: settled.fileSystem,
+			luauConfigPath,
+		});
 	}
 
 	const config = parseProjectConfigFile(
-		await loadProjectConfigViaC12(settled.configLoader, filePath, cwd),
+		await loadProjectConfigViaC12({ configLoader: settled.configLoader, cwd, filePath }),
 		filePath,
 	);
 
@@ -316,22 +338,25 @@ export async function loadProjectConfigFile(
 
 	const configDirectory = path.posix.dirname(filePath);
 	const tsconfig = settled.resolveTsconfigDirectories(cwd, settled.tsconfigReader);
-	deriveIncludeFromTestMatch(config, configDirectory, tsconfig);
+	deriveIncludeFromTestMatch({ ...tsconfig, config, configDirectory });
 
 	return config;
 }
 
-export async function resolveAllProjects(
-	entries: Array<ProjectEntry>,
-	rootConfig: ResolvedConfig,
-	{ cwd, fileSystem = nodeFileSystem, rojoTree, ...seams }: ProjectResolutionFrame,
-): Promise<Array<ResolvedProjectConfig>> {
+export async function resolveAllProjects({
+	cwd,
+	entries,
+	fileSystem = nodeFileSystem,
+	rojoTree,
+	rootConfig,
+	...seams
+}: ProjectResolutionRequest): Promise<Array<ResolvedProjectConfig>> {
 	const loaded: Array<ProjectConfigFile> = [];
 	const input: ProjectConfigInput = { ...seams, fileSystem };
 
 	for (const entry of entries) {
 		if (typeof entry === "string") {
-			loaded.push(await loadProjectConfigFile(entry, cwd, input));
+			loaded.push(await loadProjectConfigFile({ cwd, filePath: entry, input }));
 		} else {
 			loaded.push(entry.test);
 		}
@@ -340,7 +365,9 @@ export async function resolveAllProjects(
 	const projects = validateProjects(loaded);
 
 	const classify = createFsClassifier(cwd, fileSystem);
-	return projects.map((project) => resolveProjectConfig(project, rootConfig, rojoTree, classify));
+	return projects.map((project) => {
+		return resolveProjectConfig({ classify, project, rojoTree, rootConfig });
+	});
 }
 
 function displayNameOf(project: ProjectConfigFile): string {
@@ -378,11 +405,15 @@ function pruneAncestorMounts(mounts: Array<Mount>): Array<Mount> {
 	return mounts.filter((mount) => surviving.has(mount.dataModelPath));
 }
 
-function unmappableRootError(
-	project: ProjectTestConfig,
-	root: string,
-	rojoTree: RojoTreeNode,
-): ConfigError {
+function unmappableRootError({
+	project,
+	rojoTree,
+	root,
+}: {
+	readonly project: ProjectTestConfig;
+	readonly rojoTree: RojoTreeNode;
+	readonly root: string;
+}): ConfigError {
 	const name = displayNameOf(project);
 	const available: Array<string> = [];
 	collectPaths(rojoTree, available);
@@ -403,12 +434,17 @@ function filterMountsForRoot(allMounts: Array<Mount>, root: string): Array<Mount
 	return allMounts.filter((mount) => mount.fsPath.startsWith(`${root}/`));
 }
 
-function resolveMounts(
-	project: ProjectTestConfig,
-	roots: Array<{ root: string; testMatch: Array<string> }>,
-	rojoTree: RojoTreeNode,
-	classify: PathClassifier,
-): Array<Mount> {
+function resolveMounts({
+	classify,
+	project,
+	rojoTree,
+	roots,
+}: {
+	readonly classify: PathClassifier;
+	readonly project: ProjectTestConfig;
+	readonly rojoTree: RojoTreeNode;
+	readonly roots: Array<{ root: string; testMatch: Array<string> }>;
+}): Array<Mount> {
 	if (project.outDir !== undefined) {
 		// Exact-lookup only; disables auto-expand. With outDir set, multi-root
 		// includes feed test discovery only; the project stays pinned to one
@@ -432,7 +468,7 @@ function resolveMounts(
 		collectedMounts ??= collectMounts(rojoTree, "", classify);
 		const expanded = filterMountsForRoot(collectedMounts, root);
 		if (expanded.length === 0) {
-			throw unmappableRootError(project, root, rojoTree);
+			throw unmappableRootError({ project, rojoTree, root });
 		}
 
 		allMounts.push(...expanded);
@@ -443,11 +479,15 @@ function resolveMounts(
 
 // c12 surfaces a resolution failure as a bare loader error; re-throw it naming
 // the config file so the user knows which project entry to fix.
-async function loadProjectConfigViaC12(
-	configLoader: ConfigLoader,
-	filePath: string,
-	cwd: string,
-): Promise<unknown> {
+async function loadProjectConfigViaC12({
+	configLoader,
+	cwd,
+	filePath,
+}: {
+	readonly configLoader: ConfigLoader;
+	readonly cwd: string;
+	readonly filePath: string;
+}): Promise<unknown> {
 	try {
 		const result = await configLoader({
 			name: "jest-project",
@@ -496,11 +536,15 @@ const luauProjectConfigSchema = type({
 	"testTimeout?": "number",
 });
 
-function buildProjectConfigFromLuau(
-	luauConfigPath: string,
-	directoryPath: string,
-	fileSystem: FileSystem,
-): ProjectTestConfig {
+function buildProjectConfigFromLuau({
+	directoryPath,
+	fileSystem,
+	luauConfigPath,
+}: {
+	readonly directoryPath: string;
+	readonly fileSystem: FileSystem;
+	readonly luauConfigPath: string;
+}): ProjectTestConfig {
 	const raw = loadLuauConfig(luauConfigPath, fileSystem);
 
 	const { displayName } = raw;
@@ -531,11 +575,15 @@ function buildProjectConfigFromLuau(
  * write project configs with the standard Jest `testMatch` field without
  * needing the CLI-specific `include`.
  */
-function deriveIncludeFromTestMatch(
-	config: ProjectConfigFile,
-	configDirectory: string,
-	{ outDir, rootDir }: TsconfigDirectories,
-): void {
+function deriveIncludeFromTestMatch({
+	config,
+	configDirectory,
+	outDir,
+	rootDir,
+}: TsconfigDirectories & {
+	readonly config: ProjectConfigFile;
+	readonly configDirectory: string;
+}): void {
 	if (config.include !== undefined) {
 		return;
 	}

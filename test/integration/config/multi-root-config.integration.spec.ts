@@ -58,12 +58,12 @@ describe("multi-root project integration — friends-package layout", () => {
 			},
 		});
 
-		const resolved = resolveProjectConfig(
-			project.test,
+		const resolved = resolveProjectConfig({
+			classify: allDirectories,
+			project: project.test,
+			rojoTree: friendsPackageTree,
 			rootConfig,
-			friendsPackageTree,
-			allDirectories,
-		);
+		});
 
 		// Six mounts under `src/` (2 Client + 2 Shared + 2 Server) plus
 		// one exact-lookup mount for `test/`.
@@ -127,12 +127,12 @@ describe("multi-root project integration — friends-package layout", () => {
 			},
 		});
 
-		const resolved = resolveProjectConfig(
-			project.test,
+		const resolved = resolveProjectConfig({
+			classify: allDirectories,
+			project: project.test,
+			rojoTree: friendsPackageTree,
 			rootConfig,
-			friendsPackageTree,
-			allDirectories,
-		);
+		});
 
 		expect(resolved.rojoMounts).toStrictEqual([
 			{
@@ -158,12 +158,12 @@ describe("multi-root project integration — friends-package layout", () => {
 			},
 		});
 
-		const resolved = resolveProjectConfig(
-			project.test,
-			rootConfig,
-			friendsPackageTree,
+		const resolved = resolveProjectConfig({
 			classify,
-		);
+			project: project.test,
+			rojoTree: friendsPackageTree,
+			rootConfig,
+		});
 
 		expect(resolved.rojoMounts).toStrictEqual([
 			{

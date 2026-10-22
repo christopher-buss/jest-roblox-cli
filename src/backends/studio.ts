@@ -150,7 +150,7 @@ export class StudioBackend implements Backend {
 		});
 
 		const executionStart = Date.now();
-		const message = await this.waitForResultAsync(wss, requestMessage, requestId);
+		const message = await this.waitForResultAsync({ requestId, requestMessage, wss });
 
 		// Unreachable against a plugin whose announcement matches what it
 		// serves, since a connection announcing another protocol is never
@@ -196,11 +196,15 @@ export class StudioBackend implements Backend {
 		throw new Error("Timed out waiting for Studio plugin connection");
 	}
 
-	private async waitForResultAsync(
-		wss: WebSocketServer,
-		requestMessage: RunTestsMessage,
-		requestId: string,
-	): Promise<PluginMessage> {
+	private async waitForResultAsync({
+		requestId,
+		requestMessage,
+		wss,
+	}: {
+		readonly requestId: string;
+		readonly requestMessage: RunTestsMessage;
+		readonly wss: WebSocketServer;
+	}): Promise<PluginMessage> {
 		return new Promise((resolve, reject) => {
 			// One error listener spans both halves of the wait — selecting a
 			// compatible plugin, then the run itself. A bind failure surfaces

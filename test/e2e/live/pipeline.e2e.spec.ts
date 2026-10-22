@@ -215,7 +215,7 @@ describe("live pipeline", () => {
 			const bundle = await skipOnQuotaAsync(
 				context,
 				prepareArtifactsAsync({
-					...(await loadConfig("jest.no-probe.config.ts", sandbox)),
+					...(await loadConfig({ configPath: "jest.no-probe.config.ts", cwd: sandbox })),
 					backend: "open-cloud",
 				}),
 			);

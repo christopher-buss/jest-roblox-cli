@@ -224,7 +224,9 @@ async function resolveWorkspaceOptionsAsync({
 			packageInfos.map(async (info) => {
 				return {
 					name: info.name,
-					config: await loadPackageConfig(undefined, info.packageDirectory, {
+					config: await loadPackageConfig({
+						configPath: undefined,
+						cwd: info.packageDirectory,
 						fileSystem,
 					}),
 				};

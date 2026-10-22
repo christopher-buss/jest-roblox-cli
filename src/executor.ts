@@ -180,9 +180,11 @@ export function buildProjectJob(
 	tsconfigReader: TsconfigReader = nodeTsconfigReader,
 ): ProjectJob {
 	return {
-		config: resolveSnapshotFormat(project.config, project.testFiles, {
+		config: resolveSnapshotFormat({
 			cache,
+			config: project.config,
 			fileSystem,
+			testFiles: project.testFiles,
 			tsconfigReader,
 		}),
 		displayColor: project.displayColor,
@@ -539,12 +541,12 @@ function processOrRecoverEntry(
 	// synthetic failed ExecuteResult so the other entries' snapshot
 	// writes and per-package output files still land.
 	try {
-		const projectResult = buildProjectResult(
-			raw.entry,
+		const projectResult = buildProjectResult({
+			...raw.entry,
+			fallbackGameOutput: raw.fallbackGameOutput,
+			gameOutputScope: raw.gameOutputScope,
 			job,
-			raw.fallbackGameOutput,
-			raw.gameOutputScope,
-		);
+		});
 		return processProjectResult(projectResult, { ...context, config: job.config });
 	} catch (err) {
 		if (!(err instanceof LuauScriptError)) {

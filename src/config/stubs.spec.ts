@@ -375,7 +375,12 @@ describe(syncStubsToShadowDirectory, () => {
 			"/shadow/orphan/jest.config.luau": serializeToLuau(minimalConfig()),
 		});
 
-		syncStubsToShadowDirectory([], "/root", shadowAt("/shadow"), fileSystem);
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects: [],
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(volume.existsSync("/shadow")).toBeTrue();
 		expect(volume.existsSync("/shadow/orphan")).toBeFalse();
@@ -392,7 +397,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		syncStubsToShadowDirectory(projects, "/root", shadowAt("/shadow"), fileSystem);
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(volume.readFileSync("/shadow/out/client/jest.config.luau", "utf8")).toBe("-- stub");
 	});
@@ -408,12 +418,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		const hasChanged = syncStubsToShadowDirectory(
-			projects,
-			"/root",
-			shadowAt("/shadow"),
+		const hasChanged = syncStubsToShadowDirectory({
 			fileSystem,
-		);
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeTrue();
 	});
@@ -431,12 +441,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		const hasChanged = syncStubsToShadowDirectory(
-			projects,
-			"/root",
-			shadowAt("/shadow"),
+		const hasChanged = syncStubsToShadowDirectory({
 			fileSystem,
-		);
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeTrue();
 	});
@@ -454,12 +464,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		const hasChanged = syncStubsToShadowDirectory(
-			projects,
-			"/root",
-			shadowAt("/shadow"),
+		const hasChanged = syncStubsToShadowDirectory({
 			fileSystem,
-		);
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeFalse();
 	});
@@ -471,12 +481,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: undefined, rojoMounts: [] })];
 
-		const hasChanged = syncStubsToShadowDirectory(
-			projects,
-			"/root",
-			shadowAt("/shadow"),
+		const hasChanged = syncStubsToShadowDirectory({
 			fileSystem,
-		);
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeFalse();
 	});
@@ -499,7 +509,12 @@ describe(syncStubsToShadowDirectory, () => {
 			}),
 		];
 
-		syncStubsToShadowDirectory(projects, "/root", shadowAt("/shadow"), fileSystem);
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(volume.existsSync("/shadow/out/deep/nested/jest.config.luau")).toBeTrue();
 	});
@@ -519,12 +534,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
-		const hasChanged = syncStubsToShadowDirectory(
-			projects,
-			"/root",
-			shadowAt("/shadow"),
+		const hasChanged = syncStubsToShadowDirectory({
 			fileSystem,
-		);
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeTrue();
 		expect(volume.existsSync("/shadow/out/removed/jest.config.luau")).toBeFalse();
@@ -542,7 +557,12 @@ describe(syncStubsToShadowDirectory, () => {
 		];
 
 		expect(() => {
-			return syncStubsToShadowDirectory(projects, "/root", shadowAt("/shadow"), fileSystem);
+			return syncStubsToShadowDirectory({
+				fileSystem,
+				projects,
+				rootDirectory: "/root",
+				shadow: shadowAt("/shadow"),
+			});
 		}).toThrow("mount fsPath must be relative");
 	});
 
@@ -558,7 +578,12 @@ describe(syncStubsToShadowDirectory, () => {
 		];
 
 		expect(() => {
-			return syncStubsToShadowDirectory(projects, "/root", shadowAt("/shadow"), fileSystem);
+			return syncStubsToShadowDirectory({
+				fileSystem,
+				projects,
+				rootDirectory: "/root",
+				shadow: shadowAt("/shadow"),
+			});
 		}).toThrow("mount fsPath escapes root directory");
 	});
 
@@ -576,7 +601,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
-		syncStubsToShadowDirectory(projects, "/root", shadowAt("/shadow"), fileSystem);
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(volume.existsSync("/shadow/out/removed/deep")).toBeFalse();
 		expect(volume.existsSync("/shadow/out/removed")).toBeFalse();
@@ -590,12 +620,12 @@ describe(syncStubsToShadowDirectory, () => {
 		// No stubs anywhere, no mounts tracked
 		const projects = [makeResolvedProject({ outDir: undefined, rojoMounts: [] })];
 
-		const hasChanged = syncStubsToShadowDirectory(
-			projects,
-			"/root",
-			shadowAt("/shadow"),
+		const hasChanged = syncStubsToShadowDirectory({
 			fileSystem,
-		);
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeFalse();
 	});
@@ -615,7 +645,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
-		syncStubsToShadowDirectory(projects, "/root", shadowAt("/shadow"), fileSystem);
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(volume.existsSync("/shadow/out/mixed/jest.config.luau")).toBeFalse();
 		expect(volume.existsSync("/shadow/out/mixed/other-file.txt")).toBeTrue();
@@ -632,12 +667,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects: Array<ResolvedProjectConfig> = [];
 
-		const hasChanged = syncStubsToShadowDirectory(
-			projects,
-			"/root",
-			shadowAt("/shadow"),
+		const hasChanged = syncStubsToShadowDirectory({
 			fileSystem,
-		);
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeFalse();
 	});
@@ -655,7 +690,12 @@ describe(syncStubsToShadowDirectory, () => {
 			"/shadow/user/jest.config.luau": "return {}\n",
 		});
 
-		const hasChanged = syncStubsToShadowDirectory([], "/root", shadowAt("/shadow"), fileSystem);
+		const hasChanged = syncStubsToShadowDirectory({
+			fileSystem,
+			projects: [],
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeTrue();
 
@@ -675,12 +715,12 @@ describe(syncStubsToShadowDirectory, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		const hasChanged = syncStubsToShadowDirectory(
-			projects,
-			"/root",
-			shadowAt("/shadow"),
+		const hasChanged = syncStubsToShadowDirectory({
 			fileSystem,
-		);
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(hasChanged).toBeFalse();
 	});
@@ -709,7 +749,12 @@ describe(syncStubsToShadowDirectory, () => {
 			}),
 		];
 
-		syncStubsToShadowDirectory(projects, "/root", shadowAt("/shadow"), fileSystem);
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(volume.existsSync("/shadow/src/Client/jest.config.luau")).toBeTrue();
 		expect(volume.existsSync("/shadow/src/Server/jest.config.luau")).toBeTrue();
@@ -740,7 +785,12 @@ describe(syncStubsToShadowDirectory, () => {
 			}),
 		];
 
-		syncStubsToShadowDirectory(projects, "/root", shadowAt("/shadow"), fileSystem);
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects,
+			rootDirectory: "/root",
+			shadow: shadowAt("/shadow"),
+		});
 
 		expect(volume.existsSync("/shadow/src/Client/jest.config.luau")).toBeTrue();
 		expect(volume.existsSync("/shadow/src/Removed/jest.config.luau")).toBeFalse();
@@ -756,7 +806,7 @@ describe(createStubBake, () => {
 			"/shadow/jest.config.lua": serializeToLuau(minimalConfig()),
 			"/shadow/jest.config.luau": "return {}",
 		});
-		const bake = createStubBake([], "/cache", fileSystem);
+		const bake = createStubBake({ cacheRoot: "/cache", fileSystem, projects: [] });
 
 		expect([
 			bake.isBakeOwned("/shadow/jest.config.luau"),
@@ -785,7 +835,7 @@ describe(assertStubCollisionRule, () => {
 		});
 
 		expect(() => {
-			assertStubCollisionRule(project, "/root", fileSystem);
+			assertStubCollisionRule({ fileSystem, project, rootDirectory: "/root" });
 		}).not.toThrow();
 	});
 
@@ -809,7 +859,7 @@ describe(assertStubCollisionRule, () => {
 		});
 
 		expect(() => {
-			assertStubCollisionRule(project, "/root", fileSystem);
+			assertStubCollisionRule({ fileSystem, project, rootDirectory: "/root" });
 		}).not.toThrow();
 	});
 
@@ -833,7 +883,7 @@ describe(assertStubCollisionRule, () => {
 		});
 
 		expect(() => {
-			assertStubCollisionRule(project, "/root", fileSystem);
+			assertStubCollisionRule({ fileSystem, project, rootDirectory: "/root" });
 		}).not.toThrow();
 	});
 
@@ -857,7 +907,7 @@ describe(assertStubCollisionRule, () => {
 		});
 
 		expect(() => {
-			assertStubCollisionRule(project, "/root", fileSystem);
+			assertStubCollisionRule({ fileSystem, project, rootDirectory: "/root" });
 		}).not.toThrow();
 	});
 
@@ -882,7 +932,7 @@ describe(assertStubCollisionRule, () => {
 
 		let caught: unknown;
 		try {
-			assertStubCollisionRule(project, "/root", fileSystem);
+			assertStubCollisionRule({ fileSystem, project, rootDirectory: "/root" });
 		} catch (err) {
 			caught = err;
 		}
@@ -925,7 +975,7 @@ describe(assertStubCollisionRule, () => {
 
 		// Both mounts effectively have no user config, so no throw.
 		expect(() => {
-			assertStubCollisionRule(project, "/root", fileSystem);
+			assertStubCollisionRule({ fileSystem, project, rootDirectory: "/root" });
 		}).not.toThrow();
 	});
 
@@ -953,7 +1003,7 @@ describe(assertStubCollisionRule, () => {
 		});
 
 		expect(() => {
-			assertStubCollisionRule(project, "/root", fileSystem);
+			assertStubCollisionRule({ fileSystem, project, rootDirectory: "/root" });
 		}).toThrow(
 			[
 				'Project "four-mounts": user-authored jest config present at some mounts but not others.',
@@ -977,7 +1027,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage", fsPath: "." }],
 		});
 
-		generateProjectStubs([project], "/root", "/cache/workspace", fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: "/cache/workspace",
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		expect(volume.existsSync("/cache/workspace/jest.config.luau")).toBeTrue();
 	});
@@ -992,7 +1047,12 @@ describe(generateProjectStubs, () => {
 		});
 
 		expect(() => {
-			generateProjectStubs([project], "/root", undefined, fileSystem);
+			generateProjectStubs({
+				fileSystem,
+				outputRoot: undefined,
+				projects: [project],
+				rootDirectory: "/root",
+			});
 		}).toThrow("mount fsPath escapes root directory");
 	});
 
@@ -1006,7 +1066,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
 		});
 
-		generateProjectStubs([project], "/root", undefined, fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: undefined,
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		expect(volume.existsSync("/root/out/Client/jest.config.luau")).toBeTrue();
 	});
@@ -1021,7 +1086,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
 		});
 
-		generateProjectStubs([project], "/root", undefined, fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: undefined,
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		const content = volume.readFileSync("/root/out/Client/jest.config.luau", "utf8");
 
@@ -1048,7 +1118,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
 		});
 
-		generateProjectStubs([project], "/root", undefined, fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: undefined,
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		const content = volume.readFileSync("/root/out/Client/jest.config.luau", "utf8");
 
@@ -1076,7 +1151,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
 		});
 
-		generateProjectStubs([project], "/root", undefined, fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: undefined,
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		const content = volume.readFileSync("/root/out/Client/jest.config.luau", "utf8");
 
@@ -1104,7 +1184,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
 		});
 
-		generateProjectStubs([project], "/root", undefined, fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: undefined,
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		const content = volume.readFileSync("/root/out/Client/jest.config.luau", "utf8");
 
@@ -1128,7 +1213,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
 		});
 
-		generateProjectStubs([project], "/root", undefined, fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: undefined,
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		const content = volume.readFileSync("/root/out/Client/jest.config.luau", "utf8");
 
@@ -1152,7 +1242,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
 		});
 
-		generateProjectStubs([project], "/root", undefined, fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: undefined,
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		const content = volume.readFileSync("/root/out/Client/jest.config.luau", "utf8");
 
@@ -1172,7 +1267,12 @@ describe(generateProjectStubs, () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Client", fsPath: "out/Client" }],
 		});
 
-		generateProjectStubs([project], "/root", "/cache/.jest-roblox/workspace/pkg", fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: "/cache/.jest-roblox/workspace/pkg",
+			projects: [project],
+			rootDirectory: "/root",
+		});
 
 		expect(
 			volume.existsSync("/cache/.jest-roblox/workspace/pkg/out/Client/jest.config.luau"),
@@ -1193,12 +1293,12 @@ describe(generateProjectStubs, () => {
 		});
 
 		expect(() => {
-			generateProjectStubs(
-				[project],
-				"/root",
-				"/cache/.jest-roblox/workspace/pkg",
+			generateProjectStubs({
 				fileSystem,
-			);
+				outputRoot: "/cache/.jest-roblox/workspace/pkg",
+				projects: [project],
+				rootDirectory: "/root",
+			});
 		}).toThrow("mount fsPath must be relative");
 	});
 
@@ -1223,12 +1323,12 @@ describe(generateProjectStubs, () => {
 		});
 
 		expect(() => {
-			generateProjectStubs(
-				[project],
-				"/root",
-				"/cache/.jest-roblox/workspace/pkg",
+			generateProjectStubs({
 				fileSystem,
-			);
+				outputRoot: "/cache/.jest-roblox/workspace/pkg",
+				projects: [project],
+				rootDirectory: "/root",
+			});
 		}).toThrow(ConfigError);
 		// No stub written to cache because the guard fires before any write.
 		expect(
@@ -1420,9 +1520,9 @@ describe("cleanLeftoverStubs containment guard", () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/evil", fsPath: "/tmp/outside" }],
 		});
 
-		expect(() => cleanLeftoverStubs([project], "/root", fileSystem)).toThrow(
-			/mount fsPath must be relative/,
-		);
+		expect(() => {
+			return cleanLeftoverStubs({ fileSystem, projects: [project], rootDirectory: "/root" });
+		}).toThrow(/mount fsPath must be relative/);
 		// Outside marker file MUST survive the failed cleanup.
 		expect(volume.existsSync("/tmp/outside/jest.config.luau")).toBeTrue();
 	});
@@ -1438,9 +1538,9 @@ describe("cleanLeftoverStubs containment guard", () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/escape", fsPath: "../other-package" }],
 		});
 
-		expect(() => cleanLeftoverStubs([project], "/root", fileSystem)).toThrow(
-			/mount fsPath escapes root directory/,
-		);
+		expect(() => {
+			return cleanLeftoverStubs({ fileSystem, projects: [project], rootDirectory: "/root" });
+		}).toThrow(/mount fsPath escapes root directory/);
 		// Sibling-package marker file MUST survive.
 		expect(volume.existsSync("/other-package/jest.config.luau")).toBeTrue();
 	});
@@ -1478,7 +1578,7 @@ describe(cleanLeftoverStubs, () => {
 			}),
 		];
 
-		const cleaned = cleanLeftoverStubs(projects, "/root", fileSystem);
+		const cleaned = cleanLeftoverStubs({ fileSystem, projects, rootDirectory: "/root" });
 
 		expect(cleaned).toHaveLength(1);
 		expect(cleaned[0]).toContain("Client");
@@ -1514,7 +1614,7 @@ describe(cleanLeftoverStubs, () => {
 			}),
 		];
 
-		const cleaned = cleanLeftoverStubs(projects, "/root", fileSystem);
+		const cleaned = cleanLeftoverStubs({ fileSystem, projects, rootDirectory: "/root" });
 
 		expect(cleaned).toHaveLength(2);
 		expect(volume.existsSync("/root/out/Client/jest.config.luau")).toBeFalse();
@@ -1553,7 +1653,12 @@ describe("syncStubsToShadowDirectory preserves user-authored configs", () => {
 			}),
 		];
 
-		syncStubsToShadowDirectory(projects, "/root/.cache", shadowAt("/shadow"), fileSystem);
+		syncStubsToShadowDirectory({
+			fileSystem,
+			projects,
+			rootDirectory: "/root/.cache",
+			shadow: shadowAt("/shadow"),
+		});
 
 		// Server: cache stub was copied in (changed).
 		expect(volume.readFileSync("/shadow/out/Server/jest.config.luau", "utf8")).toContain(
@@ -1592,7 +1697,12 @@ describe("generateProjectStubs (per-mount FS user-config detection)", () => {
 			rojoMounts: [{ dataModelPath: "ServerStorage/Server", fsPath: "out/Server" }],
 		});
 
-		generateProjectStubs([sharedProject, serverProject], "/root", "/root/.cache", fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: "/root/.cache",
+			projects: [sharedProject, serverProject],
+			rootDirectory: "/root",
+		});
 
 		// Shared: user file exists at mount → no cache stub.
 		expect(volume.existsSync("/root/.cache/out/Shared/jest.config.luau")).toBeFalse();
@@ -1610,7 +1720,12 @@ describe("generateProjectStubs (per-mount FS user-config detection)", () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/Shared", fsPath: "out/Shared" }],
 		});
 
-		generateProjectStubs([stringEntryProject], "/root", "/root/.cache", fileSystem);
+		generateProjectStubs({
+			fileSystem,
+			outputRoot: "/root/.cache",
+			projects: [stringEntryProject],
+			rootDirectory: "/root",
+		});
 
 		// String-entry project but mount is empty on disk — generate the
 		// cache stub. Without this, a TS source whose compile hasn't run yet
@@ -1640,9 +1755,9 @@ describe("cleanLeftoverStubs symlink-escape guard", () => {
 			rojoMounts: [{ dataModelPath: "ReplicatedStorage/escaped", fsPath: "escaped" }],
 		});
 
-		expect(() => cleanLeftoverStubs([project], "/root", fileSystem)).toThrow(
-			/resolves outside root via symlink/,
-		);
+		expect(() => {
+			return cleanLeftoverStubs({ fileSystem, projects: [project], rootDirectory: "/root" });
+		}).toThrow(/resolves outside root via symlink/);
 		// Out-of-root marker file survives.
 		expect(volume.existsSync("/outside/escaped/jest.config.luau")).toBeTrue();
 	});
@@ -1734,15 +1849,15 @@ describe(isGeneratedStub, () => {
 
 		const projects = [makeResolvedProject({ outDir: "out/client" })];
 
-		syncStubsToShadowDirectory(
+		syncStubsToShadowDirectory({
+			fileSystem,
 			projects,
-			"/root",
-			{
+			rootDirectory: "/root",
+			shadow: {
 				mountedDirectory: () => "/shadow/.spine/out/client",
 				root: "/shadow",
 			},
-			fileSystem,
-		);
+		});
 
 		expect(volume.readFileSync("/shadow/.spine/out/client/jest.config.luau", "utf8")).toBe(
 			"-- stub",

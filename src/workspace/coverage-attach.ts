@@ -112,11 +112,15 @@ export function prepareWorkspaceCoverageMap({
 	});
 }
 
-export function attachCoverageManifests(
-	results: Array<ExecuteResult>,
-	pending: Array<PendingEntry>,
-	coverageByPackage: Map<string, WorkspacePackageCoverage>,
-): Array<WorkspaceProjectResult> {
+export function attachCoverageManifests({
+	coverageByPackage,
+	pending,
+	results,
+}: {
+	readonly coverageByPackage: Map<string, WorkspacePackageCoverage>;
+	readonly pending: Array<PendingEntry>;
+	readonly results: Array<ExecuteResult>;
+}): Array<WorkspaceProjectResult> {
 	return results.map((result, index) => {
 		// oxlint-disable-next-line typescript/no-non-null-assertion -- runProjects preserves order
 		const pendingEntry = pending[index]!;

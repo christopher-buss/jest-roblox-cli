@@ -16,7 +16,11 @@ describe(attachTypecheck, () => {
 		const record = vi.fn<TimingCollector["record"]>();
 
 		expect(
-			attachTypecheck(results, { elapsedMs: 12, result }, fromPartial({ record })),
+			attachTypecheck({
+				pass: { elapsedMs: 12, result },
+				results,
+				timing: fromPartial({ record }),
+			}),
 		).toStrictEqual({ results, typecheckResult: result });
 		expect(record).toHaveBeenCalledExactlyOnceWith("runTypecheck", 12);
 	});
@@ -26,7 +30,13 @@ describe(attachTypecheck, () => {
 
 		const record = vi.fn<TimingCollector["record"]>();
 
-		expect(attachTypecheck([], { elapsedMs: 0 }, fromPartial({ record }))).toStrictEqual({
+		expect(
+			attachTypecheck({
+				pass: { elapsedMs: 0 },
+				results: [],
+				timing: fromPartial({ record }),
+			}),
+		).toStrictEqual({
 			results: [],
 			typecheckResult: undefined,
 		});

@@ -68,6 +68,17 @@ describe(buildWorkspaceRunOptions, () => {
 		).toBeTrue();
 	});
 
+	it("should leave workspace bail off when the CLI flag is absent", () => {
+		expect.assertions(1);
+
+		expect(
+			buildWorkspaceRunOptions({
+				cli: emptyCli(),
+				perPackageConfigs: [{ name: "alpha", config: {} }],
+			}).bail,
+		).toBeFalse();
+	});
+
 	describe("happy path: per-package consensus", () => {
 		it("should use the agreed value when every package declares the same value", () => {
 			expect.assertions(1);

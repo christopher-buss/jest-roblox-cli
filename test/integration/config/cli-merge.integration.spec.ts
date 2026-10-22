@@ -58,7 +58,7 @@ describe("cli / jest.config.ts credential precedence", () => {
 		writeConfigWithCredentials(sandbox, { placeId: "777", universeId: "555" });
 
 		const cli = parseArgs(["--apiKey", "cli-key"]);
-		const config = await loadConfig(undefined, sandbox);
+		const config = await loadConfig({ cwd: sandbox });
 
 		const credentials = resolveCredentials({
 			defaults: { placeId: config.placeId, universeId: config.universeId },
@@ -94,7 +94,7 @@ describe("cli / jest.config.ts credential precedence", () => {
 			"--placeId",
 			"override-place",
 		]);
-		const config = await loadConfig(undefined, sandbox);
+		const config = await loadConfig({ cwd: sandbox });
 
 		const credentials = resolveCredentials({
 			defaults: { placeId: config.placeId, universeId: config.universeId },

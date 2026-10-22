@@ -149,10 +149,12 @@ async function resolveCleanStubMountsAsync(
 		return undefined;
 	}
 
-	const projects = await seams.resolveAllProjects(rawProjects, config, {
+	const projects = await seams.resolveAllProjects({
 		cwd: config.rootDir,
+		entries: rawProjects,
 		fileSystem,
 		rojoTree: dispatch.loadRojoTree(config, fileSystem),
+		rootConfig: config,
 		tsconfigReader: seams.tsconfigReader,
 	});
 	return collectStubMounts({

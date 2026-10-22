@@ -79,8 +79,12 @@ export function listPackages(
 ): Array<PackageInfo> {
 	const packages =
 		patterns !== undefined
-			? enumerateFromGlobs(fileSystem, workspaceRoot, patterns)
-			: pnpmPackages(fileSystem, workspaceRoot, []);
+			? enumerateFromGlobs({
+					fileSystem,
+					patterns,
+					workspaceRoot,
+				})
+			: pnpmPackages({ fileSystem, names: [], workspaceRoot });
 	assertNoDuplicateNames(packages, workspaceRoot);
 	return packages;
 }
@@ -93,11 +97,15 @@ export function listPackages(
  * {@link enumerateWorkspacePackages}: turbo and nx hand back directories
  * directly, and an excluded package that changed is still excluded.
  */
-export function excludePackages(
-	packages: Array<PackageInfo>,
-	workspaceRoot: string,
-	exclude: Array<string> | undefined,
-): Array<PackageInfo> {
+export function excludePackages({
+	exclude,
+	packages,
+	workspaceRoot,
+}: {
+	readonly exclude: Array<string> | undefined;
+	readonly packages: Array<PackageInfo>;
+	readonly workspaceRoot: string;
+}): Array<PackageInfo> {
 	if (exclude === undefined || exclude.length === 0) {
 		return packages;
 	}
@@ -130,12 +138,31 @@ export function enumerateWorkspacePackages(
 	const cache = createGlobCache([PACKAGE_JSON_LEAF, JEST_CONFIG_LEAF]);
 	const candidates =
 		patterns !== undefined
-			? enumerateFromGlobs(fileSystem, workspaceRoot, patterns, cache)
-			: pnpmPackages(fileSystem, workspaceRoot, [], cache);
-	const testable = withJestConfig(fileSystem, candidates, workspaceRoot, cache);
+			? enumerateFromGlobs({
+					cache,
+					fileSystem,
+					patterns,
+					workspaceRoot,
+				})
+			: pnpmPackages({
+					cache,
+					fileSystem,
+					names: [],
+					workspaceRoot,
+				});
+	const testable = withJestConfig({
+		cache,
+		fileSystem,
+		packages: candidates,
+		workspaceRoot,
+	});
 	// After the exclude, not before: an excluded fixture sharing a name with a
 	// real package would otherwise fail the run it was excluded from.
-	const selected = excludePackages(testable, workspaceRoot, exclude);
+	const selected = excludePackages({
+		exclude,
+		packages: testable,
+		workspaceRoot,
+	});
 	assertNoDuplicateNames(selected, workspaceRoot);
 	return selected;
 }
@@ -148,15 +175,19 @@ export function enumerateWorkspacePackages(
  *
  * @throws When a name matches no package in the workspace.
  */
-export function resolvePackages(
-	workspaceRoot: string,
-	names: Array<string>,
-	{ fileSystem = nodeFileSystem, patterns }: ResolvePackagesOptions = {},
-): Array<PackageInfo> {
+export function resolvePackages({
+	fileSystem = nodeFileSystem,
+	names,
+	patterns,
+	workspaceRoot,
+}: ResolvePackagesOptions & {
+	readonly names: Array<string>;
+	readonly workspaceRoot: string;
+}): Array<PackageInfo> {
 	const packages =
 		patterns !== undefined
 			? listPackages(workspaceRoot, { fileSystem, patterns })
-			: pnpmPackages(fileSystem, workspaceRoot, names);
+			: pnpmPackages({ fileSystem, names, workspaceRoot });
 	assertNoDuplicateNames(packages, workspaceRoot);
 	return names.map((name) => findOrThrow(packages, name));
 }
@@ -203,12 +234,17 @@ function assertNoDuplicateNames(packages: Array<PackageInfo>, workspaceRoot: str
  * its fixtures out of the package manager's workspace has said so already, and
  * enumerating them anyway would contradict a file we claim to read.
  */
-function matchUnderPatterns(
-	{ fileSystem, workspaceRoot }: WorkspaceWalk,
-	patterns: Array<string>,
-	leaf: string,
-	cache?: GlobCache,
-): Array<string> {
+function matchUnderPatterns({
+	cache,
+	fileSystem,
+	leaf,
+	patterns,
+	workspaceRoot,
+}: WorkspaceWalk & {
+	readonly cache?: GlobCache | undefined;
+	readonly leaf: string;
+	readonly patterns: Array<string>;
+}): Array<string> {
 	// One walk of the workspace root serves every pattern, and the leaves it was
 	// declared for are the only files it keeps — one per package rather than
 	// every file in the checkout.
@@ -291,11 +327,15 @@ function assertPnpmWorkspace(fileSystem: FileSystem, workspaceRoot: string): str
  * a workspace that lists one (`.bedrock`, `.sandcastle`) resolves it only
  * through the snapshot.
  */
-function walkPnpmPackages(
-	fileSystem: FileSystem,
-	workspaceRoot: string,
-	cache?: GlobCache,
-): Array<PackageInfo> {
+function walkPnpmPackages({
+	cache,
+	fileSystem,
+	workspaceRoot,
+}: {
+	readonly cache?: GlobCache | undefined;
+	readonly fileSystem: FileSystem;
+	readonly workspaceRoot: string;
+}): Array<PackageInfo> {
 	const yamlPath = assertPnpmWorkspace(fileSystem, workspaceRoot);
 	const yaml = parseYAML<PnpmWorkspace>(fileSystem.readFileSync(yamlPath, "utf-8"));
 	const packages: Array<PackageInfo> = [];
@@ -305,14 +345,8 @@ function walkPnpmPackages(
 	// root leads the list rather than waiting on a pattern to select it.
 	const matches = [PACKAGE_JSON_LEAF];
 	if (yaml.packages !== undefined) {
-		matches.push(
-			...matchUnderPatterns(
-				{ fileSystem, workspaceRoot },
-				yaml.packages,
-				PACKAGE_JSON_LEAF,
-				cache,
-			),
-		);
+		const walk = { cache, fileSystem, leaf: PACKAGE_JSON_LEAF, workspaceRoot };
+		matches.push(...matchUnderPatterns({ ...walk, patterns: yaml.packages }));
 	}
 
 	for (const match of matches) {
@@ -353,18 +387,23 @@ function findByName(packages: Array<PackageInfo>, name: string): PackageInfo | u
  * reads as untrustworthy here and reaches {@link walkPnpmPackages}, which is
  * where the error naming the missing file belongs.
  */
-function pnpmPackages(
-	fileSystem: FileSystem,
-	workspaceRoot: string,
-	names: Array<string>,
-	cache?: GlobCache,
-): Array<PackageInfo> {
+function pnpmPackages({
+	cache,
+	fileSystem,
+	names,
+	workspaceRoot,
+}: {
+	readonly cache?: GlobCache | undefined;
+	readonly fileSystem: FileSystem;
+	readonly names: Array<string>;
+	readonly workspaceRoot: string;
+}): Array<PackageInfo> {
 	const snapshot = readPnpmWorkspaceProjects(workspaceRoot, fileSystem);
 	if (snapshot !== undefined && names.every((name) => findByName(snapshot, name) !== undefined)) {
 		return snapshot;
 	}
 
-	return walkPnpmPackages(fileSystem, workspaceRoot, cache);
+	return walkPnpmPackages({ cache, fileSystem, workspaceRoot });
 }
 
 function inferPackageName(fileSystem: FileSystem, packageDirectory: string): string {
@@ -372,12 +411,17 @@ function inferPackageName(fileSystem: FileSystem, packageDirectory: string): str
 	return readPackageJsonName(packageJsonPath, fileSystem) ?? path.basename(packageDirectory);
 }
 
-function collectPackagesFromMatches(
-	{ fileSystem, workspaceRoot }: WorkspaceWalk,
-	matches: Array<string>,
-	seenDirectories: Set<string>,
-	packages: Array<PackageInfo>,
-): void {
+function collectPackagesFromMatches({
+	fileSystem,
+	matches,
+	packages,
+	seenDirectories,
+	workspaceRoot,
+}: WorkspaceWalk & {
+	readonly matches: Array<string>;
+	readonly packages: Array<PackageInfo>;
+	readonly seenDirectories: Set<string>;
+}): void {
 	for (const match of matches) {
 		if (!JEST_CONFIG_MARKER.test(path.basename(match))) {
 			continue;
@@ -393,21 +437,33 @@ function collectPackagesFromMatches(
 	}
 }
 
-function enumerateFromGlobs(
-	fileSystem: FileSystem,
-	workspaceRoot: string,
-	patterns: Array<string>,
-	cache?: GlobCache,
-): Array<PackageInfo> {
+function enumerateFromGlobs({
+	cache,
+	fileSystem,
+	patterns,
+	workspaceRoot,
+}: {
+	readonly cache?: GlobCache | undefined;
+	readonly fileSystem: FileSystem;
+	readonly patterns: Array<string>;
+	readonly workspaceRoot: string;
+}): Array<PackageInfo> {
 	const seenDirectories = new Set<string>();
 	const packages: Array<PackageInfo> = [];
 
-	collectPackagesFromMatches(
-		{ fileSystem, workspaceRoot },
-		matchUnderPatterns({ fileSystem, workspaceRoot }, patterns, JEST_CONFIG_LEAF, cache),
-		seenDirectories,
+	collectPackagesFromMatches({
+		fileSystem,
+		matches: matchUnderPatterns({
+			cache,
+			fileSystem,
+			leaf: JEST_CONFIG_LEAF,
+			patterns,
+			workspaceRoot,
+		}),
 		packages,
-	);
+		seenDirectories,
+		workspaceRoot,
+	});
 
 	return packages;
 }
@@ -423,14 +479,25 @@ function enumerateFromGlobs(
  * walk that found the manifests: `cache` is declared for both leaves, so the
  * configs cost no filesystem access of their own.
  */
-function withJestConfig(
-	fileSystem: FileSystem,
-	packages: Array<PackageInfo>,
-	workspaceRoot: string,
-	cache: GlobCache,
-): Array<PackageInfo> {
+function withJestConfig({
+	cache,
+	fileSystem,
+	packages,
+	workspaceRoot,
+}: {
+	readonly cache: GlobCache;
+	readonly fileSystem: FileSystem;
+	readonly packages: Array<PackageInfo>;
+	readonly workspaceRoot: string;
+}): Array<PackageInfo> {
 	const configDirectories = new Set(
-		matchUnderPatterns({ fileSystem, workspaceRoot }, ["**"], JEST_CONFIG_LEAF, cache)
+		matchUnderPatterns({
+			cache,
+			fileSystem,
+			leaf: JEST_CONFIG_LEAF,
+			patterns: ["**"],
+			workspaceRoot,
+		})
 			// The glob accepts the dots a `jest.config.spec.ts` carries; the
 			// marker is what holds the leaf to a single suffix.
 			.filter((match) => JEST_CONFIG_MARKER.test(path.basename(match)))

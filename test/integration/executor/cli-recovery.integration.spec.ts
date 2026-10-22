@@ -71,7 +71,7 @@ describe.skipIf(!IS_BINARY_INPUT)("cLI Open Cloud recovery", () => {
 		const actual = await runAsync([], {
 			loadConfig: async () => {
 				return {
-					...(await loadConfig(undefined, sandbox)),
+					...(await loadConfig({ cwd: sandbox })),
 					bootProbeTimeout: 0,
 					uploadCache: false,
 				};
@@ -144,7 +144,7 @@ describe.skipIf(!IS_BINARY_INPUT)("cLI Open Cloud recovery", () => {
 		const actual = await runAsync([], {
 			loadConfig: async () => {
 				return {
-					...(await loadConfig(undefined, sandbox)),
+					...(await loadConfig({ cwd: sandbox })),
 					bootProbeTimeout: 0,
 					uploadCache: false,
 				};
@@ -257,7 +257,7 @@ describe.skipIf(!IS_BINARY_INPUT)("cLI Open Cloud recovery", () => {
 			const actual = await runAsync([], {
 				loadConfig: async () => {
 					return {
-						...(await loadConfig(undefined, sandbox)),
+						...(await loadConfig({ cwd: sandbox })),
 						bootProbeTimeout: 0,
 						uploadCache: false,
 					};

@@ -199,7 +199,11 @@ export function selectWorkspaceTests({
 	const typeTestPackages = new Set(
 		Array.from(discovered.typecheckByDirectory.values(), (entry) => entry.pkg),
 	);
-	const policy = applyEmptyPackagePolicy(discovered.pending, filteredContexts, typeTestPackages);
+	const policy = applyEmptyPackagePolicy({
+		allEntries: discovered.pending,
+		contexts: filteredContexts,
+		typeTestPackages,
+	});
 
 	return {
 		emptyPackageErrors: policy.emptyPackageErrors,
@@ -211,11 +215,15 @@ export function selectWorkspaceTests({
 	};
 }
 
-function applyEmptyPackagePolicy(
-	allEntries: Array<PendingEntry>,
-	contexts: Array<PackageContext>,
-	typeTestPackages: ReadonlySet<string>,
-): Pick<WorkspaceTestSelection, "emptyPackageErrors" | "pending"> {
+function applyEmptyPackagePolicy({
+	allEntries,
+	contexts,
+	typeTestPackages,
+}: {
+	readonly allEntries: Array<PendingEntry>;
+	readonly contexts: Array<PackageContext>;
+	readonly typeTestPackages: ReadonlySet<string>;
+}): Pick<WorkspaceTestSelection, "emptyPackageErrors" | "pending"> {
 	const passByPackage = new Map<string, boolean>();
 	for (const ctx of contexts) {
 		passByPackage.set(ctx.info.name, ctx.pkgConfig.passWithNoTests);
@@ -337,12 +345,17 @@ function buildProjectExecutionConfig(
 	};
 }
 
-function discoverProjectTestFiles(
-	project: ResolvedProjectConfig,
-	packageDirectory: string,
-	globCache: GlobCache,
-	fileSystem: FileSystem,
-): Array<string> {
+function discoverProjectTestFiles({
+	fileSystem,
+	globCache,
+	packageDirectory,
+	project,
+}: {
+	readonly fileSystem: FileSystem;
+	readonly globCache: GlobCache;
+	readonly packageDirectory: string;
+	readonly project: ResolvedProjectConfig;
+}): Array<string> {
 	const found: Array<string> = [];
 	for (const pattern of project.include) {
 		found.push(...globSync(pattern, { cache: globCache, cwd: packageDirectory, fileSystem }));
@@ -443,7 +456,12 @@ function buildPendingEntry({
 		cliFiles?.runtimeFiles ??
 		(typecheck.only
 			? []
-			: discoverProjectTestFiles(project, packageDirectory, globCache, fileSystem));
+			: discoverProjectTestFiles({
+					fileSystem,
+					globCache,
+					packageDirectory,
+					project,
+				}));
 
 	return {
 		pkg: ctx.info.name,

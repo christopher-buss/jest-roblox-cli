@@ -27,10 +27,11 @@ export interface ConfigLoadOptions {
 	fileSystem?: FileSystem;
 }
 
-const NODE_CONFIG_LOAD_OPTIONS: Required<ConfigLoadOptions> = {
-	configLoader: nodeConfigLoader,
-	fileSystem: nodeFileSystem,
-};
+/** Where a config load starts, plus the collaborators it reaches. */
+export interface ConfigLoadRequest extends ConfigLoadOptions {
+	readonly configPath?: string | undefined;
+	readonly cwd?: string | undefined;
+}
 
 export type PackageConfigLoader = typeof loadConfig;
 
@@ -112,17 +113,18 @@ export function resolveConfig(config: Config): ResolvedConfig {
 	return resolved;
 }
 
-export async function loadConfig(
-	configPath?: string,
-	cwd: string = process.cwd(),
-	options?: ConfigLoadOptions,
-): Promise<ResolvedConfig> {
-	const { config, loadDirectory } = await loadConfigLayers(
-		{ ...NODE_CONFIG_LOAD_OPTIONS, ...options },
+export async function loadConfig({
+	configLoader = nodeConfigLoader,
+	configPath,
+	cwd = process.cwd(),
+	fileSystem = nodeFileSystem,
+}: ConfigLoadRequest = {}): Promise<ResolvedConfig> {
+	const { config, loadDirectory } = await loadConfigLayers({
 		configPath,
+		context: { configLoader, fileSystem },
 		cwd,
-	);
-	config.rootDir = anchorRootDirectory(config.rootDir, loadDirectory, cwd);
+	});
+	config.rootDir = anchorRootDirectory({ cwd, loadDirectory, rootDirectory: config.rootDir });
 
 	return resolveConfig(config);
 }
@@ -137,16 +139,17 @@ export async function loadConfig(
  * mode rejects malformed per-package configs with the same error messaging,
  * rather than comparing unchecked shapes and failing later.
  */
-export async function loadRawConfig(
-	configPath?: string,
-	cwd: string = process.cwd(),
-	options?: ConfigLoadOptions,
-): Promise<Config> {
-	const { config } = await loadConfigLayers(
-		{ ...NODE_CONFIG_LOAD_OPTIONS, ...options },
+export async function loadRawConfig({
+	configLoader = nodeConfigLoader,
+	configPath,
+	cwd = process.cwd(),
+	fileSystem = nodeFileSystem,
+}: ConfigLoadRequest): Promise<Config> {
+	const { config } = await loadConfigLayers({
 		configPath,
+		context: { configLoader, fileSystem },
 		cwd,
-	);
+	});
 
 	return config;
 }
@@ -190,7 +193,15 @@ function merger(...sources: Array<Config | null | undefined>): Config {
 	return defuFn({}, ...sources);
 }
 
-async function invokeC12(configLoader: ConfigLoader, configFile: string | undefined, cwd: string) {
+async function invokeC12({
+	configFile,
+	configLoader,
+	cwd,
+}: {
+	readonly configFile: string | undefined;
+	readonly configLoader: ConfigLoader;
+	readonly cwd: string;
+}) {
 	let options: LoadConfigOptions<Config> = {
 		name: "jest",
 		configFileRequired: configFile !== undefined,
@@ -221,16 +232,24 @@ async function invokeC12(configLoader: ConfigLoader, configFile: string | undefi
  * relative `rootDir` needs, and it survives only here — `processExtends` merges
  * the layers into one object that no longer records where any of them lived.
  */
-async function loadConfigLayers(
-	context: ConfigLoadContext,
-	configPath: string | undefined,
-	cwd: string,
-): Promise<LoadedConfig> {
+async function loadConfigLayers({
+	configPath,
+	context,
+	cwd,
+}: {
+	readonly configPath: string | undefined;
+	readonly context: ConfigLoadContext;
+	readonly cwd: string;
+}): Promise<LoadedConfig> {
 	const { fileSystem } = context;
 
 	let result;
 	try {
-		result = await invokeC12(context.configLoader, configPath, cwd);
+		result = await invokeC12({
+			configFile: configPath,
+			configLoader: context.configLoader,
+			cwd,
+		});
 	} catch (err) {
 		if (configPath !== undefined && isC12NotFoundError(err)) {
 			throw new Error(`Config file not found: ${configPath}`, { cause: err });
@@ -239,7 +258,7 @@ async function loadConfigLayers(
 		throw err;
 	}
 
-	const mergedConfig = await processExtends(context, result, new Set());
+	const mergedConfig = await processExtends({ context, result, visited: new Set() });
 	const loadedFile = result.configFile;
 
 	return {
@@ -271,11 +290,15 @@ async function loadConfigLayers(
  * spelling the config wrote, which is what the prefix-comparing consumers
  * (`resolveUniverseAnchor`, `filter-projects-by-files`) expect to see.
  */
-function anchorRootDirectory(
-	rootDirectory: string | undefined,
-	loadDirectory: string,
-	cwd: string,
-): string {
+function anchorRootDirectory({
+	cwd,
+	loadDirectory,
+	rootDirectory,
+}: {
+	readonly cwd: string;
+	readonly loadDirectory: string;
+	readonly rootDirectory: string | undefined;
+}): string {
 	if (rootDirectory === undefined) {
 		// `cwd` is a caller's string too — `--workspace-root=.` reaches here
 		// verbatim — so this branch resolves rather than passing it on. It needs
@@ -319,11 +342,15 @@ function anchorWorkspaceRoot(config: Config, baseDirectory: string): Config {
 // graph (child → [a, b], both → base) loads `base` twice rather than failing
 // as a false cycle. Config load is one-time at startup; the re-parse cost is
 // negligible.
-async function processExtends(
-	context: ConfigLoadContext,
-	result: Awaited<ReturnType<typeof invokeC12>>,
-	visited: Set<string>,
-): Promise<Config> {
+async function processExtends({
+	context,
+	result,
+	visited,
+}: {
+	readonly context: ConfigLoadContext;
+	readonly result: Awaited<ReturnType<typeof invokeC12>>;
+	readonly visited: Set<string>;
+}): Promise<Config> {
 	const { fileSystem } = context;
 	const loadedConfig = result.config;
 	const loadedFile = result.configFile;
@@ -373,14 +400,18 @@ async function loadExtendsLayers({
 
 		let extendedResult;
 		try {
-			extendedResult = await invokeC12(context.configLoader, target, path.dirname(target));
+			extendedResult = await invokeC12({
+				configFile: target,
+				configLoader: context.configLoader,
+				cwd: path.dirname(target),
+			});
 		} catch (err) {
 			throw new Error(`Failed to resolve extends "${entry}" from "${canonicalFile}".`, {
 				cause: err,
 			});
 		}
 
-		const extendedConfig = await processExtends(context, extendedResult, visited);
+		const extendedConfig = await processExtends({ context, result: extendedResult, visited });
 		layers.push(extendedConfig);
 	}
 

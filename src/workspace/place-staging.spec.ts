@@ -106,7 +106,7 @@ function seed(): Harness {
 		[path.join(PACKAGE_DIR, "package.json")]: `{ "name": "${PACKAGE_NAME}" }`,
 		[path.join(PACKAGE_DIR, "src/index.luau")]: "return 1\n",
 	});
-	const execFile = vi.fn<RojoExec>((_file, args, _options, callback) => {
+	const execFile = vi.fn<RojoExec>((...[, args, , callback]) => {
 		memory.volume.writeFileSync(String(args[3]), PLACE_BYTES);
 		callback(null, "", "");
 	});

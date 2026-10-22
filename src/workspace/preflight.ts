@@ -27,17 +27,21 @@ export function validatePackages(
 ): Array<PreflightError> {
 	const errors: Array<PreflightError> = [];
 	for (const descriptor of descriptors) {
-		validatePackage(fileSystem, descriptor, errors);
+		validatePackage({ descriptor, errors, fileSystem });
 	}
 
 	return errors;
 }
 
-function validatePackage(
-	fileSystem: FileSystem,
-	descriptor: PackageDescriptor,
-	errors: Array<PreflightError>,
-): void {
+function validatePackage({
+	descriptor,
+	errors,
+	fileSystem,
+}: {
+	readonly descriptor: PackageDescriptor;
+	readonly errors: Array<PreflightError>;
+	readonly fileSystem: FileSystem;
+}): void {
 	if (!fileSystem.existsSync(descriptor.rojoProjectPath)) {
 		errors.push({
 			package: descriptor.name,

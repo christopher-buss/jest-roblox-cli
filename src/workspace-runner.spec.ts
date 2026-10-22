@@ -277,7 +277,7 @@ function makeProjectEntries(entries: Array<ProjectEntry>): Array<ProjectEntry> {
 }
 
 function setLoadedConfigPerPackage(map: Readonly<Record<string, PreResolutionConfig>>): void {
-	loadPackageConfig.mockImplementation(async (_path, cwd) => {
+	loadPackageConfig.mockImplementation(async ({ cwd } = {}) => {
 		const config = map[cwd ?? ""];
 		if (config === undefined) {
 			throw new Error(`No mocked config for cwd: ${cwd ?? "<undefined>"}`);

@@ -30,7 +30,11 @@ describe("c12 loader boundary", () => {
 		const { fileSystem } = createMemoryFileSystem();
 
 		await expect(
-			loadRawConfig(undefined, "/repo", seamsFor(configLoader, fileSystem)),
+			loadRawConfig({
+				configPath: undefined,
+				cwd: "/repo",
+				...seamsFor(configLoader, fileSystem),
+			}),
 		).resolves.toStrictEqual({});
 
 		const [options] = configLoader.mock.calls[0]!;
@@ -56,7 +60,11 @@ describe("c12 loader boundary", () => {
 		const configLoader = emptyConfigLoader();
 		const { fileSystem } = createMemoryFileSystem();
 
-		await loadRawConfig("configs/jest.config.ts", "/repo", seamsFor(configLoader, fileSystem));
+		await loadRawConfig({
+			configPath: "configs/jest.config.ts",
+			cwd: "/repo",
+			...seamsFor(configLoader, fileSystem),
+		});
 
 		const [options] = configLoader.mock.calls[0]!;
 		const { merger, ...plainOptions } = options;
@@ -86,7 +94,11 @@ describe("c12 loader boundary", () => {
 		});
 		vi.stubEnv("JEST_ROBLOX_SEA", "true");
 
-		await loadRawConfig("jest.config.json", "/repo", seamsFor(configLoader, fileSystem));
+		await loadRawConfig({
+			configPath: "jest.config.json",
+			cwd: "/repo",
+			...seamsFor(configLoader, fileSystem),
+		});
 
 		const [options] = configLoader.mock.calls[0]!;
 		const { import: importConfig, merger, ...plainOptions } = options;
