@@ -140,7 +140,7 @@ function setupMocks(volume: MemoryVolume, { outDir }: { outDir?: string } = {}) 
 	const tsconfigReader = readingOutDirectory(outDir);
 	const instrumenter = vi.fn<Instrumenter>().mockReturnValue({});
 
-	const execFile = vi.fn<RojoExec>((_file, args, _options, callback) => {
+	const execFile = vi.fn<RojoExec>((...[, args, , callback]) => {
 		volume.writeFileSync(String(args[3]), "RBXL");
 		callback(null, "", "");
 	});
@@ -987,7 +987,7 @@ describe(prepareCoverageAsync, () => {
 			const clock = movableClockCollector(1_000);
 			const profile = vi.spyOn(clock.timing, "profileTimedAsync");
 
-			execFile.mockImplementation((_file, args, _options, callback) => {
+			execFile.mockImplementation((...[, args, , callback]) => {
 				clock.advance(250);
 				volume.writeFileSync(String(args[3]), "RBXL");
 				callback(null, "", "");
@@ -1087,8 +1087,8 @@ describe(prepareCoverageAsync, () => {
 			const { fileSystem, volume } = seedFilesystem();
 			const { childProcess, execFile, instrumenter } = setupMocks(volume);
 
-			execFile.mockImplementation((_file, _args, _options, callback) => {
-				callback(new Error("spawn failed"), "", "");
+			execFile.mockImplementation((...callArgs) => {
+				callArgs[3](new Error("spawn failed"), "", "");
 			});
 			const config = makeConfig({ luauRoots: ["out-tsc/test"] });
 

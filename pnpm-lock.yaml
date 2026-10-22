@@ -98,7 +98,7 @@ importers:
         version: 3.16.0-ts.1
       '@rbxts/types':
         specifier: latest
-        version: 1.0.958
+        version: 1.0.959
       '@stryker-mutator/api':
         specifier: 10.0.0
         version: 10.0.0
@@ -2157,8 +2157,8 @@ packages:
   '@rbxts/pretty-format@3.16.0-ts.1':
     resolution: {integrity: sha512-zi68DwNLjMB8F7HaeWul4gMeqy4+W3d9PYlkVRCPZBE0+f/qR/G1PKMpzmJoT3SSHSbGpZk9El9gMKDfde4n4w==}
 
-  '@rbxts/types@1.0.958':
-    resolution: {integrity: sha512-/0G554MPBxX5ydA+KUSLHu2INK/QkpbohtDMHugJ0BW8Lp6UIwkZCqFhcaFYTg6o8i7qhDNtBaRVl5w7TXyZbw==}
+  '@rbxts/types@1.0.959':
+    resolution: {integrity: sha512-UyqSEnNsAZsL+3z1smoOFBHXmqXRhMb8hy8sL2IST/C78C96uXop4qYSaBifXjKMye/tckB7j8ILZEmdOD88nQ==}
 
   '@roblox-ts/luau-ast@2.0.1':
     resolution: {integrity: sha512-jej2mzRGwhR9wu4woAtgTwqsKADlegZYlQ+M5qVHRojvjoyJVFkLrSbhBKRr8HR+fVW5nCz0qX7kNa0tSpAY+A==}
@@ -7126,7 +7126,7 @@ snapshots:
     dependencies:
       '@rbxts-js/pretty-format': 3.16.0-ts.1
 
-  '@rbxts/types@1.0.958': {}
+  '@rbxts/types@1.0.959': {}
 
   '@roblox-ts/luau-ast@2.0.1': {}
 
